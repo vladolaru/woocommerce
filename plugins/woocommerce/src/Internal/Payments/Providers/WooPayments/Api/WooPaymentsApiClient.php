@@ -26,6 +26,23 @@ use WP_REST_Request;
 class WooPaymentsApiClient {
 
 	/**
+	 * Tell whether a failed request has an ambiguous provider outcome.
+	 *
+	 * @param WooPaymentsApiException $exception Request failure.
+	 * @return bool
+	 *
+	 * @since 11.2.0
+	 */
+	public function is_ambiguous_request_failure( WooPaymentsApiException $exception ): bool {
+		if ( in_array( $exception->get_error_code(), array( 'http_request_failed', 'http_request_not_executed' ), true ) ) {
+			return true;
+		}
+
+		return 500 <= $exception->get_http_code()
+			&& in_array( $exception->get_error_code(), array( 'wcpay_unparseable_or_null_body', 'wcpay_client_error_code_missing' ), true );
+	}
+
+	/**
 	 * Request timeout.
 	 */
 	private const REQUEST_TIMEOUT_SECONDS = 70;

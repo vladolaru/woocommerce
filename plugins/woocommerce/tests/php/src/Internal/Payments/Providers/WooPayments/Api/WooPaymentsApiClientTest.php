@@ -26,6 +26,40 @@ use WP_REST_Request;
 class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
+	 * @testdox Charge failure ambiguity should distinguish transport uncertainty from definitive provider responses.
+	 * @dataProvider charge_failure_ambiguity_provider
+	 *
+	 * @param string $error_code Provider error code.
+	 * @param int    $http_code Provider HTTP code.
+	 * @param string $error_type Provider error type.
+	 * @param bool   $expected Whether the failure is ambiguous.
+	 */
+	public function test_charge_failure_ambiguity( string $error_code, int $http_code, string $error_type, bool $expected ): void {
+		$exception = new WooPaymentsApiException( 'Request failed.', $error_code, $http_code, $error_type );
+		$sut       = new WooPaymentsApiClient();
+
+		$this->assertSame( $expected, $sut->is_ambiguous_request_failure( $exception ), 'Only unstructured transport failures should retain a charge idempotency key.' );
+	}
+
+	/**
+	 * Provide ambiguous and definitive charge failures.
+	 *
+	 * @return array<string,array{string,int,string,bool}>
+	 */
+	public function charge_failure_ambiguity_provider(): array {
+		return array(
+			'failed transport request'      => array( 'http_request_failed', 0, '', true ),
+			'unexecuted transport request'  => array( 'http_request_not_executed', 0, '', true ),
+			'unparseable server response'   => array( 'wcpay_unparseable_or_null_body', 500, '', true ),
+			'unstructured server response'  => array( 'wcpay_client_error_code_missing', 503, '', true ),
+			'unparseable conflict response' => array( 'wcpay_unparseable_or_null_body', 409, '', false ),
+			'structured server response'    => array( 'api_connection_error', 502, '', false ),
+			'card decline'                  => array( 'card_declined', 402, 'card_error', false ),
+			'local readiness failure'       => array( 'wcpay_wpcom_not_connected', 409, '', false ),
+		);
+	}
+
+	/**
 	 * Preserved WooPayments V1 client capability user agent.
 	 */
 	private const EXPECTED_USER_AGENT = 'WooCommerce Payments/10.8.0';

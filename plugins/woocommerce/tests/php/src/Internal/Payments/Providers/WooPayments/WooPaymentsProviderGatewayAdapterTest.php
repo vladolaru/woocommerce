@@ -509,6 +509,237 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native charge should reuse a persisted key after an ambiguous transport failure.
+	 */
+	public function test_native_charge_reuses_persisted_key_after_ambiguous_transport_failure(): void {
+		$order            = $this->create_woopayments_order();
+		$order_id         = $order->get_id();
+		$api_client       = new class( $order_id ) extends WooPaymentsApiClient {
+			/** @var int */
+			private int $order_id;
+			/** @var string[] */
+			public array $keys = array();
+
+			/**
+			 * Initialize the recording client.
+			 *
+			 * @param int $order_id Order ID.
+			 */
+			public function __construct( int $order_id ) {
+				$this->order_id = $order_id;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				$fresh_order  = wc_get_order( $this->order_id );
+				$this->keys[] = $idempotency_key;
+				if ( ! $fresh_order instanceof WC_Order || $idempotency_key !== $fresh_order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) ) {
+					throw new \RuntimeException( 'Charge key was not persisted before dispatch.' );
+				}
+				if ( 1 === count( $this->keys ) ) {
+					throw new WooPaymentsApiException( 'Transport failed.', 'http_request_failed' );
+				}
+				return array(
+					'id'     => 'pi_reused',
+					'status' => 'succeeded',
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_reused' );
+		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+
+		$ambiguous_outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_reused' ), 'key_a' );
+		$sut->finalize_charge_idempotency_key( $order, $ambiguous_outcome );
+		$sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_reused' ), 'key_b' );
+
+		$this->assertSame( array( 'key_a', 'key_a' ), $api_client->keys );
+	}
+
+	/**
+	 * @testdox Native charge should retire its key after a definitive provider outcome.
+	 */
+	public function test_native_charge_retires_key_after_definitive_outcome(): void {
+		$order            = $this->create_woopayments_order();
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/** @var string[] */
+			public array $keys = array();
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				$this->keys[] = $idempotency_key;
+				if ( 1 === count( $this->keys ) ) {
+					throw new WooPaymentsApiException( 'Declined.', 'card_declined', 402, 'card_error' );
+				}
+				return array(
+					'id'     => 'pi_new_key',
+					'status' => 'succeeded',
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_new_key' );
+		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+
+		$declined_outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_new_key' ), 'key_d' );
+		$sut->finalize_charge_idempotency_key( $order, $declined_outcome );
+		$success_outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_new_key' ), 'key_e' );
+		$sut->finalize_charge_idempotency_key( $order, $success_outcome );
+		$fresh_order = wc_get_order( $order->get_id() );
+
+		$this->assertSame( array( 'key_d', 'key_e' ), $api_client->keys );
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$this->assertSame( '', $fresh_order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+	}
+
+	/**
+	 * @testdox Native charge should use the caller key for a different order.
+	 */
+	public function test_native_charge_uses_a_different_order_key(): void {
+		$first_order      = $this->create_woopayments_order();
+		$second_order     = $this->create_woopayments_order();
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/** @var string[] */
+			public array $keys = array();
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				$this->keys[] = $idempotency_key;
+				return array(
+					'id'     => 'pi_' . count( $this->keys ),
+					'status' => 'succeeded',
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_different_order' );
+		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+
+		$sut->charge( PaymentContext::for_checkout( $first_order, OrderPaymentStore::GATEWAY_ID, 'pm_different_order' ), 'key_a' );
+		$sut->charge( PaymentContext::for_checkout( $second_order, OrderPaymentStore::GATEWAY_ID, 'pm_different_order' ), 'key_c' );
+
+		$this->assertSame( array( 'key_a', 'key_c' ), $api_client->keys );
+	}
+
+	/**
+	 * @testdox Native SetupIntent failure should retain an ambiguous charge key.
+	 */
+	public function test_native_setup_intent_failure_retains_ambiguous_charge_key(): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, 'key_ambiguous_charge' );
+		$order->save_meta_data();
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+			/**
+			 * Create and confirm a setup intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException Always.
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				throw new WooPaymentsApiException( 'SetupIntent declined.', 'card_declined', 402, 'card_error' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_setup_failure' );
+		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_setup_failure' ), 'key_setup' );
+		$sut->finalize_charge_idempotency_key( $order, $outcome );
+		$fresh_order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$this->assertSame( 'key_ambiguous_charge', $fresh_order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+	}
+
+	/**
+	 * @testdox Native pre-dispatch failure should retain an ambiguous charge key.
+	 */
+	public function test_native_pre_dispatch_failure_retains_ambiguous_charge_key(): void {
+		set_transient( 'wcpay_minimum_amount_usd', 100, DAY_IN_SECONDS );
+		$order = $this->create_woopayments_order( '0.50' );
+		$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, 'key_ambiguous_charge' );
+		$order->save_meta_data();
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->expects( $this->never() )->method( 'get_or_create_customer_id_for_order' );
+		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+
+		try {
+			$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_pre_dispatch_failure' ), 'key_pre_dispatch' );
+			$sut->finalize_charge_idempotency_key( $order, $outcome );
+			$fresh_order = wc_get_order( $order->get_id() );
+
+			$this->assertInstanceOf( WC_Order::class, $fresh_order );
+			$this->assertSame( 'key_ambiguous_charge', $fresh_order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		} finally {
+			delete_transient( 'wcpay_minimum_amount_usd' );
+		}
+	}
+
+	/**
 	 * @testdox Native charge declines write the payment-failed order note with the seller message and allow fraud meta.
 	 */
 	public function test_charge_decline_composes_failed_note_and_allow_fraud_meta(): void {

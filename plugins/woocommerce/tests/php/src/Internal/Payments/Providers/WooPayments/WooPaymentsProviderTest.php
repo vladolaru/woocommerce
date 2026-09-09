@@ -110,8 +110,10 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$context         = PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_effects' );
 		$effect_plan     = WooPaymentsOrderEffectPlan::for_payment_intent( array( 'status' => 'succeeded' ), false );
 		$outcome         = ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_effects' ) )->with_effect_plan( $effect_plan );
+		$call_sequence   = array();
 		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
 			->disableOriginalConstructor()
+			->onlyMethods( array( 'finalize_charge_idempotency_key' ) )
 			->getMock();
 		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -126,10 +128,28 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$effect_applier->expects( $this->once() )
 			->method( 'apply' )
 			->with( $context, $outcome, $effect_plan )
-			->willReturn( $outcome );
+			->willReturnCallback(
+				static function () use ( &$call_sequence, $outcome ): PaymentOutcome {
+					$call_sequence[] = 'apply';
+					return $outcome;
+				}
+			);
 		$effect_applier->expects( $this->once() )
 			->method( 'apply_payment_method_display_details' )
-			->with( $order, array( 'status' => 'succeeded' ) );
+			->with( $order, array( 'status' => 'succeeded' ) )
+			->willReturnCallback(
+				static function () use ( &$call_sequence ): void {
+					$call_sequence[] = 'display';
+				}
+			);
+		$gateway_adapter->expects( $this->once() )
+			->method( 'finalize_charge_idempotency_key' )
+			->with( $order, $outcome )
+			->willReturnCallback(
+				function () use ( &$call_sequence ): void {
+					$this->assertSame( array( 'apply', 'display' ), $call_sequence, 'Charge key finalization must follow payment-method display projection.' );
+				}
+			);
 
 		$provider = new WooPaymentsProvider();
 		$provider->init( $gateway_adapter, $api_client, $account_service, null, $effect_applier );

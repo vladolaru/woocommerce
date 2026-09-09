@@ -23,6 +23,21 @@ use WC_Order;
 class WooPaymentsProviderGatewayAdapter {
 
 	/**
+	 * Order meta key holding the native charge idempotency key.
+	 *
+	 * @var string
+	 * @since 11.2.0
+	 */
+	public const CHARGE_IDEMPOTENCY_KEY_META = '_wcpay_charge_idempotency_key';
+
+	/**
+	 * Outcome data key marking a definitive native charge failure.
+	 *
+	 * @var string
+	 */
+	private const DEFINITIVE_CHARGE_FAILURE_DATA_KEY = '_wcpay_definitive_charge_failure';
+
+	/**
 	 * WooPayments legacy runtime.
 	 *
 	 * @var WooPaymentsLegacyRuntime
@@ -359,19 +374,24 @@ class WooPaymentsProviderGatewayAdapter {
 
 		$this->assert_total_meets_cached_platform_minimum( $order );
 
-		$customer_id  = $this->customer_service->get_or_create_customer_id_for_order( $order );
-		$request_data = $this->request_builder->charge_request_data( $context, $payment_credential, $customer_id, $is_recurring );
+		$customer_id     = $this->customer_service->get_or_create_customer_id_for_order( $order );
+		$request_data    = $this->request_builder->charge_request_data( $context, $payment_credential, $customer_id, $is_recurring );
+		$idempotency_key = $this->resolve_charge_idempotency_key( $order, $idempotency_key );
 
 		try {
 			$result = $this->api_client->create_and_confirm_payment_intention( $request_data, $idempotency_key );
 		} catch ( WooPaymentsApiException $exception ) {
 			if ( ! $this->is_missing_customer_exception( $exception ) ) {
-				throw $exception;
+				return $this->failed_charge_outcome( $order, $exception, true );
 			}
 
 			$customer_id              = $this->customer_service->recreate_customer_for_order( $order );
 			$request_data['customer'] = $customer_id;
-			$result                   = $this->api_client->create_and_confirm_payment_intention( $request_data, $idempotency_key );
+			try {
+				$result = $this->api_client->create_and_confirm_payment_intention( $request_data, $idempotency_key );
+			} catch ( WooPaymentsApiException $exception ) {
+				return $this->failed_charge_outcome( $order, $exception, true );
+			}
 		}
 
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
@@ -382,6 +402,47 @@ class WooPaymentsProviderGatewayAdapter {
 		$this->maybe_add_customer_notification_note( $order, $result );
 
 		return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $result, $is_recurring ) );
+	}
+
+	/**
+	 * Resolve the durable idempotency key for a native charge.
+	 *
+	 * @param WC_Order $order     Order being charged.
+	 * @param string   $candidate Current checkout invocation key.
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	private function resolve_charge_idempotency_key( WC_Order $order, string $candidate ): string {
+		$persisted_key = (string) $order->get_meta( self::CHARGE_IDEMPOTENCY_KEY_META, true );
+		if ( '' !== $persisted_key ) {
+			return $persisted_key;
+		}
+
+		$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $candidate );
+		$order->save_meta_data();
+
+		return $candidate;
+	}
+
+	/**
+	 * Retire a native charge idempotency key after a definitive lifecycle outcome.
+	 *
+	 * @param WC_Order       $order   Order that was charged.
+	 * @param PaymentOutcome $outcome Provider outcome applied by the lifecycle.
+	 * @return void
+	 *
+	 * @since 11.2.0
+	 */
+	public function finalize_charge_idempotency_key( WC_Order $order, PaymentOutcome $outcome ): void {
+		$plan = $outcome->get_effect_plan();
+		$data = $outcome->get_data();
+		if ( ! ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT === $plan->get_type() ) && empty( $data[ self::DEFINITIVE_CHARGE_FAILURE_DATA_KEY ] ) ) {
+			return;
+		}
+
+		$order->delete_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META );
+		$order->save_meta_data();
 	}
 
 	/**
@@ -424,13 +485,17 @@ class WooPaymentsProviderGatewayAdapter {
 	 * seller message when the charge outcome carried one), and a card error
 	 * marks the fraud meta box allow because fraud checks passed.
 	 *
-	 * @param WC_Order                $order     Order object.
-	 * @param WooPaymentsApiException $exception Transport exception.
+	 * @param WC_Order                $order                       Order object.
+	 * @param WooPaymentsApiException $exception                   Transport exception.
+	 * @param bool                    $is_payment_intent_dispatch Whether the exception came from PaymentIntent dispatch.
 	 * @return PaymentOutcome
 	 */
-	private function failed_charge_outcome( WC_Order $order, WooPaymentsApiException $exception ): PaymentOutcome {
+	private function failed_charge_outcome( WC_Order $order, WooPaymentsApiException $exception, bool $is_payment_intent_dispatch = false ): PaymentOutcome {
 		$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'charge', $exception );
 		$data    = $outcome->get_data();
+		if ( $is_payment_intent_dispatch && ! $this->api_client->is_ambiguous_request_failure( $exception ) ) {
+			$data[ self::DEFINITIVE_CHARGE_FAILURE_DATA_KEY ] = true;
+		}
 
 		if ( $this->is_blocked_by_fraud_rules( $exception ) ) {
 			return $this->fraud_blocked_charge_outcome( $order, $exception, $outcome, $data );

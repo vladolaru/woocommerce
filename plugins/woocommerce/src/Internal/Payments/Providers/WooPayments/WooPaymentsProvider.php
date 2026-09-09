@@ -453,14 +453,14 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	 * @param string         $operation Operation name.
 	 */
 	public function apply_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): void {
-		unset( $operation );
-
 		$plan = $outcome->get_effect_plan();
-		if ( ! $plan instanceof WooPaymentsOrderEffectPlan || WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT !== $plan->get_type() ) {
-			return;
+		if ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT === $plan->get_type() ) {
+			$this->get_order_effect_applier()->apply_payment_method_display_details( $context->get_order(), $plan->get_provider_result() );
 		}
 
-		$this->get_order_effect_applier()->apply_payment_method_display_details( $context->get_order(), $plan->get_provider_result() );
+		if ( 'charge' === $operation ) {
+			$this->get_gateway_adapter()->finalize_charge_idempotency_key( $context->get_order(), $outcome );
+		}
 	}
 
 	/**
