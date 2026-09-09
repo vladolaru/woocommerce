@@ -10,6 +10,7 @@ PERFORMANCE_STEP_NAME = "Measure native payments performance subset"
 PERFORMANCE_HARNESS_PATH = (
     "plugins/woocommerce/tests/e2e/envs/woopayments-native/perf-compare.sh"
 )
+PERFORMANCE_HARNESS_BASENAME = "perf-compare.sh"
 PERFORMANCE_COMMAND = (
     f"bash {PERFORMANCE_HARNESS_PATH} "
     '--mode ci --store-url "$E2E_WOOPAYMENTS_NATIVE_STORE_URL" '
@@ -125,7 +126,8 @@ performance_harness_steps = [
     for step in steps
     if isinstance(step, dict)
     and any(
-        posixpath.normpath(token.strip("\"'")) == PERFORMANCE_HARNESS_PATH
+        posixpath.basename(posixpath.normpath(token.strip("\"'")))
+        == PERFORMANCE_HARNESS_BASENAME
         for token in step.get("run", "").split()
     )
 ]

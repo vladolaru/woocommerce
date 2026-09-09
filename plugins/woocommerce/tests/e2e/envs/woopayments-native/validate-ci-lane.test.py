@@ -214,6 +214,31 @@ class PerformanceSubsetTests(unittest.TestCase):
 
         self.assert_rejected(document, "performance harness must run exactly once")
 
+    def test_rejects_workspace_alias_duplicate_performance_harness_invocation(self) -> None:
+        document = self.workflow_document()
+        job = self.job(document)
+        readonly_index = next(
+            index
+            for index, step in enumerate(job["steps"])
+            if step.get("name") == "Run secretless readonly project"
+        )
+        job["steps"].insert(
+            readonly_index,
+            {
+                "name": "Workspace native payments performance subset",
+                "run": (
+                    'bash "$GITHUB_WORKSPACE/plugins/woocommerce/tests/e2e/envs/'
+                    'woopayments-native/perf-compare.sh" --mode ci '
+                    '--store-url "$E2E_WOOPAYMENTS_NATIVE_STORE_URL" '
+                    '--wp-env-config "$E2E_WOOPAYMENTS_WP_ENV_CONFIG" '
+                    '--wp-env-service cli '
+                    '--output "$RUNNER_TEMP/woopayments-native-perf.tsv"'
+                ),
+            },
+        )
+
+        self.assert_rejected(document, "performance harness must run exactly once")
+
     def test_rejects_malformed_performance_command(self) -> None:
         document = self.workflow_document()
         step = self.performance_step(document)
