@@ -171,6 +171,24 @@ class PerformanceSubsetTests(unittest.TestCase):
 
         self.assert_rejected(document, "performance subset must run exactly once")
 
+    def test_rejects_duplicate_performance_harness_invocation(self) -> None:
+        document = self.workflow_document()
+        job = self.job(document)
+        readonly_index = next(
+            index
+            for index, step in enumerate(job["steps"])
+            if step.get("name") == "Run secretless readonly project"
+        )
+        job["steps"].insert(
+            readonly_index,
+            {
+                "name": "Duplicate native payments performance subset",
+                "run": PERFORMANCE_COMMAND,
+            },
+        )
+
+        self.assert_rejected(document, "performance harness must run exactly once")
+
     def test_rejects_malformed_performance_command(self) -> None:
         document = self.workflow_document()
         step = self.performance_step(document)
@@ -191,6 +209,24 @@ class PerformanceSubsetTests(unittest.TestCase):
         job["steps"].insert(readonly_index + 1, step)
 
         self.assert_rejected(document, "performance subset must run after the fixture and before Playwright")
+
+    def test_requires_performance_step_immediately_after_fixture(self) -> None:
+        document = self.workflow_document()
+        job = self.job(document)
+        fixture_index = next(
+            index
+            for index, step in enumerate(job["steps"])
+            if step.get("name") == "Install secretless provider fixture"
+        )
+        job["steps"].insert(
+            fixture_index + 1,
+            {"name": "Intervening step", "run": "true"},
+        )
+
+        self.assert_rejected(
+            document,
+            "performance subset must immediately follow provider fixture",
+        )
 
     def test_rejects_performance_step_bypass(self) -> None:
         document = self.workflow_document()

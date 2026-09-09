@@ -6,8 +6,11 @@ import yaml
 
 
 PERFORMANCE_STEP_NAME = "Measure native payments performance subset"
+PERFORMANCE_HARNESS_PATH = (
+    "plugins/woocommerce/tests/e2e/envs/woopayments-native/perf-compare.sh"
+)
 PERFORMANCE_COMMAND = (
-    "bash plugins/woocommerce/tests/e2e/envs/woopayments-native/perf-compare.sh "
+    f"bash {PERFORMANCE_HARNESS_PATH} "
     '--mode ci --store-url "$E2E_WOOPAYMENTS_NATIVE_STORE_URL" '
     '--wp-env-config "$E2E_WOOPAYMENTS_WP_ENV_CONFIG" --wp-env-service cli '
     '--output "$RUNNER_TEMP/woopayments-native-perf.tsv"'
@@ -113,16 +116,25 @@ if len(performance_steps) != 1:
 performance_step = performance_steps[0]
 if performance_step.get("run") != PERFORMANCE_COMMAND:
     fail("performance subset command must match exactly")
+performance_harness_steps = [
+    step
+    for step in steps
+    if isinstance(step, dict)
+    and PERFORMANCE_HARNESS_PATH in step.get("run", "")
+]
+if len(performance_harness_steps) != 1:
+    fail("performance harness must run exactly once")
 if "continue-on-error" in performance_step:
     fail("performance subset must not continue on error")
 if "if" in performance_step:
     fail("performance subset must not have an if condition")
-if not (
-    steps.index(fixture_steps[0])
-    < steps.index(performance_step)
-    < steps.index(readonly_steps[0])
-):
+fixture_index = steps.index(fixture_steps[0])
+performance_index = steps.index(performance_step)
+readonly_index = steps.index(readonly_steps[0])
+if not fixture_index < performance_index < readonly_index:
     fail("performance subset must run after the fixture and before Playwright")
+if performance_index != fixture_index + 1:
+    fail("performance subset must immediately follow provider fixture")
 diagnostics_directory = "${{ runner.temp }}/woopayments-native-diagnostics"
 for label, step in (
     ("readonly project", readonly_steps[0]),
