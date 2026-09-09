@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import pathlib
+import posixpath
 import sys
 
 import yaml
@@ -16,6 +17,9 @@ PERFORMANCE_COMMAND = (
     '--output "$RUNNER_TEMP/woopayments-native-perf.tsv"'
 )
 PERFORMANCE_ARTIFACT_PATH = "${{ runner.temp }}/woopayments-native-perf.tsv"
+PERFORMANCE_ARTIFACT_UPLOAD_ACTION = (
+    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+)
 
 
 def fail(message: str) -> None:
@@ -120,7 +124,10 @@ performance_harness_steps = [
     step
     for step in steps
     if isinstance(step, dict)
-    and PERFORMANCE_HARNESS_PATH in step.get("run", "")
+    and any(
+        posixpath.normpath(token.strip("\"'")) == PERFORMANCE_HARNESS_PATH
+        for token in step.get("run", "").split()
+    )
 ]
 if len(performance_harness_steps) != 1:
     fail("performance harness must run exactly once")
@@ -153,6 +160,8 @@ artifact_upload_steps = [
 if len(artifact_upload_steps) != 1:
     fail("performance artifact upload step must run exactly once")
 artifact_upload_step = artifact_upload_steps[0]
+if artifact_upload_step.get("uses") != PERFORMANCE_ARTIFACT_UPLOAD_ACTION:
+    fail("performance artifact upload must use the pinned upload action")
 if artifact_upload_step.get("if") != "${{ always() }}":
     fail("performance artifact upload must use always()")
 artifact_paths = artifact_upload_step.get("with", {}).get("path", "").splitlines()

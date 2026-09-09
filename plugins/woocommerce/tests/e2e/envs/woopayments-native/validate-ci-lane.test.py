@@ -189,6 +189,31 @@ class PerformanceSubsetTests(unittest.TestCase):
 
         self.assert_rejected(document, "performance harness must run exactly once")
 
+    def test_rejects_equivalent_duplicate_performance_harness_invocation(self) -> None:
+        document = self.workflow_document()
+        job = self.job(document)
+        readonly_index = next(
+            index
+            for index, step in enumerate(job["steps"])
+            if step.get("name") == "Run secretless readonly project"
+        )
+        job["steps"].insert(
+            readonly_index,
+            {
+                "name": "Equivalent native payments performance subset",
+                "run": (
+                    "bash plugins/woocommerce/tests/e2e/envs/woopayments-native/"
+                    "./perf-compare.sh --mode ci "
+                    '--store-url "$E2E_WOOPAYMENTS_NATIVE_STORE_URL" '
+                    '--wp-env-config "$E2E_WOOPAYMENTS_WP_ENV_CONFIG" '
+                    '--wp-env-service cli '
+                    '--output "$RUNNER_TEMP/woopayments-native-perf.tsv"'
+                ),
+            },
+        )
+
+        self.assert_rejected(document, "performance harness must run exactly once")
+
     def test_rejects_malformed_performance_command(self) -> None:
         document = self.workflow_document()
         step = self.performance_step(document)
@@ -259,6 +284,18 @@ class PerformanceSubsetTests(unittest.TestCase):
         self.artifact_upload_step(document)["if"] = "${{ success() }}"
 
         self.assert_rejected(document, "performance artifact upload must use always()")
+
+    def test_requires_pinned_performance_artifact_uploader(self) -> None:
+        document = self.workflow_document()
+        self.performance_step(document)
+        self.artifact_upload_step(document)["uses"] = (
+            "actions/download-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+        )
+
+        self.assert_rejected(
+            document,
+            "performance artifact upload must use the pinned upload action",
+        )
 
 
 if __name__ == "__main__":
