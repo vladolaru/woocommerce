@@ -1628,6 +1628,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 					}
 					return class_exists( $class_name, $autoload );
 				},
+				'defined'            => function ( $constant_name ) {
+					if ( 'WCPAY_PLUGIN_FILE' === $constant_name ) {
+						return $this->plugin_class_loaded;
+					}
+					return defined( $constant_name );
+				},
 				'deactivate_plugins' => function ( $plugin, $silent = false, $network_wide = null ) use ( $entry ) {
 					$network_wide                    = (bool) $network_wide;
 					$this->deactivate_plugin_calls[] = array( (string) $plugin, (bool) $silent, $network_wide );
@@ -1654,6 +1660,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function fake_woopayments_class_unloaded(): void {
 		$this->plugin_class_loaded = false;
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**
