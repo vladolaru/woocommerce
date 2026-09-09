@@ -434,10 +434,7 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		sort( $files, SORT_STRING );
 		$query_lines = array();
 		foreach ( $this->query_trace as $query ) {
-			$sql = preg_replace( array( '/\s+/', '/\b\d{2,}\b/' ), array( ' ', '?' ), $query[0] );
-			if ( ! is_string( $sql ) ) {
-				continue;
-			}
+			$sql = $this->normalize_sql( $query[0] );
 			$frames = array_reverse(
 				array_filter(
 					$query[1],
@@ -454,6 +451,32 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		file_put_contents( $prefix . '-files.txt', implode( "\n", $files ) . "\n" );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The local-only probe writes runner-requested diagnostic artifacts.
 		file_put_contents( $prefix . '-queries.tsv', implode( "\n", $query_lines ) . ( empty( $query_lines ) ? '' : "\n" ) );
+	}
+
+	/**
+	 * Normalize query text while preserving quoted values and identifiers.
+	 *
+	 * @param string $sql Database query.
+	 * @return string Normalized database query.
+	 */
+	private function normalize_sql( string $sql ): string {
+		$parts = preg_split( '/(\'(?:\'\'|\\\\.|[^\'\\\\])*\'|"(?:""|\\\\.|[^"\\\\])*")/', $sql, -1, PREG_SPLIT_DELIM_CAPTURE );
+		if ( ! is_array( $parts ) ) {
+			return $sql;
+		}
+
+		foreach ( $parts as $index => $part ) {
+			if ( 0 !== $index % 2 ) {
+				continue;
+			}
+
+			$normalized_part = preg_replace( array( '/\s+/', '/\b\d{2,}\b/' ), array( ' ', '?' ), $part );
+			if ( is_string( $normalized_part ) ) {
+				$parts[ $index ] = $normalized_part;
+			}
+		}
+
+		return implode( '', $parts );
 	}
 }
 

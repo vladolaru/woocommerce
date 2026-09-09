@@ -284,7 +284,7 @@ if ( $untrusted_query !== call_user_func( $registered_filters["query"], $untrust
 	fwrite( STDERR, "The query recorder did not preserve an untrusted query filter value.\n" );
 	exit( 1 );
 }
-call_user_func( $registered_filters["query"], " SELECT  option_value FROM wp_options WHERE option_name = '\''_wcpay_feature_2'\'' AND id = 123 " );
+call_user_func( $registered_filters["query"], " SELECT  option_value FROM wp_options WHERE option_name = '\''merchant-action-2026'\'' AND option_id = 123 " );
 call_user_func( $registered_actions["shutdown"] );
 $files_path = $upload_dir . "/woocommerce-native-perf-baseline_noop-files.txt";
 $queries_path = $upload_dir . "/woocommerce-native-perf-baseline_noop-queries.tsv";
@@ -292,7 +292,7 @@ if ( ! is_file( $files_path ) || ! in_array( realpath( $argv[1] ), file( $files_
 	fwrite( STDERR, "The attribution request did not write its included-file list.\n" );
 	exit( 1 );
 }
-$expected_query = "SELECT option_value FROM wp_options WHERE option_name = '\''_wcpay_feature_2'\'' AND id = ?\tWooCommerce_Feature::load\n";
+$expected_query = "SELECT option_value FROM wp_options WHERE option_name = '\''merchant-action-2026'\'' AND option_id = ?\tWooCommerce_Feature::load\n";
 if ( ! is_file( $queries_path ) || $expected_query !== file_get_contents( $queries_path ) ) {
 	fwrite( STDERR, "The attribution request did not write its normalized query trace.\n" );
 	exit( 1 );
