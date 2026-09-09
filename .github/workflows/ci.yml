@@ -522,6 +522,9 @@ jobs:
       - name: 'Install secretless provider fixture'
         run: bash plugins/woocommerce/tests/e2e/envs/woopayments-native/install-ci-fixture.sh
 
+      - name: 'Measure native payments performance subset'
+        run: bash plugins/woocommerce/tests/e2e/envs/woopayments-native/perf-compare.sh --mode ci --store-url "$E2E_WOOPAYMENTS_NATIVE_STORE_URL" --wp-env-config "$E2E_WOOPAYMENTS_WP_ENV_CONFIG" --wp-env-service cli --output "$RUNNER_TEMP/woopayments-native-perf.tsv"
+
       - name: 'Run secretless readonly project'
         env:
           E2E_WOOPAYMENTS_DIAGNOSTICS_DIR: '${{ runner.temp }}/woopayments-native-diagnostics'
@@ -553,6 +556,7 @@ jobs:
           path: |
             plugins/woocommerce/tests/e2e/test-results
             ${{ runner.temp }}/woopayments-native-diagnostics
+            ${{ runner.temp }}/woopayments-native-perf.tsv
           if-no-files-found: error
           retention-days: 7
 

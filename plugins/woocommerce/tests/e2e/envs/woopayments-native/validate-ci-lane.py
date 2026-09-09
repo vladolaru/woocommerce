@@ -5,6 +5,16 @@ import sys
 import yaml
 
 
+PERFORMANCE_STEP_NAME = "Measure native payments performance subset"
+PERFORMANCE_COMMAND = (
+    "bash plugins/woocommerce/tests/e2e/envs/woopayments-native/perf-compare.sh "
+    '--mode ci --store-url "$E2E_WOOPAYMENTS_NATIVE_STORE_URL" '
+    '--wp-env-config "$E2E_WOOPAYMENTS_WP_ENV_CONFIG" --wp-env-service cli '
+    '--output "$RUNNER_TEMP/woopayments-native-perf.tsv"'
+)
+PERFORMANCE_ARTIFACT_PATH = "${{ runner.temp }}/woopayments-native-perf.tsv"
+
+
 def fail(message: str) -> None:
     raise SystemExit(f"WooPayments native CI contract failed: {message}")
 
@@ -93,6 +103,26 @@ readonly_steps = [
 ]
 if len(readonly_steps) != 1:
     fail("secretless readonly project must run exactly once")
+performance_steps = [
+    step
+    for step in steps
+    if isinstance(step, dict) and step.get("name") == PERFORMANCE_STEP_NAME
+]
+if len(performance_steps) != 1:
+    fail("performance subset must run exactly once")
+performance_step = performance_steps[0]
+if performance_step.get("run") != PERFORMANCE_COMMAND:
+    fail("performance subset command must match exactly")
+if "continue-on-error" in performance_step:
+    fail("performance subset must not continue on error")
+if "if" in performance_step:
+    fail("performance subset must not have an if condition")
+if not (
+    steps.index(fixture_steps[0])
+    < steps.index(performance_step)
+    < steps.index(readonly_steps[0])
+):
+    fail("performance subset must run after the fixture and before Playwright")
 diagnostics_directory = "${{ runner.temp }}/woopayments-native-diagnostics"
 for label, step in (
     ("readonly project", readonly_steps[0]),
@@ -101,6 +131,21 @@ for label, step in (
     step_environment = step.get("env", {})
     if step_environment.get("E2E_WOOPAYMENTS_DIAGNOSTICS_DIR") != diagnostics_directory:
         fail(f"{label} must receive its diagnostics path from runner temp")
+
+artifact_upload_steps = [
+    step
+    for step in steps
+    if isinstance(step, dict)
+    and step.get("name") == "Upload Playwright results and fixture audit"
+]
+if len(artifact_upload_steps) != 1:
+    fail("performance artifact upload step must run exactly once")
+artifact_upload_step = artifact_upload_steps[0]
+if artifact_upload_step.get("if") != "${{ always() }}":
+    fail("performance artifact upload must use always()")
+artifact_paths = artifact_upload_step.get("with", {}).get("path", "").splitlines()
+if PERFORMANCE_ARTIFACT_PATH not in artifact_paths:
+    fail("performance table must be uploaded from runner temp")
 
 evaluation = jobs.get("evaluate-project-jobs", {})
 needs = evaluation.get("needs", [])
