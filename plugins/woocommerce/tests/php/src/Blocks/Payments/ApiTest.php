@@ -49,6 +49,7 @@ class ApiTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		Package::container( true );
+		Package::init();
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		delete_option( NativePaymentsState::OPTION_NAME );
 		$this->state->invalidate();
