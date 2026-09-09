@@ -282,6 +282,7 @@ EOF
 	if [[ ! "$status" =~ ^2[0-9][0-9]$ ]]; then echo "Invalid $suffix ($state/$page): HTTP status $status." >&2; return 1; fi
 	if [[ "$final_path" != "$expected_path" ]]; then echo "Invalid $suffix ($state/$page): final path $final_path, expected $expected_path." >&2; return 1; fi
 	probe_header="$(final_probe_header "$headers")"
+	if [[ "$probe_header" == 'error=attribution-artifacts' ]]; then echo "Invalid $suffix ($state/$page): probe could not write required attribution artifacts." >&2; return 1; fi
 	if [[ ! "$probe_header" =~ ^state=[a-z_]+\;tier=[a-z]+\;owner=(native|plugin)\;bootstrap_calls=[0-9]+\;queries=[0-9]+\;used_peak_bytes=[0-9]+\;hooks=[0-9]+\;files=[0-9]+\;http=[0-9]+$ ]]; then echo "Invalid $suffix ($state/$page): missing or malformed probe header." >&2; return 1; fi
 	actual_state="$(probe_field "$probe_header" state)"; tier="$(probe_field "$probe_header" tier)"; owner="$(probe_field "$probe_header" owner)"; bootstrap="$(probe_field "$probe_header" bootstrap_calls)"
 	queries="$(probe_field "$probe_header" queries)"; memory="$(probe_field "$probe_header" used_peak_bytes)"; hooks="$(probe_field "$probe_header" hooks)"; http="$(probe_field "$probe_header" http)"

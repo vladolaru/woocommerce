@@ -410,24 +410,27 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		);
 		$owner = $this->is_reference_plugin_loaded() ? 'plugin' : 'native';
 		$state = $this->get_control_value( 'state' );
-		$this->write_attribution_artifacts();
+		if ( ! $this->write_attribution_artifacts() ) {
+			header( 'X-WooCommerce-Native-Payments-Probe: error=attribution-artifacts' );
+			return;
+		}
 		header( sprintf( 'X-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%d;queries=%d;used_peak_bytes=%d;hooks=%d;files=%d;http=%d', $state, $tiers[ $state ], $owner, $this->bootstrap_calls, get_num_queries(), memory_get_peak_usage( false ), count( $wp_filter ), count( get_included_files() ), $this->http_requests ) );
 	}
 
 	/**
 	 * Write deterministic included-file and query traces for a local attribution request.
 	 *
-	 * @return void
+	 * @return bool True when artifacts are not needed or were written.
 	 */
-	private function write_attribution_artifacts(): void {
+	private function write_attribution_artifacts(): bool {
 		if ( '' === $this->trace_state ) {
-			return;
+			return true;
 		}
 
 		$uploads = wp_upload_dir();
 		$basedir = $uploads['basedir'] ?? '';
 		if ( ! is_string( $basedir ) || ! is_dir( $basedir ) ) {
-			return;
+			return false;
 		}
 
 		$files = get_included_files();
@@ -446,11 +449,46 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 			$query_lines[] = trim( $sql ) . "\t" . implode( ' < ', array_slice( $frames, 0, 12 ) );
 		}
 
-		$prefix = $basedir . '/woocommerce-native-perf-' . $this->trace_state;
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The local-only probe writes runner-requested diagnostic artifacts.
-		file_put_contents( $prefix . '-files.txt', implode( "\n", $files ) . "\n" );
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The local-only probe writes runner-requested diagnostic artifacts.
-		file_put_contents( $prefix . '-queries.tsv', implode( "\n", $query_lines ) . ( empty( $query_lines ) ? '' : "\n" ) );
+		$prefix            = $basedir . '/woocommerce-native-perf-' . $this->trace_state;
+		$files_path        = $prefix . '-files.txt';
+		$queries_path      = $prefix . '-queries.tsv';
+		$temporary_files   = tempnam( $basedir, 'woocommerce-native-perf-files-' );
+		$temporary_queries = tempnam( $basedir, 'woocommerce-native-perf-queries-' );
+		if ( ! is_string( $temporary_files ) || ! is_string( $temporary_queries ) ) {
+			foreach ( array( $temporary_files, $temporary_queries ) as $temporary_path ) {
+				if ( is_string( $temporary_path ) && file_exists( $temporary_path ) ) {
+					wp_delete_file( $temporary_path );
+				}
+			}
+			return false;
+		}
+
+		try {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The local-only probe writes runner-requested diagnostic artifacts.
+			if ( false === file_put_contents( $temporary_files, implode( "\n", $files ) . "\n" ) ) {
+				return false;
+			}
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The local-only probe writes runner-requested diagnostic artifacts.
+			if ( false === file_put_contents( $temporary_queries, implode( "\n", $query_lines ) . ( empty( $query_lines ) ? '' : "\n" ) ) ) {
+				return false;
+			}
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- The local-only probe publishes only after both temporary artifact writes succeed.
+			if ( ! rename( $temporary_files, $files_path ) ) {
+				return false;
+			}
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- The local-only probe publishes only after both temporary artifact writes succeed.
+			if ( ! rename( $temporary_queries, $queries_path ) ) {
+				return false;
+			}
+
+			return true;
+		} finally {
+			foreach ( array( $temporary_files, $temporary_queries ) as $temporary_path ) {
+				if ( file_exists( $temporary_path ) ) {
+					wp_delete_file( $temporary_path );
+				}
+			}
+		}
 	}
 
 	/**

@@ -192,7 +192,11 @@ fake_curl() {
 		http-failure) status=503 ;;
 		esac
 		if [[ -n "$headers" ]]; then
-			printf 'HTTP/1.1 %s OK\r\nX-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%s;queries=%s;used_peak_bytes=%s;hooks=%s;files=%s;http=%s\r\n\r\n' "$status" "$state" "$tier" "$owner" "$bootstrap" "$queries" "$memory" "$hooks" "$files" "$http" > "$headers"
+			if [[ "${PERF_FAKE_CASE:-}" == 'attribution-artifact-failure' && "$kind" == attribution ]]; then
+				printf 'HTTP/1.1 %s OK\r\nX-WooCommerce-Native-Payments-Probe: error=attribution-artifacts\r\n\r\n' "$status" > "$headers"
+			else
+				printf 'HTTP/1.1 %s OK\r\nX-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%s;queries=%s;used_peak_bytes=%s;hooks=%s;files=%s;http=%s\r\n\r\n' "$status" "$state" "$tier" "$owner" "$bootstrap" "$queries" "$memory" "$hooks" "$files" "$http" > "$headers"
+			fi
 		fi
 		printf 'SAMPLE\t%s\t%s\n' "$kind" "$state" >> "$root/events.log"
 	fi
@@ -299,6 +303,28 @@ if ( ! is_file( $queries_path ) || $expected_query !== file_get_contents( $queri
 }
 ' "$PROBE" "$probe_attribution_dir" || fail 'The MU probe did not write isolated attribution artifacts.'
 
+php -r '
+define( "ABSPATH", __DIR__ );
+define( "WP_PLUGIN_DIR", "/plugins" );
+$registered_actions = array();
+$_SERVER["HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_PERF_TRACE"] = "baseline_noop";
+function get_option() {
+	return array( "state" => "baseline_noop", "reference_plugin_slug" => "woocommerce-payments-reference/woocommerce-payments.php" );
+}
+function add_filter() {}
+function add_action( $hook, $callback ) {
+	global $registered_actions;
+	$registered_actions[ $hook ] = $callback;
+}
+function wp_upload_dir() {
+	return array( "basedir" => __DIR__ . "/unavailable-attribution-artifacts" );
+}
+require $argv[1];
+$method = new ReflectionMethod( "WooCommerce_Native_Payments_Perf_Probe", "write_attribution_artifacts" );
+global $woocommerce_native_payments_perf_probe;
+exit( false === $method->invoke( $woocommerce_native_payments_perf_probe ) ? 0 : 1 );
+' "$PROBE" || fail 'The MU probe did not report unavailable attribution artifact storage.'
+
 assert_trace_is_rejected() {
 	local trace_state="$1" control_state="$2"
 	php -r '
@@ -381,6 +407,10 @@ grep -Fq $'disabled\tfront\t101\t1524288\t105\tbaseline_noop\t1\t524288\t5\tpass
 grep -Fq $'active_native\tfront\t202\t5097152\t163\tactive_plugin\t2\t2097152\t3\tpass' "$local_output" || fail 'The exact native/plugin ceiling did not pass.'
 grep -Fq $'active_native\tcheckout_median\tNA\tNA\tNA\tactive_plugin\tNA\tNA\tNA\t105.000,100.000,5.000,pass' "$local_output" || fail 'The exact timing ceiling did not pass.'
 assert_cleaned "$local_root"
+
+run_case attribution-artifact-failure attribution-artifact-failure 1 local
+grep -Fq 'could not write required attribution artifacts' "$TEST_ROOT/attribution-artifact-failure/stderr" || fail 'Local attribution accepted a probe artifact-write failure.'
+assert_cleaned "$TEST_ROOT/attribution-artifact-failure"
 
 for failure in query-fail memory-fail hook-fail timing-fail; do
 	run_case "$failure" "$failure" 1 local
