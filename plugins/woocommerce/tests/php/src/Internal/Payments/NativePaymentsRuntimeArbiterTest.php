@@ -43,14 +43,16 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	/**
 	 * Control every WooPayments-plugin detection signal in a single mock registration.
 	 *
-	 * All three are mocked together so an "absent" plugin is absent on every signal — the
-	 * real test process may have WC_Payments loaded, which would otherwise trip the fallback.
+	 * Every signal is mocked together so an "absent" plugin is absent on every signal — the
+	 * real test process may have WC_Payments loaded or WCPAY_PLUGIN_FILE defined, which would
+	 * otherwise trip a fallback.
 	 *
-	 * @param bool $in_list      Whether the plugin is in the per-site active-plugins list.
-	 * @param bool $network      Whether the plugin is in the network active-sitewide-plugins list.
-	 * @param bool $class_loaded Whether the WC_Payments bootstrap class is loaded (the fallback signal).
+	 * @param bool $in_list          Whether the plugin is in the per-site active-plugins list.
+	 * @param bool $network          Whether the plugin is in the network active-sitewide-plugins list.
+	 * @param bool $class_loaded     Whether the WC_Payments bootstrap class is loaded.
+	 * @param bool $constant_defined Whether the WooPayments include-time constant is defined.
 	 */
-	private function fake_plugin( bool $in_list = false, bool $network = false, bool $class_loaded = false ): void {
+	private function fake_plugin( bool $in_list = false, bool $network = false, bool $class_loaded = false, bool $constant_defined = false ): void {
 		$entry = NativePaymentsRuntimeArbiter::PLUGIN_FILE;
 		$this->register_legacy_proxy_function_mocks(
 			array(
@@ -71,6 +73,12 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 						return $class_loaded;
 					}
 					return class_exists( $class_name, $autoload );
+				},
+				'defined'         => function ( $constant_name ) use ( $constant_defined ) {
+					if ( 'WCPAY_PLUGIN_FILE' === $constant_name ) {
+						return $constant_defined;
+					}
+					return defined( $constant_name );
 				},
 			)
 		);
@@ -117,14 +125,25 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The plugin is detected via the class_exists fallback for non-standard installs.
+	 * @testdox The plugin is detected via its include-time constant for a non-standard install.
 	 */
-	public function test_plugin_detected_via_class_exists_fallback(): void {
-		$this->fake_plugin( false, false, true );
+	public function test_plugin_detected_via_include_time_constant_for_non_standard_install(): void {
+		$this->fake_plugin( false, false, false, true );
 		$this->enable_native_runtime();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, $this->sut->get_runtime_owner(), 'A loaded bootstrap class is detected even without a standard active-plugins entry.' );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, $this->sut->get_runtime_owner(), 'The include-time constant detects a plugin outside the standard active-plugins entry.' );
 		$this->assertFalse( $this->sut->should_native_register(), 'Native must not register when the plugin is detected by the fallback signal.' );
+	}
+
+	/**
+	 * @testdox A loaded bootstrap class alone does not establish plugin ownership.
+	 */
+	public function test_loaded_bootstrap_class_alone_does_not_establish_plugin_ownership(): void {
+		$this->fake_plugin( false, false, true, false );
+		$this->enable_native_runtime();
+
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner(), 'The legacy bootstrap class is not an ownership fallback.' );
+		$this->assertTrue( $this->sut->should_native_register(), 'Native should register when only the removed fallback signal is present.' );
 	}
 
 	/**

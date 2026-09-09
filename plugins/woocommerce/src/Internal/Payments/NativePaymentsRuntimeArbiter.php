@@ -32,10 +32,9 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  * construction) MUST consult {@see self::should_native_register()} before doing anything mutating.
  *
  * Plugin detection uses the active-plugins list (per-site + network), reliable in the early-boot
- * window and correct per-site under multisite; `class_exists( 'WC_Payments' )` is only a fallback for
- * non-standard installs (the plugin defines its bootstrap class late, at `plugins_loaded:11`, so
- * `class_exists` alone is false during early registration). Consult the arbiter at or after
- * `plugins_loaded:11` so the plugin's own boot is resolvable.
+ * window and correct per-site under multisite; `WCPAY_PLUGIN_FILE` is the fallback for non-standard
+ * installs. WooPayments defines this constant from its main file at include time, so early WooCommerce
+ * registration can resolve plugin ownership before the plugin's bootstrap class is available.
  *
  * The arbiter is necessary but not sufficient for money-safety: the binding invariant — only one
  * runtime may submit a payment/refund/capture for a given site+order at a time — is additionally
@@ -210,8 +209,8 @@ class NativePaymentsRuntimeArbiter {
 	 * Tell whether the WooPayments plugin is active for the current site.
 	 *
 	 * Primary signal is the active-plugins list (per-site + network), which is reliable in the
-	 * early-boot window and correct per-site under multisite. The class_exists check is only a
-	 * fallback for non-standard installs.
+	 * early-boot window and correct per-site under multisite. The include-time WCPAY_PLUGIN_FILE
+	 * constant is the fallback for non-standard installs.
 	 *
 	 * @return bool True when the WooPayments plugin is active.
 	 */
@@ -220,7 +219,7 @@ class NativePaymentsRuntimeArbiter {
 			return true;
 		}
 
-		return (bool) $this->legacy_proxy->call_function( 'class_exists', 'WC_Payments' );
+		return (bool) $this->legacy_proxy->call_function( 'defined', 'WCPAY_PLUGIN_FILE' );
 	}
 
 	/**
