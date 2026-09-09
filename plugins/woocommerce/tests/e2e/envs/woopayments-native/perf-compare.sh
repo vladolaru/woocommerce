@@ -294,7 +294,7 @@ EOF
 
 capture_attribution() {
 	local state cookie
-	for state in baseline_noop disabled; do
+	for state in baseline_noop disabled active_native active_plugin; do
 		cookie="$TEMP_ROOT/$state-attribution.cookies"
 		reset_database || return 1
 		prepare_state "$state" || return 1

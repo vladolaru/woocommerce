@@ -276,7 +276,7 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 	 */
 	private function get_trace_state(): string {
 		$trace_state = $_SERVER['HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_PERF_TRACE'] ?? '';
-		if ( ! is_string( $trace_state ) || ! in_array( $trace_state, array( 'baseline_noop', 'disabled' ), true ) ) {
+		if ( ! is_string( $trace_state ) || ! in_array( $trace_state, array( 'baseline_noop', 'disabled', 'active_native', 'active_plugin' ), true ) ) {
 			return '';
 		}
 
