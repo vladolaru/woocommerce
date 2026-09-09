@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+
 /**
  * Tests that WC_Unit_Test_Case clears the WC() singleton state that neither the per-test
  * database rollback nor the hook restore covers.
@@ -20,9 +22,41 @@ class UnitTestCaseTearDownTest extends \WC_Unit_Test_Case {
 	private const LEAKED_LOCALE_LABEL = 'Leaked postcode label';
 
 	/**
-	 * Every piece of singleton state the teardown is responsible for is cleared.
+	 * @testdox Every piece of singleton state the teardown is responsible for is cleared.
 	 */
 	public function test_clear_wc_singleton_state_clears_what_survives_the_parent_teardown(): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_option'      => static function ( $name, $default_value = false ) {
+					if ( 'active_plugins' === $name ) {
+						return array();
+					}
+
+					return get_option( $name, $default_value );
+				},
+				'get_site_option' => static function ( $name, $default_value = false ) {
+					if ( 'active_sitewide_plugins' === $name ) {
+						return array();
+					}
+
+					return get_site_option( $name, $default_value );
+				},
+				'defined'         => static function ( $constant_name ) {
+					if ( 'WCPAY_PLUGIN_FILE' === $constant_name ) {
+						return false;
+					}
+
+					return defined( $constant_name );
+				},
+			)
+		);
+
+		$runtime_arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The initial runtime owner should be none.' );
+
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The runtime owner should remain memoized before cleanup.' );
+
 		$locale_filter = function ( $locale ) {
 			$locale['GB']['postcode']['label'] = self::LEAKED_LOCALE_LABEL;
 			return $locale;
@@ -64,6 +98,7 @@ class UnitTestCaseTearDownTest extends \WC_Unit_Test_Case {
 		$this->assertSame( 'shortcode', WC()->cart->cart_context, 'The cart context should be back to shortcode.' );
 		$this->assertSame( 0, wc_notice_count(), 'The notice queue should have been cleared.' );
 		$this->assertFalse( $clear_persistent_cart, 'Teardown should leave persistent cart cleanup to the database rollback.' );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $runtime_arbiter->get_runtime_owner(), 'The native runtime owner should be resolved again after cleanup.' );
 		$this->assertNotSame(
 			self::LEAKED_LOCALE_LABEL,
 			WC()->countries->get_country_locale()['GB']['postcode']['label'] ?? null,
