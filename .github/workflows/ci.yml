@@ -562,6 +562,80 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Keep this matrix outside evaluate-project-jobs until it has completed three green runs.
+  # Private extension credentials are available only after the branch moves to the official repository.
+  woopayments-native-extension-compat:
+    name: 'Native WooPayments extension compatibility (${{ matrix.pin-set }})'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && github.repository == 'woocommerce/woocommerce' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        pin-set: [ 'oldest', 'latest' ]
+    env:
+      WCPAY_RUNTIME: 'native'
+      E2E_WOOPAYMENTS_NATIVE: 'true'
+      E2E_WOOPAYMENTS_EXTENSION_COMPAT: 'true'
+      E2E_WOOPAYMENTS_NATIVE_STORE_DIR: '${{ github.workspace }}/plugins/woocommerce'
+      E2E_WOOPAYMENTS_WP_ENV_CONFIG: '.wp-env.e2e.json'
+      E2E_WOOPAYMENTS_EXTENSION_WP_ENV_CONFIG: '.wp-env.e2e.json'
+      E2E_WOOPAYMENTS_EXTENSION_WP_ENV_SERVICE: 'cli'
+      E2E_WOOPAYMENTS_NATIVE_STORE_URL: 'http://localhost:8086'
+      BASE_URL: 'http://localhost:8086'
+      WP_BASE_URL: 'http://localhost:8086'
+    steps:
+      - uses: 'actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0' # v7.0.0
+        name: 'Checkout'
+        with:
+          ref: ${{ inputs.refName != '' && inputs.refName || '' }}
+          persist-credentials: false
+
+      - uses: './.github/actions/setup-woocommerce-monorepo'
+        name: 'Install and build WooCommerce'
+        with:
+          install: '@woocommerce/plugin-woocommerce...'
+          build: '@woocommerce/plugin-woocommerce'
+          build-type: 'full'
+          pull-playwright-cache: 'true'
+          pull-package-deps: '@woocommerce/plugin-woocommerce'
+
+      - name: 'Start Test Environment: increase max-download-attempts'
+        uses: docker/setup-docker-action@6d7cfa65f60a9dda7b46e5513fa982536f3c9877 # v5.3.0
+        with:
+          daemon-config: |
+            {
+              "max-download-attempts": 10,
+              "max-concurrent-downloads": 3
+            }
+
+      - name: 'Start extension compatibility environment'
+        run: pnpm --dir plugins/woocommerce wp-env:e2e start
+
+      - name: 'Enable the secretless native runtime'
+        run: bash plugins/woocommerce/tests/e2e/envs/woopayments-native/fresh-activation-smoke.sh
+
+      - name: 'Prepare ${{ matrix.pin-set }} extension profile'
+        working-directory: 'plugins/woocommerce'
+        env:
+          TMPDIR: '${{ runner.temp }}'
+          E2E_WOOPAYMENTS_EXTENSION_READ_TOKEN: '${{ secrets.E2E_WOOPAYMENTS_EXTENSION_READ_TOKEN }}'
+        run: tests/e2e/envs/woopayments-native/extensions-profile.sh --pin-set '${{ matrix.pin-set }}' --store-url "$E2E_WOOPAYMENTS_NATIVE_STORE_URL" --wp-env-config "$E2E_WOOPAYMENTS_EXTENSION_WP_ENV_CONFIG" --wp-env-service "$E2E_WOOPAYMENTS_EXTENSION_WP_ENV_SERVICE"
+
+      - name: 'Run ${{ matrix.pin-set }} extension compatibility matrix'
+        working-directory: 'plugins/woocommerce'
+        run: pnpm exec playwright test --config=tests/e2e/envs/woopayments-native/playwright.config.ts --project=woopayments-native-extension-compat tests/e2e/tests/woopayments-native/compat
+
+      - name: 'Upload extension compatibility results'
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: 'woopayments-native-extension-compat-${{ matrix.pin-set }}-${{ github.run_id }}'
+          path: 'plugins/woocommerce/tests/e2e/test-results'
+          if-no-files-found: warn
+          retention-days: 7
+
   evaluate-project-jobs:
     # In order to add a required status check we need a consistent job that we can grab onto.
     # Since we are dynamically generating a matrix for the project jobs, however, we can't
