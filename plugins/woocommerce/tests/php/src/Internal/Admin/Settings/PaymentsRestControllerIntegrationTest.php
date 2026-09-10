@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\Incentive;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions;
 use Automattic\WooCommerce\Internal\Admin\Onboarding\OnboardingProfile;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\RestApi\UnitTests\CorePayPalGatewayTrait;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
@@ -2049,8 +2050,16 @@ class PaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 
 					return false;
 				},
+				'get_option'   => function ( $option, $default_value = false ) use ( $woopayments ) {
+					if ( 'active_plugins' === $option ) {
+						return $woopayments ? array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) : array();
+					}
+
+					return get_option( $option, $default_value );
+				},
 			)
 		);
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**

@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
@@ -226,8 +227,16 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 				'wc_get_logger' => function () use ( $logger ) {
 					return $logger ? $logger : wc_get_logger();
 				},
+				'get_option'    => function ( $option, $default_value = false ) {
+					if ( 'active_plugins' === $option ) {
+						return array( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+					}
+
+					return get_option( $option, $default_value );
+				},
 			)
 		);
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 
 		$this->register_legacy_proxy_static_mocks(
 			array(

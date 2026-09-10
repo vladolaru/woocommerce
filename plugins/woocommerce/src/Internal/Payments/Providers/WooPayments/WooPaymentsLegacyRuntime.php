@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
@@ -46,14 +47,23 @@ class WooPaymentsLegacyRuntime {
 	private LegacyProxy $legacy_proxy;
 
 	/**
+	 * Runtime owner arbiter for container-managed instances.
+	 *
+	 * @var NativePaymentsRuntimeArbiter|null
+	 */
+	private ?NativePaymentsRuntimeArbiter $arbiter = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy $legacy_proxy Legacy proxy.
+	 * @param LegacyProxy                       $legacy_proxy Legacy proxy.
+	 * @param NativePaymentsRuntimeArbiter|null $arbiter      Runtime owner arbiter. Optional for isolated legacy-runtime adapters.
 	 */
-	final public function init( LegacyProxy $legacy_proxy ): void {
+	final public function init( LegacyProxy $legacy_proxy, ?NativePaymentsRuntimeArbiter $arbiter = null ): void {
 		$this->legacy_proxy = $legacy_proxy;
+		$this->arbiter      = $arbiter;
 	}
 
 	/**
@@ -63,11 +73,11 @@ class WooPaymentsLegacyRuntime {
 	 */
 	public function is_loaded(): bool {
 		try {
-			if ( ! $this->legacy_proxy->call_function( 'class_exists', 'WC_Payments' ) ) {
+			if ( null !== $this->arbiter && ! $this->arbiter->is_plugin_runtime_active() ) {
 				return false;
 			}
 
-			return ! $this->legacy_proxy->call_function( 'defined', 'WC_Payments::IS_NATIVE_COMPATIBILITY_FACADE' );
+			return (bool) $this->legacy_proxy->call_function( 'class_exists', 'WC_Payments' );
 		} catch ( \Throwable $e ) {
 			return false;
 		}

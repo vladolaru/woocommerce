@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Orders;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
 use WC_Unit_Test_Case;
 
@@ -94,8 +95,16 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 					}
 					return class_exists( $class_name, $autoload );
 				},
+				'get_option'   => function ( $option, $default_value = false ) {
+					if ( 'active_plugins' === $option ) {
+						return array( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+					}
+
+					return get_option( $option, $default_value );
+				},
 			)
 		);
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		$this->register_legacy_proxy_static_mocks(
 			array(
 				'WC_Payments' => array(

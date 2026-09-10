@@ -281,6 +281,13 @@ class WooPaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 				'time'         => function () {
 					return $this->current_time;
 				},
+				'get_option'   => function ( $option, $default_value = false ) {
+					if ( 'active_plugins' === $option ) {
+						return array( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+					}
+
+					return get_option( $option, $default_value );
+				},
 				'class_exists' => function ( $class_to_check ) {
 					// By default, the WooPayments extension is mocked as active.
 					if ( 'WC_Payments' === ltrim( (string) $class_to_check, '\\' ) ) {

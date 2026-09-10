@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use WC_Unit_Test_Case;
 
@@ -23,6 +24,21 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 		$this->assertNull( $sut->get_gateway() );
 		$this->assertNull( $sut->get_account_service() );
 		$this->assertNull( $sut->get_payments_api_client() );
+	}
+
+	/**
+	 * @testdox Should not report a plugin runtime when the native runtime owns payments.
+	 */
+	public function test_reports_not_loaded_when_native_runtime_owns_payments(): void {
+		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
+		$arbiter->expects( $this->once() )
+			->method( 'is_plugin_runtime_active' )
+			->willReturn( false );
+
+		$sut = new WooPaymentsLegacyRuntime();
+		$sut->init( new LegacyRuntimeProxy( true ), $arbiter );
+
+		$this->assertFalse( $sut->is_loaded() );
 	}
 
 	/**

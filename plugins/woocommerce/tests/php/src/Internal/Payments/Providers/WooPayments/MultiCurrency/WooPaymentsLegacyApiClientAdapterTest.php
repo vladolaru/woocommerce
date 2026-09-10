@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyApiClientAdapter;
 use WC_Unit_Test_Case;
 
@@ -71,8 +72,16 @@ class WooPaymentsLegacyApiClientAdapterTest extends WC_Unit_Test_Case {
 					}
 					return class_exists( $class_name, $autoload );
 				},
+				'get_option'   => function ( $option, $default_value = false ) use ( $class_loaded ) {
+					if ( 'active_plugins' === $option ) {
+						return $class_loaded ? array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) : array();
+					}
+
+					return get_option( $option, $default_value );
+				},
 			)
 		);
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 
 		if ( $class_loaded ) {
 			$this->register_legacy_proxy_static_mocks(

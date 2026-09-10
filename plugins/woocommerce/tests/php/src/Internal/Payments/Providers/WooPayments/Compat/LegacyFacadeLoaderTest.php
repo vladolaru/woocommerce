@@ -72,8 +72,11 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	public function test_native_facade_does_not_report_standalone_runtime_as_loaded(): void {
 		$this->register_legacy_facades();
 
+		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_plugin_runtime_active' )->willReturn( false );
+
 		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( new LegacyProxy() );
+		$legacy_runtime->init( new LegacyProxy(), $arbiter );
 
 		$this->assertTrue( class_exists( 'WC_Payments', false ), 'Extension compatibility requires the native facade to remain declared.' );
 		$this->assertFalse( $legacy_runtime->is_loaded(), 'Core must retain its Payments menu and other native-only behavior when only the facade is present.' );
