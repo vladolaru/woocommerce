@@ -148,6 +148,28 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Oracle normalization handles an order ID that matches the rendered timestamp minute.
+	 */
+	public function test_oracle_normalization_handles_order_id_inside_rendered_timestamp(): void {
+		$order = $this->getMockBuilder( WC_Order::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_date_created', 'get_id', 'get_items', 'get_view_order_url' ) )
+			->getMock();
+		$order->method( 'get_date_created' )->willReturn( null );
+		$order->method( 'get_id' )->willReturn( 52 );
+		$order->method( 'get_items' )->willReturn( array() );
+		$order->method( 'get_view_order_url' )->willReturn( 'https://example.test/order/52' );
+
+		$method = new \ReflectionMethod( $this, 'normalize_receipt_content' );
+		$method->setAccessible( true );
+
+		$this->assertSame(
+			'Date: <RENDERED_AT>; order #<ORDER_ID>',
+			$method->invoke( $this, 'Date: 2026-09-10 12:52PM; order #52', $order, true )
+		);
+	}
+
+	/**
 	 * @testdox Receipt email compliance details prefer a recognized terminal network.
 	 */
 	public function test_compliance_details_prefer_a_recognized_terminal_network(): void {
@@ -345,13 +367,13 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 			}
 		);
 		$content = str_replace( $site_urls, '<SITE_URL>', $content );
-		$content = str_replace( (string) $order->get_id(), '<ORDER_ID>', $content );
 		if ( null !== $date_created ) {
 			$content = str_replace( wc_format_datetime( $date_created ), '<ORDER_DATE>', $content );
 		}
 
 		$content = preg_replace( '/\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?:AM|PM)\b/', '<RENDERED_AT>', $content );
 		$this->assertIsString( $content );
+		$content = str_replace( (string) $order->get_id(), '<ORDER_ID>', $content );
 
 		if ( ! $plain_text ) {
 			// Current WooCommerce email templates add presentational attributes that were absent from the 10.8.0 oracle.
