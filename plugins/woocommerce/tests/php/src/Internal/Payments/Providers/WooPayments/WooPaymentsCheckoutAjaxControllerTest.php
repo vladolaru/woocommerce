@@ -1200,6 +1200,13 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )
+			->with( 'upe_enabled_payment_method_ids', array( 'card' ) )
+			->willReturn( array( 'card', 'sepa_debit' ) );
 		$token_service   = $this->create_token_service(
 			array(
 				'pm_sepa' => array(
@@ -1209,7 +1216,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						'last4' => '6789',
 					),
 				),
-			)
+			),
+			$account_service
 		);
 		$sut             = $this->create_controller( $api_client, null, $token_service );
 		$token_class_map = new WooPaymentsTokenClassMapController();
@@ -2006,9 +2014,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * Create a token service test double.
 	 *
 	 * @param array<string,array<string,mixed>> $payment_method_details Payment method details keyed by ID.
+	 * @param WooPaymentsAccountService|null    $account_service        Optional account service.
 	 * @return WooPaymentsTokenService
 	 */
-	private function create_token_service( array $payment_method_details = array() ): WooPaymentsTokenService {
+	private function create_token_service( array $payment_method_details = array(), ?WooPaymentsAccountService $account_service = null ): WooPaymentsTokenService {
 		$details_service = new class( $payment_method_details ) extends WooPaymentsPaymentMethodDetailsService {
 			/**
 			 * Payment method details keyed by ID.
@@ -2038,7 +2047,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsTokenService();
-		$sut->init( $details_service, new StaticNativeRuntimeArbiter( true ) );
+		$sut->init( $details_service, new StaticNativeRuntimeArbiter( true ), null, null, $account_service );
 
 		return $sut;
 	}
