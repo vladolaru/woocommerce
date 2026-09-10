@@ -16,6 +16,14 @@ class WC_Payments {
 	// phpcs:enable Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Classes.ValidClassName.NotCamelCaps
 
 	/**
+	 * Identify this class as Core's native compatibility facade.
+	 *
+	 * @since 11.0.0
+	 * @internal Core uses this marker to distinguish the facade from the standalone plugin runtime.
+	 */
+	public const IS_NATIVE_COMPATIBILITY_FACADE = true;
+
+	/**
 	 * Return the container-owned native WooPayments gateway.
 	 *
 	 * @since 11.0.0

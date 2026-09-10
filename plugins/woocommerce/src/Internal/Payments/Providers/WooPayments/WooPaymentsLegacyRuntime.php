@@ -63,7 +63,11 @@ class WooPaymentsLegacyRuntime {
 	 */
 	public function is_loaded(): bool {
 		try {
-			return (bool) $this->legacy_proxy->call_function( 'class_exists', 'WC_Payments' );
+			if ( ! $this->legacy_proxy->call_function( 'class_exists', 'WC_Payments' ) ) {
+				return false;
+			}
+
+			return ! $this->legacy_proxy->call_function( 'defined', 'WC_Payments::IS_NATIVE_COMPATIBILITY_FACADE' );
 		} catch ( \Throwable $e ) {
 			return false;
 		}

@@ -7,6 +7,8 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
@@ -60,6 +62,21 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->register_legacy_facades();
 
 		$this->assertTrue( class_exists( '\\WC_Payments' ), 'PayPal Payments should recognize native WooPayments when making its onboarding decision.' );
+	}
+
+	/**
+	 * @testdox Core does not mistake its compatibility facade for the standalone WooPayments runtime.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_native_facade_does_not_report_standalone_runtime_as_loaded(): void {
+		$this->register_legacy_facades();
+
+		$legacy_runtime = new WooPaymentsLegacyRuntime();
+		$legacy_runtime->init( new LegacyProxy() );
+
+		$this->assertTrue( class_exists( 'WC_Payments', false ), 'Extension compatibility requires the native facade to remain declared.' );
+		$this->assertFalse( $legacy_runtime->is_loaded(), 'Core must retain its Payments menu and other native-only behavior when only the facade is present.' );
 	}
 
 	/**
