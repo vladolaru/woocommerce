@@ -153,7 +153,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->register_legacy_facades();
 
 		define( 'WP_SANDBOX_SCRAPING', true );
-		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.php';
+		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.inc';
 
 		$this->assertSame( 'plugin', \WC_Payments::DECLARATION_OWNER, 'The activation sandbox must retain authority to declare the plugin bootstrap class.' );
 		$this->assertSame( 'plugin', \WC_Payments_Features::DECLARATION_OWNER, 'The activation sandbox must retain authority to declare the plugin feature class.' );
@@ -296,7 +296,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		$this->register_legacy_facades();
 		define( 'WP_SANDBOX_SCRAPING', true );
-		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.php';
+		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.inc';
 
 		$this->assertSame( 'plugin', \WC_Payments::DECLARATION_OWNER, 'A programmatic activation sandbox should own the plugin bootstrap class.' );
 		$this->assertSame( 'plugin', \WC_Payments_Features::DECLARATION_OWNER, 'A programmatic activation sandbox should own the plugin feature class.' );
