@@ -79,6 +79,25 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The WC_Payments facade keeps the legacy Blueprint settings call safe.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_wc_payments_facade_keeps_blueprint_settings_call_safe(): void {
+		$this->register_legacy_facades();
+		$this->assertTrue( class_exists( 'WC_Payments' ), 'The legacy WooPayments facade should be loaded.' );
+		if ( ! class_exists( 'WC_Payments' ) ) {
+			return;
+		}
+
+		$gateways = WC()->payment_gateways->payment_gateways();
+
+		$this->setExpectedDeprecated( 'WC_Payments::hide_gateways_on_settings_page' );
+		$this->assertNull( \WC_Payments::hide_gateways_on_settings_page(), 'The native facade should preserve the plugin method\'s void-like return shape.' );
+		$this->assertSame( $gateways, WC()->payment_gateways->payment_gateways(), 'The native facade must not remove gateways by emulating the unsupported plugin gateway class.' );
+	}
+
+	/**
 	 * @testdox The loader does not emulate the standalone plugin gateway class.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled

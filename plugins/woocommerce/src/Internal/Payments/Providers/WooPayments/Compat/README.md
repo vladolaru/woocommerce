@@ -6,7 +6,7 @@ This folder is the removable boundary for plugin-owned global symbols that Woo e
 
 | Symbol | Native behavior | Known Woo-owned consumers |
 |---|---|---|
-| `WC_Payments` | Makes existence gates recognize the active native runtime. `get_gateway()` returns the dependency-injection container's `NativeWooPaymentsGateway` and emits a deprecation notice. | All Products for WooCommerce Subscriptions, AutomateWoo, WooCommerce PayPal Payments |
+| `WC_Payments` | Makes existence gates recognize the active native runtime. `get_gateway()` returns the dependency-injection container's `NativeWooPaymentsGateway`; `hide_gateways_on_settings_page()` is a safe no-op because native does not expose secondary plugin gateway classes. Both methods emit deprecation notices. | WooCommerce Core Blueprint exporter, All Products for WooCommerce Subscriptions, AutomateWoo, WooCommerce PayPal Payments |
 | `WC_Payments_Features` | Makes the All Products for WooCommerce Subscriptions gate safe. `is_wcpay_subscriptions_enabled()` returns `false` because native subscription support is exposed by gateway capabilities, and emits a deprecation notice. | All Products for WooCommerce Subscriptions |
 | `WCPAY_VERSION_NUMBER` | Reports `WooPaymentsClientVersion::VERSION`, the plugin version whose platform contract the native runtime implements. | All Products for WooCommerce Subscriptions |
 
