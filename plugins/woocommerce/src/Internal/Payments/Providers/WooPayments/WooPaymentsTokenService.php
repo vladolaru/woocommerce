@@ -234,18 +234,31 @@ class WooPaymentsTokenService {
 			return $tokens;
 		}
 
-		$tokens             = $this->reconcile_tokens_with_provider( $tokens, absint( $user_id ), $gateway_id );
-		$enabled_method_ids = $this->get_enabled_payment_method_ids();
+		$tokens                    = $this->reconcile_tokens_with_provider( $tokens, absint( $user_id ), $gateway_id );
+		$enabled_method_ids        = null;
+		$enabled_method_ids_loaded = false;
 
 		foreach ( $tokens as $token_key => $token ) {
-			if (
-				$token instanceof WC_Payment_Token
-				&& $this->is_native_woopayments_gateway_id( $token->get_gateway_id() )
-				&& (
-					! $this->is_supported_native_woopayments_token( $token )
-					|| ! $this->is_payment_method_type_enabled( $this->get_payment_method_type_for_token( $token ), $enabled_method_ids )
-				)
-			) {
+			if ( ! $token instanceof WC_Payment_Token || ! $this->is_native_woopayments_gateway_id( $token->get_gateway_id() ) ) {
+				continue;
+			}
+
+			if ( ! $this->is_supported_native_woopayments_token( $token ) ) {
+				unset( $tokens[ $token_key ] );
+				continue;
+			}
+
+			$payment_method_type = $this->get_payment_method_type_for_token( $token );
+			if ( self::PAYMENT_METHOD_TYPE_CARD === $payment_method_type ) {
+				continue;
+			}
+
+			if ( ! $enabled_method_ids_loaded ) {
+				$enabled_method_ids        = $this->get_enabled_payment_method_ids();
+				$enabled_method_ids_loaded = true;
+			}
+
+			if ( ! $this->is_payment_method_type_enabled( $payment_method_type, $enabled_method_ids ) ) {
 				unset( $tokens[ $token_key ] );
 			}
 		}
@@ -378,10 +391,14 @@ class WooPaymentsTokenService {
 			return null;
 		}
 
+		if ( ! $this->is_supported_native_woopayments_token( $token ) || $user_id !== $token->get_user_id() ) {
+			return null;
+		}
+
+		$payment_method_type = $this->get_payment_method_type_for_token( $token );
 		if (
-			! $this->is_supported_native_woopayments_token( $token )
-			|| ! $this->is_payment_method_type_enabled( $this->get_payment_method_type_for_token( $token ), $this->get_enabled_payment_method_ids() )
-			|| $user_id !== $token->get_user_id()
+			self::PAYMENT_METHOD_TYPE_CARD !== $payment_method_type
+			&& ! $this->is_payment_method_type_enabled( $payment_method_type, $this->get_enabled_payment_method_ids() )
 		) {
 			return null;
 		}

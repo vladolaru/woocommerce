@@ -67,6 +67,17 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Resolving a card token should not read enabled-method settings.
+	 */
+	public function test_resolves_card_token_without_reading_enabled_method_settings(): void {
+		$user_id = $this->factory()->user->create();
+		$token   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_saved' );
+		$sut     = $this->create_service( array(), null, null, $this->create_account_service_that_must_not_read_enabled_methods() );
+
+		$this->assertSame( 'pm_saved', $sut->resolve_payment_method_id_from_token_id( (string) $token->get_id(), $user_id ) );
+	}
+
+	/**
 	 * @testdox Should reject tokens that belong to another user or gateway.
 	 */
 	public function test_rejects_unowned_or_wrong_gateway_tokens(): void {
@@ -1064,6 +1075,20 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Empty token listings should not read enabled-method settings.
+	 */
+	public function test_empty_token_listing_does_not_read_enabled_method_settings(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( 0 );
+		$this->create_service( array(), null, null, $this->create_account_service_that_must_not_read_enabled_methods() );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' );
+
+		$this->assertSame( array(), $tokens );
+	}
+
+	/**
 	 * @testdox Reconciliation should not run once the unpaginated token page is full.
 	 */
 	public function test_reconcile_skips_at_the_token_page_limit(): void {
@@ -1611,6 +1636,21 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
 		$account_service->method( 'get_gateway_setting' )->willReturn( $enabled_method_ids );
+
+		return $account_service;
+	}
+
+	/**
+	 * Create an account service double that rejects enabled-method settings reads.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service_that_must_not_read_enabled_methods(): WooPaymentsAccountService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->expects( $this->never() )->method( 'get_gateway_setting' );
 
 		return $account_service;
 	}
