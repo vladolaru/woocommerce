@@ -33,6 +33,8 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		unset( $_GET['pay_for_order'], $_GET['key'] );
 		remove_all_filters( 'woocommerce_woopayments_express_checkout_enabled_methods' );
 		remove_all_filters( 'wcpay_payment_request_supported_types' );
+		remove_all_filters( 'wcpay_payment_request_is_cart_supported' );
+		remove_all_filters( 'wcpay_payment_request_hide_itemization' );
 		remove_all_filters( 'wcpay_payment_request_total_label' );
 		remove_all_filters( 'wcpay_payment_request_total_label_suffix' );
 		remove_all_filters( 'woocommerce_is_checkout' );
@@ -81,6 +83,71 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $sut->should_show_payment_request_button( 'product' ) );
 		$this->assertFalse( $sut->should_show_payment_request_button( 'cart' ) );
 		$this->assertFalse( $sut->should_show_payment_request_button( 'checkout' ) );
+	}
+
+	/**
+	 * @testdox Should fire the legacy cart-support filter for each cart product.
+	 */
+	public function test_cart_support_filter_is_fired_for_each_cart_product(): void {
+		$first_product    = \WC_Helper_Product::create_simple_product();
+		$second_product   = \WC_Helper_Product::create_simple_product();
+		$filtered_product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $first_product->get_id() );
+		WC()->cart->add_to_cart( $second_product->get_id() );
+		$substitute_product = static function ( \WC_Product $product ) use ( $first_product, $filtered_product ): \WC_Product {
+			return $first_product->get_id() === $product->get_id() ? $filtered_product : $product;
+		};
+		add_filter( 'woocommerce_cart_item_product', $substitute_product );
+
+		$seen_product_ids = array();
+		add_filter(
+			'wcpay_payment_request_is_cart_supported',
+			static function ( bool $supported, \WC_Product $product ) use ( &$seen_product_ids, $second_product ): bool {
+				$seen_product_ids[] = $product->get_id();
+
+				return $supported && $second_product->get_id() !== $product->get_id();
+			},
+			10,
+			2
+		);
+
+		try {
+			$this->assertFalse( $this->create_service()->should_show_payment_request_button( 'cart' ) );
+			$this->assertSame( array( $filtered_product->get_id(), $second_product->get_id() ), $seen_product_ids );
+		} finally {
+			remove_filter( 'woocommerce_cart_item_product', $substitute_product );
+		}
+	}
+
+	/**
+	 * @testdox Should honor the legacy cart-support filter during checkout.
+	 */
+	public function test_cart_support_filter_is_fired_during_checkout(): void {
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
+		add_filter( 'wcpay_payment_request_is_cart_supported', '__return_false' );
+
+		$this->assertFalse( $this->create_service()->should_show_payment_request_button( 'checkout' ) );
+	}
+
+	/**
+	 * @testdox Should let the legacy itemization filter remove product-page display items.
+	 */
+	public function test_hide_itemization_filter_removes_product_display_items(): void {
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'regular_price' => '12.34',
+				'price'         => '12.34',
+			)
+		);
+		$this->set_current_product( $product );
+		add_filter( 'wcpay_payment_request_hide_itemization', '__return_true' );
+
+		$data = $this->create_service()->get_express_checkout_params( 'product' )['product'];
+
+		$this->assertArrayNotHasKey( 'displayItems', $data );
+		$this->assertArrayHasKey( 'total', $data );
 	}
 
 	/**

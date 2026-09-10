@@ -74,6 +74,10 @@ class WooPaymentsExpressCheckoutService {
 			return false;
 		}
 
+		if ( in_array( $context, array( 'cart', 'checkout' ), true ) && ! $this->is_cart_supported() ) {
+			return false;
+		}
+
 		return ! empty( $this->get_allowed_payment_method_types_for_context( $context, $this->get_context_currency( $context ) ) );
 	}
 
@@ -410,6 +414,46 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
+	 * Tell whether every product in the current cart supports payment-request express checkout.
+	 *
+	 * @return bool
+	 */
+	private function is_cart_supported(): bool {
+		$woocommerce = function_exists( 'WC' ) ? WC() : null;
+		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
+		if ( ! $cart instanceof \WC_Cart ) {
+			return false;
+		}
+
+		foreach ( $cart->get_cart() as $cart_item_key => $cart_item ) {
+			$product = $cart_item['data'] ?? null;
+			if ( ! $product instanceof \WC_Product ) {
+				return false;
+			}
+
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce core hook.
+			$product = apply_filters( 'woocommerce_cart_item_product', $product, $cart_item, $cart_item_key );
+			if ( ! $product instanceof \WC_Product ) {
+				return false;
+			}
+
+			/**
+			 * Filters whether a cart product supports WooPayments payment-request express checkout.
+			 *
+			 * @since 11.2.0
+			 *
+			 * @param bool        $supported Whether the product is supported.
+			 * @param \WC_Product $product   Product object.
+			 */
+			if ( ! apply_filters( 'wcpay_payment_request_is_cart_supported', true, $product ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
 	 * Get reference-shaped product data for product-page ECE.
 	 *
 	 * @return array<string,mixed>
@@ -474,6 +518,17 @@ class WooPaymentsExpressCheckoutService {
 				'detail' => '',
 				'amount' => 0,
 			);
+		}
+
+		/**
+		 * Filters whether to hide itemized product data in WooPayments express checkout.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param bool $hide_itemization Whether to hide itemized display items.
+		 */
+		if ( apply_filters( 'wcpay_payment_request_hide_itemization', false ) ) {
+			unset( $data['displayItems'] );
 		}
 
 		/**
