@@ -267,6 +267,11 @@ class WooPaymentsApiClient {
 	private const CAPITAL_API = 'capital';
 
 	/**
+	 * WooPayments account links API path.
+	 */
+	private const LINKS_API = 'links';
+
+	/**
 	 * HTTP client.
 	 *
 	 * @var WooPaymentsHttpClient
@@ -1614,6 +1619,17 @@ class WooPaymentsApiClient {
 			'wcpay_get_account_capital_link',
 			true
 		);
+	}
+
+	/**
+	 * Create a WooPayments account link from platform-issued arguments.
+	 *
+	 * @param array<string,mixed> $args Account-link arguments.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function create_account_link( array $args ): array {
+		return $this->request( $args, self::LINKS_API, 'POST', true, true );
 	}
 
 	/**

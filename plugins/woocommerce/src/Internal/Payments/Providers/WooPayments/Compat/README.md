@@ -1,6 +1,6 @@
 # WooPayments legacy facade compatibility
 
-This folder is the removable boundary for plugin-owned global symbols that Woo extensions still use to detect WooPayments. `LegacyFacadeLoader` loads them only when the core-native runtime owns payments; the standalone WooPayments plugin retains every symbol while it owns the runtime.
+This folder is the removable boundary for plugin-owned compatibility surfaces that existing WooPayments links and Woo extensions still depend on. `LegacyFacadeLoader` loads global symbols only when the core-native runtime owns payments; the standalone WooPayments plugin retains every symbol while it owns the runtime. `LegacyAdminLinkHandler` accepts platform-issued `wcpay-link-handler` admin links under the same ownership rule.
 
 ## Contract
 
@@ -10,6 +10,8 @@ This folder is the removable boundary for plugin-owned global symbols that Woo e
 | `WC_Payments_Features` | Makes the All Products for WooCommerce Subscriptions gate safe. `is_wcpay_subscriptions_enabled()` returns `false` because native subscription support is exposed by gateway capabilities, and emits a deprecation notice. | All Products for WooCommerce Subscriptions |
 | `WCPAY_VERSION_NUMBER` | Reports `WooPaymentsClientVersion::VERSION`, the plugin version whose platform contract the native runtime implements. | All Products for WooCommerce Subscriptions |
 
+`LegacyAdminLinkHandler` preserves authenticated platform email links by forwarding their arguments to the native user-token `links` API and safely redirecting the merchant to the returned URL. Access still requires `manage_woocommerce`; API failures return to the native overview with `wcpay-server-link-error=1`.
+
 The boundary intentionally does not declare, alias, or emulate `WC_Payment_Gateway_WCPay`. The native gateway preserves the `woocommerce_payments` gateway ID and WooCommerce capability contract, but it must not pretend to be the standalone plugin's concrete gateway class.
 
 ## Activation safety
@@ -18,4 +20,4 @@ WordPress sandbox-includes a plugin before adding it to the active-plugin list a
 
 ## Removal
 
-These facades are scheduled for removal in WooCommerce 12.0.0 after supported extension versions no longer depend on the plugin-owned symbols. Remove this `Compat` folder and the `LegacyFacadeLoader` registration line in `includes/class-woocommerce.php` together.
+These compatibility surfaces are scheduled for removal in WooCommerce 12.0.0 after supported extensions no longer depend on the plugin-owned symbols and the platform no longer emits legacy admin links. Remove this `Compat` folder, the `LegacyFacadeLoader` registration line in `includes/class-woocommerce.php`, and the `LegacyAdminLinkHandler` bootstrap root together.

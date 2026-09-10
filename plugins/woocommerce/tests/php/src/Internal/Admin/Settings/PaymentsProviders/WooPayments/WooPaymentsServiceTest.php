@@ -306,6 +306,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			$summary['documents']
 		);
 		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $summary['urls']['overview_page'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-success', $summary['urls']['overview_page'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-error', $summary['urls']['overview_page'] );
 		$this->assertSame( 'https://example.com/woopayments/onboarding', $summary['urls']['setup'] );
 		$this->assertArrayNotHasKey( 'test_publishable_key', $summary['account'] );
 		$this->assertArrayNotHasKey( 'live_publishable_key', $summary['account'] );
@@ -340,6 +342,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			$summary['documents']
 		);
 		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $summary['urls']['overview_page'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-success', $summary['urls']['overview_page'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-error', $summary['urls']['overview_page'] );
 		$this->assertSame( 'https://example.com/woopayments/onboarding', $summary['urls']['setup'] );
 	}
 
@@ -436,8 +440,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $result );
 		$this->assertStringContainsString(
 			'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview',
-			$result['context']['urls']['overview_page']
+			rawurldecode( $result['context']['urls']['overview_page'] )
 		);
+		$this->assertStringContainsString( 'wcpay-connection-success=1', $result['context']['urls']['overview_page'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-error', $result['context']['urls']['overview_page'] );
 	}
 
 	/**
@@ -1366,6 +1372,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $result['success'] );
 		$this->assertFalse( $captured_call['live_account'] );
 		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $captured_call['return_url'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-success', $captured_call['return_url'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-error', $captured_call['return_url'] );
 		$this->assertSame( 'card_payments', array_key_first( $captured_call['account_data']['capabilities'] ) );
 		$this->assertIsArray( $cached );
 		$this->assertSame( 'acct_native_test', $cached['data']['account_id'] );
@@ -2099,7 +2107,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'context', $result );
 		$this->assertStringContainsString(
 			'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview',
-			$result['context']['urls']['overview_page']
+			rawurldecode( $result['context']['urls']['overview_page'] )
 		);
 	}
 
@@ -2161,7 +2169,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'context', $result );
 		$this->assertStringContainsString(
 			'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview',
-			$result['context']['urls']['overview_page']
+			rawurldecode( $result['context']['urls']['overview_page'] )
 		);
 	}
 
@@ -2193,8 +2201,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$location = 'US';
 
 		// Arrange.
-		$rest_path        = '/rest/path/to/onboarding/';
-		$kyc_fallback_url = 'https://example.com/kyc_fallback';
+		$rest_path            = '/rest/path/to/onboarding/';
+		$raw_kyc_fallback_url = 'https://example.com/kyc_fallback';
+		$kyc_fallback_url     = add_query_arg( 'wcpay-connection-error', '1', $raw_kyc_fallback_url );
 
 		$wpcom_connection_return_url = 'https://example.com/payments-settings/return?wpcom_connection_return=1';
 
@@ -2578,8 +2587,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 					},
 				),
 				'WC_Payments_Account' => array(
-					'get_connect_url' => function () use ( $kyc_fallback_url ) {
-						return $kyc_fallback_url;
+					'get_connect_url' => function () use ( $raw_kyc_fallback_url ) {
+						return $raw_kyc_fallback_url;
 					},
 				),
 			)

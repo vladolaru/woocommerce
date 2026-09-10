@@ -269,7 +269,7 @@ class WooPaymentsService {
 			'steps'    => $this->get_onboarding_steps( $location, trailingslashit( $rest_path ) . 'step', $source ),
 			'context'  => array(
 				'urls' => array(
-					'overview_page' => $this->get_overview_page_url(),
+					'overview_page' => add_query_arg( 'wcpay-connection-success', '1', $this->get_overview_page_url() ),
 				),
 			),
 		);
@@ -3967,7 +3967,7 @@ class WooPaymentsService {
 	 * @return string The fallback URL for the embedded KYC flow.
 	 */
 	private function get_onboarding_kyc_fallback_url(): string {
-		return $this->get_onboarding_adapter()->get_onboarding_kyc_fallback_url( $this->provider );
+		return add_query_arg( 'wcpay-connection-error', '1', $this->get_onboarding_adapter()->get_onboarding_kyc_fallback_url( $this->provider ) );
 	}
 
 	/**

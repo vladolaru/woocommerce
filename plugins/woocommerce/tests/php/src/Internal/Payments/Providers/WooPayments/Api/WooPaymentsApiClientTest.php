@@ -65,6 +65,47 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	private const EXPECTED_USER_AGENT = 'WooCommerce Payments/10.8.0';
 
 	/**
+	 * @testdox Should create account links through the site-scoped user-token endpoint.
+	 */
+	public function test_create_account_link_posts_forwarded_arguments_with_user_token(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'url'   => 'https://connect.stripe.com/setup/session',
+					'state' => 'state_test',
+				)
+			),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		$result = $sut->create_account_link(
+			array(
+				'type'       => 'complete_kyc_link',
+				'return_url' => 'https://example.com/return',
+			)
+		);
+
+		$this->assertSame( 'https://connect.stripe.com/setup/session', $result['url'] );
+		$this->assertSame( '/sites/123/wcpay/links', $http_client->last_path );
+		$this->assertSame( 'POST', $http_client->last_method );
+		$this->assertTrue( $http_client->last_use_user_token );
+		$this->assertSame(
+			array(
+				'test_mode'  => false,
+				'type'       => 'complete_kyc_link',
+				'return_url' => 'https://example.com/return',
+			),
+			json_decode( (string) $http_client->last_body, true )
+		);
+	}
+
+	/**
 	 * @testdox Should build the site-scoped WPCOM endpoint and lift idempotency_key into the request headers.
 	 */
 	public function test_request_lifts_idempotency_key_and_preserves_filtered_params(): void {
