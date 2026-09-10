@@ -321,46 +321,6 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy global declarations are confined to the sanctioned compatibility boundary.
-	 */
-	public function test_global_facade_declarations_are_confined_to_compatibility_boundary(): void {
-		$provider_directory   = WC()->plugin_path() . '/src/Internal/Payments/Providers/WooPayments';
-		$allowed_facade_files = array(
-			$provider_directory . '/Compat/legacy/class-wc-payments.php',
-			$provider_directory . '/Compat/legacy/class-wc-payments-features.php',
-		);
-
-		foreach ( $allowed_facade_files as $allowed_file ) {
-			$this->assertFileExists( $allowed_file, 'Each sanctioned global facade must live in its explicit compatibility file.' );
-		}
-
-		foreach ( new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $provider_directory ) ) as $file ) {
-			if ( ! $file instanceof \SplFileInfo || ! $file->isFile() || 'php' !== $file->getExtension() || in_array( $file->getPathname(), $allowed_facade_files, true ) ) {
-				continue;
-			}
-
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading immutable local production source for a placement assertion.
-			$source = (string) file_get_contents( $file->getPathname() );
-			$this->assertDoesNotMatchRegularExpression( '/\\bclass\\s+WC_Payments(?:_Features)?\\b/', $source, $file->getPathname() . ' must not declare a plugin-owned global facade outside the sanctioned compatibility boundary.' );
-		}
-	}
-
-	/**
-	 * @testdox WooCommerce eagerly registers the removable facade loader.
-	 */
-	public function test_loader_is_registered_from_woocommerce_bootstrap(): void {
-		$woocommerce_file = WC()->plugin_path() . '/includes/class-woocommerce.php';
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading immutable local production source for a registration assertion.
-		$source = (string) file_get_contents( $woocommerce_file );
-
-		$this->assertStringContainsString(
-			'$container->get( Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Compat\\LegacyFacadeLoader::class )->register();',
-			$source,
-			'The compatibility boundary must be registered from the WooCommerce composition root.'
-		);
-	}
-
-	/**
 	 * Register the facade loader under a controlled ownership decision.
 	 *
 	 * @param bool $native_owns Whether the native runtime owns payments.

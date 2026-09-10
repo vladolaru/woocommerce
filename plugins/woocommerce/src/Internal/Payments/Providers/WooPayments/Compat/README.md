@@ -1,6 +1,6 @@
 # WooPayments legacy facade compatibility
 
-This folder is the removable boundary for plugin-owned compatibility surfaces that existing WooPayments links and Woo extensions still depend on. `LegacyFacadeLoader` loads global symbols only when the core-native runtime owns payments; the standalone WooPayments plugin retains every symbol while it owns the runtime. `LegacyAdminLinkHandler` accepts platform-issued `wcpay-link-handler` admin links under the same ownership rule.
+This folder is the removable boundary for plugin-owned compatibility surfaces that existing WooPayments links and Woo extensions still depend on. `LegacyFacadeLoader` loads global symbols only when the core-native runtime owns payments; the standalone WooPayments plugin retains every symbol while it owns the runtime. `LegacyAdminLinkHandler` accepts platform-issued `wcpay-link-handler` admin links under the same ownership rule. The plugin-shaped `WCPay\MultiCurrency` namespace lives in the separate [multi-currency compatibility boundary](../../../../MultiCurrency/Compat/README.md).
 
 ## Contract
 
@@ -18,6 +18,17 @@ The boundary intentionally does not declare, alias, or emulate `WC_Payment_Gatew
 
 WordPress sandbox-includes a plugin before adding it to the active-plugin list and provides no pre-sandbox activation hook. The loader therefore waits until `plugins_loaded` priority 0 and leaves the global names free during WooPayments activation requests from the Plugins screen, bulk actions, installer AJAX, the core plugins REST controller, and WooPayments activation/install commands in WP-CLI. Ordinary and unrelated WP-CLI commands retain the native facades. A programmatic activator whose later `activate_plugin()` call has no recognizable WordPress request shape must return `false` from `woocommerce_native_payments_should_load_legacy_facades` before `plugins_loaded` priority 0.
 
+## Placement invariant
+
+`LegacyWooPaymentsCompatibilityPlacementTest` scans production PHP under `src/` and `includes/` and rejects global `WC_Payments*` or namespaced `WCPay\` type declarations outside a `Compat/` directory. It also requires exactly one composition-root registration for each compatibility loader and a removal README for each boundary. When a boundary is removed, update its expected loader and README entries in the same removal commit; do not relax the `Compat/` placement rule.
+
 ## Removal
 
-These compatibility surfaces are scheduled for removal in WooCommerce 12.0.0 after supported extensions no longer depend on the plugin-owned symbols and the platform no longer emits legacy admin links. Remove this `Compat` folder, the `LegacyFacadeLoader` registration line in `includes/class-woocommerce.php`, and the `LegacyAdminLinkHandler` bootstrap root together.
+These compatibility surfaces are scheduled for removal in WooCommerce 12.0.0 after supported extensions no longer depend on the plugin-owned symbols and the platform no longer emits legacy admin links. Remove these pieces together:
+
+- This production `Compat/` folder.
+- The `LegacyFacadeLoader` registration line in `includes/class-woocommerce.php`.
+- The `LegacyAdminLinkHandler::class` root in `WooPaymentsProvider`.
+- The `LegacyAdminLinkHandler` bootstrap-root expectations in `tests/php/src/Internal/Payments/NativePaymentsBootstrapTest.php`.
+- The matching `tests/php/src/Internal/Payments/Providers/WooPayments/Compat/` tests and fixtures.
+- This boundary's expected symbols, loader and README entries in `LegacyWooPaymentsCompatibilityPlacementTest`.
