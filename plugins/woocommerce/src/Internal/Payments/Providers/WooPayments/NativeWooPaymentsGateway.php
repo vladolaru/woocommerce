@@ -265,6 +265,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	public function handle_init(): void {
 		$this->method_description = __( 'Accept payments with WooPayments.', 'woocommerce' );
+		$this->init_supported_features();
 	}
 
 	/**

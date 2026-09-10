@@ -158,6 +158,41 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should refresh subscription capabilities after third-party plugins finish loading.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_handle_init_refreshes_late_loaded_subscription_capabilities(): void {
+		$gateway = new NativeWooPaymentsGateway();
+
+		$this->assertFalse( $gateway->supports( 'subscriptions' ), 'The fixture must construct the gateway before Subscriptions is available.' );
+
+		require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
+		class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+
+		$gateway->handle_init();
+		$gateway->handle_init();
+
+		$expected_features = array(
+			'subscriptions',
+			'multiple_subscriptions',
+			'subscription_cancellation',
+			'subscription_suspension',
+			'subscription_reactivation',
+			'subscription_amount_changes',
+			'subscription_date_changes',
+			'subscription_payment_method_change',
+			'subscription_payment_method_change_customer',
+			'subscription_payment_method_change_admin',
+		);
+
+		foreach ( $expected_features as $feature ) {
+			$this->assertTrue( $gateway->supports( $feature ), "The late-loaded gateway should support {$feature}." );
+			$this->assertSame( 1, count( array_keys( $gateway->supports, $feature, true ) ), "The {$feature} capability should remain idempotent." );
+		}
+	}
+
+	/**
 	 * @testdox Should render country-aware definition branding for a classic split gateway.
 	 */
 	public function test_classic_split_gateway_icon_uses_country_aware_definition_branding(): void {
