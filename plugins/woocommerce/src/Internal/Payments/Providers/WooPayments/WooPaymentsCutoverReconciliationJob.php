@@ -64,18 +64,27 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private WooPaymentsCutoverActionScheduler $scheduler;
 
 	/**
+	 * Headless cutover preflight facts.
+	 *
+	 * @var WooPaymentsCutoverPreflightService
+	 */
+	private WooPaymentsCutoverPreflightService $preflight_service;
+
+	/**
 	 * Initialize the job.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter      $arbiter     Runtime owner arbiter.
-	 * @param WooPaymentsCutoverStateStore      $state_store Persisted state store.
-	 * @param WooPaymentsCutoverActionScheduler $scheduler   Action Scheduler adapter.
+	 * @param NativePaymentsRuntimeArbiter       $arbiter          Runtime owner arbiter.
+	 * @param WooPaymentsCutoverStateStore       $state_store      Persisted state store.
+	 * @param WooPaymentsCutoverActionScheduler  $scheduler        Action Scheduler adapter.
+	 * @param WooPaymentsCutoverPreflightService $preflight_service Headless cutover facts.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCutoverStateStore $state_store, WooPaymentsCutoverActionScheduler $scheduler ): void {
-		$this->arbiter     = $arbiter;
-		$this->state_store = $state_store;
-		$this->scheduler   = $scheduler;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCutoverStateStore $state_store, WooPaymentsCutoverActionScheduler $scheduler, WooPaymentsCutoverPreflightService $preflight_service ): void {
+		$this->arbiter           = $arbiter;
+		$this->state_store       = $state_store;
+		$this->scheduler         = $scheduler;
+		$this->preflight_service = $preflight_service;
 	}
 
 	/**
@@ -110,7 +119,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when durable work already exists or was scheduled.
 	 */
 	public function enqueue( string $source ): bool {
-		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
+		if ( ! isset( $this->preflight_service ) || ! $this->arbiter->is_native_runtime_enabled() ) {
 			return false;
 		}
 

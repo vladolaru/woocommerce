@@ -13,6 +13,7 @@ use ActionScheduler_Store;
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverActionScheduler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use WC_Unit_Test_Case;
@@ -44,6 +45,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	private ?WooPaymentsCutoverActionScheduler $scheduler = null;
 
 	/**
+	 * Headless preflight fixture.
+	 *
+	 * @var WooPaymentsCutoverPreflightService|null
+	 */
+	private ?WooPaymentsCutoverPreflightService $preflight_service = null;
+
+	/**
 	 * Job instances whose callbacks must be removed.
 	 *
 	 * @var array<int,WooPaymentsCutoverReconciliationJob>
@@ -61,8 +69,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			&& class_exists( WooPaymentsCutoverStateStore::class )
 			&& class_exists( WooPaymentsCutoverActionScheduler::class )
 		) {
-			$this->state_store = new WooPaymentsCutoverStateStore();
-			$this->scheduler   = new WooPaymentsCutoverActionScheduler();
+			$this->state_store       = new WooPaymentsCutoverStateStore();
+			$this->scheduler         = new WooPaymentsCutoverActionScheduler();
+			$this->preflight_service = new WooPaymentsCutoverPreflightService();
 			$this->cleanup_state();
 			$this->sut = $this->create_job( true );
 		}
@@ -82,6 +91,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		}
 
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox The job receives the explicitly injected headless preflight service.
+	 */
+	public function test_job_receives_the_explicit_preflight_service(): void {
+		$job      = $this->require_sut();
+		$property = new \ReflectionProperty( $job, 'preflight_service' );
+		$property->setAccessible( true );
+
+		$this->assertSame( $this->preflight_service, $property->getValue( $job ) );
 	}
 
 	/**
@@ -660,7 +680,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 
 		$job = new WooPaymentsCutoverReconciliationJob();
-		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler() );
+		$this->assertInstanceOf( WooPaymentsCutoverPreflightService::class, $this->preflight_service );
+		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $this->preflight_service );
 		$this->jobs[] = $job;
 
 		return $job;

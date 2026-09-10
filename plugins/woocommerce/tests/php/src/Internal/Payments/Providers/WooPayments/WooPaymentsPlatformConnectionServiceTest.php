@@ -66,6 +66,45 @@ class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Connection-owner status distinguishes a missing owner from a missing token and a deleted user.
+	 */
+	public function test_connection_owner_status_distinguishes_missing_owner_token_and_user(): void {
+		$missing_owner          = new TestableWooPaymentsPlatformConnectionService();
+		$missing_owner->manager = $this->create_connection_manager( true, 0, false );
+
+		$without_token          = new TestableWooPaymentsPlatformConnectionService();
+		$without_token->manager = $this->create_connection_manager( true, 1, false );
+
+		$deleted_user          = new TestableWooPaymentsPlatformConnectionService();
+		$deleted_user->manager = $this->create_connection_manager( true, 999999, true );
+
+		$this->assertSame(
+			array(
+				'owner_id'             => 0,
+				'owner_exists'         => false,
+				'user_token_available' => false,
+			),
+			$missing_owner->get_cutover_connection_owner_user_token_status()
+		);
+		$this->assertSame(
+			array(
+				'owner_id'             => 1,
+				'owner_exists'         => true,
+				'user_token_available' => false,
+			),
+			$without_token->get_cutover_connection_owner_user_token_status()
+		);
+		$this->assertSame(
+			array(
+				'owner_id'             => 999999,
+				'owner_exists'         => false,
+				'user_token_available' => false,
+			),
+			$deleted_user->get_cutover_connection_owner_user_token_status()
+		);
+	}
+
+	/**
 	 * Create a Jetpack connection manager mock.
 	 *
 	 * @param bool $is_connected                Whether the store is connected.

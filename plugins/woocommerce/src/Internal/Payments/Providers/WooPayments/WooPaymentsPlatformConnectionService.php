@@ -37,6 +37,30 @@ class WooPaymentsPlatformConnectionService {
 	}
 
 	/**
+	 * Get the connection-owner details required by the informational retry path.
+	 *
+	 * @return array{owner_id:int,owner_exists:bool,user_token_available:bool} Connection owner details.
+	 */
+	public function get_cutover_connection_owner_user_token_status(): array {
+		$manager  = $this->get_connection_manager();
+		$owner_id = null === $manager ? 0 : $this->get_connection_owner_id( $manager );
+		if ( $owner_id <= 0 ) {
+			return array(
+				'owner_id'             => 0,
+				'owner_exists'         => false,
+				'user_token_available' => false,
+			);
+		}
+
+		$owner_exists = null !== $this->get_connection_owner_user( $owner_id );
+		return array(
+			'owner_id'             => $owner_id,
+			'owner_exists'         => $owner_exists,
+			'user_token_available' => $owner_exists && null !== $manager && $this->is_user_connected( $manager, $owner_id ),
+		);
+	}
+
+	/**
 	 * Get local WPCOM/Jetpack connection readiness failures.
 	 *
 	 * @param bool $require_user_token Whether connection-owner user-token readiness is required.
@@ -62,10 +86,10 @@ class WooPaymentsPlatformConnectionService {
 			$failures[] = 'wpcom_blog_id_unavailable';
 		}
 
-		$connection_owner_id = $this->get_connection_owner_id( $manager );
-		if ( $connection_owner_id <= 0 ) {
+		$connection_owner = $this->get_cutover_connection_owner_user_token_status();
+		if ( $connection_owner['owner_id'] <= 0 ) {
 			$failures[] = 'wpcom_connection_owner_unavailable';
-		} elseif ( $require_user_token && ! $this->is_user_connected( $manager, $connection_owner_id ) ) {
+		} elseif ( $require_user_token && ( ! $connection_owner['owner_exists'] || ! $connection_owner['user_token_available'] ) ) {
 			$failures[] = 'wpcom_connection_owner_user_token_unavailable';
 		}
 
@@ -127,5 +151,16 @@ class WooPaymentsPlatformConnectionService {
 		} catch ( \Throwable $e ) {
 			return false;
 		}
+	}
+
+	/**
+	 * Get the WordPress user for the connection owner.
+	 *
+	 * @param int $connection_owner_id Connection owner user ID.
+	 * @return \WP_User|null Connection owner user.
+	 */
+	protected function get_connection_owner_user( int $connection_owner_id ): ?\WP_User {
+		$user = get_user_by( 'id', $connection_owner_id );
+		return $user instanceof \WP_User ? $user : null;
 	}
 }

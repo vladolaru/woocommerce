@@ -8,11 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
@@ -134,49 +130,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private const NOTICE_STATUS_TRANSIENT = 'woocommerce_woopayments_native_cutover_status';
 
 	/**
-	 * Action Scheduler hooks with native Core consumers.
-	 *
-	 * @var string[]
-	 */
-	private const NATIVE_OWNED_OPERATIONAL_QUEUE_HOOKS = array(
-		WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION,
-		WooPaymentsOperationalQueueService::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
-		WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
-		WooPaymentsOperationalQueueService::UPDATE_COMPATIBILITY_DATA_ACTION,
-		WooPaymentsOperationalQueueService::INSTANT_DEPOSIT_REMINDER_ACTION,
-		WooPaymentsOperationalQueueService::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
-		WooPaymentsOrderTrackingService::TRACK_NEW_ORDER_ACTION,
-		WooPaymentsOrderTrackingService::TRACK_UPDATE_ORDER_ACTION,
-		WooPaymentsApplePayDomainService::RETRY_ACTION,
-		WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
-		WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,
-		WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK,
-		WooPaymentsWebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION,
-		WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
-	);
-
-	/**
-	 * Sentinel operational hook returned when the database cannot safely prepare identifier placeholders.
-	 *
-	 * @var string
-	 */
-	private const IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK = 'woocommerce_woopayments_identifier_placeholders_unavailable';
-
-	/**
-	 * Option containing the last active WooPayments plugin version.
-	 *
-	 * @var string
-	 */
-	private const WOOPAYMENTS_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
-
-	/**
-	 * Maximum number of network site IDs loaded for one preflight query.
-	 *
-	 * @var int
-	 */
-	private const NETWORK_PREFLIGHT_BATCH_SIZE = 100;
-
-	/**
 	 * Status value for a successful plugin disable.
 	 *
 	 * @var string
@@ -212,103 +165,29 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Native WooPayments provider.
+	 * Headless cutover preflight facts.
 	 *
-	 * @var WooPaymentsProvider
+	 * @var WooPaymentsCutoverPreflightService
 	 */
-	private WooPaymentsProvider $provider;
-
-	/**
-	 * Legacy subscription data guard.
-	 *
-	 * @var WooPaymentsLegacySubscriptionsGuard
-	 */
-	private WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard;
-
-	/**
-	 * Canceled-authorization fee remediation queue owner.
-	 *
-	 * @var WooPaymentsCanceledAuthorizationFeeRemediationService
-	 */
-	private WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service;
-
-	/**
-	 * Platform connection readiness service.
-	 *
-	 * @var WooPaymentsPlatformConnectionService
-	 */
-	private WooPaymentsPlatformConnectionService $platform_connection_service;
-
-	/**
-	 * Native rate account boundary.
-	 *
-	 * @var WooPaymentsNativeAccountAdapter
-	 */
-	private WooPaymentsNativeAccountAdapter $native_rate_account;
-
-	/**
-	 * Native rate API client boundary.
-	 *
-	 * @var WooPaymentsNativeApiClientAdapter
-	 */
-	private WooPaymentsNativeApiClientAdapter $native_rate_api_client;
-
-	/**
-	 * Native WooPayments admin navigation owner.
-	 *
-	 * @var WooPaymentsAdminNavigationController
-	 */
-	private WooPaymentsAdminNavigationController $admin_navigation_controller;
-
-	/**
-	 * Request-local cutover preflight failures keyed by blog ID.
-	 *
-	 * @var array<int,array<int,string>>
-	 */
-	private array $preflight_memo = array();
-
-	/**
-	 * Request-local network preflight failures.
-	 *
-	 * @var int[]|null
-	 */
-	private ?array $network_preflight_failing_site_ids_memo = null;
+	private WooPaymentsCutoverPreflightService $preflight_service;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter                               $arbiter                    Runtime owner arbiter.
-	 * @param LegacyProxy                                                $legacy_proxy               Legacy proxy.
-	 * @param WooPaymentsProvider                                        $provider                   Native WooPayments provider.
-	 * @param WooPaymentsLegacySubscriptionsGuard|null                   $legacy_subscriptions_guard Legacy subscription data guard.
-	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService|null $fee_remediation_service    Canceled-authorization fee remediation queue owner.
-	 * @param WooPaymentsPlatformConnectionService|null                  $platform_connection_service Platform connection readiness service.
-	 * @param WooPaymentsNativeAccountAdapter|null                       $native_rate_account         Native rate account boundary.
-	 * @param WooPaymentsNativeApiClientAdapter|null                     $native_rate_api_client      Native rate API client boundary.
-	 * @param WooPaymentsAdminNavigationController|null                  $admin_navigation_controller Native admin navigation owner.
+	 * @param NativePaymentsRuntimeArbiter       $arbiter          Runtime owner arbiter.
+	 * @param LegacyProxy                        $legacy_proxy     Legacy proxy.
+	 * @param WooPaymentsCutoverPreflightService $preflight_service Headless cutover facts.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
 		LegacyProxy $legacy_proxy,
-		WooPaymentsProvider $provider,
-		?WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard = null,
-		?WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service = null,
-		?WooPaymentsPlatformConnectionService $platform_connection_service = null,
-		?WooPaymentsNativeAccountAdapter $native_rate_account = null,
-		?WooPaymentsNativeApiClientAdapter $native_rate_api_client = null,
-		?WooPaymentsAdminNavigationController $admin_navigation_controller = null
+		WooPaymentsCutoverPreflightService $preflight_service
 	): void {
-		$this->arbiter                     = $arbiter;
-		$this->legacy_proxy                = $legacy_proxy;
-		$this->provider                    = $provider;
-		$this->legacy_subscriptions_guard  = $legacy_subscriptions_guard ?? wc_get_container()->get( WooPaymentsLegacySubscriptionsGuard::class );
-		$this->fee_remediation_service     = $fee_remediation_service ?? wc_get_container()->get( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
-		$this->platform_connection_service = $platform_connection_service ?? wc_get_container()->get( WooPaymentsPlatformConnectionService::class );
-		$this->native_rate_account         = $native_rate_account ?? wc_get_container()->get( WooPaymentsNativeAccountAdapter::class );
-		$this->native_rate_api_client      = $native_rate_api_client ?? wc_get_container()->get( WooPaymentsNativeApiClientAdapter::class );
-		$this->admin_navigation_controller = $admin_navigation_controller ?? wc_get_container()->get( WooPaymentsAdminNavigationController::class );
+		$this->arbiter           = $arbiter;
+		$this->legacy_proxy      = $legacy_proxy;
+		$this->preflight_service = $preflight_service;
 	}
 
 	/**
@@ -422,35 +301,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool True when the plugin no longer owns the runtime.
 	 */
 	private function deactivate_woopayments_plugin(): bool {
-		if ( ! function_exists( 'deactivate_plugins' ) ) {
-			require_once ABSPATH . 'wp-admin/includes/plugin.php';
-		}
-
-		if ( 'unavailable' === $this->fee_remediation_service->ensure_scheduled() ) {
-			wc_get_logger()->error(
-				'WooPayments could not be deactivated because native WooPayments could not schedule canceled-authorization fee remediation.',
-				array( 'source' => 'woocommerce-woopayments-cutover' )
-			);
-			return false;
-		}
-
-		$plugin_file = $this->get_active_woopayments_plugin_file();
-		if ( '' === $plugin_file ) {
-			wc_get_logger()->error(
-				'WooPayments could not be deactivated because the active plugin file could not be resolved.',
-				array( 'source' => 'woocommerce-woopayments-cutover' )
-			);
-			return false;
-		}
-
-		$this->legacy_proxy->call_function(
-			'deactivate_plugins',
-			$plugin_file,
-			false,
-			$this->is_woopayments_network_active()
-		);
-
-		return ! $this->is_woopayments_site_active() && ! $this->is_woopayments_network_active();
+		return $this->preflight_service->deactivate_woopayments_plugin();
 	}
 
 	/**
@@ -486,102 +337,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return array<int,string> Failure codes.
 	 */
 	public function get_preflight_failures(): array {
-		$blog_id = get_current_blog_id();
-		if ( array_key_exists( $blog_id, $this->preflight_memo ) ) {
-			return $this->preflight_memo[ $blog_id ];
-		}
-
-		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
-			$this->preflight_memo[ $blog_id ] = array( 'native_runtime_disabled' );
-			return $this->preflight_memo[ $blog_id ];
-		}
-
-		$failures           = array();
-		$protected_failures = array();
-
-		if ( ! $this->is_woopayments_plugin_version_supported() ) {
-			$failures[]           = 'woopayments_plugin_version_unsupported';
-			$protected_failures[] = 'woopayments_plugin_version_unsupported';
-		}
-
-		/**
-		 * Filters whether the native WooPayments transport is ready for cutover.
-		 *
-		 * @param bool $is_ready Whether the native transport can process WooPayments requests.
-		 *
-		 * @since 11.0.0
-		 */
-		if ( ! (bool) apply_filters( self::FILTER_NATIVE_TRANSPORT_READY, $this->is_native_transport_ready() ) ) {
-			$failures[] = 'native_transport_unavailable';
-		}
-
-		$platform_connection_failures = $this->platform_connection_service->get_cutover_preflight_failures();
-		$failures                     = array_merge( $failures, $platform_connection_failures );
-		$protected_failures           = array_merge( $protected_failures, $platform_connection_failures );
-
-		if ( $this->has_unsupported_enabled_payment_methods() ) {
-			$failures[]           = 'unsupported_payment_methods_enabled';
-			$protected_failures[] = 'unsupported_payment_methods_enabled';
-		}
-
-		if ( $this->has_unavailable_multi_currency_rate_provider() ) {
-			$failures[]           = 'multi_currency_rates_unavailable';
-			$protected_failures[] = 'multi_currency_rates_unavailable';
-		}
-
-		/**
-		 * Filters whether native WooPayments merchant admin surfaces are ready after deactivation.
-		 *
-		 * @param bool $is_ready Whether native merchant admin surfaces are ready.
-		 *
-		 * @since 11.0.0
-		 */
-		if ( ! (bool) apply_filters( self::FILTER_NATIVE_ADMIN_SURFACES_READY, $this->admin_navigation_controller->are_all_available_routes_registered() ) ) {
-			$failures[] = 'native_admin_surfaces_unavailable';
-		}
-
-		if ( array() !== $this->get_pending_provider_event_types() ) {
-			$failures[] = 'provider_events_undispositioned';
-		}
-
-		if ( array() !== $this->get_pending_operational_queue_hooks() ) {
-			$failures[] = 'operational_queue_hooks_undispositioned';
-		}
-
-		if ( ! $this->fee_remediation_service->can_schedule_cutover_remediation() ) {
-			$failures[] = 'financial_migrations_unavailable';
-		}
-
-		/**
-		 * Filters WooPayments native cutover preflight failures.
-		 *
-		 * This filter runs only after the native runtime is enabled. When native runtime is disabled,
-		 * preflight returns `native_runtime_disabled` before running platform, queue, or filter checks.
-		 *
-		 * @param array<int,string> $failures Failure codes.
-		 *
-		 * @since 11.0.0
-		 */
-		$failures = apply_filters( self::FILTER_PREFLIGHT_FAILURES, $failures );
-
-		$failures = is_array( $failures ) ? array_values( array_map( 'strval', $failures ) ) : array( 'preflight_filter_invalid' );
-
-		foreach ( $protected_failures as $failure ) {
-			$failure = (string) $failure;
-			if ( '' !== $failure && ! in_array( $failure, $failures, true ) ) {
-				$failures[] = $failure;
-			}
-		}
-
-		if (
-			$this->legacy_subscriptions_guard->has_legacy_stripe_billing_subscription_markers() &&
-			! in_array( 'legacy_stripe_billing_subscriptions_present', $failures, true )
-		) {
-			$failures[] = 'legacy_stripe_billing_subscriptions_present';
-		}
-
-		$this->preflight_memo[ $blog_id ] = $failures;
-		return $this->preflight_memo[ $blog_id ];
+		return $this->preflight_service->get_preflight_failures();
 	}
 
 	/**
@@ -590,174 +346,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return int[] Failing site IDs in ascending order.
 	 */
 	public function get_network_preflight_failing_site_ids(): array {
-		if ( ! is_multisite() || ! $this->is_woopayments_network_active() ) {
-			return array();
-		}
-
-		if ( null !== $this->network_preflight_failing_site_ids_memo ) {
-			return $this->network_preflight_failing_site_ids_memo;
-		}
-
-		$failing_site_ids = array();
-		$offset           = 0;
-
-		do {
-			$site_ids = get_sites(
-				array(
-					'fields'     => 'ids',
-					'network_id' => get_current_network_id(),
-					'number'     => self::NETWORK_PREFLIGHT_BATCH_SIZE,
-					'offset'     => $offset,
-					'orderby'    => 'id',
-					'order'      => 'ASC',
-				)
-			);
-
-			foreach ( $site_ids as $site_id ) {
-				$site_id  = (int) $site_id;
-				$switched = get_current_blog_id() !== $site_id;
-				if ( $switched ) {
-					switch_to_blog( $site_id );
-				}
-
-				try {
-					if ( array() !== $this->get_preflight_failures() ) {
-						$failing_site_ids[] = $site_id;
-					}
-				} finally {
-					if ( $switched ) {
-						restore_current_blog();
-					}
-				}
-			}
-
-			$site_count = count( $site_ids );
-			$offset    += $site_count;
-		} while ( self::NETWORK_PREFLIGHT_BATCH_SIZE === $site_count );
-
-		$this->network_preflight_failing_site_ids_memo = $failing_site_ids;
-		return $this->network_preflight_failing_site_ids_memo;
-	}
-
-	/**
-	 * Tell whether the recorded WooPayments plugin version is safe for cutover normalization.
-	 *
-	 * @return bool
-	 */
-	private function is_woopayments_plugin_version_supported(): bool {
-		$version = get_option( self::WOOPAYMENTS_VERSION_OPTION, '' );
-
-		if ( ! is_string( $version ) ) {
-			return false;
-		}
-
-		$version = trim( $version );
-		if ( 1 !== preg_match( '/^\d+(?:\.\d+){1,3}(?:[-+][0-9A-Za-z.-]+)?$/D', $version ) ) {
-			return false;
-		}
-
-		return version_compare( $version, self::MINIMUM_CUTOVER_PLUGIN_VERSION, '>=' );
-	}
-
-	/**
-	 * Determine whether legacy settings enable methods native WooPayments cannot charge yet.
-	 *
-	 * @return bool
-	 */
-	private function has_unsupported_enabled_payment_methods(): bool {
-		$natively_chargeable_payment_method_ids = WooPaymentsSettingsService::get_natively_chargeable_payment_method_ids();
-
-		foreach ( $this->get_enabled_legacy_payment_method_ids() as $payment_method_id ) {
-			if ( ! in_array( $payment_method_id, $natively_chargeable_payment_method_ids, true ) ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Tell whether cutover would leave automatic multi-currency rates without a provider.
-	 *
-	 * @return bool
-	 */
-	private function has_unavailable_multi_currency_rate_provider(): bool {
-		if ( ! $this->has_automatic_multi_currency_rate_currencies() ) {
-			return false;
-		}
-
-		try {
-			return ! (
-				$this->native_rate_api_client->is_server_connected()
-				&& $this->native_rate_account->is_provider_connected()
-				&& ! $this->native_rate_account->is_account_rejected()
-			);
-		} catch ( \Throwable $e ) {
-			return true;
-		}
-	}
-
-	/**
-	 * Tell whether enabled multi-currency includes any automatic-rate non-default currency.
-	 *
-	 * @return bool
-	 */
-	private function has_automatic_multi_currency_rate_currencies(): bool {
-		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
-			return false;
-		}
-
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
-		if ( ! is_array( $enabled_currencies ) || array() === $enabled_currencies ) {
-			return false;
-		}
-
-		$store_currency = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
-		foreach ( $enabled_currencies as $currency_code ) {
-			if ( ! is_scalar( $currency_code ) ) {
-				continue;
-			}
-
-			$currency_code = strtoupper( trim( (string) $currency_code ) );
-			if ( '' === $currency_code || $store_currency === $currency_code ) {
-				continue;
-			}
-
-			if ( 'manual' !== (string) get_option( 'wcpay_multi_currency_exchange_rate_' . strtolower( $currency_code ), 'automatic' ) ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Get enabled payment method IDs from the standalone WooPayments settings option.
-	 *
-	 * @return string[]
-	 */
-	private function get_enabled_legacy_payment_method_ids(): array {
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION, array() );
-		if ( ! is_array( $settings ) ) {
-			return array();
-		}
-
-		$payment_method_ids = $settings['upe_enabled_payment_method_ids'] ?? array( 'card' );
-		if ( ! is_array( $payment_method_ids ) ) {
-			return array();
-		}
-
-		return array_values(
-			array_unique(
-				array_filter(
-					array_map(
-						static fn( $payment_method_id ): string => is_scalar( $payment_method_id ) ? (string) $payment_method_id : '',
-						$payment_method_ids
-					),
-					static fn( string $payment_method_id ): bool => '' !== $payment_method_id
-				)
-			)
-		);
+		return $this->preflight_service->get_network_preflight_failing_site_ids();
 	}
 
 	/**
@@ -834,129 +423,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether native WooPayments can process after plugin deactivation.
-	 *
-	 * @return bool
-	 */
-	private function is_native_transport_ready(): bool {
-		try {
-			return $this->provider->can_process_payments();
-		} catch ( \Throwable $e ) {
-			return false;
-		}
-	}
-
-	/**
-	 * Get provider event types that still need native cutover disposition.
-	 *
-	 * @return array<int,string> Event type identifiers.
-	 */
-	private function get_pending_provider_event_types(): array {
-		/**
-		 * Filters provider event types that still need native cutover disposition.
-		 *
-		 * @param array<int,string> $event_types Event types that still block cutover.
-		 *
-		 * @since 11.0.0
-		 */
-		$event_types = apply_filters( self::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-
-		if ( ! is_array( $event_types ) ) {
-			return array( 'provider_events_filter_invalid' );
-		}
-
-		return array_values(
-			array_unique(
-				array_filter(
-					array_map( 'strval', $event_types ),
-					static fn( string $event_type ): bool => '' !== $event_type
-				)
-			)
-		);
-	}
-
-	/**
-	 * Get operational queue hooks that still need native cutover disposition.
-	 *
-	 * @return array<int,string> Operational queue hook names.
-	 */
-	private function get_pending_operational_queue_hooks(): array {
-		$queued_hook_names = $this->get_queued_operational_action_hooks();
-		if ( in_array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK, $queued_hook_names, true ) ) {
-			return array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK );
-		}
-
-		/**
-		 * Filters operational queue hooks that still need native cutover disposition.
-		 *
-		 * @param array<int,string> $hook_names Operational queue hooks that still block cutover.
-		 *
-		 * @since 11.0.0
-		 */
-		$hook_names = apply_filters(
-			self::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER,
-			array_values( array_diff( $queued_hook_names, self::NATIVE_OWNED_OPERATIONAL_QUEUE_HOOKS ) )
-		);
-
-		if ( ! is_array( $hook_names ) ) {
-			return array( 'operational_queue_hooks_filter_invalid' );
-		}
-
-		return array_values(
-			array_unique(
-				array_filter(
-					array_map( 'strval', $hook_names ),
-					static fn( string $hook_name ): bool => '' !== $hook_name
-				)
-			)
-		);
-	}
-
-	/**
-	 * Get pending or running WooPayments operational hooks from Action Scheduler.
-	 *
-	 * @return string[] Operational hook names.
-	 */
-	private function get_queued_operational_action_hooks(): array {
-		$wpdb = $this->get_database();
-
-		if ( ! class_exists( '\\ActionScheduler_Store' ) || empty( $wpdb->actionscheduler_actions ) ) {
-			return array();
-		}
-
-		if ( ! $wpdb->has_cap( 'identifier_placeholders' ) ) {
-			return array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK );
-		}
-
-		$query      = $wpdb->prepare(
-			'SELECT DISTINCT hook
-			FROM %i
-			WHERE status IN ( %s, %s )
-			AND ( hook LIKE %s OR hook LIKE %s )
-			ORDER BY hook ASC',
-			$wpdb->actionscheduler_actions,
-			\ActionScheduler_Store::STATUS_PENDING,
-			\ActionScheduler_Store::STATUS_RUNNING,
-			$wpdb->esc_like( 'wcpay_' ) . '%',
-			$wpdb->esc_like( 'woocommerce_woopayments_' ) . '%'
-		);
-		$hook_names = $wpdb->get_col( $query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One request-memoized indexed operational preflight scan.
-
-		return array_values( array_map( 'strval', $hook_names ) );
-	}
-
-	/**
-	 * Get the WordPress database abstraction.
-	 *
-	 * @return \wpdb WordPress database access abstraction.
-	 */
-	protected function get_database(): \wpdb {
-		global $wpdb;
-
-		return $wpdb;
-	}
-
-	/**
 	 * Tell whether the soft cutover notice is enabled.
 	 *
 	 * @return bool
@@ -1009,82 +475,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_woopayments_network_active(): bool {
-		$network_active = (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() );
-
-		foreach ( array_keys( $network_active ) as $plugin_file ) {
-			if ( is_string( $plugin_file ) && $this->is_woopayments_plugin_file( $plugin_file ) ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Tell whether WooPayments is active for the current site.
-	 *
-	 * @return bool
-	 */
-	private function is_woopayments_site_active(): bool {
-		$active_plugins = (array) $this->legacy_proxy->call_function( 'get_option', 'active_plugins', array() );
-
-		foreach ( $active_plugins as $plugin_file ) {
-			if ( is_string( $plugin_file ) && $this->is_woopayments_plugin_file( $plugin_file ) ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Resolve the active WooPayments plugin file.
-	 *
-	 * @return string Active WooPayments plugin file, or an empty string when unresolved.
-	 */
-	private function get_active_woopayments_plugin_file(): string {
-		$active_plugins = (array) $this->legacy_proxy->call_function( 'get_option', 'active_plugins', array() );
-		foreach ( $active_plugins as $plugin_file ) {
-			if ( is_string( $plugin_file ) && $this->is_woopayments_plugin_file( $plugin_file ) ) {
-				return $plugin_file;
-			}
-		}
-
-		$network_active = (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() );
-		foreach ( array_keys( $network_active ) as $plugin_file ) {
-			if ( is_string( $plugin_file ) && $this->is_woopayments_plugin_file( $plugin_file ) ) {
-				return $plugin_file;
-			}
-		}
-
-		return '';
-	}
-
-	/**
-	 * Tell whether a plugin file is the WooPayments main plugin file.
-	 *
-	 * @param string $plugin_file Plugin file path.
-	 * @return bool
-	 */
-	private function is_woopayments_plugin_file( string $plugin_file ): bool {
-		if ( NativePaymentsRuntimeArbiter::PLUGIN_FILE === $plugin_file ) {
-			return true;
-		}
-
-		if ( ! function_exists( 'get_plugins' ) ) {
-			require_once ABSPATH . 'wp-admin/includes/plugin.php';
-		}
-
-		$plugins = $this->legacy_proxy->call_function( 'get_plugins' );
-		if ( ! is_array( $plugins ) || ! isset( $plugins[ $plugin_file ] ) || ! is_array( $plugins[ $plugin_file ] ) ) {
-			return false;
-		}
-
-		$plugin_data = $plugins[ $plugin_file ];
-		$name        = isset( $plugin_data['Name'] ) && is_scalar( $plugin_data['Name'] ) ? (string) $plugin_data['Name'] : '';
-		$text_domain = isset( $plugin_data['TextDomain'] ) && is_scalar( $plugin_data['TextDomain'] ) ? (string) $plugin_data['TextDomain'] : '';
-
-		return 'WooPayments' === $name || 'woocommerce-payments' === $text_domain;
+		return $this->preflight_service->is_woopayments_network_active();
 	}
 
 	/**

@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProvider
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use WC_Unit_Test_Case;
@@ -281,9 +282,11 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 */
 	private function reset_cutover_preflight_memo(): void {
 		$controller = wc_get_container()->get( WooPaymentsCutoverController::class );
-		$property   = new \ReflectionProperty( $controller, 'preflight_memo' );
+		$property   = new \ReflectionProperty( $controller, 'preflight_service' );
 		$property->setAccessible( true );
-		$property->setValue( $controller, array() );
+		$preflight_service = $property->getValue( $controller );
+		$this->assertInstanceOf( WooPaymentsCutoverPreflightService::class, $preflight_service );
+		$preflight_service->invalidate_current_blog_memoization();
 	}
 
 	/**
