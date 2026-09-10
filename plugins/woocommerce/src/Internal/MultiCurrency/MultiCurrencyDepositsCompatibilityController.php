@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDepositsCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
@@ -129,6 +130,10 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	 * @return array<mixed>
 	 */
 	public function modify_cart_item_deposit_amounts( array $cart_contents ): array {
+		if ( wc_get_container()->get( LegacyMultiCurrencyFacadeLoader::class )->did_project_product_price() ) {
+			return $cart_contents;
+		}
+
 		foreach ( $cart_contents as $cart_item_key => $cart_item ) {
 			if (
 				is_array( $cart_item )
