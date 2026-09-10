@@ -42,6 +42,37 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Slow retry delay after the first day. */
 	private const SLOW_RETRY_DELAY = DAY_IN_SECONDS;
 
+	/** Source used for cutover diagnostics. */
+	private const LOG_SOURCE = 'woocommerce-woopayments-cutover';
+
+	/** WordPress core upgrader lock name for the filesystem-global plugin update. */
+	private const PLUGIN_UPDATE_LOCK_NAME = 'woocommerce_woopayments_cutover_plugin_update_lock';
+
+	/** Maximum duration for the plugin-update lock. */
+	private const PLUGIN_UPDATE_LOCK_TTL = 5 * MINUTE_IN_SECONDS;
+
+	/** Operational actions whose native callbacks continue after cutover. */
+	private const ADOPTED_OPERATIONAL_QUEUE_HOOKS = array(
+		WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION,
+		WooPaymentsOperationalQueueService::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
+		WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
+		WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,
+	);
+
+	/** Legacy subscription migration actions that must not survive cutover. */
+	private const LEGACY_SUBSCRIPTION_MIGRATOR_HOOKS = array(
+		'wcpay_schedule_subscription_migrations',
+		'wcpay_migrate_subscription',
+		'wcpay_migrate_subscription_retry',
+	);
+
+	/** Conditions caused by an invalid extension filter. */
+	private const ENGINEERING_ERROR_CODES = array(
+		'preflight_filter_invalid',
+		'provider_events_filter_invalid',
+		'operational_queue_hooks_filter_invalid',
+	);
+
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -179,8 +210,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 
-		$now   = time();
-		$token = $this->state_store->acquire_lease( $now );
+		$now     = time();
+		$token   = $this->state_store->acquire_lease( $now );
+		$claimed = null;
 		if ( null === $token ) {
 			return;
 		}
@@ -207,9 +239,15 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$claimed['lease_token']      = $token;
 			$claimed['lease_expires_at'] = $now + self::RUNNING_TIMEOUT;
 			$claimed                     = $this->append_step( $claimed, 'running', $now );
-			$this->state_store->compare_and_set_record( $record, $claimed );
+			if ( ! $this->state_store->compare_and_set_record( $record, $claimed ) ) {
+				$claimed = null;
+			}
 		} finally {
 			$this->state_store->release_lease( $token );
+		}
+
+		if ( is_array( $claimed ) ) {
+			$this->reconcile_claim( $claimed );
 		}
 	}
 
@@ -220,9 +258,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * @param array<string,mixed> $expected_claim Exact running revision owned by this worker.
 	 * @param array<int,string>   $codes          Remaining condition codes.
+	 * @param array<int,mixed>    $outcomes       Informational outcomes to retain.
 	 * @return bool True when the next attempt is scheduled.
 	 */
-	public function defer( array $expected_claim, array $codes ): bool {
+	public function defer( array $expected_claim, array $codes, array $outcomes = array() ): bool {
 		$now   = time();
 		$token = $this->state_store->acquire_lease( $now );
 		if ( null === $token ) {
@@ -240,17 +279,18 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				return false;
 			}
 
-			$deferred                     = $record;
-			$deferred['revision']         = $record['revision'] + 1;
-			$deferred['state']            = WooPaymentsCutoverState::DEFERRED;
-			$deferred['action_id']        = 0;
-			$deferred['current_step']     = 'deferred';
-			$deferred['updated_at']       = $now;
-			$deferred['deferred_codes']   = $this->normalize_codes( $codes );
-			$deferred['next_attempt_at']  = $now + $this->get_retry_delay( $record, $now );
-			$deferred['lease_token']      = null;
-			$deferred['lease_expires_at'] = null;
-			$deferred                     = $this->append_step( $deferred, 'deferred', $now, array( 'codes' => $deferred['deferred_codes'] ) );
+			$deferred                           = $record;
+			$deferred['revision']               = $record['revision'] + 1;
+			$deferred['state']                  = WooPaymentsCutoverState::DEFERRED;
+			$deferred['action_id']              = 0;
+			$deferred['current_step']           = 'deferred';
+			$deferred['updated_at']             = $now;
+			$deferred['deferred_codes']         = $this->normalize_codes( $codes );
+			$deferred['informational_outcomes'] = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
+			$deferred['next_attempt_at']        = $now + $this->get_retry_delay( $record, $now );
+			$deferred['lease_token']            = null;
+			$deferred['lease_expires_at']       = null;
+			$deferred                           = $this->append_step( $deferred, 'deferred', $now, array( 'codes' => $deferred['deferred_codes'] ) );
 			if ( ! $this->state_store->compare_and_set_record( $record, $deferred ) ) {
 				return false;
 			}
@@ -258,6 +298,390 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return $this->ensure_record_scheduled( $deferred, $now );
 		} finally {
 			$this->state_store->release_lease( $token );
+		}
+	}
+
+	/**
+	 * Disposition one claimed reconciliation attempt.
+	 *
+	 * Task 4 owns all-clear finalization. This task resolves or defers every
+	 * condition without allowing a worker to remain in the running state.
+	 *
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 */
+	private function reconcile_claim( array $claimed ): void {
+		try {
+			$failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
+			if ( in_array( 'legacy_stripe_billing_subscriptions_present', $failures, true ) ) {
+				$this->exclude( $claimed, 'legacy_stripe_billing_subscriptions_present' );
+				return;
+			}
+
+			$claimed  = $this->record_engineering_error_observations( $claimed, $failures );
+			$outcomes = array();
+			if ( in_array( 'wpcom_connection_owner_user_token_unavailable', $failures, true ) && $this->preflight_service->is_cutover_connection_owner_user_missing() ) {
+				$outcomes[] = array( 'code' => 'reconnect_required' );
+			}
+
+			if ( in_array( 'unsupported_payment_methods_enabled', $failures, true ) ) {
+				$removed_payment_method_ids = $this->preflight_service->remove_unsupported_enabled_payment_method_ids();
+				if ( array() !== $removed_payment_method_ids ) {
+					$outcomes[] = array(
+						'code'               => 'unsupported_payment_methods_disabled',
+						'payment_method_ids' => $removed_payment_method_ids,
+					);
+				}
+			}
+
+			$plugin_update_succeeded = false;
+			if ( in_array( 'woopayments_plugin_version_unsupported', $failures, true ) ) {
+				$plugin_update_succeeded = $this->update_woopayments_plugin();
+			}
+
+			$outcomes = array_merge( $outcomes, $this->disposition_operational_queue() );
+
+			$this->preflight_service->invalidate_current_blog_memoization();
+			$remaining_failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
+			if ( in_array( 'legacy_stripe_billing_subscriptions_present', $remaining_failures, true ) ) {
+				$this->exclude( $claimed, 'legacy_stripe_billing_subscriptions_present' );
+				return;
+			}
+			if ( $plugin_update_succeeded && in_array( 'woopayments_plugin_version_unsupported', $remaining_failures, true ) ) {
+				$this->log_error( 'WooPayments cutover plugin update completed without installing a supported version.' );
+			}
+
+			$this->defer( $claimed, array() === $remaining_failures ? array( 'finalization_pending' ) : $remaining_failures, $outcomes );
+		} catch ( \Throwable $error ) {
+			$this->log_error( 'WooPayments cutover reconciliation resolver failed.', array( 'error' => $error->getMessage() ) );
+			$this->defer( $claimed, array( 'reconciliation_resolver_failed' ) );
+		}
+	}
+
+	/**
+	 * Persist a terminal exclusion for a claimed generation.
+	 *
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 * @param string              $code    Exclusion condition code.
+	 */
+	private function exclude( array $claimed, string $code ): void {
+		$now   = time();
+		$token = $this->state_store->acquire_lease( $now );
+		if ( null === $token ) {
+			return;
+		}
+
+		try {
+			$record = $this->state_store->get_record();
+			if ( ! is_array( $record ) || $record !== $claimed || WooPaymentsCutoverState::RUNNING !== $record['state'] ) {
+				return;
+			}
+
+			$excluded                     = $record;
+			$excluded['revision']         = $record['revision'] + 1;
+			$excluded['state']            = WooPaymentsCutoverState::EXCLUDED;
+			$excluded['action_id']        = 0;
+			$excluded['current_step']     = 'excluded';
+			$excluded['updated_at']       = $now;
+			$excluded['deferred_codes']   = array( $code );
+			$excluded['next_attempt_at']  = null;
+			$excluded['lease_token']      = null;
+			$excluded['lease_expires_at'] = null;
+			$excluded                     = $this->append_step( $excluded, 'excluded', $now, array( 'code' => $code ) );
+			$this->state_store->compare_and_set_record( $record, $excluded );
+			$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
+		} finally {
+			$this->state_store->release_lease( $token );
+		}
+	}
+
+	/**
+	 * Record and report newly observed invalid-filter diagnostics.
+	 *
+	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
+	 * @param string[]            $failures Current reconciliation failures.
+	 * @return array<string,mixed> Current claimed revision after observations are persisted.
+	 */
+	private function record_engineering_error_observations( array $claimed, array $failures ): array {
+		foreach ( array_intersect( self::ENGINEERING_ERROR_CODES, $failures ) as $code ) {
+			$outcome = array(
+				'code'      => 'diagnostic_observed',
+				'condition' => $code,
+			);
+			if ( $this->has_information_outcome( $claimed['informational_outcomes'], $outcome ) ) {
+				continue;
+			}
+
+			$observed = $this->persist_information_outcomes( $claimed, array( $outcome ) );
+			if ( null === $observed ) {
+				continue;
+			}
+
+			$claimed = $observed;
+			$this->log_error( 'WooPayments cutover encountered an invalid preflight filter.', array( 'condition' => $code ) );
+			$this->record_tracks_diagnostic( $code );
+		}
+
+		return $claimed;
+	}
+
+	/**
+	 * Persist informational outcomes while retaining the running lease fence.
+	 *
+	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
+	 * @param array<int,mixed>    $outcomes Outcomes to persist.
+	 * @return array<string,mixed>|null Updated claim, or null when it was fenced.
+	 */
+	private function persist_information_outcomes( array $claimed, array $outcomes ): ?array {
+		$now   = time();
+		$token = $this->state_store->acquire_lease( $now );
+		if ( null === $token ) {
+			return null;
+		}
+
+		try {
+			$record = $this->state_store->get_record();
+			if ( ! is_array( $record ) || $record !== $claimed || WooPaymentsCutoverState::RUNNING !== $record['state'] || $record['lease_expires_at'] <= $now ) {
+				return null;
+			}
+
+			$updated                           = $record;
+			$updated['revision']               = $record['revision'] + 1;
+			$updated['updated_at']             = $now;
+			$updated['informational_outcomes'] = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
+			$updated                           = $this->append_step( $updated, 'observed_diagnostic', $now, array( 'outcomes' => $outcomes ) );
+
+			return $this->state_store->compare_and_set_record( $record, $updated ) ? $updated : null;
+		} finally {
+			$this->state_store->release_lease( $token );
+		}
+	}
+
+	/**
+	 * Reconcile queued legacy actions without canceling native-owned callbacks.
+	 *
+	 * @return array<int,mixed> Informational operational-action outcomes.
+	 */
+	private function disposition_operational_queue(): array {
+		$outcomes = array();
+		foreach ( $this->preflight_service->get_queued_operational_actions() as $action ) {
+			if ( self::ACTION_HOOK === $action['hook'] && self::ACTION_GROUP === $action['group'] ) {
+				continue;
+			}
+			if ( in_array( $action['hook'], self::ADOPTED_OPERATIONAL_QUEUE_HOOKS, true ) ) {
+				$outcomes[] = array(
+					'code' => 'operational_action_adopted',
+					'hook' => $action['hook'],
+				);
+				continue;
+			}
+			if ( ! in_array( $action['hook'], self::LEGACY_SUBSCRIPTION_MIGRATOR_HOOKS, true ) || $action['action_id'] < 1 ) {
+				continue;
+			}
+			$cancelled = $this->cancel_pending_legacy_migrator( $action['action_id'] );
+			if ( true === $cancelled ) {
+				$outcomes[] = array(
+					'code' => 'legacy_migrator_canceled',
+					'hook' => $action['hook'],
+				);
+			} elseif ( null === $cancelled ) {
+				$this->log_error(
+					'WooPayments cutover could not cancel a legacy subscription migrator.',
+					array(
+						'action_id' => $action['action_id'],
+					)
+				);
+			}
+		}
+
+		return $outcomes;
+	}
+
+	/**
+	 * Atomically cancel one unclaimed pending legacy migrator in the custom Action Scheduler table.
+	 *
+	 * @param int $action_id Action Scheduler action ID.
+	 * @return bool|null True when canceled, false when claimed or changed, null on database failure.
+	 */
+	protected function cancel_pending_legacy_migrator( int $action_id ): ?bool {
+		global $wpdb;
+
+		$updated = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$wpdb->actionscheduler_actions} SET status = %s WHERE action_id = %d AND status = %s AND claim_id = %d",
+				\ActionScheduler_Store::STATUS_CANCELED,
+				$action_id,
+				\ActionScheduler_Store::STATUS_PENDING,
+				0
+			)
+		);
+		if ( false === $updated ) {
+			return null;
+		}
+		if ( 1 !== $updated ) {
+			return false;
+		}
+
+		\ActionScheduler::store()->flush_caches();
+		/**
+		 * Fires after reconciliation atomically cancels one pending legacy migrator.
+		 *
+		 * @param int $action_id Action Scheduler action ID.
+		 * @since 11.2.0
+		 */
+		do_action( 'action_scheduler_canceled_action', $action_id );
+		return true;
+	}
+
+	/**
+	 * Update the resolved active WooPayments plugin with WordPress core APIs.
+	 *
+	 * @return bool True only when WordPress reports a completed plugin upgrade.
+	 */
+	private function update_woopayments_plugin(): bool {
+		$plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
+		if ( '' === $plugin_file ) {
+			$this->log_error( 'WooPayments cutover could not resolve the active plugin file for updating.' );
+			return false;
+		}
+
+		try {
+			if ( ! function_exists( 'wp_update_plugins' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/update.php';
+			}
+			if ( ! class_exists( '\Plugin_Upgrader' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+			}
+			if ( ! class_exists( '\Automatic_Upgrader_Skin' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader-skins.php';
+			}
+
+			$switched = $this->switch_to_plugin_update_lock_blog();
+			if ( null === $switched ) {
+				$this->log_error( 'WooPayments cutover could not resolve the network main site for the shared plugin update lock.' );
+				return false;
+			}
+
+			$lock_created = false;
+			try {
+				$lock_created = \WP_Upgrader::create_lock( self::PLUGIN_UPDATE_LOCK_NAME, self::PLUGIN_UPDATE_LOCK_TTL );
+				if ( ! $lock_created ) {
+					$this->log_error( 'WooPayments cutover deferred because another site is updating the shared plugin files.' );
+					return false;
+				}
+
+				$this->refresh_plugin_update_metadata();
+				$result = $this->upgrade_woopayments_plugin_file( $plugin_file );
+				if ( false === $result || null === $result || is_wp_error( $result ) ) {
+					$this->log_error( 'WooPayments cutover plugin update did not complete.', array( 'plugin_file' => $plugin_file ) );
+					return false;
+				}
+				return true;
+			} finally {
+				try {
+					if ( $lock_created ) {
+						\WP_Upgrader::release_lock( self::PLUGIN_UPDATE_LOCK_NAME );
+					}
+				} finally {
+					$this->restore_plugin_update_lock_blog( $switched );
+				}
+			}
+		} catch ( \Throwable $error ) {
+			$this->log_error(
+				'WooPayments cutover plugin update failed.',
+				array(
+					'plugin_file' => $plugin_file,
+					'error'       => $error->getMessage(),
+				)
+			);
+			return false;
+		}
+	}
+
+	/**
+	 * Refresh WordPress plugin update metadata before upgrading WooPayments.
+	 */
+	protected function refresh_plugin_update_metadata(): void {
+		wp_update_plugins();
+	}
+
+	/**
+	 * Upgrade one resolved WooPayments plugin file with WordPress core.
+	 *
+	 * @param string $plugin_file Active WooPayments plugin file.
+	 * @return mixed WordPress upgrader result.
+	 */
+	protected function upgrade_woopayments_plugin_file( string $plugin_file ) {
+		$upgrader = new \Plugin_Upgrader( new \Automatic_Upgrader_Skin() );
+		return $upgrader->upgrade( $plugin_file );
+	}
+
+	/**
+	 * Switch to the current network's main site for unique-option lock operations.
+	 *
+	 * @return bool|null Whether the current blog must be restored afterward, or null when no main site is available.
+	 */
+	private function switch_to_plugin_update_lock_blog(): ?bool {
+		if ( ! is_multisite() ) {
+			return false;
+		}
+
+		$main_site_id = get_main_site_id( get_current_network_id() );
+		if ( $main_site_id < 1 ) {
+			return null;
+		}
+		if ( get_current_blog_id() === $main_site_id ) {
+			return false;
+		}
+
+		switch_to_blog( $main_site_id );
+		return true;
+	}
+
+	/**
+	 * Restore a calling blog after a main-site plugin-lock operation.
+	 *
+	 * @param bool $switched Whether this worker switched to the main site.
+	 */
+	private function restore_plugin_update_lock_blog( bool $switched ): void {
+		if ( $switched ) {
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Log one cutover error with its stable source.
+	 *
+	 * @param string              $message Error message.
+	 * @param array<string,mixed> $context Additional diagnostic context.
+	 */
+	private function log_error( string $message, array $context = array() ): void {
+		$this->write_log_error( $message, array_merge( $context, array( 'source' => self::LOG_SOURCE ) ) );
+	}
+
+	/**
+	 * Write a normalized cutover error to the WooCommerce logger.
+	 *
+	 * @param string              $message Error message.
+	 * @param array<string,mixed> $context Normalized error context.
+	 */
+	protected function write_log_error( string $message, array $context ): void {
+		wc_get_logger()->error( $message, $context );
+	}
+
+	/**
+	 * Emit a best-effort Tracks diagnostic when the recorder is available.
+	 *
+	 * @param string $code Invalid filter condition code.
+	 */
+	protected function record_tracks_diagnostic( string $code ): void {
+		if ( ! class_exists( '\WC_Tracks' ) || ! is_callable( array( '\WC_Tracks', 'record_event' ) ) ) {
+			return;
+		}
+
+		try {
+			\WC_Tracks::record_event( 'woocommerce_woopayments_cutover_diagnostic', array( 'condition' => $code ) );
+		} catch ( \Throwable $error ) {
+			return;
 		}
 	}
 
@@ -434,6 +858,40 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function normalize_codes( array $codes ): array {
 		return array_values( array_unique( array_filter( $codes, 'is_string' ) ) );
+	}
+
+	/**
+	 * Merge informational outcomes without duplicating a persisted observation.
+	 *
+	 * @param array<int,mixed> $existing Existing informational outcomes.
+	 * @param array<int,mixed> $additional Outcomes to append.
+	 * @return array<int,mixed>
+	 */
+	private function merge_information_outcomes( array $existing, array $additional ): array {
+		foreach ( $additional as $outcome ) {
+			if ( ! $this->has_information_outcome( $existing, $outcome ) ) {
+				$existing[] = $outcome;
+			}
+		}
+
+		return $existing;
+	}
+
+	/**
+	 * Tell whether an informational outcome has already been persisted.
+	 *
+	 * @param array<int,mixed> $outcomes Existing informational outcomes.
+	 * @param mixed            $candidate Candidate outcome.
+	 * @return bool
+	 */
+	private function has_information_outcome( array $outcomes, $candidate ): bool {
+		foreach ( $outcomes as $outcome ) {
+			if ( $outcome === $candidate ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
