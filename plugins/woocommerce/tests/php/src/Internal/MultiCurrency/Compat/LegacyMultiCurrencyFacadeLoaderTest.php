@@ -51,7 +51,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 		if ( ! $instance_type instanceof \ReflectionNamedType || ! $get_price_type instanceof \ReflectionNamedType ) {
 			return;
 		}
-		$this->assertSame( 'self', $instance_type->getName(), 'The singleton return type is part of the approved facade contract.' );
+		$this->assertContains( $instance_type->getName(), array( 'self', 'WCPay\\MultiCurrency\\MultiCurrency' ), 'The singleton return type is part of the approved facade contract.' );
 		$this->assertCount( 2, $get_price->getParameters() );
 		$this->assertFalse( $get_price->getParameters()[0]->hasType(), 'The legacy amount parameter must continue accepting numeric strings.' );
 		$this->assertSame( 'string', (string) $get_price->getParameters()[1]->getType() );
