@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
@@ -34,11 +35,18 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** Available admin roots. */
 	private const AVAILABLE_ADMIN = array(
 		self::WCPAY . 'WooPaymentsCutoverController',
+		WooPaymentsCutoverReconciliationJob::class,
+	);
+
+	/** Available cron and Action Scheduler roots. */
+	private const AVAILABLE_CRON = array(
+		WooPaymentsCutoverReconciliationJob::class,
 	);
 
 	/** Connected admin roots. */
 	private const CONNECTED_ADMIN = array(
 		self::WCPAY . 'WooPaymentsCutoverController',
+		WooPaymentsCutoverReconciliationJob::class,
 		self::ADMIN_NAVIGATION,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
@@ -98,6 +106,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Connected cron and Action Scheduler roots. */
 	private const CONNECTED_CRON = array(
+		WooPaymentsCutoverReconciliationJob::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
@@ -143,6 +152,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsCutoverController',
+		WooPaymentsCutoverReconciliationJob::class,
 		self::ADMIN_NAVIGATION,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
@@ -228,6 +238,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
+		WooPaymentsCutoverReconciliationJob::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
@@ -309,6 +320,20 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverNormalizationRunner::class, $active_roots['cron'][0], 'Cron cutover normalization must run before bounded native consumers.' );
 	}
 
+	/** @testdox Cutover reconciliation is registered only on admin and cron roots in every available native tier. */
+	public function test_provider_matrix_bounds_cutover_reconciliation_to_admin_and_cron_roots(): void {
+		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
+
+		foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+			$this->assertContains( WooPaymentsCutoverReconciliationJob::class, $matrix[ $state ]['admin'], $state . ' admin requests must register cutover reconciliation.' );
+			$this->assertContains( WooPaymentsCutoverReconciliationJob::class, $matrix[ $state ]['cron'], $state . ' cron requests must register cutover reconciliation.' );
+
+			foreach ( array( 'front', 'ajax', 'rest' ) as $request_type ) {
+				$this->assertNotContains( WooPaymentsCutoverReconciliationJob::class, $matrix[ $state ][ $request_type ] ?? array(), $state . ' ' . $request_type . ' requests must not pay cutover reconciliation cost.' );
+			}
+		}
+	}
+
 	/** @testdox Should resolve and register each explicit connected REST root once in order. */
 	public function test_register_resolves_connected_rest_roots_once_in_order(): void {
 		$container = $this->make_container( NativePaymentsState::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
@@ -336,6 +361,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			'disabled'        => array( NativePaymentsState::DISABLED, 'admin', array() ),
 			'available no-op' => array( NativePaymentsState::AVAILABLE, 'front', array() ),
 			'available admin' => array( NativePaymentsState::AVAILABLE, 'admin', self::AVAILABLE_ADMIN ),
+			'available cron'  => array( NativePaymentsState::AVAILABLE, 'cron', self::AVAILABLE_CRON ),
 			'connected no-op' => array( NativePaymentsState::CONNECTED, 'front', array() ),
 			'connected admin' => array( NativePaymentsState::CONNECTED, 'admin', self::CONNECTED_ADMIN ),
 			'connected AJAX'  => array( NativePaymentsState::CONNECTED, 'ajax', self::CONNECTED_AJAX ),

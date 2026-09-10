@@ -115,6 +115,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	public static function get_bootstrap_root_matrix(): array {
 		$connected_admin           = array(
 			WooPaymentsCutoverController::class,
+			WooPaymentsCutoverReconciliationJob::class,
 			WooPaymentsAdminNavigationController::class,
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
@@ -168,6 +169,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsOperationalQueueService::class,
 		);
 		$connected_cron            = array(
+			WooPaymentsCutoverReconciliationJob::class,
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
 			WooPaymentsOperationalQueueService::class,
@@ -189,7 +191,8 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 
 		return array(
 			NativePaymentsState::AVAILABLE => array(
-				'admin' => array( WooPaymentsCutoverController::class ),
+				'admin' => array( WooPaymentsCutoverController::class, WooPaymentsCutoverReconciliationJob::class ),
+				'cron'  => array( WooPaymentsCutoverReconciliationJob::class ),
 			),
 			NativePaymentsState::CONNECTED => array(
 				'admin' => $connected_admin,
