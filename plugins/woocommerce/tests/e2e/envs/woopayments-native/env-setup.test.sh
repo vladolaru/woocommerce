@@ -179,6 +179,9 @@ fi
 if ! grep -F "$CLIENT_STORE	" "$CLIENT_COMMAND_LOG" | grep -Fq 'wp_insert_user'; then
 	fail 'Provider readiness must establish the shared shopper account.'
 fi
+if ! grep -F "$CLIENT_STORE	" "$CLIENT_COMMAND_LOG" | grep -Fq 'update_option( "woocommerce_coming_soon", "no" )'; then
+	fail 'Provider readiness must make the store reachable to its shared shopper.'
+fi
 if ! grep -Fq 'created' "$TEST_ROOT/client-diagnostics/client/customer.txt"; then
 	fail 'Provider readiness must record the shopper fixture outcome.'
 fi
