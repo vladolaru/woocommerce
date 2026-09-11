@@ -24,6 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPl
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
+use WC_Payment_Token_CC;
 
 /**
  * Tests for the WooPayments native cutover controller.
@@ -227,6 +228,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private array $scheduled_action_hooks = array();
 
 	/**
+	 * Arguments passed to the most recent wp_die call.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $wp_die_arguments = array();
+
+	/**
 	 * Multisite blogs created by tests.
 	 *
 	 * @var int[]
@@ -348,6 +356,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		remove_all_filters( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED );
 		remove_all_filters( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES );
 		remove_all_filters( 'wp_die_handler' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		if ( $this->registered_subscription_order_type ) {
 			global $wc_order_types;
 			unset( $wc_order_types['shop_subscription'] );
@@ -636,7 +645,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				return true;
 			}
 
-			/** Return whether lifecycle work is job-owned. */
+			/**
+			 * Return whether lifecycle work is job-owned.
+			 *
+			 * @return bool
+			 */
 			public function is_internal_plugin_lifecycle_change(): bool {
 				return false;
 			}
@@ -659,17 +672,143 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Mandatory activation guard blocks WooPayments reactivation when mandatory cutover is enabled.
+	 * @testdox Mandatory cutover allows WooPayments reactivation when plugin-era evidence exists.
 	 */
-	public function test_mandatory_activation_guard_blocks_reactivation_when_enabled(): void {
-		$this->fake_wp_die_handler();
+	public function test_mandatory_activation_guard_allows_reactivation_when_plugin_evidence_exists(): void {
 		$this->enable_ready_cutover();
 		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
 		$controller = $this->create_cutover_controller( null, $this->create_completed_cutover_job() );
 
-		$this->expectException( WooPaymentsCutoverBlockedException::class );
-
 		$controller->guard_woopayments_activation();
+
+		$this->assertTrue( true, 'A completed mandatory cutover must still permit a rollback when the store has WooPayments plugin evidence.' );
+	}
+
+	/**
+	 * @testdox Native WooPayments should block a first-time standalone plugin activation.
+	 */
+	public function test_native_activation_guard_blocks_a_store_without_woopayments_plugin_evidence(): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		$this->enable_native_runtime_owner();
+		$this->fake_wp_die_handler();
+
+		try {
+			$this->sut->guard_woopayments_activation();
+			$this->fail( 'The native owner should block a first-time WooPayments plugin activation.' );
+		} catch ( WooPaymentsCutoverBlockedException $exception ) {
+			$this->assertSame( 'WooPayments is already available in WooCommerce. Set up WooPayments in Payments settings instead.', $exception->getMessage() );
+		}
+
+		$this->assertStringContainsString( 'page=wc-settings', $this->wp_die_arguments['link_url'] );
+		$this->assertStringContainsString( 'tab=checkout', $this->wp_die_arguments['link_url'] );
+		$this->assertStringNotContainsString( 'plugins.php', $this->wp_die_arguments['link_url'] );
+	}
+
+	/** @testdox Native WooPayments should allow plugin reactivation after a recorded version. */
+	public function test_native_activation_guard_allows_a_store_with_a_woopayments_plugin_version(): void {
+		$this->enable_native_runtime_owner();
+
+		$this->sut->guard_woopayments_activation();
+
+		$this->assertTrue( true );
+	}
+
+	/**
+	 * @testdox Native WooPayments should allow plugin reactivation after canonical or prefixed WooPayments orders.
+	 *
+	 * @dataProvider data_provider_woopayments_gateway_ids
+	 *
+	 * @param string $gateway_id WooPayments gateway identity.
+	 */
+	public function test_native_activation_guard_allows_a_store_with_a_woopayments_order( string $gateway_id ): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		$order = wc_create_order();
+		$order->set_payment_method( $gateway_id );
+		$order->save();
+		$this->enable_native_runtime_owner();
+
+		$this->sut->guard_woopayments_activation();
+
+		$this->assertTrue( true );
+	}
+
+	/**
+	 * @testdox Native WooPayments should allow plugin reactivation after canonical or prefixed WooPayments tokens.
+	 *
+	 * @dataProvider data_provider_woopayments_gateway_ids
+	 *
+	 * @param string $gateway_id WooPayments gateway identity.
+	 */
+	public function test_native_activation_guard_allows_a_store_with_a_woopayments_token( string $gateway_id ): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		$token = $this->create_woopayments_token( $gateway_id );
+		$this->enable_native_runtime_owner();
+
+		try {
+			$this->sut->guard_woopayments_activation();
+			$this->assertTrue( true );
+		} finally {
+			$token->delete( true );
+		}
+	}
+
+	/** @testdox Plugin activation remains available while native WooPayments does not own the runtime. */
+	public function test_native_activation_guard_allows_plugin_activation_when_native_does_not_own_the_runtime(): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+
+		$this->sut->guard_woopayments_activation();
+
+		$this->assertTrue( true );
+	}
+
+	/** @testdox Internal lifecycle changes bypass the native activation guard. */
+	public function test_native_activation_guard_allows_internal_plugin_lifecycle_changes(): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		$this->enable_native_runtime_owner();
+		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @return array<string,mixed>|null */
+			public function get_state_record(): ?array {
+				return null;
+			}
+
+			/**
+			 * Return whether lifecycle work is job-owned.
+			 *
+			 * @return bool
+			 */
+			public function is_internal_plugin_lifecycle_change(): bool {
+				return true;
+			}
+		};
+
+		$this->create_cutover_controller( null, $job )->guard_woopayments_activation();
+
+		$this->assertTrue( true );
+	}
+
+	/** @testdox Merged feature development bypasses the native activation guard. */
+	public function test_native_activation_guard_allows_merged_feature_development(): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		$this->enable_native_runtime_owner();
+		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+
+		$this->sut->guard_woopayments_activation();
+
+		$this->assertTrue( true );
+	}
+
+	/**
+	 * WooPayments gateway identities that permit a standalone plugin rollback.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function data_provider_woopayments_gateway_ids(): array {
+		return array(
+			'canonical gateway ID' => array( 'woocommerce_payments' ),
+			'prefixed gateway ID'  => array( 'woocommerce_payments_card' ),
+		);
 	}
 
 	/**
@@ -721,27 +860,17 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Mandatory cutover rollout filter receives the fail-closed default and can enable mandatory cutover.
+	 * @testdox A completed mandatory cutover blocks a first-time plugin activation.
 	 */
-	public function test_mandatory_cutover_rollout_filter_receives_default_and_can_enable(): void {
+	public function test_mandatory_completed_cutover_blocks_a_first_time_plugin_activation(): void {
 		$this->fake_wp_die_handler();
 		$this->enable_ready_cutover();
-		$observed_default = null;
-		add_filter(
-			WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED,
-			static function ( bool $enabled ) use ( &$observed_default ): bool {
-				$observed_default = $enabled;
-				return true;
-			}
-		);
+		delete_option( 'woocommerce_woocommerce_payments_version' );
 		$controller = $this->create_cutover_controller( null, $this->create_completed_cutover_job() );
 
 		$this->expectException( WooPaymentsCutoverBlockedException::class );
-		try {
-			$controller->guard_woopayments_activation();
-		} finally {
-			$this->assertSame( WooPaymentsCutoverController::DEFAULT_MANDATORY_CUTOVER_ENABLED, $observed_default, 'The mandatory cutover filter should receive the explicit default value.' );
-		}
+
+		$controller->guard_woopayments_activation();
 	}
 
 	/**
@@ -899,6 +1028,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$provider_event_filter_calls    = 0;
 		$operational_queue_filter_calls = 0;
 		$preflight_filter_calls         = 0;
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		add_filter(
 			WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER,
 			static function () use ( &$provider_event_filter_calls ): array {
@@ -1555,6 +1686,34 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Make the native runtime own the current site.
+	 */
+	private function enable_native_runtime_owner(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+	}
+
+	/**
+	 * Create a saved WooPayments card token.
+	 *
+	 * @param string $gateway_id WooPayments gateway identity.
+	 * @return WC_Payment_Token_CC
+	 */
+	private function create_woopayments_token( string $gateway_id ): WC_Payment_Token_CC {
+		$token = new WC_Payment_Token_CC();
+		$token->set_gateway_id( $gateway_id );
+		$token->set_user_id( self::factory()->user->create() );
+		$token->set_token( 'pm_native_activation_guard' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->save();
+
+		return $token;
+	}
+
+	/**
 	 * Create two sites with the minimum supported cutover version.
 	 *
 	 * @return int[] Current-network site IDs in preflight order.
@@ -1856,8 +2015,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private function fake_wp_die_handler(): void {
 		add_filter(
 			'wp_die_handler',
-			static function () {
-				return static function ( $message = '' ): void {
+			function () {
+				return function ( $message = '', $title = '', $arguments = array() ): void {
+					unset( $title );
+					$this->wp_die_arguments = is_array( $arguments ) ? $arguments : array();
 					throw new WooPaymentsCutoverBlockedException( esc_html( wp_strip_all_tags( (string) $message ) ) );
 				};
 			}

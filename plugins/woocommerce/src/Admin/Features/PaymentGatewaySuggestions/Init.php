@@ -7,6 +7,7 @@ namespace Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions;
 
 defined( 'ABSPATH' ) || exit;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Admin\RemoteSpecs\RemoteSpecsEngine;
 
 /**
@@ -97,6 +98,10 @@ class Init extends RemoteSpecsEngine {
 	 * @return array Normalized suggestions.
 	 */
 	private static function normalize_native_woopayments_suggestions( array $suggestions ): array {
+		if ( Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
+			return $suggestions;
+		}
+
 		foreach ( $suggestions as $suggestion ) {
 			if ( ! is_object( $suggestion ) || empty( $suggestion->id ) ) {
 				continue;

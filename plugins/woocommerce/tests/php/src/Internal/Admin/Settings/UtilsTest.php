@@ -3,6 +3,9 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings;
 
+use Automattic\Jetpack\Connection\Manager;
+use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use WC_Unit_Test_Case;
 use WP_Locale;
@@ -1818,5 +1821,78 @@ class UtilsTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'admin.php?page=wc-admin', $url );
 		$this->assertStringContainsString( 'path=/payments/transactions/details', $url );
 		$this->assertStringContainsString( 'id=pi_123', $url );
+	}
+
+	/**
+	 * @testdox Native WooPayments authorization should identify WooCommerce core.
+	 */
+	public function test_wpcom_connection_authorization_uses_the_core_identity_for_native_woopayments(): void {
+		$this->replace_jetpack_connection_manager();
+
+		try {
+			$this->assertSame( 'woocommerce', $this->get_authorization_plugin_name() );
+		} finally {
+			$this->restore_jetpack_connection_manager();
+		}
+	}
+
+	/**
+	 * @testdox Merged feature development should preserve the WooPayments plugin authorization identity.
+	 */
+	public function test_wpcom_connection_authorization_preserves_the_plugin_identity_for_merged_feature_development(): void {
+		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+		$this->replace_jetpack_connection_manager();
+
+		try {
+			$this->assertSame( 'woocommerce-payments', $this->get_authorization_plugin_name() );
+		} finally {
+			$this->restore_jetpack_connection_manager();
+			Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
+		}
+	}
+
+	/**
+	 * Previous Jetpack connection manager instance.
+	 *
+	 * @var Manager|null
+	 */
+	private $previous_jetpack_connection_manager;
+
+	/**
+	 * Use a connected Jetpack manager double so authorization URL tests have no network side effects.
+	 */
+	private function replace_jetpack_connection_manager(): void {
+		$manager = $this->getMockBuilder( Manager::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_connected', 'get_authorization_url' ) )
+			->getMock();
+		$manager->method( 'is_connected' )->willReturn( true );
+		$manager->method( 'get_authorization_url' )->willReturn( 'https://example.test/authorize' );
+
+		$property                                  = new \ReflectionProperty( JetpackConnection::class, 'manager' );
+		$this->previous_jetpack_connection_manager = $property->getValue();
+		$property->setValue( null, $manager );
+	}
+
+	/**
+	 * Restore the Jetpack manager used before the test.
+	 */
+	private function restore_jetpack_connection_manager(): void {
+		$property = new \ReflectionProperty( JetpackConnection::class, 'manager' );
+		$property->setValue( null, $this->previous_jetpack_connection_manager );
+	}
+
+	/**
+	 * Get the identity used by the authorization URL.
+	 *
+	 * @return string
+	 */
+	private function get_authorization_plugin_name(): string {
+		$authorization = Utils::get_wpcom_connection_authorization( 'https://example.test/return' );
+		$query         = wp_parse_url( $authorization['url'], PHP_URL_QUERY );
+		$args          = array();
+		wp_parse_str( (string) $query, $args );
+
+		return $args['plugin_name'];
 	}
 }

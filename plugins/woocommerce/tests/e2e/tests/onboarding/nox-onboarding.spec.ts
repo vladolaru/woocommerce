@@ -18,11 +18,6 @@ const WOO_PAYMENTS_PROVIDER = {
 	description:
 		'Accept credit cards and other payment methods with WooPayments.',
 	icon: '',
-	plugin: {
-		slug: 'woocommerce-payments',
-		file: 'woocommerce-payments/woocommerce-payments.php',
-		status: 'active',
-	},
 	supports: [],
 	management: {
 		_links: {
@@ -187,6 +182,8 @@ test.describe(
 		test( 'can start in-context onboarding from Payments settings', async ( {
 			page,
 		} ) => {
+			expect( WOO_PAYMENTS_PROVIDER ).not.toHaveProperty( 'plugin' );
+
 			const consoleErrors: string[] = [];
 			page.on( 'console', ( message ) => {
 				if ( message.type() === 'error' ) {
@@ -202,9 +199,17 @@ test.describe(
 				page.getByText( 'Payment providers', { exact: true } )
 			).toBeVisible( { timeout: 30000 } );
 
-			await page
+			const wooPaymentsProvider = page
 				.locator( '.woocommerce-list__item' )
-				.filter( { hasText: 'WooPayments' } )
+				.filter( { hasText: 'WooPayments' } );
+
+			await expect(
+				wooPaymentsProvider.getByRole( 'button', {
+					name: /^Install WooPayments$/,
+				} )
+			).toHaveCount( 0 );
+
+			await wooPaymentsProvider
 				.getByRole( 'button', { name: 'Complete setup' } )
 				.click();
 

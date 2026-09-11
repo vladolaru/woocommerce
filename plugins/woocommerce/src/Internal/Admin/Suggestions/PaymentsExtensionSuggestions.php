@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Internal\Admin\Suggestions;
 
 defined( 'ABSPATH' ) || exit;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Onboarding\OnboardingProfile;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
@@ -4454,7 +4455,9 @@ class PaymentsExtensionSuggestions {
 		$standardized['id']        = $extension_details['id'];
 		$standardized['_priority'] = $extension_details['_priority'];
 		$standardized['_type']     = $extension_details['_type'];
-		$standardized['plugin']    = $extension_details['plugin'];
+		if ( isset( $extension_details['plugin'] ) && ( self::WOOPAYMENTS !== $extension_details['id'] || Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) ) {
+			$standardized['plugin'] = $extension_details['plugin'];
+		}
 
 		// Optional fields.
 		$standardized['title']       = $extension_details['title'] ?? '';

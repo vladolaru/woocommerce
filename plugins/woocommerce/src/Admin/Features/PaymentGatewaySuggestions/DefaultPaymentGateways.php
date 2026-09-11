@@ -7,6 +7,7 @@ namespace Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions;
 
 defined( 'ABSPATH' ) || exit;
 
+use Automattic\Jetpack\Constants;
 use WC_Gateway_BACS;
 use WC_Gateway_COD;
 
@@ -948,6 +949,15 @@ class DefaultPaymentGateways {
 			$payment_gateways[ $index ]['recommendation_priority'] = self::get_recommendation_priority( $payment_gateway['id'], $country );
 		}
 
+		if ( Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
+			foreach ( $payment_gateways as &$payment_gateway ) {
+				if ( 0 === strpos( $payment_gateway['id'], 'woocommerce_payments' ) ) {
+					$payment_gateway['plugins'] = array( 'woocommerce-payments' );
+				}
+			}
+			unset( $payment_gateway );
+		}
+
 		return $payment_gateways;
 	}
 
@@ -1070,17 +1080,27 @@ class DefaultPaymentGateways {
 	}
 
 	/**
-	 * Get default rules for the WooPayments plugin being installed and activated.
+	 * Get default rules for WooPayments being active.
 	 *
 	 * @param bool $should_be Whether WooPayments should be activated.
 	 *
 	 * @return object Rules to match.
 	 */
 	public static function get_rules_for_wcpay_activated( $should_be ) {
-		$active_rule = (object) array(
-			'type'    => 'plugins_activated',
-			'plugins' => array( 'woocommerce-payments' ),
-		);
+		if ( Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
+			$active_rule = (object) array(
+				'type'    => 'plugins_activated',
+				'plugins' => array( 'woocommerce-payments' ),
+			);
+		} else {
+			$active_rule = (object) array(
+				'type'        => 'option',
+				'option_name' => 'woocommerce_native_payments_enabled',
+				'operation'   => '=',
+				'value'       => 'yes',
+				'default'     => 'no',
+			);
+		}
 
 		if ( $should_be ) {
 			return $active_rule;

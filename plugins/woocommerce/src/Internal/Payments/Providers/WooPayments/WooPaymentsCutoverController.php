@@ -9,9 +9,12 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
+use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -132,6 +135,12 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @var string
 	 */
 	public const STATUS_BLOCKED = 'blocked';
+
+	/** WooPayments' canonical payment gateway identity. */
+	private const WOOPAYMENTS_GATEWAY_ID = 'woocommerce_payments';
+
+	/** Prefix used by WooPayments payment-method variants. */
+	private const WOOPAYMENTS_GATEWAY_PREFIX = 'woocommerce_payments_';
 
 	/**
 	 * Runtime owner arbiter.
@@ -292,29 +301,99 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Guard WooPayments activation once mandatory native cutover is enabled.
+	 * Guard WooPayments activation after mandatory cutover or on a fresh native-owned store.
 	 *
 	 * @internal
 	 */
 	public function guard_woopayments_activation(): void {
-		$record = $this->reconciliation_job->get_state_record();
-		if (
-			$this->reconciliation_job->is_internal_plugin_lifecycle_change() ||
-			! $this->is_mandatory_cutover_enabled() ||
-			! is_array( $record ) || WooPaymentsCutoverState::DONE !== $record['state'] ||
-			Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' )
-		) {
+		if ( $this->reconciliation_job->is_internal_plugin_lifecycle_change() || Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
+			return;
+		}
+
+		if ( ! $this->arbiter->should_native_register() || $this->store_has_woopayments_plugin_evidence() ) {
 			return;
 		}
 
 		wp_die(
-			esc_html__( 'WooPayments cannot be activated because its functionality is now included in WooCommerce core.', 'woocommerce' ),
+			esc_html__( 'WooPayments is already available in WooCommerce. Set up WooPayments in Payments settings instead.', 'woocommerce' ),
 			esc_html__( 'Plugin activation error', 'woocommerce' ),
 			array(
-				'link_url'  => esc_url( admin_url( 'plugins.php' ) ),
-				'link_text' => esc_html__( 'Return to the Plugins page', 'woocommerce' ),
+				'link_url'  => esc_url( Utils::wc_payments_settings_url() ),
+				'link_text' => esc_html__( 'Go to Payments settings', 'woocommerce' ),
 			)
 		);
+	}
+
+	/**
+	 * Tell whether the store has evidence that WooPayments was previously installed.
+	 *
+	 * @return bool
+	 */
+	private function store_has_woopayments_plugin_evidence(): bool {
+		if ( false !== get_option( 'woocommerce_woocommerce_payments_version', false ) ) {
+			return true;
+		}
+
+		return $this->store_has_woopayments_order() || $this->store_has_woopayments_token();
+	}
+
+	/**
+	 * Tell whether the store contains a WooPayments order without loading a collection.
+	 *
+	 * @return bool
+	 */
+	private function store_has_woopayments_order(): bool {
+		$canonical_order_ids = wc_get_orders(
+			array(
+				'payment_method' => self::WOOPAYMENTS_GATEWAY_ID,
+				'limit'          => 1,
+				'return'         => 'ids',
+			)
+		);
+		if ( ! empty( $canonical_order_ids ) ) {
+			return true;
+		}
+
+		global $wpdb;
+		$gateway_prefix = $wpdb->esc_like( self::WOOPAYMENTS_GATEWAY_PREFIX ) . '%';
+
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$table_name = OrdersTableDataStore::get_orders_table_name();
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name is a trusted WooCommerce table name.
+			$query = $wpdb->prepare(
+				"SELECT id FROM {$table_name} WHERE payment_method LIKE %s LIMIT 1",
+				$gateway_prefix
+			);
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		} else {
+			$query = $wpdb->prepare(
+				"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value LIKE %s LIMIT 1",
+				'_payment_method',
+				$gateway_prefix
+			);
+		}
+
+		return null !== $wpdb->get_var( $query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $query is prepared immediately above with trusted table identifiers.
+	}
+
+	/**
+	 * Tell whether the store contains a WooPayments payment token without loading a collection.
+	 *
+	 * @return bool
+	 */
+	private function store_has_woopayments_token(): bool {
+		global $wpdb;
+		$gateway_prefix = $wpdb->esc_like( self::WOOPAYMENTS_GATEWAY_PREFIX ) . '%';
+		$table_name     = $wpdb->prefix . 'woocommerce_payment_tokens';
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name is a trusted WordPress table name.
+		$query = $wpdb->prepare(
+			"SELECT token_id FROM {$table_name} WHERE gateway_id = %s OR gateway_id LIKE %s LIMIT 1",
+			self::WOOPAYMENTS_GATEWAY_ID,
+			$gateway_prefix
+		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		return null !== $wpdb->get_var( $query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $query is prepared immediately above with a trusted table identifier.
 	}
 
 	/**

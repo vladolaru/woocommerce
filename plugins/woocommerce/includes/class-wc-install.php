@@ -1283,6 +1283,8 @@ class WC_Install {
 		add_option( 'woocommerce_demo_store', 'no', '', 'no' );
 
 		if ( self::is_new_install() ) {
+			add_option( 'woocommerce_native_payments_enabled', 'yes', '', true );
+
 			// Define initial tax classes.
 			WC_Tax::create_tax_class( __( 'Reduced rate', 'woocommerce' ) );
 			WC_Tax::create_tax_class( __( 'Zero rate', 'woocommerce' ) );

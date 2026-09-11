@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Internal\Admin\Settings;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use WP_REST_Request;
 
@@ -485,8 +486,8 @@ class Utils {
 				array(
 					// We use the new WooDNA value.
 					'from'         => 'woocommerce-onboarding',
-					// We inform Calypso that this is a WooPayments onboarding flow.
-					'plugin_name'  => 'woocommerce-payments',
+					// Native WooPayments onboarding belongs to WooCommerce core; retain the plugin identity for merged-feature development.
+					'plugin_name'  => Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ? 'woocommerce-payments' : 'woocommerce',
 					// Use the current user's WP admin color scheme.
 					'color_scheme' => $result['color_scheme'],
 				),
