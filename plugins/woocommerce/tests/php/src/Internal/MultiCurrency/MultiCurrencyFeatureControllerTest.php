@@ -223,13 +223,23 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		update_option( 'wcpay_multi_currency_stored_customer_currencies', array( 12 => 'EUR' ) );
-		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, array( 'data' => array( 'currencies' => array( 'EUR' => '0.9' ) ), 'fetched' => time(), 'errored' => false ) );
+		$cached_currencies = array(
+			'data'    => array( 'currencies' => array( 'EUR' => '0.9' ), 'updated' => 1234567890 ),
+			'fetched' => 1234567890,
+			'errored' => false,
+		);
+		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $cached_currencies );
 		update_user_meta( $user_id, MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY, 'EUR' );
 		update_option( 'wcpay_multi_currency_store_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'automatic' );
 		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
 		update_option( 'wcpay_multi_currency_price_rounding_eur', '0.01' );
 		update_option( 'wcpay_multi_currency_price_charm_eur', '0.99' );
+		update_option( 'wcpay_multi_currency_show_store_currency_changed_notice', 'yes' );
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'no' );
+		update_option( 'wcpay_multi_currency_rendering_mode', 'preview' );
+		update_option( 'wcpay_multi_currency_setup_completed', 'yes' );
 		$order = wc_create_order();
 		$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.9' );
 		$order->save();
@@ -245,13 +255,18 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 		$this->assertSame( array( 'EUR' ), get_option( 'wcpay_multi_currency_enabled_currencies' ) );
 		$this->assertSame( array( 12 => 'EUR' ), get_option( 'wcpay_multi_currency_stored_customer_currencies' ) );
-		$this->assertSame( array( 'data' => array( 'currencies' => array( 'EUR' => '0.9' ) ), 'fetched' => get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY )['fetched'], 'errored' => false ), get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+		$this->assertSame( $cached_currencies, get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
 		$this->assertSame( 'EUR', get_user_meta( $user_id, MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY, true ) );
 		$this->assertSame( 'USD', get_option( 'wcpay_multi_currency_store_currency' ) );
 		$this->assertSame( 'automatic', get_option( 'wcpay_multi_currency_exchange_rate_eur' ) );
 		$this->assertSame( '0.9', get_option( 'wcpay_multi_currency_manual_rate_eur' ) );
 		$this->assertSame( '0.01', get_option( 'wcpay_multi_currency_price_rounding_eur' ) );
 		$this->assertSame( '0.99', get_option( 'wcpay_multi_currency_price_charm_eur' ) );
+		$this->assertSame( 'yes', get_option( 'wcpay_multi_currency_show_store_currency_changed_notice' ) );
+		$this->assertSame( 'yes', get_option( 'wcpay_multi_currency_enable_auto_currency' ) );
+		$this->assertSame( 'no', get_option( 'wcpay_multi_currency_enable_storefront_switcher' ) );
+		$this->assertSame( 'preview', get_option( 'wcpay_multi_currency_rendering_mode' ) );
+		$this->assertSame( 'yes', get_option( 'wcpay_multi_currency_setup_completed' ) );
 		$this->assertSame( '0.9', $order->get_meta( '_wcpay_multi_currency_order_exchange_rate', true ) );
 	}
 
