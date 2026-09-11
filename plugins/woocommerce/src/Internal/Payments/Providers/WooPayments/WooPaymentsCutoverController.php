@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -115,29 +116,18 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 */
 	public const QUERY_ACTION = 'wc_woopayments_cutover_action';
 
-	/**
-	 * Query parameter that carries the cutover status notice.
-	 *
-	 * @var string
-	 */
+	/** Legacy query parameter retained for URL compatibility. */
 	public const QUERY_STATUS = 'wc_woopayments_cutover_status';
 
 	/**
-	 * Transient that carries a one-time mandatory cutover status across plugin deactivation redirects.
-	 *
-	 * @var string
-	 */
-	private const NOTICE_STATUS_TRANSIENT = 'woocommerce_woopayments_native_cutover_status';
-
-	/**
-	 * Status value for a successful plugin disable.
+	 * Legacy status value retained for URL compatibility.
 	 *
 	 * @var string
 	 */
 	public const STATUS_DISABLED = 'disabled';
 
 	/**
-	 * Status value for a blocked plugin disable.
+	 * Legacy blocked value retained for URL compatibility.
 	 *
 	 * @var string
 	 */
@@ -149,13 +139,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @var NativePaymentsRuntimeArbiter
 	 */
 	private NativePaymentsRuntimeArbiter $arbiter;
-
-	/**
-	 * Cutover status produced during the current request.
-	 *
-	 * @var string
-	 */
-	private string $current_request_status = '';
 
 	/**
 	 * Legacy proxy.
@@ -172,22 +155,32 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private WooPaymentsCutoverPreflightService $preflight_service;
 
 	/**
+	 * Durable reconciliation workflow.
+	 *
+	 * @var WooPaymentsCutoverReconciliationJob
+	 */
+	private WooPaymentsCutoverReconciliationJob $reconciliation_job;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter       $arbiter          Runtime owner arbiter.
-	 * @param LegacyProxy                        $legacy_proxy     Legacy proxy.
-	 * @param WooPaymentsCutoverPreflightService $preflight_service Headless cutover facts.
+	 * @param NativePaymentsRuntimeArbiter        $arbiter          Runtime owner arbiter.
+	 * @param LegacyProxy                         $legacy_proxy     Legacy proxy.
+	 * @param WooPaymentsCutoverPreflightService  $preflight_service Headless cutover facts.
+	 * @param WooPaymentsCutoverReconciliationJob $reconciliation_job Durable reconciliation workflow.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
 		LegacyProxy $legacy_proxy,
-		WooPaymentsCutoverPreflightService $preflight_service
+		WooPaymentsCutoverPreflightService $preflight_service,
+		WooPaymentsCutoverReconciliationJob $reconciliation_job
 	): void {
-		$this->arbiter           = $arbiter;
-		$this->legacy_proxy      = $legacy_proxy;
-		$this->preflight_service = $preflight_service;
+		$this->arbiter            = $arbiter;
+		$this->legacy_proxy       = $legacy_proxy;
+		$this->preflight_service  = $preflight_service;
+		$this->reconciliation_job = $reconciliation_job;
 	}
 
 	/**
@@ -196,7 +189,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public function register() {
 		add_action( 'admin_init', array( $this, 'handle_admin_init' ) );
 		add_action( 'admin_notices', array( $this, 'output_admin_notices' ) );
-		add_action( 'activate_plugin', array( $this, 'guard_woopayments_activation' ) );
+		add_action( 'activate_' . NativePaymentsRuntimeArbiter::PLUGIN_FILE, array( $this, 'guard_woopayments_activation' ) );
+		add_action( 'activated_plugin', array( $this, 'handle_plugin_activated' ), 10, 2 );
+		add_action( 'deactivated_plugin', array( $this, 'handle_plugin_deactivated' ), 10, 2 );
 	}
 
 	/**
@@ -217,15 +212,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			wp_die( esc_html__( 'Action failed. Please refresh the page and retry.', 'woocommerce' ) );
 		}
 
-		$status = $this->disable_woopayments_plugin() ? self::STATUS_DISABLED : self::STATUS_BLOCKED;
-		$url    = add_query_arg(
-			array(
-				self::QUERY_STATUS => $status,
-			),
-			admin_url( 'plugins.php' )
-		);
-
-		wp_safe_redirect( $url );
+		$this->disable_woopayments_plugin();
+		wp_safe_redirect( admin_url( 'plugins.php' ) );
 		$this->legacy_proxy->exit();
 	}
 
@@ -235,39 +223,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function output_admin_notices(): void {
-		$status                       = $this->current_request_status;
-		$is_current_request_status    = '' !== $status;
-		$this->current_request_status = '';
-
-		if ( '' === $status ) {
-			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reads post-redirect status only; no state change is performed here.
-			$status = isset( $_GET[ self::QUERY_STATUS ] ) ? sanitize_key( wp_unslash( $_GET[ self::QUERY_STATUS ] ) ) : '';
-		}
-
-		if ( '' === $status ) {
-			$status = $this->consume_stored_notice_status();
-		}
-
-		if ( self::STATUS_DISABLED === $status && ! $is_current_request_status && $this->arbiter->is_plugin_runtime_active() ) {
-			$status = self::STATUS_BLOCKED;
-		}
-
-		if ( self::STATUS_DISABLED === $status ) {
-			if ( $is_current_request_status ) {
-				$this->delete_stored_notice_status();
-			}
-			$this->output_success_notice();
-			return;
-		}
-
-		if ( self::STATUS_BLOCKED === $status ) {
-			$this->output_blocked_notice();
-			return;
-		}
-
-		if ( $this->should_show_soft_cutover_notice() ) {
-			$this->output_soft_cutover_notice();
-		}
+		$this->output_reconciliation_notice();
 	}
 
 	/**
@@ -276,46 +232,76 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function should_show_soft_cutover_notice(): bool {
-		return $this->is_soft_cutover_enabled()
-			&& $this->arbiter->is_plugin_runtime_active()
-			&& $this->current_user_can_cutover()
-			&& $this->is_cutover_ready();
-	}
-
-	/**
-	 * Disable the standalone WooPayments plugin when all cutover guards pass.
-	 *
-	 * @return bool True when the plugin no longer owns the runtime.
-	 */
-	public function disable_woopayments_plugin(): bool {
-		if ( ! $this->arbiter->is_plugin_runtime_active() || ! $this->current_user_can_cutover() || ! $this->is_cutover_ready() ) {
+		if ( ! $this->is_start_eligible() ) {
 			return false;
 		}
-
-		return $this->deactivate_woopayments_plugin();
+		$this->reconciliation_job->classify_for_admin_notice();
+		return $this->reconciliation_job->should_offer_start();
 	}
 
 	/**
-	 * Deactivate the standalone WooPayments plugin.
+	 * Queue merchant-requested WooPayments reconciliation when the request is eligible.
 	 *
-	 * @return bool True when the plugin no longer owns the runtime.
+	 * @return bool True when reconciliation was queued.
 	 */
-	private function deactivate_woopayments_plugin(): bool {
-		return $this->preflight_service->deactivate_woopayments_plugin();
+	public function disable_woopayments_plugin(): bool {
+		if ( ! $this->arbiter->is_plugin_runtime_active() || ! $this->current_user_can_cutover() ) {
+			return false;
+		}
+		return $this->reconciliation_job->enqueue( 'merchant' );
+	}
+
+	/**
+	 * Record a manual WooPayments deactivation for reconciliation in a later request.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $plugin               Deactivated plugin path from the public WordPress hook.
+	 * @param mixed $network_deactivating Whether WordPress is deactivating the plugin network-wide.
+	 */
+	public function handle_plugin_deactivated( $plugin, $network_deactivating ): void {
+		if ( $this->reconciliation_job->is_internal_plugin_lifecycle_change() || ! is_string( $plugin ) || ! is_bool( $network_deactivating ) ) {
+			return;
+		}
+		$active_plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
+		if ( NativePaymentsRuntimeArbiter::PLUGIN_FILE !== $plugin && $active_plugin_file !== $plugin ) {
+			return;
+		}
+
+		$this->reconciliation_job->enqueue_manual_deactivation( $plugin, $network_deactivating );
+	}
+
+	/**
+	 * Open a new generation when a completed WooPayments cutover is rolled back by plugin activation.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $plugin       Activated plugin path from the public WordPress hook.
+	 * @param mixed $network_wide Whether WordPress activated the plugin network-wide.
+	 */
+	public function handle_plugin_activated( $plugin, $network_wide ): void {
+		if ( $this->reconciliation_job->is_internal_plugin_lifecycle_change() || ! is_string( $plugin ) || ! is_bool( $network_wide ) ) {
+			return;
+		}
+		$active_plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
+		if ( NativePaymentsRuntimeArbiter::PLUGIN_FILE !== $plugin && $active_plugin_file !== $plugin ) {
+			return;
+		}
+
+		$this->reconciliation_job->record_plugin_activation( $network_wide );
 	}
 
 	/**
 	 * Guard WooPayments activation once mandatory native cutover is enabled.
 	 *
 	 * @internal
-	 *
-	 * @param string $plugin Plugin path being activated.
 	 */
-	public function guard_woopayments_activation( string $plugin ): void {
+	public function guard_woopayments_activation(): void {
+		$record = $this->reconciliation_job->get_state_record();
 		if (
-			NativePaymentsRuntimeArbiter::PLUGIN_FILE !== $plugin ||
+			$this->reconciliation_job->is_internal_plugin_lifecycle_change() ||
 			! $this->is_mandatory_cutover_enabled() ||
-			! $this->is_cutover_ready() ||
+			! is_array( $record ) || WooPaymentsCutoverState::DONE !== $record['state'] ||
 			Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' )
 		) {
 			return;
@@ -361,65 +347,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! $this->is_cutover_ready() ) {
-			$this->set_current_request_status( self::STATUS_BLOCKED );
-			return;
-		}
-
-		$this->set_current_request_status( self::STATUS_DISABLED, true );
-		if ( $this->deactivate_woopayments_plugin() ) {
-			return;
-		}
-
-		$this->delete_stored_notice_status();
-		$this->set_current_request_status( self::STATUS_BLOCKED );
-	}
-
-	/**
-	 * Set the cutover notice status for the current request.
-	 *
-	 * @param string $status  Cutover notice status.
-	 * @param bool   $persist Whether to store the notice for the next request.
-	 */
-	private function set_current_request_status( string $status, bool $persist = false ): void {
-		$this->current_request_status = $status;
-		$_GET[ self::QUERY_STATUS ]   = $status;
-
-		if ( $persist ) {
-			set_transient( self::NOTICE_STATUS_TRANSIENT, $status, 10 * MINUTE_IN_SECONDS );
-		}
-	}
-
-	/**
-	 * Consume a stored cutover notice status.
-	 *
-	 * @return string Cutover status, or empty string when none is stored.
-	 */
-	private function consume_stored_notice_status(): string {
-		$status = get_transient( self::NOTICE_STATUS_TRANSIENT );
-		$this->delete_stored_notice_status();
-
-		return is_string( $status ) ? sanitize_key( $status ) : '';
-	}
-
-	/**
-	 * Delete the stored cutover notice status.
-	 */
-	private function delete_stored_notice_status(): void {
-		delete_transient( self::NOTICE_STATUS_TRANSIENT );
-	}
-
-	/**
-	 * Tell whether all deterministic cutover preflight checks pass.
-	 *
-	 * @return bool
-	 */
-	private function is_cutover_ready(): bool {
-		if ( is_multisite() && $this->is_woopayments_network_active() ) {
-			return array() === $this->get_network_preflight_failing_site_ids();
-		}
-
-		return array() === $this->get_preflight_failures();
+		$this->reconciliation_job->enqueue( 'mandatory' );
 	}
 
 	/**
@@ -501,15 +429,82 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		?>
 		<div class="notice notice-info">
 			<p>
-				<?php esc_html_e( 'WooPayments is now part of WooCommerce core. Disable the WooPayments extension to continue processing payments with WooPayments.', 'woocommerce' ); ?>
+				<?php esc_html_e( 'WooPayments is now part of WooCommerce. Start the switch: we will migrate what is needed and disable the WooPayments extension.', 'woocommerce' ); ?>
 			</p>
 			<p>
 				<a class="button button-primary" href="<?php echo esc_url( $this->get_disable_url() ); ?>">
-					<?php esc_html_e( 'Disable WooPayments', 'woocommerce' ); ?>
+					<?php esc_html_e( 'Start the switch', 'woocommerce' ); ?>
 				</a>
 			</p>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Render the notice derived from durable reconciliation state.
+	 */
+	private function output_reconciliation_notice(): void {
+		$record = $this->reconciliation_job->classify_for_admin_notice();
+		if ( is_array( $record ) ) {
+			if ( WooPaymentsCutoverState::PENDING === $record['state'] && 'awaiting_merchant_start' === ( $record['current_step'] ?? null ) ) {
+				if ( $this->is_start_eligible() && $this->reconciliation_job->should_offer_start() ) {
+					$this->output_soft_cutover_notice();
+				}
+				return;
+			}
+			if ( in_array( $record['state'], array( WooPaymentsCutoverState::PENDING, WooPaymentsCutoverState::RUNNING, WooPaymentsCutoverState::DEFERRED ), true ) ) {
+				$is_manual_deactivation = is_string( $record['origin_plugin_file'] ?? null ) && '' !== $record['origin_plugin_file'] && in_array( $record['origin_plugin_scope'] ?? null, array( 'site', 'network' ), true );
+				if ( ! $is_manual_deactivation ) {
+					?>
+						<div class="notice notice-info"><p><?php esc_html_e( 'Switch in progress', 'woocommerce' ); ?></p></div>
+						<?php
+				}
+				if ( $this->reconciliation_job->consume_reconnect_notice() ) {
+					?>
+						<div class="notice notice-info is-dismissible"><p><?php esc_html_e( 'The connection owner is no longer available. Reconnect this site to continue the switch.', 'woocommerce' ); ?></p></div>
+						<?php
+				}
+					return;
+			}
+			if ( WooPaymentsCutoverState::EXCLUDED === $record['state'] ) {
+				return;
+			}
+			if ( WooPaymentsCutoverState::DONE === $record['state'] && ! $this->arbiter->is_plugin_runtime_active() ) {
+				$this->output_success_notice();
+				$this->output_disabled_payment_methods_notice( $record['informational_outcomes'] ?? array() );
+				return;
+			}
+		}
+
+		if ( $this->is_start_eligible() && $this->reconciliation_job->should_offer_start() ) {
+			$this->output_soft_cutover_notice();
+		}
+	}
+
+	/**
+	 * Tell whether the current admin request may offer the merchant start action.
+	 *
+	 * @return bool
+	 */
+	private function is_start_eligible(): bool {
+		return $this->is_soft_cutover_enabled() && $this->arbiter->is_plugin_runtime_active() && $this->current_user_can_cutover();
+	}
+
+	/**
+	 * Render the payment methods disabled during reconciliation.
+	 *
+	 * @param array<int,mixed> $outcomes Persisted informational outcomes.
+	 */
+	private function output_disabled_payment_methods_notice( array $outcomes ): void {
+		foreach ( $outcomes as $outcome ) {
+			if ( ! is_array( $outcome ) || 'unsupported_payment_methods_disabled' !== ( $outcome['code'] ?? null ) || ! is_array( $outcome['payment_method_ids'] ?? null ) ) {
+				continue;
+			}
+			?>
+			<div class="notice notice-info is-dismissible"><p><?php esc_html_e( 'Some payment methods that are not supported by native WooPayments were disabled during the switch.', 'woocommerce' ); ?></p></div>
+			<?php
+			return;
+		}
 	}
 
 	/**
@@ -519,41 +514,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		?>
 		<div class="notice notice-success is-dismissible">
 			<p><?php esc_html_e( 'WooPayments is now fully native in WooCommerce. Everything works as before.', 'woocommerce' ); ?></p>
-		</div>
-		<?php
-	}
-
-	/**
-	 * Output the blocked cutover notice.
-	 */
-	public function output_blocked_notice(): void {
-		$failures         = $this->get_preflight_failures();
-		$failing_site_ids = $this->get_network_preflight_failing_site_ids();
-		?>
-		<div class="notice notice-error">
-			<p><?php esc_html_e( 'WooPayments could not be disabled because native WooPayments is not ready to process payments yet.', 'woocommerce' ); ?></p>
-			<?php if ( array() !== $failing_site_ids ) : ?>
-				<p>
-					<?php
-					printf(
-						/* translators: %s: comma-separated list of site IDs. */
-						esc_html( _n( 'Native WooPayments is not ready on site ID %s.', 'Native WooPayments is not ready on site IDs %s.', count( $failing_site_ids ), 'woocommerce' ) ),
-						esc_html( implode( ', ', $failing_site_ids ) )
-					);
-					?>
-				</p>
-			<?php endif; ?>
-			<?php if ( in_array( 'legacy_stripe_billing_subscriptions_present', $failures, true ) ) : ?>
-				<p>
-					<?php
-					printf(
-						/* translators: %s: WooCommerce Subscriptions product name. */
-						esc_html__( 'This store still has legacy Stripe Billing subscription data. Install %s, run the WooPayments Stripe Billing migration from the WooPayments extension, then try again.', 'woocommerce' ),
-						'WooCommerce Subscriptions'
-					);
-					?>
-				</p>
-			<?php endif; ?>
 		</div>
 		<?php
 	}

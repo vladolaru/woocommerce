@@ -334,6 +334,27 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		}
 	}
 
+	/** @testdox Reactivated plugin ownership maps connected tiers to one available cutover job on admin and cron requests. */
+	public function test_plugin_owned_connected_tiers_resolve_one_available_cutover_job_for_admin_and_cron(): void {
+		$bootstrap      = $this->make_bootstrap();
+		$roots_for      = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
+		$register_roots = new ReflectionMethod( NativePaymentsBootstrap::class, 'register_roots' );
+		$roots_for->setAccessible( true );
+		$register_roots->setAccessible( true );
+
+		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $stored_state ) {
+			foreach ( array( 'admin', 'cron' ) as $request_type ) {
+				$container   = $this->make_container( $stored_state, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+				$state_store = $container->get( NativePaymentsState::class );
+				$this->assertSame( NativePaymentsState::AVAILABLE, $state_store->get_state() );
+				$roots = $roots_for->invoke( $bootstrap, $state_store->get_state(), $request_type );
+				$register_roots->invoke( $bootstrap, $container, $roots );
+
+				$this->assertSame( 1, count( array_keys( $container->resolved, WooPaymentsCutoverReconciliationJob::class, true ) ) );
+			}
+		}
+	}
+
 	/** @testdox Should resolve and register each explicit connected REST root once in order. */
 	public function test_register_resolves_connected_rest_roots_once_in_order(): void {
 		$container = $this->make_container( NativePaymentsState::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_NATIVE );

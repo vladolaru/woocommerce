@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use WC_Unit_Test_Case;
@@ -70,6 +71,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			&& class_exists( WooPaymentsCutoverStateStore::class )
 			&& class_exists( WooPaymentsCutoverActionScheduler::class )
 		) {
+			$request_token = new \ReflectionProperty( WooPaymentsCutoverReconciliationJob::class, 'request_token' );
+			$request_token->setAccessible( true );
+			$request_token->setValue( null );
 			$this->state_store       = new WooPaymentsCutoverStateStore();
 			$this->scheduler         = new WooPaymentsCutoverActionScheduler();
 			$this->preflight_service = new WooPaymentsCutoverPreflightService();
@@ -181,6 +185,609 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An all-clear attempt normalizes, seeds features, deactivates WooPayments, and schedules fresh-request ownership verification.
+	 */
+	public function test_all_clear_attempt_starts_two_request_finalization(): void {
+		$plugin_active = true;
+		$preflight     = new class( $plugin_active ) extends WooPaymentsCutoverPreflightService {
+			/** @var bool */
+			private bool $plugin_active;
+
+			/** @var int */
+			private int $deactivation_calls = 0;
+
+			/**
+			 * @param bool $plugin_active Whether the plugin is active.
+			 */
+			public function __construct( bool &$plugin_active ) {
+				$this->plugin_active =& $plugin_active;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Deactivate the controlled plugin. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivation_calls;
+				$this->plugin_active = false;
+				return true;
+			}
+
+			/** Return the number of deactivation calls. */
+			public function get_deactivation_calls(): int {
+				return $this->deactivation_calls;
+			}
+		};
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @var int */
+			private int $run_count = 0;
+
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				++$this->run_count;
+				return array(
+					'ran'     => true,
+					'changes' => array( 'no_changes' ),
+				);
+			}
+
+			/** Return the number of normalization calls. */
+			public function get_run_count(): int {
+				return $this->run_count;
+			}
+		};
+		$arbiter       = new class() extends NativePaymentsRuntimeArbiter {
+			/** Return an enabled native runtime. */
+			public function is_native_runtime_enabled(): bool {
+				return true;
+			}
+		};
+		$sut           = new WooPaymentsCutoverReconciliationJob();
+		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization );
+		$this->jobs[]  = $sut;
+		$seeded        = 0;
+		$seed_features = static function () use ( &$seeded ): void {
+			++$seeded;
+		};
+		add_action( 'woocommerce_woopayments_cutover_seed_features', $seed_features );
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $pending );
+			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+			$before = time();
+
+			$sut->handle_reconcile( $pending['generation'], 1 );
+		} finally {
+			remove_action( 'woocommerce_woopayments_cutover_seed_features', $seed_features );
+		}
+
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		$this->assertSame( 1, $normalization->get_run_count() );
+		$this->assertSame( 1, $seeded );
+		$this->assertSame( 1, $preflight->get_deactivation_calls() );
+		$this->assertSame( WooPaymentsCutoverState::PENDING, $verification['state'] );
+		$this->assertSame( 'verify_native_ownership', $verification['current_step'] );
+		$this->assertSame( 1, $verification['attempt'] );
+		$this->assertIsString( $verification['request_origin_token'] );
+		$this->assertNotSame( '', $verification['request_origin_token'] );
+		$this->assertGreaterThan( $before, $verification['next_attempt_at'] );
+		$this->assertSame( $verification['action_id'], $this->require_scheduler()->get_scheduled_action_id( $verification['generation'], 2 ) );
+	}
+
+	/**
+	 * @testdox Ownership verification cannot complete in its originating request and completes only after a fresh native-owned request.
+	 */
+	public function test_ownership_verification_requires_a_fresh_native_owned_request(): void {
+		$preflight = $this->create_preflight_with_failures( array() );
+		$origin    = $this->create_job( true, $preflight );
+		$this->assertTrue( $origin->enqueue( 'merchant' ) );
+		$queued = $this->require_state_store()->get_record();
+		$this->assertIsArray( $queued );
+		$this->require_scheduler()->cancel( $queued['generation'], 1 );
+		$request_token = new \ReflectionProperty( WooPaymentsCutoverReconciliationJob::class, 'request_token' );
+		$request_token->setAccessible( true );
+		$verification                         = $queued;
+		$verification['revision']             = $queued['revision'] + 1;
+		$verification['attempt']              = 1;
+		$verification['action_id']            = 0;
+		$verification['current_step']         = 'verify_native_ownership';
+		$verification['next_attempt_at']      = time() + MINUTE_IN_SECONDS;
+		$verification['request_origin_token'] = $request_token->getValue();
+		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $queued, $verification ) );
+
+		$origin->handle_reconcile( $verification['generation'], 2 );
+
+		$this->assertSame( $verification, $this->require_state_store()->get_record(), 'The request that scheduled verification must not claim or complete it.' );
+		$same_request = $this->create_job( true, $preflight, null, false );
+		$same_request->handle_reconcile( $verification['generation'], 2 );
+		$this->assertSame( $verification, $this->require_state_store()->get_record(), 'A second job instance in the same request must share the origin fence.' );
+
+		$request_token->setValue( null );
+		$fresh_request = $this->create_job( true, $preflight, null, false );
+		$fresh_request->handle_reconcile( $verification['generation'], 2 );
+
+		$done = $this->require_state_store()->get_record();
+		$this->assertIsArray( $done );
+		$this->assertSame( WooPaymentsCutoverState::DONE, $done['state'] );
+		$this->assertSame( 'done', $done['current_step'] );
+		$this->assertNull( $done['next_attempt_at'] );
+		$this->assertNull( $done['request_origin_token'] );
+	}
+
+	/**
+	 * @testdox A throwing feature-seeding callback defers the current revision and retries the idempotent action before completion.
+	 */
+	public function test_throwing_feature_seeding_callback_defers_the_current_claim(): void {
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array( 'no_changes' ),
+				);
+			}
+		};
+		$sut           = new WooPaymentsCutoverReconciliationJob();
+		$arbiter       = new class() extends NativePaymentsRuntimeArbiter {
+			/** Return an enabled native runtime. */
+			public function is_native_runtime_enabled(): bool {
+				return true;
+			}
+		};
+		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $this->create_preflight_with_failures( array() ), $normalization );
+		$this->jobs[]  = $sut;
+		$throwing_seed = static function (): void {
+			throw new \RuntimeException( 'Expected feature seeding failure.' );
+		};
+		add_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $throwing_seed );
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $pending );
+			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+
+			$sut->handle_reconcile( $pending['generation'], 1 );
+		} finally {
+			remove_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $throwing_seed );
+		}
+
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'feature_seeding_failed' ), $deferred['deferred_codes'] );
+		$this->assertNotSame( 'done', $deferred['current_step'] );
+		$this->assertContains( array( 'code' => 'feature_seeding_started' ), $deferred['informational_outcomes'] );
+		$this->assertNotContains( array( 'code' => 'feature_seeding_completed' ), $deferred['informational_outcomes'] );
+
+		$retry_calls = 0;
+		$retry_seed  = static function () use ( &$retry_calls ): void {
+			++$retry_calls;
+		};
+		add_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $retry_seed );
+		try {
+			$this->require_scheduler()->cancel( $deferred['generation'], 2 );
+			$sut->handle_reconcile( $deferred['generation'], 2 );
+		} finally {
+			remove_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $retry_seed );
+		}
+
+		$retried = $this->require_state_store()->get_record();
+		$this->assertIsArray( $retried );
+		$this->assertSame( 1, $retry_calls );
+		$this->assertContains( array( 'code' => 'feature_seeding_completed' ), $retried['informational_outcomes'] );
+	}
+
+	/**
+	 * @testdox A throwing ownership probe defers verification without leaving its claim running.
+	 */
+	public function test_throwing_ownership_probe_defers_verification(): void {
+		$preflight = $this->create_preflight_with_failures( array() );
+		$origin    = $this->create_job( true, $preflight );
+		$this->assertTrue( $origin->enqueue( 'merchant' ) );
+		$queued = $this->require_state_store()->get_record();
+		$this->assertIsArray( $queued );
+		$this->require_scheduler()->cancel( $queued['generation'], 1 );
+		$verification                         = $queued;
+		$verification['revision']             = $queued['revision'] + 1;
+		$verification['attempt']              = 1;
+		$verification['action_id']            = 0;
+		$verification['current_step']         = 'verify_native_ownership';
+		$verification['next_attempt_at']      = time() + MINUTE_IN_SECONDS;
+		$verification['request_origin_token'] = 'previous-request-token';
+		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $queued, $verification ) );
+		$arbiter              = new class() extends NativePaymentsRuntimeArbiter {
+			/** Return an enabled native runtime. */
+			public function is_native_runtime_enabled(): bool {
+				return true;
+			}
+
+			/** Throw while probing plugin ownership. */
+			public function is_plugin_runtime_active(): bool {
+				throw new \RuntimeException( 'Expected ownership probe failure.' );
+			}
+		};
+		$sut                  = new WooPaymentsCutoverReconciliationJob();
+		$normalization_runner = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** Return a controlled persistence failure. */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array( 'settings_persistence_failed' ),
+				);
+			}
+		};
+		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization_runner );
+		$this->jobs[] = $sut;
+
+		$sut->handle_reconcile( $verification['generation'], 2 );
+
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'native_ownership_verification_failed' ), $deferred['deferred_codes'] );
+	}
+	/**
+	 * @testdox Manual deactivation keeps the plugin inactive and persists its exact origin with an unresolved disposition.
+	 */
+	public function test_manual_deactivation_defers_without_reactivating_plugin(): void {
+		$preflight = $this->create_preflight_with_failures( array( 'native_transport_unavailable' ) );
+		$sut       = $this->create_job( true, $preflight );
+
+		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'native_transport_unavailable' ), $deferred['deferred_codes'] );
+		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $deferred['origin_plugin_file'] );
+		$this->assertSame( 'site', $deferred['origin_plugin_scope'] );
+		$this->assertFalse( method_exists( $sut, 'activate_woopayments_plugin_file' ) );
+	}
+
+	/**
+	 * @testdox An all-clear manual deactivation remains native-owned and completes after a future ownership check.
+	 */
+	public function test_all_clear_manual_deactivation_verifies_native_ownership_without_deactivating_again(): void {
+		$deactivation_calls = 0;
+		$preflight          = new class( $deactivation_calls ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivation_calls;
+
+			/**
+			 * @param int $deactivation_calls Deactivation calls.
+			 */
+			public function __construct( int &$deactivation_calls ) {
+				$this->deactivation_calls =& $deactivation_calls;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Record any unexpected second deactivation. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivation_calls;
+				return true;
+			}
+		};
+		$normalization      = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut                = $this->create_job( true, $preflight, null, false, $normalization );
+
+		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$before = time();
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		$this->assertSame( 0, $deactivation_calls );
+		$this->assertSame( WooPaymentsCutoverState::PENDING, $verification['state'] );
+		$this->assertSame( 'verify_native_ownership', $verification['current_step'] );
+		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $verification['origin_plugin_file'] );
+		$this->assertSame( 'site', $verification['origin_plugin_scope'] );
+		$this->assertGreaterThan( $before, $verification['next_attempt_at'] );
+		$this->assertGreaterThan( 0, $verification['action_id'] );
+		$this->assertSame( $verification['action_id'], $this->require_scheduler()->get_scheduled_action_id( $verification['generation'], 2 ) );
+
+		$this->require_scheduler()->cancel( $verification['generation'], 2 );
+		$request_token = new \ReflectionProperty( WooPaymentsCutoverReconciliationJob::class, 'request_token' );
+		$request_token->setAccessible( true );
+		$request_token->setValue( null );
+		$fresh_request = $this->create_job( true, $preflight, null, false, $normalization );
+		$fresh_request->handle_reconcile( $verification['generation'], 2 );
+
+		$done = $this->require_state_store()->get_record();
+		$this->assertIsArray( $done );
+		$this->assertSame( WooPaymentsCutoverState::DONE, $done['state'] );
+		$this->assertSame( 'done', $done['current_step'] );
+		$this->assertSame( 0, $deactivation_calls );
+	}
+
+	/**
+	 * @testdox Every exceptional manual-deactivation exit defers without reactivating and retains exact origin metadata.
+	 * @dataProvider manual_exception_provider
+	 *
+	 * @param string $failure_step  Controlled failing step.
+	 * @param string $expected_code Expected deferred code.
+	 */
+	public function test_manual_deactivation_exception_defers_without_reactivation( string $failure_step, string $expected_code ): void {
+		$preflight     = new class( $failure_step ) extends WooPaymentsCutoverPreflightService {
+			/** @var string */
+			private string $failure_step;
+
+			/**
+			 * @param string $failure_step Controlled failing step.
+			 */
+			public function __construct( string $failure_step ) {
+				$this->failure_step = $failure_step;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				if ( 'resolver' === $this->failure_step ) {
+					throw new \RuntimeException( 'Expected resolver failure.' );
+				}
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+		};
+		$normalization = new class( $failure_step ) extends WooPaymentsCutoverNormalizationRunner {
+			/** @var string */
+			private string $failure_step;
+
+			/**
+			 * @param string $failure_step Controlled failing step.
+			 */
+			public function __construct( string $failure_step ) {
+				$this->failure_step = $failure_step;
+			}
+
+			/** Return controlled normalization. */
+			public function run(): array {
+				if ( 'normalization' === $this->failure_step ) {
+					throw new \RuntimeException( 'Expected normalization failure.' );
+				}
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut           = $this->create_job( true, $preflight, null, true, $normalization );
+		$throwing_seed = static function (): void {
+			throw new \RuntimeException( 'Expected feature seeding failure.' );
+		};
+		if ( 'feature_seeding' === $failure_step ) {
+			add_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $throwing_seed );
+		}
+		try {
+			$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
+			$pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $pending );
+			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+			$sut->handle_reconcile( $pending['generation'], 1 );
+		} finally {
+			remove_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $throwing_seed );
+		}
+
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
+		$this->assertSame( array( $expected_code ), $deferred['deferred_codes'] );
+		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $deferred['origin_plugin_file'] );
+		$this->assertSame( 'site', $deferred['origin_plugin_scope'] );
+	}
+
+	/** @return array<string,array{string,string}> */
+	public function manual_exception_provider(): array {
+		return array(
+			'resolver'        => array( 'resolver', 'reconciliation_resolver_failed' ),
+			'normalization'   => array( 'normalization', 'normalization_failed' ),
+			'feature seeding' => array( 'feature_seeding', 'feature_seeding_failed' ),
+		);
+	}
+
+	/**
+	 * @testdox Stripe exclusion removal opens an unscheduled generation that only a merchant click can start.
+	 */
+	public function test_removed_stripe_exclusion_waits_for_merchant_start(): void {
+		$failures  = array( 'legacy_stripe_billing_subscriptions_present' );
+		$preflight = new class( $failures ) extends WooPaymentsCutoverPreflightService {
+			/** @var string[] */
+			private array $failures;
+
+			/**
+			 * @param string[] $failures Controlled failures.
+			 */
+			public function __construct( array &$failures ) {
+				$this->failures =& $failures;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return $this->failures;
+			}
+		};
+		$sut       = $this->create_job( true, $preflight );
+
+		$excluded = $sut->classify_for_admin_notice();
+		$this->assertIsArray( $excluded );
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $excluded['state'] );
+		$this->assertSame( 0, $excluded['action_id'] );
+		$failures = array();
+
+		$awaiting = $sut->classify_for_admin_notice();
+		$this->assertIsArray( $awaiting );
+		$this->assertSame( $excluded['generation'] + 1, $awaiting['generation'] );
+		$this->assertSame( WooPaymentsCutoverState::PENDING, $awaiting['state'] );
+		$this->assertSame( 'awaiting_merchant_start', $awaiting['current_step'] );
+		$this->assertSame( 0, $awaiting['action_id'] );
+		$failures   = array( 'legacy_stripe_billing_subscriptions_present' );
+		$reexcluded = $sut->classify_for_admin_notice();
+		$this->assertIsArray( $reexcluded );
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $reexcluded['state'] );
+		$this->assertSame( $awaiting['generation'], $reexcluded['generation'] );
+		$failures = array();
+		$awaiting = $sut->classify_for_admin_notice();
+		$this->assertIsArray( $awaiting );
+		$this->assertSame( 'awaiting_merchant_start', $awaiting['current_step'] );
+		$sut->register();
+		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $awaiting['generation'], 1 ) );
+
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$queued = $this->require_state_store()->get_record();
+		$this->assertIsArray( $queued );
+		$this->assertSame( $awaiting['generation'], $queued['generation'] );
+		$this->assertSame( 'queued', $queued['current_step'] );
+		$this->assertGreaterThan( 0, $queued['action_id'] );
+	}
+
+	/** @testdox A manual deactivation supersedes a current Stripe exclusion and persists the same exclusion without reactivation. */
+	public function test_manual_deactivation_supersedes_a_current_stripe_exclusion(): void {
+		$preflight = $this->create_preflight_with_failures( array( 'legacy_stripe_billing_subscriptions_present' ) );
+		$sut       = $this->create_job( true, $preflight );
+		$excluded  = $sut->classify_for_admin_notice();
+		$this->assertIsArray( $excluded );
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $excluded['state'] );
+
+		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
+		$manual = $this->require_state_store()->get_record();
+		$this->assertIsArray( $manual );
+		$this->assertSame( $excluded['generation'] + 1, $manual['generation'] );
+		$this->assertSame( WooPaymentsCutoverState::PENDING, $manual['state'] );
+		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $manual['origin_plugin_file'] );
+		$this->assertSame( 'site', $manual['origin_plugin_scope'] );
+		$this->assertGreaterThan( 0, $manual['action_id'] );
+		$this->require_scheduler()->cancel( $manual['generation'], 1 );
+		$sut->handle_reconcile( $manual['generation'], 1 );
+		$manual_excluded = $this->require_state_store()->get_record();
+		$this->assertIsArray( $manual_excluded );
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $manual_excluded['state'] );
+		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $manual_excluded['origin_plugin_file'] );
+		$this->assertSame( 'site', $manual_excluded['origin_plugin_scope'] );
+	}
+
+	/** @testdox A classifier cannot overwrite pending work created while it resolves an initial Stripe marker. */
+	public function test_no_record_notice_classifier_rereads_under_the_state_lease(): void {
+		$job       = null;
+		$preflight = new class( $job ) extends WooPaymentsCutoverPreflightService {
+			/** @var WooPaymentsCutoverReconciliationJob|null */
+			private ?WooPaymentsCutoverReconciliationJob $job;
+
+			/**
+			 * @param WooPaymentsCutoverReconciliationJob|null $job Concurrent job.
+			 */
+			public function __construct( ?WooPaymentsCutoverReconciliationJob &$job ) {
+				$this->job =& $job;
+			}
+
+			/** Resolve a marker after interleaving a merchant enqueue. */
+			public function get_reconciliation_failures(): array {
+				if ( $this->job instanceof WooPaymentsCutoverReconciliationJob ) {
+					$job       = $this->job;
+					$this->job = null;
+					$job->enqueue( 'merchant' );
+				}
+				return array( 'legacy_stripe_billing_subscriptions_present' );
+			}
+		};
+		$job       = $this->create_job( true, $preflight );
+
+		$classified = $job->classify_for_admin_notice();
+		$this->assertIsArray( $classified );
+		$this->assertSame( WooPaymentsCutoverState::PENDING, $classified['state'] );
+		$this->assertSame( 'queued', $classified['current_step'] );
+		$this->assertGreaterThan( 0, $classified['action_id'] );
+	}
+
+	/**
+	 * @testdox Manual deactivation supersedes an existing queued attempt with exact origin context and a fresh action.
+	 */
+	public function test_manual_deactivation_replaces_pending_action_with_exact_origin(): void {
+		$sut = $this->require_sut();
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$queued = $this->require_state_store()->get_record();
+		$this->assertIsArray( $queued );
+		$old_action_id = $queued['action_id'];
+
+		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', true ) );
+		$manual = $this->require_state_store()->get_record();
+		$this->assertIsArray( $manual );
+		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $manual['origin_plugin_file'] );
+		$this->assertSame( 'network', $manual['origin_plugin_scope'] );
+		$this->assertSame( $queued['attempt'] + 1, $manual['attempt'] );
+		$this->assertNotSame( $old_action_id, $manual['action_id'] );
+		$this->assertSame( ActionScheduler_Store::STATUS_CANCELED, ActionScheduler::store()->get_status( $old_action_id ) );
+		$this->assertSame( $manual['action_id'], $this->require_scheduler()->get_scheduled_action_id( $manual['generation'], $manual['attempt'] + 1 ) );
+	}
+
+	/**
+	 * @testdox Manual deactivation fences a running worker before recording exact origin context.
+	 */
+	public function test_manual_deactivation_supersedes_running_claim(): void {
+		$sut = $this->require_sut();
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$running = $this->create_running_record( $pending );
+
+		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
+		$manual = $this->require_state_store()->get_record();
+		$this->assertIsArray( $manual );
+		$this->assertSame( WooPaymentsCutoverState::PENDING, $manual['state'] );
+		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $manual['origin_plugin_file'] );
+		$this->assertSame( 'site', $manual['origin_plugin_scope'] );
+		$this->assertFalse( $sut->defer( $running, array( 'native_transport_unavailable' ) ) );
+		$this->assertSame( $manual, $this->require_state_store()->get_record() );
+	}
+
+	/**
 	 * @testdox Each reconciliation condition receives one durable disposition.
 	 *
 	 * @dataProvider reconciliation_disposition_provider
@@ -265,6 +872,29 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $reconnect_outcomes );
 		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
+		$this->assertTrue( $sut->consume_reconnect_notice(), 'The first admin request must atomically claim the sanctioned notice.' );
+		$this->assertFalse( $sut->consume_reconnect_notice(), 'A concurrent or later admin request must not show the notice again.' );
+		$after_notice = $this->require_state_store()->get_record();
+		$this->assertIsArray( $after_notice );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $after_notice['state'], 'Consuming information must not stop silent retries.' );
+	}
+
+	/** @testdox Consuming reconnect information cannot revise or fence a live worker claim. */
+	public function test_reconnect_notice_consumption_does_not_revise_a_running_claim(): void {
+		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_user_token_unavailable' ), true );
+		$sut       = $this->create_job_with_preflight( true, $preflight );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$sut->handle_reconcile( $pending['generation'], 1 );
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->require_scheduler()->cancel( $deferred['generation'], $deferred['attempt'] + 1 );
+		$running = $this->create_running_record( $deferred );
+
+		$this->assertFalse( $sut->consume_reconnect_notice() );
+		$this->assertSame( $running, $this->require_state_store()->get_record() );
 	}
 
 	/**
@@ -580,7 +1210,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$deferred = $this->require_state_store()->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
-		$this->assertSame( array( 'finalization_pending' ), $deferred['deferred_codes'] );
+		$this->assertSame( array( 'normalization_failed' ), $deferred['deferred_codes'] );
 		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $action_id ) );
 		$sut->handle_reconcile( $deferred['generation'], 2 );
 
@@ -697,7 +1327,829 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A started network source queues an awaiting same-generation peer before entering the barrier.
+	 * @group multisite
+	 */
+	public function test_network_repair_starts_an_awaiting_same_generation_peer(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-awaiting-peer.example.org' );
+		$sut            = $this->create_job( true, $this->create_network_preflight_with_failures( array() ) );
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $second_site_id );
+			$peer = $this->require_state_store()->get_record();
+			$this->assertIsArray( $peer );
+			$this->require_scheduler()->cancel( $peer['generation'], 1 );
+			$awaiting                    = $peer;
+			$awaiting['revision']        = $peer['revision'] + 1;
+			$awaiting['action_id']       = 0;
+			$awaiting['current_step']    = 'awaiting_merchant_start';
+			$awaiting['next_attempt_at'] = null;
+			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $peer, $awaiting ) );
+			restore_current_blog();
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			switch_to_blog( $second_site_id );
+			$started_peer = $this->require_state_store()->get_record();
+			$this->assertIsArray( $started_peer );
+			$this->assertSame( $main_pending['generation'], $started_peer['generation'] );
+			$this->assertSame( WooPaymentsCutoverState::PENDING, $started_peer['state'] );
+			$this->assertSame( 'queued', $started_peer['current_step'] );
+			$this->assertGreaterThan( 0, $started_peer['action_id'] );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
+	 * @testdox A stale lower callback mirrors a higher awaiting generation's origin without scheduling or regressing it.
+	 * @group multisite
+	 */
+	public function test_stale_network_callback_mirrors_higher_awaiting_origin_without_starting_it(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-higher-awaiting.example.org' );
+		$sut            = $this->create_job( true, $this->create_network_preflight_with_failures( array() ) );
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $second_site_id );
+			$peer = $this->require_state_store()->get_record();
+			$this->assertIsArray( $peer );
+			$this->require_scheduler()->cancel( $peer['generation'], 1 );
+			$higher                        = $peer;
+			$higher['generation']          = $peer['generation'] + 1;
+			$higher['revision']            = $peer['revision'] + 1;
+			$higher['action_id']           = 0;
+			$higher['current_step']        = 'awaiting_merchant_start';
+			$higher['next_attempt_at']     = null;
+			$higher['network_cutover']     = false;
+			$higher['origin_plugin_file']  = 'newer-wcpay/woocommerce-payments.php';
+			$higher['origin_plugin_scope'] = 'network';
+			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $peer, $higher ) );
+			restore_current_blog();
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			$superseded = $this->require_state_store()->get_record();
+			$this->assertIsArray( $superseded );
+			$this->assertSame( $higher['generation'], $superseded['generation'] );
+			$this->assertSame( WooPaymentsCutoverState::PENDING, $superseded['state'] );
+			$this->assertSame( 'awaiting_merchant_start', $superseded['current_step'] );
+			$this->assertSame( 0, $superseded['action_id'] );
+			$this->assertSame( 'newer-wcpay/woocommerce-payments.php', $superseded['origin_plugin_file'] );
+			$this->assertSame( 'network', $superseded['origin_plugin_scope'] );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
+	 * @testdox A source callback observing a same-generation excluded peer converges the whole network to exclusion.
+	 * @group multisite
+	 */
+	public function test_network_repair_propagates_a_same_generation_peer_exclusion(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-peer-exclusion.example.org' );
+		$sut            = $this->create_job( true, $this->create_network_preflight_with_failures( array() ) );
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $second_site_id );
+			$peer = $this->require_state_store()->get_record();
+			$this->assertIsArray( $peer );
+			$this->require_scheduler()->cancel( $peer['generation'], 1 );
+			$excluded                     = $peer;
+			$excluded['revision']         = $peer['revision'] + 1;
+			$excluded['state']            = WooPaymentsCutoverState::EXCLUDED;
+			$excluded['action_id']        = 0;
+			$excluded['current_step']     = 'excluded';
+			$excluded['deferred_codes']   = array( 'legacy_stripe_billing_subscriptions_present' );
+			$excluded['next_attempt_at']  = null;
+			$excluded['lease_token']      = null;
+			$excluded['lease_expires_at'] = null;
+			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $peer, $excluded ) );
+			restore_current_blog();
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $this->require_state_store()->get_record()['state'] ?? null );
+			switch_to_blog( $second_site_id );
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $this->require_state_store()->get_record()['state'] ?? null );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
+	 * @testdox Network-wide plugin activation opens one coherent unscheduled rollback generation on every site.
+	 * @group multisite
+	 */
+	public function test_network_plugin_activation_opens_one_awaiting_generation_everywhere(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-network-rollback.example.org' );
+		$sut            = $this->create_job( true, $this->create_network_preflight_with_failures( array() ) );
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$generation = 0;
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				if ( get_current_blog_id() !== $site_id ) {
+					switch_to_blog( $site_id );
+				}
+				$pending = $this->require_state_store()->get_record();
+				$this->assertIsArray( $pending );
+				$generation = $pending['generation'];
+				$this->require_scheduler()->cancel( $generation, 1 );
+				$done                         = $pending;
+				$done['revision']             = $pending['revision'] + 1;
+				$done['state']                = WooPaymentsCutoverState::DONE;
+				$done['action_id']            = 0;
+				$done['current_step']         = 'done';
+				$done['next_attempt_at']      = null;
+				$done['request_origin_token'] = null;
+				$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $done ) );
+				if ( get_current_blog_id() !== $main_site_id ) {
+					restore_current_blog();
+				}
+			}
+
+			$this->assertTrue( $sut->record_plugin_activation( true ) );
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				if ( get_current_blog_id() !== $site_id ) {
+					switch_to_blog( $site_id );
+				}
+				$awaiting = $this->require_state_store()->get_record();
+				$this->assertIsArray( $awaiting );
+				$this->assertSame( $generation + 1, $awaiting['generation'] );
+				$this->assertSame( WooPaymentsCutoverState::PENDING, $awaiting['state'] );
+				$this->assertSame( 'awaiting_merchant_start', $awaiting['current_step'] );
+				$this->assertSame( 0, $awaiting['action_id'] );
+				$this->assertTrue( $awaiting['network_cutover'] );
+				$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $awaiting['generation'], 1 ) );
+				if ( get_current_blog_id() !== $main_site_id ) {
+					restore_current_blog();
+				}
+			}
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
+	 * @testdox A partially recorded network rollback converges when the merchant starts the new generation.
+	 * @group multisite
+	 */
+	public function test_network_plugin_activation_lease_contention_converges_on_merchant_start(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-network-rollback-contention.example.org' );
+		$sut            = $this->create_job( true, $this->create_network_preflight_with_failures( array() ) );
+		$site_token     = null;
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$generation = 0;
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				if ( get_current_blog_id() !== $site_id ) {
+					switch_to_blog( $site_id );
+				}
+				$pending = $this->require_state_store()->get_record();
+				$this->assertIsArray( $pending );
+				$generation = $pending['generation'];
+				$this->require_scheduler()->cancel( $generation, 1 );
+				$done                         = $pending;
+				$done['revision']             = $pending['revision'] + 1;
+				$done['state']                = WooPaymentsCutoverState::DONE;
+				$done['action_id']            = 0;
+				$done['current_step']         = 'done';
+				$done['next_attempt_at']      = null;
+				$done['request_origin_token'] = null;
+				$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $done ) );
+				if ( get_current_blog_id() !== $main_site_id ) {
+					restore_current_blog();
+				}
+			}
+
+			switch_to_blog( $second_site_id );
+			$site_token = $this->require_state_store()->acquire_lease( time() );
+			$this->assertIsString( $site_token );
+			restore_current_blog();
+
+			$this->assertFalse( $sut->record_plugin_activation( true ) );
+			$partial = $this->require_state_store()->get_record();
+			$this->assertIsArray( $partial );
+			$this->assertSame( $generation + 1, $partial['generation'] );
+			$this->assertSame( 'awaiting_merchant_start', $partial['current_step'] );
+			$this->assertSame( 0, $partial['action_id'] );
+
+			switch_to_blog( $second_site_id );
+			$this->require_state_store()->release_lease( $site_token );
+			$site_token = null;
+			restore_current_blog();
+
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				if ( get_current_blog_id() !== $site_id ) {
+					switch_to_blog( $site_id );
+				}
+				$started = $this->require_state_store()->get_record();
+				$this->assertIsArray( $started );
+				$this->assertSame( $generation + 1, $started['generation'] );
+				$this->assertSame( WooPaymentsCutoverState::PENDING, $started['state'] );
+				$this->assertSame( 'queued', $started['current_step'] );
+				$this->assertGreaterThan( 0, $started['action_id'] );
+				if ( get_current_blog_id() !== $main_site_id ) {
+					restore_current_blog();
+				}
+			}
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				if ( is_string( $site_token ) ) {
+					$this->require_state_store()->release_lease( $site_token );
+				}
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
+	 * @testdox A network merchant start fans out site-local state and the last ready site completes the barrier once.
+	 * @group multisite
+	 */
+	public function test_network_fanout_and_all_ready_barrier(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = self::factory()->blog->create(
+			array(
+				'domain' => 'cutover-barrier.example.org',
+				'path'   => '/',
+			)
+		);
+		switch_to_blog( $second_site_id );
+		( new \ActionScheduler_StoreSchema() )->register_tables( true );
+		( new \ActionScheduler_LoggerSchema() )->register_tables( true );
+		restore_current_blog();
+		$failures_by_site   = array(
+			$main_site_id   => array(),
+			$second_site_id => array(),
+		);
+		$deactivation_calls = 0;
+		$preflight          = new class( $failures_by_site, $deactivation_calls ) extends WooPaymentsCutoverPreflightService {
+			/** @var array<int,string[]> */
+			private array $failures_by_site;
+
+			/** @var int */
+			private int $deactivation_calls;
+
+			/**
+			 * @param array<int,string[]> $failures_by_site  Controlled failures.
+			 * @param int                 $deactivation_calls Deactivation calls.
+			 */
+			public function __construct( array &$failures_by_site, int &$deactivation_calls ) {
+				$this->failures_by_site   =& $failures_by_site;
+				$this->deactivation_calls =& $deactivation_calls;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+
+			/** Record one network deactivation. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivation_calls;
+				return true;
+			}
+		};
+		$normalization      = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** Return successful normalization. */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut                = $this->create_job( true, $preflight, null, true, $normalization );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $second_site_id );
+			$second_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_pending );
+			$this->assertSame( $main_pending['generation'], $second_pending['generation'] );
+			$this->assertTrue( $second_pending['network_cutover'] );
+			restore_current_blog();
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			$main_ready = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_ready );
+			$this->assertSame( array( 'network_barrier' ), $main_ready['deferred_codes'] );
+			$this->assertSame( 0, $deactivation_calls );
+
+			switch_to_blog( $second_site_id );
+			$this->require_scheduler()->cancel( $second_pending['generation'], 1 );
+			$sut->handle_reconcile( $second_pending['generation'], 1 );
+			$second_verifying = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_verifying );
+			$this->assertSame( 'verify_native_ownership', $second_verifying['current_step'] );
+			restore_current_blog();
+			$main_verifying = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_verifying );
+			$this->assertSame( 'verify_native_ownership', $main_verifying['current_step'] );
+			$this->assertSame( 1, $deactivation_calls );
+			$this->assertSame( $main_site_id, get_current_blog_id() );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
+	 * @testdox Network exclusion fences a paused worker and marker removal reopens one merchant-started generation everywhere.
+	 * @group multisite
+	 */
+	public function test_network_exclusion_fences_paused_worker_and_reopens_after_marker_removal(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = self::factory()->blog->create(
+			array(
+				'domain' => 'cutover-exclusion.example.org',
+				'path'   => '/',
+			)
+		);
+		switch_to_blog( $second_site_id );
+		( new \ActionScheduler_StoreSchema() )->register_tables( true );
+		( new \ActionScheduler_LoggerSchema() )->register_tables( true );
+		restore_current_blog();
+		$failures_by_site = array(
+			$main_site_id   => array( 'legacy_stripe_billing_subscriptions_present' ),
+			$second_site_id => array(),
+		);
+		$preflight        = new class( $failures_by_site ) extends WooPaymentsCutoverPreflightService {
+			/** @var array<int,string[]> */
+			private array $failures_by_site;
+
+			/**
+			 * @param array<int,string[]> $failures_by_site Controlled failures.
+			 */
+			public function __construct( array &$failures_by_site ) {
+				$this->failures_by_site =& $failures_by_site;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+		};
+		$normalization    = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** Return successful normalization. */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut              = $this->create_job( true, $preflight, null, true, $normalization );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $second_site_id );
+			$second_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_pending );
+			$this->require_scheduler()->cancel( $second_pending['generation'], 1 );
+			$sut->handle_reconcile( $second_pending['generation'], 1 );
+			$second_ready = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_ready );
+			$this->require_scheduler()->cancel( $second_ready['generation'], 2 );
+			$paused                     = $second_ready;
+			$paused['revision']         = $second_ready['revision'] + 1;
+			$paused['state']            = WooPaymentsCutoverState::RUNNING;
+			$paused['attempt']          = 2;
+			$paused['action_id']        = 0;
+			$paused['current_step']     = 'running';
+			$paused['lease_token']      = 'paused-worker';
+			$paused['lease_expires_at'] = time() + MINUTE_IN_SECONDS;
+			$paused['next_attempt_at']  = null;
+			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $second_ready, $paused ) );
+			restore_current_blog();
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			$main_excluded = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_excluded );
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $main_excluded['state'] );
+			switch_to_blog( $second_site_id );
+			$second_excluded = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_excluded );
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $second_excluded['state'] );
+			$this->assertFalse( $sut->defer( $paused, array( 'network_barrier' ) ), 'The paused worker must lose its stale compare-and-set after propagation.' );
+			$this->assertSame( $second_excluded, $sut->classify_for_admin_notice(), 'A visit to the clear site must remain excluded while another site still has the marker.' );
+
+			$failures_by_site[ $main_site_id ] = array();
+			$awaiting                          = $sut->classify_for_admin_notice();
+			$this->assertIsArray( $awaiting );
+			$this->assertSame( 'awaiting_merchant_start', $awaiting['current_step'] );
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$second_reopened = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_reopened );
+			restore_current_blog();
+			$main_reopened = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_reopened );
+			$this->assertSame( $second_reopened['generation'], $main_reopened['generation'] );
+			$this->assertSame( 'queued', $main_reopened['current_step'] );
+			$this->assertSame( 'queued', $second_reopened['current_step'] );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
+	 * @testdox Network exclusion repairs a site whose fan-out record was lost before the source worker resumes.
+	 * @group multisite
+	 */
+	public function test_network_exclusion_repairs_a_missing_partial_fanout_record(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = self::factory()->blog->create(
+			array(
+				'domain' => 'cutover-partial-fanout.example.org',
+				'path'   => '/',
+			)
+		);
+		switch_to_blog( $second_site_id );
+		( new \ActionScheduler_StoreSchema() )->register_tables( true );
+		( new \ActionScheduler_LoggerSchema() )->register_tables( true );
+		restore_current_blog();
+		$failures_by_site = array(
+			$main_site_id   => array( 'legacy_stripe_billing_subscriptions_present' ),
+			$second_site_id => array(),
+		);
+		$preflight        = new class( $failures_by_site ) extends WooPaymentsCutoverPreflightService {
+			/** @var array<int,string[]> */
+			private array $failures_by_site;
+
+			/**
+			 * @param array<int,string[]> $failures_by_site Controlled failures.
+			 */
+			public function __construct( array &$failures_by_site ) {
+				$this->failures_by_site =& $failures_by_site;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+		};
+		$sut              = $this->create_job( true, $preflight );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $second_site_id );
+			delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
+			restore_current_blog();
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $this->require_state_store()->get_record()['state'] ?? null );
+			switch_to_blog( $second_site_id );
+			$repaired = $this->require_state_store()->get_record();
+			$this->assertIsArray( $repaired );
+			$this->assertSame( $main_pending['generation'], $repaired['generation'] );
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $repaired['state'] );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
+	 * @testdox A clear network callback repairs missing fan-out work before entering the all-site barrier.
+	 * @group multisite
+	 */
+	public function test_network_reconciliation_repairs_missing_fanout_before_the_barrier(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id       = get_current_blog_id();
+		$second_site_id     = self::factory()->blog->create(
+			array(
+				'domain' => 'cutover-clear-partial-fanout.example.org',
+				'path'   => '/',
+			)
+		);
+		$deactivation_calls = 0;
+		switch_to_blog( $second_site_id );
+		( new \ActionScheduler_StoreSchema() )->register_tables( true );
+		( new \ActionScheduler_LoggerSchema() )->register_tables( true );
+		restore_current_blog();
+		$preflight     = new class( $deactivation_calls ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivation_calls;
+
+			/**
+			 * @param int $deactivation_calls Deactivation calls.
+			 */
+			public function __construct( int &$deactivation_calls ) {
+				$this->deactivation_calls =& $deactivation_calls;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+
+			/** Record network deactivation. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivation_calls;
+				return true;
+			}
+		};
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** Return successful normalization. */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut           = $this->create_job( true, $preflight, null, true, $normalization );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $second_site_id );
+			delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
+			restore_current_blog();
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			$main_barrier = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_barrier );
+			$this->assertSame( array( 'network_barrier' ), $main_barrier['deferred_codes'] );
+			switch_to_blog( $second_site_id );
+			$repaired = $this->require_state_store()->get_record();
+			$this->assertIsArray( $repaired );
+			$this->assertSame( $main_pending['generation'], $repaired['generation'] );
+			$this->assertSame( WooPaymentsCutoverState::PENDING, $repaired['state'] );
+			$this->assertGreaterThan( 0, $repaired['action_id'] );
+			$this->require_scheduler()->cancel( $repaired['generation'], 1 );
+			$sut->handle_reconcile( $repaired['generation'], 1 );
+			restore_current_blog();
+			$this->assertSame( 1, $deactivation_calls );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
+	 * @testdox A contended notice-time exclusion suppresses Start and schedules durable network convergence.
+	 * @group multisite
+	 */
+	public function test_notice_time_network_exclusion_contention_schedules_convergence(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = self::factory()->blog->create(
+			array(
+				'domain' => 'cutover-notice-contention.example.org',
+				'path'   => '/',
+			)
+		);
+		switch_to_blog( $second_site_id );
+		( new \ActionScheduler_StoreSchema() )->register_tables( true );
+		( new \ActionScheduler_LoggerSchema() )->register_tables( true );
+		restore_current_blog();
+		$failures_by_site = array(
+			$main_site_id   => array( 'legacy_stripe_billing_subscriptions_present' ),
+			$second_site_id => array(),
+		);
+		$preflight        = new class( $failures_by_site ) extends WooPaymentsCutoverPreflightService {
+			/** @var array<int,string[]> */
+			private array $failures_by_site;
+
+			/**
+			 * @param array<int,string[]> $failures_by_site Controlled failures.
+			 */
+			public function __construct( array &$failures_by_site ) {
+				$this->failures_by_site =& $failures_by_site;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+		};
+		$sut              = $this->create_job( true, $preflight );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $pending );
+			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+			$sut->handle_reconcile( $pending['generation'], 1 );
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $this->require_state_store()->get_record()['state'] ?? null );
+
+			$failures_by_site[ $main_site_id ] = array();
+			switch_to_blog( $second_site_id );
+			$awaiting = $sut->classify_for_admin_notice();
+			$this->assertIsArray( $awaiting );
+			$this->assertSame( 'awaiting_merchant_start', $awaiting['current_step'] );
+			restore_current_blog();
+
+			$failures_by_site[ $main_site_id ] = array( 'legacy_stripe_billing_subscriptions_present' );
+			$network_lease                     = $this->require_state_store()->acquire_lease( time() );
+			$this->assertIsString( $network_lease );
+			switch_to_blog( $second_site_id );
+			$classified = $sut->classify_for_admin_notice();
+			$this->assertIsArray( $classified );
+			$this->assertSame( WooPaymentsCutoverState::DEFERRED, $classified['state'] );
+			$this->assertSame( array( 'network_exclusion_propagation_pending' ), $classified['deferred_codes'] );
+			$this->assertGreaterThan( 0, $classified['action_id'] );
+			$this->assertFalse( $sut->should_offer_start() );
+			restore_current_blog();
+			$this->require_state_store()->release_lease( $network_lease );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			if ( isset( $network_lease ) && is_string( $network_lease ) ) {
+				$this->require_state_store()->release_lease( $network_lease );
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
 	 * @testdox A network plugin update uses the main site core lock and restores a subsite context.
+	 * @group multisite
 	 */
 	public function test_network_plugin_update_lock_uses_the_main_site_and_restores_the_calling_blog(): void {
 		if ( ! is_multisite() ) {
@@ -765,6 +2217,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A throwing core lock release still restores the calling multisite blog.
+	 * @group multisite
 	 */
 	public function test_throwing_network_plugin_update_lock_release_restores_the_calling_blog(): void {
 		if ( ! is_multisite() ) {
@@ -1106,7 +2559,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$first = $this->require_state_store()->get_record();
 		$this->assertIsArray( $first );
-		$this->assertSame( array( 'finalization_pending' ), $first['deferred_codes'] );
+		$this->assertSame( array( 'normalization_failed' ), $first['deferred_codes'] );
 		$this->assertSame( 1, $job->get_metadata_refresh_count() );
 		$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php' ), $job->get_upgraded_plugin_files() );
 		$this->assertSame( array( true ), $job->get_lock_observations() );
@@ -1115,7 +2568,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$second = $this->require_state_store()->get_record();
 		$this->assertIsArray( $second );
-		$this->assertSame( array( 'finalization_pending' ), $second['deferred_codes'] );
+		$this->assertSame( array( 'normalization_failed' ), $second['deferred_codes'] );
 		$this->assertSame( 1, $job->get_metadata_refresh_count() );
 		$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php' ), $job->get_upgraded_plugin_files() );
 	}
@@ -1176,7 +2629,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 			$resolved = $this->require_state_store()->get_record();
 			$this->assertIsArray( $resolved );
-			$this->assertSame( array( 'finalization_pending' ), $resolved['deferred_codes'] );
+			$this->assertSame( array( 'normalization_failed' ), $resolved['deferred_codes'] );
 			$this->assertSame( ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $retry_action_id ) );
 		} finally {
 			$store->release_claim( $claim );
@@ -1659,35 +3112,56 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a job with a deterministic native-runtime answer.
 	 *
-	 * @param bool                                     $native_enabled     Whether native payments are enabled.
-	 * @param WooPaymentsCutoverPreflightService|null  $preflight_service Controlled preflight facts, when needed.
-	 * @param WooPaymentsCutoverReconciliationJob|null $job               Job instance, when a test needs a narrow override.
+	 * @param bool                                       $native_enabled     Whether native payments are enabled.
+	 * @param WooPaymentsCutoverPreflightService|null    $preflight_service Controlled preflight facts, when needed.
+	 * @param WooPaymentsCutoverReconciliationJob|null   $job               Job instance, when a test needs a narrow override.
+	 * @param bool                                       $plugin_active     Whether the plugin owns the runtime.
+	 * @param WooPaymentsCutoverNormalizationRunner|null $normalization_runner Controlled normalization runner.
 	 * @return WooPaymentsCutoverReconciliationJob
 	 */
-	private function create_job( bool $native_enabled, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null ): WooPaymentsCutoverReconciliationJob {
-		$arbiter = new class( $native_enabled ) extends NativePaymentsRuntimeArbiter {
+	private function create_job( bool $native_enabled, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $plugin_active = true, ?WooPaymentsCutoverNormalizationRunner $normalization_runner = null ): WooPaymentsCutoverReconciliationJob {
+		$arbiter = new class( $native_enabled, $plugin_active ) extends NativePaymentsRuntimeArbiter {
 			/** @var bool */
 			private bool $native_enabled;
+
+			/** @var bool */
+			private bool $plugin_active;
 
 			/**
 			 * Initialize the static runtime answer.
 			 *
 			 * @param bool $native_enabled Whether native payments are enabled.
+			 * @param bool $plugin_active Whether the plugin owns the runtime.
 			 */
-			public function __construct( bool $native_enabled ) {
+			public function __construct( bool $native_enabled, bool $plugin_active ) {
 				$this->native_enabled = $native_enabled;
+				$this->plugin_active  = $plugin_active;
 			}
 
 			/** Return the configured native feature state. */
 			public function is_native_runtime_enabled(): bool {
 				return $this->native_enabled;
 			}
+
+			/** Return the configured plugin ownership state. */
+			public function is_plugin_runtime_active(): bool {
+				return $this->plugin_active;
+			}
 		};
 
 		$job               = $job ?? new WooPaymentsCutoverReconciliationJob();
 		$preflight_service = $preflight_service ?? $this->preflight_service;
 		$this->assertInstanceOf( WooPaymentsCutoverPreflightService::class, $preflight_service );
-		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight_service );
+		$normalization_runner = $normalization_runner ?? new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** Return a controlled persistence failure for tests that do not exercise finalization. */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array( 'settings_persistence_failed' ),
+				);
+			}
+		};
+		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight_service, $normalization_runner );
 		$this->jobs[] = $job;
 
 		return $job;
@@ -1702,6 +3176,69 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	private function create_job_with_preflight( bool $native_enabled, WooPaymentsCutoverPreflightService $preflight ): WooPaymentsCutoverReconciliationJob {
 		return $this->create_job( $native_enabled, $preflight );
+	}
+
+	/**
+	 * Create a multisite blog with Action Scheduler tables ready for cutover actions.
+	 *
+	 * @param string $domain Test blog domain.
+	 * @return int
+	 */
+	private function create_cutover_multisite_site( string $domain ): int {
+		$site_id = self::factory()->blog->create(
+			array(
+				'domain' => $domain,
+				'path'   => '/',
+			)
+		);
+		switch_to_blog( $site_id );
+		try {
+			( new \ActionScheduler_StoreSchema() )->register_tables( true );
+			( new \ActionScheduler_LoggerSchema() )->register_tables( true );
+		} finally {
+			restore_current_blog();
+		}
+
+		return $site_id;
+	}
+
+	/**
+	 * Create deterministic network-active preflight facts.
+	 *
+	 * @param string[] $failures Reconciliation failures.
+	 * @return WooPaymentsCutoverPreflightService
+	 */
+	private function create_network_preflight_with_failures( array $failures ): WooPaymentsCutoverPreflightService {
+		return new class( $failures ) extends WooPaymentsCutoverPreflightService {
+			/** @var string[] */
+			private array $failures;
+
+			/**
+			 * @param string[] $failures Controlled failures.
+			 */
+			public function __construct( array $failures ) {
+				$this->failures = $failures;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return $this->failures;
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+		};
 	}
 
 	/**

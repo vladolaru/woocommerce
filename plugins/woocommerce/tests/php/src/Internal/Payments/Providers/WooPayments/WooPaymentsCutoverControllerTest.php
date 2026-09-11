@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
@@ -18,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPlatformConnectionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -373,18 +375,21 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/**
-	 * @testdox Soft cutover notice is hidden until native cutover preflight is ready.
-	 */
-	public function test_soft_notice_is_hidden_until_preflight_is_ready(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-
-		$this->assertFalse(
-			$this->sut->should_show_soft_cutover_notice(),
-			'The notice must not invite disabling WooPayments while native transport readiness is false.'
-		);
+	/** @testdox Lifecycle guards register only on WordPress's exact WooPayments activation and deactivation hooks. */
+	public function test_registers_exact_plugin_lifecycle_hooks(): void {
+		$this->sut->register();
+		try {
+			$this->assertSame( 10, has_action( 'activate_' . NativePaymentsRuntimeArbiter::PLUGIN_FILE, array( $this->sut, 'guard_woopayments_activation' ) ) );
+			$this->assertSame( 10, has_action( 'activated_plugin', array( $this->sut, 'handle_plugin_activated' ) ) );
+			$this->assertSame( 10, has_action( 'deactivated_plugin', array( $this->sut, 'handle_plugin_deactivated' ) ) );
+			$this->assertFalse( has_action( 'activate_plugin', array( $this->sut, 'guard_woopayments_activation' ) ) );
+		} finally {
+			remove_action( 'admin_init', array( $this->sut, 'handle_admin_init' ) );
+			remove_action( 'admin_notices', array( $this->sut, 'output_admin_notices' ) );
+			remove_action( 'activate_' . NativePaymentsRuntimeArbiter::PLUGIN_FILE, array( $this->sut, 'guard_woopayments_activation' ) );
+			remove_action( 'activated_plugin', array( $this->sut, 'handle_plugin_activated' ), 10 );
+			remove_action( 'deactivated_plugin', array( $this->sut, 'handle_plugin_deactivated' ), 10 );
+		}
 	}
 
 	/**
@@ -402,87 +407,255 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Disable action deactivates the WooPayments plugin after capability and preflight pass.
+	 * @testdox Job-backed cutover notice shows the owner-approved action even while preflight is blocked.
 	 */
-	public function test_disable_action_deactivates_plugin_after_guards_pass(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-
-		$result = $this->sut->disable_woopayments_plugin();
-
-		$this->assertTrue( $result, 'The disable action should report success after the plugin is deactivated.' );
-		$this->assertSame(
-			array( NativePaymentsRuntimeArbiter::PLUGIN_FILE, false, false ),
-			$this->deactivate_plugin_calls[0],
-			'The soft cutover should deactivate the per-site WooPayments plugin.'
-		);
-		$this->assertFalse( $this->plugin_active, 'The plugin active signal should be removed after deactivation.' );
-	}
-
-	/**
-	 * @testdox Disable action deactivates WooPayments when the plugin folder was renamed.
-	 */
-	public function test_disable_action_deactivates_renamed_woopayments_plugin_file(): void {
-		$renamed_plugin_file = 'renamed-woocommerce-payments/woocommerce-payments.php';
-
-		$this->fake_plugin_active( true, false, $renamed_plugin_file );
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-
-		$result = $this->sut->disable_woopayments_plugin();
-
-		$this->assertTrue( $result, 'The disable action should report success after the renamed plugin is deactivated.' );
-		$this->assertSame(
-			array( $renamed_plugin_file, false, false ),
-			$this->deactivate_plugin_calls[0],
-			'Cutover should deactivate the actual active WooPayments plugin file, not only the canonical folder path.'
-		);
-		$this->assertFalse( $this->plugin_active, 'The renamed plugin active signal should be removed after deactivation.' );
-	}
-
-	/**
-	 * @testdox Disable action asks native to adopt canceled-authorization fee remediation before deactivation.
-	 */
-	public function test_disable_action_schedules_fee_remediation_before_deactivation(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-
-		$this->assertTrue( $this->sut->disable_woopayments_plugin() );
-
-		$this->assertSame( 1, $this->fee_remediation_schedule_calls, 'Cutover should adopt preserved financial remediation jobs before deactivation.' );
-	}
-
-	/**
-	 * @testdox Disable action blocks deactivation when financial remediation cannot be adopted.
-	 */
-	public function test_disable_action_blocks_when_fee_remediation_adoption_fails(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->fee_remediation_schedule_result = 'unavailable';
-
-		$result = $this->sut->disable_woopayments_plugin();
-
-		$this->assertFalse( $result, 'Cutover must fail closed when financial remediation cannot be scheduled.' );
-		$this->assertSame( 1, $this->fee_remediation_schedule_calls, 'Cutover should attempt to adopt financial remediation before blocking.' );
-		$this->assertSame( array(), $this->deactivate_plugin_calls, 'The plugin must stay active when financial remediation cannot be adopted.' );
-		$this->assertTrue( $this->plugin_active, 'WooPayments should continue owning runtime until financial remediation is safely queued.' );
-	}
-
-	/**
-	 * @testdox Disable action refuses to deactivate WooPayments when cutover preflight fails.
-	 */
-	public function test_disable_action_refuses_when_preflight_fails(): void {
+	public function test_job_backed_notice_is_shown_while_preflight_is_blocked(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @return array<string,mixed>|null */
+			public function get_state_record(): ?array {
+				return null;
+			}
 
-		$result = $this->sut->disable_woopayments_plugin();
+			/** @return array<string,mixed>|null */
+			public function classify_for_admin_notice(): ?array {
+				return null;
+			}
 
-		$this->assertFalse( $result, 'Cutover must fail closed while native transport readiness is false.' );
-		$this->assertSame( array(), $this->deactivate_plugin_calls, 'The plugin must not be deactivated on failed preflight.' );
+			/** Offer the first generation. */
+			public function should_offer_start(): bool {
+				return true;
+			}
+		};
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( null, $job ) );
+
+		$this->assertStringContainsString( 'WooPayments is now part of WooCommerce. Start the switch: we will migrate what is needed and disable the WooPayments extension.', $notice );
+		$this->assertStringContainsString( 'Start the switch', $notice );
+		$this->assertStringNotContainsString( 'not ready', $notice );
+	}
+
+	/**
+	 * @testdox Active job states show only the switch-in-progress notice.
+	 * @testWith ["pending"]
+	 *           ["running"]
+	 *           ["deferred"]
+	 *
+	 * @param string $state Active cutover state.
+	 */
+	public function test_active_job_states_show_only_progress( string $state ): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$job = new class( $state ) extends WooPaymentsCutoverReconciliationJob {
+			/** @var string */
+			private string $state;
+
+			/**
+			 * @param string $state Active cutover state.
+			 */
+			public function __construct( string $state ) {
+				$this->state = $state;
+			}
+
+			/** @return array<string,mixed>|null */
+			public function get_state_record(): ?array {
+				return array(
+					'state'                  => $this->state,
+					'informational_outcomes' => array(),
+				);
+			}
+
+			/** @return array<string,mixed>|null */
+			public function classify_for_admin_notice(): ?array {
+				return $this->get_state_record();
+			}
+
+			/** Do not emit reconnect information. */
+			public function consume_reconnect_notice(): bool {
+				return false;
+			}
+		};
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( null, $job ) );
+
+		$this->assertStringContainsString( 'Switch in progress', $notice );
+		$this->assertStringNotContainsString( 'Start the switch', $notice );
+		$this->assertStringNotContainsString( 'not ready', $notice );
+	}
+
+	/**
+	 * @testdox An awaiting generation never bypasses the ordinary start-notice eligibility boundary.
+	 */
+	public function test_awaiting_generation_requires_start_notice_eligibility(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( false );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @return array<string,mixed>|null */
+			public function classify_for_admin_notice(): ?array {
+				return array(
+					'state'        => WooPaymentsCutoverState::PENDING,
+					'current_step' => 'awaiting_merchant_start',
+				);
+			}
+		};
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( null, $job ) );
+
+		$this->assertStringNotContainsString( 'Start the switch', $notice );
+		$this->assertStringNotContainsString( 'Switch in progress', $notice );
+	}
+
+	/**
+	 * @testdox The reconnect exception is rendered only for the request that atomically consumes it.
+	 */
+	public function test_reconnect_notice_is_rendered_only_when_atomically_consumed(): void {
+		$this->fake_plugin_active();
+		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var bool */
+			private bool $available = true;
+
+			/** @return array<string,mixed>|null */
+			public function classify_for_admin_notice(): ?array {
+				return array(
+					'state'        => WooPaymentsCutoverState::DEFERRED,
+					'current_step' => 'deferred',
+				);
+			}
+
+			/** Consume once. */
+			public function consume_reconnect_notice(): bool {
+				$available       = $this->available;
+				$this->available = false;
+				return $available;
+			}
+		};
+		$controller = $this->create_cutover_controller( null, $job );
+
+		$first  = $this->render_admin_notices( $controller );
+		$second = $this->render_admin_notices( $controller );
+
+		$this->assertStringContainsString( 'The connection owner is no longer available. Reconnect this site to continue the switch.', $first );
+		$this->assertStringNotContainsString( 'Reconnect this site', $second );
+	}
+
+	/**
+	 * @testdox Manual-deactivation work is silent unless the atomic reconnect information is available.
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $reconnect_available Whether Decision 7 reconnect information can be consumed.
+	 */
+	public function test_manual_deactivation_notice_only_renders_reconnect_information( bool $reconnect_available ): void {
+		$job = new class( $reconnect_available ) extends WooPaymentsCutoverReconciliationJob {
+			/** @var bool */
+			private bool $reconnect_available;
+
+			/**
+			 * @param bool $reconnect_available Whether reconnect information is available.
+			 */
+			public function __construct( bool $reconnect_available ) {
+				$this->reconnect_available = $reconnect_available;
+			}
+
+			/** @return array<string,mixed>|null */
+			public function classify_for_admin_notice(): ?array {
+				return array(
+					'state'                  => WooPaymentsCutoverState::DEFERRED,
+					'current_step'           => 'deferred',
+					'origin_plugin_file'     => 'renamed-wcpay/woocommerce-payments.php',
+					'origin_plugin_scope'    => 'site',
+					'informational_outcomes' => $this->reconnect_available ? array( array( 'code' => 'reconnect_required' ) ) : array(),
+				);
+			}
+
+			/** Consume controlled reconnect information once. */
+			public function consume_reconnect_notice(): bool {
+				$available                 = $this->reconnect_available;
+				$this->reconnect_available = false;
+				return $available;
+			}
+		};
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( null, $job ) );
+
+		$this->assertStringNotContainsString( 'Switch in progress', $notice );
+		$this->assertStringNotContainsString( 'Start the switch', $notice );
+		if ( $reconnect_available ) {
+			$this->assertStringContainsString( 'The connection owner is no longer available. Reconnect this site to continue the switch.', $notice );
+		} else {
+			$this->assertStringNotContainsString( 'The connection owner is no longer available. Reconnect this site to continue the switch.', $notice );
+		}
+	}
+
+	/**
+	 * @testdox The controller sends merchant, activation, and manual-deactivation triggers into the one reconciliation job with exact scope.
+	 */
+	public function test_controller_routes_merchant_and_manual_triggers_into_the_job(): void {
+		$renamed_plugin_file = 'renamed-woocommerce-payments/woocommerce-payments.php';
+		$this->fake_plugin_active( true, false, $renamed_plugin_file );
+		$this->fake_current_user_caps( true );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var string[] */
+			public array $sources = array();
+
+			/** @var array<int,array{string,bool}> */
+			public array $manual = array();
+
+			/** @var bool[] */
+			public array $activation_scopes = array();
+
+			/**
+			 * @param string $source Trigger source.
+			 */
+			public function enqueue( string $source ): bool {
+				$this->sources[] = $source;
+				return true;
+			}
+
+			/**
+			 * @param string $plugin_file  Exact plugin path.
+			 * @param bool   $network_wide Network scope.
+			 */
+			public function enqueue_manual_deactivation( string $plugin_file, bool $network_wide ): bool {
+				$this->manual[] = array( $plugin_file, $network_wide );
+				return true;
+			}
+
+			/**
+			 * Record the external activation scope.
+			 *
+			 * @param bool $network_wide Network scope.
+			 */
+			public function record_plugin_activation( bool $network_wide = false ): bool {
+				$this->activation_scopes[] = $network_wide;
+				return true;
+			}
+
+			/** Return whether lifecycle work is job-owned. */
+			public function is_internal_plugin_lifecycle_change(): bool {
+				return false;
+			}
+
+			/** Do not emit reconnect information. */
+			public function consume_reconnect_notice(): bool {
+				return false;
+			}
+		};
+		$controller = $this->create_cutover_controller( null, $job );
+
+		$this->assertTrue( $controller->disable_woopayments_plugin() );
+		$controller->handle_plugin_deactivated( $renamed_plugin_file, false );
+		$controller->handle_plugin_activated( $renamed_plugin_file, true );
+
+		$this->assertSame( array( 'merchant' ), $job->sources );
+		$this->assertSame( array( array( $renamed_plugin_file, false ) ), $job->manual );
+		$this->assertSame( array( true ), $job->activation_scopes );
+		$this->assertSame( array(), $this->deactivate_plugin_calls );
 	}
 
 	/**
@@ -492,22 +665,35 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_wp_die_handler();
 		$this->enable_ready_cutover();
 		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
+		$controller = $this->create_cutover_controller( null, $this->create_completed_cutover_job() );
 
 		$this->expectException( WooPaymentsCutoverBlockedException::class );
 
-		$this->sut->guard_woopayments_activation( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+		$controller->guard_woopayments_activation();
 	}
 
 	/**
-	 * @testdox Mandatory activation guard stays open when cutover preflight is not ready.
+	 * @testdox Mandatory activation guard stays open until a cutover generation is durably complete.
 	 */
-	public function test_mandatory_activation_guard_stays_open_when_preflight_is_not_ready(): void {
+	public function test_mandatory_activation_guard_stays_open_before_done(): void {
 		$this->fake_wp_die_handler();
 		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
+		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** Return active durable work. */
+			public function get_state_record(): ?array {
+				return array( 'state' => WooPaymentsCutoverState::DEFERRED );
+			}
 
-		$this->sut->guard_woopayments_activation( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+			/** Return an external lifecycle event. */
+			public function is_internal_plugin_lifecycle_change(): bool {
+				return false;
+			}
+		};
+		$controller = $this->create_cutover_controller( null, $job );
 
-		$this->assertTrue( true, 'WooPayments reactivation must not be blocked while native transport readiness is false.' );
+		$controller->guard_woopayments_activation();
+
+		$this->assertTrue( true, 'WooPayments reactivation remains a merchant option until cutover completes.' );
 	}
 
 	/**
@@ -517,7 +703,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_wp_die_handler();
 		$this->enable_ready_cutover();
 
-		$this->sut->guard_woopayments_activation( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+		$this->sut->guard_woopayments_activation();
 
 		$this->assertTrue( true, 'Mandatory cutover must still require an explicit rollout filter.' );
 	}
@@ -530,7 +716,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 
 		$this->assertFalse( WooPaymentsCutoverController::DEFAULT_MANDATORY_CUTOVER_ENABLED );
-		$this->sut->guard_woopayments_activation( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+		$this->sut->guard_woopayments_activation();
 		$this->assertTrue( true, 'Mandatory cutover remains fail-closed until the release rollout default is explicitly flipped.' );
 	}
 
@@ -548,134 +734,116 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		);
+		$controller = $this->create_cutover_controller( null, $this->create_completed_cutover_job() );
 
 		$this->expectException( WooPaymentsCutoverBlockedException::class );
 		try {
-			$this->sut->guard_woopayments_activation( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+			$controller->guard_woopayments_activation();
 		} finally {
 			$this->assertSame( WooPaymentsCutoverController::DEFAULT_MANDATORY_CUTOVER_ENABLED, $observed_default, 'The mandatory cutover filter should receive the explicit default value.' );
 		}
 	}
 
 	/**
-	 * @testdox Mandatory auto-deactivation does not require current user cutover capabilities.
+	 * @testdox A valid merchant action queues idempotent durable work and redirects to the bare Plugins screen.
 	 */
-	public function test_mandatory_auto_deactivation_does_not_require_current_user_cutover_capabilities(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( false );
-		$this->enable_ready_cutover();
-		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
+	public function test_valid_cutover_action_enqueues_idempotently_and_redirects_to_plugins(): void {
+		$arbiter      = new class() extends NativePaymentsRuntimeArbiter {
+			/** Return enabled native runtime. */
+			public function is_native_runtime_enabled(): bool {
+				return true;
+			}
 
-		$this->sut->handle_admin_init();
+			/** Return active plugin ownership. */
+			public function is_plugin_runtime_active(): bool {
+				return true;
+			}
+		};
+		$preflight    = new class() extends WooPaymentsCutoverPreflightService {
+			/** Return site activation scope. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+		};
+		$job          = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var int Number of controller enqueue requests. */
+			public int $enqueue_calls = 0;
 
-		$this->assertCount( 1, $this->deactivate_plugin_calls, 'Mandatory cutover should deactivate the plugin when native preflight is ready.' );
-		$this->assertSame(
-			array( NativePaymentsRuntimeArbiter::PLUGIN_FILE, false, false ),
-			$this->deactivate_plugin_calls[0],
-			'Mandatory cutover should deactivate the per-site WooPayments plugin when native preflight is ready.'
-		);
-		$this->assertFalse( $this->plugin_active, 'Mandatory cutover should remove the plugin active signal.' );
+			/** @var int Number of durable generations opened. */
+			public int $generation_count = 0;
+
+			/**
+			 * Enqueue idempotently.
+			 *
+			 * @param string $source Trigger source.
+			 */
+			public function enqueue( string $source ): bool {
+				unset( $source );
+				++$this->enqueue_calls;
+				if ( 1 === $this->enqueue_calls ) {
+					++$this->generation_count;
+				}
+				return true;
+			}
+		};
+		$legacy_proxy = $this->getMockBuilder( LegacyProxy::class )
+			->onlyMethods( array( 'call_function', 'exit' ) )
+			->getMock();
+		$legacy_proxy->method( 'call_function' )->willReturn( true );
+		$legacy_proxy->expects( $this->exactly( 2 ) )->method( 'exit' );
+		$controller = new WooPaymentsCutoverController();
+		$controller->init( $arbiter, $legacy_proxy, $preflight, $job );
+		$redirects        = array();
+		$capture_redirect = static function ( string $location ) use ( &$redirects ): string {
+			$redirects[] = $location;
+			return '';
+		};
+		add_filter( 'wp_redirect', $capture_redirect );
+		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_DISABLE;
+		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsCutoverController::NONCE_ACTION );
+
+		try {
+			$controller->handle_admin_init();
+			$controller->handle_admin_init();
+		} finally {
+			remove_filter( 'wp_redirect', $capture_redirect );
+		}
+
+		$this->assertSame( 2, $job->enqueue_calls );
+		$this->assertSame( 1, $job->generation_count );
+		$this->assertSame( array( admin_url( 'plugins.php' ), admin_url( 'plugins.php' ) ), $redirects );
 	}
 
 	/**
-	 * @testdox Mandatory auto-deactivation renders success notice after deactivation redirects.
+	 * @testdox An invalid merchant action nonce dies before any cutover work is queued.
 	 */
-	public function test_mandatory_auto_deactivation_renders_success_notice_after_deactivation_redirect(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( false );
-		$this->enable_ready_cutover();
-		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
+	public function test_invalid_cutover_action_nonce_dies_before_enqueue(): void {
+		$this->fake_wp_die_handler();
+		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var int Number of enqueue calls. */
+			public int $enqueue_calls = 0;
 
-		$this->sut->handle_admin_init();
-		unset( $_GET[ WooPaymentsCutoverController::QUERY_STATUS ] );
-		$this->fake_woopayments_class_unloaded();
+			/**
+			 * Record an unexpected enqueue call.
+			 *
+			 * @param string $source Trigger source.
+			 */
+			public function enqueue( string $source ): bool {
+				unset( $source );
+				++$this->enqueue_calls;
+				return true;
+			}
+		};
+		$controller = $this->create_cutover_controller( null, $job );
+		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_DISABLE;
+		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = 'invalid';
 
-		$notice = $this->render_admin_notices( $this->create_cutover_controller() );
-
-		$this->assertStringContainsString( 'WooPayments is now fully native in WooCommerce', $notice );
-		$this->assertStringContainsString( 'Everything works as before', $notice );
-
-		unset( $_GET[ WooPaymentsCutoverController::QUERY_STATUS ] );
-		$this->fake_woopayments_class_unloaded();
-
-		$next_request_notice = $this->render_admin_notices( $this->create_cutover_controller() );
-
-		$this->assertStringNotContainsString( 'WooPayments is now fully native in WooCommerce', $next_request_notice );
-	}
-
-	/**
-	 * @testdox Mandatory auto-deactivation renders same-request success while the plugin class remains loaded.
-	 */
-	public function test_mandatory_auto_deactivation_renders_same_request_success_when_plugin_class_remains_loaded(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( false );
-		$this->enable_ready_cutover();
-		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
-
-		$this->sut->handle_admin_init();
-
-		$notice = $this->render_admin_notices( $this->sut );
-
-		$this->assertStringContainsString( 'WooPayments is now fully native in WooCommerce', $notice );
-		$this->assertStringContainsString( 'Everything works as before', $notice );
-
-		unset( $_GET[ WooPaymentsCutoverController::QUERY_STATUS ] );
-		$this->fake_woopayments_class_unloaded();
-
-		$next_request_notice = $this->render_admin_notices( $this->create_cutover_controller() );
-
-		$this->assertStringNotContainsString( 'WooPayments is now fully native in WooCommerce', $next_request_notice );
-	}
-
-	/**
-	 * @testdox Stale disabled cutover query status renders blocked notice while the plugin runtime remains active.
-	 */
-	public function test_stale_disabled_query_status_renders_blocked_notice_when_plugin_runtime_remains_active(): void {
-		$this->fake_plugin_active();
-		$this->enable_ready_cutover();
-		$_GET[ WooPaymentsCutoverController::QUERY_STATUS ] = WooPaymentsCutoverController::STATUS_DISABLED;
-
-		$notice = $this->render_admin_notices( $this->sut );
-
-		$this->assertStringContainsString( 'WooPayments could not be disabled because native WooPayments is not ready', $notice );
-		$this->assertStringNotContainsString( 'WooPayments is now fully native in WooCommerce', $notice );
-	}
-
-	/**
-	 * @testdox Stale disabled cutover transient renders blocked notice while the plugin runtime remains active.
-	 */
-	public function test_stale_disabled_transient_renders_blocked_notice_when_plugin_runtime_remains_active(): void {
-		$this->fake_plugin_active();
-		$this->enable_ready_cutover();
-		set_transient( 'woocommerce_woopayments_native_cutover_status', WooPaymentsCutoverController::STATUS_DISABLED, 10 * MINUTE_IN_SECONDS );
-
-		$notice = $this->render_admin_notices( $this->sut );
-
-		$this->assertStringContainsString( 'WooPayments could not be disabled because native WooPayments is not ready', $notice );
-		$this->assertStringNotContainsString( 'WooPayments is now fully native in WooCommerce', $notice );
-	}
-
-	/**
-	 * @testdox Failed mandatory auto-deactivation clears stored success and renders blocked notice.
-	 */
-	public function test_failed_mandatory_auto_deactivation_clears_stored_success_and_renders_blocked_notice(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( false );
-		$this->enable_ready_cutover();
-		$this->fee_remediation_schedule_result = 'unavailable';
-		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
-
-		$this->sut->handle_admin_init();
-		unset( $_GET[ WooPaymentsCutoverController::QUERY_STATUS ] );
-
-		$same_request_notice = $this->render_admin_notices( $this->sut );
-
-		$this->fake_woopayments_class_unloaded();
-		$next_request_notice = $this->render_admin_notices( $this->create_cutover_controller() );
-
-		$this->assertStringContainsString( 'WooPayments could not be disabled because native WooPayments is not ready', $same_request_notice );
-		$this->assertStringNotContainsString( 'WooPayments is now fully native in WooCommerce', $same_request_notice );
-		$this->assertStringNotContainsString( 'WooPayments is now fully native in WooCommerce', $next_request_notice );
+		$this->expectException( WooPaymentsCutoverBlockedException::class );
+		try {
+			$controller->handle_admin_init();
+		} finally {
+			$this->assertSame( 0, $job->enqueue_calls );
+		}
 	}
 
 	/**
@@ -686,73 +854,31 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
 		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var int Number of enqueue calls. */
+			public int $enqueue_calls = 0;
 
-		$this->sut->handle_admin_init();
+			/**
+			 * Record an unexpected mandatory enqueue.
+			 *
+			 * @param string $source Trigger source.
+			 */
+			public function enqueue( string $source ): bool {
+				unset( $source );
+				++$this->enqueue_calls;
+				return true;
+			}
+		};
+		$controller = $this->create_cutover_controller( null, $job );
 
-		$this->assertSame( array(), $this->deactivate_plugin_calls, 'Developer bypass should preserve an active standalone plugin for parallel testing.' );
+		$controller->handle_admin_init();
+
+		$this->assertSame( 0, $job->enqueue_calls, 'Developer bypass should not start mandatory reconciliation.' );
 		$this->assertTrue( $this->plugin_active, 'Developer bypass should leave WooPayments active.' );
 	}
 
 	/**
-	 * @testdox Mandatory activation guard ignores other plugins.
-	 */
-	public function test_mandatory_activation_guard_ignores_other_plugins(): void {
-		$this->fake_wp_die_handler();
-		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
-
-		$this->sut->guard_woopayments_activation( 'other-plugin/other-plugin.php' );
-
-		$this->assertTrue( true, 'Other plugins should not be blocked by the WooPayments cutover guard.' );
-	}
-
-	/**
-	 * @testdox Network-active WooPayments is deactivated network-wide.
-	 */
-	public function test_network_active_woopayments_deactivates_network_wide(): void {
-		$this->fake_plugin_active( false, true );
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-
-		$result = $this->sut->disable_woopayments_plugin();
-
-		$this->assertTrue( $result, 'Network-active WooPayments should be disabled when the user can manage network plugins.' );
-		$this->assertSame(
-			array( NativePaymentsRuntimeArbiter::PLUGIN_FILE, false, true ),
-			$this->deactivate_plugin_calls[0],
-			'Network-active WooPayments must be deactivated with the network-wide flag.'
-		);
-	}
-
-	/**
-	 * @testdox Network cutover evaluates every site and refuses deactivation when any site fails preflight.
-	 * @group multisite
-	 */
-	public function test_network_cutover_refuses_when_any_site_fails_preflight(): void {
-		$site_ids         = $this->create_multisite_preflight_sites();
-		$failing_site_id  = (int) end( $site_ids );
-		$visited_site_ids = array();
-		$this->create_multisite_legacy_subscription_marker( $failing_site_id );
-
-		$this->fake_plugin_active( false, true );
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		add_filter(
-			WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES,
-			static function ( array $failures ) use ( &$visited_site_ids ): array {
-				$current_site_id    = get_current_blog_id();
-				$visited_site_ids[] = $current_site_id;
-				return $failures;
-			}
-		);
-
-		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
-		$this->assertSame( $site_ids, array_values( array_unique( $visited_site_ids ) ) );
-		$this->assertSame( array(), $this->deactivate_plugin_calls );
-		$this->assertTrue( $this->plugin_network_active );
-	}
-
-	/**
-	 * @testdox Network preflight reports failing site IDs in its support surface and blocked notice.
+	 * @testdox Network preflight reports failing site IDs in its compatibility support surface.
 	 * @group multisite
 	 */
 	public function test_network_preflight_reports_failing_site_ids(): void {
@@ -764,13 +890,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 
 		$this->assertSame( array( $failing_site_id ), $this->sut->get_network_preflight_failing_site_ids() );
-
-		ob_start();
-		$this->sut->output_blocked_notice();
-		$notice = (string) ob_get_clean();
-
-		$this->assertStringContainsString( (string) $failing_site_id, $notice );
-		$this->assertStringNotContainsString( (string) $site_ids[1], $notice );
 	}
 
 	/**
@@ -857,7 +976,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_TRANSPORT_READY, '__return_false' );
 
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 		$this->assertContains( 'native_transport_unavailable', $this->sut->get_preflight_failures() );
 	}
 
@@ -871,9 +989,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->platform_connection_failures = array( 'wpcom_connection_owner_user_token_unavailable' );
 
 		$this->assertContains( 'wpcom_connection_owner_user_token_unavailable', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
-		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
-		$this->assertSame( array(), $this->deactivate_plugin_calls, 'The plugin must stay active when owner user-token readiness is unavailable.' );
 	}
 
 	/**
@@ -887,8 +1002,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
 
 		$this->assertContains( 'wpcom_blog_id_unavailable', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
-		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
 	}
 
 	/**
@@ -906,9 +1019,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertContains( 'unsupported_payment_methods_enabled', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
-		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
-		$this->assertSame( array(), $this->deactivate_plugin_calls, 'The plugin must stay active while any enabled method cannot be charged natively.' );
 	}
 
 	/**
@@ -942,7 +1052,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertNotContains( 'unsupported_payment_methods_enabled', $this->sut->get_preflight_failures() );
-		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -961,8 +1070,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
 
 		$this->assertContains( 'unsupported_payment_methods_enabled', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
-		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
 	}
 
 	/**
@@ -975,8 +1082,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_multi_currency_with_rate_type( 'automatic' );
 
 		$this->assertContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
-		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
 	}
 
 	/**
@@ -989,7 +1094,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_multi_currency_with_rate_type( 'manual' );
 
 		$this->assertNotContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
-		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1003,7 +1107,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_available_native_rate_transport();
 
 		$this->assertNotContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
-		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1017,8 +1120,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
 
 		$this->assertContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
-		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
 	}
 
 	/**
@@ -1033,7 +1134,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->native_provider_ready = true;
 
 		$this->assertContains( 'native_admin_surfaces_unavailable', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1049,7 +1149,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$sut                         = $this->create_cutover_controller( $this->create_admin_navigation_controller( false ) );
 
 		$this->assertContains( 'native_admin_surfaces_unavailable', $sut->get_preflight_failures() );
-		$this->assertFalse( $sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1066,7 +1165,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$failures = $this->sut->get_preflight_failures();
 
 		$this->assertNotContains( 'native_admin_surfaces_unavailable', $failures );
-		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1082,7 +1180,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
 
 		$this->assertContains( 'woopayments_plugin_version_unsupported', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1111,7 +1208,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->native_provider_ready = true;
 
 		$this->assertContains( 'provider_events_undispositioned', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1127,7 +1223,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->native_provider_ready = true;
 
 		$this->assertContains( 'operational_queue_hooks_undispositioned', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1148,7 +1243,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $action_id );
 		$this->assertGreaterThan( 0, $action_id );
 		$this->assertContains( 'operational_queue_hooks_undispositioned', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1172,7 +1266,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $action_id );
 		$this->assertGreaterThan( 0, $action_id );
 		$this->assertNotContains( 'operational_queue_hooks_undispositioned', $this->sut->get_preflight_failures() );
-		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1209,7 +1302,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fee_remediation_schedulable = false;
 
 		$this->assertContains( 'financial_migrations_unavailable', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1227,7 +1319,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertNotContains( 'native_admin_surfaces_unavailable', $failures );
 		$this->assertNotContains( 'provider_events_undispositioned', $failures );
 		$this->assertNotContains( 'operational_queue_hooks_undispositioned', $failures );
-		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1240,7 +1331,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->create_legacy_stripe_billing_subscription( 'pending' );
 
 		$this->assertContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1253,7 +1343,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->create_legacy_stripe_billing_subscription( 'cancelled' );
 
 		$this->assertContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1266,7 +1355,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->create_legacy_stripe_billing_subscription( 'cancelled', '_migrated_wcpay_subscription_id' );
 
 		$this->assertContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1280,7 +1368,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
 
 		$this->assertContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1295,7 +1382,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$this->assertContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1308,7 +1394,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->create_legacy_stripe_billing_hpos_marker( '_wcpay_pending_invoice_id' );
 
 		$this->assertContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
-		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}
 
 	/**
@@ -1320,40 +1405,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 
 		$this->assertNotContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
-		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
-	}
-
-	/**
-	 * @testdox Blocked cutover notice signposts the Stripe Billing migration path.
-	 */
-	public function test_blocked_notice_signposts_stripe_billing_migration_path(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->create_legacy_stripe_billing_subscription( 'active' );
-
-		ob_start();
-		$this->sut->output_blocked_notice();
-		$notice = (string) ob_get_clean();
-
-		$this->assertStringContainsString( 'WooCommerce Subscriptions', $notice );
-		$this->assertStringContainsString( 'run the WooPayments Stripe Billing migration from the WooPayments extension', $notice );
-	}
-
-	/**
-	 * @testdox Mandatory auto-deactivation is blocked while legacy Stripe Billing subscription data exists.
-	 */
-	public function test_mandatory_auto_deactivation_blocks_when_legacy_stripe_billing_subscription_marker_exists(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( false );
-		$this->enable_ready_cutover();
-		$this->create_legacy_stripe_billing_subscription( 'on-hold' );
-		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
-
-		$this->sut->handle_admin_init();
-
-		$this->assertSame( array(), $this->deactivate_plugin_calls, 'Mandatory cutover must not deactivate the plugin while legacy Stripe Billing subscription data exists.' );
-		$this->assertTrue( $this->plugin_active, 'The plugin must keep owning legacy Stripe Billing subscription data.' );
 	}
 
 	/**
@@ -1368,16 +1419,17 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_empty_array' );
 		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_TRANSPORT_READY, '__return_true' );
 
-		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
+		$this->assertNotContains( 'native_transport_unavailable', $this->sut->get_preflight_failures() );
 	}
 
 	/**
 	 * Create a cutover controller wired to this test's dependencies.
 	 *
 	 * @param WooPaymentsAdminNavigationController|null $admin_navigation_controller Optional admin navigation owner.
+	 * @param WooPaymentsCutoverReconciliationJob|null  $job                         Optional reconciliation job.
 	 * @return WooPaymentsCutoverController
 	 */
-	private function create_cutover_controller( ?WooPaymentsAdminNavigationController $admin_navigation_controller = null ): WooPaymentsCutoverController {
+	private function create_cutover_controller( ?WooPaymentsAdminNavigationController $admin_navigation_controller = null, ?WooPaymentsCutoverReconciliationJob $job = null ): WooPaymentsCutoverController {
 		$arbiter           = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
 		$legacy_proxy      = wc_get_container()->get( LegacyProxy::class );
 		$preflight_service = new WooPaymentsCutoverPreflightService();
@@ -1392,10 +1444,56 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->native_rate_api_client,
 			$admin_navigation_controller ?? $this->create_admin_navigation_controller( true )
 		);
+		$job        = $job ?? new class() extends WooPaymentsCutoverReconciliationJob {
+			/** Return no durable state. */
+			public function get_state_record(): ?array {
+				return null;
+			}
+
+			/** Return no durable state after notice classification. */
+			public function classify_for_admin_notice(): ?array {
+				return null;
+			}
+
+			/** Offer a new generation. */
+			public function should_offer_start(): bool {
+				return true;
+			}
+
+			/**
+			 * Accept controller routing without executing reconciliation inline.
+			 *
+			 * @param string $source Trigger source.
+			 */
+			public function enqueue( string $source ): bool {
+				unset( $source );
+				return true;
+			}
+
+			/** Return an external lifecycle event. */
+			public function is_internal_plugin_lifecycle_change(): bool {
+				return false;
+			}
+		};
 		$controller = new WooPaymentsCutoverController();
-		$controller->init( $arbiter, $legacy_proxy, $preflight_service );
+		$controller->init( $arbiter, $legacy_proxy, $preflight_service, $job );
 
 		return $controller;
+	}
+
+	/** Create a durable completed-state double for activation-guard tests. */
+	private function create_completed_cutover_job(): WooPaymentsCutoverReconciliationJob {
+		return new class() extends WooPaymentsCutoverReconciliationJob {
+			/** Return one completed generation. */
+			public function get_state_record(): ?array {
+				return array( 'state' => WooPaymentsCutoverState::DONE );
+			}
+
+			/** Return an external lifecycle event. */
+			public function is_internal_plugin_lifecycle_change(): bool {
+				return false;
+			}
+		};
 	}
 
 	/**
