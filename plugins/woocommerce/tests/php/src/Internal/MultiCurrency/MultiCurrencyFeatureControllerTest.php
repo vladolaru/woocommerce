@@ -132,12 +132,14 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$this->sut = new MultiCurrencyFeatureController();
 		$this->sut->init( $detector );
 		$original_postmeta = $wpdb->postmeta;
+		$suppress_errors   = $wpdb->suppress_errors( true );
 		$wpdb->postmeta    = "{$wpdb->prefix}missing_multi_currency_order_meta";
 
 		try {
 			$this->assertSame( array( 'no' ), $this->sut->get_feature_setting()['disabled']() );
 		} finally {
 			$wpdb->postmeta = $original_postmeta;
+			$wpdb->suppress_errors( $suppress_errors );
 		}
 	}
 

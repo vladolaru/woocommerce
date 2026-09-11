@@ -176,12 +176,14 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$sut->set_default_currency_resolver( static fn(): string => 'USD' );
 		$sut->set_request_args_resolver( static fn(): array => array() );
 		$original_postmeta = $wpdb->postmeta;
+		$suppress_errors   = $wpdb->suppress_errors( true );
 		$wpdb->postmeta    = "{$wpdb->prefix}missing_multi_currency_order_meta";
 
 		try {
 			$sut->register();
 		} finally {
 			$wpdb->postmeta = $original_postmeta;
+			$wpdb->suppress_errors( $suppress_errors );
 		}
 
 		$this->assertSame( 99999, has_filter( 'woocommerce_analytics_update_order_stats_data', array( $sut, 'handle_woocommerce_analytics_update_order_stats_data' ) ) );
