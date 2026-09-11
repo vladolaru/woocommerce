@@ -268,6 +268,11 @@ class WooPayments extends PaymentGateway {
 			$extension_suggestion['onboarding']['_links'] = array();
 		}
 
+		$is_core_native_suggestion = self::ONBOARDING_TYPE_NATIVE_IN_CONTEXT === $extension_suggestion['onboarding']['type'] && empty( $extension_suggestion['plugin']['slug'] );
+		if ( $is_core_native_suggestion && ! empty( $extension_suggestion['_incentive'] ) && is_array( $extension_suggestion['_incentive'] ) ) {
+			$extension_suggestion['_incentive']['cta_label'] = __( 'Get started', 'woocommerce' );
+		}
+
 		// We only add the preload link if we don't have a working WPCOM connection.
 		// This is because WooPayments onboarding preloading focuses on hydrating the WPCOM connection.
 		if ( ! $extension_suggestion['onboarding']['state']['wpcom_has_working_connection'] ) {

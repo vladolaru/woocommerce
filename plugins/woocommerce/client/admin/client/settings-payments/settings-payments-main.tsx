@@ -38,6 +38,7 @@ import {
 	isWooPayments,
 	getWooPaymentsFromProviders,
 	providersContainWooPaymentsNeedsSetup,
+	isCoreNativeWooPayments,
 	isIncentiveDismissedEarlierThanTimestamp,
 	isActionIncentive,
 	recordPaymentsEvent,
@@ -333,6 +334,18 @@ export const SettingsPaymentsMain = () => {
 				} );
 			}
 
+			if ( isCoreNativeWooPayments( paymentsEntity ) ) {
+				recordPaymentsOnboardingEvent(
+					'woopayments_onboarding_modal_opened',
+					{
+						from: context,
+						source: wooPaymentsOnboardingSessionEntrySettings,
+					}
+				);
+				setIsOnboardingModalOpen( true );
+				return;
+			}
+
 			setInstallingPlugin( paymentsEntity.id );
 			recordPaymentsEvent( 'recommendations_setup', {
 				extension_selected: paymentsEntity.plugin.slug,
@@ -458,8 +471,10 @@ export const SettingsPaymentsMain = () => {
 		[
 			installingPlugin,
 			installAndActivatePlugins,
+			attachPaymentExtensionSuggestion,
 			invalidateResolutionForStoreSelector,
 			businessCountry,
+			setIsOnboardingModalOpen,
 		]
 	);
 

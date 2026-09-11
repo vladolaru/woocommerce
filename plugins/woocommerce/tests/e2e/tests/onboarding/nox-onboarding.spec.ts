@@ -11,27 +11,17 @@ const PROVIDERS_ENDPOINT =
 const ONBOARDING_ENDPOINT =
 	/\/wp-json\/wc-admin\/settings\/payments\/woopayments\/onboarding(\?.*)?$/;
 const WOO_PAYMENTS_PROVIDER = {
-	_type: 'gateway',
+	_type: 'suggestion',
 	_order: 1,
-	id: 'woocommerce_payments',
-	title: 'WooPayments',
+	id: '_wc_pes_woopayments',
+	_suggestion_id: 'woopayments',
+	title: 'Accept payments with Woo',
 	description:
 		'Accept credit cards and other payment methods with WooPayments.',
 	icon: '',
-	supports: [],
-	management: {
-		_links: {
-			settings: {
-				href: '/wp-admin/admin.php?page=wc-settings&tab=checkout',
-			},
-		},
-	},
-	state: {
-		enabled: false,
-		account_connected: false,
-		needs_setup: true,
-		test_mode: false,
-		dev_mode: false,
+	plugin: {
+		file: '',
+		status: 'not_installed',
 	},
 	onboarding: {
 		type: 'native_in_context',
@@ -42,14 +32,13 @@ const WOO_PAYMENTS_PROVIDER = {
 			test_mode: false,
 			wpcom_has_working_connection: true,
 		},
-		messages: {},
-		_links: {
-			onboard: { href: '#' },
-			reset: { href: '#' },
-		},
-		recommended_payment_methods: [],
+		_links: {},
 	},
-	_links: {},
+	tags: [ 'made_in_woo', 'preferred', 'recommended' ],
+	_links: {
+		attach: { href: '#' },
+		hide: { href: '#' },
+	},
 };
 
 const ONBOARDING_FIELDS = {
@@ -182,7 +171,7 @@ test.describe(
 		test( 'can start in-context onboarding from Payments settings', async ( {
 			page,
 		} ) => {
-			expect( WOO_PAYMENTS_PROVIDER ).not.toHaveProperty( 'plugin' );
+			expect( WOO_PAYMENTS_PROVIDER.plugin ).not.toHaveProperty( 'slug' );
 
 			const consoleErrors: string[] = [];
 			page.on( 'console', ( message ) => {
@@ -205,12 +194,12 @@ test.describe(
 
 			await expect(
 				wooPaymentsProvider.getByRole( 'button', {
-					name: /^Install WooPayments$/,
+					name: /^Install$/,
 				} )
 			).toHaveCount( 0 );
 
 			await wooPaymentsProvider
-				.getByRole( 'button', { name: 'Complete setup' } )
+				.getByRole( 'button', { name: 'Set up' } )
 				.click();
 
 			await expect(

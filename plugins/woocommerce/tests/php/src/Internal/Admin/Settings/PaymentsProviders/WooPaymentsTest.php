@@ -844,6 +844,27 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Test a core-native suggestion does not retain an extension-install incentive action.
+	 */
+	public function test_enhance_core_native_suggestion_uses_setup_incentive_copy(): void {
+		$extension_suggestion = array(
+			'id'         => '_wc_pes_woopayments',
+			'plugin'     => array(
+				'file'   => '',
+				'status' => PaymentsProviders::EXTENSION_NOT_INSTALLED,
+			),
+			'onboarding' => array(),
+			'_incentive' => array(
+				'cta_label' => 'Install and save 10%',
+			),
+		);
+
+		$enhanced = $this->sut->enhance_extension_suggestion( $extension_suggestion );
+
+		$this->assertSame( 'Get started', $enhanced['_incentive']['cta_label'] );
+	}
+
+	/**
 	 * Test enhance_extension_suggestion includes preload link without WPCOM connection.
 	 */
 	public function test_enhance_extension_suggestion_includes_preload_link_without_wpcom() {
