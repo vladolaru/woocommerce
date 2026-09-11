@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
@@ -62,6 +63,16 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	public function test_provider_identity_preserves_woopayments_gateway_id(): void {
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $this->sut->get_id() );
 		$this->assertInstanceOf( CapabilityManifest::class, $this->sut->get_capability_manifest() );
+	}
+
+	/** @testdox Provider exposes its Multi-Currency bootstrap root without core-owned composition knowledge. */
+	public function test_provider_exposes_its_multi_currency_bootstrap_root(): void {
+		$this->assertTrue( method_exists( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ) );
+		if ( ! method_exists( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ) ) {
+			return;
+		}
+
+		$this->assertSame( array( WooPaymentsMultiCurrencyProviderBootstrap::class ), WooPaymentsProvider::get_multi_currency_provider_roots() );
 	}
 
 	/**

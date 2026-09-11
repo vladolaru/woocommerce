@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyAdminLinkHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
@@ -270,6 +271,15 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				),
 			),
 		);
+	}
+
+	/**
+	 * Get WooPayments-owned Multi-Currency bootstrap roots.
+	 *
+	 * @return array<int,class-string> Root classes in registration order.
+	 */
+	public static function get_multi_currency_provider_roots(): array {
+		return array( WooPaymentsMultiCurrencyProviderBootstrap::class );
 	}
 
 	/**

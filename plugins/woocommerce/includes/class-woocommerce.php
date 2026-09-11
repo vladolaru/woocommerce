@@ -426,7 +426,8 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader::class )->register();
 
 		( new Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap(
-			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_bootstrap_root_matrix()
+			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_bootstrap_root_matrix(),
+			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_multi_currency_provider_roots()
 		) )->register(
 			$container,
 			fn(): bool => $this->is_rest_api_request()

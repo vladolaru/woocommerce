@@ -265,6 +265,26 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		);
 	}
 
+	/** @testdox Production composition supplies lazy WooPayments Multi-Currency provider roots. */
+	public function test_production_composition_uses_lazy_multi_currency_provider_root_resolver(): void {
+		$method       = new ReflectionMethod( \WooCommerce::class, 'init_hooks' );
+		$source_lines = file( $method->getFileName() );
+		$method_body  = implode( '', array_slice( $source_lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1 ) );
+
+		$this->assertStringContainsString(
+			'static fn(): array => Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsProvider::get_multi_currency_provider_roots()',
+			$method_body
+		);
+	}
+
+	/** @testdox Native Payments passes its provider roots and REST classifier into the Multi-Currency bootstrap. */
+	public function test_native_bootstrap_passes_multi_currency_composition_callables_through(): void {
+		$source = implode( '', file( ( new ReflectionMethod( NativePaymentsBootstrap::class, 'register' ) )->getFileName() ) );
+
+		$this->assertStringContainsString( 'new MultiCurrencyBootstrap( $this->multi_currency_provider_roots_resolver )', $source );
+		$this->assertStringContainsString( '->register( $container, $is_rest_api_request )', $source );
+	}
+
 	/** @testdox Should return before request or container work when the bootstrap filter is false. */
 	public function test_bootstrap_filter_false_short_circuits_all_work(): void {
 		add_filter( NativePaymentsBootstrap::FILTER_BOOTSTRAP_ENABLED, '__return_false' );
@@ -275,7 +295,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			static function () use ( &$matrix_calls ): array {
 				++$matrix_calls;
 				return WooPaymentsProvider::get_bootstrap_root_matrix();
-			}
+			},
+			static fn(): array => array()
 		);
 
 		$sut->register(
@@ -522,7 +543,10 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * @return NativePaymentsBootstrap
 	 */
 	private function make_bootstrap(): NativePaymentsBootstrap {
-		return new NativePaymentsBootstrap( array( WooPaymentsProvider::class, 'get_bootstrap_root_matrix' ) );
+		return new NativePaymentsBootstrap(
+			array( WooPaymentsProvider::class, 'get_bootstrap_root_matrix' ),
+			array( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' )
+		);
 	}
 
 	/**

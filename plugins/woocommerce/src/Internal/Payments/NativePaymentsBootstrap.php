@@ -33,13 +33,24 @@ final class NativePaymentsBootstrap {
 	private $root_matrix_resolver;
 
 	/**
-	 * Create a neutral bootstrap for one provider-owned root matrix.
+	 * Multi-Currency provider roots resolver.
 	 *
-	 * @param callable $root_matrix_resolver Provider-owned root matrix resolver.
-	 * @phpstan-param callable(): array<string,array<string,array<int,class-string>>> $root_matrix_resolver
+	 * @var callable
+	 * @phpstan-var callable(): array<int,class-string>
 	 */
-	public function __construct( callable $root_matrix_resolver ) {
-		$this->root_matrix_resolver = $root_matrix_resolver;
+	private $multi_currency_provider_roots_resolver;
+
+	/**
+	 * Create a neutral bootstrap for provider-owned root matrices.
+	 *
+	 * @param callable $root_matrix_resolver                  Provider-owned native payments root matrix resolver.
+	 * @param callable $multi_currency_provider_roots_resolver Provider-owned Multi-Currency roots resolver.
+	 * @phpstan-param callable(): array<string,array<string,array<int,class-string>>> $root_matrix_resolver
+	 * @phpstan-param callable(): array<int,class-string> $multi_currency_provider_roots_resolver
+	 */
+	public function __construct( callable $root_matrix_resolver, callable $multi_currency_provider_roots_resolver ) {
+		$this->root_matrix_resolver                   = $root_matrix_resolver;
+		$this->multi_currency_provider_roots_resolver = $multi_currency_provider_roots_resolver;
 	}
 
 	/**
@@ -64,7 +75,7 @@ final class NativePaymentsBootstrap {
 			return;
 		}
 
-		( new MultiCurrencyBootstrap() )->register( $container );
+		( new MultiCurrencyBootstrap( $this->multi_currency_provider_roots_resolver ) )->register( $container, $is_rest_api_request );
 
 		$state_store = $container->get( NativePaymentsState::class );
 		$arbiter     = $container->get( NativePaymentsRuntimeArbiter::class );
