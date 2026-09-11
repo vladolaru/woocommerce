@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocaliza
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use WC_Unit_Test_Case;
 
 /**
@@ -61,7 +62,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
 		$sut->set_dev_mode_resolver( static fn(): bool => true );
 		$sut->set_rest_request_resolver( static fn(): bool => true );
-		$sut->set_multi_currency_orders_resolver( static fn(): bool => true );
 
 		$sut->register();
 
@@ -76,7 +76,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_baseline_analytics_hooks_when_core_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 		$sut->set_rest_request_resolver( static fn(): bool => false );
-		$sut->set_multi_currency_orders_resolver( static fn(): bool => true );
 
 		$sut->register();
 		$sut->register();
@@ -148,7 +147,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_sql_hooks_only_for_rest_requests_with_multi_currency_orders(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 		$sut->set_rest_request_resolver( static fn(): bool => true );
-		$sut->set_multi_currency_orders_resolver( static fn(): bool => true );
+		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
 
 		$sut->register();
 
@@ -163,7 +162,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_selected_currency_sql_hooks_for_rest_requests_with_multi_currency_orders(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 		$sut->set_rest_request_resolver( static fn(): bool => true );
-		$sut->set_multi_currency_orders_resolver( static fn(): bool => true );
+		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
 		$sut->set_default_currency_resolver( static fn(): string => 'USD' );
 		$sut->set_request_args_resolver( static fn(): array => array( 'currency' => 'EUR' ) );
 
@@ -179,7 +178,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	public function test_register_does_not_resolve_default_currency_for_selected_currency_sql_hooks(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 		$sut->set_rest_request_resolver( static fn(): bool => true );
-		$sut->set_multi_currency_orders_resolver( static fn(): bool => true );
+		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
 		$sut->set_request_args_resolver( static fn(): array => array( 'currency' => 'EUR' ) );
 		$sut->set_default_currency_resolver(
 			static function (): string {
@@ -340,13 +339,17 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 
 		$sut->register();
 
-		$this->assertSame(
-			10,
-			has_filter( 'woocommerce_new_order', array( $sut, 'invalidate_has_multi_currency_orders_cache' ) ),
-			'The controller should listen for new orders to invalidate its cached existence flag.'
+		$this->assertTrue(
+			false !== has_filter( 'woocommerce_new_order' ),
+			'The controller should listen for new orders to invalidate the usage detector cache.'
 		);
 
-		$sut->invalidate_has_multi_currency_orders_cache();
+		$callbacks = $GLOBALS['wp_filter']['woocommerce_new_order']->callbacks[10] ?? array();
+		foreach ( $callbacks as $callback ) {
+			if ( $callback['function'][0] instanceof MultiCurrencyUsageDetector ) {
+				call_user_func( $callback['function'] );
+			}
+		}
 
 		$this->assertFalse(
 			get_transient( 'wc_mc_has_orders' ),
@@ -365,13 +368,13 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyAnalyticsController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
+			new MultiCurrencyUsageDetector()
 		);
 		$controller->set_dev_mode_resolver( static fn(): bool => false );
 		if ( $set_rest_request_resolver ) {
 			$controller->set_rest_request_resolver( static fn(): bool => false );
 		}
-		$controller->set_multi_currency_orders_resolver( static fn(): bool => false );
 		$controller->set_hpos_resolver( static fn(): bool => false );
 		$controller->set_default_currency_resolver( static fn(): string => 'USD' );
 		$controller->set_request_args_resolver( static fn(): array => array() );
@@ -392,7 +395,8 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyAnalyticsController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
+			new MultiCurrencyUsageDetector()
 		);
 		$controller->set_dev_mode_resolver( static fn(): bool => false );
 		$controller->set_rest_request_resolver( static fn(): bool => true );

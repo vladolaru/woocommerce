@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsSqlProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 
@@ -31,11 +32,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	private const EXTEND_ORDER_SELECT_FILTER  = 'wcpay_multi_currency_filter_select_orders_clauses';
 
 	/**
-	 * Transient caching whether the store has multi-currency orders.
-	 */
-	private const HAS_MC_ORDERS_TRANSIENT = 'wc_mc_has_orders';
-
-	/**
 	 * Runtime owner arbiter.
 	 *
 	 * @var MultiCurrencyRuntimeArbiter
@@ -48,6 +44,13 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 * @var MultiCurrencyRuntimeServiceFactory
 	 */
 	private MultiCurrencyRuntimeServiceFactory $runtime_service_factory;
+
+	/**
+	 * Persisted Multi-Currency usage detector.
+	 *
+	 * @var MultiCurrencyUsageDetector
+	 */
+	private MultiCurrencyUsageDetector $usage_detector;
 
 	/**
 	 * Analytics projection service.
@@ -78,20 +81,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	private $rest_request_resolver = null;
 
 	/**
-	 * Multi-currency orders resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $multi_currency_orders_resolver = null;
-
-	/**
-	 * Request-level memo for the multi-currency orders existence check.
-	 *
-	 * @var bool|null
-	 */
-	private ?bool $has_multi_currency_orders_memo = null;
-
-	/**
 	 * HPOS enabled resolver.
 	 *
 	 * @var callable|null
@@ -119,10 +108,12 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 *
 	 * @param MultiCurrencyRuntimeArbiter        $arbiter                 Runtime owner arbiter.
 	 * @param MultiCurrencyRuntimeServiceFactory $runtime_service_factory Runtime service factory.
+	 * @param MultiCurrencyUsageDetector         $usage_detector          Persisted usage detector.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRuntimeServiceFactory $runtime_service_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRuntimeServiceFactory $runtime_service_factory, MultiCurrencyUsageDetector $usage_detector ): void {
 		$this->arbiter                 = $arbiter;
 		$this->runtime_service_factory = $runtime_service_factory;
+		$this->usage_detector          = $usage_detector;
 	}
 
 	/**
@@ -145,17 +136,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 */
 	public function set_rest_request_resolver( callable $resolver ): void {
 		$this->rest_request_resolver = $resolver;
-	}
-
-	/**
-	 * Set the multi-currency orders resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $resolver Resolver returning whether multi-currency orders exist.
-	 */
-	public function set_multi_currency_orders_resolver( callable $resolver ): void {
-		$this->multi_currency_orders_resolver = $resolver;
 	}
 
 	/**
@@ -225,13 +205,21 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			$this->add_filter_once( 'woocommerce_analytics_report_should_use_cache', array( $this, 'handle_woocommerce_analytics_report_should_use_cache' ) );
 		}
 
-		$this->add_filter_once( 'woocommerce_new_order', array( $this, 'invalidate_has_multi_currency_orders_cache' ) );
+		$this->add_filter_once( 'woocommerce_new_order', array( $this->usage_detector, 'invalidate_foreign_currency_orders_cache' ) );
 
 		$this->add_filter_once( 'woocommerce_analytics_update_order_stats_data', array( $this, 'handle_woocommerce_analytics_update_order_stats_data' ), 99999, 2 );
 		$this->add_filter_once( 'woocommerce_analytics_orders_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
 		$this->add_filter_once( 'woocommerce_analytics_orders_stats_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
 
-		if ( ! $this->is_rest_api_request() || ! $this->has_multi_currency_orders() ) {
+		if ( ! $this->is_rest_api_request() ) {
+			return;
+		}
+
+		try {
+			if ( ! $this->usage_detector->has_foreign_currency_orders() ) {
+				return;
+			}
+		} catch ( \RuntimeException $e ) {
 			return;
 		}
 
@@ -432,68 +420,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 		 * @param bool $is_rest_api_request Whether this is a WooCommerce REST API request.
 		 */
 		return (bool) apply_filters( 'woocommerce_is_rest_api_request', $is_rest_api_request );
-	}
-
-	/**
-	 * Tell whether the store has multi-currency orders.
-	 *
-	 * @return bool
-	 */
-	private function has_multi_currency_orders(): bool {
-		if ( null !== $this->multi_currency_orders_resolver ) {
-			return (bool) call_user_func( $this->multi_currency_orders_resolver );
-		}
-
-		if ( null !== $this->has_multi_currency_orders_memo ) {
-			return $this->has_multi_currency_orders_memo;
-		}
-
-		$cached = get_transient( self::HAS_MC_ORDERS_TRANSIENT );
-		if ( false !== $cached ) {
-			$this->has_multi_currency_orders_memo = ( '1' === $cached );
-
-			return $this->has_multi_currency_orders_memo;
-		}
-
-		global $wpdb;
-
-		if ( $this->is_hpos_enabled() ) {
-			$result = $wpdb->get_var(
-				"SELECT EXISTS(
-					SELECT 1
-					FROM {$wpdb->prefix}wc_orders_meta
-					WHERE meta_key = '_wcpay_multi_currency_order_exchange_rate'
-					LIMIT 1)
-				AS count;"
-			);
-		} else {
-			$result = $wpdb->get_var(
-				"SELECT EXISTS(
-					SELECT 1
-					FROM {$wpdb->postmeta}
-					WHERE meta_key = '_wcpay_multi_currency_order_exchange_rate'
-					LIMIT 1)
-				AS count;"
-			);
-		}
-
-		$this->has_multi_currency_orders_memo = ( 1 === (int) $result );
-		set_transient( self::HAS_MC_ORDERS_TRANSIENT, $this->has_multi_currency_orders_memo ? '1' : '0', HOUR_IN_SECONDS );
-
-		return $this->has_multi_currency_orders_memo;
-	}
-
-	/**
-	 * Invalidate the cached multi-currency orders existence flag.
-	 *
-	 * Hooked on order creation so a store's first multi-currency order is reflected on the
-	 * next analytics request without waiting for the transient to expire.
-	 *
-	 * @internal
-	 */
-	public function invalidate_has_multi_currency_orders_cache(): void {
-		$this->has_multi_currency_orders_memo = null;
-		delete_transient( self::HAS_MC_ORDERS_TRANSIENT );
 	}
 
 	/**

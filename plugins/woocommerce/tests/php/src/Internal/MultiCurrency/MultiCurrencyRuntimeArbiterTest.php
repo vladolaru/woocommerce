@@ -63,13 +63,16 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 			->with(
 				'multi_currency',
 				'Multi-currency',
-				array(
-					'option_key'                   => 'woocommerce_feature_multi_currency_enabled',
-					'description'                  => 'Let customers shop and pay in their own currency.',
-					'enabled_by_default'           => false,
-					'disable_ui'                   => false,
-					'is_experimental'              => false,
-					'default_plugin_compatibility' => FeaturePluginCompatibility::COMPATIBLE,
+				$this->callback(
+					function ( array $definition ): bool {
+						return 'woocommerce_feature_multi_currency_enabled' === $definition['option_key']
+							&& 'Let customers shop and pay in their own currency.' === $definition['description']
+							&& false === $definition['enabled_by_default']
+							&& false === $definition['disable_ui']
+							&& false === $definition['is_experimental']
+							&& FeaturePluginCompatibility::COMPATIBLE === $definition['default_plugin_compatibility']
+							&& isset( $definition['setting'] );
+					}
 				)
 			);
 
