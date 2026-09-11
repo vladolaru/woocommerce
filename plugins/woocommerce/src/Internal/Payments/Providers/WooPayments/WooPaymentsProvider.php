@@ -276,6 +276,8 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	/**
 	 * Get WooPayments-owned Multi-Currency bootstrap roots.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @return array<int,class-string> Root classes in registration order.
 	 */
 	public static function get_multi_currency_provider_roots(): array {

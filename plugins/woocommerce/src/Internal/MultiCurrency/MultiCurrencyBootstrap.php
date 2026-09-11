@@ -85,6 +85,8 @@ final class MultiCurrencyBootstrap {
 	/**
 	 * Initialize provider-neutral Multi-Currency composition.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param callable $provider_roots_resolver Provider-owned roots resolver.
 	 * @phpstan-param callable(): array<int,class-string> $provider_roots_resolver
 	 */
