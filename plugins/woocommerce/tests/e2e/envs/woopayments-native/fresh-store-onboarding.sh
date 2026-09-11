@@ -128,7 +128,7 @@ assert_local_wpcom_ready() {
 		echo 'Fresh-store onboarding requires local WPCOM readiness: env status.' >&2
 		return "$readiness_status"
 	fi
-	if ! jq -e '.status == "success" and .exit_code == 0 and (.context | type == "object") and .context.wpcom_web_generation == "current" and .context.ingress_routes == "current"' "$readiness_file" > /dev/null; then
+	if ! jq -e '.status == "success" and .exit_code == 0 and (.context | type == "object") and .context["wpcom-web_generation"] == "current" and .context.ingress_routes == "current"' "$readiness_file" > /dev/null; then
 		echo 'Fresh-store onboarding requires a current local WPCOM web runtime and ingress routes.' >&2
 		return 1
 	fi

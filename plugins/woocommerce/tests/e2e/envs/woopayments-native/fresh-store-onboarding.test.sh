@@ -46,7 +46,7 @@ fi
 
 case "$*" in
 	'--json env status')
-		printf '{"status":"success","exit_code":0,"context":{"wpcom_web_generation":"current","ingress_routes":"current"}}\n'
+		printf '{"status":"success","exit_code":0,"context":{"wpcom-web_generation":"current","ingress_routes":"current"}}\n'
 		;;
 	'--json transact status')
 		printf '{"status":"success","exit_code":0,"context":{"readiness_status":"ready","async_jobs_ready":"true","async_jobs_mode":"automatic"}}\n'
