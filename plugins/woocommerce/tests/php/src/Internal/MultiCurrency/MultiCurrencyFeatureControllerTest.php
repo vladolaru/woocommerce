@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Enums\FeaturePluginCompatibility;
+use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStoreMeta;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
@@ -35,7 +36,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		$this->previous_user_id = get_current_user_id();
-		$this->sut = new MultiCurrencyFeatureController();
+		$this->sut              = new MultiCurrencyFeatureController();
 		$this->sut->init( new MultiCurrencyUsageDetector() );
 	}
 
@@ -126,18 +127,9 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should protect disabling for real posts-storage Multi-Currency metadata.
 	 */
 	public function test_get_feature_setting_disables_no_for_real_posts_storage_order(): void {
-		global $wpdb;
-
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$order_id = $this->factory->post->create( array( 'post_type' => 'shop_order' ) );
-		$wpdb->insert(
-			$wpdb->postmeta,
-			array(
-				'post_id'    => $order_id,
-				'meta_key'   => '_wcpay_multi_currency_order_exchange_rate',
-				'meta_value' => '0.9',
-			)
-		);
+		add_post_meta( $order_id, '_wcpay_multi_currency_order_exchange_rate', '0.9' );
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
 		$this->sut = new MultiCurrencyFeatureController();
@@ -151,16 +143,15 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should protect disabling for real HPOS Multi-Currency metadata.
 	 */
 	public function test_get_feature_setting_disables_no_for_real_hpos_storage_order(): void {
-		global $wpdb;
-
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$order = wc_create_order();
-		$wpdb->insert(
-			"{$wpdb->prefix}wc_orders_meta",
-			array(
-				'order_id'   => $order->get_id(),
-				'meta_key'   => '_wcpay_multi_currency_order_exchange_rate',
-				'meta_value' => '0.9',
+		wc_get_container()->get( OrdersTableDataStoreMeta::class )->add_meta(
+			$order,
+			new \WC_Meta_Data(
+				array(
+					'key'   => '_wcpay_multi_currency_order_exchange_rate',
+					'value' => '0.9',
+				)
 			)
 		);
 		$detector = new MultiCurrencyUsageDetector();

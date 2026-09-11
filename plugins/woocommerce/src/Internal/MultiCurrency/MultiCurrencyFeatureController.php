@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDet
  * @since 11.2.0
  * @internal
  */
-final class MultiCurrencyFeatureController {
+class MultiCurrencyFeatureController {
 
 	/** Multi-Currency feature identifier. */
 	public const FEATURE_ID = 'multi_currency';

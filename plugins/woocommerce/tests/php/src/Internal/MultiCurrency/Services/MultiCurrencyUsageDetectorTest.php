@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
+use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStoreMeta;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use WC_Unit_Test_Case;
 
@@ -60,7 +61,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	public function test_has_foreign_currency_orders_queries_posts_table(): void {
 		$queries      = array();
 		$query_filter = $this->add_existence_query_filter( $queries );
-		$detector = new MultiCurrencyUsageDetector();
+		$detector     = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
 
 		try {
@@ -77,7 +78,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	public function test_has_foreign_currency_orders_queries_hpos_table(): void {
 		$queries      = array();
 		$query_filter = $this->add_existence_query_filter( $queries );
-		$detector = new MultiCurrencyUsageDetector();
+		$detector     = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => true );
 
 		try {
@@ -92,17 +93,8 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	 * @testdox Should detect persisted order metadata in posts storage.
 	 */
 	public function test_has_foreign_currency_orders_detects_real_posts_metadata(): void {
-		global $wpdb;
-
 		$order_id = $this->factory->post->create( array( 'post_type' => 'shop_order' ) );
-		$wpdb->insert(
-			$wpdb->postmeta,
-			array(
-				'post_id'    => $order_id,
-				'meta_key'   => '_wcpay_multi_currency_order_exchange_rate',
-				'meta_value' => '0.9',
-			)
-		);
+		add_post_meta( $order_id, '_wcpay_multi_currency_order_exchange_rate', '0.9' );
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
 
@@ -113,15 +105,14 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	 * @testdox Should detect persisted order metadata in HPOS storage.
 	 */
 	public function test_has_foreign_currency_orders_detects_real_hpos_metadata(): void {
-		global $wpdb;
-
 		$order = wc_create_order();
-		$wpdb->insert(
-			"{$wpdb->prefix}wc_orders_meta",
-			array(
-				'order_id'   => $order->get_id(),
-				'meta_key'   => '_wcpay_multi_currency_order_exchange_rate',
-				'meta_value' => '0.9',
+		wc_get_container()->get( OrdersTableDataStoreMeta::class )->add_meta(
+			$order,
+			new \WC_Meta_Data(
+				array(
+					'key'   => '_wcpay_multi_currency_order_exchange_rate',
+					'value' => '0.9',
+				)
 			)
 		);
 		$detector = new MultiCurrencyUsageDetector();
@@ -136,7 +127,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	public function test_has_foreign_currency_orders_reuses_caches_and_fresh_bypasses_them(): void {
 		$queries      = array();
 		$query_filter = $this->add_existence_query_filter( $queries );
-		$detector = new MultiCurrencyUsageDetector();
+		$detector     = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
 
 		try {
@@ -163,7 +154,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	public function test_invalidate_foreign_currency_orders_cache_clears_request_and_transient_cache(): void {
 		$queries      = array();
 		$query_filter = $this->add_existence_query_filter( $queries );
-		$detector = new MultiCurrencyUsageDetector();
+		$detector     = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
 
 		try {
