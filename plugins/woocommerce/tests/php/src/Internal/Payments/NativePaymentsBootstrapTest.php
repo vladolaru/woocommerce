@@ -17,8 +17,6 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPluginEvidenceDiscovery;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPluginEvidenceMaintenanceRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Shadow\NativePaymentsShadowMode;
@@ -37,24 +35,16 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** Available admin roots. */
 	private const AVAILABLE_ADMIN = array(
 		self::WCPAY . 'WooPaymentsCutoverController',
-		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		WooPaymentsCutoverReconciliationJob::class,
 	);
 
 	/** Available cron and Action Scheduler roots. */
 	private const AVAILABLE_CRON = array(
-		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		WooPaymentsCutoverReconciliationJob::class,
-	);
-
-	/** WP-CLI Action Scheduler roots are limited to evidence-discovery callbacks. */
-	private const CLI_ASYNC = array(
-		self::WCPAY . 'WooPaymentsPluginEvidenceMaintenanceRegistrar',
 	);
 
 	/** Connected admin roots. */
 	private const CONNECTED_ADMIN = array(
-		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		self::WCPAY . 'WooPaymentsCutoverController',
 		WooPaymentsCutoverReconciliationJob::class,
 		self::ADMIN_NAVIGATION,
@@ -116,7 +106,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Connected cron and Action Scheduler roots. */
 	private const CONNECTED_CRON = array(
-		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		WooPaymentsCutoverReconciliationJob::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
@@ -131,7 +120,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Active shopper roots. */
 	private const ACTIVE_FRONT = array(
-		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
@@ -161,7 +149,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** Active admin roots. */
 	private const ACTIVE_ADMIN = array(
 		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
-		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsCutoverController',
@@ -184,7 +171,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Active AJAX roots. */
 	private const ACTIVE_AJAX = array(
-		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
@@ -211,7 +197,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Active REST and Store API roots. */
 	private const ACTIVE_REST = array(
-		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
@@ -251,7 +236,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** Active cron and Action Scheduler roots. */
 	private const ACTIVE_CRON = array(
 		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
-		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		WooPaymentsCutoverReconciliationJob::class,
@@ -395,25 +379,22 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string,string,array<int,string>}> */
 	public static function unique_matrix_compositions(): array {
 		return array(
-			'disabled'                       => array( NativePaymentsState::DISABLED, 'admin', array() ),
-			'available no-op'                => array( NativePaymentsState::AVAILABLE, 'front', array() ),
-			'available admin'                => array( NativePaymentsState::AVAILABLE, 'admin', self::AVAILABLE_ADMIN ),
-			'available cron'                 => array( NativePaymentsState::AVAILABLE, 'cron', self::AVAILABLE_CRON ),
-			'available CLI Action Scheduler' => array( NativePaymentsState::AVAILABLE, 'cli-async', self::CLI_ASYNC ),
-			'connected no-op'                => array( NativePaymentsState::CONNECTED, 'front', array() ),
-			'connected admin'                => array( NativePaymentsState::CONNECTED, 'admin', self::CONNECTED_ADMIN ),
-			'connected AJAX'                 => array( NativePaymentsState::CONNECTED, 'ajax', self::CONNECTED_AJAX ),
-			'connected REST'                 => array( NativePaymentsState::CONNECTED, 'rest', self::CONNECTED_REST ),
-			'connected cron'                 => array( NativePaymentsState::CONNECTED, 'cron', self::CONNECTED_CRON ),
-			'connected CLI'                  => array( NativePaymentsState::CONNECTED, 'cli', array() ),
-			'connected CLI Action Scheduler' => array( NativePaymentsState::CONNECTED, 'cli-async', self::CLI_ASYNC ),
-			'active front'                   => array( NativePaymentsState::ACTIVE, 'front', self::ACTIVE_FRONT ),
-			'active admin'                   => array( NativePaymentsState::ACTIVE, 'admin', self::ACTIVE_ADMIN ),
-			'active AJAX'                    => array( NativePaymentsState::ACTIVE, 'ajax', self::ACTIVE_AJAX ),
-			'active REST'                    => array( NativePaymentsState::ACTIVE, 'rest', self::ACTIVE_REST ),
-			'active cron'                    => array( NativePaymentsState::ACTIVE, 'cron', self::ACTIVE_CRON ),
-			'active CLI'                     => array( NativePaymentsState::ACTIVE, 'cli', array() ),
-			'active CLI Action Scheduler'    => array( NativePaymentsState::ACTIVE, 'cli-async', self::CLI_ASYNC ),
+			'disabled'        => array( NativePaymentsState::DISABLED, 'admin', array() ),
+			'available no-op' => array( NativePaymentsState::AVAILABLE, 'front', array() ),
+			'available admin' => array( NativePaymentsState::AVAILABLE, 'admin', self::AVAILABLE_ADMIN ),
+			'available cron'  => array( NativePaymentsState::AVAILABLE, 'cron', self::AVAILABLE_CRON ),
+			'connected no-op' => array( NativePaymentsState::CONNECTED, 'front', array() ),
+			'connected admin' => array( NativePaymentsState::CONNECTED, 'admin', self::CONNECTED_ADMIN ),
+			'connected AJAX'  => array( NativePaymentsState::CONNECTED, 'ajax', self::CONNECTED_AJAX ),
+			'connected REST'  => array( NativePaymentsState::CONNECTED, 'rest', self::CONNECTED_REST ),
+			'connected cron'  => array( NativePaymentsState::CONNECTED, 'cron', self::CONNECTED_CRON ),
+			'connected CLI'   => array( NativePaymentsState::CONNECTED, 'cli', array() ),
+			'active front'    => array( NativePaymentsState::ACTIVE, 'front', self::ACTIVE_FRONT ),
+			'active admin'    => array( NativePaymentsState::ACTIVE, 'admin', self::ACTIVE_ADMIN ),
+			'active AJAX'     => array( NativePaymentsState::ACTIVE, 'ajax', self::ACTIVE_AJAX ),
+			'active REST'     => array( NativePaymentsState::ACTIVE, 'rest', self::ACTIVE_REST ),
+			'active cron'     => array( NativePaymentsState::ACTIVE, 'cron', self::ACTIVE_CRON ),
+			'active CLI'      => array( NativePaymentsState::ACTIVE, 'cli', array() ),
 		);
 	}
 
@@ -485,48 +466,20 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$classifier = new ReflectionMethod( NativePaymentsBootstrap::class, 'classify_signals' );
 		$classifier->setAccessible( true );
 		$cases = array(
-			'CLI'                            => array( array( true, false, false, false, false, false ), 'cli' ),
-			'CLI Action Scheduler'           => array( array( true, false, true, false, false, false ), 'cli-async' ),
-			'cron'                           => array( array( false, true, false, false, false, false ), 'cron' ),
-			'Action Scheduler'               => array( array( false, false, true, false, false, false ), 'cron' ),
-			'AJAX'                           => array( array( false, false, false, true, false, false ), 'ajax' ),
-			'REST'                           => array( array( false, false, false, false, true, false ), 'rest' ),
-			'admin'                          => array( array( false, false, false, false, false, true ), 'admin' ),
-			'front'                          => array( array( false, false, false, false, false, false ), 'front' ),
-			'CLI Action Scheduler collision' => array( array( true, true, true, true, true, true ), 'cli-async' ),
-			'CLI collision'                  => array( array( true, true, false, true, true, true ), 'cli' ),
-			'cron collision'                 => array( array( false, true, false, true, true, true ), 'cron' ),
-			'AJAX collision'                 => array( array( false, false, false, true, true, true ), 'ajax' ),
-			'REST collision'                 => array( array( false, false, false, false, true, true ), 'rest' ),
+			'CLI'            => array( array( true, false, false, false, false ), 'cli' ),
+			'cron'           => array( array( false, true, false, false, false ), 'cron' ),
+			'AJAX'           => array( array( false, false, true, false, false ), 'ajax' ),
+			'REST'           => array( array( false, false, false, true, false ), 'rest' ),
+			'admin'          => array( array( false, false, false, false, true ), 'admin' ),
+			'front'          => array( array( false, false, false, false, false ), 'front' ),
+			'CLI collision'  => array( array( true, true, true, true, true ), 'cli' ),
+			'cron collision' => array( array( false, true, true, true, true ), 'cron' ),
+			'AJAX collision' => array( array( false, false, true, true, true ), 'ajax' ),
+			'REST collision' => array( array( false, false, false, true, true ), 'rest' ),
 		);
 
 		foreach ( $cases as $label => list( $signals, $expected ) ) {
 			$this->assertSame( $expected, $classifier->invokeArgs( null, $signals ), $label );
-		}
-	}
-
-	/** @testdox A WP-CLI Action Scheduler request dispatches only evidence-discovery maintenance callbacks. */
-	public function test_cli_action_scheduler_dispatches_evidence_maintenance_without_payment_roots(): void {
-		$classifier = new ReflectionMethod( NativePaymentsBootstrap::class, 'classify_signals' );
-		$roots_for  = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
-		$classifier->setAccessible( true );
-		$roots_for->setAccessible( true );
-		$discovery = new WooPaymentsPluginEvidenceDiscovery();
-		$registrar = new WooPaymentsPluginEvidenceMaintenanceRegistrar();
-		$registrar->init( $discovery );
-
-		try {
-			$this->assertSame( 'cli-async', $classifier->invoke( null, true, false, true, false, false, false ) );
-			$this->assertSame( self::CLI_ASYNC, $roots_for->invoke( $this->make_bootstrap(), NativePaymentsState::AVAILABLE, 'cli-async' ) );
-			$registrar->register();
-			$this->assertSame( 10, has_action( WooPaymentsPluginEvidenceDiscovery::DISCOVERY_ACTION_HOOK, array( $discovery, 'discover_current_site' ) ) );
-			$this->assertSame( 10, has_action( WooPaymentsPluginEvidenceDiscovery::NETWORK_DISCOVERY_ACTION_HOOK, array( $discovery, 'refresh_network_summary' ) ) );
-			$this->assertFalse( has_action( 'woocommerce_new_order', array( $discovery, 'observe_order' ) ) );
-			$this->assertFalse( has_action( 'woocommerce_new_payment_token', array( $discovery, 'observe_payment_token' ) ) );
-		} finally {
-			remove_action( WooPaymentsPluginEvidenceDiscovery::DISCOVERY_ACTION_HOOK, array( $discovery, 'discover_current_site' ), 10 );
-			remove_action( WooPaymentsPluginEvidenceDiscovery::NETWORK_DISCOVERY_ACTION_HOOK, array( $discovery, 'refresh_network_summary' ), 10 );
-			remove_action( 'action_scheduler_init', array( $discovery, 'handle_action_scheduler_init' ), 10 );
 		}
 	}
 

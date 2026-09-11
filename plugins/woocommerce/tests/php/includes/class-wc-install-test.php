@@ -380,7 +380,6 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 			return $version;
 		};
 		delete_option( 'woocommerce_native_payments_enabled' );
-		delete_option( 'woocommerce_woopayments_plugin_evidence' );
 		add_filter( 'option_woocommerce_version', $supply_version );
 
 		try {
@@ -388,11 +387,9 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 
 			$this->assertSame( 'yes', get_option( 'woocommerce_native_payments_enabled' ) );
 			$this->assertArrayHasKey( 'woocommerce_native_payments_enabled', wp_load_alloptions() );
-			$this->assertSame( 'none', get_option( 'woocommerce_woopayments_plugin_evidence' ) );
 		} finally {
 			remove_filter( 'option_woocommerce_version', $supply_version );
 			delete_option( 'woocommerce_native_payments_enabled' );
-			delete_option( 'woocommerce_woopayments_plugin_evidence' );
 		}
 	}
 
@@ -409,7 +406,6 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 			return $shop_id;
 		};
 		delete_option( 'woocommerce_native_payments_enabled' );
-		delete_option( 'woocommerce_woopayments_plugin_evidence' );
 		add_filter( 'option_woocommerce_version', $supply_version );
 		add_filter( 'woocommerce_get_shop_page_id', $supply_shop_id );
 
@@ -417,12 +413,10 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 			$this->invoke_create_options();
 
 			$this->assertFalse( get_option( 'woocommerce_native_payments_enabled', false ) );
-			$this->assertFalse( get_option( 'woocommerce_woopayments_plugin_evidence', false ) );
 		} finally {
 			remove_filter( 'option_woocommerce_version', $supply_version );
 			remove_filter( 'woocommerce_get_shop_page_id', $supply_shop_id );
 			delete_option( 'woocommerce_native_payments_enabled' );
-			delete_option( 'woocommerce_woopayments_plugin_evidence' );
 		}
 	}
 
