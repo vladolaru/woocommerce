@@ -331,6 +331,12 @@ test( 'runs canonical PHP with one standard native-store WP-CLI invocation', asy
 		"true === $wrapper['data']['card_testing_protection_eligible']"
 	);
 	expect( phpSource ).toContain(
+		"array_key_exists( 'card_testing_protection_eligible', $wrapper['data'] ) && ! is_bool( $wrapper['data']['card_testing_protection_eligible'] )"
+	);
+	expect( phpSource ).toContain(
+		"'effectiveProtection' => (bool) ( $wrapper['data']['card_testing_protection_eligible'] ?? false )"
+	);
+	expect( phpSource ).toContain(
 		`$wcpay_e2e_operation_base64 = '${ Buffer.from(
 			'capture-state'
 		).toString( 'base64' ) }';`
