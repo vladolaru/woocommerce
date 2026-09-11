@@ -1,0 +1,303 @@
+{
+	"schema_version": 2,
+	"slice_id": "provider-js-validation-family-smoke-closure",
+	"wc_base_commit": "143b1c5ea5d1c2ff63a90e943783ffe815f8a04d",
+	"verified_at_commit": "640800bd6205dd154fa0aec35522da0744939b67",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php",
+		"plugins/woocommerce/tests/php/src/Blocks/Payments/Integrations/WooPaymentsTest.php"
+	],
+	"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:89::Shopper › Checkout › Failures with various cards › should throw an error that the card CVV number is invalid",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:155::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to incorrect card number",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-payment-methods-add-fail.spec.ts:71::Payment Methods › when attempting to add a declined-incorrect card › it should not add the card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card number is invalid.",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s expiration year is in the past.",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s security code is incomplete."
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+			"contract": "invalid card input yields accessible field-associated errors before any payment dispatch"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+			"contract": "invalid card input yields accessible field-associated errors before any payment dispatch"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Blocks/Payments/Integrations/WooPaymentsTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+			"contract": "invalid card input yields accessible field-associated errors before any payment dispatch"
+		}
+	],
+	"implementation_commits": [
+		"640800bd6205dd154fa0aec35522da0744939b67"
+	],
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+			"exit_code": 0,
+			"summary": "The provider-free smoke ran green twice consecutively with one worker and zero retries on the closed bytes, plus a post-commit confirmation run, after env-setup proved provider-free readiness for the native store. The single test establishes a run-stable virtual product idempotently over REST, asserts the gateway-enabled precondition, gates on the payment element genuinely mounting with an accessibly named frame and all three card fields, then performs three invalid-input gestures once each from asserted valid baselines: a Luhn-failing card number, a past expiration date, and an incomplete security code. Each rejection must mark its exact field invalid and reference a non-empty alert error element through the field description, polled as one predicate; each correction must restore a value-verified valid field with the description withdrawn and focus resting where the shopper left it. The run proves zero Store API checkout dispatches across both route forms and an unchanged product-scoped order count. The oracle was mutation-checked in three directions on the closed bytes: renaming the payment-element container in the built integration fails the mount gate while the REST precondition stays green, feeding a valid card number where the invalid one belongs fails exactly at the invalid-state assertion, and disabling the gateway kills the run loudly at admin authentication before any assertion."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "The full controller passed on the closed proposal before commit: the contract-map validator unit tests, the ledger validation across all 181 contracts including the six reopened rows, the project-routing validator unit tests including the six new annotation bindings, the environment-setup contract tests, and the provider-free harness unit tests."
+		}
+	],
+	"reviews": [
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+			"summary": "Two-round review; the first round blocked on evidence attributability because the working tree had moved past the reviewed commit, and every substantive finding was applied before the final bytes were committed and re-verified. On the committed bytes: each gesture opens with an asserted valid baseline on its own field, so the rejection it asserts is provably caused by its own input; recovery asserts the corrected value before the invalid flag and then polls that no non-empty alert description lingers, closing the remounted-empty-field masquerade; the frame is derived from the gated element so gate and interaction target are the same iframe by construction; and a header comment records the owner-accepted downscope for the mounts the smoke does not visit. The product-scoped order filter was verified honoured on both order-storage backends, all six contract annotations resolve one-to-one to ledger rows listing this spec, and the fresh green runs plus both mutation kills describe exactly the shipped bytes."
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+			"summary": "Two-round review; both findings resolved on the committed bytes. Locators are role-based throughout with no timing waits, and the association proof retries the full invalid-flag, description, alert-element, non-empty-text chain as one atomic polled unit, resolving the non-atomic-read race. Expiry inputs use the suite’s established unformatted four-digit convention. The commit also hardens beyond the requested fixes: proven valid baselines before each gesture, recovery assertions checking corrected value and withdrawn description rather than just the invalid flag, focus verification after each blur, and frame derivation from the exact element the visibility gate proved. The zero-submission and product-scoped order-count oracle held across all gestures."
+		},
+		{
+			"role": "reliability",
+			"verdict": "APPROVE",
+			"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+			"summary": "Two-round review; both findings resolved on the committed bytes. Every REST-backed setup and precondition failure now carries HTTP status and response body, and the association predicate polls as a single unit with a descriptive message, so a split DOM commit can no longer produce a misleading association failure under the zero-retry policy. The gateway precondition and three-field mount gate fail loudly before any accessibility assertion, confirmed under mutation; no exception swallowing, no cross-gesture state leakage, and the additional causal-attribution hardening from other reviewers introduces no new reliability gap."
+		},
+		{
+			"role": "accessibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+			"summary": "Two-round review; all four findings resolved on the committed bytes. Association and announcement are established by a single polled predicate that resolves every identifier in the field’s description list and requires one to be a non-empty alert element — genuinely state-sensitive, since the description list is identical in valid and invalid states and only the resolved node differs. Recovery proves the alert description is withdrawn, so a latched message a screen-reader user would still hear on a corrected field now fails, and a corrected-value assertion prevents a remount masquerading as recovery. Focus is asserted on the clicked field after each blur, witnessing that the error does not steal the shopper’s place in the form. The closure claims programmatic exposure and field association under the relevant success criteria, not verified assistive-technology utterance, and records the provider-owned traits — the alert node injected with its text, the polite live-region override, and inter-subfield auto-advance — as inherited, not introduced."
+		},
+		{
+			"role": "security",
+			"verdict": "APPROVE",
+			"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+			"summary": "Two-round review; approved and re-confirmed on independently hashed committed bytes. The test card data is the provider’s published public test numbers with a flipped check digit, safe to commit; no assertion captures request bodies or provider telemetry, so nothing sensitive reaches traces or artifacts; all REST calls go through the capability-checked admin fixture with compile-time literals in query strings; no capability check or validation is bypassed; and the zero-dispatch counter plus product-scoped order equality genuinely bound the run’s effect surface. The hardening round added only stronger assertions with no new sink, capture surface, or call."
+		},
+		{
+			"role": "drift",
+			"verdict": "APPROVE",
+			"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+			"summary": "Obtained per the packets’ named roles and re-confirmed on the committed bytes. Both runtimes mount the same provider payment element in deferred-intent mode with equivalent validation-relevant options, so field-level validation and its accessibility exposure are provider-owned and identical across runtimes. Five introduced divergences were found and recorded, none constrained by the six contracts under closure: a deliberate container and selector rename that merchant styling targeting the old classes will miss, the absence of the client’s loading skeleton, a payment-method option accessible name derived from the visible label where the client hardcodes a product name, a locale-derivation difference that can change the language of in-element validation messages for region-variant locales, and a submit-path difference in how failed payment-method-creation attempts are recorded. The locale and submit-path items are recommended parity follow-ups outside this closure."
+		},
+		{
+			"role": "provider-hosted-copy",
+			"verdict": "APPROVE",
+			"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+			"summary": "Obtained per the My Account packet’s named role and re-confirmed on the committed bytes. The oracle is genuinely copy-free: it couples to nothing the provider authors except standard accessibility semantics, after the provider id-naming heuristic was replaced with a convention-free predicate accepting any field-description target that is itself a non-empty alert element, with failure diagnostics that carry no provider text. The downscope cedes only copy meaningfulness, which the provider alone authors and owns, while proving field association and input-driven recovery more rigorously than the exact-string originals did. Provider strings persist only inside the immutable contract-ledger identifiers as provenance, and the English accessible-name locators fail loudly rather than falsely passing on a localized store."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:89::Shopper › Checkout › Failures with various cards › should throw an error that the card CVV number is invalid",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+				"contract": "invalid card input yields accessible field-associated errors before any payment dispatch"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+					"exit_code": 0,
+					"summary": "The incomplete-security-code gesture proves this contract on the family-representative blocks surface: the CVC field is marked invalid with a programmatically associated, non-empty alert error description, focus stays where the shopper put it, and correcting the code clears the invalid state and withdraws the description, with zero checkout dispatches. The classic-checkout mount this row named is represented by the family smoke under the owner-accepted downscope; core-side handling is the retained gateway coverage."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Each gesture asserts its own valid baseline, the rejection on the exact field, and a value-verified recovery, so the oracle is causally bound to the gesture and mutation-proven in both directions."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Role-based in-frame locators with a single atomically-polled association predicate and no timing waits; the zero-dispatch counter and product-scoped order equality close the negative space."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Setup, precondition, and mount failures are loud and cause-proximate with status and body, and the polled predicate cannot produce a misleading association failure under the zero-retry policy."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:155::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to incorrect card number",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+				"contract": "invalid card input yields accessible field-associated errors before any payment dispatch"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+					"exit_code": 0,
+					"summary": "The Luhn-failing card-number gesture proves this contract on the family-representative blocks surface: the number field is marked invalid before any submission with a field-associated non-empty alert description, and the corrected number restores a provably valid, value-verified field. The frozen client oracle for this row was a known false-pass; the smoke asserts the rejection in the test body with zero checkout dispatches."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Each gesture asserts its own valid baseline, the rejection on the exact field, and a value-verified recovery, so the oracle is causally bound to the gesture and mutation-proven in both directions."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Role-based in-frame locators with a single atomically-polled association predicate and no timing waits; the zero-dispatch counter and product-scoped order equality close the negative space."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Setup, precondition, and mount failures are loud and cause-proximate with status and body, and the polled predicate cannot produce a misleading association failure under the zero-retry policy."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-payment-methods-add-fail.spec.ts:71::Payment Methods › when attempting to add a declined-incorrect card › it should not add the card",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+				"contract": "invalid card input yields accessible field-associated errors before any payment dispatch"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+					"exit_code": 0,
+					"summary": "The Luhn-failing card-number gesture proves the accessible field-level rejection this row asserts; that an invalid card never persists a credential is the retained token-service coverage, and the My Account mount is represented by the family smoke under the owner-accepted downscope. Zero checkout dispatches and an unchanged product-scoped order count bound the run to no local records."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Each gesture asserts its own valid baseline, the rejection on the exact field, and a value-verified recovery, so the oracle is causally bound to the gesture and mutation-proven in both directions."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Role-based in-frame locators with a single atomically-polled association predicate and no timing waits; the zero-dispatch counter and product-scoped order equality close the negative space."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Setup, precondition, and mount failures are loud and cause-proximate with status and body, and the polled predicate cannot produce a misleading association failure under the zero-retry policy."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card number is invalid.",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Blocks/Payments/Integrations/WooPaymentsTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+				"contract": "invalid card input yields accessible field-associated errors before any payment dispatch"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+					"exit_code": 0,
+					"summary": "The Luhn-failing card-number gesture proves this contract on its own surface: the blocks checkout payment element marks the number field invalid, associates a non-empty alert error element through the field description, keeps focus where the shopper put it, and recovers on correction. The provider error string is deliberately not pinned; core-side handling of element validation failure is the retained blocks integration coverage."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Each gesture asserts its own valid baseline, the rejection on the exact field, and a value-verified recovery, so the oracle is causally bound to the gesture and mutation-proven in both directions."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Role-based in-frame locators with a single atomically-polled association predicate and no timing waits; the zero-dispatch counter and product-scoped order equality close the negative space."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Setup, precondition, and mount failures are loud and cause-proximate with status and body, and the polled predicate cannot produce a misleading association failure under the zero-retry policy."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s expiration year is in the past.",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Blocks/Payments/Integrations/WooPaymentsTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+				"contract": "invalid card input yields accessible field-associated errors before any payment dispatch"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+					"exit_code": 0,
+					"summary": "The past-expiration gesture proves this contract on its own surface from an asserted valid baseline: the expiry field is marked invalid with a field-associated non-empty alert description, and a future date restores a value-verified valid field with the description withdrawn, with zero checkout dispatches."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Each gesture asserts its own valid baseline, the rejection on the exact field, and a value-verified recovery, so the oracle is causally bound to the gesture and mutation-proven in both directions."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Role-based in-frame locators with a single atomically-polled association predicate and no timing waits; the zero-dispatch counter and product-scoped order equality close the negative space."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Setup, precondition, and mount failures are loud and cause-proximate with status and body, and the polled predicate cannot produce a misleading association failure under the zero-retry policy."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s security code is incomplete.",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Blocks/Payments/Integrations/WooPaymentsTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+				"contract": "invalid card input yields accessible field-associated errors before any payment dispatch"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+					"exit_code": 0,
+					"summary": "The incomplete-security-code gesture proves this contract on its own surface from an asserted valid baseline: the CVC field is marked invalid with a field-associated non-empty alert description, and completing the code restores a value-verified valid field with the description withdrawn, with zero checkout dispatches."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Each gesture asserts its own valid baseline, the rejection on the exact field, and a value-verified recovery, so the oracle is causally bound to the gesture and mutation-proven in both directions."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Role-based in-frame locators with a single atomically-polled association predicate and no timing waits; the zero-dispatch counter and product-scoped order equality close the negative space."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "519e03aad8a4bb4fb2efcadfac930ef8fed5306522ca2114d04aa34b0ead6f95",
+					"summary": "Setup, precondition, and mount failures are loud and cause-proximate with status and body, and the polled predicate cannot produce a misleading association failure under the zero-retry policy."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

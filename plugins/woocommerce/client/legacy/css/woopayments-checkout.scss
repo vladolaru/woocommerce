@@ -1,0 +1,356 @@
+/* stylelint-disable no-descending-specificity, selector-class-pattern */
+
+#payment .payment_method_woocommerce_payments .woocommerce-error {
+	margin: 1rem 0;
+}
+
+.js-woopayments-copy-test-number {
+	line-height: 1.2;
+	vertical-align: middle;
+	border-radius: 0;
+	border: none !important;
+	background-color: transparent !important;
+	font-weight: 400;
+	display: inline-flex;
+	cursor: pointer;
+	color: inherit !important;
+	font-family: inherit !important;
+	font-size: inherit;
+	padding: 2px 1px !important;
+	align-items: center;
+	box-shadow: none !important;
+
+	span {
+		margin-right: 4px;
+	}
+
+	i {
+		order: 1;
+		display: block;
+		width: 1.2em;
+		height: 1.2em;
+		position: relative;
+
+		&::before,
+		&::after {
+			content: "";
+			position: absolute;
+			box-sizing: border-box;
+			width: 0.7em;
+			height: 0.82em;
+			border: 0.12em solid currentcolor;
+			border-radius: 0.08em;
+		}
+
+		&::before {
+			top: 0.26em;
+			left: 0.14em;
+			opacity: 0.65;
+		}
+
+		&::after {
+			top: 0.08em;
+			left: 0.36em;
+			background-color: currentcolor;
+			box-shadow: inset 0 0 0 0.14em #fff;
+		}
+	}
+
+	&:hover {
+		background-color: transparent;
+		opacity: 0.7;
+
+		i {
+			opacity: 0.7;
+		}
+	}
+
+	&:active i {
+		transform: scale(0.9);
+	}
+
+	&:focus:not(:focus-visible) {
+		outline: none;
+	}
+
+	&:focus-visible,
+	&.state--success {
+		outline: 2px solid currentcolor;
+		outline-offset: 2px;
+	}
+
+	&.state--success span {
+		text-decoration: underline;
+	}
+
+	@media ( forced-colors: active ) {
+
+		&.state--success {
+			outline-color: Highlight;
+		}
+	}
+}
+
+#payment .payment_method_woocommerce_payments .testmode-info {
+	margin-bottom: 0.5em;
+}
+
+#wcpay-upe-element,
+.wcpay-upe-element,
+#wcpay-core-payment-element,
+.wcpay-core-payment-element {
+	padding: 7px;
+	margin-bottom: 0.5em;
+
+	&.processing {
+		min-height: 70px;
+	}
+}
+
+#payment .payment_methods {
+
+	li[class*="payment_method_woocommerce_payments"] label {
+		display: inline;
+
+		.payment-methods--logos {
+			float: right;
+			display: inline-flex;
+			align-items: center;
+			gap: 4px;
+
+			img {
+				float: none;
+			}
+
+			img:last-of-type {
+				margin-right: 0;
+			}
+
+			&-count {
+				width: 38px;
+				height: 24px;
+				background-color: rgba(117, 117, 117, 0.1);
+				color: var(--wp--preset--color--contrast, #1e1e1e);
+				text-align: center;
+				line-height: 24px;
+				border-radius: 3px;
+				font-size: 11px;
+				font-weight: 600;
+				white-space: nowrap;
+				text-overflow: ellipsis;
+				overflow: hidden;
+				margin-left: 4px;
+
+				@media ( min-width: 768px ) and ( max-width: 900px ) {
+					margin-left: 0;
+				}
+			}
+		}
+
+		img {
+			float: right;
+			border: 0;
+			padding: 0;
+			width: 38px;
+			height: 24px !important;
+			max-height: 24px !important;
+		}
+
+		img.wcpay-payment-method-icon {
+			width: auto;
+		}
+
+		.logo-popover {
+			background-color: #fff;
+			border: 1px solid #ddd;
+			border-radius: 3px;
+			padding: 8px;
+			box-sizing: border-box;
+			box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.1);
+			display: grid;
+			gap: 8px;
+			justify-content: center;
+			cursor: pointer;
+			position: absolute;
+			z-index: 1000;
+
+			> img {
+				box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+				width: 38px;
+				height: 24px;
+			}
+		}
+	}
+}
+
+.theme-storefront,
+.theme-twentytwenty,
+.theme-twentytwentyone,
+.theme-twentytwentytwo,
+.theme-twentytwentythree {
+
+	#payment {
+
+		.payment_methods {
+
+			> li.wc_payment_method {
+				grid-template-areas: "li-label";
+				grid-template-columns: 1fr;
+
+				> input + label {
+					grid-template-areas: "label-before label-spacer label-inner";
+					grid-template-columns: max-content max-content 1fr;
+
+					&::before {
+						grid-area: label-before;
+					}
+				}
+			}
+
+			li[class*="payment_method_woocommerce_payments"] {
+
+				> input + label {
+					display: block;
+				}
+			}
+		}
+	}
+}
+
+/* stylelint-enable no-descending-specificity, selector-class-pattern */
+
+/*
+ * WooPay email-input / OTP flow — ported from the WooPayments plugin's
+ * checkout/woopay/style.scss. The one-time-code iframe slides up as a
+ * full-screen sheet on narrow viewports and floats next to the billing
+ * email field behind a dimmed backdrop on wide ones. The plugin borrows
+ * the Blocks spinner for the email lookup; the classic checkout does not
+ * load the Blocks stylesheet, so the spinner ships here.
+ */
+@keyframes woopay-spinner__animation {
+
+	0% {
+		animation-timing-function: cubic-bezier(0.5856, 0.0703, 0.4143, 0.9297);
+		transform: rotate(0deg);
+	}
+
+	100% {
+		transform: rotate(360deg);
+	}
+}
+
+/* stylelint-disable selector-id-pattern */
+#contact_details {
+	float: none;
+}
+
+#contact_details + #customer_details {
+	display: block;
+}
+
+#billing_email_field {
+
+	.wc-block-components-spinner {
+		position: absolute;
+		width: 100%;
+		height: 100%;
+		color: inherit;
+		box-sizing: content-box;
+		text-align: center;
+		font-size: 1.25em;
+		top: initial;
+		left: initial;
+
+		&::after {
+			content: " ";
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			margin: -0.5em 0 0 -0.5em;
+			width: 1em;
+			height: 1em;
+			box-sizing: border-box;
+			transform-origin: 50% 50%;
+			transform: translateZ(0) scale(0.5);
+			backface-visibility: hidden;
+			border-radius: 50%;
+			border: 0.2em solid currentcolor;
+			border-left-color: transparent;
+			animation: woopay-spinner__animation 1s infinite linear;
+		}
+	}
+
+	.woocommerce-input-wrapper {
+		display: inline-block;
+		position: relative;
+		width: 100%;
+
+		.wc-block-components-spinner {
+			right: 10px;
+			width: 24px;
+		}
+	}
+}
+/* stylelint-enable selector-id-pattern */
+
+.woopay-otp-iframe {
+	transition: top 500ms;
+	width: 100%;
+	height: 100dvh; /* stylelint-disable-line unit-no-unknown */
+	position: fixed;
+	top: 100%;
+	left: 0;
+	z-index: 355000;
+	border: 0;
+	background: #fff;
+
+	&.open {
+		top: 0;
+	}
+}
+
+.woopay-otp-iframe-wrapper {
+
+	.arrow {
+		position: fixed;
+		top: 100%;
+	}
+}
+
+@media screen and (min-width: 768px) {
+
+	.woopay-otp-iframe-wrapper {
+		position: fixed;
+		background: rgba(117, 117, 117, 0.6);
+		top: 0;
+		left: 0;
+		width: 100vw;
+		height: 100vh;
+		content: " ";
+		display: block;
+		z-index: 355000;
+
+		.woopay-otp-iframe {
+			transition: none;
+			height: 90vh;
+			max-height: 650px;
+			position: absolute;
+			max-width: 374px;
+			border-radius: 8px;
+			right: 50px;
+			left: auto;
+		}
+
+		.arrow {
+			position: absolute;
+			right: calc(15px / 2);
+			background: transparent;
+			width: 0;
+			height: 0;
+			z-index: 355001;
+			border-top: 15px solid transparent;
+			border-bottom: 15px solid transparent;
+			border-right: 15px solid #fff;
+		}
+	}
+}

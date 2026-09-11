@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Centralize WooPayments account-cache checks behind the native payments runtime.

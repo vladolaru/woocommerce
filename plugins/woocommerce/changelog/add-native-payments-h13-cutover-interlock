@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Block native WooPayments cutover until admin surfaces and provider event sync are ready.

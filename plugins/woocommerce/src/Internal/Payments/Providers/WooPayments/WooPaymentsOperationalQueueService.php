@@ -1,0 +1,1518 @@
+<?php
+/**
+ * WooPaymentsOperationalQueueService class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Admin\Notes\Note;
+use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
+use Automattic\WooCommerce\Admin\Notes\Notes;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Throwable;
+use WC_Order;
+
+/**
+ * Native owner for WooPayments-compatible operational queue hooks.
+ *
+ * @since 11.0.0
+ * @internal Transitional internal component for the native payments runtime.
+ */
+class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
+
+	/**
+	 * Preserved store setup sync hook.
+	 *
+	 * @var string
+	 */
+	const STORE_SETUP_SYNC_ACTION = 'wcpay_store_setup_sync';
+
+	/**
+	 * Preserved saved-payment-method update hook.
+	 *
+	 * @var string
+	 */
+	const UPDATE_SAVED_PAYMENT_METHOD_ACTION = 'wcpay_update_saved_payment_method';
+
+	/**
+	 * Preserved fee-breakdown order note hook.
+	 *
+	 * @var string
+	 */
+	const ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION = 'wcpay_add_fee_breakdown_to_order_notes';
+
+	/**
+	 * Preserved compatibility-data update hook.
+	 *
+	 * @var string
+	 */
+	const UPDATE_COMPATIBILITY_DATA_ACTION = 'wcpay_update_compatibility_data';
+
+	/**
+	 * Preserved Instant Deposit reminder hook.
+	 *
+	 * @var string
+	 */
+	const INSTANT_DEPOSIT_REMINDER_ACTION = 'wcpay_instant_deposit_reminder';
+
+	/**
+	 * Preserved post-KYC activation email hook.
+	 *
+	 * @var string
+	 */
+	const POST_KYC_ACTIVATION_EMAIL_SEND_ACTION = 'wcpay_post_kyc_activation_email_send';
+
+	/**
+	 * Preserved post-KYC activation email class registry key.
+	 *
+	 * @var string
+	 */
+	const POST_KYC_ACTIVATION_EMAIL_CLASS_KEY = 'WC_Payments_Email_Post_Kyc_Activation';
+
+	/**
+	 * Preserved Instant Deposit eligibility note name.
+	 *
+	 * @var string
+	 */
+	private const INSTANT_DEPOSIT_NOTE_NAME = 'wc-payments-notes-instant-deposits-eligible';
+
+	/**
+	 * Preserved option that records a merchant has been eligible for Instant Deposits.
+	 *
+	 * @var string
+	 */
+	private const INSTANT_DEPOSITS_PREVIOUSLY_ELIGIBLE_OPTION = 'wcpay_instant_deposits_previously_eligible';
+
+	/**
+	 * Preserved KYC completion date option.
+	 *
+	 * @var string
+	 */
+	private const KYC_COMPLETION_DATE_OPTION = 'wcpay_kyc_completion_date';
+
+	/**
+	 * Preserved KYC submitted date option.
+	 *
+	 * @var string
+	 */
+	private const KYC_SUBMITTED_DATE_OPTION = 'wcpay_kyc_submitted_date';
+
+	/**
+	 * Preserved post-KYC activation email sent-stage option.
+	 *
+	 * @var string
+	 */
+	private const POST_KYC_EMAIL_SENT_STAGES_OPTION = 'wcpay_post_kyc_activation_email_sent_stages';
+
+	/**
+	 * Preserved post-KYC activation email scheduled marker.
+	 *
+	 * @var string
+	 */
+	private const POST_KYC_EMAILS_SCHEDULED_OPTION = 'wcpay_post_kyc_activation_emails_scheduled';
+
+	/**
+	 * Preserved first-live-sale marker.
+	 *
+	 * @var string
+	 */
+	private const HAS_LIVE_SALE_OPTION = 'wcpay_has_live_sale';
+
+	/**
+	 * Preserved test-mode enable date option.
+	 *
+	 * @var string
+	 */
+	private const TEST_MODE_ENABLED_DATE_OPTION = 'wcpay_test_mode_enabled_date';
+
+	/**
+	 * Preserved test-to-live notice eligibility transient.
+	 *
+	 * @var string
+	 */
+	private const TEST_TO_LIVE_NOTICE_ELIGIBLE_TRANSIENT = 'wcpay_test_to_live_eligible';
+
+	/**
+	 * Test-to-live go-live nudge inbox note name.
+	 *
+	 * @var string
+	 */
+	private const TEST_TO_LIVE_NOTE_NAME = 'wc-payments-notes-test-to-live';
+
+	/**
+	 * Days a live-connected store must sit in test mode before the go-live nudge.
+	 *
+	 * @var int
+	 */
+	private const TEST_TO_LIVE_DAYS_THRESHOLD = 7;
+
+	/**
+	 * Preserved post-KYC activation eligibility transient.
+	 *
+	 * @var string
+	 */
+	private const POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT = 'wcpay_post_kyc_activation_eligible';
+
+	/**
+	 * Post-KYC activation email stages in days after KYC completion.
+	 *
+	 * @var int[]
+	 */
+	private const POST_KYC_STAGE_DAYS = array( 7, 14, 30 );
+
+	/**
+	 * Grace window for stale post-KYC activation email actions.
+	 *
+	 * @var int
+	 */
+	private const POST_KYC_STALE_GRACE_SECONDS = 7 * DAY_IN_SECONDS;
+
+	/**
+	 * Instant Deposit reminder cadence.
+	 *
+	 * @var int
+	 */
+	private const INSTANT_DEPOSIT_REMINDER_DELAY = 90 * DAY_IN_SECONDS;
+
+	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var NativePaymentsRuntimeArbiter
+	 */
+	private NativePaymentsRuntimeArbiter $arbiter;
+
+	/**
+	 * Action Scheduler service.
+	 *
+	 * @var WooPaymentsActionSchedulerService
+	 */
+	private WooPaymentsActionSchedulerService $scheduler;
+
+	/**
+	 * WooPayments API client.
+	 *
+	 * @var WooPaymentsApiClient
+	 */
+	private WooPaymentsApiClient $api_client;
+
+	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
+	 * WooPayments order data service.
+	 *
+	 * @var WooPaymentsOrderDataService
+	 */
+	private WooPaymentsOrderDataService $order_data_service;
+
+	/**
+	 * WooPayments settings service.
+	 *
+	 * @var WooPaymentsSettingsService|null
+	 */
+	private ?WooPaymentsSettingsService $settings_service = null;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param NativePaymentsRuntimeArbiter      $arbiter            Runtime owner arbiter.
+	 * @param WooPaymentsActionSchedulerService $scheduler          Action Scheduler service.
+	 * @param WooPaymentsApiClient              $api_client         WooPayments API client.
+	 * @param WooPaymentsAccountService         $account_service    WooPayments account service.
+	 * @param WooPaymentsOrderDataService       $order_data_service WooPayments order data service.
+	 * @param WooPaymentsSettingsService|null   $settings_service   Optional WooPayments settings service.
+	 */
+	final public function init(
+		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsActionSchedulerService $scheduler,
+		WooPaymentsApiClient $api_client,
+		WooPaymentsAccountService $account_service,
+		WooPaymentsOrderDataService $order_data_service,
+		?WooPaymentsSettingsService $settings_service = null
+	): void {
+		$this->arbiter            = $arbiter;
+		$this->scheduler          = $scheduler;
+		$this->api_client         = $api_client;
+		$this->account_service    = $account_service;
+		$this->order_data_service = $order_data_service;
+		$this->settings_service   = $settings_service;
+	}
+
+	/**
+	 * Get the WooPayments settings service.
+	 *
+	 * @return WooPaymentsSettingsService
+	 */
+	private function get_settings_service(): WooPaymentsSettingsService {
+		if ( null === $this->settings_service ) {
+			$this->settings_service = wc_get_container()->get( WooPaymentsSettingsService::class );
+		}
+
+		return $this->settings_service;
+	}
+
+	/**
+	 * Register preserved operational queue producers and consumers.
+	 */
+	public function register() {
+		if ( ! $this->arbiter->should_native_register() ) {
+			return;
+		}
+
+		add_action( self::STORE_SETUP_SYNC_ACTION, array( $this, 'handle_wcpay_store_setup_sync' ) );
+		add_action( 'woocommerce_woocommerce_payments_updated', array( $this, 'handle_wcpay_store_setup_sync' ) );
+		add_action( self::UPDATE_SAVED_PAYMENT_METHOD_ACTION, array( $this, 'handle_wcpay_update_saved_payment_method' ), 10, 3 );
+		add_action( self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION, array( $this, 'handle_wcpay_add_fee_breakdown_to_order_notes' ), 10, 3 );
+		add_action( self::UPDATE_COMPATIBILITY_DATA_ACTION, array( $this, 'handle_wcpay_update_compatibility_data' ), 10, 0 );
+		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'schedule_compatibility_data_update' ) );
+		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'handle_wcpay_instant_deposits_inbox_note' ) );
+		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'maybe_record_kyc_completion_date' ) );
+		add_action( self::INSTANT_DEPOSIT_REMINDER_ACTION, array( $this, 'handle_wcpay_instant_deposit_reminder' ), 10, 0 );
+		add_action( 'add_option_' . self::KYC_COMPLETION_DATE_OPTION, array( $this, 'handle_add_option_wcpay_kyc_completion_date' ), 10, 2 );
+		add_action( self::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION, array( $this, 'handle_wcpay_post_kyc_activation_email_send' ), 10, 1 );
+		add_action( 'admin_init', array( $this, 'handle_wcpay_post_kyc_activation_email_cta' ) );
+		add_filter( 'woocommerce_email_classes', array( $this, 'add_post_kyc_activation_email' ), 10, 1 );
+		add_filter( 'woocommerce_email_classes', array( $this, 'add_ipp_receipt_email' ), 10, 1 );
+		add_action( 'after_switch_theme', array( $this, 'schedule_compatibility_data_update' ) );
+		add_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule_recurring_actions' ) );
+		add_action( 'updated_option', array( $this, 'handle_site_language_update' ), 10, 3 );
+		add_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $this, 'maybe_add_missing_currencies' ) );
+		add_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $this, 'maybe_handle_test_mode_toggle' ), 10, 2 );
+		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'maybe_sync_test_to_live_inbox_note' ) );
+		add_action( self::STORE_SETUP_SYNC_ACTION, array( $this, 'maybe_sync_test_to_live_inbox_note' ) );
+	}
+
+	/**
+	 * Track test-mode flips for the go-live nudge, like the plugin's onboarding service.
+	 *
+	 * Enable stamps the (preserved) enable date so the nudge clock starts; disable clears it so re-entering test mode restarts the clock; both drop the notice-eligibility transients.
+	 *
+	 * @param mixed $old_value Previous settings option value.
+	 * @param mixed $new_value New settings option value.
+	 */
+	public function maybe_handle_test_mode_toggle( $old_value, $new_value ): void {
+		$old_test_mode = is_array( $old_value ) ? ( $old_value['test_mode'] ?? 'no' ) : 'no';
+		$new_test_mode = is_array( $new_value ) ? ( $new_value['test_mode'] ?? 'no' ) : 'no';
+
+		if ( $old_test_mode === $new_test_mode ) {
+			return;
+		}
+
+		if ( 'yes' === $new_test_mode ) {
+			if ( ! get_option( self::TEST_MODE_ENABLED_DATE_OPTION ) ) {
+				update_option( self::TEST_MODE_ENABLED_DATE_OPTION, time(), false );
+			}
+		} else {
+			delete_option( self::TEST_MODE_ENABLED_DATE_OPTION );
+		}
+
+		delete_transient( self::TEST_TO_LIVE_NOTICE_ELIGIBLE_TRANSIENT );
+		delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
+	}
+
+	/**
+	 * Keep the test-to-live inbox note aligned with the plugin's go-live nudge eligibility.
+	 *
+	 * The plugin renders this as a settings-page admin notice; the native surface is a WC Admin inbox note, added when a live-connected store has sat in test mode for a week with at least one test sale, and removed once eligibility clears.
+	 */
+	public function maybe_sync_test_to_live_inbox_note(): void {
+		if ( $this->is_eligible_for_test_to_live_note() ) {
+			$this->add_test_to_live_note();
+			return;
+		}
+
+		$this->delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
+	}
+
+	/**
+	 * Compute the plugin's test-to-live nudge eligibility predicate.
+	 *
+	 * @return bool
+	 */
+	private function is_eligible_for_test_to_live_note(): bool {
+		if ( ! $this->account_service->has_working_account() ) {
+			return false;
+		}
+
+		if ( ! $this->account_service->is_test_mode_enabled() || $this->account_service->is_dev_mode_enabled() ) {
+			return false;
+		}
+
+		$enabled_date = (int) get_option( self::TEST_MODE_ENABLED_DATE_OPTION, 0 );
+		if ( ! $enabled_date || time() < $enabled_date + self::TEST_TO_LIVE_DAYS_THRESHOLD * DAY_IN_SECONDS ) {
+			return false;
+		}
+
+		// Existence-only check: orderby none keeps the LIMIT from forcing a filesort over every matching order on large stores, like the plugin's query.
+		$orders = wc_get_orders(
+			array(
+				'payment_method' => OrderPaymentStore::GATEWAY_ID,
+				'limit'          => 1,
+				'orderby'        => 'none',
+				'return'         => 'ids',
+				'status'         => array( 'wc-completed', 'wc-processing' ),
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_key'       => '_wcpay_mode',
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+				'meta_value'     => 'test',
+			)
+		);
+
+		return ! empty( $orders );
+	}
+
+	/**
+	 * Add the test-to-live go-live nudge inbox note.
+	 */
+	private function add_test_to_live_note(): void {
+		/**
+		 * Notes data store.
+		 *
+		 * @var NotesDataStore $data_store
+		 */
+		$data_store = Notes::load_data_store();
+		if ( ! empty( $data_store->get_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME ) ) ) {
+			return;
+		}
+
+		$note = new Note();
+		$note->set_title(
+			sprintf(
+				/* translators: %s: WooPayments. */
+				__( 'Ready to accept real payments with %s?', 'woocommerce' ),
+				'WooPayments'
+			)
+		);
+		$note->set_content(
+			sprintf(
+				/* translators: %s: WooPayments. */
+				__( 'Your store has been using %s in test mode for a while. Test payments are not real payments — switch to live mode in your payment settings when you are ready to start selling.', 'woocommerce' ),
+				'WooPayments'
+			)
+		);
+		$note->set_content_data( (object) array() );
+		$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
+		$note->set_name( self::TEST_TO_LIVE_NOTE_NAME );
+		$note->set_source( 'woocommerce-payments' );
+		$note->add_action(
+			self::TEST_TO_LIVE_NOTE_NAME,
+			__( 'Go to payment settings', 'woocommerce' ),
+			admin_url( 'admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments' ),
+			'unactioned',
+			true
+		);
+		$note->save();
+	}
+
+	/**
+	 * Delete all inbox notes stored under a name.
+	 *
+	 * @param string $name Note name.
+	 */
+	private function delete_notes_with_name( string $name ): void {
+		/**
+		 * Notes data store.
+		 *
+		 * @var NotesDataStore $data_store
+		 */
+		$data_store = Notes::load_data_store();
+
+		foreach ( $data_store->get_notes_with_name( $name ) as $note_id ) {
+			$note = Notes::get_note( (int) $note_id );
+			if ( $note instanceof Note ) {
+				$note->delete();
+			}
+		}
+	}
+
+	/**
+	 * Auto-enable the Multi-Currency currencies required by enabled payment methods.
+	 *
+	 * Mirrors the plugin's WC_Payments_Currency_Manager::maybe_add_missing_currencies(): without it, enabling a currency-restricted method such as iDEAL (EUR) leaves the required currency disabled, so the method is marked enabled but never offered at checkout.
+	 */
+	public function maybe_add_missing_currencies(): void {
+		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
+			return;
+		}
+
+		$needed_codes = $this->get_enabled_payment_method_currency_codes();
+		if ( empty( $needed_codes ) ) {
+			return;
+		}
+
+		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
+		$state         = $state_builder->build();
+		$available     = $state->get_available_currencies();
+		$enabled       = $state->get_enabled_currencies();
+
+		$missing_codes = array();
+		foreach ( $needed_codes as $currency_code ) {
+			if ( isset( $available[ $currency_code ] ) && ! isset( $enabled[ $currency_code ] ) ) {
+				$missing_codes[] = $currency_code;
+			}
+		}
+
+		if ( empty( $missing_codes ) ) {
+			return;
+		}
+
+		update_option( 'wcpay_multi_currency_enabled_currencies', array_values( array_unique( array_merge( array_keys( $enabled ), $missing_codes ) ) ) );
+		$state_builder->reset();
+	}
+
+	/**
+	 * Get the currency codes the enabled payment methods are restricted to.
+	 *
+	 * A method with no currency restriction contributes nothing; domestic-only methods require the account's default currency, like the plugin's per-method currency resolution.
+	 *
+	 * @return string[]
+	 */
+	private function get_enabled_payment_method_currency_codes(): array {
+		$settings    = $this->get_gateway_settings();
+		$enabled_ids = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array();
+		$registry    = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
+		$country     = $this->account_service->get_account_country();
+		$codes       = array();
+
+		foreach ( $enabled_ids as $payment_method_id ) {
+			if ( ! is_string( $payment_method_id ) || in_array( $payment_method_id, array( 'card', 'card_present', 'link' ), true ) ) {
+				continue;
+			}
+
+			$definition = $registry->get( $payment_method_id );
+			if ( null === $definition ) {
+				continue;
+			}
+
+			if ( in_array( WooPaymentsPaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY, $definition->get_capabilities(), true ) ) {
+				$codes[] = strtoupper( $this->account_service->get_account_default_currency() );
+				continue;
+			}
+
+			$currencies = $definition->get_supported_currencies( '' !== $country ? $country : null );
+			foreach ( $currencies as $currency_code ) {
+				$codes[] = strtoupper( (string) $currency_code );
+			}
+		}
+
+		return array_values( array_unique( array_filter( $codes ) ) );
+	}
+
+	/**
+	 * Propagate a site-language change to the connected account's locale.
+	 *
+	 * Mirrors the plugin's possibly_update_wcpay_account_locale(): platform-generated merchant emails and hosted pages render in the account locale, which otherwise never follows WPLANG.
+	 *
+	 * @param string $option_name Updated option name.
+	 * @param mixed  $old_value   Previous option value.
+	 * @param mixed  $new_value   New option value.
+	 */
+	public function handle_site_language_update( $option_name, $old_value, $new_value ): void {
+		unset( $old_value );
+
+		if ( 'WPLANG' !== $option_name || ! $this->account_service->has_account() ) {
+			return;
+		}
+
+		try {
+			$this->api_client->update_account( array( 'locale' => is_string( $new_value ) && '' !== $new_value ? $new_value : 'en_US' ) );
+			$this->account_service->refresh_account_data();
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->log_exception( 'Failed to propagate the site language to the WooPayments account locale.', $exception );
+		}
+	}
+
+	/**
+	 * Schedule WooPayments recurring operational actions.
+	 *
+	 * @internal
+	 */
+	public function schedule_recurring_actions(): void {
+		if ( ! function_exists( 'as_schedule_recurring_action' ) || ! function_exists( 'as_has_scheduled_action' ) ) {
+			return;
+		}
+
+		if ( as_has_scheduled_action( self::STORE_SETUP_SYNC_ACTION, null, WooPaymentsActionSchedulerService::GROUP_ID ) ) {
+			return;
+		}
+
+		as_schedule_recurring_action(
+			time() + wp_rand( 10, 60 ),
+			6 * HOUR_IN_SECONDS,
+			self::STORE_SETUP_SYNC_ACTION,
+			array(),
+			WooPaymentsActionSchedulerService::GROUP_ID,
+			true
+		);
+	}
+
+	/**
+	 * Send the current store setup state to the WooPayments API.
+	 *
+	 * @internal
+	 */
+	public function handle_wcpay_store_setup_sync(): void {
+		if ( ! $this->api_client->is_available() ) {
+			return;
+		}
+
+		try {
+			$this->api_client->send_store_setup( $this->get_store_setup_details() );
+		} catch ( Throwable $exception ) {
+			$this->log_exception(
+				'Failed to sync native WooPayments store setup state.',
+				$exception,
+				array( 'action' => self::STORE_SETUP_SYNC_ACTION )
+			);
+		}
+	}
+
+	/**
+	 * Schedule a debounced compatibility data update.
+	 *
+	 * @internal
+	 */
+	public function schedule_compatibility_data_update(): void {
+		$this->scheduler->schedule_job( self::UPDATE_COMPATIBILITY_DATA_ACTION, array(), time() + 2 * MINUTE_IN_SECONDS );
+	}
+
+	/**
+	 * Send the current compatibility data to the WooPayments API.
+	 *
+	 * @internal
+	 */
+	public function handle_wcpay_update_compatibility_data(): void {
+		try {
+			$this->api_client->update_compatibility_data( $this->get_compatibility_data() );
+		} catch ( Throwable $exception ) {
+			$this->log_exception(
+				'Failed to sync native WooPayments compatibility data.',
+				$exception,
+				array( 'action' => self::UPDATE_COMPATIBILITY_DATA_ACTION )
+			);
+		}
+	}
+
+	/**
+	 * Refresh the Instant Deposit eligibility inbox note from account data.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $account Account data from the WooPayments account cache refresh hook.
+	 */
+	public function handle_wcpay_instant_deposits_inbox_note( $account ): void {
+		if ( ! is_array( $account ) || empty( $account ) ) {
+			return;
+		}
+
+		if ( empty( $account['instant_deposits_eligible'] ) ) {
+			return;
+		}
+
+		update_option( self::INSTANT_DEPOSITS_PREVIOUSLY_ELIGIBLE_OPTION, true );
+
+		try {
+			$this->add_instant_deposit_note();
+			$this->schedule_instant_deposit_note_reminder();
+		} catch ( Throwable $exception ) {
+			$this->log_exception( 'Failed to refresh native WooPayments Instant Deposit eligibility note.', $exception );
+		}
+	}
+
+	/**
+	 * Handle the preserved Instant Deposit reminder action.
+	 *
+	 * @internal
+	 */
+	public function handle_wcpay_instant_deposit_reminder(): void {
+		try {
+			$this->delete_instant_deposit_note();
+		} catch ( Throwable $exception ) {
+			$this->log_exception(
+				'Failed to delete native WooPayments Instant Deposit eligibility note.',
+				$exception,
+				array( 'action' => self::INSTANT_DEPOSIT_REMINDER_ACTION )
+			);
+		}
+
+		$this->handle_wcpay_instant_deposits_inbox_note( $this->account_service->get_cached_account_data() );
+	}
+
+	/**
+	 * Record the first live KYC completion observation from account refresh data.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $account Account data from the WooPayments account cache refresh hook.
+	 */
+	public function maybe_record_kyc_completion_date( $account ): void {
+		if ( ! is_array( $account ) || empty( $account ) ) {
+			return;
+		}
+
+		if ( empty( $account['payments_enabled'] ) || empty( $account['is_live'] ) || ! empty( $account['is_test_drive'] ) ) {
+			return;
+		}
+
+		if ( get_option( self::KYC_COMPLETION_DATE_OPTION ) ) {
+			return;
+		}
+
+		$kyc_submitted_date = (int) get_option( self::KYC_SUBMITTED_DATE_OPTION, 0 );
+		$account_created    = (int) ( $account['created'] ?? 0 );
+
+		if ( $kyc_submitted_date ) {
+			$completion_date = time();
+		} elseif ( $account_created ) {
+			$completion_date = $account_created;
+		} else {
+			return;
+		}
+
+		update_option( self::KYC_COMPLETION_DATE_OPTION, $completion_date, false );
+	}
+
+	/**
+	 * Schedule the preserved post-KYC activation email stages when KYC completion is recorded.
+	 *
+	 * @internal
+	 *
+	 * @param string $option_name Option name.
+	 * @param mixed  $value       Option value.
+	 */
+	public function handle_add_option_wcpay_kyc_completion_date( $option_name, $value ): void {
+		if ( self::KYC_COMPLETION_DATE_OPTION !== $option_name ) {
+			return;
+		}
+
+		$kyc_date = (int) $value;
+		if ( ! $kyc_date ) {
+			return;
+		}
+
+		// Atomically claim the scheduling gate. add_option() performs an INSERT that
+		// returns false when the row already exists, so only the first of two
+		// concurrent account-refresh handlers proceeds to schedule the email stages.
+		// This avoids the time-of-check/time-of-use race a get_option()/update_option()
+		// pair would leave open and the duplicate merchant emails it could send.
+		if ( ! add_option( self::POST_KYC_EMAILS_SCHEDULED_OPTION, '1', '', false ) ) {
+			return;
+		}
+
+		$now = time();
+		foreach ( self::POST_KYC_STAGE_DAYS as $stage ) {
+			$send_at = $kyc_date + $stage * DAY_IN_SECONDS;
+			if ( $send_at < $now - self::POST_KYC_STALE_GRACE_SECONDS ) {
+				continue;
+			}
+
+			$this->scheduler->schedule_job(
+				self::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
+				array( $stage ),
+				max( $send_at, $now + MINUTE_IN_SECONDS )
+			);
+		}
+	}
+
+	/**
+	 * Handle the preserved staged post-KYC activation email action.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $stage Stage day.
+	 */
+	public function handle_wcpay_post_kyc_activation_email_send( $stage ): void {
+		$stage = (int) $stage;
+		if ( ! in_array( $stage, self::POST_KYC_STAGE_DAYS, true ) ) {
+			return;
+		}
+
+		$sent_stages = $this->get_post_kyc_sent_stages();
+		if ( in_array( $stage, $sent_stages, true ) ) {
+			return;
+		}
+
+		$kyc_date = (int) get_option( self::KYC_COMPLETION_DATE_OPTION, 0 );
+		if ( ! $kyc_date ) {
+			return;
+		}
+
+		if ( time() > $kyc_date + $stage * DAY_IN_SECONDS + self::POST_KYC_STALE_GRACE_SECONDS ) {
+			return;
+		}
+
+		if ( ! $this->is_post_kyc_activation_email_eligible() ) {
+			return;
+		}
+
+		$email = $this->get_post_kyc_activation_email();
+		if ( ! $email || ! $email->is_enabled() || ! $email->get_recipient() ) {
+			return;
+		}
+
+		if ( ! $email->trigger( $stage ) ) {
+			return;
+		}
+
+		$sent_stages[] = $stage;
+		update_option( self::POST_KYC_EMAIL_SENT_STAGES_OPTION, array_values( array_unique( $sent_stages ) ), false );
+	}
+
+	/**
+	 * Register the post-KYC activation email class.
+	 *
+	 * @internal
+	 *
+	 * @param array<string,mixed> $email_classes WooCommerce email classes.
+	 * @return array<string,mixed>
+	 */
+	public function add_post_kyc_activation_email( array $email_classes ): array {
+		$email_classes[ self::POST_KYC_ACTIVATION_EMAIL_CLASS_KEY ] = new WooPaymentsPostKycActivationEmail();
+
+		return $email_classes;
+	}
+
+	/**
+	 * Register the IPP receipt email class.
+	 *
+	 * @internal
+	 *
+	 * @param array<string,mixed> $email_classes WooCommerce email classes.
+	 * @return array<string,mixed>
+	 */
+	public function add_ipp_receipt_email( array $email_classes ): array {
+		$email = new WooPaymentsIppReceiptEmail();
+		$email->init_hooks();
+
+		$email_classes[ WooPaymentsIppReceiptEmail::EMAIL_CLASS_KEY ] = $email;
+
+		return $email_classes;
+	}
+
+	/**
+	 * Track clicks from the post-KYC activation email CTA.
+	 *
+	 * @internal
+	 */
+	public function handle_wcpay_post_kyc_activation_email_cta(): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended
+		if ( ! isset( $_GET['wcpay_referrer'] ) || 'post_kyc_email' !== $_GET['wcpay_referrer'] ) {
+			return;
+		}
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			return;
+		}
+
+		// Note: this handler intentionally does not verify a nonce. It fires from a
+		// post-KYC activation email CTA that merchants may open days after it is sent,
+		// so a short-lived nonce would be expired for most legitimate clicks. The CSRF
+		// exposure is limited and acceptable: the handler is gated on the
+		// `manage_woocommerce` capability, only records a single telemetry event whose
+		// `stage` must be in the POST_KYC_STAGE_DAYS allowlist, and performs a safe
+		// same-page redirect via wp_safe_redirect( remove_query_arg( ... ) ). The worst
+		// a forged request can do is record one allowlisted-stage analytics event.
+		// See review finding 7522b93d.
+		$stage = isset( $_GET['wcpay_referrer_stage'] ) ? (int) $_GET['wcpay_referrer_stage'] : 0;
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		if ( ! in_array( $stage, self::POST_KYC_STAGE_DAYS, true ) ) {
+			return;
+		}
+
+		if ( class_exists( '\WC_Tracks' ) ) {
+			\WC_Tracks::record_event( 'wcpay_post_kyc_activation_email_cta_clicked', array( 'stage' => $stage ) );
+		}
+
+		wp_safe_redirect( remove_query_arg( array( 'wcpay_referrer', 'wcpay_referrer_stage' ) ) );
+		exit;
+	}
+
+	/**
+	 * Update a saved payment method with the order billing details.
+	 *
+	 * @internal
+	 *
+	 * @param string $payment_method Payment method ID.
+	 * @param int    $order_id       Order ID.
+	 * @param bool   $is_test_mode   Whether this queued job should run in test mode.
+	 */
+	public function handle_wcpay_update_saved_payment_method( $payment_method, $order_id, $is_test_mode = false ): void {
+		$this->with_test_mode_context(
+			(bool) $is_test_mode,
+			function () use ( $payment_method, $order_id ): void {
+				$order = wc_get_order( $order_id );
+				if ( ! $order instanceof WC_Order || ! is_string( $payment_method ) || '' === $payment_method ) {
+					return;
+				}
+
+				$billing_details = $this->order_data_service->get_billing_data_from_order( $order );
+				if ( empty( $billing_details ) ) {
+					return;
+				}
+
+				try {
+					$this->api_client->update_payment_method(
+						$payment_method,
+						array(
+							'billing_details' => $billing_details,
+						)
+					);
+				} catch ( Throwable $exception ) {
+					$this->log_exception(
+						'Failed to update native WooPayments saved payment method.',
+						$exception,
+						array(
+							'action'         => self::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
+							'order_id'       => $order->get_id(),
+							'payment_method' => $payment_method,
+						)
+					);
+				}
+			}
+		);
+	}
+
+	/**
+	 * Add fee-breakdown details to an order note from the intent timeline.
+	 *
+	 * @internal
+	 *
+	 * @param int    $order_id     Order ID.
+	 * @param string $intent_id    PaymentIntent ID.
+	 * @param bool   $is_test_mode Whether this queued job should run in test mode.
+	 */
+	public function handle_wcpay_add_fee_breakdown_to_order_notes( $order_id, $intent_id, $is_test_mode = false ): void {
+		$this->with_test_mode_context(
+			(bool) $is_test_mode,
+			function () use ( $order_id, $intent_id ): void {
+				$order = wc_get_order( $order_id );
+				if ( ! $order instanceof WC_Order || ! is_string( $intent_id ) || '' === $intent_id ) {
+					return;
+				}
+
+				try {
+					$events = $this->api_client->get_timeline( $intent_id );
+				} catch ( Throwable $exception ) {
+					$this->log_exception(
+						'Failed to read native WooPayments intent timeline.',
+						$exception,
+						array(
+							'action'    => self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+							'order_id'  => $order->get_id(),
+							'intent_id' => $intent_id,
+						)
+					);
+					return;
+				}
+
+				if ( ! isset( $events['data'] ) || ! is_array( $events['data'] ) ) {
+					return;
+				}
+
+				foreach ( $events['data'] as $event ) {
+					if ( is_array( $event ) && 'captured' === ( $event['type'] ?? null ) ) {
+						if ( $this->order_data_service->add_fee_breakdown_note_from_timeline_event( $order, $event ) ) {
+							$order->save();
+						}
+						return;
+					}
+				}
+			}
+		);
+	}
+
+	/**
+	 * Add the preserved Instant Deposit eligibility note when it does not already exist.
+	 */
+	private function add_instant_deposit_note(): void {
+		/**
+		 * Notes data store.
+		 *
+		 * @var NotesDataStore $data_store
+		 */
+		$data_store = Notes::load_data_store();
+		if ( ! empty( $data_store->get_notes_with_name( self::INSTANT_DEPOSIT_NOTE_NAME ) ) ) {
+			return;
+		}
+
+		$note = new Note();
+		$note->set_title(
+			sprintf(
+				/* translators: %s: WooPayments. */
+				__( "You're now eligible to receive Instant Payouts with %s", 'woocommerce' ),
+				'WooPayments'
+			)
+		);
+		$note->set_content(
+			sprintf(
+				/* translators: 1: WooPayments, 2: Instant Payouts documentation URL. */
+				__( 'Get immediate access to your funds when you need them - including nights, weekends, and holidays. With %1$s\' <a href="%2$s">Instant Payouts feature</a>, you\'re able to transfer your earnings to a debit card within minutes.', 'woocommerce' ),
+				'WooPayments',
+				esc_url( 'https://woocommerce.com/document/woopayments/payouts/instant-payouts/' )
+			)
+		);
+		$note->set_content_data( (object) array() );
+		$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
+		$note->set_name( self::INSTANT_DEPOSIT_NOTE_NAME );
+		$note->set_source( 'woocommerce-payments' );
+		$note->add_action(
+			self::INSTANT_DEPOSIT_NOTE_NAME,
+			__( 'Request an instant payout', 'woocommerce' ),
+			'https://woocommerce.com/document/woopayments/payouts/instant-payouts/#request-an-instant-payout',
+			'unactioned',
+			true
+		);
+		$note->save();
+	}
+
+	/**
+	 * Delete the preserved Instant Deposit eligibility note.
+	 */
+	private function delete_instant_deposit_note(): void {
+		/**
+		 * Notes data store.
+		 *
+		 * @var NotesDataStore $data_store
+		 */
+		$data_store = Notes::load_data_store();
+		$note_ids   = $data_store->get_notes_with_name( self::INSTANT_DEPOSIT_NOTE_NAME );
+
+		foreach ( $note_ids as $note_id ) {
+			$note = Notes::get_note( (int) $note_id );
+			if ( $note instanceof Note ) {
+				$data_store->delete( $note );
+			}
+		}
+	}
+
+	/**
+	 * Schedule the next preserved Instant Deposit eligibility reminder.
+	 */
+	private function schedule_instant_deposit_note_reminder(): void {
+		$this->scheduler->schedule_job( self::INSTANT_DEPOSIT_REMINDER_ACTION, array(), time() + self::INSTANT_DEPOSIT_REMINDER_DELAY );
+	}
+
+	/**
+	 * Get post-KYC activation stages already sent.
+	 *
+	 * @return int[]
+	 */
+	private function get_post_kyc_sent_stages(): array {
+		$sent_stages = get_option( self::POST_KYC_EMAIL_SENT_STAGES_OPTION, array() );
+		if ( ! is_array( $sent_stages ) ) {
+			return array();
+		}
+
+		return array_values(
+			array_intersect(
+				self::POST_KYC_STAGE_DAYS,
+				array_map( 'intval', $sent_stages )
+			)
+		);
+	}
+
+	/**
+	 * Tell whether the store is eligible for a post-KYC activation email.
+	 *
+	 * @return bool
+	 */
+	private function is_post_kyc_activation_email_eligible(): bool {
+		if ( ! $this->account_service->can_process_payments() ) {
+			return false;
+		}
+
+		if ( $this->account_service->has_test_account() ) {
+			return false;
+		}
+
+		if ( $this->account_service->is_test_mode_enabled() ) {
+			return false;
+		}
+
+		if ( ! get_option( self::KYC_COMPLETION_DATE_OPTION ) ) {
+			return false;
+		}
+
+		return ! $this->has_live_sale();
+	}
+
+	/**
+	 * Tell whether the store has a live WooPayments sale.
+	 *
+	 * @return bool
+	 */
+	private function has_live_sale(): bool {
+		if ( get_option( self::HAS_LIVE_SALE_OPTION ) ) {
+			return true;
+		}
+
+		$orders = wc_get_orders(
+			array(
+				'payment_method' => OrderPaymentStore::GATEWAY_ID,
+				'limit'          => 1,
+				'return'         => 'ids',
+				'status'         => array( 'wc-completed', 'wc-processing' ),
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_key'       => '_wcpay_mode',
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+				'meta_value'     => array( 'production', 'prod', 'live' ),
+				'meta_compare'   => 'IN',
+			)
+		);
+
+		if ( ! empty( $orders ) ) {
+			update_option( self::HAS_LIVE_SALE_OPTION, '1', true );
+			delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get the native post-KYC activation email instance.
+	 *
+	 * @return WooPaymentsPostKycActivationEmail|null
+	 */
+	private function get_post_kyc_activation_email(): ?WooPaymentsPostKycActivationEmail {
+		if ( ! function_exists( 'WC' ) || ! WC()->mailer() ) {
+			return null;
+		}
+
+		$emails = WC()->mailer()->get_emails();
+		$email  = $emails[ self::POST_KYC_ACTIVATION_EMAIL_CLASS_KEY ] ?? null;
+
+		return $email instanceof WooPaymentsPostKycActivationEmail ? $email : null;
+	}
+
+	/**
+	 * Build the WooPayments-compatible store setup snapshot.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_store_setup_details(): array {
+		$settings                         = $this->get_gateway_settings();
+		$payment_methods_available        = $this->get_payment_methods_available( $settings );
+		$payment_methods_enabled          = $this->get_payment_methods_enabled( $settings, $payment_methods_available );
+		$payment_methods_disabled         = array_values( array_diff( $payment_methods_available, $payment_methods_enabled ) );
+		$provider_capabilities_enabled    = $this->map_payment_methods_to_capabilities( $payment_methods_enabled );
+		$provider_capabilities_disabled   = $this->map_payment_methods_to_capabilities( $payment_methods_disabled );
+		$provider_capabilities_available  = array_values( array_unique( array_merge( $provider_capabilities_enabled, $provider_capabilities_disabled ) ) );
+		$express_checkout_payment_methods = $settings['express_checkout_in_payment_methods'] ?? false;
+		$payment_request_locations        = $this->get_express_checkout_method_locations( $settings, 'payment_request' );
+		$woopay_locations                 = $this->get_express_checkout_method_locations( $settings, 'woopay' );
+
+		return array(
+			'gateway'                                     => array(
+				'enabled'              => $this->is_setting_enabled( $settings, 'enabled' ),
+				'test_mode'            => $this->account_service->is_test_mode_enabled(),
+				'test_mode_onboarding' => $this->account_service->is_test_mode_onboarding_enabled(),
+			),
+			'payment_methods'                             => array(
+				'available'  => $payment_methods_available,
+				'enabled'    => $payment_methods_enabled,
+				'disabled'   => $payment_methods_disabled,
+				'duplicates' => $this->get_settings_service()->get_duplicated_payment_method_ids(),
+			),
+			'provider_capabilities'                       => array(
+				'available' => $provider_capabilities_available,
+				'enabled'   => $provider_capabilities_enabled,
+				'disabled'  => $provider_capabilities_disabled,
+			),
+			'express_checkout_in_payment_methods_enabled' => $express_checkout_payment_methods,
+			'saved_cards_enabled'                         => $this->is_setting_enabled( $settings, 'saved_cards' ) || $this->is_setting_enabled( $settings, 'saved_cards_enabled' ),
+			'manual_capture_enabled'                      => $this->is_setting_enabled( $settings, 'manual_capture' ),
+			'debug_log_enabled'                           => $this->is_setting_enabled( $settings, 'enable_logging' ),
+			'payment_request'                             => array(
+				'enabled'              => $this->account_service->is_payment_request_enabled(),
+				'enabled_locations'    => $payment_request_locations,
+				'button_type'          => $settings['payment_request_button_type'] ?? '',
+				'button_size'          => $settings['payment_request_button_size'] ?? '',
+				'button_theme'         => $settings['payment_request_button_theme'] ?? '',
+				'button_border_radius' => $settings['payment_request_button_border_radius'] ?? '',
+			),
+			'woopay'                                      => array(
+				'enabled'                 => ! empty( $woopay_locations ) || $this->is_setting_enabled( $settings, 'platform_checkout' ) || $this->is_setting_enabled( $settings, 'woopay' ),
+				'enabled_locations'       => $woopay_locations,
+				'store_logo'              => $settings['platform_checkout_store_logo'] ?? '',
+				'custom_message'          => $settings['platform_checkout_custom_message'] ?? '',
+				'invalid_extension_found' => (bool) get_option( 'woopay_invalid_extension_found', false ),
+			),
+			// The plugin reads the Multi-Currency feature flag with a default of enabled; Stripe Billing is retired natively, so false is the true value.
+			'multi_currency_enabled'                      => '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ),
+			'stripe_billing_enabled'                      => false,
+			'plugin'                                      => array(
+				'version'              => defined( 'WC_VERSION' ) ? explode( '-', WC_VERSION, 2 )[0] : '',
+				'activation_timestamp' => get_option( 'wcpay_activation_timestamp', null ),
+			),
+			'wp_setup'                                    => array(
+				'name'           => get_bloginfo( 'name' ),
+				'url'            => home_url(),
+				'active_theme'   => $this->get_store_theme_details(),
+				'active_plugins' => $this->get_store_active_plugins(),
+				'version'        => get_bloginfo( 'version' ),
+				'locale'         => get_locale(),
+			),
+			'wc_setup'                                    => array(
+				'version'                     => defined( 'WC_VERSION' ) ? explode( '-', WC_VERSION, 2 )[0] : '',
+				'store_id'                    => ( class_exists( '\WC_Install' ) && defined( '\WC_Install::STORE_ID_OPTION' ) ) ? get_option( \WC_Install::STORE_ID_OPTION, null ) : null,
+				'currency'                    => get_woocommerce_currency(),
+				'tracking_enabled'            => class_exists( '\WC_Site_Tracking' ) ? \WC_Site_Tracking::is_tracking_enabled() : false,
+				'registered_payment_gateways' => $this->get_store_registered_gateway_ids(),
+				'enabled_payment_gateways'    => $this->get_store_enabled_gateway_ids(),
+				'wc_subscriptions_active'     => $this->is_plugin_active( 'woocommerce-subscriptions/woocommerce-subscriptions.php' ),
+				'wc_subscriptions_version'    => $this->get_plugin_version( 'woocommerce-subscriptions/woocommerce-subscriptions.php' ),
+			),
+		);
+	}
+
+	/**
+	 * Build WooPayments-compatible compatibility data.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_compatibility_data(): array {
+		return array(
+			'woopayments_version'    => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+			'woocommerce_version'    => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+			'woocommerce_permalinks' => get_option( 'woocommerce_permalinks', array() ),
+			'woocommerce_shop'       => $this->get_permalink_for_page_id( 'shop' ),
+			'woocommerce_cart'       => $this->get_permalink_for_page_id( 'cart' ),
+			'woocommerce_checkout'   => $this->get_permalink_for_page_id( 'checkout' ),
+			'blog_theme'             => get_stylesheet(),
+			'active_plugins'         => get_option( 'active_plugins', array() ),
+			'post_types_count'       => $this->get_post_types_count(),
+		);
+	}
+
+	/**
+	 * Apply a queued job's test-mode context for the duration of a callback.
+	 *
+	 * @param bool     $is_test_mode Whether the job should run in test mode.
+	 * @param callable $callback     Callback to run.
+	 */
+	private function with_test_mode_context( bool $is_test_mode, callable $callback ): void {
+		$apply_test_mode_context = static function () use ( $is_test_mode ): bool {
+			return $is_test_mode;
+		};
+
+		add_filter( 'wcpay_test_mode', $apply_test_mode_context );
+		try {
+			$callback();
+		} finally {
+			remove_filter( 'wcpay_test_mode', $apply_test_mode_context );
+		}
+	}
+
+	/**
+	 * Get WooPayments gateway settings.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_gateway_settings(): array {
+		$settings = get_option( 'woocommerce_' . OrderPaymentStore::GATEWAY_ID . '_settings', array() );
+
+		return is_array( $settings ) ? $settings : array();
+	}
+
+	/**
+	 * Tell whether a yes/no gateway setting is enabled.
+	 *
+	 * @param array<string,mixed> $settings Gateway settings.
+	 * @param string              $key      Setting key.
+	 * @return bool
+	 */
+	private function is_setting_enabled( array $settings, string $key ): bool {
+		return isset( $settings[ $key ] ) && true === wc_string_to_bool( $settings[ $key ] );
+	}
+
+	/**
+	 * Get available payment method IDs.
+	 *
+	 * @param array<string,mixed> $settings Gateway settings.
+	 * @return string[]
+	 */
+	private function get_payment_methods_available( array $settings ): array {
+		$available = $settings['upe_available_payment_methods'] ?? array();
+		if ( ! is_array( $available ) || empty( $available ) ) {
+			$available = $settings['upe_enabled_payment_method_ids'] ?? array( 'card' );
+		}
+
+		return $this->sanitize_string_list( $available );
+	}
+
+	/**
+	 * Get enabled payment method IDs.
+	 *
+	 * @param array<string,mixed> $settings  Gateway settings.
+	 * @param string[]            $available Available payment method IDs.
+	 * @return string[]
+	 */
+	private function get_payment_methods_enabled( array $settings, array $available ): array {
+		$enabled = $settings['upe_enabled_payment_method_ids'] ?? array();
+		if ( ! is_array( $enabled ) || empty( $enabled ) ) {
+			$enabled = in_array( 'card', $available, true ) ? array( 'card' ) : array();
+		}
+
+		return $this->sanitize_string_list( $enabled );
+	}
+
+	/**
+	 * Map WooPayments payment method IDs to Transact Platform capability keys.
+	 *
+	 * @param string[] $payment_method_ids Payment method IDs.
+	 * @return string[]
+	 */
+	private function map_payment_methods_to_capabilities( array $payment_method_ids ): array {
+		$map          = array(
+			'alipay'            => 'alipay_payments',
+			'amazon_pay'        => 'amazon_pay_payments',
+			'apple_pay'         => 'card_payments',
+			'au_becs_debit'     => 'au_becs_debit_payments',
+			'bancontact'        => 'bancontact_payments',
+			'card'              => 'card_payments',
+			'eps'               => 'eps_payments',
+			'giropay'           => 'giropay_payments',
+			'google_pay'        => 'card_payments',
+			'grabpay'           => 'grabpay_payments',
+			'ideal'             => 'ideal_payments',
+			'jcb'               => 'jcb_payments',
+			'klarna'            => 'klarna_payments',
+			'link'              => 'link_payments',
+			'multibanco'        => 'multibanco_payments',
+			'p24'               => 'p24_payments',
+			'sepa_debit'        => 'sepa_debit_payments',
+			'sofort'            => 'sofort_payments',
+			'wechat_pay'        => 'wechat_pay_payments',
+			'affirm'            => 'affirm_payments',
+			'afterpay_clearpay' => 'afterpay_clearpay_payments',
+		);
+		$capabilities = array();
+
+		foreach ( $payment_method_ids as $payment_method_id ) {
+			if ( isset( $map[ $payment_method_id ] ) ) {
+				$capabilities[] = $map[ $payment_method_id ];
+			}
+		}
+
+		return array_values( array_unique( $capabilities ) );
+	}
+
+	/**
+	 * Get configured express-checkout button locations.
+	 *
+	 * @param array<string,mixed> $settings Gateway settings.
+	 * @param string              $method   Express checkout method ID.
+	 * @return string[]
+	 */
+	private function get_express_checkout_method_locations( array $settings, string $method ): array {
+		$enabled_locations = array();
+
+		foreach ( array( 'product', 'cart', 'checkout' ) as $location ) {
+			$enabled_methods = $settings[ 'express_checkout_' . $location . '_methods' ] ?? array();
+			if ( is_array( $enabled_methods ) && in_array( $method, $enabled_methods, true ) ) {
+				$enabled_locations[] = $location;
+			}
+		}
+
+		return $enabled_locations;
+	}
+
+	/**
+	 * Sanitize a string list.
+	 *
+	 * @param mixed $values Raw values.
+	 * @return string[]
+	 */
+	private function sanitize_string_list( $values ): array {
+		if ( ! is_array( $values ) ) {
+			return array();
+		}
+
+		$strings = array();
+		foreach ( $values as $value ) {
+			if ( is_string( $value ) && '' !== $value ) {
+				$strings[] = $value;
+			}
+		}
+
+		return array_values( array_unique( $strings ) );
+	}
+
+	/**
+	 * Get active theme details.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_store_theme_details(): array {
+		$theme_data = wp_get_theme();
+
+		return array(
+			'name'        => $theme_data->get( 'Name' ),
+			'version'     => $theme_data->get( 'Version' ),
+			'child_theme' => is_child_theme(),
+			'wc_support'  => current_theme_supports( 'woocommerce' ),
+			'block_theme' => wp_is_block_theme(),
+		);
+	}
+
+	/**
+	 * Get active plugin details.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_store_active_plugins(): array {
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+
+		$all_plugins = get_plugins();
+		if ( empty( $all_plugins ) ) {
+			return array();
+		}
+
+		$plugins_list      = array();
+		$active_plugin_ids = wp_get_active_and_valid_plugins();
+		foreach ( $active_plugin_ids as $plugin_file ) {
+			$plugin_file = plugin_basename( $plugin_file );
+			if ( isset( $all_plugins[ $plugin_file ] ) ) {
+				$plugin_data                  = $all_plugins[ $plugin_file ];
+				$plugins_list[ $plugin_file ] = array(
+					'name'     => $plugin_data['Name'],
+					'slug'     => dirname( $plugin_file ),
+					'version'  => $plugin_data['Version'],
+					'wc_aware' => null,
+				);
+			}
+		}
+
+		return array_values( $plugins_list );
+	}
+
+	/**
+	 * Get registered gateway IDs.
+	 *
+	 * @return string[]
+	 */
+	private function get_store_registered_gateway_ids(): array {
+		$payment_gateways = WC()->payment_gateways()->payment_gateways();
+		if ( empty( $payment_gateways ) ) {
+			return array();
+		}
+
+		return array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						static fn( $gateway ): ?string => isset( $gateway->id ) && is_string( $gateway->id ) ? $gateway->id : null,
+						$payment_gateways
+					)
+				)
+			)
+		);
+	}
+
+	/**
+	 * Get enabled gateway IDs.
+	 *
+	 * @return string[]
+	 */
+	private function get_store_enabled_gateway_ids(): array {
+		$enabled_gateways = array();
+		foreach ( WC()->payment_gateways()->payment_gateways() as $gateway ) {
+			if ( isset( $gateway->id, $gateway->enabled ) && is_string( $gateway->id ) && 'yes' === $gateway->enabled ) {
+				$enabled_gateways[] = $gateway->id;
+			}
+		}
+
+		return array_values( array_unique( $enabled_gateways ) );
+	}
+
+	/**
+	 * Get public post type publish counts.
+	 *
+	 * @return array<string,int>
+	 */
+	private function get_post_types_count(): array {
+		$post_types_count = array();
+		foreach ( get_post_types( array( 'public' => true ) ) as $post_type ) {
+			$post_types_count[ $post_type ] = (int) wp_count_posts( $post_type )->publish;
+		}
+
+		return $post_types_count;
+	}
+
+	/**
+	 * Gets the permalink for a WooCommerce page ID.
+	 *
+	 * @param string $page_id Page ID key.
+	 * @return string
+	 */
+	private function get_permalink_for_page_id( string $page_id ): string {
+		$permalink = get_permalink( wc_get_page_id( $page_id ) );
+
+		return $permalink ? $permalink : 'Not set';
+	}
+
+	/**
+	 * Tell whether a plugin file is active.
+	 *
+	 * @param string $plugin_file Plugin basename.
+	 * @return bool
+	 */
+	private function is_plugin_active( string $plugin_file ): bool {
+		$active_plugins = get_option( 'active_plugins', array() );
+
+		return is_array( $active_plugins ) && in_array( $plugin_file, $active_plugins, true );
+	}
+
+	/**
+	 * Get a plugin version from the installed plugins list.
+	 *
+	 * @param string $plugin_file Plugin basename.
+	 * @return string
+	 */
+	private function get_plugin_version( string $plugin_file ): string {
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+
+		$plugins = get_plugins();
+
+		return isset( $plugins[ $plugin_file ]['Version'] ) ? (string) $plugins[ $plugin_file ]['Version'] : '';
+	}
+
+	/**
+	 * Log an operational queue exception without fataling the request.
+	 *
+	 * @param string              $message   Log message.
+	 * @param Throwable           $exception Exception thrown.
+	 * @param array<string,mixed> $context   Optional correlation context (e.g. order_id, intent_id, action)
+	 *                                       merged into the log entry alongside the source.
+	 */
+	private function log_exception( string $message, Throwable $exception, array $context = array() ): void {
+		if ( ! function_exists( 'wc_get_logger' ) ) {
+			return;
+		}
+
+		wc_get_logger()->error(
+			$message . ' ' . $exception->getMessage(),
+			array_merge( $context, array( 'source' => 'woopayments' ) )
+		);
+	}
+}

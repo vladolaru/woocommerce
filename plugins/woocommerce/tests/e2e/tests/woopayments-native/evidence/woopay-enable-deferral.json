@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "woopay-enable-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "15e80e1e591add9a247aa87e54f14be9a96bbf67",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/woopay-setup.spec.ts:30::WooPay setup › can enable the WooPay feature"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA 34f1e439528740d9467913b0a35c78b592a1212cdcba33fd6918a4176c20741a against ledger SHA 55bf7428d8024e1afd01d5357b755b3b010c176fc321cbb1fb4b5baae19c5e77 with no findings. Only line-30 fields 37-40 change, and the disable sibling remains an independent committed slice. The deferral correctly binds an independently provisioned authoritative false baseline, one accessible complete save, raw, REST, reload, and fresh-shopper true state, preserved disable-date bytes, exactly one correctly owned active webhook, and one operational store-setup occurrence. Complete local/external journals, byte restoration, quarantine, source/target drift, accessibility, and companion-invariance controls are present; line 26 cannot provide setup or cleanup, and no financial-provider record or listener belongs to the contract."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the independently disabled baseline and authenticated one-save settings, raw persistence, fresh shopper, operational store-setup sync, and owned-webhook joins can run; the provisional target and owner remain pending; and no approved eligible account, external disabled provisioner/readback/restore, or row-safe journal topology exists. Core's local WooPay settings, runtime, platform true projection, and webhook reconciliation form an honest adapter, so no defect, known gap, or product-authority conflict is established.",
+		"affected_scope": "Only an independent false-to-true WooPay transition. Start from an eligible connected US native account, Link off, raw platform_checkout no, one configured supported WooPay location held inert, unchecked merchant control, ineffective frontend config, no shopper affordance/session, no native-owned WooPay webhook, and authoritative external disabled state provisioned outside the pinned OR projection. Dispatch one complete settings POST with is_woopay_enabled true and unchanged companions; join raw yes while preserving prior disable-date bytes, settings GET and reload true, exactly one fresh shopper affordance, exactly one correct owned active webhook, and one attributed store-setup POST reporting enabled true with unchanged locations. Disablement, enrollment, OTP, checkout completion, orders, payments, refunds, and financial provider records remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native owner/account/callback readiness, approve the pending target/owner, create a restorable eligible external disabled baseline, or safely mutate settings and webhook state without complete local and external journals. The focused frozen case is a no-op because suite setup already enables WooPay; a checked control, snackbar, raw yes alone, component/service tests, line 26's side effect, repeated helper, provider financial allocation, or listener cannot substitute for one causal save from verified false, cold/reload persistence, fresh shopper outcome, exact owned webhook creation, one operational platform occurrence, companion invariance, and byte-exact local/external restoration.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve a row-safe target contract and owner; provide the eligible Link-off US account, one known supported cart and configured WooPay location, exact canonical full settings, an authoritative external disabled baseline with readback/restore, and local webhook ownership controls. Acquire ordered readiness/account/store/settings/WooPay/platform-sync/webhook locks, publish independent setup/behavior/restoration journals, and run one keyboard-accessible enable save with one worker, zero retries, and no replay. Join all local, shopper, webhook, and external facts, restore the original exact webhook/platform/settings graph without using the disable sibling, and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, option, settings fixture, shopper session, webhook, external platform record, lock, journal, provider object, listener, retention record, or quarantine was created or changed for this row. A future wrong identity, missing or duplicate settings/platform POST, unexpected provider call, companion drift, support-phone/capability/fraud/promotion mutation, webhook absence/duplication/wrong ownership/secret drift, platform mismatch, target drift, session leakage, lock loss, or incomplete local/external restoration must preserve diagnostics and quarantine the exact account/store/settings/WooPay-context/session/webhook/platform-sync graph and journal without replay. No payment-provider financial record or listener belongs to this contract."
+	}
+}

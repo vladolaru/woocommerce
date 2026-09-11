@@ -1,0 +1,215 @@
+{
+	"schema_version": 2,
+	"slice_id": "switcher-family-smoke-closure",
+	"wc_base_commit": "143b1c5ea5d1c2ff63a90e943783ffe815f8a04d",
+	"verified_at_commit": "7445572f874827ee5ba65bf2e166f85a37eca543",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+		"plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencyFrontendPricesControllerTest.php"
+	],
+	"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:40::Shopper Multi-Currency widget › should display currency switcher widget if multi-currency is enabled",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:59::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the product page",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:63::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the cart page",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:67::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the checkout page"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencyFrontendPricesControllerTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+			"contract": "shopper currency switcher renders and switches across storefront contexts"
+		}
+	],
+	"implementation_commits": [ "7445572f874827ee5ba65bf2e166f85a37eca543" ],
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+			"exit_code": 0,
+			"summary": "The provider-free smoke ran once with one worker and zero retries against the closed bytes and passed 1/1 in 8.7 seconds, after env-setup proved callback readiness for native blog 4. The single test establishes its own state idempotently over REST on every run - manual EUR rate 0.80 with rounding and charm pinned to zero, enabled currencies asserted to exactly USD and EUR from the update response, the native switcher block placed in both the theme header and the WooCommerce checkout-header template parts, and one run-stable USD 10.00 virtual product with a price-drift guard - then asserts one visible, unique, focusable Currency combobox on the shop page and, at the product, cart and checkout surfaces, an exact USD 10.00 to EUR 8.00 conversion with zero visible old-currency price nodes after each switch, plus EUR persistence across a query-free request. An earlier identical run passed twice consecutively, and the oracle was mutation-checked in both directions: suppressing the switcher block markup in the projection service fails the shop-page visibility assertion, and reducing the enabled currency option to USD alone fails loudly at the REST setup precondition."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "The full controller passed on the closed proposal before commit: 224 contract-map validator unit tests, the ledger validation across all 181 contracts, 30 project-routing validator unit tests including the four new annotation bindings, the environment-setup contract tests, and 328 provider-free harness unit tests."
+		}
+	],
+	"reviews": [
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+			"summary": "Fresh review of the closed bytes with a dated re-review after all first-round findings were applied. Setup ordering was traced and found safe: the manual EUR rate is written before EUR is enabled, and the enabled-currencies route only deletes per-currency options for dropped codes, so the rate survives. The precondition guard asserts exactly the condition the switcher markup is gated on, making it a genuine anti-vacuity check. The price-drift guard fails setup at its cause naming both values, the enabled-currencies check is a same-request verification because the endpoint resets its state builder before answering, focusability is asserted directly with the claim scoped honestly, and the converted-price helper awaits the positive assertion before its visible-scoped zero-count negative so it cannot pass against an unrendered surface. Five absence claims were cleared against the implementation rather than assumed, including guest currency persistence via the forced session cookie and the absence of intra-project state races. One residual non-blocking observation: the drift guard checks the regular price but not a hypothetical sale price."
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+			"summary": "Fresh review of the closed bytes with a dated re-review. The smoke uses role-based locators and auto-retrying assertions throughout with no fixed timeouts, and strengthens the client suite's afterEach-only oracle by asserting converted prices in the test body per context. Both first-round gaps are closed on the reviewed bytes: after every currency switch the new-currency price must be visible and the old-currency price must have zero visible occurrences anywhere on the page, so a partial re-render across duplicate price surfaces cannot pass, and the shop-page switcher asserts real focusability, backing the keyboard-operable framing with a check rather than an inference. The added setup-time guards convert previously silent no-op or drift scenarios into loud, early, specific failures. All changes assert behavior and effect rather than structure or timing, and the retained lower-layer PHPUnit evidence is unchanged."
+		},
+		{
+			"role": "reliability",
+			"verdict": "APPROVE",
+			"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+			"summary": "Fresh review of the closed bytes with a dated re-review. Setup helpers throw loudly with HTTP status and response body on every REST failure, and the precondition guard runs before any UI assertion, so a store where multi-currency silently failed to activate fails fast and legibly rather than passing vacuously. The applied changes move failures closer to their cause with named expected and actual values, close a silent-no-op path where the enabled-currencies route answers success without applying anything, and remove a latent path where a partial re-render could pass unnoticed; none introduce a new unguarded call, swallowed exception, or unobservable failure mode. Failures surface through the suite's screenshot, video and trace capture with specific, attributable messages. One pre-existing low-severity note remains: the template-part existence guard does not name which expected template part was missing."
+		},
+		{
+			"role": "accessibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+			"summary": "Obtained on 2026-08-07 to satisfy the accessibility role named by both deferral packets' unlock decisions, which the original closure did not carry. The switcher is a real select element, so keyboard operability, screen-reader support and mobile pickers come from the platform rather than re-implemented scripting, and it always carries an accessible name - the block title when set, otherwise Currency. The oracle proves operability instead of assuming it: the control is located by role and accessible name, exposes exactly one matching EUR option, and is asserted to actually take focus, which means an accessible-name regression to empty would fail the test. Two characteristics are recorded rather than flagged because both are byte-identical to the client plugin and so are inherited rather than introduced: the select submits and navigates on change, which is a change of context on input under WCAG 3.2.2 with no submit button available as a deliberate alternative, and the accessible name is supplied only by aria-label when the block has no title, leaving sighted users an unlabelled control. Neither is constrained by these four contracts."
+		},
+		{
+			"role": "drift",
+			"verdict": "APPROVE",
+			"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+			"summary": "Obtained on 2026-08-07 to satisfy the drift role named by both deferral packets' unlock decisions, which the original closure did not carry. Compared the shipped native markup and behaviour against the client plugin at source and on the live store. The control element, the currency query-parameter transport, the selected-option handling, the onchange form submission and the js-woopayments-currency-switcher class are identical; the shared class matters because merchant CSS and third-party scripts target it, so keeping it unchanged is what makes that customisation surface survive the switch. One divergence found and recorded: the accessible name. The client uses the constant string Select your currency regardless of title, while native derives the label from the block or widget title and falls back to Currency, confirmed live on the untitled block. A screen-reader user therefore hears the control announced differently after a migration. This is arguably the better behaviour, since a title-derived name matches the visible label as WCAG 2.5.3 asks, but it is a user-visible difference in a programme whose goal is a frictionless switch, and it is a product decision rather than a test change. None of the four contracts constrains the accessible name, so the closure stands."
+		},
+		{
+			"role": "security",
+			"verdict": "APPROVE",
+			"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+			"summary": "Obtained on 2026-08-07 to satisfy the security role named by the context-switching deferral packet's unlock decision, which the original closure did not carry. The spec handles no credential: it takes the adminApi fixture, which authenticates through the harness credential helper, so nothing is hardcoded and no secret enters the spec scope where a trace could capture it. Scanned the spec and this evidence file for password, secret, token, sk_, pk_ and acct_ patterns with no matches, and this committed file carries no account, store or blog identifier and no personal data, so it is public-safe. The mutation surface - multi-currency settings, two header template parts, one published product - is written as an authenticated administrator through documented REST routes rather than around them, and the template-part write inserts a constant block comment rather than interpolated input, so it carries no injection vector. No capability check, nonce, sanitisation or escaping is disabled or stubbed to make an assertion pass; the test asserts the shipped escaped markup. Provider-side security is out of scope because the spec makes no provider call."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:40::Shopper Multi-Currency widget › should display currency switcher widget if multi-currency is enabled",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencyFrontendPricesControllerTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+				"contract": "shopper currency switcher renders and switches across storefront contexts"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+					"exit_code": 0,
+					"summary": "The enabled-visibility half of this contract is proven by the passing smoke's shop-page assertions: exactly one visible, focusable Currency combobox with a unique EUR option and USD selected, guarded by a REST precondition proving multi-currency reports USD and EUR enabled. The disabled half remains deferred in its own packet and is not claimed here. Vacuity was mutation-checked: suppressing the switcher block markup fails the visibility assertion."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "The shop-page block asserts visibility, selected value, unique EUR option and focusability of one semantic combobox, behind a genuine anti-vacuity precondition asserting exactly the state the markup is gated on."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "Role-based locator with exact accessible name, auto-retrying assertions, and a focusability check backing the keyboard-operable framing; the visibility oracle was mutation-verified against suppressed markup."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "The precondition guard runs before the visibility assertion, so an inactive multi-currency store fails fast at setup with a specific message instead of passing vacuously or failing obscurely."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:59::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the product page",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencyFrontendPricesControllerTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+				"contract": "shopper currency switcher renders and switches across storefront contexts"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+					"exit_code": 0,
+					"summary": "The product-page context is proven in the test body: USD 10.00 visible before the switch, the switcher-driven navigation landing on the switched URL, exactly EUR 8.00 visible with zero visible USD price nodes after it, and the EUR selection persisting with the converted price across a query-free navigation. The client test asserted this contract only in afterEach; the smoke asserts it inline."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "The conversion oracle is deterministic by construction: manual rate 0.80 with rounding and charm pinned to zero over a drift-guarded 10.00 product, and guest persistence across a query-free request is supported by the forced session cookie."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "Before-and-after price assertions plus a zero-visible-old-price check close the partial-re-render gap; the navigation wait binds the switch to its URL effect rather than a timing guess."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "A failed switch surfaces as a specific assertion on the exact price text with full trace capture, and setup failures name the drifted value or unapplied state rather than failing downstream."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:63::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the cart page",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencyFrontendPricesControllerTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+				"contract": "shopper currency switcher renders and switches across storefront contexts"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+					"exit_code": 0,
+					"summary": "The cart context is proven with the smoke product in the cart: the item and USD 10.00 total visible before the switch, and exactly EUR 8.00 visible with zero visible USD price nodes after it, on the blocks cart whose prices flow through the Store API respecting the session-selected currency."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "Cart contents are owned by the fresh guest context, so the single add-to-cart yields a deterministic one-item cart and the converted total is exact rather than approximate."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "Visible-filtered price locators tolerate the blocks cart's hidden duplicate price nodes without weakening the oracle, and the zero-old-price check rules out a half-converted render."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "Auto-retrying assertions absorb blocks hydration timing without fixed waits, so the cart assertions are not a flake surface under the serialized single-worker project."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:67::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the checkout page",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencyFrontendPricesControllerTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+				"contract": "shopper currency switcher renders and switches across storefront contexts"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+					"exit_code": 0,
+					"summary": "The checkout context is proven without submitting payment: the USD 10.00 order total visible before the switch and exactly EUR 8.00 visible with zero visible USD price nodes after it. The blocks checkout renders its own minimal checkout-header template part rather than the theme header, so the smoke places the switcher block in both parts and the assertion exercises the real checkout surface."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "The dual template-part placement matches how the blocks checkout actually composes its header, so the checkout assertion exercises the shipped surface rather than an artificial one."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "The visible-filtered price locator was introduced precisely because the checkout order summary renders a hidden mobile duplicate of the total, so the assertion binds to what a shopper actually sees."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "82804ecf6837c0965674b9052b8a01852a3613df9219cf348d24888d25bbd22a",
+					"summary": "The template-part guard fails setup loudly if either header part disappears, so a theme change breaks the run at its cause instead of as a mysterious missing-switcher assertion at checkout."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

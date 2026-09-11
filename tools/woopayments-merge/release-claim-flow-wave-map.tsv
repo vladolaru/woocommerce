@@ -1,0 +1,77 @@
+id	primary_wave	supplemental_wave	mutation_class	release_evidence
+SC-01	3	0	ordinary-provider	Fresh classic card payment, order/intent/charge joins, badge and error UX
+SC-02	3	0	ordinary-provider	Fresh Blocks card payment, order/intent/charge joins, mounted Payment Element and errors
+SC-03	3	0	ordinary-provider-single-sequence	Exact same-order 3DS fail then retry then success, no duplicate charge
+SC-04	3	0	ordinary-provider	Fresh saved-card classic and Blocks, normal and SCA, exact token reuse
+SC-05	3	0	ordinary-provider-single-sequence	Fresh order-pay new-card and checked-save 3DS paths, paid order and saved-token joins
+SC-06	2	0	local-reversible	Regular/subscription save control and terms behavior on both checkout surfaces
+SC-07	3	5	ordinary-provider-capability	Method/network/currency-specific rejection plus supported paid control
+SC-08	5	3	external-otp	WooPay signup, OTP, paid checkout, reusable payment and address
+SC-09	5	3	external-real-chrome	Stripe Link registration, paid checkout, and reuse
+SC-10	3	5	ordinary-provider-capability	Eligible regional methods pay and refund, ineligible currencies hide, settings restore
+SC-11	3	5	ordinary-provider-manual-action	Klarna/Affirm/Afterpay eligibility, hosted completion, receipt, branding, and refund
+SC-12	2	0	local-reversible	Alternate gateway coexistence, distinct labels, no WooPayments false validation
+SC-13	2	3	local-reversible	Exact shipping method 20-to-40-to-20 totals journey and checkout continuity
+SC-14	3	5	ordinary-provider-capability	Every supported wave-1 method creates correct method-specific intent/order or honest external block
+SP-01	3	0	ordinary-provider	One SetupIntent/PaymentMethod/token, visible success and checkout reuse
+SP-02	3	0	ordinary-provider-single-sequence	3DS setup failure then success, no token on failure, one token on success
+SP-03	3	0	ordinary-provider-decline	Specific safe decline error, no token/order/charge
+SP-04	3	0	ordinary-provider	Delete exact token, provider detachment, surviving token continuity
+SP-05	3	0	ordinary-provider	Set default, persistence, exact default selection at checkout
+SS-01	3	0	ordinary-provider	Initial subscription order, token/customer/provider joins, schedule and mandate UX
+SS-02	3	0	ordinary-provider	Change to new card, token persistence, subscription binding and renewal readiness
+SS-03	3	0	ordinary-provider	Change to saved card and provider-reconciled renewal
+SS-04	3	0	ordinary-provider	Default change and renewal use of exact selected token
+SS-05	3	0	ordinary-provider	One shopper early renewal, paid order, schedule advancement and exact charge
+SS-06	3	0	ordinary-provider	Cancel and re-subscribe, distinct schedules and exact new charge/token joins
+SS-07	3	2	ordinary-provider	Signup, one-off and recurring coupons through initial and renewal totals
+SS-08	3	0	ordinary-provider	Zero-total trial SetupIntent/token and first charged renewal
+SS-09	3	2	ordinary-provider	Multiple subscriptions from one purchase with independent schedules
+SS-10	6	5	cutover-provider-capability	Target-only plugin-created SEPA token visibility and native renewal after cutover
+MS-01	2	0	local-reversible	Published subscription product, settings and owner-resolved Add to cart CTA
+MS-02	3	0	ordinary-provider-observation	Fresh purchased subscription visible in admin and My Account
+MS-03	2	0	local-reversible	Suspend blocks renewal and resume restores status/schedule without unintended charge
+MS-04	2	3	local-reversible	Coupon promotion persists and affects scheduled money exactly
+MS-05	3	0	ordinary-provider-async	Exactly one scheduled renewal, email/notes, active status and next date
+MS-06	3	0	ordinary-provider	Admin process renewal pays once while preserving future schedule
+MS-07	3	0	ordinary-provider	Admin token fields save exact method and one renewal uses it
+MO-01	3	0	ordinary-provider	One authorization and full capture from order, exact status/amount/notes
+MO-02	3	0	ordinary-provider	Authorization list inclusion, linked row, capture and removal
+MO-03	3	0	ordinary-provider	Reach detail from row, capture there, exact cleared authorization state
+MO-04	3	0	ordinary-provider	One full refund with local/provider ID, amount, note and detail joins
+MO-05	3	0	ordinary-provider	Two partial refunds with cumulative amount, status, IDs, notes and detail joins
+MO-06	3	0	ordinary-provider-failure	Provider refund rejection surfaced with no phantom local refund
+MA-01	2	0	local-reversible	Dedicated customer/session capability denial/admission and no financial payload leak
+MA-02	1	0	read-only	Exact REST-backed Total/Available and native Pending presentation
+MA-03	3	1	read-only-on-fresh-fixtures	Fresh campaign transactions populate columns and row links
+MA-04	3	1	read-only-on-fresh-fixtures	Filters narrow exact fresh transaction set
+MA-05	3	1	read-only-on-fresh-fixtures	Search and autocomplete return exact fresh transaction
+MA-06	3	1	read-only-on-fresh-fixtures	CSV export contains exact fresh rows and values
+MA-07	3	1	read-only-on-fresh-fixtures	Detail card graphic, amounts, timeline, identifiers and order link
+MA-08	4	1	high-consequence-payout	Fresh payout list/detail and exact provider facts
+MA-09	1	0	read-only	Existing stable 500-row minimum ledger, pagination/filter timing and unchanged digest
+MA-10	4	5	high-consequence-translation	Comparable localized charge/refund/dispute note families with installed catalog
+MA-11	6	0	cutover-local	Plugin-active settings usable without native collision, exact ownership restoration
+MD-01	4	0	high-consequence-dispute	Fresh provider dispute, on-hold order, note, notification and financial joins
+MD-02	4	0	high-consequence-single-save	One draft evidence save on MD-01 dispute with request and delayed persistence witnesses
+MD-03	4	0	high-consequence-single-submit	Fresh dispute, exactly one winning submission, terminal won and reinstatement joins
+MD-04	4	0	high-consequence-single-submit	Fresh dispute, exactly one losing submission, terminal lost and chargeback joins
+ON-01	5	6	external-kyc	Settings entry, test onboarding, live handoff and externally completed KYC
+ON-02	5	6	external-kyc	Launch Your Store entry, test onboarding/task completion and external live KYC
+ON-03	6	5	install-onboarding	Manual install and setup without duplicate ownership or lost configuration
+ON-04	6	0	install-update	Plugin update preserves activation, owner, settings and checkout
+MC-01	2	0	local-reversible	Enable EUR/GBP, rates, persistence, storefront and exact restoration
+MC-02	2	0	local-reversible	Edit configured currencies/settings with precise persistence and restoration
+MC-03	2	0	local-reversible	Classic widget insertion, switching behavior and restoration
+MC-04	2	0	local-reversible	Block editor insertion, live preview, storefront switching and restoration
+MC-05	2	0	local-reversible	Multi-currency onboarding task completion and configured state
+MC-06	2	0	provider-read-local-reversible	Fresh automatic rates, cache timestamps and cross-store comparison without provider write
+MCS-01	3	2	ordinary-provider	Fresh guest GBP shop/cart/Blocks/receipt, order meta and provider GBP joins
+MCS-02	3	2	ordinary-provider	Fresh logged-in currency persistence, saved method and exact converted order/provider joins
+EC-01	5	3	external-wallet	Product-page payment request button and wallet-sheet payment
+EC-02	5	3	external-wallet	Cart payment request button and wallet-sheet payment
+EC-03	5	3	external-wallet	Wallet 3DS challenge and paid order without duplicate charge
+MU-01	6	0	multisite-prerequisite	Network activation exposes one owner on existing and new subsites
+MU-02	6	0	multisite-prerequisite	Per-site activation isolation and retained site-level control
+MU-03	6	0	multisite-prerequisite	Network update keeps all sites on one version with usable admin/checkout
+MU-04	6	3	multisite-provider	Independent primary/secondary checkout with no cross-site order or transaction leak

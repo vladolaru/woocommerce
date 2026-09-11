@@ -8,6 +8,7 @@
 use Automattic\WooCommerce\Admin\Settings\SettingsSection;
 use Automattic\WooCommerce\Admin\Settings\SettingsSectionInterface;
 use Automattic\WooCommerce\Admin\Settings\SettingsSectionRegistry;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Testing\Tools\CodeHacking\Hacks\FunctionsMockerHack;
 use Automattic\WooCommerce\Testing\Tools\CodeHacking\Hacks\StaticMockerHack;
 
@@ -36,6 +37,9 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		SettingsSectionRegistry::get_instance()->unregister_all();
+		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( 'experimental_woocommerce_admin_payment_reactify_render_sections' );
+		$this->reset_legacy_proxy_mocks();
 
 		parent::tearDown();
 	}
@@ -129,6 +133,144 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 		}
 
 		$this->assertStringContainsString( 'name="registered_acme_payments_setting"', $output );
+	}
+
+	/**
+	 * @testdox Should not render WooPayments settings as a React section while the plugin owns the runtime.
+	 */
+	public function test_woopayments_section_is_not_reactified_while_plugin_owns_runtime() {
+		$this->set_runtime_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+
+		$sut = new WC_Settings_Payment_Gateways();
+
+		$this->assertFalse( $sut->should_render_react_section( WC_Settings_Payment_Gateways::WOOPAYMENTS_SECTION_NAME ) );
+	}
+
+	/**
+	 * @testdox Should render WooPayments settings as a React section when native owns the runtime.
+	 */
+	public function test_woopayments_section_is_reactified_when_native_owns_runtime() {
+		$this->set_runtime_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+
+		$sut = new WC_Settings_Payment_Gateways();
+
+		$this->assertTrue( $sut->should_render_react_section( WC_Settings_Payment_Gateways::WOOPAYMENTS_SECTION_NAME ) );
+	}
+
+	/**
+	 * @testdox Should not render WooPayments settings as a React section when no runtime owns the site.
+	 */
+	public function test_woopayments_section_is_not_reactified_when_no_runtime_owns_site() {
+		$this->set_runtime_owner( NativePaymentsRuntimeArbiter::OWNER_NONE );
+
+		$sut = new WC_Settings_Payment_Gateways();
+
+		$this->assertFalse( $sut->should_render_react_section( WC_Settings_Payment_Gateways::WOOPAYMENTS_SECTION_NAME ) );
+	}
+
+	/**
+	 * @testdox Should not allow the optional sections filter to force WooPayments reactification when native does not own the runtime.
+	 *
+	 * @testWith ["plugin"]
+	 *           ["none"]
+	 *
+	 * @param string $owner Runtime owner.
+	 */
+	public function test_woopayments_section_filter_cannot_bypass_runtime_ownership( string $owner ): void {
+		$this->set_runtime_owner( $owner );
+		add_filter(
+			'experimental_woocommerce_admin_payment_reactify_render_sections',
+			static function () {
+				return array( WC_Settings_Payment_Gateways::WOOPAYMENTS_SECTION_NAME );
+			}
+		);
+
+		$sut = new WC_Settings_Payment_Gateways();
+
+		$this->assertFalse( $sut->should_render_react_section( WC_Settings_Payment_Gateways::WOOPAYMENTS_SECTION_NAME ) );
+	}
+
+	/**
+	 * @testdox Should render the WooPayments React root for the WooPayments settings section.
+	 */
+	public function test_woopayments_section_outputs_react_root() {
+		global $current_section;
+		$current_section = 'woocommerce_payments';
+		$this->set_runtime_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$sut = new WC_Settings_Payment_Gateways();
+
+		ob_start();
+		$sut->output();
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( 'id="experimental_wc_settings_payments_woocommerce_payments"', $output );
+	}
+
+	/**
+	 * @testdox Should emit WooPayments gateway notices inside the native React settings section.
+	 */
+	public function test_woopayments_section_outputs_gateway_admin_notices() {
+		global $current_section;
+		$current_section = WC_Settings_Payment_Gateways::WOOPAYMENTS_SECTION_NAME;
+		$this->set_runtime_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$notice_callback = static function () {
+			echo '<div id="native-woopayments-notice">Notice</div>';
+		};
+		add_action( 'woocommerce_woocommerce_payments_admin_notices', $notice_callback );
+
+		try {
+			$sut = new WC_Settings_Payment_Gateways();
+			ob_start();
+			$sut->output();
+			$output = ob_get_clean();
+
+			$this->assertStringContainsString( 'id="native-woopayments-notice"', $output );
+		} finally {
+			remove_action( 'woocommerce_woocommerce_payments_admin_notices', $notice_callback );
+		}
+	}
+
+	/**
+	 * @testdox Should preserve classic WooPayments settings field extensions.
+	 */
+	public function test_woopayments_section_preserves_classic_settings_field_extensions() {
+		$filter_callback = static function ( $fields ) {
+			$fields['custom_extension_field'] = array(
+				'title' => 'Custom extension field',
+				'type'  => 'text',
+			);
+
+			return $fields;
+		};
+		add_filter( 'woocommerce_settings_api_form_fields_woocommerce_payments', $filter_callback );
+
+		try {
+			$sut = new WC_Settings_Payment_Gateways();
+
+			$this->assertFalse( $sut->should_render_react_section( 'woocommerce_payments' ) );
+		} finally {
+			remove_filter( 'woocommerce_settings_api_form_fields_woocommerce_payments', $filter_callback );
+		}
+	}
+
+	/**
+	 * @testdox Should allow the WooPayments React section to be removed through the optional sections filter.
+	 */
+	public function test_woopayments_section_can_be_removed_from_optional_reactified_sections() {
+		$filter_callback = static function () {
+			return array(
+				WC_Settings_Payment_Gateways::COD_SECTION_NAME,
+				WC_Settings_Payment_Gateways::BACS_SECTION_NAME,
+				WC_Settings_Payment_Gateways::CHEQUE_SECTION_NAME,
+			);
+		};
+		add_filter( 'experimental_woocommerce_admin_payment_reactify_render_sections', $filter_callback );
+
+		$sut = new WC_Settings_Payment_Gateways();
+
+		$this->assertFalse( $sut->should_render_react_section( 'woocommerce_payments' ) );
+
+		remove_filter( 'experimental_woocommerce_admin_payment_reactify_render_sections', $filter_callback );
 	}
 
 	/**
@@ -263,5 +405,44 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 			}
 
 		};
+	}
+
+	/**
+	 * Set the payments runtime owner for the current test.
+	 *
+	 * @param string $owner Runtime owner.
+	 */
+	private function set_runtime_owner( string $owner ): void {
+		$plugin_active = NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $owner;
+		$entry         = NativePaymentsRuntimeArbiter::PLUGIN_FILE;
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_option'      => function ( $name, $default_value = false ) use ( $plugin_active, $entry ) {
+					if ( 'active_plugins' === $name ) {
+						return $plugin_active ? array( $entry ) : array();
+					}
+					return get_option( $name, $default_value );
+				},
+				'get_site_option' => function ( $name, $default_value = false ) {
+					if ( 'active_sitewide_plugins' === $name ) {
+						return array();
+					}
+					return get_site_option( $name, $default_value );
+				},
+				'class_exists'    => function ( $class_name, $autoload = true ) use ( $plugin_active ) {
+					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
+						return $plugin_active;
+					}
+					return class_exists( $class_name, $autoload );
+				},
+			)
+		);
+
+		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE === $owner ) {
+			add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			return;
+		}
+
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
 	}
 }

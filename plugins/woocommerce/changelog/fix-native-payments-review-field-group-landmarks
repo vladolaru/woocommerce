@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Expose WooPayments settings field groups as labelled ARIA group landmarks, improving screen-reader navigation and letting tests scope by role + accessible name instead of CSS class.

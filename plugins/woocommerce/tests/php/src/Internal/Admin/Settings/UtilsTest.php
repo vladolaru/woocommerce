@@ -77,8 +77,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider3' => 3,
 				),
 				array(
-					'provider1' => 2, // The sorting should not matter.
-					'provider2' => 3,
+					'provider1' => 2,
+					// The sorting should not matter.
+												'provider2' => 3,
 					'provider3' => 1,
 				),
 				array(
@@ -94,8 +95,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider3' => 3,
 				),
 				array(
-					'provider1' => 20, // The sorting should not matter.
-					'provider2' => 30,
+					'provider1' => 20,
+					// The sorting should not matter.
+												'provider2' => 30,
 					'provider3' => 10,
 				),
 				array(
@@ -111,8 +113,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider3' => 20,
 				),
 				array(
-					'provider1' => 20, // The sorting should not matter.
-					'provider2' => 30,
+					'provider1' => 20,
+					// The sorting should not matter.
+												'provider2' => 30,
 					'provider3' => 10,
 				),
 				array(
@@ -128,8 +131,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider3' => 5,
 				),
 				array(
-					'provider1' => 3, // The sorting should not matter.
-					'provider2' => 5,
+					'provider1' => 3,
+					// The sorting should not matter.
+												'provider2' => 5,
 					'provider3' => 1,
 				),
 				array(
@@ -273,8 +277,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				),
 				array(
 					'provider1',
-					'provider4', // The provider takes the place of the existing one.
-					'provider2',
+					'provider4',
+					// The provider takes the place of the existing one.
+												'provider2',
 					'provider3',
 				),
 			),
@@ -296,13 +301,15 @@ class UtilsTest extends WC_Unit_Test_Case {
 			),
 			'new map is a subset of the old map - existing order values #2' => array(
 				array(
-					'provider2' => 2, // The sorting should not matter.
-					'provider1' => 1,
+					'provider2' => 2,
+					// The sorting should not matter.
+													'provider1' => 1,
 					'provider3' => 3,
 				),
 				array(
-					'provider3' => 2, // The sorting should matter.
-					'provider2' => 1,
+					'provider3' => 2,
+					// The sorting should matter.
+												'provider2' => 1,
 				),
 				array(
 					'provider2',
@@ -328,13 +335,15 @@ class UtilsTest extends WC_Unit_Test_Case {
 			),
 			'new map is a subset of the old map - non-existing order values #2' => array(
 				array(
-					'provider1' => 1, // The sorting should not matter.
-					'provider3' => 3,
+					'provider1' => 1,
+					// The sorting should not matter.
+													'provider3' => 3,
 					'provider2' => 2,
 				),
 				array(
-					'provider2' => 20, // The sorting should not matter.
-					'provider1' => 10,
+					'provider2' => 20,
+					// The sorting should not matter.
+												'provider1' => 10,
 				),
 				array(
 					'provider3',
@@ -360,13 +369,15 @@ class UtilsTest extends WC_Unit_Test_Case {
 			),
 			'new map is a subset of the old map - both existing and non-existing order values #2' => array(
 				array(
-					'provider2' => 2, // The sorting should not matter.
-					'provider1' => 1,
+					'provider2' => 2,
+					// The sorting should not matter.
+													'provider1' => 1,
 					'provider3' => 3,
 				),
 				array(
-					'provider2' => 20, // The sorting should not matter.
-					'provider1' => 3,
+					'provider2' => 20,
+					// The sorting should not matter.
+												'provider1' => 3,
 				),
 				array(
 					'provider3',
@@ -435,8 +446,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider3' => 3,
 				),
 				array(
-					'provider5' => 30, // The sorting should not matter.
-					'provider4' => 20,
+					'provider5' => 30,
+					// The sorting should not matter.
+												'provider4' => 20,
 				),
 				array(
 					'provider1',
@@ -958,8 +970,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				'provider3',
 				1,
 				array(
-					'provider1' => 1, // Remains the same.
-					'provider2' => 2,
+					'provider1' => 1,
+					// Remains the same.
+												'provider2' => 2,
 				),
 			),
 			'id is already at the desired order'          => array(
@@ -970,8 +983,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				'provider1',
 				1,
 				array(
-					'provider1' => 1, // Remains the same.
-					'provider2' => 2,
+					'provider1' => 1,
+					// Remains the same.
+												'provider2' => 2,
 				),
 			),
 			'id is not at the desired order - does not bump after it #1' => array(
@@ -1172,8 +1186,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				1,
 				array(
 					'provider1' => 1,
-					'provider2' => 3, // These are not bumped because there was none at the desired order.
-					'provider3' => 5,
+					'provider2' => 3,
+					// These are not bumped because there was none at the desired order.
+												'provider3' => 5,
 				),
 			),
 			'id exists and is not at the desired order #2' => array(
@@ -1186,8 +1201,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				3,
 				array(
 					'provider1' => 3,
-					'provider2' => 4, // These are bumped.
-					'provider3' => 6,
+					'provider2' => 4,
+					// These are bumped.
+												'provider3' => 6,
 				),
 			),
 			'id exists and is not at the desired order #3' => array(
@@ -1201,7 +1217,8 @@ class UtilsTest extends WC_Unit_Test_Case {
 				array(
 					'provider1' => 2,
 					'provider2' => 4,
-					'provider3' => 5, // These are not bumped because there was none at the desired order.
+					'provider3' => 5,
+			// These are not bumped because there was none at the desired order.
 				),
 			),
 			'id exists and is not at the desired order #4' => array(
@@ -1216,8 +1233,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				array(
 					'provider1' => 2,
 					'provider2' => 4,
-					'provider3' => 5, // These are bumped.
-					'provider4' => 8,
+					'provider3' => 5,
+					// These are bumped.
+												'provider4' => 8,
 				),
 			),
 			'id exists and is not at the desired order #5' => array(
@@ -1233,7 +1251,8 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider1' => 2,
 					'provider2' => 7,
 					'provider3' => 5,
-					'provider4' => 8, // This is bumped.
+					'provider4' => 8,
+			// This is bumped.
 				),
 			),
 			'id exists and is not at the desired order #6' => array(
@@ -1246,8 +1265,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				'provider3',
 				2,
 				array(
-					'provider1' => 3, // All are bumped.
-					'provider2' => 4,
+					'provider1' => 3,
+					// All are bumped.
+												'provider2' => 4,
 					'provider3' => 2,
 					'provider4' => 8,
 				),
@@ -1744,7 +1764,8 @@ class UtilsTest extends WC_Unit_Test_Case {
 		$wp_locale                  = new WP_Locale();
 		$wp_locale->word_count_type = 'characters_excluding_spaces';
 
-		$text = '尉ち雨　ケ　ッピみ　イカ援'; // Translation of: 'This is just a test! for truncating without cutting words.'.
+		$text = '尉ち雨　ケ　ッピみ　イカ援';
+		// Translation of: 'This is just a test! for truncating without cutting words.'.
 
 		// Act.
 		$truncated = Utils::truncate_with_words( $text, 8, '...' );
@@ -1763,5 +1784,39 @@ class UtilsTest extends WC_Unit_Test_Case {
 		// Cleanup.
 		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		$wp_locale = $tmp_local;
+	}
+
+	/**
+	 * @testdox Should append provider route fragments to native payments settings URLs.
+	 */
+	public function test_wc_payments_settings_url_appends_provider_route_fragment(): void {
+		$url = Utils::wc_payments_settings_url(
+			'/woopayments/settings',
+			array(
+				'from' => 'legacy-bookmark',
+			),
+			'advanced'
+		);
+
+		$this->assertSame(
+			admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings&from=legacy-bookmark#advanced' ),
+			$url
+		);
+	}
+
+	/**
+	 * @testdox Should build reference-shaped legacy WooPayments admin URLs for persisted records.
+	 */
+	public function test_wc_payments_legacy_admin_url_builds_reference_shaped_url(): void {
+		$url = Utils::wc_payments_legacy_admin_url(
+			'/payments/transactions/details',
+			array(
+				'id' => 'pi_123',
+			)
+		);
+
+		$this->assertStringContainsString( 'admin.php?page=wc-admin', $url );
+		$this->assertStringContainsString( 'path=/payments/transactions/details', $url );
+		$this->assertStringContainsString( 'id=pi_123', $url );
 	}
 }

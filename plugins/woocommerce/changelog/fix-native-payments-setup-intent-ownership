@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Verify a WooPayments SetupIntent belongs to the current user before attaching the payment method.

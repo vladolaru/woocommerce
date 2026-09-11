@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Allow native WooPayments onboarding before the merchant account can process payments.

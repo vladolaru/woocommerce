@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+#
+# Bucket-E parity differ (WooPayments → core merge, A0 verification harness).
+#
+# Captures the Bucket-E payment surface (status/meta/notes/refunds) for the same order
+# IDs from two stores and asserts ZERO diff on the PRESERVE surface — the executable
+# form of RULE 0 (no merchant-facing regression). Everything the Bucket-E dump emits is
+# a PRESERVE row, so "diff" == "regression". Exit 1 on any diff.
+#
+# Two modes:
+#   Self-check (A0): prove the differ agrees with reality on the UNMODIFIED plugin —
+#     dump the same store twice; must be zero diff. This is the A0 harness trust gate.
+#       parity-diff.sh --self-check "docker exec -i wcpay_wp_default wp --allow-root" 346 344
+#
+#   Cross-store (A1 shadow mode onward): reference (current plugin) vs target (native).
+#       parity-diff.sh \
+#         --ref    "docker exec -i wcpay_wp_default wp --allow-root" \
+#         --target "docker exec -i <core-cli> wp" \
+#         346 344
+#
+#     If corresponding target orders have different local IDs, pass them explicitly:
+#       parity-diff.sh --ref "$REF" --target "$TARGET" --target-ids "12 13" 346 344
+#
+# Env noise that is NOT payment behavior is filtered before diffing (e.g. local mail-send
+# failure notes), so two stores with different mail config don't report false regressions.
+
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	echo "FAIL: local runner safety library is missing: $LOCAL_RUNNER_SAFETY" >&2
+	exit 2
+fi
+# shellcheck source=tools/woopayments-merge/local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
+DUMP="$SELF_DIR/dump-bucket-e-surface.sh"
+CROSS_SETTLE_TRIES="${CROSS_SETTLE_TRIES:-60}"
+CROSS_SETTLE_SLEEP_SECONDS="${CROSS_SETTLE_SLEEP_SECONDS:-1}"
+
+progress() {
+	printf 'Bucket-E: %s\n' "$*" >&2
+}
+
+REF_WP=""
+TARGET_WP=""
+SELF_WP=""
+IDS=()
+TARGET_IDS=()
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--ref) REF_WP="$2"; shift 2 ;;
+		--target) TARGET_WP="$2"; shift 2 ;;
+		--target-ids) read -r -a TARGET_IDS <<< "$2"; shift 2 ;;
+		--self-check) SELF_WP="$2"; shift 2 ;;
+		--) shift; break ;;
+		-*) echo "Unknown flag: $1" >&2; exit 2 ;;
+		*) IDS+=("$1"); shift ;;
+	esac
+done
+IDS+=("$@")
+
+if [ "${#IDS[@]}" -eq 0 ]; then
+	echo "usage: parity-diff.sh (--self-check WP | --ref WP --target WP) <order_id>..." >&2
+	exit 2
+fi
+
+# Local-only enforcement (RULE: never read Bucket-E surfaces from a remote store).
+# Every accepted runner string is validated once, before any store command.
+validate_local_wp_cmd() {
+	local label="$1"
+	local command="$2"
+	local error
+
+	if ! error="$(woopayments_validate_local_wp_runner "$command")"; then
+		echo "FAIL: unsafe WP-CLI command for $label: $error" >&2
+		exit 2
+	fi
+}
+
+if [ -n "$SELF_WP" ]; then
+	validate_local_wp_cmd self-check "$SELF_WP"
+fi
+if [ -n "$REF_WP" ]; then
+	validate_local_wp_cmd reference "$REF_WP"
+fi
+if [ -n "$TARGET_WP" ]; then
+	validate_local_wp_cmd target "$TARGET_WP"
+fi
+
+# Env-noise (local mail-transport failure notes) is excluded inside the dump itself, at the
+# data level — never as a line-grep here, since each order is a single JSON line and a
+# text filter would drop the whole record, not just the noisy note.
+dump() {
+	local wp="$1"
+	shift
+	WP="$wp" bash "$DUMP" "$@" 2>/dev/null
+}
+
+if [ -n "$SELF_WP" ]; then
+	LEFT_LABEL="run-1"; RIGHT_LABEL="run-2"
+	# Self-check proves the differ is deterministic on a SETTLED surface. A freshly-driven order can
+	# still be settling (async webhooks updating status/notes), a moving target — so dump until two
+	# consecutive dumps match (bounded), then compare those. A genuinely non-deterministic differ
+	# never stabilizes and the final unequal pair is reported as FAIL.
+	progress "capturing self-check surfaces for order(s): ${IDS[*]}"
+	left="$(dump "$SELF_WP" "${IDS[@]}")"
+	right="$(dump "$SELF_WP" "${IDS[@]}")"
+	tries=0
+	while [ "$left" != "$right" ] && [ "$tries" -lt 8 ]; do
+		progress "self-check surfaces still moving; retry $((tries + 1))/8"
+		sleep 1
+		left="$right"
+		right="$(dump "$SELF_WP" "${IDS[@]}")"
+		tries=$((tries + 1))
+	done
+else
+	if [ -z "$REF_WP" ] || [ -z "$TARGET_WP" ]; then
+		echo "Cross-store mode needs both --ref and --target." >&2
+		exit 2
+	fi
+	if [ "${#TARGET_IDS[@]}" -eq 0 ]; then
+		TARGET_IDS=("${IDS[@]}")
+	fi
+	if [ "${#TARGET_IDS[@]}" -ne "${#IDS[@]}" ]; then
+		echo "Cross-store mode needs the same number of reference and target order IDs." >&2
+		exit 2
+	fi
+	LEFT_LABEL="reference"; RIGHT_LABEL="target-native"
+	progress "capturing reference order(s): ${IDS[*]}"
+	left="$(dump "$REF_WP" "${IDS[@]}")"
+	progress "capturing target order(s): ${TARGET_IDS[*]}"
+	right="$(dump "$TARGET_WP" "${TARGET_IDS[@]}")"
+	tries=0
+	left_compare="$(printf '%s\n' "$left" | python3 "$SELF_DIR/normalize-bucket-e-cross.py")"
+	right_compare="$(printf '%s\n' "$right" | python3 "$SELF_DIR/normalize-bucket-e-cross.py")"
+	while [ "$left_compare" != "$right_compare" ] && [ "$tries" -lt "$CROSS_SETTLE_TRIES" ]; do
+		if [ "$tries" -eq 0 ] || [ $((tries % 5)) -eq 0 ]; then
+			progress "surfaces differ; waiting for settle attempt $((tries + 1))/$CROSS_SETTLE_TRIES"
+		fi
+		sleep "$CROSS_SETTLE_SLEEP_SECONDS"
+		left="$(dump "$REF_WP" "${IDS[@]}")"
+		right="$(dump "$TARGET_WP" "${TARGET_IDS[@]}")"
+		left_compare="$(printf '%s\n' "$left" | python3 "$SELF_DIR/normalize-bucket-e-cross.py")"
+		right_compare="$(printf '%s\n' "$right" | python3 "$SELF_DIR/normalize-bucket-e-cross.py")"
+		tries=$((tries + 1))
+	done
+fi
+
+if [ -z "$left" ]; then
+	echo "BLOCKED: $LEFT_LABEL produced no surface output (store unreachable or no orders) — not a parity result." >&2
+	exit 3
+fi
+if [ -z "$right" ]; then
+	echo "BLOCKED: $RIGHT_LABEL produced no surface output (store unreachable or no orders) — not a parity regression, an infra failure." >&2
+	exit 3
+fi
+
+# A parity verdict may only rest on records that were positively captured. An order the
+# dump could not resolve emits {"order_id":N,"error":"..."} — two such records normalize
+# identically (order ids are masked), so without this check nonexistent orders on both
+# sides would produce a vacuous PASS on the RULE 0 gate.
+verify_surface() {
+	local label="$1" expected_count="$2" surface="$3" problems
+	problems="$(printf '%s\n' "$surface" | python3 -c '
+import json
+import sys
+
+expected = int(sys.argv[1])
+records = 0
+errors = []
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    records += 1
+    try:
+        record = json.loads(line)
+    except json.JSONDecodeError:
+        errors.append("unparseable record")
+        continue
+    if "error" in record:
+        errors.append("order {}: {}".format(record.get("order_id", "?"), record["error"]))
+if records != expected:
+    errors.append("captured {} record(s), expected {}".format(records, expected))
+for error in errors:
+    print(error)
+' "$expected_count")"
+	if [ -n "$problems" ]; then
+		echo "BLOCKED: $label surface contains unverifiable records — not a parity result:" >&2
+		printf '%s\n' "$problems" | sed 's/^/    /' >&2
+		exit 3
+	fi
+}
+
+if [ -n "$SELF_WP" ]; then
+	verify_surface "$LEFT_LABEL" "${#IDS[@]}" "$left"
+	verify_surface "$RIGHT_LABEL" "${#IDS[@]}" "$right"
+else
+	verify_surface "$LEFT_LABEL" "${#IDS[@]}" "$left"
+	verify_surface "$RIGHT_LABEL" "${#TARGET_IDS[@]}" "$right"
+fi
+
+if [ -n "$SELF_WP" ]; then
+	left_compare="$left"
+	right_compare="$right"
+elif [ -z "${left_compare:-}" ] || [ -z "${right_compare:-}" ]; then
+	left_compare="$(printf '%s\n' "$left" | python3 "$SELF_DIR/normalize-bucket-e-cross.py")"
+	right_compare="$(printf '%s\n' "$right" | python3 "$SELF_DIR/normalize-bucket-e-cross.py")"
+fi
+
+d="$(diff <(printf '%s\n' "$left_compare") <(printf '%s\n' "$right_compare"))"
+if [ -n "$d" ]; then
+	echo "FAIL: Bucket-E parity diff ($LEFT_LABEL vs $RIGHT_LABEL) — RULE 0 regression on PRESERVE surface:"
+	printf '%s\n' "$d" | sed 's/^/    /'
+	echo
+	echo "  '<' = $LEFT_LABEL only · '>' = $RIGHT_LABEL only"
+	exit 1
+fi
+
+echo "PASS: zero Bucket-E parity diff across ${#IDS[@]} order(s) ($LEFT_LABEL vs $RIGHT_LABEL)."
+exit 0

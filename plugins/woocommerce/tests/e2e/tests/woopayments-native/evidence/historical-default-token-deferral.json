@@ -1,0 +1,46 @@
+{
+	"schema_version": 2,
+	"slice_id": "historical-default-token-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "0ddb1576e51c174b2034a1068e08dac7f0c27edf",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-tokens.spec.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/checkout.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/historical-tokens.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/saved-cards.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/store-transition.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-evidence.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/record-evidence.ts"
+	],
+	"source_test_sha256": "8cb0aff5b954af7eed5b70e4f00347adec06596c8c675ca5857845eb4cd1bc68",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: basic › should be able to set the basic card as default payment method"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-tokens.spec.ts",
+			"contract": "plugin-origin default saved method remains the sole preselected Classic method after native cutover and funds one exact payment"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "8cb0aff5b954af7eed5b70e4f00347adec06596c8c675ca5857845eb4cd1bc68",
+			"summary": "Fresh broad review approved the exact one-row blocked-environment deferral: listener exclusivity was lost during the sole zero-retry run, neither rerunning nor modifying the unowned listener is allowlisted, the executable target remains unclosed, and an exclusively owned listener window is the smallest unlock."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "A separately owned webhook listener appeared after preflight during the sole provider exercise, so exclusive delivery attribution cannot be established for closure.",
+		"affected_scope": "The exact historical basic default-token contract and its dedicated executable transition target.",
+		"no_allowlisted_action_reason": "The run cannot repeat a provider mutation to erase uncertain evidence and cannot stop or modify a separately owned local process.",
+		"reference": "blocked-environment:PILOT-PROVIDER-LISTENER-EXCLUSIVITY",
+		"unlock_decision": "Provide a fresh authorized migration run with one exclusively owned listener maintained for the entire provider interval.",
+		"quarantine_status": "Run-owned transition teardown completed with no lease, journal, or quarantine residue; the separately owned listener was left untouched."
+	}
+}

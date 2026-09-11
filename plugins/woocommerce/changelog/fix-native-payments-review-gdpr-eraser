@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Register a personal-data eraser for native WooPayments customer IDs so GDPR erasure requests clear the stored Stripe customer linkage.

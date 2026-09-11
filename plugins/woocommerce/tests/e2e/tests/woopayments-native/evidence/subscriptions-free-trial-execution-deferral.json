@@ -1,0 +1,71 @@
+{
+	"schema_version": 2,
+	"slice_id": "subscriptions-free-trial-execution-deferral",
+	"wc_base_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"verified_at_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php",
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/free-trial-3ds.spec.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/classic-card-authentication.test.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/classic-card-authentication.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/subscriptions.ts"
+	],
+	"source_test_sha256": "7360b7a082e3337f1f902e64a7ffd4fe39ba17558880a7c99ebbad8ce76cb391",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-free-trial.spec.ts:77::Shopper: Subscriptions - Purchase Free Trial › Shopper should be able to purchase a free trial"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/free-trial-3ds.spec.ts",
+			"contract": "a shopper sees a 14-day free trial on the product, cart, and classic checkout, sees the same timezone-safe first-renewal date and a zero initial total in cart and checkout, completes one required SetupIntent challenge, and one journaled USD 9.99 renewal succeeds on that exact reusable credential"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [
+		{
+			"command": "targeted TypeScript formatting, lint, collection, PHP syntax, and classic-card-authentication unit checks",
+			"exit_code": 0,
+			"summary": "Implementation checks passed after the runtime and shared Classic authentication driver learned to route seti_ identities through subscription-evidence and expose only the redacted next_action_type. The focused provider-intent routing unit passed."
+		},
+		{
+			"command": "provider run result originally emitted as ctrf-report-1786643987968.json",
+			"exit_code": 1,
+			"summary": "The first run stopped before provider submission because the Blocks cart selector did not match the native cart. The selector was corrected; no provider object or financial attempt was created by this run."
+		},
+		{
+			"command": "provider run result originally emitted as ctrf-report-1786644430268.json",
+			"exit_code": 1,
+			"summary": "The second run stopped before provider submission because the Classic accessible total included the USD currency label. The product oracle was corrected to accept the accessible currency while retaining the exact zero-total requirement; no provider object or financial attempt was created by this run."
+		},
+		{
+			"command": "provider run result originally emitted as ctrf-report-1786644511435.json",
+			"exit_code": 1,
+			"summary": "The third run reached the exact SetupIntent, then the shared Classic driver incorrectly queried the PaymentIntent REST route with a seti_ identity and received HTTP 404. The run correctly published immutable quarantine for the account, store, run product, and one open provider attempt. The quarantine contains four files: three receipts plus events.jsonl. Listener PID 51722 remains associated with the interval. These three observed run results were transcribed into this durable packet before later Playwright runs replaced their ephemeral CTRF files; the quarantine receipts and open attempt remain present."
+		}
+	],
+	"reviews": [
+		{
+			"role": "semantic",
+			"verdict": "APPROVE",
+			"source_test_sha256": "7360b7a082e3337f1f902e64a7ffd4fe39ba17558880a7c99ebbad8ce76cb391",
+			"summary": "The target preserves the current-client free-trial product contract across product, cart, and Classic checkout while strengthening migration proof around timezone-safe renewal dates, one mandatory SetupIntent challenge, the exact reusable credential, subscription and parent-order identity, and one journaled USD 9.99 renewal."
+		},
+		{
+			"role": "simplification",
+			"verdict": "APPROVE",
+			"source_test_sha256": "7360b7a082e3337f1f902e64a7ffd4fe39ba17558880a7c99ebbad8ce76cb391",
+			"summary": "The two pre-provider failures were corrected at their narrow UI oracles. The provider-read defect was fixed once in the shared intent router by dispatching seti_ identities to subscription-evidence and exposing only redacted next-action type, without duplicating subscription-specific payment logic."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Execution is blocked by immutable provider quarantine from ctrf-report-1786644511435.json. The account, store, run product, and one open provider attempt remain quarantined after the exact SetupIntent was created and the old shared reader queried the wrong REST route. The corrected driver and runtime unit proof are ready, but a rerun is forbidden while this quarantine exists.",
+		"affected_scope": "One product-first 14-day free-trial journey under native ownership: exact free-trial and renewal-date comprehension on product, cart, and Classic checkout; exact zero initial total; one mandatory SetupIntent challenge; exact reusable token, subscription, parent order, SetupIntent and provider customer joins; and one journaled USD 9.99 renewal on that same credential. The product and Classic total corrections are complete, and seti_ readback now uses subscription-evidence with redacted next_action_type.",
+		"no_allowlisted_action_reason": "No local bookkeeping action can clear or reinterpret an immutable quarantine containing three receipts, events.jsonl, and an open provider attempt. Replaying the setup or renewal could duplicate provider state and violate exact-once attribution. The listener at PID 51722 and all quarantined resources must remain untouched until the owning recovery workflow resolves the attempt.",
+		"reference": "blocked-environment:PILOT-PROVIDER-QUARANTINE",
+		"unlock_decision": "Resolve the existing quarantine through the provider recovery process, prove the open attempt terminal and the account/store safe, then rerun the exact target with one worker and zero retries using the corrected seti_ reader. Do not replace or replay the quarantined attempt.",
+		"quarantine_status": "Four immutable quarantine files exist: three receipts and events.jsonl. They cover the account, store, run product, and one open provider attempt from report ctrf-report-1786644511435.json. No rerun, cleanup, listener mutation, store mutation, or provider mutation was performed during this bookkeeping step."
+	}
+}

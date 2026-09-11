@@ -1,0 +1,31 @@
+{
+	"schema_version": 2,
+	"slice_id": "blocks-checkout-post-auth-decline-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "b7b9b007b56455c6008c61d09f2d354678afd2af",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": ["default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card has been declined."],
+	"targets": [{"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/decline.ts", "contract": "pending"}],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent static review approved provider-matrix SHA f78451cd5af08591171b2b173817fbefe0bd51f81c49e7bb63909f37fd685715, client-validation SHA eeb85016c1faf258f908da0b6a69e71fe1f6ece40d57e1dc5ae8e573837143b0, post-auth SHA dc517c1c1628c4c285a15469c61a661cb600a3a5fa5f92fe6e4e485a7c3be27a, and retry SHA 06e91c4de79feb5be3d6d0d7ea578924cc77df9785ee5285ae8c6bf15dabae54 against mutated ledger SHA 70f0b4a794c23820694dd9a5150c5024faa5a71ca8db5bb0e37d479bafc53300, with no findings. Exactly physical rows 166-175 change, only fields 37-40, and the ten contract IDs occur exactly once across four honest schema-v2 artifacts. Every row retains the exact single scenarios/decline.ts target object and pending target/owner fields. The evidence preserves the five distinct provider-decline error graphs, three provider-free accessible validation graphs, mandatory same-intent 1629 post-auth decline, and two-attempt same-page recovery cardinality. Writer/listener ownership, zero runner retries/replay, journals, restoration, retention, quarantine, and drift controls remain explicit; the current separately owned listener is untouched, and no defect, known gap, execution, or closure is claimed."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The decline target/owner, standing readiness, approved 1629 mandatory-completion capability, intermediate intent/confirmation reader, semantic challenge adapter and exclusive listener are absent. The frozen helper may silently omit its challenge; no native post-auth defect is established.",
+		"affected_scope": "One fresh graph enters 1629 once and creates one exact PaymentMethod plus one Store API checkout POST. The backend creates one order and one PaymentIntent in requires_action, returns HTTP 200 with a payment-success result and public-safe confirmation-fragment binding to that same order/intent. Exactly one visible named challenge receives focus and one keyboard-operable Complete action is activated once under a separate journal; Fail is never used. handleNextAction then reports Your card has been declined., the unchanged intent moves to requires_payment_method with last_payment_error code card_declined, and no decline-code value is invented. Exactly zero update-order-status AJAX calls occur, one payment_intent.payment_failed event is ingested once, and the one order converges failed/unpaid. Zero successful intent, charge, capture, balance transaction, token, receipt or success event exists. The visible error is announced, focus returns sensibly and correction remains usable.",
+		"no_allowlisted_action_reason": "No action can assign target/owner, satisfy readiness, approve mandatory-1629 completion/readers or own the listener. Missing/frictionless challenge, Fail action, second Complete, replacement intent, checkout resubmission or inferred decline code is invalid. Use one worker, one provider writer/listener interval, one checkout and one Complete action, separate journals, zero retries/replay and bounded convergence.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Approve target/owner, readiness, mandatory 1629 capability, exact action/fragment/callback/event readers and semantic challenge adapter plus one exclusive listener. Prove the same-order/same-intent post-auth failure, zero update call and financial success effects, accessibility, restoration, failed-history retention and fresh reviews.",
+		"quarantine_status": "No order, intent, challenge, provider object, listener, browser, writer, journal or quarantine was created. Future challenge, action, identity, callback, event, listener, restoration or publication ambiguity stops without replay, retains failed graph/open journals and quarantines the exact account, store, session, order, method, intent, challenge/event interval and locks."
+	}
+}

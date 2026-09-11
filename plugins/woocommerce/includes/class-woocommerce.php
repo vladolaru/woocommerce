@@ -420,6 +420,17 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\CostOfGoodsSold\CostOfGoodsSoldController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsController::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsCliCommand::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader::class )->register();
+
+		( new Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap(
+			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_bootstrap_root_matrix()
+		) )->register(
+			$container,
+			fn(): bool => $this->is_rest_api_request()
+		);
 		$container->get( Automattic\WooCommerce\Internal\Utilities\LegacyRestApiStub::class )->register();
 		$container->get( LegacySelect2UsageTracker::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\VariationGallery\Telemetry::class )->register();

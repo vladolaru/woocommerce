@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add a card-authentication driver that proves the 3D Secure challenge happened instead of passing when it is absent.

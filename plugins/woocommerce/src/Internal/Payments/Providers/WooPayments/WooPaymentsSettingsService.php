@@ -1,0 +1,2254 @@
+<?php
+/**
+ * WooPaymentsSettingsService class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Throwable;
+use WP_Error;
+use WP_REST_Request;
+
+/**
+ * Provides the native WooPayments settings contract consumed by the hoisted settings store.
+ *
+ * @since 11.0.0
+ * @internal Transitional internal component for the native WooPayments settings runtime.
+ */
+class WooPaymentsSettingsService {
+
+	public const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
+
+	private const MULTI_CURRENCY_FLAG_OPTION = '_wcpay_feature_customer_multi_currency';
+
+	private const WCPAY_SUBSCRIPTIONS_FLAG_OPTION = '_wcpay_feature_subscriptions';
+
+	private const WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION = '_wcpay_feature_woopay_express_checkout';
+
+	private const DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION = '_wcpay_feature_dynamic_checkout_place_order_button';
+
+	private const SUPPORTED_PAYMENT_METHOD_IDS = array(
+		'alipay',
+		'amazon_pay',
+		'apple_pay',
+		'au_becs_debit',
+		'bancontact',
+		'card',
+		'eps',
+		'google_pay',
+		'grabpay',
+		'ideal',
+		'jcb',
+		'klarna',
+		'link',
+		'multibanco',
+		'p24',
+		'sepa_debit',
+		'wechat_pay',
+		'affirm',
+		'afterpay_clearpay',
+	);
+
+	private const MANUAL_CAPTURE_PAYMENT_METHOD_IDS = array(
+		'amazon_pay',
+		'apple_pay',
+		'card',
+		'google_pay',
+		'link',
+	);
+
+	private const EXPRESS_CHECKOUT_METHOD_IDS = array(
+		'payment_request',
+		'amazon_pay',
+		'woopay',
+		'link',
+	);
+
+	private const PAYMENT_METHOD_CAPABILITY_KEY_MAP = array(
+		'alipay'            => 'alipay_payments',
+		'amazon_pay'        => 'amazon_pay_payments',
+		'apple_pay'         => 'card_payments',
+		'au_becs_debit'     => 'au_becs_debit_payments',
+		'bancontact'        => 'bancontact_payments',
+		'card'              => 'card_payments',
+		'eps'               => 'eps_payments',
+		'google_pay'        => 'card_payments',
+		'grabpay'           => 'grabpay_payments',
+		'ideal'             => 'ideal_payments',
+		'jcb'               => 'jcb_payments',
+		'klarna'            => 'klarna_payments',
+		'link'              => 'link_payments',
+		'multibanco'        => 'multibanco_payments',
+		'p24'               => 'p24_payments',
+		'sepa_debit'        => 'sepa_debit_payments',
+		'wechat_pay'        => 'wechat_pay_payments',
+		'affirm'            => 'affirm_payments',
+		'afterpay_clearpay' => 'afterpay_clearpay_payments',
+	);
+
+	private const DUPLICATE_PAYMENT_METHOD_KEYWORDS = array(
+		'card'              => array( 'credit_card', 'creditcard', 'cc', 'card', 'stripe', 'woocommerce_payments' ),
+		'alipay'            => array( 'alipay' ),
+		'amazon_pay'        => array( 'amazon_pay', 'amazonpay' ),
+		'au_becs_debit'     => array( 'au_becs', 'becs' ),
+		'bancontact'        => array( 'bancontact' ),
+		'eps'               => array( 'eps' ),
+		'grabpay'           => array( 'grabpay' ),
+		'ideal'             => array( 'ideal' ),
+		'klarna'            => array( 'klarna' ),
+		'multibanco'        => array( 'multibanco' ),
+		'p24'               => array( 'p24', 'przelewy24' ),
+		'sepa_debit'        => array( 'sepa' ),
+		'wechat_pay'        => array( 'wechat' ),
+		'affirm'            => array( 'affirm' ),
+		'afterpay_clearpay' => array( 'afterpay', 'clearpay' ),
+	);
+
+	private const PAYMENT_REQUEST_DUPLICATE_METHOD_ID = 'apple_pay_google_pay';
+
+	private const FILTER_GATEWAY_DUPLICATE_PAYMENT_METHOD_IDS = 'woocommerce_woopayments_gateway_duplicate_payment_method_ids';
+
+	private const PAYMENT_REQUEST_DUPLICATE_GATEWAY_KEYWORDS = array(
+		'apple_pay',
+		'applepay',
+		'google_pay',
+		'googlepay',
+	);
+
+	private const ALLOWED_OPTIONS = array(
+		'wcpay_multi_currency_setup_completed'             => 'bool',
+		'woocommerce_dismissed_todo_tasks'                 => 'array',
+		'woocommerce_remind_me_later_todo_tasks'           => 'array',
+		'woocommerce_deleted_todo_tasks'                   => 'array',
+		'wcpay_fraud_protection_welcome_tour_dismissed'    => 'bool',
+		'wcpay_onboarding_eligibility_modal_dismissed'     => 'bool',
+		'wcpay_connection_success_modal_dismissed'         => 'bool',
+		'wcpay_next_deposit_notice_dismissed'              => 'bool',
+		'wcpay_duplicate_payment_method_notices_dismissed' => 'array',
+		'wcpay_instant_deposit_notice_dismissed'           => 'bool',
+		'wcpay_exit_survey_last_shown'                     => 'string',
+	);
+
+	private const LOCAL_SETTING_MAP = array(
+		'is_wcpay_enabled'                               => array( 'enabled', 'bool' ),
+		'is_manual_capture_enabled'                      => array( 'manual_capture', 'bool' ),
+		'is_test_mode_enabled'                           => array( 'test_mode', 'bool' ),
+		'is_debug_log_enabled'                           => array( 'enable_logging', 'bool' ),
+		'is_saved_cards_enabled'                         => array( 'saved_cards', 'bool' ),
+		'is_express_checkout_in_payment_methods_enabled' => array( 'express_checkout_in_payment_methods', 'bool' ),
+		'payment_request_button_size'                    => array( 'payment_request_button_size', 'string' ),
+		'payment_request_button_type'                    => array( 'payment_request_button_type', 'string' ),
+		'payment_request_button_theme'                   => array( 'payment_request_button_theme', 'string' ),
+		'payment_request_button_border_radius'           => array( 'payment_request_button_border_radius', 'int' ),
+		'is_woopay_enabled'                              => array( 'platform_checkout', 'bool' ),
+		'is_woopay_global_theme_support_enabled'         => array( 'is_woopay_global_theme_support_enabled', 'bool' ),
+		'woopay_store_logo'                              => array( 'platform_checkout_store_logo', 'string' ),
+	);
+
+	private const ACCOUNT_SETTING_MAP = array(
+		'account_statement_descriptor'       => 'statement_descriptor',
+		'account_statement_descriptor_kanji' => 'statement_descriptor_kanji',
+		'account_statement_descriptor_kana'  => 'statement_descriptor_kana',
+		'account_business_name'              => 'business_name',
+		'account_business_url'               => 'business_url',
+		'account_business_support_address'   => 'business_support_address',
+		'account_business_support_email'     => 'business_support_email',
+		'account_business_support_phone'     => 'business_support_phone',
+		'account_branding_logo'              => 'branding_logo',
+		'account_branding_icon'              => 'branding_icon',
+		'account_branding_primary_color'     => 'branding_primary_color',
+		'account_branding_secondary_color'   => 'branding_secondary_color',
+		'account_communications_email'       => 'communications_email',
+		'deposit_schedule_interval'          => 'deposit_schedule_interval',
+		'deposit_schedule_monthly_anchor'    => 'deposit_schedule_monthly_anchor',
+		'deposit_schedule_weekly_anchor'     => 'deposit_schedule_weekly_anchor',
+	);
+
+	/**
+	 * Settings fields whose platform rejections the settings UI can render inline under the field.
+	 *
+	 * Mirrors the WooPayments plugin's INLINE_ERROR_SETTING_KEYS.
+	 */
+	private const INLINE_ERROR_SETTING_KEYS = array(
+		'account_statement_descriptor',
+		'account_business_support_email',
+		'account_business_support_phone',
+		'account_communications_email',
+	);
+
+	/**
+	 * Native WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
+	 * Native WooPayments API client.
+	 *
+	 * @var WooPaymentsApiClient
+	 */
+	private WooPaymentsApiClient $api_client;
+
+	/**
+	 * WooPay session service.
+	 *
+	 * @var WooPaymentsWooPaySessionService|null
+	 */
+	private ?WooPaymentsWooPaySessionService $woopay_session_service = null;
+
+	/**
+	 * Canonical-to-split gateway settings synchronizer.
+	 *
+	 * @var WooPaymentsGatewaySettingsSynchronizer|null
+	 */
+	private ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null;
+
+	/**
+	 * Payment method definition registry.
+	 *
+	 * @var WooPaymentsPaymentMethodRegistry|null
+	 */
+	private ?WooPaymentsPaymentMethodRegistry $payment_method_registry = null;
+
+	/**
+	 * Payment method promotions service.
+	 *
+	 * @var WooPaymentsPmPromotionsService
+	 */
+	private WooPaymentsPmPromotionsService $pm_promotions_service;
+
+	/**
+	 * Whether fraud protection settings were refreshed for this service instance.
+	 *
+	 * @var bool
+	 */
+	private bool $fraud_protection_settings_refreshed = false;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsAccountService                   $account_service        Native WooPayments account service.
+	 * @param WooPaymentsApiClient                        $api_client             Native WooPayments API client.
+	 * @param WooPaymentsPmPromotionsService              $pm_promotions_service  PM promotions service.
+	 * @param WooPaymentsWooPaySessionService|null        $woopay_session_service       Optional WooPay session service.
+	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional gateway settings synchronizer.
+	 * @param WooPaymentsPaymentMethodRegistry|null       $payment_method_registry       Optional payment method registry.
+	 */
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, ?WooPaymentsWooPaySessionService $woopay_session_service = null, ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null, ?WooPaymentsPaymentMethodRegistry $payment_method_registry = null ): void {
+		$this->account_service               = $account_service;
+		$this->api_client                    = $api_client;
+		$this->pm_promotions_service         = $pm_promotions_service;
+		$this->woopay_session_service        = $woopay_session_service;
+		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
+		$this->payment_method_registry       = $payment_method_registry;
+	}
+
+	/**
+	 * Get payment method IDs accepted by the settings REST contract.
+	 *
+	 * @return string[]
+	 */
+	public static function get_supported_payment_method_ids(): array {
+		return self::SUPPORTED_PAYMENT_METHOD_IDS;
+	}
+
+	/**
+	 * Get payment method IDs the native WooPayments gateway can charge today.
+	 *
+	 * @return string[]
+	 */
+	public static function get_natively_chargeable_payment_method_ids(): array {
+		return ( new WooPaymentsPaymentMethodRegistry() )->get_natively_chargeable_ids();
+	}
+
+	/**
+	 * Get express checkout method IDs accepted by the settings REST contract.
+	 *
+	 * @return string[]
+	 */
+	public static function get_express_checkout_method_ids(): array {
+		return self::EXPRESS_CHECKOUT_METHOD_IDS;
+	}
+
+	/**
+	 * Tell whether dynamic checkout place-order controls are enabled.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @return bool
+	 */
+	public static function is_dynamic_checkout_place_order_button_enabled(): bool {
+		// An absent flag counts as OFF, matching the reference client's default;
+		// the platform delivering '1' with the account payload turns it on.
+		return '1' === (string) get_option( self::DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION, '0' );
+	}
+
+	/**
+	 * Get the native WooPayments settings contract.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_settings(): array {
+		$settings                        = $this->get_gateway_settings();
+		$filtered_payment_method_catalog = $this->get_payment_method_registry()->get_available_payment_method_ids();
+		$account_fields                  = $this->get_account_backed_response_fields( $settings );
+		$available_payment_method_ids    = $this->get_available_payment_method_ids( $filtered_payment_method_catalog );
+		$enabled_payment_method_ids      = $this->sanitize_payment_method_ids(
+			$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids' ),
+			$available_payment_method_ids
+		);
+
+		return array(
+			'enabled_payment_method_ids'                 => $enabled_payment_method_ids,
+			'available_payment_method_ids'               => $available_payment_method_ids,
+			'natively_chargeable_payment_method_ids'     => self::get_natively_chargeable_payment_method_ids(),
+			'payment_method_statuses'                    => $this->get_payment_method_statuses(),
+			'duplicated_payment_method_ids'              => $this->get_duplicated_payment_method_ids(),
+			'dismissed_duplicate_payment_method_notices' => $this->get_dismissed_duplicate_payment_method_notices(),
+			'account_fees'                               => $this->get_account_fees(),
+			'pm_promotions'                              => $this->get_pm_promotions_service()->get_visible_promotions() ?? array(),
+			'is_wcpay_enabled'                           => $this->is_yes( $settings['enabled'] ),
+			'is_manual_capture_enabled'                  => $this->is_yes( $settings['manual_capture'] ),
+			'is_test_mode_enabled'                       => $this->account_service->is_test_mode_enabled(),
+			'is_test_mode_onboarding'                    => $this->account_service->is_test_mode_onboarding_enabled(),
+			'is_dev_mode_enabled'                        => $this->account_service->is_dev_mode_enabled(),
+			'is_multi_currency_enabled'                  => '1' === (string) get_option( self::MULTI_CURRENCY_FLAG_OPTION, '0' ),
+			'is_wcpay_subscriptions_enabled'             => '1' === (string) get_option( self::WCPAY_SUBSCRIPTIONS_FLAG_OPTION, '0' ),
+			'is_wcpay_subscriptions_eligible'            => $this->is_subscriptions_eligible(),
+			'is_subscriptions_plugin_active'             => class_exists( 'WC_Subscriptions' ),
+			'feature_flags'                              => $this->get_feature_flags(),
+			'account_country'                            => $account_fields['account_country'],
+			'account_statement_descriptor'               => $account_fields['account_statement_descriptor'],
+			'account_statement_descriptor_kanji'         => $account_fields['account_statement_descriptor_kanji'],
+			'account_statement_descriptor_kana'          => $account_fields['account_statement_descriptor_kana'],
+			'account_business_name'                      => $account_fields['account_business_name'],
+			'account_business_url'                       => $account_fields['account_business_url'],
+			'account_business_support_address'           => $account_fields['account_business_support_address'],
+			'account_business_support_email'             => $account_fields['account_business_support_email'],
+			'account_business_support_phone'             => $account_fields['account_business_support_phone'],
+			'account_branding_logo'                      => $account_fields['account_branding_logo'],
+			'account_branding_icon'                      => $account_fields['account_branding_icon'],
+			'account_branding_primary_color'             => $account_fields['account_branding_primary_color'],
+			'account_branding_secondary_color'           => $account_fields['account_branding_secondary_color'],
+			'account_domestic_currency'                  => $account_fields['account_domestic_currency'],
+			'account_communications_email'               => $account_fields['account_communications_email'],
+			'is_payment_request_enabled'                 => $this->account_service->is_payment_request_enabled(),
+			'is_express_checkout_in_payment_methods_enabled' => $this->is_yes( $settings['express_checkout_in_payment_methods'] ?? 'no' ),
+			'is_express_checkout_in_payment_methods_list_supported' => true,
+			'is_debug_log_enabled'                       => $this->is_yes( $settings['enable_logging'] ),
+			'payment_request_button_size'                => $this->get_string_setting( $settings, 'payment_request_button_size' ),
+			'payment_request_button_type'                => $this->get_string_setting( $settings, 'payment_request_button_type' ),
+			'payment_request_button_theme'               => $this->get_string_setting( $settings, 'payment_request_button_theme' ),
+			'payment_request_button_border_radius'       => $this->get_int_setting( $settings, 'payment_request_button_border_radius', 4 ),
+			'is_saved_cards_enabled'                     => $this->is_yes( $settings['saved_cards'] ),
+			'is_card_present_eligible'                   => false,
+			'is_woopay_enabled'                          => $this->is_yes( $settings['platform_checkout'] ?? 'no' ),
+			'woopay_last_disable_date'                   => $this->get_string_setting( $settings, 'platform_checkout_last_disable_date' ),
+			'is_woopay_global_theme_support_enabled'     => $this->is_yes( $settings['is_woopay_global_theme_support_enabled'] ?? 'no' ),
+			'is_woopay_global_theme_support_eligible'    => $this->is_woopay_global_theme_support_eligible(),
+			'show_woopay_incompatibility_notice'         => (bool) get_option( 'woopay_invalid_extension_found', false ),
+			'woopay_custom_message'                      => $this->get_string_setting( $settings, 'platform_checkout_custom_message' ),
+			'woopay_store_logo'                          => $this->get_string_setting( $settings, 'platform_checkout_store_logo' ),
+			'woopay_appearance'                          => $this->get_woopay_appearance_for_settings(),
+			'woopay_font_rules'                          => $this->get_woopay_font_rules_for_settings(),
+			'store_name'                                 => get_bloginfo( 'name' ),
+			'store_currency'                             => $this->get_store_currency(),
+			'site_logo_url'                              => $this->get_site_logo_url(),
+			'deposit_schedule_interval'                  => $account_fields['deposit_schedule_interval'],
+			'deposit_schedule_monthly_anchor'            => $account_fields['deposit_schedule_monthly_anchor'],
+			'deposit_schedule_weekly_anchor'             => $account_fields['deposit_schedule_weekly_anchor'],
+			'deposit_delay_days'                         => $account_fields['deposit_delay_days'],
+			'deposit_status'                             => $account_fields['deposit_status'],
+			'deposit_restrictions'                       => $account_fields['deposit_restrictions'],
+			'deposit_completed_waiting_period'           => $account_fields['deposit_completed_waiting_period'],
+			'current_protection_level'                   => $this->get_current_protection_level(),
+			'advanced_fraud_protection_settings'         => $this->get_advanced_fraud_protection_settings(),
+			'fraud_protection'                           => $this->get_fraud_protection_settings(),
+			'fraud_protection_allowed_countries'         => $this->get_fraud_protection_allowed_countries(),
+			'is_fraud_protection_review_feature_active'  => $this->is_fraud_protection_review_feature_active(),
+			'express_checkout_product_methods'           => $this->sanitize_payment_method_ids( $this->get_array_setting( $settings, 'express_checkout_product_methods' ), self::EXPRESS_CHECKOUT_METHOD_IDS ),
+			'express_checkout_cart_methods'              => $this->sanitize_payment_method_ids( $this->get_array_setting( $settings, 'express_checkout_cart_methods' ), self::EXPRESS_CHECKOUT_METHOD_IDS ),
+			'express_checkout_checkout_methods'          => $this->sanitize_payment_method_ids( $this->get_array_setting( $settings, 'express_checkout_checkout_methods' ), self::EXPRESS_CHECKOUT_METHOD_IDS ),
+			'express_checkout_preview'                   => $this->get_express_checkout_preview_settings(),
+		);
+	}
+
+	/**
+	 * Get public Stripe configuration used by the express checkout settings preview.
+	 *
+	 * @return array<string,array<string,string>>
+	 */
+	private function get_express_checkout_preview_settings(): array {
+		return array(
+			'stripe' => array(
+				'publishableKey' => $this->account_service->get_publishable_key(),
+				'accountId'      => $this->account_service->get_account_id(),
+				'locale'         => $this->get_stripe_locale(),
+			),
+		);
+	}
+
+	/**
+	 * Get a Stripe-supported locale for the current request.
+	 *
+	 * @return string
+	 */
+	private function get_stripe_locale(): string {
+		$locale = function_exists( 'determine_locale' ) ? determine_locale() : get_locale();
+
+		return WooPaymentsLocaleUtils::convert_to_stripe_locale( (string) $locale );
+	}
+
+	/**
+	 * Tell whether the connected account can use WooPay global theme support.
+	 *
+	 * @return bool
+	 */
+	private function is_woopay_global_theme_support_eligible(): bool {
+		$account_data = $this->account_service->get_cached_account_data();
+
+		return ! empty( $account_data['platform_global_theme_support_enabled'] );
+	}
+
+	/**
+	 * Get feature flags consumed by the native WooPayments settings UI.
+	 *
+	 * @return array<string,bool>
+	 */
+	private function get_feature_flags(): array {
+		$is_woopay_eligible = $this->is_woopay_eligible();
+
+		return array(
+			'woopay'                                   => $is_woopay_eligible,
+			'woopayExpressCheckout'                    => $this->is_feature_flag_enabled( self::WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION, true ),
+			'isDynamicCheckoutPlaceOrderButtonEnabled' => self::is_dynamic_checkout_place_order_button_enabled(),
+			'amazonPay'                                => WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ),
+			'isEceUsingConfirmationTokens'             => WooPaymentsFeaturePolicy::is_ece_confirmation_tokens_enabled( $this->account_service ),
+		);
+	}
+
+	/**
+	 * Tell whether the connected account can use WooPay surfaces.
+	 *
+	 * @return bool
+	 */
+	private function is_woopay_eligible(): bool {
+		if ( ! class_exists( 'Automattic\WooCommerce\StoreApi\Routes\V1\AbstractCartRoute' ) ) {
+			return false;
+		}
+
+		$account_data = $this->account_service->get_cached_account_data();
+
+		return ! empty( $account_data['platform_checkout_eligible'] )
+			&& ! $this->account_service->is_account_rejected()
+			&& ! $this->account_service->is_account_under_review();
+	}
+
+	/**
+	 * Tell whether a WooPayments feature flag option is enabled.
+	 *
+	 * @param string $option_name Feature flag option name.
+	 * @param bool   $default_value Default flag value.
+	 * @return bool
+	 */
+	private function is_feature_flag_enabled( string $option_name, bool $default_value ): bool {
+		return '1' === (string) get_option( $option_name, $default_value ? '1' : '0' );
+	}
+
+	/**
+	 * Get WooPay appearance data for the settings preview.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_woopay_appearance_for_settings(): array {
+		$service = $this->get_woopay_session_service();
+
+		return $service instanceof WooPaymentsWooPaySessionService ? $service->get_woopay_appearance() : array();
+	}
+
+	/**
+	 * Get WooPay font rules for the settings preview.
+	 *
+	 * @return array<int,array<string,string>>
+	 */
+	private function get_woopay_font_rules_for_settings(): array {
+		$service = $this->get_woopay_session_service();
+
+		return $service instanceof WooPaymentsWooPaySessionService ? $service->get_woopay_font_rules() : array();
+	}
+
+	/**
+	 * Get the site's logo URL for the settings preview.
+	 *
+	 * @return string
+	 */
+	private function get_site_logo_url(): string {
+		$logo_id = function_exists( 'get_theme_mod' ) ? get_theme_mod( 'custom_logo' ) : 0;
+
+		if ( ! $logo_id || ! function_exists( 'wp_get_attachment_image_url' ) ) {
+			return '';
+		}
+
+		$url = wp_get_attachment_image_url( (int) $logo_id, 'full' );
+
+		return is_string( $url ) ? $url : '';
+	}
+
+	/**
+	 * Get the WooPay session service when it is available.
+	 *
+	 * @return WooPaymentsWooPaySessionService|null
+	 */
+	private function get_woopay_session_service(): ?WooPaymentsWooPaySessionService {
+		if ( $this->woopay_session_service instanceof WooPaymentsWooPaySessionService ) {
+			return $this->woopay_session_service;
+		}
+
+		if ( ! function_exists( 'wc_get_container' ) ) {
+			return null;
+		}
+
+		try {
+			$service = wc_get_container()->get( WooPaymentsWooPaySessionService::class );
+		} catch ( Throwable $e ) {
+			return null;
+		}
+
+		if ( ! $service instanceof WooPaymentsWooPaySessionService ) {
+			return null;
+		}
+
+		$this->woopay_session_service = $service;
+
+		return $this->woopay_session_service;
+	}
+
+	/**
+	 * Get the payment method promotions service.
+	 *
+	 * @return WooPaymentsPmPromotionsService
+	 */
+	private function get_pm_promotions_service(): WooPaymentsPmPromotionsService {
+		return $this->pm_promotions_service;
+	}
+
+	/**
+	 * Update native WooPayments settings.
+	 *
+	 * @param array<string,mixed> $params Request parameters.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function update_settings( array $params ) {
+		$settings                = $this->get_gateway_settings();
+		$was_woopay_enabled      = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
+		$payment_request_enabled = array_key_exists( 'is_payment_request_enabled', $params )
+			? $this->is_yes( $this->normalize_setting_value( $params['is_payment_request_enabled'], 'bool' ) )
+			: null;
+		$enabled_methods_update  = $this->prepare_enabled_payment_method_ids_update( $params, $settings );
+		if ( is_wp_error( $enabled_methods_update ) ) {
+			return $enabled_methods_update;
+		}
+
+		$error = $this->update_provider_backed_settings( $params, $settings );
+		if ( is_wp_error( $error ) ) {
+			return $error;
+		}
+
+		foreach ( self::LOCAL_SETTING_MAP as $request_key => $mapping ) {
+			if ( ! array_key_exists( $request_key, $params ) ) {
+				continue;
+			}
+
+			if ( $this->should_skip_local_setting_update_in_dev_mode( $request_key ) ) {
+				continue;
+			}
+
+			list( $setting_key, $type ) = $mapping;
+			$settings[ $setting_key ]   = $this->normalize_setting_value( $params[ $request_key ], $type );
+		}
+
+		if ( array_key_exists( 'is_woopay_enabled', $params ) && $was_woopay_enabled && ! $this->is_yes( $settings['platform_checkout'] ?? 'no' ) ) {
+			$settings['platform_checkout_last_disable_date'] = gmdate( 'Y-m-d' );
+		}
+
+		if ( array_key_exists( 'woopay_custom_message', $params ) ) {
+			$custom_message                               = is_scalar( $params['woopay_custom_message'] ) ? (string) $params['woopay_custom_message'] : '';
+			$custom_message                               = str_replace( '[terms_of_service_link]', '[terms]', $custom_message );
+			$custom_message                               = str_replace( '[privacy_policy_link]', '[privacy_policy]', $custom_message );
+			$settings['platform_checkout_custom_message'] = wp_kses_post( $custom_message );
+		}
+
+		if ( null !== $enabled_methods_update ) {
+			$capability_error = $this->request_unrequested_payment_methods( $enabled_methods_update['requested'] );
+			if ( is_wp_error( $capability_error ) ) {
+				return $capability_error;
+			}
+
+			$previous_enabled_payment_method_ids = $this->sanitize_payment_method_ids(
+				$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ),
+				$enabled_methods_update['available']
+			);
+			$enabled_payment_method_ids          = $this->sanitize_payment_method_ids(
+				$enabled_methods_update['requested'],
+				$enabled_methods_update['available']
+			);
+			foreach ( array_diff( $enabled_payment_method_ids, $previous_enabled_payment_method_ids ) as $payment_method_id ) {
+				$this->get_pm_promotions_service()->maybe_activate_promotion_for_payment_method( $payment_method_id );
+			}
+			$settings['upe_enabled_payment_method_ids'] = $enabled_payment_method_ids;
+		}
+
+		foreach ( array( 'product', 'cart', 'checkout' ) as $location ) {
+			$request_key = 'express_checkout_' . $location . '_methods';
+			if ( array_key_exists( $request_key, $params ) ) {
+				$settings[ $request_key ] = $this->sanitize_payment_method_ids(
+					is_array( $params[ $request_key ] ) ? $params[ $request_key ] : array(),
+					self::EXPRESS_CHECKOUT_METHOD_IDS
+				);
+			}
+		}
+
+		if ( array_key_exists( 'is_multi_currency_enabled', $params ) ) {
+			update_option( self::MULTI_CURRENCY_FLAG_OPTION, $params['is_multi_currency_enabled'] ? '1' : '0' );
+		}
+
+		if ( array_key_exists( 'is_wcpay_subscriptions_enabled', $params ) && ! $params['is_wcpay_subscriptions_enabled'] ) {
+			update_option( self::WCPAY_SUBSCRIPTIONS_FLAG_OPTION, '0' );
+		}
+
+		foreach ( array_keys( self::ACCOUNT_SETTING_MAP ) as $request_key ) {
+			if ( ! array_key_exists( $request_key, $params ) ) {
+				continue;
+			}
+
+			// Store exactly what update_provider_backed_settings() sent to the platform: the local mirror is a cache-unavailable fallback for the account data, so a value that diverges from the wire (e.g. a sanitized-to-empty color) would misreport the account. Format guarantees live at the REST boundary validators; the mirror's read paths (JSON settings responses and the escaped IPP receipt templates) all encode at output.
+			$settings[ $request_key ] = $params[ $request_key ];
+		}
+
+		// Persist every setting in one canonical write, then project enabled state to split gateways.
+		$projection = $this->get_gateway_settings_synchronizer()->persist( $settings, $payment_request_enabled );
+		if ( ! $projection['persisted'] ) {
+			return new WP_Error(
+				'woocommerce_woopayments_settings_persistence_failed',
+				esc_html__( 'WooPayments settings could not be saved. Please try again.', 'woocommerce' ),
+				array( 'status' => 500 )
+			);
+		}
+		$settings = $projection['settings'];
+		/**
+		 * Fires after native WooPayments settings are updated so operational mirrors can sync setup state.
+		 *
+		 * @since 11.0.0
+		 */
+		do_action( WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION );
+
+		return $this->get_settings();
+	}
+
+	/**
+	 * Update an allowlisted WordPress option used by the settings page.
+	 *
+	 * @param string $option_name Option name.
+	 * @param mixed  $value       Option value.
+	 * @return true|WP_Error
+	 */
+	public function update_option( string $option_name, $value ) {
+		$expected_type = self::ALLOWED_OPTIONS[ $option_name ] ?? null;
+		if ( null === $expected_type ) {
+			return new WP_Error(
+				'woocommerce_woopayments_invalid_settings_option',
+				esc_html__( 'Invalid WooPayments settings option.', 'woocommerce' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		if ( ! $this->is_valid_option_value_type( $value, $expected_type ) ) {
+			return new WP_Error(
+				'woocommerce_woopayments_invalid_settings_option_value',
+				sprintf(
+					/* translators: %s: expected option value type. */
+					esc_html__( 'Invalid WooPayments settings option value. Expected %s.', 'woocommerce' ),
+					$expected_type
+				),
+				array( 'status' => 400 )
+			);
+		}
+
+		update_option( $option_name, $value );
+
+		return true;
+	}
+
+	/**
+	 * Upload a file through the native API client.
+	 *
+	 * @param WP_REST_Request $request Request object.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function upload_file( WP_REST_Request $request ) {
+		try {
+			return $this->api_client->upload_file( $request );
+		} catch ( WooPaymentsApiException $e ) {
+			return $this->api_exception_to_wp_error( $e );
+		}
+	}
+
+	/**
+	 * Get provider file details.
+	 *
+	 * @param string $file_id    Provider file ID.
+	 * @param bool   $as_account Whether to fetch the file as the connected account.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function get_file( string $file_id, bool $as_account = false ) {
+		try {
+			return $this->api_client->get_file( $file_id, $as_account );
+		} catch ( WooPaymentsApiException $e ) {
+			return $this->api_exception_to_wp_error( $e );
+		}
+	}
+
+	/**
+	 * Get provider file contents.
+	 *
+	 * @param string $file_id    Provider file ID.
+	 * @param bool   $as_account Whether to fetch the file as the connected account.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function get_file_contents( string $file_id, bool $as_account = false ) {
+		try {
+			return $this->api_client->get_file_contents( $file_id, $as_account );
+		} catch ( WooPaymentsApiException $e ) {
+			return $this->api_exception_to_wp_error( $e );
+		}
+	}
+
+	/**
+	 * Get gateway settings.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_gateway_settings(): array {
+		$settings = get_option( self::SETTINGS_OPTION, array() );
+
+		return array_replace( WooPaymentsSettingsDefaults::all(), is_array( $settings ) ? $settings : array() );
+	}
+
+	/**
+	 * Get the canonical-to-split gateway settings synchronizer.
+	 *
+	 * @return WooPaymentsGatewaySettingsSynchronizer
+	 */
+	private function get_gateway_settings_synchronizer(): WooPaymentsGatewaySettingsSynchronizer {
+		if ( null === $this->gateway_settings_synchronizer ) {
+			$this->gateway_settings_synchronizer = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class );
+		}
+
+		return $this->gateway_settings_synchronizer;
+	}
+
+	/**
+	 * Get the payment method definition registry.
+	 *
+	 * @return WooPaymentsPaymentMethodRegistry
+	 */
+	private function get_payment_method_registry(): WooPaymentsPaymentMethodRegistry {
+		if ( null === $this->payment_method_registry ) {
+			$this->payment_method_registry = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
+		}
+
+		return $this->payment_method_registry;
+	}
+
+	/**
+	 * Validate a requested enabled-payment-methods update against the account's live availability.
+	 *
+	 * Runs before any platform mutation so a rejected save is fully atomic, like the plugin's REST-boundary enum. An unknown availability (no fee-backed methods, e.g. a cold or errored account cache) rejects every enabled-methods save — including an empty list, which a settings-screen round-trip would otherwise persist, silently wiping the store's enabled methods without self-healing when the cache returns.
+	 *
+	 * @param array<string,mixed> $params   Request parameters.
+	 * @param array<string,mixed> $settings Current gateway settings.
+	 * @return array{requested:string[],available:string[]}|WP_Error|null Prepared update, an error, or null when the request does not touch enabled methods.
+	 */
+	private function prepare_enabled_payment_method_ids_update( array $params, array $settings ) {
+		if ( ! array_key_exists( 'enabled_payment_method_ids', $params ) ) {
+			return null;
+		}
+
+		$requested_payment_method_ids = $this->sanitize_payment_method_ids(
+			is_array( $params['enabled_payment_method_ids'] ) ? $params['enabled_payment_method_ids'] : array(),
+			self::SUPPORTED_PAYMENT_METHOD_IDS
+		);
+		if ( $this->is_manual_capture_enabled_after_update( $params, $settings ) ) {
+			$requested_payment_method_ids = $this->filter_manual_capture_payment_method_ids( $requested_payment_method_ids );
+		}
+
+		$available_payment_method_ids = $this->get_available_payment_method_ids();
+		if ( empty( $available_payment_method_ids ) ) {
+			return $this->enabled_payment_method_ids_error(
+				__( 'The payment methods available to the account cannot be determined right now. Please try again.', 'woocommerce' )
+			);
+		}
+
+		$unavailable_payment_method_ids = array_values( array_diff( $requested_payment_method_ids, $available_payment_method_ids ) );
+		if ( ! empty( $unavailable_payment_method_ids ) ) {
+			// The plugin's REST enum is the live available set, so an unavailable method is a hard 400 there — never a silent discard.
+			return $this->enabled_payment_method_ids_error(
+				sprintf(
+					/* translators: %s: comma-separated payment method IDs. */
+					__( 'These payment methods are not available to the account: %s', 'woocommerce' ),
+					implode( ', ', $unavailable_payment_method_ids )
+				)
+			);
+		}
+
+		return array(
+			'requested' => $requested_payment_method_ids,
+			'available' => $available_payment_method_ids,
+		);
+	}
+
+	/**
+	 * Build the rest_invalid_param error envelope for a rejected enabled-methods update.
+	 *
+	 * @param string $message Field error message.
+	 * @return WP_Error
+	 */
+	private function enabled_payment_method_ids_error( string $message ): WP_Error {
+		return new WP_Error(
+			'rest_invalid_param',
+			sprintf(
+				/* translators: %s: settings field key. */
+				__( 'Invalid parameter(s): %s', 'woocommerce' ),
+				'enabled_payment_method_ids'
+			),
+			array(
+				'status'  => 400,
+				'params'  => array( 'enabled_payment_method_ids' => $message ),
+				'details' => array(
+					'enabled_payment_method_ids' => array(
+						'code'    => 'rest_not_in_enum',
+						'message' => $message,
+						'data'    => null,
+					),
+				),
+			)
+		);
+	}
+
+	/**
+	 * Get payment method IDs available to the connected account.
+	 *
+	 * @param string[]|null $filtered_catalog Optional pre-filtered payment method catalog.
+	 * @return string[]
+	 */
+	private function get_available_payment_method_ids( ?array $filtered_catalog = null ): array {
+		// Availability comes from the account's live fee structures only, like the plugin: no locally stored list and no card fallback. Empty fees (no account, or a genuinely feeless cache) means nothing is available — the plugin's settings enum is empty in the same state.
+		$filtered_catalog = $filtered_catalog ?? $this->get_payment_method_registry()->get_available_payment_method_ids();
+		$account_data     = $this->account_service->get_cached_account_data();
+		$fees             = is_array( $account_data['fees'] ?? null ) ? array_keys( $account_data['fees'] ) : array();
+		$available_ids    = array();
+		if ( ! empty( $fees ) ) {
+			$available_ids = $this->sanitize_payment_method_ids( $fees, self::SUPPORTED_PAYMENT_METHOD_IDS );
+			if ( in_array( 'card', $available_ids, true ) ) {
+				$available_ids[] = 'apple_pay';
+				$available_ids[] = 'google_pay';
+			}
+
+			$available_ids = $this->apply_payment_method_feature_policy( array_values( array_unique( $available_ids ) ) );
+		}
+
+		return array_values(
+			array_intersect( $filtered_catalog, $available_ids )
+		);
+	}
+
+	/**
+	 * Remove payment methods whose shared provider feature policy is disabled.
+	 *
+	 * @param string[] $payment_method_ids Payment method IDs.
+	 * @return string[]
+	 */
+	private function apply_payment_method_feature_policy( array $payment_method_ids ): array {
+		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ) ) {
+			$payment_method_ids = array_values( array_diff( $payment_method_ids, array( 'amazon_pay' ) ) );
+		}
+
+		return $payment_method_ids;
+	}
+
+	/**
+	 * Get account fee structures from cached account data.
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	private function get_account_fees(): array {
+		$account_data = $this->account_service->get_cached_account_data();
+		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
+		$account_fees = array();
+
+		foreach ( $fees as $payment_method_id => $fee_structure ) {
+			if ( ! is_string( $payment_method_id ) || ! in_array( $payment_method_id, self::SUPPORTED_PAYMENT_METHOD_IDS, true ) || ! is_array( $fee_structure ) ) {
+				continue;
+			}
+
+			$account_fees[ $payment_method_id ] = $fee_structure;
+		}
+
+		return $account_fees;
+	}
+
+	/**
+	 * Get dismissed duplicate payment method notice state.
+	 *
+	 * @return array<string,string[]>
+	 */
+	private function get_dismissed_duplicate_payment_method_notices(): array {
+		$dismissed_notices = get_option( 'wcpay_duplicate_payment_method_notices_dismissed', array() );
+
+		return $this->sanitize_duplicate_gateway_map( is_array( $dismissed_notices ) ? $dismissed_notices : array(), false );
+	}
+
+	/**
+	 * Get payment methods enabled by WooPayments and another gateway.
+	 *
+	 * Public so the operational store-setup snapshot can report real duplicates to the platform.
+	 *
+	 * @return array<string,string[]>
+	 */
+	public function get_duplicated_payment_method_ids(): array {
+		try {
+			$duplicate_candidates = array();
+			$settings             = $this->get_gateway_settings();
+
+			foreach ( $this->get_registered_payment_gateways() as $gateway ) {
+				if ( ! $this->is_gateway_enabled( $gateway ) ) {
+					continue;
+				}
+
+				$gateway_id = $this->get_gateway_id( $gateway );
+				if ( '' === $gateway_id ) {
+					continue;
+				}
+
+				foreach ( $this->get_declared_duplicate_payment_method_ids_for_gateway( $gateway, $gateway_id ) as $payment_method_id ) {
+					$duplicate_candidates[ $payment_method_id ][] = $gateway_id;
+				}
+
+				if ( $this->is_payment_request_duplicate_gateway( $gateway, $gateway_id ) ) {
+					$duplicate_candidates[ self::PAYMENT_REQUEST_DUPLICATE_METHOD_ID ][] = $gateway_id;
+				}
+
+				$payment_method_id = $this->get_duplicate_payment_method_id_for_gateway( $gateway_id );
+				if ( '' !== $payment_method_id ) {
+					$duplicate_candidates[ $payment_method_id ][] = $gateway_id;
+				}
+			}
+
+			return $this->keep_woopayments_duplicate_clusters_only( $duplicate_candidates );
+		} catch ( Throwable $e ) {
+			wc_get_logger()->warning(
+				'Native WooPayments duplicate payment method detection failed: ' . $e->getMessage(),
+				array( 'source' => 'woocommerce-woopayments-settings' )
+			);
+
+			return array();
+		}
+	}
+
+	/**
+	 * Keep only duplicate clusters that include WooPayments.
+	 *
+	 * @param array<string,string[]> $duplicate_candidates Duplicate candidates.
+	 * @return array<string,string[]>
+	 */
+	private function keep_woopayments_duplicate_clusters_only( array $duplicate_candidates ): array {
+		$duplicates = array();
+
+		foreach ( $duplicate_candidates as $payment_method_id => $gateway_ids ) {
+			$gateway_ids = array_values( array_unique( $gateway_ids ) );
+			if ( count( $gateway_ids ) < 2 ) {
+				continue;
+			}
+
+			$has_woopayments_gateway = array_filter(
+				$gateway_ids,
+				fn( string $gateway_id ): bool => $this->is_woopayments_gateway_id( $gateway_id )
+			);
+			if ( empty( $has_woopayments_gateway ) ) {
+				continue;
+			}
+
+			$duplicates[ $payment_method_id ] = $gateway_ids;
+		}
+
+		return $duplicates;
+	}
+
+	/**
+	 * Get payment method duplicate declarations for a gateway.
+	 *
+	 * @param object $gateway    Payment gateway.
+	 * @param string $gateway_id Gateway ID.
+	 * @return string[]
+	 */
+	private function get_declared_duplicate_payment_method_ids_for_gateway( object $gateway, string $gateway_id ): array {
+		/**
+		 * Filters native WooPayments payment method IDs duplicated by a payment gateway.
+		 *
+		 * This gives gateway integrations a precise declaration path without relying on gateway ID
+		 * keywords or private option names. Return native method IDs such as "card" or the
+		 * synthetic express-wallet ID "apple_pay_google_pay".
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param string[] $payment_method_ids Native WooPayments payment method IDs duplicated by the gateway.
+		 * @param string   $gateway_id         Payment gateway ID.
+		 * @param object   $gateway            Payment gateway instance.
+		 */
+		$payment_method_ids = apply_filters(
+			self::FILTER_GATEWAY_DUPLICATE_PAYMENT_METHOD_IDS,
+			array(),
+			$gateway_id,
+			$gateway
+		);
+
+		if ( ! is_array( $payment_method_ids ) ) {
+			return array();
+		}
+
+		return $this->sanitize_duplicate_payment_method_ids( $payment_method_ids );
+	}
+
+	/**
+	 * Get registered WooCommerce payment gateways.
+	 *
+	 * @return object[]
+	 */
+	private function get_registered_payment_gateways(): array {
+		if ( ! function_exists( 'WC' ) || ! WC()->payment_gateways() ) {
+			return array();
+		}
+
+		$gateways = WC()->payment_gateways()->payment_gateways();
+
+		return is_array( $gateways ) ? array_values( $gateways ) : array();
+	}
+
+	/**
+	 * Get a gateway ID.
+	 *
+	 * @param object $gateway Payment gateway.
+	 * @return string
+	 */
+	private function get_gateway_id( object $gateway ): string {
+		return isset( $gateway->id ) && is_scalar( $gateway->id ) ? (string) $gateway->id : '';
+	}
+
+	/**
+	 * Tell whether a gateway is enabled.
+	 *
+	 * @param object $gateway Payment gateway.
+	 * @return bool
+	 */
+	private function is_gateway_enabled( object $gateway ): bool {
+		return isset( $gateway->enabled ) && 'yes' === (string) $gateway->enabled;
+	}
+
+	/**
+	 * Tell whether a gateway ID belongs to WooPayments.
+	 *
+	 * @param string $gateway_id Gateway ID.
+	 * @return bool
+	 */
+	private function is_woopayments_gateway_id( string $gateway_id ): bool {
+		return OrderPaymentStore::GATEWAY_ID === $gateway_id || 0 === strpos( $gateway_id, OrderPaymentStore::GATEWAY_ID_PREFIX );
+	}
+
+	/**
+	 * Get the duplicate-detection payment method ID for a gateway ID.
+	 *
+	 * @param string $gateway_id Gateway ID.
+	 * @return string
+	 */
+	private function get_duplicate_payment_method_id_for_gateway( string $gateway_id ): string {
+		if ( OrderPaymentStore::GATEWAY_ID === $gateway_id ) {
+			return 'card';
+		}
+
+		if ( 0 === strpos( $gateway_id, OrderPaymentStore::GATEWAY_ID_PREFIX ) ) {
+			$payment_method_id = substr( $gateway_id, strlen( OrderPaymentStore::GATEWAY_ID_PREFIX ) );
+
+			return in_array( $payment_method_id, self::SUPPORTED_PAYMENT_METHOD_IDS, true ) ? $payment_method_id : '';
+		}
+
+		foreach ( self::DUPLICATE_PAYMENT_METHOD_KEYWORDS as $payment_method_id => $keywords ) {
+			if ( $this->gateway_id_contains_keyword( $gateway_id, $keywords ) ) {
+				return $payment_method_id;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Tell whether a gateway participates in the Apple Pay / Google Pay duplicate cluster.
+	 *
+	 * @param object $gateway    Payment gateway.
+	 * @param string $gateway_id Gateway ID.
+	 * @return bool
+	 */
+	private function is_payment_request_duplicate_gateway( object $gateway, string $gateway_id ): bool {
+		if ( OrderPaymentStore::GATEWAY_ID === $gateway_id ) {
+			return $this->account_service->is_payment_request_enabled();
+		}
+
+		if ( $this->is_woopayments_gateway_id( $gateway_id ) ) {
+			return false;
+		}
+
+		if ( $this->gateway_id_contains_keyword( $gateway_id, self::PAYMENT_REQUEST_DUPLICATE_GATEWAY_KEYWORDS ) ) {
+			return true;
+		}
+
+		if ( 'stripe' === $gateway_id && $this->is_gateway_option_enabled( $gateway, 'payment_request' ) ) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Tell whether a gateway option is enabled.
+	 *
+	 * @param object $gateway Payment gateway.
+	 * @param string $key     Option key.
+	 * @return bool
+	 */
+	private function is_gateway_option_enabled( object $gateway, string $key ): bool {
+		if ( ! method_exists( $gateway, 'get_option' ) ) {
+			return false;
+		}
+
+		$value = $gateway->get_option( $key );
+
+		return is_scalar( $value ) && $this->is_yes( $value );
+	}
+
+	/**
+	 * Tell whether a gateway ID contains one of the given keywords.
+	 *
+	 * @param string   $gateway_id Gateway ID.
+	 * @param string[] $keywords   Keywords.
+	 * @return bool
+	 */
+	private function gateway_id_contains_keyword( string $gateway_id, array $keywords ): bool {
+		foreach ( $keywords as $keyword ) {
+			if ( false !== strpos( $gateway_id, $keyword ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Sanitize duplicate-detection payment method IDs.
+	 *
+	 * @param mixed[] $payment_method_ids Payment method IDs.
+	 * @return string[]
+	 */
+	private function sanitize_duplicate_payment_method_ids( array $payment_method_ids ): array {
+		$allowed_payment_method_ids = array_merge(
+			self::SUPPORTED_PAYMENT_METHOD_IDS,
+			array( self::PAYMENT_REQUEST_DUPLICATE_METHOD_ID )
+		);
+
+		return array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						static fn( $payment_method_id ): string => is_scalar( $payment_method_id ) ? (string) $payment_method_id : '',
+						$payment_method_ids
+					),
+					static fn( string $payment_method_id ): bool => in_array( $payment_method_id, $allowed_payment_method_ids, true )
+				)
+			)
+		);
+	}
+
+	/**
+	 * Sanitize a payment-method to gateway IDs map.
+	 *
+	 * @param array<int|string,mixed> $gateway_map              Raw gateway map.
+	 * @param bool                    $supported_methods_only  Whether to remove unsupported payment method IDs.
+	 * @return array<string,string[]>
+	 */
+	private function sanitize_duplicate_gateway_map( array $gateway_map, bool $supported_methods_only = true ): array {
+		$sanitized = array();
+
+		foreach ( $gateway_map as $payment_method_id => $gateway_ids ) {
+			if ( ! is_string( $payment_method_id ) || ! is_array( $gateway_ids ) ) {
+				continue;
+			}
+
+			if ( $supported_methods_only && ! in_array( $payment_method_id, self::SUPPORTED_PAYMENT_METHOD_IDS, true ) ) {
+				continue;
+			}
+
+			$gateway_ids = array_values(
+				array_unique(
+					array_filter(
+						array_map(
+							static fn( $gateway_id ): string => is_scalar( $gateway_id ) ? (string) $gateway_id : '',
+							$gateway_ids
+						)
+					)
+				)
+			);
+
+			if ( empty( $gateway_ids ) ) {
+				continue;
+			}
+
+			$sanitized[ $payment_method_id ] = $gateway_ids;
+		}
+
+		return $sanitized;
+	}
+
+	/**
+	 * Tell whether manual capture will be enabled after this update.
+	 *
+	 * @param array<string,mixed> $params   Request parameters.
+	 * @param array<string,mixed> $settings Current gateway settings.
+	 * @return bool
+	 */
+	private function is_manual_capture_enabled_after_update( array $params, array $settings ): bool {
+		if ( array_key_exists( 'is_manual_capture_enabled', $params ) ) {
+			return (bool) $params['is_manual_capture_enabled'];
+		}
+
+		return $this->is_yes( $settings['manual_capture'] ?? 'no' );
+	}
+
+	/**
+	 * Filter payment methods to those compatible with manual capture.
+	 *
+	 * @param string[] $payment_method_ids Payment method IDs.
+	 * @return string[]
+	 */
+	private function filter_manual_capture_payment_method_ids( array $payment_method_ids ): array {
+		return array_values(
+			array_filter(
+				$payment_method_ids,
+				static fn( string $payment_method_id ): bool => in_array( $payment_method_id, self::MANUAL_CAPTURE_PAYMENT_METHOD_IDS, true )
+			)
+		);
+	}
+
+	/**
+	 * Update provider-backed account and fraud settings.
+	 *
+	 * @param array<string,mixed> $params   Request parameters.
+	 * @param array<string,mixed> $settings Current gateway settings.
+	 * @return WP_Error|null
+	 */
+	private function update_provider_backed_settings( array $params, array $settings ): ?WP_Error {
+		$account_response_fields = $this->get_account_backed_response_fields( $settings );
+		$account_settings        = array();
+		foreach ( self::ACCOUNT_SETTING_MAP as $request_key => $account_key ) {
+			if ( array_key_exists( $request_key, $params ) && ( $account_response_fields[ $request_key ] ?? null ) !== $params[ $request_key ] ) {
+				$account_settings[ $account_key ] = $params[ $request_key ];
+			}
+		}
+
+		if (
+			! isset( $account_settings['deposit_schedule_interval'] )
+			&& (
+				isset( $account_settings['deposit_schedule_weekly_anchor'] )
+				|| isset( $account_settings['deposit_schedule_monthly_anchor'] )
+			)
+		) {
+			$account_settings['deposit_schedule_interval'] = array_key_exists( 'deposit_schedule_interval', $params )
+				? $params['deposit_schedule_interval']
+				: ( $settings['deposit_schedule_interval'] ?? '' );
+		}
+
+		// A payout-schedule change must re-arm the next-deposit notice, like the plugin does before its account update. Core renders no such notice yet, but the dismissal flag is already writable through the settings option route.
+		if ( preg_grep( '/^deposit_schedule_/', array_keys( $account_settings ) ) ) {
+			delete_option( 'wcpay_next_deposit_notice_dismissed' );
+		}
+
+		try {
+			if ( ! empty( $account_settings ) ) {
+				$this->api_client->update_account( $account_settings );
+				$this->account_service->refresh_account_data();
+			}
+		} catch ( WooPaymentsApiException $e ) {
+			return $this->account_update_exception_to_wp_error( $e );
+		}
+
+		try {
+			$fraud_settings = $this->get_changed_fraud_settings( $params );
+			if ( null !== $fraud_settings ) {
+				$this->api_client->save_fraud_ruleset( $fraud_settings['ruleset_config'] );
+				set_transient( 'wcpay_fraud_protection_settings', $fraud_settings['ruleset_config'], DAY_IN_SECONDS );
+				update_option( 'current_protection_level', $fraud_settings['protection_level'] );
+				$this->sync_cached_fraud_mitigation_settings_after_fraud_save( $fraud_settings );
+			}
+		} catch ( WooPaymentsApiException $e ) {
+			return $this->api_exception_to_wp_error( $e );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get changed fraud settings from request parameters.
+	 *
+	 * @param array<string,mixed> $params   Request parameters.
+	 * @return array{protection_level:string,ruleset_config:array<int|string,mixed>}|null
+	 */
+	private function get_changed_fraud_settings( array $params ): ?array {
+		if ( ! array_key_exists( 'current_protection_level', $params ) || ! array_key_exists( 'advanced_fraud_protection_settings', $params ) ) {
+			return null;
+		}
+
+		$protection_level = is_scalar( $params['current_protection_level'] ) ? (string) $params['current_protection_level'] : '';
+		if ( ! in_array( $protection_level, array( 'basic', 'standard', 'high', 'advanced' ), true ) ) {
+			return null;
+		}
+
+		$has_fraud_settings_error = 'error' === ( $params['advanced_fraud_protection_settings'] ?? null );
+		if ( $has_fraud_settings_error && 'advanced' === $protection_level ) {
+			return null;
+		}
+
+		$ruleset_config = $this->get_fraud_ruleset_for_protection_level( $protection_level, $params['advanced_fraud_protection_settings'] ?? array() );
+		if ( null === $ruleset_config ) {
+			return null;
+		}
+
+		if ( $has_fraud_settings_error ) {
+			$current_level = get_option( 'current_protection_level', 'basic' );
+			$current_level = is_scalar( $current_level ) ? (string) $current_level : 'basic';
+
+			if ( $current_level === $protection_level ) {
+				return null;
+			}
+
+			return array(
+				'protection_level' => $protection_level,
+				'ruleset_config'   => $ruleset_config,
+			);
+		}
+
+		$current_level = $this->get_current_protection_level();
+		$current_rules = $this->get_advanced_fraud_protection_settings();
+
+		if ( $current_level === $protection_level && $current_rules === $ruleset_config ) {
+			return null;
+		}
+
+		return array(
+			'protection_level' => $protection_level,
+			'ruleset_config'   => $ruleset_config,
+		);
+	}
+
+	/**
+	 * Keep account-level fraud mitigation flags aligned with the just-saved ruleset.
+	 *
+	 * Runs for every protection level like the plugin's unconditional cache write: the built-in rulesets never contain avs_verification, so stepping down from an AVS-bearing advanced ruleset must overwrite the cached true.
+	 *
+	 * @param array{protection_level:string,ruleset_config:array<int|string,mixed>} $fraud_settings Saved fraud settings.
+	 * @return void
+	 */
+	private function sync_cached_fraud_mitigation_settings_after_fraud_save( array $fraud_settings ): void {
+		$account_data = $this->account_service->get_cached_account_data();
+		if ( empty( $account_data ) ) {
+			return;
+		}
+
+		$fraud_mitigation_settings                      = is_array( $account_data['fraud_mitigation_settings'] ?? null ) ? $account_data['fraud_mitigation_settings'] : array();
+		$fraud_mitigation_settings['avs_check_enabled'] = $this->ruleset_contains_fraud_rule( $fraud_settings['ruleset_config'], 'avs_verification' );
+		$account_data['fraud_mitigation_settings']      = $fraud_mitigation_settings;
+
+		$this->account_service->cache_account_data( $account_data );
+	}
+
+	/**
+	 * Check whether a fraud ruleset contains a rule key.
+	 *
+	 * @param array<int|string,mixed> $ruleset  Fraud ruleset.
+	 * @param string                  $rule_key Rule key.
+	 * @return bool
+	 */
+	private function ruleset_contains_fraud_rule( array $ruleset, string $rule_key ): bool {
+		foreach ( $ruleset as $rule ) {
+			if ( is_array( $rule ) && ( $rule['key'] ?? null ) === $rule_key ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get the fraud ruleset for a protection level.
+	 *
+	 * @param string $protection_level Protection level.
+	 * @param mixed  $advanced_ruleset Submitted advanced ruleset.
+	 * @return array<int,array<string,mixed>>|null
+	 */
+	private function get_fraud_ruleset_for_protection_level( string $protection_level, $advanced_ruleset ): ?array {
+		switch ( $protection_level ) {
+			case 'basic':
+				return array();
+			case 'standard':
+				return $this->get_standard_fraud_ruleset();
+			case 'high':
+				return $this->get_high_fraud_ruleset();
+			case 'advanced':
+				if ( ! is_array( $advanced_ruleset ) || ! $this->is_valid_fraud_ruleset( $advanced_ruleset ) ) {
+					return null;
+				}
+
+				return $advanced_ruleset;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get the standard fraud protection ruleset.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_standard_fraud_ruleset(): array {
+		$reviewable_outcome = $this->get_reviewable_fraud_outcome();
+
+		return array(
+			$this->get_international_ip_address_rule( $reviewable_outcome ),
+			$this->get_rule( 'order_items_threshold', $reviewable_outcome, $this->get_check( 'item_count', 'greater_than', 10 ) ),
+			$this->get_rule( 'purchase_price_threshold', $reviewable_outcome, $this->get_check( 'order_total', 'greater_than', $this->get_fraud_threshold_amount() ) ),
+			$this->get_rule( 'ip_address_mismatch', $reviewable_outcome, $this->get_check( 'ip_billing_country_same', 'equals', false ) ),
+		);
+	}
+
+	/**
+	 * Get the high fraud protection ruleset.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_high_fraud_ruleset(): array {
+		$reviewable_outcome = $this->get_reviewable_fraud_outcome();
+
+		return array(
+			$this->get_international_ip_address_rule( 'block' ),
+			$this->get_rule( 'purchase_price_threshold', 'block', $this->get_check( 'order_total', 'greater_than', $this->get_fraud_threshold_amount() ) ),
+			$this->get_rule(
+				'order_items_threshold',
+				$reviewable_outcome,
+				array(
+					'operator' => 'or',
+					'checks'   => array(
+						$this->get_check( 'item_count', 'less_than', 2 ),
+						$this->get_check( 'item_count', 'greater_than', 10 ),
+					),
+				)
+			),
+			$this->get_rule( 'address_mismatch', $reviewable_outcome, $this->get_check( 'billing_shipping_address_same', 'equals', false ) ),
+			$this->get_rule( 'ip_address_mismatch', $reviewable_outcome, $this->get_check( 'ip_billing_country_same', 'equals', false ) ),
+		);
+	}
+
+	/**
+	 * Get the outcome used by rules that can send fraud decisions to review.
+	 *
+	 * @return string
+	 */
+	private function get_reviewable_fraud_outcome(): string {
+		return $this->is_fraud_protection_review_feature_active() ? 'review' : 'block';
+	}
+
+	/**
+	 * Get the international IP address rule.
+	 *
+	 * @param string $outcome Rule outcome.
+	 * @return array<string,mixed>
+	 */
+	private function get_international_ip_address_rule( string $outcome ): array {
+		return $this->get_rule(
+			'international_ip_address',
+			$outcome,
+			$this->get_check( 'ip_country', $this->get_selling_locations_type_operator(), $this->get_selling_locations_string() )
+		);
+	}
+
+	/**
+	 * Get a fraud protection rule array.
+	 *
+	 * @param string              $key     Rule key.
+	 * @param string              $outcome Rule outcome.
+	 * @param array<string,mixed> $check   Rule check.
+	 * @return array<string,mixed>
+	 */
+	private function get_rule( string $key, string $outcome, array $check ): array {
+		return array(
+			'key'     => $key,
+			'outcome' => $outcome,
+			'check'   => $check,
+		);
+	}
+
+	/**
+	 * Get a fraud protection check array.
+	 *
+	 * @param string $key      Check key.
+	 * @param string $operator Check operator.
+	 * @param mixed  $value    Check value.
+	 * @return array<string,mixed>
+	 */
+	private function get_check( string $key, string $operator, $value ): array {
+		return array(
+			'key'      => $key,
+			'operator' => $operator,
+			'value'    => $value,
+		);
+	}
+
+	/**
+	 * Validate a submitted fraud ruleset.
+	 *
+	 * Public so the settings REST boundary can reject a structurally invalid advanced ruleset before any persistence.
+	 *
+	 * @param array<int|string,mixed> $ruleset Submitted ruleset.
+	 * @return bool
+	 */
+	public function is_valid_fraud_ruleset( array $ruleset ): bool {
+		foreach ( $ruleset as $rule ) {
+			if ( ! is_array( $rule ) || ! $this->is_valid_fraud_rule( $rule ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Validate a submitted fraud rule.
+	 *
+	 * @param array<int|string,mixed> $rule Submitted rule.
+	 * @return bool
+	 */
+	private function is_valid_fraud_rule( array $rule ): bool {
+		return isset( $rule['key'], $rule['outcome'], $rule['check'] )
+			&& is_string( $rule['key'] )
+			&& in_array( $rule['outcome'], array( 'allow', 'block', 'review' ), true )
+			&& is_array( $rule['check'] )
+			&& $this->is_valid_fraud_check( $rule['check'] );
+	}
+
+	/**
+	 * Validate a submitted fraud check.
+	 *
+	 * @param array<int|string,mixed> $check Submitted check.
+	 * @return bool
+	 */
+	private function is_valid_fraud_check( array $check ): bool {
+		if ( isset( $check['operator'] ) && in_array( $check['operator'], array( 'and', 'or' ), true ) ) {
+			if ( empty( $check['checks'] ) || ! is_array( $check['checks'] ) ) {
+				return false;
+			}
+
+			foreach ( $check['checks'] as $child_check ) {
+				if ( ! is_array( $child_check ) || ! $this->is_valid_fraud_check( $child_check ) ) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		return isset( $check['key'], $check['operator'] )
+			&& in_array( $check['operator'], array( 'equals', 'not_equals', 'greater_than', 'greater_or_equal', 'less_than', 'less_or_equal', 'in', 'not_in' ), true )
+			&& array_key_exists( 'value', $check );
+	}
+
+	/**
+	 * Get the international selling-locations operator.
+	 *
+	 * @return string
+	 */
+	private function get_selling_locations_type_operator(): string {
+		return 'specific' === get_option( 'woocommerce_allowed_countries', 'all' ) ? 'not_in' : 'in';
+	}
+
+	/**
+	 * Get the lower-case pipe-separated selling-locations list.
+	 *
+	 * @return string
+	 */
+	private function get_selling_locations_string(): string {
+		$selling_locations_type = get_option( 'woocommerce_allowed_countries', 'all' );
+		if ( 'specific' === $selling_locations_type ) {
+			$countries = get_option( 'woocommerce_specific_allowed_countries', array() );
+		} elseif ( 'all_except' === $selling_locations_type ) {
+			$countries = get_option( 'woocommerce_all_except_countries', array() );
+		} else {
+			$countries = array();
+		}
+
+		return is_array( $countries ) ? strtolower( implode( '|', $countries ) ) : '';
+	}
+
+	/**
+	 * Get the fraud threshold amount payload.
+	 *
+	 * @return string
+	 */
+	private function get_fraud_threshold_amount(): string {
+		$default_currency = $this->account_service->get_account_default_currency();
+		$currency         = strtolower( '' !== $default_currency ? $default_currency : 'usd' );
+
+		return '100000|' . $currency;
+	}
+
+	/**
+	 * Get payment method statuses.
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	private function get_payment_method_statuses(): array {
+		$account_data = $this->account_service->get_cached_account_data();
+		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
+		$requirements = is_array( $account_data['capability_requirements'] ?? null ) ? $account_data['capability_requirements'] : array();
+		$statuses     = array();
+
+		foreach ( $capabilities as $capability_id => $status ) {
+			if ( ! is_scalar( $status ) ) {
+				continue;
+			}
+
+			$capability_id              = (string) $capability_id;
+			$statuses[ $capability_id ] = array(
+				'status'       => (string) $status,
+				'requirements' => is_array( $requirements[ $capability_id ] ?? null ) ? $requirements[ $capability_id ] : array(),
+			);
+		}
+
+		if ( ! empty( $statuses ) ) {
+			return $statuses;
+		}
+
+		return array(
+			'card_payments' => array(
+				'status'       => 'active',
+				'requirements' => array(),
+			),
+		);
+	}
+
+	/**
+	 * Request any unrequested capabilities for newly enabled methods.
+	 *
+	 * @param string[] $payment_method_ids Enabled payment method IDs.
+	 * @return WP_Error|null
+	 */
+	private function request_unrequested_payment_methods( array $payment_method_ids ): ?WP_Error {
+		$payment_method_statuses = $this->get_payment_method_statuses();
+		$cache_needs_refresh     = false;
+
+		try {
+			foreach ( $payment_method_ids as $payment_method_id ) {
+				$capability_id = self::PAYMENT_METHOD_CAPABILITY_KEY_MAP[ $payment_method_id ] ?? null;
+				if ( null === $capability_id || 'unrequested' !== ( $payment_method_statuses[ $capability_id ]['status'] ?? 'unrequested' ) ) {
+					continue;
+				}
+
+				$request_result      = $this->api_client->request_capability( $capability_id, true );
+				$cache_needs_refresh = $cache_needs_refresh || 'unrequested' !== ( $request_result['status'] ?? 'unrequested' );
+			}
+
+			if ( $cache_needs_refresh ) {
+				$this->account_service->refresh_account_data();
+			}
+		} catch ( WooPaymentsApiException $e ) {
+			return $this->api_exception_to_wp_error( $e );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get current fraud protection level.
+	 *
+	 * @return string
+	 */
+	private function get_current_protection_level(): string {
+		$this->maybe_refresh_fraud_protection_settings();
+
+		$level = get_option( 'current_protection_level', 'basic' );
+
+		return is_scalar( $level ) ? (string) $level : 'basic';
+	}
+
+	/**
+	 * Tell whether an advanced fraud protection rule is active.
+	 *
+	 * Refreshes the cached ruleset from the platform when the local cache is
+	 * missing, mirroring the plugin's lazy refresh before rule checks.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param string $rule_key Fraud rule key (e.g. avs_verification).
+	 * @return bool
+	 */
+	public function is_fraud_rule_active( string $rule_key ): bool {
+		$ruleset = $this->get_advanced_fraud_protection_settings();
+
+		return is_array( $ruleset ) && $this->ruleset_contains_fraud_rule( $ruleset, $rule_key );
+	}
+
+	/**
+	 * Get advanced fraud protection settings.
+	 *
+	 * @return array<int|string,mixed>|string
+	 */
+	private function get_advanced_fraud_protection_settings() {
+		if ( ! $this->account_service->has_account() ) {
+			return array();
+		}
+
+		$this->maybe_refresh_fraud_protection_settings();
+
+		$ruleset = get_transient( 'wcpay_fraud_protection_settings' );
+		if ( is_array( $ruleset ) ) {
+			return $ruleset;
+		}
+
+		return 'error';
+	}
+
+	/**
+	 * Refresh cached fraud protection settings from the platform when local cache is missing.
+	 *
+	 * @return void
+	 */
+	private function maybe_refresh_fraud_protection_settings(): void {
+		if ( $this->fraud_protection_settings_refreshed ) {
+			return;
+		}
+
+		if ( is_array( get_transient( 'wcpay_fraud_protection_settings' ) ) ) {
+			return;
+		}
+
+		$this->fraud_protection_settings_refreshed = true;
+
+		if ( ! $this->account_service->has_account() ) {
+			return;
+		}
+
+		try {
+			$latest_ruleset = $this->api_client->get_latest_fraud_ruleset();
+			$ruleset        = $latest_ruleset['ruleset_config'] ?? null;
+
+			if ( is_array( $ruleset ) && $this->is_valid_fraud_ruleset( $ruleset ) ) {
+				set_transient( 'wcpay_fraud_protection_settings', $ruleset, DAY_IN_SECONDS );
+				update_option( 'current_protection_level', $this->get_matching_fraud_protection_level( $ruleset ) );
+			} else {
+				$this->log_fraud_ruleset_refresh_warning( 'Native WooPayments fraud ruleset refresh returned an invalid ruleset.' );
+			}
+		} catch ( WooPaymentsApiException $e ) {
+			if ( 'wcpay_fraud_ruleset_not_found' !== $e->get_error_code() ) {
+				$this->log_fraud_ruleset_refresh_warning(
+					'Native WooPayments fraud ruleset refresh failed.',
+					array(
+						'error_code'  => $e->get_error_code(),
+						'http_status' => $e->get_http_code(),
+					)
+				);
+				return;
+			}
+
+			try {
+				$basic_ruleset = $this->get_fraud_ruleset_for_protection_level( 'basic', array() );
+				if ( ! is_array( $basic_ruleset ) ) {
+					return;
+				}
+
+				$this->api_client->save_fraud_ruleset( $basic_ruleset );
+				set_transient( 'wcpay_fraud_protection_settings', $basic_ruleset, DAY_IN_SECONDS );
+				update_option( 'current_protection_level', 'basic' );
+			} catch ( WooPaymentsApiException $save_exception ) {
+				$this->log_fraud_ruleset_refresh_warning(
+					'Native WooPayments fraud ruleset Basic initialization failed.',
+					array(
+						'error_code'  => $save_exception->get_error_code(),
+						'http_status' => $save_exception->get_http_code(),
+					)
+				);
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Match a ruleset config to a known protection level.
+	 *
+	 * @param array<int|string,mixed> $ruleset Ruleset config.
+	 * @return string
+	 */
+	private function get_matching_fraud_protection_level( array $ruleset ): string {
+		if ( array() === $ruleset ) {
+			return 'basic';
+		}
+
+		if ( $this->get_standard_fraud_ruleset() === $ruleset ) {
+			return 'standard';
+		}
+
+		if ( $this->get_high_fraud_ruleset() === $ruleset ) {
+			return 'high';
+		}
+
+		return 'advanced';
+	}
+
+	/**
+	 * Log fraud ruleset refresh warnings without interrupting admin settings responses.
+	 *
+	 * @param string              $message Warning message.
+	 * @param array<string,mixed> $context Log context.
+	 * @return void
+	 */
+	private function log_fraud_ruleset_refresh_warning( string $message, array $context = array() ): void {
+		if ( ! function_exists( 'wc_get_logger' ) ) {
+			return;
+		}
+
+		$context['source'] = 'woocommerce-woopayments-settings';
+		try {
+			wc_get_logger()->warning( $message, $context );
+		} catch ( Throwable $e ) {
+			unset( $e );
+		}
+	}
+
+	/**
+	 * Get the WooCommerce store currency for fraud threshold rules.
+	 *
+	 * @return string
+	 */
+	private function get_store_currency(): string {
+		$currency = function_exists( 'get_woocommerce_currency' ) ? get_woocommerce_currency() : get_option( 'woocommerce_currency', 'USD' );
+
+		return is_scalar( $currency ) ? strtoupper( (string) $currency ) : 'USD';
+	}
+
+	/**
+	 * Get platform fraud protection settings projected from cached account data.
+	 *
+	 * @return array<string,bool>
+	 */
+	private function get_fraud_protection_settings(): array {
+		$account_data = $this->account_service->get_cached_account_data();
+
+		return array(
+			'decline_on_avs_failure'    => $this->get_account_bool_setting( $account_data, array( 'fraud_mitigation_settings', 'avs_check_enabled' ), true ),
+			'decline_on_cvc_failure'    => $this->get_account_bool_setting( $account_data, array( 'fraud_mitigation_settings', 'cvc_check_enabled' ), true ),
+			'is_welcome_tour_dismissed' => (bool) get_option( 'wcpay_fraud_protection_welcome_tour_dismissed', false ),
+		);
+	}
+
+	/**
+	 * Get the WooCommerce selling-location settings used by fraud filters.
+	 *
+	 * @return array{type:string,countries:string[]}
+	 */
+	private function get_fraud_protection_allowed_countries(): array {
+		$selling_locations_type = get_option( 'woocommerce_allowed_countries', 'all' );
+		$selling_locations_type = is_scalar( $selling_locations_type ) ? (string) $selling_locations_type : 'all';
+
+		if ( 'specific' === $selling_locations_type ) {
+			$countries = get_option( 'woocommerce_specific_allowed_countries', array() );
+		} elseif ( 'all_except' === $selling_locations_type ) {
+			$countries = get_option( 'woocommerce_all_except_countries', array() );
+		} else {
+			$countries = array();
+		}
+
+		return array(
+			'type'      => in_array( $selling_locations_type, array( 'all', 'specific', 'all_except' ), true ) ? $selling_locations_type : 'all',
+			'countries' => is_array( $countries ) ? array_values( array_filter( $countries, 'is_string' ) ) : array(),
+		);
+	}
+
+	/**
+	 * Tell whether fraud-protection review outcomes are enabled.
+	 *
+	 * @return bool
+	 */
+	private function is_fraud_protection_review_feature_active(): bool {
+		return '1' === (string) get_option( 'wcpay_frt_review_feature_active', '0' );
+	}
+
+	/**
+	 * Convert native API exceptions into REST-safe errors.
+	 *
+	 * @param WooPaymentsApiException $exception API exception.
+	 * @return WP_Error
+	 */
+	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
+		return new WP_Error(
+			$exception->get_error_code(),
+			$exception->getMessage(),
+			array( 'status' => $exception->get_http_code() )
+		);
+	}
+
+	/**
+	 * Convert a platform account-update rejection into the error shape the settings UI consumes.
+	 *
+	 * The platform names the rejected account field in the error's `param`. When that field has an inline error slot in the settings UI, emit the plugin's `wcpay_server_error` envelope so the message renders under the field; otherwise mark the error for the legacy `server_error` body the REST controller emits.
+	 *
+	 * @param WooPaymentsApiException $exception API exception from the account update.
+	 * @return WP_Error
+	 */
+	private function account_update_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
+		$param       = $exception->get_error_data()['param'] ?? null;
+		$setting_key = is_string( $param ) && '' !== $param
+			? array_search( $param, self::ACCOUNT_SETTING_MAP, true )
+			: false;
+
+		if ( false === $setting_key || ! in_array( $setting_key, self::INLINE_ERROR_SETTING_KEYS, true ) ) {
+			return new WP_Error(
+				'woocommerce_woopayments_account_update_rejected',
+				$exception->getMessage(),
+				array( 'status' => 400 )
+			);
+		}
+
+		return new WP_Error(
+			'wcpay_server_error',
+			sprintf(
+				/* translators: %s: settings field key, e.g. account_business_support_phone. */
+				__( 'Invalid parameter(s): %s', 'woocommerce' ),
+				$setting_key
+			),
+			array(
+				'status'  => 400,
+				'params'  => array( $setting_key => $exception->getMessage() ),
+				'details' => array(
+					$setting_key => array(
+						'code'    => $exception->get_error_code(),
+						'message' => $exception->getMessage(),
+						'data'    => null,
+					),
+				),
+			)
+		);
+	}
+
+	/**
+	 * Normalize a local gateway setting value.
+	 *
+	 * @param mixed  $value Value.
+	 * @param string $type  Setting type.
+	 * @return mixed
+	 */
+	private function normalize_setting_value( $value, string $type ) {
+		if ( 'bool' === $type ) {
+			return $value ? 'yes' : 'no';
+		}
+
+		if ( 'int' === $type ) {
+			return (int) $value;
+		}
+
+		return is_scalar( $value ) ? (string) $value : '';
+	}
+
+	/**
+	 * Tell whether an option value matches the expected type.
+	 *
+	 * @param mixed  $value         Option value.
+	 * @param string $expected_type Expected type.
+	 * @return bool
+	 */
+	private function is_valid_option_value_type( $value, string $expected_type ): bool {
+		if ( 'bool' === $expected_type ) {
+			return is_bool( $value );
+		}
+
+		if ( 'array' === $expected_type ) {
+			return is_array( $value );
+		}
+
+		return 'string' === $expected_type && is_string( $value );
+	}
+
+	/**
+	 * Tell whether Subscriptions should be treated as eligible.
+	 *
+	 * @return bool
+	 */
+	private function is_subscriptions_eligible(): bool {
+		if ( function_exists( 'wcs_get_subscriptions' ) ) {
+			$subscriptions = wcs_get_subscriptions(
+				array(
+					'subscriptions_per_page' => 1,
+					'subscription_status'    => 'any',
+					'meta_query'             => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+						array(
+							'key'     => '_wcpay_subscription_id',
+							'compare' => 'EXISTS',
+						),
+					),
+				)
+			);
+			if ( is_countable( $subscriptions ) && 0 < count( $subscriptions ) ) {
+				return true;
+			}
+		}
+
+		$stripe_billing_query = static function ( $query, $query_vars ) {
+			if ( ! empty( $query_vars['stripe_billing_product'] ) ) {
+				$query['meta_query'][] = array(
+					'key'     => '_wcpay_product_hash',
+					'compare' => 'EXISTS',
+				);
+			}
+
+			return $query;
+		};
+		add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $stripe_billing_query, 10, 2 );
+		try {
+			$products = wc_get_products(
+				array(
+					'limit'                  => 1,
+					'type'                   => array( 'subscription', 'variable-subscription' ),
+					'status'                 => 'publish',
+					'return'                 => 'ids',
+					'stripe_billing_product' => 'true',
+				)
+			);
+		} finally {
+			remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $stripe_billing_query, 10 );
+		}
+
+		return is_countable( $products ) && 0 < count( $products );
+	}
+
+	/**
+	 * Normalize a yes/no value.
+	 *
+	 * @param mixed $value Raw value.
+	 * @return bool
+	 */
+	private function is_yes( $value ): bool {
+		return 'yes' === $value || true === $value || '1' === $value || 1 === $value;
+	}
+
+	/**
+	 * Get settings fields projected from cached account data.
+	 *
+	 * @param array<string,mixed> $settings Gateway settings.
+	 * @return array<string,mixed>
+	 */
+	private function get_account_backed_response_fields( array $settings ): array {
+		$account_data = $this->account_service->get_cached_account_data();
+
+		return array(
+			'account_country'                    => $this->get_account_string_setting( $account_data, array( 'country' ), $this->get_string_setting( $settings, 'account_country' ) ),
+			'account_statement_descriptor'       => $this->get_account_string_setting( $account_data, array( 'statement_descriptor' ), $this->get_string_setting( $settings, 'account_statement_descriptor' ) ),
+			'account_statement_descriptor_kanji' => $this->get_account_string_setting( $account_data, array( 'statement_descriptor_kanji' ), $this->get_string_setting( $settings, 'account_statement_descriptor_kanji' ) ),
+			'account_statement_descriptor_kana'  => $this->get_account_string_setting( $account_data, array( 'statement_descriptor_kana' ), $this->get_string_setting( $settings, 'account_statement_descriptor_kana' ) ),
+			'account_business_name'              => $this->get_account_string_setting( $account_data, array( 'business_profile', 'name' ), $this->get_string_setting( $settings, 'account_business_name' ) ),
+			'account_business_url'               => $this->get_account_string_setting( $account_data, array( 'business_profile', 'url' ), $this->get_string_setting( $settings, 'account_business_url' ) ),
+			'account_business_support_address'   => $this->get_account_array_setting( $account_data, array( 'business_profile', 'support_address' ), $this->get_array_setting( $settings, 'account_business_support_address' ) ),
+			'account_business_support_email'     => $this->get_account_string_setting( $account_data, array( 'business_profile', 'support_email' ), $this->get_string_setting( $settings, 'account_business_support_email' ) ),
+			'account_business_support_phone'     => $this->get_account_string_setting( $account_data, array( 'business_profile', 'support_phone' ), $this->get_string_setting( $settings, 'account_business_support_phone' ) ),
+			'account_branding_logo'              => $this->get_account_string_setting( $account_data, array( 'branding', 'logo' ), $this->get_string_setting( $settings, 'account_branding_logo' ) ),
+			'account_branding_icon'              => $this->get_account_string_setting( $account_data, array( 'branding', 'icon' ), $this->get_string_setting( $settings, 'account_branding_icon' ) ),
+			'account_branding_primary_color'     => $this->get_account_string_setting( $account_data, array( 'branding', 'primary_color' ), $this->get_string_setting( $settings, 'account_branding_primary_color' ) ),
+			'account_branding_secondary_color'   => $this->get_account_string_setting( $account_data, array( 'branding', 'secondary_color' ), $this->get_string_setting( $settings, 'account_branding_secondary_color' ) ),
+			'account_domestic_currency'          => $this->get_string_setting( $settings, 'account_domestic_currency', $this->account_service->get_account_default_currency() ),
+			'account_communications_email'       => $this->get_account_string_setting( $account_data, array( 'communications_email' ), $this->get_string_setting( $settings, 'account_communications_email' ) ),
+			'deposit_schedule_interval'          => $this->get_account_string_setting( $account_data, array( 'deposits', 'interval' ), $this->get_string_setting( $settings, 'deposit_schedule_interval' ) ),
+			'deposit_schedule_monthly_anchor'    => $this->get_account_nullable_int_setting( $account_data, array( 'deposits', 'monthly_anchor' ), $this->get_nullable_int_setting( $settings, 'deposit_schedule_monthly_anchor' ) ),
+			'deposit_schedule_weekly_anchor'     => $this->get_account_string_setting( $account_data, array( 'deposits', 'weekly_anchor' ), $this->get_string_setting( $settings, 'deposit_schedule_weekly_anchor' ) ),
+			'deposit_delay_days'                 => $this->get_account_nullable_int_setting( $account_data, array( 'deposits', 'delay_days' ), $this->get_nullable_int_setting( $settings, 'deposit_delay_days' ) ),
+			'deposit_status'                     => $this->get_account_string_setting( $account_data, array( 'deposits', 'status' ), $this->get_string_setting( $settings, 'deposit_status' ) ),
+			'deposit_restrictions'               => $this->get_account_string_setting( $account_data, array( 'deposits', 'restrictions' ), $this->get_string_setting( $settings, 'deposit_restrictions' ) ),
+			'deposit_completed_waiting_period'   => $this->get_account_bool_setting( $account_data, array( 'deposits', 'completed_waiting_period' ), (bool) ( $settings['deposit_completed_waiting_period'] ?? false ) ),
+		);
+	}
+
+	/**
+	 * Get a nested scalar account value as a string.
+	 *
+	 * @param array<string,mixed> $account_data Account data.
+	 * @param string[]            $path         Nested path.
+	 * @param string              $fallback     Fallback value.
+	 * @return string
+	 */
+	private function get_account_string_setting( array $account_data, array $path, string $fallback = '' ): string {
+		$value = $this->get_account_path_value( $account_data, $path, $fallback );
+
+		return is_scalar( $value ) ? (string) $value : $fallback;
+	}
+
+	/**
+	 * Get a nested account value as an array.
+	 *
+	 * @param array<string,mixed>     $account_data Account data.
+	 * @param string[]                $path         Nested path.
+	 * @param array<int|string,mixed> $fallback     Fallback value.
+	 * @return array<int|string,mixed>
+	 */
+	private function get_account_array_setting( array $account_data, array $path, array $fallback = array() ): array {
+		$value = $this->get_account_path_value( $account_data, $path, $fallback );
+
+		return is_array( $value ) ? $value : $fallback;
+	}
+
+	/**
+	 * Get a nested account value as an integer or null.
+	 *
+	 * @param array<string,mixed> $account_data Account data.
+	 * @param string[]            $path         Nested path.
+	 * @param int|null            $fallback     Fallback value.
+	 * @return int|null
+	 */
+	private function get_account_nullable_int_setting( array $account_data, array $path, ?int $fallback = null ): ?int {
+		$value = $this->get_account_path_value( $account_data, $path, $fallback );
+
+		return is_numeric( $value ) ? (int) $value : $fallback;
+	}
+
+	/**
+	 * Get a nested account value as a boolean.
+	 *
+	 * @param array<string,mixed> $account_data Account data.
+	 * @param string[]            $path         Nested path.
+	 * @param bool                $fallback     Fallback value.
+	 * @return bool
+	 */
+	private function get_account_bool_setting( array $account_data, array $path, bool $fallback = false ): bool {
+		$value = $this->get_account_path_value( $account_data, $path, $fallback );
+
+		return is_bool( $value ) ? $value : $this->is_yes( $value );
+	}
+
+	/**
+	 * Get a nested value from account data.
+	 *
+	 * @param array<string,mixed> $account_data Account data.
+	 * @param string[]            $path         Nested path.
+	 * @param mixed               $fallback     Fallback value.
+	 * @return mixed
+	 */
+	private function get_account_path_value( array $account_data, array $path, $fallback ) {
+		$value = $account_data;
+		foreach ( $path as $key ) {
+			if ( ! is_array( $value ) || ! array_key_exists( $key, $value ) ) {
+				return $fallback;
+			}
+			$value = $value[ $key ];
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Get a scalar setting as a string.
+	 *
+	 * @param array<string,mixed> $settings Settings.
+	 * @param string              $key      Setting key.
+	 * @param string              $fallback Fallback value.
+	 * @return string
+	 */
+	private function get_string_setting( array $settings, string $key, string $fallback = '' ): string {
+		return isset( $settings[ $key ] ) && is_scalar( $settings[ $key ] ) ? (string) $settings[ $key ] : $fallback;
+	}
+
+	/**
+	 * Get an array setting.
+	 *
+	 * @param array<string,mixed>     $settings Settings.
+	 * @param string                  $key      Setting key.
+	 * @param array<int|string,mixed> $fallback Fallback value.
+	 * @return array<int|string,mixed>
+	 */
+	private function get_array_setting( array $settings, string $key, array $fallback = array() ): array {
+		return isset( $settings[ $key ] ) && is_array( $settings[ $key ] ) ? $settings[ $key ] : $fallback;
+	}
+
+	/**
+	 * Get a nullable integer setting.
+	 *
+	 * @param array<string,mixed> $settings Settings.
+	 * @param string              $key      Setting key.
+	 * @return int|null
+	 */
+	private function get_nullable_int_setting( array $settings, string $key ): ?int {
+		return isset( $settings[ $key ] ) && is_numeric( $settings[ $key ] ) ? (int) $settings[ $key ] : null;
+	}
+
+	/**
+	 * Get an integer setting.
+	 *
+	 * @param array<string,mixed> $settings Settings.
+	 * @param string              $key      Setting key.
+	 * @param int                 $fallback Fallback value.
+	 * @return int
+	 */
+	private function get_int_setting( array $settings, string $key, int $fallback = 0 ): int {
+		return isset( $settings[ $key ] ) && is_numeric( $settings[ $key ] ) ? (int) $settings[ $key ] : $fallback;
+	}
+
+	/**
+	 * Tell whether a local setting update should be ignored in dev mode.
+	 *
+	 * @param string $request_key Request key.
+	 * @return bool
+	 */
+	private function should_skip_local_setting_update_in_dev_mode( string $request_key ): bool {
+		return $this->account_service->is_dev_mode_enabled()
+			&& in_array( $request_key, array( 'is_test_mode_enabled', 'is_debug_log_enabled' ), true );
+	}
+
+	/**
+	 * Keep only supported payment method IDs.
+	 *
+	 * @param array<int|string,mixed> $payment_method_ids Raw payment method IDs.
+	 * @param string[]                $allowed_ids        Allowed payment method IDs.
+	 * @return string[]
+	 */
+	private function sanitize_payment_method_ids( array $payment_method_ids, array $allowed_ids ): array {
+		return array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						static fn( $payment_method_id ): string => is_scalar( $payment_method_id ) ? (string) $payment_method_id : '',
+						$payment_method_ids
+					),
+					static fn( string $payment_method_id ): bool => in_array( $payment_method_id, $allowed_ids, true )
+				)
+			)
+		);
+	}
+}

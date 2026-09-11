@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "widget-admin-currencies-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "806d0d72566a21887bbaefea5b073b6bcbd9e2e1",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:52::Multi-currency widget setup › displays enabled currencies correctly in the admin"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact line-52 blocked-environment deferral and four-field-only transition, strict separation from adjacent widget rows, deterministic USD/EUR/GBP configuration and one inserted native switcher, authenticated semantic editor exposing exactly the three currency choices with no missing, duplicates, or extras, narrow non-save/non-style/non-shopper/non-financial scope, rejected plugin/editor/theme selectors, byte-exact option/theme/widget snapshot and restoration without normalization or blanket deletion, ordered locks and journals, one worker and zero retries, lower-layer non-substitution, shared-target drift, predecessor/calibration binding, listener irrelevance, and zero current resources/quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership and readiness fails first. The run also lacks a resolved exact editing-surface owner, target contract, and row-safe closure-bundle topology; an approved deterministic USD-default plus EUR/GBP configuration and one native switcher placement across the active theme; stable semantic authenticated-editor navigation and controls; byte-exact feature, currency, theme, sidebar, widget, and block snapshot/restoration; ordered locks and durable journals; bounded persistence/read confirmation; and approved cleanup/quarantine handling.",
+		"affected_scope": "Only line 52 admin currency membership: under an approved configuration with USD default and EUR and GBP as the complete enabled non-default set, exactly one supported native switcher is inserted into a deterministic current-theme editing surface and an authenticated authorized merchant semantically selects it and sees exactly USD, EUR, and GBP currency choices with no missing, duplicate, or disabled extra. It claims no option order, property save, styling, frontend publication, shopper selection, repricing, checkout, payment, provider state, WooPayments route, widgets.php location, frozen block title, select name, Storefront/sidebar placement, or REST polling mechanism.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair readiness, choose the exact native editing owner/row-safe target, approve deterministic theme/widget/config mutation, or establish byte-exact snapshot/restoration, stable semantic controls, locks, journals, and quarantine. Lower settings, rate, frontend-pricing, and block tests cannot substitute for the authenticated inserted-block editor boundary. The frozen currency normalization and blanket switcher deletion are destructive and forbidden. Any apparent native editor membership gap is not known before prerequisites and exact-target RED.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful native readiness; resolve the row-safe editing owner and target; approve USD/EUR/GBP configuration, active-theme switcher placement, and semantic editor adapter; acquire ordered store, setting, theme, and widget locks; snapshot option existence and byte-exact values; journal every mutation; run once with one worker and zero retries; prove exactly the three editor choices; close the merchant context; and restore and verify every prior byte. Quarantine uncertainty and prefer a row-specific target or explicit reopen/re-closure for later shared edits.",
+		"quarantine_status": "This deferral allocated and mutated nothing, opened no browser, acquired no lock, opened no journal, consumed no provider capacity, and created no quarantine. It creates no shopper, payment, order, or provider resource and requires no listener; the separately owned listener remains untouched and irrelevant. Any uncertain eventual configuration, insertion, editor read, restoration, cleanup, lock, or journal state must quarantine affected store resources and must not be replayed."
+	}
+}

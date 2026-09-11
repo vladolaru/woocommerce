@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Fix native WooPayments express checkout (ECE) on classic and block surfaces: honor the wallet-chosen shipping address, set future usage for subscription carts, convert amounts to minor units, send order attribution, report failed authentications and normalize wallet billing details.

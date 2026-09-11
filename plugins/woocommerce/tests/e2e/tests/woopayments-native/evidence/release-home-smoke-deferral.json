@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "release-home-smoke-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "ee989f0757aef0545d9f6217ac6f7341cef53f70",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::basic::tests/e2e/specs/basic.spec.ts:8::A basic set of tests to ensure WP, wp-admin and my-account load › Load the home page"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/onboarding.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact one-row blocked-environment deferral: inactive native ownership makes storefront reachability non-probative for integration safety, no allowlisted action can establish the required fixture, pending decisions remain truthful, and externally managed readiness is the smallest unlock."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The storefront smoke cannot prove active native integration safety while the standing store lacks native ownership, account readiness, and callback proof.",
+		"affected_scope": "The exact public-visitor release-smoke contract for a reachable and renderable storefront under the installed native payments runtime.",
+		"no_allowlisted_action_reason": "The run cannot enable ownership, repair shared environment state, invent readiness, or substitute generic WooCommerce and theme reachability.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Provide successful standing-native readiness for the exact store, account, and callback identity through externally managed setup.",
+		"quarantine_status": "No resource was allocated or mutated, and no row-specific quarantine exists."
+	}
+}

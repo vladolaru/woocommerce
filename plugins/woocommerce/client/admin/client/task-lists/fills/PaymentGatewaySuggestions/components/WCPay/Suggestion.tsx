@@ -9,7 +9,7 @@ import {
 	WCPayBenefits,
 	WCPayBannerImageCut,
 } from '@woocommerce/onboarding';
-import { useDispatch, useSelect } from '@wordpress/data';
+import { useSelect } from '@wordpress/data';
 import { paymentSettingsStore } from '@woocommerce/data';
 
 /**
@@ -28,7 +28,7 @@ interface PaymentGateway {
 
 interface SuggestionProps {
 	paymentGateway: PaymentGateway;
-	onSetupCallback?: ( () => void ) | null;
+	onSetupCallback?: ( ( resolve?: () => void ) => void ) | null;
 }
 
 export const Suggestion = ( {
@@ -38,7 +38,6 @@ export const Suggestion = ( {
 	const {
 		id,
 		needsSetup,
-		installed,
 		enabled: isEnabled,
 		installed: isInstalled,
 	} = paymentGateway;
@@ -48,17 +47,16 @@ export const Suggestion = ( {
 		return store.getIsWooPayEligible();
 	}, [] );
 
-	const { createNotice } = useDispatch( 'core/notices' );
-	// When WCPay is installed and onSetupCallback is null
-	// Overwrite onSetupCallback to redirect to the setup page
-	// when the user clicks on the "Finish setup" button.
-	// WCPay doesn't need to be configured in WCA.
-	// It should be configured in its onboarding flow.
-	if ( installed && onSetupCallback === null ) {
-		onSetupCallback = () => {
-			connectWcpay( createNotice );
+	if ( onSetupCallback === null ) {
+		onSetupCallback = ( resolve?: () => void ) => {
+			connectWcpay();
+			resolve?.();
 		};
 	}
+
+	const setupButtonText: string = isInstalled
+		? __( 'Finish setup', 'woocommerce' )
+		: __( 'Get started', 'woocommerce' );
 
 	return (
 		<div className="woocommerce-wcpay-suggestion">
@@ -70,14 +68,11 @@ export const Suggestion = ( {
 							id={ id }
 							hasSetup={ true }
 							needsSetup={ needsSetup }
-							isEnabled={ isEnabled }
+							isEnabled={ isEnabled && ! needsSetup }
 							isRecommended={ true }
 							isInstalled={ isInstalled }
-							hasPlugins={ true }
-							setupButtonText={ __(
-								'Get started',
-								'woocommerce'
-							) }
+							hasPlugins={ false }
+							setupButtonText={ setupButtonText }
 							onSetupCallback={ onSetupCallback }
 						/>
 					}

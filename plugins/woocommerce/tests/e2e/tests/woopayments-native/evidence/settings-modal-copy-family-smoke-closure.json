@@ -1,0 +1,171 @@
+{
+	"schema_version": 2,
+	"slice_id": "settings-modal-copy-family-smoke-closure",
+	"wc_base_commit": "143b1c5ea5d1c2ff63a90e943783ffe815f8a04d",
+	"verified_at_commit": "cd8f55ceb3e66f2dffff1cb91023fb973c88eb2c",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsOrderEffectApplierTest.php"
+	],
+	"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:22::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should show the confirmation dialog when enabling the manual capture",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:34::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should not show the confirmation dialog when disabling the manual capture",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:48::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should show the non-card methods disabled when manual capture is enabled"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts",
+			"contract": "manual capture warns before enabling, flags incompatible methods, and disables without ceremony"
+		}
+	],
+	"implementation_commits": [
+		"cd8f55ceb3e66f2dffff1cb91023fb973c88eb2c"
+	],
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts",
+			"exit_code": 0,
+			"summary": "The provider-free smoke ran green twice consecutively with one worker and zero retries on the closed bytes, plus a post-mutation confirmation run, after env-setup proved provider-free readiness. It repairs its manual-capture-disabled baseline over REST, asserts the gateway-enabled precondition, then proves all three contracts in the test body: enabling opens a confirmation dialog located by its accessible name with the seven-day deadline warning and the card-only incompatibility notice, cancelling closes it with nothing enabled, confirming enables the toggle, every incompatible method carries the reason chip while natively disabled and describedby-associated, and disabling restores the flagged methods with no confirmation. The whole flow is pre-save client state, so the run proves zero settings-route writes and re-reads the stored setting as still disabled. The oracle was mutation-checked in both directions: rewording the seven-day deadline copy fails at the dialog warning assertion, and rewording the incompatibility chip copy fails at the chip assertion, with the store verified clean afterward."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "The full controller passed on the closed proposal before commit: the contract-map validator unit tests, the ledger validation across all 181 contracts including the three reopened rows, the project-routing validator unit tests including the three new annotation bindings, the environment-setup contract tests, and the provider-free harness unit tests."
+		}
+	],
+	"reviews": [
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+			"summary": "Two-round review; approved with the non-blocking items folded in. The toggle is a controlled checkbox whose enable path only opens the modal, so a click cannot silently flip the setting, and the confirm-button locator is unambiguous. The zero-persistence claim is sound on two independent legs - the confirm action dispatches a local reducer with no auto-save, and a post-flow REST re-read confirms the stored value never moved. Flagged rows can only be flagged by capture incompatibility because every other blocking status is resolved earlier, and the breadth precondition makes a store with no incompatible method fail loudly. The recorded constraint that the readonly baseline shares a setting the provider pilot governs with a formal lock is carried in the calibration note, and the disable assertions were reordered to anchor on the settled state."
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+			"summary": "Two-round review; the blocking finding is resolved on the committed bytes. methodNameOfRow now reads the row heading rather than parsing whole-row textContent, so the coupling to fee and description copy is gone and each row has exactly one heading carrying the label. The listitem and chip queries are scoped to the payment-methods list container, exact matchers are on the toggle and dialog buttons, and the accessible-description assertion was verified to resolve only when a chip is rendered. Locators are role and text based with auto-retried assertions and no timing coupling."
+		},
+		{
+			"role": "reliability",
+			"verdict": "APPROVE",
+			"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+			"summary": "Single-round review, approved with no findings. Every REST call - the precondition read, the idempotent baseline reset, and the final re-read - fails loudly with HTTP status and body. The dialog confirm action was traced to a local reducer that never reaches the settings-save generator, so the zero-write assertion checks the real save endpoint and the store setting cannot be left dirty by the flow regardless of where it fails, matching the verified-clean state after the mutation sweep. A modal-open regression fails attributably at the next dialog assertion, and the chip-breadth guard cannot pass vacuously."
+		},
+		{
+			"role": "accessibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+			"summary": "Two-round review; both blocking findings resolved on the committed bytes. The confirmation modal is matched by its accessible name throughout, proving the heading names the dialog to assistive technology and scoping the dismissal checks to the modal under test rather than to the tooltip dialog the surface also renders. Each incompatible method checkbox asserts both native disablement and the programmatic association of the unavailability reason through aria-describedby, so a screen-reader-only regression that hid the reason now fails. Modal focus management is inherited from the shared component library and recorded as inherited, along with two product observations on keyboard-activation announcement and post-confirmation row changes."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:22::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should show the confirmation dialog when enabling the manual capture",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts",
+				"contract": "manual capture warns before enabling, flags incompatible methods, and disables without ceremony"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts",
+					"exit_code": 0,
+					"summary": "The enable-confirmation half is proven directly: enabling opens a dialog matched by its accessible name whose copy carries the seven-day capture-deadline warning and the card-only incompatibility notice, so the merchant is warned before the workflow changes. The retained gateway and order-effect coverage prove the capture behaviour the warning describes."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+					"summary": "The controlled toggle cannot flip without confirmation, the confirm locator is unambiguous, and the zero-persistence proof rests on a local reducer plus an independent REST re-read."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+					"summary": "Role and text locators scoped to the methods list with a heading-based row-name read; the copy mutations fail at the deadline and chip assertions."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+					"summary": "Loud cause-proximate REST failures and a non-vacuous chip-breadth guard; the flow never persists, so the store state is clean regardless of outcome."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:34::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should not show the confirmation dialog when disabling the manual capture",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts",
+				"contract": "manual capture warns before enabling, flags incompatible methods, and disables without ceremony"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts",
+					"exit_code": 0,
+					"summary": "The disable half is proven directly: toggling manual capture off settles to unchecked with no confirmation dialog, and the methods excluded only by capture incompatibility become eligible again - the remembered flagged method reads back enabled. No irrelevant warning interrupts the merchant."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+					"summary": "The controlled toggle cannot flip without confirmation, the confirm locator is unambiguous, and the zero-persistence proof rests on a local reducer plus an independent REST re-read."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+					"summary": "Role and text locators scoped to the methods list with a heading-based row-name read; the copy mutations fail at the deadline and chip assertions."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+					"summary": "Loud cause-proximate REST failures and a non-vacuous chip-breadth guard; the flow never persists, so the store state is clean regardless of outcome."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:48::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should show the non-card methods disabled when manual capture is enabled",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts",
+				"contract": "manual capture warns before enabling, flags incompatible methods, and disables without ceremony"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts",
+					"exit_code": 0,
+					"summary": "The incompatibility half is proven directly: with manual capture on, every flagged method carries the reason chip, is removed from the tab order as natively disabled, and has the reason programmatically associated through aria-describedby so a screen-reader user hears why it is unavailable. A non-vacuous chip-breadth precondition ensures a store with no incompatible method fails rather than passes silently."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+					"summary": "The controlled toggle cannot flip without confirmation, the confirm locator is unambiguous, and the zero-persistence proof rests on a local reducer plus an independent REST re-read."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+					"summary": "Role and text locators scoped to the methods list with a heading-based row-name read; the copy mutations fail at the deadline and chip assertions."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "535930ec5042ac4297a4010e5a4f9b0cf66ba10eecd00946854f3119f6d9bd22",
+					"summary": "Loud cause-proximate REST failures and a non-vacuous chip-breadth guard; the flow never persists, so the store state is clean regardless of outcome."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

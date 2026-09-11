@@ -1,0 +1,93 @@
+{
+  "schema_version": 2,
+  "slice_id": "basic-card-charge-fidelity-closure",
+  "wc_base_commit": "13bf3394e1f294c87651d155dfffc0b7eac2be47",
+  "verified_at_commit": "13bf3394e1f294c87651d155dfffc0b7eac2be47",
+  "reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+  "source_test_paths": [
+    "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-basic-card.spec.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/card-testing-protection.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/block-theme.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/classic-card-checkout.ts",
+    "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts"
+  ],
+  "source_test_sha256": "8954f81fee16ef25b0707ad8b92ca2a51fe8c124035f57b96bff88423cf5bb15",
+  "contract_ids": [
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-purchase.spec.ts:31::WooCommerce Blocks › Successful purchase › using a basic card",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-cart-coupon.spec.ts:67::Checkout with free coupon & after modifying cart on Checkout page › Remove free coupon, then checkout",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection true › using a basic card",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:91::Successful purchase, site builder theme › card prevention: false › basic card",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:91::Successful purchase, site builder theme › card prevention: true › basic card"
+  ],
+  "targets": [
+    {
+      "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-basic-card.spec.ts",
+      "contract": "the basic-card-charge provider-fidelity family"
+    }
+  ],
+  "implementation_commits": [],
+  "execution_fixture": {
+    "site": "http://store8889.localhost:8889",
+    "wpcom_blog_id": 4,
+    "account_id": "acct_1TrY2nBzWlxcwgpP",
+    "runtime_owner": "native",
+    "migration_state": "WooPayments client plugin inactive; native runtime owner; Stripe test mode; wpcom-local Transact listener forwarding throughout"
+  },
+  "verification": [
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:basic-card-charge\"",
+      "exit_code": 0,
+      "summary": "Passed 5/5 in 3.4 minutes with one worker and zero retries, on approval 2026-08-14-basic-card-rerun. B1, B1c, B1f, B1p and B1pf each settled their own graph; the two protection twins additionally proved a tokenless submission produces no provider object across a held empty interval. Lock directory ended the run with zero quarantine receipts and zero unresolved provider write attempts, and the store’s runtime status reported the same enabled method set it started with."
+    }
+  ],
+  "reviews": [],
+  "closures": [
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-purchase.spec.ts:31::WooCommerce Blocks › Successful purchase › using a basic card",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-basic-card.spec.ts",
+        "contract": "One Blocks checkout submission with the basic card settles exactly one run-owned order, one succeeded 1099 usd PaymentIntent, and one captured charge, and creates no second order, intent, charge, capture, challenge, or reusable credential"
+      },
+      "fidelity_claim": "basic-card-charge",
+      "fidelity_case": "B1"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-cart-coupon.spec.ts:67::Checkout with free coupon & after modifying cart on Checkout page › Remove free coupon, then checkout",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-basic-card.spec.ts",
+        "contract": "A Blocks checkout that applies and then removes a free coupon before its single submission settles a USD 10.99 order carrying no coupon line and no discount, and the same one-intent, one-captured-charge 1099 usd provider graph"
+      },
+      "fidelity_claim": "basic-card-charge",
+      "fidelity_case": "B1c"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection true › using a basic card",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-basic-card.spec.ts",
+        "contract": "Card-testing protection admits one token-bearing classic basic-card submission to the same 1099 usd one-intent, one-captured-charge graph, and a tokenless submission on the same session creates no payment context and no provider object at all"
+      },
+      "fidelity_claim": "basic-card-charge",
+      "fidelity_case": "B1p"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:91::Successful purchase, site builder theme › card prevention: false › basic card",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-basic-card.spec.ts",
+        "contract": "The same Blocks basic-card submission under a deliberately activated supported block theme settles the same one-order, one-intent, one-captured-charge 1099 usd graph, and the store is returned to its own theme"
+      },
+      "fidelity_claim": "basic-card-charge",
+      "fidelity_case": "B1f"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:91::Successful purchase, site builder theme › card prevention: true › basic card",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-basic-card.spec.ts",
+        "contract": "Under a deliberately activated supported block theme, card-testing protection admits one token-bearing Blocks basic-card submission to the same 1099 usd one-intent, one-captured-charge graph, and a tokenless submission on the same session creates no payment context and no provider object at all"
+      },
+      "fidelity_claim": "basic-card-charge",
+      "fidelity_case": "B1pf"
+    }
+  ],
+  "known_gaps": [],
+  "deferral": null
+}

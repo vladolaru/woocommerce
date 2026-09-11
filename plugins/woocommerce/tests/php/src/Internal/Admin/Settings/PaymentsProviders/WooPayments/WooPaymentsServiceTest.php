@@ -5,11 +5,23 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 
 use Automattic\Jetpack\Connection\Manager as WPCOM_Connection_Manager;
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiException;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Admin\Settings\Mocks\FakePaymentGateway;
@@ -72,6 +84,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 	private const TEST_EPOCH = 1234567890;
 
+	private const PENDING_PAYMENT_METHODS_PROJECTION_OPTION = 'woocommerce_woopayments_pending_payment_method_projection';
+
 	/**
 	 * Set up test.
 	 */
@@ -92,9 +106,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 									)
 									->getMock();
 
-		$this->mock_provider = $this->getMockBuilder( PaymentGateway::class )
-									->disableOriginalConstructor()
-									->getMock();
+			$this->mock_provider = $this->getMockBuilder( PaymentGateway::class )
+										->disableOriginalConstructor()
+										->getMock();
+			$this->mock_provider
+				->method( 'get_onboarding_url' )
+				->willReturn( 'https://example.com/woopayments/onboarding' );
 
 		$this->mock_providers
 			->expects( $this->any() )
@@ -132,7 +149,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				},
 				'class_exists' => function ( $class_to_check ) {
 					// By default, the WooPayments extension is mocked as active.
-					if ( '\WC_Payments' === $class_to_check ) {
+					if ( $this->is_woopayments_class( $class_to_check ) ) {
 						return true;
 					}
 
@@ -150,7 +167,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$this->mockable_proxy->register_static_mocks(
 			array(
-				'\WC_Payments'         => array(
+				'WC_Payments'         => array(
 					'get_gateway'         => function () {
 						return new FakePaymentGateway();
 					},
@@ -158,7 +175,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 						return $this->mock_account_service;
 					},
 				),
-				'\WC_Payments_Account' => array(
+				'WC_Payments_Account' => array(
 					'get_connect_url'       => function () {
 						return 'https://example.com/kyc_fallback';
 					},
@@ -166,16 +183,24 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 						return 'https://example.com/overview_page?from=' . WooPaymentsService::FROM_NOX_IN_CONTEXT;
 					},
 				),
-				'\WC_Payments_Utils'   => array(
+				'\WC_Payments_Utils'  => array(
 					'supported_countries' => function () {
 						return $this->get_woopayments_supported_countries();
 					},
 				),
-				Utils::class           => array(
-					// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+				Utils::class          => array(
 					'wc_payments_settings_url'           => function ( ?string $path = null, array $query = array() ) {
-						unset( $path, $query );
-						return 'https://example.com/payments-settings';
+						$url = 'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout';
+
+						if ( ! empty( $path ) ) {
+							$url .= '&path=' . $path;
+						}
+
+						if ( ! empty( $query ) ) {
+							$url .= '&' . http_build_query( $query );
+						}
+
+						return $url;
 					},
 					// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 					'get_wpcom_connection_authorization' => function ( string $return_url ) {
@@ -202,8 +227,124 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 
+		foreach ( $this->get_refresh_projection_callbacks() as $registered_callback ) {
+			remove_action( 'woocommerce_payments_account_refreshed', $registered_callback['callback'], $registered_callback['priority'] );
+		}
+
 		$this->sut = new WooPaymentsService();
-		$this->sut->init( $this->mock_providers, $this->mockable_proxy );
+		$this->sut->init(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$this->create_onboarding_adapter(),
+			$this->create_legacy_runtime(),
+			$this->create_unavailable_api_client(),
+			$this->create_native_account_service()
+		);
+	}
+
+	/**
+	 * Tear down test.
+	 */
+	public function tearDown(): void {
+		remove_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_project_pending_onboarding_payment_methods' ) );
+		delete_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
+
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should expose a safe native account summary for the WooPayments settings surface.
+	 */
+	public function test_get_account_summary_returns_safe_native_account_state(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'             => 'acct_native_test',
+					'test_publishable_key'   => 'pk_test_secret',
+					'live_publishable_key'   => 'pk_live_secret',
+					'payments_enabled'       => true,
+					'details_submitted'      => true,
+					'is_test_drive'          => true,
+					'is_live'                => false,
+					'is_documents_enabled'   => true,
+					'has_submitted_vat_data' => true,
+					'country'                => 'NL',
+					'store_currencies'       => array(
+						'default' => 'eur',
+					),
+				),
+			)
+		);
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'   => 'yes',
+				'test_mode' => 'yes',
+			)
+		);
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+
+		$summary = $this->sut->get_account_summary();
+
+		$this->assertSame( 'acct_native_test', $summary['account']['id'] );
+		$this->assertSame( 'test', $summary['account']['mode'] );
+		$this->assertSame( 'eur', $summary['account']['default_currency'] );
+		$this->assertTrue( $summary['account']['connected'] );
+		$this->assertTrue( $summary['account']['working'] );
+		$this->assertTrue( $summary['account']['can_process_payments'] );
+		$this->assertTrue( $summary['account']['test_mode'] );
+		$this->assertTrue( $summary['account']['test_drive'] );
+		$this->assertFalse( $summary['account']['sandbox'] );
+		$this->assertFalse( $summary['account']['live'] );
+		$this->assertSame(
+			array(
+				'enabled'                => true,
+				'has_submitted_vat_data' => true,
+				'country'                => 'NL',
+			),
+			$summary['documents']
+		);
+		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $summary['urls']['overview_page'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-success', $summary['urls']['overview_page'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-error', $summary['urls']['overview_page'] );
+		$this->assertSame( 'https://example.com/woopayments/onboarding', $summary['urls']['setup'] );
+		$this->assertArrayNotHasKey( 'test_publishable_key', $summary['account'] );
+		$this->assertArrayNotHasKey( 'live_publishable_key', $summary['account'] );
+		$this->assertArrayNotHasKey( 'is_documents_enabled', $summary['account'] );
+		$this->assertArrayNotHasKey( 'has_submitted_vat_data', $summary['account'] );
+	}
+
+	/**
+	 * @testdox Should expose a safe no-account summary for stores that still need setup.
+	 */
+	public function test_get_account_summary_returns_no_account_state(): void {
+		update_option( 'wcpay_account_data', array( 'data' => array() ) );
+
+		$summary = $this->sut->get_account_summary();
+
+		$this->assertSame( '', $summary['account']['id'] );
+		$this->assertSame( 'live', $summary['account']['mode'] );
+		$this->assertSame( 'usd', $summary['account']['default_currency'] );
+		$this->assertFalse( $summary['account']['connected'] );
+		$this->assertFalse( $summary['account']['working'] );
+		$this->assertFalse( $summary['account']['can_process_payments'] );
+		$this->assertFalse( $summary['account']['test_mode'] );
+		$this->assertFalse( $summary['account']['test_drive'] );
+		$this->assertFalse( $summary['account']['sandbox'] );
+		$this->assertFalse( $summary['account']['live'] );
+		$this->assertSame(
+			array(
+				'enabled'                => false,
+				'has_submitted_vat_data' => false,
+				'country'                => '',
+			),
+			$summary['documents']
+		);
+		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $summary['urls']['overview_page'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-success', $summary['urls']['overview_page'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-error', $summary['urls']['overview_page'] );
+		$this->assertSame( 'https://example.com/woopayments/onboarding', $summary['urls']['setup'] );
 	}
 
 	/**
@@ -212,19 +353,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_get_onboarding_details_throws_when_extension_not_active(): void {
 		$location = 'US';
 
-		// Arrange.
-		// Mock the extension as not active.
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( '\WC_Payments' === $class_to_check ) {
-						return false;
-					}
-
-					return true;
-				},
-			)
-		);
+		$this->mock_woopayments_runtime_unavailable();
 
 		// Act.
 		try {
@@ -234,6 +363,1472 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		} catch ( ApiException $e ) {
 			$this->assertSame( 'woocommerce_woopayments_onboarding_extension_not_active', $e->getErrorCode() );
 		}
+	}
+
+	/**
+	 * Test get onboarding details uses the onboarding adapter runtime availability.
+	 */
+	public function test_get_onboarding_details_uses_onboarding_adapter_runtime_availability(): void {
+		$location = 'US';
+		$gateway  = new FakePaymentGateway( WooPaymentsService::GATEWAY_ID );
+
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					if ( $this->is_woopayments_class( $class_to_check ) ) {
+						return false;
+					}
+
+					return true;
+				},
+			)
+		);
+
+		$onboarding_adapter = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+					'get_onboarding_kyc_fallback_url',
+					'get_overview_page_url',
+				)
+			)
+			->getMock();
+		$onboarding_adapter
+			->method( 'is_onboarding_runtime_available' )
+			->willReturn( true );
+		$onboarding_adapter
+			->method( 'get_payment_gateway' )
+			->willReturn( $gateway );
+		$onboarding_adapter
+			->method( 'has_account' )
+			->willReturn( false );
+		$onboarding_adapter
+			->method( 'has_valid_account' )
+			->willReturn( false );
+		$onboarding_adapter
+			->method( 'has_working_account' )
+			->willReturn( false );
+		$onboarding_adapter
+			->method( 'has_test_account' )
+			->willReturn( false );
+		$onboarding_adapter
+			->method( 'has_sandbox_account' )
+			->willReturn( false );
+		$onboarding_adapter
+			->method( 'has_live_account' )
+			->willReturn( false );
+		$onboarding_adapter
+			->method( 'get_onboarding_kyc_fallback_url' )
+			->willReturn( 'https://example.com/native-kyc' );
+		$onboarding_adapter
+			->method( 'get_overview_page_url' )
+			->willReturn( 'https://example.com/native-overview' );
+
+		$this->sut = new WooPaymentsService();
+		$this->sut->init( $this->mock_providers, $this->mockable_proxy, $onboarding_adapter, $this->create_legacy_runtime(), $this->create_unavailable_api_client(), $this->create_native_account_service() );
+
+		$result = $this->sut->get_onboarding_details( $location, '/some/path' );
+
+		$this->assertIsArray( $result );
+		$this->assertStringContainsString(
+			'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview',
+			rawurldecode( $result['context']['urls']['overview_page'] )
+		);
+		$this->assertStringContainsString( 'wcpay-connection-success=1', $result['context']['urls']['overview_page'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-error', $result['context']['urls']['overview_page'] );
+	}
+
+	/**
+	 * Test native onboarding details do not depend on plugin-owned onboarding REST routes.
+	 *
+	 * @return void
+	 */
+	public function test_get_onboarding_details_uses_native_fields_when_legacy_onboarding_route_is_unavailable(): void {
+		$location    = 'US';
+		$fields_data = array(
+			'business_types'    => $this->get_mock_onboarding_fields_business_types(),
+			'mccs_display_tree' => array(
+				array(
+					'id'    => 'most_popular',
+					'type'  => 'group',
+					'title' => 'Most popular',
+					'items' => array(),
+				),
+			),
+		);
+		$api_client  = new class( $fields_data ) extends WooPaymentsApiClient {
+			/**
+			 * Native onboarding fields response.
+			 *
+			 * @var array
+			 */
+			private array $fields_data;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array $fields_data Native onboarding fields response.
+			 */
+			public function __construct( array $fields_data ) {
+				$this->fields_data = $fields_data;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Get fake onboarding fields data.
+			 *
+			 * @param string $locale User locale.
+			 * @return array
+			 */
+			public function get_onboarding_fields_data( string $locale = '' ): array {
+				unset( $locale );
+				return $this->fields_data;
+			}
+		};
+		$adapter     = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+					'get_onboarding_kyc_fallback_url',
+					'get_overview_page_url',
+				)
+			)
+			->getMock();
+
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		$adapter->method( 'has_account' )->willReturn( false );
+		$adapter->method( 'has_valid_account' )->willReturn( false );
+		$adapter->method( 'has_working_account' )->willReturn( false );
+		$adapter->method( 'has_test_account' )->willReturn( false );
+		$adapter->method( 'has_sandbox_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
+		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/native-kyc' );
+		$adapter->method( 'get_overview_page_url' )->willReturn( 'https://example.com/native-overview' );
+
+		$this->mock_provider->method( 'is_onboarding_supported' )->willReturn( true );
+		$this->mock_provider->method( 'is_onboarding_started' )->willReturn( false );
+		$this->mock_provider->method( 'is_onboarding_completed' )->willReturn( false );
+		$this->mock_provider->method( 'is_in_test_mode_onboarding' )->willReturn( true );
+		$this->mock_provider->method( 'is_in_dev_mode' )->willReturn( false );
+		$this->mock_provider->method( 'get_recommended_payment_methods' )->willReturn( array() );
+
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'is_connection_owner' )->willReturn( true );
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function () {
+					return false;
+				},
+			)
+		);
+
+		$this->mockable_proxy->register_static_mocks(
+			array(
+				Utils::class => array(
+					'wc_payments_settings_url'           => function (): string {
+						return 'https://example.com/payments-settings';
+					},
+					'get_wpcom_connection_authorization' => function (): array {
+						return array(
+							'success'      => true,
+							'errors'       => array(),
+							'color_scheme' => 'fresh',
+							'url'          => 'https://wordpress.com/auth?query=some_query',
+						);
+					},
+					'rest_endpoint_get_request'          => function ( string $endpoint ) {
+						if ( '/wc/v3/payments/onboarding/fields' === $endpoint ) {
+							return new WP_Error( 'rest_no_route', 'No route was found matching the URL and request method.' );
+						}
+
+						throw new \Exception( esc_html( 'GET endpoint response is not mocked: ' . $endpoint ) );
+					},
+				),
+			)
+		);
+
+		$this->sut = new WooPaymentsService();
+			$this->sut->init(
+				$this->mock_providers,
+				$this->mockable_proxy,
+				$adapter,
+				$this->create_legacy_runtime(),
+				$api_client,
+				$this->create_native_account_service()
+			);
+
+		$result                     = $this->sut->get_onboarding_details( $location, '/some/path' );
+		$business_verification_step = $this->find_onboarding_step( $result['steps'], WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION );
+
+		$this->assertSame( $location, $business_verification_step['context']['fields']['location'] );
+		$this->assertSame( 'en_US', $business_verification_step['context']['fields']['__locale'] );
+		$this->assertSame(
+			DefaultPaymentGateways::get_wcpay_countries(),
+			array_keys( $business_verification_step['context']['fields']['available_countries'] )
+		);
+		$this->assertSame( $fields_data['business_types'], $business_verification_step['context']['fields']['business_types'] );
+		$this->assertSame( array(), $business_verification_step['errors'] );
+	}
+
+	/**
+	 * Test native embedded KYC sessions do not depend on plugin-owned onboarding REST routes.
+	 *
+	 * @return void
+	 */
+	public function test_get_onboarding_kyc_session_uses_native_api_when_legacy_onboarding_route_is_unavailable(): void {
+		$location      = 'US';
+		$captured_call = array();
+		$api_client    = new class( $captured_call ) extends WooPaymentsApiClient {
+			/**
+			 * Captured KYC session request payload.
+			 *
+			 * @var array
+			 */
+			private array $captured_call;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array $captured_call Captured KYC session request payload.
+			 */
+			public function __construct( array &$captured_call ) {
+				$this->captured_call = &$captured_call;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Capture an embedded KYC request and return a fake session.
+			 *
+			 * @param bool        $live_account   Whether the session is for a live account.
+			 * @param array       $site_data      Site data.
+			 * @param array       $user_data      User data.
+			 * @param array       $account_data   Account data.
+			 * @param array       $actioned_notes Actioned notes.
+			 * @param string|null $referral_code  Referral code.
+			 * @return array
+			 */
+			public function initialize_onboarding_embedded_kyc( bool $live_account, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
+				$this->captured_call = array(
+					'live_account'   => $live_account,
+					'site_data'      => $site_data,
+					'user_data'      => $user_data,
+					'account_data'   => $account_data,
+					'actioned_notes' => $actioned_notes,
+					'referral_code'  => $referral_code,
+				);
+
+				return array(
+					'clientSecret'   => 'accs_secret_native',
+					'expiresAt'      => 1234567999,
+					'accountId'      => 'acct_native',
+					'isLive'         => true,
+					'accountCreated' => true,
+					'publishableKey' => 'pk_live_native',
+				);
+			}
+		};
+		$adapter       = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+					'get_onboarding_kyc_fallback_url',
+					'get_overview_page_url',
+				)
+			)
+			->getMock();
+
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		$adapter->method( 'has_account' )->willReturn( false );
+		$adapter->method( 'has_valid_account' )->willReturn( false );
+		$adapter->method( 'has_working_account' )->willReturn( false );
+		$adapter->method( 'has_test_account' )->willReturn( false );
+		$adapter->method( 'has_sandbox_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
+		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/native-kyc' );
+		$adapter->method( 'get_overview_page_url' )->willReturn( 'https://example.com/native-overview' );
+
+		$this->mock_provider->method( 'is_in_dev_mode' )->willReturn( false );
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		update_option(
+			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+			array(
+				'onboarding' => array(
+					'US' => array(
+						'steps' => array(
+							WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array(
+								'data' => array(
+									'payment_methods' => array(
+										'card' => true,
+									),
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					if ( $this->is_woopayments_class( $class_to_check ) ) {
+						return false;
+					}
+
+					return false;
+				},
+			)
+		);
+		$this->mockable_proxy->register_static_mocks(
+			array(
+				Utils::class => array(
+					'rest_endpoint_post_request' => function ( string $endpoint ) {
+						if ( '/wc/v3/payments/onboarding/kyc/session' === $endpoint ) {
+							return new WP_Error( 'rest_no_route', 'No route was found matching the URL and request method.' );
+						}
+
+						throw new \Exception( esc_html( 'POST endpoint response is not mocked: ' . $endpoint ) );
+					},
+				),
+			)
+		);
+
+		$this->sut = new WooPaymentsService();
+		$this->sut->init(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$adapter,
+			$this->create_legacy_runtime(),
+			$api_client,
+			$this->create_native_account_service()
+		);
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'        => 'acct_stale',
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+				),
+			)
+		);
+
+		$result = $this->sut->get_onboarding_kyc_session(
+			$location,
+			array(
+				'business_type' => 'individual',
+				'country'       => 'US',
+			)
+		);
+
+		$this->assertSame( 'accs_secret_native', $result['clientSecret'] );
+		$this->assertSame( 'pk_live_native', $result['publishableKey'] );
+		$this->assertSame( 'en_US', $result['locale'] );
+		$this->assertTrue( $result['isLive'] );
+		$this->assertTrue( $captured_call['live_account'] );
+		$this->assertSame( 'card_payments', array_key_first( $captured_call['account_data']['capabilities'] ) );
+		$cached = get_option( 'wcpay_account_data' );
+		$this->assertIsArray( $cached );
+		$this->assertSame( 'acct_native', $cached['data']['account_id'] );
+		$this->assertSame( 'pk_live_native', $cached['data']['live_publishable_key'] );
+		$this->assertTrue( $cached['data']['is_live'] );
+		$this->assertFalse( $cached['data']['details_submitted'] );
+	}
+
+	/**
+	 * @testdox Native KYC finalization enables active payment methods through canonical settings idempotently.
+	 */
+	public function test_finish_native_onboarding_kyc_session_enables_active_payment_methods_idempotently(): void {
+		$fresh_account  = array(
+			'account_id'        => 'acct_finalized_native',
+			'is_live'           => true,
+			'payments_enabled'  => true,
+			'details_submitted' => true,
+			'capabilities'      => array(
+				'card_payments'       => 'active',
+				'ideal_payments'      => 'active',
+				'bancontact_payments' => 'active',
+				'alipay_payments'     => 'active',
+				'eps_payments'        => 'inactive',
+			),
+			'fees'              => array(
+				'card'       => array(),
+				'ideal'      => array(),
+				'bancontact' => array(),
+				'eps'        => array(),
+			),
+		);
+		$fixture        = $this->arrange_native_finalize_projection(
+			array( $fresh_account, $fresh_account ),
+			array(
+				'card'         => true,
+				'ideal'        => true,
+				'bancontact'   => true,
+				'alipay'       => true,
+				'eps'          => true,
+				'apple_google' => true,
+			)
+		);
+		$first_response = $this->sut->finish_onboarding_kyc_session( 'US' );
+		$first_settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$this->sut->finish_onboarding_kyc_session( 'US' );
+		$second_settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_project_pending_onboarding_payment_methods' ) ) );
+		$this->assertSame(
+			array(
+				'success'           => true,
+				'details_submitted' => true,
+				'account_id'        => 'acct_finalized_native',
+				'mode'              => 'live',
+			),
+			$first_response
+		);
+		$this->assertSame( 2, $fixture['api_client']->account_requests );
+		$this->assertIsArray( $first_settings );
+		$this->assertSame( array( 'card', 'ideal', 'bancontact' ), $first_settings['upe_enabled_payment_method_ids'] );
+		$this->assertNotContains( 'alipay', $first_settings['upe_enabled_payment_method_ids'], 'Selected methods without fee-backed availability stay disabled.' );
+		$this->assertNotContains( 'eps', $first_settings['upe_enabled_payment_method_ids'], 'Selected fee-backed methods without an active capability stay disabled.' );
+		$this->assertNotContains( 'apple_pay', $first_settings['upe_enabled_payment_method_ids'] );
+		$this->assertNotContains( 'google_pay', $first_settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_bancontact_settings' )['enabled'] );
+		$this->assertSame( $first_settings, $second_settings );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * @testdox Native KYC finalization survives account refresh failure and retries payment-method projection after a later refresh.
+	 */
+	public function test_finish_native_onboarding_kyc_session_defers_payment_method_projection_after_refresh_failure(): void {
+		$fresh_account = $this->get_native_finalize_projection_account();
+		$fixture       = $this->arrange_native_finalize_projection(
+			array(
+				new \RuntimeException( 'Temporary account refresh failure.' ),
+				$fresh_account,
+			),
+			array(
+				'card'  => true,
+				'ideal' => true,
+			)
+		);
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertSame(
+			array(
+				'success'           => true,
+				'details_submitted' => true,
+				'account_id'        => 'acct_finalized_native',
+				'mode'              => 'live',
+			),
+			$response
+		);
+		$business_verification_statuses = get_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY )['onboarding']['US']['steps'][ WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION ]['statuses'];
+		$this->assertArrayHasKey( WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, $business_verification_statuses );
+		$this->assertArrayNotHasKey( WooPaymentsService::ONBOARDING_STEP_STATUS_FAILED, $business_verification_statuses );
+		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
+		$this->assertTrue( $fixture['api_client']->pending_marker_seen, 'The pending marker must exist before the account refresh starts.' );
+		$this->assertOptionNotAutoloaded( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+
+		$fixture['account_service']->refresh_account_data();
+
+		$this->assertSame( array( 'card', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * @testdox Native KYC finalization projects selected methods directly when the retry marker cannot be persisted.
+	 */
+	public function test_finish_native_onboarding_kyc_session_projects_payment_methods_when_marker_write_fails(): void {
+		$fixture = $this->arrange_native_finalize_projection(
+			array( $this->get_native_finalize_projection_account() ),
+			array(
+				'card'  => true,
+				'ideal' => true,
+			)
+		);
+		$this->mock_native_projection_marker_write_failure();
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertTrue( $response['success'] );
+		$this->assertFalse( $fixture['api_client']->pending_marker_seen );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+		$this->assertSame( array( 'card', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
+	}
+
+	/**
+	 * @testdox Native KYC finalization logs fallback projection failure when no retry marker is durable.
+	 */
+	public function test_finish_native_onboarding_kyc_session_logs_projection_failure_without_durable_marker(): void {
+		$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_settings', 'update_settings' ) )
+			->getMock();
+		$settings_service->method( 'get_settings' )->willReturn( array( 'enabled_payment_method_ids' => array( 'card' ) ) );
+		$settings_service->method( 'update_settings' )->willReturn( new WP_Error( 'temporary_settings_failure', 'Temporary settings failure.' ) );
+		$logger = $this->getMockBuilder( \WC_Logger_Interface::class )->getMock();
+		$logger->expects( $this->once() )
+			->method( 'error' )
+			->with(
+				$this->stringContains( 'could not project selected payment methods' ),
+				array( 'source' => 'woocommerce-woopayments-onboarding' )
+			);
+		$this->arrange_native_finalize_projection(
+			array( $this->get_native_finalize_projection_account() ),
+			array(
+				'card'  => true,
+				'ideal' => true,
+			),
+			$settings_service
+		);
+		$this->mock_native_projection_marker_write_failure( $logger );
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertTrue( $response['success'] );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * @testdox Native KYC finalization ignores malformed NOX selections without updating settings.
+	 */
+	public function test_finish_native_onboarding_kyc_session_ignores_malformed_payment_method_selections(): void {
+		$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_settings', 'update_settings' ) )
+			->getMock();
+		$settings_service->expects( $this->never() )->method( 'get_settings' );
+		$settings_service->expects( $this->never() )->method( 'update_settings' );
+		$this->arrange_native_finalize_projection(
+			array( $this->get_native_finalize_projection_account() ),
+			array(
+				'ideal'      => array( 'malformed' ),
+				'bancontact' => (object) array( 'malformed' => true ),
+			),
+			$settings_service
+		);
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertTrue( $response['success'] );
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * @testdox A settings failure preserves pending native payment-method projection without breaking refresh callers.
+	 * @dataProvider settings_projection_failure_provider
+	 *
+	 * @param WP_Error|\Throwable $failure Settings update failure.
+	 */
+	public function test_native_payment_method_projection_retries_after_settings_failure( $failure ): void {
+		$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_settings', 'update_settings' ) )
+			->getMock();
+		$settings_service->method( 'get_settings' )->willReturn(
+			array(
+				'enabled_payment_method_ids'   => array( 'card' ),
+				'available_payment_method_ids' => array( 'card', 'ideal' ),
+			)
+		);
+		$update_attempts = 0;
+		$settings_service->expects( $this->exactly( 2 ) )
+			->method( 'update_settings' )
+			->willReturnCallback(
+				static function () use ( $failure, &$update_attempts ) {
+					++$update_attempts;
+					if ( 1 === $update_attempts ) {
+						if ( $failure instanceof \Throwable ) {
+							throw $failure;
+						}
+
+						return $failure;
+					}
+
+					return array( 'enabled_payment_method_ids' => array( 'card', 'ideal' ) );
+				}
+			);
+		$fixture   = $this->arrange_native_finalize_projection(
+			array(
+				$this->get_native_finalize_projection_account(),
+				$this->get_native_finalize_projection_account(),
+			),
+			array(
+				'card'  => true,
+				'ideal' => true,
+			),
+			$settings_service
+		);
+		$callbacks = $this->get_refresh_projection_callbacks();
+		$this->assertCount( 1, $callbacks );
+		$this->assertSame( $this->sut, $callbacks[0]['callback'][0] );
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+		$this->assertTrue( $response['success'] );
+		$this->assertSame( 1, $update_attempts, 'The finalization refresh should make one projection attempt.' );
+		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
+
+		$fixture['account_service']->refresh_account_data();
+
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * Provide settings projection failures.
+	 *
+	 * @return array<string,array{WP_Error|\Throwable}>
+	 */
+	public function settings_projection_failure_provider(): array {
+		return array(
+			'WP_Error'  => array( new WP_Error( 'temporary_settings_failure', 'Temporary settings failure.' ) ),
+			'exception' => array( new \RuntimeException( 'Temporary settings failure.' ) ),
+		);
+	}
+
+	/**
+	 * Test live native KYC switches the gateway out of test mode when replacing a test-drive account.
+	 *
+	 * @return void
+	 */
+	public function test_live_native_kyc_switches_gateway_out_of_test_mode_after_test_drive(): void {
+		$location      = 'US';
+		$captured_call = array();
+		$api_client    = new class( $captured_call ) extends WooPaymentsApiClient {
+			/**
+			 * Captured KYC session request payload.
+			 *
+			 * @var array
+			 */
+			private array $captured_call;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array $captured_call Captured KYC session request payload.
+			 */
+			public function __construct( array &$captured_call ) {
+				$this->captured_call = &$captured_call;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Capture an embedded KYC request and return a ready live account session.
+			 *
+			 * @param bool        $live_account   Whether the session is for a live account.
+			 * @param array       $site_data      Site data.
+			 * @param array       $user_data      User data.
+			 * @param array       $account_data   Account data.
+			 * @param array       $actioned_notes Actioned notes.
+			 * @param string|null $referral_code  Referral code.
+			 * @return array
+			 */
+			public function initialize_onboarding_embedded_kyc( bool $live_account, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
+				$this->captured_call = array(
+					'live_account'   => $live_account,
+					'site_data'      => $site_data,
+					'user_data'      => $user_data,
+					'account_data'   => $account_data,
+					'actioned_notes' => $actioned_notes,
+					'referral_code'  => $referral_code,
+				);
+
+				return array(
+					'clientSecret'     => 'accs_secret_live',
+					'expiresAt'        => 1234567999,
+					'accountId'        => 'acct_live_native',
+					'isLive'           => true,
+					'accountCreated'   => true,
+					'publishableKey'   => 'pk_live_native',
+					'paymentsEnabled'  => true,
+					'detailsSubmitted' => true,
+				);
+			}
+		};
+		$adapter       = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+					'get_onboarding_kyc_fallback_url',
+					'get_overview_page_url',
+				)
+			)
+			->getMock();
+
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		$adapter->method( 'has_account' )->willReturn( false );
+		$adapter->method( 'has_valid_account' )->willReturn( false );
+		$adapter->method( 'has_working_account' )->willReturn( false );
+		$adapter->method( 'has_test_account' )->willReturn( false );
+		$adapter->method( 'has_sandbox_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
+		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/native-kyc' );
+		$adapter->method( 'get_overview_page_url' )->willReturn( 'https://example.com/native-overview' );
+
+		$this->mock_provider->method( 'is_in_dev_mode' )->willReturn( false );
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		update_option(
+			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+			array(
+				'onboarding' => array(
+					'US' => array(
+						'steps' => array(
+							WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array(
+								'data' => array(
+									'payment_methods' => array(
+										'card' => true,
+									),
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					if ( $this->is_woopayments_class( $class_to_check ) ) {
+						return false;
+					}
+
+					return false;
+				},
+			)
+		);
+		$this->mockable_proxy->register_static_mocks(
+			array(
+				Utils::class => array(
+					'rest_endpoint_post_request' => function ( string $endpoint ) {
+						if ( '/wc/v3/payments/onboarding/kyc/session' === $endpoint ) {
+							return new WP_Error( 'rest_no_route', 'No route was found matching the URL and request method.' );
+						}
+
+						throw new \Exception( esc_html( 'POST endpoint response is not mocked: ' . $endpoint ) );
+					},
+				),
+			)
+		);
+
+		$this->sut = new WooPaymentsService();
+		$this->sut->init(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$adapter,
+			$this->create_legacy_runtime(),
+			$api_client,
+			$this->create_native_account_service()
+		);
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'           => 'acct_test_drive',
+					'test_publishable_key' => 'pk_test_stale',
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+					'is_test_drive'        => true,
+					'is_live'              => false,
+				),
+			)
+		);
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'   => 'yes',
+				'test_mode' => 'yes',
+			)
+		);
+
+		$result          = $this->sut->get_onboarding_kyc_session(
+			$location,
+			array(
+				'business_type' => 'individual',
+				'country'       => 'US',
+			)
+		);
+		$settings        = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$account_service = $this->create_native_account_service();
+
+		$this->assertSame( 'accs_secret_live', $result['clientSecret'] );
+		$this->assertTrue( $captured_call['live_account'] );
+		$this->assertIsArray( $settings );
+		$this->assertSame( 'no', $settings['test_mode'] );
+		$this->assertSame( 'pk_live_native', $account_service->get_publishable_key() );
+		$this->assertTrue( $account_service->can_process_payments() );
+	}
+
+	/**
+	 * Test native test-drive initialization writes a usable account cache from the platform response.
+	 *
+	 * @return void
+	 */
+	public function test_onboarding_test_account_init_uses_native_api_and_writes_usable_account_cache(): void {
+		$captured_call = array();
+		$api_client    = new class( $captured_call ) extends WooPaymentsApiClient {
+			/**
+			 * Captured onboarding init payload.
+			 *
+			 * @var array
+			 */
+			private array $captured_call;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array $captured_call Captured onboarding init payload.
+			 */
+			public function __construct( array &$captured_call ) {
+				$this->captured_call = &$captured_call;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Capture a native onboarding init request and return a completed test-drive account.
+			 *
+			 * @param bool        $live_account   Whether the account is live.
+			 * @param string      $return_url     Return URL for the onboarding flow.
+			 * @param array       $site_data      Site data.
+			 * @param array       $user_data      User data.
+			 * @param array       $account_data   Account data.
+			 * @param array       $actioned_notes Actioned notes.
+			 * @param bool        $collect_payout_requirements Whether to collect payout requirements.
+			 * @param string|null $referral_code  Referral code.
+			 * @return array
+			 */
+			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), bool $collect_payout_requirements = false, ?string $referral_code = null ): array {
+				$this->captured_call = array(
+					'live_account'                => $live_account,
+					'return_url'                  => $return_url,
+					'site_data'                   => $site_data,
+					'user_data'                   => $user_data,
+					'account_data'                => $account_data,
+					'actioned_notes'              => $actioned_notes,
+					'collect_payout_requirements' => $collect_payout_requirements,
+					'referral_code'               => $referral_code,
+				);
+
+				return array(
+					'url'               => false,
+					'account_id'        => 'acct_native_test',
+					'is_live'           => false,
+					'publishable_key'   => 'pk_test_native',
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+				);
+			}
+		};
+		$adapter       = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+				)
+			)
+			->getMock();
+
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		$adapter->method( 'has_account' )->willReturn( false );
+		$adapter->method( 'has_valid_account' )->willReturn( false );
+		$adapter->method( 'has_working_account' )->willReturn( false );
+		$adapter->method( 'has_test_account' )->willReturn( false );
+		$adapter->method( 'has_sandbox_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
+
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		update_option(
+			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+			array(
+				'onboarding' => array(
+					'US' => array(
+						'steps' => array(
+							WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array(
+								'data' => array(
+									'payment_methods' => array(
+										'card' => true,
+									),
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					if ( $this->is_woopayments_class( $class_to_check ) ) {
+						return false;
+					}
+
+					return false;
+				},
+			)
+		);
+
+		$this->sut = new WooPaymentsService();
+		$this->sut->init(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$adapter,
+			$this->create_legacy_runtime(),
+			$api_client,
+			$this->create_native_account_service()
+		);
+
+		$result          = $this->sut->onboarding_test_account_init( 'US' );
+		$cached          = get_option( 'wcpay_account_data' );
+		$account_service = $this->create_native_account_service();
+
+		$this->assertTrue( $result['success'] );
+		$this->assertFalse( $captured_call['live_account'] );
+		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $captured_call['return_url'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-success', $captured_call['return_url'] );
+		$this->assertStringNotContainsString( 'wcpay-connection-error', $captured_call['return_url'] );
+		$this->assertSame( 'card_payments', array_key_first( $captured_call['account_data']['capabilities'] ) );
+		$this->assertIsArray( $cached );
+		$this->assertSame( 'acct_native_test', $cached['data']['account_id'] );
+		$this->assertSame( 'pk_test_native', $cached['data']['test_publishable_key'] );
+		$this->assertFalse( $cached['data']['is_live'] );
+		$this->assertTrue( $cached['data']['is_test_drive'] );
+		$this->assertTrue( $cached['data']['payments_enabled'] );
+		$this->assertTrue( $cached['data']['details_submitted'] );
+		$this->assertTrue( $account_service->can_process_payments() );
+	}
+
+	/**
+	 * @testdox Onboarding actions use the legacy endpoint when native onboarding is unavailable.
+	 */
+	public function test_onboarding_test_account_init_uses_legacy_endpoint_when_native_onboarding_is_unavailable(): void {
+		$native_call_count = 0;
+		$legacy_endpoint   = null;
+		$api_client        = new class( $native_call_count ) extends WooPaymentsApiClient {
+			/**
+			 * Native initialize call count.
+			 *
+			 * @var int
+			 */
+			private int $native_call_count;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param int $native_call_count Native initialize call count.
+			 */
+			public function __construct( int &$native_call_count ) {
+				$this->native_call_count = &$native_call_count;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Count unexpected native onboarding init calls.
+			 *
+			 * @param bool        $live_account   Whether the account is live.
+			 * @param string      $return_url     Return URL for the onboarding flow.
+			 * @param array       $site_data      Site data.
+			 * @param array       $user_data      User data.
+			 * @param array       $account_data   Account data.
+			 * @param array       $actioned_notes Actioned notes.
+			 * @param bool        $collect_payout_requirements Whether to collect payout requirements.
+			 * @param string|null $referral_code  Referral code.
+			 * @return array
+			 */
+			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), bool $collect_payout_requirements = false, ?string $referral_code = null ): array {
+				unset( $live_account, $return_url, $site_data, $user_data, $account_data, $actioned_notes, $collect_payout_requirements, $referral_code );
+				++$this->native_call_count;
+
+				return array(
+					'success' => true,
+					'url'     => false,
+				);
+			}
+		};
+		$adapter           = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+				)
+			)
+			->getMock();
+
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( false );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		$adapter->method( 'has_account' )->willReturn( false );
+		$adapter->method( 'has_valid_account' )->willReturn( false );
+		$adapter->method( 'has_working_account' )->willReturn( false );
+		$adapter->method( 'has_test_account' )->willReturn( false );
+		$adapter->method( 'has_sandbox_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
+
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		update_option(
+			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+			array(
+				'onboarding' => array(
+					'US' => array(
+						'steps' => array(
+							WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array(
+								'data' => array(
+									'payment_methods' => array(
+										'card' => true,
+									),
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					if ( $this->is_woopayments_class( $class_to_check ) ) {
+						return false;
+					}
+
+					return false;
+				},
+			)
+		);
+		$this->mockable_proxy->register_static_mocks(
+			array(
+				Utils::class => array(
+					'rest_endpoint_post_request' => function ( string $endpoint ) use ( &$legacy_endpoint ) {
+						$legacy_endpoint = $endpoint;
+
+						return array(
+							'success' => true,
+						);
+					},
+				),
+			)
+		);
+
+		$this->sut = new WooPaymentsService();
+		$this->sut->init(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$adapter,
+			$this->create_legacy_runtime(),
+			$api_client,
+			$this->create_native_account_service()
+		);
+
+		$result = $this->sut->onboarding_test_account_init( 'US' );
+
+		$this->assertSame( array( 'success' => true ), $result );
+		$this->assertSame( 0, $native_call_count );
+		$this->assertSame( '/wc/v3/payments/onboarding/test_drive_account/init', $legacy_endpoint );
+	}
+
+	/**
+	 * Test native onboarding reset immediately clears stale account readiness.
+	 *
+	 * @return void
+	 */
+	public function test_reset_onboarding_uses_native_api_and_overwrites_stale_account_cache(): void {
+		$deleted_test_mode = null;
+		$api_client        = new class( $deleted_test_mode ) extends WooPaymentsApiClient {
+			/**
+			 * Captured deleted account mode.
+			 *
+			 * @var bool|null
+			 */
+			private ?bool $deleted_test_mode;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param bool|null $deleted_test_mode Captured deleted account mode.
+			 */
+			public function __construct( ?bool &$deleted_test_mode ) {
+				$this->deleted_test_mode = &$deleted_test_mode;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Capture account delete calls.
+			 *
+			 * @param bool $test_mode Whether to delete a test-mode account.
+			 * @return array
+			 */
+			public function delete_account( bool $test_mode = false ): array {
+				$this->deleted_test_mode = $test_mode;
+
+				return array(
+					'result' => 'success',
+				);
+			}
+		};
+		$adapter           = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+				)
+			)
+			->getMock();
+
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		$adapter->method( 'has_account' )->willReturn( true );
+		$adapter->method( 'has_valid_account' )->willReturn( true );
+		$adapter->method( 'has_working_account' )->willReturn( true );
+		$adapter->method( 'has_test_account' )->willReturn( true );
+		$adapter->method( 'has_sandbox_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
+
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					if ( $this->is_woopayments_class( $class_to_check ) ) {
+						return false;
+					}
+
+					return false;
+				},
+			)
+		);
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'        => 'acct_stale',
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+					'is_test_drive'     => true,
+					'is_live'           => false,
+				),
+			)
+		);
+
+		$this->sut = new WooPaymentsService();
+		$this->sut->init(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$adapter,
+			$this->create_legacy_runtime(),
+			$api_client,
+			$this->create_native_account_service()
+		);
+
+		$result = $this->sut->reset_onboarding( 'US' );
+		$cached = get_option( 'wcpay_account_data' );
+
+		$this->assertSame( true, $result['success'] );
+		$this->assertTrue( $deleted_test_mode );
+		$this->assertIsArray( $cached );
+		$this->assertSame( array(), $cached['data'] );
+		$this->assertSame( 'no', get_option( 'wcpay_onboarding_test_mode' ) );
+	}
+
+	/**
+	 * Create an onboarding adapter wired to this test's mockable legacy proxy.
+	 *
+	 * @param bool $native_onboarding_available Whether native onboarding is available.
+	 * @return WooPaymentsOnboardingAdapter
+	 */
+	private function create_onboarding_adapter( bool $native_onboarding_available = true ): WooPaymentsOnboardingAdapter {
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments', 'can_manage_onboarding' ) )
+			->getMock();
+		$provider
+			->method( 'can_process_payments' )
+			->willReturn( false );
+		$provider
+			->method( 'can_manage_onboarding' )
+			->willReturn( $native_onboarding_available );
+
+		$adapter         = new WooPaymentsOnboardingAdapter();
+		$account_service = new WooPaymentsAccountService();
+		$account_service->init( $this->mockable_proxy );
+		$adapter->init( $this->create_legacy_runtime(), $provider, new NativeWooPaymentsGateway(), $account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
+
+		return $adapter;
+	}
+
+	/**
+	 * Create an adapter exposing the native finalization path.
+	 *
+	 * @return WooPaymentsOnboardingAdapter|MockObject
+	 */
+	private function create_native_finalize_adapter() {
+		$adapter = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+				)
+			)
+			->getMock();
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		$adapter->method( 'has_account' )->willReturn( true );
+		$adapter->method( 'has_valid_account' )->willReturn( true );
+		$adapter->method( 'has_working_account' )->willReturn( true );
+		$adapter->method( 'has_test_account' )->willReturn( true );
+		$adapter->method( 'has_sandbox_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
+
+		return $adapter;
+	}
+
+	/**
+	 * Mock both WooPayments runtime paths as unavailable.
+	 */
+	private function mock_woopayments_runtime_unavailable(): void {
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					if ( $this->is_woopayments_class( $class_to_check ) ) {
+						return false;
+					}
+
+					return true;
+				},
+			)
+		);
+
+		$this->sut = new WooPaymentsService();
+		$this->sut->init(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$this->create_onboarding_adapter( false ),
+			$this->create_legacy_runtime(),
+			$this->create_unavailable_api_client(),
+			$this->create_native_account_service()
+		);
+	}
+
+	/**
+	 * Create a native account service wired to this test's mockable legacy proxy.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_native_account_service(): WooPaymentsAccountService {
+		$account_service = new WooPaymentsAccountService();
+		$account_service->init( $this->mockable_proxy );
+
+		return $account_service;
+	}
+
+	/**
+	 * Create a WooPayments legacy runtime wired to this test's mockable proxy.
+	 *
+	 * @return WooPaymentsLegacyRuntime
+	 */
+	private function create_legacy_runtime(): WooPaymentsLegacyRuntime {
+		$legacy_runtime = new WooPaymentsLegacyRuntime();
+		$legacy_runtime->init( $this->mockable_proxy );
+
+		return $legacy_runtime;
+	}
+
+	/**
+	 * Create an unavailable native API client.
+	 *
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_unavailable_api_client(): WooPaymentsApiClient {
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available' ) )
+			->getMock();
+
+		$api_client->method( 'is_available' )->willReturn( false );
+
+		return $api_client;
+	}
+
+	/**
+	 * Tell whether a class check targets the WooPayments extension class.
+	 *
+	 * @param mixed $class_to_check Class name passed to class_exists().
+	 * @return bool
+	 */
+	private function is_woopayments_class( $class_to_check ): bool {
+		return 'WC_Payments' === ltrim( (string) $class_to_check, '\\' );
+	}
+
+	/**
+	 * Find an onboarding step by ID.
+	 *
+	 * @param array[] $steps   Onboarding steps.
+	 * @param string  $step_id Step ID.
+	 * @return array
+	 */
+	private function find_onboarding_step( array $steps, string $step_id ): array {
+		foreach ( $steps as $step ) {
+			if ( isset( $step['id'] ) && $step_id === $step['id'] ) {
+				return $step;
+			}
+		}
+
+		$this->fail( 'Expected onboarding step not found: ' . $step_id );
+	}
+
+	/**
+	 * @testdox Should receive the onboarding adapter through dependency injection.
+	 */
+	public function test_onboarding_adapter_access_is_injected(): void {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for admin-service boundary regression coverage.
+		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsService.php' );
+
+		$this->assertDoesNotMatchRegularExpression(
+			'/wc_get_container\(\)\s*->get\(\s*WooPaymentsOnboardingAdapter::class\s*\)/',
+			$source,
+			'WooPaymentsService should receive the onboarding adapter through init injection.'
+		);
+	}
+
+	/**
+	 * @testdox Should centralize legacy WooPayments runtime access.
+	 */
+	public function test_legacy_runtime_access_is_centralized(): void {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for admin-service boundary regression coverage.
+		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsService.php' );
+
+		$this->assertStringNotContainsString( "class_exists( 'WC_Payments_Onboarding_Service' )", $source, 'WooPaymentsService should reset onboarding mode through WooPaymentsLegacyRuntime.' );
+		$this->assertStringNotContainsString( "class_exists( '\\WC_Payments_Utils' )", $source, 'WooPaymentsService should read supported countries through WooPaymentsLegacyRuntime.' );
+		$this->assertStringNotContainsString( '\\WC_Payments_Utils::supported_countries', $source, 'WooPaymentsService should not call WooPayments utility statics directly.' );
 	}
 
 	/**
@@ -510,13 +2105,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'not_supported', $result['messages'] );
 		$this->assertNull( $result['messages']['not_supported'] );
 		$this->assertArrayHasKey( 'context', $result );
-		$this->assertSame(
-			array(
-				'urls' => array(
-					'overview_page' => 'https://example.com/overview_page?from=' . WooPaymentsService::FROM_NOX_IN_CONTEXT,
-				),
-			),
-			$result['context']
+		$this->assertStringContainsString(
+			'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview',
+			rawurldecode( $result['context']['urls']['overview_page'] )
 		);
 	}
 
@@ -576,13 +2167,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			$result['messages']
 		);
 		$this->assertArrayHasKey( 'context', $result );
-		$this->assertSame(
-			array(
-				'urls' => array(
-					'overview_page' => 'https://example.com/overview_page?from=' . WooPaymentsService::FROM_NOX_IN_CONTEXT,
-				),
-			),
-			$result['context']
+		$this->assertStringContainsString(
+			'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview',
+			rawurldecode( $result['context']['urls']['overview_page'] )
 		);
 	}
 
@@ -614,8 +2201,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$location = 'US';
 
 		// Arrange.
-		$rest_path        = '/rest/path/to/onboarding/';
-		$kyc_fallback_url = 'https://example.com/kyc_fallback';
+		$rest_path            = '/rest/path/to/onboarding/';
+		$raw_kyc_fallback_url = 'https://example.com/kyc_fallback';
+		$kyc_fallback_url     = add_query_arg( 'wcpay-connection-error', '1', $raw_kyc_fallback_url );
 
 		$wpcom_connection_return_url = 'https://example.com/payments-settings/return?wpcom_connection_return=1';
 
@@ -826,6 +2414,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 						),
 						'available_countries' => $this->get_woopayments_supported_countries(),
 						'location'            => $location,
+						'__locale'            => 'en_US',
 					) : array(),
 					'sub_steps'           => $steps_stored_profile[ WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION ]['sub_steps'] ?? array(),
 					'self_assessment'     => $steps_stored_profile[ WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION ]['self_assessment'] ?? array(),
@@ -965,7 +2554,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$this->mockable_proxy->register_static_mocks(
 			array(
-				Utils::class           => array(
+				Utils::class          => array(
 					'wc_payments_settings_url'           => function ( ?string $path = null, array $query = array() ) use ( $wpcom_connection_return_url ) {
 						if ( WooPaymentsService::ONBOARDING_PATH_BASE === $path && ! empty( $query['wpcom_connection_return'] ) ) {
 							return $wpcom_connection_return_url;
@@ -997,9 +2586,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 						throw new \Exception( esc_html( 'GET endpoint response is not mocked: ' . $endpoint ) );
 					},
 				),
-				'\WC_Payments_Account' => array(
-					'get_connect_url' => function () use ( $kyc_fallback_url ) {
-						return $kyc_fallback_url;
+				'WC_Payments_Account' => array(
+					'get_connect_url' => function () use ( $raw_kyc_fallback_url ) {
+						return $raw_kyc_fallback_url;
 					},
 				),
 			)
@@ -1043,7 +2632,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 		$expected_pms_state      = array(
-			'card'         => true, // Force enabled because it is required.
+			// Force enabled because it is required.
+			'card'         => true,
 			'apple_google' => true,
 		);
 
@@ -1848,7 +3438,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses ignored - WPCOM connection: store connected, connected owner' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // A working connection will overwrite the stored status.
+					// A working connection will overwrite the stored status.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
@@ -1879,7 +3470,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses respected - WPCOM connection missing' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED, // The stored status is respected.
+					// The stored status is respected.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
@@ -1899,7 +3491,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses ignored - WPCOM connection broken' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED, // The stored status is ignored.
+					// The stored status is ignored.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
@@ -1930,9 +3523,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses ignored - Test account completed with requirements met' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
-					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The stored status is ignored.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The stored status is ignored.
+					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
 				array(
@@ -1968,7 +3564,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses ignored - Test account not completed due to unmet requirements' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 					// The completed stored status is ignored due to unmet requirements.
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
@@ -2009,8 +3606,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses respected - Test account started with no account' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
-					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED, // The stored status is respected.
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The stored status is respected.
+					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
 				array(
@@ -2047,8 +3646,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses respected - Test account step with live, invalid account' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
-					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The stored status is respected.
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The stored status is respected.
+					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
 				array(
@@ -2085,9 +3686,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses respected - Test account with live, valid account' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
-					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The stored status is respected.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The stored status is respected.
+					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				),
 				array(
@@ -2124,8 +3728,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses ignored - Business verification completed with requirements met' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				),
@@ -2168,8 +3774,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses ignored - Business verification not completed due to unmet requirements' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED, // The connection is required to be completed.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 					// The completed stored status is ignored due to unmet requirements.
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
 					// The completed stored status is ignored due to unmet requirements.
@@ -2216,9 +3824,11 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses respected - Business verification started with no account' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
-					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED, // The stored status is respected.
+					// The stored status is respected.
+					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
 				),
 				array(
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT   => array(
@@ -2259,10 +3869,13 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses ignored - Business verification with live, valid account' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
-					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The stored status is ignored.
+					// The stored status is ignored.
+					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				),
 				array(
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT   => array(
@@ -2308,7 +3921,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT          => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
-				array(), // no stored profile steps.
+				// no stored profile steps.
+				array(),
 				$default_recommended_pms,
 				$expected_pms_state,
 				array_merge(
@@ -2749,7 +4363,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION,
 				WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				array(
-					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time, // This will be ignored.
+					// This will be ignored.
+					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time,
 				),
 				array(
 					'is_store_connected'  => false,
@@ -3330,7 +4945,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'test_account - stored completed with no account, met requirements' => array(
 				WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT,
-				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // We trust the stored status since we can be in progress with switch to live.
+				// We trust the stored status since we can be in progress with switch to live.
+				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				array(
 					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time,
 				),
@@ -3346,7 +4962,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'test_account - stored failed and completed with no account, met requirements' => array(
 				WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT,
-				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // We trust the stored status since we can be in progress with switch to live.
+				// We trust the stored status since we can be in progress with switch to live.
+				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				array(
 					WooPaymentsService::ONBOARDING_STEP_STATUS_FAILED => $current_time - 10,
 					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time,
@@ -3363,7 +4980,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'test_account - stored blocked and completed with no account, met requirements' => array(
 				WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT,
-				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // We trust the stored status since we can be in progress with switch to live.
+				// We trust the stored status since we can be in progress with switch to live.
+				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				array(
 					WooPaymentsService::ONBOARDING_STEP_STATUS_BLOCKED => $current_time - 10,
 					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time,
@@ -3717,7 +5335,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'test_account - stored started and completed with no account, met requirements' => array(
 				WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT,
-				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // We trust the completed stored status since we can be in progress with switch to live.
+				// We trust the completed stored status since we can be in progress with switch to live.
+				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				array(
 					WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED => $current_time - 10,
 					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time,
@@ -3734,7 +5353,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'test_account - stored started, failed, and completed with no account, met requirements' => array(
 				WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT,
-				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // We trust the completed stored status since we can be in progress with switch to live.
+				// We trust the completed stored status since we can be in progress with switch to live.
+				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				array(
 					WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED => $current_time - 10,
 					WooPaymentsService::ONBOARDING_STEP_STATUS_FAILED => $current_time - 5,
@@ -5509,19 +7129,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_mark_onboarding_step_started_throws_when_extension_not_active() {
 		$location = 'US';
 
-		// Arrange.
-		// Mock the extension as not active.
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( '\WC_Payments' === $class_to_check ) {
-						return false;
-					}
-
-					return true;
-				},
-			)
-		);
+		$this->mock_woopayments_runtime_unavailable();
 
 		try {
 			$this->sut->mark_onboarding_step_started( WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT, $location );
@@ -5782,19 +7390,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_mark_onboarding_step_completed_throws_when_extension_not_active() {
 		$location = 'US';
 
-		// Arrange.
-		// Mock the extension as not active.
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( '\WC_Payments' === $class_to_check ) {
-						return false;
-					}
-
-					return true;
-				},
-			)
-		);
+		$this->mock_woopayments_runtime_unavailable();
 
 		try {
 			$this->sut->mark_onboarding_step_completed( WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT, $location );
@@ -6120,19 +7716,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_clean_onboarding_step_progress_throws_when_extension_not_active() {
 		$location = 'US';
 
-		// Arrange.
-		// Mock the extension as not active.
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( '\WC_Payments' === $class_to_check ) {
-						return false;
-					}
-
-					return true;
-				},
-			)
-		);
+		$this->mock_woopayments_runtime_unavailable();
 
 		try {
 			$this->sut->clean_onboarding_step_progress( WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT, $location );
@@ -6413,19 +7997,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_onboarding_step_save_throws_when_extension_not_active() {
 		$location = 'US';
 
-		// Arrange.
-		// Mock the extension as not active.
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( '\WC_Payments' === $class_to_check ) {
-						return false;
-					}
-
-					return true;
-				},
-			)
-		);
+		$this->mock_woopayments_runtime_unavailable();
 
 		try {
 			$this->sut->onboarding_step_save( WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS, $location, array() );
@@ -6752,19 +8324,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_onboarding_step_check_throws_when_extension_not_active() {
 		$location = 'US';
 
-		// Arrange.
-		// Mock the extension as not active.
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( '\WC_Payments' === $class_to_check ) {
-						return false;
-					}
-
-					return true;
-				},
-			)
-		);
+		$this->mock_woopayments_runtime_unavailable();
 
 		try {
 			$this->sut->onboarding_step_check( WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT, $location );
@@ -6953,7 +8513,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->mock_account_service
 			->expects( $this->any() )
 			->method( 'is_stripe_account_valid' )
-			->willReturn( false ); // Make it invalid, for good measure.
+			// Make it invalid, for good measure.
+			->willReturn( false );
 		$this->mock_account_service
 			->expects( $this->any() )
 			->method( 'get_account_status_data' )
@@ -7024,7 +8585,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->mock_account_service
 			->expects( $this->any() )
 			->method( 'is_stripe_account_valid' )
-			->willReturn( false ); // Make it invalid, for good measure.
+			// Make it invalid, for good measure.
+			->willReturn( false );
 		$this->mock_account_service
 			->expects( $this->any() )
 			->method( 'get_account_status_data' )
@@ -7076,19 +8638,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_onboarding_test_account_init_throws_when_extension_not_active() {
 		$location = 'US';
 
-		// Arrange.
-		// Mock the extension as not active.
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( '\WC_Payments' === $class_to_check ) {
-						return false;
-					}
-
-					return true;
-				},
-			)
-		);
+		$this->mock_woopayments_runtime_unavailable();
 
 		try {
 			$this->sut->onboarding_test_account_init( $location );
@@ -7635,7 +9185,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			array(
 				Utils::class => array(
 					'rest_endpoint_post_request' => function ( string $endpoint, array $params = array() ) use ( $error_data_with_extra_keys ) {
-						unset( $params ); // Avoid parameter not used PHPCS errors.
+						// Avoid parameter not used PHPCS errors.
+						unset( $params );
 						if ( '/wc/v3/payments/onboarding/test_drive_account/init' === $endpoint ) {
 							return new WP_Error( 'test_error', 'Test error message', $error_data_with_extra_keys );
 						}
@@ -7741,13 +9292,15 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				'existing_key'    => 'existing value',
 				'conflicting_key' => 'context value',
 			),
-			'conflicting_key' => 'extra key value', // This should be overwritten by context value.
+			// This should be overwritten by context value.
+			'conflicting_key' => 'extra key value',
 		);
 		$this->mockable_proxy->register_static_mocks(
 			array(
 				Utils::class => array(
 					'rest_endpoint_post_request' => function ( string $endpoint, array $params = array() ) use ( $error_data ) {
-						unset( $params ); // Avoid parameter not used PHPCS errors.
+						// Avoid parameter not used PHPCS errors.
+						unset( $params );
 						if ( '/wc/v3/payments/onboarding/test_drive_account/init' === $endpoint ) {
 							return new WP_Error( 'test_error', 'Test error message', $error_data );
 						}
@@ -7845,17 +9398,20 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		// The error_data has a nested 'context' key that should be flattened.
 		$error_data = array(
 			'top_level_key'   => 'top value',
-			'conflicting_key' => 'top level value', // Should be overwritten by nested context value.
+			// Should be overwritten by nested context value.
+			'conflicting_key' => 'top level value',
 			'context'         => array(
 				'nested_key'      => 'nested value',
-				'conflicting_key' => 'nested context value', // Takes precedence.
+				// Takes precedence.
+				'conflicting_key' => 'nested context value',
 			),
 		);
 		$this->mockable_proxy->register_static_mocks(
 			array(
 				Utils::class => array(
 					'rest_endpoint_post_request' => function ( string $endpoint, array $params = array() ) use ( $error_data ) {
-						unset( $params ); // Avoid parameter not used PHPCS errors.
+						// Avoid parameter not used PHPCS errors.
+						unset( $params );
 						if ( '/wc/v3/payments/onboarding/test_drive_account/init' === $endpoint ) {
 							return new WP_Error( 'test_error', 'Test error message', $error_data );
 						}
@@ -9820,19 +11376,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_get_onboarding_kyc_session_throws_when_extension_not_active() {
 		$location = 'US';
 
-		// Arrange.
-		// Mock the extension as not active.
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( '\WC_Payments' === $class_to_check ) {
-						return false;
-					}
-
-					return true;
-				},
-			)
-		);
+		$this->mock_woopayments_runtime_unavailable();
 
 		try {
 			$this->sut->get_onboarding_kyc_session( $location );
@@ -10200,19 +11744,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_finish_onboarding_kyc_session_throws_when_extension_not_active() {
 		$location = 'US';
 
-		// Arrange.
-		// Mock the extension as not active.
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( '\WC_Payments' === $class_to_check ) {
-						return false;
-					}
-
-					return true;
-				},
-			)
-		);
+		$this->mock_woopayments_runtime_unavailable();
 
 		try {
 			$this->sut->finish_onboarding_kyc_session( $location );
@@ -10652,18 +12184,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_reset_onboarding_throws_when_extension_not_active() {
 		// Arrange.
 		$location = 'US';
-		// Mock the extension as not active.
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( '\WC_Payments' === $class_to_check ) {
-						return false;
-					}
-
-					return true;
-				},
-			)
-		);
+		$this->mock_woopayments_runtime_unavailable();
 
 		try {
 			$this->sut->reset_onboarding( $location );
@@ -10922,8 +12443,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		self::assertEquals( $expected_response, $result );
 		self::assertCount( 1, $requests_made );
 		self::assertEquals( $expected_payload, $requests_made[0] );
-		self::assertEquals( 1, $onboarding_lock_cleared ); // The onboarding lock should be cleared.
-		self::assertEquals( 1, $deleted_profiles ); // The NOX profile option should be deleted.
+		// The onboarding lock should be cleared.
+		self::assertEquals( 1, $onboarding_lock_cleared );
+		// The NOX profile option should be deleted.
+		self::assertEquals( 1, $deleted_profiles );
 	}
 
 	/**
@@ -10995,9 +12518,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		// Assert.
 		self::assertEquals( $expected_response, $result );
-		self::assertCount( 0, $requests_made ); // No request should be made when there is no connected account.
-		self::assertEquals( 1, $onboarding_lock_cleared ); // The onboarding lock should be cleared.
-		self::assertEquals( 1, $deleted_profiles ); // The NOX profile option should be deleted.
+		// No request should be made when there is no connected account.
+		self::assertCount( 0, $requests_made );
+		// The onboarding lock should be cleared.
+		self::assertEquals( 1, $onboarding_lock_cleared );
+		// The NOX profile option should be deleted.
+		self::assertEquals( 1, $deleted_profiles );
 	}
 
 	/**
@@ -11275,6 +12801,296 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Get a fresh account payload for native finalize projection tests.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_native_finalize_projection_account(): array {
+		return array(
+			'account_id'        => 'acct_finalized_native',
+			'is_live'           => true,
+			'payments_enabled'  => true,
+			'details_submitted' => true,
+			'capabilities'      => array(
+				'card_payments'  => 'active',
+				'ideal_payments' => 'active',
+			),
+			'fees'              => array(
+				'card'  => array(),
+				'ideal' => array(),
+			),
+		);
+	}
+
+	/**
+	 * Refuse the native projection marker write and optionally expose a logger.
+	 *
+	 * @param \WC_Logger_Interface|null $logger Optional logger returned by wc_get_logger().
+	 */
+	private function mock_native_projection_marker_write_failure( ?\WC_Logger_Interface $logger = null ): void {
+		$function_mocks = array(
+			'update_option' => static function ( $option_name, $value, $autoload = null ) {
+				if ( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION === $option_name ) {
+					return false;
+				}
+
+				return update_option( $option_name, $value, $autoload );
+			},
+		);
+		if ( null !== $logger ) {
+			$function_mocks['wc_get_logger'] = static function () use ( $logger ) {
+				return $logger;
+			};
+		}
+
+		$this->mockable_proxy->register_function_mocks( $function_mocks );
+	}
+
+	/**
+	 * Get native payment-method projection callbacks registered on account refresh.
+	 *
+	 * @return array<int,array{callback:array,priority:int}>
+	 */
+	private function get_refresh_projection_callbacks(): array {
+		global $wp_filter;
+
+		$projection_callbacks = array();
+		$hook                 = $wp_filter['woocommerce_payments_account_refreshed'] ?? null;
+		if ( ! $hook instanceof \WP_Hook ) {
+			return $projection_callbacks;
+		}
+
+		foreach ( $hook->callbacks as $priority => $callbacks ) {
+			foreach ( $callbacks as $registered_callback ) {
+				$callback = $registered_callback['function'];
+				if ( is_array( $callback ) && isset( $callback[0], $callback[1] ) && $callback[0] instanceof WooPaymentsService && 'maybe_project_pending_onboarding_payment_methods' === $callback[1] ) {
+					$projection_callbacks[] = array(
+						'callback' => $callback,
+						'priority' => $priority,
+					);
+				}
+			}
+		}
+
+		return $projection_callbacks;
+	}
+
+	/**
+	 * Arrange the public native finalize path with configurable account refresh results.
+	 *
+	 * @param array<int,array<string,mixed>|\Throwable> $account_responses Account refresh results in request order.
+	 * @param array<string,mixed>                       $selected_methods  Persisted NOX payment-method selections.
+	 * @param WooPaymentsSettingsService|null           $settings_service  Optional settings service override.
+	 * @return array{api_client:WooPaymentsApiClient,account_service:WooPaymentsAccountService,settings_service:WooPaymentsSettingsService}
+	 */
+	private function arrange_native_finalize_projection(
+		array $account_responses,
+		array $selected_methods,
+		?WooPaymentsSettingsService $settings_service = null
+	): array {
+		$api_client      = new class( $account_responses ) extends WooPaymentsApiClient {
+			/**
+			 * Account refresh results in request order.
+			 *
+			 * @var array<int,array<string,mixed>|\Throwable>
+			 */
+			private array $account_responses;
+
+			/**
+			 * Number of account refresh requests.
+			 *
+			 * @var int
+			 */
+			public int $account_requests = 0;
+
+			/**
+			 * Whether the pending projection marker existed before an account request.
+			 *
+			 * @var bool
+			 */
+			public bool $pending_marker_seen = false;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<int,array<string,mixed>|\Throwable> $account_responses Account refresh results.
+			 */
+			public function __construct( array $account_responses ) {
+				$this->account_responses = $account_responses;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return the exact provider finalize response shape.
+			 *
+			 * @param string   $locale         User locale.
+			 * @param string   $source         Onboarding source.
+			 * @param string[] $actioned_notes Actioned notes.
+			 * @return array<string,mixed>
+			 */
+			public function finalize_onboarding_embedded_kyc( string $locale, string $source, array $actioned_notes = array() ): array {
+				unset( $locale, $source, $actioned_notes );
+
+				return array(
+					'success'           => true,
+					'details_submitted' => true,
+					'account_id'        => 'acct_finalized_native',
+					'mode'              => 'live',
+				);
+			}
+
+			/**
+			 * Return or throw the next configured account refresh result.
+			 *
+			 * @param string $woocommerce_store_id WooCommerce store ID.
+			 * @return array<string,mixed>
+			 * @throws \Throwable Configured refresh failure.
+			 */
+			public function get_account( string $woocommerce_store_id = '' ): array {
+				unset( $woocommerce_store_id );
+				++$this->account_requests;
+				$this->pending_marker_seen = false !== get_option( 'woocommerce_woopayments_pending_payment_method_projection', false );
+				$response                  = array_shift( $this->account_responses );
+
+				if ( $response instanceof \Throwable ) {
+					throw $response;
+				}
+
+				if ( ! is_array( $response ) ) {
+					throw new \LogicException( 'No account refresh response was configured.' );
+				}
+
+				return $response;
+			}
+
+			/**
+			 * Avoid an unrelated fraud ruleset API request while reading settings.
+			 *
+			 * @return array<string,mixed>
+			 */
+			public function get_latest_fraud_ruleset(): array {
+				return array();
+			}
+		};
+		$account_service = new class( $api_client ) extends WooPaymentsAccountService {
+			/**
+			 * Native API client.
+			 *
+			 * @var WooPaymentsApiClient
+			 */
+			private WooPaymentsApiClient $api_client;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param WooPaymentsApiClient $api_client Native API client.
+			 */
+			public function __construct( WooPaymentsApiClient $api_client ) {
+				$this->api_client = $api_client;
+			}
+
+			/**
+			 * Get the native API client used by account refreshes.
+			 *
+			 * @return WooPaymentsApiClient
+			 */
+			protected function get_api_client(): ?WooPaymentsApiClient {
+				return $this->api_client;
+			}
+		};
+		$account_service->init( $this->mockable_proxy );
+
+		if ( null === $settings_service ) {
+			$pm_promotions = $this->getMockBuilder( WooPaymentsPmPromotionsService::class )
+				->disableOriginalConstructor()
+				->onlyMethods( array( 'maybe_activate_promotion_for_payment_method' ) )
+				->getMock();
+			$pm_promotions->method( 'maybe_activate_promotion_for_payment_method' )->willReturn( false );
+			$settings_service = new WooPaymentsSettingsService();
+			$settings_service->init(
+				$account_service,
+				$api_client,
+				$pm_promotions,
+				null,
+				new WooPaymentsGatewaySettingsSynchronizer( new WooPaymentsPaymentMethodRegistry() )
+			);
+		}
+
+		$adapter = $this->create_native_finalize_adapter();
+
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					return ! $this->is_woopayments_class( $class_to_check );
+				},
+			)
+		);
+
+		update_option( WooPaymentsSettingsService::SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => array(
+					'account_id'           => 'acct_finalized_native',
+					'live_publishable_key' => 'pk_live_finalized_native',
+					'is_live'              => true,
+				),
+				'fetched'            => $this->current_time,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			'no'
+		);
+		update_option(
+			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+			array(
+				'onboarding' => array(
+					'US' => array(
+						'steps' => array(
+							WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array(
+								'data' => array( 'payment_methods' => $selected_methods ),
+							),
+							WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => array(
+								'statuses' => array(
+									WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED => $this->current_time - 100,
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+
+		remove_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_project_pending_onboarding_payment_methods' ) );
+		$this->sut = new WooPaymentsService();
+		$this->sut->init(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$adapter,
+			$this->create_legacy_runtime(),
+			$api_client,
+			$account_service,
+			$settings_service
+		);
+
+		return array(
+			'api_client'       => $api_client,
+			'account_service'  => $account_service,
+			'settings_service' => $settings_service,
+		);
+	}
+
+	/**
 	 * Mock a working WPCOM connection.
 	 *
 	 * Required for onboarding step completion that depends on the WPCOM connection step.
@@ -11378,6 +13194,57 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 			$steps[ $step_id ]['statuses'] ?? array(),
 			sprintf( 'The "%s" onboarding step should be marked completed on a successful disable.', $step_id )
+		);
+	}
+
+	/**
+	 * @testdox Should not autoload the onboarding test-mode option when persisting it.
+	 */
+	public function test_set_native_onboarding_test_mode_does_not_autoload_option(): void {
+		delete_option( 'wcpay_onboarding_test_mode' );
+
+		$this->invoke_private_method( 'set_native_onboarding_test_mode', array( true ) );
+
+		$this->assertSame( 'yes', get_option( 'wcpay_onboarding_test_mode' ) );
+		$this->assertOptionNotAutoloaded( 'wcpay_onboarding_test_mode' );
+	}
+
+	/**
+	 * @testdox Should not autoload the Stripe-connected onboarding marker when persisting it.
+	 */
+	public function test_update_native_gateway_settings_after_test_account_init_does_not_autoload_stripe_connected_marker(): void {
+		delete_option( '_wcpay_onboarding_stripe_connected' );
+
+		$this->invoke_private_method(
+			'update_native_gateway_settings_after_test_account_init',
+			array( array( 'card_payments' => true ), array( 'is_live' => false ) )
+		);
+
+		$this->assertIsArray( get_option( '_wcpay_onboarding_stripe_connected' ) );
+		$this->assertOptionNotAutoloaded( '_wcpay_onboarding_stripe_connected' );
+	}
+
+	/**
+	 * Assert that a WordPress option is not flagged for autoload.
+	 *
+	 * Reads the raw autoload column to stay robust across WordPress versions:
+	 * pre-6.6 stores 'no' while 6.6+ stores 'off'/'auto-off' for non-autoloaded options.
+	 *
+	 * @param string $option_name The option name to inspect.
+	 * @return void
+	 */
+	private function assertOptionNotAutoloaded( string $option_name ): void {
+		global $wpdb;
+
+		$autoload = $wpdb->get_var(
+			$wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", $option_name )
+		);
+
+		$this->assertNotNull( $autoload, sprintf( 'Option %s was not persisted.', $option_name ) );
+		$this->assertNotContains(
+			$autoload,
+			array( 'yes', 'on', 'auto', 'auto-on' ),
+			sprintf( 'Option %s should not be autoloaded, got autoload value "%s".', $option_name, $autoload )
 		);
 	}
 

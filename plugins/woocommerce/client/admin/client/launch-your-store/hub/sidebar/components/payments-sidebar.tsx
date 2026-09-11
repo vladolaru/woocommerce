@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-/* eslint-disable import/order */
+
 /**
  * External dependencies
  */
@@ -15,7 +15,6 @@ import {
 	// @ts-ignore No types for this exist yet.
 	__unstableMotion as motion,
 } from '@wordpress/components';
-import { useOnboardingContext } from '~/settings-payments/onboarding/providers/woopayments/data/onboarding-context';
 import { recordEvent } from '@woocommerce/tracks';
 import type { TaskType } from '@woocommerce/data';
 
@@ -27,6 +26,7 @@ import { SidebarContainer } from './sidebar-container';
 import { SiteHub } from '~/customize-store/site-hub';
 import { taskIcons, taskCompleteIcon } from './icons';
 import { StepPlaceholder } from './step-placeholder';
+import { useOnboardingContext } from '~/woopayments/onboarding';
 import { useSetUpPaymentsContext } from '~/launch-your-store/data/setup-payments-context';
 import { WooPaymentsProviderOnboardingStep } from '~/settings-payments/onboarding/types';
 import { recordPaymentsOnboardingEvent } from '~/settings-payments/utils';
@@ -140,29 +140,40 @@ export const PaymentsSidebar = ( props: SidebarComponentProps ) => {
 		isStepComplete,
 	}: {
 		isStepComplete: boolean;
-	} ) => (
-		<SidebarNavigationItem
-			key="install-woopayments"
-			className={ clsx( 'install-woopayments', {
-				active: isStepComplete,
-				'payment-step': true,
-				'payment-step--active': isStepComplete,
-				'payment-step--disabled': isStepComplete,
-				'is-complete': isStepComplete,
-			} ) }
-			icon={
-				isStepComplete ? taskCompleteIcon : taskIcons.activePaymentStep
-			}
-			disabled={ true }
-			showChevron={ false }
-		>
-			{ payments_task?.additionalData?.wooPaymentsIsInstalled
-				? /* translators: %s: WooPayments */
-				  sprintf( __( 'Enable %s', 'woocommerce' ), 'WooPayments' )
-				: /* translators: %s: WooPayments */
-				  sprintf( __( 'Install %s', 'woocommerce' ), 'WooPayments' ) }
-		</SidebarNavigationItem>
-	);
+	} ) => {
+		/* translators: %s: WooPayments */
+		let label = sprintf( __( 'Install %s', 'woocommerce' ), 'WooPayments' );
+
+		if ( isWooPaymentsActive ) {
+			/* translators: %s: WooPayments */
+			label = sprintf( __( 'Set up %s', 'woocommerce' ), 'WooPayments' );
+		} else if ( payments_task?.additionalData?.wooPaymentsIsInstalled ) {
+			/* translators: %s: WooPayments */
+			label = sprintf( __( 'Enable %s', 'woocommerce' ), 'WooPayments' );
+		}
+
+		return (
+			<SidebarNavigationItem
+				key="install-woopayments"
+				className={ clsx( 'install-woopayments', {
+					active: isStepComplete,
+					'payment-step': true,
+					'payment-step--active': isStepComplete,
+					'payment-step--disabled': isStepComplete,
+					'is-complete': isStepComplete,
+				} ) }
+				icon={
+					isStepComplete
+						? taskCompleteIcon
+						: taskIcons.activePaymentStep
+				}
+				disabled={ true }
+				showChevron={ false }
+			>
+				{ label }
+			</SidebarNavigationItem>
+		);
+	};
 
 	return (
 		<div

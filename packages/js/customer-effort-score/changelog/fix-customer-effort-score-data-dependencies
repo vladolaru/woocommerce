@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Declare the WordPress data dependencies used by the customer effort score package.

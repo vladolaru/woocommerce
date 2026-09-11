@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Pass native WooPayments dispute summary filters to the platform instead of dropping them.

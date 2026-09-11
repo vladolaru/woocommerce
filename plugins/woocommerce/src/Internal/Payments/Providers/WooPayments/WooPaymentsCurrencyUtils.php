@@ -1,0 +1,121 @@
+<?php
+/**
+ * WooPaymentsCurrencyUtils class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+/**
+ * WooPayments currency helpers for provider-boundary amount handling.
+ *
+ * @since 11.0.0
+ * @internal Transitional internal component for the native payments runtime.
+ */
+final class WooPaymentsCurrencyUtils {
+
+	/**
+	 * Stripe zero-decimal currencies.
+	 *
+	 * @var string[]
+	 */
+	private const ZERO_DECIMAL_CURRENCIES = array(
+		'bif',
+		'clp',
+		'djf',
+		'gnf',
+		'jpy',
+		'kmf',
+		'krw',
+		'mga',
+		'pyg',
+		'rwf',
+		'vnd',
+		'vuv',
+		'xaf',
+		'xof',
+		'xpf',
+	);
+
+	/**
+	 * Tell whether the currency uses zero decimal places at the provider boundary.
+	 *
+	 * @param string $currency Currency code.
+	 * @return bool
+	 */
+	public static function is_zero_decimal_currency( string $currency ): bool {
+		return in_array( strtolower( $currency ), self::ZERO_DECIMAL_CURRENCIES, true );
+	}
+
+	/**
+	 * Get the Stripe minor-unit decimal count for a currency.
+	 *
+	 * Returns 0 for true zero-decimal currencies and 2 for everything else,
+	 * including Stripe special-case currencies that WooCommerce can display
+	 * without decimals while Stripe still expects two-decimal minor units.
+	 *
+	 * @param string $currency Currency code.
+	 * @return int
+	 */
+	public static function get_stripe_minor_unit_for_currency( string $currency ): int {
+		return self::is_zero_decimal_currency( $currency ) ? 0 : 2;
+	}
+
+	/**
+	 * Convert a provider minor-unit amount to a decimal amount.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param int    $amount   Minor-unit amount.
+	 * @param string $currency Currency code.
+	 * @return float
+	 */
+	public static function amount_from_minor_units( int $amount, string $currency ): float {
+		return self::is_zero_decimal_currency( $currency ) ? (float) $amount : (float) $amount / 100;
+	}
+
+	/**
+	 * Convert a decimal amount to provider minor units.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param float  $amount   Decimal amount.
+	 * @param string $currency Currency code.
+	 * @return int
+	 */
+	public static function amount_to_minor_units( float $amount, string $currency ): int {
+		$minor_unit = self::get_stripe_minor_unit_for_currency( $currency );
+
+		return (int) round( $amount * ( 10 ** $minor_unit ) );
+	}
+
+	/**
+	 * Cache the platform-reported per-currency minimum charge amount.
+	 *
+	 * Uses the same transient the WooPayments plugin writes, so the learned
+	 * floor survives switching between the plugin and the native runtime.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param string $currency Currency code.
+	 * @param int    $amount   Minimum amount in provider minor units.
+	 */
+	public static function cache_minimum_amount( string $currency, int $amount ): void {
+		set_transient( 'wcpay_minimum_amount_' . strtolower( $currency ), $amount, DAY_IN_SECONDS );
+	}
+
+	/**
+	 * Get the cached platform-reported minimum charge amount for a currency.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param string $currency Currency code.
+	 * @return int|null Minimum amount in provider minor units, or null when unknown.
+	 */
+	public static function get_cached_minimum_amount( string $currency ): ?int {
+		$cached = (int) get_transient( 'wcpay_minimum_amount_' . strtolower( $currency ) );
+
+		return 0 < $cached ? $cached : null;
+	}
+}

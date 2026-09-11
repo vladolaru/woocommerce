@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "dispute-draft-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "8ebcfa5844f80603de955aad5326d8948ccefdf9",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:497::Disputes › Respond to a dispute › Save a dispute challenge without submitting evidence"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/dispute-lifecycle.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact line-497 blocked-environment deferral and four-field-only transition, strict separation from accept, submitted win, and submitted loss, fresh run-owned payment and dispute lifecycle, unique description and offline_service, exactly one acknowledged submit=false with exact payload and identities, provider-backed exact restoration after leave and re-entry, continued actionable state with no submission timestamp, count, or final decision and actions intact, acknowledged-but-missing draft as fail-and-quarantine without resubmission, pending target and owner, readiness and later fixture, oracle, listener, lock, journal, bounded-read, retention, cleanup, and quarantine gates, lower-layer non-substitution, shared-target drift, predecessor and calibration binding, and zero current quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership, account, and callback readiness fails first. The run also lacks a resolved exact target contract, implementation owner, and row-safe closure-bundle topology; an approved deterministic checkout/dispute/draft fixture and exact provider-backed write/read oracle; one exclusively owned listener interval; account, store, provider-write, and record-event ownership; separate durable checkout and single-draft-save journals; bounded readback; and approved cleanup and retained-record handling.",
+		"affected_scope": "Only line 497 draft persistence: one fresh run-owned product, shopper, order, credential, provider customer, payment intent, charge, payment method, dispute, and native transaction chain has exactly one captured payment and one fraudulent dispute with exact amount, currency, reason, and correlated event; for the exact actionable dispute the merchant enters a unique run-correlated description and offline_service, sends exactly one acknowledged update with submit=false whose exact values, IDs, and metadata are proven, leaves and re-enters that same dispute, and a provider-backed read restores the exact values while the dispute remains actionable with no evidence-submitted timestamp, submission-count increment, or final decision and appropriate response actions intact. It is not acceptance or a submitted win/loss.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, approve or supply the deterministic dispute and draft fixture/oracle, resolve row-safe target and bundle ownership, obtain exclusive listener attribution, or establish exact locks, separate journals, bounded readback, retained-record handling, and cleanup. Mocked update forwarding, cache behavior, and field rendering cannot substitute for one real exact submit=false write and durable provider-backed restoration after navigation with no submission side effects. The frozen up-to-three writes hide lost or non-idempotent writes and are forbidden: a successful acknowledgement followed by a missing or mismatched draft is uncertain and must fail and quarantine without resubmission. Any apparent native draft gap is not known before prerequisites and exact-target RED.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful exact-store/account/callback native readiness; resolve a row-safe target and owner; approve deterministic checkout/dispute/draft fixtures, exact write/read oracle, and retained-record policy; obtain one exclusively owned listener; then run once with one worker and zero retries under account, store, provider-write, and record-event locks, separate checkout and draft-save journals, a unique description and offline_service, exactly one exact submit=false request, provider-backed restoration after navigation, proof of no submission timestamp/count/final decision and continued actions, bounded reads, cleanup, and fail-closed quarantine. Never resubmit after acknowledged-but-missing durability. Use row-specific targets or plan explicit reopen/re-closure before shared-file edits.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, performed no browser or provider run, consumed no provider capacity, and created no quarantine. The separately owned listener remains untouched and cannot support exclusive attribution. Any uncertain eventual checkout, event, dispute, save acknowledgement, provider readback, cleanup, lock, or listener state must quarantine affected resources and must not cause a replacement save."
+	}
+}

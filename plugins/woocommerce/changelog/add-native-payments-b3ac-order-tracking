@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Preserve native WooPayments order-tracking queue hooks.

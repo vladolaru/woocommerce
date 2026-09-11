@@ -1,0 +1,41 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-3ds-card-purchase-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "e352e7655e15d864dead40847370ec0b12651cc5",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:78::Successful purchase › Carding protection false › using a 3DS card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:78::Successful purchase › Carding protection true › using a 3DS card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review basic evidence SHA 194bd417e71eee3f5fc08d585a1321021ee72e516b26786b2ee7bafb6f6e8568 and 3DS evidence SHA 171723759a4baf237927034c2edad17c65b68de4b8179b15590f61ade956b4dd against mutated ledger SHA 2286900cc3e6600a0adbdd12b41a6a3c0acb258efd90e33145146fc17a9659a3 and committed baseline cd881f9401aa33ce707308e408ade24ca2c7bd74d3fc0a555b97308d0b91387a at e352e7655e15d864dead40847370ec0b12651cc5, with no findings. Exactly the intended three rows change only fields 37-40 while the specified false-basic pilot remains byte-identical. The two 3DS subcontracts retain independent false/true protection graphs, mandatory 3184 challenge and semantic Complete action, same-intent terminal authentication, one 1099 USD capture each, accessibility, one writer, exclusive listener, zero retries/replay, exact restoration, retention, quarantine and drift controls. Readiness remains first and no defect, gap, implementation, verification or closure is claimed."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before this two-row 3DS campaign may allocate the exact site/blog/account, provider writer, or exclusively owned callback listener. The shared target is absent with pending contract and owner; no approved false/true protection controller, deterministic mandatory-challenge capability, semantic 3DS driver, intermediate action-state reader, or terminal provider authentication-detail schema exists. The frozen helper permits an absent challenge and retries irreversible submission, while Core's action and token paths align statically; no current native defect or source drift is established.",
+		"affected_scope": "Two independent USD 10.99 graphs using the deterministic Visa 3184 action-required fixture: one fresh shopper/session/cart/product/order under authoritative protection false and one under authoritative protection true. False proves cached false, empty checkout configuration and submitted token, and no stale browser token. True proves one 16-character token by equal redacted configuration/browser/request digests. Each sole checkout dispatch produces one unchanged order/payment method/intent in the approved customer-action-required state; a named accessible challenge must appear, receive keyboard focus, expose one semantic Complete action, and return understandable focus/context. Exactly one activation then joins the same graph to successful 3DS authentication, one 1099 USD captured charge, one intent lineage, one capture, merchant success, and an accessible exact receipt. Missing, frictionless or skipped challenge is failure, and neither graph can satisfy the other.",
+		"no_allowlisted_action_reason": "No allowlisted local action can establish readiness, assign the target/owner, allocate the writer/listener, safely control both protection states, approve the 3184 provider capability, or add intermediate requires-action and terminal 3DS-detail evidence. A token global, optional private-frame helper, URL, local receipt, lower-layer action test, previous basic-card pilot, or saved-token closure cannot replace the exact challenge and order/intent/method/charge/cardinality joins. Run serialized with one worker, zero retries, one submission and one Complete activation per graph, shrinking-deadline reads only, no replay, and halt all later work after any ambiguity.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness; approve the target/owner and deterministic 3184 capability plus provider authentication schema; allocate one protected writer and one exclusively owned listener; and supply byte-restorable false/true protection control, one-shot Classic payment/challenge drivers, and intermediate/terminal provider readers. Journal allocation, raw feature state, each independent session and sole dispatch before writing; run false then true with zero retries/replay; retain redacted financial, authentication and event evidence; restore reversible account/gateway/protection/session/cart state exactly; quarantine uncertainty; and obtain fresh code, E2E-test, reliability, concurrency, accessibility, security and provider-evidence reviews without changing the closed saved-token bundle.",
+		"quarantine_status": "This readiness deferral opened no browser, allocated no account/store/writer/listener, acquired no lock, created no journal, changed no feature state, created no local or provider record, and created no quarantine; the separately owned listener remains untouched. A future readiness, protection, dispatch, action-state, challenge, focus, authentication, identity, amount, currency, status, cardinality, listener, lock, restoration, retention, publication or source/target drift mismatch must halt the second graph or campaign, preserve journals and immutable financial history, and quarantine the exact account/store/feature/session/product/order/provider/event graph without replay, manual completion, provider deletion, broad reset, listener takeover, or edits to closed target bundles."
+	}
+}

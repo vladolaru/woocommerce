@@ -1,0 +1,802 @@
+.woopayments-account-settings {
+	max-width: 960px;
+	margin: 48px 12px 0;
+	color: $gray-900;
+
+	&__header {
+		margin-bottom: 24px;
+
+		h1 {
+			margin: 0;
+			font-size: 24px;
+			line-height: 32px;
+			font-weight: 600;
+		}
+	}
+
+	&__loading {
+		margin: 0;
+		color: $gray-700;
+	}
+
+	&__section {
+		max-width: 720px;
+		padding: 24px;
+		border: 1px solid $gray-200;
+		background: $white;
+
+		h2 {
+			margin: 0;
+			font-size: 16px;
+			line-height: 24px;
+			font-weight: 600;
+		}
+
+		p {
+			margin: 12px 0 0;
+			color: $gray-700;
+			font-size: 13px;
+			line-height: 20px;
+		}
+	}
+
+	&__section--error {
+		border-color: $alert-red;
+	}
+
+	&__actions {
+		margin-top: 16px;
+	}
+
+	&__section-header {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-bottom: 24px;
+	}
+
+	&__badge {
+		display: inline-flex;
+		align-items: center;
+		min-height: 24px;
+		padding: 0 8px;
+		border: 1px solid $gray-300;
+		border-radius: 2px;
+		background: $gray-100;
+		color: $gray-900;
+		font-size: 12px;
+		line-height: 18px;
+		font-weight: 500;
+	}
+
+	&__details {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 20px 24px;
+		margin: 0;
+
+		@include breakpoint("<782px") {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	&__detail {
+		min-width: 0;
+
+		dt {
+			margin: 0 0 4px;
+			color: $gray-700;
+			font-size: 12px;
+			line-height: 16px;
+			font-weight: 500;
+		}
+
+		dd {
+			margin: 0;
+			color: $gray-900;
+			font-size: 14px;
+			line-height: 20px;
+			overflow-wrap: anywhere;
+		}
+	}
+}
+
+.woopayments-settings-page {
+	max-width: 1120px;
+	margin: 32px 12px 80px;
+	color: $gray-900;
+
+	&__header {
+		max-width: 760px;
+		margin-bottom: 24px;
+
+		h1 {
+			margin: 0;
+			font-size: 24px;
+			line-height: 32px;
+			font-weight: 600;
+		}
+
+		p {
+			margin: 8px 0 0;
+			color: $gray-700;
+			font-size: 13px;
+			line-height: 20px;
+		}
+	}
+
+	.woopayments-settings-loadable-placeholder-group {
+		display: grid;
+		gap: 12px;
+	}
+
+	.woopayments-settings-loadable-placeholder {
+		display: block;
+		width: 100%;
+		height: 16px;
+		border-radius: 2px;
+		background-color: $gray-100;
+		animation: loading-fade 1.6s ease-in-out infinite;
+
+		&:nth-child(4n + 1) {
+			width: 88%;
+		}
+
+		&:nth-child(4n + 2) {
+			width: 72%;
+		}
+
+		&:nth-child(4n + 3) {
+			width: 54%;
+		}
+
+		&:nth-child(4n) {
+			width: 36%;
+		}
+	}
+
+	@media screen and ( prefers-reduced-motion: reduce ) {
+		.woopayments-settings-loadable-placeholder {
+			animation: none;
+		}
+	}
+}
+
+.woopayments-settings-section {
+	display: grid;
+	grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+	gap: 24px;
+	padding: 24px 0;
+	border-top: 1px solid $gray-200;
+
+	@include breakpoint("<782px") {
+		grid-template-columns: 1fr;
+		gap: 12px;
+	}
+
+	&__details {
+		h2 {
+			margin: 0;
+			font-size: 16px;
+			line-height: 24px;
+			font-weight: 600;
+		}
+	}
+
+	&__description {
+		margin-top: 8px;
+		color: $gray-700;
+		font-size: 13px;
+		line-height: 20px;
+
+		p {
+			margin: 0 0 8px;
+		}
+	}
+
+	&__controls.components-card {
+		box-sizing: border-box;
+		width: 100%;
+		padding: 24px;
+		border-radius: 2px;
+		box-shadow: none;
+	}
+}
+
+.woopayments-settings-field-group {
+	& + & {
+		margin-top: 28px;
+		padding-top: 24px;
+		border-top: 1px solid $gray-100;
+	}
+
+	h3 {
+		margin: 0 0 16px;
+		font-size: 14px;
+		line-height: 20px;
+		font-weight: 600;
+	}
+
+	.components-base-control {
+		margin-bottom: 16px;
+	}
+}
+
+.woopayments-settings-payment-methods-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	border-top: 1px solid $gray-100;
+}
+
+.woopayments-settings-payment-method-item {
+	margin: 0;
+	padding: 24px 0;
+	border-bottom: 1px solid $gray-100;
+
+	&__main {
+		display: grid;
+		grid-template-columns: 32px 72px minmax(0, 1fr) auto;
+		gap: 16px;
+		align-items: center;
+
+		@include breakpoint("<782px") {
+			grid-template-columns: 32px minmax(0, 1fr);
+			gap: 12px;
+		}
+	}
+
+	.components-base-control {
+		margin-bottom: 0;
+	}
+
+	.components-base-control__field {
+		margin: 0;
+	}
+
+	.components-checkbox-control__label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		border: 0;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	&__icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 48px;
+		height: 32px;
+		border: 1px solid $gray-200;
+		border-radius: 4px;
+		object-fit: contain;
+		background: $white;
+
+		@include breakpoint("<782px") {
+			grid-column: 2;
+			grid-row: 1;
+		}
+	}
+
+	&__icon--fallback {
+		color: $gray-700;
+		font-size: 13px;
+		font-weight: 600;
+		line-height: 1;
+	}
+
+	&__body {
+		min-width: 0;
+
+		@include breakpoint("<782px") {
+			grid-column: 2;
+		}
+
+		p {
+			margin: 4px 0 0;
+			color: $gray-700;
+			font-size: 13px;
+			line-height: 20px;
+		}
+	}
+
+	&__actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		min-width: max-content;
+		margin-left: 16px;
+
+		@include breakpoint("<782px") {
+			grid-column: 2;
+			justify-content: flex-start;
+			margin-top: 8px;
+			margin-left: 0;
+		}
+	}
+
+	&__heading {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 6px;
+
+		h4 {
+			margin: 0;
+			color: $gray-900;
+			font-size: 14px;
+			line-height: 20px;
+			font-weight: 600;
+		}
+	}
+
+	&__required {
+		color: $gray-700;
+		font-size: 12px;
+		line-height: 18px;
+	}
+
+	&__fee-wrapper {
+		position: relative;
+		display: inline-flex;
+	}
+
+	&__promotion-wrapper {
+		position: relative;
+		display: inline-flex;
+	}
+
+	&__fee-pill,
+	&__discount-badge,
+	&__promotion-badge {
+		display: inline-flex;
+		align-items: center;
+		min-height: 20px;
+		padding: 1px 8px;
+		border-radius: 2px;
+		font-size: 12px;
+		line-height: 18px;
+	}
+
+	&__fee-pill,
+	&__promotion-badge {
+		border: 1px solid $gray-300;
+		appearance: none;
+		background: $white;
+		color: $gray-900;
+		cursor: help;
+		font-family: inherit;
+	}
+
+	&__promotion-badge {
+		gap: 4px;
+		font-weight: 500;
+
+		&:not(button) {
+			cursor: default;
+		}
+
+		&.is-success {
+			border-color: #b8e6cd;
+			background: #e8f7f0;
+			color: #005c3a;
+		}
+
+		&.is-primary {
+			border-color: #d0e4ff;
+			background: #edf6ff;
+			color: #0a4b78;
+		}
+
+		&.is-light {
+			border-color: $gray-200;
+			background: $gray-100;
+			color: $gray-900;
+		}
+
+		&.is-warning {
+			border-color: #f0d96a;
+			background: #fcf9e8;
+			color: $gray-900;
+		}
+
+		&.is-alert {
+			border-color: #f0b7bf;
+			background: #f7ebec;
+			color: $alert-red;
+		}
+	}
+
+	&__fee-pill {
+		border-radius: 999px;
+		white-space: nowrap;
+	}
+
+	&__promotion-icon {
+		fill: currentColor;
+		flex: 0 0 auto;
+	}
+
+	&__discount-badge {
+		background: #e8f7f0;
+		color: #005c3a;
+		font-weight: 500;
+	}
+
+	&__fees-tooltip {
+		position: absolute;
+		z-index: 20;
+		left: 0;
+		top: calc(100% + 6px);
+		display: grid;
+		gap: 8px;
+		min-width: 260px;
+		max-width: 320px;
+		padding: 12px;
+		border-radius: 2px;
+		background: $gray-900;
+		color: $white;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+		font-size: 12px;
+		line-height: 18px;
+		opacity: 0;
+		pointer-events: auto;
+		transform: translateY(-4px);
+		transition: opacity 120ms ease, transform 120ms ease;
+
+		> span {
+			display: flex;
+			justify-content: space-between;
+			gap: 16px;
+		}
+
+		strong {
+			color: $white;
+		}
+	}
+
+	&__promotion-tooltip {
+		position: absolute;
+		z-index: 20;
+		left: 0;
+		top: calc(100% + 6px);
+		display: grid;
+		gap: 8px;
+		min-width: 240px;
+		max-width: 320px;
+		padding: 12px;
+		border-radius: 2px;
+		background: $gray-900;
+		color: $white;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+		font-size: 12px;
+		line-height: 18px;
+		opacity: 0;
+		pointer-events: auto;
+		transform: translateY(-4px);
+		transition: opacity 120ms ease, transform 120ms ease;
+
+		a {
+			color: $white;
+			text-decoration: underline;
+		}
+
+		p {
+			margin: 0;
+			color: $white;
+		}
+	}
+
+	&__fee-wrapper:hover &__fees-tooltip,
+	&__fee-wrapper:focus-within &__fees-tooltip {
+		opacity: 1;
+		transform: translateY(0);
+	}
+
+	&__promotion-wrapper:hover &__promotion-tooltip,
+	&__promotion-wrapper:focus-within &__promotion-tooltip {
+		opacity: 1;
+		transform: translateY(0);
+	}
+
+	&__chip {
+		display: inline-flex;
+		align-items: center;
+		min-height: 20px;
+		padding: 1px 8px;
+		border-radius: 2px;
+		background: #fcf9e8;
+		color: $gray-900;
+		font-size: 12px;
+		line-height: 18px;
+
+		&.is-error {
+			background: #f7ebec;
+			color: $alert-red;
+		}
+	}
+
+	&__card-brands {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 12px;
+
+		img {
+			width: 32px;
+			height: 20px;
+			object-fit: contain;
+		}
+	}
+
+	&__notice.components-notice {
+		margin: 12px 0 0;
+	}
+
+	&__duplicate-notice.components-notice {
+		margin: 12px 0 0 48px;
+
+		@include breakpoint("<782px") {
+			margin-left: 0;
+		}
+	}
+}
+
+.woopayments-settings-payment-methods__manual-capture-notice.components-notice {
+	margin: 0 0 16px;
+	background: #fcf9e8;
+	border-left: 0;
+}
+
+.woopayments-settings-payment-method-activation-modal {
+	&__body {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+
+		p,
+		ul {
+			margin: 0;
+		}
+
+		ul {
+			padding-left: 20px;
+		}
+	}
+
+	.woopayments-settings-payment-method-item__icon {
+		width: 64px;
+		height: 42px;
+	}
+}
+
+.woopayments-settings-control-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+
+	.wcpay-component-phone-number-input {
+		display: block;
+		width: 100%;
+	}
+
+	.wcpay-component-phone-number-input__input {
+		box-sizing: border-box;
+		width: 100%;
+		min-height: 40px;
+	}
+
+	@include breakpoint("<782px") {
+		grid-template-columns: 1fr;
+	}
+}
+
+.woopayments-settings-location-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 12px;
+	margin: 8px 0 16px;
+
+	@include breakpoint("<782px") {
+		grid-template-columns: 1fr;
+	}
+}
+
+.woopayments-settings-location-fieldset {
+	min-width: 0;
+	margin: 8px 0 16px;
+	padding: 0;
+	border: 0;
+}
+
+.woopayments-settings-logo-upload {
+	margin-top: 16px;
+
+	label {
+		display: block;
+		margin-bottom: 8px;
+		font-weight: 500;
+	}
+
+	input[type="file"] {
+		display: block;
+		max-width: 100%;
+	}
+
+	.components-notice {
+		margin: 12px 0 0;
+	}
+}
+
+.woopayments-settings-modal {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+
+	h2,
+	p {
+		margin: 0;
+	}
+
+	&__actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-top: 8px;
+	}
+}
+
+.woopayments-settings-disable-modal {
+	.components-modal__content > div {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	p {
+		margin: 0;
+	}
+
+	&__payment-methods-list {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 8px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+
+		@include breakpoint("<782px") {
+			grid-template-columns: 1fr;
+		}
+
+		li {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			min-width: 0;
+			margin: 0;
+			color: $gray-900;
+			font-size: 13px;
+			line-height: 20px;
+		}
+	}
+
+	&__method-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex: 0 0 auto;
+		width: 32px;
+		height: 24px;
+		border: 1px solid $gray-200;
+		border-radius: 2px;
+		background: $white;
+		object-fit: contain;
+	}
+
+	&__method-icon--fallback {
+		color: $gray-700;
+		font-size: 12px;
+		font-weight: 600;
+		line-height: 1;
+	}
+
+	&__help {
+		color: $gray-700;
+		font-size: 13px;
+		line-height: 20px;
+	}
+}
+
+.woopayments-woopay-disable-feedback {
+	@media (min-width: 960px) {
+		max-height: calc(100% - 120px);
+	}
+
+	.components-modal__content {
+		padding: 24px;
+	}
+
+	&__body {
+		width: min(600px, calc(100vw - 96px));
+	}
+
+	&__logo {
+		display: block;
+		height: 31px;
+		margin-bottom: 16px;
+	}
+
+	&__status {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 0 0 12px;
+		color: $gray-700;
+		font-size: 13px;
+		line-height: 20px;
+	}
+
+	&__iframe {
+		display: block;
+		width: 100%;
+		min-height: 650px;
+		border: 0;
+
+		@include breakpoint("<782px") {
+			min-height: 560px;
+		}
+	}
+}
+
+.woopayments-settings-inline-status {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 8px 0 0;
+	color: $gray-700;
+
+	.components-button {
+		margin-left: 8px;
+	}
+}
+
+.woopayments-settings-character-count,
+.woopayments-settings-muted {
+	margin: 8px 0 0;
+	color: $gray-700;
+	font-size: 12px;
+	line-height: 18px;
+}
+
+.woopayments-settings-save-bar {
+	position: sticky;
+	bottom: 0;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	margin-top: 24px;
+	padding: 16px 0;
+	border-top: 1px solid $gray-200;
+	background: $gray-100;
+
+	@include breakpoint("<782px") {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	&__status {
+		margin: 0;
+		color: $gray-700;
+		font-size: 13px;
+		line-height: 20px;
+	}
+}

@@ -1697,6 +1697,758 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 	}
 
 	/**
+	 * @testdox Invalid refund inputs are rejected before local or gateway mutation.
+	 * @dataProvider invalid_refund_line_item_data
+	 *
+	 * @param array<string,int|float|string> $quantities     Quantities keyed by symbolic line name.
+	 * @param array<string,int|float|string> $line_totals    Net totals keyed by symbolic line name.
+	 * @param string                         $refund_amount  Aggregate refund amount.
+	 * @param string                         $expected_error Expected semantic error.
+	 */
+	public function test_refund_line_items_rejects_invalid_input_before_mutation( array $quantities, array $line_totals, string $refund_amount, string $expected_error ): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves test fixture state.
+		$original_post             = $_POST;
+		$original_user_id          = get_current_user_id();
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+		$gateway                   = $this->create_recording_refund_gateway();
+		$order                     = null;
+		$products                  = array();
+		$create_refund_calls       = 0;
+		$refund_created_calls      = 0;
+		$create_refund_callback    = static function () use ( &$create_refund_calls ): void {
+			++$create_refund_calls;
+		};
+		$refund_created_callback   = static function () use ( &$refund_created_calls ): void {
+			++$refund_created_calls;
+		};
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+
+			add_action( 'woocommerce_create_refund', $create_refund_callback, 10, 0 );
+			add_action( 'woocommerce_refund_created', $refund_created_callback, 10, 0 );
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request( $order, $fixture['item_ids'], $quantities, $line_totals, $refund_amount );
+
+			$this->assertFalse( $response['success'], 'Invalid refund input should return an AJAX error.' );
+			$this->assertSame( $expected_error, $response['data']['error'], 'The AJAX error should identify the violated refund bound.' );
+			$this->assertCount( 0, $gateway->refund_calls, 'Invalid refund input should not reach the payment gateway.' );
+			$this->assertSame( 0, $create_refund_calls, 'Invalid refund input should not reach the pre-create refund hook.' );
+			$this->assertSame( 0, $refund_created_calls, 'Invalid refund input should not fire the refund-created action.' );
+
+			$stored_order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $stored_order, 'The order should still exist after rejection.' );
+			$this->assertCount( 0, $stored_order->get_refunds(), 'Invalid refund input should not create a local refund.' );
+			$this->assertSame( 0.0, (float) $stored_order->get_total_refunded(), 'The refunded total should remain unchanged.' );
+			$this->assertSame( 20.0, (float) $stored_order->get_remaining_refund_amount(), 'The full order amount should remain refundable.' );
+		} finally {
+			remove_action( 'woocommerce_create_refund', $create_refund_callback, 10 );
+			remove_action( 'woocommerce_refund_created', $refund_created_callback, 10 );
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * Data provider for invalid refund requests.
+	 *
+	 * @return array<string,array{array<string,int|float|string>,array<string,int|float|string>,string,string}>
+	 */
+	public static function invalid_refund_line_item_data(): array {
+		return array(
+			'quantity greater than maximum'     => array(
+				array( 'first' => 2 ),
+				array( 'first' => 5 ),
+				'5',
+				'Line item quantity cannot be greater than the remaining refundable quantity.',
+			),
+			'quantity negative'                 => array(
+				array( 'first' => -1 ),
+				array( 'first' => 5 ),
+				'5',
+				'Line item quantity must be non-negative.',
+			),
+			'fractional quantity negative'      => array(
+				array( 'first' => '-0.5' ),
+				array( 'first' => 1 ),
+				'1',
+				'Line item quantity must be non-negative.',
+			),
+			'line amount greater than maximum'  => array(
+				array(),
+				array( 'first' => 10 ),
+				'10',
+				'Refund total cannot be greater than the remaining refundable amount for this line item.',
+			),
+			'line amount slightly over maximum' => array(
+				array(),
+				array( 'first' => '5.001' ),
+				'5',
+				'Refund total cannot be greater than the remaining refundable amount for this line item.',
+			),
+			'line amount negative'              => array(
+				array(),
+				array(
+					'first'  => -1,
+					'second' => 2,
+				),
+				'1',
+				'Refund total has the wrong sign for this line item.',
+			),
+			'line amount slightly negative'     => array(
+				array(),
+				array(
+					'first'  => '-0.001',
+					'second' => '1.001',
+				),
+				'1',
+				'Refund total has the wrong sign for this line item.',
+			),
+			'total amount greater than maximum' => array(
+				array(),
+				array(),
+				'21',
+				'Invalid refund amount',
+			),
+			'total amount negative'             => array(
+				array(),
+				array(),
+				'-1',
+				'Invalid refund amount',
+			),
+		);
+	}
+
+	/**
+	 * @testdox A refund quantity cannot exceed the units left after a prior partial refund.
+	 */
+	public function test_refund_line_items_rejects_quantity_above_remaining_after_partial_refund(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves test fixture state.
+		$original_post             = $_POST;
+		$original_user_id          = get_current_user_id();
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+		$gateway                   = $this->create_recording_refund_gateway();
+		$order                     = null;
+		$products                  = array();
+		$refund_created_calls      = 0;
+		$refund_created_callback   = static function () use ( &$refund_created_calls ): void {
+			++$refund_created_calls;
+		};
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_refundable_order( $gateway, 2 );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+			$first_item_id                                = $fixture['item_ids']['first'];
+
+			$prior_refund = wc_create_refund(
+				array(
+					'amount'     => 5,
+					'order_id'   => $order->get_id(),
+					'line_items' => array(
+						$first_item_id => array(
+							'qty'          => 1,
+							'refund_total' => 5,
+						),
+					),
+				)
+			);
+			$this->assertInstanceOf( WC_Order_Refund::class, $prior_refund, 'The prior partial-quantity refund should be created.' );
+
+			add_action( 'woocommerce_refund_created', $refund_created_callback, 10, 0 );
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request(
+				$order,
+				$fixture['item_ids'],
+				array( 'first' => 2 ),
+				array( 'first' => 5 ),
+				'5'
+			);
+
+			$this->assertFalse( $response['success'], 'A quantity above the remaining units should return an AJAX error.' );
+			$this->assertSame( 'Line item quantity cannot be greater than the remaining refundable quantity.', $response['data']['error'] );
+			$this->assertCount( 0, $gateway->refund_calls, 'The rejected follow-up refund should not reach the gateway.' );
+			$this->assertSame( 0, $refund_created_calls, 'The rejected follow-up refund should not fire the refund-created action.' );
+
+			$stored_order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $stored_order, 'The order should still exist after rejection.' );
+			$this->assertCount( 1, $stored_order->get_refunds(), 'Only the prior refund should remain.' );
+			$this->assertSame( -1, $stored_order->get_qty_refunded_for_item( $first_item_id ), 'One unit should remain recorded as refunded.' );
+			$this->assertSame( 5.0, (float) $stored_order->get_total_refunded(), 'The prior refunded total should remain unchanged.' );
+			$this->assertSame( 20.0, (float) $stored_order->get_remaining_refund_amount(), 'The rejected request should not reduce the remaining order amount.' );
+		} finally {
+			remove_action( 'woocommerce_refund_created', $refund_created_callback, 10 );
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * @testdox A refund total cannot exceed the net amount left after a prior amount-only refund.
+	 */
+	public function test_refund_line_items_rejects_total_above_remaining_after_amount_only_refund(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves test fixture state.
+		$original_post             = $_POST;
+		$original_user_id          = get_current_user_id();
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+		$gateway                   = $this->create_recording_refund_gateway();
+		$order                     = null;
+		$products                  = array();
+		$refund_created_calls      = 0;
+		$refund_created_callback   = static function () use ( &$refund_created_calls ): void {
+			++$refund_created_calls;
+		};
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+			$first_item_id                                = $fixture['item_ids']['first'];
+
+			$prior_refund = wc_create_refund(
+				array(
+					'amount'     => 3,
+					'order_id'   => $order->get_id(),
+					'line_items' => array(
+						$first_item_id => array(
+							'qty'          => 0,
+							'refund_total' => 3,
+						),
+					),
+				)
+			);
+			$this->assertInstanceOf( WC_Order_Refund::class, $prior_refund, 'The prior amount-only refund should be created.' );
+
+			add_action( 'woocommerce_refund_created', $refund_created_callback, 10, 0 );
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request(
+				$order,
+				$fixture['item_ids'],
+				array( 'first' => 0 ),
+				array( 'first' => 3 ),
+				'3'
+			);
+
+			$this->assertFalse( $response['success'], 'A line total above the remaining net amount should return an AJAX error.' );
+			$this->assertSame( 'Refund total cannot be greater than the remaining refundable amount for this line item.', $response['data']['error'] );
+			$this->assertCount( 0, $gateway->refund_calls, 'The rejected follow-up refund should not reach the gateway.' );
+			$this->assertSame( 0, $refund_created_calls, 'The rejected follow-up refund should not fire the refund-created action.' );
+
+			$stored_order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $stored_order, 'The order should still exist after rejection.' );
+			$this->assertCount( 1, $stored_order->get_refunds(), 'Only the prior refund should remain.' );
+			$this->assertSame( 0, $stored_order->get_qty_refunded_for_item( $first_item_id ), 'An amount-only refund should not consume units.' );
+			$this->assertSame( 3.0, (float) $stored_order->get_total_refunded(), 'The prior refunded total should remain unchanged.' );
+			$this->assertSame( 17.0, (float) $stored_order->get_remaining_refund_amount(), 'The rejected request should not reduce the remaining order amount.' );
+		} finally {
+			remove_action( 'woocommerce_refund_created', $refund_created_callback, 10 );
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * @testdox The exact decimal remainder remains refundable after a prior product-line amount refund.
+	 */
+	public function test_refund_line_items_accepts_exact_decimal_remainder_after_prior_refund(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves test fixture state.
+		$original_post               = $_POST;
+		$original_user_id            = get_current_user_id();
+		$payment_gateway_registry    = WC_Payment_Gateways::instance();
+		$original_payment_gateways   = $payment_gateway_registry->payment_gateways;
+		$gateway                     = $this->create_recording_refund_gateway();
+		$order                       = null;
+		$products                    = array();
+		$create_refund_calls         = 0;
+		$refund_created_calls        = 0;
+		$captured_create_refund_args = null;
+		$create_refund_callback      = static function ( $refund, $args ) use ( &$create_refund_calls, &$captured_create_refund_args ): void {
+			unset( $refund );
+			++$create_refund_calls;
+			$captured_create_refund_args = $args;
+		};
+		$refund_created_callback     = static function () use ( &$refund_created_calls ): void {
+			++$refund_created_calls;
+		};
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+			$first_item_id                                = $fixture['item_ids']['first'];
+
+			$prior_refund = wc_create_refund(
+				array(
+					'amount'     => 0.56,
+					'order_id'   => $order->get_id(),
+					'line_items' => array(
+						$first_item_id => array(
+							'qty'          => 0,
+							'refund_total' => 0.56,
+						),
+					),
+				)
+			);
+			$this->assertInstanceOf( WC_Order_Refund::class, $prior_refund, 'The prior USD 0.56 amount-only refund should be created.' );
+
+			add_action( 'woocommerce_create_refund', $create_refund_callback, 10, 2 );
+			add_action( 'woocommerce_refund_created', $refund_created_callback, 10, 0 );
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request(
+				$order,
+				$fixture['item_ids'],
+				array( 'first' => 0 ),
+				array( 'first' => '4.44' ),
+				'4.44'
+			);
+
+			$this->assertTrue( $response['success'], 'The exact USD 4.44 line remainder should succeed.' );
+			$this->assertSame( 1, $create_refund_calls, 'The follow-up request should reach the pre-create hook exactly once.' );
+			$this->assertIsArray( $captured_create_refund_args, 'The pre-create hook should receive the follow-up refund arguments.' );
+			$this->assertSame( 0, $captured_create_refund_args['line_items'][ $first_item_id ]['qty'], 'The exact-remainder refund should remain amount-only.' );
+			$this->assertSame( '4.44', $captured_create_refund_args['line_items'][ $first_item_id ]['refund_total'], 'The exact line remainder should retain its submitted allocation.' );
+			$this->assertSame(
+				array(
+					array(
+						'order_id' => $order->get_id(),
+						'amount'   => 4.44,
+						'reason'   => 'AJAX refund validation test',
+					),
+				),
+				$gateway->refund_calls,
+				'The exact-remainder request should reach the gateway exactly once.'
+			);
+			$this->assertSame( 1, $refund_created_calls, 'The follow-up request should fire the refund-created action exactly once.' );
+
+			$stored_order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $stored_order, 'The order should still exist after both refunds.' );
+			$refunds = $stored_order->get_refunds();
+			$this->assertCount( 2, $refunds, 'The prior and exact-remainder refunds should both be persisted.' );
+			$follow_up_refunds = array_filter(
+				$refunds,
+				static function ( $refund ): bool {
+					return 4.44 === (float) $refund->get_amount();
+				}
+			);
+			$this->assertCount( 1, $follow_up_refunds, 'Exactly one persisted refund should represent the USD 4.44 follow-up.' );
+			$follow_up_refund = reset( $follow_up_refunds );
+			$follow_up_items  = $follow_up_refund->get_items( 'line_item' );
+			$this->assertCount( 1, $follow_up_items, 'The follow-up refund should retain one product-line allocation.' );
+			$follow_up_item = reset( $follow_up_items );
+			$this->assertSame( $first_item_id, (int) $follow_up_item->get_meta( '_refunded_item_id' ), 'The follow-up line should reference the original USD 5 item.' );
+			$this->assertSame( 0.0, (float) $follow_up_item->get_quantity(), 'The follow-up line should not consume product quantity.' );
+			$this->assertSame( -4.44, (float) $follow_up_item->get_total(), 'The follow-up line should persist the exact USD 4.44 allocation.' );
+			$this->assertSame( 0, $stored_order->get_qty_refunded_for_item( $first_item_id ), 'Both amount-only refunds should leave quantity available.' );
+			$this->assertSame( 5.0, $stored_order->get_total_refunded_for_item( $first_item_id ), 'The product line should be fully allocated across the two refunds.' );
+			$this->assertSame( 5.0, (float) $stored_order->get_total_refunded(), 'The stored aggregate refunded amount should equal USD 5.' );
+			$this->assertSame( 15.0, (float) $stored_order->get_remaining_refund_amount(), 'The remaining order amount should equal USD 15.' );
+		} finally {
+			remove_action( 'woocommerce_create_refund', $create_refund_callback, 10 );
+			remove_action( 'woocommerce_refund_created', $refund_created_callback, 10 );
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * @testdox A valid amount-only refund with zero quantity succeeds without consuming units.
+	 */
+	public function test_refund_line_items_accepts_amount_only_refund_with_zero_quantity(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves test fixture state.
+		$original_post             = $_POST;
+		$original_user_id          = get_current_user_id();
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+		$gateway                   = $this->create_recording_refund_gateway();
+		$order                     = null;
+		$products                  = array();
+		$refund_created_calls      = 0;
+		$refund_created_callback   = static function () use ( &$refund_created_calls ): void {
+			++$refund_created_calls;
+		};
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+
+			add_action( 'woocommerce_refund_created', $refund_created_callback, 10, 0 );
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request(
+				$order,
+				$fixture['item_ids'],
+				array( 'first' => '-0' ),
+				array( 'first' => 3 ),
+				'3'
+			);
+
+			$this->assertTrue( $response['success'], 'A valid amount-only refund should succeed.' );
+			$this->assertSame(
+				array(
+					array(
+						'order_id' => $order->get_id(),
+						'amount'   => 3.0,
+						'reason'   => 'AJAX refund validation test',
+					),
+				),
+				$gateway->refund_calls,
+				'A valid API refund should send the exact order, amount, and reason to the gateway.'
+			);
+			$this->assertSame( 1, $refund_created_calls, 'A valid refund should fire the refund-created action once.' );
+
+			$stored_order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $stored_order, 'The order should still exist after the refund.' );
+			$this->assertCount( 1, $stored_order->get_refunds(), 'A valid amount-only request should create one refund.' );
+			$this->assertSame( 0, $stored_order->get_qty_refunded_for_item( $fixture['item_ids']['first'] ), 'An amount-only refund should not consume units.' );
+			$this->assertSame( 3.0, $stored_order->get_total_refunded_for_item( $fixture['item_ids']['first'] ), 'The amount-only refund should remain allocated to the requested line.' );
+			$this->assertSame( 3.0, (float) $stored_order->get_total_refunded(), 'The amount-only refund should update the refunded total.' );
+			$this->assertSame( 17.0, (float) $stored_order->get_remaining_refund_amount(), 'The unrefunded order amount should remain available.' );
+		} finally {
+			remove_action( 'woocommerce_refund_created', $refund_created_callback, 10 );
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * @testdox Extra-precision product line totals survive refund creation while aggregate payment uses store precision.
+	 */
+	public function test_refund_line_items_preserves_extra_precision_line_total(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves test fixture state.
+		$original_post               = $_POST;
+		$original_user_id            = get_current_user_id();
+		$payment_gateway_registry    = WC_Payment_Gateways::instance();
+		$original_payment_gateways   = $payment_gateway_registry->payment_gateways;
+		$gateway                     = $this->create_recording_refund_gateway();
+		$order                       = null;
+		$products                    = array();
+		$intval_filter_priority      = has_filter( 'woocommerce_stock_amount', 'intval' );
+		$floatval_filter_priority    = has_filter( 'woocommerce_stock_amount', 'floatval' );
+		$captured_create_refund_args = null;
+		$create_refund_callback      = static function ( $refund, $args ) use ( &$captured_create_refund_args ): void {
+			unset( $refund );
+			$captured_create_refund_args = $args;
+		};
+
+		try {
+			if ( false !== $intval_filter_priority ) {
+				remove_filter( 'woocommerce_stock_amount', 'intval', $intval_filter_priority );
+			}
+			if ( false !== $floatval_filter_priority ) {
+				remove_filter( 'woocommerce_stock_amount', 'floatval', $floatval_filter_priority );
+			}
+			add_filter( 'woocommerce_stock_amount', 'floatval' );
+
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+			$first_item_id                                = $fixture['item_ids']['first'];
+
+			add_action( 'woocommerce_create_refund', $create_refund_callback, 10, 2 );
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request(
+				$order,
+				$fixture['item_ids'],
+				array( 'first' => '0.5' ),
+				array( 'first' => '3.4567' ),
+				'3.4567'
+			);
+
+			$this->assertTrue( $response['success'], 'A valid extra-precision line refund should succeed.' );
+			$this->assertIsArray( $captured_create_refund_args, 'The pre-create hook should receive the refund arguments.' );
+			$this->assertSame( '3.4567', $captured_create_refund_args['line_items'][ $first_item_id ]['refund_total'], 'The line total should retain submitted precision in pre-create arguments.' );
+			$this->assertSame(
+				array(
+					array(
+						'order_id' => $order->get_id(),
+						'amount'   => 3.46,
+						'reason'   => 'AJAX refund validation test',
+					),
+				),
+				$gateway->refund_calls,
+				'The gateway amount should use store currency precision.'
+			);
+
+			$stored_order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $stored_order, 'The order should still exist after the refund.' );
+			$refunds = $stored_order->get_refunds();
+			$this->assertCount( 1, $refunds, 'A valid extra-precision request should create one refund.' );
+			$refund       = reset( $refunds );
+			$refund_items = $refund->get_items( 'line_item' );
+			$this->assertCount( 1, $refund_items, 'The refund should retain its product line allocation.' );
+			$refund_item = reset( $refund_items );
+			$this->assertSame( $first_item_id, (int) $refund_item->get_meta( '_refunded_item_id' ), 'The persisted refund line should reference the submitted order item.' );
+			$this->assertSame( -0.5, (float) $refund_item->get_quantity(), 'Fractional refund quantities should remain supported.' );
+			$this->assertSame( -3.4567, (float) $refund_item->get_total(), 'The persisted refund line should retain submitted precision.' );
+			$this->assertSame( 3.46, (float) $refund->get_amount(), 'The persisted aggregate refund should use store currency precision.' );
+		} finally {
+			remove_action( 'woocommerce_create_refund', $create_refund_callback, 10 );
+			remove_filter( 'woocommerce_stock_amount', 'floatval' );
+			if ( false !== $floatval_filter_priority ) {
+				add_filter( 'woocommerce_stock_amount', 'floatval', $floatval_filter_priority );
+			}
+			if ( false !== $intval_filter_priority ) {
+				add_filter( 'woocommerce_stock_amount', 'intval', $intval_filter_priority );
+			}
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * @testdox Fractional non-product quantities retain legacy normalization through refund creation.
+	 */
+	public function test_refund_line_items_preserves_fractional_non_product_quantity(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves test fixture state.
+		$original_post               = $_POST;
+		$original_user_id            = get_current_user_id();
+		$payment_gateway_registry    = WC_Payment_Gateways::instance();
+		$original_payment_gateways   = $payment_gateway_registry->payment_gateways;
+		$gateway                     = $this->create_recording_refund_gateway();
+		$order                       = null;
+		$products                    = array();
+		$captured_create_refund_args = null;
+		$create_refund_callback      = static function ( $refund, $args ) use ( &$captured_create_refund_args ): void {
+			unset( $refund );
+			$captured_create_refund_args = $args;
+		};
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+			$fee_item                                     = new WC_Order_Item_Fee();
+			$fee_item->set_name( 'Fractional refund fee' );
+			$fee_item->set_tax_status( 'none' );
+			$fee_item->set_amount( '2' );
+			$fee_item->set_total( '2' );
+			$this->assertNotFalse( $order->add_item( $fee_item ), 'The fee item should be accepted by the refundable order.' );
+			$order->calculate_totals();
+			$order->save();
+
+			$fee_item_id = $fee_item->get_id();
+			$this->assertGreaterThan( 0, $fee_item_id, 'The fee item should be added to the refundable order.' );
+			$item_ids        = $fixture['item_ids'];
+			$item_ids['fee'] = $fee_item_id;
+
+			add_action( 'woocommerce_create_refund', $create_refund_callback, 10, 2 );
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request(
+				$order,
+				$item_ids,
+				array( 'fee' => '0.5' ),
+				array( 'fee' => '1' ),
+				'1'
+			);
+
+			$this->assertTrue( $response['success'], 'A valid fractional fee refund should succeed.' );
+			$this->assertIsArray( $captured_create_refund_args, 'The pre-create hook should receive the refund arguments.' );
+			$this->assertSame( '0.5', $captured_create_refund_args['line_items'][ $fee_item_id ]['qty'], 'Non-product quantities should retain the legacy untruncated value.' );
+			$this->assertSame(
+				array(
+					array(
+						'order_id' => $order->get_id(),
+						'amount'   => 1.0,
+						'reason'   => 'AJAX refund validation test',
+					),
+				),
+				$gateway->refund_calls,
+				'A valid fractional fee refund should retain the gateway contract.'
+			);
+
+			$stored_order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $stored_order, 'The order should still exist after the refund.' );
+			$this->assertCount( 1, $stored_order->get_refunds(), 'A valid fractional fee request should create one refund.' );
+			$this->assertSame( 1.0, (float) $stored_order->get_total_refunded(), 'The fractional fee request should update the refunded total.' );
+		} finally {
+			remove_action( 'woocommerce_create_refund', $create_refund_callback, 10 );
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * @testdox Refund requests reject product item IDs that do not belong to the target order.
+	 * @dataProvider invalid_refund_item_id_data
+	 *
+	 * @param bool $use_foreign_order_item Whether to submit an item from another order.
+	 */
+	public function test_refund_line_items_rejects_foreign_and_unknown_item_ids( bool $use_foreign_order_item ): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves test fixture state.
+		$original_post             = $_POST;
+		$original_user_id          = get_current_user_id();
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+		$gateway                   = $this->create_recording_refund_gateway();
+		$order                     = null;
+		$products                  = array();
+		$foreign_order             = null;
+		$foreign_products          = array();
+		$refund_created_calls      = 0;
+		$refund_created_callback   = static function () use ( &$refund_created_calls ): void {
+			++$refund_created_calls;
+		};
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+			$submitted_item_id                            = 999999999;
+
+			if ( $use_foreign_order_item ) {
+				$foreign_fixture   = $this->create_refundable_order( $gateway );
+				$foreign_order     = $foreign_fixture['order'];
+				$foreign_products  = $foreign_fixture['products'];
+				$submitted_item_id = $foreign_fixture['item_ids']['first'];
+			}
+
+			add_action( 'woocommerce_refund_created', $refund_created_callback, 10, 0 );
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request(
+				$order,
+				array(
+					'first'  => $submitted_item_id,
+					'second' => $fixture['item_ids']['second'],
+				),
+				array( 'first' => 0 ),
+				array( 'first' => 3 ),
+				'3'
+			);
+
+			$this->assert_fresh_refund_rejected(
+				$response,
+				'Refund line item must belong to this order.',
+				$gateway,
+				$refund_created_calls,
+				$order
+			);
+		} finally {
+			remove_action( 'woocommerce_refund_created', $refund_created_callback, 10 );
+			$this->delete_refund_fixture( $foreign_order, $foreign_products );
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * Data provider for refund item IDs outside the target order.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public static function invalid_refund_item_id_data(): array {
+		return array(
+			'foreign order item' => array( true ),
+			'nonexistent item'   => array( false ),
+		);
+	}
+
+	/**
+	 * @testdox Refund requests reject structured and non-finite line values before normalization.
+	 * @dataProvider invalid_refund_line_value_data
+	 *
+	 * @param string $field          Payload field containing the invalid value.
+	 * @param mixed  $invalid_value  Invalid decoded JSON value.
+	 * @param string $expected_error Expected semantic error.
+	 */
+	public function test_refund_line_items_rejects_invalid_numeric_values( string $field, $invalid_value, string $expected_error ): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves test fixture state.
+		$original_post             = $_POST;
+		$original_user_id          = get_current_user_id();
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+		$gateway                   = $this->create_recording_refund_gateway();
+		$order                     = null;
+		$products                  = array();
+		$refund_created_calls      = 0;
+		$refund_created_callback   = static function () use ( &$refund_created_calls ): void {
+			++$refund_created_calls;
+		};
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+			$quantities                                   = array( 'first' => 0 );
+			$line_totals                                  = array( 'first' => 1 );
+
+			if ( 'quantity' === $field ) {
+				$quantities['first'] = $invalid_value;
+			} else {
+				$line_totals['first'] = $invalid_value;
+			}
+
+			add_action( 'woocommerce_refund_created', $refund_created_callback, 10, 0 );
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request( $order, $fixture['item_ids'], $quantities, $line_totals, '1' );
+
+			$this->assert_fresh_refund_rejected( $response, $expected_error, $gateway, $refund_created_calls, $order );
+		} finally {
+			remove_action( 'woocommerce_refund_created', $refund_created_callback, 10 );
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * Data provider for invalid decoded refund values.
+	 *
+	 * @return array<string,array{string,mixed,string}>
+	 */
+	public static function invalid_refund_line_value_data(): array {
+		return array(
+			'quantity array'              => array( 'quantity', array( 1 ), 'Line item quantity must be a finite number.' ),
+			'total object'                => array( 'total', (object) array( 'value' => 1 ), 'Refund total must be a finite number.' ),
+			'quantity boolean'            => array( 'quantity', true, 'Line item quantity must be a finite number.' ),
+			'total null'                  => array( 'total', null, 'Refund total must be a finite number.' ),
+			'quantity non-numeric string' => array( 'quantity', 'not-a-number', 'Line item quantity must be a finite number.' ),
+			'total NaN spelling'          => array( 'total', 'NaN', 'Refund total must be a finite number.' ),
+			'quantity INF spelling'       => array( 'quantity', 'INF', 'Line item quantity must be a finite number.' ),
+			'total exponent overflow'     => array( 'total', '1e309', 'Refund total must be a finite number.' ),
+		);
+	}
+
+	/**
 	 * @testdox Should clear variation sale dates when bulk schedule dates are blank.
 	 * @group ajax
 	 */
@@ -2222,6 +2974,169 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 	}
 
 	/**
+	 * Create a refundable order with two product lines.
+	 *
+	 * @param WC_Payment_Gateway $gateway       Payment gateway assigned to the order.
+	 * @param int                $first_quantity Quantity of the USD 5 product.
+	 * @return array{order:WC_Order,products:array{WC_Product,WC_Product},item_ids:array{first:int,second:int}}
+	 */
+	private function create_refundable_order( WC_Payment_Gateway $gateway, int $first_quantity = 1 ): array {
+		$first_product  = WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Five dollar refund product',
+				'regular_price' => '5',
+				'price'         => '5',
+				'tax_status'    => 'none',
+			)
+		);
+		$second_product = WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Fifteen dollar refund product',
+				'regular_price' => '15',
+				'price'         => '15',
+				'tax_status'    => 'none',
+			)
+		);
+
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order, 'The refundable order should be created.' );
+		$order->set_currency( 'USD' );
+		$order->save();
+
+		$first_item_id  = $order->add_product( $first_product, $first_quantity );
+		$second_item_id = $order->add_product( $second_product, 1 );
+		$order->calculate_totals();
+		$order->set_status( OrderStatus::COMPLETED );
+		$order->set_payment_method( $gateway->id );
+		$order->save();
+
+		return array(
+			'order'    => $order,
+			'products' => array( $first_product, $second_product ),
+			'item_ids' => array(
+				'first'  => $first_item_id,
+				'second' => $second_item_id,
+			),
+		);
+	}
+
+	/**
+	 * Create a refundable gateway that records provider calls.
+	 *
+	 * @return WC_Payment_Gateway&object{refund_calls:array<int,array{order_id:int,amount:float|null,reason:string}>}
+	 */
+	private function create_recording_refund_gateway(): WC_Payment_Gateway {
+		return new class() extends WC_Payment_Gateway {
+			/**
+			 * Recorded refund calls.
+			 *
+			 * @var array<int,array{order_id:int,amount:float|null,reason:string}>
+			 */
+			public array $refund_calls = array();
+
+			/**
+			 * Constructor.
+			 */
+			public function __construct() {
+				$this->id           = 'ajax_recording_refund_gateway';
+				$this->method_title = 'AJAX recording refund gateway';
+				$this->title        = 'AJAX recording refund gateway';
+				$this->supports     = array( 'refunds' );
+			}
+
+			/**
+			 * Record a gateway refund call.
+			 *
+			 * @param int        $order_id Order ID.
+			 * @param float|null $amount   Refund amount.
+			 * @param string     $reason   Refund reason.
+			 * @return bool
+			 */
+			public function process_refund( $order_id, $amount = null, $reason = '' ) {
+				$this->refund_calls[] = array(
+					'order_id' => (int) $order_id,
+					'amount'   => null === $amount ? null : (float) $amount,
+					'reason'   => (string) $reason,
+				);
+
+				return true;
+			}
+		};
+	}
+
+	/**
+	 * Submit a refund request through the authenticated classic AJAX boundary.
+	 *
+	 * @param WC_Order                       $order         Order to refund.
+	 * @param array{first:int,second:int}    $item_ids      Actual order-item IDs keyed by symbolic line name.
+	 * @param array<string,int|float|string> $quantities    Quantities keyed by symbolic line name.
+	 * @param array<string,int|float|string> $line_totals   Net totals keyed by symbolic line name.
+	 * @param string                         $refund_amount Aggregate refund amount.
+	 * @return array<string,mixed>
+	 */
+	private function submit_refund_ajax_request( WC_Order $order, array $item_ids, array $quantities, array $line_totals, string $refund_amount ): array {
+		$_POST = array(
+			'security'               => wp_create_nonce( 'order-item' ),
+			'order_id'               => $order->get_id(),
+			'refund_amount'          => $refund_amount,
+			'refunded_amount'        => wc_format_decimal( $order->get_total_refunded(), wc_get_price_decimals() ),
+			'refund_reason'          => 'AJAX refund validation test',
+			'line_item_qtys'         => wp_json_encode( $this->resolve_refund_line_ids( $quantities, $item_ids ) ),
+			'line_item_totals'       => wp_json_encode( $this->resolve_refund_line_ids( $line_totals, $item_ids ) ),
+			'line_item_tax_totals'   => wp_json_encode( array() ),
+			'api_refund'             => 'true',
+			'restock_refunded_items' => 'false',
+		);
+
+		$response = $this->do_ajax( 'woocommerce_refund_line_items' );
+		$this->assertIsArray( $response, 'The AJAX handler should return a JSON object.' );
+
+		return $response;
+	}
+
+	/**
+	 * Replace symbolic refund line names with fixture item IDs.
+	 *
+	 * @param array<string,int|float|string> $values   Values keyed by symbolic line name.
+	 * @param array{first:int,second:int}    $item_ids Actual order-item IDs keyed by symbolic line name.
+	 * @return array<int,int|float|string>
+	 */
+	private function resolve_refund_line_ids( array $values, array $item_ids ): array {
+		$resolved = array();
+
+		foreach ( $values as $line_name => $value ) {
+			$resolved[ $item_ids[ $line_name ] ] = $value;
+		}
+
+		return $resolved;
+	}
+
+	/**
+	 * Delete every order, refund, and product created by a refund fixture.
+	 *
+	 * @param WC_Order|null     $order    Fixture order.
+	 * @param array<WC_Product> $products Fixture products.
+	 */
+	private function delete_refund_fixture( ?WC_Order $order, array $products ): void {
+		if ( $order instanceof WC_Order ) {
+			$stored_order = wc_get_order( $order->get_id() );
+
+			if ( $stored_order instanceof WC_Order ) {
+				foreach ( $stored_order->get_refunds() as $refund ) {
+					$refund->delete( true );
+				}
+				$stored_order->delete( true );
+			}
+		}
+
+		foreach ( $products as $product ) {
+			$product->delete( true );
+		}
+	}
+
+	/**
 	 * Set the static registration flag on BlockTypesController.
 	 *
 	 * The flag records whether register_blocks() ran in the current request, and Bootstrap's on-demand block
@@ -2383,6 +3298,28 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 		$fresh_item = \WC_Order_Factory::get_order_item( $item_id );
 		$this->assertInstanceOf( \WC_Order_Item_Product::class, $fresh_item, 'The item should not have been deleted.' );
 		$this->assertEquals( $original_qty, $fresh_item->get_quantity() );
+	}
+
+	/**
+	 * Assert a fresh order was not mutated by a rejected refund request.
+	 *
+	 * @param array<string,mixed>                                                                                    $response             AJAX response.
+	 * @param string                                                                                                 $expected_error       Expected semantic error.
+	 * @param WC_Payment_Gateway&object{refund_calls:array<int,array{order_id:int,amount:float|null,reason:string}>} $gateway              Recording gateway.
+	 * @param int                                                                                                    $refund_created_calls Number of refund-created action calls.
+	 * @param WC_Order                                                                                               $order                Target order.
+	 */
+	private function assert_fresh_refund_rejected( array $response, string $expected_error, WC_Payment_Gateway $gateway, int $refund_created_calls, WC_Order $order ): void {
+		$this->assertFalse( $response['success'], 'Invalid refund input should return an AJAX error.' );
+		$this->assertSame( $expected_error, $response['data']['error'], 'The AJAX error should identify the invalid refund input.' );
+		$this->assertCount( 0, $gateway->refund_calls, 'Invalid refund input should not reach the payment gateway.' );
+		$this->assertSame( 0, $refund_created_calls, 'Invalid refund input should not fire the refund-created action.' );
+
+		$stored_order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $stored_order, 'The order should still exist after rejection.' );
+		$this->assertCount( 0, $stored_order->get_refunds(), 'Invalid refund input should not create a local refund.' );
+		$this->assertSame( 0.0, (float) $stored_order->get_total_refunded(), 'The refunded total should remain unchanged.' );
+		$this->assertSame( 20.0, (float) $stored_order->get_remaining_refund_amount(), 'The full order amount should remain refundable.' );
 	}
 
 	/**

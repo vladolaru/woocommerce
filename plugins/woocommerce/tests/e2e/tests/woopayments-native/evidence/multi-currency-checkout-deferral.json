@@ -1,0 +1,41 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-checkout-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "1a0d8eebec4437604ef5a5dd374d2c2701f79909",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:51::Multi-currency checkout › Checkout with multiple currencies › checkout with EUR",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:51::Multi-currency checkout › Checkout with multiple currencies › checkout with USD"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA eb823e51de50fcd8f867360d32000d0e83919ea0c0aef984eeb69b49a5f4ebc7 against ledger SHA fc4db2b27de960f014a4de85224aca6d6267221eeadf886d767d9e360d250a23 with no findings. Exactly the two line-51 EUR and USD rows change, and only fields 37-40. The grouped deferral remains row-independent for browser contexts, products, carts, orders, provider identities, record locks, and journals. It correctly binds USD 10.00 and provider 1000 with both multi-currency metadata keys absent versus EUR 8.00 and provider 800 at rate 0.80 with exact exchange-rate and USD-default metadata. Cross-request selection persistence, exact accessible UI, order, provider identity, amount, currency, status and cardinality joins, readiness, exclusive listener ownership, zero replay, raw restoration, retention, quarantine, source/target drift, and second-row halt after first-row ambiguity are complete."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the two-row campaign may allocate a provider writer, exclusive listener, shoppers, products, orders, or financial graphs; the shared target contract and owner remain pending; and no approved deterministic USD/EUR settings fixture, complete raw restoration journal, or protected provider window exists. Core already owns selected-currency persistence, deterministic price projection, non-default order metadata, order-context rendering, and exact order-to-intent request amounts, so no current native defect, known gap, authority conflict, or frozen-to-rolling source staleness is established.",
+		"affected_scope": "Two independently addressable card checkout outcomes in one serialized campaign. Each row owns a fresh context, explicit currency-selection occurrence persisted across a request without the query, unique non-taxable USD 10.00 product, cart, order, intent, charge, payment method, record-event lock, and provider journal. The USD row proves exact order/provider 10.00 USD and 1000 usd with both multi-currency order metadata keys absent. The EUR row proves exact order/provider 8.00 EUR and 800 eur at manual rate 0.80 with exchange-rate metadata 0.8 and default-currency metadata USD. Each joins one succeeded captured charge and capture occurrence plus exact order-received and My Account product/amount/currency semantics. History-only display, method eligibility, rounding, refunds, and settlement remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native readiness, approve the target/owner, allocate the protected provider tuple and exclusive listener, or safely create currency settings and financial records without complete journals and locks. A rendered currency code, symbol, navigation, shared authenticated shopper, source three-click helper, one row's order, lower-layer calculator, or provider record alone cannot substitute for cross-request selection persistence, exact structured order and provider amount/currency/identity/cardinality joins, default-versus-nondefault metadata rules, accessible exact-order UI, zero replay, retained financial evidence, and byte-exact settings/session restoration.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness; approve the grouped target contract and one owner for its shared journal/driver; provide one protected test-mode provider account/store window and exactly one exclusively owned listener. Supply deterministic USD default, enabled EUR at manual 0.80, zero rounding/charm, pinned formatting, two unique USD 10.00 products, isolated contexts, complete wildcard settings/cache/user-meta/session snapshots, and two row-specific pre-dispatch journals. Run serialized with one worker, zero retries, no replay, exact local/provider/UI joins, raw restoration, retention, quarantine, and fresh code, E2E-test, reliability, accessibility, and provider-evidence reviews.",
+		"quarantine_status": "No browser context, account, store, allocation, currency setting, product, cart, session, order, intent, charge, payment method, event, lock, journal, listener, provider object, retention record, or quarantine was created or changed for either row; the separately owned listener remains untouched. A future wrong identity or bundle, missing/extraneous listener, lock loss, duplicate or ambiguous selection/checkout/payment/capture/callback, amount/currency/metadata/cardinality mismatch, cross-row contamination, convergence timeout, restoration failure, or unsafe product cleanup must preserve diagnostics and financial history and quarantine the exact account/store/settings/session/product/order/provider/event graph and journals without replay. The second row must not start after an ambiguous first-row outcome."
+	}
+}

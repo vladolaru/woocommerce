@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Payments as SettingsPaymentsS
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use WC_Gateway_BACS;
 use WC_Gateway_Cheque;
 use WC_Gateway_COD;
@@ -168,6 +169,33 @@ class Payments extends Task {
 	}
 
 	/**
+	 * Get the task badge.
+	 *
+	 * Backward compatibility: the standalone WooPayments onboarding task (removed when
+	 * WooPayments merged into core) fired this documented public filter. It is re-fired
+	 * here so extensions (e.g. WooPayments' own incentives service) that hook it keep
+	 * working. Deprecated: prefer the native payments incentive surface.
+	 *
+	 * @return string
+	 */
+	public function get_badge() {
+		/**
+		 * Filter WooPayments onboarding task badge.
+		 *
+		 * @deprecated 11.0.0 The WooPayments onboarding task moved into core.
+		 * @since 8.2.0
+		 * @param string $badge Badge content.
+		 */
+		return (string) apply_filters_deprecated(
+			'woocommerce_admin_woopayments_onboarding_task_badge',
+			array( '' ),
+			'11.0.0',
+			'',
+			'The WooPayments onboarding task moved into core.'
+		);
+	}
+
+	/**
 	 * Additional data to be passed to the front-end JS logic.
 	 *
 	 * Primarily used to inform the behavior of the Payments task in the LYS context.
@@ -175,7 +203,7 @@ class Payments extends Task {
 	 * @return array
 	 */
 	public function get_additional_data() {
-		return array(
+		$native = array(
 			'wooPaymentsIsActive'                   => $this->is_woopayments_active(),
 			'wooPaymentsIsInstalled'                => $this->is_woopayments_installed(),
 			'wooPaymentsSettingsCountryIsSupported' => $this->is_woopayments_supported_country( $this->get_payments_settings_country() ),
@@ -185,6 +213,28 @@ class Payments extends Task {
 			'wooPaymentsHasOtherProvidersNeedSetup' => $this->has_providers_needing_setup_other_than_woopayments(),
 			'wooPaymentsHasOnlineGatewaysEnabled'   => $this->has_online_gateways(),
 		);
+
+		/**
+		 * Filter WooPayments onboarding task additional data.
+		 *
+		 * @deprecated 11.0.0 The WooPayments onboarding task moved into core.
+		 * @since 9.4.0
+		 * @param ?array $additional_data The task additional data.
+		 */
+		$deprecated = apply_filters_deprecated(
+			'woocommerce_admin_woopayments_onboarding_task_additional_data',
+			array( null ),
+			'11.0.0',
+			'',
+			'The WooPayments onboarding task moved into core.'
+		);
+
+		if ( is_array( $deprecated ) ) {
+			// Native values take precedence; the deprecated filter may only add keys.
+			return array_merge( $deprecated, $native );
+		}
+
+		return $native;
 	}
 
 	/**
@@ -193,7 +243,9 @@ class Payments extends Task {
 	 * @return bool
 	 */
 	private function is_woopayments_active(): bool {
-		return class_exists( '\WC_Payments' );
+		$legacy_runtime = $this->get_woopayments_legacy_runtime();
+
+		return null !== $legacy_runtime && $legacy_runtime->is_loaded();
 	}
 
 	/**
@@ -308,8 +360,10 @@ class Payments extends Task {
 	 * @return bool Whether the country is supported by WooPayments.
 	 */
 	private function is_woopayments_supported_country( string $country_code ): bool {
-		if ( class_exists( '\WC_Payments_Utils' ) && is_callable( array( '\WC_Payments_Utils', 'supported_countries' ) ) ) {
-			$supported_countries = array_keys( \WC_Payments_Utils::supported_countries() );
+		$legacy_runtime      = $this->get_woopayments_legacy_runtime();
+		$supported_countries = null !== $legacy_runtime ? $legacy_runtime->get_supported_countries() : null;
+		if ( is_array( $supported_countries ) ) {
+			$supported_countries = array_keys( $supported_countries );
 			return in_array( $country_code, $supported_countries, true );
 		}
 
@@ -496,5 +550,20 @@ class Payments extends Task {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Get the WooPayments legacy runtime.
+	 *
+	 * @return WooPaymentsLegacyRuntime|null
+	 */
+	private function get_woopayments_legacy_runtime(): ?WooPaymentsLegacyRuntime {
+		try {
+			$legacy_runtime = wc_get_container()->get( WooPaymentsLegacyRuntime::class );
+		} catch ( \Throwable $e ) {
+			return null;
+		}
+
+		return $legacy_runtime instanceof WooPaymentsLegacyRuntime ? $legacy_runtime : null;
 	}
 }

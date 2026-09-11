@@ -4,6 +4,7 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings;
 
 use Automattic\WooCommerce\Admin\PluginsHelper;
+use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\Affirm;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\AfterpayClearpay;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\Airwallex;
@@ -36,8 +37,11 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\Visa;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\Vivacom;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WCCore;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions as ExtensionSuggestions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
 use WC_Payment_Gateway;
@@ -100,6 +104,8 @@ class PaymentsProviders {
 	public const LINK_TYPE_ABOUT   = 'about';
 	public const LINK_TYPE_TERMS   = 'terms';
 	public const LINK_TYPE_PRICING = 'pricing';
+
+	private const WOOPAYMENTS_EXTENSION_PLUGIN_SLUG = 'woocommerce-payments';
 
 	/**
 	 * The map of gateway IDs to their respective provider classes.
@@ -230,16 +236,39 @@ class PaymentsProviders {
 	private LegacyProxy $proxy;
 
 	/**
+	 * The dependency injection container.
+	 *
+	 * @var Container|null
+	 */
+	private ?Container $container = null;
+
+	/**
+	 * The WooPayments legacy runtime.
+	 *
+	 * @var WooPaymentsLegacyRuntime|null
+	 */
+	private ?WooPaymentsLegacyRuntime $woo_payments_legacy_runtime = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
-	 * @param ExtensionSuggestions $payment_extension_suggestions The payment extension suggestions service.
-	 * @param LegacyProxy          $proxy                         The LegacyProxy instance.
+	 * @param ExtensionSuggestions     $payment_extension_suggestions The payment extension suggestions service.
+	 * @param LegacyProxy              $proxy                         The LegacyProxy instance.
+	 * @param Container                $container                     Optional. The dependency injection container.
+	 * @param WooPaymentsLegacyRuntime $woo_payments_legacy_runtime Optional. The WooPayments legacy runtime.
 	 *
 	 * @internal
 	 */
-	final public function init( ExtensionSuggestions $payment_extension_suggestions, LegacyProxy $proxy ): void {
-		$this->extension_suggestions = $payment_extension_suggestions;
-		$this->proxy                 = $proxy;
+	final public function init(
+		ExtensionSuggestions $payment_extension_suggestions,
+		LegacyProxy $proxy,
+		?Container $container = null,
+		?WooPaymentsLegacyRuntime $woo_payments_legacy_runtime = null
+	): void {
+		$this->extension_suggestions       = $payment_extension_suggestions;
+		$this->proxy                       = $proxy;
+		$this->container                   = $container;
+		$this->woo_payments_legacy_runtime = $woo_payments_legacy_runtime;
 
 		wp_cache_add_non_persistent_groups( array( self::GATEWAY_DETAILS_REQUEST_CACHE_GROUP, self::PROVIDER_LISTS_REQUEST_CACHE_GROUP ) );
 	}
@@ -428,7 +457,7 @@ class PaymentsProviders {
 			return $this->instances['generic'];
 		}
 
-		$this->instances[ $gateway_id ] = new $provider_class( $this->proxy );
+		$this->instances[ $gateway_id ] = $this->configure_payment_gateway_provider_instance( new $provider_class( $this->proxy ) );
 
 		return $this->instances[ $gateway_id ];
 	}
@@ -478,9 +507,49 @@ class PaymentsProviders {
 			return $this->instances['generic'];
 		}
 
-		$this->instances[ $pes_id ] = new $provider_class( $this->proxy );
+		$this->instances[ $pes_id ] = $this->configure_payment_gateway_provider_instance( new $provider_class( $this->proxy ) );
 
 		return $this->instances[ $pes_id ];
+	}
+
+	/**
+	 * Configure provider instances that need explicit runtime collaborators.
+	 *
+	 * @param PaymentGateway $provider The payment gateway provider instance.
+	 * @return PaymentGateway
+	 */
+	private function configure_payment_gateway_provider_instance( PaymentGateway $provider ): PaymentGateway {
+		if ( ! $provider instanceof WooPayments ||
+			null === $this->container ||
+			null === $this->woo_payments_legacy_runtime ) {
+			return $provider;
+		}
+
+		$container                   = $this->container;
+		$woo_payments_legacy_runtime = $this->woo_payments_legacy_runtime;
+
+		$provider->set_admin_runtime_collaborators(
+			$woo_payments_legacy_runtime,
+			function () use ( $container ): WooPaymentsRestController {
+				$rest_controller = $container->get( WooPaymentsRestController::class );
+				if ( ! $rest_controller instanceof WooPaymentsRestController ) {
+					throw new \RuntimeException( 'WooPayments REST controller is not available.' );
+				}
+
+				return $rest_controller;
+			},
+			function () use ( $container ): WooPaymentsService {
+				$service = $container->get( WooPaymentsService::class );
+				if ( ! $service instanceof WooPaymentsService ) {
+					throw new \RuntimeException( 'WooPayments service is not available.' );
+				}
+
+				return $service;
+			},
+			$container->get( WooPaymentsOnboardingAdapter::class )
+		);
+
+		return $provider;
 	}
 
 	/**
@@ -708,6 +777,14 @@ class PaymentsProviders {
 		$active_extensions = array();
 
 		foreach ( $extensions as $extension ) {
+			if (
+				ExtensionSuggestions::WOOPAYMENTS === ( $extension['id'] ?? null ) &&
+				$this->has_registered_payment_gateway( WooPaymentsService::GATEWAY_ID )
+			) {
+				$active_extensions[] = ExtensionSuggestions::WOOPAYMENTS;
+				continue;
+			}
+
 			$extension = $this->enhance_extension_suggestion( $extension );
 
 			if ( self::EXTENSION_ACTIVE === $extension['plugin']['status'] ) {
@@ -1101,7 +1178,12 @@ class PaymentsProviders {
 		// Get the payment gateways to suggestions map.
 		// There will be null entries for payment gateways where we couldn't find a suggestion.
 		$payment_gateways_to_suggestions_map = array_map(
-			fn( $gateway ) => $this->extension_suggestions->get_by_plugin_slug( Utils::normalize_plugin_slug( $this->get_payment_gateway_plugin_slug( $gateway ) ) ),
+			fn( $gateway ) => $this->extension_suggestions->get_by_plugin_slug(
+				$this->get_suggestion_plugin_slug_for_gateway(
+					$gateway,
+					Utils::normalize_plugin_slug( $this->get_payment_gateway_plugin_slug( $gateway ) )
+				)
+			),
 			$payment_gateways
 		);
 
@@ -1365,10 +1447,11 @@ class PaymentsProviders {
 		// The payment gateway plugin might use a non-standard directory name.
 		// Try to normalize it to the common slug to avoid false negatives when matching.
 		$normalized_plugin_slug = Utils::normalize_plugin_slug( $plugin_slug );
+		$suggestion_plugin_slug = $this->get_suggestion_plugin_slug_for_gateway( $payment_gateway, $normalized_plugin_slug );
 
 		// If we have a matching suggestion, hoist details from there.
 		// The suggestions only know about the normalized (aka official) plugin slug.
-		$suggestion = $this->get_extension_suggestion_by_plugin_slug( $normalized_plugin_slug, $country_code );
+		$suggestion = $this->get_extension_suggestion_by_plugin_slug( $suggestion_plugin_slug, $country_code );
 		if ( ! is_null( $suggestion ) ) {
 			// The title, description, icon, and image from the suggestion take precedence over the ones from the gateway.
 			// This is temporary until we update the partner extensions.
@@ -1480,6 +1563,40 @@ class PaymentsProviders {
 		);
 
 		return ! empty( $enabled_gateways );
+	}
+
+	/**
+	 * Check if a gateway ID is registered in the raw WooCommerce gateways list.
+	 *
+	 * @param string $gateway_id The payment gateway ID.
+	 * @return bool
+	 */
+	private function has_registered_payment_gateway( string $gateway_id ): bool {
+		foreach ( $this->get_payment_gateways( false ) as $gateway ) {
+			if ( $gateway instanceof WC_Payment_Gateway && $gateway_id === $gateway->id ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get the suggestion plugin slug that corresponds to a gateway.
+	 *
+	 * @param WC_Payment_Gateway $payment_gateway        The payment gateway object.
+	 * @param string             $normalized_plugin_slug The normalized gateway plugin slug.
+	 * @return string
+	 */
+	private function get_suggestion_plugin_slug_for_gateway( WC_Payment_Gateway $payment_gateway, string $normalized_plugin_slug ): string {
+		if (
+			WooPaymentsService::GATEWAY_ID === $payment_gateway->id &&
+			'woocommerce' === $normalized_plugin_slug
+		) {
+			return self::WOOPAYMENTS_EXTENSION_PLUGIN_SLUG;
+		}
+
+		return $normalized_plugin_slug;
 	}
 
 	/**

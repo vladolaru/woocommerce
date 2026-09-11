@@ -1,0 +1,35 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-page-load-performance-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "68490ecfd6fdcc32447d12b19c9679c5667d245c",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"performance::chromium::tests/e2e/specs/performance/payment-methods.spec.ts:42::Checkout page performance › Stripe › measures averaged page load metrics",
+		"performance::chromium::tests/e2e/specs/performance/payment-methods.spec.ts:71::Checkout page performance › WooPay › measures averaged page load metrics"
+	],
+	"targets": [
+		{"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php;plugins/woocommerce/client/blocks/assets/js/extensions/payment-methods/woopayments/test/index.js;plugins/woocommerce/tests/e2e/tests/woopayments-native/performance/checkout-readiness.spec.ts", "contract": "pending"},
+		{"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsWooPaySessionServiceTest.php;plugins/woocommerce/client/blocks/assets/js/extensions/payment-methods/woopayments/woopay/test/index.js;plugins/woocommerce/tests/e2e/tests/woopayments-native/performance/checkout-readiness.spec.ts", "contract": "pending"}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [{
+		"role": "deferral",
+		"verdict": "APPROVE",
+		"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+		"summary": "Fresh independent review approved pre-review evidence SHA dc736a85bf5d539a1fbdb6aa1a9c4aefb6cd8b8af83a2c9a9db4f04b739ada5b against mutated ledger SHA a15489faa5d5873cc0c0366f38a04680359d781a3cb8d0ead67ae22040c79a2c and baseline 92a3d3acb5aafe2a0998985a0736ad23041f729f4acf4affef211b46fbd0c3e9 at 68490ecfd6fdcc32447d12b19c9679c5667d245c, with no findings. Exactly rows 181-182 change only fields 37-40, with two exact semicolon-delimited target objects. The paired Card-readiness WooPay-off/on interpretation, distinct Metrics quantitative and native semantic owners, equivalent pre-provisioned snapshots, excluded settings synchronization/provider/Tracks writes, three counterbalanced rounds, one warmup plus ten retained samples, median, p90, dispersion, paired and identical-byte head/base comparisons, calibrated-above-noise budget, fixed external-read/environment policy, accessible Card and enabled-only focus-ready WooPay smoke, no provider writer/listener/financial journal, byte restoration, quarantine, drift and source truth of three unbudgeted source reloads are approved without defect, execution, retirement, verification or closure claims."
+	}],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The shared semantic target is absent, both exact multi-target contracts and owners remain pending, and standing native readiness has no approved non-transactional profile that can omit callback proof. Core Metrics has not accepted the quantitative owner, paired methodology or calibrated budget, and no byte-identical WooPay-off/on snapshots exist. The frozen and rolling source is unchanged but only logs three retained reload means with no warmup, threshold or verdict; no performance defect is established.",
+		"affected_scope": "One grouped paired comparison measures the same real Card payment-surface readiness with WooPay disabled and enabled; the enabled number is not a WooPay flow metric. The quantitative owner uses equivalent pre-provisioned snapshots, tracking disabled, fixed Core, WordPress, PHP, Node, Playwright, Chromium, OS, theme, checkout, origin, viewport, locale, reduced-motion, product, cart, customer, gateway, account, test-mode and external-resource fingerprints. At least three independent counterbalanced AB and BA rounds each discard one warmup and retain ten samples per configuration. Report raw samples, missing count, median, p90, MAD or IQR, paired off/on delta and identical-byte head/base comparison; calibrate a budget above the observed noise floor rather than inheriting an unasserted source mean. A separate semantic smoke proves an accessible selected Card control and titled keyboard-reachable card surface in both states, no checkout error, and one accessible focus-ready WooPay express control only when enabled without activating it. No order, payment, intent, charge or other financial object is created.",
+		"no_allowlisted_action_reason": "No local action can assign the Metrics and native E2E owners, approve the non-callback readiness profile, provision equivalent snapshots, define the external-read policy or calibrate and accept a budget. Calling settings UI or REST is disallowed because it can trigger provider synchronization; the benchmark must consume pre-provisioned state or an owner-approved direct local fixture. Use one worker, zero retries and no sample replay. Provider writer, financial journal and callback listener are intentionally absent; Stripe, WooPay and account resources are declared reads only, and Tracks writes are disabled.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Satisfy exact native identity and Card readiness under an approved non-transactional profile, obtain Core Metrics ownership for the quantitative pair and native E2E ownership for the semantic smoke, then provision byte-identical off/on snapshots with tracking and settings synchronization excluded. Run at least three counterbalanced rounds with one warmup and ten retained samples per state, calibrate and approve a budget above noise, preserve exact environment and raw-sample attachments, prove the semantic accessibility boundary, restore exact bytes and obtain fresh code, E2E, reliability, performance, accessibility and evidence reviews. Retirement of the original log-only form remains a later explicit owner decision.",
+		"quarantine_status": "No store snapshot, browser, sample, provider writer, listener, journal, external write, setting mutation, restoration or quarantine was created; the separately owned listener remains untouched and is not required. Future wrong identity, unexpected provider or Tracks write, resource-policy breach, missing or duplicate sample, checkout error, settings drift, restoration or publication uncertainty must stop without retry and quarantine the exact store snapshot, settings journal, browser/network trace and raw sample set. Pure statistical noise with exact identity and restoration makes the campaign non-decision-capable but does not by itself quarantine provider or store state."
+	}
+}

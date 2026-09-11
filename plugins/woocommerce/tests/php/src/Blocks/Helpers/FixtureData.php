@@ -387,6 +387,45 @@ class FixtureData {
 	}
 
 	/**
+	 * Sideload a sample image fixture and return its ID.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return int Attachment ID.
+	 */
+	public function sideload_image( $product_id = 0 ) {
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/media.php';
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+
+		$fixture_path = \WC_Unit_Tests_Bootstrap::instance()->tests_dir . '/data/Dr1Bczxq4q.png';
+		$tmp_file     = wp_tempnam( basename( $fixture_path ) );
+
+		if ( ! $tmp_file || ! copy( $fixture_path, $tmp_file ) ) {
+			throw new \RuntimeException( 'Unable to copy image fixture for Blocks Store API tests.' );
+		}
+		clearstatcache( true, $tmp_file );
+
+		$file = array(
+			'name'     => basename( $fixture_path ),
+			'tmp_name' => $tmp_file,
+			'type'     => 'image/png',
+			'size'     => filesize( $tmp_file ),
+			'error'    => 0,
+		);
+
+		$image_id = media_handle_sideload( $file, $product_id );
+
+		if ( is_wp_error( $image_id ) ) {
+			if ( file_exists( $tmp_file ) ) {
+				wp_delete_file( $tmp_file );
+			}
+			throw new \RuntimeException( esc_html( $image_id->get_error_message() ) );
+		}
+
+		return $image_id;
+	}
+
+	/**
 	 * Add a review to a product and flush cache.
 	 *
 	 * @param integer $product_id Product ID.

@@ -1,0 +1,17 @@
+# WooPayments REST route parity exceptions.
+#
+# Format:
+# METHOD<TAB>LEGACY_ROUTE<TAB>DISPOSITION<TAB>NATIVE_SUCCESSOR<TAB>SIGNOFF<TAB>REASON
+#
+# Dispositions:
+# - SUPERSEDED: Native runtime intentionally provides equivalent product behavior through a different route surface.
+# - DROPPED: Native runtime intentionally does not provide the legacy route. Dropped rows require explicit sign-off before release.
+
+POST	/wc/v3/payments/onboarding/kyc/session	SUPERSEDED	POST /wc-admin/settings/payments/woopayments/onboarding/step/business_verification/kyc_session	Task 6.1 / D8	Native NOX onboarding owns embedded KYC session creation through the business-verification step action.
+POST	/wc/v3/payments/onboarding/kyc/finalize	SUPERSEDED	POST /wc-admin/settings/payments/woopayments/onboarding/step/business_verification/kyc_session/finish	Task 6.1 / D8	Native NOX onboarding owns embedded KYC session finalization through the business-verification step action.
+POST	/wc/v3/payments/onboarding/reset	SUPERSEDED	POST /wc-admin/settings/payments/woopayments/onboarding/reset	Task 6.1 / D8	Native NOX onboarding owns reset semantics and records the location/source/from context on its own route.
+GET	/wc/v3/payments/onboarding/fields	SUPERSEDED	POST /wc-admin/settings/payments/woopayments/onboarding; POST /wc-admin/settings/payments/woopayments/onboarding/preload	Task 6.1 / D8	Native NOX onboarding exposes required field context through onboarding details/preload rather than a standalone legacy fields endpoint.
+GET	/wc/v3/payments/onboarding/business_types	SUPERSEDED	POST /wc-admin/settings/payments/woopayments/onboarding; POST /wc-admin/settings/payments/woopayments/onboarding/preload	Task 6.1 / D8	Native NOX onboarding exposes business-type context through onboarding details/preload rather than a standalone legacy business-types endpoint.
+POST	/wc/v3/payments/onboarding/test_drive_account/init	SUPERSEDED	POST /wc-admin/settings/payments/woopayments/onboarding/step/test_account/init	Task 6.1 / D8	Native NOX onboarding owns test-account initialization through the test-account onboarding step.
+POST	/wc/v3/payments/onboarding/test_drive_account/disable	SUPERSEDED	POST /wc-admin/settings/payments/woopayments/onboarding/test_account/disable; POST /wc-admin/settings/payments/woopayments/onboarding/step/business_verification/test_account/disable	Task 6.1 / D8	Native NOX onboarding owns test-account disable/reset flows through native context-aware actions.
+POST	/wc/v3/payments/settings/schedule-stripe-billing-migration	DROPPED	none	Task 6.1 / D13 Stripe Billing engine drop	The Stripe Billing engine and its off-site-to-tokenized migration scheduler are explicitly dropped from the native runtime scope.

@@ -1,0 +1,41 @@
+{
+	"schema_version": 2,
+	"slice_id": "bancontact-checkout-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "7fe68f4bd2a22f3045f72ded483aa665a7025275",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:125::Local payment method checkout with card testing › Card testing protection enabled: false › should successfully place order with Bancontact",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:125::Local payment method checkout with card testing › Card testing protection enabled: true › should successfully place order with Bancontact"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/checkout.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review checkout evidence SHA 91e72c82875b6c8793fdc331df0d13aa4acb236539661b1c6c02d0f2fa829d41 and refund evidence SHA ee19ed5c5b00081e9c7dc351417bcd2e15d1c275ed6ebf02f7df0e0b1c1050e6 against mutated ledger SHA cd881f9401aa33ce707308e408ade24ca2c7bd74d3fc0a555b97308d0b91387a and committed baseline aa9789dc75aeee2b267dd05b706d8fbd89648a521836e89455affd3a701b4a77 at 7fe68f4bd2a22f3045f72ded483aa665a7025275, with no findings. Exactly three intended Bancontact rows change only fields 37-40. The two checkout rows preserve authoritative false/true protection, BE/EUR eligibility, accessible one-shot external authorization, exact 6500 EUR order/intent/Bancontact-method/charge/capture joins and independent graph cardinality, with one writer, exclusive listener, zero retries/replay, journals, exact restoration, retention, quarantine and drift controls. Readiness remains first and no defect, known gap, implementation, verification or closure is claimed."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before this two-row Bancontact campaign may allocate the exact site/blog, BE test account, canonical and split gateways, sole provider writer, or exclusively owned callback listener. The checkout target contract and owner remain pending, and no approved one-shot external-authorization driver, authoritative false/true card-testing-protection controller, exact Bancontact payment-method reader, or byte-exact restoration protocol exists. Core's BE/EUR eligibility, redirect return controller, token bridge, and capture infrastructure align statically with the frozen source, so no current native product defect or source drift is established.",
+		"affected_scope": "Exactly two independently attributable EUR 65.00 Bancontact checkouts: one under authoritatively false card-testing protection and one under authoritatively true protection. Each uses a fresh run-correlated shopper/session/cart, unique virtual non-taxable no-shipping product, Belgian billing address, exact BE connected account with bancontact_payments active, canonical and Bancontact gateways enabled, automatic capture, and effective checkout/session currency EUR. The false graph proves policy false and no generated, exposed, or submitted protection token. The true graph proves one 16-character session token whose redacted digest is equal across configuration, checkout exposure, and the submitted request. Each graph joins one semantic checkout activation and one accessible external authorization to one order, intent, Bancontact payment method, successful captured charge, exact 6500 amount, EUR/eur currency, one intent lineage, one charge, one capture, exact order confirmation, and correlated callback events.",
+		"no_allowlisted_action_reason": "No allowlisted local action can establish native readiness, assign the target/owner, supply an owner-approved BE/EUR/Bancontact allocation, take exclusive ownership of the callback stream, authoritatively control and restore both protection states, or add the missing provider payment-method type reader. A Belgian shopper address, enabled EUR, frontend token global, local success page, visible intent link, lower-layer coverage, or historical provider run cannot replace exact connected-account, selected-currency, submitted-token, order/intent/method/charge and occurrence joins. The future campaign uses one worker, zero Playwright retries, one provider writer, one semantic submission and authorization per graph, bounded read-only convergence, no replay, and immediate halt before later writes after ambiguity.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy owner-approved readiness for the exact native runtime, site/blog, BE test account, canonical gateway, Bancontact split gateway, and callback route. Approve the row-safe target contract and implementation owner; allocate one protected provider writer and one exclusively owned listener; provide exact BE account/capability, EUR session, false/true protection, and raw settings/cache controllers plus a provider reader proving payment-method type, amount, currency, capture state and cardinality. Journal allocation and raw state before mutation, execute the false checkout then the true checkout as independent graphs with zero retries/replay, retain immutable redacted financial/event evidence, restore reversible settings/account/cache/currency/user/session bytes exactly, quarantine uncertainty, and obtain fresh code, lower-layer, E2E-test, reliability, concurrency, accessibility, security, and provider-evidence reviews.",
+		"quarantine_status": "This readiness deferral opened no browser, allocated no account/store/writer/listener capacity, acquired no lock, created no journal, changed no gateway, currency, account cache, protection state, shopper, session, cart, product, order, intent, payment method, charge, capture, or event, and created no quarantine; the separately owned listener remains untouched. A future readiness, identity, eligibility, token, dispatch, authorization, return, amount, currency, method type, capture, cardinality, listener, lock, restoration, retention, publication, or drift mismatch must halt later writes, preserve journals and immutable financial history, and quarantine the exact account/store/settings/session/product/order/provider/event graph without replay, provider deletion, broad reset, hard-coded restoration, or listener takeover."
+	}
+}

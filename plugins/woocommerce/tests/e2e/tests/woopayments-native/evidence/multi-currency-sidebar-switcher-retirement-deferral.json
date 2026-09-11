@@ -1,0 +1,48 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-sidebar-switcher-retirement-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "b25993cb8ee21bdd99cd1806d070e744419edfc6",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency.spec.ts:55::Multi-currency › add the currency switcher to the sidebar"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencySettingsControllerTest.php;plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencyFrontendPricesControllerTest.php;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/MultiCurrency/WooPaymentsCurrencyRateProviderTest.php;plugins/woocommerce/client/blocks/assets/js/blocks/multi-currency-switcher/test/index.js",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA 47f89f6e7f396a74fa3ddec4790004c1a230cd9ba19dee6dd91ef042b34c2193 against ledger SHA e9808e63821e9753cf387e2300fd89c5db2745af48a9d0c075bd394f12f0f706 with no findings. Exactly fields 37-40 change on the line-55 sidebar-switcher row, and the exact multi-target ledger path remains preserved. Explicit retirement authority correctly precedes standing native readiness; the affected scope is limited to the frozen helper postcondition rather than Core's preserved classic widget. Richer shopper and frontend contracts, historical plugin-created widget cutover, the retained classic-widget publisher oracle, line 61's dynamic block publication, theme/widget/sidebar journals and exact restoration, quarantine, accessibility, source/target drift, and the provider/listener-free boundary all remain explicitly separate."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Retiring this helper-only classic-sidebar row requires explicit disposition authority plus an explicit allocation of the real merchant publication and storefront outcomes to retained rows and of plugin-created widget-data continuity to a transition target. Core deliberately preserves the classic currency_switcher_widget, while this frozen row proves only that some matching widget appears in sidebar-1 after a broad helper. Lower-layer registration tests, duplicate shopper setup, and historical local evidence cannot mint retirement authority.",
+		"affected_scope": "Only the exact line-55 helper postcondition: with additional currencies disabled, an authenticated merchant invokes the classic-widget insertion helper and REST eventually sees some currency_switcher_widget in seeded sidebar-1. Retirement would not remove the native classic widget or retire historical plugin-created widget data, storefront rendering or switching, Storefront breadcrumb injection, dynamic block publishing, the stronger shopper widget contracts, or line 61's post/page block publication.",
+		"no_allowlisted_action_reason": "No autonomous local run can decide retirement, assign historical plugin-widget continuity, reinterpret registration tests as a saved-editor crossing, or replace the classic widget contract with the dynamic block or Storefront injection. Standing native readiness is secondary to that authority decision. Provider writes, financial objects, events, and the separately owned listener are irrelevant and cannot unlock or strengthen this local publisher contract.",
+		"reference": "ambiguous-decision:PILOT-RETIREMENT-AUTHORITY",
+		"unlock_decision": "Either explicitly approve retirement of only this helper-only row after naming the retained semantic publication/frontend rows and an owner for historical plugin-created widget cutover, or reverse the retirement disposition and approve a row-specific target, contract, and owner for a provider-free classic-widget publisher/persistence oracle. A retained run must use one accessible insertion and save with no replay, join one exact run-owned widget across editor, REST, raw widget instance, sidebar placement, and reload, preserve line 61 and historical cutover separately, and then satisfy native readiness with complete theme/widget/sidebar journals and fresh reviews.",
+		"quarantine_status": "No browser context, account, store, theme, option, widget, sidebar, lock, journal, provider object, listener, retention record, or quarantine was created or changed for this row. A future ambiguous save, duplicate or wrong widget identity, theme/sidebar change, raw/projection mismatch, ownership or target drift, or incomplete restoration must preserve diagnostics and quarantine the exact store/theme/widget/sidebar graph and journal without replay. Blanket widget deletion, currency normalization, provider allocation, payment records, and listener activity never belong to this row.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency.spec.ts:55::Multi-currency › add the currency switcher to the sidebar",
+				"unlock_decision": "Either explicitly approve retirement of only this helper-only row after naming the retained semantic publication/frontend rows and an owner for historical plugin-created widget cutover, or reverse the retirement disposition and approve a row-specific target, contract, and owner for a provider-free classic-widget publisher/persistence oracle. A retained run must use one accessible insertion and save with no replay, join one exact run-owned widget across editor, REST, raw widget instance, sidebar placement, and reload, preserve line 61 and historical cutover separately, and then satisfy native readiness with complete theme/widget/sidebar journals and fresh reviews.",
+				"satisfied_on": "2026-08-06",
+				"reference": "calibration-notes:2026-08-06:duplicate-contract-retirement"
+			}
+		]
+	}
+}

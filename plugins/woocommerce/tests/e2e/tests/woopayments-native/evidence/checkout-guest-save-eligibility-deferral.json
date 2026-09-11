@@ -1,0 +1,41 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-guest-save-eligibility-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "502b3d45fa50ccd440ec003ca4e71f4d504f3c85",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a basic card added on checkout › should not allow guest user to save the card"
+	],
+	"targets": [{"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/saved-method.ts", "contract": "pending"}],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review basic save/delete SHA 35182748ec541caab6b191c721b12cffcb429114316aacf65cd62eb8d7e6961d, 3DS save SHA c8c0b74e66bb8528fb25c888dc817cb86ef03a3a270d169350022e1cf999e7d3, guest eligibility SHA 6b92895797f112b7dbbd33710fe7c4a5507c62f5724148b8357d86957a79e78f and duplicate-retirements SHA 0ee9af2098e98f37635b1a7edbe7bd98f1d03c1ebad6c703045668f04135d6b1 against mutated ledger SHA 2fb5e5b50cd574c256e537f8c5d447c805216faf4b1a72e485f2c91c3ffc82a6 and baseline 2286900cc3e6600a0adbdd12b41a6a3c0acb258efd90e33145146fc17a9659a3 at 502b3d45fa50ccd440ec003ca4e71f4d504f3c85, with no findings. Exactly six rows change only fields 37-40: four readiness deferrals and two retirement-authority deferrals. The evidence preserves exact save/delete/provider identity, mandatory same-intent 3DS, provider-free guest accessibility and zero dispatch, duplicate-only retirement reasoning, one writer/listener, no retry/replay, journals, exact restoration, retention, quarantine and drift, with no unsupported defect, gap, implementation, verification, closure or retirement claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness and target ownership are unresolved before this provider-free guest eligibility row can use the exact native Card surface. The saved-method target is absent with pending contract and owner, and no approved adapter distinguishes an intentionally hidden Core save row from a missing gateway or broad checkout failure. The frozen exact-label assertion is stale against Core's semantic Save to account control; no native product defect is established.",
+		"affected_scope": "One fresh anonymous context and session with no inherited storage, a run-owned product/cart, native Card gateway and named card form visibly present, recorded registration/account-creation policy and account creation unselected. The Core save input exists exactly once in its hidden row but is not visible, accessible or keyboard-focusable, and the accessible save-control count is zero. Page and local counters prove zero checkout/payment dispatch, order, user, local token, provider create/confirm/detach call or financial object. Place order is never activated; provider writer, listener, journal, intent, method and charge are intentionally absent. The duplicate 3DS parameter remains a separate authority decision.",
+		"no_allowlisted_action_reason": "No local allowlisted action can assign the absent target/owner or establish the exact native Card and guest-policy fixture without misclassifying a missing gateway as a pass. This row is read-only after fixture provisioning and must not be expanded into a guest purchase. It needs semantic visibility/focus proof and authoritative zero-dispatch/local/provider counters rather than one stale label.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness and approve the target/owner plus a provider-free guest fixture. Implement a semantic Core save-control adapter and zero-dispatch/local-record counters; use a fresh anonymous context, prove Card remains operable while credential persistence is unavailable, close the context, clear only the run-owned cart/product/session, verify unchanged token/order cardinalities, quarantine local uncertainty, and obtain fresh code, E2E-test, accessibility, reliability and security reviews. No provider allocation or listener is required.",
+		"quarantine_status": "No browser, context, session, product, cart, user, token, order, provider record, writer, listener, journal, mutation or quarantine was created; the separately owned listener remains untouched. A future native-surface, identity, visibility, focusability, zero-dispatch, cleanup, restoration, publication or drift mismatch must preserve diagnostics and quarantine only the exact disposable store/session/product/cart graph without provider claims, replay, broad reset or listener action.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a basic card added on checkout › should not allow guest user to save the card",
+				"unlock_decision": "Externally satisfy exact native readiness and approve the target/owner plus a provider-free guest fixture. Implement a semantic Core save-control adapter and zero-dispatch/local-record counters; use a fresh anonymous context, prove Card remains operable while credential persistence is unavailable, close the context, clear only the run-owned cart/product/session, verify unchanged token/order cardinalities, quarantine local uncertainty, and obtain fresh code, E2E-test, accessibility, reliability and security reviews. No provider allocation or listener is required.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:guest-save-family-smoke"
+			}
+		]
+	}
+}

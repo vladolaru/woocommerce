@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+#
+# BC-manifest drift gate (WooPayments → WooCommerce core merge, plan stage A0).
+#
+# Re-runs the backward-compatibility extraction commands (the "Regeneration
+# Commands" blocks in ai-prompts/.../follow-up/bc-extraction/*.md) against the
+# LIVE WooPayments source, normalizes the result into a stable per-category
+# surface signature, and diffs it against a committed baseline. Any undispositioned
+# add/remove of a BC surface line fails the gate.
+#
+# This is a DRIFT gate, not a re-extraction: the human-readable inventories in
+# bc-extraction/*.md remain the disposition record; this script's baseline is the
+# machine-diffable snapshot the gate compares against.
+#
+# Usage:
+#   bc-drift-gate.sh            # check mode: exit 1 on any drift (CI + local gate)
+#   bc-drift-gate.sh --update   # capture/refresh the baseline (disposition step)
+#
+# Source location (override in CI):
+#   WCPAY_SRC=/path/to/woocommerce-payments bc-drift-gate.sh
+#
+# Normalization drops the absolute path prefix and line numbers (which churn on
+# every edit) but keeps "relative_file: matched content", so moving a line within
+# a file does not drift, while adding/removing/relocating a BC surface does.
+
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
+WCPAY_SRC="${WCPAY_SRC:-$REPO_ROOT/../woocommerce-payments}"
+WCPAY_SOURCE_REF="${WCPAY_SOURCE_REF:-10.8.0}"
+BASELINE_DIR="$SELF_DIR/bc-drift-baseline"
+PROVENANCE_FILE="$BASELINE_DIR/source-provenance.txt"
+
+MODE="check"
+if [ "${1:-}" = "--update" ]; then
+	MODE="update"
+elif [ -n "${1:-}" ]; then
+	echo "Unknown argument: $1 (use --update or no argument)" >&2
+	exit 2
+fi
+
+if [ ! -d "$WCPAY_SRC/includes" ]; then
+	echo "BLOCKED: WooPayments source not found at: $WCPAY_SRC" >&2
+	echo "         Set WCPAY_SRC to the woocommerce-payments checkout." >&2
+	exit 3
+fi
+
+resolve_source_commit() {
+	local source_commit head_commit dirty_paths
+
+	if [ "$WCPAY_SOURCE_REF" = "worktree" ]; then
+		source_commit="$(git -C "$WCPAY_SRC" rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || {
+			echo "ERROR: WooPayments source is not a Git worktree: $WCPAY_SRC" >&2
+			return 1
+		}
+		printf '%s\n' "$source_commit"
+		return 0
+	fi
+
+	source_commit="$(git -C "$WCPAY_SRC" rev-parse --verify "refs/tags/$WCPAY_SOURCE_REF^{commit}" 2>/dev/null)" || {
+		echo "ERROR: WooPayments source does not contain required ref $WCPAY_SOURCE_REF: $WCPAY_SRC" >&2
+		return 1
+	}
+	head_commit="$(git -C "$WCPAY_SRC" rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || return 1
+	if [ "$head_commit" != "$source_commit" ]; then
+		echo "ERROR: WooPayments source must be checked out at WooPayments ref $WCPAY_SOURCE_REF ($source_commit); HEAD is $head_commit" >&2
+		return 1
+	fi
+
+	dirty_paths="$(git -C "$WCPAY_SRC" status --porcelain --untracked-files=all -- includes src client woocommerce-payments.php 2>/dev/null)" || return 1
+	if [ -n "$dirty_paths" ]; then
+		echo "ERROR: WooPayments source must be clean at ref $WCPAY_SOURCE_REF before BC extraction" >&2
+		return 1
+	fi
+
+	printf '%s\n' "$source_commit"
+}
+
+# Pin/cleanliness failures are preconditions, not drift verdicts: BLOCKED (exit 3).
+SOURCE_COMMIT="$(resolve_source_commit)" || exit 3
+SOURCE_PROVENANCE="$(printf 'source_ref=%s\nsource_commit=%s\n' "$WCPAY_SOURCE_REF" "$SOURCE_COMMIT")"
+
+if [ "$MODE" = "update" ]; then
+	# Baseline + provenance are written only after every probe validated non-empty
+	# (see the update summary below) so a refused update leaves the committed
+	# baseline byte-for-byte untouched.
+	UPDATE_STAGING="$(mktemp -d "${TMPDIR:-/tmp}/bc-drift-update.XXXXXX")"
+	trap 'rm -rf "$UPDATE_STAGING"' EXIT
+elif [ ! -f "$PROVENANCE_FILE" ]; then
+	echo "FAIL: BC baseline source provenance is missing: $PROVENANCE_FILE" >&2
+	echo "      regenerate only from the intended immutable WooPayments source with --update" >&2
+	exit 1
+elif [ "$(cat "$PROVENANCE_FILE")" != "$SOURCE_PROVENANCE" ]; then
+	echo "FAIL: BC baseline source provenance does not match the requested WooPayments source" >&2
+	echo "      expected: $WCPAY_SOURCE_REF @ $SOURCE_COMMIT" >&2
+	exit 1
+fi
+
+INC="$WCPAY_SRC/includes"
+SRC="$WCPAY_SRC/src"
+CLIENT="$WCPAY_SRC/client"
+ROOTFILE="$WCPAY_SRC/woocommerce-payments.php"
+SCAN="$INC $SRC"
+
+# Strip the source path prefix and ":<line>:" so the signature is churn-stable, then sort-unique.
+normalize() {
+	sed -E "s#${WCPAY_SRC}/?##g" \
+		| sed -E 's/^([^:]+):[0-9]+:[[:space:]]*/\1: /' \
+		| sed -E 's/[[:space:]]+$//' \
+		| grep -v -e '^[[:space:]]*$' \
+		| LC_ALL=C sort -u
+}
+
+# --- Category probes: faithful to bc-extraction/*.md regeneration commands. ---
+# `head` limits from the docs are intentionally dropped here (the gate needs the full surface).
+
+probe_scheduler() {
+	{
+		grep -rHn "GROUP_ID\|group_id\|'woocommerce_payments'\|\"woocommerce_payments\"" $SCAN --include="*.php"
+		grep -rHn "as_schedule_single_action\|as_schedule_recurring_action\|as_enqueue_async_action\|schedule_job\|as_unschedule_action\|as_unschedule_all_actions\|as_cancel_action" $SCAN --include="*.php"
+		grep -rHn "wcpay_\|'woocommerce_payments_" $SCAN --include="*.php" | grep "schedule\|as_enqueue\|as_schedule\|add_action"
+		grep -rHn "wp_schedule_event\|wp_schedule_single_event\|wp_unschedule_event\|wp_clear_scheduled_hook\|wp_next_scheduled\|wp_unschedule_hook" $SCAN --include="*.php"
+		grep -rHn "add_action.*wcpay_\|add_action.*woocommerce_payments_" $SCAN --include="*.php"
+		grep -rHn "const.*HOOK\|const.*ACTION\|const.*EVENT" $SCAN --include="*.php" | grep -i "wcpay\|woocommerce_pay"
+		grep -rHn "wcpay_failed_event\|failed_webhook\|failed_event" $SCAN --include="*.php"
+	} 2>/dev/null | grep -v vendor | grep -v '/tests/' | normalize
+}
+
+probe_php_api() {
+	{
+		grep -Hn "public static function" "$INC/class-wc-payments.php"
+		grep -rHn "^function " "$INC" "$SRC" "$ROOTFILE" --include="*.php"
+		grep -rHn 'GATEWAY_ID\|const TYPE\|protected \$type' "$INC" --include="*.php"
+		grep -rHn "get_id()\|get_stripe_payment_method_type" "$INC/payment-methods/Configs/Definitions/" --include="*.php"
+		grep -rHn "implements.*MultiCurrency" "$INC" --include="*.php"
+		grep -rHn "WC_Payments::\|WC_Payment_Gateway_WCPay::\|WC_Payments_Account::\|WC_Payments_Customer_Service::\|WC_Payments_Order_Service::\|WC_Payments_Token_Service::" "$INC/subscriptions/" --include="*.php"
+		grep -Hn "const.*META_KEY\|const.*OPTION\|const.*KEY" "$INC/class-wc-payments-order-service.php"
+		grep -rHn "class.*Exception\|class.*_Exception" "$INC" --include="*.php"
+	} 2>/dev/null | grep -v "vendor/\|/tests/\|/vendor\b" | normalize
+}
+
+probe_persisted_data() {
+	{
+		grep -rHn "update_meta_data\|add_meta_data\|get_meta\|delete_meta_data" "$INC" "$SRC" --include="*.php"
+		grep -rHn "update_post_meta\|get_post_meta\|add_post_meta\|delete_post_meta" "$INC" "$SRC" --include="*.php"
+		grep -rHn "update_user_meta\|get_user_meta\|add_user_meta\|delete_user_meta\|update_user_option\|get_user_option" "$INC" "$SRC" --include="*.php"
+		grep -rHn "get_option\|update_option\|add_option\|delete_option" "$INC" "$SRC" --include="*.php" | grep -iE "wcpay|woopay|woocommerce_payments|woocommerce_woopayments|nox_profile|nox_lock|platform_checkout"
+		grep -rHn "set_transient\|get_transient\|delete_transient" "$INC" "$SRC" --include="*.php"
+		grep -rHn "WC()->session\|->session->set\|->session->get\|->session->has\|->session->__unset" "$INC" "$SRC" --include="*.php"
+		grep -Hn "^	const " "$INC/class-database-cache.php"
+		grep -rHn "^	const .*META_KEY\|^	const .*OPTION\|^	const .*SESSION_KEY\|^	const .*TRANSIENT\|^	const .*KEY\b" "$INC" "$SRC" --include="*.php" | grep -iE "wcpay|woopay|stripe|intent|charge|currency|invoice|subscription|product_id|product_price"
+	} 2>/dev/null | grep -v "vendor\|/tests\|node_modules" | normalize
+}
+
+probe_endpoints() {
+	{
+		grep -rHn "register_rest_route(" "$INC/" "$SRC/" --include="*.php"
+		grep -rHn "add_action.*wp_ajax" "$INC/" "$SRC/" --include="*.php"
+		grep -rHn "add_action.*wc_ajax\|add_action.*woocommerce_api_" "$INC/" "$SRC/" --include="*.php"
+		grep -rHn "woocommerce_store_api_register\|ExtendSchema\|ExtendRestApi\|register_endpoint_data\|register_update_callback\|register_payment_requirements" "$INC/" "$SRC/" --include="*.php"
+		grep -rHn "AbstractPaymentMethodType\|woocommerce_blocks_payment_method_type_registration" "$INC/" "$SRC/" --include="*.php"
+	} 2>/dev/null | grep -v "vendor/\|/tests/" | normalize
+}
+
+probe_hooks_filters() {
+	{
+		grep -rHn --include="*.php" -E "(do_action|do_action_deprecated|apply_filters|apply_filters_deprecated)\s*\(\s*['\"]?(wcpay_|wc_payments_|woocommerce_payments_|woopay_|wcpay_multi_currency_|__experimental_woocommerce_[a-z_]*payments[a-z_]*)" "$INC/" "$SRC/"
+		grep -rHn --include="*.php" -E "protected\s+\\\$hook\s*=\s*['\"]" "$INC/core/server/request/"
+		grep -rHn --include="*.php" "wcpay_.*_format" "$INC/class-wc-payments-localization-service.php"
+		grep -rHn --include="*.php" -E "(do_action_deprecated|apply_filters_deprecated)" "$INC/" "$SRC/"
+	} 2>/dev/null | grep -v "vendor/\|/tests/" | normalize
+}
+
+# Tracks / telemetry emitters (bc-extraction/tracks-events.md) — the non-negotiable telemetry
+# contract (bc-manifest §0.3/§3.6). Static name-level drift only; prop-level drift is the runtime
+# parity harness's job. Captures PHP recorders + JS recorders + the server-side event-name constants.
+probe_tracks() {
+	{
+		grep -rHnE "Tracker::track[a-z_]*\(|record_tracks_event\(|wc_admin_record_tracks_event\(" "$INC" "$SRC" --include="*.php"
+		grep -rHn "const " "$INC/constants/class-track-events.php"
+		grep -rHnE "record(User)?Event\(|wcpayTracks|wcTracks\.recordEvent" "$CLIENT" --include="*.js" --include="*.jsx" --include="*.ts" --include="*.tsx"
+	} 2>/dev/null | grep -vE "vendor|/tests/|__tests__|\.spec\." | normalize
+}
+
+CATEGORIES="scheduler php_api persisted_data endpoints hooks_filters tracks"
+
+echo "BC-manifest drift gate"
+echo "  source:   $WCPAY_SRC"
+echo "  ref:      $WCPAY_SOURCE_REF @ $SOURCE_COMMIT"
+echo "  baseline: $BASELINE_DIR"
+echo "  mode:     $MODE"
+echo
+
+fail=0
+for cat in $CATEGORIES; do
+	out="$("probe_$cat")"
+	count="$(printf '%s\n' "$out" | grep -c . )"
+	base="$BASELINE_DIR/$cat.txt"
+
+	if [ "$MODE" = "update" ]; then
+		printf '%s\n' "$out" > "$UPDATE_STAGING/$cat.txt"
+		if [ "$count" -eq 0 ]; then
+			printf '  EMPTY   %-16s %5s lines\n' "$cat" "$count"
+			EMPTY_CATEGORIES="${EMPTY_CATEGORIES:-}${EMPTY_CATEGORIES:+ }$cat"
+		else
+			printf '  staged  %-16s %5s lines\n' "$cat" "$count"
+		fi
+		continue
+	fi
+
+	if [ ! -f "$base" ]; then
+		echo "  MISSING baseline: $cat (run --update to capture)"
+		fail=1
+		continue
+	fi
+
+	# "<" = present in live source but not baseline (NEW surface, needs disposition).
+	# ">" = present in baseline but gone from live source (REMOVED surface).
+	d="$(diff <(printf '%s\n' "$out") "$base")"
+	if [ -n "$d" ]; then
+		echo "  DRIFT  $cat ($count live lines):"
+		printf '%s\n' "$d" | sed 's/^/      /'
+		fail=1
+	else
+		printf '  ok     %-16s %5s lines\n' "$cat" "$count"
+	fi
+done
+
+echo
+if [ "$MODE" = "update" ]; then
+	if [ -n "${EMPTY_CATEGORIES:-}" ]; then
+		echo "ERROR: refusing --update: probe(s) returned 0 lines: ${EMPTY_CATEGORIES}" >&2
+		echo "       An empty category would bake a permanently vacuous baseline (empty-vs-empty" >&2
+		echo "       compares PASS forever). Likely probe drift or renamed source files — fix the" >&2
+		echo "       probe or the source layout first. No baseline file was written." >&2
+		exit 3
+	fi
+	mkdir -p "$BASELINE_DIR"
+	for cat in $CATEGORIES; do
+		mv "$UPDATE_STAGING/$cat.txt" "$BASELINE_DIR/$cat.txt"
+		printf '  updated %-16s\n' "$cat"
+	done
+	printf '%s\n' "$SOURCE_PROVENANCE" > "$PROVENANCE_FILE"
+	echo "Baseline captured. Commit $BASELINE_DIR and disposition any new rows in bc-extraction/*.md + bc-manifest.md."
+	exit 0
+fi
+
+if [ "$fail" -ne 0 ]; then
+	echo "FAIL: BC surface drift detected. Disposition each row (PRESERVE/FACADE/REDESIGN/EXTRACT/DROP)"
+	echo "      in bc-manifest.md, then re-run with --update to accept the new baseline."
+	exit 1
+fi
+
+echo "PASS: no undispositioned BC surface drift."
+echo "      scope: reference-source drift only — native reproduction of these surfaces is covered by the parity gates, not this one."
+exit 0

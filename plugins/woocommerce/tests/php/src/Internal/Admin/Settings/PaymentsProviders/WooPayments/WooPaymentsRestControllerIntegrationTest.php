@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\TestingContainer;
@@ -229,7 +230,7 @@ class WooPaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 
 		$this->mockable_proxy->register_static_mocks(
 			array(
-				'\WC_Payments'         => array(
+				'WC_Payments'         => array(
 					'get_gateway'         => function () {
 						return $this->mock_gateway;
 					},
@@ -237,7 +238,7 @@ class WooPaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 						return $this->mock_account_service;
 					},
 				),
-				'\WC_Payments_Account' => array(
+				'WC_Payments_Account' => array(
 					'get_connect_url'       => function () {
 						return 'https://example.com/kyc_fallback';
 					},
@@ -245,12 +246,12 @@ class WooPaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 						return 'https://example.com/overview_page?from=' . WooPaymentsService::FROM_NOX_IN_CONTEXT;
 					},
 				),
-				'\WC_Payments_Utils'   => array(
+				'\WC_Payments_Utils'  => array(
 					'supported_countries' => function () {
 						return $this->get_woopayments_supported_countries();
 					},
 				),
-				Utils::class           => array(
+				Utils::class          => array(
 					'get_wpcom_connection_authorization' => function ( string $return_url ) {
 						unset( $return_url ); // Avoid parameter not used PHPCS errors.
 						return array(
@@ -280,9 +281,16 @@ class WooPaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 				'time'         => function () {
 					return $this->current_time;
 				},
+				'get_option'   => function ( $option, $default_value = false ) {
+					if ( 'active_plugins' === $option ) {
+						return array( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+					}
+
+					return get_option( $option, $default_value );
+				},
 				'class_exists' => function ( $class_to_check ) {
 					// By default, the WooPayments extension is mocked as active.
-					if ( '\WC_Payments' === $class_to_check ) {
+					if ( 'WC_Payments' === ltrim( (string) $class_to_check, '\\' ) ) {
 						return true;
 					}
 
@@ -305,8 +313,17 @@ class WooPaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 		$this->woopayments_provider_service = $container->get( WooPaymentsService::class );
 
 		// Register the REST controller routes again to make sure the dependency tree is using our mocks.
+		// Inject a runtime arbiter that owns the site so the native settings routes register under the fail-closed guard.
+		$runtime_arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$runtime_arbiter
+			->method( 'should_native_register' )
+			->willReturn( true );
+
 		$this->controller = new WooPaymentsRestController();
-		$this->controller->init( $container->get( Payments::class ), $this->woopayments_provider_service );
+		$this->controller->init( $container->get( Payments::class ), $this->woopayments_provider_service, null, $runtime_arbiter );
 		$this->server = $this->create_rest_server_with_routes(
 			array(
 				function () {

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add native WooPayments saved-token persistence for checkout and callback flows.

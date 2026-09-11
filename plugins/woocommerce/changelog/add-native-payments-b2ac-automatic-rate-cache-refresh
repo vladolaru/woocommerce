@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Refresh native multi-currency automatic rate cache from providers.

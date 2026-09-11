@@ -1,0 +1,55 @@
+{
+	"schema_version": 2,
+	"slice_id": "blocks-checkout-client-validation-matrix-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "b7b9b007b56455c6008c61d09f2d354678afd2af",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card number is invalid.",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s expiration year is in the past.",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s security code is incomplete."
+	],
+	"targets": [{"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/decline.ts", "contract": "pending"}],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent static review approved provider-matrix SHA f78451cd5af08591171b2b173817fbefe0bd51f81c49e7bb63909f37fd685715, client-validation SHA eeb85016c1faf258f908da0b6a69e71fe1f6ece40d57e1dc5ae8e573837143b0, post-auth SHA dc517c1c1628c4c285a15469c61a661cb600a3a5fa5f92fe6e4e485a7c3be27a, and retry SHA 06e91c4de79feb5be3d6d0d7ea578924cc77df9785ee5285ae8c6bf15dabae54 against mutated ledger SHA 70f0b4a794c23820694dd9a5150c5024faa5a71ca8db5bb0e37d479bafc53300, with no findings. Exactly physical rows 166-175 change, only fields 37-40, and the ten contract IDs occur exactly once across four honest schema-v2 artifacts. Every row retains the exact single scenarios/decline.ts target object and pending target/owner fields. The evidence preserves the five distinct provider-decline error graphs, three provider-free accessible validation graphs, mandatory same-intent 1629 post-auth decline, and two-attempt same-page recovery cardinality. Writer/listener ownership, zero runner retries/replay, journals, restoration, retention, quarantine, and drift controls remain explicit; the current separately owned listener is untouched, and no defect, known gap, execution, or closure is claimed."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The target/owner is absent and pending, standing readiness lacks the served native Blocks Payment Element, and no approved request/object counters or semantic hosted-field accessibility adapter exist. Static Elements submit short-circuit behavior does not prove the delivered bundle; no defect is established.",
+		"affected_scope": "Three independent provider-free contexts quiesce legitimate background checkout PATCH persistence, then perform one invalid entry plus Place order gesture: invalid-Luhn 4241 announces invalid card number; 4242 with 11/12 announces expiration year in the past; 4242 with CVC 11 announces incomplete security code. Each field/provider frame exposes semantic invalidity and programmatic error association or equivalent announced error; focus remains sensible, correction is keyboard-possible and Place order becomes usable. The measured gesture creates exactly zero Store API checkout POSTs and zero Classic checkout POSTs, Woo orders, PaymentMethods, PaymentIntents, charges, balance transactions, tokens or provider events; the browser remains on checkout and no receipt exists. This does not claim zero legitimate background Store API traffic before quiescence.",
+		"no_allowlisted_action_reason": "No local action can assign target/owner, satisfy exact Payment Element readiness or add authoritative request/provider-object and accessibility readers. Private frame selectors, typography, raw third-party IDs or assumed network silence are insufficient. Run each gesture once with one worker and zero retries; provider writer, listener and financial journal are intentionally absent.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Approve target/owner, satisfy native Blocks Payment Element readiness and add exact checkout/no-call/object counters plus a semantic hosted-field accessibility adapter. Execute three independent gestures once, prove literal semantic errors, zero checkout/provider effects and recoverable focus, restore local session/cart state and obtain fresh code, E2E, reliability, accessibility, security and drift reviews.",
+		"quarantine_status": "No shopper, cart, request, order, provider object, writer, listener, journal, restoration or quarantine was created; the separately owned listener remains untouched and is unnecessary. Future unexpected checkout/provider object, inaccessible error, request-boundary, restoration or publication ambiguity stops without replay and quarantines the exact local context, trace and held locks; no provider graph is invented.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card number is invalid.",
+				"unlock_decision": "Approve target/owner, satisfy native Blocks Payment Element readiness and add exact checkout/no-call/object counters plus a semantic hosted-field accessibility adapter. Execute three independent gestures once, prove literal semantic errors, zero checkout/provider effects and recoverable focus, restore local session/cart state and obtain fresh code, E2E, reliability, accessibility, security and drift reviews.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:provider-js-validation-family-smoke"
+			},
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s expiration year is in the past.",
+				"unlock_decision": "Approve target/owner, satisfy native Blocks Payment Element readiness and add exact checkout/no-call/object counters plus a semantic hosted-field accessibility adapter. Execute three independent gestures once, prove literal semantic errors, zero checkout/provider effects and recoverable focus, restore local session/cart state and obtain fresh code, E2E, reliability, accessibility, security and drift reviews.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:provider-js-validation-family-smoke"
+			},
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s security code is incomplete.",
+				"unlock_decision": "Approve target/owner, satisfy native Blocks Payment Element readiness and add exact checkout/no-call/object counters plus a semantic hosted-field accessibility adapter. Execute three independent gestures once, prove literal semantic errors, zero checkout/provider effects and recoverable focus, restore local session/cart state and obtain fresh code, E2E, reliability, accessibility, security and drift reviews.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:provider-js-validation-family-smoke"
+			}
+		]
+	}
+}

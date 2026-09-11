@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Track test-mode state and surface the go-live nudges as inbox notes on native WooPayments.

@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-refund-audit-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "8e5a41d1df79f4f276405c5465a72e76a15bd528",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:181::Admin Multi-Currency Orders › refund displays correctly on transaction page"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved with no material findings after independently verifying the exact line-181 boundary; the four-field-only transition preserving target, pending contract, and owner; predecessor/source/calibration binding; the immutable same-account O5/PI5/C5/R5 graph, full EUR amount/currency, relationships, one occurrence, C5 full amount_refunded, local-R5 mapping, and terminal successful provider/local state; semantic exact-transaction navigation and refunded amount/status observation; line-114 closure or independent-fixture prerequisite; strict separation from lines 54, 70, 88, and 114; no reason, mutation, listener, defect, runtime-execution, or lower-layer-substitution claim; read authority, one-worker/zero-retry, shrinking-read, context-cleanup, retention, quarantine, and drift safeguards; PILOT readiness as first blocker; and zero provider-resource use."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership and readiness fails first. The run also lacks a resolved row-safe target contract, implementation owner, and closure-bundle topology; line-114 closure with explicitly shareable retained state or an independently approved immutable same-account provider-correlated fixture carrying exact O5/PI5/C5/R5 identities, full refund amount, EUR currency, relationships, occurrence, and terminal state; stable semantic native order-to-transaction navigation; bounded same-record UI, order, API, and provider reconciliation; approved retained-record read authority and ownership; and approved public-safe evidence, context cleanup, and quarantine handling.",
+		"affected_scope": "Only line 181 refunded-transaction audit observation: from an exact approved provider-correlated retained record with O5/PI5/C5/R5 identities, full refunded EUR amount and currency, exact relationships, one occurrence, and terminal successful provider/local state, an authenticated authorized merchant semantically navigates to the exact native transaction detail and observes the same original-currency refund amount plus Refunded status; shrinking-deadline UI, order, API, and provider reads reconcile those semantics to the same records. It claims no checkout or refund mutation, setting change, provider write, listener/event attribution, merchant reason, line-114 closure, line-54/70/88 behavior, exposed pi_ link, plugin route, exact timeline/status prose, DOM structure, or WooPayments branding.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, resolve target/bundle ownership, close line 114, invent or approve an exact immutable refunded-record fixture, or establish semantic navigation, same-account read authority, exact record ownership, bounded correlation, public-safe evidence, and quarantine policy. Native money-movement REST/UI and refund-event tests cannot substitute for exact browser discoverability and the same-record provider-correlated financial audit trail. The frozen shared page and module variables provide no independent evidence. No bounded native defect is known before prerequisites and exact-target RED.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful native readiness; resolve a row-safe target and owner; close line 114 with an explicitly shareable retained record or approve an independent immutable same-account fixture with exact O5/PI5/C5/R5 identities, full refund amount, EUR currency, relationships, one occurrence, and terminal successful provider/local state; then run once with one worker and zero retries under exact read ownership, a fresh authorized merchant context, semantic order-to-transaction navigation, shrinking-deadline UI/order/API/provider reconciliation, public-safe evidence, safe context cleanup, retained financial records, and fail-closed quarantine. Explicitly reopen/re-close this row if the shared multi-currency target later drifts.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease, lock, or retained fixture, performed no browser or provider read/write, consumed no provider capacity, and created no quarantine. Campaign inventory remains zero for active leases, transition workspaces, open provider/restoration journals, quarantine receipts/events, and stale recoveries. The existing separately owned listener remains present, untouched, and irrelevant because the preferred observation performs no write or event attribution. Any uncertain fixture identity, cross-record read, provider correlation, context cleanup, or ownership state must quarantine the affected retained fixture/account resource and must not be retried to produce a match."
+	}
+}

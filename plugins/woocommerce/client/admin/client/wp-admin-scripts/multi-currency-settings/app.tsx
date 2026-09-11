@@ -1,0 +1,517 @@
+/**
+ * External dependencies
+ */
+import { speak } from '@wordpress/a11y';
+import apiFetch from '@wordpress/api-fetch';
+import {
+	Button,
+	CheckboxControl,
+	Modal,
+	SearchControl,
+	Spinner,
+} from '@wordpress/components';
+import { useDispatch } from '@wordpress/data';
+import { useEffect, useMemo, useRef, useState } from '@wordpress/element';
+import { __, sprintf } from '@wordpress/i18n';
+
+/**
+ * Internal dependencies
+ */
+import type { MultiCurrencyCurrency, StoreCurrenciesResponse } from './types';
+import { StoreLevelSettings } from './store-settings';
+import { CurrencySettingsModal } from './currency-settings-modal';
+
+const REST_BASE = '/wc/v3/payments/multi-currency';
+const EMPTY_SELECTION_HINT_ID =
+	'woocommerce-multi-currency-settings__empty-selection-hint';
+
+// One source for the refusal wording, so what a screen reader is told when the
+// selection empties cannot drift from what the button's description says.
+const emptySelectionHint = (): string =>
+	__(
+		'Select at least one currency to update your enabled currencies. To stop offering a currency, remove it from the list of enabled currencies.',
+		'woocommerce'
+	);
+
+const currencyValues = (
+	currencies: Record< string, MultiCurrencyCurrency >
+): MultiCurrencyCurrency[] => Object.values( currencies );
+
+const normalizeEnabledCodes = (
+	codes: string[],
+	defaultCode: string,
+	availableCurrencies: MultiCurrencyCurrency[]
+): string[] => {
+	const selectedLookup = new Set( [ defaultCode, ...codes ] );
+
+	return availableCurrencies
+		.map( ( currency ) => currency.code )
+		.filter( ( code ) => selectedLookup.has( code ) );
+};
+
+const formatExchangeRate = ( currency: MultiCurrencyCurrency ): string => {
+	if ( currency.is_default ) {
+		return __( 'Default currency', 'woocommerce' );
+	}
+
+	return currency.rate.toLocaleString( undefined, {
+		maximumFractionDigits: 6,
+	} );
+};
+
+const updateCurrencyRecordRate = (
+	currencies: Record< string, MultiCurrencyCurrency >,
+	code: string,
+	rate: number
+): Record< string, MultiCurrencyCurrency > => {
+	if ( ! currencies[ code ] ) {
+		return currencies;
+	}
+
+	return {
+		...currencies,
+		[ code ]: {
+			...currencies[ code ],
+			rate,
+		},
+	};
+};
+
+export function MultiCurrencySettingsApp() {
+	const { createSuccessNotice, createErrorNotice } =
+		useDispatch( 'core/notices' );
+	const [ currencies, setCurrencies ] =
+		useState< StoreCurrenciesResponse | null >( null );
+	const [ isLoading, setIsLoading ] = useState( true );
+	const [ isSaving, setIsSaving ] = useState( false );
+	const [ isModalOpen, setIsModalOpen ] = useState( false );
+	const [ managedCurrencyCode, setManagedCurrencyCode ] = useState<
+		string | null
+	>( null );
+	const [ selectedCodes, setSelectedCodes ] = useState< string[] >( [] );
+	const [ search, setSearch ] = useState( '' );
+	const manageCurrenciesButtonRef = useRef< HTMLButtonElement | null >(
+		null
+	);
+	const manageCurrencyButtonRef = useRef< HTMLButtonElement | null >( null );
+	const shouldRestoreManagementFocusRef = useRef( false );
+	const shouldRestoreManagedCurrencyFocusRef = useRef( false );
+
+	useEffect( () => {
+		let isMounted = true;
+
+		apiFetch< StoreCurrenciesResponse >( {
+			path: `${ REST_BASE }/currencies`,
+		} )
+			.then( ( response ) => {
+				if ( ! isMounted ) {
+					return;
+				}
+
+				setCurrencies( response );
+			} )
+			.catch( () => {
+				if ( ! isMounted ) {
+					return;
+				}
+
+				createErrorNotice(
+					__( 'Error loading currencies.', 'woocommerce' )
+				);
+			} )
+			.finally( () => {
+				if ( isMounted ) {
+					setIsLoading( false );
+				}
+			} );
+
+		return () => {
+			isMounted = false;
+		};
+	}, [ createErrorNotice ] );
+
+	const availableCurrencies = useMemo(
+		() => ( currencies ? currencyValues( currencies.available ) : [] ),
+		[ currencies ]
+	);
+	const enabledCurrencies = useMemo(
+		() => ( currencies ? currencyValues( currencies.enabled ) : [] ),
+		[ currencies ]
+	);
+	const defaultCode = currencies?.default.code ?? '';
+	const managedCurrency =
+		managedCurrencyCode && currencies?.enabled[ managedCurrencyCode ]
+			? currencies.enabled[ managedCurrencyCode ]
+			: null;
+
+	useEffect( () => {
+		if (
+			isSaving ||
+			isModalOpen ||
+			! shouldRestoreManagementFocusRef.current
+		) {
+			return;
+		}
+
+		shouldRestoreManagementFocusRef.current = false;
+		manageCurrenciesButtonRef.current?.focus();
+	}, [ isModalOpen, isSaving, currencies ] );
+
+	useEffect( () => {
+		if (
+			managedCurrencyCode ||
+			! shouldRestoreManagedCurrencyFocusRef.current
+		) {
+			return;
+		}
+
+		shouldRestoreManagedCurrencyFocusRef.current = false;
+		manageCurrencyButtonRef.current?.focus();
+	}, [ managedCurrencyCode ] );
+
+	// The store default is always enabled and is filtered out of the modal
+	// list, so it is never something the merchant selected. Reading the
+	// selection without it is what makes "nothing is checked" answerable.
+	const hasNoSelectedCurrency = useMemo(
+		() => ! selectedCodes.some( ( code ) => code !== defaultCode ),
+		[ selectedCodes, defaultCode ]
+	);
+
+	// Disabling the primary action is a state change nothing else announces:
+	// focus stays on the checkbox the merchant just cleared, and the button is
+	// two tab stops away, so a screen-reader user would meet a dead control
+	// with no explanation. Announce on the edge only - not when the modal
+	// opens on an already-empty selection, where the hint is read with the
+	// rest of the dialog.
+	const previousEmptySelectionRef = useRef< boolean | null >( null );
+
+	useEffect( () => {
+		if ( ! isModalOpen ) {
+			previousEmptySelectionRef.current = null;
+			return;
+		}
+
+		const wasEmptySelection = previousEmptySelectionRef.current;
+		previousEmptySelectionRef.current = hasNoSelectedCurrency;
+
+		if ( hasNoSelectedCurrency && wasEmptySelection === false ) {
+			speak( emptySelectionHint(), 'polite' );
+		}
+	}, [ isModalOpen, hasNoSelectedCurrency ] );
+
+	const filteredAvailableCurrencies = useMemo( () => {
+		const query = search.trim().toLowerCase();
+
+		return availableCurrencies.filter( ( currency ) => {
+			if ( currency.code === defaultCode ) {
+				return false;
+			}
+
+			if ( query === '' ) {
+				return true;
+			}
+
+			return (
+				currency.name.toLowerCase().includes( query ) ||
+				currency.code.toLowerCase().includes( query )
+			);
+		} );
+	}, [ availableCurrencies, defaultCode, search ] );
+
+	const saveEnabledCurrencies = async ( codes: string[] ) => {
+		if ( ! currencies || isSaving ) {
+			return;
+		}
+
+		const enabled = normalizeEnabledCodes(
+			codes,
+			currencies.default.code,
+			availableCurrencies
+		);
+
+		setIsSaving( true );
+
+		try {
+			const response = await apiFetch< StoreCurrenciesResponse >( {
+				path: `${ REST_BASE }/update-enabled-currencies`,
+				method: 'POST',
+				data: { enabled },
+			} );
+
+			shouldRestoreManagementFocusRef.current = true;
+			setCurrencies( response );
+			setIsModalOpen( false );
+			createSuccessNotice(
+				__( 'Enabled currencies updated.', 'woocommerce' )
+			);
+		} catch ( error ) {
+			createErrorNotice(
+				__( 'Error updating enabled currencies.', 'woocommerce' )
+			);
+		} finally {
+			setIsSaving( false );
+		}
+	};
+
+	const openModal = () => {
+		setSelectedCodes(
+			enabledCurrencies.map( ( currency ) => currency.code )
+		);
+		setSearch( '' );
+		setIsModalOpen( true );
+	};
+
+	const toggleCurrency = ( code: string, checked: boolean ) => {
+		setSelectedCodes( ( currentCodes ) => {
+			if ( checked ) {
+				return currentCodes.includes( code )
+					? currentCodes
+					: [ ...currentCodes, code ];
+			}
+
+			return currentCodes.filter(
+				( currentCode ) => currentCode !== code
+			);
+		} );
+	};
+
+	const closeCurrencySettingsModal = () => {
+		shouldRestoreManagedCurrencyFocusRef.current = true;
+		setManagedCurrencyCode( null );
+	};
+
+	const updateManagedCurrencyRate = (
+		code: string,
+		manualRate: number | null
+	) => {
+		if ( manualRate === null ) {
+			return;
+		}
+
+		setCurrencies( ( currentCurrencies ) => {
+			if ( ! currentCurrencies ) {
+				return currentCurrencies;
+			}
+
+			return {
+				...currentCurrencies,
+				available: updateCurrencyRecordRate(
+					currentCurrencies.available,
+					code,
+					manualRate
+				),
+				enabled: updateCurrencyRecordRate(
+					currentCurrencies.enabled,
+					code,
+					manualRate
+				),
+			};
+		} );
+	};
+
+	if ( isLoading ) {
+		return (
+			<p aria-live="polite">
+				<Spinner />
+				{ __( 'Loading currencies…', 'woocommerce' ) }
+			</p>
+		);
+	}
+
+	if ( ! currencies ) {
+		return (
+			<p role="alert">
+				{ __(
+					'Unable to load multi-currency settings.',
+					'woocommerce'
+				) }
+			</p>
+		);
+	}
+
+	return (
+		<div className="woocommerce-multi-currency-settings">
+			<StoreLevelSettings />
+
+			<div className="woocommerce-multi-currency-settings__actions">
+				<h2>{ __( 'Enabled currencies', 'woocommerce' ) }</h2>
+				<Button
+					ref={ manageCurrenciesButtonRef }
+					variant="secondary"
+					aria-haspopup="dialog"
+					aria-expanded={ isModalOpen }
+					onClick={ openModal }
+				>
+					{ __( 'Add/remove currencies', 'woocommerce' ) }
+				</Button>
+			</div>
+
+			<table className="widefat striped">
+				<thead>
+					<tr>
+						<th scope="col">{ __( 'Name', 'woocommerce' ) }</th>
+						<th scope="col">{ __( 'Code', 'woocommerce' ) }</th>
+						<th scope="col">
+							{ __( 'Exchange rate', 'woocommerce' ) }
+						</th>
+						<th scope="col">{ __( 'Actions', 'woocommerce' ) }</th>
+					</tr>
+				</thead>
+				<tbody>
+					{ enabledCurrencies.map( ( currency ) => (
+						<tr key={ currency.code }>
+							<th scope="row">{ currency.name }</th>
+							<td>{ currency.code }</td>
+							<td>{ formatExchangeRate( currency ) }</td>
+							<td>
+								{ currency.is_default ? (
+									<span>
+										{ __(
+											'Default currency',
+											'woocommerce'
+										) }
+									</span>
+								) : (
+									<>
+										<Button
+											variant="link"
+											disabled={ isSaving }
+											accessibleWhenDisabled
+											aria-label={ sprintf(
+												/* translators: %s: Currency name. */
+												__(
+													'Manage %s settings',
+													'woocommerce'
+												),
+												currency.name
+											) }
+											onClick={ (
+												event: React.MouseEvent< HTMLButtonElement >
+											) => {
+												manageCurrencyButtonRef.current =
+													event.currentTarget;
+												setManagedCurrencyCode(
+													currency.code
+												);
+											} }
+										>
+											{ __( 'Manage', 'woocommerce' ) }
+										</Button>{ ' ' }
+										<Button
+											variant="link"
+											disabled={ isSaving }
+											accessibleWhenDisabled
+											aria-label={ sprintf(
+												/* translators: %s: Currency name. */
+												__(
+													'Remove %s as an enabled currency',
+													'woocommerce'
+												),
+												currency.name
+											) }
+											onClick={ () =>
+												saveEnabledCurrencies(
+													enabledCurrencies
+														.map(
+															(
+																enabledCurrency
+															) =>
+																enabledCurrency.code
+														)
+														.filter(
+															( code ) =>
+																code !==
+																currency.code
+														)
+												)
+											}
+										>
+											{ __( 'Remove', 'woocommerce' ) }
+										</Button>
+									</>
+								) }
+							</td>
+						</tr>
+					) ) }
+				</tbody>
+			</table>
+
+			{ managedCurrency && currencies && (
+				<CurrencySettingsModal
+					currency={ managedCurrency }
+					defaultCurrency={ currencies.default }
+					onClose={ closeCurrencySettingsModal }
+					onSaved={ updateManagedCurrencyRate }
+				/>
+			) }
+
+			{ isModalOpen && (
+				<Modal
+					title={ __( 'Add enabled currencies', 'woocommerce' ) }
+					onRequestClose={ () => setIsModalOpen( false ) }
+				>
+					<SearchControl
+						__nextHasNoMarginBottom
+						label={ __( 'Search currencies', 'woocommerce' ) }
+						placeholder={ __( 'Search currencies', 'woocommerce' ) }
+						value={ search }
+						onChange={ ( value ) => setSearch( value ) }
+					/>
+					<div>
+						{ filteredAvailableCurrencies.map( ( currency ) => (
+							<CheckboxControl
+								__nextHasNoMarginBottom
+								key={ currency.code }
+								label={ `${ currency.name } ${ currency.code }` }
+								checked={ selectedCodes.includes(
+									currency.code
+								) }
+								onChange={ ( checked ) =>
+									toggleCurrency(
+										currency.code,
+										Boolean( checked )
+									)
+								}
+							/>
+						) ) }
+					</div>
+					{ hasNoSelectedCurrency && (
+						<p id={ EMPTY_SELECTION_HINT_ID }>
+							{ emptySelectionHint() }
+						</p>
+					) }
+					<div className="woocommerce-multi-currency-settings__modal-actions">
+						<Button
+							variant="tertiary"
+							onClick={ () => setIsModalOpen( false ) }
+						>
+							{ __( 'Cancel', 'woocommerce' ) }
+						</Button>
+						<Button
+							variant="primary"
+							isBusy={ isSaving }
+							// Submitting an empty selection is not an
+							// update: it normalizes to the store default
+							// alone and silently drops every additional
+							// currency behind a success notice. Removing a
+							// currency stays available per row, where the
+							// merchant names the one they mean.
+							disabled={ isSaving || hasNoSelectedCurrency }
+							accessibleWhenDisabled
+							aria-describedby={
+								hasNoSelectedCurrency
+									? EMPTY_SELECTION_HINT_ID
+									: undefined
+							}
+							onClick={ () =>
+								saveEnabledCurrencies( selectedCodes )
+							}
+						>
+							{ __( 'Update selected', 'woocommerce' ) }
+						</Button>
+					</div>
+				</Modal>
+			) }
+		</div>
+	);
+}
