@@ -1156,6 +1156,23 @@ prepare_network_reconciliation() {
 		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
 		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
 	done
+	local excluded_states
+	excluded_states="$(store_wp eval '
+		$result = array();
+		foreach ( get_sites( array( "number" => 0, "fields" => "ids" ) ) as $site_id ) {
+			switch_to_blog( (int) $site_id );
+			$record = get_option( "woocommerce_woopayments_cutover_state", null );
+			$result[] = array( "site_id" => (int) $site_id, "generation" => (int) ( $record["generation"] ?? 0 ), "state" => (string) ( $record["state"] ?? "" ), "current_step" => (string) ( $record["current_step"] ?? "" ), "deferred_codes" => $record["deferred_codes"] ?? array(), "exclusion_codes" => $record["exclusion_codes"] ?? array() );
+			restore_current_blog();
+		}
+		echo wp_json_encode( array( "states" => $result, "network_active" => is_plugin_active_for_network( "woocommerce-payments/woocommerce-payments.php" ) ) );
+	' | node -e 'const { readFileSync } = require( "node:fs" ); process.stdout.write( readFileSync( 0, "utf8" ).trim() );')"
+	node -e '
+		const result = JSON.parse( process.argv[ 1 ] ); const states = result.states;
+		const mixed = JSON.parse( process.argv[ 2 ] );
+		const expectedIds = process.argv.slice( 3 ).map( Number ).sort( ( a, b ) => a - b );
+		if ( ! Array.isArray( states ) || states.length !== 2 || states.map( ( state ) => state.site_id ).sort( ( a, b ) => a - b ).join() !== expectedIds.join() || states.some( ( state ) => state.generation !== mixed[ 0 ].generation || state.state !== "excluded" || ! [ state.current_step, ...( Array.isArray( state.exclusion_codes ) ? state.exclusion_codes : [] ) ].includes( "legacy_stripe_billing_subscriptions_present" ) ) ) process.exit( 1 );
+	' "$excluded_states" "$mixed_states" "$primary_site_id" "$secondary_site_id"
 	store_wp --url="$base_url" post meta delete "$marker_order_id" _wcpay_subscription_id > /dev/null
 	store_wp eval '
 		$job = wc_get_container()->get( Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsCutoverReconciliationJob::class );
@@ -1182,12 +1199,15 @@ prepare_network_reconciliation() {
 	node -e '
 		const states = JSON.parse( process.argv[ 1 ] );
 		const mixed = JSON.parse( process.argv[ 2 ] );
-		if ( ! Array.isArray( states ) || states.length !== 2 || states.some( ( state, index ) => ! Number.isSafeInteger( state.site_id ) || state.site_id !== mixed[ index ].site_id || state.generation <= mixed[ index ].generation || state.state !== "done" ) ) process.exit( 1 );
-	' "$final_states" "$mixed_states"
+		const excluded = JSON.parse( process.argv[ 3 ] );
+		const excludedBySite = new Map( excluded.map( ( state ) => [ state.site_id, state ] ) );
+		if ( ! Array.isArray( states ) || states.length !== 2 || states.some( ( state ) => ! Number.isSafeInteger( state.site_id ) || ! excludedBySite.has( state.site_id ) || state.generation <= excludedBySite.get( state.site_id ).generation || state.state !== "done" ) ) process.exit( 1 );
+	' "$final_states" "$mixed_states" "$excluded_states"
 	update_state network_primary_site_id "$primary_site_id" number
 	update_state network_secondary_site_id "$secondary_site_id" number
 	update_state network_final_site_states "$final_states"
 	update_state network_mixed_site_states "$mixed_states"
+	update_state network_excluded_site_states "$excluded_states"
 }
 
 validate_store_scope() {
@@ -1237,6 +1257,7 @@ emit_create_result() {
 		if ( Number.isSafeInteger( secondarySiteId ) && secondarySiteId > 0 ) result.network_secondary_site_id = secondarySiteId;
 		if ( process.argv[ 12 ] ) result.network_final_site_states = JSON.parse( process.argv[ 12 ] );
 		if ( process.argv[ 13 ] ) result.network_mixed_site_states = JSON.parse( process.argv[ 13 ] );
+		if ( process.argv[ 14 ] ) result.network_excluded_site_states = JSON.parse( process.argv[ 14 ] );
 		process.stdout.write( `${ JSON.stringify( result ) }\n` );
 	' \
 		"$base_url" \
@@ -1251,7 +1272,8 @@ emit_create_result() {
 		"$(state_field network_primary_site_id 2> /dev/null || true)" \
 		"$(state_field network_secondary_site_id 2> /dev/null || true)" \
 		"$(state_field network_final_site_states 2> /dev/null || true)" \
-		"$(state_field network_mixed_site_states 2> /dev/null || true)"
+		"$(state_field network_mixed_site_states 2> /dev/null || true)" \
+		"$(state_field network_excluded_site_states 2> /dev/null || true)"
 }
 
 write_durable_receipt() {
