@@ -107,6 +107,14 @@ class NativePaymentsRuntimeArbiter {
 	public const NATIVE_RUNTIME_KILL_SWITCH_OPTION = 'woocommerce_native_payments_killswitch';
 
 	/**
+	 * Legacy fail-closed default for the native WooPayments runtime rollout.
+	 *
+	 * @deprecated 11.2.0 Native runtime enablement now uses the stored option.
+	 * @var bool
+	 */
+	public const DEFAULT_NATIVE_RUNTIME_ENABLED = false;
+
+	/**
 	 * The legacy proxy, used for mockable calls to global functions.
 	 *
 	 * @var LegacyProxy
@@ -197,8 +205,9 @@ class NativePaymentsRuntimeArbiter {
 	 * @return bool True when the native runtime is enabled.
 	 */
 	public function is_native_runtime_enabled(): bool {
+		$option_enabled     = 'yes' === get_option( self::FILTER_NATIVE_ENABLED, 'no' );
 		$kill_switch_active = (bool) get_option( self::NATIVE_RUNTIME_KILL_SWITCH_OPTION, false );
-		$filter_default     = $kill_switch_active ? false : 'yes' === get_option( self::FILTER_NATIVE_ENABLED, 'no' );
+		$filter_default     = $kill_switch_active ? false : $option_enabled;
 
 		/**
 		 * Filters whether the core-native payments runtime is enabled for this site.

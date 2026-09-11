@@ -286,6 +286,13 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The legacy fail-closed default constant remains available.
+	 */
+	public function test_legacy_fail_closed_default_constant_remains_available(): void {
+		$this->assertFalse( NativePaymentsRuntimeArbiter::DEFAULT_NATIVE_RUNTIME_ENABLED, 'Extensions can continue to read the legacy fail-closed default constant.' );
+	}
+
+	/**
 	 * @testdox An enabled native runtime option enables native when the plugin is absent.
 	 */
 	public function test_enabled_native_runtime_option_enables_native_when_plugin_is_absent(): void {
@@ -303,26 +310,31 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin();
 		update_option( 'woocommerce_native_payments_enabled', 'yes' );
 		update_option( 'woocommerce_native_payments_killswitch', true );
-		$option_reads     = 0;
-		$observed_default = null;
+		$resolution_steps = array();
+		add_filter(
+			'option_woocommerce_native_payments_enabled',
+			static function ( $value ) use ( &$resolution_steps ) {
+				$resolution_steps[] = 'enabled_option';
+				return $value;
+			}
+		);
 		add_filter(
 			'option_woocommerce_native_payments_killswitch',
-			static function ( $value ) use ( &$option_reads ) {
-				++$option_reads;
+			static function ( $value ) use ( &$resolution_steps ) {
+				$resolution_steps[] = 'kill_switch';
 				return $value;
 			}
 		);
 		add_filter(
 			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
-			static function ( bool $enabled ) use ( &$observed_default ): bool {
-				$observed_default = $enabled;
+			static function ( bool $enabled ) use ( &$resolution_steps ): bool {
+				$resolution_steps[] = 'filter';
 				return $enabled;
 			}
 		);
 
 		$this->assertFalse( $this->sut->is_native_runtime_enabled() );
-		$this->assertSame( 1, $option_reads, 'Resolving the native flag must read the host-controlled kill-switch option.' );
-		$this->assertFalse( $observed_default, 'An active kill switch must make the rollout filter default false.' );
+		$this->assertSame( array( 'enabled_option', 'kill_switch', 'filter' ), $resolution_steps, 'The enabled option must be resolved before the kill switch clamps the filter default.' );
 	}
 
 	/**
