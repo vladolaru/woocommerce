@@ -74,6 +74,10 @@ printf 'pnpm %s\n' "$*" >> "${E2E_FAKE_COMMAND_LOG:?}"
 
 if [[ "$*" == *'fresh_install'* ]]; then
 
+	if [[ "$*" == *'false === get_option( "wcpay_account_data"'* || "$*" != *'account_id'* ]]; then
+		echo 'Fresh status must distinguish an empty cache wrapper from a connected account.' >&2
+		exit 1
+	fi
 	printf '{"fresh_install":true,"native_enabled":true,"standalone_plugin_active":false,"account_connected":false}\n'
 
 	exit 0
