@@ -1115,33 +1115,49 @@ prepare_network_reconciliation() {
 		echo 'Transition network setup did not identify its primary site.' >&2
 		return 1
 	fi
-	local mixed_states
-	mixed_states="$(store_wp eval '
+	local marker_order_id
+	marker_order_id="$(store_wp --url="$base_url" eval '
+		$order = wc_create_order();
+		$order->update_meta_data( "_wcpay_subscription_id", "sub_transition_network_marker" );
+		$order->save();
+		echo (int) $order->get_id();
+	')"
+	if [[ ! "$marker_order_id" =~ ^[1-9][0-9]*$ ]]; then
+		echo 'Transition network setup did not create a legacy Stripe Billing marker.' >&2
+		return 1
+	fi
+	store_wp eval '
 		$job = wc_get_container()->get( Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsCutoverReconciliationJob::class );
-		update_site_option( "woocommerce_woopayments_cutover_network_rehearsal_blocker", "mixed" );
 		if ( ! $job->enqueue( "transition-network-mixed" ) ) {
 			WP_CLI::error( "Unable to schedule the mixed network reconciliation generation." );
 		}
+	' > /dev/null
+	local site_url
+	for site_url in "${base_url}/cutover-secondary"; do
+		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
+		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
+	done
+	local mixed_states
+	mixed_states="$(store_wp eval '
 		$states = array();
 		foreach ( get_sites( array( "number" => 2, "fields" => "ids" ) ) as $site_id ) {
 			switch_to_blog( (int) $site_id );
 			$record = get_option( "woocommerce_woopayments_cutover_state", null );
-			$states[] = array( "site_id" => (int) $site_id, "generation" => (int) ( $record["generation"] ?? 0 ), "state" => (string) ( $record["state"] ?? "" ) );
+			$states[] = array( "site_id" => (int) $site_id, "generation" => (int) ( $record["generation"] ?? 0 ), "state" => (string) ( $record["state"] ?? "" ), "current_step" => (string) ( $record["current_step"] ?? "" ), "deferred_codes" => $record["deferred_codes"] ?? array() );
 			restore_current_blog();
 		}
 		echo wp_json_encode( $states );
 	' | node -e 'const { readFileSync } = require( "node:fs" ); process.stdout.write( readFileSync( 0, "utf8" ).trim() );')"
 	node -e '
 		const states = JSON.parse( process.argv[ 1 ] );
-		if ( ! Array.isArray( states ) || states.length !== 2 || states.some( ( state ) => ! Number.isSafeInteger( state.site_id ) || state.generation <= 0 || ! [ "pending", "deferred", "excluded" ].includes( state.state ) ) ) process.exit( 1 );
+		if ( ! Array.isArray( states ) || states.length !== 2 || states[0].state !== "pending" || states[1].state !== "deferred" || states[0].generation <= 0 || states[0].generation !== states[1].generation || states[1].current_step !== "network_barrier" || ! Array.isArray( states[1].deferred_codes ) || ! states[1].deferred_codes.includes( "network_barrier" ) ) process.exit( 1 );
 	' "$mixed_states"
-	local site_url
-	for site_url in "$base_url" "${base_url}/cutover-secondary"; do
+	for site_url in "$base_url"; do
 		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
 		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
 	done
+	store_wp --url="$base_url" post meta delete "$marker_order_id" _wcpay_subscription_id > /dev/null
 	store_wp eval '
-		delete_site_option( "woocommerce_woopayments_cutover_network_rehearsal_blocker" );
 		$job = wc_get_container()->get( Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsCutoverReconciliationJob::class );
 		if ( ! $job->enqueue( "transition-network-reopened" ) ) {
 			WP_CLI::error( "Unable to schedule the reopened network reconciliation generation." );
