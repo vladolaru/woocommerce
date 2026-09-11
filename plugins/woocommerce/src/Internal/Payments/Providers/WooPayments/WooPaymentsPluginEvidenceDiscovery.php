@@ -83,13 +83,24 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 	 * Register bounded discovery and write-path evidence observers.
 	 */
 	public function register(): void {
-		add_action( self::DISCOVERY_ACTION_HOOK, array( $this, 'discover_current_site' ), 10, 1 );
-		add_action( self::NETWORK_DISCOVERY_ACTION_HOOK, array( $this, 'refresh_network_summary' ) );
-		add_action( 'action_scheduler_init', array( $this, 'handle_action_scheduler_init' ) );
+		$this->register_maintenance_callbacks();
 		add_action( 'woocommerce_new_order', array( $this, 'observe_order' ), 10, 2 );
 		add_action( 'woocommerce_update_order', array( $this, 'observe_order' ), 10, 2 );
 		add_action( 'woocommerce_new_payment_token', array( $this, 'observe_payment_token' ), 10, 2 );
 		add_action( 'woocommerce_payment_token_object_updated_props', array( $this, 'observe_payment_token_update' ), 10, 2 );
+	}
+
+	/**
+	 * Register only the Action Scheduler discovery callbacks.
+	 *
+	 * This small registration surface lets the WP-CLI Action Scheduler runner discover maintenance work without loading native payment roots.
+	 *
+	 * @internal
+	 */
+	public function register_maintenance_callbacks(): void {
+		add_action( self::DISCOVERY_ACTION_HOOK, array( $this, 'discover_current_site' ), 10, 3 );
+		add_action( self::NETWORK_DISCOVERY_ACTION_HOOK, array( $this, 'refresh_network_summary' ), 10, 3 );
+		add_action( 'action_scheduler_init', array( $this, 'handle_action_scheduler_init' ) );
 
 		if ( did_action( 'action_scheduler_init' ) ) {
 			$this->handle_action_scheduler_init();
@@ -178,15 +189,20 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param mixed $site_id Optional site ID supplied by Action Scheduler.
+	 * @param mixed $site_id    Optional site ID supplied by Action Scheduler.
+	 * @param mixed $generation Durable progress generation supplied by Action Scheduler.
+	 * @param mixed $cursor     Durable progress cursor supplied by Action Scheduler.
 	 */
-	public function discover_current_site( $site_id = null ): void {
+	public function discover_current_site( $site_id = null, $generation = null, $cursor = null ): void {
 		$target_site_id = null;
 		if ( null !== $site_id ) {
 			if ( ! is_int( $site_id ) || $site_id < 1 ) {
 				return;
 			}
 			$target_site_id = $site_id;
+		}
+		if ( ( null === $generation ) !== ( null === $cursor ) || ( null !== $generation && ( ! is_int( $generation ) || $generation < 0 || ! is_int( $cursor ) || $cursor < 0 ) ) ) {
+			return;
 		}
 
 		$current_site_id = get_current_blog_id();
@@ -195,7 +211,7 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 		}
 
 		try {
-			$this->discover_current_site_page();
+			$this->discover_current_site_page( $generation, $cursor );
 		} finally {
 			if ( get_current_blog_id() !== $current_site_id ) {
 				restore_current_blog();
@@ -207,20 +223,38 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 	 * Refresh the durable summary used by the network activation guard.
 	 *
 	 * @internal
+	 *
+	 * @param mixed $generation   Network generation supplied by Action Scheduler.
+	 * @param mixed $continuation Network continuation supplied by Action Scheduler.
+	 * @param mixed $cursor       Network cursor supplied by Action Scheduler.
 	 */
-	public function refresh_network_summary(): void {
+	public function refresh_network_summary( $generation = null, $continuation = null, $cursor = null ): void {
 		if ( ! is_multisite() ) {
 			return;
 		}
+		if ( ( null === $generation ) !== ( null === $continuation ) || ( null === $generation ) !== ( null === $cursor ) || ( null !== $generation && ( ! is_int( $generation ) || $generation < 0 || ! is_int( $continuation ) || $continuation < 0 || ! is_int( $cursor ) || $cursor < 0 ) ) ) {
+			return;
+		}
 
-		$progress = get_site_option( self::NETWORK_DISCOVERY_OPTION_NAME, array() );
-		$cursor   = is_array( $progress ) && isset( $progress['cursor'] ) && is_int( $progress['cursor'] ) && $progress['cursor'] >= 0 ? $progress['cursor'] : 0;
-		$state    = is_array( $progress ) && isset( $progress['state'] ) && self::is_valid_state( $progress['state'] ) ? $progress['state'] : self::STATE_NONE;
-		$has_site = is_array( $progress ) && true === ( $progress['has_native_site'] ?? false );
-		$site_ids = $this->get_network_site_id_batch( $cursor );
+		$record   = self::get_network_record();
+		$progress = $this->get_network_progress( $record['generation'] );
+		if ( null !== $generation && ( $generation !== $record['generation'] || $generation !== $progress['generation'] || $continuation !== $progress['continuation'] || $cursor !== $progress['cursor'] ) ) {
+			return;
+		}
 
+		$this->refresh_network_summary_page( $record, $progress );
+	}
+
+	/**
+	 * Process one bounded network-summary page against one durable generation.
+	 *
+	 * @param array{state:string,generation:int,raw:mixed}                                        $record   Current summary record.
+	 * @param array{cursor:int,state:string,has_native_site:bool,generation:int,continuation:int} $progress Current page progress.
+	 */
+	private function refresh_network_summary_page( array $record, array $progress ): void {
+		$site_ids = $this->get_network_site_id_batch( $progress['cursor'] );
 		if ( null === $site_ids ) {
-			update_site_option( self::NETWORK_OPTION_NAME, self::STATE_UNKNOWN );
+			$this->advance_network_progress( $record, $progress, $progress['cursor'], $progress['state'], $progress['has_native_site'] );
 			return;
 		}
 
@@ -234,14 +268,14 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 					if ( ! $this->is_current_site_native_owned() ) {
 						continue;
 					}
-					$has_site  = true;
-					$site_state = self::get_current_site_state();
+					$progress['has_native_site'] = true;
+					$site_state                  = self::get_current_site_state();
 					if ( self::STATE_PRESENT === $site_state ) {
-						$state = self::STATE_PRESENT;
+						$progress['state'] = self::STATE_PRESENT;
 						break;
 					}
 					if ( self::STATE_UNKNOWN === $site_state ) {
-						$state = self::STATE_UNKNOWN;
+						$progress['state'] = self::STATE_UNKNOWN;
 						$this->schedule_site_discovery( $site_id );
 						break;
 					}
@@ -257,33 +291,22 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 			}
 		}
 
-		if ( self::STATE_PRESENT === $state || self::STATE_UNKNOWN === $state ) {
-			update_site_option( self::NETWORK_OPTION_NAME, $state );
-			delete_site_option( self::NETWORK_DISCOVERY_OPTION_NAME );
+		if ( self::STATE_PRESENT === $progress['state'] || self::STATE_UNKNOWN === $progress['state'] ) {
+			if ( $this->commit_network_state( $record, $progress['state'] ) ) {
+				delete_site_option( self::NETWORK_DISCOVERY_OPTION_NAME );
+			}
 			return;
 		}
 
 		if ( count( $site_ids ) === self::BATCH_SIZE ) {
 			$last_site_id = (int) end( $site_ids );
-			if ( $last_site_id <= $cursor ) {
-				update_site_option( self::NETWORK_OPTION_NAME, self::STATE_UNKNOWN );
-				return;
-			}
-			update_site_option(
-				self::NETWORK_DISCOVERY_OPTION_NAME,
-				array(
-					'cursor'          => $last_site_id,
-					'state'           => $state,
-					'has_native_site' => $has_site,
-				)
-			);
-			update_site_option( self::NETWORK_OPTION_NAME, self::STATE_UNKNOWN );
-			$this->schedule_network_summary();
+			$this->advance_network_progress( $record, $progress, $last_site_id > $progress['cursor'] ? $last_site_id : $progress['cursor'], $progress['state'], $progress['has_native_site'] );
 			return;
 		}
 
-		delete_site_option( self::NETWORK_DISCOVERY_OPTION_NAME );
-		update_site_option( self::NETWORK_OPTION_NAME, $has_site ? self::STATE_NONE : self::STATE_UNKNOWN );
+		if ( $this->commit_network_state( $record, $progress['has_native_site'] ? self::STATE_NONE : self::STATE_UNKNOWN ) ) {
+			delete_site_option( self::NETWORK_DISCOVERY_OPTION_NAME );
+		}
 	}
 
 	/**
@@ -308,14 +331,16 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 	 * @return string One of the STATE_* constants.
 	 */
 	public static function get_network_state(): string {
-		$state = get_site_option( self::NETWORK_OPTION_NAME, self::STATE_UNKNOWN );
-		return self::is_valid_state( $state ) ? $state : self::STATE_UNKNOWN;
+		return self::get_network_record()['state'];
 	}
 
 	/**
 	 * Process one current-site discovery page.
+	 *
+	 * @param int|null $scheduled_generation Generation supplied by the scheduled action.
+	 * @param int|null $scheduled_cursor     Cursor supplied by the scheduled action.
 	 */
-	private function discover_current_site_page(): void {
+	private function discover_current_site_page( ?int $scheduled_generation, ?int $scheduled_cursor ): void {
 		$state = self::get_current_site_state();
 		if ( self::STATE_PRESENT === $state ) {
 			$this->mark_current_site_present();
@@ -325,18 +350,19 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 			return;
 		}
 
-		$progress = get_option( self::DISCOVERY_OPTION_NAME, array() );
-		$stage    = is_array( $progress ) && isset( $progress['stage'] ) && in_array( $progress['stage'], array( self::STAGE_ORDERS, self::STAGE_TOKENS ), true ) ? $progress['stage'] : self::STAGE_ORDERS;
-		$cursor   = is_array( $progress ) && isset( $progress['cursor'] ) && is_int( $progress['cursor'] ) && $progress['cursor'] >= 0 ? $progress['cursor'] : 0;
-		$rows     = $this->get_evidence_batch( $stage, $cursor );
+		$progress = $this->get_current_site_progress();
+		if ( null !== $scheduled_generation && ( $scheduled_generation !== $progress['generation'] || $scheduled_cursor !== $progress['cursor'] ) ) {
+			return;
+		}
 
+		$rows = $this->get_evidence_batch( $progress['stage'], $progress['cursor'] );
 		if ( null === $rows ) {
-			$this->schedule_site_discovery( get_current_blog_id() );
+			$this->advance_current_site_progress( $progress, $progress['stage'], $progress['cursor'] );
 			return;
 		}
 
 		foreach ( $rows as $row ) {
-			if ( $this->row_has_woopayments_evidence( $stage, $row ) ) {
+			if ( $this->row_has_woopayments_evidence( $progress['stage'], $row ) ) {
 				$this->mark_current_site_present();
 				return;
 			}
@@ -345,37 +371,19 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 		if ( count( $rows ) === self::BATCH_SIZE ) {
 			$last_row = end( $rows );
 			$last_id  = is_array( $last_row ) && isset( $last_row['id'] ) ? (int) $last_row['id'] : 0;
-			if ( $last_id <= $cursor ) {
-				return;
-			}
-			update_option(
-				self::DISCOVERY_OPTION_NAME,
-				array(
-					'stage'  => $stage,
-					'cursor' => $last_id,
-				),
-				false
-			);
-			$this->schedule_site_discovery( get_current_blog_id() );
+			$this->advance_current_site_progress( $progress, $progress['stage'], $last_id > $progress['cursor'] ? $last_id : $progress['cursor'] );
 			return;
 		}
 
-		if ( self::STAGE_ORDERS === $stage ) {
-			update_option(
-				self::DISCOVERY_OPTION_NAME,
-				array(
-					'stage'  => self::STAGE_TOKENS,
-					'cursor' => 0,
-				),
-				false
-			);
-			$this->schedule_site_discovery( get_current_blog_id() );
+		if ( self::STAGE_ORDERS === $progress['stage'] ) {
+			$this->advance_current_site_progress( $progress, self::STAGE_TOKENS, 0 );
 			return;
 		}
 
-		update_option( self::OPTION_NAME, self::STATE_NONE, true );
-		delete_option( self::DISCOVERY_OPTION_NAME );
-		$this->schedule_network_summary();
+		if ( $this->compare_and_swap_current_site_state( self::STATE_UNKNOWN, self::STATE_NONE ) ) {
+			delete_option( self::DISCOVERY_OPTION_NAME );
+			$this->schedule_network_summary();
+		}
 	}
 
 	/**
@@ -384,7 +392,241 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 	private function mark_current_site_present(): void {
 		update_option( self::OPTION_NAME, self::STATE_PRESENT, true );
 		delete_option( self::DISCOVERY_OPTION_NAME );
+		$this->invalidate_network_summary();
 		$this->schedule_network_summary();
+	}
+
+	/**
+	 * Get normalized durable progress for the current site.
+	 *
+	 * @return array{stage:string,cursor:int,generation:int} Current site progress.
+	 */
+	private function get_current_site_progress(): array {
+		$progress = get_option( self::DISCOVERY_OPTION_NAME, array() );
+
+		return array(
+			'stage'      => is_array( $progress ) && isset( $progress['stage'] ) && in_array( $progress['stage'], array( self::STAGE_ORDERS, self::STAGE_TOKENS ), true ) ? $progress['stage'] : self::STAGE_ORDERS,
+			'cursor'     => is_array( $progress ) && isset( $progress['cursor'] ) && is_int( $progress['cursor'] ) && $progress['cursor'] >= 0 ? $progress['cursor'] : 0,
+			'generation' => is_array( $progress ) && isset( $progress['generation'] ) && is_int( $progress['generation'] ) && $progress['generation'] >= 0 ? $progress['generation'] : 0,
+		);
+	}
+
+	/**
+	 * Persist and enqueue the next distinct current-site discovery page.
+	 *
+	 * @param array{stage:string,cursor:int,generation:int} $progress Current progress.
+	 * @param string                                        $stage    Next discovery stage.
+	 * @param int                                           $cursor   Next primary-key cursor.
+	 */
+	private function advance_current_site_progress( array $progress, string $stage, int $cursor ): void {
+		$next_progress = array(
+			'stage'      => $stage,
+			'cursor'     => $cursor,
+			'generation' => $progress['generation'] + 1,
+		);
+		update_option( self::DISCOVERY_OPTION_NAME, $next_progress, false );
+		$this->schedule_site_discovery( get_current_blog_id(), $next_progress );
+	}
+
+	/**
+	 * Atomically transition one unknown current-site marker to the conclusive none marker.
+	 *
+	 * @param string $expected Expected current state.
+	 * @param string $next     Replacement current state.
+	 * @return bool Whether this callback made the transition.
+	 */
+	private function compare_and_swap_current_site_state( string $expected, string $next ): bool {
+		global $wpdb;
+
+		if ( self::STATE_UNKNOWN !== $expected || ! self::is_valid_state( $next ) ) {
+			return false;
+		}
+
+		if ( false === get_option( self::OPTION_NAME, false ) ) {
+			return add_option( self::OPTION_NAME, $next, '', true );
+		}
+
+		$updated = $wpdb->update(
+			$wpdb->options,
+			array( 'option_value' => $next ),
+			array(
+				'option_name'  => self::OPTION_NAME,
+				'option_value' => $expected,
+			),
+			array( '%s' ),
+			array( '%s', '%s' )
+		);
+		if ( 1 !== $updated ) {
+			return false;
+		}
+
+		wp_cache_delete( self::OPTION_NAME, 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
+		return true;
+	}
+
+	/**
+	 * Get the durable network state and its generation fence.
+	 *
+	 * @return array{state:string,generation:int,raw:mixed} Network summary record.
+	 */
+	private static function get_network_record(): array {
+		$raw = get_site_option( self::NETWORK_OPTION_NAME, false );
+		if ( is_array( $raw ) && isset( $raw['state'], $raw['generation'] ) && self::is_valid_state( $raw['state'] ) && is_int( $raw['generation'] ) && $raw['generation'] >= 0 ) {
+			return array(
+				'state'      => $raw['state'],
+				'generation' => $raw['generation'],
+				'raw'        => $raw,
+			);
+		}
+
+		return array(
+			'state'      => self::is_valid_state( $raw ) ? $raw : self::STATE_UNKNOWN,
+			'generation' => 0,
+			'raw'        => $raw,
+		);
+	}
+
+	/**
+	 * Get normalized current-network discovery progress for one generation.
+	 *
+	 * @param int $generation Current network generation.
+	 * @return array{cursor:int,state:string,has_native_site:bool,generation:int,continuation:int} Network progress.
+	 */
+	private function get_network_progress( int $generation ): array {
+		$progress = get_site_option( self::NETWORK_DISCOVERY_OPTION_NAME, array() );
+		if ( ! is_array( $progress ) || ! isset( $progress['generation'] ) || ! is_int( $progress['generation'] ) || $progress['generation'] !== $generation ) {
+			return array(
+				'cursor'          => 0,
+				'state'           => self::STATE_NONE,
+				'has_native_site' => false,
+				'generation'      => $generation,
+				'continuation'    => 0,
+			);
+		}
+
+		return array(
+			'cursor'          => isset( $progress['cursor'] ) && is_int( $progress['cursor'] ) && $progress['cursor'] >= 0 ? $progress['cursor'] : 0,
+			'state'           => isset( $progress['state'] ) && self::is_valid_state( $progress['state'] ) ? $progress['state'] : self::STATE_NONE,
+			'has_native_site' => true === ( $progress['has_native_site'] ?? false ),
+			'generation'      => $generation,
+			'continuation'    => isset( $progress['continuation'] ) && is_int( $progress['continuation'] ) && $progress['continuation'] >= 0 ? $progress['continuation'] : 0,
+		);
+	}
+
+	/**
+	 * Persist and enqueue the next distinct network-summary page.
+	 *
+	 * @param array{state:string,generation:int,raw:mixed}                                        $record   Current summary record.
+	 * @param array{cursor:int,state:string,has_native_site:bool,generation:int,continuation:int} $progress Current progress.
+	 * @param int                                                                                 $cursor   Next network cursor.
+	 * @param string                                                                              $state    Current aggregate state.
+	 * @param bool                                                                                $has_site Whether a native-owned site was found.
+	 */
+	private function advance_network_progress( array $record, array $progress, int $cursor, string $state, bool $has_site ): void {
+		$next_progress = array(
+			'cursor'          => $cursor,
+			'state'           => $state,
+			'has_native_site' => $has_site,
+			'generation'      => $record['generation'],
+			'continuation'    => $progress['continuation'] + 1,
+		);
+		update_site_option( self::NETWORK_DISCOVERY_OPTION_NAME, $next_progress );
+		if ( $this->commit_network_state( $record, self::STATE_UNKNOWN ) ) {
+			$this->schedule_network_summary( self::get_network_record(), $next_progress );
+		}
+	}
+
+	/**
+	 * Commit a network state only if the callback still owns its original generation record.
+	 *
+	 * @param array{state:string,generation:int,raw:mixed} $record Expected current summary record.
+	 * @param string                                       $state  State to store.
+	 * @return bool Whether the state was committed or was already current.
+	 */
+	private function commit_network_state( array $record, string $state ): bool {
+		return $this->replace_network_record(
+			$record,
+			array(
+				'state'      => $state,
+				'generation' => $record['generation'],
+			)
+		);
+	}
+
+	/**
+	 * Invalidate a possibly blocking network summary before a present write returns.
+	 */
+	private function invalidate_network_summary(): void {
+		if ( ! is_multisite() ) {
+			return;
+		}
+
+		for ( $attempt = 0; $attempt < 3; ++$attempt ) {
+			$record = self::get_network_record();
+			if ( $this->replace_network_record(
+				$record,
+				array(
+					'state'      => self::STATE_UNKNOWN,
+					'generation' => $record['generation'] + 1,
+				)
+			) ) {
+				delete_site_option( self::NETWORK_DISCOVERY_OPTION_NAME );
+				return;
+			}
+		}
+
+		$record = self::get_network_record();
+		update_site_option(
+			self::NETWORK_OPTION_NAME,
+			array(
+				'state'      => self::STATE_UNKNOWN,
+				'generation' => $record['generation'] + 1,
+			)
+		);
+		delete_site_option( self::NETWORK_DISCOVERY_OPTION_NAME );
+	}
+
+	/**
+	 * Compare and replace one network record without allowing a stale finalizer to overwrite a newer generation.
+	 *
+	 * @param array{state:string,generation:int,raw:mixed} $record Expected summary record.
+	 * @param array{state:string,generation:int}           $next   Replacement summary record.
+	 * @return bool Whether the replacement was committed or was already current.
+	 */
+	private function replace_network_record( array $record, array $next ): bool {
+		global $wpdb;
+
+		if ( ! self::is_valid_state( $next['state'] ) || $next['generation'] < 0 ) {
+			return false;
+		}
+		if ( is_array( $record['raw'] ) && $record['raw'] === $next ) {
+			return true;
+		}
+		if ( false === $record['raw'] ) {
+			return add_site_option( self::NETWORK_OPTION_NAME, $next );
+		}
+
+		$network_id = get_current_network_id();
+		// phpcs:disable WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- This is an atomic compare-and-set of one network option, constrained by the site ID and option key.
+		$updated = $wpdb->update(
+			$wpdb->sitemeta,
+			array( 'meta_value' => maybe_serialize( $next ) ),
+			array(
+				'site_id'    => $network_id,
+				'meta_key'   => self::NETWORK_OPTION_NAME,
+				'meta_value' => maybe_serialize( $record['raw'] ),
+			),
+			array( '%s' ),
+			array( '%d', '%s', '%s' )
+		);
+		// phpcs:enable WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+		if ( 1 !== $updated ) {
+			return false;
+		}
+
+		wp_cache_delete( $network_id . ':' . self::NETWORK_OPTION_NAME, 'site-options' );
+		return true;
 	}
 
 	/**
@@ -394,7 +636,7 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 	 * @param int    $cursor Last inspected primary key.
 	 * @return array<int,array<string,mixed>>|null Null when data could not be read safely.
 	 */
-	private function get_evidence_batch( string $stage, int $cursor ): ?array {
+	protected function get_evidence_batch( string $stage, int $cursor ): ?array {
 		global $wpdb;
 
 		if ( self::STAGE_TOKENS === $stage ) {
@@ -430,7 +672,7 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 	/**
 	 * Tell whether one bounded discovery row records a WooPayments identity.
 	 *
-	 * @param string               $stage Discovery stage.
+	 * @param string              $stage Discovery stage.
 	 * @param array<string,mixed> $row   Database row.
 	 * @return bool
 	 */
@@ -474,27 +716,37 @@ class WooPaymentsPluginEvidenceDiscovery implements RegisterHooksInterface {
 	/**
 	 * Schedule one site-local discovery action.
 	 *
-	 * @param int $site_id Site ID whose options and data are inspected.
+	 * @param int                                                $site_id Site ID whose options and data are inspected.
+	 * @param array{stage:string,cursor:int,generation:int}|null $progress Current durable progress.
 	 */
-	private function schedule_site_discovery( int $site_id ): void {
+	private function schedule_site_discovery( int $site_id, ?array $progress = null ): void {
 		if ( ! function_exists( 'as_schedule_single_action' ) || ! function_exists( 'as_has_scheduled_action' ) ) {
 			return;
 		}
 
-		$args = array( $site_id );
+		$progress = $progress ?? $this->get_current_site_progress();
+		$args     = array( $site_id, $progress['generation'], $progress['cursor'] );
 		if ( false === as_has_scheduled_action( self::DISCOVERY_ACTION_HOOK, $args, self::ACTION_GROUP ) ) {
 			as_schedule_single_action( time(), self::DISCOVERY_ACTION_HOOK, $args, self::ACTION_GROUP, true );
 		}
 	}
 
-	/** Schedule one bounded network-summary action. */
-	private function schedule_network_summary(): void {
+	/**
+	 * Schedule one bounded network-summary action.
+	 *
+	 * @param array{state:string,generation:int,raw:mixed}|null                                        $record Current summary record.
+	 * @param array{cursor:int,state:string,has_native_site:bool,generation:int,continuation:int}|null $progress Current page progress.
+	 */
+	private function schedule_network_summary( ?array $record = null, ?array $progress = null ): void {
 		if ( ! is_multisite() || ! function_exists( 'as_schedule_single_action' ) || ! function_exists( 'as_has_scheduled_action' ) ) {
 			return;
 		}
 
-		if ( false === as_has_scheduled_action( self::NETWORK_DISCOVERY_ACTION_HOOK, array(), self::ACTION_GROUP ) ) {
-			as_schedule_single_action( time(), self::NETWORK_DISCOVERY_ACTION_HOOK, array(), self::ACTION_GROUP, true );
+		$record   = $record ?? self::get_network_record();
+		$progress = $progress ?? $this->get_network_progress( $record['generation'] );
+		$args     = array( $record['generation'], $progress['continuation'], $progress['cursor'] );
+		if ( false === as_has_scheduled_action( self::NETWORK_DISCOVERY_ACTION_HOOK, $args, self::ACTION_GROUP ) ) {
+			as_schedule_single_action( time(), self::NETWORK_DISCOVERY_ACTION_HOOK, $args, self::ACTION_GROUP, true );
 		}
 	}
 

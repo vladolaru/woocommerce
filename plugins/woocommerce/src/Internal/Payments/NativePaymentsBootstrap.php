@@ -95,7 +95,8 @@ final class NativePaymentsBootstrap {
 	private function classify_request( callable $is_rest_api_request ): string {
 		return self::classify_signals(
 			defined( 'WP_CLI' ) && WP_CLI,
-			wp_doing_cron() || wc_is_running_from_async_action_scheduler(),
+			wp_doing_cron(),
+			wc_is_running_from_async_action_scheduler(),
 			wp_doing_ajax(),
 			(bool) $is_rest_api_request(),
 			is_admin()
@@ -106,17 +107,21 @@ final class NativePaymentsBootstrap {
 	 * Select a request class from early-safe signals in precedence order.
 	 *
 	 * @param bool $is_cli   Whether WP-CLI is running.
-	 * @param bool $is_cron  Whether cron or Action Scheduler is running.
+	 * @param bool $is_cron  Whether WordPress cron is running.
+	 * @param bool $is_async Whether Action Scheduler is running.
 	 * @param bool $is_ajax  Whether WordPress AJAX is running.
 	 * @param bool $is_rest  Whether this is a REST request.
 	 * @param bool $is_admin Whether this is an admin request.
 	 * @return string Request class.
 	 */
-	private static function classify_signals( bool $is_cli, bool $is_cron, bool $is_ajax, bool $is_rest, bool $is_admin ): string {
+	private static function classify_signals( bool $is_cli, bool $is_cron, bool $is_async, bool $is_ajax, bool $is_rest, bool $is_admin ): string {
+		if ( $is_cli && $is_async ) {
+			return 'cli-async';
+		}
 		if ( $is_cli ) {
 			return 'cli';
 		}
-		if ( $is_cron ) {
+		if ( $is_cron || $is_async ) {
 			return 'cron';
 		}
 		if ( $is_ajax ) {

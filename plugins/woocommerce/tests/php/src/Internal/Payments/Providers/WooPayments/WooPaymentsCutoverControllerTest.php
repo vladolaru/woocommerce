@@ -348,6 +348,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_plugin_evidence_discovery' );
 		delete_site_option( 'woocommerce_woopayments_plugin_evidence_network' );
 		delete_site_option( 'woocommerce_woopayments_plugin_evidence_network_discovery' );
+		as_unschedule_all_actions( '', array(), WooPaymentsPluginEvidenceDiscovery::ACTION_GROUP );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
@@ -796,6 +797,208 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		}
 	}
 
+	/** @testdox A running discovery action schedules distinct persisted continuations for two bounded pages and a failed read. */
+	public function test_plugin_evidence_discovery_schedules_distinct_continuations_while_the_current_action_is_running(): void {
+		global $wpdb;
+
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		update_option( WooPaymentsPluginEvidenceDiscovery::OPTION_NAME, WooPaymentsPluginEvidenceDiscovery::STATE_UNKNOWN );
+		$tokens_table  = $wpdb->prefix . 'woocommerce_payment_tokens';
+		$last_token_id = (int) $wpdb->get_var( "SELECT MAX(token_id) FROM {$tokens_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Trusted WordPress table name in a test fixture.
+		update_option(
+			WooPaymentsPluginEvidenceDiscovery::DISCOVERY_OPTION_NAME,
+			array(
+				'stage'      => 'tokens',
+				'cursor'     => $last_token_id,
+				'generation' => 0,
+			)
+		);
+		$token_ids = array();
+		$discovery = new WooPaymentsPluginEvidenceDiscovery();
+		$discovery->register();
+
+		try {
+			for ( $index = 0; $index < 201; ++$index ) {
+				$wpdb->insert(
+					$tokens_table,
+					array(
+						'gateway_id' => 'other_gateway',
+						'token'      => 'evidence-continuation-' . $index,
+						'user_id'    => 1,
+						'type'       => 'CC',
+					),
+					array( '%s', '%s', '%d', '%s' )
+				);
+				$token_ids[] = (int) $wpdb->insert_id;
+			}
+
+			$discovery->handle_action_scheduler_init();
+			$first_action_id = $this->get_pending_evidence_action_id( array( get_current_blog_id(), 0, $last_token_id ) );
+			$this->assertGreaterThan( 0, $first_action_id );
+			\ActionScheduler_QueueRunner::instance()->process_action( $first_action_id, 'WooPayments evidence continuation unit test' );
+
+			$first_progress = get_option( WooPaymentsPluginEvidenceDiscovery::DISCOVERY_OPTION_NAME );
+			$this->assertIsArray( $first_progress );
+			$this->assertSame( 1, $first_progress['generation'] );
+			$this->assertGreaterThan( $last_token_id, $first_progress['cursor'] );
+			$second_action_id = $this->get_pending_evidence_action_id( array( get_current_blog_id(), 1, $first_progress['cursor'] ) );
+			$this->assertGreaterThan( 0, $second_action_id, 'The first running action must schedule a distinct pending continuation.' );
+			\ActionScheduler_QueueRunner::instance()->process_action( $second_action_id, 'WooPayments evidence continuation unit test' );
+
+			$second_progress = get_option( WooPaymentsPluginEvidenceDiscovery::DISCOVERY_OPTION_NAME );
+			$this->assertIsArray( $second_progress );
+			$this->assertSame( 2, $second_progress['generation'] );
+			$this->assertGreaterThan( $first_progress['cursor'], $second_progress['cursor'] );
+
+		} finally {
+			if ( array() !== $token_ids ) {
+				$token_ids_list = implode( ',', array_map( 'absint', $token_ids ) );
+				$wpdb->query( "DELETE FROM {$tokens_table} WHERE token_id IN ({$token_ids_list})" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Trusted test token IDs and table name.
+			}
+			$this->unregister_evidence_discovery( $discovery );
+		}
+	}
+
+	/** @testdox A failed bounded read running in Action Scheduler persists a distinct retry instead of losing discovery progress. */
+	public function test_plugin_evidence_discovery_schedules_a_distinct_retry_after_a_failed_running_read(): void {
+		global $wpdb;
+
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		update_option( WooPaymentsPluginEvidenceDiscovery::OPTION_NAME, WooPaymentsPluginEvidenceDiscovery::STATE_UNKNOWN );
+		$last_token_id = (int) $wpdb->get_var( "SELECT MAX(token_id) FROM {$wpdb->prefix}woocommerce_payment_tokens" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Trusted WordPress table name in a test fixture.
+		update_option(
+			WooPaymentsPluginEvidenceDiscovery::DISCOVERY_OPTION_NAME,
+			array(
+				'stage'      => 'tokens',
+				'cursor'     => $last_token_id,
+				'generation' => 0,
+			)
+		);
+		$discovery = new class() extends WooPaymentsPluginEvidenceDiscovery {
+			/**
+			 * Simulate an unavailable bounded data read.
+			 *
+			 * @param string $stage Discovery stage.
+			 * @param int    $cursor Primary-key cursor.
+			 * @return array<int,array<string,mixed>>|null Null for an unavailable read.
+			 */
+			protected function get_evidence_batch( string $stage, int $cursor ): ?array {
+				unset( $stage, $cursor );
+				return null;
+			}
+		};
+		$discovery->register();
+
+		try {
+			$discovery->handle_action_scheduler_init();
+			$action_id = $this->get_pending_evidence_action_id( array( get_current_blog_id(), 0, $last_token_id ) );
+			$this->assertGreaterThan( 0, $action_id );
+			\ActionScheduler_QueueRunner::instance()->process_action( $action_id, 'WooPayments evidence failed-read retry unit test' );
+
+			$progress = get_option( WooPaymentsPluginEvidenceDiscovery::DISCOVERY_OPTION_NAME );
+			$this->assertIsArray( $progress );
+			$this->assertSame( 1, $progress['generation'] );
+			$this->assertSame( $last_token_id, $progress['cursor'] );
+			$this->assertGreaterThan( 0, $this->get_pending_evidence_action_id( array( get_current_blog_id(), 1, $last_token_id ) ), 'A failed read must schedule its next-generation retry while the current action is running.' );
+		} finally {
+			$this->unregister_evidence_discovery( $discovery );
+		}
+	}
+
+	/** @testdox A discovery completion cannot overwrite WooPayments evidence written while its bounded page is read. */
+	public function test_plugin_evidence_discovery_keeps_present_evidence_when_a_page_completion_races_a_write_observer(): void {
+		global $wpdb;
+
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		update_option( WooPaymentsPluginEvidenceDiscovery::OPTION_NAME, WooPaymentsPluginEvidenceDiscovery::STATE_UNKNOWN );
+		$last_token_id = (int) $wpdb->get_var( "SELECT MAX(token_id) FROM {$wpdb->prefix}woocommerce_payment_tokens" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Trusted WordPress table name in a test fixture.
+		update_option(
+			WooPaymentsPluginEvidenceDiscovery::DISCOVERY_OPTION_NAME,
+			array(
+				'stage'      => 'tokens',
+				'cursor'     => $last_token_id,
+				'generation' => 0,
+			)
+		);
+		$discovery  = new WooPaymentsPluginEvidenceDiscovery();
+		$interleave = static function ( string $query ) use ( $discovery ): string {
+			if ( false !== strpos( $query, 'woocommerce_payment_tokens' ) ) {
+				$discovery->observe_order(
+					1,
+					new class() {
+						/** @return string */
+						public function get_payment_method(): string {
+							return 'woocommerce_payments_card';
+						}
+					}
+				);
+			}
+			return $query;
+		};
+
+		add_filter( 'query', $interleave );
+		try {
+			$discovery->discover_current_site( get_current_blog_id(), 0, $last_token_id );
+		} finally {
+			remove_filter( 'query', $interleave );
+		}
+
+		$this->assertSame( WooPaymentsPluginEvidenceDiscovery::STATE_PRESENT, WooPaymentsPluginEvidenceDiscovery::get_current_site_state() );
+	}
+
+	/** @testdox Present evidence immediately invalidates a stale blocking network summary. */
+	public function test_plugin_evidence_discovery_invalidates_network_none_when_a_native_subsite_becomes_present(): void {
+		$this->create_multisite_plugin_evidence_sites();
+		update_site_option( WooPaymentsPluginEvidenceDiscovery::NETWORK_OPTION_NAME, WooPaymentsPluginEvidenceDiscovery::STATE_NONE );
+		$discovery = new WooPaymentsPluginEvidenceDiscovery();
+
+		switch_to_blog( $this->multisite_blog_ids[0] );
+		$discovery->observe_order(
+			1,
+			new class() {
+				/** @return string */
+				public function get_payment_method(): string {
+					return 'woocommerce_payments_card';
+				}
+			}
+		);
+		restore_current_blog();
+
+		$this->assertSame( WooPaymentsPluginEvidenceDiscovery::STATE_UNKNOWN, WooPaymentsPluginEvidenceDiscovery::get_network_state() );
+	}
+
+	/** @testdox A stale network finalizer cannot overwrite a concurrent present-evidence invalidation. */
+	public function test_plugin_evidence_discovery_keeps_network_state_unknown_when_summary_finalization_races_present_evidence(): void {
+		global $wpdb;
+
+		$this->create_multisite_plugin_evidence_sites();
+		update_site_option( WooPaymentsPluginEvidenceDiscovery::NETWORK_OPTION_NAME, WooPaymentsPluginEvidenceDiscovery::STATE_NONE );
+		$discovery  = new WooPaymentsPluginEvidenceDiscovery();
+		$interleave = static function ( string $query ) use ( $discovery, $wpdb ): string {
+			if ( false !== strpos( $query, $wpdb->blogs ) ) {
+				$discovery->observe_order(
+					1,
+					new class() {
+						/** @return string */
+						public function get_payment_method(): string {
+							return 'woocommerce_payments_card';
+						}
+					}
+				);
+			}
+			return $query;
+		};
+
+		add_filter( 'query', $interleave );
+		try {
+			$discovery->refresh_network_summary();
+		} finally {
+			remove_filter( 'query', $interleave );
+		}
+
+		$this->assertSame( WooPaymentsPluginEvidenceDiscovery::STATE_UNKNOWN, WooPaymentsPluginEvidenceDiscovery::get_network_state() );
+	}
+
 	/**
 	 * @testdox A WooPayments order written after fresh native onboarding replaces the first-time marker with rollback evidence.
 	 *
@@ -892,7 +1095,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$this->sut->guard_woopayments_activation( true );
 
-		$this->assertSame( 'present', get_site_option( 'woocommerce_woopayments_plugin_evidence_network' ) );
+		$this->assertSame( 'present', WooPaymentsPluginEvidenceDiscovery::get_network_state() );
 		$this->assertTrue( true, 'Network rollback must stay available when any native subsite has WooPayments evidence.' );
 	}
 
@@ -902,7 +1105,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_native_runtime_owner();
 		$this->fake_wp_die_handler();
 		( new WooPaymentsPluginEvidenceDiscovery() )->refresh_network_summary();
-		$this->assertSame( 'none', get_site_option( 'woocommerce_woopayments_plugin_evidence_network' ) );
+		$this->assertSame( 'none', WooPaymentsPluginEvidenceDiscovery::get_network_state() );
 
 		$this->expectException( WooPaymentsCutoverBlockedException::class );
 
@@ -925,7 +1128,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		try {
 			( new WooPaymentsPluginEvidenceDiscovery() )->refresh_network_summary();
-			$this->assertSame( 'none', get_site_option( 'woocommerce_woopayments_plugin_evidence_network' ) );
+			$this->assertSame( 'none', WooPaymentsPluginEvidenceDiscovery::get_network_state() );
 
 			$this->fake_wp_die_handler();
 			$this->expectException( WooPaymentsCutoverBlockedException::class );
@@ -1769,6 +1972,42 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 
 		$this->assertNotContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+	}
+
+	/**
+	 * Return one pending evidence-discovery action with exact durable arguments.
+	 *
+	 * @param array<int,int> $args Action Scheduler arguments.
+	 * @return int Action ID, or zero when no matching action is pending.
+	 */
+	private function get_pending_evidence_action_id( array $args ): int {
+		$action_ids = as_get_scheduled_actions(
+			array(
+				'hook'     => WooPaymentsPluginEvidenceDiscovery::DISCOVERY_ACTION_HOOK,
+				'args'     => $args,
+				'group'    => WooPaymentsPluginEvidenceDiscovery::ACTION_GROUP,
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => 1,
+			),
+			'ids'
+		);
+
+		return is_array( $action_ids ) && isset( $action_ids[0] ) ? (int) $action_ids[0] : 0;
+	}
+
+	/**
+	 * Unregister one direct evidence-discovery fixture.
+	 *
+	 * @param WooPaymentsPluginEvidenceDiscovery $discovery Discovery fixture.
+	 */
+	private function unregister_evidence_discovery( WooPaymentsPluginEvidenceDiscovery $discovery ): void {
+		remove_action( 'woocommerce_new_order', array( $discovery, 'observe_order' ), 10 );
+		remove_action( 'woocommerce_update_order', array( $discovery, 'observe_order' ), 10 );
+		remove_action( 'woocommerce_new_payment_token', array( $discovery, 'observe_payment_token' ), 10 );
+		remove_action( 'woocommerce_payment_token_object_updated_props', array( $discovery, 'observe_payment_token_update' ), 10 );
+		remove_action( 'action_scheduler_init', array( $discovery, 'handle_action_scheduler_init' ) );
+		remove_action( WooPaymentsPluginEvidenceDiscovery::DISCOVERY_ACTION_HOOK, array( $discovery, 'discover_current_site' ), 10 );
+		remove_action( WooPaymentsPluginEvidenceDiscovery::NETWORK_DISCOVERY_ACTION_HOOK, array( $discovery, 'refresh_network_summary' ) );
 	}
 
 	/**
