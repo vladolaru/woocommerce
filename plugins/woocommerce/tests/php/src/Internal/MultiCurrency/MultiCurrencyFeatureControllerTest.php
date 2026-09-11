@@ -130,7 +130,14 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$order_id = $this->factory->post->create( array( 'post_type' => 'shop_order' ) );
-		$wpdb->insert( $wpdb->postmeta, array( 'post_id' => $order_id, 'meta_key' => '_wcpay_multi_currency_order_exchange_rate', 'meta_value' => '0.9' ) );
+		$wpdb->insert(
+			$wpdb->postmeta,
+			array(
+				'post_id'    => $order_id,
+				'meta_key'   => '_wcpay_multi_currency_order_exchange_rate',
+				'meta_value' => '0.9',
+			)
+		);
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
 		$this->sut = new MultiCurrencyFeatureController();
@@ -148,7 +155,14 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$order = wc_create_order();
-		$wpdb->insert( "{$wpdb->prefix}wc_orders_meta", array( 'order_id' => $order->get_id(), 'meta_key' => '_wcpay_multi_currency_order_exchange_rate', 'meta_value' => '0.9' ) );
+		$wpdb->insert(
+			"{$wpdb->prefix}wc_orders_meta",
+			array(
+				'order_id'   => $order->get_id(),
+				'meta_key'   => '_wcpay_multi_currency_order_exchange_rate',
+				'meta_value' => '0.9',
+			)
+		);
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => true );
 		$this->sut = new MultiCurrencyFeatureController();
@@ -224,7 +238,10 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		update_option( 'wcpay_multi_currency_stored_customer_currencies', array( 12 => 'EUR' ) );
 		$cached_currencies = array(
-			'data'    => array( 'currencies' => array( 'EUR' => '0.9' ), 'updated' => 1234567890 ),
+			'data'    => array(
+				'currencies' => array( 'EUR' => '0.9' ),
+				'updated'    => 1234567890,
+			),
 			'fetched' => 1234567890,
 			'errored' => false,
 		);
@@ -276,7 +293,10 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	public function test_core_confirmation_rejects_invalid_nonce(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$_GET = array( 'multi_currency' => '0', '_feature_nonce' => 'invalid' );
+		$_GET = array(
+			'multi_currency' => '0',
+			'_feature_nonce' => 'invalid',
+		);
 
 		$this->expectException( \WPDieException::class );
 		wc_get_container()->get( FeaturesController::class )->change_feature_enable_from_query_params();
@@ -288,7 +308,10 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	public function test_core_confirmation_requires_manage_woocommerce_capability(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$_GET = array( 'multi_currency' => '0', '_feature_nonce' => wp_create_nonce( 'change_feature_enable' ) );
+		$_GET = array(
+			'multi_currency' => '0',
+			'_feature_nonce' => wp_create_nonce( 'change_feature_enable' ),
+		);
 
 		wc_get_container()->get( FeaturesController::class )->change_feature_enable_from_query_params();
 

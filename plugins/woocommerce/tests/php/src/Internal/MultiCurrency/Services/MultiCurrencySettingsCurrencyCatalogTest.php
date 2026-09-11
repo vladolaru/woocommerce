@@ -98,9 +98,27 @@ class MultiCurrencySettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 	 * @testdox Should describe absent, unavailable, and available automatic rate sources.
 	 */
 	public function test_describes_automatic_rate_source_availability_without_conflating_an_outage_with_absence(): void {
-		$this->assertSame( array( 'available' => false, 'source' => null ), $this->create_catalog()->get_automatic_rates_descriptor() );
-		$this->assertSame( array( 'available' => false, 'source' => 'outage' ), $this->create_catalog( array( 'USD' ), array( 'USD' ), false )->get_automatic_rates_descriptor() );
-		$this->assertSame( array( 'available' => true, 'source' => 'available' ), $this->create_catalog( array( 'USD' ), array( 'USD' ), true )->get_automatic_rates_descriptor() );
+		$this->assertSame(
+			array(
+				'available' => false,
+				'source'    => null,
+			),
+			$this->create_catalog()->get_automatic_rates_descriptor()
+		);
+		$this->assertSame(
+			array(
+				'available' => false,
+				'source'    => 'outage',
+			),
+			$this->create_catalog( array( 'USD' ), array( 'USD' ), false )->get_automatic_rates_descriptor()
+		);
+		$this->assertSame(
+			array(
+				'available' => true,
+				'source'    => 'available',
+			),
+			$this->create_catalog( array( 'USD' ), array( 'USD' ), true )->get_automatic_rates_descriptor()
+		);
 	}
 
 	/**

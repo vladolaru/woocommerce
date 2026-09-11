@@ -47,8 +47,8 @@ final class MultiCurrencySettingsCurrencyCatalog {
 	 * Constructor.
 	 *
 	 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
-	 * @param MultiCurrencyStateBuilder           $state_builder        State builder.
-	 * @param MultiCurrencyRateService            $rate_service         Rate service.
+	 * @param MultiCurrencyStateBuilder          $state_builder State builder.
+	 * @param MultiCurrencyRateService           $rate_service Rate service.
 	 */
 	public function __construct( MultiCurrencyLocalizationInterface $localization_service, MultiCurrencyStateBuilder $state_builder, MultiCurrencyRateService $rate_service ) {
 		$this->localization_service = $localization_service;

@@ -109,7 +109,7 @@ final class MultiCurrencyUsageDetector {
 		}
 
 		if ( '' !== $wpdb->last_error ) {
-			throw new \RuntimeException( $wpdb->last_error );
+			throw new \RuntimeException( esc_html( $wpdb->last_error ) );
 		}
 
 		$this->has_foreign_currency_orders_memo = ( 1 === (int) $result );

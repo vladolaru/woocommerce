@@ -12,20 +12,10 @@ use WC_Unit_Test_Case;
 class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 
 	/**
-	 * Original WordPress database object.
-	 *
-	 * @var \wpdb
-	 */
-	private $original_wpdb;
-
-	/**
 	 * Set up test fixtures.
 	 */
 	public function set_up(): void {
 		parent::set_up();
-		global $wpdb;
-
-		$this->original_wpdb = $wpdb;
 		update_option( 'woocommerce_currency', 'USD' );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_transient( 'wc_mc_has_orders' );
@@ -35,9 +25,6 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tear_down(): void {
-		global $wpdb;
-
-		$wpdb = $this->original_wpdb;
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_transient( 'wc_mc_has_orders' );
 		parent::tear_down();
@@ -71,24 +58,34 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	 * @testdox Should query posts order metadata when HPOS is disabled.
 	 */
 	public function test_has_foreign_currency_orders_queries_posts_table(): void {
-		$database = $this->replace_database( '1' );
+		$queries      = array();
+		$query_filter = $this->add_existence_query_filter( $queries );
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
 
-		$this->assertTrue( $detector->has_foreign_currency_orders() );
-		$this->assertStringContainsString( 'postmeta', $database->queries[0] );
+		try {
+			$this->assertTrue( $detector->has_foreign_currency_orders() );
+			$this->assertStringContainsString( 'postmeta', $queries[0] );
+		} finally {
+			remove_filter( 'query', $query_filter );
+		}
 	}
 
 	/**
 	 * @testdox Should query HPOS order metadata when HPOS is enabled.
 	 */
 	public function test_has_foreign_currency_orders_queries_hpos_table(): void {
-		$database = $this->replace_database( '1' );
+		$queries      = array();
+		$query_filter = $this->add_existence_query_filter( $queries );
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => true );
 
-		$this->assertTrue( $detector->has_foreign_currency_orders() );
-		$this->assertStringContainsString( 'wc_orders_meta', $database->queries[0] );
+		try {
+			$this->assertTrue( $detector->has_foreign_currency_orders() );
+			$this->assertStringContainsString( 'wc_orders_meta', $queries[0] );
+		} finally {
+			remove_filter( 'query', $query_filter );
+		}
 	}
 
 	/**
@@ -137,150 +134,91 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	 * @testdox Should reuse request and transient cache values unless a fresh check is requested.
 	 */
 	public function test_has_foreign_currency_orders_reuses_caches_and_fresh_bypasses_them(): void {
-		$database = $this->replace_database( '1' );
+		$queries      = array();
+		$query_filter = $this->add_existence_query_filter( $queries );
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
 
-		$this->assertTrue( $detector->has_foreign_currency_orders() );
-		$this->assertTrue( $detector->has_foreign_currency_orders() );
-		$this->assertSame( 1, count( $database->queries ), 'The request memo should avoid a second query.' );
-		$this->assertSame( '1', get_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT ) );
+		try {
+			$this->assertTrue( $detector->has_foreign_currency_orders() );
+			$this->assertTrue( $detector->has_foreign_currency_orders() );
+			$this->assertSame( 1, count( $queries ), 'The request memo should avoid a second query.' );
+			$this->assertSame( '1', get_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT ) );
 
-		$this->assertTrue( $detector->has_foreign_currency_orders( true ) );
-		$this->assertSame( 2, count( $database->queries ), 'A fresh check must bypass the request memo and transient.' );
+			$this->assertTrue( $detector->has_foreign_currency_orders( true ) );
+			$this->assertSame( 2, count( $queries ), 'A fresh check must bypass the request memo and transient.' );
 
-		$cached_detector = new MultiCurrencyUsageDetector();
-		$cached_detector->set_hpos_enabled_resolver( static fn(): bool => false );
-		$this->assertTrue( $cached_detector->has_foreign_currency_orders() );
-		$this->assertSame( 2, count( $database->queries ), 'A new detector should reuse the one-hour transient.' );
+			$cached_detector = new MultiCurrencyUsageDetector();
+			$cached_detector->set_hpos_enabled_resolver( static fn(): bool => false );
+			$this->assertTrue( $cached_detector->has_foreign_currency_orders() );
+			$this->assertSame( 2, count( $queries ), 'A new detector should reuse the one-hour transient.' );
+		} finally {
+			remove_filter( 'query', $query_filter );
+		}
 	}
 
 	/**
 	 * @testdox Should invalidate cached foreign order detection after the first multi-currency order.
 	 */
 	public function test_invalidate_foreign_currency_orders_cache_clears_request_and_transient_cache(): void {
-		$database = $this->replace_database( '1' );
+		$queries      = array();
+		$query_filter = $this->add_existence_query_filter( $queries );
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
 
-		$detector->has_foreign_currency_orders();
-		$detector->invalidate_foreign_currency_orders_cache();
+		try {
+			$detector->has_foreign_currency_orders();
+			$detector->invalidate_foreign_currency_orders_cache();
 
-		$this->assertFalse( get_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT ) );
-		$this->assertTrue( $detector->has_foreign_currency_orders() );
-		$this->assertSame( 2, count( $database->queries ), 'Invalidation must also clear the request memo.' );
+			$this->assertFalse( get_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT ) );
+			$this->assertTrue( $detector->has_foreign_currency_orders() );
+			$this->assertSame( 2, count( $queries ), 'Invalidation must also clear the request memo.' );
+		} finally {
+			remove_filter( 'query', $query_filter );
+		}
 	}
 
 	/**
 	 * @testdox Should throw when the foreign order existence query fails.
 	 */
 	public function test_has_foreign_currency_orders_throws_for_database_errors(): void {
-		$database = $this->replace_database( null, 'Table unavailable' );
+		global $wpdb;
+
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
+		$original_postmeta = $wpdb->postmeta;
+		$suppress_errors   = $wpdb->suppress_errors( true );
+		$wpdb->postmeta    = "{$wpdb->prefix}missing_multi_currency_order_meta";
 
 		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'Table unavailable' );
+		$this->expectExceptionMessage( 'missing_multi_currency_order_meta' );
 
-		$detector->has_foreign_currency_orders();
+		try {
+			$detector->has_foreign_currency_orders();
+		} finally {
+			$wpdb->postmeta = $original_postmeta;
+			$wpdb->suppress_errors( $suppress_errors );
+		}
 	}
 
 	/**
-	 * Replace the database object with a recording existence-query double.
+	 * Record and replace only Multi-Currency existence queries.
 	 *
-	 * @param string|null $result Query result.
-	 * @param string      $error  Database error.
-	 * @return object{prefix:string,postmeta:string,last_error:string,queries:array<int,string>,get_var:callable}
+	 * @param array<int,string> $queries Queries captured by reference.
+	 * @return callable Query filter.
 	 */
-	private function replace_database( ?string $result, string $error = '' ): object {
-		global $wpdb;
-
-		$wpdb = new class( $this->original_wpdb, $result, $error ) {
-			/** @var \wpdb */
-			private $database;
-
-			/** @var string */
-			public $prefix = 'wp_';
-
-			/** @var string */
-			public $postmeta = 'wp_postmeta';
-
-			/** @var string */
-			public $last_error;
-
-			/** @var array<int,string> */
-			public $queries = array();
-
-			/** @var string|null */
-			private $result;
-
-			/**
-			 * Initialize the recording database double.
-			 *
-			 * @param \wpdb       $database Database object to proxy for WordPress option reads.
-			 * @param string|null $result   Query result.
-			 * @param string      $error    Database error.
-			 */
-			public function __construct( \wpdb $database, ?string $result, string $error ) {
-				$this->database   = $database;
-				$this->result     = $result;
-				$this->last_error = $error;
+	private function add_existence_query_filter( array &$queries ): callable {
+		$query_filter = static function ( $query ) use ( &$queries ) {
+			if ( false === strpos( $query, '_wcpay_multi_currency_order_exchange_rate' ) ) {
+				return $query;
 			}
 
-			/**
-			 * Record and return an existence query result.
-			 *
-			 * @param string $query Query.
-			 * @return string|null
-			 */
-			public function get_var( string $query ): ?string {
-				$this->queries[] = $query;
+			$queries[] = $query;
 
-				return $this->result;
-			}
-
-			/**
-			 * Proxy WordPress option reads to the real database object.
-			 *
-			 * @param string $query Query.
-			 * @return array<int,object>|null
-			 */
-			public function get_results( string $query ): ?array {
-				return $this->database->get_results( $query );
-			}
-
-			/**
-			 * Proxy methods used outside the order existence query.
-			 *
-			 * @param string       $method Method name.
-			 * @param array<mixed> $args   Method arguments.
-			 * @return mixed
-			 */
-			public function __call( string $method, array $args ) {
-				return $this->database->{$method}( ...$args );
-			}
-
-			/**
-			 * Proxy WordPress database properties needed by option reads.
-			 *
-			 * @param string $property Property name.
-			 * @return mixed
-			 */
-			public function __get( string $property ) {
-				return $this->database->{$property};
-			}
-
-			/**
-			 * Proxy WordPress database property writes needed by option reads.
-			 *
-			 * @param string $property Property name.
-			 * @param mixed  $value    Property value.
-			 */
-			public function __set( string $property, $value ): void {
-				$this->database->{$property} = $value;
-			}
+			return 'SELECT 1 AS count';
 		};
+		add_filter( 'query', $query_filter );
 
-		return $wpdb;
+		return $query_filter;
 	}
 }

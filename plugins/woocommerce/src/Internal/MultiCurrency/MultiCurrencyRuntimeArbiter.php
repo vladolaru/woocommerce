@@ -96,10 +96,10 @@ class MultiCurrencyRuntimeArbiter {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter    $payments_arbiter    Payments runtime owner arbiter.
-	 * @param LegacyProxy                     $legacy_proxy        Legacy proxy.
-	 * @param FeaturesController              $features_controller Core feature controller.
-	 * @param MultiCurrencyFeatureController  $feature_controller  Multi-Currency feature definition controller.
+	 * @param NativePaymentsRuntimeArbiter   $payments_arbiter Payments runtime owner arbiter.
+	 * @param LegacyProxy                    $legacy_proxy Legacy proxy.
+	 * @param FeaturesController             $features_controller Core feature controller.
+	 * @param MultiCurrencyFeatureController $feature_controller Multi-Currency feature definition controller.
 	 */
 	final public function init( NativePaymentsRuntimeArbiter $payments_arbiter, LegacyProxy $legacy_proxy, FeaturesController $features_controller, MultiCurrencyFeatureController $feature_controller ): void {
 		$this->payments_arbiter    = $payments_arbiter;
