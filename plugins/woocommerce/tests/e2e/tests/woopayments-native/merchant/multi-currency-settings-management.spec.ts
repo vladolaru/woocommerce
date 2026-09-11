@@ -18,8 +18,7 @@ import {
  *
  * Eight provider-free merchant contracts against the Core-owned multi-currency
  * settings surface (wc-settings → Multi-currency, MultiCurrencySettingsPage +
- * multi-currency-settings React app) and the native WooPayments settings
- * feature toggle.
+ * multi-currency-settings React app) and the Core Features screen.
  *
  * Per DECISIONS.md 2026-08-08 ("The multi-currency settings screen is the
  * native equivalent of the client's onboarding wizard"), the three onboarding
@@ -52,14 +51,10 @@ import {
  * run supplies that premise itself. The other four rows need no such premise
  * and run against the store exactly as it stands.
  *
- * Feature-toggle bound: MultiCurrencyRuntimeArbiter currently returns Core
- * ownership for the native runtime without consulting
- * _wcpay_feature_customer_multi_currency (the source-anchored defect
- * candidate named by the disable/enable deferral packets). The disable test
- * therefore proves the authoritative REST flag echo and reload persistence —
- * the arbiter-effect proxy that is truthful today — and deliberately does not
- * assert tab or switcher absence, which would convert this smoke into the
- * packets' RED-fingerprint defect run.
+ * Feature-toggle bound: Core owns the native runtime feature through its
+ * standard Features setting. The disable and enable rows use the Core REST
+ * settings resource only for reversible setup and restoration, then exercise
+ * the merchant transition through the user-visible Features form.
  */
 
 // The same environment-first resolution the harness fixtures use.
@@ -86,12 +81,13 @@ const CONTRACT_IDS = {
 } as const;
 
 const RUNTIME_STATUS_API = '/wp-json/wc-native-payments-e2e/v1/status';
-const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
+const CORE_MULTI_CURRENCY_FEATURE_API =
+	'/wp-json/wc/v3/settings/advanced/woocommerce_feature_multi_currency_enabled';
 const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
 const MC_SETTINGS_PATH =
 	'/wp-admin/admin.php?page=wc-settings&tab=wcpay_multi_currency';
-const PAYMENTS_SETTINGS_PATH =
-	'/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments';
+const FEATURES_SETTINGS_PATH =
+	'/wp-admin/admin.php?page=wc-settings&tab=advanced&section=features';
 
 // Copy authored by core (app.tsx / store-settings.tsx / settings-page.tsx).
 const ADD_REMOVE_BUTTON = 'Add/remove currencies';
@@ -99,11 +95,11 @@ const ADD_MODAL_TITLE = 'Add enabled currencies';
 const UPDATE_SELECTED_BUTTON = 'Update selected';
 const CURRENCIES_UPDATED_NOTICE = 'Enabled currencies updated.';
 const STORE_SETTINGS_SAVED_NOTICE = 'Store settings saved.';
-const PAYMENTS_SETTINGS_SAVED_NOTICE = 'Settings saved.';
 const AUTO_CURRENCY_LABEL =
 	'Automatically switch customers to their local currency if it has been enabled';
-const FEATURE_TOGGLE_LABEL = 'Enable multi-currency';
 const SAVE_CHANGES_BUTTON = 'Save changes';
+const FEATURE_DISABLE_EXPLANATION =
+	'Disabling Multi-Currency stops currency switching but keeps your currency settings and order data.';
 
 // The failure shapes the page-load smoke exists to catch, matching the
 // payouts-disputes release smoke.
@@ -202,73 +198,48 @@ async function logInAsAdmin(
 	} );
 }
 
-/**
- * Idempotent feature-flag seed: repair a drifted baseline through the
- * documented settings route rather than failing the row for a prior run's
- * leftovers, mirroring the frozen settings spec's baseline discipline.
- */
-async function ensureMultiCurrencyFeatureFlag(
-	adminApi: APIRequestContext,
-	enabled: boolean,
-	currentValue: boolean
-): Promise< void > {
-	if ( currentValue === enabled ) {
-		return;
-	}
-	await readJson(
-		await adminApi.post( PAYMENTS_SETTINGS_API, {
-			data: { is_multi_currency_enabled: enabled },
-		} ),
-		'Multi-currency feature baseline seed'
-	);
-}
+type CoreMultiCurrencyFeatureValue = 'yes' | 'no';
 
-/**
- * Read the first-run fraud-protection tour's dismissal state out of the
- * payments settings echo.
- */
-function readFraudTourDismissed(
-	settings: Record< string, unknown >
-): boolean {
-	const fraudProtection = settings.fraud_protection;
-	return (
-		typeof fraudProtection === 'object' &&
-		fraudProtection !== null &&
-		( fraudProtection as Record< string, unknown > )
-			.is_welcome_tour_dismissed === true
+async function readCoreMultiCurrencyFeature(
+	adminApi: APIRequestContext
+): Promise< CoreMultiCurrencyFeatureValue > {
+	const { value } = await readJson< { value: unknown } >(
+		await adminApi.get( CORE_MULTI_CURRENCY_FEATURE_API ),
+		'Core Multi-Currency feature read'
 	);
-}
-
-/**
- * Seed or restore the first-run fraud-protection tour's dismissal state
- * through the same documented route the settings app writes it with
- * (client/admin/client/woopayments/settings/fraud-protection/tour.tsx →
- * saveOption).
- *
- * The two feature-toggle rows need this because that tour mounts as soon as
- * the fraud-protection card scrolls into view on the payments settings screen,
- * and its spotlight overlay intercepts pointer events across the whole form —
- * ambient first-run UI that has nothing to do with the multi-currency contract
- * under test. Seeding it dismissed is a fixture, not a workaround for a
- * product defect: a merchant who has seen the tour once never meets it again.
- *
- * Residue: the route restores the value, not the option's prior absence — the
- * same absent-versus-default boundary the package NOTES record for every
- * REST-echo restoration in this spec.
- */
-async function setFraudTourDismissed(
-	adminApi: APIRequestContext,
-	dismissed: boolean
-): Promise< void > {
-	const response = await adminApi.post(
-		`${ PAYMENTS_SETTINGS_API }/wcpay_fraud_protection_welcome_tour_dismissed`,
-		{ data: { value: dismissed } }
-	);
-	if ( ! response.ok() ) {
+	if ( value !== 'yes' && value !== 'no' ) {
 		throw new Error(
-			`Fraud-protection tour dismissal write failed: HTTP ${ response.status() } ${ await response.text() }`
+			`Core Multi-Currency feature read returned an invalid value: ${ String(
+				value
+			) }`
 		);
 	}
+	return value;
+}
+
+async function setCoreMultiCurrencyFeature(
+	adminApi: APIRequestContext,
+	value: CoreMultiCurrencyFeatureValue
+): Promise< void > {
+	await readJson(
+		await adminApi.post( CORE_MULTI_CURRENCY_FEATURE_API, {
+			data: { value },
+		} ),
+		'Core Multi-Currency feature write'
+	);
+	expect(
+		await readCoreMultiCurrencyFeature( adminApi ),
+		'Core Multi-Currency feature write must be visible through a fresh read'
+	).toBe( value );
+}
+
+function multiCurrencyFeatureRow( page: Page ): Locator {
+	return page.getByRole( 'row' ).filter( {
+		has: page.getByRole( 'rowheader', {
+			name: 'Multi-currency',
+			exact: true,
+		} ),
+	} );
 }
 
 async function getStoreCurrencies(
@@ -709,96 +680,37 @@ test(
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
 	async ( { adminApi, page, baseURL } ) => {
-		// Snapshot the state this test touches, plus the companion settings
-		// the full-form save must not disturb.
-		const settingsBefore = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings read'
-		);
-		expect( settingsBefore.is_wcpay_enabled ).toBe( true );
-		const originalFlag = settingsBefore.is_multi_currency_enabled === true;
-		const companionsBefore = {
-			enabled_payment_method_ids:
-				settingsBefore.enabled_payment_method_ids,
-			is_manual_capture_enabled: settingsBefore.is_manual_capture_enabled,
-			is_debug_log_enabled: settingsBefore.is_debug_log_enabled,
-			is_payment_request_enabled:
-				settingsBefore.is_payment_request_enabled,
-		};
-		const tourDismissedBefore = readFraudTourDismissed( settingsBefore );
+		const originalFeatureValue =
+			await readCoreMultiCurrencyFeature( adminApi );
 
 		await withGuaranteedRestoration(
 			async () => {
-				// Isolated initial-on fixture: the disable transition needs a
-				// genuinely enabled starting point regardless of prior runs.
-				await ensureMultiCurrencyFeatureFlag(
-					adminApi,
-					true,
-					originalFlag
-				);
-				// Ambient first-run overlay, seeded away and restored below.
-				await setFraudTourDismissed( adminApi, true );
-
+				await setCoreMultiCurrencyFeature( adminApi, 'yes' );
 				await logInAsAdmin( page, baseURL );
-				await page.goto( PAYMENTS_SETTINGS_PATH );
-
-				const featureToggle = page.getByRole( 'checkbox', {
-					name: FEATURE_TOGGLE_LABEL,
+				await page.goto( FEATURES_SETTINGS_PATH );
+				const featureRow = multiCurrencyFeatureRow( page );
+				const disableRadio = featureRow.getByRole( 'radio', {
+					name: 'Disable',
 					exact: true,
 				} );
-				await expect( featureToggle ).toBeChecked();
-				await featureToggle.uncheck();
+				await expect( disableRadio ).toBeDisabled();
 				await expect(
-					page.getByRole( 'button', {
-						name: SAVE_CHANGES_BUTTON,
-					} )
-				).toBeEnabled();
-				await page
-					.getByRole( 'button', { name: SAVE_CHANGES_BUTTON } )
-					.click();
-				await expect(
-					page.getByText( PAYMENTS_SETTINGS_SAVED_NOTICE ).first()
+					featureRow.getByText( FEATURE_DISABLE_EXPLANATION )
 				).toBeVisible();
-
-				const settingsAfterDisable = await readJson(
-					await adminApi.get( PAYMENTS_SETTINGS_API ),
-					'Payments settings re-read'
+				await featureRow
+					.getByRole( 'link', {
+						name: 'Disable Multi-Currency',
+						exact: true,
+					} )
+					.click();
+				expect( await readCoreMultiCurrencyFeature( adminApi ) ).toBe(
+					'no'
 				);
-				expect( settingsAfterDisable.is_multi_currency_enabled ).toBe(
-					false
-				);
-
-				await page.reload();
-				await expect( featureToggle ).not.toBeChecked();
-
-				expect( {
-					enabled_payment_method_ids:
-						settingsAfterDisable.enabled_payment_method_ids,
-					is_manual_capture_enabled:
-						settingsAfterDisable.is_manual_capture_enabled,
-					is_debug_log_enabled:
-						settingsAfterDisable.is_debug_log_enabled,
-					is_payment_request_enabled:
-						settingsAfterDisable.is_payment_request_enabled,
-				} ).toEqual( companionsBefore );
 			},
 			async () => {
-				await readJson(
-					await adminApi.post( PAYMENTS_SETTINGS_API, {
-						data: { is_multi_currency_enabled: originalFlag },
-					} ),
-					'Multi-currency feature restoration'
-				);
-				await setFraudTourDismissed( adminApi, tourDismissedBefore );
-				const settingsRestored = await readJson(
-					await adminApi.get( PAYMENTS_SETTINGS_API ),
-					'Payments settings restoration read'
-				);
-				expect( settingsRestored.is_multi_currency_enabled ).toBe(
-					originalFlag
-				);
-				expect( readFraudTourDismissed( settingsRestored ) ).toBe(
-					tourDismissedBefore
+				await setCoreMultiCurrencyFeature(
+					adminApi,
+					originalFeatureValue
 				);
 			}
 		);
@@ -817,81 +729,36 @@ test(
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
 	async ( { adminApi, page, baseURL } ) => {
-		const settingsBefore = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings read'
-		);
-		expect( settingsBefore.is_wcpay_enabled ).toBe( true );
-		const originalFlag = settingsBefore.is_multi_currency_enabled === true;
+		const originalFeatureValue =
+			await readCoreMultiCurrencyFeature( adminApi );
 
-		// Isolated initial-off fixture, seeded per test rather than
-		// inherited from the disable case: focused execution must exercise a
-		// real off-to-on transition, not a no-op on an already-enabled store.
-		await readJson(
-			await adminApi.post( PAYMENTS_SETTINGS_API, {
-				data: { is_multi_currency_enabled: false },
-			} ),
-			'Multi-currency feature disabled seed'
-		);
-		// Ambient first-run overlay, seeded away and restored below.
-		const tourDismissedBefore = readFraudTourDismissed( settingsBefore );
-		await setFraudTourDismissed( adminApi, true );
-		const settingsSeeded = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings seeded read'
-		);
-		expect( settingsSeeded.is_multi_currency_enabled ).toBe( false );
-
-		await logInAsAdmin( page, baseURL );
-		await page.goto( PAYMENTS_SETTINGS_PATH );
-
-		// The disabled baseline reached the merchant surface: a no-op helper
-		// cannot report success from here, because the control observably
-		// starts unchecked.
-		const featureToggle = page.getByRole( 'checkbox', {
-			name: FEATURE_TOGGLE_LABEL,
-			exact: true,
-		} );
-		await expect( featureToggle ).not.toBeChecked();
-
-		await featureToggle.check();
-		await page.getByRole( 'button', { name: SAVE_CHANGES_BUTTON } ).click();
-		await expect(
-			page.getByText( PAYMENTS_SETTINGS_SAVED_NOTICE ).first()
-		).toBeVisible();
-
-		// Authoritative state: the stored flag reports enabled through a
-		// fresh authenticated read, and the control persists across reload.
-		const settingsAfterEnable = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings re-read'
-		);
-		expect( settingsAfterEnable.is_multi_currency_enabled ).toBe( true );
-		await page.reload();
-		await expect( featureToggle ).toBeChecked();
-
-		// With the feature enabled, the merchant-facing multi-currency
-		// runtime surface is reachable and loads its authoritative content.
-		await page.goto( MC_SETTINGS_PATH );
-		await expectMultiCurrencySurfaceLoaded( page );
-
-		// Restore the snapshot and verify.
-		await readJson(
-			await adminApi.post( PAYMENTS_SETTINGS_API, {
-				data: { is_multi_currency_enabled: originalFlag },
-			} ),
-			'Multi-currency feature restoration'
-		);
-		await setFraudTourDismissed( adminApi, tourDismissedBefore );
-		const settingsRestored = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings restoration read'
-		);
-		expect( settingsRestored.is_multi_currency_enabled ).toBe(
-			originalFlag
-		);
-		expect( readFraudTourDismissed( settingsRestored ) ).toBe(
-			tourDismissedBefore
+		await withGuaranteedRestoration(
+			async () => {
+				await setCoreMultiCurrencyFeature( adminApi, 'no' );
+				await logInAsAdmin( page, baseURL );
+				await page.goto( FEATURES_SETTINGS_PATH );
+				const featureRow = multiCurrencyFeatureRow( page );
+				const enableRadio = featureRow.getByRole( 'radio', {
+					name: 'Enable',
+					exact: true,
+				} );
+				await expect( enableRadio ).not.toBeChecked();
+				await enableRadio.check();
+				await page
+					.getByRole( 'button', { name: SAVE_CHANGES_BUTTON } )
+					.click();
+				expect( await readCoreMultiCurrencyFeature( adminApi ) ).toBe(
+					'yes'
+				);
+				await page.goto( MC_SETTINGS_PATH );
+				await expectMultiCurrencySurfaceLoaded( page );
+			},
+			async () => {
+				await setCoreMultiCurrencyFeature(
+					adminApi,
+					originalFeatureValue
+				);
+			}
 		);
 	}
 );

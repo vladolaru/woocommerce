@@ -1,13 +1,8 @@
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
-import {
-	expect,
-	tags,
-	test,
-	waitForWordPressLoginReady,
-} from '../../../fixtures/woopayments-native';
-import { admin } from '../../../test-data/data';
+import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import { isolatedBrowserContextOptions } from '../../../utils/woopayments-native/fixture-settings';
+import { withGuaranteedRestoration } from '../../../utils/woopayments-native/multi-currency-catalog';
 
 /**
  * Native multi-currency switcher visibility boundaries
@@ -25,18 +20,10 @@ import { isolatedBrowserContextOptions } from '../../../utils/woopayments-native
  * what the merchant has enabled. That restraint is deliberate rather than
  * incidental — see the parity note below.
  *
- * HISTORY — the shopper-side disabled-feature boundary was unassertable when
- * this spec was written. `MultiCurrencyRuntimeArbiter::get_runtime_owner()`
- * returned `OWNER_CORE` for every native-payments store and consulted
- * `_wcpay_feature_customer_multi_currency` only on the plugin branch, so every
- * native multi-currency controller registered regardless of the merchant's
- * setting and turning multi-currency off did not remove the storefront
- * switcher — a merchant who had switched the feature off got it switched back
- * on by moving to native. Rather than encode that as intended behaviour or
- * write a knowingly red test, the arbiter was fixed to read the same option on
- * both branches, and the disabled-state test below now asserts the whole
- * contract: the setting round-trips, the merchant-facing status report
- * reflects it, and the storefront switcher is gone while the flag is off.
+ * The disabled-state test uses the Core feature settings resource, which owns
+ * the native runtime. It keeps the switcher's positive control in the same
+ * session before proving that a freshly read Core-disabled state removes every
+ * anonymous storefront switcher.
  *
  * The reason the enabled set is never written is the same standing-store
  * hazard the sibling specs record: the store's rate cache is empty, so EUR is
@@ -48,12 +35,6 @@ import { isolatedBrowserContextOptions } from '../../../utils/woopayments-native
  * "no additional enabled currency" state is therefore out of bounds here.
  */
 
-// The same environment-first resolution the harness fixtures use.
-const ADMIN_USERNAME =
-	process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME ?? admin.username;
-const ADMIN_PASSWORD =
-	process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD ?? admin.password;
-
 const SHOPPER_CONTRACT_PREFIX =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:';
 
@@ -63,14 +44,14 @@ const CONTRACT_IDS = {
 } as const;
 
 const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
-const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
+const CORE_MULTI_CURRENCY_FEATURE_API =
+	'/wp-json/wc/v3/settings/advanced/woocommerce_feature_multi_currency_enabled';
 const ORDERS_API = '/wp-json/wc/v3/orders';
 const PRODUCTS_API = '/wp-json/wc/v3/products';
 const PAGES_API = '/wp-json/wp/v2/pages';
 const POSTS_API = '/wp-json/wp/v2/posts';
 const CHECKOUT_PAGE_SETTING_API =
 	'/wp-json/wc/v3/settings/advanced/woocommerce_checkout_page_id';
-const STATUS_PATH = '/wp-admin/admin.php?page=wc-status';
 
 const BLOCK_NAME = 'woocommerce-payments/multi-currency-switcher';
 const SWITCHER_BLOCK = `<!-- wp:${ BLOCK_NAME } /-->`;
@@ -120,21 +101,6 @@ async function readJson< Result = Record< string, unknown > >(
 		);
 	}
 	return ( await response.json() ) as Result;
-}
-
-async function logInAsAdmin( page: Page ): Promise< void > {
-	// Clear first, matching the harness's own admin login: a stale session
-	// cookie would redirect wp-login.php to wp-admin and leave the form fill
-	// hunting a field that is not there.
-	await page.context().clearCookies();
-	await page.goto( 'wp-login.php' );
-	await waitForWordPressLoginReady( page );
-	await page.getByLabel( 'Username or Email Address' ).fill( ADMIN_USERNAME );
-	await page
-		.getByRole( 'textbox', { name: 'Password' } )
-		.fill( ADMIN_PASSWORD );
-	await page.getByRole( 'button', { name: 'Log In' } ).click();
-	await page.waitForURL( '**/wp-admin/**' );
 }
 
 // Assets belonging to plugins other than the one under test. The standing
@@ -319,52 +285,39 @@ async function deleteRunResource(
 	}
 }
 
-/**
- * Idempotent feature-flag seed: repair a drifted baseline through the
- * documented settings route rather than failing the row for a prior run's
- * leftovers, mirroring the frozen settings spec's baseline discipline.
- *
- * @param adminApi     Authenticated admin REST context.
- * @param enabled      Desired flag state.
- * @param currentValue Flag state already read from the settings echo.
- */
-async function ensureMultiCurrencyFeatureFlag(
-	adminApi: APIRequestContext,
-	enabled: boolean,
-	currentValue: boolean
-): Promise< void > {
-	if ( currentValue === enabled ) {
-		return;
-	}
-	await readJson(
-		await adminApi.post( PAYMENTS_SETTINGS_API, {
-			data: { is_multi_currency_enabled: enabled },
-		} ),
-		'Multi-currency feature baseline seed'
+type CoreMultiCurrencyFeatureValue = 'yes' | 'no';
+
+async function readCoreMultiCurrencyFeature(
+	adminApi: APIRequestContext
+): Promise< CoreMultiCurrencyFeatureValue > {
+	const { value } = await readJson< { value: unknown } >(
+		await adminApi.get( CORE_MULTI_CURRENCY_FEATURE_API ),
+		'Core Multi-Currency feature read'
 	);
+	if ( value !== 'yes' && value !== 'no' ) {
+		throw new Error(
+			`Core Multi-Currency feature read returned an invalid value: ${ String(
+				value
+			) }`
+		);
+	}
+	return value;
 }
 
-/**
- * The value cell of one row in the native WooPayments system status section.
- *
- * @param page  Admin page showing WooCommerce → Status.
- * @param label Exact label cell text, including its trailing colon.
- * @return Locator for the row's value cell.
- */
-function statusValue( page: Page, label: string ): Locator {
-	return page
-		.getByRole( 'table' )
-		.filter( {
-			has: page.getByRole( 'heading', {
-				name: 'WooPayments native payments',
-			} ),
-		} )
-		.getByRole( 'row' )
-		.filter( {
-			has: page.getByRole( 'cell', { name: label, exact: true } ),
-		} )
-		.getByRole( 'cell' )
-		.last();
+async function setCoreMultiCurrencyFeature(
+	adminApi: APIRequestContext,
+	value: CoreMultiCurrencyFeatureValue
+): Promise< void > {
+	await readJson(
+		await adminApi.post( CORE_MULTI_CURRENCY_FEATURE_API, {
+			data: { value },
+		} ),
+		'Core Multi-Currency feature write'
+	);
+	expect(
+		await readCoreMultiCurrencyFeature( adminApi ),
+		'Core Multi-Currency feature write must be visible through a fresh read'
+	).toBe( value );
 }
 
 /**
@@ -751,79 +704,45 @@ test(
 		// disabled-state check runs against the very block this positive
 		// control just proved working.
 
-		// The merchant's disabled intent is recorded and merchant-visible.
-		const settingsBefore = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings read'
-		);
-		expect( settingsBefore.is_wcpay_enabled ).toBe( true );
-		const originalFlag = settingsBefore.is_multi_currency_enabled === true;
+		const originalFeatureValue =
+			await readCoreMultiCurrencyFeature( adminApi );
+		await withGuaranteedRestoration(
+			async () => {
+				await setCoreMultiCurrencyFeature( adminApi, 'no' );
+				expect( await readCoreMultiCurrencyFeature( adminApi ) ).toBe(
+					'no'
+				);
 
-		// Isolated initial-on fixture: the disable transition needs a
-		// genuinely enabled starting point regardless of prior runs.
-		await ensureMultiCurrencyFeatureFlag( adminApi, true, originalFlag );
-
-		await logInAsAdmin( page );
-		await page.goto( STATUS_PATH );
-		await expect( statusValue( page, 'Multi-currency:' ) ).toHaveText(
-			'Enabled'
-		);
-
-		await readJson(
-			await adminApi.post( PAYMENTS_SETTINGS_API, {
-				data: { is_multi_currency_enabled: false },
-			} ),
-			'Multi-currency feature disable'
-		);
-		const settingsAfter = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings re-read'
-		);
-		expect( settingsAfter.is_multi_currency_enabled ).toBe( false );
-
-		await page.goto( STATUS_PATH );
-		await expect( statusValue( page, 'Multi-currency:' ) ).toHaveText(
-			'Disabled'
-		);
-
-		// And the merchant's intent reaches the shopper: with the feature
-		// off, the storefront offers no switcher at all. The positive control
-		// above ran against the same published block on the same page with
-		// the feature on, so this is the flag's effect and not a page that
-		// never had a switcher.
-		const disabledVisitor = await page
-			.context()
-			.browser()
-			?.newContext( isolatedBrowserContextOptions( storeBase ) );
-		if ( ! disabledVisitor ) {
-			throw new Error(
-				'Could not open an anonymous context for the disabled-feature check.'
-			);
-		}
-		try {
-			const disabledPage = await disabledVisitor.newPage();
-			const disabledResponse = await disabledPage.goto( post.link );
-			// The page itself still renders — this is the switcher going
-			// away, not the post disappearing.
-			expect( disabledResponse?.status() ).toBe( 200 );
-			await expect( anySwitcher( disabledPage ) ).toHaveCount( 0 );
-		} finally {
-			await disabledVisitor.close();
-		}
-
-		// Restore the snapshot and verify through a fresh read.
-		await readJson(
-			await adminApi.post( PAYMENTS_SETTINGS_API, {
-				data: { is_multi_currency_enabled: originalFlag },
-			} ),
-			'Multi-currency feature restoration'
-		);
-		const settingsRestored = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings restoration read'
-		);
-		expect( settingsRestored.is_multi_currency_enabled ).toBe(
-			originalFlag
+				// The Core-disabled state reaches anonymous shoppers: the positive
+				// control above used this same published block with Core enabled.
+				const disabledVisitor = await page
+					.context()
+					.browser()
+					?.newContext( isolatedBrowserContextOptions( storeBase ) );
+				if ( ! disabledVisitor ) {
+					throw new Error(
+						'Could not open an anonymous context for the disabled-feature check.'
+					);
+				}
+				try {
+					const disabledPage = await disabledVisitor.newPage();
+					const disabledResponse = await disabledPage.goto(
+						post.link
+					);
+					expect( disabledResponse?.status() ).toBe( 200 );
+					await expect( anySwitcher( disabledPage ) ).toHaveCount(
+						0
+					);
+				} finally {
+					await disabledVisitor.close();
+				}
+			},
+			async () => {
+				await setCoreMultiCurrencyFeature(
+					adminApi,
+					originalFeatureValue
+				);
+			}
 		);
 
 		await deleteRunResource(
