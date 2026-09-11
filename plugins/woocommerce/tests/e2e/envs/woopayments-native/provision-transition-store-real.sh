@@ -1150,8 +1150,9 @@ prepare_network_reconciliation() {
 	' | node -e 'const { readFileSync } = require( "node:fs" ); process.stdout.write( readFileSync( 0, "utf8" ).trim() );')"
 	node -e '
 		const states = JSON.parse( process.argv[ 1 ] );
-		if ( ! Array.isArray( states ) || states.length !== 2 || states[0].state !== "pending" || states[1].state !== "deferred" || states[0].generation <= 0 || states[0].generation !== states[1].generation || states[1].current_step !== "network_barrier" || ! Array.isArray( states[1].deferred_codes ) || ! states[1].deferred_codes.includes( "network_barrier" ) ) process.exit( 1 );
-	' "$mixed_states"
+		const bySite = new Map( states.map( ( state ) => [ state.site_id, state ] ) ); const primary = bySite.get( Number( process.argv[ 2 ] ) ); const secondary = bySite.get( Number( process.argv[ 3 ] ) );
+		if ( ! Array.isArray( states ) || states.length !== 2 || ! primary || ! secondary || primary.state !== "pending" || secondary.state !== "deferred" || primary.generation <= 0 || primary.generation !== secondary.generation || secondary.current_step !== "network_barrier" || ! Array.isArray( secondary.deferred_codes ) || ! secondary.deferred_codes.includes( "network_barrier" ) ) process.exit( 1 );
+	' "$mixed_states" "$primary_site_id" "$secondary_site_id"
 	for site_url in "$base_url"; do
 		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
 		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
@@ -1171,7 +1172,8 @@ prepare_network_reconciliation() {
 		const result = JSON.parse( process.argv[ 1 ] ); const states = result.states;
 		const mixed = JSON.parse( process.argv[ 2 ] );
 		const expectedIds = process.argv.slice( 3 ).map( Number ).sort( ( a, b ) => a - b );
-		if ( ! Array.isArray( states ) || states.length !== 2 || states.map( ( state ) => state.site_id ).sort( ( a, b ) => a - b ).join() !== expectedIds.join() || states.some( ( state ) => state.generation !== mixed[ 0 ].generation || state.state !== "excluded" || ! [ state.current_step, ...( Array.isArray( state.exclusion_codes ) ? state.exclusion_codes : [] ) ].includes( "legacy_stripe_billing_subscriptions_present" ) ) ) process.exit( 1 );
+		const mixedGeneration = mixed.find( ( state ) => state.site_id === expectedIds[ 0 ] )?.generation;
+		if ( result.network_active !== true || ! Number.isSafeInteger( mixedGeneration ) || ! Array.isArray( states ) || states.length !== 2 || states.map( ( state ) => state.site_id ).sort( ( a, b ) => a - b ).join() !== expectedIds.join() || states.some( ( state ) => state.generation !== mixedGeneration || state.state !== "excluded" || ! [ state.current_step, ...( Array.isArray( state.exclusion_codes ) ? state.exclusion_codes : [] ) ].includes( "legacy_stripe_billing_subscriptions_present" ) ) ) process.exit( 1 );
 	' "$excluded_states" "$mixed_states" "$primary_site_id" "$secondary_site_id"
 	store_wp --url="$base_url" post meta delete "$marker_order_id" _wcpay_subscription_id > /dev/null
 	store_wp eval '
@@ -1194,14 +1196,14 @@ prepare_network_reconciliation() {
 			$result[] = array( "site_id" => (int) $site_id, "generation" => (int) ( $record["generation"] ?? 0 ), "state" => (string) ( $record["state"] ?? "" ) );
 			restore_current_blog();
 		}
-		echo wp_json_encode( $result );
+		echo wp_json_encode( array( "states" => $result, "network_active" => is_plugin_active_for_network( "woocommerce-payments/woocommerce-payments.php" ) ) );
 	' | node -e 'const { readFileSync } = require( "node:fs" ); process.stdout.write( readFileSync( 0, "utf8" ).trim() );')"
 	node -e '
-		const states = JSON.parse( process.argv[ 1 ] );
+		const finalResult = JSON.parse( process.argv[ 1 ] ); const states = finalResult.states;
 		const mixed = JSON.parse( process.argv[ 2 ] );
 		const excluded = JSON.parse( process.argv[ 3 ] );
-		const excludedBySite = new Map( excluded.map( ( state ) => [ state.site_id, state ] ) );
-		if ( ! Array.isArray( states ) || states.length !== 2 || states.some( ( state ) => ! Number.isSafeInteger( state.site_id ) || ! excludedBySite.has( state.site_id ) || state.generation <= excludedBySite.get( state.site_id ).generation || state.state !== "done" ) ) process.exit( 1 );
+		const excludedBySite = new Map( excluded.states.map( ( state ) => [ state.site_id, state ] ) );
+		if ( finalResult.network_active !== false || ! Array.isArray( states ) || states.length !== 2 || states.some( ( state ) => ! Number.isSafeInteger( state.site_id ) || ! excludedBySite.has( state.site_id ) || state.generation <= excludedBySite.get( state.site_id ).generation || state.state !== "done" ) ) process.exit( 1 );
 	' "$final_states" "$mixed_states" "$excluded_states"
 	update_state network_primary_site_id "$primary_site_id" number
 	update_state network_secondary_site_id "$secondary_site_id" number
