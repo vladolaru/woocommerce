@@ -33,7 +33,7 @@ $wcpay_fresh_cart = static function ( array $contents ): WC_Cart {
 function executeFile(
 	command: string,
 	args: string[],
-	options: { cwd: string; env?: NodeJS.ProcessEnv }
+	options: { cwd: string; env?: typeof process.env }
 ): Promise< string > {
 	return new Promise( ( resolveOutput, reject ) => {
 		execFile(
@@ -54,29 +54,6 @@ function executeFile(
 				resolveOutput( stdout );
 			}
 		);
-	} );
-}
-
-/**
- * Run a provider-free extension integration probe through the selected wp-env
- * service. The PHP body executes inside a closure and must return JSON-safe
- * data. Base64 transport keeps WP-CLI argument parsing from reshaping PHP.
- */
-export async function runExtensionCompatProbe< Result >(
-	phpBody: string
-): Promise< Result > {
-	const storeDirectory =
-		process.env.E2E_WOOPAYMENTS_EXTENSION_STORE_DIR ??
-		DEFAULT_STORE_DIRECTORY;
-	const wpEnvConfig =
-		process.env.E2E_WOOPAYMENTS_EXTENSION_WP_ENV_CONFIG ??
-		'.wp-env.e2e.json';
-	const wpEnvService =
-		process.env.E2E_WOOPAYMENTS_EXTENSION_WP_ENV_SERVICE ?? 'cli';
-	return runWpCliProbe( `${ COMMON_PROBE_PHP }\n${ phpBody }`, {
-		storeDirectory,
-		wpEnvConfig,
-		wpEnvService,
 	} );
 }
 
@@ -131,4 +108,27 @@ export async function runWpCliProbe< Result >(
 	}
 
 	return JSON.parse( resultLine.slice( RESULT_MARKER.length ) ) as Result;
+}
+
+/**
+ * Run a provider-free extension integration probe through the selected wp-env
+ * service. The PHP body executes inside a closure and must return JSON-safe
+ * data. Base64 transport keeps WP-CLI argument parsing from reshaping PHP.
+ */
+export async function runExtensionCompatProbe< Result >(
+	phpBody: string
+): Promise< Result > {
+	const storeDirectory =
+		process.env.E2E_WOOPAYMENTS_EXTENSION_STORE_DIR ??
+		DEFAULT_STORE_DIRECTORY;
+	const wpEnvConfig =
+		process.env.E2E_WOOPAYMENTS_EXTENSION_WP_ENV_CONFIG ??
+		'.wp-env.e2e.json';
+	const wpEnvService =
+		process.env.E2E_WOOPAYMENTS_EXTENSION_WP_ENV_SERVICE ?? 'cli';
+	return runWpCliProbe( `${ COMMON_PROBE_PHP }\n${ phpBody }`, {
+		storeDirectory,
+		wpEnvConfig,
+		wpEnvService,
+	} );
 }

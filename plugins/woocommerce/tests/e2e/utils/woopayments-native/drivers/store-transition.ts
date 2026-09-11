@@ -376,16 +376,6 @@ export function validateCutoverActionURL( href: string, baseURL: string ): URL {
 	return url;
 }
 
-export async function softCutOverEphemeralStore(
-	session: ProviderWriteSession,
-	page: Page
-): Promise< void > {
-	const link = await prepareCutoverAction( session, page, false );
-	await session.performWrite( () => link.click() );
-	await session.assertCurrentRuntimeReady( 'native' );
-	await session.logInAsCustomer( page );
-}
-
 async function prepareCutoverAction(
 	session: ProviderWriteSession,
 	page: Page,
@@ -414,6 +404,16 @@ async function prepareCutoverAction(
 	validateCutoverActionURL( href, session.baseURL );
 	await session.assertCanWrite();
 	return link;
+}
+
+export async function softCutOverEphemeralStore(
+	session: ProviderWriteSession,
+	page: Page
+): Promise< void > {
+	const link = await prepareCutoverAction( session, page, false );
+	await session.performWrite( () => link.click() );
+	await session.assertCurrentRuntimeReady( 'native' );
+	await session.logInAsCustomer( page );
 }
 
 async function startEphemeralCutover(

@@ -15,6 +15,17 @@ import type { TransitionAllocation } from '../transition-allocation';
 import type { ProviderWriteSession } from '../../../fixtures/woopayments-native';
 import { runWpCliProbe } from '../../../tests/woopayments-native/compat/wp-cli';
 
+function restoreProcessEnvironment(
+	name: string,
+	value: string | undefined
+): void {
+	if ( value === undefined ) {
+		delete process.env[ name ];
+		return;
+	}
+	process.env[ name ] = value;
+}
+
 test( 'reads raw transition state through the allocated wp-env config without an extension profile', async () => {
 	const state = { state: 'pending', generation: 1, revision: 2 };
 	const result = await runWpCliProbe(
@@ -439,9 +450,7 @@ test( 'polls normal HTTP traffic and reads state from the exact run-owned CLI al
 		expect( result ).toEqual( status );
 	} finally {
 		rmSync( workspace, { recursive: true, force: true } );
-		if ( previous === undefined )
-			delete process.env.E2E_TRANSITION_ALLOCATION;
-		else process.env.E2E_TRANSITION_ALLOCATION = previous;
+		restoreProcessEnvironment( 'E2E_TRANSITION_ALLOCATION', previous );
 	}
 } );
 

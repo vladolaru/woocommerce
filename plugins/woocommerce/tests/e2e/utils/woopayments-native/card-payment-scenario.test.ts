@@ -1,4 +1,9 @@
-import { expect, test } from '@playwright/test';
+import {
+	expect,
+	test,
+	type APIRequestContext,
+	type Page,
+} from '@playwright/test';
 
 import {
 	defineCardPaymentScenario,
@@ -9,7 +14,6 @@ import {
 	runCardPaymentScenario,
 } from '../../tests/woopayments-native/scenarios/card-payment';
 import type { ProviderWriteSession } from '../../fixtures/woopayments-native';
-import type { APIRequestContext, Page } from '@playwright/test';
 
 const deviceFingerprint = '0123456789abcdef0123456789abcdef';
 const paymentData = [

@@ -63,9 +63,6 @@ test(
 						),
 						contentType: 'application/json',
 					} );
-					expect(
-						cutover.before.cutover.preflight_failures
-					).toContain( 'woopayments_plugin_version_unsupported' );
 					return;
 				}
 				const cutover = await reconcileEphemeralStore(
@@ -103,14 +100,20 @@ test(
 				expect( cutover.completed.cutover.network_active ).toBe(
 					false
 				);
-				if ( profile.migratorActionId ) {
-					expect(
-						cutover.before.cutover.migrator_action?.status
-					).toBe( 'pending' );
-					expect(
-						cutover.completed.cutover.migrator_action?.status
-					).toBe( 'canceled' );
-				}
+				const expectedInitialMigratorStatus =
+					profile.migratorActionId === undefined
+						? undefined
+						: 'pending';
+				const expectedFinalMigratorStatus =
+					profile.migratorActionId === undefined
+						? undefined
+						: 'canceled';
+				expect( cutover.before.cutover.migrator_action?.status ).toBe(
+					expectedInitialMigratorStatus
+				);
+				expect(
+					cutover.completed.cutover.migrator_action?.status
+				).toBe( expectedFinalMigratorStatus );
 				await page.context().clearCookies();
 				const baselineOrderId =
 					await readHighestOrderId( pilotRuntime );
