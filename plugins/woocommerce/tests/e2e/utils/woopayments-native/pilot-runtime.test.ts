@@ -944,9 +944,9 @@ function lockLossPage(
 				}
 				if (
 					attribute === 'href' &&
-					name.includes( 'Disable WooPayments' )
+					name.includes( 'Start the switch' )
 				) {
-					return 'http://native.test/wp-admin/admin.php?wc_woopayments_cutover_action=disable_woopayments&_wc_woopayments_cutover_nonce=nonce';
+					return 'http://native.test/wp-admin/admin.php?wc_woopayments_cutover_action=disable_woopayments&_wc_woopayments_cutover_nonce=123456789a';
 				}
 				if ( attribute === 'value' && name.includes( 'value="73"' ) ) {
 					return '73';
@@ -2972,7 +2972,7 @@ test( 'blocks a saved-card default update after lock loss during preparation', a
 	).resolves.toBeUndefined();
 } );
 
-test( 'drives the nonce-protected product cutover controller entry point', async () => {
+test( 'legacy cutover restores the customer without requiring persisted reconciliation state', async () => {
 	const directory = await lockDirectory();
 	const calls: RequestCall[] = [];
 	const previousAdminUsername = process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME;
@@ -3026,7 +3026,7 @@ test( 'drives the nonce-protected product cutover controller entry point', async
 		},
 		getAttribute: async ( name ) =>
 			name === 'href'
-				? 'http://native.test/wp-admin/admin.php?wc_woopayments_cutover_action=disable_woopayments&_wc_woopayments_cutover_nonce=nonce'
+				? 'http://native.test/wp-admin/admin.php?wc_woopayments_cutover_action=disable_woopayments&_wc_woopayments_cutover_nonce=123456789a'
 				: null,
 	} );
 	const page = {
@@ -3046,7 +3046,7 @@ test( 'drives the nonce-protected product cutover controller entry point', async
 			options?: { exact?: boolean; name?: string | RegExp }
 		) => {
 			const name = String( options?.name ?? '' );
-			if ( role === 'link' && name === 'Disable WooPayments' ) {
+			if ( role === 'link' && name === 'Start the switch' ) {
 				expect( options?.exact ).toBe( true );
 				return cutoverLink;
 			}
@@ -3103,10 +3103,10 @@ test( 'blocks cutover after lock loss during admin preparation', async () => {
 	await expect(
 		expectMutationBlockedAfterPreparation(
 			{
-				loseOn: { action: 'expect', name: 'Disable WooPayments' },
+				loseOn: { action: 'expect', name: 'Start the switch' },
 				mutation: {
 					role: 'link',
-					name: 'Disable WooPayments',
+					name: 'Start the switch',
 				},
 			},
 			async ( pilotRuntime, page ) => {

@@ -5,8 +5,13 @@ import {
 	type CardPaymentScenarioDefinition,
 	type CardPaymentScenarioEvidence,
 	validateCardPaymentEvidence,
+	publicCardPaymentEvidence,
+	runCardPaymentScenario,
 } from '../../tests/woopayments-native/scenarios/card-payment';
+import type { ProviderWriteSession } from '../../fixtures/woopayments-native';
+import type { APIRequestContext, Page } from '@playwright/test';
 
+const deviceFingerprint = '0123456789abcdef0123456789abcdef';
 const paymentData = [
 	{
 		key: 'wc-woocommerce_payments-new-payment-method',
@@ -15,7 +20,7 @@ const paymentData = [
 	{ key: 'wcpay-fraud-prevention-token', value: '' },
 	{ key: 'wcpay-payment-method-error-code', value: '' },
 	{ key: 'wcpay-payment-method-error-message', value: '' },
-	{ key: 'wcpay-fingerprint', value: '' },
+	{ key: 'wcpay-fingerprint', value: deviceFingerprint },
 	{ key: 'wcpay-is-platform-payment-method', value: 'true' },
 ];
 
@@ -109,6 +114,66 @@ const strictTrueDefinition = {
 	},
 } as const;
 
+test( 'projects payment attachments without order or provider identifiers', () => {
+	const projection = publicCardPaymentEvidence( exactEvidence().payment );
+	expect( projection ).toEqual( {
+		bindings: {
+			runIdPresent: true,
+			orderIdPresent: true,
+			orderKeyPresent: true,
+			intentIdPresent: true,
+			chargeIdPresent: true,
+			paymentMethodIdPresent: true,
+		},
+		amountMinor: 1099,
+		currency: 'USD',
+		orderStatus: 'processing',
+		providerStatus: 'succeeded',
+		chargeStatus: 'succeeded',
+		chargeCaptured: true,
+		occurrenceCount: 1,
+		captureOccurrenceCount: 1,
+	} );
+	const serialized = JSON.stringify( projection );
+	for ( const hidden of [
+		'woopayments-run-exact',
+		'wc_order_exact',
+		'pi_exact',
+		'ch_exact',
+		'pm_exact',
+	] ) {
+		expect( serialized ).not.toContain( hidden );
+	}
+} );
+
+test( 'the reusable payment scenario rejects unsupported account eligibility before a checkout can submit', async () => {
+	await expect(
+		runCardPaymentScenario(
+			strictTrueDefinition,
+			{
+				withState: ( _session, _runId, callback ) =>
+					callback( undefined ),
+				completeCheckout: async () => {
+					throw new Error( 'Checkout must not be reached.' );
+				},
+			},
+			{
+				adminApi: {
+					get: async () => ( {
+						ok: () => true,
+						json: async () => ( {
+							card_testing_protection_eligible: false,
+						} ),
+					} ),
+				} as unknown as APIRequestContext,
+				page: {} as Page,
+				pilotRuntime: {} as ProviderWriteSession,
+				runId: 'unit-reusable-card',
+			}
+		)
+	).rejects.toThrow( /eligibility|eligible/ );
+} );
+
 const exactDigest = {
 	length: 16,
 	sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
@@ -119,9 +184,10 @@ const replacePaymentData = (
 	key: string,
 	value: unknown
 ): void => {
-	evidence.checkoutRequests[ 0 ].paymentData = paymentData.map( ( entry ) =>
-		entry.key === key ? { ...entry, value } : { ...entry }
-	);
+	evidence.checkoutRequests[ 0 ].paymentData =
+		evidence.checkoutRequests[ 0 ].paymentData.map( ( entry ) =>
+			entry.key === key ? { ...entry, value } : { ...entry }
+		);
 };
 
 const exactTrueEvidence = (): CardPaymentScenarioEvidence => {
@@ -132,6 +198,7 @@ const exactTrueEvidence = (): CardPaymentScenarioEvidence => {
 		'wcpay-fraud-prevention-token',
 		structuredClone( exactDigest )
 	);
+	replacePaymentData( evidence, 'wcpay-fingerprint', 'present' );
 	Object.assign( evidence, {
 		adapterOrderKey: 'wc_order_exact',
 		protectionTokens: {
@@ -532,7 +599,6 @@ test.describe( 'card payment evidence validator', () => {
 		'wcpay-fraud-prevention-token',
 		'wcpay-payment-method-error-code',
 		'wcpay-payment-method-error-message',
-		'wcpay-fingerprint',
 	] ) {
 		test( `rejects a nonempty ${ field } field`, () => {
 			const evidence = exactEvidence();
@@ -540,6 +606,32 @@ test.describe( 'card payment evidence validator', () => {
 
 			expect( () => validateCardPaymentEvidence( evidence ) ).toThrow(
 				new RegExp( `${ field }.*empty`, 'i' )
+			);
+		} );
+	}
+
+	test( 'accepts an empty best-effort device fingerprint', () => {
+		const evidence = exactEvidence();
+		replacePaymentData( evidence, 'wcpay-fingerprint', '' );
+
+		expect( () => validateCardPaymentEvidence( evidence ) ).not.toThrow();
+	} );
+
+	for ( const fingerprint of [
+		'provider_fingerprint',
+		deviceFingerprint.toUpperCase(),
+		deviceFingerprint.slice( 1 ),
+		`${ deviceFingerprint }0`,
+		null,
+	] ) {
+		test( `rejects non-device fingerprint evidence ${ String(
+			fingerprint
+		) }`, () => {
+			const evidence = exactEvidence();
+			replacePaymentData( evidence, 'wcpay-fingerprint', fingerprint );
+
+			expect( () => validateCardPaymentEvidence( evidence ) ).toThrow(
+				/device fingerprint/i
 			);
 		} );
 	}

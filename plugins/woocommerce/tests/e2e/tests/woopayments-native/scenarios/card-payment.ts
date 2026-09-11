@@ -318,6 +318,9 @@ function requireStrictTrueProtection(
 	evidence: CardPaymentScenarioEvidence,
 	data: Map< string, unknown >
 ): void {
+	if ( data.get( 'wcpay-fingerprint' ) !== 'present' ) {
+		fail( 'strict-true protection requires device fingerprint evidence.' );
+	}
 	const tokens = evidence.protectionTokens;
 	if ( ! tokens ) {
 		fail( 'strict-true protection requires token evidence.' );
@@ -372,6 +375,21 @@ function requireEmptyPaymentField(
 	}
 }
 
+function requireBestEffortDeviceFingerprint(
+	data: Map< string, unknown >
+): void {
+	const fingerprint = data.get( 'wcpay-fingerprint' );
+	if (
+		fingerprint !== '' &&
+		( typeof fingerprint !== 'string' ||
+			! /^[a-f0-9]{32}$/.test( fingerprint ) )
+	) {
+		fail(
+			'wcpay-fingerprint must be empty or an exact device fingerprint.'
+		);
+	}
+}
+
 function normalizeSummaryText( text: string ): string {
 	return text.replace( /\s+/g, ' ' ).trim();
 }
@@ -417,7 +435,6 @@ export function validateCardPaymentEvidence(
 	for ( const emptyField of [
 		'wcpay-payment-method-error-code',
 		'wcpay-payment-method-error-message',
-		'wcpay-fingerprint',
 	] ) {
 		requireEmptyPaymentField( data, emptyField );
 	}
@@ -431,6 +448,7 @@ export function validateCardPaymentEvidence(
 	if ( expectedProtection ) {
 		requireStrictTrueProtection( evidence, data );
 	} else {
+		requireBestEffortDeviceFingerprint( data );
 		requireEmptyPaymentField( data, 'wcpay-fraud-prevention-token' );
 		if ( evidence.browser.renderedFraudPreventionToken !== '' ) {
 			fail(
@@ -954,6 +972,150 @@ async function readScenarioEvidence< Scope >(
 	};
 }
 
+export function publicCardPaymentEvidence( evidence: PaymentEvidence ) {
+	return {
+		bindings: {
+			runIdPresent: Boolean( evidence.runId.trim() ),
+			orderIdPresent:
+				Number.isSafeInteger( evidence.orderId ) &&
+				evidence.orderId > 0,
+			orderKeyPresent: Boolean( evidence.orderKey.trim() ),
+			intentIdPresent: Boolean( evidence.intentId.trim() ),
+			chargeIdPresent: Boolean( evidence.chargeId.trim() ),
+			paymentMethodIdPresent: Boolean( evidence.paymentMethodId.trim() ),
+		},
+		amountMinor: evidence.amountMinor,
+		currency: evidence.currency,
+		orderStatus: evidence.orderStatus,
+		providerStatus: evidence.providerStatus,
+		chargeStatus: evidence.chargeStatus,
+		chargeCaptured: evidence.chargeCaptured,
+		occurrenceCount: evidence.occurrenceCount,
+		captureOccurrenceCount: evidence.captureOccurrenceCount,
+	};
+}
+
+export async function runCardPaymentScenario< Scope >(
+	definitionInput: CardPaymentScenarioDefinition,
+	adapter: CardPaymentRuntimeAdapter< Scope >,
+	{
+		adminApi,
+		page,
+		pilotRuntime,
+		runId,
+	}: {
+		adminApi: APIRequestContext;
+		page: Page;
+		pilotRuntime: ProviderWriteSession;
+		runId: string;
+	}
+): Promise< PaymentEvidence > {
+	const definition = defineCardPaymentScenario( definitionInput );
+	return adapter.withState( pilotRuntime, runId, async ( scope ) => {
+		const accountBody = ( await readJson(
+			await adminApi.get( '/wp-json/wc/v3/payments/accounts' ),
+			'WooPayments account'
+		) ) as AccountResponse;
+		const account = {
+			cardTestingProtectionEligible:
+				accountBody.card_testing_protection_eligible,
+		};
+		requireStrictEligibility(
+			account.cardTestingProtectionEligible,
+			definition.protection
+		);
+		const product = await pilotRuntime.createOwnedProduct(
+			definition.price
+		);
+		const observation = newCheckoutObservation();
+
+		const routeHandler = async ( route: Route ): Promise< void > => {
+			const request = route.request();
+			try {
+				if ( isCheckoutRequest( request ) ) {
+					const requestId = `checkout-${
+						observation.requests.length + 1
+					}`;
+					observation.requestIds.set( request, requestId );
+					observation.requests.push(
+						normalizeCheckoutRequest(
+							requestId,
+							request.postDataJSON()
+						)
+					);
+					observation.browser =
+						await readDispatchBrowserEvidence( page );
+				}
+			} catch {
+				observation.observerFailures.push( 'checkout-request-capture' );
+			} finally {
+				await route.continue();
+			}
+		};
+		const responseHandler = ( response: Response ): void => {
+			if ( ! isCheckoutRequest( response.request() ) ) {
+				return;
+			}
+			const task = captureCheckoutResponse( response, observation ).catch(
+				() => {
+					observation.observerFailures.push(
+						'checkout-response-capture'
+					);
+				}
+			);
+			observation.responseTasks.push( task );
+		};
+
+		const observeBlocks = definition.checkout.kind === 'blocks';
+		if ( observeBlocks ) {
+			await page.route( CHECKOUT_ROUTE, routeHandler );
+			page.on( 'response', responseHandler );
+		}
+		let result: CardPaymentCheckoutResult;
+		try {
+			result = await adapter.completeCheckout(
+				pilotRuntime,
+				page,
+				product,
+				runId,
+				definition,
+				scope
+			);
+			if ( observeBlocks ) {
+				await Promise.all( observation.responseTasks );
+			}
+		} finally {
+			await Promise.allSettled( observation.responseTasks );
+			if ( observeBlocks ) {
+				page.off( 'response', responseHandler );
+				await page.unroute( CHECKOUT_ROUTE, routeHandler );
+			}
+		}
+		const checkout = await normalizeCompletedCheckout(
+			definition,
+			result,
+			runId,
+			page,
+			observation
+		);
+
+		const evidence = await readScenarioEvidence(
+			pilotRuntime,
+			definition,
+			adapter,
+			checkout,
+			runId,
+			page,
+			account,
+			observation
+		);
+		expect( () =>
+			validateCardPaymentEvidence( evidence, definition )
+		).not.toThrow();
+		return evidence.payment;
+	} );
+}
+
 export function registerCardPaymentScenario< Scope >(
 	definitionInput: CardPaymentScenarioDefinition,
 	adapter: CardPaymentRuntimeAdapter< Scope >
@@ -983,110 +1145,11 @@ export function registerCardPaymentScenario< Scope >(
 		pilotRuntime: ProviderWriteSession;
 		runId: string;
 	} ): Promise< void > => {
-		await adapter.withState( pilotRuntime, runId, async ( scope ) => {
-			const accountBody = ( await readJson(
-				await adminApi.get( '/wp-json/wc/v3/payments/accounts' ),
-				'WooPayments account'
-			) ) as AccountResponse;
-			const account = {
-				cardTestingProtectionEligible:
-					accountBody.card_testing_protection_eligible,
-			};
-			requireStrictEligibility(
-				account.cardTestingProtectionEligible,
-				definition.protection
-			);
-			const product = await pilotRuntime.createOwnedProduct(
-				definition.price
-			);
-			const observation = newCheckoutObservation();
-
-			const routeHandler = async ( route: Route ): Promise< void > => {
-				const request = route.request();
-				try {
-					if ( isCheckoutRequest( request ) ) {
-						const requestId = `checkout-${
-							observation.requests.length + 1
-						}`;
-						observation.requestIds.set( request, requestId );
-						observation.requests.push(
-							normalizeCheckoutRequest(
-								requestId,
-								request.postDataJSON()
-							)
-						);
-						observation.browser =
-							await readDispatchBrowserEvidence( page );
-					}
-				} catch {
-					observation.observerFailures.push(
-						'checkout-request-capture'
-					);
-				} finally {
-					await route.continue();
-				}
-			};
-			const responseHandler = ( response: Response ): void => {
-				if ( ! isCheckoutRequest( response.request() ) ) {
-					return;
-				}
-				const task = captureCheckoutResponse(
-					response,
-					observation
-				).catch( () => {
-					observation.observerFailures.push(
-						'checkout-response-capture'
-					);
-				} );
-				observation.responseTasks.push( task );
-			};
-
-			const observeBlocks = definition.checkout.kind === 'blocks';
-			if ( observeBlocks ) {
-				await page.route( CHECKOUT_ROUTE, routeHandler );
-				page.on( 'response', responseHandler );
-			}
-			let result: CardPaymentCheckoutResult;
-			try {
-				result = await adapter.completeCheckout(
-					pilotRuntime,
-					page,
-					product,
-					runId,
-					definition,
-					scope
-				);
-				if ( observeBlocks ) {
-					await Promise.all( observation.responseTasks );
-				}
-			} finally {
-				await Promise.allSettled( observation.responseTasks );
-				if ( observeBlocks ) {
-					page.off( 'response', responseHandler );
-					await page.unroute( CHECKOUT_ROUTE, routeHandler );
-				}
-			}
-			const checkout = await normalizeCompletedCheckout(
-				definition,
-				result,
-				runId,
-				page,
-				observation
-			);
-
-			const evidence = await readScenarioEvidence(
-				pilotRuntime,
-				definition,
-				adapter,
-				checkout,
-				runId,
-				page,
-				account,
-				observation
-			);
-			expect( () =>
-				validateCardPaymentEvidence( evidence, definition )
-			).not.toThrow();
+		await runCardPaymentScenario( definition, adapter, {
+			adminApi,
+			page,
+			pilotRuntime,
+			runId,
 		} );
 	};
 

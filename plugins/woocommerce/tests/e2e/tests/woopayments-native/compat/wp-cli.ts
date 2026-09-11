@@ -33,7 +33,7 @@ $wcpay_fresh_cart = static function ( array $contents ): WC_Cart {
 function executeFile(
 	command: string,
 	args: string[],
-	options: { cwd: string }
+	options: { cwd: string; env?: NodeJS.ProcessEnv }
 ): Promise< string > {
 	return new Promise( ( resolveOutput, reject ) => {
 		execFile(
@@ -41,6 +41,7 @@ function executeFile(
 			args,
 			{
 				cwd: options.cwd,
+				env: options.env,
 				encoding: 'utf8',
 				maxBuffer: 10 * 1024 * 1024,
 			},
@@ -72,19 +73,37 @@ export async function runExtensionCompatProbe< Result >(
 		'.wp-env.e2e.json';
 	const wpEnvService =
 		process.env.E2E_WOOPAYMENTS_EXTENSION_WP_ENV_SERVICE ?? 'cli';
-	const source = `return ( static function () {\n${ COMMON_PROBE_PHP }\n${ phpBody }\n} )();`;
+	return runWpCliProbe( `${ COMMON_PROBE_PHP }\n${ phpBody }`, {
+		storeDirectory,
+		wpEnvConfig,
+		wpEnvService,
+	} );
+}
+
+/** Run a JSON-returning PHP probe through the selected wp-env allocation. */
+export async function runWpCliProbe< Result >(
+	phpBody: string,
+	options: {
+		wpEnvConfig: string;
+		wpEnvHome?: string;
+		storeDirectory?: string;
+		wpEnvService?: string;
+	},
+	execute = executeFile
+): Promise< Result > {
+	const source = `return ( static function () {\n${ phpBody }\n} )();`;
 	const encodedSource = Buffer.from( source, 'utf8' ).toString( 'base64' );
 	const commandPhp = `$wcpay_extension_source = base64_decode( '${ encodedSource }', true ); if ( false === $wcpay_extension_source ) { throw new RuntimeException( 'Could not decode the extension compatibility probe.' ); } $wcpay_extension_result = eval( $wcpay_extension_source ); echo "\\n${ RESULT_MARKER }" . wp_json_encode( $wcpay_extension_result ) . "\\n";`;
 
-	const stdout = await executeFile(
+	const stdout = await execute(
 		'pnpm',
 		[
 			'exec',
 			'wp-env',
 			'--config',
-			wpEnvConfig,
+			options.wpEnvConfig,
 			'run',
-			wpEnvService,
+			options.wpEnvService ?? 'cli',
 			'env',
 			'PCP_SETTINGS_ENABLED=1',
 			'wp',
@@ -92,7 +111,12 @@ export async function runExtensionCompatProbe< Result >(
 			'eval',
 			commandPhp,
 		],
-		{ cwd: storeDirectory }
+		{
+			cwd: options.storeDirectory ?? DEFAULT_STORE_DIRECTORY,
+			...( options.wpEnvHome
+				? { env: { ...process.env, WP_ENV_HOME: options.wpEnvHome } }
+				: {} ),
+		}
 	);
 	const resultLine = stdout
 		.split( /\r?\n/ )

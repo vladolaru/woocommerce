@@ -106,10 +106,15 @@ if [[ "$*" == *'plugin get woocommerce-payments --field=version'* ]]; then
 fi
 
 if [[ "$*" == *'transition_identity_probe'* ]]; then
+	if [[ "${E2E_FAKE_POST_CUTOVER_IDENTITY:-0}" == '1' ]] &&
+		[[ "$*" != *'method_exists( "WC_Payments", "get_account_service" )'* ]]; then
+		echo 'Post-cutover transition identity called the removed plugin account-service facade.' >&2
+		exit 1
+	fi
 	node -e '
 		const { readFileSync } = require( "node:fs" );
 		const state = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
-		process.stdout.write( JSON.stringify( {
+		const identity = {
 			site_url: state.base_url,
 			home: state.home,
 			marker: state.marker,
@@ -118,7 +123,10 @@ if [[ "$*" == *'transition_identity_probe'* ]]; then
 			user_token_present: true,
 			account_id: state.account_id,
 			is_live: false,
-		} ) );
+		};
+		const field = process.env.E2E_FAKE_IDENTITY_FIELD;
+		if ( field ) identity[ field ] = field.endsWith( "_present" ) ? false : "private-account-payload";
+		process.stdout.write( JSON.stringify( identity ) );
 	' "$WORKSPACE/resource-state.json"
 	exit 0
 fi
@@ -139,6 +147,57 @@ fi
 
 if [[ "$*" == *'wcpay_dev refresh_account_data'* ]]; then
 	touch "$RUNTIME_STATE/account"
+	exit 0
+fi
+
+if [[ "$*" == *'transition_seed_reference_account'* ]]; then
+	if [[ ! -f "$RUNTIME_STATE/account" || ! -f "$RUNTIME_STATE/payment-settings-written" ]]; then
+		echo 'Reference account seed ran before refresh and payment settings were complete.' >&2
+		exit 1
+	fi
+	php -r '
+		class FixtureCache {
+			const ACCOUNT_KEY = "wcpay_account_data";
+			public function add( $key, $data ) {
+				if ( ! WC_Payments_Onboarding_Service::$test_mode ) throw new RuntimeException( "Reference account seed requires test-mode onboarding first" );
+				if ( self::ACCOUNT_KEY !== $key || array( "account_id" => "acct_transition_77", "is_live" => false, "fixture_private" => "private-account-payload" ) !== $data ) throw new RuntimeException( "Incorrect reference account cache seed" );
+				file_put_contents( getenv( "E2E_FAKE_RUNTIME_STATE" ) . "/reference-account-seeded", "seeded" );
+			}
+		}
+		class_alias( "FixtureCache", "WCPay\\Database_Cache" );
+		class WC_Payments_Onboarding_Service {
+			public static $test_mode = false;
+			public static function set_test_mode( $enabled ) {
+				if ( true !== $enabled ) throw new RuntimeException( "Reference account onboarding must use test mode" );
+				self::$test_mode = true;
+			}
+		}
+		class WC_Payments { public static function get_database_cache() { return new FixtureCache(); } }
+		class FixtureNativeState {
+			const ACTIVE = "active";
+			public function write_state( $state ) {
+				if ( self::ACTIVE !== $state || ! is_file( getenv( "E2E_FAKE_RUNTIME_STATE" ) . "/reference-account-seeded" ) ) throw new RuntimeException( "Native ACTIVE state requires the reference account seed first" );
+				if ( "1" === getenv( "E2E_FAKE_NATIVE_STATE_WRITE_FAIL" ) ) return false;
+				file_put_contents( getenv( "E2E_FAKE_RUNTIME_STATE" ) . "/native-active-seeded", "active" );
+				return true;
+			}
+		}
+		class_alias( "FixtureNativeState", "Automattic\\WooCommerce\\Internal\\Payments\\NativePaymentsState" );
+		class FixtureContainer {
+			public function get( $class ) {
+				if ( "Automattic\\WooCommerce\\Internal\\Payments\\NativePaymentsState" !== $class ) throw new RuntimeException( "Unexpected injected seed service" );
+				return new FixtureNativeState();
+			}
+		}
+		function wc_get_container() { return new FixtureContainer(); }
+		class WP_CLI { public static function error( $message ) { throw new RuntimeException( $message ); } }
+		eval( $argv[1] );
+	' "${!#}"
+	exit 0
+fi
+
+if [[ "$*" == *'option set woocommerce_woocommerce_payments_settings '* ]]; then
+	touch "$RUNTIME_STATE/payment-settings-written"
 	exit 0
 fi
 

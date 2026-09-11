@@ -17,6 +17,7 @@ node -e '
 		blog_token: "77.real-blog-token",
 		user_token: "77.real-user-token.1",
 		account_id: "acct_transition_77",
+		account_data: { account_id: "acct_transition_77", is_live: false, fixture_private: "private-account-payload" },
 		is_live: false,
 		local_wpcom_enabled: true,
 		local_wpcom_base_url: "http://wpcom.localhost:8080",

@@ -234,7 +234,7 @@ validate_seed() {
 		exit 1
 	fi
 	if ! tar -xOzf "$seed_archive" woocommerce-payments/woocommerce-payments.php |
-		grep -Eq '^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*10\.5\.0[[:space:]]*$'; then
+		grep -Eq "^[[:space:]]*\\*[[:space:]]*Version:[[:space:]]*${SEED_VERSION//./\\.}[[:space:]]*$"; then
 		echo 'Transition seed archive does not contain the approved WooPayments version.' >&2
 		exit 1
 	fi
@@ -320,11 +320,11 @@ validate_seed() {
 			frontendLockHash !== manifest.frontend_lock_sha256 ||
 			frontendLock.lockfileVersion !== manifest.frontend_lockfile_version ||
 			frontendLock.name !== "woocommerce-payments" ||
-			frontendLock.version !== "10.5.0" ||
+			frontendLock.version !== process.argv[ 8 ] ||
 			frontendLock.packages?.[ "" ]?.name !== "woocommerce-payments" ||
-			frontendLock.packages?.[ "" ]?.version !== "10.5.0" ||
+			frontendLock.packages?.[ "" ]?.version !== process.argv[ 8 ] ||
 			frontendManifest.name !== "woocommerce-payments" ||
-			frontendManifest.version !== "10.5.0" ||
+			frontendManifest.version !== process.argv[ 8 ] ||
 			frontendManifest.scripts?.[ "build:client" ] !==
 				"NODE_ENV=production webpack" ||
 			readFileSync( process.argv[ 6 ], "utf8" ).trim() !==
@@ -343,7 +343,8 @@ validate_seed() {
 		"$validation_root/woocommerce-payments/package.json" \
 		"$validation_root/woocommerce-payments/package-lock.json" \
 		"$validation_root/woocommerce-payments/.nvmrc" \
-		"$validation_root/woocommerce-payments"; then
+		"$validation_root/woocommerce-payments" \
+		"$SEED_VERSION"; then
 		rm -rf "$validation_root"
 		echo 'Transition seed executable dependencies or frontend bundles do not match its safe manifest.' >&2
 		exit 1
@@ -978,6 +979,7 @@ query_reference_fixture() {
 				"blog_token" => (string) Jetpack_Options::get_option( "blog_token" ),
 				"user_token" => is_string( $user_token ) ? $user_token : "",
 				"account_id" => (string) ( $account["account_id"] ?? "" ),
+				"account_data" => $account,
 				"is_live" => ! empty( $account["is_live"] ),
 				"local_wpcom_enabled" => "1" === (string) get_option( "wcpaydev_local_wpcom_jetpack_connection", "0" ),
 				"local_wpcom_base_url" => (string) get_option( "wcpaydev_local_wpcom_base_url", "" ),
@@ -1311,15 +1313,19 @@ validate_store_scope() {
 	node -e '
 		const value = JSON.parse( process.argv[ 1 ] );
 		const exactRoot = ( candidate ) => {
-			const url = new URL( candidate );
-			if ( url.pathname !== "/" || url.search || url.hash ) process.exit( 1 );
-			return url.origin;
+			try {
+				const url = new URL( candidate );
+				return url.pathname === "/" && ! url.search && ! url.hash && url.origin === process.argv[ 2 ];
+			} catch {
+				return false;
+			}
 		};
-		if (
-			exactRoot( value.site_url ) !== process.argv[ 2 ] ||
-			exactRoot( value.home ) !== process.argv[ 2 ] ||
-			value.marker !== process.argv[ 3 ]
-		) process.exit( 1 );
+		const matches = { site_url: exactRoot( value.site_url ), home: exactRoot( value.home ), marker: value.marker === process.argv[ 3 ] };
+		const failed = Object.keys( matches ).filter( field => ! matches[ field ] );
+		if ( failed.length ) {
+			console.error( `Transition identity mismatch: ${ failed.join( ", " ) }.` );
+			process.exit( 1 );
+		}
 	' "$1" "$base_url" "$(state_field marker)"
 }
 
@@ -1327,7 +1333,10 @@ validate_created_identity() {
 	validate_store_scope "$1"
 	node -e '
 		const value = JSON.parse( process.argv[ 1 ] );
-		if ( value.wpcom_blog_id !== Number( process.argv[ 2 ] ) ) process.exit( 1 );
+		if ( value.wpcom_blog_id !== Number( process.argv[ 2 ] ) ) {
+			console.error( "Transition identity mismatch: wpcom_blog_id." );
+			process.exit( 1 );
+		}
 	' "$1" "$(state_field wpcom_blog_id)"
 }
 
@@ -1632,8 +1641,28 @@ create_store() {
 	store_wp wcpay_dev redirect_to "$redirect_to" > /dev/null
 	inject_reference_fixture "$reference_fixture" > /dev/null
 	store_wp wcpay_dev refresh_account_data > /dev/null
+	local payment_settings='{"enabled":"yes","saved_cards":"yes"}'
+	if [[ "${E2E_TRANSITION_SCENARIO:-}" == 'cutover-reconciliation' ]]; then
+		payment_settings='{"enabled":"yes","saved_cards":"yes","upe_enabled_payment_method_ids":["card","future_lpm"]}'
+	fi
 	store_wp option set woocommerce_woocommerce_payments_settings \
-		--format=json '{"enabled":"yes","saved_cards":"yes"}' > /dev/null
+		--format=json "$payment_settings" > /dev/null
+	if [[ "${E2E_TRANSITION_SCENARIO:-}" == 'cutover-reconciliation' ]]; then
+		printf '%s' "$reference_fixture" | store_wp eval '
+			/* transition_seed_reference_account */
+			$fixture = json_decode( stream_get_contents( STDIN ), true, 512, JSON_THROW_ON_ERROR );
+			$account = $fixture["account_data"] ?? null;
+			if ( ! is_array( $account ) || empty( $account ) || ( $account["account_id"] ?? null ) !== $fixture["account_id"] || false !== ( $account["is_live"] ?? null ) ) {
+				WP_CLI::error( "The reference account cache seed must match the exact non-live fixture." );
+			}
+			WC_Payments_Onboarding_Service::set_test_mode( true );
+			WC_Payments::get_database_cache()->add( WCPay\Database_Cache::ACCOUNT_KEY, $account );
+			$native_payments_state = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsState::class );
+			if ( ! $native_payments_state->write_state( Automattic\WooCommerce\Internal\Payments\NativePaymentsState::ACTIVE ) ) {
+				WP_CLI::error( "Native payments ACTIVE state could not be seeded." );
+			}
+		' > /dev/null
+	fi
 	update_state reference_fixture_borrowed true boolean
 	seed_pending_migrator_hook
 
@@ -1642,12 +1671,17 @@ create_store() {
 	validate_created_identity "$store_identity"
 	node -e '
 		const identity = JSON.parse( process.argv[ 1 ] );
-		if (
-			identity.account_id !== process.argv[ 2 ] ||
-			identity.is_live !== false ||
-			identity.blog_token_present !== true ||
-			identity.user_token_present !== true
-		) process.exit( 1 );
+		const matches = {
+			account_id: identity.account_id === process.argv[ 2 ],
+			is_live: identity.is_live === false,
+			blog_token_present: identity.blog_token_present === true,
+			user_token_present: identity.user_token_present === true,
+		};
+		const failed = Object.keys( matches ).filter( field => ! matches[ field ] );
+		if ( failed.length ) {
+			console.error( `Transition identity mismatch: ${ failed.join( ", " ) }.` );
+			process.exit( 1 );
+		}
 	' "$store_identity" "$account_id"
 	prepare_network_reconciliation "$reference_fixture"
 	update_state phase 'ready'
@@ -1658,7 +1692,7 @@ create_store() {
 query_store_identity() {
 	store_wp eval '
 		/* transition_identity_probe */
-		$account = class_exists( "WC_Payments" )
+		$account = class_exists( "WC_Payments" ) && method_exists( "WC_Payments", "get_account_service" )
 			? WC_Payments::get_account_service()->get_cached_account_data()
 			: array();
 		$account = is_array( $account ) ? $account : array();

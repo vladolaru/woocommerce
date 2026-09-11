@@ -125,7 +125,13 @@ node -e '
 	const { readFileSync } = require( "node:fs" );
 	const line = readFileSync( process.argv[ 1 ], "utf8" ).split( "\n" ).find( ( value ) => value.startsWith( "runner " ) );
 	const approval = JSON.parse( line.slice( line.indexOf( " E2E_WOOPAYMENTS_PROVIDER_FIXTURE=" ) + " E2E_WOOPAYMENTS_PROVIDER_FIXTURE=".length ) );
-	if ( approval.seed_profile !== "10.4.0" || approval.pending_migrator_hook !== true ) process.exit( 1 );
+	const keys = [ "account_alias", "account_id", "approval_id", "capabilities", "execution_scope", "runtime", "schema_version", "site_url", "store_id", "test_mode", "wpcom_blog_id" ];
+	if ( JSON.stringify( Object.keys( approval ).sort() ) !== JSON.stringify( keys ) ) {
+		throw new Error( "Provider approval must retain the exact existing schema-v1 key set." );
+	}
+	if ( ! line.includes( " E2E_TRANSITION_SEED_PROFILE=10.4.0 " ) || ! line.includes( " E2E_TRANSITION_PENDING_MIGRATOR_HOOK=1 " ) ) {
+		throw new Error( "Transition profile must be exported separately from provider approval." );
+	}
 ' "$TEST_ROOT/commands.log"
 
 : > "$TEST_ROOT/commands.log"
@@ -152,7 +158,9 @@ assert_exact_capabilities \
 	'cutover-ui' \
 	'cutover-job' \
 	'native-owner' \
-	'basic-card'
+	'basic-card' \
+	'basic-card-entry' \
+	'product/payment'
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
 
 : > "$TEST_ROOT/commands.log"

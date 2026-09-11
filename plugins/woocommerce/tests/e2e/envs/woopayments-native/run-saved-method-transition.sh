@@ -53,6 +53,8 @@ case "$SCENARIO" in
 			'cutover-job'
 			'native-owner'
 			'basic-card'
+			'basic-card-entry'
+			'product/payment'
 		)
 		;;
 	cutover-network-reconciliation)
@@ -146,9 +148,7 @@ provider_approval="$(
 			account_id: process.argv[ 6 ],
 			account_alias: process.argv[ 7 ],
 			test_mode: true,
-			seed_profile: process.argv[ 8 ],
-			pending_migrator_hook: process.argv[ 9 ] === "1",
-			capabilities: process.argv.slice( 10 ),
+			capabilities: process.argv.slice( 8 ),
 		};
 		process.stdout.write( JSON.stringify( approval ) );
 	' \
@@ -159,8 +159,6 @@ provider_approval="$(
 		"$WPCOM_BLOG_ID" \
 		"$ACCOUNT_ID" \
 		"$ACCOUNT_ALIAS" \
-		"${E2E_TRANSITION_SEED_PROFILE:-10.5.0}" \
-		"${E2E_TRANSITION_PENDING_MIGRATOR_HOOK:-0}" \
 		"${CAPABILITIES[@]}"
 )"
 account_allocations="$(

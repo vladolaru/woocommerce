@@ -330,6 +330,41 @@ node -e '
 	if ( plan.plugin_version !== "10.5.0" ) process.exit( 1 );
 ' "$plan"
 
+node - "$TEST_ROOT" <<'JS'
+const fs = require( 'node:fs' );
+const root = process.argv[2];
+fs.cpSync( root + '/seed', root + '/older-seed', { recursive: true } );
+for ( const file of [ 'woocommerce-payments.php', 'package.json', 'package-lock.json' ] ) {
+	const path = root + '/older-seed/woocommerce-payments/' + file;
+	fs.writeFileSync( path, fs.readFileSync( path, 'utf8' ).replaceAll( '10.5.0', '10.4.0' ) );
+}
+JS
+chmod -R a-w "$TEST_ROOT/older-seed/woocommerce-payments"
+tar -czf "$TEST_ROOT/older-seed.tar.gz" -C "$TEST_ROOT/older-seed" woocommerce-payments
+node - "$TEST_ROOT" <<'JS'
+const fs = require( 'node:fs' );
+const { createHash } = require( 'node:crypto' );
+const root = process.argv[2];
+const hash = value => createHash( 'sha256' ).update( value ).digest( 'hex' );
+const archive = fs.readFileSync( root + '/older-seed.tar.gz' );
+const manifest = JSON.parse( fs.readFileSync( root + '/seed.json' ) );
+Object.assign( manifest, {
+	plugin_version: '10.4.0',
+	source_commit: 'e2a6e70f21ff5827a9e67abeb4bc44c9ccabeb3d',
+	archive_sha256: hash( archive ),
+	canonical_tar_sha256: hash( require( 'node:zlib' ).gunzipSync( archive ) ),
+	frontend_lock_sha256: hash( fs.readFileSync( root + '/older-seed/woocommerce-payments/package-lock.json' ) ),
+} );
+fs.writeFileSync( root + '/older-seed.json', JSON.stringify( manifest ) );
+JS
+chmod 0444 "$TEST_ROOT/older-seed.tar.gz" "$TEST_ROOT/older-seed.json"
+older_plan="$(E2E_TRANSITION_SEED_PROFILE=10.4.0 \
+	E2E_TRANSITION_FRONTEND_LOCK_SHA256="$(shasum -a 256 "$TEST_ROOT/older-seed/woocommerce-payments/package-lock.json" | awk '{ print $1 }')" \
+	E2E_TRANSITION_PORT=19091 "$PROVISIONER" plan --workspace "$workspace" \
+	--seed-archive "$TEST_ROOT/older-seed.tar.gz" --seed-manifest "$TEST_ROOT/older-seed.json" --run-id older-profile)"
+node -e 'if ( JSON.parse( process.argv[1] ).plugin_version !== "10.4.0" ) process.exit( 1 );' "$older_plan"
+test "$(find "$workspace" -mindepth 1 -print)" = "$before_plan"
+
 # A profile names both artifact identities, so a manifest from either profile
 # cannot be paired with the other profile before the run workspace is touched.
 for rejected_profile in unknown 10.4.0; do
@@ -688,12 +723,36 @@ for receipt_fail_point in \
 	receipt_failure_port=$((receipt_failure_port + 1))
 done
 
+for identity_field in site_url home marker wpcom_blog_id account_id is_live blog_token_present user_token_present; do
+	identity_run="identity-${identity_field//_/-}"
+	identity_workspace="$TEST_ROOT/identity-$identity_field"
+	identity_runtime="$TEST_ROOT/identity-$identity_field-runtime"
+	identity_log="$TEST_ROOT/identity-$identity_field.log"
+	identity_error="$TEST_ROOT/identity-$identity_field.stderr"
+	mkdir "$identity_workspace"
+	if E2E_FAKE_IDENTITY_FIELD="$identity_field" E2E_TRANSITION_PORT=19145 \
+		run_provisioner "$identity_workspace" "$identity_runtime" "$identity_log" \
+		create --workspace "$identity_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/seed.json" --run-id "$identity_run" \
+		--base-url "http://transition-$identity_run.localhost:19145" \
+		--store-id "woopayments-native-transition-$identity_run" > /dev/null 2> "$identity_error"; then
+		echo "Creation accepted an invalid identity field: $identity_field." >&2
+		exit 1
+	fi
+	if [[ "$(< "$identity_error")" != "Transition identity mismatch: $identity_field." ]]; then
+		echo "Identity failure did not report only its field name: $identity_field." >&2
+		exit 1
+	fi
+	run_provisioner "$identity_workspace" "$identity_runtime" "$identity_log" \
+		destroy --workspace "$identity_workspace" --rollback-receipt-file "$identity_workspace/rollback-receipt"
+done
+
 create_workspace="$TEST_ROOT/woopayments-native-transition-create-run"
 create_runtime="$TEST_ROOT/runtime-create"
 create_log="$TEST_ROOT/create-commands.log"
 mkdir "$create_workspace"
 create_result="$(
-	run_provisioner "$create_workspace" "$create_runtime" "$create_log" \
+	E2E_TRANSITION_SCENARIO=cutover-reconciliation run_provisioner "$create_workspace" "$create_runtime" "$create_log" \
 		create \
 		--workspace "$create_workspace" \
 		--seed-archive "$TEST_ROOT/seed.tar.gz" \
@@ -759,8 +818,19 @@ grep -Fq "$create_workspace/wp-env-home" "$create_log"
 grep -Fq $'reference-wp\t' "$create_log"
 grep -Fq 'transition_inject_reference_fixture' "$create_log"
 grep -Fq 'wc tool run install_pages' "$create_log"
-grep -Fq 'option set woocommerce_woocommerce_payments_settings --format=json {"enabled":"yes","saved_cards":"yes"}' "$create_log"
+if ! grep -Fq 'option set woocommerce_woocommerce_payments_settings --format=json {"enabled":"yes","saved_cards":"yes","upe_enabled_payment_method_ids":["card","future_lpm"]}' "$create_log"; then
+	echo 'Reconciliation store did not seed the exact unsupported payment method blocker.' >&2
+	exit 1
+fi
 test -f "$create_runtime/reference-fixture-injected"
+if [[ ! -f "$create_runtime/reference-account-seeded" ]]; then
+	echo 'Cutover setup did not seed the validated reference account after refresh.' >&2
+	exit 1
+fi
+if [[ ! -f "$create_runtime/native-active-seeded" ]]; then
+	echo 'Cutover setup did not persist native ACTIVE state after the account seed.' >&2
+	exit 1
+fi
 if grep -Fq '<!-- wp:woocommerce/checkout /-->' "$create_log"; then
 	echo 'Transition setup replaced the installed Checkout inner-block tree.' >&2
 	exit 1
@@ -769,12 +839,12 @@ if grep -Eq 'transition_register_blog|test-lab account create|wcpay callback pro
 	echo 'Transition create provisioned external resources instead of borrowing the reference fixture.' >&2
 	exit 1
 fi
-if grep -RqE '77\\.real-(blog|user)-token' "$create_workspace" "$create_log"; then
+if grep -RqE '77\\.real-(blog|user)-token|private-account-payload' "$create_workspace" "$create_log"; then
 	echo 'Transition setup persisted the borrowed Jetpack credentials.' >&2
 	exit 1
 fi
 
-E2E_FAKE_ACCOUNT_RUNTIME=native_core run_provisioner "$create_workspace" "$create_runtime" "$create_log" \
+E2E_FAKE_ACCOUNT_RUNTIME=native_core E2E_FAKE_POST_CUTOVER_IDENTITY=1 run_provisioner "$create_workspace" "$create_runtime" "$create_log" \
 	destroy \
 	--workspace "$create_workspace" \
 	--rollback-receipt-file "$create_workspace/rollback-receipt"
@@ -795,6 +865,26 @@ test -f "$create_runtime/account"
 test ! -e "$create_runtime/wp-env"
 test ! -e "$create_lease_path"
 test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).port_lease_released" "$create_workspace/resource-state.json")" = 'true'
+
+state_failure_workspace="$TEST_ROOT/native-state-failure"
+state_failure_runtime="$TEST_ROOT/native-state-failure-runtime"
+state_failure_log="$TEST_ROOT/native-state-failure.log"
+mkdir "$state_failure_workspace"
+if E2E_FAKE_NATIVE_STATE_WRITE_FAIL=1 E2E_TRANSITION_SCENARIO=cutover-reconciliation E2E_TRANSITION_PORT=19146 \
+	run_provisioner "$state_failure_workspace" "$state_failure_runtime" "$state_failure_log" \
+	create --workspace "$state_failure_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/seed.json" --run-id native-state-failure \
+	--base-url 'http://transition-native-state-failure.localhost:19146' \
+	--store-id 'woopayments-native-transition-native-state-failure' > /dev/null 2> "$TEST_ROOT/native-state-failure.stderr"; then
+	echo 'Creation accepted a failed native ACTIVE state write.' >&2
+	exit 1
+fi
+grep -Fq 'Native payments ACTIVE state could not be seeded.' "$TEST_ROOT/native-state-failure.stderr"
+test ! -e "$state_failure_runtime/native-active-seeded"
+run_provisioner "$state_failure_workspace" "$state_failure_runtime" "$state_failure_log" \
+	destroy --workspace "$state_failure_workspace" --rollback-receipt-file "$state_failure_workspace/rollback-receipt"
+test ! -e "$state_failure_runtime/wp-env"
+test ! -e "$SHARED_TMPDIR/woopayments-native-transition-port-leases/19146"
 
 # Concurrent state writers must serialize: without a lock, two writers
 # read the same snapshot and one key's update is lost.
@@ -1068,6 +1158,7 @@ assert.deepEqual( urls.map( url => url.replace( /doing_wp_cron=[0-9]+N?$/, 'doin
 const commands = fs.readFileSync( process.env.E2E_FAKE_NETWORK_COMMAND_LOG, 'utf8' ).trim().split( '\n' ).map( line => JSON.parse( line ).join( ' ' ) ).join( '\n' );
 for ( const pattern of [ 'core multisite-convert', 'site create', 'transition-network-mixed', 'transition-network-reopened', 'woocommerce_woopayments_cutover_state', 'scheduled_date_gmt', 'scheduled_date_local' ] ) assert.ok( commands.includes( pattern ), 'Missing executed command: ' + pattern );
 assert.doesNotMatch( commands, /do_action|action-scheduler\s+(run|execute)|ActionScheduler_.*Runner|action_scheduler_run/ );
+assert.doesNotMatch( commands, /transition_seed_reference_account/ );
 assert.ok( commands.indexOf( 'plugin activate woocommerce --network' ) >= 0 );
 assert.ok( commands.indexOf( 'plugin activate woocommerce --network' ) < commands.indexOf( 'plugin activate woocommerce-payments --network' ) );
 const secondaryCommands = fs.readFileSync( process.env.E2E_FAKE_NETWORK_COMMAND_LOG, 'utf8' ).trim().split( '\n' ).map( line => JSON.parse( line ).join( ' ' ) ).filter( command => command.includes( '--url=http://transition-network-create.localhost:19119/cutover-secondary' ) ).join( '\n' );
