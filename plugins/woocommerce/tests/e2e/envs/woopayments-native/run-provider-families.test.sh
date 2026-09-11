@@ -3,6 +3,7 @@
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
 readonly TEST_ROOT="$(mktemp -d "${TMPDIR:?TMPDIR is required}/woopayments-provider-runner.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -33,11 +34,11 @@ cat > "$TEST_ROOT/delegate-bin/pnpm" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\tpnpm %s\n' "$PWD" "$*" >> "${E2E_FAKE_COMMAND_LOG:?}"
-if [[ "${1:-}" != 'test:e2e:with-env' || "${2:-}" != 'woopayments-native' ]]; then
+if [[ "${1:-}" != '--dir' || "${2:-}" != "${E2E_EXPECTED_PLUGIN_ROOT:?}" || "${3:-}" != 'test:e2e:with-env' || "${4:-}" != 'woopayments-native' ]]; then
 	echo "Unexpected provider-runner entry point: $*" >&2
 	exit 1
 fi
-shift 2
+shift 4
 PATH="${E2E_ENV_SETUP_FAKE_BIN:?}:$PATH" "${E2E_REAL_ENV_SETUP:?}" "$@"
 printf '  1 passed (1s)\n'
 FAKE
@@ -60,6 +61,7 @@ PATH="$TEST_ROOT/bin:$PATH" E2E_FAKE_COMMAND_LOG="$TEST_ROOT/success.commands" \
 	"$TEST_ROOT/basic.spec.ts" "$TEST_ROOT/refunds.spec.ts"
 
 test "$(wc -l < "$TEST_ROOT/success.commands" | tr -d ' ')" = '2'
+grep -Fq -- "--dir $PLUGIN_ROOT test:e2e:with-env woopayments-native" "$TEST_ROOT/success.commands"
 grep -q 'DONE rc=0' "$TEST_ROOT/success/families-status.txt"
 
 status=0
@@ -150,6 +152,7 @@ grep -Fq "$(cd "$TEST_ROOT" && pwd -P)/basic.spec.ts" "$TEST_ROOT/relative.comma
 
 PATH="$TEST_ROOT/delegate-bin:$PATH" \
 	E2E_FAKE_COMMAND_LOG="$TEST_ROOT/delegated.commands" \
+	E2E_EXPECTED_PLUGIN_ROOT="$PLUGIN_ROOT" \
 	E2E_ENV_SETUP_FAKE_BIN="$SCRIPT_DIR/test-fixtures/bin" \
 	E2E_REAL_ENV_SETUP="$SCRIPT_DIR/env-setup.sh" \
 	E2E_WPCOM_LOCAL_BIN="$SCRIPT_DIR/test-fixtures/bin/wpcom-local" \

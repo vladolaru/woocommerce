@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
+
 usage() {
 	echo 'Usage: run-provider-families.sh --results-dir DIR --store-url URL --native-store-dir DIR --account-id ID --account-alias ALIAS --store-id ID --wpcom-blog-id ID --wp-env-config JSON --provider-fixture JSON SPEC...' >&2
 	exit 2
@@ -85,8 +88,7 @@ for spec in "${specs[@]}"; do
 	log_file="$results_dir/e2e-fidelity-$name.log"
 	printf '%s START %s\n' "$(date '+%H:%M:%S')" "$name" >> "$status_file"
 	if (
-		cd "$native_store_dir"
-		pnpm test:e2e:with-env woopayments-native \
+		pnpm --dir "$PLUGIN_ROOT" test:e2e:with-env woopayments-native \
 			--project=woopayments-native-provider "$spec"
 	) > "$log_file" 2>&1; then
 		rc=0
