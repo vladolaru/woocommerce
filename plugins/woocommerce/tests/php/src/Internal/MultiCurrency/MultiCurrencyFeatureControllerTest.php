@@ -21,6 +21,9 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	 */
 	private $sut;
 
+	/** @var int */
+	private $previous_user_id;
+
 	/**
 	 * Set up test fixtures.
 	 */
@@ -29,6 +32,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
+		$this->previous_user_id = get_current_user_id();
 		$this->sut = new MultiCurrencyFeatureController();
 		$this->sut->init( new MultiCurrencyUsageDetector() );
 	}
@@ -40,6 +44,8 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
+		wp_set_current_user( $this->previous_user_id );
+		$_GET = array();
 		parent::tear_down();
 	}
 
@@ -145,5 +151,59 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 		$this->assertSame( array( 'EUR' ), get_option( 'wcpay_multi_currency_enabled_currencies' ) );
 		$this->assertSame( '0.9', $order->get_meta( '_wcpay_multi_currency_order_exchange_rate', true ) );
+	}
+
+	/**
+	 * @testdox Should confirm disabling through the core handler without removing Multi-Currency data.
+	 */
+	public function test_core_confirmation_disables_only_feature_option_and_preserves_multi_currency_data(): void {
+		$user_id = $this->factory->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user_id );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( 'wcpay_multi_currency_stored_customer_currencies', array( 12 => 'EUR' ) );
+		set_transient( 'wcpay_multi_currency_exchange_rate_EUR', '0.9', HOUR_IN_SECONDS );
+		$order = wc_create_order();
+		$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.9' );
+		$order->save();
+		$features = wc_get_container()->get( FeaturesController::class );
+
+		$this->assertNotNull( $features->get_feature_definition( MultiCurrencyFeatureController::FEATURE_ID ), 'The existing FeaturesController extension point must reach the feature controller.' );
+		$_GET = array(
+			'multi_currency' => '0',
+			'_feature_nonce' => wp_create_nonce( 'change_feature_enable' ),
+		);
+		$features->change_feature_enable_from_query_params();
+
+		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
+		$this->assertSame( array( 'EUR' ), get_option( 'wcpay_multi_currency_enabled_currencies' ) );
+		$this->assertSame( array( 12 => 'EUR' ), get_option( 'wcpay_multi_currency_stored_customer_currencies' ) );
+		$this->assertSame( '0.9', get_transient( 'wcpay_multi_currency_exchange_rate_EUR' ) );
+		$this->assertSame( '0.9', $order->get_meta( '_wcpay_multi_currency_order_exchange_rate', true ) );
+	}
+
+	/**
+	 * @testdox Should reject an invalid nonce through the core confirmation handler.
+	 */
+	public function test_core_confirmation_rejects_invalid_nonce(): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$_GET = array( 'multi_currency' => '0', '_feature_nonce' => 'invalid' );
+
+		$this->expectException( \WPDieException::class );
+		wc_get_container()->get( FeaturesController::class )->change_feature_enable_from_query_params();
+	}
+
+	/**
+	 * @testdox Should leave the feature enabled when the core confirmation user lacks permission.
+	 */
+	public function test_core_confirmation_requires_manage_woocommerce_capability(): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$_GET = array( 'multi_currency' => '0', '_feature_nonce' => wp_create_nonce( 'change_feature_enable' ) );
+
+		wc_get_container()->get( FeaturesController::class )->change_feature_enable_from_query_params();
+
+		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
 }

@@ -92,6 +92,48 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should detect persisted order metadata in posts storage.
+	 */
+	public function test_has_foreign_currency_orders_detects_real_posts_metadata(): void {
+		global $wpdb;
+
+		$order_id = $this->factory->post->create( array( 'post_type' => 'shop_order' ) );
+		$wpdb->insert(
+			$wpdb->postmeta,
+			array(
+				'post_id'    => $order_id,
+				'meta_key'   => '_wcpay_multi_currency_order_exchange_rate',
+				'meta_value' => '0.9',
+			)
+		);
+		$detector = new MultiCurrencyUsageDetector();
+		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
+
+		$this->assertTrue( $detector->has_foreign_currency_orders( true ) );
+	}
+
+	/**
+	 * @testdox Should detect persisted order metadata in HPOS storage.
+	 */
+	public function test_has_foreign_currency_orders_detects_real_hpos_metadata(): void {
+		global $wpdb;
+
+		$order = wc_create_order();
+		$wpdb->insert(
+			"{$wpdb->prefix}wc_orders_meta",
+			array(
+				'order_id'   => $order->get_id(),
+				'meta_key'   => '_wcpay_multi_currency_order_exchange_rate',
+				'meta_value' => '0.9',
+			)
+		);
+		$detector = new MultiCurrencyUsageDetector();
+		$detector->set_hpos_enabled_resolver( static fn(): bool => true );
+
+		$this->assertTrue( $detector->has_foreign_currency_orders( true ) );
+	}
+
+	/**
 	 * @testdox Should reuse request and transient cache values unless a fresh check is requested.
 	 */
 	public function test_has_foreign_currency_orders_reuses_caches_and_fresh_bypasses_them(): void {
