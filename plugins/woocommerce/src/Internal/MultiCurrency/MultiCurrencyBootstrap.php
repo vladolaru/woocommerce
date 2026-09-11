@@ -209,7 +209,7 @@ final class MultiCurrencyBootstrap {
 			'configured' => array(
 				'front' => array_merge( self::BASE, self::PRICE, self::COMPAT, self::STOREFRONT ),
 				'ajax'  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY ),
-				'rest'  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY, array( self::MANAGEMENT[1], MultiCurrencyRestRequestOverrideController::class ) ),
+				'rest'  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencySwitcherBlockController::class, MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY, array( self::MANAGEMENT[1], MultiCurrencyRestRequestOverrideController::class ) ),
 				'admin' => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyAnalyticsController::class, MultiCurrencySwitcherBlockController::class, self::MANAGEMENT[0], MultiCurrencyTrackingController::class ), self::ADMIN ),
 				'cron'  => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
 				'cli'   => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
