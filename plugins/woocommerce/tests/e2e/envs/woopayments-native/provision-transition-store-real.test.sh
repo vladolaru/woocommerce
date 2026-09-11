@@ -852,7 +852,7 @@ const path = process.env.E2E_FAKE_NETWORK_STATE;
 const log = process.env.E2E_FAKE_NETWORK_COMMAND_LOG;
 fs.appendFileSync(log, JSON.stringify(args) + '\\n');
 if (/do_action|action-scheduler\\s+(run|execute)|ActionScheduler_.*Runner|action_scheduler_run/.test(command)) throw Error('CLI callback execution is forbidden');
-const network = /multisite-convert|site create|site list|--network|sub_transition_network_marker|"transition-network-(mixed|reopened)"|transition_network_secondary_fixture|woocommerce_woopayments_cutover_state|_wcpay_subscription_id|wcpay_migrate_subscription_retry/.test(command);
+const network = /multisite-convert|site create|site list|--network|sub_transition_network_marker|"transition-network-(mixed|reopened)"|transition_network_secondary_fixture|woocommerce_woopayments_cutover_state|_wcpay_subscription_id|wcpay_migrate_subscription_retry|wp_create_nonce/.test(command);
 if (!network) {
  const result = cp.spawnSync(process.env.E2E_FAKE_NETWORK_FALLBACK, args, {stdio:'inherit'});
  if (result.status === 0 && args.some(arg => /^--url=.*\\/cutover-secondary$/.test(arg))) {
@@ -877,6 +877,10 @@ else if (command.includes('post meta delete')) { if (state.http !== 4 || !comman
 else {
  const index = args.indexOf('eval');
  if (index < 0) throw Error('Unexpected network command: ' + command);
+ if (command.includes('wp_create_nonce')) {
+  const base = JSON.parse(fs.readFileSync(process.env.E2E_FAKE_TRANSITION_WORKSPACE + '/resource-state.json')).base_url;
+  if (!args.includes('--url=' + base) && !args.includes('--url=' + base + '/cutover-secondary')) throw Error('Nonce generation needs exact site context');
+ }
  const result = cp.spawnSync('php', ['-r', 'require getenv("E2E_FAKE_NETWORK_PHP"); eval($argv[1]);', args[index + 1]], {stdio:'inherit', env:{...process.env, E2E_FAKE_NETWORK_SITE_ID:args.some(arg => /^--url=.*\\/cutover-secondary$/.test(arg)) ? '9' : '3'}});
  process.exit(result.status ?? 1);
 }
@@ -892,7 +896,9 @@ const base = JSON.parse(fs.readFileSync(process.env.E2E_FAKE_TRANSITION_WORKSPAC
 const sites = [9,3,3,9,3,9];
 const site = sites[Math.floor(state.http / 2)];
 const siteUrl = base + (site === 9 ? '/cutover-secondary' : '');
-const expected = state.http % 2 ? siteUrl + '/wp-admin/admin-ajax.php?action=as_async_request_queue_runner' : siteUrl + '/wp-cron.php?doing_wp_cron=';
+const nonce = site === 9 ? 'nonce00009' : 'nonce00003';
+const expected = state.http % 2 ? siteUrl + '/wp-admin/admin-ajax.php?action=as_async_request_queue_runner&nonce=' + nonce : siteUrl + '/wp-cron.php?doing_wp_cron=';
+if (state.http % 2 && new URL(url).searchParams.get('nonce') !== nonce) throw Error('Async request missing the exact anonymous site nonce');
 if (!site || (state.http % 2 ? url !== expected : !url.startsWith(expected) || !/^[0-9]+N?$/.test(url.slice(expected.length)))) throw Error('Wrong HTTP dispatch order: ' + url);
 if (state.http < 4 && (!state.mixed || !state.marker)) throw Error('Mixed generation not seeded');
 if (!state.secondaryLocal || !state.secondaryRedirect || !state.secondaryInjected || !state.secondaryRefreshed || !state.secondarySettings || !state.secondaryValidated) throw Error('Secondary site lacks its verified local reference fixture');
@@ -921,6 +927,18 @@ register_shutdown_function( function() { global $fixture_path, $fixture; file_pu
 const HOUR_IN_SECONDS = 3600;
 class WP_CLI { public static function error( $message ) { fwrite( STDERR, $message . "\n" ); exit( 1 ); } }
 function get_current_blog_id() { global $blog_id; return $blog_id; }
+$fixture_user = 1;
+function wp_set_current_user( $id ) { global $fixture_user; $fixture_user = $id; }
+function wp_create_nonce( $action ) {
+ global $fixture, $blog_id, $fixture_user;
+ if ( $action !== 'as_async_request_queue_runner' || $fixture_user !== 0 ) throw new Exception( 'Async nonce must use exact action and anonymous user' );
+ $fixture['nonce_sites'][] = $blog_id;
+ $fault = getenv( 'E2E_FAKE_NETWORK_FAULT' );
+ if ( $fault === 'nonce-empty' ) return '';
+ if ( $fault === 'nonce-invalid' ) return 'bad&nonce=';
+ if ( $fault === 'nonce-swapped' ) return $blog_id === 9 ? 'nonce00003' : 'nonce00009';
+ return $blog_id === 9 ? 'nonce00009' : 'nonce00003';
+}
 class Jetpack_Options {
  public static function get_option( $key ) {
   global $fixture, $blog_id;
@@ -1046,7 +1064,7 @@ for ( const key of Object.keys( result ).filter( key => /^(network_|pending_migr
 const urls = fs.readFileSync( process.env.E2E_FAKE_NETWORK_CURL_LOG, 'utf8' ).trim().split( '\n' );
 const base = 'http://transition-network-create.localhost:19119';
 assert.deepEqual( urls.map( url => url.replace( /doing_wp_cron=[0-9]+N?$/, 'doing_wp_cron=TIME' ) ),
- [ '/cutover-secondary', '', '', '/cutover-secondary', '', '/cutover-secondary' ].flatMap( site => [ base + site + '/wp-cron.php?doing_wp_cron=TIME', base + site + '/wp-admin/admin-ajax.php?action=as_async_request_queue_runner' ] ) );
+ [ '/cutover-secondary', '', '', '/cutover-secondary', '', '/cutover-secondary' ].flatMap( site => [ base + site + '/wp-cron.php?doing_wp_cron=TIME', base + site + '/wp-admin/admin-ajax.php?action=as_async_request_queue_runner&nonce=' + ( site ? 'nonce00009' : 'nonce00003' ) ] ) );
 const commands = fs.readFileSync( process.env.E2E_FAKE_NETWORK_COMMAND_LOG, 'utf8' ).trim().split( '\n' ).map( line => JSON.parse( line ).join( ' ' ) ).join( '\n' );
 for ( const pattern of [ 'core multisite-convert', 'site create', 'transition-network-mixed', 'transition-network-reopened', 'woocommerce_woopayments_cutover_state', 'scheduled_date_gmt', 'scheduled_date_local' ] ) assert.ok( commands.includes( pattern ), 'Missing executed command: ' + pattern );
 assert.doesNotMatch( commands, /do_action|action-scheduler\s+(run|execute)|ActionScheduler_.*Runner|action_scheduler_run/ );
@@ -1056,11 +1074,12 @@ const secondaryCommands = fs.readFileSync( process.env.E2E_FAKE_NETWORK_COMMAND_
 for ( const command of [ 'local_wpcom_jetpack enable', 'wcpay_dev redirect_to', 'transition_inject_reference_fixture', 'wcpay_dev refresh_account_data', 'woocommerce_woocommerce_payments_settings', 'transition_network_secondary_fixture' ] ) assert.ok( secondaryCommands.includes( command ), 'Missing secondary fixture command: ' + command );
 const runtime = JSON.parse( fs.readFileSync( process.env.E2E_FAKE_NETWORK_STATE ) );
 assert.equal( runtime.http, 12 );
+assert.deepEqual( runtime.nonce_sites, [ 9, 3, 3, 9, 3, 9 ] );
 assert.deepEqual( runtime.due.sort(), [ 3, 9 ] );
 for ( const site of [ 3, 9 ] ) assert.ok( runtime.events.indexOf( 'inspect:' + site ) < runtime.events.indexOf( 'due:' + site ) );
 JS
 
-for fault in final-duplicate final-generation final-active action-args action-hook action-group action-status state-generation; do
+for fault in final-duplicate final-generation final-active action-args action-hook action-group action-status state-generation nonce-empty nonce-invalid nonce-swapped; do
 	fault_workspace="$TEST_ROOT/network-$fault"
 	mkdir "$fault_workspace"
 	export E2E_FAKE_NETWORK_STATE="$TEST_ROOT/network-$fault-state.json"
@@ -1084,7 +1103,8 @@ const durable = JSON.parse( fs.readFileSync( process.argv[ 4 ] ) );
 const runtime = JSON.parse( fs.readFileSync( process.env.E2E_FAKE_NETWORK_STATE ) );
 assert.equal( durable.phase, 'create-failed' );
 if ( output ) assert.equal( result.status, 'failed' );
-assert.equal( runtime.http, process.argv[ 3 ].startsWith( 'final-' ) ? 12 : 8 );
+const fault = process.argv[ 3 ];
+assert.equal( runtime.http, fault.startsWith( 'final-' ) ? 12 : fault === 'nonce-swapped' ? 1 : fault.startsWith( 'nonce-' ) ? 0 : 8 );
 assert.equal( result.network_final_site_states, undefined );
 assert.equal( durable.network_final_site_states, undefined );
 if ( ! process.argv[ 3 ].startsWith( 'final-' ) ) assert.deepEqual( runtime.due, [] );

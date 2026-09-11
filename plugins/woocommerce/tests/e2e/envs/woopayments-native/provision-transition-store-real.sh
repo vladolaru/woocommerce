@@ -1098,6 +1098,21 @@ seed_pending_migrator_hook() {
 	update_state pending_migrator_action_id "$migrator_action_id" number
 }
 
+dispatch_network_reconciliation() {
+	local site_url="$1"
+	local nonce
+	nonce="$(store_wp --url="$site_url" eval '
+		wp_set_current_user( 0 );
+		echo wp_create_nonce( "as_async_request_queue_runner" );
+	')"
+	if [[ ! "$nonce" =~ ^[a-zA-Z0-9]{10}$ ]]; then
+		echo 'Transition async dispatch requires an exact anonymous site nonce.' >&2
+		return 1
+	fi
+	"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
+	"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner&nonce=${nonce}" > /dev/null
+}
+
 prepare_network_reconciliation() {
 	if [[ "${E2E_TRANSITION_SCENARIO:-}" != 'cutover-network-reconciliation' ]]; then
 		return
@@ -1163,8 +1178,7 @@ prepare_network_reconciliation() {
 	' > /dev/null
 	local site_url
 	for site_url in "${base_url}/cutover-secondary"; do
-		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
-		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
+		dispatch_network_reconciliation "$site_url"
 	done
 	local mixed_states
 	mixed_states="$(store_wp eval '
@@ -1183,8 +1197,7 @@ prepare_network_reconciliation() {
 		if ( ! Array.isArray( states ) || states.length !== 2 || ! primary || ! secondary || primary.state !== "pending" || secondary.state !== "deferred" || primary.generation <= 0 || primary.generation !== secondary.generation || secondary.current_step !== "network_barrier" || ! Array.isArray( secondary.deferred_codes ) || ! secondary.deferred_codes.includes( "network_barrier" ) ) process.exit( 1 );
 	' "$mixed_states" "$primary_site_id" "$secondary_site_id"
 	for site_url in "$base_url"; do
-		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
-		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
+		dispatch_network_reconciliation "$site_url"
 	done
 	local excluded_states
 	excluded_states="$(store_wp eval '
@@ -1224,8 +1237,7 @@ prepare_network_reconciliation() {
 		if ( ! Number.isSafeInteger( generation ) || excluded.states.some( state => generation <= state.generation ) ) process.exit( 1 );
 	' "$excluded_states" "$reopened_generation"
 	for site_url in "$base_url" "${base_url}/cutover-secondary"; do
-		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
-		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
+		dispatch_network_reconciliation "$site_url"
 	done
 	# Ownership verification is deliberately scheduled fifteen minutes later.
 	# Move only those exact pending rows; a fresh HTTP request still owns execution.
@@ -1267,8 +1279,7 @@ prepare_network_reconciliation() {
 		' > /dev/null
 	done
 	for site_url in "$base_url" "${base_url}/cutover-secondary"; do
-		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
-		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
+		dispatch_network_reconciliation "$site_url"
 	done
 	local final_states
 	final_states="$(store_wp eval '
