@@ -9,7 +9,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
@@ -283,6 +285,35 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'new MultiCurrencyBootstrap( $this->multi_currency_provider_roots_resolver )', $source );
 		$this->assertStringContainsString( '->register( $container, $is_rest_api_request )', $source );
+	}
+
+	/** @testdox Native Payments passes provider roots and REST classification into Multi-Currency registration. */
+	public function test_native_bootstrap_passes_provider_roots_and_rest_classifier_to_multi_currency_registration(): void {
+		$container      = $this->make_container( NativePaymentsState::DISABLED, NativePaymentsRuntimeArbiter::OWNER_NATIVE, MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$provider_calls = 0;
+		$rest_calls     = 0;
+		$sut            = new NativePaymentsBootstrap(
+			static fn(): array => array(),
+			static function () use ( &$provider_calls ): array {
+				++$provider_calls;
+				return array( 'MultiCurrencyProviderRoot' );
+			}
+		);
+
+		$sut->register(
+			$container,
+			static function () use ( &$rest_calls ): bool {
+				++$rest_calls;
+				return true;
+			}
+		);
+
+		$this->assertSame( 1, $provider_calls );
+		$this->assertSame( 2, $rest_calls );
+		$this->assertLessThan(
+			array_search( MultiCurrencyRestController::class, $container->resolved, true ),
+			array_search( 'MultiCurrencyProviderRoot', $container->resolved, true )
+		);
 	}
 
 	/** @testdox Should return before request or container work when the bootstrap filter is false. */
@@ -582,12 +613,15 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a container that records explicit resolution and registration order.
 	 *
-	 * @param string $state Native state.
-	 * @param string $owner Native runtime owner.
+	 * @param string $state                Native state.
+	 * @param string $owner                Native runtime owner.
+	 * @param string $multi_currency_owner Multi-Currency runtime owner.
+	 * @param bool   $configured           Whether additional currencies are configured.
+	 * @param bool   $historical           Whether historical Multi-Currency orders exist.
 	 * @return RuntimeContainer&object{resolved:array<int,string>,events:array<int,string>}
 	 */
-	private function make_container( string $state, string $owner ): RuntimeContainer {
-		return new class( $state, $owner ) extends RuntimeContainer {
+	private function make_container( string $state, string $owner, string $multi_currency_owner = MultiCurrencyRuntimeArbiter::OWNER_NONE, bool $configured = false, bool $historical = false ): RuntimeContainer {
+		return new class( $state, $owner, $multi_currency_owner, $configured, $historical ) extends RuntimeContainer {
 			/** @var array<int,string> */
 			public array $resolved = array();
 
@@ -600,19 +634,34 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			/** @var string */
 			private $owner;
 
+			/** @var string */
+			private $multi_currency_owner;
+
+			/** @var bool */
+			private $configured;
+
+			/** @var bool */
+			private $historical;
+
 			/** @var array<string,object> */
 			private array $services = array();
 
 			/**
 			 * Initialize the recording container.
 			 *
-			 * @param string $state Native state.
-			 * @param string $owner Native runtime owner.
+			 * @param string $state                Native state.
+			 * @param string $owner                Native runtime owner.
+			 * @param string $multi_currency_owner Multi-Currency runtime owner.
+			 * @param bool   $configured           Whether additional currencies are configured.
+			 * @param bool   $historical           Whether historical Multi-Currency orders exist.
 			 */
-			public function __construct( string $state, string $owner ) {
+			public function __construct( string $state, string $owner, string $multi_currency_owner, bool $configured, bool $historical ) {
 				parent::__construct( array() );
-				$this->state = $state;
-				$this->owner = $owner;
+				$this->state                = $state;
+				$this->owner                = $owner;
+				$this->multi_currency_owner = $multi_currency_owner;
+				$this->configured           = $configured;
+				$this->historical           = $historical;
 			}
 
 			/**
@@ -624,12 +673,43 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			public function get( string $class_name ) {
 				$this->resolved[] = $class_name;
 				$this->events[]   = 'get:' . $class_name;
+				if ( MultiCurrencyUsageDetector::class === $class_name ) {
+					return new class( $this->configured, $this->historical ) {
+						/** @var bool */
+						private $configured;
+
+						/** @var bool */
+						private $historical;
+
+						/**
+						 * Initialize persisted-data signals.
+						 *
+						 * @param bool $configured Whether additional currencies are configured.
+						 * @param bool $historical Whether historical orders exist.
+						 */
+						public function __construct( bool $configured, bool $historical ) {
+							$this->configured = $configured;
+							$this->historical = $historical;
+						}
+
+						/** Return the configured-currency signal. */
+						public function has_additional_enabled_currencies(): bool {
+							return $this->configured;
+						}
+
+						/** Return the historical-order signal. */
+						public function has_foreign_currency_orders(): bool {
+							return $this->historical;
+						}
+					};
+				}
 
 				if ( ! isset( $this->services[ $class_name ] ) ) {
 					$events                        = &$this->events;
 					$state                         = $this->state;
 					$owner                         = $this->owner;
-					$this->services[ $class_name ] = new class( $class_name, $events, $state, $owner ) {
+					$multi_currency_owner          = $this->multi_currency_owner;
+					$this->services[ $class_name ] = new class( $class_name, $events, $state, $owner, $multi_currency_owner ) {
 						/** @var string */
 						private $class_name;
 
@@ -642,19 +722,24 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 						/** @var string */
 						private $owner;
 
+						/** @var string */
+						private $multi_currency_owner;
+
 						/**
 						 * Initialize the service recorder.
 						 *
 						 * @param string            $class_name Class name.
 						 * @param array<int,string> $events     Recorded events.
-						 * @param string            $state      Native state.
-						 * @param string            $owner      Native runtime owner.
+						 * @param string            $state                Native state.
+						 * @param string            $owner                Native runtime owner.
+						 * @param string            $multi_currency_owner Multi-Currency runtime owner.
 						 */
-						public function __construct( string $class_name, array &$events, string $state, string $owner ) {
-							$this->class_name = $class_name;
-							$this->events     = &$events;
-							$this->state      = $state;
-							$this->owner      = $owner;
+						public function __construct( string $class_name, array &$events, string $state, string $owner, string $multi_currency_owner ) {
+							$this->class_name           = $class_name;
+							$this->events               = &$events;
+							$this->state                = $state;
+							$this->owner                = $owner;
+							$this->multi_currency_owner = $multi_currency_owner;
 						}
 
 						/** Return the recorded class name. */
@@ -664,7 +749,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 						/** Return the configured Multi-Currency or native owner. */
 						public function get_runtime_owner(): string {
-							return MultiCurrencyRuntimeArbiter::class === $this->class_name ? MultiCurrencyRuntimeArbiter::OWNER_NONE : $this->owner;
+							return MultiCurrencyRuntimeArbiter::class === $this->class_name ? $this->multi_currency_owner : $this->owner;
 						}
 
 						/** Return the configured effective native state. */

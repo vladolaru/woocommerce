@@ -47,7 +47,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAdminNoteController',
 	);
 
-	/** Should retain core roots when no provider roots are configured. */
+	/** @testdox Should retain core roots when no provider roots are configured. */
 	public function test_empty_provider_resolver_keeps_core_registration_providerless(): void {
 		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, false );
 		$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
@@ -57,40 +57,173 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::core_root_matrix()['configured front'][3], $container->registered );
 	}
 
-	/** Should resolve only the ownership arbiter when the runtime has no owner. */
+	/** @testdox Should resolve only the ownership arbiter when the runtime has no owner. */
 	public function test_owner_none_resolves_only_the_arbiter(): void {
-		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_NONE, false, false );
-		$sut       = new MultiCurrencyBootstrap( static fn(): array => array( 'ProviderRoot' ) );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_NONE, false, false );
+		$resolver_calls = 0;
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$resolver_calls ): array {
+				++$resolver_calls;
+				return array( 'ProviderRoot' );
+			}
+		);
 
 		$sut->register( $container, '__return_false' );
 
 		$this->assertSame( array( MultiCurrencyRuntimeArbiter::class ), $container->resolved );
+		$this->assertSame( 0, $resolver_calls );
 	}
 
-	/** Should order and de-duplicate provider roots before core roots. */
+	/** @testdox Should order and de-duplicate provider roots before core roots. */
 	public function test_core_registration_orders_and_deduplicates_provider_roots_before_core_roots(): void {
 		$provider_roots = array( 'ProviderRoot', self::CORE_ROOTS[0], 'ProviderRoot' );
 		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, false );
-		$sut            = new MultiCurrencyBootstrap( static fn(): array => $provider_roots );
+		$resolver_calls = 0;
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$provider_roots, &$resolver_calls ): array {
+				++$resolver_calls;
+				return $provider_roots;
+			}
+		);
 
 		$sut->register( $container, '__return_false' );
 
 		$this->assertSame( array_merge( array( 'ProviderRoot' ), self::core_root_matrix()['configured front'][3] ), $container->registered );
 		$this->assertSame( array_values( array_unique( $container->registered ) ), $container->registered );
+		$this->assertSame( 1, $resolver_calls );
 	}
 
-	/** Should order provider roots before an enabled plugin shadow root. */
+	/** @testdox Should order provider roots before an enabled plugin shadow root. */
 	public function test_plugin_shadow_registers_provider_roots_before_shadow(): void {
 		add_filter( MultiCurrencyShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
-		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, false, false );
-		$sut       = new MultiCurrencyBootstrap( static fn(): array => array( 'ProviderRoot' ) );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, false, false );
+		$resolver_calls = 0;
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$resolver_calls ): array {
+				++$resolver_calls;
+				return array( 'ProviderRoot' );
+			}
+		);
 
 		$sut->register( $container, '__return_false' );
 
 		$this->assertSame( array( 'ProviderRoot', MultiCurrencyShadowMode::class ), $container->registered );
+		$this->assertSame( 1, $resolver_calls );
+	}
+
+	/** @testdox Should not resolve provider roots when plugin shadow mode is disabled. */
+	public function test_plugin_owner_with_disabled_shadow_does_not_resolve_provider_roots(): void {
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, false, false );
+		$resolver_calls = 0;
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$resolver_calls ): array {
+				++$resolver_calls;
+				return array( 'ProviderRoot' );
+			}
+		);
+
+		$sut->register( $container, '__return_false' );
+
+		$this->assertSame( 0, $resolver_calls );
+		$this->assertSame( array(), $container->registered );
+	}
+
+	/** @testdox Should not resolve provider roots for an empty front request. */
+	public function test_empty_front_request_does_not_resolve_provider_roots(): void {
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$resolver_calls = 0;
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$resolver_calls ): array {
+				++$resolver_calls;
+				return array( 'ProviderRoot' );
+			}
+		);
+
+		$sut->register( $container, '__return_false' );
+
+		$this->assertSame( 0, $resolver_calls );
+		$this->assertSame( array(), $container->registered );
+	}
+
+	/** @testdox Should not resolve provider roots for an empty AJAX request. */
+	public function test_empty_ajax_request_does_not_resolve_provider_roots(): void {
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$resolver_calls = 0;
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$resolver_calls ): array {
+				++$resolver_calls;
+				return array( 'ProviderRoot' );
+			}
+		);
+
+		try {
+			$sut->register( $container, '__return_true' );
+		} finally {
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+		}
+
+		$this->assertSame( 0, $resolver_calls );
+		$this->assertSame( array(), $container->registered );
 	}
 
 	/**
+	 * @testdox Should treat an empty Action Scheduler request as cron before AJAX, REST, and admin.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_empty_action_scheduler_request_precedes_ajax_rest_and_admin_without_resolving_provider_roots(): void {
+		$_REQUEST['action'] = 'as_async_request_queue_runner';
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$resolver_calls = 0;
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$resolver_calls ): array {
+				++$resolver_calls;
+				return array( 'ProviderRoot' );
+			}
+		);
+
+		try {
+			$sut->register( $container, '__return_true' );
+		} finally {
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+		}
+
+		$this->assertSame( 0, $resolver_calls );
+		$this->assertSame( array(), $container->registered );
+	}
+
+	/**
+	 * @testdox Should not resolve provider roots for an empty CLI request.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_empty_cli_request_does_not_resolve_provider_roots(): void {
+		if ( ! defined( 'WP_CLI' ) ) {
+			define( 'WP_CLI', true );
+		}
+
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$resolver_calls = 0;
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$resolver_calls ): array {
+				++$resolver_calls;
+				return array( 'ProviderRoot' );
+			}
+		);
+
+		$sut->register( $container, '__return_true' );
+
+		$this->assertSame( 0, $resolver_calls );
+		$this->assertSame( array(), $container->registered );
+	}
+
+	/**
+	 * @testdox Should select the exact core root matrix for each persisted-data tier and request class.
+	 *
 	 * @dataProvider core_root_matrix
 	 *
 	 * @param bool              $configured Whether an additional currency is configured.
@@ -145,7 +278,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		);
 	}
 
-	/** Should avoid historical storage checks for no-config front, AJAX, and CLI requests. */
+	/** @testdox Should avoid historical storage checks for no-config front, AJAX, and CLI requests. */
 	public function test_no_config_front_ajax_and_cli_skip_historical_order_detection(): void {
 		foreach ( array( 'front', 'ajax', 'cli' ) as $request ) {
 			$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, true );
@@ -162,7 +295,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** Should retain every former core root in the configured request-matrix union. */
+	/** @testdox Should retain every former core root in the configured request-matrix union. */
 	public function test_configured_matrix_inventory_is_the_former_core_root_list_without_duplicates(): void {
 		$roots = array();
 		foreach ( self::core_root_matrix() as $case ) {
@@ -179,7 +312,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $actual );
 	}
 
-	/** Should classify all request signals with the required precedence. */
+	/** @testdox Should classify all request signals with the required precedence. */
 	public function test_classifies_request_signals_with_required_precedence(): void {
 		$this->assertTrue( method_exists( MultiCurrencyBootstrap::class, 'classify_signals' ) );
 		if ( ! method_exists( MultiCurrencyBootstrap::class, 'classify_signals' ) ) {
