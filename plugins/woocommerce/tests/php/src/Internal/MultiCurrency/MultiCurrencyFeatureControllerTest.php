@@ -121,6 +121,27 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should fail closed when historical order detection cannot query storage.
+	 */
+	public function test_get_feature_setting_disables_no_when_historical_order_query_fails(): void {
+		global $wpdb;
+
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$detector = new MultiCurrencyUsageDetector();
+		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
+		$this->sut = new MultiCurrencyFeatureController();
+		$this->sut->init( $detector );
+		$original_postmeta = $wpdb->postmeta;
+		$wpdb->postmeta    = "{$wpdb->prefix}missing_multi_currency_order_meta";
+
+		try {
+			$this->assertSame( array( 'no' ), $this->sut->get_feature_setting()['disabled']() );
+		} finally {
+			$wpdb->postmeta = $original_postmeta;
+		}
+	}
+
+	/**
 	 * @testdox Should build a core change-feature URL with a valid nonce.
 	 */
 	public function test_get_feature_setting_builds_disable_anyway_url(): void {

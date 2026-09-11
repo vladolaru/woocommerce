@@ -157,6 +157,38 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should omit optional SQL hooks when historical order detection fails.
+	 */
+	public function test_omits_optional_sql_hooks_when_historical_order_query_fails(): void {
+		global $wpdb;
+
+		$detector = new MultiCurrencyUsageDetector();
+		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
+		$sut = new MultiCurrencyAnalyticsController();
+		$sut->init(
+			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ),
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
+			$detector
+		);
+		$sut->set_dev_mode_resolver( static fn(): bool => false );
+		$sut->set_rest_request_resolver( static fn(): bool => true );
+		$sut->set_hpos_resolver( static fn(): bool => false );
+		$sut->set_default_currency_resolver( static fn(): string => 'USD' );
+		$sut->set_request_args_resolver( static fn(): array => array() );
+		$original_postmeta = $wpdb->postmeta;
+		$wpdb->postmeta    = "{$wpdb->prefix}missing_multi_currency_order_meta";
+
+		try {
+			$sut->register();
+		} finally {
+			$wpdb->postmeta = $original_postmeta;
+		}
+
+		$this->assertSame( 99999, has_filter( 'woocommerce_analytics_update_order_stats_data', array( $sut, 'handle_woocommerce_analytics_update_order_stats_data' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_analytics_clauses_select', array( $sut, 'handle_woocommerce_analytics_clauses_select' ) ) );
+	}
+
+	/**
 	 * @testdox Should register selected-currency SQL hooks for REST requests with multi-currency orders.
 	 */
 	public function test_registers_selected_currency_sql_hooks_for_rest_requests_with_multi_currency_orders(): void {
