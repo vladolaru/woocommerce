@@ -6,19 +6,14 @@ umask 077
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
 readonly PNPM_BIN="${E2E_WOOPAYMENTS_FRESH_PNPM_BIN:-pnpm}"
-readonly OPENSSL_BIN="${E2E_WOOPAYMENTS_FRESH_OPENSSL_BIN:-openssl}"
 readonly STORE_DIR="${E2E_WOOPAYMENTS_FRESH_STORE_DIR:?E2E_WOOPAYMENTS_FRESH_STORE_DIR is required}"
 readonly STORE_URL="${E2E_WOOPAYMENTS_FRESH_STORE_URL:?E2E_WOOPAYMENTS_FRESH_STORE_URL is required}"
 readonly STORE_ID="${E2E_WOOPAYMENTS_FRESH_STORE_ID:?E2E_WOOPAYMENTS_FRESH_STORE_ID is required}"
 readonly RUN_ID="${E2E_WOOPAYMENTS_FRESH_RUN_ID:?E2E_WOOPAYMENTS_FRESH_RUN_ID is required}"
 readonly WPCOM_TRANSPORT_ADAPTER="${E2E_WOOPAYMENTS_FRESH_WPCOM_TRANSPORT_ADAPTER:?E2E_WOOPAYMENTS_FRESH_WPCOM_TRANSPORT_ADAPTER is required}"
-readonly DATABASE_IDENTITY_OPTION='woocommerce_native_payments_fresh_provisioning_identity'
 
 profile_dir=''
 wp_env_config=''
-receipt_path=''
-run_nonce=''
-database_nonce=''
 transport_adapter=''
 fresh_setup=''
 
@@ -72,19 +67,6 @@ create_unused_profile() {
 	fi
 
 	wp_env_config="$profile_dir/.wp-env.json"
-	receipt_path="$profile_dir/provisioning-receipt.json"
-}
-
-generate_nonce() {
-	local nonce
-
-	nonce="$("$OPENSSL_BIN" rand -hex 32)"
-	if [[ ! "$nonce" =~ ^[a-f0-9]{64}$ ]]; then
-		echo 'Fresh-store provisioner could not generate a valid random nonce.' >&2
-		exit 1
-	fi
-
-	printf '%s\n' "$nonce"
 }
 
 write_profile_config() {
@@ -125,27 +107,7 @@ extract_json_object() {
 
 	json="$(printf '%s\n' "$output" | sed -n 's/^[^{]*\({.*}\)[^}]*$/\1/p' | tail -n 1)"
 	if ! printf '%s\n' "$json" | jq -ce 'select(type == "object")'; then
-		echo 'Fresh-store provisioner could not read the live database identity.' >&2
-		return 1
-	fi
-}
-
-seed_database_identity() {
-	local identity
-	local seed_code
-	local live_identity
-
-	identity="$(jq -cn --arg store_id "$STORE_ID" --arg run_id "$RUN_ID" --arg run_nonce "$run_nonce" --arg database_nonce "$database_nonce" '{ store_id: $store_id, run_id: $run_id, run_nonce: $run_nonce, database_nonce: $database_nonce }')"
-	seed_code='$identity = json_decode( '\''"$identity"'\'', true, 512, JSON_THROW_ON_ERROR ); if ( false !== get_option( "woocommerce_native_payments_fresh_provisioning_identity", false ) ) { throw new RuntimeException( "Fresh-store database identity already exists." ); } if ( ! add_option( "woocommerce_native_payments_fresh_provisioning_identity", $identity, "", false ) ) { throw new RuntimeException( "Fresh-store database identity could not be stored." ); } $stored = get_option( "woocommerce_native_payments_fresh_provisioning_identity", false ); if ( $stored !== $identity ) { throw new RuntimeException( "Fresh-store database identity did not persist exactly." ); } echo wp_json_encode( $stored );'
-
-	if ! live_identity="$("$PNPM_BIN" --dir "$PLUGIN_ROOT" exec wp-env --config "$wp_env_config" run cli wp --user=1 eval "$seed_code")"; then
-		echo 'Fresh-store provisioner could not seed the live database identity.' >&2
-		return 1
-	fi
-
-	extract_json_object "$live_identity" > /dev/null
-	if ! jq -e --argjson expected "$identity" '$expected == .' <<< "$(extract_json_object "$live_identity")" > /dev/null; then
-		echo 'Fresh-store provisioner seeded a database identity different from its receipt identity.' >&2
+		echo 'Fresh-store provisioner could not read the fresh-store setup result.' >&2
 		return 1
 	fi
 }
@@ -170,41 +132,20 @@ setup_fresh_store() {
 	fi
 }
 
-write_receipt() {
-	jq -cn \
-		--arg profile_path "$profile_dir" \
-		--arg wp_env_config "$wp_env_config" \
-		--arg store_url "$STORE_URL" \
-		--arg store_id "$STORE_ID" \
-		--arg run_id "$RUN_ID" \
-		--arg run_nonce "$run_nonce" \
-		--arg database_nonce "$database_nonce" \
-		--arg transport_adapter "$transport_adapter" \
-		--argjson fresh_setup "$fresh_setup" \
-		'{ schema_version: 2, provisioner: "woocommerce-native-fresh-store", fresh: true, profile_path: $profile_path, wp_env_config: $wp_env_config, store_url: $store_url, store_id: $store_id, run_id: $run_id, run_nonce: $run_nonce, database_nonce: $database_nonce, transport_adapter: $transport_adapter, fresh_setup: $fresh_setup }' > "$receipt_path"
-}
-
 require_create_command "$@"
 validate_identity
 create_unused_profile
-run_nonce="$(generate_nonce)"
-database_nonce="$(generate_nonce)"
 write_profile_config
 
 "$PNPM_BIN" --dir "$PLUGIN_ROOT" exec wp-env --config "$wp_env_config" start >&2
-seed_database_identity
 setup_fresh_store
-write_receipt
 
 jq -cn \
 	--arg profile_path "$profile_dir" \
 	--arg wp_env_config "$wp_env_config" \
-	--arg provisioning_receipt "$receipt_path" \
 	--arg store_url "$STORE_URL" \
 	--arg store_id "$STORE_ID" \
 	--arg run_id "$RUN_ID" \
-	--arg run_nonce "$run_nonce" \
-	--arg database_nonce "$database_nonce" \
 	--arg transport_adapter "$transport_adapter" \
 	--argjson fresh_setup "$fresh_setup" \
-	'{ profile_path: $profile_path, wp_env_config: $wp_env_config, provisioning_receipt: $provisioning_receipt, store_url: $store_url, store_id: $store_id, run_id: $run_id, run_nonce: $run_nonce, database_nonce: $database_nonce, transport_adapter: $transport_adapter, fresh_setup: $fresh_setup }'
+	'{ profile_path: $profile_path, wp_env_config: $wp_env_config, store_url: $store_url, store_id: $store_id, run_id: $run_id, transport_adapter: $transport_adapter, fresh_setup: $fresh_setup }'

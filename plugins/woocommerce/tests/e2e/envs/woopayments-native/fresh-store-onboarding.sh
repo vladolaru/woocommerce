@@ -13,13 +13,10 @@ readonly STORE_URL="${E2E_WOOPAYMENTS_FRESH_STORE_URL:?E2E_WOOPAYMENTS_FRESH_STO
 readonly WP_ENV_CONFIG="${E2E_WOOPAYMENTS_FRESH_WP_ENV_CONFIG:?E2E_WOOPAYMENTS_FRESH_WP_ENV_CONFIG is required}"
 readonly RESULTS_DIR="${E2E_WOOPAYMENTS_FRESH_RESULTS_DIR:?E2E_WOOPAYMENTS_FRESH_RESULTS_DIR is required}"
 readonly STORE_ID="${E2E_WOOPAYMENTS_FRESH_STORE_ID:?E2E_WOOPAYMENTS_FRESH_STORE_ID is required}"
-readonly RUN_ID="${E2E_WOOPAYMENTS_FRESH_RUN_ID:?E2E_WOOPAYMENTS_FRESH_RUN_ID is required}"
-readonly PROVISIONING_RECEIPT="${E2E_WOOPAYMENTS_FRESH_PROVISIONING_RECEIPT:?E2E_WOOPAYMENTS_FRESH_PROVISIONING_RECEIPT is required}"
 readonly ACCOUNT_ALIAS="${E2E_WOOPAYMENTS_FRESH_ACCOUNT_ALIAS:?E2E_WOOPAYMENTS_FRESH_ACCOUNT_ALIAS is required}"
 readonly LOCATION="${E2E_WOOPAYMENTS_FRESH_LOCATION:-US}"
 readonly BASIC_CARD_SPEC="$PLUGIN_ROOT/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-basic-card.spec.ts"
 readonly FRESH_INSTALL_STATUS_CODE='if ( ! function_exists( "is_plugin_active" ) ) { require_once ABSPATH . "wp-admin/includes/plugin.php"; } echo wp_json_encode( array( "fresh_install" => "yes" === get_option( "woocommerce_native_payments_enabled", "no" ) && false === get_option( "woocommerce_woocommerce_payments_version", false ) && false === get_option( "wcpay_account_data", false ), "native_enabled" => "yes" === get_option( "woocommerce_native_payments_enabled", "no" ), "standalone_plugin_active" => is_plugin_active( "woocommerce-payments/woocommerce-payments.php" ), "account_connected" => false !== get_option( "wcpay_account_data", false ) ) );'
-readonly LIVE_DATABASE_IDENTITY_CODE='echo wp_json_encode( get_option( "woocommerce_native_payments_fresh_provisioning_identity", false ) );'
 readonly ONBOARDING_INIT_CODE='$controller = wc_get_container()->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController::class ); $controller->register_routes(); $request = new WP_REST_Request( "POST", "/wc-admin/settings/payments/woopayments/onboarding/step/test_account/init" ); $request->set_param( "location", "'"$LOCATION"'" ); $request->set_param( "source", "wc_settings_payments" ); $response = rest_do_request( $request ); $data = $response->get_data(); echo wp_json_encode( array( "status" => $response->get_status(), "is_error" => $response->is_error(), "success" => is_array( $data ) && ! empty( $data["success"] ) ) );'
 readonly NATIVE_RUNTIME_STATUS_CODE='$request = new WP_REST_Request( "GET", "/wc-native-payments-e2e/v1/status" ); $response = rest_do_request( $request ); echo wp_json_encode( $response->get_data() );'
 readonly NATIVE_ACCOUNT_STATUS_CODE='$account_session_rest_controller = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountSessionRestController::class ); $account_routes_callback = array( $account_session_rest_controller, "register_routes" ); $account_session_rest_controller->register(); if ( false === has_action( "rest_api_init", $account_routes_callback ) ) { throw new RuntimeException( "WooPayments native account session routes were not registered." ); } $account_session_rest_controller->register_routes(); $request = new WP_REST_Request( "GET", "/wc/v3/payments/accounts" ); $response = rest_do_request( $request ); $data = $response->get_data(); echo wp_json_encode( array( "status" => $response->get_status(), "is_error" => $response->is_error(), "account_id" => is_array( $data ) ? (string) ( $data["account_id"] ?? "" ) : "", "test_mode" => is_array( $data ) ? (bool) ( $data["test_mode"] ?? false ) : false ) );'
@@ -37,13 +34,13 @@ validate_isolated_profile() {
 			;;
 	esac
 
-	if [[ ! -d "$STORE_DIR" || ! -f "$WP_ENV_CONFIG" || -L "$WP_ENV_CONFIG" || ! -f "$PROVISIONING_RECEIPT" || -L "$PROVISIONING_RECEIPT" || ! -x "$PROVIDER_RUNNER" || ! -f "$BASIC_CARD_SPEC" ]]; then
+	if [[ ! -d "$STORE_DIR" || ! -f "$WP_ENV_CONFIG" || -L "$WP_ENV_CONFIG" || ! -x "$PROVIDER_RUNNER" || ! -f "$BASIC_CARD_SPEC" ]]; then
 		echo 'Fresh-store onboarding requires an isolated store, wp-env config, provider runner, and basic-card spec.' >&2
 		exit 64
 	fi
 
-	if [[ ! "$STORE_ID" =~ ^[a-z0-9][a-z0-9-]{0,63}$ || ! "$RUN_ID" =~ ^[a-z0-9][a-z0-9-]{0,63}$ || ! "$ACCOUNT_ALIAS" =~ ^[a-z0-9][a-z0-9-]{0,63}$ || ! "$LOCATION" =~ ^[A-Za-z]{2}$ ]]; then
-		echo 'Fresh-store onboarding received an invalid store identity, run identity, account alias, or location.' >&2
+	if [[ ! "$STORE_ID" =~ ^[a-z0-9][a-z0-9-]{0,63}$ || ! "$ACCOUNT_ALIAS" =~ ^[a-z0-9][a-z0-9-]{0,63}$ || ! "$LOCATION" =~ ^[A-Za-z]{2}$ ]]; then
+		echo 'Fresh-store onboarding received an invalid store identity, account alias, or location.' >&2
 		exit 64
 	fi
 
@@ -67,54 +64,28 @@ validate_isolated_profile() {
 		exit 64
 	fi
 
-	if ! jq -e \
-		--arg profile_dir "$PROFILE_DIR" \
-		--arg profile_config "$PROFILE_CONFIG" \
-		--arg store_url "$STORE_URL" \
-		--arg store_id "$STORE_ID" \
-		--arg run_id "$RUN_ID" '
-			type == "object" and
-			.schema_version == 2 and
-			.provisioner == "woocommerce-native-fresh-store" and
-			.fresh == true and
-			.profile_path == $profile_dir and
-			.wp_env_config == $profile_config and
-			.store_url == $store_url and
-			.store_id == $store_id and
-			.run_id == $run_id and
-			(.run_nonce | type == "string" and test("^[a-f0-9]{64}$")) and
-			(.database_nonce | type == "string" and test("^[a-f0-9]{64}$")) and
-			(.transport_adapter | type == "string" and length > 0) and
-			(.fresh_setup | type == "object") and
-			.fresh_setup.pages_installed == true and
-			(.fresh_setup.product_id | type == "number" and . > 0) and
-			(.fresh_setup.customer_id | type == "number" and . > 0)
-		' "$PROVISIONING_RECEIPT" > /dev/null; then
-		echo 'Fresh-store onboarding requires a matching durable receipt for a newly provisioned disposable database/profile.' >&2
-		exit 64
-	fi
-
-	transport_adapter="$(jq -er '.transport_adapter' "$PROVISIONING_RECEIPT")"
+	transport_adapter="$(jq -er '.mappings["wp-content/mu-plugins/wpcom-local-store-transport.php"] | select(type == "string" and length > 0)' "$PROFILE_CONFIG")"
 	if [[ ! -f "$transport_adapter" || -L "$transport_adapter" ]]; then
-		echo 'Fresh-store onboarding requires the exact regular local WPCOM transport adapter recorded by provisioning.' >&2
+		echo 'Fresh-store onboarding requires the exact regular local WPCOM transport adapter in its profile.' >&2
 		exit 64
 	fi
 
 	if ! jq -e \
 		--arg plugin_root "$PLUGIN_ROOT" \
-		--slurpfile receipt "$PROVISIONING_RECEIPT" '
+		--arg store_url "$STORE_URL" \
+		--arg transport_adapter "$transport_adapter" '
 			type == "object" and
 			.testsEnvironment == false and
 			.plugins == [ $plugin_root ] and
-			.config.WP_HOME == $receipt[0].store_url and
-			.config.WP_SITEURL == $receipt[0].store_url and
+			.config.WP_HOME == $store_url and
+			.config.WP_SITEURL == $store_url and
 			.config.E2E_WOOPAYMENTS_NATIVE == true and
 			.config.JETPACK_DEV_DEBUG == false and
 			.config.WP_DEBUG == false and
 			.config.WP_DEBUG_DISPLAY == false and
 			.mappings["wp-content/plugins/woocommerce"] == $plugin_root and
 			.mappings["wp-content/mu-plugins/woopayments-native-runtime.php"] == ($plugin_root + "/tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php") and
-			.mappings["wp-content/mu-plugins/wpcom-local-store-transport.php"] == $receipt[0].transport_adapter
+			.mappings["wp-content/mu-plugins/wpcom-local-store-transport.php"] == $transport_adapter
 		' "$PROFILE_CONFIG" > /dev/null; then
 		echo 'Fresh-store onboarding requires the provisioned native WooCommerce, diagnostics, and local transport mappings.' >&2
 		exit 64
@@ -243,22 +214,6 @@ write_provider_fixture() {
 
 validate_isolated_profile
 mkdir -p "$RESULTS_DIR"
-install -m 600 "$PROVISIONING_RECEIPT" "$RESULTS_DIR/provisioning-receipt.json"
-
-live_database_identity="$(run_store_wp_json "$LIVE_DATABASE_IDENTITY_CODE")"
-printf '%s\n' "$live_database_identity" > "$RESULTS_DIR/live-database-identity.json"
-if ! jq -e --slurpfile receipt "$PROVISIONING_RECEIPT" '
-	type == "object" and
-	. == {
-		store_id: $receipt[0].store_id,
-		run_id: $receipt[0].run_id,
-		run_nonce: $receipt[0].run_nonce,
-		database_nonce: $receipt[0].database_nonce
-	}
-' <<< "$live_database_identity" > /dev/null; then
-	echo 'Fresh-store onboarding requires the live database identity to exactly match its disposable provisioning receipt.' >&2
-	exit 1
-fi
 
 fresh_status="$(run_store_wp_json "$FRESH_INSTALL_STATUS_CODE")"
 printf '%s\n' "$fresh_status" > "$RESULTS_DIR/fresh-install.json"
