@@ -210,9 +210,9 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should build automatic currencies from the preserved cache.
+	 * @testdox Should ignore preserved automatic currencies when no provider is registered.
 	 */
-	public function test_builds_automatic_currencies_from_preserved_cache(): void {
+	public function test_ignores_preserved_automatic_currencies_when_no_provider_is_registered(): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 		update_option(
@@ -234,7 +234,34 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 
 		$state = $this->create_builder()->build();
 
-		$this->assertSame( array( 'USD', 'EUR', 'GBP' ), array_keys( $state->get_available_currencies() ) );
+		$this->assertSame( array( 'USD' ), array_keys( $state->get_available_currencies() ) );
+		$this->assertSame( array( 'USD' ), array_keys( $state->get_enabled_currencies() ) );
+	}
+
+	/**
+	 * @testdox Should retain preserved automatic currencies when a registered provider is unavailable.
+	 */
+	public function test_retains_preserved_automatic_currencies_when_a_registered_provider_is_unavailable(): void {
+		$registry = new CurrencyRateProviderRegistry();
+		$registry->register( $this->create_unavailable_rate_provider() );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
+		update_option(
+			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			array(
+				'data'               => array(
+					'currencies' => array( 'gbp' => 0.82 ),
+					'updated'    => 123456,
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+
+		$state = $this->create_builder( $registry )->build();
+
 		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
 		$this->assertSame( 0.82, $state->get_enabled_currencies()['GBP']->get_rate() );
 		$this->assertSame( 123456, $state->get_enabled_currencies()['GBP']->get_last_updated() );
@@ -369,8 +396,10 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	 * @testdox Should return the same memoized state instance on repeated calls.
 	 */
 	public function test_memoizes_state_across_repeated_calls(): void {
-		$cache   = $this->create_counting_cache();
-		$builder = $this->create_builder( null, $cache );
+		$cache    = $this->create_counting_cache();
+		$registry = new CurrencyRateProviderRegistry();
+		$registry->register( $this->create_unavailable_rate_provider() );
+		$builder = $this->create_builder( $registry, $cache );
 
 		$first  = $builder->build();
 		$second = $builder->build();
@@ -383,8 +412,10 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	 * @testdox Should rebuild the state after reset is called.
 	 */
 	public function test_reset_rebuilds_state(): void {
-		$cache   = $this->create_counting_cache();
-		$builder = $this->create_builder( null, $cache );
+		$cache    = $this->create_counting_cache();
+		$registry = new CurrencyRateProviderRegistry();
+		$registry->register( $this->create_unavailable_rate_provider() );
+		$builder = $this->create_builder( $registry, $cache );
 
 		$first = $builder->build();
 		$builder->reset();
@@ -565,6 +596,55 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 				unset( $currency_from, $currencies_to );
 
 				return $this->rates;
+			}
+		};
+	}
+
+	/**
+	 * Create an unavailable rate provider.
+	 *
+	 * @return CurrencyRateProvider
+	 */
+	private function create_unavailable_rate_provider(): CurrencyRateProvider {
+		return new class() implements CurrencyRateProvider {
+			/**
+			 * Get the provider identifier.
+			 *
+			 * @return string
+			 */
+			public function get_id(): string {
+				return 'unavailable-provider';
+			}
+
+			/**
+			 * Tell whether automatic rates are currently available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return false;
+			}
+
+			/**
+			 * Get supported currencies.
+			 *
+			 * @return string[]
+			 */
+			public function get_supported_currencies(): array {
+				return array();
+			}
+
+			/**
+			 * Get currency rates.
+			 *
+			 * @param string        $currency_from Currency to convert from.
+			 * @param string[]|null $currencies_to Currencies to convert into.
+			 * @return array<string,mixed>
+			 */
+			public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
+				unset( $currency_from, $currencies_to );
+
+				return array();
 			}
 		};
 	}

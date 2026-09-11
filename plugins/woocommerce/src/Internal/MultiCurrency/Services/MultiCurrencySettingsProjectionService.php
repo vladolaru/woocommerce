@@ -18,18 +18,13 @@ class MultiCurrencySettingsProjectionService {
 	private const SETTINGS_TAB          = 'wcpay_multi_currency';
 	private const SETTINGS_SCREEN_BASE  = 'woocommerce_page_wc-settings';
 	private const SETTINGS_FIELD_TYPE   = 'wcpay_multi_currency_settings_page';
-	private const ONBOARDING_FIELD_TYPE = 'wcpay_currencies_settings_onboarding_cta';
 	private const SETTINGS_CONTAINER_ID = 'wcpay_multi_currency_settings_container';
-	private const ONBOARDING_CTA_ID     = 'wcpay_enabled_currencies_onboarding_cta';
-	private const ENABLED_CURRENCIES_ID = 'wcpay_multi_currency_enabled_currencies';
 	private const ADMIN_SCRIPT_ENTRY    = 'multi-currency-settings';
 	private const ADMIN_ASSET_HANDLE    = 'wc-admin-multi-currency-settings';
-	private const LEARN_MORE_URL        = 'https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/';
 
 	/**
 	 * Project the multi-currency settings page manifest.
 	 *
-	 * @param bool $provider_connected Whether a payments provider is connected.
 	 * @param bool $is_cli             Whether the current request is WP-CLI.
 	 * @param bool $is_wpcom_jobs      Whether the current request is a WPCOM jobs request.
 	 * @param bool $did_upgrade        Whether an upgrader completion action ran.
@@ -38,7 +33,6 @@ class MultiCurrencySettingsProjectionService {
 	 * @since 11.0.0
 	 */
 	public static function get_settings_page_manifest(
-		bool $provider_connected,
 		bool $is_cli,
 		bool $is_wpcom_jobs,
 		bool $did_upgrade
@@ -50,9 +44,9 @@ class MultiCurrencySettingsProjectionService {
 		return array(
 			'id'               => self::SETTINGS_TAB,
 			'label'            => self::get_tab_label(),
-			'mode'             => $provider_connected ? 'settings' : 'onboarding_cta',
+			'mode'             => 'settings',
 			'hide_save_button' => true,
-			'settings'         => $provider_connected ? self::get_connected_settings() : self::get_onboarding_settings(),
+			'settings'         => self::get_connected_settings(),
 		);
 	}
 
@@ -76,11 +70,6 @@ class MultiCurrencySettingsProjectionService {
 					'callback' => 'render_settings_container',
 					'priority' => 10,
 				),
-				array(
-					'hook'     => 'woocommerce_admin_field_wcpay_currencies_settings_onboarding_cta',
-					'callback' => 'render_onboarding_cta',
-					'priority' => 10,
-				),
 			),
 		);
 	}
@@ -97,53 +86,6 @@ class MultiCurrencySettingsProjectionService {
 			'<div id="%s" class="wc-settings-prevent-change-event" aria-describedby="%s-description"></div>',
 			esc_attr( self::SETTINGS_CONTAINER_ID ),
 			esc_attr( self::SETTINGS_CONTAINER_ID )
-		);
-	}
-
-	/**
-	 * Project onboarding CTA settings rows.
-	 *
-	 * @return array<int,array<string,string>>
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_onboarding_settings(): array {
-		return array(
-			array(
-				'title' => __( 'Enabled currencies', 'woocommerce' ),
-				'desc'  => sprintf(
-					/* translators: %s: URL to the multi-currency documentation. */
-					__( 'Accept payments in multiple currencies. Prices are converted based on exchange rates and rounding rules. <a href="%s">Learn more</a>', 'woocommerce' ),
-					esc_url( self::LEARN_MORE_URL )
-				),
-				'type'  => 'title',
-				'id'    => self::ENABLED_CURRENCIES_ID,
-			),
-			array(
-				'type' => self::ONBOARDING_FIELD_TYPE,
-			),
-			array(
-				'type' => 'sectionend',
-				'id'   => self::ENABLED_CURRENCIES_ID,
-			),
-		);
-	}
-
-	/**
-	 * Project onboarding CTA markup.
-	 *
-	 * @param string $onboarding_url Provider onboarding URL.
-	 * @return string
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_onboarding_cta_markup( string $onboarding_url ): string {
-		return sprintf(
-			'<div><p>%s</p><a href="%s" id="%s" type="button" class="button-primary">%s</a></div>',
-			self::get_onboarding_message(),
-			esc_url( $onboarding_url ),
-			esc_attr( self::ONBOARDING_CTA_ID ),
-			esc_html__( 'Get started', 'woocommerce' )
 		);
 	}
 
@@ -230,18 +172,5 @@ class MultiCurrencySettingsProjectionService {
 	 */
 	private static function get_tab_label(): string {
 		return _x( 'Multi-currency', 'Settings tab label', 'woocommerce' );
-	}
-
-	/**
-	 * Get the onboarding CTA message.
-	 *
-	 * @return string
-	 */
-	private static function get_onboarding_message(): string {
-		return sprintf(
-			/* translators: %s: WooPayments. */
-			esc_html__( 'To add new currencies to your store, please finish setting up %s.', 'woocommerce' ),
-			'WooPayments'
-		);
 	}
 }

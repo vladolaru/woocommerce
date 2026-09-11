@@ -284,6 +284,10 @@ class MultiCurrencyStateBuilder {
 	 * @return array<string,mixed>|null
 	 */
 	private function get_cached_currency_data( string $default_code ): ?array {
+		if ( ! $this->rate_service->has_registered_provider() ) {
+			return null;
+		}
+
 		if ( ! $this->rate_service->has_available_provider() ) {
 			$cache_data = $this->cache->get( MultiCurrencyCacheInterface::CURRENCIES_KEY, true );
 

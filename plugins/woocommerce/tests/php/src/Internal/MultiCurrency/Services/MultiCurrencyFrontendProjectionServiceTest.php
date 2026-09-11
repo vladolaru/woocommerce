@@ -229,14 +229,20 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject single currency settings for unavailable currency.
+	 * @testdox Should return single currency settings for known inactive currency.
 	 */
-	public function test_rejects_single_currency_settings_for_unavailable_currency(): void {
+	public function test_returns_single_currency_settings_for_known_inactive_currency(): void {
 		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
-		$this->expectException( InvalidCurrencyException::class );
-
-		$sut->get_single_currency_settings( 'EUR' );
+		$this->assertSame(
+			array(
+				'exchange_rate_type' => 'automatic',
+				'manual_rate'        => null,
+				'price_rounding'     => null,
+				'price_charm'        => null,
+			),
+			$sut->get_single_currency_settings( 'EUR' )
+		);
 	}
 
 	/**

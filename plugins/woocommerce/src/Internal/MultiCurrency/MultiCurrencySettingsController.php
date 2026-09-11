@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -26,27 +25,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * @var MultiCurrencyRuntimeArbiter
 	 */
 	private MultiCurrencyRuntimeArbiter $arbiter;
-
-	/**
-	 * Provider account resolver.
-	 *
-	 * @var MultiCurrencyProviderAccountResolver
-	 */
-	private MultiCurrencyProviderAccountResolver $account_resolver;
-
-	/**
-	 * Provider connection resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $provider_connected_resolver = null;
-
-	/**
-	 * Provider onboarding URL resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $onboarding_url_resolver = null;
 
 	/**
 	 * Admin request resolver.
@@ -102,34 +80,10 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter          $arbiter          Runtime owner arbiter.
-	 * @param MultiCurrencyProviderAccountResolver $account_resolver Provider account resolver.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter Runtime owner arbiter.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyProviderAccountResolver $account_resolver ): void {
-		$this->arbiter          = $arbiter;
-		$this->account_resolver = $account_resolver;
-	}
-
-	/**
-	 * Set the provider connection resolver.
-	 *
-	 * @internal Used by tests and future explicit provider bootstrap.
-	 *
-	 * @param callable $provider_connected_resolver Provider connection resolver.
-	 */
-	public function set_provider_connected_resolver( callable $provider_connected_resolver ): void {
-		$this->provider_connected_resolver = $provider_connected_resolver;
-	}
-
-	/**
-	 * Set the provider onboarding URL resolver.
-	 *
-	 * @internal Used by tests and future explicit provider bootstrap.
-	 *
-	 * @param callable $onboarding_url_resolver Provider onboarding URL resolver.
-	 */
-	public function set_onboarding_url_resolver( callable $onboarding_url_resolver ): void {
-		$this->onboarding_url_resolver = $onboarding_url_resolver;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter ): void {
+		$this->arbiter = $arbiter;
 	}
 
 	/**
@@ -221,7 +175,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 		$this->add_filter_once( 'wcpay_js_settings', array( $this, 'add_multi_currency_settings_config' ) );
 		$this->add_action_once( 'admin_print_scripts', array( $this, 'handle_admin_print_scripts' ) );
 		$this->add_action_once( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $this, 'render_settings_container' ) );
-		$this->add_action_once( 'woocommerce_admin_field_wcpay_currencies_settings_onboarding_cta', array( $this, 'render_onboarding_cta' ) );
 		$this->add_action_once( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
 	}
 
@@ -233,7 +186,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 */
 	public function handle_woocommerce_get_settings_pages( array $settings_pages ): array {
 		$manifest = MultiCurrencySettingsProjectionService::get_settings_page_manifest(
-			$this->is_provider_connected(),
 			$this->is_cli_request(),
 			$this->is_wpcom_jobs_request(),
 			did_action( 'upgrader_process_complete' ) > 0
@@ -257,15 +209,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 		$GLOBALS['hide_save_button'] = true;
 
 		echo wp_kses_post( MultiCurrencySettingsProjectionService::get_settings_container_markup() );
-	}
-
-	/**
-	 * Render the onboarding CTA settings field.
-	 *
-	 * @internal
-	 */
-	public function render_onboarding_cta(): void {
-		echo wp_kses_post( MultiCurrencySettingsProjectionService::get_onboarding_cta_markup( $this->get_onboarding_url() ) );
 	}
 
 	/**
@@ -319,45 +262,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 */
 	public function add_multi_currency_settings_config( array $config ): array {
 		return MultiCurrencySettingsProjectionService::add_props_to_wcpay_js_config( $config );
-	}
-
-	/**
-	 * Tell whether the provider account is connected.
-	 *
-	 * @return bool
-	 */
-	private function is_provider_connected(): bool {
-		if ( null !== $this->provider_connected_resolver ) {
-			return (bool) call_user_func( $this->provider_connected_resolver );
-		}
-
-		try {
-			return $this->account_resolver->is_provider_connected();
-		} catch ( \Throwable $e ) {
-			return false;
-		}
-	}
-
-	/**
-	 * Get the provider onboarding URL.
-	 *
-	 * @return string
-	 */
-	private function get_onboarding_url(): string {
-		if ( null !== $this->onboarding_url_resolver ) {
-			return (string) call_user_func( $this->onboarding_url_resolver );
-		}
-
-		try {
-			$onboarding_url = $this->account_resolver->get_provider_onboarding_page_url();
-			if ( '' !== $onboarding_url ) {
-				return $onboarding_url;
-			}
-		} catch ( \Throwable $e ) {
-			return admin_url( 'admin.php?page=wc-admin&path=/payments/onboarding' );
-		}
-
-		return admin_url( 'admin.php?page=wc-admin&path=/payments/onboarding' );
 	}
 
 	/**

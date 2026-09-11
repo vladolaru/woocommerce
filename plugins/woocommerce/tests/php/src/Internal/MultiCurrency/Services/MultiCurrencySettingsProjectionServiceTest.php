@@ -12,11 +12,10 @@ use WC_Unit_Test_Case;
 class MultiCurrencySettingsProjectionServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should project connected settings page manifest.
+	 * @testdox Should project the settings page manifest regardless of provider state.
 	 */
-	public function test_projects_connected_settings_page_manifest(): void {
+	public function test_projects_settings_page_manifest_regardless_of_provider_state(): void {
 		$manifest = MultiCurrencySettingsProjectionService::get_settings_page_manifest(
-			true,
 			false,
 			false,
 			false
@@ -34,6 +33,10 @@ class MultiCurrencySettingsProjectionServiceTest extends WC_Unit_Test_Case {
 			),
 			$manifest['settings']
 		);
+		$this->assertSame(
+			$manifest,
+			MultiCurrencySettingsProjectionService::get_settings_page_manifest( false, false, false )
+		);
 	}
 
 	/**
@@ -42,34 +45,16 @@ class MultiCurrencySettingsProjectionServiceTest extends WC_Unit_Test_Case {
 	public function test_omits_boot_contexts_that_must_not_instantiate_settings_pages(): void {
 		$this->assertSame(
 			array(),
-			MultiCurrencySettingsProjectionService::get_settings_page_manifest( true, true, false, false )
+			MultiCurrencySettingsProjectionService::get_settings_page_manifest( true, false, false )
 		);
 		$this->assertSame(
 			array(),
-			MultiCurrencySettingsProjectionService::get_settings_page_manifest( true, false, true, false )
+			MultiCurrencySettingsProjectionService::get_settings_page_manifest( false, true, false )
 		);
 		$this->assertSame(
 			array(),
-			MultiCurrencySettingsProjectionService::get_settings_page_manifest( true, false, false, true )
+			MultiCurrencySettingsProjectionService::get_settings_page_manifest( false, false, true )
 		);
-	}
-
-	/**
-	 * @testdox Should project onboarding settings page manifest when provider is disconnected.
-	 */
-	public function test_projects_onboarding_settings_page_manifest_when_provider_is_disconnected(): void {
-		$manifest = MultiCurrencySettingsProjectionService::get_settings_page_manifest(
-			false,
-			false,
-			false,
-			false
-		);
-
-		$this->assertSame( 'wcpay_multi_currency', $manifest['id'] );
-		$this->assertSame( 'Multi-currency', $manifest['label'] );
-		$this->assertSame( 'onboarding_cta', $manifest['mode'] );
-		$this->assertTrue( $manifest['hide_save_button'] );
-		$this->assertSame( MultiCurrencySettingsProjectionService::get_onboarding_settings(), $manifest['settings'] );
 	}
 
 	/**
@@ -87,11 +72,6 @@ class MultiCurrencySettingsProjectionServiceTest extends WC_Unit_Test_Case {
 					array(
 						'hook'     => 'woocommerce_admin_field_wcpay_multi_currency_settings_page',
 						'callback' => 'render_settings_container',
-						'priority' => 10,
-					),
-					array(
-						'hook'     => 'woocommerce_admin_field_wcpay_currencies_settings_onboarding_cta',
-						'callback' => 'render_onboarding_cta',
 						'priority' => 10,
 					),
 				),
@@ -123,43 +103,6 @@ class MultiCurrencySettingsProjectionServiceTest extends WC_Unit_Test_Case {
 				'woocommerce_page_wc-settings'
 			)
 		);
-	}
-
-	/**
-	 * @testdox Should project onboarding settings and CTA markup.
-	 */
-	public function test_projects_onboarding_settings_and_cta_markup(): void {
-		$settings = MultiCurrencySettingsProjectionService::get_onboarding_settings();
-		$href     = 'https://example.test/onboarding?next=currencies&bad=<script>';
-		$markup   = MultiCurrencySettingsProjectionService::get_onboarding_cta_markup( $href );
-
-		$this->assertSame(
-			array(
-				array(
-					'title' => 'Enabled currencies',
-					'desc'  => 'Accept payments in multiple currencies. Prices are converted based on exchange rates and rounding rules. <a href="https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/">Learn more</a>',
-					'type'  => 'title',
-					'id'    => 'wcpay_multi_currency_enabled_currencies',
-				),
-				array(
-					'type' => 'wcpay_currencies_settings_onboarding_cta',
-				),
-				array(
-					'type' => 'sectionend',
-					'id'   => 'wcpay_multi_currency_enabled_currencies',
-				),
-			),
-			$settings
-		);
-		$this->assertStringContainsString(
-			'To add new currencies to your store, please finish setting up WooPayments.',
-			$markup
-		);
-		$this->assertStringContainsString( 'id="wcpay_enabled_currencies_onboarding_cta"', $markup );
-		$this->assertStringContainsString( 'class="button-primary"', $markup );
-		$this->assertStringContainsString( 'Get started', $markup );
-		$this->assertStringContainsString( 'href="' . esc_url( $href ) . '"', $markup );
-		$this->assertStringNotContainsString( '<script>', $markup );
 	}
 
 	/**

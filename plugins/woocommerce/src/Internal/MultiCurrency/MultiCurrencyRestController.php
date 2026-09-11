@@ -10,10 +10,14 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRestProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WP_Error;
 use WP_REST_Controller;
@@ -63,6 +67,13 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	private ?MultiCurrencyFrontendProjectionService $frontend_projection_service = null;
 
 	/**
+	 * Settings currency catalog.
+	 *
+	 * @var MultiCurrencySettingsCurrencyCatalog|null
+	 */
+	private ?MultiCurrencySettingsCurrencyCatalog $settings_currency_catalog = null;
+
+	/**
 	 * Projection service factory.
 	 *
 	 * @var MultiCurrencyProjectionServiceFactory
@@ -106,6 +117,17 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 */
 	public function set_frontend_projection_service( MultiCurrencyFrontendProjectionService $frontend_projection_service ): void {
 		$this->frontend_projection_service = $frontend_projection_service;
+	}
+
+	/**
+	 * Set the settings currency catalog.
+	 *
+	 * @internal Used by tests and future explicit bootstrap definitions.
+	 *
+	 * @param MultiCurrencySettingsCurrencyCatalog $settings_currency_catalog Settings currency catalog.
+	 */
+	public function set_settings_currency_catalog( MultiCurrencySettingsCurrencyCatalog $settings_currency_catalog ): void {
+		$this->settings_currency_catalog = $settings_currency_catalog;
 	}
 
 	/**
@@ -159,15 +181,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 * @return WP_REST_Response
 	 */
 	public function get_store_currencies(): WP_REST_Response {
-		$state = $this->get_state_builder()->build();
-
-		return rest_ensure_response(
-			array(
-				'available' => $state->get_available_currencies(),
-				'enabled'   => $state->get_enabled_currencies(),
-				'default'   => $state->get_default_currency(),
-			)
-		);
+		return rest_ensure_response( $this->get_settings_currency_catalog()->get_store_currencies() );
 	}
 
 	/**
@@ -191,7 +205,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 			return $this->get_error_response( $exception );
 		}
 
-		$previous_enabled_codes = array_keys( $this->get_state_builder()->build()->get_enabled_currencies() );
+		$previous_enabled_codes = $this->get_settings_currency_catalog()->get_configured_currency_codes();
 
 		update_option( self::OPTION_PREFIX . '_enabled_currencies', $enabled_codes );
 		$this->remove_removed_currency_settings( $previous_enabled_codes, $enabled_codes );
@@ -234,7 +248,10 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 
 		try {
 			$this->validate_available_currency_codes( array( $currency_code ), __FUNCTION__ );
-			$this->update_single_currency_options( $currency_code, $exchange_rate_type, $price_rounding, $price_charm, $manual_rate );
+			$error = $this->update_single_currency_options( $currency_code, $exchange_rate_type, $price_rounding, $price_charm, $manual_rate );
+			if ( $error instanceof WP_Error ) {
+				return $error;
+			}
 		} catch ( InvalidCurrencyException | InvalidCurrencyRateException $exception ) {
 			return $this->get_error_response( $exception );
 		}
@@ -327,6 +344,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 * @param float      $price_charm        Price charm setting.
 	 * @param mixed|null $manual_rate        Manual exchange rate.
 	 * @throws InvalidCurrencyRateException When the manual rate is invalid.
+	 * @return WP_Error|null
 	 */
 	private function update_single_currency_options(
 		string $currency_code,
@@ -334,8 +352,17 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 		float $price_rounding,
 		float $price_charm,
 		$manual_rate
-	): void {
-		$currency_id = strtolower( $currency_code );
+	) {
+		$currency_id     = strtolower( $currency_code );
+		$automatic_rates = $this->get_settings_currency_catalog()->get_automatic_rates_descriptor();
+
+		if ( 'automatic' === $exchange_rate_type && null === $automatic_rates['source'] ) {
+			return new WP_Error(
+				'woocommerce_multi_currency_automatic_rates_unavailable',
+				esc_html__( 'Automatic currency rates are unavailable because no rate provider is registered.', 'woocommerce' ),
+				array( 'status' => 400 )
+			);
+		}
 
 		if ( 'manual' === $exchange_rate_type && null !== $manual_rate ) {
 			if ( ! is_numeric( $manual_rate ) || 0 >= (float) $manual_rate ) {
@@ -351,6 +378,8 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 		if ( in_array( $exchange_rate_type, array( 'automatic', 'manual' ), true ) ) {
 			update_option( self::OPTION_PREFIX . '_exchange_rate_' . $currency_id, $exchange_rate_type );
 		}
+
+		return null;
 	}
 
 	/**
@@ -361,8 +390,10 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 * @throws InvalidCurrencyException When a code is unavailable.
 	 */
 	private function validate_available_currency_codes( array $currency_codes, string $method ): void {
-		$available_codes = array_keys( $this->get_state_builder()->build()->get_available_currencies() );
-		$invalid_codes   = array_diff( $currency_codes, $available_codes );
+		$invalid_codes = array_filter(
+			$currency_codes,
+			fn( string $currency_code ): bool => ! $this->get_settings_currency_catalog()->contains( $currency_code )
+		);
 
 		if ( array() === $invalid_codes ) {
 			return;
@@ -468,6 +499,26 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 		}
 
 		return $this->frontend_projection_service;
+	}
+
+	/**
+	 * Get the settings currency catalog.
+	 *
+	 * @return MultiCurrencySettingsCurrencyCatalog
+	 */
+	private function get_settings_currency_catalog(): MultiCurrencySettingsCurrencyCatalog {
+		if ( null === $this->settings_currency_catalog ) {
+			$localization_service = new MultiCurrencyLocalizationService();
+			$registry_factory     = wc_get_container()->get( CurrencyRateProviderRegistryFactory::class );
+
+			$this->settings_currency_catalog = new MultiCurrencySettingsCurrencyCatalog(
+				$localization_service,
+				$this->get_state_builder(),
+				new MultiCurrencyRateService( $registry_factory->create() )
+			);
+		}
+
+		return $this->settings_currency_catalog;
 	}
 
 	/**

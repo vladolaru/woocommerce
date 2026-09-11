@@ -213,10 +213,9 @@ class MultiCurrencyFrontendProjectionService {
 	 * @throws InvalidCurrencyException When the currency is not available.
 	 */
 	public function get_single_currency_settings( string $currency_code ): array {
-		$state         = $this->state_builder->build();
 		$currency_code = strtoupper( $currency_code );
 
-		if ( ! array_key_exists( $currency_code, $state->get_available_currencies() ) ) {
+		if ( ! array_key_exists( $currency_code, get_woocommerce_currencies() ) ) {
 			throw new InvalidCurrencyException( esc_html( 'Invalid currency passed to get_single_currency_settings: ' . $currency_code ), 500 );
 		}
 

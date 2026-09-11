@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabase
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use WC_Unit_Test_Case;
@@ -148,24 +149,98 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return store currencies from state snapshot.
+	 * @testdox Should return the static currency catalog from the settings projection.
 	 */
-	public function test_returns_store_currencies_from_state_snapshot(): void {
-		$sut = $this->create_controller();
+	public function test_returns_store_currencies_from_the_static_settings_catalog(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		$sut = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			$this->create_state_builder( array( 'USD', 'EUR' ), array( 'USD', 'EUR' ) )
+		);
 
 		$response = $sut->get_store_currencies();
 		$data     = $response->get_data();
 
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
-		$this->assertSame( array( 'USD', 'EUR', 'GBP' ), array_keys( $data['available'] ) );
-		$this->assertSame( array( 'USD', 'EUR' ), array_keys( $data['enabled'] ) );
-		$this->assertSame( 'USD', $data['default']->get_code() );
+		$this->assertSame( array( 'available', 'enabled', 'default', 'automatic_rates' ), array_keys( $data ) );
+		$this->assertSame( array_merge( array( 'USD' ), array_diff( array_keys( get_woocommerce_currencies() ), array( 'USD' ) ) ), array_keys( $data['available'] ) );
+		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $data['enabled'] ) );
+		$this->assertSame( 1.0, $data['default']['rate'] );
+		$this->assertNull( $data['enabled']['GBP']['rate'] );
+		$this->assertSame(
+			array(
+				'available' => false,
+				'source'    => null,
+			),
+			$data['automatic_rates']
+		);
+	}
+
+	/**
+	 * @testdox Should reject automatic rate writes without a provider before changing any stored option.
+	 */
+	public function test_rejects_automatic_rate_writes_without_a_provider_before_mutating_options(): void {
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', 1.1 );
+		update_option( 'wcpay_multi_currency_price_rounding_eur', 0.5 );
+		update_option( 'wcpay_multi_currency_price_charm_eur', -0.1 );
+		$sut     = $this->create_controller();
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/currencies/EUR' );
+		$request->set_param( 'currency_code', 'EUR' );
+		$request->set_param( 'exchange_rate_type', 'automatic' );
+		$request->set_param( 'manual_rate', 1.25 );
+		$request->set_param( 'price_rounding', 1.0 );
+		$request->set_param( 'price_charm', 0.99 );
+
+		$response = $sut->update_single_currency_settings( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'woocommerce_multi_currency_automatic_rates_unavailable', $response->get_error_code() );
+		$this->assertSame( 400, $response->get_error_data()['status'] );
+		$this->assertSame( 'manual', get_option( 'wcpay_multi_currency_exchange_rate_eur' ) );
+		$this->assertSame( 1.1, get_option( 'wcpay_multi_currency_manual_rate_eur' ) );
+		$this->assertSame( 0.5, get_option( 'wcpay_multi_currency_price_rounding_eur' ) );
+		$this->assertSame( -0.1, get_option( 'wcpay_multi_currency_price_charm_eur' ) );
+	}
+
+	/**
+	 * @testdox Should permit automatic settings during a registered provider outage.
+	 */
+	public function test_permits_automatic_rate_writes_when_a_registered_provider_is_unavailable(): void {
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, null, true, false );
+		$request = $this->create_automatic_rate_request();
+
+		$response = $sut->update_single_currency_settings( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 'automatic', get_option( 'wcpay_multi_currency_exchange_rate_eur' ) );
+	}
+
+	/**
+	 * @testdox Should activate a configured currency after a positive manual rate write without a provider.
+	 */
+	public function test_activates_a_configured_currency_after_a_positive_manual_rate_write_without_a_provider(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$builder = $this->create_real_state_builder();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $builder );
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/currencies/EUR' );
+		$request->set_param( 'currency_code', 'EUR' );
+		$request->set_param( 'exchange_rate_type', 'manual' );
+		$request->set_param( 'manual_rate', 1.23 );
+		$request->set_param( 'price_rounding', 1.0 );
+		$request->set_param( 'price_charm', 0.99 );
+
+		$response = $sut->update_single_currency_settings( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 1.23, $builder->build()->get_enabled_currencies()['EUR']->get_rate() );
 	}
 
 	/**
 	 * @testdox Should update enabled currencies and remove removed currency settings.
 	 */
 	public function test_updates_enabled_currencies_and_removes_removed_currency_settings(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR', 'GBP' ) );
 		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.72' );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
 		update_option( 'wcpay_multi_currency_price_rounding_gbp', '1.00' );
@@ -326,12 +401,14 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * @param string                         $owner                 Runtime owner.
 	 * @param MultiCurrencyStateBuilder|null $state_builder         State builder.
 	 * @param bool                           $cache_optimized_mode  Whether cache mode is active.
+	 * @param bool|null                      $provider_available    Whether a registered provider is available.
 	 * @return MultiCurrencyRestController
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
 		?MultiCurrencyStateBuilder $state_builder = null,
-		bool $cache_optimized_mode = true
+		bool $cache_optimized_mode = true,
+		?bool $provider_available = null
 	): MultiCurrencyRestController {
 		$controller = new MultiCurrencyRestController();
 		$controller->init(
@@ -339,12 +416,95 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
 			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )
 		);
-		$controller->set_state_builder( $state_builder ?? $this->create_state_builder() );
+		$state_builder = $state_builder ?? $this->create_state_builder();
+		$controller->set_state_builder( $state_builder );
+		$controller->set_settings_currency_catalog( $this->create_settings_currency_catalog( $state_builder, $provider_available ) );
 		$controller->set_frontend_projection_service( $this->create_frontend_projection_service( $cache_optimized_mode ) );
 
 		$this->controllers[] = $controller;
 
 		return $controller;
+	}
+
+	/**
+	 * Create a static settings catalog for the controller.
+	 *
+	 * @param MultiCurrencyStateBuilder $state_builder      State builder.
+	 * @param bool|null                 $provider_available Whether a registered provider is available.
+	 * @return MultiCurrencySettingsCurrencyCatalog
+	 */
+	private function create_settings_currency_catalog( MultiCurrencyStateBuilder $state_builder, ?bool $provider_available ): MultiCurrencySettingsCurrencyCatalog {
+		$registry = new CurrencyRateProviderRegistry();
+		if ( null !== $provider_available ) {
+			$registry->register( $this->create_rate_provider( $provider_available ) );
+		}
+
+		return new MultiCurrencySettingsCurrencyCatalog(
+			$this->create_localization_service(),
+			$state_builder,
+			new MultiCurrencyRateService( $registry )
+		);
+	}
+
+	/**
+	 * Create a rate provider with the requested availability.
+	 *
+	 * @param bool $available Whether the provider is available.
+	 * @return \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider
+	 */
+	private function create_rate_provider( bool $available ): \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider {
+		return new class( $available ) implements \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider {
+			/** @var bool */
+			private bool $available;
+
+			/**
+			 * @param bool $available Whether the provider is available.
+			 */
+			public function __construct( bool $available ) {
+				$this->available = $available;
+			}
+
+			/** @return string */
+			public function get_id(): string {
+				return $this->available ? 'available' : 'outage';
+			}
+
+			/** @return bool */
+			public function is_available(): bool {
+				return $this->available;
+			}
+
+			/** @return string[] */
+			public function get_supported_currencies(): array {
+				return array();
+			}
+
+			/**
+			 * @param string        $currency_from Source currency.
+			 * @param string[]|null $currencies_to Target currencies.
+			 * @return array<string,mixed>
+			 */
+			public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
+				unset( $currency_from, $currencies_to );
+
+				return array();
+			}
+		};
+	}
+
+	/**
+	 * Create an automatic-rate settings request.
+	 *
+	 * @return WP_REST_Request
+	 */
+	private function create_automatic_rate_request(): WP_REST_Request {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/currencies/EUR' );
+		$request->set_param( 'currency_code', 'EUR' );
+		$request->set_param( 'exchange_rate_type', 'automatic' );
+		$request->set_param( 'price_rounding', 1.0 );
+		$request->set_param( 'price_charm', 0.99 );
+
+		return $request;
 	}
 
 	/**

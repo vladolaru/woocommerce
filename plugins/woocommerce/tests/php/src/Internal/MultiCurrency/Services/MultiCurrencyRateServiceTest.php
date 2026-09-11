@@ -152,6 +152,45 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should distinguish registered providers from available providers and prefer the available source.
+	 */
+	public function test_distinguishes_registered_and_available_providers_when_resolving_the_automatic_rate_source(): void {
+		$registry = new CurrencyRateProviderRegistry();
+		$registry->register( $this->create_provider( false, array(), array(), 'outage' ) );
+		$registry->register( $this->create_provider( true, array(), array(), 'available' ) );
+		$service = new MultiCurrencyRateService( $registry );
+
+		$this->assertTrue( $service->has_registered_provider() );
+		$this->assertTrue( $service->has_available_provider() );
+		$this->assertSame( 'available', $service->get_automatic_rate_source_id() );
+	}
+
+	/**
+	 * @testdox Should retain a registered provider source while it is unavailable.
+	 */
+	public function test_returns_the_first_registered_provider_as_the_automatic_rate_source_during_an_outage(): void {
+		$registry = new CurrencyRateProviderRegistry();
+		$registry->register( $this->create_provider( false, array(), array(), 'first-outage' ) );
+		$registry->register( $this->create_provider( false, array(), array(), 'second-outage' ) );
+		$service = new MultiCurrencyRateService( $registry );
+
+		$this->assertTrue( $service->has_registered_provider() );
+		$this->assertFalse( $service->has_available_provider() );
+		$this->assertSame( 'first-outage', $service->get_automatic_rate_source_id() );
+	}
+
+	/**
+	 * @testdox Should report no automatic rate source when no providers are registered.
+	 */
+	public function test_reports_no_automatic_rate_source_without_registered_providers(): void {
+		$service = new MultiCurrencyRateService( new CurrencyRateProviderRegistry() );
+
+		$this->assertFalse( $service->has_registered_provider() );
+		$this->assertFalse( $service->has_available_provider() );
+		$this->assertNull( $service->get_automatic_rate_source_id() );
+	}
+
+	/**
 	 * @testdox Should return normalized supported currency codes from provider.
 	 */
 	public function test_returns_normalized_supported_currency_codes_from_provider(): void {
@@ -202,10 +241,11 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 	 * @param bool                $available            Whether the provider is available.
 	 * @param array<string,mixed> $rates                Rates to return.
 	 * @param string[]            $supported_currencies Supported currency codes.
+	 * @param string              $id                   Provider identifier.
 	 * @return CurrencyRateProvider
 	 */
-	private function create_provider( bool $available, array $rates, array $supported_currencies = array() ): CurrencyRateProvider {
-		return new class( $available, $rates, $supported_currencies ) implements CurrencyRateProvider {
+	private function create_provider( bool $available, array $rates, array $supported_currencies = array(), string $id = 'fake' ): CurrencyRateProvider {
+		return new class( $available, $rates, $supported_currencies, $id ) implements CurrencyRateProvider {
 			/**
 			 * Whether the provider is available.
 			 *
@@ -228,16 +268,25 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 			private array $supported_currencies;
 
 			/**
+			 * Provider identifier.
+			 *
+			 * @var string
+			 */
+			private string $id;
+
+			/**
 			 * Constructor.
 			 *
 			 * @param bool                $available            Whether the provider is available.
 			 * @param array<string,mixed> $rates                Rates to return.
 			 * @param string[]            $supported_currencies Supported currency codes.
+			 * @param string              $id                   Provider identifier.
 			 */
-			public function __construct( bool $available, array $rates, array $supported_currencies ) {
+			public function __construct( bool $available, array $rates, array $supported_currencies, string $id ) {
 				$this->available            = $available;
 				$this->rates                = $rates;
 				$this->supported_currencies = $supported_currencies;
+				$this->id                   = $id;
 			}
 
 			/**
@@ -246,7 +295,7 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 			 * @return string
 			 */
 			public function get_id(): string {
-				return 'fake';
+				return $this->id;
 			}
 
 			/**

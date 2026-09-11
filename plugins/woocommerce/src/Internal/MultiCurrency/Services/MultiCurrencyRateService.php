@@ -45,6 +45,40 @@ class MultiCurrencyRateService {
 	}
 
 	/**
+	 * Tell whether an automatic-rate provider is registered.
+	 *
+	 * @return bool
+	 *
+	 * @since 11.2.0
+	 */
+	public function has_registered_provider(): bool {
+		return ! empty( $this->provider_registry->get_providers() );
+	}
+
+	/**
+	 * Get the configured source for automatic rates.
+	 *
+	 * Prefer a currently available provider. When all registered providers are
+	 * unavailable, retain the first registered source so settings can describe
+	 * the outage without treating it as an unconfigured automatic rate source.
+	 *
+	 * @return string|null
+	 *
+	 * @since 11.2.0
+	 */
+	public function get_automatic_rate_source_id(): ?string {
+		$provider = $this->provider_registry->get_available_provider();
+		if ( null !== $provider ) {
+			return $provider->get_id();
+		}
+
+		$providers = $this->provider_registry->get_providers();
+		$provider  = reset( $providers );
+
+		return false === $provider ? null : $provider->get_id();
+	}
+
+	/**
 	 * Get the exchange rate for a target currency.
 	 *
 	 * @param string $from_currency Source currency.

@@ -6,8 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsPage;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
 use WC_Unit_Test_Case;
 
 /**
@@ -26,7 +24,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		'wcpay_js_settings',
 		'admin_print_scripts',
 		'woocommerce_admin_field_wcpay_multi_currency_settings_page',
-		'woocommerce_admin_field_wcpay_currencies_settings_onboarding_cta',
 		'admin_enqueue_scripts',
 	);
 
@@ -56,7 +53,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'wcpay_js_settings', array( $sut, 'add_multi_currency_settings_config' ) ) );
 		$this->assertFalse( has_action( 'admin_print_scripts', array( $sut, 'handle_admin_print_scripts' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $sut, 'render_settings_container' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_admin_field_wcpay_currencies_settings_onboarding_cta', array( $sut, 'render_onboarding_cta' ) ) );
 		$this->assertFalse( has_action( 'admin_enqueue_scripts', array( $sut, 'handle_admin_enqueue_scripts' ) ) );
 	}
 
@@ -74,20 +70,15 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_filter( 'wcpay_js_settings', array( $sut, 'add_multi_currency_settings_config' ) ) );
 		$this->assertSame( 10, has_action( 'admin_print_scripts', array( $sut, 'handle_admin_print_scripts' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $sut, 'render_settings_container' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_admin_field_wcpay_currencies_settings_onboarding_cta', array( $sut, 'render_onboarding_cta' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_admin_field_wcpay_currencies_settings_onboarding_cta', array( $sut, 'render_onboarding_cta' ) ) );
 		$this->assertSame( 10, has_action( 'admin_enqueue_scripts', array( $sut, 'handle_admin_enqueue_scripts' ) ) );
 	}
 
 	/**
-	 * @testdox Should register connected settings page.
+	 * @testdox Should register settings page without a provider dependency.
 	 */
-	public function test_registers_connected_settings_page(): void {
-		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
-			array(
-				'provider_connected' => true,
-			)
-		);
+	public function test_registers_settings_page_without_a_provider_dependency(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 
 		$settings_pages = $sut->handle_woocommerce_get_settings_pages( array( 'existing' ) );
 		$settings_page  = $settings_pages[1];
@@ -108,80 +99,17 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register connected settings page from provider account resolver.
+	 * @testdox Should register the settings page when no provider is connected.
 	 */
-	public function test_registers_connected_settings_page_from_provider_account_resolver(): void {
-		$sut = new MultiCurrencySettingsController();
-		$sut->init(
-			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ),
-			$this->create_account_resolver( true, 'https://example.test/onboarding' )
-		);
-
-		$settings_pages = $sut->handle_woocommerce_get_settings_pages( array() );
-		$settings_page  = $settings_pages[0];
-
-		$this->assertInstanceOf( MultiCurrencySettingsPage::class, $settings_page );
-		$this->assertSame(
-			array(
-				array(
-					'type' => 'wcpay_multi_currency_settings_page',
-				),
-			),
-			$settings_page->get_settings()
-		);
-	}
-
-	/**
-	 * @testdox Should render onboarding CTA from provider account resolver.
-	 */
-	public function test_renders_onboarding_cta_from_provider_account_resolver(): void {
-		$sut = new MultiCurrencySettingsController();
-		$sut->init(
-			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ),
-			$this->create_account_resolver( false, 'https://example.test/account-onboarding' )
-		);
-
-		ob_start();
-		$sut->render_onboarding_cta();
-		$markup = ob_get_clean();
-
-		$this->assertStringContainsString( 'href="https://example.test/account-onboarding"', $markup );
-	}
-
-	/**
-	 * @testdox Should register onboarding CTA settings page when provider is disconnected.
-	 */
-	public function test_registers_onboarding_cta_settings_page_when_provider_is_disconnected(): void {
-		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
-			array(
-				'provider_connected' => false,
-			)
-		);
+	public function test_registers_the_settings_page_when_no_provider_is_connected(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 
 		$settings_pages = $sut->handle_woocommerce_get_settings_pages( array() );
 		$settings_page  = $settings_pages[0];
 
 		$this->assertInstanceOf( MultiCurrencySettingsPage::class, $settings_page );
 		$this->assertSame( 'wcpay_multi_currency', $settings_page->get_id() );
-		$this->assertSame(
-			array(
-				array(
-					'title' => 'Enabled currencies',
-					'desc'  => 'Accept payments in multiple currencies. Prices are converted based on exchange rates and rounding rules. <a href="https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/">Learn more</a>',
-					'type'  => 'title',
-					'id'    => 'wcpay_multi_currency_enabled_currencies',
-				),
-				array(
-					'type' => 'wcpay_currencies_settings_onboarding_cta',
-				),
-				array(
-					'type' => 'sectionend',
-					'id'   => 'wcpay_multi_currency_enabled_currencies',
-				),
-			),
-			$settings_page->get_settings()
-		);
+		$this->assertSame( array( array( 'type' => 'wcpay_multi_currency_settings_page' ) ), $settings_page->get_settings() );
 		$this->assertTrue( $GLOBALS['hide_save_button'] );
 	}
 
@@ -200,30 +128,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 			$markup
 		);
 		$this->assertTrue( $GLOBALS['hide_save_button'] );
-	}
-
-	/**
-	 * @testdox Should render onboarding CTA from resolver.
-	 */
-	public function test_renders_onboarding_cta_from_resolver(): void {
-		$onboarding_url = 'https://example.test/onboarding?next=currencies&bad=<script>';
-		$sut            = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
-			array(
-				'onboarding_url' => $onboarding_url,
-			)
-		);
-
-		ob_start();
-		$sut->render_onboarding_cta();
-		$markup = ob_get_clean();
-
-		$this->assertStringContainsString( 'To add new currencies to your store, please finish setting up WooPayments.', $markup );
-		$this->assertStringContainsString( 'id="wcpay_enabled_currencies_onboarding_cta"', $markup );
-		$this->assertStringContainsString( 'class="button-primary"', $markup );
-		$this->assertStringContainsString( 'Get started', $markup );
-		$this->assertStringContainsString( 'href="https://example.test/onboarding?next=currencies&amp;bad=script"', $markup );
-		$this->assertStringNotContainsString( '<script>', $markup );
 	}
 
 	/**
@@ -347,20 +251,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function create_controller( string $owner, array $options = array() ): MultiCurrencySettingsController {
 		$controller = new MultiCurrencySettingsController();
-		$controller->init(
-			$this->create_arbiter( $owner ),
-			$this->create_account_resolver(
-				(bool) ( $options['provider_connected'] ?? true ),
-				(string) ( $options['onboarding_url'] ?? 'https://example.test/onboarding' )
-			)
-		);
-
-		$controller->set_provider_connected_resolver(
-			static fn(): bool => (bool) ( $options['provider_connected'] ?? true )
-		);
-		$controller->set_onboarding_url_resolver(
-			static fn(): string => (string) ( $options['onboarding_url'] ?? 'https://example.test/onboarding' )
-		);
+		$controller->init( $this->create_arbiter( $owner ) );
 		$controller->set_admin_request_resolver(
 			static fn(): bool => (bool) ( $options['is_admin'] ?? true )
 		);
@@ -390,113 +281,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		);
 
 		return $controller;
-	}
-
-	/**
-	 * Create a static account resolver.
-	 *
-	 * @param bool   $connected      Whether the provider account is connected.
-	 * @param string $onboarding_url Provider onboarding URL.
-	 * @return MultiCurrencyProviderAccountResolver
-	 */
-	private function create_account_resolver( bool $connected, string $onboarding_url ): MultiCurrencyProviderAccountResolver {
-		$account_resolver = new MultiCurrencyProviderAccountResolver();
-		$account_resolver->set_account( $this->create_account( $connected, $onboarding_url ) );
-
-		return $account_resolver;
-	}
-
-	/**
-	 * Create a static account boundary.
-	 *
-	 * @param bool   $connected      Whether the provider account is connected.
-	 * @param string $onboarding_url Provider onboarding URL.
-	 * @return MultiCurrencyAccountInterface
-	 */
-	private function create_account( bool $connected, string $onboarding_url ): MultiCurrencyAccountInterface {
-		return new class( $connected, $onboarding_url ) implements MultiCurrencyAccountInterface {
-
-			/**
-			 * Whether the provider account is connected.
-			 *
-			 * @var bool
-			 */
-			private bool $connected;
-
-			/**
-			 * Provider onboarding URL.
-			 *
-			 * @var string
-			 */
-			private string $onboarding_url;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param bool   $connected      Whether the provider account is connected.
-			 * @param string $onboarding_url Provider onboarding URL.
-			 */
-			public function __construct( bool $connected, string $onboarding_url ) {
-				$this->connected      = $connected;
-				$this->onboarding_url = $onboarding_url;
-			}
-
-			/**
-			 * Tell whether the rate provider account is connected.
-			 *
-			 * @param bool $on_error Value to return on provider errors.
-			 * @return bool
-			 */
-			public function is_provider_connected( bool $on_error = false ): bool {
-				return $this->connected;
-			}
-
-			/**
-			 * Tell whether the connected account is rejected.
-			 *
-			 * @return bool
-			 */
-			public function is_account_rejected(): bool {
-				return false;
-			}
-
-			/**
-			 * Get cached provider account data.
-			 *
-			 * @param bool $force_refresh Whether to force-refresh provider data.
-			 * @return array<string,mixed>|bool
-			 */
-			public function get_cached_account_data( bool $force_refresh = false ) {
-				return false;
-			}
-
-			/**
-			 * Get account-supported customer currencies.
-			 *
-			 * @return string[]
-			 */
-			public function get_account_customer_supported_currencies(): array {
-				return array();
-			}
-
-			/**
-			 * Get provider-supported countries.
-			 *
-			 * @return string[]
-			 */
-			public function get_supported_countries(): array {
-				return array();
-			}
-
-			/**
-			 * Get the provider onboarding URL.
-			 *
-			 * @return string
-			 */
-			public function get_provider_onboarding_page_url(): string {
-				return $this->onboarding_url;
-			}
-		};
 	}
 
 	/**
