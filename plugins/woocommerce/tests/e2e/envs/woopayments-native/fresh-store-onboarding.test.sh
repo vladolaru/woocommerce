@@ -3,20 +3,44 @@
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
 readonly TEST_ROOT="$(mktemp -d "${TMPDIR:?TMPDIR is required}/woopayments-fresh-store.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 mkdir -p "$TEST_ROOT/bin" "$TEST_ROOT/store" "$TEST_ROOT/results"
 readonly TEST_PROFILE_DIR="$(cd "$TEST_ROOT/store" && pwd -P)"
 readonly TEST_PROFILE_CONFIG="$TEST_PROFILE_DIR/.wp-env.json"
-printf '{"port":8188,"config":{"WP_HOME":"http://fresh-native.localhost:8188","WP_SITEURL":"http://fresh-native.localhost:8188"}}\n' > "$TEST_ROOT/store/.wp-env.json"
+readonly TEST_TRANSPORT_ADAPTER="$TEST_ROOT/wpcom-local-store-transport.php"
+printf '%s\n' '<?php // local WPCOM transport fixture.' > "$TEST_TRANSPORT_ADAPTER"
+jq -cn --arg plugin_root "$PLUGIN_ROOT" --arg transport_adapter "$TEST_TRANSPORT_ADAPTER" '
+	{
+		port: 8188,
+		testsEnvironment: false,
+		plugins: [ $plugin_root ],
+		config: {
+			WP_HOME: "http://fresh-native.localhost:8188",
+			WP_SITEURL: "http://fresh-native.localhost:8188",
+			E2E_WOOPAYMENTS_NATIVE: true,
+			JETPACK_DEV_DEBUG: false,
+			WP_DEBUG: false,
+			WP_DEBUG_DISPLAY: false
+		},
+		mappings: {
+			"wp-content/plugins/woocommerce": $plugin_root,
+			"wp-content/mu-plugins/woopayments-native-runtime.php": ($plugin_root + "/tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php"),
+			"wp-content/mu-plugins/wpcom-local-store-transport.php": $transport_adapter
+		}
+	}' > "$TEST_ROOT/store/.wp-env.json"
 jq -n \
 	--arg profile_path "$TEST_PROFILE_DIR" \
 	--arg wp_env_config "$TEST_PROFILE_CONFIG" \
 	--arg store_url 'http://fresh-native.localhost:8188' \
 	--arg store_id 'fresh-native-8188' \
 	--arg run_id 'fresh-native-proof-1' \
-	'{ schema_version: 1, fresh: true, database_id: "fresh-native-db-1", profile_path: $profile_path, wp_env_config: $wp_env_config, store_url: $store_url, store_id: $store_id, run_id: $run_id }' > "$TEST_ROOT/provisioning-receipt.json"
+	--arg run_nonce 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+	--arg database_nonce 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
+	--arg transport_adapter "$TEST_TRANSPORT_ADAPTER" \
+	'{ schema_version: 2, provisioner: "woocommerce-native-fresh-store", fresh: true, profile_path: $profile_path, wp_env_config: $wp_env_config, store_url: $store_url, store_id: $store_id, run_id: $run_id, run_nonce: $run_nonce, database_nonce: $database_nonce, transport_adapter: $transport_adapter, fresh_setup: { pages_installed: true, product_id: 11, customer_id: 12 } }' > "$TEST_ROOT/provisioning-receipt.json"
 
 cat > "$TEST_ROOT/bin/wpcom-local" <<'FAKE'
 #!/usr/bin/env bash
@@ -58,6 +82,15 @@ cat > "$TEST_ROOT/bin/pnpm" <<'FAKE'
 set -euo pipefail
 
 printf 'pnpm %s\n' "$*" >> "${E2E_FAKE_COMMAND_LOG:?}"
+
+if [[ "$*" == *'woocommerce_native_payments_fresh_provisioning_identity'* ]]; then
+
+	jq -cn \
+		--arg database_nonce "${E2E_FAKE_DATABASE_NONCE:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}" \
+		'{ store_id: "fresh-native-8188", run_id: "fresh-native-proof-1", run_nonce: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", database_nonce: $database_nonce }'
+
+	exit 0
+fi
 
 if [[ "$*" == *'fresh_install'* ]]; then
 
@@ -165,7 +198,8 @@ env "${common_environment[@]}" "$SCRIPT_DIR/fresh-store-onboarding.sh"
 for checkpoint in fresh-install onboarding-init native-runtime native-account; do
 	jq -e 'type == "object"' "$TEST_ROOT/results/$checkpoint.json" > /dev/null
 done
-jq -e '.fresh == true and .database_id == "fresh-native-db-1" and .run_id == "fresh-native-proof-1"' "$TEST_ROOT/results/provisioning-receipt.json" > /dev/null
+jq -e '.fresh == true and .run_id == "fresh-native-proof-1" and .database_nonce == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$TEST_ROOT/results/provisioning-receipt.json" > /dev/null
+jq -e '.store_id == "fresh-native-8188" and .run_id == "fresh-native-proof-1" and .database_nonce == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$TEST_ROOT/results/live-database-identity.json" > /dev/null
 jq -e '.fresh_install == true and .native_enabled == true' "$TEST_ROOT/results/fresh-install.json" > /dev/null
 jq -e '.status == 200 and .success == true' "$TEST_ROOT/results/onboarding-init.json" > /dev/null
 jq -e '.runtime_owner == "native" and .account_connected == true' "$TEST_ROOT/results/native-runtime.json" > /dev/null
@@ -188,6 +222,31 @@ env "${common_environment[@]}" \
 test "$status" = '7'
 if grep -q '/test_account/init\|^runner ' "$TEST_ROOT/unready.commands"; then
 	echo 'A local-WPCOM readiness failure must occur before onboarding or provider work.' >&2
+	exit 1
+fi
+
+jq 'del( .fresh_setup )' "$TEST_ROOT/provisioning-receipt.json" > "$TEST_ROOT/missing-setup-receipt.json"
+status=0
+env "${common_environment[@]}" \
+	E2E_WOOPAYMENTS_FRESH_PROVISIONING_RECEIPT="$TEST_ROOT/missing-setup-receipt.json" \
+	E2E_FAKE_COMMAND_LOG="$TEST_ROOT/missing-setup.commands" \
+	E2E_WOOPAYMENTS_FRESH_RESULTS_DIR="$TEST_ROOT/missing-setup-results" \
+	"$SCRIPT_DIR/fresh-store-onboarding.sh" || status=$?
+test "$status" = '64'
+if [[ -e "$TEST_ROOT/missing-setup.commands" ]]; then
+	echo 'A receipt without fresh-only setup provenance must be rejected before any command runs.' >&2
+	exit 1
+fi
+
+status=0
+env "${common_environment[@]}" \
+	E2E_FAKE_COMMAND_LOG="$TEST_ROOT/stale-receipt.commands" \
+	E2E_FAKE_DATABASE_NONCE='cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' \
+	E2E_WOOPAYMENTS_FRESH_RESULTS_DIR="$TEST_ROOT/stale-receipt-results" \
+	"$SCRIPT_DIR/fresh-store-onboarding.sh" || status=$?
+test "$status" = '1'
+if grep -q '^wpcom-local \|/test_account/init\|^runner ' "$TEST_ROOT/stale-receipt.commands"; then
+	echo 'A stale or foreign provisioning receipt must be rejected before WPCOM, onboarding, or provider work.' >&2
 	exit 1
 fi
 
