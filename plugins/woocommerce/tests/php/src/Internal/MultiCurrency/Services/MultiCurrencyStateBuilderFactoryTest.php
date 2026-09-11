@@ -3,10 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
@@ -149,6 +152,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	public function test_create_uses_supplied_localization_and_cache_boundaries(): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
+		$this->register_unavailable_rate_provider();
 
 		$state = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )
 			->create(
@@ -444,6 +448,68 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	 */
 	private function reset_rate_provider_registry_factory(): void {
 		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
+	}
+
+	/**
+	 * Register a provider-neutral automatic-rate provider that is temporarily unavailable.
+	 */
+	private function register_unavailable_rate_provider(): void {
+		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars(
+			array(
+				new class() implements CurrencyRateProviderRegistrarInterface {
+					/**
+					 * Register an unavailable rate provider.
+					 *
+					 * @param CurrencyRateProviderRegistry $registry Rate provider registry.
+					 */
+					public function register( CurrencyRateProviderRegistry $registry ): void {
+						$registry->register(
+							new class() implements CurrencyRateProvider {
+								/**
+								 * Get the provider identifier.
+								 *
+								 * @return string
+								 */
+								public function get_id(): string {
+									return 'test-outage';
+								}
+
+								/**
+								 * Tell whether automatic rates are currently available.
+								 *
+								 * @return bool
+								 */
+								public function is_available(): bool {
+									return false;
+								}
+
+								/**
+								 * Get supported currencies.
+								 *
+								 * @return string[]
+								 */
+								public function get_supported_currencies(): array {
+									return array();
+								}
+
+								/**
+								 * Get currency rates.
+								 *
+								 * @param string        $currency_from Currency to convert from.
+								 * @param string[]|null $currencies_to Currencies to convert into, or null for all supported.
+								 * @return array<string,mixed>
+								 */
+								public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
+									unset( $currency_from, $currencies_to );
+
+									return array();
+								}
+							}
+						);
+					}
+				},
+			)
+		);
 	}
 
 	/**
