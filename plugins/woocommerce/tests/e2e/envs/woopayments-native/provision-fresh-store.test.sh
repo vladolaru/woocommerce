@@ -35,6 +35,10 @@ fi
 if [[ "$*" == *'WC_Install::create_pages'* ]]; then
 
 	test -f "$E2E_FAKE_DATABASE_STATE"
+	if [[ "$*" == *'$setup_input'* || "$*" != *'fresh-native-proof-1'* ]]; then
+		echo 'Fresh setup must receive the concrete run identity.' >&2
+		exit 1
+	fi
 	printf '%s\n' '{"pages_installed":true,"product_id":11,"customer_id":12}'
 
 	exit 0

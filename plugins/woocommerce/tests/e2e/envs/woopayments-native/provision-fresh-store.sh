@@ -113,12 +113,10 @@ extract_json_object() {
 }
 
 setup_fresh_store() {
-	local setup_input
 	local setup_code
 	local setup_output
 
-	setup_input="$(jq -cn --arg run_id "$RUN_ID" '{ customer_login: ("fresh-native-" + $run_id + "-customer"), customer_email: ("fresh-native-" + $run_id + "-customer@example.test"), product_sku: ("fresh-native-" + $run_id + "-product") }')"
-	setup_code='$setup = json_decode( '\''"$setup_input"'\'', true, 512, JSON_THROW_ON_ERROR ); \WC_Install::create_pages(); $product_id = wc_get_product_id_by_sku( $setup["product_sku"] ); if ( ! $product_id ) { $product = new WC_Product_Simple(); $product->set_name( "Fresh native onboarding product" ); $product->set_regular_price( "10.00" ); $product->set_sku( $setup["product_sku"] ); $product_id = $product->save(); } $customer = get_user_by( "login", $setup["customer_login"] ); if ( ! $customer ) { $customer_id = wp_insert_user( array( "user_login" => $setup["customer_login"], "user_email" => $setup["customer_email"], "user_pass" => "fresh-native-e2e-password", "role" => "customer" ) ); if ( is_wp_error( $customer_id ) ) { throw new RuntimeException( $customer_id->get_error_message() ); } } else { $customer_id = $customer->ID; } echo wp_json_encode( array( "pages_installed" => true, "product_id" => (int) $product_id, "customer_id" => (int) $customer_id ) );'
+	setup_code='$run_id = "'"$RUN_ID"'"; $setup = array( "customer_login" => "fresh-native-" . $run_id . "-customer", "customer_email" => "fresh-native-" . $run_id . "-customer@example.test", "product_sku" => "fresh-native-" . $run_id . "-product" ); \WC_Install::create_pages(); $product_id = wc_get_product_id_by_sku( $setup["product_sku"] ); if ( ! $product_id ) { $product = new WC_Product_Simple(); $product->set_name( "Fresh native onboarding product" ); $product->set_regular_price( "10.00" ); $product->set_sku( $setup["product_sku"] ); $product_id = $product->save(); } $customer = get_user_by( "login", $setup["customer_login"] ); if ( ! $customer ) { $customer_id = wp_insert_user( array( "user_login" => $setup["customer_login"], "user_email" => $setup["customer_email"], "user_pass" => "fresh-native-e2e-password", "role" => "customer" ) ); if ( is_wp_error( $customer_id ) ) { throw new RuntimeException( $customer_id->get_error_message() ); } } else { $customer_id = $customer->ID; } echo wp_json_encode( array( "pages_installed" => true, "product_id" => (int) $product_id, "customer_id" => (int) $customer_id ) );'
 
 	if ! setup_output="$("$PNPM_BIN" --dir "$PLUGIN_ROOT" exec wp-env --config "$wp_env_config" run cli wp --user=1 eval "$setup_code")"; then
 		echo 'Fresh-store provisioner could not create fresh-store prerequisites.' >&2
