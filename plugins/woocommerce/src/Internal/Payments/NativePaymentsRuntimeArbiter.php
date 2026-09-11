@@ -85,9 +85,8 @@ class NativePaymentsRuntimeArbiter {
 	/**
 	 * Filter that reports whether the core-native payments runtime is enabled for this site.
 	 *
-	 * Defaults to false: the native runtime ships dormant and is enabled (eventually default-on at
-	 * the cutover release) only when it is ready to own the site. Even when enabled, the plugin still
-	 * wins while it is active.
+	 * The stored option supplies the default. Even when enabled, the plugin still wins while it is
+	 * active.
 	 *
 	 * Early native registrations resolve this filter while WooCommerce is being loaded. To affect all
 	 * native registrations in a request, set the filter from a mu-plugin or earlier bootstrap code.
@@ -106,15 +105,6 @@ class NativePaymentsRuntimeArbiter {
 	 * @var string
 	 */
 	public const NATIVE_RUNTIME_KILL_SWITCH_OPTION = 'woocommerce_native_payments_killswitch';
-
-	/**
-	 * Default state for the native WooPayments runtime rollout.
-	 *
-	 * This intentionally remains false until the final A5 stage-boundary gates approve the release/default-on flip.
-	 *
-	 * @var bool
-	 */
-	public const DEFAULT_NATIVE_RUNTIME_ENABLED = false;
 
 	/**
 	 * The legacy proxy, used for mockable calls to global functions.
@@ -208,7 +198,7 @@ class NativePaymentsRuntimeArbiter {
 	 */
 	public function is_native_runtime_enabled(): bool {
 		$kill_switch_active = (bool) get_option( self::NATIVE_RUNTIME_KILL_SWITCH_OPTION, false );
-		$filter_default     = $kill_switch_active ? false : self::DEFAULT_NATIVE_RUNTIME_ENABLED;
+		$filter_default     = $kill_switch_active ? false : 'yes' === get_option( self::FILTER_NATIVE_ENABLED, 'no' );
 
 		/**
 		 * Filters whether the core-native payments runtime is enabled for this site.

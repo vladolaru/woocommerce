@@ -34,8 +34,10 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		delete_option( 'woocommerce_native_payments_enabled' );
 		delete_option( 'woocommerce_native_payments_killswitch' );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( 'option_woocommerce_native_payments_enabled' );
 		remove_all_filters( 'option_woocommerce_native_payments_killswitch' );
 		$this->sut->invalidate();
 		$this->reset_legacy_proxy_mocks();
@@ -274,40 +276,32 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native runtime rollout default is fail-closed.
+	 * @testdox An absent native runtime option fails closed.
 	 */
-	public function test_native_runtime_rollout_default_is_fail_closed(): void {
+	public function test_absent_native_runtime_option_fails_closed(): void {
 		$this->fake_plugin();
 
-		$this->assertFalse( NativePaymentsRuntimeArbiter::DEFAULT_NATIVE_RUNTIME_ENABLED );
-		$this->assertFalse( $this->sut->is_native_runtime_enabled(), 'Native runtime must stay default-off until the release rollout default is explicitly flipped.' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'With no plugin and default-off native runtime, nobody owns the runtime.' );
+		$this->assertFalse( $this->sut->is_native_runtime_enabled(), 'An absent native runtime option must remain disabled until the upgrade enables it.' );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'With no plugin and an absent native runtime option, nobody owns the runtime.' );
 	}
 
 	/**
-	 * @testdox Native runtime rollout filter receives the fail-closed default and can enable native.
+	 * @testdox An enabled native runtime option enables native when the plugin is absent.
 	 */
-	public function test_native_runtime_rollout_filter_receives_default_and_can_enable(): void {
+	public function test_enabled_native_runtime_option_enables_native_when_plugin_is_absent(): void {
 		$this->fake_plugin();
-		$observed_default = null;
-		add_filter(
-			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
-			static function ( bool $enabled ) use ( &$observed_default ): bool {
-				$observed_default = $enabled;
-				return true;
-			}
-		);
+		update_option( 'woocommerce_native_payments_enabled', 'yes' );
 
-		$this->assertTrue( $this->sut->is_native_runtime_enabled(), 'The rollout filter should still be able to enable native runtime for controlled gates.' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::DEFAULT_NATIVE_RUNTIME_ENABLED, $observed_default, 'The rollout filter should receive the explicit default value.' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner(), 'Native should own the runtime when the plugin is absent and the rollout filter enables native.' );
+		$this->assertTrue( $this->sut->is_native_runtime_enabled(), 'The native runtime option should enable native payments.' );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner(), 'Native should own the runtime when the plugin is absent and the option is enabled.' );
 	}
 
 	/**
-	 * @testdox The option-backed kill switch makes the rollout filter default false.
+	 * @testdox The option-backed kill switch makes an enabled native runtime filter default false.
 	 */
 	public function test_kill_switch_option_disables_native_filter_default(): void {
 		$this->fake_plugin();
+		update_option( 'woocommerce_native_payments_enabled', 'yes' );
 		update_option( 'woocommerce_native_payments_killswitch', true );
 		$option_reads     = 0;
 		$observed_default = null;
@@ -332,7 +326,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The rollout filter retains final authority over the option-backed kill switch.
+	 * @testdox The runtime filter retains final authority over the option-backed kill switch.
 	 */
 	public function test_native_enabled_filter_can_override_kill_switch_option(): void {
 		$this->fake_plugin();

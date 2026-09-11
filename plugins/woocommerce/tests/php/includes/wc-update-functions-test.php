@@ -29,6 +29,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 	public function tearDown(): void {
 		Constants::clear_single_constant( 'WOOCOMMERCE_BIS_ALPHA_ENABLED' );
 		delete_option( 'woocommerce_feature_customer_stock_notifications_enabled' );
+		delete_option( 'woocommerce_native_payments_enabled' );
 		parent::tearDown();
 	}
 
@@ -618,5 +619,32 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 
 		$this->assertNull( $get_marker( $refund->get_id() ), 'The refund row marker should be reset to NULL.' );
 		$this->assertSame( '0', $get_marker( $order->get_id() ), 'The order row marker should be left unchanged.' );
+	}
+
+	/**
+	 * @testdox Migration registers and creates the autoloaded native payments option without overwriting an existing value.
+	 */
+	public function test_wc_update_11203_enable_native_payments(): void {
+		global $wpdb;
+
+		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
+
+		$db_updates = WC_Install::get_db_update_callbacks();
+		$this->assertArrayHasKey( '11.2.0-3', $db_updates );
+		$this->assertContains( 'wc_update_11203_enable_native_payments', $db_updates['11.2.0-3'] );
+
+		wc_update_11203_enable_native_payments();
+
+		$this->assertSame( 'yes', get_option( 'woocommerce_native_payments_enabled' ), 'The migration should enable native payments for upgraded stores.' );
+		$this->assertContains(
+			$wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", 'woocommerce_native_payments_enabled' ) ),
+			wp_autoload_values_to_autoload(),
+			'The option should be autoloaded because the arbiter resolves it in the request hot path.'
+		);
+
+		update_option( 'woocommerce_native_payments_enabled', 'no' );
+		wc_update_11203_enable_native_payments();
+
+		$this->assertSame( 'no', get_option( 'woocommerce_native_payments_enabled' ), 'The migration should preserve an existing native payments setting.' );
 	}
 }

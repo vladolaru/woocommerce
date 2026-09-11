@@ -3800,3 +3800,14 @@ function wc_update_11202_reset_refund_returning_customer_markers() {
 
 	return false;
 }
+
+/**
+ * Enable native payments for stores upgrading to this release.
+ *
+ * @since 11.2.0
+ *
+ * @return void
+ */
+function wc_update_11203_enable_native_payments(): void {
+	add_option( 'woocommerce_native_payments_enabled', 'yes', '', true );
+}
