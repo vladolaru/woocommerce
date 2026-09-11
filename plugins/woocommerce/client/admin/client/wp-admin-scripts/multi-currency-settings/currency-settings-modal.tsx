@@ -268,21 +268,21 @@ export function CurrencySettingsModal( {
 									label: __(
 										'Fetch rates automatically',
 										'woocommerce'
-									),
-									value: 'automatic',
-									description:
-										currency.rate === null
-											? __(
-													'An automatic rate is not available yet.',
-													'woocommerce'
-												)
-											: ! automaticRates.available &&
-										automaticRates.source === 'woopayments'
-											? __(
-													'WooPayments automatic rates are temporarily unavailable. You can use manual rates.',
-													'woocommerce'
-												)
-											: sprintf(
+										),
+										value: 'automatic',
+										description:
+											! automaticRates.available &&
+											automaticRates.source === 'woopayments'
+												? __(
+														'WooPayments automatic rates are temporarily unavailable. You can use manual rates.',
+														'woocommerce'
+												  )
+												: currency.rate === null
+													? __(
+															'An automatic rate is not available yet.',
+															'woocommerce'
+													  )
+													: sprintf(
 														/* translators: 1: Default currency code, 2: Exchange rate, 3: Target currency code. */
 														__(
 															'Current rate: 1 %1$s = %2$s %3$s',

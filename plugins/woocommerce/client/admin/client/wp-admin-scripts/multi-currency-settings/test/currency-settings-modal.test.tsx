@@ -212,6 +212,26 @@ describe( 'CurrencySettingsModal', () => {
 		).not.toHaveLength( 0 );
 	} );
 
+	it( 'describes a WooPayments outage when automatic cache has no rate', async () => {
+		mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+		renderModal( {
+			currency: { ...euroCurrency, rate: null },
+			automaticRates: { available: false, source: 'woopayments' },
+		} );
+
+		expect(
+			await screen.findByRole( 'radio', {
+				name: 'Fetch rates automatically',
+			} )
+		).toBeChecked();
+		expect(
+			screen.getByText(
+				'WooPayments automatic rates are temporarily unavailable. You can use manual rates.'
+			)
+		).toBeInTheDocument();
+	} );
+
 	it( 'saves manual currency settings with preserved REST keys', async () => {
 		mockApiFetch
 			.mockResolvedValueOnce( automaticSettingsResponse )
