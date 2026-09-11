@@ -119,6 +119,47 @@ describe( 'CurrencySettingsModal', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	it( 'omits the manual rate when saving automatic currency settings', async () => {
+		mockApiFetch
+			.mockResolvedValueOnce( automaticSettingsResponse )
+			.mockResolvedValueOnce( automaticSettingsResponse );
+
+		renderModal();
+
+		await screen.findByRole( 'radio', {
+			name: 'Fetch rates automatically',
+		} );
+		fireEvent.change( screen.getByLabelText( 'Price rounding' ), {
+			target: { value: '5.00' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Charm pricing' ), {
+			target: { value: '-0.05' },
+		} );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		);
+
+		await waitFor( () => {
+			const request = mockApiFetch.mock.calls.at( -1 )?.[ 0 ];
+
+			expect( request ).toMatchObject( {
+				path: '/wc/v3/payments/multi-currency/currencies/EUR',
+				method: 'POST',
+				data: {
+					exchange_rate_type: 'automatic',
+					price_rounding: 5,
+					price_charm: -0.05,
+				},
+			} );
+			expect(
+				Object.prototype.hasOwnProperty.call(
+					request?.data ?? {},
+					'manual_rate'
+				)
+			).toBe( false );
+		} );
+	} );
+
 	it( 'requires a finite positive manual rate when no automatic source is registered', async () => {
 		mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
 		const inactiveCurrency = { ...euroCurrency, rate: null };

@@ -200,17 +200,26 @@ export function CurrencySettingsModal( {
 			settings.exchangeRateType === 'manual'
 				? Number( settings.manualRate )
 				: null;
+		const data: {
+			exchange_rate_type: ExchangeRateType;
+			price_rounding: number;
+			price_charm: number;
+			manual_rate?: number;
+		} = {
+			exchange_rate_type: settings.exchangeRateType,
+			price_rounding: Number( settings.priceRounding ),
+			price_charm: Number( settings.priceCharm ),
+		};
+
+		if ( manualRate !== null ) {
+			data.manual_rate = manualRate;
+		}
 
 		try {
 			await apiFetch< CurrencySettingsResponse >( {
 				path: `${ REST_BASE }/currencies/${ currency.code }`,
 				method: 'POST',
-				data: {
-					exchange_rate_type: settings.exchangeRateType,
-					manual_rate: manualRate,
-					price_rounding: Number( settings.priceRounding ),
-					price_charm: Number( settings.priceCharm ),
-				},
+				data,
 			} );
 
 			createSuccessNotice(
