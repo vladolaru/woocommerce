@@ -394,6 +394,40 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Fresh installs explicitly excluded by the cached platform payload should not enable native payments.
+	 */
+	public function test_create_options_does_not_enable_native_payments_for_platform_ineligible_fresh_installs(): void {
+		$version        = false;
+		$supply_version = function () use ( &$version ) {
+			return $version;
+		};
+		delete_option( 'woocommerce_native_payments_enabled' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'native_payments' => array(
+						'eligible' => false,
+						'cohort'   => 'holdback',
+						'reason'   => 'manual_hold',
+					),
+				),
+			)
+		);
+		add_filter( 'option_woocommerce_version', $supply_version );
+
+		try {
+			$this->invoke_create_options();
+
+			$this->assertFalse( get_option( 'woocommerce_native_payments_enabled', false ) );
+		} finally {
+			remove_filter( 'option_woocommerce_version', $supply_version );
+			delete_option( 'wcpay_account_data' );
+			delete_option( 'woocommerce_native_payments_enabled' );
+		}
+	}
+
+	/**
 	 * @testdox Established installs should not receive the native payments default from create_options.
 	 */
 	public function test_create_options_does_not_enable_native_payments_for_established_installs(): void {

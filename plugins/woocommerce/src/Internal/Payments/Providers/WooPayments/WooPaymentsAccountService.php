@@ -616,9 +616,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		$account_data = $cache_contents['data'];
-		$is_eligible  = ! is_array( $account_data['native_payments'] ?? null ) || false !== ( $account_data['native_payments']['eligible'] ?? null );
 
-		if ( ! $this->runtime_arbiter->is_native_runtime_enabled() || ! $is_eligible ) {
+		if ( ! $this->runtime_arbiter->is_native_runtime_enabled() || ! $this->is_native_eligible_account_data( $account_data ) ) {
 			$this->native_payments_state->write_state( NativePaymentsState::DISABLED );
 			return;
 		}
@@ -766,6 +765,46 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		return isset( $account_data['account_id'] ) && is_scalar( $account_data['account_id'] )
 			? (string) $account_data['account_id']
 			: '';
+	}
+
+	/**
+	 * Tell whether the platform account is eligible for native payments.
+	 *
+	 * Older platform payloads that do not include native eligibility remain eligible.
+	 *
+	 * @since 11.2.0
+	 * @return bool
+	 */
+	public function is_native_eligible(): bool {
+		return $this->is_native_eligible_account_data( $this->get_cached_account_data() );
+	}
+
+	/**
+	 * Get the platform rollout cohort for native payments.
+	 *
+	 * @since 11.2.0
+	 * @return string
+	 */
+	public function get_native_cohort(): string {
+		$account_data    = $this->get_cached_account_data();
+		$native_payments = $account_data['native_payments'] ?? null;
+		if ( ! is_array( $native_payments ) || ! is_string( $native_payments['cohort'] ?? null ) ) {
+			return '';
+		}
+
+		return $native_payments['cohort'];
+	}
+
+	/**
+	 * Parse native eligibility from account data.
+	 *
+	 * @param array<string,mixed> $account_data Account payload.
+	 * @return bool
+	 */
+	private function is_native_eligible_account_data( array $account_data ): bool {
+		$native_payments = $account_data['native_payments'] ?? null;
+
+		return ! is_array( $native_payments ) || false !== ( $native_payments['eligible'] ?? null );
 	}
 
 	/**

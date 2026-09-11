@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
@@ -413,6 +414,20 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->sut->should_show_soft_cutover_notice(),
 			'The notice should show only when the merchant can safely disable the plugin.'
 		);
+	}
+
+	/**
+	 * @testdox Platform-ineligible accounts should neither offer nor start cutover.
+	 */
+	public function test_platform_ineligible_accounts_do_not_offer_or_start_cutover(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		$this->enable_ready_cutover();
+
+		$controller = $this->create_cutover_controller( null, null, false );
+
+		$this->assertFalse( $controller->should_show_soft_cutover_notice() );
+		$this->assertFalse( $controller->disable_woopayments_plugin() );
 	}
 
 	/**
@@ -921,7 +936,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$legacy_proxy->method( 'call_function' )->willReturn( true );
 		$legacy_proxy->expects( $this->exactly( 2 ) )->method( 'exit' );
 		$controller = new WooPaymentsCutoverController();
-		$controller->init( $arbiter, $legacy_proxy, $preflight, $job );
+		$controller->init( $arbiter, $legacy_proxy, $preflight, $job, $this->create_eligible_account_service() );
 		$redirects        = array();
 		$capture_redirect = static function ( string $location ) use ( &$redirects ): string {
 			$redirects[] = $location;
@@ -1558,9 +1573,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param WooPaymentsAdminNavigationController|null $admin_navigation_controller Optional admin navigation owner.
 	 * @param WooPaymentsCutoverReconciliationJob|null  $job                         Optional reconciliation job.
+	 * @param bool|null                                 $native_eligible             Optional platform eligibility answer.
 	 * @return WooPaymentsCutoverController
 	 */
-	private function create_cutover_controller( ?WooPaymentsAdminNavigationController $admin_navigation_controller = null, ?WooPaymentsCutoverReconciliationJob $job = null ): WooPaymentsCutoverController {
+	private function create_cutover_controller( ?WooPaymentsAdminNavigationController $admin_navigation_controller = null, ?WooPaymentsCutoverReconciliationJob $job = null, ?bool $native_eligible = null ): WooPaymentsCutoverController {
 		$arbiter           = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
 		$legacy_proxy      = wc_get_container()->get( LegacyProxy::class );
 		$preflight_service = new WooPaymentsCutoverPreflightService();
@@ -1575,7 +1591,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->native_rate_api_client,
 			$admin_navigation_controller ?? $this->create_admin_navigation_controller( true )
 		);
-		$job        = $job ?? new class() extends WooPaymentsCutoverReconciliationJob {
+		$job             = $job ?? new class() extends WooPaymentsCutoverReconciliationJob {
 			/** Return no durable state. */
 			public function get_state_record(): ?array {
 				return null;
@@ -1606,10 +1622,40 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				return false;
 			}
 		};
-		$controller = new WooPaymentsCutoverController();
-		$controller->init( $arbiter, $legacy_proxy, $preflight_service, $job );
+		$account_service = new class( $native_eligible ?? true ) extends WooPaymentsAccountService {
+			/** @var bool */
+			private bool $native_eligible;
+
+			/**
+			 * @param bool $native_eligible Controlled eligibility answer.
+			 */
+			public function __construct( bool $native_eligible ) {
+				$this->native_eligible = $native_eligible;
+			}
+
+			/** Return the controlled eligibility answer. */
+			public function is_native_eligible(): bool {
+				return $this->native_eligible;
+			}
+		};
+		$controller      = new WooPaymentsCutoverController();
+		$controller->init( $arbiter, $legacy_proxy, $preflight_service, $job, $account_service );
 
 		return $controller;
+	}
+
+	/**
+	 * Create an account-service double that is eligible for native payments.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_eligible_account_service(): WooPaymentsAccountService {
+		return new class() extends WooPaymentsAccountService {
+			/** Return an eligible platform account. */
+			public function is_native_eligible(): bool {
+				return true;
+			}
+		};
 	}
 
 	/** Create a durable completed-state double for activation-guard tests. */

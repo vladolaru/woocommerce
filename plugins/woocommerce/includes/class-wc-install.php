@@ -1283,7 +1283,14 @@ class WC_Install {
 		add_option( 'woocommerce_demo_store', 'no', '', 'no' );
 
 		if ( self::is_new_install() ) {
-			add_option( 'woocommerce_native_payments_enabled', 'yes', '', true );
+			$account_cache   = get_option( 'wcpay_account_data', array() );
+			$account_data    = is_array( $account_cache ) && is_array( $account_cache['data'] ?? null ) ? $account_cache['data'] : array();
+			$native_payments = $account_data['native_payments'] ?? null;
+			$native_eligible = ! is_array( $native_payments ) || false !== ( $native_payments['eligible'] ?? null );
+
+			if ( $native_eligible ) {
+				add_option( 'woocommerce_native_payments_enabled', 'yes', '', true );
+			}
 
 			// Define initial tax classes.
 			WC_Tax::create_tax_class( __( 'Reduced rate', 'woocommerce' ) );

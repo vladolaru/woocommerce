@@ -171,6 +171,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private WooPaymentsCutoverReconciliationJob $reconciliation_job;
 
 	/**
+	 * WooPayments account state.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -179,17 +186,20 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @param LegacyProxy                         $legacy_proxy     Legacy proxy.
 	 * @param WooPaymentsCutoverPreflightService  $preflight_service Headless cutover facts.
 	 * @param WooPaymentsCutoverReconciliationJob $reconciliation_job Durable reconciliation workflow.
+	 * @param WooPaymentsAccountService           $account_service   WooPayments account state.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
 		LegacyProxy $legacy_proxy,
 		WooPaymentsCutoverPreflightService $preflight_service,
-		WooPaymentsCutoverReconciliationJob $reconciliation_job
+		WooPaymentsCutoverReconciliationJob $reconciliation_job,
+		WooPaymentsAccountService $account_service
 	): void {
 		$this->arbiter            = $arbiter;
 		$this->legacy_proxy       = $legacy_proxy;
 		$this->preflight_service  = $preflight_service;
 		$this->reconciliation_job = $reconciliation_job;
+		$this->account_service    = $account_service;
 	}
 
 	/**
@@ -254,7 +264,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool True when reconciliation was queued.
 	 */
 	public function disable_woopayments_plugin(): bool {
-		if ( ! $this->arbiter->is_plugin_runtime_active() || ! $this->current_user_can_cutover() ) {
+		if ( ! $this->account_service->is_native_eligible() || ! $this->arbiter->is_plugin_runtime_active() || ! $this->current_user_can_cutover() ) {
 			return false;
 		}
 		return $this->reconciliation_job->enqueue( 'merchant' );
@@ -566,7 +576,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_start_eligible(): bool {
-		return $this->is_soft_cutover_enabled() && $this->arbiter->is_plugin_runtime_active() && $this->current_user_can_cutover();
+		return $this->account_service->is_native_eligible() && $this->is_soft_cutover_enabled() && $this->arbiter->is_plugin_runtime_active() && $this->current_user_can_cutover();
 	}
 
 	/**

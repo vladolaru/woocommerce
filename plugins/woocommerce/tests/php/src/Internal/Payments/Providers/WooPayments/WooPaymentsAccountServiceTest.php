@@ -105,6 +105,68 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native eligibility and cohort should follow eligible, ineligible, and older-platform account payloads.
+	 * @dataProvider native_payments_payload_provider
+	 *
+	 * @param array<string,mixed> $native_payments Native payments payload, or an empty array when the field is absent.
+	 * @param bool                $include_field   Whether to include the native payments field.
+	 * @param bool                $expected_eligible Expected native eligibility.
+	 * @param string              $expected_cohort Expected native cohort.
+	 */
+	public function test_exposes_native_payments_eligibility_and_cohort( array $native_payments, bool $include_field, bool $expected_eligible, string $expected_cohort ): void {
+		$account_data = array( 'is_live' => true );
+		if ( $include_field ) {
+			$account_data['native_payments'] = $native_payments;
+		}
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => $account_data,
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+
+		$sut = $this->create_service();
+
+		$this->assertTrue( method_exists( $sut, 'is_native_eligible' ), 'Native eligibility should be part of the account service contract.' );
+		$this->assertTrue( method_exists( $sut, 'get_native_cohort' ), 'Native cohort should be part of the account service contract.' );
+		$this->assertSame( $expected_eligible, $sut->is_native_eligible() );
+		$this->assertSame( $expected_cohort, $sut->get_native_cohort() );
+	}
+
+	/**
+	 * Native payments account payload fixtures.
+	 *
+	 * @return array<string,array{array<string,mixed>,bool,bool,string}>
+	 */
+	public static function native_payments_payload_provider(): array {
+		return array(
+			'eligible cohort'            => array(
+				array(
+					'eligible' => true,
+					'cohort'   => 'canary',
+					'reason'   => '',
+				),
+				true,
+				true,
+				'canary',
+			),
+			'ineligible with reason'     => array(
+				array(
+					'eligible' => false,
+					'cohort'   => 'holdback',
+					'reason'   => 'manual_hold',
+				),
+				true,
+				false,
+				'holdback',
+			),
+			'older platform omits field' => array( array(), false, true, '' ),
+		);
+	}
+
+	/**
 	 * @testdox Account readiness reads each multisite blog's preserved cache after switching.
 	 * @group multisite
 	 */

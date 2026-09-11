@@ -112,6 +112,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private WooPaymentsCutoverNormalizationRunner $normalization_runner;
 
 	/**
+	 * WooPayments account state.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Request-local token shared by every job instance in the current PHP request.
 	 *
 	 * @var string|null
@@ -135,13 +142,15 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param WooPaymentsCutoverActionScheduler     $scheduler        Action Scheduler adapter.
 	 * @param WooPaymentsCutoverPreflightService    $preflight_service   Headless cutover facts.
 	 * @param WooPaymentsCutoverNormalizationRunner $normalization_runner Cutover normalization runner.
+	 * @param WooPaymentsAccountService             $account_service     WooPayments account state.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCutoverStateStore $state_store, WooPaymentsCutoverActionScheduler $scheduler, WooPaymentsCutoverPreflightService $preflight_service, WooPaymentsCutoverNormalizationRunner $normalization_runner ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCutoverStateStore $state_store, WooPaymentsCutoverActionScheduler $scheduler, WooPaymentsCutoverPreflightService $preflight_service, WooPaymentsCutoverNormalizationRunner $normalization_runner, WooPaymentsAccountService $account_service ): void {
 		$this->arbiter              = $arbiter;
 		$this->state_store          = $state_store;
 		$this->scheduler            = $scheduler;
 		$this->preflight_service    = $preflight_service;
 		$this->normalization_runner = $normalization_runner;
+		$this->account_service      = $account_service;
 		if ( null === self::$request_token ) {
 			self::$request_token = wp_generate_uuid4();
 		}
@@ -211,7 +220,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when durable work already exists or was scheduled.
 	 */
 	private function enqueue_with_context( string $source, ?string $origin_plugin_file, ?string $origin_plugin_scope ): bool {
-		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
+		if ( ! $this->arbiter->is_native_runtime_enabled() || ! $this->account_service->is_native_eligible() ) {
 			return false;
 		}
 		if ( is_multisite() && ( 'network' === $origin_plugin_scope || $this->preflight_service->is_woopayments_network_active() ) ) {

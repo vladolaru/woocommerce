@@ -12,6 +12,7 @@ use ActionScheduler_QueueRunner;
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
@@ -185,6 +186,18 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Platform-ineligible accounts refuse cutover without persisting or scheduling work.
+	 */
+	public function test_enqueue_does_nothing_when_platform_account_is_ineligible(): void {
+		$this->require_sut();
+		$sut = $this->create_job( true, null, null, true, null, false );
+
+		$this->assertFalse( $sut->enqueue( 'merchant' ) );
+		$this->assertNull( $this->require_state_store()->get_record() );
+		$this->assertSame( 0, $this->count_cutover_actions() );
+	}
+
+	/**
 	 * @testdox An all-clear attempt normalizes, seeds features, deactivates WooPayments, and schedules fresh-request ownership verification.
 	 */
 	public function test_all_clear_attempt_starts_two_request_finalization(): void {
@@ -254,7 +267,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 		$sut           = new WooPaymentsCutoverReconciliationJob();
-		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization );
+		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization, $this->create_native_eligibility_service( true ) );
 		$this->jobs[]  = $sut;
 		$seeded        = 0;
 		$seed_features = static function () use ( &$seeded ): void {
@@ -347,7 +360,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
-		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $this->create_preflight_with_failures( array() ), $normalization );
+		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $this->create_preflight_with_failures( array() ), $normalization, $this->create_native_eligibility_service( true ) );
 		$this->jobs[]  = $sut;
 		$throwing_seed = static function (): void {
 			throw new \RuntimeException( 'Expected feature seeding failure.' );
@@ -429,7 +442,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization_runner );
+		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization_runner, $this->create_native_eligibility_service( true ) );
 		$this->jobs[] = $sut;
 
 		$sut->handle_reconcile( $verification['generation'], 2 );
@@ -3117,9 +3130,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsCutoverReconciliationJob|null   $job               Job instance, when a test needs a narrow override.
 	 * @param bool                                       $plugin_active     Whether the plugin owns the runtime.
 	 * @param WooPaymentsCutoverNormalizationRunner|null $normalization_runner Controlled normalization runner.
+	 * @param bool                                       $native_eligible  Whether the platform account is native-eligible.
 	 * @return WooPaymentsCutoverReconciliationJob
 	 */
-	private function create_job( bool $native_enabled, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $plugin_active = true, ?WooPaymentsCutoverNormalizationRunner $normalization_runner = null ): WooPaymentsCutoverReconciliationJob {
+	private function create_job( bool $native_enabled, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $plugin_active = true, ?WooPaymentsCutoverNormalizationRunner $normalization_runner = null, bool $native_eligible = true ): WooPaymentsCutoverReconciliationJob {
 		$arbiter = new class( $native_enabled, $plugin_active ) extends NativePaymentsRuntimeArbiter {
 			/** @var bool */
 			private bool $native_enabled;
@@ -3161,10 +3175,35 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight_service, $normalization_runner );
+		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight_service, $normalization_runner, $this->create_native_eligibility_service( $native_eligible ) );
 		$this->jobs[] = $job;
 
 		return $job;
+	}
+
+	/**
+	 * Create an account-service double with deterministic platform eligibility.
+	 *
+	 * @param bool $native_eligible Controlled eligibility answer.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_native_eligibility_service( bool $native_eligible ): WooPaymentsAccountService {
+		return new class( $native_eligible ) extends WooPaymentsAccountService {
+			/** @var bool */
+			private bool $native_eligible;
+
+			/**
+			 * @param bool $native_eligible Controlled eligibility answer.
+			 */
+			public function __construct( bool $native_eligible ) {
+				$this->native_eligible = $native_eligible;
+			}
+
+			/** Return the controlled eligibility answer. */
+			public function is_native_eligible(): bool {
+				return $this->native_eligible;
+			}
+		};
 	}
 
 	/**
