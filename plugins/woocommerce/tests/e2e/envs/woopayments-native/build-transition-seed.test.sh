@@ -569,4 +569,49 @@ for composer_mode in missing mismatch; do
 	fi
 done
 
+# Named profiles must be selected on the command line; the builder must never
+# infer a mutable version from the source checkout or its environment.
+if run_builder "$TEST_ROOT/implicit-profile" > /dev/null; then
+	:
+else
+	echo 'The default immutable 10.5.0 profile is no longer buildable.' >&2
+	exit 1
+fi
+old_profile_tree="$TEST_ROOT/old-profile-tree"
+cp -R "$TEST_ROOT/tree" "$old_profile_tree"
+sed -i.bak 's/10\.5\.0/10.4.0/g' "$old_profile_tree/woocommerce-payments/woocommerce-payments.php" "$old_profile_tree/woocommerce-payments/package.json" "$old_profile_tree/woocommerce-payments/package-lock.json"
+rm "$old_profile_tree/woocommerce-payments/woocommerce-payments.php.bak" "$old_profile_tree/woocommerce-payments/package.json.bak" "$old_profile_tree/woocommerce-payments/package-lock.json.bak"
+if env \
+	TMPDIR="$TEST_ROOT" \
+	E2E_TRANSITION_WCPAY_REPO="$TEST_ROOT/repository" \
+	E2E_TRANSITION_GIT_BIN="$SCRIPT_DIR/test-fixtures/bin/git" \
+	E2E_TRANSITION_ARCHIVE_GIT_BIN="$ARCHIVE_GIT_BIN" \
+	E2E_TRANSITION_GZIP_BIN="$GZIP_BIN" \
+	E2E_TRANSITION_COMPOSER_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-composer.sh" \
+	E2E_TRANSITION_NODE_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-node.sh" \
+	E2E_TRANSITION_NPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-npm.sh" \
+	E2E_TRANSITION_FRONTEND_LOCK_SHA256="$(shasum -a 256 "$old_profile_tree/woocommerce-payments/package-lock.json" | awk '{ print $1 }')" \
+	E2E_FAKE_SEED_TREE="$old_profile_tree" \
+	E2E_FAKE_GIT_COMMIT='e2a6e70f21ff5827a9e67abeb4bc44c9ccabeb3d' \
+	E2E_FAKE_COMMAND_LOG="$TEST_ROOT/old-profile-commands.log" \
+	"$BUILDER" --profile 10.4.0 --output-dir "$TEST_ROOT/old-profile" > "$TEST_ROOT/old-profile.json"; then
+	old_profile_manifest="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv.at(-1))).manifest_path' "$TEST_ROOT/old-profile.json")"
+	node -e '
+		const manifest = JSON.parse( require( "node:fs" ).readFileSync( process.argv[ 1 ] ) );
+		if ( manifest.plugin_version !== "10.4.0" || manifest.source_commit !== "e2a6e70f21ff5827a9e67abeb4bc44c9ccabeb3d" ) process.exit( 1 );
+	' "$old_profile_manifest"
+else
+	echo 'The explicit immutable 10.4.0 profile could not be built.' >&2
+	exit 1
+fi
+if env \
+	TMPDIR="$TEST_ROOT" \
+	E2E_TRANSITION_WCPAY_REPO="$TEST_ROOT/repository" \
+	E2E_TRANSITION_GIT_BIN="$SCRIPT_DIR/test-fixtures/bin/git" \
+	E2E_FAKE_SEED_TREE="$TEST_ROOT/tree" \
+	"$BUILDER" --profile unknown --output-dir "$TEST_ROOT/unknown-profile" > /dev/null 2>&1; then
+	echo 'The seed builder accepted an unknown immutable profile.' >&2
+	exit 1
+fi
+
 echo 'build-transition-seed.sh tests passed.'

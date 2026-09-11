@@ -329,6 +329,23 @@ node -e '
 	if ( plan.plugin_version !== "10.5.0" ) process.exit( 1 );
 ' "$plan"
 
+# A profile names both artifact identities, so a manifest from either profile
+# cannot be paired with the other profile before the run workspace is touched.
+for rejected_profile in unknown 10.4.0; do
+	profile_workspace="$TEST_ROOT/profile-$rejected_profile-workspace"
+	mkdir "$profile_workspace"
+	if env E2E_TRANSITION_PORT=19091 E2E_TRANSITION_SEED_PROFILE="$rejected_profile" \
+		"$PROVISIONER" plan \
+		--workspace "$profile_workspace" \
+		--seed-archive "$TEST_ROOT/seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/seed.json" \
+		--run-id "profile-${rejected_profile//./-}" > /dev/null 2>&1; then
+		echo "Plan accepted a mismatched immutable profile: $rejected_profile." >&2
+		exit 1
+	fi
+	test ! -n "$(find "$profile_workspace" -mindepth 1 -print -quit)"
+done
+
 make_invalid_seed_manifest() {
 	local variant="$1"
 	local variant_manifest="$TEST_ROOT/$variant-seed.json"

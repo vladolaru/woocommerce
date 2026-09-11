@@ -17,6 +17,8 @@ trap cleanup EXIT
 run_orchestrator() {
 	local run_id="${1:-orchestrator-run}"
 	local scenario="${2:-}"
+	local seed_profile="${3:-10.5.0}"
+	local pending_migrator_hook="${4:-0}"
 	local -a scenario_environment=()
 	if [[ -n "$scenario" ]]; then
 		scenario_environment+=( "E2E_TRANSITION_SCENARIO=$scenario" )
@@ -26,6 +28,8 @@ run_orchestrator() {
 		E2E_TRANSITION_RUN_ID="$run_id" \
 		E2E_TRANSITION_SEED_ARCHIVE="$TEST_ROOT/seed.tar.gz" \
 		E2E_TRANSITION_SEED_MANIFEST="$TEST_ROOT/seed.json" \
+		E2E_TRANSITION_SEED_PROFILE="$seed_profile" \
+		E2E_TRANSITION_PENDING_MIGRATOR_HOOK="$pending_migrator_hook" \
 		E2E_TRANSITION_STORE_PROVISIONER="$SCRIPT_DIR/test-fixtures/fake-transition-provisioner.sh" \
 		E2E_TRANSITION_WRAPPER="$SCRIPT_DIR/test-fixtures/fake-transition-wrapper.sh" \
 		E2E_TRANSITION_TEST_RUNNER="$SCRIPT_DIR/test-fixtures/fake-transition-test-runner.sh" \
@@ -116,6 +120,15 @@ fi
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
 
 : > "$TEST_ROOT/commands.log"
+run_orchestrator 'cutover-old-profile-run' 'cutover-reconciliation' '10.4.0' '1'
+node -e '
+	const { readFileSync } = require( "node:fs" );
+	const line = readFileSync( process.argv[ 1 ], "utf8" ).split( "\n" ).find( ( value ) => value.startsWith( "runner " ) );
+	const approval = JSON.parse( line.slice( line.indexOf( " E2E_WOOPAYMENTS_PROVIDER_FIXTURE=" ) + " E2E_WOOPAYMENTS_PROVIDER_FIXTURE=".length ) );
+	if ( approval.seed_profile !== "10.4.0" || approval.pending_migrator_hook !== true ) process.exit( 1 );
+' "$TEST_ROOT/commands.log"
+
+: > "$TEST_ROOT/commands.log"
 run_orchestrator 'historical-token-run' 'historical-tokens'
 grep -Fq -- 'tests/woopayments-native/transitions/historical-tokens.spec.ts' "$TEST_ROOT/commands.log"
 assert_exact_capabilities \
@@ -128,6 +141,18 @@ assert_exact_capabilities \
 	'saved-card-cleanup' \
 	'saved-card-classic' \
 	'product/payment'
+grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
+
+: > "$TEST_ROOT/commands.log"
+run_orchestrator 'cutover-reconciliation-run' 'cutover-reconciliation'
+grep -Fq -- 'tests/woopayments-native/transitions/cutover-reconciliation.spec.ts' "$TEST_ROOT/commands.log"
+assert_exact_capabilities \
+	"$TEST_ROOT/commands.log" \
+	'cutover-reconciliation' \
+	'cutover-ui' \
+	'cutover-job' \
+	'native-owner' \
+	'basic-card'
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
 
 : > "$TEST_ROOT/commands.log"

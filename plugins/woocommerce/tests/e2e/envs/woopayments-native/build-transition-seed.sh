@@ -3,13 +3,10 @@
 set -euo pipefail
 umask 077
 
-readonly SEED_COMMIT='a1f755fc903966387f8629f78f75976ac8d2016e'
-readonly SEED_VERSION='10.5.0'
 readonly FRONTEND_NODE_LINE='20.11'
 readonly FRONTEND_NODE_VERSION='v20.11.1'
 readonly FRONTEND_NPM_VERSION='10.2.4'
 readonly ARCHIVE_PROFILE='git-sha1-fixed-pax+gzip-n9-v1'
-readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1}"
 readonly SCRIPT_DIR="$(
 	cd "$(dirname "${BASH_SOURCE[0]}")"
 	pwd -P
@@ -28,8 +25,13 @@ readonly NPM_BIN="${E2E_TRANSITION_NPM_BIN:-npm}"
 readonly TEMP_ROOT="${TMPDIR:?TMPDIR is required}"
 
 output_dir=''
+seed_profile='10.5.0'
 while (( $# > 0 )); do
 	case "$1" in
+		--profile)
+			seed_profile="${2:-}"
+			shift 2
+			;;
 		--output-dir)
 			output_dir="${2:-}"
 			shift 2
@@ -40,6 +42,23 @@ while (( $# > 0 )); do
 			;;
 	esac
 done
+
+case "$seed_profile" in
+	10.5.0)
+		readonly SEED_COMMIT='a1f755fc903966387f8629f78f75976ac8d2016e'
+		readonly SEED_VERSION='10.5.0'
+		readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1}"
+		;;
+	10.4.0)
+		readonly SEED_COMMIT='e2a6e70f21ff5827a9e67abeb4bc44c9ccabeb3d'
+		readonly SEED_VERSION='10.4.0'
+		readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-934b317f080dc26760be7364ef64a748b33f6055e03e7accec37f23461ae7bb7}"
+		;;
+	*)
+		echo "Unknown immutable transition seed profile: $seed_profile" >&2
+		exit 1
+		;;
+esac
 
 if [[ -z "$output_dir" ]]; then
 	echo 'build-transition-seed.sh requires --output-dir.' >&2
@@ -174,8 +193,8 @@ node_version_file="$plugin_root/.nvmrc"
 package_manifest="$plugin_root/package.json"
 frontend_lock="$plugin_root/package-lock.json"
 if [[ ! -f "$plugin_file" ]] ||
-	! grep -Eq '^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*10\.5\.0[[:space:]]*$' "$plugin_file"; then
-	echo 'The approved seed tree does not identify WooPayments 10.5.0.' >&2
+	! grep -Eq "^[[:space:]]*\\*[[:space:]]*Version:[[:space:]]*${SEED_VERSION//./\\.}[[:space:]]*$" "$plugin_file"; then
+	echo "The approved seed tree does not identify WooPayments $SEED_VERSION." >&2
 	exit 1
 fi
 if [[ ! -f "$plugin_root/composer.json" || -L "$plugin_root/composer.json" ]] ||
@@ -244,16 +263,16 @@ if ! "$NODE_BIN" -e '
 	const root = lock.packages?.[ "" ];
 	if (
 		manifest.name !== "woocommerce-payments" ||
-		manifest.version !== "10.5.0" ||
+		manifest.version !== process.argv[ 3 ] ||
 		manifest.scripts?.[ "build:client" ] !== "NODE_ENV=production webpack" ||
 		lock.name !== "woocommerce-payments" ||
-		lock.version !== "10.5.0" ||
+		lock.version !== process.argv[ 3 ] ||
 		lock.lockfileVersion !== 3 ||
 		root?.name !== "woocommerce-payments" ||
-		root?.version !== "10.5.0"
+		root?.version !== process.argv[ 3 ]
 	) process.exit( 1 );
-' "$package_manifest" "$frontend_lock"; then
-	echo 'The approved seed frontend metadata does not match WooPayments 10.5.0.' >&2
+' "$package_manifest" "$frontend_lock" "$SEED_VERSION"; then
+	echo "The approved seed frontend metadata does not match WooPayments $SEED_VERSION." >&2
 	exit 1
 fi
 

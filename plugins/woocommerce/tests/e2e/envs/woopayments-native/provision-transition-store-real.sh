@@ -3,10 +3,24 @@
 set -Eeuo pipefail
 umask 077
 
-readonly SEED_COMMIT='a1f755fc903966387f8629f78f75976ac8d2016e'
-readonly SEED_VERSION='10.5.0'
 readonly ARCHIVE_PROFILE='git-sha1-fixed-pax+gzip-n9-v1'
-readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1}"
+readonly SEED_PROFILE="${E2E_TRANSITION_SEED_PROFILE:-10.5.0}"
+case "$SEED_PROFILE" in
+	10.5.0)
+		readonly SEED_COMMIT='a1f755fc903966387f8629f78f75976ac8d2016e'
+		readonly SEED_VERSION='10.5.0'
+		readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1}"
+		;;
+	10.4.0)
+		readonly SEED_COMMIT='e2a6e70f21ff5827a9e67abeb4bc44c9ccabeb3d'
+		readonly SEED_VERSION='10.4.0'
+		readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-934b317f080dc26760be7364ef64a748b33f6055e03e7accec37f23461ae7bb7}"
+		;;
+	*)
+		echo "Unknown immutable transition seed profile: $SEED_PROFILE" >&2
+		exit 1
+		;;
+esac
 readonly SCRIPT_DIR="$(
 	cd "$(dirname "${BASH_SOURCE[0]}")"
 	pwd -P
@@ -23,6 +37,7 @@ readonly WP_ENV_BIN_INPUT="${E2E_TRANSITION_WP_ENV_BIN:-$PLUGIN_ROOT/node_module
 readonly REFERENCE_STORE_DIR="${E2E_TRANSITION_REFERENCE_STORE_DIR:-$PROJECTS_ROOT/woocommerce-payments}"
 readonly REFERENCE_WP_BIN="${E2E_TRANSITION_REFERENCE_WP_BIN:-}"
 readonly DOCKER_BIN="${E2E_TRANSITION_DOCKER_BIN:-docker}"
+readonly CURL_BIN="${E2E_TRANSITION_CURL_BIN:-curl}"
 readonly GZIP_BIN="${E2E_TRANSITION_GZIP_BIN:-gzip}"
 readonly STATE_WRITER="$SCRIPT_DIR/write-transition-state.js"
 
@@ -1052,6 +1067,74 @@ inject_reference_fixture() {
 	'
 }
 
+seed_pending_migrator_hook() {
+	if [[ "${E2E_TRANSITION_PENDING_MIGRATOR_HOOK:-0}" != '1' ]]; then
+		return
+	fi
+	local action_id
+	action_id="$(store_wp --user=1 eval '
+		$hook = "wcpay_migrate_subscription_retry";
+		$action_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook );
+		if ( ! is_numeric( $action_id ) || (int) $action_id <= 0 ) {
+			WP_CLI::error( "Unable to schedule the pending WooPayments migrator action." );
+		}
+		echo wp_json_encode( array( "hook" => $hook, "action_id" => (int) $action_id ) );
+	' | json_object_from_stdin)"
+	local migrator_identity
+	migrator_identity="$(node -e '
+		const value = JSON.parse( process.argv[ 1 ] );
+		if ( value.hook !== "wcpay_migrate_subscription_retry" || ! Number.isSafeInteger( value.action_id ) || value.action_id <= 0 ) process.exit( 1 );
+		process.stdout.write( `${ value.hook }\t${ value.action_id }` );
+	' "$action_id")"
+	local migrator_hook migrator_action_id
+	IFS=$'\t' read -r migrator_hook migrator_action_id <<< "$migrator_identity"
+	update_state pending_migrator_hook "$migrator_hook"
+	update_state pending_migrator_action_id "$migrator_action_id" number
+}
+
+prepare_network_reconciliation() {
+	if [[ "${E2E_TRANSITION_SCENARIO:-}" != 'cutover-network-reconciliation' ]]; then
+		return
+	fi
+	store_wp core multisite-convert --title='WooPayments transition network' > /dev/null
+	local secondary_site_id
+	secondary_site_id="$(store_wp site create "${base_url}/cutover-secondary" --title='Cutover secondary' --porcelain)"
+	if [[ ! "$secondary_site_id" =~ ^[1-9][0-9]*$ ]]; then
+		echo 'Transition network setup did not create an exact secondary site ID.' >&2
+		return 1
+	fi
+	store_wp plugin activate woocommerce-payments --network > /dev/null
+	local primary_site_id
+	primary_site_id="$(store_wp site list --field=blog_id --number=1)"
+	if [[ ! "$primary_site_id" =~ ^[1-9][0-9]*$ ]]; then
+		echo 'Transition network setup did not identify its primary site.' >&2
+		return 1
+	fi
+	local site_url
+	for site_url in "$base_url" "${base_url}/cutover-secondary"; do
+		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
+		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
+	done
+	local final_states
+	final_states="$(store_wp eval '
+		$sites = get_sites( array( "number" => 2, "fields" => "ids" ) );
+		$result = array();
+		foreach ( $sites as $site_id ) {
+			switch_to_blog( (int) $site_id );
+			$result[] = array( "site_id" => (int) $site_id, "state" => (string) get_option( "wc_payments_cutover_reconciliation_state", "" ) );
+			restore_current_blog();
+		}
+		echo wp_json_encode( $result );
+	' | node -e 'const { readFileSync } = require( "node:fs" ); process.stdout.write( readFileSync( 0, "utf8" ).trim() );')"
+	node -e '
+		const states = JSON.parse( process.argv[ 1 ] );
+		if ( ! Array.isArray( states ) || states.length !== 2 || states.some( ( state ) => ! Number.isSafeInteger( state.site_id ) || typeof state.state !== "string" ) ) process.exit( 1 );
+	' "$final_states"
+	update_state network_primary_site_id "$primary_site_id" number
+	update_state network_secondary_site_id "$secondary_site_id" number
+	update_state network_final_site_states "$final_states"
+}
+
 validate_store_scope() {
 	node -e '
 		const value = JSON.parse( process.argv[ 1 ] );
@@ -1090,6 +1173,9 @@ emit_create_result() {
 		if ( Number.isSafeInteger( blog ) && blog > 0 ) result.wpcom_blog_id = blog;
 		if ( process.argv[ 6 ] ) result.account_id = process.argv[ 6 ];
 		if ( process.argv[ 7 ] !== "success" ) result.status = process.argv[ 7 ];
+		if ( process.argv[ 8 ] ) result.pending_migrator_hook = process.argv[ 8 ];
+		const actionId = Number( process.argv[ 9 ] );
+		if ( Number.isSafeInteger( actionId ) && actionId > 0 ) result.pending_migrator_action_id = actionId;
 		process.stdout.write( `${ JSON.stringify( result ) }\n` );
 	' \
 		"$base_url" \
@@ -1098,7 +1184,9 @@ emit_create_result() {
 		"$receipt" \
 		"$(state_field wpcom_blog_id 2> /dev/null || printf 0)" \
 		"$(state_field account_id 2> /dev/null || true)" \
-		"$status"
+		"$status" \
+		"$(state_field pending_migrator_hook 2> /dev/null || true)" \
+		"$(state_field pending_migrator_action_id 2> /dev/null || true)"
 }
 
 write_durable_receipt() {
@@ -1363,6 +1451,7 @@ create_store() {
 	store_wp option set woocommerce_woocommerce_payments_settings \
 		--format=json '{"enabled":"yes","saved_cards":"yes"}' > /dev/null
 	update_state reference_fixture_borrowed true boolean
+	seed_pending_migrator_hook
 
 	local store_identity
 	store_identity="$(query_store_identity)"
@@ -1376,6 +1465,7 @@ create_store() {
 			identity.user_token_present !== true
 		) process.exit( 1 );
 	' "$store_identity" "$account_id"
+	prepare_network_reconciliation
 	update_state phase 'ready'
 	trap - ERR
 	emit_create_result "$receipt"
