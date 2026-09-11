@@ -81,6 +81,7 @@ const CONTRACT_IDS = {
 } as const;
 
 const RUNTIME_STATUS_API = '/wp-json/wc-native-payments-e2e/v1/status';
+const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
 const CORE_MULTI_CURRENCY_FEATURE_API =
 	'/wp-json/wc/v3/settings/advanced/woocommerce_feature_multi_currency_enabled';
 const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
@@ -154,6 +155,13 @@ interface StoreSettingsEcho {
 	renderingMode: string;
 }
 
+interface PaymentsSettingsCompanions {
+	enabled_payment_method_ids: unknown;
+	is_manual_capture_enabled: unknown;
+	is_debug_log_enabled: unknown;
+	is_payment_request_enabled: unknown;
+}
+
 function requireBaseUrl( baseURL: string | undefined ): string {
 	if ( ! baseURL ) {
 		throw new Error( 'BASE_URL is required for this smoke.' );
@@ -171,6 +179,23 @@ async function readJson< Result = Record< string, unknown > >(
 		);
 	}
 	return ( await response.json() ) as Result;
+}
+
+async function readPaymentsSettingsCompanions(
+	adminApi: APIRequestContext,
+	description: string
+): Promise< PaymentsSettingsCompanions > {
+	const settings = await readJson(
+		await adminApi.get( PAYMENTS_SETTINGS_API ),
+		description
+	);
+	expect( settings.is_wcpay_enabled ).toBe( true );
+	return {
+		enabled_payment_method_ids: settings.enabled_payment_method_ids,
+		is_manual_capture_enabled: settings.is_manual_capture_enabled,
+		is_debug_log_enabled: settings.is_debug_log_enabled,
+		is_payment_request_enabled: settings.is_payment_request_enabled,
+	};
 }
 
 async function logInAsAdmin(
@@ -682,6 +707,10 @@ test(
 	async ( { adminApi, page, baseURL } ) => {
 		const originalFeatureValue =
 			await readCoreMultiCurrencyFeature( adminApi );
+		const paymentsSettingsBefore = await readPaymentsSettingsCompanions(
+			adminApi,
+			'Payments settings read before Core feature disable'
+		);
 
 		await withGuaranteedRestoration(
 			async () => {
@@ -706,6 +735,12 @@ test(
 				expect( await readCoreMultiCurrencyFeature( adminApi ) ).toBe(
 					'no'
 				);
+				expect(
+					await readPaymentsSettingsCompanions(
+						adminApi,
+						'Payments settings read after Core feature disable'
+					)
+				).toEqual( paymentsSettingsBefore );
 			},
 			async () => {
 				await setCoreMultiCurrencyFeature(
