@@ -5,6 +5,7 @@ umask 077
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
+readonly PNPM_BIN="${E2E_WOOPAYMENTS_FRESH_PNPM_BIN:-pnpm}"
 readonly WPCOM_LOCAL_BIN="${E2E_WPCOM_LOCAL_BIN:-wpcom-local}"
 readonly PROVIDER_RUNNER="${E2E_WOOPAYMENTS_FRESH_PROVIDER_RUNNER:-$SCRIPT_DIR/run-provider-families.sh}"
 readonly STORE_DIR="${E2E_WOOPAYMENTS_FRESH_STORE_DIR:?E2E_WOOPAYMENTS_FRESH_STORE_DIR is required}"
@@ -12,6 +13,8 @@ readonly STORE_URL="${E2E_WOOPAYMENTS_FRESH_STORE_URL:?E2E_WOOPAYMENTS_FRESH_STO
 readonly WP_ENV_CONFIG="${E2E_WOOPAYMENTS_FRESH_WP_ENV_CONFIG:?E2E_WOOPAYMENTS_FRESH_WP_ENV_CONFIG is required}"
 readonly RESULTS_DIR="${E2E_WOOPAYMENTS_FRESH_RESULTS_DIR:?E2E_WOOPAYMENTS_FRESH_RESULTS_DIR is required}"
 readonly STORE_ID="${E2E_WOOPAYMENTS_FRESH_STORE_ID:?E2E_WOOPAYMENTS_FRESH_STORE_ID is required}"
+readonly RUN_ID="${E2E_WOOPAYMENTS_FRESH_RUN_ID:?E2E_WOOPAYMENTS_FRESH_RUN_ID is required}"
+readonly PROVISIONING_RECEIPT="${E2E_WOOPAYMENTS_FRESH_PROVISIONING_RECEIPT:?E2E_WOOPAYMENTS_FRESH_PROVISIONING_RECEIPT is required}"
 readonly ACCOUNT_ALIAS="${E2E_WOOPAYMENTS_FRESH_ACCOUNT_ALIAS:?E2E_WOOPAYMENTS_FRESH_ACCOUNT_ALIAS is required}"
 readonly LOCATION="${E2E_WOOPAYMENTS_FRESH_LOCATION:-US}"
 readonly BASIC_CARD_SPEC="$PLUGIN_ROOT/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-basic-card.spec.ts"
@@ -33,13 +36,53 @@ validate_isolated_profile() {
 			;;
 	esac
 
-	if [[ ! -d "$STORE_DIR" || ! -f "$WP_ENV_CONFIG" || ! -x "$PROVIDER_RUNNER" || ! -f "$BASIC_CARD_SPEC" ]]; then
+	if [[ ! -d "$STORE_DIR" || ! -f "$WP_ENV_CONFIG" || ! -f "$PROVISIONING_RECEIPT" || -L "$PROVISIONING_RECEIPT" || ! -x "$PROVIDER_RUNNER" || ! -f "$BASIC_CARD_SPEC" ]]; then
 		echo 'Fresh-store onboarding requires an isolated store, wp-env config, provider runner, and basic-card spec.' >&2
 		exit 64
 	fi
 
-	if [[ ! "$STORE_ID" =~ ^[a-z0-9][a-z0-9-]{0,63}$ || ! "$ACCOUNT_ALIAS" =~ ^[a-z0-9][a-z0-9-]{0,63}$ || ! "$LOCATION" =~ ^[A-Za-z]{2}$ ]]; then
-		echo 'Fresh-store onboarding received an invalid store identity, account alias, or location.' >&2
+	if [[ ! "$STORE_ID" =~ ^[a-z0-9][a-z0-9-]{0,63}$ || ! "$RUN_ID" =~ ^[a-z0-9][a-z0-9-]{0,63}$ || ! "$ACCOUNT_ALIAS" =~ ^[a-z0-9][a-z0-9-]{0,63}$ || ! "$LOCATION" =~ ^[A-Za-z]{2}$ ]]; then
+		echo 'Fresh-store onboarding received an invalid store identity, run identity, account alias, or location.' >&2
+		exit 64
+	fi
+
+	PROFILE_DIR="$(cd "$STORE_DIR" && pwd -P)"
+	PROFILE_CONFIG="$(cd "$(dirname "$WP_ENV_CONFIG")" && pwd -P)/$(basename "$WP_ENV_CONFIG")"
+	if [[ "$(dirname "$PROFILE_CONFIG")" != "$PROFILE_DIR" || ( "$(basename "$PROFILE_CONFIG")" != '.wp-env.json' && "$(basename "$PROFILE_CONFIG")" != '.wp-env.override.json' ) ]]; then
+		echo 'Fresh-store onboarding requires the exact wp-env config in the disposable profile directory.' >&2
+		exit 64
+	fi
+
+	if [[ -f "$PROFILE_DIR/.wp-env.json" && -f "$PROFILE_DIR/.wp-env.override.json" ]]; then
+		echo 'Fresh-store onboarding requires one unambiguous wp-env profile config for wp-env and store doctor.' >&2
+		exit 64
+	fi
+
+	if ! jq -e --arg store_url "$STORE_URL" '
+		def effective_config: (.config // {}) * (.env.development.config // {});
+		type == "object" and effective_config.WP_HOME == $store_url and effective_config.WP_SITEURL == $store_url
+	' "$PROFILE_CONFIG" > /dev/null; then
+		echo 'Fresh-store onboarding requires the disposable profile config to declare the exact store URL.' >&2
+		exit 64
+	fi
+
+	if ! jq -e \
+		--arg profile_dir "$PROFILE_DIR" \
+		--arg profile_config "$PROFILE_CONFIG" \
+		--arg store_url "$STORE_URL" \
+		--arg store_id "$STORE_ID" \
+		--arg run_id "$RUN_ID" '
+			type == "object" and
+			.schema_version == 1 and
+			.fresh == true and
+			.profile_path == $profile_dir and
+			.wp_env_config == $profile_config and
+			.store_url == $store_url and
+			.store_id == $store_id and
+			.run_id == $run_id and
+			(.database_id | type == "string" and length > 0)
+		' "$PROVISIONING_RECEIPT" > /dev/null; then
+		echo 'Fresh-store onboarding requires a matching durable receipt for a newly provisioned disposable database/profile.' >&2
 		exit 64
 	fi
 }
@@ -50,8 +93,7 @@ run_store_wp_json() {
 	local json_output
 
 	if ! raw_output="$(
-		cd "$STORE_DIR"
-		pnpm exec wp-env --config "$WP_ENV_CONFIG" run cli wp --user=1 eval "$code"
+		"$PNPM_BIN" --dir "$PLUGIN_ROOT" exec wp-env --config "$PROFILE_CONFIG" run cli wp --user=1 eval "$code"
 	)"; then
 		echo 'Fresh-store wp-env command failed.' >&2
 		return 1
@@ -70,27 +112,57 @@ run_store_wp_json() {
 }
 
 assert_local_wpcom_ready() {
-	local readiness_command
 	local readiness_file
 	local readiness_status
 
-	for readiness_command in 'env status' 'transact status' 'store doctor'; do
-		readiness_file="$RESULTS_DIR/wpcom-${readiness_command// /-}.json"
-		if (
-			cd "$STORE_DIR"
-			"$WPCOM_LOCAL_BIN" --json $readiness_command
-		) > "$readiness_file"; then
-			:
-		else
-			readiness_status=$?
-			echo "Fresh-store onboarding requires local WPCOM readiness: $readiness_command." >&2
-			return "$readiness_status"
-		fi
-		jq -e 'type == "object"' "$readiness_file" > /dev/null || {
-			echo "Fresh-store onboarding received invalid local WPCOM readiness output: $readiness_command." >&2
-			return 1
-		}
-	done
+	readiness_file="$RESULTS_DIR/wpcom-env-status.json"
+	if "$WPCOM_LOCAL_BIN" --json env status > "$readiness_file"; then
+		:
+	else
+		readiness_status=$?
+		echo 'Fresh-store onboarding requires local WPCOM readiness: env status.' >&2
+		return "$readiness_status"
+	fi
+	if ! jq -e '.status == "success" and .exit_code == 0 and (.context | type == "object") and .context.wpcom_web_generation == "current" and .context.ingress_routes == "current"' "$readiness_file" > /dev/null; then
+		echo 'Fresh-store onboarding requires a current local WPCOM web runtime and ingress routes.' >&2
+		return 1
+	fi
+
+	readiness_file="$RESULTS_DIR/wpcom-transact-status.json"
+	if "$WPCOM_LOCAL_BIN" --json transact status > "$readiness_file"; then
+		:
+	else
+		readiness_status=$?
+		echo 'Fresh-store onboarding requires local WPCOM readiness: transact status.' >&2
+		return "$readiness_status"
+	fi
+	if ! jq -e '.status == "success" and .exit_code == 0 and (.context | type == "object") and .context.readiness_status == "ready" and .context.async_jobs_ready == "true" and .context.async_jobs_mode == "automatic"' "$readiness_file" > /dev/null; then
+		echo 'Fresh-store onboarding requires ready local Transact credentials and automatic async jobs.' >&2
+		return 1
+	fi
+
+	readiness_file="$RESULTS_DIR/wpcom-store-doctor.json"
+	if "$WPCOM_LOCAL_BIN" --json store doctor --path "$PROFILE_DIR" > "$readiness_file"; then
+		:
+	else
+		readiness_status=$?
+		echo 'Fresh-store onboarding requires local WPCOM readiness: store doctor.' >&2
+		return "$readiness_status"
+	fi
+	if ! jq -e \
+		--arg profile_dir "$PROFILE_DIR" \
+		--arg profile_config "$PROFILE_CONFIG" \
+		--arg store_host "${STORE_URL#*://}" '
+			.status == "success" and .exit_code == 0 and
+			.context.store_dir == $profile_dir and
+			.context.config_path == $profile_config and
+			.context.unique_host == "true" and
+			.context.live_checked == "true" and
+			.context.host == ($store_host | split(":")[0])
+		' "$readiness_file" > /dev/null; then
+		echo 'Fresh-store onboarding requires store doctor to verify the same explicit wp-env profile and unique store host.' >&2
+		return 1
+	fi
 }
 
 write_provider_fixture() {
@@ -137,6 +209,7 @@ write_provider_fixture() {
 
 validate_isolated_profile
 mkdir -p "$RESULTS_DIR"
+install -m 600 "$PROVISIONING_RECEIPT" "$RESULTS_DIR/provisioning-receipt.json"
 
 fresh_status="$(run_store_wp_json "$FRESH_INSTALL_STATUS_CODE")"
 printf '%s\n' "$fresh_status" > "$RESULTS_DIR/fresh-install.json"
@@ -190,12 +263,12 @@ export WCPAY_RUNTIME=native
 "$PROVIDER_RUNNER" \
 	--results-dir "$RESULTS_DIR/provider-basic-card" \
 	--store-url "$STORE_URL" \
-	--native-store-dir "$STORE_DIR" \
+	--native-store-dir "$PROFILE_DIR" \
 	--account-id "$(jq -r '.account_id' <<< "$runtime_status")" \
 	--account-alias "$ACCOUNT_ALIAS" \
 	--store-id "$STORE_ID" \
 	--wpcom-blog-id "$(jq -r '.wpcom_blog_id' <<< "$runtime_status")" \
-	--wp-env-config "$WP_ENV_CONFIG" \
+	--wp-env-config "$PROFILE_CONFIG" \
 	--provider-fixture "$provider_fixture" \
 	"$BASIC_CARD_SPEC"
 
