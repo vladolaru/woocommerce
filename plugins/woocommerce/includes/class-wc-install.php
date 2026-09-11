@@ -365,6 +365,9 @@ class WC_Install {
 		'11.2.0-3' => array(
 			'wc_update_11203_enable_native_payments',
 		),
+		'11.2.0-4' => array(
+			'wc_update_11204_seed_multi_currency_feature',
+		),
 	);
 
 	/**

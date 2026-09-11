@@ -250,7 +250,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	 * @param string $rate_type Exchange rate type.
 	 */
 	private function enable_multi_currency_with_rate_type( string $rate_type ): void {
-		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( '_wcpay_feature_customer_multi_currency', '0' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', $rate_type );
 		update_option(
@@ -419,6 +419,15 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
+				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+			}
+
+			/**
+			 * Tell whether the independent core multi-currency feature is enabled.
+			 *
+			 * @return bool
+			 */
+			public function feature_is_enabled(): bool {
 				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
 			}
 		};

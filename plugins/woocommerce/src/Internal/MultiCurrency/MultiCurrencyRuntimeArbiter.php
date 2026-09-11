@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Enums\FeaturePluginCompatibility;
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
@@ -22,6 +24,20 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  * @internal Transitional internal component for the native multi-currency runtime.
  */
 class MultiCurrencyRuntimeArbiter {
+
+	/**
+	 * Multi-currency feature identifier.
+	 *
+	 * @var string
+	 */
+	public const FEATURE_ID = 'multi_currency';
+
+	/**
+	 * Option storing whether the multi-currency feature is enabled.
+	 *
+	 * @var string
+	 */
+	public const FEATURE_ENABLE_OPTION = 'woocommerce_feature_multi_currency_enabled';
 
 	/**
 	 * Owner value: the standalone WooPayments plugin owns multi-currency.
@@ -59,16 +75,56 @@ class MultiCurrencyRuntimeArbiter {
 	private LegacyProxy $legacy_proxy;
 
 	/**
+	 * Core feature controller.
+	 *
+	 * @var FeaturesController
+	 */
+	private FeaturesController $features_controller;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $payments_arbiter Payments runtime owner arbiter.
-	 * @param LegacyProxy                  $legacy_proxy     Legacy proxy.
+	 * @param NativePaymentsRuntimeArbiter $payments_arbiter    Payments runtime owner arbiter.
+	 * @param LegacyProxy                  $legacy_proxy        Legacy proxy.
+	 * @param FeaturesController           $features_controller Core feature controller.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $payments_arbiter, LegacyProxy $legacy_proxy ): void {
-		$this->payments_arbiter = $payments_arbiter;
-		$this->legacy_proxy     = $legacy_proxy;
+	final public function init( NativePaymentsRuntimeArbiter $payments_arbiter, LegacyProxy $legacy_proxy, FeaturesController $features_controller ): void {
+		$this->payments_arbiter    = $payments_arbiter;
+		$this->legacy_proxy        = $legacy_proxy;
+		$this->features_controller = $features_controller;
+	}
+
+	/**
+	 * Add the multi-currency feature definition.
+	 *
+	 * @param FeaturesController $features_controller Feature controller receiving the definition.
+	 *
+	 * @internal For exclusive usage of WooCommerce core, backwards compatibility not guaranteed.
+	 */
+	public function add_feature_definition( FeaturesController $features_controller ): void {
+		$features_controller->add_feature_definition(
+			self::FEATURE_ID,
+			__( 'Multi-currency', 'woocommerce' ),
+			array(
+				'option_key'                   => self::FEATURE_ENABLE_OPTION,
+				'description'                  => __( 'Let customers shop and pay in their own currency.', 'woocommerce' ),
+				'enabled_by_default'           => false,
+				'disable_ui'                   => false,
+				'is_experimental'              => false,
+				'default_plugin_compatibility' => FeaturePluginCompatibility::COMPATIBLE,
+			)
+		);
+	}
+
+	/**
+	 * Tell whether the independent core multi-currency feature is enabled.
+	 *
+	 * @return bool True when the core feature is enabled.
+	 */
+	public function feature_is_enabled(): bool {
+		return $this->features_controller->feature_is_enabled( self::FEATURE_ID );
 	}
 
 	/**
@@ -79,11 +135,11 @@ class MultiCurrencyRuntimeArbiter {
 	public function get_runtime_owner(): string {
 		$payments_owner = $this->payments_arbiter->get_runtime_owner();
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $payments_owner && $this->is_customer_multi_currency_enabled() ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $payments_owner && $this->is_plugin_multi_currency_enabled() ) {
 			return self::OWNER_PLUGIN;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE === $payments_owner && $this->is_customer_multi_currency_enabled() ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE === $payments_owner && $this->feature_is_enabled() ) {
 			return self::OWNER_CORE;
 		}
 
@@ -109,16 +165,15 @@ class MultiCurrencyRuntimeArbiter {
 	}
 
 	/**
-	 * Tell whether the merchant has customer multi-currency switched on.
+	 * Tell whether the plugin has customer multi-currency switched on.
 	 *
 	 * WooPayments defaults `_wcpay_feature_customer_multi_currency` to enabled and
 	 * returns before loading its multi-currency module when the option is `0`.
-	 * Core reads the same option so that a merchant who switched the feature off
-	 * under the plugin does not find it switched back on by moving to native.
+	 * The core-owned runtime uses its independent WooCommerce feature setting.
 	 *
 	 * @return bool True when the multi-currency runtime may take ownership.
 	 */
-	private function is_customer_multi_currency_enabled(): bool {
+	private function is_plugin_multi_currency_enabled(): bool {
 		return '1' === (string) $this->legacy_proxy->call_function( 'get_option', '_wcpay_feature_customer_multi_currency', '1' );
 	}
 }

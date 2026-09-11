@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Enums\FeaturePluginCompatibility;
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
@@ -20,10 +22,21 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	private $sut;
 
 	/**
+	 * Payments arbiter used by the system under test.
+	 *
+	 * @var NativePaymentsRuntimeArbiter
+	 */
+	private $payments_arbiter;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		delete_option( 'woocommerce_feature_multi_currency_enabled' );
+		delete_option( 'woocommerce_native_payments_enabled' );
+		$this->payments_arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$this->payments_arbiter->invalidate();
 		$this->sut = wc_get_container()->get( MultiCurrencyRuntimeArbiter::class );
 	}
 
@@ -32,8 +45,42 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		delete_option( 'woocommerce_feature_multi_currency_enabled' );
+		delete_option( 'woocommerce_native_payments_enabled' );
+		$this->payments_arbiter->invalidate();
 		$this->reset_legacy_proxy_mocks();
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should register the visible, stable multi-currency feature as disabled by default.
+	 */
+	public function test_registers_multi_currency_feature_definition(): void {
+		$features_controller = $this->createMock( FeaturesController::class );
+		$features_controller
+			->expects( $this->once() )
+			->method( 'add_feature_definition' )
+			->with(
+				'multi_currency',
+				'Multi-currency',
+				array(
+					'option_key'                   => 'woocommerce_feature_multi_currency_enabled',
+					'description'                  => 'Let customers shop and pay in their own currency.',
+					'enabled_by_default'           => false,
+					'disable_ui'                   => false,
+					'is_experimental'              => false,
+					'default_plugin_compatibility' => FeaturePluginCompatibility::COMPATIBLE,
+				)
+			);
+
+		$this->sut->add_feature_definition( $features_controller );
+	}
+
+	/**
+	 * @testdox Should leave core multi-currency disabled by default on new installs.
+	 */
+	public function test_core_multi_currency_is_disabled_by_default(): void {
+		$this->assertFalse( $this->sut->feature_is_enabled() );
 	}
 
 	/**
@@ -71,6 +118,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 				},
 			)
 		);
+		$this->payments_arbiter->invalidate();
 	}
 
 	/**
@@ -119,6 +167,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function test_native_payments_owner_uses_core_multi_currency_owner(): void {
 		$this->fake_plugin();
 		$this->enable_native_runtime();
+		$this->enable_core_multi_currency();
 
 		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->sut->get_runtime_owner(), 'Native payments ownership should flip multi-currency to core.' );
 		$this->assertTrue( $this->sut->should_core_register(), 'Core multi-currency may register only in native payments mode.' );
@@ -126,15 +175,27 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave multi-currency unowned when native payments owns the site but the merchant switched customer multi-currency off.
+	 * @testdox Should use the core feature flag when native payments owns the site, independently of the plugin flag.
 	 */
-	public function test_native_payments_owner_with_disabled_customer_multi_currency_leaves_multi_currency_unowned(): void {
+	public function test_native_payments_owner_ignores_disabled_plugin_multi_currency_flag(): void {
 		$this->fake_plugin( false, false, false, false );
 		$this->enable_native_runtime();
+		$this->enable_core_multi_currency();
 
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'A merchant who switched customer multi-currency off must not have it switched back on by native payments ownership.' );
-		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must not register while the merchant has the feature switched off.' );
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->sut->get_runtime_owner(), 'The plugin flag must not override the independent core feature setting.' );
+		$this->assertTrue( $this->sut->should_core_register(), 'Core multi-currency should register when its core feature is enabled.' );
 		$this->assertFalse( $this->sut->should_plugin_register(), 'Plugin multi-currency must not register in native mode either.' );
+	}
+
+	/**
+	 * @testdox Should leave multi-currency unowned when its core feature is disabled.
+	 */
+	public function test_native_payments_owner_with_disabled_core_feature_leaves_multi_currency_unowned(): void {
+		$this->fake_plugin();
+		$this->enable_native_runtime();
+
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'Native payments ownership must not imply multi-currency enablement.' );
+		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must remain dormant until its own feature is enabled.' );
 	}
 
 	/**
@@ -146,5 +207,12 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'Without a payments owner, core multi-currency should stay dormant.' );
 		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must not register without native payments ownership.' );
 		$this->assertFalse( $this->sut->should_plugin_register(), 'Plugin multi-currency is absent when the plugin is absent.' );
+	}
+
+	/**
+	 * Enable the core multi-currency feature.
+	 */
+	private function enable_core_multi_currency(): void {
+		update_option( 'woocommerce_feature_multi_currency_enabled', 'yes' );
 	}
 }

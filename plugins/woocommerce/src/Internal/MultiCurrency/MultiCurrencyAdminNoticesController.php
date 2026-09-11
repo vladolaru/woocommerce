@@ -224,7 +224,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function has_automatic_multi_currency_rate_currencies(): bool {
-		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
+		if ( ! $this->arbiter->feature_is_enabled() ) {
 			return false;
 		}
 
