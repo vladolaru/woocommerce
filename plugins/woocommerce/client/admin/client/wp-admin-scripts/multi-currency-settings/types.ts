@@ -2,7 +2,7 @@ export interface MultiCurrencyCurrency {
 	id: string;
 	code: string;
 	name: string;
-	rate: number;
+	rate: number | null;
 	symbol: string;
 	symbol_position: string;
 	is_zero_decimal: boolean;
@@ -12,10 +12,16 @@ export interface MultiCurrencyCurrency {
 	last_updated: number | null;
 }
 
+export interface AutomaticRatesDescriptor {
+	available: boolean;
+	source: string | null;
+}
+
 export interface StoreCurrenciesResponse {
 	available: Record< string, MultiCurrencyCurrency >;
 	enabled: Record< string, MultiCurrencyCurrency >;
-	default: MultiCurrencyCurrency;
+	default: MultiCurrencyCurrency & { rate: number };
+	automatic_rates: AutomaticRatesDescriptor;
 }
 
 export type StoreSettingsBoolean = boolean | 'yes' | 'no';

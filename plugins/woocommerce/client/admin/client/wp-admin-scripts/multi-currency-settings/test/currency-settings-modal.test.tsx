@@ -85,6 +85,7 @@ const renderModal = ( props = {} ) => {
 			defaultCurrency={ usdCurrency }
 			onClose={ onClose }
 			onSaved={ onSaved }
+			automaticRates={ { available: true, source: 'woopayments' } }
 			{ ...props }
 		/>
 	);
@@ -116,6 +117,58 @@ describe( 'CurrencySettingsModal', () => {
 		expect(
 			screen.queryByLabelText( 'Manual rate' )
 		).not.toBeInTheDocument();
+	} );
+
+	it( 'requires a finite positive manual rate when no automatic source is registered', async () => {
+		mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+		const inactiveCurrency = { ...euroCurrency, rate: null };
+
+		renderModal( {
+			currency: inactiveCurrency,
+			automaticRates: { available: false, source: null },
+		} );
+
+		expect( await screen.findByLabelText( 'Manual rate' ) ).toHaveValue( '' );
+		expect(
+			screen.getByRole( 'radio', { name: 'Fetch rates automatically' } )
+		).toBeDisabled();
+		expect( screen.getByText( 'No automatic-rate provider is available.' ) ).toBeInTheDocument();
+		const saveButton = screen.getByRole( 'button', { name: 'Save changes' } );
+		expect( saveButton ).toHaveAttribute( 'aria-disabled', 'true' );
+		expect( screen.getByText( 'Enter a positive exchange rate.' ) ).toBeInTheDocument();
+
+		fireEvent.change( screen.getByLabelText( 'Manual rate' ), {
+			target: { value: '1.25' },
+		} );
+		mockApiFetch.mockResolvedValueOnce( manualSettingsResponse );
+		fireEvent.click( saveButton );
+
+		await waitFor( () =>
+			expect( mockApiFetch ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					data: expect.objectContaining( { manual_rate: 1.25 } ),
+				} )
+			)
+		);
+	} );
+
+	it( 'keeps automatic selection available during a named provider outage', async () => {
+		mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+		renderModal( {
+			automaticRates: { available: false, source: 'woopayments' },
+		} );
+
+		expect(
+			await screen.findByRole( 'radio', {
+				name: 'Fetch rates automatically',
+			} )
+		).toBeChecked();
+		expect(
+			screen.getAllByText(
+				'WooPayments automatic rates are temporarily unavailable. You can use manual rates.'
+			)
+		).not.toHaveLength( 0 );
 	} );
 
 	it( 'saves manual currency settings with preserved REST keys', async () => {

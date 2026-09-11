@@ -7,6 +7,7 @@ import {
 	Button,
 	CheckboxControl,
 	Modal,
+	Notice,
 	SearchControl,
 	Spinner,
 } from '@wordpress/components';
@@ -17,7 +18,11 @@ import { __, sprintf } from '@wordpress/i18n';
 /**
  * Internal dependencies
  */
-import type { MultiCurrencyCurrency, StoreCurrenciesResponse } from './types';
+import type {
+	AutomaticRatesDescriptor,
+	MultiCurrencyCurrency,
+	StoreCurrenciesResponse,
+} from './types';
 import { StoreLevelSettings } from './store-settings';
 import { CurrencySettingsModal } from './currency-settings-modal';
 
@@ -54,9 +59,50 @@ const formatExchangeRate = ( currency: MultiCurrencyCurrency ): string => {
 		return __( 'Default currency', 'woocommerce' );
 	}
 
+	if ( currency.rate === null ) {
+		return __( 'Manual rate required', 'woocommerce' );
+	}
+
 	return currency.rate.toLocaleString( undefined, {
 		maximumFractionDigits: 6,
 	} );
+};
+
+const getAutomaticRatesNotice = (
+	automaticRates: AutomaticRatesDescriptor
+): string => {
+	if ( automaticRates.source === null ) {
+		return __(
+			'No automatic-rate provider is available. Set manual rates for enabled currencies.',
+			'woocommerce'
+		);
+	}
+
+	if ( automaticRates.available ) {
+		return sprintf(
+			/* translators: %s: Automatic-rate provider name or ID. */
+			__( 'Automatic rates are provided by %s.', 'woocommerce' ),
+			automaticRates.source === 'woopayments'
+				? 'WooPayments'
+				: automaticRates.source
+		);
+	}
+
+	if ( automaticRates.source === 'woopayments' ) {
+		return __(
+			'WooPayments automatic rates are temporarily unavailable. You can use manual rates.',
+			'woocommerce'
+		);
+	}
+
+	return sprintf(
+		/* translators: %s: Automatic-rate provider ID. */
+		__(
+			'Automatic rates from %s are temporarily unavailable. You can use manual rates.',
+			'woocommerce'
+		),
+		automaticRates.source
+	);
 };
 
 const updateCurrencyRecordRate = (
@@ -332,6 +378,9 @@ export function MultiCurrencySettingsApp() {
 	return (
 		<div className="woocommerce-multi-currency-settings">
 			<StoreLevelSettings />
+			<Notice status="info" isDismissible={ false }>
+				{ getAutomaticRatesNotice( currencies.automatic_rates ) }
+			</Notice>
 
 			<div className="woocommerce-multi-currency-settings__actions">
 				<h2>{ __( 'Enabled currencies', 'woocommerce' ) }</h2>
@@ -440,6 +489,7 @@ export function MultiCurrencySettingsApp() {
 				<CurrencySettingsModal
 					currency={ managedCurrency }
 					defaultCurrency={ currencies.default }
+					automaticRates={ currencies.automatic_rates }
 					onClose={ closeCurrencySettingsModal }
 					onSaved={ updateManagedCurrencyRate }
 				/>

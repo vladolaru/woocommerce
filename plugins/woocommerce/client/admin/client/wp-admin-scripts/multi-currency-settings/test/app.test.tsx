@@ -87,7 +87,7 @@ const currenciesResponse: StoreCurrenciesResponse = {
 			rounding: '0',
 			last_updated: 1710000000,
 		},
-		CAD: {
+	CAD: {
 			id: 'cad',
 			code: 'CAD',
 			name: 'Canadian dollar',
@@ -103,6 +103,10 @@ const currenciesResponse: StoreCurrenciesResponse = {
 	},
 	enabled: {},
 	default: {} as StoreCurrenciesResponse[ 'default' ],
+	automatic_rates: {
+		available: true,
+		source: 'woopayments',
+	},
 };
 currenciesResponse.enabled = {
 	USD: currenciesResponse.available.USD,
@@ -191,6 +195,67 @@ describe( 'MultiCurrencySettingsApp', () => {
 		expect(
 			screen.getByText( 'Currency settings modal for EUR' )
 		).toBeInTheDocument();
+	} );
+
+	it( 'renders inactive enabled currencies safely and restores Manage focus after closing', async () => {
+		mockApiFetch.mockReset();
+		const inactiveCurrency = {
+			...currenciesResponse.available.CAD,
+			rate: null,
+		};
+		mockApiFetch.mockResolvedValueOnce( {
+			...currenciesResponse,
+			available: {
+				...currenciesResponse.available,
+				CAD: inactiveCurrency,
+			},
+			enabled: {
+				USD: currenciesResponse.available.USD,
+				CAD: inactiveCurrency,
+			},
+		} );
+
+		render( <MultiCurrencySettingsApp /> );
+
+		expect( await screen.findByText( 'Manual rate required' ) ).toBeInTheDocument();
+		const manageButton = screen.getByRole( 'button', {
+			name: 'Manage Canadian dollar settings',
+		} );
+		fireEvent.click( manageButton );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Save CAD manual rate' } )
+		);
+
+		await waitFor( () => expect( manageButton ).toHaveFocus() );
+	} );
+
+	it.each( [
+		[
+			{ available: true, source: 'woopayments' },
+			'Automatic rates are provided by WooPayments.',
+		],
+		[
+			{ available: true, source: 'custom-provider' },
+			'Automatic rates are provided by custom-provider.',
+		],
+		[
+			{ available: false, source: null },
+			'No automatic-rate provider is available. Set manual rates for enabled currencies.',
+		],
+		[
+			{ available: false, source: 'woopayments' },
+			'WooPayments automatic rates are temporarily unavailable. You can use manual rates.',
+		],
+	] )( 'renders automatic rate availability notice %s', async ( automaticRates, notice ) => {
+		mockApiFetch.mockReset();
+		mockApiFetch.mockResolvedValueOnce( {
+			...currenciesResponse,
+			automatic_rates: automaticRates,
+		} );
+
+		render( <MultiCurrencySettingsApp /> );
+
+		expect( await screen.findAllByText( notice ) ).not.toHaveLength( 0 );
 	} );
 
 	it( 'updates the displayed exchange rate after saving manual currency settings', async () => {
