@@ -310,10 +310,16 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 1, $provider_calls );
 		$this->assertSame( 2, $rest_calls );
-		$this->assertLessThan(
-			array_search( MultiCurrencyRestController::class, $container->resolved, true ),
-			array_search( 'MultiCurrencyProviderRoot', $container->resolved, true )
-		);
+		$this->assertContains( 'MultiCurrencyProviderRoot', $container->resolved );
+		$this->assertContains( MultiCurrencyRestController::class, $container->resolved );
+		$this->assertContains( 'register:MultiCurrencyProviderRoot', $container->events );
+
+		$provider_root_position   = array_search( 'MultiCurrencyProviderRoot', $container->resolved, true );
+		$rest_controller_position = array_search( MultiCurrencyRestController::class, $container->resolved, true );
+
+		$this->assertNotFalse( $provider_root_position );
+		$this->assertNotFalse( $rest_controller_position );
+		$this->assertLessThan( $rest_controller_position, $provider_root_position );
 	}
 
 	/** @testdox Should return before request or container work when the bootstrap filter is false. */
