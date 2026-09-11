@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPluginEvidenceDiscovery;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPlatformConnectionService;
@@ -343,6 +344,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		delete_transient( 'woocommerce_woopayments_native_cutover_status' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_version' );
+		delete_option( 'woocommerce_woopayments_plugin_evidence' );
+		delete_option( 'woocommerce_woopayments_plugin_evidence_discovery' );
+		delete_site_option( 'woocommerce_woopayments_plugin_evidence_network' );
+		delete_site_option( 'woocommerce_woopayments_plugin_evidence_network_discovery' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
@@ -689,6 +694,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_native_activation_guard_blocks_a_store_without_woopayments_plugin_evidence(): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
+		update_option( 'woocommerce_woopayments_plugin_evidence', 'none' );
 		$this->enable_native_runtime_owner();
 		$this->fake_wp_die_handler();
 
@@ -702,6 +708,231 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'page=wc-settings', $this->wp_die_arguments['link_url'] );
 		$this->assertStringContainsString( 'tab=checkout', $this->wp_die_arguments['link_url'] );
 		$this->assertStringNotContainsString( 'plugins.php', $this->wp_die_arguments['link_url'] );
+	}
+
+	/** @testdox Native WooPayments keeps activation available while historical evidence discovery is incomplete. */
+	public function test_native_activation_guard_allows_an_unknown_evidence_state(): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		delete_option( 'woocommerce_woopayments_plugin_evidence' );
+		$this->enable_native_runtime_owner();
+
+		$this->sut->guard_woopayments_activation();
+
+		$this->assertTrue( true, 'Rollback must remain available until durable historical evidence discovery concludes.' );
+	}
+
+	/** @testdox The first-time activation guard does not synchronously scan high-cardinality payment-token data. */
+	public function test_native_activation_guard_does_not_scan_payment_data_for_a_conclusive_no_evidence_marker(): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		update_option( 'woocommerce_woopayments_plugin_evidence', 'none' );
+		$this->enable_native_runtime_owner();
+		$this->fake_wp_die_handler();
+		$scanned_payment_data = false;
+		$observe_query        = static function ( string $query ) use ( &$scanned_payment_data ): string {
+			if ( false !== strpos( $query, 'woocommerce_payment_tokens' ) || false !== strpos( $query, 'wc_orders' ) || false !== strpos( $query, 'postmeta' ) ) {
+				$scanned_payment_data = true;
+			}
+			return $query;
+		};
+		add_filter( 'query', $observe_query );
+
+		try {
+			$this->sut->guard_woopayments_activation();
+			$this->fail( 'A conclusively first-time native store should block standalone WooPayments activation.' );
+		} catch ( WooPaymentsCutoverBlockedException $exception ) {
+			$this->assertSame( 'WooPayments is already available in WooCommerce. Set up WooPayments in Payments settings instead.', $exception->getMessage() );
+		} finally {
+			remove_filter( 'query', $observe_query );
+		}
+
+		$this->assertFalse( $scanned_payment_data, 'The synchronous activation hook must rely on the durable marker instead of scanning orders or tokens.' );
+	}
+
+	/** @testdox Historical evidence discovery scans large token tables in bounded pages before concluding there is no evidence. */
+	public function test_plugin_evidence_discovery_keeps_a_high_cardinality_no_match_token_scan_incomplete_after_one_page(): void {
+		global $wpdb;
+
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		update_option( 'woocommerce_woopayments_plugin_evidence', 'unknown' );
+		$tokens_table  = $wpdb->prefix . 'woocommerce_payment_tokens';
+		$last_token_id = (int) $wpdb->get_var( "SELECT MAX(token_id) FROM {$tokens_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Trusted WordPress table name in a test fixture.
+		update_option(
+			'woocommerce_woopayments_plugin_evidence_discovery',
+			array(
+				'stage'  => 'tokens',
+				'cursor' => $last_token_id,
+			)
+		);
+		$token_ids = array();
+
+		try {
+			for ( $index = 0; $index < 101; ++$index ) {
+				$wpdb->insert(
+					$tokens_table,
+					array(
+						'gateway_id' => 'other_gateway',
+						'token'      => 'evidence-no-match-' . $index,
+						'user_id'    => 1,
+						'type'       => 'CC',
+					),
+					array( '%s', '%s', '%d', '%s' )
+				);
+				$token_ids[] = (int) $wpdb->insert_id;
+			}
+
+			( new WooPaymentsPluginEvidenceDiscovery() )->discover_current_site();
+
+			$progress = get_option( 'woocommerce_woopayments_plugin_evidence_discovery' );
+			$this->assertSame( 'unknown', get_option( 'woocommerce_woopayments_plugin_evidence' ) );
+			$this->assertIsArray( $progress );
+			$this->assertSame( 'tokens', $progress['stage'] );
+			$this->assertGreaterThan( $last_token_id, $progress['cursor'] );
+			$this->assertLessThan( max( $token_ids ), $progress['cursor'] );
+		} finally {
+			if ( array() !== $token_ids ) {
+				$token_ids_list = implode( ',', array_map( 'absint', $token_ids ) );
+				$wpdb->query( "DELETE FROM {$tokens_table} WHERE token_id IN ({$token_ids_list})" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Trusted test token IDs and table name.
+			}
+		}
+	}
+
+	/**
+	 * @testdox A WooPayments order written after fresh native onboarding replaces the first-time marker with rollback evidence.
+	 *
+	 * @dataProvider data_provider_woopayments_gateway_ids
+	 *
+	 * @param string $gateway_id WooPayments gateway identity.
+	 */
+	public function test_woopayments_order_writes_replace_a_fresh_first_time_marker( string $gateway_id ): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		update_option( 'woocommerce_woopayments_plugin_evidence', 'none' );
+		$discovery = new WooPaymentsPluginEvidenceDiscovery();
+		$discovery->register();
+
+		try {
+			$order = wc_create_order();
+			$order->set_payment_method( $gateway_id );
+			$order->save();
+
+			$this->assertSame( 'present', get_option( 'woocommerce_woopayments_plugin_evidence' ) );
+		} finally {
+			remove_action( 'woocommerce_new_order', array( $discovery, 'observe_order' ), 10 );
+			remove_action( 'woocommerce_update_order', array( $discovery, 'observe_order' ), 10 );
+			remove_action( 'woocommerce_new_payment_token', array( $discovery, 'observe_payment_token' ), 10 );
+			remove_action( 'woocommerce_payment_token_object_updated_props', array( $discovery, 'observe_payment_token_update' ), 10 );
+			remove_action( 'action_scheduler_init', array( $discovery, 'handle_action_scheduler_init' ) );
+			remove_action( WooPaymentsPluginEvidenceDiscovery::DISCOVERY_ACTION_HOOK, array( $discovery, 'discover_current_site' ), 10 );
+			remove_action( WooPaymentsPluginEvidenceDiscovery::NETWORK_DISCOVERY_ACTION_HOOK, array( $discovery, 'refresh_network_summary' ) );
+		}
+	}
+
+	/**
+	 * @testdox A WooPayments token written after fresh native onboarding replaces the first-time marker with rollback evidence.
+	 *
+	 * @dataProvider data_provider_woopayments_gateway_ids
+	 *
+	 * @param string $gateway_id WooPayments gateway identity.
+	 */
+	public function test_woopayments_token_writes_replace_a_fresh_first_time_marker( string $gateway_id ): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		update_option( 'woocommerce_woopayments_plugin_evidence', 'none' );
+		$discovery = new WooPaymentsPluginEvidenceDiscovery();
+		$discovery->register();
+		$token = $this->create_woopayments_token( $gateway_id );
+
+		try {
+			$this->assertSame( 'present', get_option( 'woocommerce_woopayments_plugin_evidence' ) );
+		} finally {
+			$token->delete( true );
+			remove_action( 'woocommerce_new_order', array( $discovery, 'observe_order' ), 10 );
+			remove_action( 'woocommerce_update_order', array( $discovery, 'observe_order' ), 10 );
+			remove_action( 'woocommerce_new_payment_token', array( $discovery, 'observe_payment_token' ), 10 );
+			remove_action( 'woocommerce_payment_token_object_updated_props', array( $discovery, 'observe_payment_token_update' ), 10 );
+			remove_action( 'action_scheduler_init', array( $discovery, 'handle_action_scheduler_init' ) );
+			remove_action( WooPaymentsPluginEvidenceDiscovery::DISCOVERY_ACTION_HOOK, array( $discovery, 'discover_current_site' ), 10 );
+			remove_action( WooPaymentsPluginEvidenceDiscovery::NETWORK_DISCOVERY_ACTION_HOOK, array( $discovery, 'refresh_network_summary' ) );
+		}
+	}
+
+	/** @testdox A payment-token gateway update records WooPayments evidence using the update hook's token-first signature. */
+	public function test_woopayments_payment_token_gateway_updates_replace_a_fresh_first_time_marker(): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		update_option( 'woocommerce_woopayments_plugin_evidence', 'none' );
+		$discovery = new WooPaymentsPluginEvidenceDiscovery();
+		$discovery->register();
+		$token = $this->create_woopayments_token( 'other_gateway' );
+
+		try {
+			$token->set_gateway_id( 'woocommerce_payments_card' );
+			$token->save();
+
+			$this->assertSame( 'present', get_option( 'woocommerce_woopayments_plugin_evidence' ) );
+		} finally {
+			$token->delete( true );
+			remove_action( 'woocommerce_new_order', array( $discovery, 'observe_order' ), 10 );
+			remove_action( 'woocommerce_update_order', array( $discovery, 'observe_order' ), 10 );
+			remove_action( 'woocommerce_new_payment_token', array( $discovery, 'observe_payment_token' ), 10 );
+			remove_action( 'woocommerce_payment_token_object_updated_props', array( $discovery, 'observe_payment_token_update' ), 10 );
+			remove_action( 'action_scheduler_init', array( $discovery, 'handle_action_scheduler_init' ) );
+			remove_action( WooPaymentsPluginEvidenceDiscovery::DISCOVERY_ACTION_HOOK, array( $discovery, 'discover_current_site' ), 10 );
+			remove_action( WooPaymentsPluginEvidenceDiscovery::NETWORK_DISCOVERY_ACTION_HOOK, array( $discovery, 'refresh_network_summary' ) );
+		}
+	}
+
+	/** @testdox Network activation remains available when a native subsite has historical rollback evidence. */
+	public function test_network_activation_guard_allows_a_network_with_subsite_rollback_evidence(): void {
+		$this->create_multisite_plugin_evidence_sites();
+		$this->enable_native_runtime_owner();
+		$discovery = new WooPaymentsPluginEvidenceDiscovery();
+
+		switch_to_blog( $this->multisite_blog_ids[0] );
+		update_option( 'woocommerce_woopayments_plugin_evidence', 'present' );
+		restore_current_blog();
+		$discovery->refresh_network_summary();
+
+		$this->sut->guard_woopayments_activation( true );
+
+		$this->assertSame( 'present', get_site_option( 'woocommerce_woopayments_plugin_evidence_network' ) );
+		$this->assertTrue( true, 'Network rollback must stay available when any native subsite has WooPayments evidence.' );
+	}
+
+	/** @testdox Network activation blocks only after every native site is conclusively first-time. */
+	public function test_network_activation_guard_blocks_when_every_native_site_is_conclusively_first_time(): void {
+		$this->create_multisite_plugin_evidence_sites();
+		$this->enable_native_runtime_owner();
+		$this->fake_wp_die_handler();
+		( new WooPaymentsPluginEvidenceDiscovery() )->refresh_network_summary();
+		$this->assertSame( 'none', get_site_option( 'woocommerce_woopayments_plugin_evidence_network' ) );
+
+		$this->expectException( WooPaymentsCutoverBlockedException::class );
+
+		$this->sut->guard_woopayments_activation( true );
+	}
+
+	/** @testdox Network evidence ignores a subsite whose runtime is not native-owned. */
+	public function test_network_activation_guard_ignores_rollback_evidence_on_a_subsite_without_the_native_runtime(): void {
+		$this->create_multisite_plugin_evidence_sites();
+		$this->enable_native_runtime_owner();
+		$non_native_blog_id  = $this->multisite_blog_ids[0];
+		$native_owner_filter = static function ( bool $enabled ) use ( $non_native_blog_id ): bool {
+			return get_current_blog_id() === $non_native_blog_id ? false : $enabled;
+		};
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $native_owner_filter );
+
+		switch_to_blog( $non_native_blog_id );
+		update_option( 'woocommerce_woopayments_plugin_evidence', 'present' );
+		restore_current_blog();
+
+		try {
+			( new WooPaymentsPluginEvidenceDiscovery() )->refresh_network_summary();
+			$this->assertSame( 'none', get_site_option( 'woocommerce_woopayments_plugin_evidence_network' ) );
+
+			$this->fake_wp_die_handler();
+			$this->expectException( WooPaymentsCutoverBlockedException::class );
+			$this->sut->guard_woopayments_activation( true );
+		} finally {
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $native_owner_filter );
+		}
 	}
 
 	/** @testdox Native WooPayments should allow plugin reactivation after a recorded version. */
@@ -725,6 +956,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$order = wc_create_order();
 		$order->set_payment_method( $gateway_id );
 		$order->save();
+		( new WooPaymentsPluginEvidenceDiscovery() )->observe_order( $order->get_id(), $order );
 		$this->enable_native_runtime_owner();
 
 		$this->sut->guard_woopayments_activation();
@@ -742,6 +974,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_native_activation_guard_allows_a_store_with_a_woopayments_token( string $gateway_id ): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
 		$token = $this->create_woopayments_token( $gateway_id );
+		( new WooPaymentsPluginEvidenceDiscovery() )->observe_payment_token( $token->get_id(), $token );
 		$this->enable_native_runtime_owner();
 
 		try {
@@ -1743,6 +1976,26 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
+	}
+
+	/** Create native-owned sites with conclusively first-time WooPayments evidence. */
+	private function create_multisite_plugin_evidence_sites(): void {
+		$this->skipWithoutMultisite();
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		update_option( 'woocommerce_native_payments_enabled', 'yes' );
+		update_option( 'woocommerce_woopayments_plugin_evidence', 'none' );
+
+		for ( $index = 0; $index < 2; ++$index ) {
+			$blog_id                    = self::factory()->blog->create();
+			$this->multisite_blog_ids[] = $blog_id;
+			switch_to_blog( $blog_id );
+			\WC_Install::create_tables();
+			( new \ActionScheduler_StoreSchema() )->register_tables( true );
+			update_option( 'woocommerce_native_payments_enabled', 'yes' );
+			update_option( 'woocommerce_woopayments_plugin_evidence', 'none' );
+			delete_option( 'woocommerce_woocommerce_payments_version' );
+			restore_current_blog();
+		}
 	}
 
 	/**

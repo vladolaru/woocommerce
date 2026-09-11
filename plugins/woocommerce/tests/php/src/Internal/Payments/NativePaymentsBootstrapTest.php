@@ -35,16 +35,19 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** Available admin roots. */
 	private const AVAILABLE_ADMIN = array(
 		self::WCPAY . 'WooPaymentsCutoverController',
+		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		WooPaymentsCutoverReconciliationJob::class,
 	);
 
 	/** Available cron and Action Scheduler roots. */
 	private const AVAILABLE_CRON = array(
+		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		WooPaymentsCutoverReconciliationJob::class,
 	);
 
 	/** Connected admin roots. */
 	private const CONNECTED_ADMIN = array(
+		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		self::WCPAY . 'WooPaymentsCutoverController',
 		WooPaymentsCutoverReconciliationJob::class,
 		self::ADMIN_NAVIGATION,
@@ -106,6 +109,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Connected cron and Action Scheduler roots. */
 	private const CONNECTED_CRON = array(
+		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		WooPaymentsCutoverReconciliationJob::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
@@ -120,6 +124,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Active shopper roots. */
 	private const ACTIVE_FRONT = array(
+		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
@@ -149,6 +154,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** Active admin roots. */
 	private const ACTIVE_ADMIN = array(
 		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
+		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsCutoverController',
@@ -171,6 +177,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Active AJAX roots. */
 	private const ACTIVE_AJAX = array(
+		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
@@ -197,6 +204,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Active REST and Store API roots. */
 	private const ACTIVE_REST = array(
+		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
@@ -236,6 +244,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** Active cron and Action Scheduler roots. */
 	private const ACTIVE_CRON = array(
 		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
+		self::WCPAY . 'WooPaymentsPluginEvidenceDiscovery',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		WooPaymentsCutoverReconciliationJob::class,

@@ -181,6 +181,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsOrderAdminActionsController::class,
 		);
 		$active_prefix             = array(
+			WooPaymentsPluginEvidenceDiscovery::class,
 			NativePaymentsGatewayRegistry::class,
 			self::class,
 		);
@@ -191,14 +192,14 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 
 		return array(
 			NativePaymentsState::AVAILABLE => array(
-				'admin' => array( WooPaymentsCutoverController::class, WooPaymentsCutoverReconciliationJob::class ),
-				'cron'  => array( WooPaymentsCutoverReconciliationJob::class ),
+				'admin' => array( WooPaymentsCutoverController::class, WooPaymentsPluginEvidenceDiscovery::class, WooPaymentsCutoverReconciliationJob::class ),
+				'cron'  => array( WooPaymentsPluginEvidenceDiscovery::class, WooPaymentsCutoverReconciliationJob::class ),
 			),
 			NativePaymentsState::CONNECTED => array(
-				'admin' => $connected_admin,
+				'admin' => array_merge( array( WooPaymentsPluginEvidenceDiscovery::class ), $connected_admin ),
 				'ajax'  => $connected_ajax,
 				'rest'  => $connected_rest,
-				'cron'  => $connected_cron,
+				'cron'  => array_merge( array( WooPaymentsPluginEvidenceDiscovery::class ), $connected_cron ),
 			),
 			NativePaymentsState::ACTIVE    => array(
 				'front' => array_merge(

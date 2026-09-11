@@ -1284,6 +1284,10 @@ class WC_Install {
 
 		if ( self::is_new_install() ) {
 			add_option( 'woocommerce_native_payments_enabled', 'yes', '', true );
+			add_option( 'woocommerce_woopayments_plugin_evidence', 'none', '', true );
+			if ( is_multisite() ) {
+				update_site_option( 'woocommerce_woopayments_plugin_evidence_network', 'unknown' );
+			}
 
 			// Define initial tax classes.
 			WC_Tax::create_tax_class( __( 'Reduced rate', 'woocommerce' ) );
