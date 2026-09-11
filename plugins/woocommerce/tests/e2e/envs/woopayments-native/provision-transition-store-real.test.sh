@@ -295,6 +295,7 @@ node -e '
 	"$frontend_blocks_checkout_js_hash" \
 	"$seed_canonical_hash"
 export E2E_TRANSITION_FRONTEND_LOCK_SHA256="$frontend_lock_hash"
+export E2E_TRANSITION_TEST_MODE=1
 chmod 0444 \
 	"$TEST_ROOT/source-only-seed.tar.gz" \
 	"$TEST_ROOT/source-only-seed.json" \
@@ -835,5 +836,25 @@ if E2E_FAKE_ACCOUNT_RUNTIME=native_core run_provisioner "$create_workspace" "$cr
 fi
 grep -Fq 'Transition destroy claim already exists' "$claim_stderr" "$create_log"
 test "$(grep -Fc $'\tdestroy --force' "$create_log")" = '1'
+
+# These are deliberately checked as a production-path contract: WP-CLI seeds
+# and inspects Action Scheduler state, while only HTTP cron/async dispatches
+# the callbacks. Removing any scheduling, receipt, or state fence breaks this
+# suite before a browser rehearsal can hide it.
+grep -Fq 'wcpay_migrate_subscription_retry' "$PROVISIONER"
+grep -Fq 'pending_migrator_action_id' "$PROVISIONER"
+grep -Fq 'core multisite-convert' "$PROVISIONER"
+grep -Fq 'site create' "$PROVISIONER"
+grep -Fq 'transition-network-mixed' "$PROVISIONER"
+grep -Fq 'transition-network-reopened' "$PROVISIONER"
+grep -Fq 'wp-cron.php?doing_wp_cron=' "$PROVISIONER"
+grep -Fq 'as_async_request_queue_runner' "$PROVISIONER"
+grep -Fq 'network_primary_site_id' "$PROVISIONER"
+grep -Fq 'network_secondary_site_id' "$PROVISIONER"
+grep -Fq 'network_final_site_states' "$PROVISIONER"
+if grep -Eq 'action-scheduler[[:space:]]+(run|execute)|action_scheduler_run' "$PROVISIONER"; then
+	echo 'The network rehearsal must not execute Action Scheduler callbacks through WP-CLI.' >&2
+	exit 1
+fi
 
 echo 'provision-transition-store-real.sh reference fixture tests passed.'

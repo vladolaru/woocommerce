@@ -47,18 +47,24 @@ case "$seed_profile" in
 	10.5.0)
 		readonly SEED_COMMIT='a1f755fc903966387f8629f78f75976ac8d2016e'
 		readonly SEED_VERSION='10.5.0'
-		readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1}"
+		FRONTEND_LOCK_SHA256='6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1'
 		;;
 	10.4.0)
 		readonly SEED_COMMIT='e2a6e70f21ff5827a9e67abeb4bc44c9ccabeb3d'
 		readonly SEED_VERSION='10.4.0'
-		readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-934b317f080dc26760be7364ef64a748b33f6055e03e7accec37f23461ae7bb7}"
+		FRONTEND_LOCK_SHA256='934b317f080dc26760be7364ef64a748b33f6055e03e7accec37f23461ae7bb7'
 		;;
 	*)
 		echo "Unknown immutable transition seed profile: $seed_profile" >&2
 		exit 1
 		;;
 esac
+
+if [[ "${E2E_TRANSITION_TEST_MODE:-0}" == '1' ]] &&
+	[[ -n "${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-}" ]]; then
+	FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256}"
+fi
+readonly FRONTEND_LOCK_SHA256
 
 if [[ -z "$output_dir" ]]; then
 	echo 'build-transition-seed.sh requires --output-dir.' >&2

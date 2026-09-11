@@ -9,18 +9,23 @@ case "$SEED_PROFILE" in
 	10.5.0)
 		readonly SEED_COMMIT='a1f755fc903966387f8629f78f75976ac8d2016e'
 		readonly SEED_VERSION='10.5.0'
-		readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1}"
+		FRONTEND_LOCK_SHA256='6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1'
 		;;
 	10.4.0)
 		readonly SEED_COMMIT='e2a6e70f21ff5827a9e67abeb4bc44c9ccabeb3d'
 		readonly SEED_VERSION='10.4.0'
-		readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-934b317f080dc26760be7364ef64a748b33f6055e03e7accec37f23461ae7bb7}"
+		FRONTEND_LOCK_SHA256='934b317f080dc26760be7364ef64a748b33f6055e03e7accec37f23461ae7bb7'
 		;;
 	*)
 		echo "Unknown immutable transition seed profile: $SEED_PROFILE" >&2
 		exit 1
 		;;
 esac
+if [[ "${E2E_TRANSITION_TEST_MODE:-0}" == '1' ]] &&
+	[[ -n "${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-}" ]]; then
+	FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256}"
+fi
+readonly FRONTEND_LOCK_SHA256
 readonly SCRIPT_DIR="$(
 	cd "$(dirname "${BASH_SOURCE[0]}")"
 	pwd -P
@@ -1110,7 +1115,38 @@ prepare_network_reconciliation() {
 		echo 'Transition network setup did not identify its primary site.' >&2
 		return 1
 	fi
+	local mixed_states
+	mixed_states="$(store_wp eval '
+		$job = wc_get_container()->get( Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsCutoverReconciliationJob::class );
+		update_site_option( "woocommerce_woopayments_cutover_network_rehearsal_blocker", "mixed" );
+		if ( ! $job->enqueue( "transition-network-mixed" ) ) {
+			WP_CLI::error( "Unable to schedule the mixed network reconciliation generation." );
+		}
+		$states = array();
+		foreach ( get_sites( array( "number" => 2, "fields" => "ids" ) ) as $site_id ) {
+			switch_to_blog( (int) $site_id );
+			$record = get_option( "woocommerce_woopayments_cutover_state", null );
+			$states[] = array( "site_id" => (int) $site_id, "generation" => (int) ( $record["generation"] ?? 0 ), "state" => (string) ( $record["state"] ?? "" ) );
+			restore_current_blog();
+		}
+		echo wp_json_encode( $states );
+	' | node -e 'const { readFileSync } = require( "node:fs" ); process.stdout.write( readFileSync( 0, "utf8" ).trim() );')"
+	node -e '
+		const states = JSON.parse( process.argv[ 1 ] );
+		if ( ! Array.isArray( states ) || states.length !== 2 || states.some( ( state ) => ! Number.isSafeInteger( state.site_id ) || state.generation <= 0 || ! [ "pending", "deferred", "excluded" ].includes( state.state ) ) ) process.exit( 1 );
+	' "$mixed_states"
 	local site_url
+	for site_url in "$base_url" "${base_url}/cutover-secondary"; do
+		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
+		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
+	done
+	store_wp eval '
+		delete_site_option( "woocommerce_woopayments_cutover_network_rehearsal_blocker" );
+		$job = wc_get_container()->get( Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsCutoverReconciliationJob::class );
+		if ( ! $job->enqueue( "transition-network-reopened" ) ) {
+			WP_CLI::error( "Unable to schedule the reopened network reconciliation generation." );
+		}
+	' > /dev/null
 	for site_url in "$base_url" "${base_url}/cutover-secondary"; do
 		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
 		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
@@ -1121,18 +1157,21 @@ prepare_network_reconciliation() {
 		$result = array();
 		foreach ( $sites as $site_id ) {
 			switch_to_blog( (int) $site_id );
-			$result[] = array( "site_id" => (int) $site_id, "state" => (string) get_option( "wc_payments_cutover_reconciliation_state", "" ) );
+			$record = get_option( "woocommerce_woopayments_cutover_state", null );
+			$result[] = array( "site_id" => (int) $site_id, "generation" => (int) ( $record["generation"] ?? 0 ), "state" => (string) ( $record["state"] ?? "" ) );
 			restore_current_blog();
 		}
 		echo wp_json_encode( $result );
 	' | node -e 'const { readFileSync } = require( "node:fs" ); process.stdout.write( readFileSync( 0, "utf8" ).trim() );')"
 	node -e '
 		const states = JSON.parse( process.argv[ 1 ] );
-		if ( ! Array.isArray( states ) || states.length !== 2 || states.some( ( state ) => ! Number.isSafeInteger( state.site_id ) || typeof state.state !== "string" ) ) process.exit( 1 );
-	' "$final_states"
+		const mixed = JSON.parse( process.argv[ 2 ] );
+		if ( ! Array.isArray( states ) || states.length !== 2 || states.some( ( state, index ) => ! Number.isSafeInteger( state.site_id ) || state.site_id !== mixed[ index ].site_id || state.generation <= mixed[ index ].generation || state.state !== "done" ) ) process.exit( 1 );
+	' "$final_states" "$mixed_states"
 	update_state network_primary_site_id "$primary_site_id" number
 	update_state network_secondary_site_id "$secondary_site_id" number
 	update_state network_final_site_states "$final_states"
+	update_state network_mixed_site_states "$mixed_states"
 }
 
 validate_store_scope() {
@@ -1176,6 +1215,12 @@ emit_create_result() {
 		if ( process.argv[ 8 ] ) result.pending_migrator_hook = process.argv[ 8 ];
 		const actionId = Number( process.argv[ 9 ] );
 		if ( Number.isSafeInteger( actionId ) && actionId > 0 ) result.pending_migrator_action_id = actionId;
+		const primarySiteId = Number( process.argv[ 10 ] );
+		const secondarySiteId = Number( process.argv[ 11 ] );
+		if ( Number.isSafeInteger( primarySiteId ) && primarySiteId > 0 ) result.network_primary_site_id = primarySiteId;
+		if ( Number.isSafeInteger( secondarySiteId ) && secondarySiteId > 0 ) result.network_secondary_site_id = secondarySiteId;
+		if ( process.argv[ 12 ] ) result.network_final_site_states = JSON.parse( process.argv[ 12 ] );
+		if ( process.argv[ 13 ] ) result.network_mixed_site_states = JSON.parse( process.argv[ 13 ] );
 		process.stdout.write( `${ JSON.stringify( result ) }\n` );
 	' \
 		"$base_url" \
@@ -1186,7 +1231,11 @@ emit_create_result() {
 		"$(state_field account_id 2> /dev/null || true)" \
 		"$status" \
 		"$(state_field pending_migrator_hook 2> /dev/null || true)" \
-		"$(state_field pending_migrator_action_id 2> /dev/null || true)"
+		"$(state_field pending_migrator_action_id 2> /dev/null || true)" \
+		"$(state_field network_primary_site_id 2> /dev/null || true)" \
+		"$(state_field network_secondary_site_id 2> /dev/null || true)" \
+		"$(state_field network_final_site_states 2> /dev/null || true)" \
+		"$(state_field network_mixed_site_states 2> /dev/null || true)"
 }
 
 write_durable_receipt() {

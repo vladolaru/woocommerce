@@ -132,6 +132,7 @@ run_builder() {
 		E2E_TRANSITION_COMPOSER_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-composer.sh" \
 		E2E_TRANSITION_NODE_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-node.sh" \
 		E2E_TRANSITION_NPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-npm.sh" \
+		E2E_TRANSITION_TEST_MODE=1 \
 		E2E_TRANSITION_FRONTEND_LOCK_SHA256="$frontend_lock_hash" \
 		E2E_FAKE_SEED_TREE="$TEST_ROOT/tree" \
 		E2E_FAKE_COMMAND_LOG="$TEST_ROOT/commands.log" \
@@ -559,6 +560,7 @@ for composer_mode in missing mismatch; do
 		E2E_TRANSITION_COMPOSER_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-composer.sh" \
 		E2E_TRANSITION_NODE_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-node.sh" \
 		E2E_TRANSITION_NPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-npm.sh" \
+		E2E_TRANSITION_TEST_MODE=1 \
 		E2E_TRANSITION_FRONTEND_LOCK_SHA256="$frontend_lock_hash" \
 		E2E_FAKE_SEED_TREE="$TEST_ROOT/tree" \
 		E2E_FAKE_COMMAND_LOG="$TEST_ROOT/commands.log" \
@@ -589,7 +591,8 @@ if env \
 	E2E_TRANSITION_GZIP_BIN="$GZIP_BIN" \
 	E2E_TRANSITION_COMPOSER_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-composer.sh" \
 	E2E_TRANSITION_NODE_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-node.sh" \
-	E2E_TRANSITION_NPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-npm.sh" \
+		E2E_TRANSITION_NPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-npm.sh" \
+		E2E_TRANSITION_TEST_MODE=1 \
 	E2E_TRANSITION_FRONTEND_LOCK_SHA256="$(shasum -a 256 "$old_profile_tree/woocommerce-payments/package-lock.json" | awk '{ print $1 }')" \
 	E2E_FAKE_SEED_TREE="$old_profile_tree" \
 	E2E_FAKE_GIT_COMMIT='e2a6e70f21ff5827a9e67abeb4bc44c9ccabeb3d' \
@@ -611,6 +614,25 @@ if env \
 	E2E_FAKE_SEED_TREE="$TEST_ROOT/tree" \
 	"$BUILDER" --profile unknown --output-dir "$TEST_ROOT/unknown-profile" > /dev/null 2>&1; then
 	echo 'The seed builder accepted an unknown immutable profile.' >&2
+	exit 1
+fi
+
+# A profile's production hash is not an environment setting. The fixture seam
+# must be explicitly test-only, otherwise a caller could forge a profile.
+if env \
+	TMPDIR="$TEST_ROOT" \
+	E2E_TRANSITION_WCPAY_REPO="$TEST_ROOT/repository" \
+	E2E_TRANSITION_GIT_BIN="$SCRIPT_DIR/test-fixtures/bin/git" \
+	E2E_TRANSITION_ARCHIVE_GIT_BIN="$ARCHIVE_GIT_BIN" \
+	E2E_TRANSITION_GZIP_BIN="$GZIP_BIN" \
+	E2E_TRANSITION_COMPOSER_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-composer.sh" \
+	E2E_TRANSITION_NODE_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-node.sh" \
+	E2E_TRANSITION_NPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-npm.sh" \
+	E2E_TRANSITION_FRONTEND_LOCK_SHA256="$frontend_lock_hash" \
+	E2E_FAKE_SEED_TREE="$TEST_ROOT/tree" \
+	E2E_FAKE_COMMAND_LOG="$TEST_ROOT/production-override.log" \
+	"$BUILDER" --output-dir "$TEST_ROOT/production-override" > /dev/null 2>&1; then
+	echo 'A production seed build accepted a mutable frontend lock override.' >&2
 	exit 1
 fi
 
