@@ -83,15 +83,11 @@ const normalizeCurrencySettings = (
 	automaticRates: AutomaticRatesDescriptor
 ): CurrencySettingsState => ( {
 	exchangeRateType:
-		response.exchange_rate_type === 'manual' || automaticRates.source === null
+		response.exchange_rate_type === 'manual' ||
+		automaticRates.source === null
 			? 'manual'
 			: 'automatic',
-	manualRate:
-		response.manual_rate !== null
-			? String( response.manual_rate )
-			: currency.rate === null
-				? ''
-				: String( currency.rate ),
+	manualRate: String( response.manual_rate ?? currency.rate ?? '' ),
 	priceRounding: String(
 		response.price_rounding ?? ( currency.is_zero_decimal ? '100' : '1.00' )
 	),
@@ -113,6 +109,28 @@ const getAutomaticRateUnavailableDescription = ( source: string ): string => {
 			'woocommerce'
 		),
 		source
+	);
+};
+
+const getAutomaticRateDescription = (
+	automaticRates: AutomaticRatesDescriptor,
+	currency: MultiCurrencyCurrency,
+	defaultCurrency: MultiCurrencyCurrency & { rate: number }
+): string => {
+	if ( ! automaticRates.available && automaticRates.source !== null ) {
+		return getAutomaticRateUnavailableDescription( automaticRates.source );
+	}
+
+	if ( currency.rate === null ) {
+		return __( 'An automatic rate is not available yet.', 'woocommerce' );
+	}
+
+	return sprintf(
+		/* translators: 1: Default currency code, 2: Exchange rate, 3: Target currency code. */
+		__( 'Current rate: 1 %1$s = %2$s %3$s', 'woocommerce' ),
+		defaultCurrency.code,
+		String( currency.rate ),
+		currency.code
 	);
 };
 
@@ -288,25 +306,11 @@ export function CurrencySettingsModal( {
 										'woocommerce'
 									),
 									value: 'automatic',
-									description: ! automaticRates.available
-										? getAutomaticRateUnavailableDescription(
-												automaticRates.source
-										  )
-										: currency.rate === null
-										? __(
-												'An automatic rate is not available yet.',
-												'woocommerce'
-										  )
-										: sprintf(
-												/* translators: 1: Default currency code, 2: Exchange rate, 3: Target currency code. */
-												__(
-													'Current rate: 1 %1$s = %2$s %3$s',
-													'woocommerce'
-												),
-												defaultCurrency.code,
-												String( currency.rate ),
-												currency.code
-										  ),
+									description: getAutomaticRateDescription(
+										automaticRates,
+										currency,
+										defaultCurrency
+									),
 								},
 								{
 									label: __( 'Manual', 'woocommerce' ),
@@ -341,7 +345,10 @@ export function CurrencySettingsModal( {
 										className="components-radio-control__label"
 										htmlFor={ `woocommerce-multi-currency-settings-${ currency.code }-automatic` }
 									>
-										{ __( 'Fetch rates automatically', 'woocommerce' ) }
+										{ __(
+											'Fetch rates automatically',
+											'woocommerce'
+										) }
 									</label>
 									<p
 										id={ automaticRateDescriptionId }
@@ -365,7 +372,9 @@ export function CurrencySettingsModal( {
 											automaticRateDescriptionId
 										}
 										onChange={ () =>
-											updateSettings( { exchangeRateType: 'manual' } )
+											updateSettings( {
+												exchangeRateType: 'manual',
+											} )
 										}
 									/>
 									<label

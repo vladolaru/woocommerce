@@ -170,19 +170,27 @@ describe( 'CurrencySettingsModal', () => {
 			automaticRates: { available: false, source: null },
 		} );
 
-		expect( await screen.findByLabelText( 'Manual rate' ) ).toHaveValue( '' );
+		expect( await screen.findByLabelText( 'Manual rate' ) ).toHaveValue(
+			''
+		);
 		expect(
 			screen.getByRole( 'radio', { name: 'Fetch rates automatically' } )
 		).toBeDisabled();
-		expect( screen.getByText( 'No automatic-rate provider is available.' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( 'No automatic-rate provider is available.' )
+		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'radio', { name: 'Manual' } )
 		).toHaveAccessibleDescription(
 			'No automatic-rate provider is available.'
 		);
-		const saveButton = screen.getByRole( 'button', { name: 'Save changes' } );
+		const saveButton = screen.getByRole( 'button', {
+			name: 'Save changes',
+		} );
 		expect( saveButton ).toHaveAttribute( 'aria-disabled', 'true' );
-		expect( screen.getByText( 'Enter a positive exchange rate.' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Enter a positive exchange rate.' )
+		).toBeInTheDocument();
 
 		fireEvent.change( screen.getByLabelText( 'Manual rate' ), {
 			target: { value: '1.25' },

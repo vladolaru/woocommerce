@@ -87,7 +87,7 @@ const currenciesResponse: StoreCurrenciesResponse = {
 			rounding: '0',
 			last_updated: 1710000000,
 		},
-	CAD: {
+		CAD: {
 			id: 'cad',
 			code: 'CAD',
 			name: 'Canadian dollar',
@@ -217,7 +217,9 @@ describe( 'MultiCurrencySettingsApp', () => {
 
 		render( <MultiCurrencySettingsApp /> );
 
-		expect( await screen.findByText( 'Manual rate required' ) ).toBeInTheDocument();
+		expect(
+			await screen.findByText( 'Manual rate required' )
+		).toBeInTheDocument();
 		const manageButton = screen.getByRole( 'button', {
 			name: 'Manage Canadian dollar settings',
 		} );
@@ -246,17 +248,22 @@ describe( 'MultiCurrencySettingsApp', () => {
 			{ available: false, source: 'woopayments' },
 			'WooPayments automatic rates are temporarily unavailable. You can use manual rates.',
 		],
-	] )( 'renders automatic rate availability notice %s', async ( automaticRates, notice ) => {
-		mockApiFetch.mockReset();
-		mockApiFetch.mockResolvedValueOnce( {
-			...currenciesResponse,
-			automatic_rates: automaticRates,
-		} );
+	] )(
+		'renders automatic rate availability notice %s',
+		async ( automaticRates, notice ) => {
+			mockApiFetch.mockReset();
+			mockApiFetch.mockResolvedValueOnce( {
+				...currenciesResponse,
+				automatic_rates: automaticRates,
+			} );
 
-		render( <MultiCurrencySettingsApp /> );
+			render( <MultiCurrencySettingsApp /> );
 
-		expect( await screen.findAllByText( notice ) ).not.toHaveLength( 0 );
-	} );
+			expect( await screen.findAllByText( notice ) ).not.toHaveLength(
+				0
+			);
+		}
+	);
 
 	it( 'updates the displayed exchange rate after saving manual currency settings', async () => {
 		render( <MultiCurrencySettingsApp /> );
