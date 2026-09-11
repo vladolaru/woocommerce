@@ -16,6 +16,7 @@ set -euo pipefail
 printf 'pnpm %s\n' "$*" >> "${E2E_FAKE_COMMAND_LOG:?}"
 [[ "$*" == *'wp-env --config .wp-env.e2e.json run cli wp --user=1 eval'* || "$*" == *'wp-env --config .wp-env.e2e.json run tests-cli wp --user=1 eval'* ]]
 [[ "$*" == *'_wcpay_feature_customer_multi_currency'* ]]
+grep -Fq 'update_option( "woocommerce_feature_multi_currency_enabled", "yes" );' <<< "$*"
 [[ "$*" == *'wcpay_multi_currency_enabled_currencies'* ]]
 [[ "$*" == *'express_checkout_checkout_methods'* ]]
 grep -Fq '$settings["platform_checkout"] = "no"' <<< "$*"
