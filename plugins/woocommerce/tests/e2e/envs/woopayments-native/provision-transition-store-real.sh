@@ -1044,7 +1044,8 @@ reference_fixture_field() {
 }
 
 inject_reference_fixture() {
-	printf '%s' "$1" | store_wp eval '
+	local target_url="${2:-$base_url}"
+	printf '%s' "$1" | store_wp --url="$target_url" eval '
 		/* transition_inject_reference_fixture */
 		$fixture = json_decode(
 			stream_get_contents( STDIN ),
@@ -1103,12 +1104,40 @@ prepare_network_reconciliation() {
 	fi
 	store_wp core multisite-convert --title='WooPayments transition network' > /dev/null
 	local secondary_site_id
-	secondary_site_id="$(store_wp site create "${base_url}/cutover-secondary" --title='Cutover secondary' --porcelain)"
+	secondary_site_id="$(store_wp site create --slug=cutover-secondary --title='Cutover secondary' --porcelain)"
 	if [[ ! "$secondary_site_id" =~ ^[1-9][0-9]*$ ]]; then
 		echo 'Transition network setup did not create an exact secondary site ID.' >&2
 		return 1
 	fi
+	store_wp plugin activate woocommerce --network > /dev/null
 	store_wp plugin activate woocommerce-payments --network > /dev/null
+	local reference_fixture="$1"
+	local secondary_url="${base_url}/cutover-secondary"
+	store_wp --url="$secondary_url" plugin activate woocommerce-payments-dev-tools > /dev/null
+	store_wp --url="$secondary_url" wcpay_dev local_wpcom_jetpack enable "$(reference_fixture_field "$reference_fixture" local_wpcom_base_url)" > /dev/null
+	store_wp --url="$secondary_url" wcpay_dev redirect_to "$(reference_fixture_field "$reference_fixture" redirect_to)" > /dev/null
+	inject_reference_fixture "$reference_fixture" "$secondary_url" > /dev/null
+	store_wp --url="$secondary_url" wcpay_dev refresh_account_data > /dev/null
+	store_wp --url="$secondary_url" option set woocommerce_woocommerce_payments_settings \
+		--format=json '{"enabled":"yes","saved_cards":"yes"}' > /dev/null
+	local secondary_identity
+	secondary_identity="$(store_wp --url="$secondary_url" eval '
+		/* transition_network_secondary_fixture */
+		$account = WC_Payments::get_account_service()->get_cached_account_data();
+		$tokens = Jetpack_Options::get_option( "user_tokens" );
+		echo wp_json_encode( array(
+			"site_id" => get_current_blog_id(),
+			"wpcom_blog_id" => (int) Jetpack_Options::get_option( "id" ),
+			"blog_token_present" => "" !== (string) Jetpack_Options::get_option( "blog_token" ),
+			"user_token_present" => is_array( $tokens ) && ! empty( array_filter( $tokens, "is_string" ) ),
+			"account_id" => (string) ( $account["account_id"] ?? "" ),
+			"is_live" => ! empty( $account["is_live"] ),
+		) );
+	' | json_object_from_stdin)"
+	node -e '
+		const identity = JSON.parse( process.argv[ 1 ] );
+		if ( identity.site_id !== Number( process.argv[ 2 ] ) || identity.wpcom_blog_id !== Number( process.argv[ 3 ] ) || identity.account_id !== process.argv[ 4 ] || identity.is_live !== false || identity.blog_token_present !== true || identity.user_token_present !== true ) process.exit( 1 );
+	' "$secondary_identity" "$secondary_site_id" "$(state_field wpcom_blog_id)" "$(state_field account_id)"
 	local primary_site_id
 	primary_site_id="$(store_wp site list --field=blog_id --number=1)"
 	if [[ ! "$primary_site_id" =~ ^[1-9][0-9]*$ ]]; then
@@ -1127,7 +1156,7 @@ prepare_network_reconciliation() {
 		return 1
 	fi
 	store_wp eval '
-		$job = wc_get_container()->get( Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsCutoverReconciliationJob::class );
+		$job = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob::class );
 		if ( ! $job->enqueue( "transition-network-mixed" ) ) {
 			WP_CLI::error( "Unable to schedule the mixed network reconciliation generation." );
 		}
@@ -1176,19 +1205,74 @@ prepare_network_reconciliation() {
 		if ( result.network_active !== true || ! Number.isSafeInteger( mixedGeneration ) || ! Array.isArray( states ) || states.length !== 2 || states.map( ( state ) => state.site_id ).sort( ( a, b ) => a - b ).join() !== expectedIds.join() || states.some( ( state ) => state.generation !== mixedGeneration || state.state !== "excluded" || ! [ state.current_step, ...( Array.isArray( state.exclusion_codes ) ? state.exclusion_codes : [] ) ].includes( "legacy_stripe_billing_subscriptions_present" ) ) ) process.exit( 1 );
 	' "$excluded_states" "$mixed_states" "$primary_site_id" "$secondary_site_id"
 	store_wp --url="$base_url" post meta delete "$marker_order_id" _wcpay_subscription_id > /dev/null
-	store_wp eval '
-		$job = wc_get_container()->get( Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsCutoverReconciliationJob::class );
+	local reopened_generation
+	reopened_generation="$(store_wp eval '
+		$job = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob::class );
 		if ( ! $job->enqueue( "transition-network-reopened" ) ) {
 			WP_CLI::error( "Unable to schedule the reopened network reconciliation generation." );
 		}
-	' > /dev/null
+		$record = get_option( "woocommerce_woopayments_cutover_state", null );
+		echo (int) ( $record["generation"] ?? 0 );
+	')"
+	if [[ ! "$reopened_generation" =~ ^[1-9][0-9]*$ ]]; then
+		echo 'Transition network did not reopen an exact generation.' >&2
+		return 1
+	fi
+	node -e '
+		const excluded = JSON.parse( process.argv[ 1 ] );
+		const generation = Number( process.argv[ 2 ] );
+		if ( ! Number.isSafeInteger( generation ) || excluded.states.some( state => generation <= state.generation ) ) process.exit( 1 );
+	' "$excluded_states" "$reopened_generation"
+	for site_url in "$base_url" "${base_url}/cutover-secondary"; do
+		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
+		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
+	done
+	# Ownership verification is deliberately scheduled fifteen minutes later.
+	# Move only those exact pending rows; a fresh HTTP request still owns execution.
+	local site_id
+	for site_id in "$primary_site_id" "$secondary_site_id"; do
+		store_wp eval '
+			global $wpdb;
+			switch_to_blog( '"$site_id"' );
+			try {
+				$record = get_option( "woocommerce_woopayments_cutover_state", null );
+				if ( ! is_array( $record ) || "pending" !== ( $record["state"] ?? null ) || "verify_native_ownership" !== ( $record["current_step"] ?? null ) || '"$reopened_generation"' !== ( $record["generation"] ?? null ) || ! is_int( $record["action_id"] ?? null ) || $record["action_id"] <= 0 || ! is_int( $record["attempt"] ?? null ) || $record["attempt"] < 0 ) {
+					WP_CLI::error( "Expected the reopened generation pending ownership verification." );
+				}
+				$query = $wpdb->prepare(
+					"SELECT a.*, g.slug AS group_slug FROM {$wpdb->prefix}actionscheduler_actions a INNER JOIN {$wpdb->prefix}actionscheduler_groups g ON g.group_id = a.group_id WHERE a.action_id = %d",
+					$record["action_id"]
+				);
+				$row = $wpdb->get_row( $query );
+				$args = array( "generation" => $record["generation"], "attempt" => $record["attempt"] + 1 );
+				if ( ! $row || (int) $row->action_id !== $record["action_id"] || "pending" !== $row->status || "woocommerce_woopayments_cutover_reconcile" !== $row->hook || "woocommerce_woopayments_cutover" !== $row->group_slug || $args !== json_decode( $row->args, true ) ) {
+					WP_CLI::error( "Ownership verification action identity does not match its pending state." );
+				}
+				$gmt = gmdate( "Y-m-d H:i:s", time() - 60 );
+				$dates = array( "scheduled_date_gmt" => $gmt, "scheduled_date_local" => get_date_from_gmt( $gmt ) );
+				$where = array( "action_id" => $record["action_id"], "hook" => $row->hook, "status" => $row->status, "args" => $row->args, "group_id" => (int) $row->group_id );
+				if ( 1 !== $wpdb->update( $wpdb->prefix . "actionscheduler_actions", $dates, $where ) ) {
+					WP_CLI::error( "Unable to make the exact ownership verification action due." );
+				}
+				$after = $wpdb->get_row( $query );
+				$expected = clone $row;
+				$expected->scheduled_date_gmt = $dates["scheduled_date_gmt"];
+				$expected->scheduled_date_local = $dates["scheduled_date_local"];
+				if ( $after != $expected ) {
+					WP_CLI::error( "Making ownership verification due changed its action identity." );
+				}
+			} finally {
+				restore_current_blog();
+			}
+		' > /dev/null
+	done
 	for site_url in "$base_url" "${base_url}/cutover-secondary"; do
 		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-cron.php?doing_wp_cron=$(date +%s%N)" > /dev/null
 		"$CURL_BIN" --fail --silent --show-error "${site_url}/wp-admin/admin-ajax.php?action=as_async_request_queue_runner" > /dev/null
 	done
 	local final_states
 	final_states="$(store_wp eval '
-		$sites = get_sites( array( "number" => 2, "fields" => "ids" ) );
+		$sites = get_sites( array( "number" => 0, "fields" => "ids" ) );
 		$result = array();
 		foreach ( $sites as $site_id ) {
 			switch_to_blog( (int) $site_id );
@@ -1200,11 +1284,11 @@ prepare_network_reconciliation() {
 	' | node -e 'const { readFileSync } = require( "node:fs" ); process.stdout.write( readFileSync( 0, "utf8" ).trim() );')"
 	node -e '
 		const finalResult = JSON.parse( process.argv[ 1 ] ); const states = finalResult.states;
-		const mixed = JSON.parse( process.argv[ 2 ] );
-		const excluded = JSON.parse( process.argv[ 3 ] );
-		const excludedBySite = new Map( excluded.states.map( ( state ) => [ state.site_id, state ] ) );
-		if ( finalResult.network_active !== false || ! Array.isArray( states ) || states.length !== 2 || states.some( ( state ) => ! Number.isSafeInteger( state.site_id ) || ! excludedBySite.has( state.site_id ) || state.generation <= excludedBySite.get( state.site_id ).generation || state.state !== "done" ) ) process.exit( 1 );
-	' "$final_states" "$mixed_states" "$excluded_states"
+		const excluded = JSON.parse( process.argv[ 2 ] );
+		const generation = Number( process.argv[ 3 ] );
+		const expectedIds = process.argv.slice( 4 ).map( Number ).sort( ( a, b ) => a - b );
+		if ( finalResult.network_active !== false || ! Array.isArray( states ) || states.length !== 2 || states.map( state => state.site_id ).sort( ( a, b ) => a - b ).join() !== expectedIds.join() || states.some( state => ! Number.isSafeInteger( state.site_id ) || state.generation !== generation || state.state !== "done" ) || excluded.states.some( state => generation <= state.generation ) ) process.exit( 1 );
+	' "$final_states" "$excluded_states" "$reopened_generation" "$primary_site_id" "$secondary_site_id"
 	update_state network_primary_site_id "$primary_site_id" number
 	update_state network_secondary_site_id "$secondary_site_id" number
 	update_state network_final_site_states "$final_states"
@@ -1554,7 +1638,7 @@ create_store() {
 			identity.user_token_present !== true
 		) process.exit( 1 );
 	' "$store_identity" "$account_id"
-	prepare_network_reconciliation
+	prepare_network_reconciliation "$reference_fixture"
 	update_state phase 'ready'
 	trap - ERR
 	emit_create_result "$receipt"

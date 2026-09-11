@@ -837,6 +837,263 @@ fi
 grep -Fq 'Transition destroy claim already exists' "$claim_stderr" "$create_log"
 test "$(grep -Fc $'\tdestroy --force' "$create_log")" = '1'
 
+# Execute the real create path; only the external WordPress/HTTP boundary is fake.
+# The PHP snippets themselves run, including their state/action guards and updates.
+mkdir "$TEST_ROOT/network-bin"
+node - "$TEST_ROOT/network-bin" <<'JS'
+const { writeFileSync } = require( 'node:fs' );
+const root = process.argv[ 2 ];
+writeFileSync( `${ root }/wp-env`, `#!/usr/bin/env node
+const fs = require('node:fs');
+const cp = require('node:child_process');
+const args = process.argv.slice(2);
+const command = args.join(' ');
+const path = process.env.E2E_FAKE_NETWORK_STATE;
+const log = process.env.E2E_FAKE_NETWORK_COMMAND_LOG;
+fs.appendFileSync(log, JSON.stringify(args) + '\\n');
+if (/do_action|action-scheduler\\s+(run|execute)|ActionScheduler_.*Runner|action_scheduler_run/.test(command)) throw Error('CLI callback execution is forbidden');
+const network = /multisite-convert|site create|site list|--network|sub_transition_network_marker|"transition-network-(mixed|reopened)"|transition_network_secondary_fixture|woocommerce_woopayments_cutover_state|_wcpay_subscription_id|wcpay_migrate_subscription_retry/.test(command);
+if (!network) {
+ const result = cp.spawnSync(process.env.E2E_FAKE_NETWORK_FALLBACK, args, {stdio:'inherit'});
+ if (result.status === 0 && args.some(arg => /^--url=.*\\/cutover-secondary$/.test(arg))) {
+  const state = JSON.parse(fs.readFileSync(path));
+  if (!state.active || !state.coreActive) throw Error('Secondary configured before network plugins');
+  if (command.includes('local_wpcom_jetpack enable http://wpcom.localhost:8080')) state.secondaryLocal = true;
+  if (command.includes('wcpay_dev redirect_to http://wpcom.localhost:8080')) state.secondaryRedirect = true;
+  if (command.includes('transition_inject_reference_fixture')) state.secondaryInjected = true;
+  if (command.includes('wcpay_dev refresh_account_data')) state.secondaryRefreshed = true;
+  if (command.includes('woocommerce_woocommerce_payments_settings') && command.includes('"enabled":"yes"') && command.includes('"saved_cards":"yes"')) state.secondarySettings = true;
+  fs.writeFileSync(path, JSON.stringify(state));
+ }
+ process.exit(result.status ?? 1);
+}
+let state = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path)) : {http:0, due:[], events:[], generation:41};
+if (command.includes('core multisite-convert')) { state.converted = true; }
+else if (command.includes('site create')) { if (!state.converted || !args.includes('--slug=cutover-secondary')) throw Error('Network conversion or secondary slug missing'); state.secondary = 9; console.log(9); }
+else if (command.includes('site list')) { console.log(3); }
+else if (command.includes('plugin activate woocommerce --network')) { state.coreActive = true; }
+else if (command.includes('plugin activate woocommerce-payments --network')) { if (state.secondary !== 9 || !state.coreActive) throw Error('Secondary site must load WooCommerce before network WooPayments'); state.active = true; }
+else if (command.includes('post meta delete')) { if (state.http !== 4 || !command.includes('701 _wcpay_subscription_id')) throw Error('Marker removed before exclusion'); state.marker = false; }
+else {
+ const index = args.indexOf('eval');
+ if (index < 0) throw Error('Unexpected network command: ' + command);
+ const result = cp.spawnSync('php', ['-r', 'require getenv("E2E_FAKE_NETWORK_PHP"); eval($argv[1]);', args[index + 1]], {stdio:'inherit', env:{...process.env, E2E_FAKE_NETWORK_SITE_ID:args.some(arg => /^--url=.*\\/cutover-secondary$/.test(arg)) ? '9' : '3'}});
+ process.exit(result.status ?? 1);
+}
+fs.writeFileSync(path, JSON.stringify(state));
+`, { mode: 0o755 } );
+writeFileSync( `${ root }/curl`, `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = process.env.E2E_FAKE_NETWORK_STATE;
+const state = JSON.parse(fs.readFileSync(path));
+const url = process.argv.at(-1);
+fs.appendFileSync(process.env.E2E_FAKE_NETWORK_CURL_LOG, url + '\\n');
+const base = JSON.parse(fs.readFileSync(process.env.E2E_FAKE_TRANSITION_WORKSPACE + '/resource-state.json')).base_url;
+const sites = [9,3,3,9,3,9];
+const site = sites[Math.floor(state.http / 2)];
+const siteUrl = base + (site === 9 ? '/cutover-secondary' : '');
+const expected = state.http % 2 ? siteUrl + '/wp-admin/admin-ajax.php?action=as_async_request_queue_runner' : siteUrl + '/wp-cron.php?doing_wp_cron=';
+if (!site || (state.http % 2 ? url !== expected : !url.startsWith(expected) || !/^[0-9]+N?$/.test(url.slice(expected.length)))) throw Error('Wrong HTTP dispatch order: ' + url);
+if (state.http < 4 && (!state.mixed || !state.marker)) throw Error('Mixed generation not seeded');
+if (!state.secondaryLocal || !state.secondaryRedirect || !state.secondaryInjected || !state.secondaryRefreshed || !state.secondarySettings || !state.secondaryValidated) throw Error('Secondary site lacks its verified local reference fixture');
+if (state.http >= 4 && (!state.reopened || state.marker)) throw Error('Generation not reopened');
+if (state.http >= 8 && !state.due.includes(site)) throw Error('Ownership verification action is still scheduled in the future');
+state.http++;
+if (state.http === 8) {
+ state.active = false;
+ state.actions = {};
+ for (const id of [3,9]) state.actions[id] = {action_id:900 + id, hook:'woocommerce_woopayments_cutover_reconcile', status:'pending', args:JSON.stringify({generation:42,attempt:2}), group_id:7, group_slug:'woocommerce_woopayments_cutover', scheduled_date_gmt:'2099-01-01 00:00:00', scheduled_date_local:'2099-01-01 03:00:00'};
+ if (process.env.E2E_FAKE_NETWORK_FAULT === 'action-args') state.actions[3].args = JSON.stringify({generation:41,attempt:2});
+ if (process.env.E2E_FAKE_NETWORK_FAULT === 'action-hook') state.actions[3].hook = 'unrelated_action';
+ if (process.env.E2E_FAKE_NETWORK_FAULT === 'action-group') state.actions[3].group_slug = 'unrelated_group';
+ if (process.env.E2E_FAKE_NETWORK_FAULT === 'action-status') state.actions[3].status = 'in-progress';
+}
+fs.writeFileSync(path, JSON.stringify(state));
+`, { mode: 0o755 } );
+JS
+node - "$TEST_ROOT/network-bin/runtime.php" <<'JS'
+require( 'node:fs' ).writeFileSync( process.argv[ 2 ], String.raw`<?php
+$fixture_path = getenv( 'E2E_FAKE_NETWORK_STATE' );
+$fixture = file_exists( $fixture_path ) ? json_decode( file_get_contents( $fixture_path ), true ) : array( 'http' => 0, 'due' => array(), 'events' => array(), 'generation' => 41 );
+$blog_id = (int) getenv( 'E2E_FAKE_NETWORK_SITE_ID' );
+$blog_stack = array();
+register_shutdown_function( function() { global $fixture_path, $fixture; file_put_contents( $fixture_path, json_encode( $fixture ) ); } );
+const HOUR_IN_SECONDS = 3600;
+class WP_CLI { public static function error( $message ) { fwrite( STDERR, $message . "\n" ); exit( 1 ); } }
+function get_current_blog_id() { global $blog_id; return $blog_id; }
+class Jetpack_Options {
+ public static function get_option( $key ) {
+  global $fixture, $blog_id;
+  if ( $blog_id !== 9 || empty( $fixture['secondaryInjected'] ) ) throw new Exception( 'Secondary fixture not injected' );
+  $fixture['secondaryValidated'] = true;
+  return array( 'id' => 77, 'blog_token' => '77.real-blog-token', 'user_tokens' => array( 1 => '77.real-user-token.1' ) )[ $key ] ?? null;
+ }
+}
+class WC_Payments {
+ public static function get_account_service() { return new self(); }
+ public function get_cached_account_data() { global $fixture; if ( empty( $fixture['secondaryRefreshed'] ) ) throw new Exception( 'Secondary account not refreshed' ); return array( 'account_id' => 'acct_transition_77', 'is_live' => false ); }
+}
+function wp_json_encode( $value ) { return json_encode( $value ); }
+function get_sites( $args ) { global $fixture; return $fixture['http'] === 12 && getenv( 'E2E_FAKE_NETWORK_FAULT' ) === 'final-duplicate' ? array( 3, 3 ) : array( 9, 3 ); }
+function switch_to_blog( $id ) { global $blog_id, $blog_stack, $wpdb; $blog_stack[] = $blog_id; $blog_id = $id; $wpdb->prefix = 'wp_' . $id . '_'; }
+function restore_current_blog() { global $blog_id, $blog_stack, $wpdb; $blog_id = array_pop( $blog_stack ); $wpdb->prefix = 'wp_' . $blog_id . '_'; }
+function is_plugin_active_for_network( $plugin ) { global $fixture; return $fixture['http'] === 12 && getenv( 'E2E_FAKE_NETWORK_FAULT' ) === 'final-active' ? true : $fixture['active']; }
+function get_option( $key, $default = null ) {
+ global $fixture, $blog_id;
+ if ( $key !== 'woocommerce_woopayments_cutover_state' ) throw new Exception( 'Unexpected option' );
+ $http = $fixture['http'];
+ $record = array( 'generation' => $fixture['generation'], 'state' => 'pending', 'current_step' => '', 'deferred_codes' => array(), 'exclusion_codes' => array(), 'attempt' => 1, 'action_id' => 900 + $blog_id );
+ if ( $http === 2 && $blog_id === 9 ) { $record['state'] = 'deferred'; $record['current_step'] = 'network_barrier'; $record['deferred_codes'] = array( 'network_barrier' ); }
+ elseif ( $http === 4 ) { $record['state'] = 'excluded'; $record['current_step'] = 'legacy_stripe_billing_subscriptions_present'; $record['exclusion_codes'] = array( 'legacy_stripe_billing_subscriptions_present' ); }
+ elseif ( $http >= 8 ) { $record['current_step'] = 'verify_native_ownership'; if ( $http >= ( $blog_id === 3 ? 10 : 12 ) ) { $record['state'] = 'done'; $record['current_step'] = 'done'; } }
+ if ( $http === 12 && $blog_id === 9 && getenv( 'E2E_FAKE_NETWORK_FAULT' ) === 'final-generation' ) $record['generation'] = 43;
+ if ( $http === 8 && getenv( 'E2E_FAKE_NETWORK_FAULT' ) === 'state-generation' ) $record['generation'] = 41;
+ return $record;
+}
+function as_schedule_single_action( $timestamp, $hook ) {
+ global $fixture;
+ if ( $hook !== 'wcpay_migrate_subscription_retry' || $timestamp <= time() ) throw new Exception( 'Wrong migrator seed' );
+ $fixture['migrator'] = 811;
+ return 811;
+}
+class FixtureOrder {
+ public function update_meta_data( $key, $value ) { global $fixture; if ( $key !== '_wcpay_subscription_id' || $value !== 'sub_transition_network_marker' ) throw new Exception( 'Wrong marker' ); $fixture['marker'] = true; }
+ public function save() {}
+ public function get_id() { return 701; }
+}
+function wc_create_order() { return new FixtureOrder(); }
+class FixtureJob {
+ public function get( $class ) { if ( $class !== 'Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob' ) throw new Exception( 'Wrong job' ); return $this; }
+ public function enqueue( $source ) {
+  global $fixture;
+  if ( $source === 'transition-network-mixed' && ! empty( $fixture['marker'] ) && ! empty( $fixture['active'] ) ) { $fixture['mixed'] = true; return true; }
+  if ( $source === 'transition-network-reopened' && $fixture['http'] === 4 && ! $fixture['marker'] ) { $fixture['reopened'] = true; $fixture['generation'] = 42; return true; }
+  return false;
+ }
+}
+function wc_get_container() { return new FixtureJob(); }
+function get_date_from_gmt( $date ) { return gmdate( 'Y-m-d H:i:s', strtotime( $date . ' UTC' ) + 10800 ); }
+class FixtureDatabase {
+ public $prefix = 'wp_3_';
+ public function prepare( $query, ...$args ) { foreach ( $args as $arg ) $query = preg_replace( '/%[ds]/', is_int( $arg ) ? (string) $arg : "'" . $arg . "'", $query, 1 ); return $query; }
+ public function get_row( $query ) {
+  global $fixture, $blog_id;
+  if ( ! str_contains( $query, $this->prefix . 'actionscheduler_actions' ) || ! str_contains( $query, $this->prefix . 'actionscheduler_groups' ) || ! preg_match( '/action_id\s*=\s*' . ( 900 + $blog_id ) . '\b/', $query ) ) throw new Exception( 'Action lookup lost exact site/ID/group' );
+  $fixture['events'][] = 'inspect:' . $blog_id;
+  return isset( $fixture['actions'][ $blog_id ] ) ? (object) $fixture['actions'][ $blog_id ] : null;
+ }
+ public function update( $table, $data, $where, $format = null, $where_format = null ) {
+  global $fixture, $blog_id;
+  $row = $fixture['actions'][ $blog_id ];
+  if ( $table !== $this->prefix . 'actionscheduler_actions' || array_keys( $data ) !== array( 'scheduled_date_gmt', 'scheduled_date_local' ) || strtotime( $data['scheduled_date_gmt'] . ' UTC' ) >= time() || get_date_from_gmt( $data['scheduled_date_gmt'] ) !== $data['scheduled_date_local'] ) throw new Exception( 'Update must only make the existing action due in both timezones' );
+  foreach ( array( 'action_id', 'hook', 'status', 'args', 'group_id' ) as $key ) if ( ! array_key_exists( $key, $where ) || (string) $where[ $key ] !== (string) $row[ $key ] ) throw new Exception( 'Update lost action identity: ' . $key );
+  $fixture['actions'][ $blog_id ] = array_merge( $row, $data );
+  $fixture['due'][] = $blog_id;
+  $fixture['events'][] = 'due:' . $blog_id;
+  return 1;
+ }
+}
+$wpdb = new FixtureDatabase();
+` );
+JS
+
+network_workspace="$TEST_ROOT/network-create"
+mkdir "$network_workspace"
+export E2E_FAKE_NETWORK_STATE="$TEST_ROOT/network-state.json"
+export E2E_FAKE_NETWORK_COMMAND_LOG="$TEST_ROOT/network-commands.jsonl"
+export E2E_FAKE_NETWORK_CURL_LOG="$TEST_ROOT/network-curl.log"
+export E2E_FAKE_NETWORK_PHP="$TEST_ROOT/network-bin/runtime.php"
+export E2E_FAKE_NETWORK_FALLBACK="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh"
+if ! E2E_TRANSITION_SCENARIO=cutover-network-reconciliation E2E_TRANSITION_PENDING_MIGRATOR_HOOK=1 \
+	E2E_TRANSITION_WP_ENV_BIN="$TEST_ROOT/network-bin/wp-env" E2E_TRANSITION_CURL_BIN="$TEST_ROOT/network-bin/curl" \
+	E2E_TRANSITION_PORT=19119 run_provisioner "$network_workspace" "$TEST_ROOT/network-runtime" "$TEST_ROOT/network-ordinary.log" \
+	create --workspace "$network_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" --seed-manifest "$TEST_ROOT/seed.json" \
+	--run-id network-create --base-url http://transition-network-create.localhost:19119 --store-id woopayments-native-transition-network-create \
+	> "$TEST_ROOT/network-result.json"; then
+	echo 'Network create failed before fresh HTTP ownership verification completed.' >&2
+	exit 1
+fi
+node - "$TEST_ROOT/network-result.json" "$network_workspace/resource-state.json" <<'JS'
+const assert = require( 'node:assert/strict' );
+const fs = require( 'node:fs' );
+const result = JSON.parse( fs.readFileSync( process.argv[ 2 ] ) );
+const durable = JSON.parse( fs.readFileSync( process.argv[ 3 ] ) );
+assert.equal( result.pending_migrator_hook, 'wcpay_migrate_subscription_retry' );
+assert.equal( result.pending_migrator_action_id, 811 );
+assert.equal( result.network_primary_site_id, 3 );
+assert.equal( result.network_secondary_site_id, 9 );
+const mixed = result.network_mixed_site_states;
+assert.equal( mixed.length, 2 );
+assert.deepEqual( mixed.map( s => s.site_id ).sort(), [ 3, 9 ] );
+assert.equal( mixed.find( s => s.site_id === 3 ).state, 'pending' );
+const secondary = mixed.find( s => s.site_id === 9 );
+assert.equal( secondary.state, 'deferred' );
+assert.equal( secondary.current_step, 'network_barrier' );
+assert.deepEqual( secondary.deferred_codes, [ 'network_barrier' ] );
+assert.ok( mixed.every( s => s.generation === 41 ) );
+const excluded = result.network_excluded_site_states;
+assert.equal( excluded.network_active, true );
+assert.deepEqual( excluded.states.map( s => s.site_id ).sort(), [ 3, 9 ] );
+assert.ok( excluded.states.every( s => s.state === 'excluded' && s.generation === 41 && s.current_step === 'legacy_stripe_billing_subscriptions_present' && s.exclusion_codes.includes( 'legacy_stripe_billing_subscriptions_present' ) ) );
+const final = result.network_final_site_states;
+assert.equal( final.network_active, false );
+assert.deepEqual( final.states.map( s => s.site_id ).sort(), [ 3, 9 ] );
+assert.ok( final.states.every( s => s.state === 'done' && s.generation === 42 && s.generation > 41 ) );
+for ( const key of Object.keys( result ).filter( key => /^(network_|pending_migrator_)/.test( key ) ) ) {
+ const value = typeof durable[ key ] === 'string' && key.endsWith( '_states' ) ? JSON.parse( durable[ key ] ) : durable[ key ];
+ assert.deepEqual( value, result[ key ], 'Durable evidence differs: ' + key );
+}
+const urls = fs.readFileSync( process.env.E2E_FAKE_NETWORK_CURL_LOG, 'utf8' ).trim().split( '\n' );
+const base = 'http://transition-network-create.localhost:19119';
+assert.deepEqual( urls.map( url => url.replace( /doing_wp_cron=[0-9]+N?$/, 'doing_wp_cron=TIME' ) ),
+ [ '/cutover-secondary', '', '', '/cutover-secondary', '', '/cutover-secondary' ].flatMap( site => [ base + site + '/wp-cron.php?doing_wp_cron=TIME', base + site + '/wp-admin/admin-ajax.php?action=as_async_request_queue_runner' ] ) );
+const commands = fs.readFileSync( process.env.E2E_FAKE_NETWORK_COMMAND_LOG, 'utf8' ).trim().split( '\n' ).map( line => JSON.parse( line ).join( ' ' ) ).join( '\n' );
+for ( const pattern of [ 'core multisite-convert', 'site create', 'transition-network-mixed', 'transition-network-reopened', 'woocommerce_woopayments_cutover_state', 'scheduled_date_gmt', 'scheduled_date_local' ] ) assert.ok( commands.includes( pattern ), 'Missing executed command: ' + pattern );
+assert.doesNotMatch( commands, /do_action|action-scheduler\s+(run|execute)|ActionScheduler_.*Runner|action_scheduler_run/ );
+assert.ok( commands.indexOf( 'plugin activate woocommerce --network' ) >= 0 );
+assert.ok( commands.indexOf( 'plugin activate woocommerce --network' ) < commands.indexOf( 'plugin activate woocommerce-payments --network' ) );
+const secondaryCommands = fs.readFileSync( process.env.E2E_FAKE_NETWORK_COMMAND_LOG, 'utf8' ).trim().split( '\n' ).map( line => JSON.parse( line ).join( ' ' ) ).filter( command => command.includes( '--url=http://transition-network-create.localhost:19119/cutover-secondary' ) ).join( '\n' );
+for ( const command of [ 'local_wpcom_jetpack enable', 'wcpay_dev redirect_to', 'transition_inject_reference_fixture', 'wcpay_dev refresh_account_data', 'woocommerce_woocommerce_payments_settings', 'transition_network_secondary_fixture' ] ) assert.ok( secondaryCommands.includes( command ), 'Missing secondary fixture command: ' + command );
+const runtime = JSON.parse( fs.readFileSync( process.env.E2E_FAKE_NETWORK_STATE ) );
+assert.equal( runtime.http, 12 );
+assert.deepEqual( runtime.due.sort(), [ 3, 9 ] );
+for ( const site of [ 3, 9 ] ) assert.ok( runtime.events.indexOf( 'inspect:' + site ) < runtime.events.indexOf( 'due:' + site ) );
+JS
+
+for fault in final-duplicate final-generation final-active action-args action-hook action-group action-status state-generation; do
+	fault_workspace="$TEST_ROOT/network-$fault"
+	mkdir "$fault_workspace"
+	export E2E_FAKE_NETWORK_STATE="$TEST_ROOT/network-$fault-state.json"
+	export E2E_FAKE_NETWORK_COMMAND_LOG="$TEST_ROOT/network-$fault-commands.jsonl"
+	export E2E_FAKE_NETWORK_CURL_LOG="$TEST_ROOT/network-$fault-curl.log"
+	if E2E_FAKE_NETWORK_FAULT="$fault" E2E_TRANSITION_SCENARIO=cutover-network-reconciliation E2E_TRANSITION_PENDING_MIGRATOR_HOOK=1 \
+		E2E_TRANSITION_WP_ENV_BIN="$TEST_ROOT/network-bin/wp-env" E2E_TRANSITION_CURL_BIN="$TEST_ROOT/network-bin/curl" \
+		E2E_TRANSITION_PORT=19120 run_provisioner "$fault_workspace" "$TEST_ROOT/network-$fault-runtime" "$TEST_ROOT/network-$fault-ordinary.log" \
+		create --workspace "$fault_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" --seed-manifest "$TEST_ROOT/seed.json" \
+		--run-id "network-$fault" --base-url "http://transition-network-$fault.localhost:19120" --store-id "woopayments-native-transition-network-$fault" \
+		> "$TEST_ROOT/network-$fault-result.json" 2> "$TEST_ROOT/network-$fault-stderr"; then
+		echo "Network create accepted invalid evidence: $fault." >&2
+		exit 1
+	fi
+	node - "$TEST_ROOT/network-$fault-result.json" "$fault" "$fault_workspace/resource-state.json" <<'JS'
+const assert = require( 'node:assert/strict' );
+const fs = require( 'node:fs' );
+const output = fs.readFileSync( process.argv[ 2 ], 'utf8' ).trim();
+const result = output ? JSON.parse( output ) : {};
+const durable = JSON.parse( fs.readFileSync( process.argv[ 4 ] ) );
+const runtime = JSON.parse( fs.readFileSync( process.env.E2E_FAKE_NETWORK_STATE ) );
+assert.equal( durable.phase, 'create-failed' );
+if ( output ) assert.equal( result.status, 'failed' );
+assert.equal( runtime.http, process.argv[ 3 ].startsWith( 'final-' ) ? 12 : 8 );
+assert.equal( result.network_final_site_states, undefined );
+assert.equal( durable.network_final_site_states, undefined );
+if ( ! process.argv[ 3 ].startsWith( 'final-' ) ) assert.deepEqual( runtime.due, [] );
+JS
+	run_provisioner "$fault_workspace" "$TEST_ROOT/network-$fault-runtime" "$TEST_ROOT/network-$fault-ordinary.log" \
+		destroy --workspace "$fault_workspace" --rollback-receipt-file "$fault_workspace/rollback-receipt"
+done
+
+# Supplemental source checks guard the callback execution boundary.
 # These are deliberately checked as a production-path contract: WP-CLI seeds
 # and inspects Action Scheduler state, while only HTTP cron/async dispatches
 # the callbacks. Removing any scheduling, receipt, or state fence breaks this
