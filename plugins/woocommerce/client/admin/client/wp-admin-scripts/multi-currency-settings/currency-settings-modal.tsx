@@ -98,6 +98,24 @@ const normalizeCurrencySettings = (
 	priceCharm: String( response.price_charm ?? '0.00' ),
 } );
 
+const getAutomaticRateUnavailableDescription = ( source: string ): string => {
+	if ( source === 'woopayments' ) {
+		return __(
+			'WooPayments automatic rates are temporarily unavailable. You can use manual rates.',
+			'woocommerce'
+		);
+	}
+
+	return sprintf(
+		/* translators: %s: Automatic-rate provider ID. */
+		__(
+			'Automatic rates from %s are temporarily unavailable. You can use manual rates.',
+			'woocommerce'
+		),
+		source
+	);
+};
+
 export function CurrencySettingsModal( {
 	currency,
 	defaultCurrency,
@@ -181,7 +199,6 @@ export function CurrencySettingsModal( {
 				: currentSettings
 		);
 	};
-	const hasAutomaticRateSource = automaticRates.source !== null;
 	const hasValidManualRate =
 		settings !== null &&
 		Number.isFinite( Number( settings.manualRate ) ) &&
@@ -241,6 +258,7 @@ export function CurrencySettingsModal( {
 		__( 'Manage %s settings', 'woocommerce' ),
 		currency.name
 	);
+	const automaticRateDescriptionId = `woocommerce-multi-currency-settings-${ currency.code }-automatic-description`;
 
 	return (
 		<Modal title={ modalTitle } onRequestClose={ onClose }>
@@ -259,7 +277,7 @@ export function CurrencySettingsModal( {
 
 			{ ! isLoading && settings && (
 				<div className="woocommerce-multi-currency-settings__currency-settings">
-					{ hasAutomaticRateSource ? (
+					{ automaticRates.source !== null ? (
 						<RadioControl
 							label={ __( 'Exchange rate', 'woocommerce' ) }
 							selected={ settings.exchangeRateType }
@@ -268,30 +286,27 @@ export function CurrencySettingsModal( {
 									label: __(
 										'Fetch rates automatically',
 										'woocommerce'
-										),
-										value: 'automatic',
-										description:
-											! automaticRates.available &&
-											automaticRates.source === 'woopayments'
-												? __(
-														'WooPayments automatic rates are temporarily unavailable. You can use manual rates.',
-														'woocommerce'
-												  )
-												: currency.rate === null
-													? __(
-															'An automatic rate is not available yet.',
-															'woocommerce'
-													  )
-													: sprintf(
-														/* translators: 1: Default currency code, 2: Exchange rate, 3: Target currency code. */
-														__(
-															'Current rate: 1 %1$s = %2$s %3$s',
-															'woocommerce'
-														),
-														defaultCurrency.code,
-														String( currency.rate ),
-														currency.code
-													),
+									),
+									value: 'automatic',
+									description: ! automaticRates.available
+										? getAutomaticRateUnavailableDescription(
+												automaticRates.source
+										  )
+										: currency.rate === null
+										? __(
+												'An automatic rate is not available yet.',
+												'woocommerce'
+										  )
+										: sprintf(
+												/* translators: 1: Default currency code, 2: Exchange rate, 3: Target currency code. */
+												__(
+													'Current rate: 1 %1$s = %2$s %3$s',
+													'woocommerce'
+												),
+												defaultCurrency.code,
+												String( currency.rate ),
+												currency.code
+										  ),
 								},
 								{
 									label: __( 'Manual', 'woocommerce' ),
@@ -318,7 +333,9 @@ export function CurrencySettingsModal( {
 										name={ `woocommerce-multi-currency-settings-${ currency.code }-exchange-rate` }
 										value="automatic"
 										disabled
-										aria-describedby={ `woocommerce-multi-currency-settings-${ currency.code }-automatic-description` }
+										aria-describedby={
+											automaticRateDescriptionId
+										}
 									/>
 									<label
 										className="components-radio-control__label"
@@ -327,7 +344,7 @@ export function CurrencySettingsModal( {
 										{ __( 'Fetch rates automatically', 'woocommerce' ) }
 									</label>
 									<p
-										id={ `woocommerce-multi-currency-settings-${ currency.code }-automatic-description` }
+										id={ automaticRateDescriptionId }
 										className="components-radio-control__option-description"
 									>
 										{ __(
@@ -344,6 +361,9 @@ export function CurrencySettingsModal( {
 										name={ `woocommerce-multi-currency-settings-${ currency.code }-exchange-rate` }
 										value="manual"
 										checked
+										aria-describedby={
+											automaticRateDescriptionId
+										}
 										onChange={ () =>
 											updateSettings( { exchangeRateType: 'manual' } )
 										}

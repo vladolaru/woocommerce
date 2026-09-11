@@ -8,6 +8,7 @@ import {
 	screen,
 	waitFor,
 } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import apiFetch from '@wordpress/api-fetch';
 
 /**
@@ -174,6 +175,11 @@ describe( 'CurrencySettingsModal', () => {
 			screen.getByRole( 'radio', { name: 'Fetch rates automatically' } )
 		).toBeDisabled();
 		expect( screen.getByText( 'No automatic-rate provider is available.' ) ).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'radio', { name: 'Manual' } )
+		).toHaveAccessibleDescription(
+			'No automatic-rate provider is available.'
+		);
 		const saveButton = screen.getByRole( 'button', { name: 'Save changes' } );
 		expect( saveButton ).toHaveAttribute( 'aria-disabled', 'true' );
 		expect( screen.getByText( 'Enter a positive exchange rate.' ) ).toBeInTheDocument();
@@ -191,6 +197,37 @@ describe( 'CurrencySettingsModal', () => {
 				} )
 			)
 		);
+	} );
+
+	it.each( [
+		[ 'whitespace', ' ' ],
+		[ 'Infinity', 'Infinity' ],
+		[ 'NaN', 'NaN' ],
+		[ 'zero', '0' ],
+		[ 'negative number', '-1' ],
+	] )( 'blocks %s as a manual rate', async ( _description, manualRate ) => {
+		mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+		renderModal( {
+			currency: { ...euroCurrency, rate: null },
+			automaticRates: { available: false, source: null },
+		} );
+
+		const manualRateInput = await screen.findByLabelText( 'Manual rate' );
+		await userEvent.type( manualRateInput, manualRate );
+
+		expect( manualRateInput ).toHaveAttribute( 'aria-invalid', 'true' );
+		expect( manualRateInput ).toHaveAccessibleDescription(
+			'Enter a positive exchange rate.'
+		);
+		const saveButton = screen.getByRole( 'button', {
+			name: 'Save changes',
+		} );
+		expect( saveButton ).toHaveAttribute( 'aria-disabled', 'true' );
+
+		await userEvent.click( saveButton );
+
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
 	} );
 
 	it( 'keeps automatic selection available during a named provider outage', async () => {
@@ -231,6 +268,46 @@ describe( 'CurrencySettingsModal', () => {
 			)
 		).toBeInTheDocument();
 	} );
+
+	it.each( [
+		[ 'a cached automatic rate', euroCurrency.rate ],
+		[ 'no cached automatic rate', null ],
+	] )(
+		'keeps automatic selection available and describes a generic provider outage with %s',
+		async ( _rateDescription, rate ) => {
+			mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+			renderModal( {
+				currency: { ...euroCurrency, rate },
+				automaticRates: {
+					available: false,
+					source: 'custom-provider',
+				},
+			} );
+
+			const automaticRateOption = await screen.findByRole( 'radio', {
+				name: 'Fetch rates automatically',
+			} );
+			expect( automaticRateOption ).toBeEnabled();
+			expect( automaticRateOption ).toBeChecked();
+			expect(
+				screen.getByText(
+					'Automatic rates from custom-provider are temporarily unavailable. You can use manual rates.'
+				)
+			).toBeInTheDocument();
+
+			await userEvent.click(
+				screen.getByRole( 'radio', { name: 'Manual' } )
+			);
+			expect(
+				screen.getByRole( 'radio', { name: 'Manual' } )
+			).toBeChecked();
+
+			await userEvent.click( automaticRateOption );
+			expect( automaticRateOption ).toBeEnabled();
+			expect( automaticRateOption ).toBeChecked();
+		}
+	);
 
 	it( 'saves manual currency settings with preserved REST keys', async () => {
 		mockApiFetch
