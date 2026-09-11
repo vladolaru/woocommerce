@@ -432,13 +432,9 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Provider onboarding availability requires native transport, not account readiness.
-	 *
-	 * @dataProvider boolean_provider
-	 *
-	 * @param bool $transport_available Whether native transport is available.
+	 * @testdox Provider onboarding availability does not require an established WPCOM transport.
 	 */
-	public function test_can_manage_onboarding_requires_native_transport_only( bool $transport_available ): void {
+	public function test_can_manage_onboarding_before_wpcom_transport_is_connected(): void {
 		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
@@ -451,9 +447,8 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'is_available' ) )
 			->getMock();
 		$api_client
-			->expects( $this->once() )
-			->method( 'is_available' )
-			->willReturn( $transport_available );
+			->expects( $this->never() )
+			->method( 'is_available' );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
@@ -465,7 +460,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$provider = new WooPaymentsProvider();
 		$provider->init( $gateway_adapter, $api_client, $account_service );
 
-		$this->assertSame( $transport_available, $provider->can_manage_onboarding() );
+		$this->assertTrue( $provider->can_manage_onboarding() );
 	}
 
 	/**

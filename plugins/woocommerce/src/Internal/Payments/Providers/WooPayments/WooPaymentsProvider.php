@@ -379,12 +379,13 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	/**
 	 * Tell whether WooPayments can perform native onboarding/admin account operations.
 	 *
-	 * Unlike money-moving readiness, onboarding availability must not require an already-connected account.
+	 * Unlike money-moving readiness, onboarding availability must not require an established WPCOM connection.
+	 * The onboarding flow creates that connection before native account operations use the API client.
 	 *
 	 * @return bool
 	 */
 	public function can_manage_onboarding(): bool {
-		return $this->api_client->is_available();
+		return true;
 	}
 
 	/**
