@@ -230,10 +230,11 @@ class WooPaymentsOrderEffectApplier {
 			? $this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() )
 			: array();
 		$display_effects = $this->compose_payment_method_display_details( $order, $result );
+		$account_mode    = $this->account_service->get_mode();
 		$meta            = WooPaymentsOrderEffects::payment_intent_meta(
 			$result,
 			(string) $order->get_currency(),
-			$this->account_service->get_mode(),
+			$account_mode,
 			$settlement_meta,
 			$order->has_status( 'on-hold' ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true )
 		);
@@ -249,7 +250,8 @@ class WooPaymentsOrderEffectApplier {
 				$order,
 				$intent_id,
 				$charge_id,
-				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
+				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null ),
+				$account_mode
 			);
 			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
 			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;

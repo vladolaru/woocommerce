@@ -63,6 +63,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsCurrencyComplianceNotice',
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
+		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 	);
 
 	/** Connected AJAX roots. */
@@ -77,6 +78,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsApplePayDomainService',
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
+		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 	);
 
 	/** Connected REST roots. */
@@ -104,6 +106,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsTosRestController',
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
+		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 	);
 
 	/** Connected cron and Action Scheduler roots. */
@@ -118,6 +121,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsApplePayDomainService',
 		self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
 		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
+		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 	);
 
 	/** Active shopper roots. */
@@ -146,6 +150,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsFrontendTrackingController',
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
+		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 	);
 
 	/** Active admin roots. */
@@ -169,6 +174,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsCurrencyComplianceNotice',
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
+		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 	);
 
 	/** Active AJAX roots. */
@@ -185,6 +191,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsApplePayDomainService',
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
+		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsCheckoutBridge',
 		self::WCPAY . 'WooPaymentsAddressProvider',
 		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
@@ -224,6 +231,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsTosRestController',
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
+		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsCheckoutBridge',
 		self::WCPAY . 'WooPaymentsAddressProvider',
 		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
@@ -250,6 +258,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsApplePayDomainService',
 		self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
 		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
+		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsOrderStatusChangeController',
 		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
 	);

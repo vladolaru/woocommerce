@@ -37,10 +37,11 @@ class WooPaymentsOrderNoteService {
 	 * @param string   $intent_id              Payment intent ID.
 	 * @param string   $charge_id              Charge ID.
 	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @param ?string  $account_mode           WooPayments account mode, or null to use the persisted order mode.
 	 * @return string
 	 */
-	public function format_payment_success_note( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '' ): string {
-		return $this->format_payment_success_note_for_domain( $order, $intent_id, $charge_id, $balance_transaction_id, 'woocommerce' );
+	public function format_payment_success_note( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '', ?string $account_mode = null ): string {
+		return $this->format_payment_success_note_for_domain( $order, $intent_id, $charge_id, $balance_transaction_id, 'woocommerce', null, $this->get_payment_success_note_account_mode( $order, $account_mode ) );
 	}
 
 	/**
@@ -50,15 +51,35 @@ class WooPaymentsOrderNoteService {
 	 * @param string   $intent_id              Payment intent ID.
 	 * @param string   $charge_id              Charge ID.
 	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @param ?string  $account_mode           WooPayments account mode, or null to use the persisted order mode.
 	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
 	 *
 	 * @since 11.0.0
 	 */
-	public function format_payment_success_note_candidates( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '' ): array {
+	public function format_payment_success_note_candidates( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '', ?string $account_mode = null ): array {
+		$account_mode = $this->get_payment_success_note_account_mode( $order, $account_mode );
+
 		return $this->format_amount_note_candidates(
 			$order,
-			fn( string $text_domain, string $formatted_amount ): string => $this->format_payment_success_note_for_domain( $order, $intent_id, $charge_id, $balance_transaction_id, $text_domain, $formatted_amount )
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_payment_success_note_for_domain( $order, $intent_id, $charge_id, $balance_transaction_id, $text_domain, $formatted_amount, $account_mode )
 		);
+	}
+
+	/**
+	 * Resolve a payment-success note account mode from the synchronous value or persisted order snapshot.
+	 *
+	 * @param WC_Order $order        Order object.
+	 * @param ?string  $account_mode Synchronous account mode, when available.
+	 * @return string
+	 */
+	private function get_payment_success_note_account_mode( WC_Order $order, ?string $account_mode ): string {
+		if ( null !== $account_mode ) {
+			return $account_mode;
+		}
+
+		$persisted_account_mode = $order->get_meta( '_wcpay_mode', true );
+
+		return is_string( $persisted_account_mode ) ? $persisted_account_mode : '';
 	}
 
 	/**
@@ -377,12 +398,21 @@ class WooPaymentsOrderNoteService {
 	 * @param string   $balance_transaction_id Balance transaction ID.
 	 * @param string   $text_domain            Translation catalog to render.
 	 * @param ?string  $formatted_amount       Preformatted order amount, when supplied.
+	 * @param string   $account_mode           WooPayments account mode.
 	 * @return string
 	 */
-	private function format_payment_success_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id, string $text_domain, ?string $formatted_amount = null ): string {
+	private function format_payment_success_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id, string $text_domain, ?string $formatted_amount = null, string $account_mode = '' ): string {
 		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
 		$transaction_url = $this->transaction_url( $intent_id, $charge_id, $balance_transaction_id );
-		if ( 'woocommerce-payments' === $text_domain ) {
+		if ( 'test' === $account_mode ) {
+			if ( 'woocommerce-payments' === $text_domain ) {
+				/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+				$note_format = __( 'A test payment of %1$s was processed using %2$s in <strong>test mode</strong> (<a>%3$s</a>). No real funds were collected.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			} else {
+				/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+				$note_format = __( 'A test payment of %1$s was processed using %2$s in <strong>test mode</strong> (<a>%3$s</a>). No real funds were collected.', 'woocommerce' );
+			}
+		} elseif ( 'woocommerce-payments' === $text_domain ) {
 			/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
 			$note_format = __( 'A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
 		} else {

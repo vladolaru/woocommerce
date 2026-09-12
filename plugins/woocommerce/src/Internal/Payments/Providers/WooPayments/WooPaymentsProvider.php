@@ -131,6 +131,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsCurrencyComplianceNotice::class,
 			WooPaymentsOrderTrackingService::class,
 			WooPaymentsOperationalQueueService::class,
+			WooPaymentsTestModeOrderEmailService::class,
 		);
 		$connected_ajax            = array(
 			WooPaymentsAccountService::class,
@@ -143,6 +144,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsApplePayDomainService::class,
 			WooPaymentsOrderTrackingService::class,
 			WooPaymentsOperationalQueueService::class,
+			WooPaymentsTestModeOrderEmailService::class,
 		);
 		$connected_rest            = array(
 			WooPaymentsAccountService::class,
@@ -168,6 +170,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsTosRestController::class,
 			WooPaymentsOrderTrackingService::class,
 			WooPaymentsOperationalQueueService::class,
+			WooPaymentsTestModeOrderEmailService::class,
 		);
 		$connected_cron            = array(
 			WooPaymentsCutoverReconciliationJob::class,
@@ -180,6 +183,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsApplePayDomainService::class,
 			WooPaymentsCanceledAuthorizationFeeRemediationService::class,
 			WooPaymentsOrderAdminActionsController::class,
+			WooPaymentsTestModeOrderEmailService::class,
 		);
 		$active_prefix             = array(
 			NativePaymentsGatewayRegistry::class,
@@ -227,6 +231,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 						WooPaymentsFrontendTrackingController::class,
 						WooPaymentsOrderTrackingService::class,
 						WooPaymentsOperationalQueueService::class,
+						WooPaymentsTestModeOrderEmailService::class,
 					)
 				),
 				'admin' => array_merge( $active_maintenance_prefix, $connected_admin ),

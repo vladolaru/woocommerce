@@ -281,6 +281,44 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Synchronous test payments compose the test note before payment metadata persists.
+	 */
+	public function test_synchronous_test_payment_uses_test_note_before_mode_metadata_persists(): void {
+		$order           = $this->create_woopayments_order( '25.00' );
+		$result          = array(
+			'id'       => 'pi_test_mode',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                  => 'ch_test_mode',
+						'balance_transaction' => 'txn_test_mode',
+					),
+				),
+			),
+		);
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_account_country', 'get_account_default_currency', 'get_mode' ) )
+			->getMock();
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+		$account_service->method( 'get_account_default_currency' )->willReturn( 'usd' );
+		$account_service->method( 'get_mode' )->willReturn( 'test' );
+
+		$enriched = $this->create_applier( null, null, $account_service )->enrich_outcome_for_lifecycle(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_test_mode' ),
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test_mode' ),
+			WooPaymentsOrderEffectPlan::for_payment_intent( $result, false )
+		);
+
+		$this->assertSame( 'test', $enriched->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'] );
+		$this->assertStringContainsString( 'A test payment of', $enriched->get_data()[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertStringContainsString( 'No real funds were collected.', $enriched->get_data()[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertSame( '', $order->get_meta( '_wcpay_mode', true ) );
+	}
+
+	/**
 	 * @testdox Final payment identity is propagated to subscriptions created from the parent order.
 	 */
 	public function test_final_payment_method_display_details_propagate_to_related_subscriptions(): void {

@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRemoteNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
@@ -346,6 +347,57 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertContains( hash( 'sha256', 'payment_lifecycle:pi_123|completed|payment_success' ), $note_identities );
 		$this->assertSame( '', $order->get_meta( '_wc_native_payments_note_' . md5( 'pi_123|completed|payment_success' ), true ) );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded records the Core test-mode note from the persisted order mode.
+	 */
+	public function test_payment_intent_succeeded_uses_persisted_test_mode_for_its_completion_note(): void {
+		$this->install_test_translations_for_domain(
+			'woocommerce',
+			array(
+				'A test payment of %1$s was processed using %2$s in <strong>test mode</strong> (<a>%3$s</a>). No real funds were collected.' => 'Core test payment %1$s using %2$s (<a>%3$s</a>).',
+			)
+		);
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_wcpay_mode', 'test' );
+		$order->save();
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertOrderHasNoteContaining( $order, array( 'Core test payment', 'pi_123' ) );
+	}
+
+	/**
+	 * @testdox A replay de-duplicates a persisted test-mode legacy-catalog completion note.
+	 */
+	public function test_payment_intent_succeeded_replay_deduplicates_persisted_test_mode_plugin_catalog_note(): void {
+		$this->install_test_translations_for_domain(
+			'woocommerce-payments',
+			array(
+				'A test payment of %1$s was processed using %2$s in <strong>test mode</strong> (<a>%3$s</a>). No real funds were collected.' => 'Plugin test payment %1$s using %2$s (<a>%3$s</a>).',
+			)
+		);
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->set_transaction_id( 'pi_123' );
+		$order->update_meta_data( '_intent_id', 'pi_123' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_wcpay_mode', 'test' );
+		$order->save();
+		$transaction_url = wc_get_container()->get( WooPaymentsOrderNoteService::class )->transaction_url( 'pi_123', 'ch_123' );
+		$plugin_note     = sprintf( 'Plugin test payment %1$s using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_123</a>).', wc_price( 10.00, array( 'currency' => 'USD' ) ), $transaction_url );
+		$live_note       = sprintf( 'A payment of %1$s USD was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_123</a>).', wc_price( 10.00, array( 'currency' => 'USD' ) ), $transaction_url );
+		$order->add_order_note( $plugin_note );
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array(), array( 'id' => 'evt_replay_test_mode' ) ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
+		$this->assertSame( 0, $this->count_order_notes_matching( $order, $live_note ) );
 	}
 
 	/**

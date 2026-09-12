@@ -92,6 +92,114 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Payment success notes identify test payments without changing live-note copy.
+	 */
+	public function test_formats_test_mode_payment_success_note_with_reference_copy(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->set_total( '25.00' );
+		$order->save();
+		$sut             = new WooPaymentsOrderNoteService();
+		$transaction_url = $sut->transaction_url( 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' );
+
+		$this->assertSame(
+			sprintf(
+				'A test payment of %1$s was processed using WooPayments in <strong>test mode</strong> (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>). No real funds were collected.',
+				wc_price( 25.00, array( 'currency' => 'USD' ) ) . ' USD',
+				$transaction_url
+			),
+			$sut->format_payment_success_note_candidates( $order, 'pi_test_charge', 'ch_test_charge', 'txn_test_charge', 'test' )[0]
+		);
+	}
+
+	/**
+	 * @testdox Payment success candidates use the persisted test mode when no synchronous mode is supplied.
+	 */
+	public function test_payment_success_candidates_use_persisted_test_mode_with_core_first_catalog_order(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->set_total( '25.00' );
+		$order->update_meta_data( '_wcpay_mode', 'test' );
+		$order->save();
+		$sut = new WooPaymentsOrderNoteService();
+		$this->install_test_translations(
+			array(
+				'woocommerce'          => array(
+					'A test payment of %1$s was processed using %2$s in <strong>test mode</strong> (<a>%3$s</a>). No real funds were collected.' => 'Core test payment %1$s using %2$s (<a>%3$s</a>).',
+				),
+				'woocommerce-payments' => array(
+					'A test payment of %1$s was processed using %2$s in <strong>test mode</strong> (<a>%3$s</a>). No real funds were collected.' => 'Plugin test payment %1$s using %2$s (<a>%3$s</a>).',
+				),
+			)
+		);
+
+		$this->assertSame(
+			array(
+				sprintf( 'Core test payment %1$s USD using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).', wc_price( 25.00, array( 'currency' => 'USD' ) ), $sut->transaction_url( 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' ) ),
+				sprintf( 'Plugin test payment %1$s using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).', wc_price( 25.00, array( 'currency' => 'USD' ) ), $sut->transaction_url( 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' ) ),
+			),
+			$sut->format_payment_success_note_candidates( $order, 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' )
+		);
+	}
+
+	/**
+	 * @testdox Live payment success copy remains unchanged for non-test mode inputs.
+	 */
+	public function test_payment_success_candidates_preserve_live_copy_for_non_test_modes(): void {
+		$sut                      = new WooPaymentsOrderNoteService();
+		$expected_live_candidates = array(
+			sprintf( 'A payment of %1$s USD was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).', wc_price( 25.00, array( 'currency' => 'USD' ) ), $sut->transaction_url( 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' ) ),
+			sprintf( 'A payment of %1$s was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).', wc_price( 25.00, array( 'currency' => 'USD' ) ), $sut->transaction_url( 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' ) ),
+		);
+
+		$cases = array(
+			'explicit live'  => array( 'test', 'live' ),
+			'persisted live' => array( 'live', null ),
+			'missing mode'   => array( '', null ),
+			'unknown mode'   => array( 'unknown', null ),
+		);
+
+		foreach ( $cases as $case => $modes ) {
+			$order = wc_create_order();
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$order->set_currency( 'USD' );
+			$order->set_total( '25.00' );
+			if ( '' !== $modes[0] ) {
+				$order->update_meta_data( '_wcpay_mode', $modes[0] );
+			}
+			$order->save();
+
+			$candidates = null === $modes[1]
+				? $sut->format_payment_success_note_candidates( $order, 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' )
+				: $sut->format_payment_success_note_candidates( $order, 'pi_test_charge', 'ch_test_charge', 'txn_test_charge', $modes[1] );
+
+			$this->assertSame( $expected_live_candidates, $candidates, $case );
+		}
+	}
+
+	/**
+	 * @testdox Payment success candidates retain their existing duplicate collapse for live modes.
+	 */
+	public function test_payment_success_candidates_retain_duplicate_collapse_for_live_modes(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->set_total( '25.00' );
+		$order->update_meta_data( '_wcpay_mode', 'live' );
+		$order->save();
+		$this->install_test_translations(
+			array(
+				'woocommerce'          => array( 'A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).' => 'Unchanged live note.' ),
+				'woocommerce-payments' => array( 'A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).' => 'Unchanged live note.' ),
+			)
+		);
+
+		$this->assertSame( array( 'Unchanged live note.' ), ( new WooPaymentsOrderNoteService() )->format_payment_success_note_candidates( $order, 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' ) );
+	}
+
+	/**
 	 * @testdox Checkout payment-failure notes carry the error details and the merchant seller message.
 	 */
 	public function test_formats_checkout_payment_failed_note_with_seller_message(): void {
