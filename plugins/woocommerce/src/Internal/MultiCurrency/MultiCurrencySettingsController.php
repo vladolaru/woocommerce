@@ -172,7 +172,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 		}
 
 		$this->add_filter_once( 'woocommerce_get_settings_pages', array( $this, 'handle_woocommerce_get_settings_pages' ) );
-		$this->add_filter_once( 'wcpay_js_settings', array( $this, 'add_multi_currency_settings_config' ) );
+		$this->add_filter_once( 'woocommerce_multi_currency_js_settings', array( $this, 'add_multi_currency_settings_config' ) );
 		$this->add_action_once( 'admin_print_scripts', array( $this, 'handle_admin_print_scripts' ) );
 		$this->add_action_once( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $this, 'render_settings_container' ) );
 		$this->add_action_once( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
@@ -255,12 +255,19 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add the multi-currency flag to the WCPay JS config.
+	 * Add the multi-currency flag to the Core JS config when it remains an array.
 	 *
-	 * @param array<string,mixed> $config Existing config.
-	 * @return array<string,mixed>
+	 * Filter callbacks can return any value. Preserve a non-array value so the
+	 * provider payload boundary can reject it without breaking the filter chain.
+	 *
+	 * @param mixed $config Existing config.
+	 * @return mixed Existing config when it is not an array, otherwise the updated config.
 	 */
-	public function add_multi_currency_settings_config( array $config ): array {
+	public function add_multi_currency_settings_config( $config ) {
+		if ( ! is_array( $config ) ) {
+			return $config;
+		}
+
 		return MultiCurrencySettingsProjectionService::add_props_to_wcpay_js_config( $config );
 	}
 

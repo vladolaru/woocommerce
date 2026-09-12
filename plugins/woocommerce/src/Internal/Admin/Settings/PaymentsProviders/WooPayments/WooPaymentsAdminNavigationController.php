@@ -258,6 +258,33 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['featureFlags'] = $feature_flags;
 
 		$settings['woopaymentsSettings']['adminRouteAvailability'] = $this->get_admin_route_availability();
+		$provider_settings = $settings['woopaymentsSettings'];
+
+		/**
+		 * Filters native WooPayments settings with Core-owned Multi-Currency data.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param array<string,mixed> $settings Native WooPayments settings.
+		 */
+		$core_settings_candidate = apply_filters( 'woocommerce_multi_currency_js_settings', $provider_settings );
+		if ( is_array( $core_settings_candidate ) ) {
+			$provider_settings = $core_settings_candidate;
+		}
+
+		/**
+		 * Filters native WooPayments settings for legacy WooPayments extensions.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param array<string,mixed> $settings Native WooPayments settings.
+		 */
+		$legacy_settings_candidate = apply_filters( 'wcpay_js_settings', $provider_settings );
+		if ( is_array( $legacy_settings_candidate ) ) {
+			$provider_settings = $legacy_settings_candidate;
+		}
+
+		$settings['woopaymentsSettings'] = $provider_settings;
 
 		return $settings;
 	}

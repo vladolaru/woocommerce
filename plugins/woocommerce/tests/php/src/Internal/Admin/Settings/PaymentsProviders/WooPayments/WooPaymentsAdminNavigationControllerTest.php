@@ -70,6 +70,8 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$this->intercepted_redirect = '';
 		remove_filter( 'wp_redirect', array( $this, 'intercept_redirect' ), 10 );
 		remove_filter( 'wp_doing_ajax', '__return_true' );
+		remove_all_filters( 'woocommerce_multi_currency_js_settings' );
+		remove_all_filters( 'wcpay_js_settings' );
 		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['woopayments-vat-details-redirect'] );
 
 		parent::tearDown();
@@ -282,6 +284,174 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['reportsArea'] );
 		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['existingFlag'] );
+	}
+
+	/**
+	 * @testdox Should apply Core Multi-Currency settings before legacy WooPayments settings.
+	 */
+	public function test_preloads_core_multi_currency_settings_before_legacy_woopayments_settings(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller(
+			true,
+			array(
+				'is_reports_enabled' => true,
+			)
+		);
+		$filter_calls = array();
+
+		add_filter(
+			'woocommerce_multi_currency_js_settings',
+			static function ( array $settings ) use ( &$filter_calls ): array {
+				$filter_calls[] = array(
+					'hook'     => 'woocommerce_multi_currency_js_settings',
+					'settings' => $settings,
+				);
+				return array_merge( $settings, array( 'multiCurrency' => array( 'enabled' => true ) ) );
+			}
+		);
+		add_filter(
+			'wcpay_js_settings',
+			static function ( array $settings ) use ( &$filter_calls ): array {
+				$filter_calls[] = array(
+					'hook'     => 'wcpay_js_settings',
+					'settings' => $settings,
+				);
+				return array_merge( $settings, array( 'legacyWooPayments' => true ) );
+			}
+		);
+
+		$settings = $sut->preload_shared_settings(
+			array(
+				'preservedSharedSetting' => 'shared value',
+				'woopaymentsSettings'    => array(
+					'preservedProviderSetting' => 'provider value',
+					'featureFlags'             => array(
+						'existingFlag' => true,
+					),
+				),
+			)
+		);
+
+		$this->assertSame(
+			array(
+				'woocommerce_multi_currency_js_settings',
+				'wcpay_js_settings',
+			),
+			wp_list_pluck( $filter_calls, 'hook' )
+		);
+		$this->assertSame( 'provider value', $filter_calls[0]['settings']['preservedProviderSetting'] );
+		$this->assertTrue( $filter_calls[0]['settings']['featureFlags']['reportsArea'] );
+		$this->assertSame( array( 'enabled' => true ), $filter_calls[1]['settings']['multiCurrency'] );
+		$this->assertSame( 'shared value', $settings['preservedSharedSetting'] );
+		$this->assertSame( 'provider value', $settings['woopaymentsSettings']['preservedProviderSetting'] );
+		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['existingFlag'] );
+		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['reportsArea'] );
+		$this->assertSame( array( 'enabled' => true ), $settings['woopaymentsSettings']['multiCurrency'] );
+		$this->assertTrue( $settings['woopaymentsSettings']['legacyWooPayments'] );
+	}
+
+	/**
+	 * @testdox Should preserve native WooPayments settings when the Core filter returns an invalid value.
+	 */
+	public function test_preserves_native_woopayments_settings_when_core_filter_returns_invalid_value(): void {
+		$_GET['page']    = 'wc-settings';
+		$_GET['tab']     = 'checkout';
+		$sut             = $this->create_controller(
+			true,
+			array(
+				'is_reports_enabled' => true,
+			)
+		);
+		$core_settings   = null;
+		$legacy_settings = null;
+
+		add_filter(
+			'woocommerce_multi_currency_js_settings',
+			static function ( array $settings ) use ( &$core_settings ) {
+				$core_settings = $settings;
+
+				return null;
+			}
+		);
+		add_filter(
+			'wcpay_js_settings',
+			static function ( array $settings ) use ( &$legacy_settings ): array {
+				$legacy_settings = $settings;
+
+				return $settings;
+			}
+		);
+
+		$settings = $sut->preload_shared_settings(
+			array(
+				'preservedSharedSetting' => 'shared value',
+				'woopaymentsSettings'    => array(
+					'preservedProviderSetting' => 'provider value',
+					'featureFlags'             => array(
+						'existingFlag' => true,
+					),
+				),
+			)
+		);
+
+		$this->assertSame( $core_settings, $legacy_settings );
+		$this->assertSame( $core_settings, $settings['woopaymentsSettings'] );
+		$this->assertSame( 'shared value', $settings['preservedSharedSetting'] );
+		$this->assertSame( 'provider value', $settings['woopaymentsSettings']['preservedProviderSetting'] );
+		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['existingFlag'] );
+		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['reportsArea'] );
+		$this->assertArrayHasKey( 'adminRouteAvailability', $settings['woopaymentsSettings'] );
+	}
+
+	/**
+	 * @testdox Should preserve Core Multi-Currency settings when the legacy filter returns an invalid value.
+	 */
+	public function test_preserves_core_multi_currency_settings_when_legacy_filter_returns_invalid_value(): void {
+		$_GET['page']    = 'wc-settings';
+		$_GET['tab']     = 'checkout';
+		$sut             = $this->create_controller(
+			true,
+			array(
+				'is_reports_enabled' => true,
+			)
+		);
+		$legacy_settings = null;
+
+		add_filter(
+			'woocommerce_multi_currency_js_settings',
+			static function ( array $settings ): array {
+				return array_merge( $settings, array( 'multiCurrency' => array( 'enabled' => true ) ) );
+			}
+		);
+		add_filter(
+			'wcpay_js_settings',
+			static function ( array $settings ) use ( &$legacy_settings ) {
+				$legacy_settings = $settings;
+
+				return null;
+			}
+		);
+
+		$settings = $sut->preload_shared_settings(
+			array(
+				'preservedSharedSetting' => 'shared value',
+				'woopaymentsSettings'    => array(
+					'preservedProviderSetting' => 'provider value',
+					'featureFlags'             => array(
+						'existingFlag' => true,
+					),
+				),
+			)
+		);
+
+		$this->assertSame( $legacy_settings, $settings['woopaymentsSettings'] );
+		$this->assertSame( 'shared value', $settings['preservedSharedSetting'] );
+		$this->assertSame( 'provider value', $settings['woopaymentsSettings']['preservedProviderSetting'] );
+		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['existingFlag'] );
+		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['reportsArea'] );
+		$this->assertArrayHasKey( 'adminRouteAvailability', $settings['woopaymentsSettings'] );
+		$this->assertSame( array( 'enabled' => true ), $settings['woopaymentsSettings']['multiCurrency'] );
 	}
 
 	/**

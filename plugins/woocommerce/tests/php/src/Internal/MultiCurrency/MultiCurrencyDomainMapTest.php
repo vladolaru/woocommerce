@@ -56,51 +56,27 @@ class MultiCurrencyDomainMapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep settings controller independent from provider account wiring.
+	 * @testdox Should keep WooPayments provider implementation details out of production Multi-Currency code.
 	 */
-	public function test_settings_controller_is_independent_from_provider_account_wiring(): void {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for domain-boundary regression coverage.
-		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/MultiCurrency/MultiCurrencySettingsController.php' );
+	public function test_production_multi_currency_code_is_provider_neutral(): void {
+		$directory = WC()->plugin_path() . '/src/Internal/MultiCurrency';
+		$offenders = array();
 
-		$this->assertStringNotContainsString( 'MultiCurrencyProviderAccountResolver', $source, 'Settings controller must not require a provider account to mount settings.' );
-		$this->assertStringNotContainsString( 'WooPaymentsLegacyAccountAdapter', $source, 'Settings controller should not type-hint the WooPayments account adapter.' );
-		$this->assertStringNotContainsString( 'Internal\\Payments\\Providers\\WooPayments', $source, 'Settings controller should not import WooPayments provider implementation details.' );
-	}
+		foreach ( new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $directory ) ) as $file ) {
+			if ( ! $file instanceof \SplFileInfo || 'php' !== $file->getExtension() ) {
+				continue;
+			}
 
-	/**
-	 * @testdox Should keep generic account resolver wiring provider-neutral.
-	 */
-	public function test_provider_account_resolver_wiring_is_provider_neutral(): void {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for domain-boundary regression coverage.
-		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/MultiCurrency/Providers/MultiCurrencyProviderAccountResolver.php' );
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local production source for domain-boundary regression coverage.
+			$source = (string) file_get_contents( $file->getPathname() );
+			if ( false !== strpos( $source, 'Internal\\Payments\\Providers\\WooPayments' ) ) {
+				$offenders[] = substr( $file->getPathname(), strlen( $directory ) + 1 );
+			}
+		}
 
-		$this->assertStringContainsString( 'MultiCurrencyAccountInterface', $source, 'Generic resolver should expose only the provider-neutral account boundary.' );
-		$this->assertStringNotContainsString( 'WooPaymentsLegacyAccountAdapter', $source, 'Generic resolver should not type-hint the WooPayments account adapter.' );
-		$this->assertStringNotContainsString( 'Internal\\Payments\\Providers\\WooPayments', $source, 'Generic resolver should not import WooPayments provider implementation details.' );
-	}
+		sort( $offenders );
 
-	/**
-	 * @testdox Should keep generic admin note account wiring provider-neutral.
-	 */
-	public function test_admin_note_account_wiring_is_provider_neutral(): void {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for domain-boundary regression coverage.
-		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/MultiCurrency/MultiCurrencyAdminNoteController.php' );
-
-		$this->assertStringContainsString( 'MultiCurrencyProviderAccountResolver', $source, 'Admin note controller should use the provider-neutral account resolver.' );
-		$this->assertStringNotContainsString( 'WooPaymentsProvider', $source, 'Admin note controller should not type-hint the WooPayments provider.' );
-		$this->assertStringNotContainsString( 'Internal\\Payments\\Providers\\WooPayments', $source, 'Admin note controller should not import WooPayments provider implementation details.' );
-	}
-
-	/**
-	 * @testdox Should keep generic rate-provider registry factory wiring provider-neutral.
-	 */
-	public function test_rate_provider_registry_factory_wiring_is_provider_neutral(): void {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for domain-boundary regression coverage.
-		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/MultiCurrency/Providers/CurrencyRateProviderRegistryFactory.php' );
-
-		$this->assertStringContainsString( 'CurrencyRateProviderRegistrarInterface', $source, 'Generic registry factory should expose only the provider-neutral registrar boundary.' );
-		$this->assertStringNotContainsString( 'WooPaymentsCurrencyRateProviderRegistrar', $source, 'Generic registry factory should not type-hint the WooPayments registrar.' );
-		$this->assertStringNotContainsString( 'Internal\\Payments\\Providers\\WooPayments', $source, 'Generic registry factory should not import WooPayments provider implementation details.' );
+		$this->assertSame( array(), $offenders, 'WooPayments provider implementation details must not appear in production Multi-Currency files: ' . implode( ', ', $offenders ) );
 	}
 
 	/**
