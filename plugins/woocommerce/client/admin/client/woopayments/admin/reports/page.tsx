@@ -82,6 +82,7 @@ type BalanceDateFilterValue =
 
 type BalanceDatePreset =
 	| 'last_month'
+	| 'last_year'
 	| 'month_to_date'
 	| 'year_to_date'
 	| 'custom';
@@ -320,6 +321,20 @@ const getLastFullCalendarMonthDateFilter = (
 	};
 };
 
+const getLastFullCalendarYearDateFilter = (
+	now: Date
+): BalanceDateFilterValue => {
+	const previousYear = now.getUTCFullYear() - 1;
+
+	return {
+		operator: 'between',
+		value: [
+			toYmdUTC( new Date( Date.UTC( previousYear, 0, 1 ) ) ),
+			toYmdUTC( new Date( Date.UTC( previousYear, 11, 31 ) ) ),
+		],
+	};
+};
+
 const getMonthToDateFilter = ( now: Date ): BalanceDateFilterValue => ( {
 	operator: 'between',
 	value: [
@@ -339,7 +354,9 @@ const getYearToDateFilter = ( now: Date ): BalanceDateFilterValue => ( {
 } );
 
 const isBalanceDatePreset = ( value: string ): value is BalanceDatePreset =>
-	[ 'last_month', 'month_to_date', 'year_to_date' ].includes( value );
+	[ 'last_month', 'last_year', 'month_to_date', 'year_to_date' ].includes(
+		value
+	);
 
 const getBalanceDateFilterForPreset = (
 	preset: BalanceDatePreset,
@@ -351,6 +368,10 @@ const getBalanceDateFilterForPreset = (
 
 	if ( preset === 'year_to_date' ) {
 		return getYearToDateFilter( now );
+	}
+
+	if ( preset === 'last_year' ) {
+		return getLastFullCalendarYearDateFilter( now );
 	}
 
 	return getLastFullCalendarMonthDateFilter( now );
@@ -587,6 +608,15 @@ const matchBalanceDatePreset = (
 		value.value[ 1 ] === lastMonth.value[ 1 ]
 	) {
 		return 'last_month';
+	}
+
+	const lastYear = getLastFullCalendarYearDateFilter( now );
+
+	if (
+		value.value[ 0 ] === lastYear.value[ 0 ] &&
+		value.value[ 1 ] === lastYear.value[ 1 ]
+	) {
+		return 'last_year';
 	}
 
 	const monthToDate = getMonthToDateFilter( now );
@@ -1072,8 +1102,12 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 					__nextHasNoMarginBottom
 					options={ [
 						{
-							label: __( 'Last month', 'woocommerce' ),
+							label: __( 'Previous month', 'woocommerce' ),
 							value: 'last_month',
+						},
+						{
+							label: __( 'Previous year', 'woocommerce' ),
+							value: 'last_year',
 						},
 						{
 							label: __( 'Month to date', 'woocommerce' ),
@@ -1150,7 +1184,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 	);
 };
 
-const FeesReport = () => {
+const FeesReport = ( { now }: { now: Date } ) => {
 	const [ view, setView ] = useState< View >( {
 		type: 'table',
 		page: 1,
@@ -1201,6 +1235,22 @@ const FeesReport = () => {
 	);
 	const isInitialLoading =
 		isLoading && ! rowsState.data && ! summaryState.data;
+	const activeDatePreset = useMemo( () => {
+		const hasDateFilter = (
+			view.filters as DataViewsFilter[] | undefined
+		 )?.some( ( filter ) => filter.field === 'date' );
+
+		return hasDateFilter
+			? matchBalanceDatePreset(
+					getBalanceDateFilterFromView(
+						view,
+						getLastFullCalendarMonthDateFilter( now ),
+						now
+					),
+					now
+			  )
+			: 'custom';
+	}, [ now, view ] );
 
 	useEffect(
 		() => () => {
@@ -1438,6 +1488,29 @@ const FeesReport = () => {
 		setView( nextView );
 	};
 
+	const handlePresetChange = ( nextPreset: string | null ) => {
+		if ( ! nextPreset || ! isBalanceDatePreset( nextPreset ) ) {
+			return;
+		}
+
+		const dateFilter = getBalanceDateFilterForPreset( nextPreset, now );
+
+		setView( ( previousView: View ) => ( {
+			...previousView,
+			page: 1,
+			filters: [
+				...( previousView.filters ?? [] ).filter(
+					( filter: DataViewsFilter ) => filter.field !== 'date'
+				),
+				{
+					field: 'date',
+					operator: dateFilter.operator,
+					value: dateFilter.value,
+				},
+			],
+		} ) );
+	};
+
 	const handleExport = async () => {
 		const settings = getGlobalSettings();
 		const exportQuery = {
@@ -1542,6 +1615,39 @@ const FeesReport = () => {
 				header={
 					<div className="woocommerce-woopayments-reports__toolbar">
 						<h2>{ __( 'Fees', 'woocommerce' ) }</h2>
+						<SelectControl
+							className="woocommerce-woopayments-reports__date-range"
+							label={ __( 'Date range', 'woocommerce' ) }
+							value={ activeDatePreset }
+							__next40pxDefaultSize
+							__nextHasNoMarginBottom
+							options={ [
+								{
+									label: __(
+										'Previous month',
+										'woocommerce'
+									),
+									value: 'last_month',
+								},
+								{
+									label: __( 'Previous year', 'woocommerce' ),
+									value: 'last_year',
+								},
+								{
+									label: __( 'Month to date', 'woocommerce' ),
+									value: 'month_to_date',
+								},
+								{
+									label: __( 'Year to date', 'woocommerce' ),
+									value: 'year_to_date',
+								},
+								{
+									label: __( 'Custom', 'woocommerce' ),
+									value: 'custom',
+								},
+							] }
+							onChange={ handlePresetChange }
+						/>
 						<Button
 							variant="primary"
 							onClick={ handleExport }
@@ -1704,7 +1810,7 @@ export const WooPaymentsReportsPage = ( {
 				aria-labelledby={ feesTabId }
 				hidden={ activeTab !== 'fees' }
 			>
-				{ activeTab === 'fees' && <FeesReport /> }
+				{ activeTab === 'fees' && <FeesReport now={ stableNow } /> }
 			</div>
 		</div>
 	);

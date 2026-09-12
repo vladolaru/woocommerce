@@ -99,6 +99,14 @@ const getSingleString = ( value: unknown ): string | undefined => {
 	return typeof value === 'string' && value ? value : undefined;
 };
 
+const isDateOnly = ( value: string ) => /^\d{4}-\d{2}-\d{2}$/.test( value );
+
+const toUtcDateRangeStart = ( value: string ) =>
+	isDateOnly( value ) ? `${ value }T00:00:00.000Z` : value;
+
+const toUtcDateRangeEnd = ( value: string ) =>
+	isDateOnly( value ) ? `${ value }T23:59:59.999Z` : value;
+
 const getDateFilterQuery = (
 	value: unknown,
 	operator?: string
@@ -107,7 +115,10 @@ const getDateFilterQuery = (
 
 	if ( Array.isArray( dateRange ) && dateRange.length >= 2 ) {
 		return {
-			date_between: dateRange.slice( 0, 2 ),
+			date_between: [
+				toUtcDateRangeStart( dateRange[ 0 ] ),
+				toUtcDateRangeEnd( dateRange[ 1 ] ),
+			],
 		};
 	}
 

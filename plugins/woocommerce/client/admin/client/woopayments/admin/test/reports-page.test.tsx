@@ -115,6 +115,33 @@ const mockDataViews = jest.fn(
 							Apply April date filter
 						</button>
 					) }
+				{ search && onChangeView && (
+					<button
+						type="button"
+						onClick={ () =>
+							onChangeView( {
+								...view,
+								page: 3,
+								perPage: 50,
+								search: 'txn_456',
+								filters: [
+									{
+										field: 'date',
+										operator: 'between',
+										value: [ '2026-04-01', '2026-04-30' ],
+									},
+									{
+										field: 'type',
+										operator: 'is',
+										value: 'charge',
+									},
+								],
+							} )
+						}
+					>
+						Apply detailed fees view
+					</button>
+				) }
 				{ search && searchLabel && (
 					<input
 						type="search"
@@ -544,6 +571,100 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 	} );
 
+	it( 'applies previous-period presets to Balance and Fees using the stable report clock', async () => {
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		const balanceDateRange = screen.getByLabelText( 'Date range' );
+		expect(
+			within( balanceDateRange ).getByRole( 'option', {
+				name: 'Previous month',
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( balanceDateRange ).getByRole( 'option', {
+				name: 'Previous year',
+			} )
+		).toBeInTheDocument();
+
+		fireEvent.change( balanceDateRange, {
+			target: { value: 'last_month' },
+		} );
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2026-05-01T00:00:00.000Z',
+				date_end: '2026-05-31T23:59:59.999Z',
+				currency: 'USD',
+			} )
+		);
+
+		fireEvent.change( balanceDateRange, {
+			target: { value: 'last_year' },
+		} );
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2025-01-01T00:00:00.000Z',
+				date_end: '2025-12-31T23:59:59.999Z',
+				currency: 'USD',
+			} )
+		);
+
+		await userEvent.click( screen.getByRole( 'tab', { name: 'Fees' } ) );
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
+		);
+		const feesDateRange = screen.getByLabelText( 'Date range' );
+		expect(
+			within( feesDateRange ).getByRole( 'option', {
+				name: 'Previous month',
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( feesDateRange ).getByRole( 'option', {
+				name: 'Previous year',
+			} )
+		).toBeInTheDocument();
+
+		fireEvent.change( feesDateRange, {
+			target: { value: 'last_month' },
+		} );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					page: 1,
+					per_page: 50,
+					sort: 'date',
+					direction: 'desc',
+					search: [ 'txn_456' ],
+					type: [ 'charge' ],
+					date_between: [
+						'2026-05-01T00:00:00.000Z',
+						'2026-05-31T23:59:59.999Z',
+					],
+				} )
+			)
+		);
+
+		fireEvent.change( feesDateRange, {
+			target: { value: 'last_year' },
+		} );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					date_between: [
+						'2025-01-01T00:00:00.000Z',
+						'2025-12-31T23:59:59.999Z',
+					],
+				} )
+			)
+		);
+	} );
+
 	it( 'lets merchants change the Balance period through the DataViews date filter', async () => {
 		renderReportsPage();
 
@@ -787,14 +908,20 @@ describe( 'WooPaymentsReportsPage', () => {
 		await waitFor( () =>
 			expect( mockGetFees ).toHaveBeenLastCalledWith(
 				expect.objectContaining( {
-					date_between: [ '2026-04-01', '2026-04-30' ],
+					date_between: [
+						'2026-04-01T00:00:00.000Z',
+						'2026-04-30T23:59:59.999Z',
+					],
 					user_timezone: expect.stringMatching( /^[+-]\d{2}:\d{2}$/ ),
 				} )
 			)
 		);
 		expect( mockGetFeesSummary ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
-				date_between: [ '2026-04-01', '2026-04-30' ],
+				date_between: [
+					'2026-04-01T00:00:00.000Z',
+					'2026-04-30T23:59:59.999Z',
+				],
 				user_timezone: expect.stringMatching( /^[+-]\d{2}:\d{2}$/ ),
 			} )
 		);

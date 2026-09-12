@@ -68,13 +68,56 @@ describe( 'WooPayments Reports query helpers', () => {
 			per_page: 10,
 			sort: 'source',
 			direction: 'asc',
-			date_between: [ '2026-06-01', '2026-06-19' ],
+			date_between: [
+				'2026-06-01T00:00:00.000Z',
+				'2026-06-19T23:59:59.999Z',
+			],
 			payment_method_type: 'card',
 			type: [ 'charge', 'refund' ],
 			search: [ 'txn_123' ],
 			user_timezone: expect.stringMatching( timezonePattern ),
 		} );
 	} );
+
+	it.each( [
+		[
+			'Previous month',
+			[ '2026-05-01', '2026-05-31' ],
+			[ '2026-05-01T00:00:00.000Z', '2026-05-31T23:59:59.999Z' ],
+		],
+		[
+			'Previous year',
+			[ '2025-01-01', '2025-12-31' ],
+			[ '2025-01-01T00:00:00.000Z', '2025-12-31T23:59:59.999Z' ],
+		],
+	] )(
+		'serializes %s date filters with inclusive UTC boundaries',
+		( _, dates, expectedDates ) => {
+			const query = buildReportsFeesQueryFromView( {
+				type: 'table',
+				filters: [
+					{
+						field: 'date',
+						operator: 'between',
+						value: dates,
+					},
+				],
+			} );
+
+			expect( query ).toEqual(
+				expect.objectContaining( {
+					date_between: expectedDates,
+				} )
+			);
+			expect( serializeReportsFeesListQuery( query ) ).toContain(
+				`date_between%5B%5D=${ encodeURIComponent(
+					expectedDates[ 0 ]
+				) }&date_between%5B%5D=${ encodeURIComponent(
+					expectedDates[ 1 ]
+				) }`
+			);
+		}
+	);
 
 	it( 'normalizes a scalar type filter to the Reports array schema', () => {
 		expect(
