@@ -3500,12 +3500,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'page=wc-admin', $url );
 		$this->assertStringContainsString( 'id=pi_transaction_url', $url );
-		// The path is carried unencoded because native composes this through the same
-		// admin-URL helper its order notes use, so a note's link and the order page's
-		// link are byte-identical. The client plugin rawurlencodes it instead; both
-		// forms read back as the same `path` query value, so the destination is the
-		// same and the internal consistency is the more useful property.
-		$this->assertStringContainsString( 'path=/payments/transactions/details', $url );
+		$this->assertStringContainsString( 'path=%2Fpayments%2Ftransactions%2Fdetails', $url );
 	}
 
 	/**

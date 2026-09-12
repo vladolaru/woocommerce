@@ -474,7 +474,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return Utils::wc_payments_legacy_admin_url(
-			'/payments/transactions/details',
+			rawurlencode( '/payments/transactions/details' ),
 			array( 'id' => '' !== $intent_id ? $intent_id : $charge_id )
 		);
 	}

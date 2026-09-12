@@ -69,6 +69,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$sut             = new WooPaymentsOrderNoteService();
 		$transaction_url = $sut->transaction_url( 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' );
 
+		$this->assertStringContainsString( 'path=%2Fpayments%2Ftransactions%2Fdetails', $transaction_url );
 		$this->assertSame(
 			sprintf(
 				'A payment of %1$s USD was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).',
@@ -307,6 +308,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		);
 		$url        = $sut->blocked_transaction_url( 'pi_blocked_test', (string) $order->get_id() );
 
+		$this->assertStringContainsString( 'path=%2Fpayments%2Ftransactions%2Fdetails', $url );
 		$this->assertSame(
 			sprintf(
 				'&#x1F6AB; A payment of %1$s USD was <strong>blocked</strong> by the following risk filters:<br>%2$s<br><br><a href="%3$s" target="_blank" rel="noopener noreferrer">View more details</a>.',

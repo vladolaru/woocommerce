@@ -304,7 +304,7 @@ class WooPaymentsOrderNoteService {
 		}
 
 		return Utils::wc_payments_legacy_admin_url(
-			'/payments/transactions/details',
+			rawurlencode( '/payments/transactions/details' ),
 			array(
 				'id'        => '' !== $intent_id ? $intent_id : $order_id,
 				'status_is' => 'block',
@@ -1057,7 +1057,7 @@ class WooPaymentsOrderNoteService {
 		}
 
 		return Utils::wc_payments_legacy_admin_url(
-			'/payments/transactions/details',
+			rawurlencode( '/payments/transactions/details' ),
 			array( 'id' => '' !== $intent_id ? $intent_id : $charge_id )
 		);
 	}
