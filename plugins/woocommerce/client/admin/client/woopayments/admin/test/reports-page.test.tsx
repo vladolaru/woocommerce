@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { speak } from '@wordpress/a11y';
 import { recordEvent } from '@woocommerce/tracks';
+import { downloadCSVFile } from '@woocommerce/csv-export';
 
 /**
  * Internal dependencies
@@ -36,6 +37,11 @@ jest.mock( '@wordpress/a11y', () => ( {
 
 jest.mock( '@wordpress/date', () => ( {
 	dateI18n: jest.fn( ( format, date ) => `${ format }|${ date }` ),
+} ) );
+
+jest.mock( '@woocommerce/csv-export', () => ( {
+	...jest.requireActual( '@woocommerce/csv-export' ),
+	downloadCSVFile: jest.fn(),
 } ) );
 
 jest.mock( '../reports/data', () => ( {
@@ -169,6 +175,7 @@ const mockGetFeesExportUrl =
 	getWooPaymentsReportsFeesExportUrl as jest.MockedFunction<
 		typeof getWooPaymentsReportsFeesExportUrl
 	>;
+const mockDownloadCSVFile = jest.mocked( downloadCSVFile );
 
 const LocationProbe = () => {
 	const location = useLocation();
@@ -292,6 +299,14 @@ describe( 'WooPaymentsReportsPage', () => {
 			locale: {
 				userLocale: 'en_US',
 			},
+			admin: {
+				woopaymentsSettings: {
+					balanceReportIdentity: {
+						businessName: 'Native Merchant LLC',
+						accountId: 'acct_native_123',
+					},
+				},
+			},
 		};
 		(
 			window as typeof window & {
@@ -312,6 +327,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		mockGetFeesSummary.mockReset();
 		mockRequestFeesExport.mockReset();
 		mockGetFeesExportUrl.mockReset();
+		mockDownloadCSVFile.mockReset();
 		mockGetBalanceSummary.mockImplementation( async () => {
 			await waitForNextTick();
 			return balanceSummary;
@@ -418,6 +434,22 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect( speak ).toHaveBeenCalledWith(
 			'18 balance report rows loaded.',
 			'polite'
+		);
+	} );
+
+	it( 'downloads the loaded Balance summary with business and account identity CSV columns', async () => {
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Export' } )
+		);
+
+		expect( mockDownloadCSVFile ).toHaveBeenCalledWith(
+			'balance-report-2026-06-01-to-2026-06-19.csv',
+			expect.stringContaining(
+				'business_name,woopayments_account_id,row_key,label,amount,count,currency,period_start,period_end\n"Native Merchant LLC",acct_native_123,starting_balance,"Starting balance",1000,,usd,2026-06-01,2026-06-19'
+			)
 		);
 	} );
 

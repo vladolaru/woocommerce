@@ -18,6 +18,10 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { recordEvent } from '@woocommerce/tracks';
 import { getHistory, getNewPath } from '@woocommerce/navigation';
+import {
+	downloadCSVFile,
+	generateCSVDataFromTable,
+} from '@woocommerce/csv-export';
 
 // @ts-expect-error - Use the WordPress-bundled DataViews entry in wp-admin builds.
 import { DataViews, type Field, type View } from '@wordpress/dataviews/wp';
@@ -98,6 +102,14 @@ type GlobalSettings = typeof globalThis & {
 	wcSettings?: {
 		adminUrl?: string;
 		dateFormat?: string;
+		admin?: {
+			woopaymentsSettings?: {
+				balanceReportIdentity?: {
+					businessName?: string;
+					accountId?: string;
+				};
+			};
+		};
 		locale?: {
 			userLocale?: string;
 		};
@@ -167,6 +179,23 @@ const formatAmount = ( amount = 0, currency = 'usd' ) =>
 
 const formatExplicitAmount = ( amount = 0, currency = 'usd' ) =>
 	`${ formatAmount( amount, currency ) } ${ currency.toUpperCase() }`;
+
+const getBalanceReportIdentity = () => {
+	const identity =
+		getGlobalSettings().wcSettings?.admin?.woopaymentsSettings
+			?.balanceReportIdentity;
+
+	return {
+		businessName:
+			typeof identity?.businessName === 'string'
+				? identity.businessName.trim()
+				: '',
+		accountId:
+			typeof identity?.accountId === 'string'
+				? identity.accountId.trim()
+				: '',
+	};
+};
 
 const getDateFormat = () =>
 	getGlobalSettings().wcpaySettings?.dateFormat ||
@@ -718,6 +747,51 @@ const hasBalanceActivity = ( rows: BalanceRow[] ) =>
 			( row.amount !== 0 || Number( row.count ?? 0 ) > 0 )
 	);
 
+const getBalanceCsv = (
+	rows: BalanceRow[],
+	summary: ReportsBalanceSummary,
+	currency: string
+) => {
+	const identity = getBalanceReportIdentity();
+	const periodStart = summary.period?.start?.slice( 0, 10 ) || '';
+	const periodEnd = summary.period?.end?.slice( 0, 10 ) || '';
+
+	return generateCSVDataFromTable(
+		[
+			{ key: 'business_name', label: 'business_name' },
+			{
+				key: 'woopayments_account_id',
+				label: 'woopayments_account_id',
+			},
+			{ key: 'row_key', label: 'row_key' },
+			{ key: 'label', label: 'label' },
+			{ key: 'amount', label: 'amount' },
+			{ key: 'count', label: 'count' },
+			{ key: 'currency', label: 'currency' },
+			{ key: 'period_start', label: 'period_start' },
+			{ key: 'period_end', label: 'period_end' },
+		],
+		rows.map( ( row ) => [
+			{ value: identity.businessName, display: identity.businessName },
+			{ value: identity.accountId, display: identity.accountId },
+			{ value: row.id, display: row.id },
+			{ value: row.label, display: row.label },
+			{ value: row.amount, display: String( row.amount ) },
+			{ value: row.count ?? '', display: String( row.count ?? '' ) },
+			{ value: currency.toLowerCase(), display: currency.toLowerCase() },
+			{ value: periodStart, display: periodStart },
+			{ value: periodEnd, display: periodEnd },
+		] )
+	);
+};
+
+const getBalanceCsvFileName = ( summary: ReportsBalanceSummary ) => {
+	const periodStart = summary.period?.start?.slice( 0, 10 ) || 'export';
+	const periodEnd = summary.period?.end?.slice( 0, 10 ) || 'export';
+
+	return `balance-report-${ periodStart }-to-${ periodEnd }.csv`;
+};
+
 const getMethodLabel = ( value?: string ) => {
 	if ( ! value ) {
 		return '-';
@@ -1031,6 +1105,10 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 					<Button
 						variant="secondary"
 						onClick={ () => {
+							downloadCSVFile(
+								getBalanceCsvFileName( summary ),
+								getBalanceCsv( rows, summary, reportCurrency )
+							);
 							recordEvent( 'wcpay_reports_balance_export_click', {
 								visible_row_count: rows.length,
 							} );

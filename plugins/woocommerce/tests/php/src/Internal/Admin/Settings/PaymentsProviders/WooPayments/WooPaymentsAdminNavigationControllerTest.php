@@ -287,6 +287,65 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preload trimmed Balance report identity from the WooPayments account.
+	 */
+	public function test_preloads_trimmed_balance_report_identity_from_account(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller(
+			true,
+			array(
+				'get_cached_account_data' => array(
+					'business_profile' => array(
+						'name' => ' Native Merchant ',
+					),
+				),
+				'get_account_id'          => ' acct_native_123 ',
+			)
+		);
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame(
+			array(
+				'businessName' => 'Native Merchant',
+				'accountId'    => 'acct_native_123',
+			),
+			$settings['woopaymentsSettings']['balanceReportIdentity']
+		);
+	}
+
+	/**
+	 * @testdox Should fall back to the store name and an empty account ID for Balance report identity.
+	 */
+	public function test_preloads_balance_report_identity_with_store_name_and_empty_account_id_fallbacks(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		update_option( 'blogname', ' Native Store ' );
+		$sut = $this->create_controller(
+			true,
+			array(
+				'get_cached_account_data' => array(
+					'business_profile' => array(
+						'name' => ' ',
+					),
+				),
+				'get_account_id'          => ' ',
+			)
+		);
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame(
+			array(
+				'businessName' => 'Native Store',
+				'accountId'    => '',
+			),
+			$settings['woopaymentsSettings']['balanceReportIdentity']
+		);
+	}
+
+	/**
 	 * @testdox Should apply Core Multi-Currency settings before legacy WooPayments settings.
 	 */
 	public function test_preloads_core_multi_currency_settings_before_legacy_woopayments_settings(): void {
@@ -1485,9 +1544,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the controller under test.
 	 *
-	 * @param bool               $native_register Whether native should own menu registration.
-	 * @param array<string,bool> $account_state   Account state overrides.
-	 * @param array<string,int>  $badge_counts    Badge count overrides.
+	 * @param bool                $native_register Whether native should own menu registration.
+	 * @param array<string,mixed> $account_state  Account state overrides.
+	 * @param array<string,int>   $badge_counts   Badge count overrides.
 	 * @return WooPaymentsAdminNavigationController
 	 */
 	private function create_controller( bool $native_register, array $account_state = array(), array $badge_counts = array() ): WooPaymentsAdminNavigationController {
@@ -1546,7 +1605,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a native account service test double.
 	 *
-	 * @param array<string,bool> $overrides Account state overrides.
+	 * @param array<string,mixed> $overrides Account state overrides.
 	 * @return WooPaymentsAccountService&MockObject
 	 */
 	private function create_account_service( array $overrides = array() ): WooPaymentsAccountService {
@@ -1563,6 +1622,8 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 				'has_previous_capital_loans'             => false,
 				'is_documents_enabled'                   => false,
 				'is_reports_enabled'                     => false,
+				'get_cached_account_data'                => array(),
+				'get_account_id'                         => '',
 			),
 			$overrides
 		);

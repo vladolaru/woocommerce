@@ -254,8 +254,9 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 			$feature_flags = array();
 		}
 
-		$feature_flags['reportsArea']                    = $this->account_service->is_reports_enabled();
-		$settings['woopaymentsSettings']['featureFlags'] = $feature_flags;
+		$feature_flags['reportsArea']                             = $this->account_service->is_reports_enabled();
+		$settings['woopaymentsSettings']['featureFlags']          = $feature_flags;
+		$settings['woopaymentsSettings']['balanceReportIdentity'] = $this->get_balance_report_identity();
 
 		$settings['woopaymentsSettings']['adminRouteAvailability'] = $this->get_admin_route_availability();
 		$provider_settings = $settings['woopaymentsSettings'];
@@ -287,6 +288,28 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings'] = $provider_settings;
 
 		return $settings;
+	}
+
+	/**
+	 * Get the WooPayments identity used in Balance report exports.
+	 *
+	 * @return array{businessName:string,accountId:string}
+	 */
+	private function get_balance_report_identity(): array {
+		$account_data     = $this->account_service->get_cached_account_data();
+		$business_profile = $account_data['business_profile'] ?? array();
+		$business_name    = is_array( $business_profile ) && isset( $business_profile['name'] ) && is_scalar( $business_profile['name'] )
+			? trim( (string) $business_profile['name'] )
+			: '';
+
+		if ( '' === $business_name ) {
+			$business_name = trim( get_bloginfo( 'name' ) );
+		}
+
+		return array(
+			'businessName' => $business_name,
+			'accountId'    => trim( $this->account_service->get_account_id() ),
+		);
 	}
 
 	/**
