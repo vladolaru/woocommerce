@@ -199,6 +199,40 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should enable cache-optimized rendering by default in cache mode.
+	 */
+	public function test_enables_cache_optimized_rendering_by_default_in_cache_mode(): void {
+		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
+		$sut = $this->create_service( $this->create_state( 'GBP' ) );
+
+		$this->assertTrue( $sut->get_settings()['is_cache_optimized_feature_enabled'] );
+		$this->assertTrue( $sut->is_cache_optimized_mode() );
+	}
+
+	/**
+	 * @testdox Should keep cache-optimized rendering disabled when explicitly disabled.
+	 */
+	public function test_keeps_cache_optimized_rendering_disabled_when_explicitly_disabled(): void {
+		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
+		update_option( '_wcpay_feature_mc_cache_optimized', '0' );
+		$sut = $this->create_service( $this->create_state( 'GBP' ) );
+
+		$this->assertFalse( $sut->get_settings()['is_cache_optimized_feature_enabled'] );
+		$this->assertFalse( $sut->is_cache_optimized_mode() );
+	}
+
+	/**
+	 * @testdox Should keep cache-optimized rendering inactive outside cache mode.
+	 */
+	public function test_keeps_cache_optimized_rendering_inactive_outside_cache_mode(): void {
+		update_option( 'wcpay_multi_currency_rendering_mode', 'speed' );
+		$sut = $this->create_service( $this->create_state( 'GBP' ) );
+
+		$this->assertTrue( $sut->get_settings()['is_cache_optimized_feature_enabled'] );
+		$this->assertFalse( $sut->is_cache_optimized_mode() );
+	}
+
+	/**
 	 * @testdox Should project store currency decimals for shipping calculations.
 	 */
 	public function test_projects_store_currency_decimals_for_shipping_calculations(): void {

@@ -512,7 +512,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * @return bool
 	 */
 	private function is_cache_optimized_mode(): bool {
-		return '1' === get_option( self::CACHE_FEATURE_FLAG_OPTION, '0' )
+		return '1' === get_option( self::CACHE_FEATURE_FLAG_OPTION, '1' )
 			&& self::RENDERING_MODE_CACHE === get_option( self::OPTION_PREFIX . '_rendering_mode', MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED );
 	}
 

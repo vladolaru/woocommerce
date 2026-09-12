@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Enable multi-currency cache-optimized rendering by default while preserving explicit opt-outs.

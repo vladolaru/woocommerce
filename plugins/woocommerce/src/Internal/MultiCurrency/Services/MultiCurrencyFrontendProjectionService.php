@@ -433,7 +433,7 @@ class MultiCurrencyFrontendProjectionService {
 	 * @return bool
 	 */
 	private function is_cache_optimized_feature_enabled(): bool {
-		return '1' === get_option( self::CACHE_FEATURE_FLAG_OPTION, '0' );
+		return '1' === get_option( self::CACHE_FEATURE_FLAG_OPTION, '1' );
 	}
 
 	/**
