@@ -1142,7 +1142,10 @@ const ExpressCheckoutContent = ( {
 						path: getStoreApiPath(
 							'/wc/store/v1/cart/update-customer'
 						),
-						headers: getStoreApiHeaders(),
+						headers: {
+							...getStoreApiHeaders(),
+							'X-WooPayments-Tokenized-Cart': true,
+						},
 						data: {
 							shipping_address: getShippingAddressFromEvent(
 								event,

@@ -191,6 +191,71 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should normalize generic tokenized checkout Hong Kong addresses without a product session.
+	 */
+	public function test_normalizes_generic_tokenized_checkout_hong_kong_addresses_without_product_session(): void {
+		$this->set_store_api_request();
+		$this->sut = $this->create_controller( true );
+		$request   = $this->create_generic_tokenized_store_api_request( 'POST', '/wc/store/v1/checkout', wp_create_nonce( 'woopayments_tokenized_cart_nonce' ) );
+		$request->set_param(
+			'billing_address',
+			array(
+				'country'  => 'HK',
+				'state'    => '',
+				'postcode' => '',
+				'city'     => 'Tai Po',
+			)
+		);
+
+		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, $request );
+
+		$this->assertNull( $result );
+		$billing_address = $request->get_param( 'billing_address' );
+		$this->assertSame( 'NEW TERRITORIES', $billing_address['state'] );
+	}
+
+	/**
+	 * @testdox Should leave generic tokenized Hong Kong addresses unchanged without a valid nonce.
+	 * @dataProvider invalid_generic_tokenized_cart_nonce_provider
+	 *
+	 * @param string|null $tokenized_nonce Generic tokenized cart nonce.
+	 */
+	public function test_leaves_generic_tokenized_hong_kong_addresses_unchanged_without_valid_nonce( ?string $tokenized_nonce ): void {
+		$this->set_store_api_request();
+		$this->sut = $this->create_controller( true );
+		$request   = $this->create_generic_tokenized_store_api_request( 'POST', '/wc/store/v1/checkout', $tokenized_nonce );
+		$request->set_param(
+			'billing_address',
+			array(
+				'country'  => 'HK',
+				'state'    => '',
+				'postcode' => '',
+				'city'     => 'Tai Po',
+			)
+		);
+
+		$this->assertSame( 'WC_Session_Handler', $this->sut->handle_woocommerce_session_handler( 'WC_Session_Handler' ) );
+
+		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, $request );
+
+		$this->assertNull( $result );
+		$billing_address = $request->get_param( 'billing_address' );
+		$this->assertSame( '', $billing_address['state'] );
+	}
+
+	/**
+	 * Data provider for missing or invalid generic tokenized cart nonces.
+	 *
+	 * @return array<string,array{0:string|null}>
+	 */
+	public function invalid_generic_tokenized_cart_nonce_provider(): array {
+		return array(
+			'Missing nonce' => array( null ),
+			'Invalid nonce' => array( 'invalid-tokenized-cart-nonce' ),
+		);
+	}
+
+	/**
 	 * @testdox Should normalize tokenized checkout address lines before Store API validation.
 	 */
 	public function test_normalizes_tokenized_checkout_address_lines_before_store_api_validation(): void {
@@ -460,6 +525,28 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 		$request->set_header( 'X-WooPayments-Tokenized-Cart-Session-Nonce', $session_nonce );
 		$request->set_header( 'X-WooPayments-Tokenized-Cart', 'true' );
 		$request->set_header( 'X-WooPayments-Tokenized-Cart-Nonce', $tokenized_nonce );
+
+		return $request;
+	}
+
+	/**
+	 * Create a generic tokenized-cart Store API request without a product-page session.
+	 *
+	 * @param string      $method          Request method.
+	 * @param string      $route           Request route.
+	 * @param string|null $tokenized_nonce Generic tokenized cart nonce.
+	 * @return WP_REST_Request
+	 */
+	private function create_generic_tokenized_store_api_request( string $method, string $route, ?string $tokenized_nonce ): WP_REST_Request {
+		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART'] = 'true';
+
+		$request = new WP_REST_Request( $method, $route );
+		$request->set_header( 'X-WooPayments-Tokenized-Cart', 'true' );
+
+		if ( null !== $tokenized_nonce ) {
+			$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_NONCE'] = $tokenized_nonce;
+			$request->set_header( 'X-WooPayments-Tokenized-Cart-Nonce', $tokenized_nonce );
+		}
 
 		return $request;
 	}

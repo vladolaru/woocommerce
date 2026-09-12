@@ -469,7 +469,13 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 		}
 
 		if ( ! $this->has_valid_session_nonce() ) {
-			return $this->has_tokenized_cart_marker() ? $this->reject_invalid_tokenized_cart_session( $result, $server, $request ) : $result;
+			if ( $this->has_product_session_marker() ) {
+				return $this->reject_invalid_tokenized_cart_session( $result, $server, $request );
+			}
+
+			$this->normalize_tokenized_cart_store_api_addresses( $request );
+
+			return $result;
 		}
 
 		if ( ! $this->has_valid_incoming_session_token() ) {
@@ -996,14 +1002,13 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Tell whether the request carries WooPayments tokenized-cart markers.
+	 * Tell whether the request carries WooPayments product-page session markers.
 	 *
 	 * @return bool
 	 */
-	private function has_tokenized_cart_marker(): bool {
+	private function has_product_session_marker(): bool {
 		return isset( $_SERVER[ self::SESSION_NONCE_HEADER ] ) ||
 			isset( $_SERVER[ self::SESSION_HEADER ] ) ||
-			isset( $_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART'] ) ||
 			isset( $_SERVER[ self::EPHEMERAL_CART_HEADER ] );
 	}
 

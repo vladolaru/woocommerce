@@ -1387,8 +1387,21 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			'woocommerce_payments_express_checkout_applePay'
 		);
 
+		const paymentMethodInterfaceProps = getPaymentMethodInterfaceProps(
+			cartWithSubscriptionSchedule()
+		);
 		renderExpressPaymentMethod( applePayRegistration, {
-			...getPaymentMethodInterfaceProps( cartWithSubscriptionSchedule() ),
+			...paymentMethodInterfaceProps,
+			shippingData: {
+				...paymentMethodInterfaceProps.shippingData,
+				shippingAddress: {
+					...paymentMethodInterfaceProps.shippingData.shippingAddress,
+					city: 'Tai Po',
+					state: '',
+					postcode: '',
+					country: 'HK',
+				},
+			},
 		} );
 
 		await waitFor( () => {
@@ -1399,10 +1412,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			name: 'Ada Lovelace',
 			address: {
 				line1: '2 Wallet Way',
-				city: 'New York',
-				state: 'NY',
-				postal_code: '10001',
-				country: 'US',
+				city: 'Tai Po',
+				state: '',
+				postal_code: 'New Territories',
+				country: 'HK',
 			},
 			resolve: jest.fn(),
 			reject: jest.fn(),
@@ -1419,16 +1432,17 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				headers: expect.objectContaining( {
 					Nonce: 'store-api-nonce',
 					'X-WooPayments-Tokenized-Cart-Nonce': 'cart-nonce',
+					'X-WooPayments-Tokenized-Cart': true,
 				} ),
 				data: {
 					shipping_address: expect.objectContaining( {
 						first_name: 'Ada',
 						last_name: 'Lovelace',
 						address_1: '2 Wallet Way',
-						city: 'New York',
-						state: 'NY',
-						postcode: '10001',
-						country: 'US',
+						city: 'Tai Po',
+						state: '',
+						postcode: 'New Territories',
+						country: 'HK',
 					} ),
 				},
 			} )
