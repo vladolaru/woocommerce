@@ -33,6 +33,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
 		remove_all_filters( 'wcpay_payment_request_payment_method_title_suffix' );
+		unset( $GLOBALS['wcpay_test_order_subscription_relationships'] );
 		parent::tearDown();
 	}
 
@@ -479,24 +480,26 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Recurring token effects synchronize the token and provider metadata to related subscriptions.
+	 * @testdox Recurring renewal token effects synchronize the new customer token and provider metadata.
 	 */
-	public function test_recurring_token_effects_synchronize_related_subscriptions(): void {
+	public function test_recurring_token_effects_synchronize_failed_renewal_subscriptions(): void {
+		$this->ensure_wcs_subscriptions_for_order_double();
 		$user_id      = $this->factory()->user->create();
 		$order        = $this->create_woopayments_order();
 		$subscription = $this->create_woopayments_order();
+		$unrelated    = $this->create_woopayments_order();
 		$order->set_customer_id( $user_id );
+		$order->set_status( 'failed' );
 		$order->save();
 		$subscription->set_customer_id( $user_id );
 		$subscription->save();
-
-		add_filter(
-			'woocommerce_woopayments_related_subscriptions_for_order',
-			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
-				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
-			},
-			10,
-			2
+		$unrelated->set_customer_id( $user_id );
+		$unrelated->set_payment_method( 'cheque' );
+		$unrelated->update_meta_data( '_payment_method_id', 'pm_unrelated' );
+		$unrelated->update_meta_data( '_stripe_customer_id', 'cus_unrelated' );
+		$unrelated->save();
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array(
+			$order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ),
 		);
 
 		$token_service = $this->create_token_service(
@@ -526,6 +529,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$result       = $this->create_applier( $token_service )->apply( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_recurring' ), $outcome, $plan );
 		$order        = wc_get_order( $order->get_id() );
 		$subscription = wc_get_order( $subscription->get_id() );
+		$unrelated    = wc_get_order( $unrelated->get_id() );
 		$tokens       = \WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
 		$token        = reset( $tokens );
 
@@ -533,11 +537,17 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_recurring', $result->get_provider_payment_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertInstanceOf( WC_Order::class, $unrelated );
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertCount( 1, $tokens );
+		$this->assertSame( $user_id, $token->get_user_id() );
 		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
 		$this->assertContains( $token->get_id(), $subscription->get_payment_tokens() );
 		$this->assertSame( 'pm_recurring', $subscription->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_recurring', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( array(), $unrelated->get_payment_tokens() );
+		$this->assertSame( 'pm_unrelated', $unrelated->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_unrelated', $unrelated->get_meta( '_stripe_customer_id', true ) );
 	}
 
 	/**
@@ -1210,6 +1220,20 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$this->assertSame( 're_retained', $outcome->get_provider_payment_id() );
 			$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		}
+	}
+
+	/**
+	 * Ensure a WCS subscriptions-for-order double with WCS relationship defaults exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_subscriptions_for_order_double(): void {
+		if ( function_exists( 'wcs_get_subscriptions_for_order' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order lookup contract.
+		eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["wcpay_test_order_subscription_relationships"][ absint( $order_id ) ] ?? array(); $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
 	}
 
 	/**

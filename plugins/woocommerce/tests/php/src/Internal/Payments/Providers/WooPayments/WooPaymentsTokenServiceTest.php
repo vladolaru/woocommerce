@@ -50,6 +50,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'pre_option_wcpay_pm_customer_1' );
 		remove_all_filters( 'woocommerce_payment_token_class' );
 		remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
+		unset( $GLOBALS['wcpay_test_order_subscription_relationships'] );
 		parent::tearDown();
 	}
 
@@ -112,6 +113,29 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_attached', $sut->resolve_payment_method_id_from_order_token_id( (string) $token->get_id(), $order ) );
 		$this->assertSame( '', $sut->resolve_payment_method_id_from_order_token_id( (string) $unattached->get_id(), $order ), 'Tokens not attached to the order should not resolve.' );
 		$this->assertSame( '', $sut->resolve_payment_method_id_from_order_token_id( (string) $wrong_gateway->get_id(), $order ), 'Non-WooPayments tokens attached to the order should not resolve.' );
+	}
+
+	/**
+	 * @testdox Related subscription lookups include parent, switch, and renewal relationships.
+	 */
+	public function test_get_related_subscriptions_for_order_includes_renewal_relationships(): void {
+		$this->ensure_wcs_subscriptions_for_order_double();
+		$order         = $this->create_woopayments_order();
+		$parent        = $this->create_woopayments_order();
+		$switch        = $this->create_woopayments_order();
+		$renewal       = $this->create_woopayments_order();
+		$unrelated     = $this->create_woopayments_order();
+		$relationships = array(
+			'parent'  => array( $parent->get_id() ),
+			'switch'  => array( $switch->get_id() ),
+			'renewal' => array( $renewal->get_id() ),
+		);
+
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => $relationships );
+		$related = $this->create_service()->get_related_subscriptions_for_order( $order );
+
+		$this->assertSame( array( $parent->get_id(), $switch->get_id(), $renewal->get_id() ), array_map( static fn( WC_Order $subscription ): int => $subscription->get_id(), $related ) );
+		$this->assertNotContains( $unrelated->get_id(), array_map( static fn( WC_Order $subscription ): int => $subscription->get_id(), $related ) );
 	}
 
 	/**
@@ -1669,6 +1693,33 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 
 		return $account_service;
+	}
+
+	/**
+	 * Ensure a WCS subscriptions-for-order double with WCS relationship defaults exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_subscriptions_for_order_double(): void {
+		if ( function_exists( 'wcs_get_subscriptions_for_order' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order lookup contract.
+		eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["wcpay_test_order_subscription_relationships"][ absint( $order_id ) ] ?? array(); $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
+	}
+
+	/**
+	 * Create a WooPayments test order.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_woopayments_order(): WC_Order {
+		$order = wc_create_order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->save();
+
+		return $order;
 	}
 
 	/**

@@ -57,6 +57,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_woopayments_is_recurring_payment' );
 		remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
 		remove_all_filters( 'woocommerce_payment_token_class' );
+		unset( $GLOBALS['wcpay_test_order_subscription_relationships'], $GLOBALS['wcpay_test_renewal_order_ids'] );
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
 			\WC_Subscriptions_Change_Payment_Gateway::reset();
 		}
@@ -1244,19 +1245,38 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback should copy saved token details to related subscriptions.
+	 * @testdox Authenticated renewal callbacks save and synchronize a new card despite an unchecked save preference.
+	 *
+	 * @dataProvider renewal_order_statuses
+	 *
+	 * @param string $renewal_status Renewal order status.
 	 */
-	public function test_update_order_status_copies_saved_card_token_to_related_subscriptions(): void {
+	public function test_update_order_status_saves_and_syncs_new_card_for_failed_or_pending_renewal( string $renewal_status ): void {
+		$this->ensure_wcs_order_contains_renewal_double();
+		$this->ensure_wcs_subscriptions_for_order_double();
 		$user_id      = $this->factory()->user->create();
 		$order        = $this->create_woopayments_order( '10.00' );
 		$subscription = $this->create_woopayments_order( '10.00' );
+		$unrelated    = $this->create_woopayments_order( '10.00' );
 		wp_set_current_user( $user_id );
 
 		$order->set_customer_id( $user_id );
+		$order->set_status( $renewal_status );
 		$order->update_meta_data( '_intent_id', 'pi_native' );
 		$order->save();
 		$subscription->set_customer_id( $user_id );
+		$subscription->set_payment_method_title( 'WooPayments' );
 		$subscription->save();
+		$unrelated->set_customer_id( $user_id );
+		$unrelated->set_payment_method( 'cheque' );
+		$unrelated->set_payment_method_title( 'Check payments' );
+		$unrelated->update_meta_data( '_payment_method_id', 'pm_unrelated' );
+		$unrelated->update_meta_data( '_stripe_customer_id', 'cus_unrelated' );
+		$unrelated->save();
+		$GLOBALS['wcpay_test_renewal_order_ids']                = array( $order->get_id() );
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array(
+			$order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ),
+		);
 
 		$api_client    = new class() extends WooPaymentsApiClient {
 			/**
@@ -1304,22 +1324,12 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$sut           = $this->create_controller( $api_client, null, $token_service );
 
-		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
-		add_filter(
-			'woocommerce_woopayments_related_subscriptions_for_order',
-			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
-				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
-			},
-			10,
-			2
-		);
-
 		$response = $sut->get_update_order_status_response(
 			array(
 				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
 				'order_id'                   => $order->get_id(),
 				'intent_id'                  => 'pi_native',
-				'should_save_payment_method' => 'true',
+				'should_save_payment_method' => 'false',
 			)
 		);
 		$order    = wc_get_order( $order->get_id() );
@@ -1327,15 +1337,53 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$token    = $tokens[0] ?? null;
 
 		$subscription = wc_get_order( $subscription->get_id() );
+		$unrelated    = wc_get_order( $unrelated->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertInstanceOf( WC_Order::class, $unrelated );
 		$this->assertSame( 200, $response['status_code'] );
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertCount( 1, $tokens );
+		$this->assertSame( $user_id, $token->get_user_id() );
 		$this->assertContains( $token->get_id(), $order->get_payment_tokens(), 'Saved cards should be linked to the parent order.' );
-		$this->assertContains( $token->get_id(), $subscription->get_payment_tokens(), 'Saved cards should be linked to related subscriptions.' );
+		$this->assertContains( $token->get_id(), $subscription->get_payment_tokens(), 'Saved cards should be linked to the renewal subscription.' );
 		$this->assertSame( 'pm_native', $subscription->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_native', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertSame( 'WooPayments', $subscription->get_payment_method_title() );
+		$this->assertSame( array(), $unrelated->get_payment_tokens() );
+		$this->assertSame( 'pm_unrelated', $unrelated->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_unrelated', $unrelated->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'cheque', $unrelated->get_payment_method() );
+		$this->assertSame( 'Check payments', $unrelated->get_payment_method_title() );
+
+		$response     = $sut->get_update_order_status_response(
+			array(
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'                   => $order->get_id(),
+				'intent_id'                  => 'pi_native',
+				'should_save_payment_method' => 'false',
+			)
+		);
+		$subscription = wc_get_order( $subscription->get_id() );
+		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
+
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertCount( 1, $tokens );
+		$this->assertSame( array( $token->get_id() ), array_values( $subscription->get_payment_tokens() ) );
+	}
+
+	/**
+	 * Provide failed and pending renewal statuses.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function renewal_order_statuses(): array {
+		return array(
+			'failed renewal'  => array( 'failed' ),
+			'pending renewal' => array( 'pending' ),
+		);
 	}
 
 	/**
@@ -2113,6 +2161,34 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		return $order;
+	}
+
+	/**
+	 * Ensure a WCS subscriptions-for-order double with WCS relationship defaults exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_subscriptions_for_order_double(): void {
+		if ( function_exists( 'wcs_get_subscriptions_for_order' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order lookup contract.
+		eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["wcpay_test_order_subscription_relationships"][ absint( $order_id ) ] ?? array(); $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
+	}
+
+	/**
+	 * Ensure a renewal-order detector double exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_order_contains_renewal_double(): void {
+		if ( function_exists( 'wcs_order_contains_renewal' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal detector.
+		eval( 'namespace { function wcs_order_contains_renewal( $order ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_renewal_order_ids"] ?? array(), true ); } }' );
 	}
 
 	/**

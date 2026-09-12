@@ -1136,11 +1136,11 @@ class WooPaymentsTokenService {
 	}
 
 	/**
-	 * Copy a saved payment token and provider metadata to subscriptions related to an initial order.
+	 * Copy a saved payment token and provider metadata to related parent, switch, or renewal subscriptions.
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order         $order             Parent order.
+	 * @param WC_Order         $order             Related order.
 	 * @param WC_Payment_Token $token             Saved payment token.
 	 * @param string           $payment_method_id Provider payment method ID.
 	 * @param string           $customer_id       WooPayments customer ID.
@@ -1213,26 +1213,31 @@ class WooPaymentsTokenService {
 	}
 
 	/**
-	 * Get subscriptions related to an initial order.
+	 * Get parent, switch, or renewal subscriptions related to an order.
 	 *
-	 * @param WC_Order $order Parent order.
+	 * @param WC_Order $order Related order.
 	 * @return array<int,mixed>
 	 */
 	public function get_related_subscriptions_for_order( WC_Order $order ): array {
 		$subscriptions = array();
 		if ( function_exists( 'wcs_get_subscriptions_for_order' ) ) {
-			$subscriptions = wcs_get_subscriptions_for_order( $order->get_id() );
+			$subscriptions = wcs_get_subscriptions_for_order(
+				$order->get_id(),
+				array(
+					'order_type' => array( 'parent', 'switch', 'renewal' ),
+				)
+			);
 		}
 
 		$subscriptions = is_array( $subscriptions ) ? $subscriptions : array();
 
 		/**
-		 * Filters native WooPayments subscriptions related to an initial order.
+		 * Filters native WooPayments subscriptions related through parent, switch, or renewal orders.
 		 *
 		 * @since 11.0.0
 		 *
 		 * @param array<int,mixed> $subscriptions Related subscriptions.
-		 * @param WC_Order         $order         Parent order.
+		 * @param WC_Order         $order         Related order.
 		 */
 		$subscriptions = apply_filters( 'woocommerce_woopayments_related_subscriptions_for_order', $subscriptions, $order );
 

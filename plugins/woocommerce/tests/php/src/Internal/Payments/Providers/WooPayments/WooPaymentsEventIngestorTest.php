@@ -214,13 +214,15 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$subscription->set_payment_method( OrderPaymentStore::GATEWAY_ID );
 		$subscription->save();
 
-		$GLOBALS['wcpay_test_renewal_order_ids']      = array( $order->get_id() );
-		$GLOBALS['wcpay_test_order_subscription_ids'] = array( $order->get_id() => array( $subscription->get_id() ) );
+		$GLOBALS['wcpay_test_renewal_order_ids']                = array( $order->get_id() );
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array(
+			$order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ),
+		);
 
 		try {
 			$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
 		} finally {
-			unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_order_subscription_ids'] );
+			unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_order_subscription_relationships'] );
 		}
 
 		$subscription = wc_get_order( $subscription->get_id() );
@@ -3956,7 +3958,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Ensure a minimal subscriptions-for-order lookup double exists.
+	 * Ensure a WCS subscriptions-for-order double with WCS relationship defaults exists.
 	 *
 	 * @return void
 	 */
@@ -3965,8 +3967,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			return;
 		}
 
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order lookup.
-		eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id ) { $ids = $GLOBALS["wcpay_test_order_subscription_ids"][ $order_id ] ?? array(); return array_map( "wc_get_order", $ids ); } }' );
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order lookup contract.
+		eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["wcpay_test_order_subscription_relationships"][ absint( $order_id ) ] ?? array(); $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
 	}
 
 	/**
