@@ -151,7 +151,14 @@ final class MultiCurrencyBootstrap {
 			return array();
 		}
 
-		return $this->get_roots_for_tier( $usage_detector->has_foreign_currency_orders() ? 'historical' : 'empty', $request );
+		try {
+			$has_foreign_currency_orders = $usage_detector->has_foreign_currency_orders();
+		} catch ( \RuntimeException $error ) {
+			// Preserve recovery services when order history cannot be determined.
+			return $this->get_roots_for_tier( 'historical', $request );
+		}
+
+		return $this->get_roots_for_tier( $has_foreign_currency_orders ? 'historical' : 'empty', $request );
 	}
 
 	/**

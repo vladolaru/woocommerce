@@ -278,6 +278,35 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		);
 	}
 
+	/**
+	 * @testdox Should retain historical roots when historical-order detection fails.
+	 *
+	 * @dataProvider historical_detection_failure_data
+	 *
+	 * @param string            $request  Request class.
+	 * @param array<int,string> $expected Expected roots.
+	 */
+	public function test_retains_historical_roots_when_historical_order_detection_fails( string $request, array $expected ): void {
+		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false, true );
+		$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
+		$method    = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'get_core_roots' );
+		$method->setAccessible( true );
+
+		$this->assertSame( $expected, $method->invoke( $sut, $container, $request ) );
+		$this->assertSame( 1, $container->foreign_currency_order_checks, $request . ' must check historical orders once.' );
+	}
+
+	/** @return array<string,array{string,array<int,string>}> */
+	public static function historical_detection_failure_data(): array {
+		$matrix = self::core_root_matrix();
+
+		return array(
+			'admin' => array( 'admin', $matrix['historical admin'][3] ),
+			'rest'  => array( 'rest', $matrix['historical rest'][3] ),
+			'cron'  => array( 'cron', $matrix['historical cron'][3] ),
+		);
+	}
+
 	/** @testdox Should avoid historical storage checks for no-config front, AJAX, and CLI requests. */
 	public function test_no_config_front_ajax_and_cli_skip_historical_order_detection(): void {
 		foreach ( array( 'front', 'ajax', 'cli' ) as $request ) {
@@ -332,10 +361,11 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * @param string $owner Multi-Currency owner.
 	 * @param bool   $configured Whether extra configured currencies exist.
-	 * @param bool   $historical Whether historical orders exist.
+	 * @param bool   $historical                                      Whether historical orders exist.
+	 * @param bool   $throw_on_foreign_currency_order_detection      Whether historical-order detection throws.
 	 * @return RuntimeContainer&object{resolved:array<int,string>,registered:array<int,string>,foreign_currency_order_checks:int}
 	 */
-	private function make_container( string $owner, bool $configured, bool $historical ): RuntimeContainer {
+	private function make_container( string $owner, bool $configured, bool $historical, bool $throw_on_foreign_currency_order_detection = false ): RuntimeContainer {
 		$arbiter = new class( $owner ) extends MultiCurrencyRuntimeArbiter {
 			/** @var string */
 			private $owner;
@@ -355,7 +385,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		return new class( $arbiter, $configured, $historical ) extends RuntimeContainer {
+		return new class( $arbiter, $configured, $historical, $throw_on_foreign_currency_order_detection ) extends RuntimeContainer {
 			/** @var array<int,string> */
 			public array $resolved = array();
 
@@ -374,18 +404,23 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			/** @var bool */
 			private $historical;
 
+			/** @var bool */
+			private $throw_on_foreign_currency_order_detection;
+
 			/**
 			 * Initialize the recording container.
 			 *
 			 * @param MultiCurrencyRuntimeArbiter $arbiter Runtime owner arbiter.
 			 * @param bool                        $configured Whether extra configured currencies exist.
-			 * @param bool                        $historical Whether historical orders exist.
+			 * @param bool                        $historical                                 Whether historical orders exist.
+			 * @param bool                        $throw_on_foreign_currency_order_detection Whether historical-order detection throws.
 			 */
-			public function __construct( MultiCurrencyRuntimeArbiter $arbiter, bool $configured, bool $historical ) {
+			public function __construct( MultiCurrencyRuntimeArbiter $arbiter, bool $configured, bool $historical, bool $throw_on_foreign_currency_order_detection ) {
 				parent::__construct( array() );
-				$this->arbiter    = $arbiter;
-				$this->configured = $configured;
-				$this->historical = $historical;
+				$this->arbiter                                   = $arbiter;
+				$this->configured                                = $configured;
+				$this->historical                                = $historical;
+				$this->throw_on_foreign_currency_order_detection = $throw_on_foreign_currency_order_detection;
 			}
 
 			/**
@@ -401,11 +436,12 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				}
 
 				if ( MultiCurrencyUsageDetector::class === $class_name ) {
-					$configured = $this->configured;
-					$historical = $this->historical;
-					$container  = $this;
+					$configured                                = $this->configured;
+					$historical                                = $this->historical;
+					$container                                 = $this;
+					$throw_on_foreign_currency_order_detection = $this->throw_on_foreign_currency_order_detection;
 
-					return new class( $configured, $historical, $container ) {
+					return new class( $configured, $historical, $container, $throw_on_foreign_currency_order_detection ) {
 						/** @var bool */
 						private $configured;
 
@@ -415,17 +451,22 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 						/** @var object */
 						private $container;
 
+						/** @var bool */
+						private $throw_on_foreign_currency_order_detection;
+
 						/**
 						 * Initialize persisted-data signals.
 						 *
 						 * @param bool   $configured Whether extra configured currencies exist.
 						 * @param bool   $historical Whether historical orders exist.
-						 * @param object $container Recording container.
+						 * @param object $container                                  Recording container.
+						 * @param bool   $throw_on_foreign_currency_order_detection Whether historical-order detection throws.
 						 */
-						public function __construct( bool $configured, bool $historical, object $container ) {
-							$this->configured = $configured;
-							$this->historical = $historical;
-							$this->container  = $container;
+						public function __construct( bool $configured, bool $historical, object $container, bool $throw_on_foreign_currency_order_detection ) {
+							$this->configured                                = $configured;
+							$this->historical                                = $historical;
+							$this->container                                 = $container;
+							$this->throw_on_foreign_currency_order_detection = $throw_on_foreign_currency_order_detection;
 						}
 
 						/** Return the configured-currency signal. @return bool Whether configured currencies exist. */
@@ -436,6 +477,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 						/** Count and return the historical-order signal. @return bool Whether historical orders exist. */
 						public function has_foreign_currency_orders(): bool {
 							++$this->container->foreign_currency_order_checks;
+							if ( $this->throw_on_foreign_currency_order_detection ) {
+								throw new \RuntimeException( 'Historical order detection failed.' );
+							}
 
 							return $this->historical;
 						}
