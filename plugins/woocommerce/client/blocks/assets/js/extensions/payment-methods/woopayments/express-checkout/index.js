@@ -425,13 +425,44 @@ const getCartTotalsAmount = ( cart ) => getCartTotalPrice( cart );
 const shouldUseConfirmationTokens = () =>
 	params?.flags?.isEceUsingConfirmationTokens ?? true;
 
-const addReferenceElementOptions = ( options ) => {
+const isSubscriptionData = ( schedule ) => {
+	if ( Array.isArray( schedule ) ) {
+		return schedule.length > 0;
+	}
+
+	return (
+		typeof schedule?.billing_period === 'string' &&
+		schedule.billing_period.length > 0 &&
+		typeof schedule.billing_interval === 'number' &&
+		schedule.billing_interval > 0
+	);
+};
+
+const cartHasAnySubscription = ( cartData ) => {
+	const schedules = cartData?.extensions?.subscriptions;
+	if ( Array.isArray( schedules ) && schedules.length > 0 ) {
+		return true;
+	}
+
+	if ( ! Array.isArray( cartData?.items ) ) {
+		return false;
+	}
+
+	return cartData.items.some( ( item ) =>
+		isSubscriptionData( item?.extensions?.subscriptions )
+	);
+};
+
+const getSetupFutureUsageForCart = ( cartData ) =>
+	cartHasAnySubscription( cartData ) ? 'off_session' : null;
+
+const addReferenceElementOptions = ( options, cartData ) => {
 	if ( shouldUseConfirmationTokens() && params?.is_manual_capture ) {
 		options.captureMethod = 'manual';
 	}
 
-	if ( shouldUseConfirmationTokens() && params?.has_subscription ) {
-		options.setupFutureUsage = 'off_session';
+	if ( shouldUseConfirmationTokens() ) {
+		options.setupFutureUsage = getSetupFutureUsageForCart( cartData );
 	}
 
 	const appearance = getBlocksCheckoutAppearance(
@@ -457,16 +488,19 @@ const getStripeElementsOptions = ( billing, cart ) => {
 		getCartTotal( billing ),
 		cartData
 	);
-	const options = addReferenceElementOptions( {
-		mode: amount > 0 ? 'payment' : 'setup',
-		loader: 'never',
-		currency: getCartCurrency( billing ),
-		// Without confirmation tokens, the payment method is created
-		// manually at confirm time.
-		...( shouldUseConfirmationTokens()
-			? { paymentMethodTypes: getPaymentMethodTypes( cartData ) }
-			: { paymentMethodCreation: 'manual' } ),
-	} );
+	const options = addReferenceElementOptions(
+		{
+			mode: amount > 0 ? 'payment' : 'setup',
+			loader: 'never',
+			currency: getCartCurrency( billing ),
+			// Without confirmation tokens, the payment method is created
+			// manually at confirm time.
+			...( shouldUseConfirmationTokens()
+				? { paymentMethodTypes: getPaymentMethodTypes( cartData ) }
+				: { paymentMethodCreation: 'manual' } ),
+		},
+		cartData
+	);
 
 	if ( options.mode === 'payment' ) {
 		options.amount = amount;
@@ -482,12 +516,15 @@ const getAvailabilityElementsOptions = ( cart ) => {
 		getCartTotalsAmount( cart ),
 		cartData
 	);
-	const options = addReferenceElementOptions( {
-		mode: amount > 0 ? 'payment' : 'setup',
-		loader: 'never',
-		currency: getCartTotalsCurrency( cart ),
-		paymentMethodTypes: getPaymentMethodTypes( cart ),
-	} );
+	const options = addReferenceElementOptions(
+		{
+			mode: amount > 0 ? 'payment' : 'setup',
+			loader: 'never',
+			currency: getCartTotalsCurrency( cart ),
+			paymentMethodTypes: getPaymentMethodTypes( cart ),
+		},
+		cartData
+	);
 
 	if ( options.mode === 'payment' ) {
 		options.amount = Math.max( amount, 1 );
@@ -541,7 +578,7 @@ const checkAvailablePaymentMethods = ( cart ) => {
 		options.currency,
 		getPaymentMethodTypes( cart ).join( ',' ),
 		params?.is_manual_capture ? 'manual' : 'automatic',
-		params?.has_subscription ? 'subscription' : 'standard',
+		options.setupFutureUsage || 'standard',
 	].join( ':' );
 
 	if ( availabilityCache.has( cacheKey ) ) {
@@ -857,8 +894,8 @@ const getElementsUpdateOptionsForCart = ( cart ) => {
 
 	// setupFutureUsage is a confirmation-token option; Elements created in
 	// manual payment-method mode rejects it on update.
-	if ( shouldUseConfirmationTokens() && params?.has_subscription ) {
-		options.setupFutureUsage = 'off_session';
+	if ( shouldUseConfirmationTokens() ) {
+		options.setupFutureUsage = getSetupFutureUsageForCart( cartData );
 	}
 
 	return options;

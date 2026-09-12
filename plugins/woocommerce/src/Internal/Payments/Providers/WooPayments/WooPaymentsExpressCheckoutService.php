@@ -806,11 +806,12 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	private function context_has_subscription( string $context ): bool {
-		if ( 'product' === $context && class_exists( 'WC_Subscriptions_Product' ) ) {
+		if ( 'product' === $context ) {
 			$product = $this->get_product_for_product_page();
-			if ( $product instanceof \WC_Product && \WC_Subscriptions_Product::is_subscription( $product ) ) {
-				return true;
-			}
+
+			return class_exists( 'WC_Subscriptions_Product' ) &&
+				$product instanceof \WC_Product &&
+				\WC_Subscriptions_Product::is_subscription( $product );
 		}
 
 		return $this->cart_has_any_subscription_schedule();

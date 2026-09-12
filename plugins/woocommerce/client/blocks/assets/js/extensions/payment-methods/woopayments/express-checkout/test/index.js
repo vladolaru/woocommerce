@@ -228,6 +228,23 @@ const cartWithExpressMethods = ( methods, overrides = {} ) => ( {
 	},
 } );
 
+const cartWithSubscriptionSchedule = (
+	methods = [ 'payment_request' ],
+	overrides = {}
+) =>
+	cartWithExpressMethods( methods, {
+		...overrides,
+		extensions: {
+			...overrides.extensions,
+			subscriptions: [
+				{
+					billing_period: 'month',
+					billing_interval: 1,
+				},
+			],
+		},
+	} );
+
 const shippingData = {
 	needsShipping: true,
 	shippingAddress: {
@@ -548,7 +565,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			'amazon_pay',
 		];
 		baseExpressCheckoutParams.is_manual_capture = true;
-		baseExpressCheckoutParams.has_subscription = true;
+		baseExpressCheckoutParams.has_subscription = false;
 		registerExpressCheckout();
 		const amazonPayRegistration = getRegistration(
 			'woocommerce_payments_express_checkout_amazonPay'
@@ -556,7 +573,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 		renderExpressPaymentMethod( amazonPayRegistration, {
 			...getPaymentMethodInterfaceProps(
-				cartWithExpressMethods( [ 'amazon_pay' ] )
+				cartWithSubscriptionSchedule( [ 'amazon_pay' ] )
 			),
 		} );
 
@@ -575,6 +592,203 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				setupFutureUsage: 'off_session',
 				locale: 'en',
 				appearance: expect.any( Object ),
+			} )
+		);
+	} );
+
+	it( 'clears a stale localized subscription flag when the live cart is ordinary', async () => {
+		baseExpressCheckoutParams.has_subscription = true;
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				setupFutureUsage: null,
+			} )
+		);
+	} );
+
+	it( 'detects a subscription schedule on a live cart item', async () => {
+		baseExpressCheckoutParams.has_subscription = false;
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const subscriptionItemCart = cartWithExpressMethods(
+			[ 'payment_request' ],
+			{
+				items: [
+					{
+						...blocksCart.items[ 0 ],
+						extensions: {
+							subscriptions: {
+								billing_period: 'month',
+								billing_interval: 1,
+							},
+						},
+					},
+				],
+			}
+		);
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps( subscriptionItemCart ),
+		} );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				setupFutureUsage: 'off_session',
+			} )
+		);
+	} );
+
+	it.each( [
+		{
+			description: 'an empty object',
+			subscriptionData: {},
+		},
+		{
+			description: 'null data',
+			subscriptionData: null,
+		},
+		{
+			description: 'an all-null object',
+			subscriptionData: {
+				billing_period: null,
+				billing_interval: null,
+			},
+		},
+		{
+			description: 'an empty billing period',
+			subscriptionData: {
+				billing_period: '',
+				billing_interval: 1,
+			},
+		},
+		{
+			description: 'a non-positive billing interval',
+			subscriptionData: {
+				billing_period: 'month',
+				billing_interval: 0,
+			},
+		},
+		{
+			description: 'a non-numeric billing interval',
+			subscriptionData: {
+				billing_period: 'month',
+				billing_interval: '1',
+			},
+		},
+	] )(
+		'treats malformed item-level subscription object data as ordinary: $description',
+		async ( { subscriptionData } ) => {
+			registerExpressCheckout();
+			const applePayRegistration = getRegistration(
+				'woocommerce_payments_express_checkout_applePay'
+			);
+			const regularItemCart = cartWithExpressMethods(
+				[ 'payment_request' ],
+				{
+					items: [
+						{
+							...blocksCart.items[ 0 ],
+							extensions: {
+								subscriptions: subscriptionData,
+							},
+						},
+					],
+				}
+			);
+
+			renderExpressPaymentMethod( applePayRegistration, {
+				...getPaymentMethodInterfaceProps( regularItemCart ),
+			} );
+
+			await waitFor( () => {
+				expect( expressElement.mount ).toHaveBeenCalled();
+			} );
+
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					setupFutureUsage: null,
+				} )
+			);
+		}
+	);
+
+	it( 'detects a non-empty subscription array on a live cart item', async () => {
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const subscriptionItemCart = cartWithExpressMethods(
+			[ 'payment_request' ],
+			{
+				items: [
+					{
+						...blocksCart.items[ 0 ],
+						extensions: {
+							subscriptions: [ { billing_period: 'month' } ],
+						},
+					},
+				],
+			}
+		);
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps( subscriptionItemCart ),
+		} );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				setupFutureUsage: 'off_session',
+			} )
+		);
+	} );
+
+	it( 'ignores an empty subscription array on a live cart item', async () => {
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const regularItemCart = cartWithExpressMethods( [ 'payment_request' ], {
+			items: [
+				{
+					...blocksCart.items[ 0 ],
+					extensions: {
+						subscriptions: [],
+					},
+				},
+			],
+		} );
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps( regularItemCart ),
+		} );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				setupFutureUsage: null,
 			} )
 		);
 	} );
@@ -638,6 +852,25 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				},
 			} )
 		).resolves.toBe( false );
+	} );
+
+	it( 'does not reuse availability for ordinary and subscription carts', async () => {
+		availablePaymentMethods = { applePay: true };
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		await expect(
+			applePayRegistration.canMakePayment( { cart: blocksCart } )
+		).resolves.toBe( true );
+		await expect(
+			applePayRegistration.canMakePayment( {
+				cart: cartWithSubscriptionSchedule(),
+			} )
+		).resolves.toBe( true );
+
+		expect( stripe.elements ).toHaveBeenCalledTimes( 2 );
 	} );
 
 	it( 'probes Stripe Amazon Pay availability before exposing the Blocks Amazon method', async () => {
@@ -1155,9 +1388,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		);
 
 		renderExpressPaymentMethod( applePayRegistration, {
-			...getPaymentMethodInterfaceProps(
-				cartWithExpressMethods( [ 'payment_request' ] )
-			),
+			...getPaymentMethodInterfaceProps( cartWithSubscriptionSchedule() ),
 		} );
 
 		await waitFor( () => {
@@ -1205,7 +1436,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( elements.update ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				amount: 5700,
-				setupFutureUsage: 'off_session',
+				setupFutureUsage: null,
 			} )
 		);
 		expect( event.resolve ).toHaveBeenCalledWith(
@@ -1219,6 +1450,51 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			} )
 		);
 		expect( event.reject ).not.toHaveBeenCalled();
+	} );
+
+	it( 'updates Elements when the live Store API cart gains a subscription', async () => {
+		const updatedCart = cartWithSubscriptionSchedule(
+			[ 'payment_request' ],
+			{
+				totals: {
+					...blocksCart.totals,
+					total_price: '5700',
+				},
+			}
+		);
+		apiFetch.mockResolvedValueOnce( updatedCart );
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingaddresschange ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.shippingaddresschange( {
+				name: 'Ada Lovelace',
+				address: {
+					line1: '2 Wallet Way',
+					city: 'New York',
+					state: 'NY',
+					postal_code: '10001',
+					country: 'US',
+				},
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+		} );
+
+		expect( elements.update ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				amount: 5700,
+				setupFutureUsage: 'off_session',
+			} )
+		);
 	} );
 
 	it( 'keeps setupFutureUsage out of Elements updates when confirmation tokens are disabled', async () => {

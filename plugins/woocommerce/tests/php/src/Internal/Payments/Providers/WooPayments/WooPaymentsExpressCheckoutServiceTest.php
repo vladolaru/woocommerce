@@ -243,6 +243,71 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not use an unrelated cart subscription on an ordinary product page.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_product_page_subscription_context_ignores_global_cart(): void {
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test doubles for absent WCS symbols.
+		eval( 'namespace { class WC_Subscriptions_Product { public static function is_subscription( $product ) { return false; } } class WC_Subscriptions_Cart { public static function cart_contains_subscription() { return true; } } }' );
+
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Regular Widget',
+				'regular_price' => '10',
+				'virtual'       => true,
+				'price'         => '10',
+			)
+		);
+		$this->set_current_product( $product );
+
+		$this->assertFalse( $this->create_service()->get_express_checkout_params( 'product' )['has_subscription'] );
+	}
+
+	/**
+	 * @testdox Should expose subscription state for each supported cart detector.
+	 *
+	 * @dataProvider provider_checkout_subscription_contexts
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param bool        $initial     Whether the initial cart detector matches.
+	 * @param array|false $renewal     Renewal detector result.
+	 * @param array|false $resubscribe Resubscribe detector result.
+	 * @param array|false $switch_result Switch detector result.
+	 * @param bool        $expected    Expected localized subscription state.
+	 */
+	public function test_checkout_subscription_context_uses_supported_cart_detectors( bool $initial, $renewal, $resubscribe, $switch_result, bool $expected ): void {
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test doubles for absent WCS symbols use the public detector return shapes.
+		eval( 'namespace { class WC_Subscriptions_Cart { public static function cart_contains_subscription() { return $GLOBALS["wcpay_ece_subscription_detectors"]["initial"]; } } function wcs_cart_contains_renewal() { return $GLOBALS["wcpay_ece_subscription_detectors"]["renewal"]; } function wcs_cart_contains_resubscribe() { return $GLOBALS["wcpay_ece_subscription_detectors"]["resubscribe"]; } function wcs_cart_contains_switches() { return $GLOBALS["wcpay_ece_subscription_detectors"]["switch"]; } }' );
+		$GLOBALS['wcpay_ece_subscription_detectors'] = array(
+			'initial'     => $initial,
+			'renewal'     => $renewal,
+			'resubscribe' => $resubscribe,
+			'switch'      => $switch_result,
+		);
+
+		$this->assertSame( $expected, $this->create_service()->get_express_checkout_params( 'checkout' )['has_subscription'] );
+	}
+
+	/**
+	 * Provide initial, renewal, resubscribe, switch, and ordinary cart states.
+	 *
+	 * @return array<string,array{bool,array|false,array|false,array|false,bool}>
+	 */
+	public function provider_checkout_subscription_contexts(): array {
+		return array(
+			'initial subscription' => array( true, false, false, false, true ),
+			'renewal'              => array( false, array( 'renewal' ), false, false, true ),
+			'resubscribe'          => array( false, false, array( 'resubscribe' ), false, true ),
+			'switch'               => array( false, false, false, array( 'switch' ), true ),
+			'ordinary cart'        => array( false, false, false, false, false ),
+		);
+	}
+
+	/**
 	 * @testdox Should require login confirmation on a subscription product page even with guest checkout enabled.
 	 *
 	 * @runInSeparateProcess
