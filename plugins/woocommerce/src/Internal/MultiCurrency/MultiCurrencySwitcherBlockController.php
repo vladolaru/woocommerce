@@ -19,11 +19,12 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 
-	private const BLOCK_NAME                 = 'woocommerce-payments/multi-currency-switcher';
-	private const EDITOR_SCRIPT_HANDLE       = self::BLOCK_NAME;
-	private const EDITOR_SCRIPT_PATH         = 'assets/client/blocks/multi-currency-switcher.js';
-	private const EDITOR_SCRIPT_ASSET_PATH   = 'assets/client/blocks/multi-currency-switcher.asset.php';
-	private const EDITOR_SCRIPT_DEPENDENCIES = array(
+	private const BLOCK_NAME                  = 'woocommerce-payments/multi-currency-switcher';
+	private const EDITOR_SCRIPT_HANDLE        = 'wc-multi-currency-switcher';
+	private const LEGACY_EDITOR_SCRIPT_HANDLE = self::BLOCK_NAME;
+	private const EDITOR_SCRIPT_PATH          = 'assets/client/blocks/multi-currency-switcher.js';
+	private const EDITOR_SCRIPT_ASSET_PATH    = 'assets/client/blocks/multi-currency-switcher.asset.php';
+	private const EDITOR_SCRIPT_DEPENDENCIES  = array(
 		'react-jsx-runtime',
 		'wp-block-editor',
 		'wp-blocks',
@@ -130,35 +131,35 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	 * Register the editor-only switcher block script.
 	 */
 	private function register_editor_script(): void {
-		if ( wp_script_is( self::EDITOR_SCRIPT_HANDLE, 'registered' ) ) {
-			return;
-		}
+		if ( ! wp_script_is( self::EDITOR_SCRIPT_HANDLE, 'registered' ) ) {
+			$asset_data_path = WC()->plugin_path() . '/' . self::EDITOR_SCRIPT_ASSET_PATH;
+			$asset_data      = array();
 
-		$asset_data_path = WC()->plugin_path() . '/' . self::EDITOR_SCRIPT_ASSET_PATH;
-		$asset_data      = array();
+			if ( file_exists( $asset_data_path ) ) {
+				$loaded_asset_data = require $asset_data_path;
 
-		if ( file_exists( $asset_data_path ) ) {
-			$loaded_asset_data = require $asset_data_path;
-
-			if ( is_array( $loaded_asset_data ) ) {
-				$asset_data = $loaded_asset_data;
+				if ( is_array( $loaded_asset_data ) ) {
+					$asset_data = $loaded_asset_data;
+				}
 			}
+
+			$asset_dependencies = $asset_data['dependencies'] ?? null;
+			$dependencies       = self::resolve_editor_script_dependencies( $asset_dependencies );
+			$version            = isset( $asset_data['version'] ) && is_string( $asset_data['version'] ) && '' !== $asset_data['version']
+				? $asset_data['version']
+				: WC_VERSION;
+
+			wp_register_script(
+				self::EDITOR_SCRIPT_HANDLE,
+				WC()->plugin_url() . '/' . self::EDITOR_SCRIPT_PATH,
+				$dependencies,
+				$version,
+				true
+			);
+			wp_set_script_translations( self::EDITOR_SCRIPT_HANDLE, 'woocommerce' );
 		}
 
-		$asset_dependencies = $asset_data['dependencies'] ?? null;
-		$dependencies       = self::resolve_editor_script_dependencies( $asset_dependencies );
-		$version            = isset( $asset_data['version'] ) && is_string( $asset_data['version'] ) && '' !== $asset_data['version']
-			? $asset_data['version']
-			: WC_VERSION;
-
-		wp_register_script(
-			self::EDITOR_SCRIPT_HANDLE,
-			WC()->plugin_url() . '/' . self::EDITOR_SCRIPT_PATH,
-			$dependencies,
-			$version,
-			true
-		);
-		wp_set_script_translations( self::EDITOR_SCRIPT_HANDLE, 'woocommerce' );
+		wp_register_script( self::LEGACY_EDITOR_SCRIPT_HANDLE, false, array( self::EDITOR_SCRIPT_HANDLE ), WC_VERSION, true );
 	}
 
 	/**

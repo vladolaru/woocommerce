@@ -15,7 +15,8 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyAsyncPriceProjectionService {
 
-	private const SCRIPT_HANDLE        = 'wcpay-multi-currency-async-renderer';
+	private const SCRIPT_HANDLE        = 'wc-multi-currency-async-renderer';
+	private const LEGACY_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
 	private const SCRIPT_PATH          = 'dist/multi-currency-async-renderer';
 	private const STYLE_PATH           = 'dist/multi-currency-async-renderer.css';
 	private const LOCALIZED_OBJECT     = 'wcpayAsyncPriceConfig';
@@ -292,6 +293,7 @@ class MultiCurrencyAsyncPriceProjectionService {
 		return array(
 			'script' => array(
 				'handle'           => self::SCRIPT_HANDLE,
+				'legacy_handle'    => self::LEGACY_SCRIPT_HANDLE,
 				'path'             => self::SCRIPT_PATH,
 				'localized_object' => self::LOCALIZED_OBJECT,
 				'config'           => array(
@@ -301,10 +303,11 @@ class MultiCurrencyAsyncPriceProjectionService {
 				),
 			),
 			'style'  => array(
-				'handle'  => self::SCRIPT_HANDLE,
-				'path'    => self::STYLE_PATH,
-				'url'     => $style_url,
-				'version' => $style_version,
+				'handle'        => self::SCRIPT_HANDLE,
+				'legacy_handle' => self::LEGACY_SCRIPT_HANDLE,
+				'path'          => self::STYLE_PATH,
+				'url'           => $style_url,
+				'version'       => $style_version,
 			),
 			'client' => array(
 				'session_cache_key'    => self::SESSION_CACHE_KEY,

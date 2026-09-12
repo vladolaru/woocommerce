@@ -23,11 +23,12 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterface {
 
-	private const OPTION_PREFIX     = 'wcpay_multi_currency';
-	private const PRICE_TYPE_FILTER = 'wcpay_multi_currency_async_price_type';
-	private const SCRIPT_HANDLE     = 'wcpay-multi-currency-async-renderer';
-	private const SCRIPT_PATH       = 'assets/js/frontend/multi-currency-async-renderer';
-	private const STYLE_PATH        = 'assets/css/multi-currency-async-renderer.css';
+	private const OPTION_PREFIX        = 'wcpay_multi_currency';
+	private const PRICE_TYPE_FILTER    = 'wcpay_multi_currency_async_price_type';
+	private const SCRIPT_HANDLE        = 'wc-multi-currency-async-renderer';
+	private const LEGACY_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
+	private const SCRIPT_PATH          = 'assets/js/frontend/multi-currency-async-renderer';
+	private const STYLE_PATH           = 'assets/css/multi-currency-async-renderer.css';
 
 	/**
 	 * Runtime owner arbiter.
@@ -303,15 +304,18 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 			$this->get_asset_version( self::STYLE_PATH )
 		);
 
-		$script_handle = self::SCRIPT_HANDLE;
+		$script_handle        = self::SCRIPT_HANDLE;
+		$legacy_script_handle = self::LEGACY_SCRIPT_HANDLE;
+		$script_version       = $this->get_asset_version( self::SCRIPT_PATH . '.js' );
 
 		wp_register_script(
 			$script_handle,
 			$this->get_asset_url( self::SCRIPT_PATH . $this->get_script_suffix() . '.js' ),
 			array( 'wp-polyfill' ),
-			$this->get_asset_version( self::SCRIPT_PATH . '.js' ),
+			$script_version,
 			array( 'in_footer' => true )
 		);
+		wp_register_script( $legacy_script_handle, false, array( $script_handle ), $script_version, array( 'in_footer' => true ) );
 		wp_localize_script(
 			$script_handle,
 			$manifest['script']['localized_object'],
@@ -319,12 +323,14 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 		);
 		wp_enqueue_script( $script_handle );
 
-		wp_enqueue_style(
-			$script_handle,
+		wp_register_style(
+			$manifest['style']['handle'],
 			$manifest['style']['url'],
 			array(),
 			$manifest['style']['version']
 		);
+		wp_register_style( $manifest['style']['legacy_handle'], false, array( $manifest['style']['handle'] ), $manifest['style']['version'] );
+		wp_enqueue_style( $manifest['style']['handle'] );
 	}
 
 	/**

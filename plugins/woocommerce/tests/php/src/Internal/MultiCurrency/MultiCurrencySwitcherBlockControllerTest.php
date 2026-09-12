@@ -16,8 +16,9 @@ use WP_Block_Type_Registry;
  */
 class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 
-	private const BLOCK_NAME           = 'woocommerce-payments/multi-currency-switcher';
-	private const EDITOR_SCRIPT_HANDLE = 'woocommerce-payments/multi-currency-switcher';
+	private const BLOCK_NAME                  = 'woocommerce-payments/multi-currency-switcher';
+	private const EDITOR_SCRIPT_HANDLE        = 'wc-multi-currency-switcher';
+	private const LEGACY_EDITOR_SCRIPT_HANDLE = 'woocommerce-payments/multi-currency-switcher';
 
 	/**
 	 * Hooks touched by the switcher block controller.
@@ -38,6 +39,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 
 		$this->unregister_block_type();
 		wp_deregister_script( self::EDITOR_SCRIPT_HANDLE );
+		wp_deregister_script( self::LEGACY_EDITOR_SCRIPT_HANDLE );
 
 		unset( $_GET['currency'], $_GET['orderby'] );
 
@@ -143,6 +145,12 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 		$this->assertContains( 'wp-server-side-render', $registered_script->deps );
 		$this->assertNotContains( 'wp-element', $registered_script->deps );
 		$this->assertNotEmpty( $registered_script->ver );
+
+		$legacy_script = wp_scripts()->registered[ self::LEGACY_EDITOR_SCRIPT_HANDLE ] ?? null;
+
+		$this->assertInstanceOf( \_WP_Dependency::class, $legacy_script );
+		$this->assertFalse( $legacy_script->src );
+		$this->assertSame( array( self::EDITOR_SCRIPT_HANDLE ), $legacy_script->deps );
 	}
 
 	/**
