@@ -505,13 +505,22 @@
 
 		if ( getGlobalConfig() ) {
 			var renderer = new MultiCurrencyAsyncPriceRenderer();
-			if ( 'loading' === document.readyState ) {
-				document.addEventListener( 'DOMContentLoaded', function () {
-					renderer.init();
-				} );
-			} else {
-				renderer.init();
-			}
+			window.wcpayAsyncCurrency = {
+				ready: new Promise( function ( resolve ) {
+					function initializeRenderer() {
+						renderer.init().then( function () {
+							var selectedCurrency = renderer.config && renderer.config.selected_currency;
+							resolve( typeof selectedCurrency === 'string' ? selectedCurrency.toLowerCase() : '' );
+						} );
+					}
+
+					if ( 'loading' === document.readyState ) {
+						document.addEventListener( 'DOMContentLoaded', initializeRenderer );
+					} else {
+						initializeRenderer();
+					}
+				} ),
+			};
 		}
 	}
 }() );

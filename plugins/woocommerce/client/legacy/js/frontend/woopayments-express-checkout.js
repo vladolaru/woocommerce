@@ -12,9 +12,15 @@
 	var elementCurrency = null;
 	var productAddToCartPromise = Promise.resolve();
 	var productAddToCartErrorMessage = '';
+	var resolvedProductCurrency = '';
+	var productCurrencyResolutionPromise = null;
+	var productEnabledMethodCeiling = Array.isArray( config.enabled_methods )
+		? config.enabled_methods.slice()
+		: [];
 	var iapiPreviewRequestId = 0;
 	var iapiLastSelection = null;
 	var iapiSelectionRefreshTimer = null;
+	var iapiObserverInstalled = false;
 	var navigate = function ( url ) {
 		window.location.href = url;
 	};
@@ -78,6 +84,90 @@
 		} );
 
 		return paymentMethodTypes.length ? paymentMethodTypes : [ 'card' ];
+	}
+
+	function normalizeCurrency( currency ) {
+		return typeof currency === 'string' && currency
+			? currency.toLowerCase()
+			: '';
+	}
+
+	function getLocalizedProductCurrency() {
+		return normalizeCurrency(
+			( config.product && config.product.currency ) ||
+				( config.checkout && config.checkout.currency_code )
+		);
+	}
+
+	function getStoreApiCurrency() {
+		return (
+			isProduct() && resolvedProductCurrency
+				? resolvedProductCurrency
+				: ( config.checkout && config.checkout.currency_code ) || ''
+		).toUpperCase();
+	}
+
+	function resolveProductCurrency( fallback ) {
+		var currency = normalizeCurrency( fallback );
+		var ready =
+			window.wcpayAsyncCurrency && window.wcpayAsyncCurrency.ready;
+
+		if ( ! ready || typeof ready.then !== 'function' ) {
+			return Promise.resolve( currency );
+		}
+
+		return new Promise( function ( resolve ) {
+			var watchdog = window.setTimeout( function () {
+				resolve( currency );
+			}, 6000 );
+
+			Promise.resolve( ready ).then(
+				function ( resolved ) {
+					window.clearTimeout( watchdog );
+					resolve( normalizeCurrency( resolved ) || currency );
+				},
+				function () {
+					window.clearTimeout( watchdog );
+					resolve( currency );
+				}
+			);
+		} );
+	}
+
+	function applyProductPreviewMethods( cartData ) {
+		var methods =
+			cartData &&
+			cartData.extensions &&
+			cartData.extensions.wcpay &&
+			cartData.extensions.wcpay.express_checkout_methods;
+
+		if ( ! Array.isArray( methods ) ) {
+			return false;
+		}
+
+		methods = methods.filter( function ( method, index ) {
+			return (
+				[ 'payment_request', 'amazon_pay' ].indexOf( method ) !== -1 &&
+				productEnabledMethodCeiling.indexOf( method ) !== -1 &&
+				methods.indexOf( method ) === index
+			);
+		} );
+
+		config.enabled_methods = methods;
+		config.payment_method_types = methods.reduce( function (
+			types,
+			method
+		) {
+			if ( 'payment_request' === method ) {
+				types.push( 'card' );
+			}
+			if ( 'amazon_pay' === method ) {
+				types.push( 'amazon_pay' );
+			}
+			return types;
+		}, [] );
+
+		return isPaymentRequestEnabled() || isAmazonPayEnabled();
 	}
 
 	function shouldUseConfirmationTokens() {
@@ -185,10 +275,7 @@
 			// or geolocation-driven multi-currency setups can't serve the
 			// request in a different currency than the wallet sheet shows.
 			path: addQueryArgs( options.path, {
-				currency: (
-					( config.checkout && config.checkout.currency_code ) ||
-					''
-				).toUpperCase(),
+				currency: getStoreApiCurrency(),
 			} ),
 			headers: Object.assign(
 				{},
@@ -1252,38 +1339,43 @@
 			'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
 		} );
 
-		return apiFetch( {
-			method: 'POST',
-			path: addQueryArgs( '/wc/store/v1/cart/add-item', {
-				currency: (
-					( config.checkout && config.checkout.currency_code ) ||
-					''
-				).toUpperCase(),
-			} ),
-			headers: headers,
-			data: product,
-			parse: false,
-		} ).then( function ( response ) {
-			var nextNonce =
-				response &&
-				response.headers &&
-				typeof response.headers.get === 'function'
-					? response.headers.get( 'Nonce' )
-					: null;
+		function requestPreview() {
+			return apiFetch( {
+				method: 'POST',
+				path: addQueryArgs( '/wc/store/v1/cart/add-item', {
+					currency: getStoreApiCurrency(),
+				} ),
+				headers: headers,
+				data: product,
+				parse: false,
+			} ).then( function ( response ) {
+				var nextNonce =
+					response &&
+					response.headers &&
+					typeof response.headers.get === 'function'
+						? response.headers.get( 'Nonce' )
+						: null;
 
-			if ( nextNonce ) {
-				config.nonce = config.nonce || {};
-				config.nonce.store_api_nonce = nextNonce;
-			}
+				if ( nextNonce ) {
+					config.nonce = config.nonce || {};
+					config.nonce.store_api_nonce = nextNonce;
+				}
 
-			return response && typeof response.json === 'function'
-				? response.json()
-				: response;
-		} );
+				return response && typeof response.json === 'function'
+					? response.json()
+					: response;
+			} );
+		}
+
+		return productCurrencyResolutionPromise
+			? productCurrencyResolutionPromise.then( requestPreview )
+			: requestPreview();
 	}
 
 	function refreshIapiProductPreview() {
-		var product = filterSelectedProduct( getSelectedProduct() );
+		var selectedProduct = getSelectedProduct();
+		var product = filterSelectedProduct( selectedProduct );
+		var selection = JSON.stringify( selectedProduct );
 		var requestId;
 
 		if ( ! product ) {
@@ -1292,23 +1384,54 @@
 		}
 
 		requestId = ++iapiPreviewRequestId;
-		requestIapiProductPreview( product )
-			.then( function ( cartData ) {
+		iapiLastSelection = selection;
+		return requestIapiProductPreview( product ).then(
+			function ( cartData ) {
 				if ( requestId !== iapiPreviewRequestId ) {
 					return;
 				}
 
+				if ( selection !== JSON.stringify( getSelectedProduct() ) ) {
+					return refreshIapiProductPreview();
+				}
+
+				if (
+					! elements &&
+					resolvedProductCurrency !== getLocalizedProductCurrency() &&
+					! applyProductPreviewMethods( cartData )
+				) {
+					hideExpressButton();
+					return;
+				}
+
+				if ( ! elements ) {
+					return initializeExpressCheckout( cartData );
+				}
+
 				cachedCartData = cartData;
 				return updateElementsForCart( cartData );
-			} )
-			.catch( function () {} );
+			},
+			function () {
+				if ( requestId !== iapiPreviewRequestId ) {
+					return;
+				}
+
+				if ( selection !== JSON.stringify( getSelectedProduct() ) ) {
+					return refreshIapiProductPreview();
+				}
+			}
+		);
 	}
 
 	function watchIapiVariationSelection() {
 		var form;
 		var variationSelectors;
 
-		if ( ! isProduct() || typeof window.MutationObserver !== 'function' ) {
+		if (
+			! isProduct() ||
+			iapiObserverInstalled ||
+			typeof window.MutationObserver !== 'function'
+		) {
 			return;
 		}
 
@@ -1326,20 +1449,22 @@
 			return;
 		}
 
+		iapiObserverInstalled = true;
 		iapiLastSelection = JSON.stringify( getSelectedProduct() );
 
 		variationSelectors.forEach( function ( selector ) {
 			new window.MutationObserver( function () {
+				var selection = JSON.stringify( getSelectedProduct() );
+
 				window.clearTimeout( iapiSelectionRefreshTimer );
 				iapiSelectionRefreshTimer = window.setTimeout( function () {
-					var selection = JSON.stringify( getSelectedProduct() );
+					selection = JSON.stringify( getSelectedProduct() );
 					iapiSelectionRefreshTimer = null;
 
 					if ( selection === iapiLastSelection ) {
 						return;
 					}
 
-					iapiLastSelection = selection;
 					refreshIapiProductPreview();
 				}, 250 );
 			} ).observe( selector, {
@@ -1852,13 +1977,16 @@
 		};
 	}
 
-	async function initExpressCheckout() {
+	async function initExpressCheckout( previewCartData ) {
 		var stripe;
 		var total;
+		var initialProductSelection;
+		var previewRequestId;
 
 		if (
 			isBlockSurface() ||
-			! ( isPaymentRequestEnabled() || isAmazonPayEnabled() ) ||
+			( ! isProduct() &&
+				! ( isPaymentRequestEnabled() || isAmazonPayEnabled() ) ) ||
 			! getApiFetch() ||
 			! document.getElementById( 'wcpay-express-checkout-element' )
 		) {
@@ -1866,8 +1994,53 @@
 		}
 
 		try {
-			cachedCartData = isProduct() ? config.product : await getCart();
+			if ( previewCartData ) {
+				cachedCartData = previewCartData;
+			} else if ( isProduct() ) {
+				var localizedProductCurrency = getLocalizedProductCurrency();
+				var ready =
+					window.wcpayAsyncCurrency &&
+					window.wcpayAsyncCurrency.ready;
+
+				previewRequestId = ++iapiPreviewRequestId;
+				initialProductSelection = JSON.stringify( getSelectedProduct() );
+				if ( ! ready || typeof ready.then !== 'function' ) {
+					resolvedProductCurrency = localizedProductCurrency;
+					productCurrencyResolutionPromise = null;
+					cachedCartData = config.product;
+				} else {
+					productCurrencyResolutionPromise = resolveProductCurrency(
+						localizedProductCurrency
+					);
+					resolvedProductCurrency =
+						await productCurrencyResolutionPromise;
+
+					if ( previewRequestId !== iapiPreviewRequestId ) {
+						return;
+					}
+
+					if (
+						initialProductSelection !==
+						JSON.stringify( getSelectedProduct() )
+					) {
+						return refreshIapiProductPreview();
+					}
+
+					if ( resolvedProductCurrency !== localizedProductCurrency ) {
+						return refreshIapiProductPreview();
+					}
+
+					cachedCartData = config.product;
+				}
+			} else {
+				cachedCartData = await getCart();
+			}
 		} catch ( error ) {
+			hideExpressButton();
+			return;
+		}
+
+		if ( ! ( isPaymentRequestEnabled() || isAmazonPayEnabled() ) ) {
 			hideExpressButton();
 			return;
 		}
@@ -1991,6 +2164,19 @@
 		expressElement.mount( '#wcpay-express-checkout-element' );
 	}
 
+	function initializeExpressCheckout( previewCartData ) {
+		return initExpressCheckout( previewCartData ).then(
+			function ( result ) {
+				watchIapiVariationSelection();
+				return result;
+			},
+			function ( error ) {
+				watchIapiVariationSelection();
+				throw error;
+			}
+		);
+	}
+
 	$( function () {
 		if ( isBlockSurface() ) {
 			return;
@@ -2003,18 +2189,17 @@
 			getButtonContext() !== 'checkout' ||
 			getButtonContext() === 'pay_for_order'
 		) {
-			initExpressCheckout();
-			watchIapiVariationSelection();
+			initializeExpressCheckout();
 		}
 
 		$( document.body ).on( 'updated_checkout', function () {
 			cachedCartData = null;
-			return initExpressCheckout();
+			return initializeExpressCheckout();
 		} );
 
 		$( document.body ).on( 'updated_cart_totals', function () {
 			cachedCartData = null;
-			return initExpressCheckout();
+			return initializeExpressCheckout();
 		} );
 	} );
 	// Expose internals for unit testing only.

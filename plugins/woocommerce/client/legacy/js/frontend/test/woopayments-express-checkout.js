@@ -14,6 +14,12 @@ describe( 'WooPayments express checkout', () => {
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 	}
 
+	async function flushMicrotasks() {
+		for ( let index = 0; index < 10; index++ ) {
+			await Promise.resolve();
+		}
+	}
+
 	function createDeferred() {
 		let resolve;
 		let reject;
@@ -121,6 +127,68 @@ describe( 'WooPayments express checkout', () => {
 		};
 	}
 
+	function getResolvedProductCart( methods ) {
+		return {
+			needs_shipping: true,
+			totals: {
+				total_price: '4200',
+				total_refund: '0',
+				currency_code: 'EUR',
+			},
+			extensions: {
+				wcpay: {
+					express_checkout_methods: methods,
+				},
+				subscriptions: [ { interval: 'month' } ],
+			},
+			items: [],
+		};
+	}
+
+	function setProductPage( options ) {
+		options = options || {};
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			( options.iapi
+				? '<form class="wp-block-add-to-cart-with-options">' +
+					'<input type="hidden" name="add-to-cart" value="257" />' +
+					'<input type="hidden" name="product_id" value="257" />' +
+					'<input type="hidden" name="variation_id" value="263" />' +
+					'<div class="wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute">' +
+					'<input type="hidden" name="attribute_pa_color" value="blue" />' +
+					'</div>' +
+					'</form>'
+				: '<form class="cart">' +
+					'<button type="submit" name="add-to-cart" value="123">Add to cart</button>' +
+					'</form>' ) +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.enabled_methods =
+			options.localizedMethods || [ 'payment_request' ];
+		window.wcpayExpressCheckoutParams.payment_method_types =
+			options.localizedTypes || [ 'card' ];
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Express Widget', amount: 2500 } ],
+			total: { label: 'Express Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: options.iapi ? 'variable' : 'simple',
+		};
+	}
+
+	function setIapiColor( color ) {
+		document.querySelector(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		).innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="' +
+			color +
+			'" />';
+	}
+
 	function getOrderPayResponse() {
 		var cartResponse = getCartResponse();
 
@@ -213,6 +281,7 @@ describe( 'WooPayments express checkout', () => {
 		delete window.wp;
 		delete window.Stripe;
 		delete window.wcpayFraudPreventionToken;
+		delete window.wcpayAsyncCurrency;
 		window.fetch = originalFetch;
 		delete window.wcpayExpressCheckoutParams;
 		document.body.innerHTML = '';
@@ -657,6 +726,728 @@ describe( 'WooPayments express checkout', () => {
 			'#wcpay-express-checkout-element'
 		);
 	} );
+
+	test( 'waits for resolved product currency before previewing and mounts the fresh cart once', async () => {
+		const currency = createDeferred();
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			'<form class="cart">' +
+			'<button type="submit" name="add-to-cart" value="123">Add to cart</button>' +
+			'</form>' +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Express Widget', amount: 2500 } ],
+			total: { label: 'Express Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'simple',
+		};
+		window.wcpayAsyncCurrency = { ready: currency.promise };
+		window.wp.apiFetch.mockResolvedValue(
+			getResolvedProductCart( [ 'payment_request' ] )
+		);
+
+		require( '../woopayments-express-checkout' );
+		await flushPromises();
+
+		expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+		expect( stripe.elements ).not.toHaveBeenCalled();
+
+		currency.resolve( 'EUR' );
+		await flushPromises();
+		await flushPromises();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				method: 'POST',
+				path: '/wc/store/v1/cart/add-item?currency=EUR',
+				data: { id: 123, quantity: 1, variation: [] },
+			} )
+		);
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				amount: 4200,
+				currency: 'eur',
+				paymentMethodTypes: [ 'card' ],
+				setupFutureUsage: 'off_session',
+			} )
+		);
+		expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	test( 'uses localized product data when currency readiness reaches the six-second watchdog', async () => {
+		const currency = createDeferred();
+		jest.useFakeTimers();
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Express Widget', amount: 2500 } ],
+			total: { label: 'Express Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'simple',
+		};
+		window.wcpayAsyncCurrency = { ready: currency.promise };
+
+		require( '../woopayments-express-checkout' );
+		jest.advanceTimersByTime( 6000 );
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( { amount: 2500, currency: 'usd' } )
+		);
+		expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	test.each( [
+		[ 'rejects', true ],
+		[ 'has no usable methods', false ],
+	] )( 'keeps product ECE hidden when the changed-currency preview %s', async ( scenario, rejects ) => {
+		void scenario;
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			'<form class="cart">' +
+			'<button type="submit" name="add-to-cart" value="123">Add to cart</button>' +
+			'</form>' +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Express Widget', amount: 2500 } ],
+			total: { label: 'Express Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'simple',
+		};
+		window.wcpayAsyncCurrency = { ready: Promise.resolve( 'eur' ) };
+		window.wp.apiFetch.mockImplementation( () =>
+			rejects
+				? Promise.reject( new Error( 'Preview failed' ) )
+				: Promise.resolve( getResolvedProductCart( [] ) )
+		);
+
+		require( '../woopayments-express-checkout' );
+		await flushPromises();
+		await flushPromises();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( stripe.elements ).not.toHaveBeenCalled();
+		expect( expressElement.mount ).not.toHaveBeenCalled();
+		expect(
+			document
+				.getElementById( 'wcpay-express-checkout-element' )
+				.classList.contains( 'is-ready' )
+		).toBe( false );
+	} );
+
+	test( 'coalesces a pre-resolution IAPI selection into one current-currency preview', async () => {
+		const currency = createDeferred();
+		jest.useFakeTimers();
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			'<form class="wp-block-add-to-cart-with-options">' +
+			'<input type="hidden" name="add-to-cart" value="257" />' +
+			'<input type="hidden" name="product_id" value="257" />' +
+			'<input type="hidden" name="variation_id" value="263" />' +
+			'<div class="wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute">' +
+			'<input type="hidden" name="attribute_pa_color" value="blue" />' +
+			'</div>' +
+			'</form>' +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Variable Widget', amount: 2500 } ],
+			total: { label: 'Variable Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'variable',
+		};
+		window.wcpayAsyncCurrency = { ready: currency.promise };
+		window.wp.apiFetch.mockResolvedValue(
+			getResolvedProductCart( [ 'payment_request' ] )
+		);
+
+		require( '../woopayments-express-checkout' );
+		await Promise.resolve();
+		document.querySelector(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		).innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="red" />';
+		await Promise.resolve();
+
+		expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+		expect( stripe.elements ).not.toHaveBeenCalled();
+
+		currency.resolve( 'EUR' );
+		await Promise.resolve();
+		jest.advanceTimersByTime( 250 );
+		await flushMicrotasks();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				path: '/wc/store/v1/cart/add-item?currency=EUR',
+				data: {
+					id: 257,
+					quantity: 1,
+					variation: [
+						{ attribute: 'attribute_pa_color', value: 'red' },
+					],
+				},
+			} )
+		);
+		expect( stripe.elements ).toHaveBeenCalledTimes( 1 );
+		expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	test.each( [
+		[ 'after the debounce', true ],
+		[ 'before the debounce', false ],
+	] )( 'keeps the final IAPI owner when readiness settles %s during an A-to-B-to-A change', async ( scenario, settleAfterDebounce ) => {
+		const currency = createDeferred();
+		const finalSelection = {
+			id: 257,
+			quantity: 1,
+			variation: [ { attribute: 'attribute_pa_color', value: 'blue' } ],
+		};
+		void scenario;
+		jest.useFakeTimers();
+		setProductPage( { iapi: true } );
+		window.wcpayAsyncCurrency = { ready: currency.promise };
+		window.wp.apiFetch.mockResolvedValue(
+			getResolvedProductCart( [ 'payment_request' ] )
+		);
+
+		require( '../woopayments-express-checkout' );
+		await Promise.resolve();
+		const selector = document.querySelector(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		);
+		selector.innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="red" />';
+		await Promise.resolve();
+
+		if ( settleAfterDebounce ) {
+			jest.advanceTimersByTime( 250 );
+		}
+
+		currency.resolve( 'EUR' );
+		selector.innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="blue" />';
+		await Promise.resolve();
+		jest.advanceTimersByTime( 250 );
+		await flushMicrotasks();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				path: '/wc/store/v1/cart/add-item?currency=EUR',
+				data: finalSelection,
+			} )
+		);
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				amount: 4200,
+				currency: 'eur',
+				paymentMethodTypes: [ 'card' ],
+				setupFutureUsage: 'off_session',
+			} )
+		);
+		expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	test.each( [
+		[ 'valid product methods', [ 'payment_request' ], {}, [ 'card' ], true ],
+		[
+			'valid localized Amazon Pay',
+			[ 'amazon_pay' ],
+			{
+				localizedMethods: [ 'amazon_pay' ],
+				localizedTypes: [ 'amazon_pay' ],
+			},
+			[ 'amazon_pay' ],
+			true,
+		],
+		[ 'an empty list', [], {}, null, false ],
+		[ 'an absent list', 'absent', {}, null, false ],
+		[ 'a malformed list', 'payment_request', {}, null, false ],
+		[
+			'duplicate methods',
+			[ 'payment_request', 'payment_request' ],
+			{},
+			[ 'card' ],
+			true,
+		],
+		[
+			'mixed unknown methods',
+			[ 'unknown', 'payment_request', 'unknown' ],
+			{},
+			[ 'card' ],
+			true,
+		],
+		[
+			'a checkout-only method',
+			[ 'payment_request', 'amazon_pay' ],
+			{},
+			[ 'card' ],
+			true,
+		],
+	] )(
+		'uses only known localized product methods when the changed-currency preview returns %s',
+		async ( scenario, methods, options, expectedTypes, mounts ) => {
+			const cartData = getResolvedProductCart( methods );
+			void scenario;
+			setProductPage( options );
+			window.wcpayAsyncCurrency = { ready: Promise.resolve( 'EUR' ) };
+			if ( methods === 'absent' ) {
+				delete cartData.extensions.wcpay.express_checkout_methods;
+			}
+			window.wp.apiFetch.mockResolvedValue( cartData );
+
+			require( '../woopayments-express-checkout' );
+			await flushPromises();
+			await flushPromises();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+			if ( mounts ) {
+				expect( stripe.elements ).toHaveBeenCalledWith(
+					expect.objectContaining( {
+						paymentMethodTypes: expectedTypes,
+					} )
+				);
+				expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+				expect( elements.create ).toHaveBeenCalledWith(
+					'expressCheckout',
+					expect.objectContaining( {
+						paymentMethods: expect.objectContaining( {
+							amazonPay:
+								expectedTypes.indexOf( 'amazon_pay' ) !== -1
+									? 'auto'
+									: 'never',
+						} ),
+					} )
+				);
+			} else {
+				expect( stripe.elements ).not.toHaveBeenCalled();
+				expect( expressElement.mount ).not.toHaveBeenCalled();
+			}
+		}
+	);
+
+	test( 'keeps the mounted product method identity when a later IAPI preview changes methods', async () => {
+		const firstCart = getResolvedProductCart( [ 'payment_request' ] );
+		const nextCart = getResolvedProductCart( [ 'amazon_pay' ] );
+		const resolveClick = jest.fn();
+		jest.useFakeTimers();
+		setProductPage( { iapi: true } );
+		nextCart.totals.total_price = '5000';
+		nextCart.extensions.subscriptions = [];
+		window.wcpayAsyncCurrency = { ready: Promise.resolve( 'EUR' ) };
+		window.wp.apiFetch
+			.mockResolvedValueOnce( firstCart )
+			.mockResolvedValueOnce( nextCart )
+			.mockResolvedValueOnce( nextCart )
+			.mockResolvedValueOnce( { payment_result: {} } );
+
+		require( '../woopayments-express-checkout' );
+		await flushMicrotasks();
+		document.querySelector(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		).innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="red" />';
+		await Promise.resolve();
+		jest.advanceTimersByTime( 250 );
+		await flushMicrotasks();
+
+		expect( elements.update ).toHaveBeenCalledWith(
+			expect.objectContaining( { amount: 5000 } )
+		);
+		expect( stripe.elements ).toHaveBeenCalledTimes( 1 );
+		expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+		expect( elements.create ).toHaveBeenCalledWith(
+			'expressCheckout',
+			expect.objectContaining( {
+				paymentMethods: expect.objectContaining( { amazonPay: 'never' } ),
+			} )
+		);
+
+		await expressHandlers.click( { resolve: resolveClick } );
+		await Promise.resolve();
+		await expressHandlers.confirm( {
+			billingDetails: {
+				email: 'shopper@example.test',
+				name: 'Ada Lovelace',
+			},
+		} );
+
+		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+			expect.objectContaining( {
+				data: expect.objectContaining( {
+					payment_data: expect.arrayContaining( [
+						{
+							key: 'wcpay-express-payment-method-types',
+							value: JSON.stringify( [ 'card' ] ),
+						},
+					] ),
+				} ),
+			} )
+		);
+	} );
+
+	test( 'replaces a pending initial IAPI preview when its live selection changes before the response', async () => {
+		const bluePreview = createDeferred();
+		const redCart = getResolvedProductCart( [ 'payment_request' ] );
+		const resolveClick = jest.fn();
+		setProductPage( { iapi: true } );
+		redCart.needs_shipping = false;
+		redCart.totals.total_price = '5000';
+		window.wcpayAsyncCurrency = { ready: Promise.resolve( 'EUR' ) };
+		window.wp.apiFetch
+			.mockReturnValueOnce( bluePreview.promise )
+			.mockResolvedValueOnce( redCart )
+			.mockResolvedValueOnce( redCart );
+
+		require( '../woopayments-express-checkout' );
+		await flushMicrotasks();
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				data: {
+					id: 257,
+					quantity: 1,
+					variation: [
+						{ attribute: 'attribute_pa_color', value: 'blue' },
+					],
+				},
+			} )
+		);
+
+		document.querySelector(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		).innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="red" />';
+		await flushMicrotasks();
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+
+		bluePreview.resolve( getResolvedProductCart( [ 'payment_request' ] ) );
+		await flushMicrotasks();
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 2 );
+		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+			expect.objectContaining( {
+				data: {
+					id: 257,
+					quantity: 1,
+					variation: [
+						{ attribute: 'attribute_pa_color', value: 'red' },
+					],
+				},
+			} )
+		);
+		await flushMicrotasks();
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				amount: 5000,
+				setupFutureUsage: 'off_session',
+			} )
+		);
+		expect( stripe.elements ).not.toHaveBeenCalledWith(
+			expect.objectContaining( { amount: 4200 } )
+		);
+		expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+
+		await expressHandlers.click( { resolve: resolveClick } );
+		expect( resolveClick ).toHaveBeenCalledWith(
+			expect.objectContaining( { shippingAddressRequired: false } )
+		);
+	} );
+
+	test( 'replaces a rejected pending initial IAPI preview when its live selection changes', async () => {
+		const bluePreview = createDeferred();
+		const redCart = getResolvedProductCart( [ 'payment_request' ] );
+		setProductPage( { iapi: true } );
+		redCart.totals.total_price = '5000';
+		window.wcpayAsyncCurrency = { ready: Promise.resolve( 'EUR' ) };
+		window.wp.apiFetch
+			.mockReturnValueOnce( bluePreview.promise )
+			.mockResolvedValueOnce( redCart );
+
+		require( '../woopayments-express-checkout' );
+		await flushMicrotasks();
+		document.querySelector(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		).innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="red" />';
+		await flushMicrotasks();
+		bluePreview.reject( new Error( 'Blue preview rejected' ) );
+		await flushMicrotasks();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 2 );
+		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+			expect.objectContaining( {
+				data: expect.objectContaining( {
+					variation: [
+						{ attribute: 'attribute_pa_color', value: 'red' },
+					],
+				} ),
+			} )
+		);
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( { amount: 5000 } )
+		);
+		expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	test( 'does not replace or mount a pending initial IAPI preview when the final selection is invalid', async () => {
+		const bluePreview = createDeferred();
+		setProductPage( { iapi: true } );
+		window.wcpayAsyncCurrency = { ready: Promise.resolve( 'EUR' ) };
+		window.wp.apiFetch.mockReturnValueOnce( bluePreview.promise );
+
+		require( '../woopayments-express-checkout' );
+		await flushMicrotasks();
+		document
+			.querySelector( 'form.wp-block-add-to-cart-with-options' )
+			.classList.add( 'is-invalid' );
+		bluePreview.resolve( getResolvedProductCart( [ 'payment_request' ] ) );
+		await flushMicrotasks();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( stripe.elements ).not.toHaveBeenCalled();
+		expect( expressElement.mount ).not.toHaveBeenCalled();
+	} );
+
+	test.each( [
+		[ 'before the debounce', true ],
+		[ 'after the debounce', false ],
+	] )(
+		'updates accepted A from pending B when B bounces through C back to B %s',
+		async ( scenario, settleBeforeDebounce ) => {
+			const pendingB = createDeferred();
+			const bCart = getResolvedProductCart( [ 'amazon_pay' ] );
+			const resolveClick = jest.fn();
+			void scenario;
+			jest.useFakeTimers();
+			setProductPage( { iapi: true } );
+			bCart.needs_shipping = false;
+			bCart.totals.total_price = '5000';
+			window.wcpayAsyncCurrency = { ready: Promise.resolve( 'EUR' ) };
+			window.wp.apiFetch
+				.mockResolvedValueOnce(
+					getResolvedProductCart( [ 'payment_request' ] )
+				)
+				.mockReturnValueOnce( pendingB.promise );
+
+			require( '../woopayments-express-checkout' );
+			await flushMicrotasks();
+			setIapiColor( 'red' );
+			await flushMicrotasks();
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 2 );
+
+			setIapiColor( 'green' );
+			await flushMicrotasks();
+			setIapiColor( 'red' );
+			await flushMicrotasks();
+			if ( settleBeforeDebounce ) {
+				pendingB.resolve( bCart );
+				await flushMicrotasks();
+				jest.advanceTimersByTime( 250 );
+			} else {
+				jest.advanceTimersByTime( 250 );
+				await flushMicrotasks();
+				pendingB.resolve( bCart );
+			}
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 2 );
+			expect( elements.update ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 5000 } )
+			);
+			expect( elements.update ).not.toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 4200 } )
+			);
+			expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+			expect( elements.create ).toHaveBeenCalledWith(
+				'expressCheckout',
+				expect.objectContaining( {
+					paymentMethods: expect.objectContaining( {
+						amazonPay: 'never',
+					} ),
+				} )
+			);
+			await expressHandlers.click( { resolve: resolveClick } );
+			expect( resolveClick ).toHaveBeenCalledWith(
+				expect.objectContaining( { shippingAddressRequired: false } )
+			);
+		}
+	);
+
+	test.each( [
+		[ 'before the debounce', true ],
+		[ 'after the debounce', false ],
+	] )(
+		'updates accepted A from stable C once when pending B settles %s',
+		async ( scenario, settleBeforeDebounce ) => {
+			const pendingB = createDeferred();
+			const cCart = getResolvedProductCart( [ 'amazon_pay' ] );
+			void scenario;
+			jest.useFakeTimers();
+			setProductPage( { iapi: true } );
+			cCart.totals.total_price = '6000';
+			window.wcpayAsyncCurrency = { ready: Promise.resolve( 'EUR' ) };
+			window.wp.apiFetch
+				.mockResolvedValueOnce(
+					getResolvedProductCart( [ 'payment_request' ] )
+				)
+				.mockReturnValueOnce( pendingB.promise )
+				.mockResolvedValueOnce( cCart );
+
+			require( '../woopayments-express-checkout' );
+			await flushMicrotasks();
+			setIapiColor( 'red' );
+			await flushMicrotasks();
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+			setIapiColor( 'green' );
+			await flushMicrotasks();
+			if ( settleBeforeDebounce ) {
+				pendingB.resolve( getResolvedProductCart( [ 'payment_request' ] ) );
+				await flushMicrotasks();
+				jest.advanceTimersByTime( 250 );
+			} else {
+				jest.advanceTimersByTime( 250 );
+				await flushMicrotasks();
+				pendingB.resolve( getResolvedProductCart( [ 'payment_request' ] ) );
+			}
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 3 );
+			expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					data: expect.objectContaining( {
+						variation: [
+							{ attribute: 'attribute_pa_color', value: 'green' },
+						],
+					} ),
+				} )
+			);
+			expect( elements.update ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 6000 } )
+			);
+			expect( elements.update ).not.toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 4200 } )
+			);
+		}
+	);
+
+	test( 'does not preview accepted A when the form bounces through C back to A', async () => {
+		jest.useFakeTimers();
+		setProductPage( { iapi: true } );
+		window.wcpayAsyncCurrency = { ready: Promise.resolve( 'EUR' ) };
+		window.wp.apiFetch.mockResolvedValue(
+			getResolvedProductCart( [ 'payment_request' ] )
+		);
+
+		require( '../woopayments-express-checkout' );
+		await flushMicrotasks();
+		setIapiColor( 'green' );
+		setIapiColor( 'blue' );
+		await flushMicrotasks();
+		jest.advanceTimersByTime( 250 );
+		await flushMicrotasks();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( elements.update ).not.toHaveBeenCalled();
+	} );
+
+	test.each( [
+		[ 'after current preview mounts', false ],
+		[ 'before current preview mounts', true ],
+	] )(
+		'installs observation from repeated initialization when stale startup settles %s',
+		async ( scenario, settleStartupFirst ) => {
+			const startupPreview = createDeferred();
+			const currentPreview = createDeferred();
+			const bCart = getResolvedProductCart( [ 'payment_request' ] );
+			void scenario;
+			jest.useFakeTimers();
+			setProductPage( { iapi: true } );
+			bCart.totals.total_price = '5000';
+			window.wcpayAsyncCurrency = { ready: Promise.resolve( 'EUR' ) };
+			window.wp.apiFetch
+				.mockReturnValueOnce( startupPreview.promise )
+				.mockReturnValueOnce( currentPreview.promise )
+				.mockResolvedValueOnce( bCart );
+
+			require( '../woopayments-express-checkout' );
+			await flushMicrotasks();
+			bodyEventHandlers.updated_cart_totals();
+			await flushMicrotasks();
+
+			if ( settleStartupFirst ) {
+				startupPreview.resolve(
+					getResolvedProductCart( [ 'payment_request' ] )
+				);
+				await flushMicrotasks();
+				setIapiColor( 'red' );
+				await flushMicrotasks();
+				currentPreview.resolve(
+					getResolvedProductCart( [ 'payment_request' ] )
+				);
+			} else {
+				currentPreview.resolve(
+					getResolvedProductCart( [ 'payment_request' ] )
+				);
+				await flushMicrotasks();
+				setIapiColor( 'red' );
+				await flushMicrotasks();
+				startupPreview.resolve(
+					getResolvedProductCart( [ 'payment_request' ] )
+				);
+			}
+			await flushMicrotasks();
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 3 );
+			expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					data: expect.objectContaining( {
+						variation: [
+							{ attribute: 'attribute_pa_color', value: 'red' },
+						],
+					} ),
+				} )
+			);
+			expect( stripe.elements ).toHaveBeenCalledTimes( 1 );
+			if ( settleStartupFirst ) {
+				expect( stripe.elements ).toHaveBeenCalledWith(
+					expect.objectContaining( { amount: 5000 } )
+				);
+			} else {
+				expect( elements.update ).toHaveBeenCalledWith(
+					expect.objectContaining( { amount: 5000 } )
+				);
+			}
+		}
+	);
 
 	test( 'adds the selected product to a separate tokenized cart before resolving product page click', async () => {
 		const resolveClick = jest.fn();
