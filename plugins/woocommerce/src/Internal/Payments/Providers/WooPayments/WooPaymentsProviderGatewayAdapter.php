@@ -151,12 +151,14 @@ class WooPaymentsProviderGatewayAdapter {
 	public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
 		if ( $this->api_client->is_available() ) {
 			try {
-				return 0.0 < (float) $context->get_order()->get_total()
+				$outcome = 0.0 < (float) $context->get_order()->get_total()
 					? $this->charge_via_native_transport( $context, $idempotency_key )
 					: $this->setup_intent_via_native_transport( $context, $idempotency_key );
 			} catch ( WooPaymentsApiException $exception ) {
-				return $this->failed_charge_outcome( $context->get_order(), $exception );
+				$outcome = $this->failed_charge_outcome( $context->get_order(), $exception );
 			}
+
+			return $this->normalize_unusable_scheduled_renewal_failure( $context, $outcome );
 		}
 
 		$gateway = $this->legacy_runtime->get_gateway();
@@ -528,6 +530,67 @@ class WooPaymentsProviderGatewayAdapter {
 			'',
 			$data
 		);
+	}
+
+	/**
+	 * Replace raw diagnostics for a permanently unusable scheduled renewal payment method.
+	 *
+	 * @param PaymentContext $context Charge context.
+	 * @param PaymentOutcome $outcome Charge outcome.
+	 * @return PaymentOutcome
+	 */
+	private function normalize_unusable_scheduled_renewal_failure( PaymentContext $context, PaymentOutcome $outcome ): PaymentOutcome {
+		$provider_data = $context->get_provider_data();
+		$data          = $outcome->get_data();
+		$error_code    = isset( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) && is_scalar( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) ? (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] : '';
+		$error_message = isset( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] ) && is_scalar( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] ) ? (string) $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] : '';
+
+		if (
+			true !== ( $provider_data['scheduled_subscription_payment'] ?? false ) ||
+			PaymentOutcome::STATUS_FAILED !== $outcome->get_status() ||
+			! $this->is_unusable_saved_payment_method_failure( $error_code, $error_message )
+		) {
+			return $outcome;
+		}
+
+		$display_name                                  = isset( $provider_data['saved_payment_method_display_name'] ) && is_scalar( $provider_data['saved_payment_method_display_name'] ) ? (string) $provider_data['saved_payment_method_display_name'] : '';
+		$note_candidates                               = $this->note_service->format_unusable_saved_payment_method_note_candidates( $context->get_order(), $display_name );
+		$data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
+		$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
+		$data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED;
+
+		$normalized  = new PaymentOutcome(
+			$outcome->get_status(),
+			$outcome->get_provider_payment_id(),
+			$outcome->get_redirect_url(),
+			$outcome->get_payment_method_id(),
+			$outcome->get_customer_id(),
+			$data
+		);
+		$effect_plan = $outcome->get_effect_plan();
+
+		return null === $effect_plan ? $normalized : $normalized->with_effect_plan( $effect_plan );
+	}
+
+	/**
+	 * Tell whether an error identifies a permanently unusable saved payment method.
+	 *
+	 * @param string $error_code    Provider error code.
+	 * @param string $error_message Provider error message.
+	 * @return bool
+	 */
+	private function is_unusable_saved_payment_method_failure( string $error_code, string $error_message ): bool {
+		if ( 'payment_method_no_longer_available' === $error_code ) {
+			return true;
+		}
+
+		foreach ( array( 'must save this PaymentMethod to a customer', 'No such PaymentMethod', 'detached from a Customer', 'may not be used again' ) as $phrase ) {
+			if ( false !== stripos( $error_message, $phrase ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

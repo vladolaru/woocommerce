@@ -338,6 +338,22 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build exact Core- and plugin-catalog renderings for an unusable saved renewal payment method.
+	 *
+	 * @param WC_Order $order              Order object.
+	 * @param string   $token_display_name Saved payment method display name.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.2.0
+	 */
+	public function format_unusable_saved_payment_method_note_candidates( WC_Order $order, string $token_display_name ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_unusable_saved_payment_method_note_for_domain( $token_display_name, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
 	 * Build exact Core- and plugin-catalog renderings of a payment-failure note.
 	 *
 	 * @param WC_Order            $order              Order object.
@@ -825,6 +841,45 @@ class WooPaymentsOrderNoteService {
 		);
 
 		return $note . ' ' . $this->format_payment_failure_message_for_domain( $last_payment_error, $text_domain );
+	}
+
+	/**
+	 * Build an unusable saved renewal payment method note from one known catalog.
+	 *
+	 * @param string $token_display_name Saved payment method display name.
+	 * @param string $text_domain        Translation catalog to render.
+	 * @param string $formatted_amount   Formatted order amount.
+	 * @return string
+	 */
+	private function format_unusable_saved_payment_method_note_for_domain( string $token_display_name, string $text_domain, string $formatted_amount ): string {
+		if ( '' === $token_display_name ) {
+			if ( 'woocommerce-payments' === $text_domain ) {
+				/* translators: %1$s: failed payment amount. */
+				$note_format = __( 'A payment of %1$s <strong>failed</strong>: the saved payment method can no longer be used. A new payment method is required.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			} else {
+				/* translators: %1$s: failed payment amount. */
+				$note_format = __( 'A payment of %1$s <strong>failed</strong>: the saved payment method can no longer be used. A new payment method is required.', 'woocommerce' );
+			}
+
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html( $note_format, array( 'strong' => '<strong>' ) ),
+				$formatted_amount
+			);
+		}
+
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: failed payment amount, %2$s: saved payment method display name. */
+			$note_format = __( 'A payment of %1$s <strong>failed</strong>: the saved payment method <strong>%2$s</strong> can no longer be used. A new payment method is required.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: failed payment amount, %2$s: saved payment method display name. */
+			$note_format = __( 'A payment of %1$s <strong>failed</strong>: the saved payment method <strong>%2$s</strong> can no longer be used. A new payment method is required.', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html( $note_format, array( 'strong' => '<strong>' ) ),
+			$formatted_amount,
+			esc_html( $token_display_name )
+		);
 	}
 
 	/**

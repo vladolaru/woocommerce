@@ -648,7 +648,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return;
 		}
 
-		$provider_data = array( 'scheduled_subscription_payment' => true );
+		$provider_data = array(
+			'scheduled_subscription_payment'    => true,
+			'saved_payment_method_display_name' => $token->get_display_name(),
+		);
 		$mandate       = $this->get_renewal_order_mandate( $renewal_order );
 		if ( '' !== $mandate ) {
 			$provider_data['renewal_mandate'] = $mandate;

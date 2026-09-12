@@ -93,6 +93,46 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Unusable saved payment method notes use actionable escaped renewal copy.
+	 */
+	public function test_formats_unusable_saved_payment_method_note_candidates(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'EUR' );
+		$order->set_total( '12.50' );
+		$order->save();
+		$sut = new WooPaymentsOrderNoteService();
+		$this->install_test_translations(
+			array(
+				'woocommerce-payments' => array(
+					'A payment of %1$s <strong>failed</strong>: the saved payment method <strong>%2$s</strong> can no longer be used. A new payment method is required.' => 'Plugin payment %1$s <strong>failed</strong>: saved method <strong>%2$s</strong> needs replacing.',
+					'A payment of %1$s <strong>failed</strong>: the saved payment method can no longer be used. A new payment method is required.' => 'Plugin payment %1$s <strong>failed</strong>: saved method needs replacing.',
+				),
+			)
+		);
+
+		$named_candidates   = $sut->format_unusable_saved_payment_method_note_candidates( $order, 'Visa <ending 4242>' );
+		$unnamed_candidates = $sut->format_unusable_saved_payment_method_note_candidates( $order, '' );
+
+		$this->assertSame(
+			'A payment of ' . wc_price( 12.50, array( 'currency' => 'EUR' ) ) . ' EUR <strong>failed</strong>: the saved payment method <strong>Visa &lt;ending 4242&gt;</strong> can no longer be used. A new payment method is required.',
+			$named_candidates[0]
+		);
+		$this->assertSame(
+			'A payment of ' . wc_price( 12.50, array( 'currency' => 'EUR' ) ) . ' EUR <strong>failed</strong>: the saved payment method can no longer be used. A new payment method is required.',
+			$unnamed_candidates[0]
+		);
+		$this->assertSame(
+			'Plugin payment ' . wc_price( 12.50, array( 'currency' => 'EUR' ) ) . ' <strong>failed</strong>: saved method <strong>Visa &lt;ending 4242&gt;</strong> needs replacing.',
+			$named_candidates[1]
+		);
+		$this->assertSame(
+			'Plugin payment ' . wc_price( 12.50, array( 'currency' => 'EUR' ) ) . ' <strong>failed</strong>: saved method needs replacing.',
+			$unnamed_candidates[1]
+		);
+	}
+
+	/**
 	 * @testdox Payment success notes identify test payments without changing live-note copy.
 	 */
 	public function test_formats_test_mode_payment_success_note_with_reference_copy(): void {

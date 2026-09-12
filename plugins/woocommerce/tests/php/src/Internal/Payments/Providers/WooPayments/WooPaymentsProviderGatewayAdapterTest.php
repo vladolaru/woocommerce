@@ -5,11 +5,13 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsErrorMessages;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
@@ -2486,6 +2488,177 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$metadata_payment_types
 		);
 		$this->assertArrayNotHasKey( 'setup_future_usage', $api_client->last_request_data );
+	}
+
+	/**
+	 * @testdox Scheduled renewal failures normalize unusable saved payment methods without changing other outcome data.
+	 *
+	 * @dataProvider unusable_saved_method_transport_failure_data
+	 *
+	 * @param string $error_code Provider error code.
+	 * @param string $message Provider error message.
+	 */
+	public function test_scheduled_renewal_failure_normalizes_unusable_saved_payment_method( string $error_code, string $message ): void {
+		$user_id          = $this->factory()->user->create();
+		$order            = $this->create_woopayments_order();
+		$token            = $this->create_card_token( $user_id, 'pm_unusable_method' );
+		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$expected_result  = array(
+			'id'                 => 'pi_unusable_method',
+			'status'             => 'requires_payment_method',
+			'customer'           => 'cus_renewal',
+			'payment_method'     => 'pm_unusable_method',
+			'last_payment_error' => array(
+				'code'    => $error_code,
+				'message' => $message,
+			),
+		);
+		$api_client       = new class( $expected_result ) extends WooPaymentsApiClient {
+			/**
+			 * Provider result.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $result;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $result Provider result.
+			 */
+			public function __construct( array $result ) {
+				$this->result = $result;
+			}
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $request_data, $idempotency_key );
+
+				return $this->result;
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_renewal' );
+		$order->set_customer_id( $user_id );
+		$order->add_payment_token( $token );
+		$order->save();
+
+		$outcome                  = $this->create_adapter( $gateway, $api_client, $customer_service )->charge(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'',
+				array( 'payment_token' => (string) $token->get_id() ),
+				array(
+					'scheduled_subscription_payment'    => true,
+					'saved_payment_method_display_name' => $token->get_display_name(),
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT => true,
+				)
+			),
+			'key_unusable_method'
+		);
+		$data                     = $outcome->get_data();
+		$expected_note_candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_unusable_saved_payment_method_note_candidates( $order, $token->get_display_name() );
+		$expected_shopper_message = WooPaymentsErrorMessages::get_shopper_message( '', $error_code, '', $message );
+		$effect_plan              = $outcome->get_effect_plan();
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'pi_unusable_method', $outcome->get_provider_payment_id() );
+		$this->assertSame( '', $outcome->get_redirect_url() );
+		$this->assertSame( 'pm_unusable_method', $outcome->get_payment_method_id() );
+		$this->assertSame( 'cus_renewal', $outcome->get_customer_id() );
+		$this->assertCount( 2, $expected_note_candidates );
+		$this->assertSame(
+			array(
+				PaymentOutcome::DATA_ERROR_CODE            => $error_code,
+				PaymentOutcome::DATA_ERROR_MESSAGE         => $message,
+				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => $expected_shopper_message,
+				PaymentOutcome::DATA_NOTE                  => $expected_note_candidates[0],
+				PaymentOutcome::DATA_NOTE_EQUIVALENTS      => $expected_note_candidates,
+				PaymentOutcome::DATA_NOTE_TYPE             => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
+			),
+			$data
+		);
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $effect_plan );
+		if ( ! $effect_plan instanceof WooPaymentsOrderEffectPlan ) {
+			return;
+		}
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, $effect_plan->get_type() );
+		$this->assertSame( $expected_result, $effect_plan->get_provider_result() );
+		$this->assertTrue( $effect_plan->is_recurring() );
+		$this->assertFalse( $effect_plan->should_apply_token_effects() );
+	}
+
+	/**
+	 * Provide native returned-failure shapes that must receive the safe renewal note.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public static function unusable_saved_method_transport_failure_data(): array {
+		return array(
+			'exact code'       => array( 'payment_method_no_longer_available', 'Raw provider diagnostic.' ),
+			'must-save phrase' => array( '', 'Before retry, MUST SAVE THIS paymentmethod TO A CUSTOMER.' ),
+			'no-such phrase'   => array( '', 'Upstream: no such paymentmethod: pm_123.' ),
+			'detached phrase'  => array( '', 'This card is DETACHED FROM A customer.' ),
+			'reuse phrase'     => array( '', 'This payment method MAY NOT BE USED AGAIN.' ),
+		);
+	}
+
+	/**
+	 * @testdox Unusable saved method classification accepts only the approved structured code and complete phrases.
+	 *
+	 * @dataProvider unusable_saved_method_failure_data
+	 *
+	 * @param string $error_code Provider error code.
+	 * @param string $message Provider error message.
+	 * @param bool   $expected Whether the failure is an unusable saved method.
+	 */
+	public function test_unusable_saved_method_failure_classification( string $error_code, string $message, bool $expected ): void {
+		$sut    = $this->create_adapter( new RecordingLegacyGateway() );
+		$method = new \ReflectionMethod( WooPaymentsProviderGatewayAdapter::class, 'is_unusable_saved_payment_method_failure' );
+		$method->setAccessible( true );
+
+		$this->assertSame( $expected, $method->invoke( $sut, $error_code, $message ) );
+	}
+
+	/**
+	 * Provide strict unusable saved-method classifier cases.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public static function unusable_saved_method_failure_data(): array {
+		return array(
+			'exact error code'                       => array( 'payment_method_no_longer_available', 'Unrelated provider diagnostic.', true ),
+			'wrong-case error code'                  => array( 'Payment_Method_No_Longer_Available', 'Unrelated provider diagnostic.', false ),
+			'must-save phrase with surrounding text' => array( '', 'Upstream says you MUST SAVE THIS paymentmethod TO A CUSTOMER before reuse.', true ),
+			'no-such-payment-method phrase'          => array( '', 'prefix: no such paymentmethod: pm_123 suffix', true ),
+			'detached phrase'                        => array( '', 'The payment method was DETACHED FROM A customer by the platform.', true ),
+			'may-not-reuse phrase'                   => array( '', 'This saved credential MAY NOT BE USED AGAIN after detachment.', true ),
+			'partial must-save fragment'             => array( '', 'must save this PaymentMethod', false ),
+			'partial no-such fragment'               => array( '', 'No such Payment', false ),
+			'generic resource missing'               => array( 'resource_missing', 'No such resource: res_123', false ),
+			'no such customer'                       => array( 'resource_missing', 'No such customer: cus_123', false ),
+			'card decline'                           => array( 'card_declined', 'Your card was declined.', false ),
+			'authentication required'                => array( 'authentication_required', 'Authentication is required.', false ),
+			'unrelated API failure'                  => array( 'api_error', 'The upstream service is unavailable.', false ),
+		);
 	}
 
 	/**

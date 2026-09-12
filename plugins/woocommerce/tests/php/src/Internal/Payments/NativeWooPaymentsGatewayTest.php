@@ -9,12 +9,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaym
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedTransactionRateLimiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
@@ -89,6 +92,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		}
 		wc_clear_notices();
 		wp_set_current_user( 0 );
+		$this->reset_container_replacements();
+		wc_get_container()->reset_all_resolved();
 		parent::tearDown();
 	}
 
@@ -1159,7 +1164,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$user_id = self::factory()->user->create();
 		$order   = $this->create_order();
 		$order->set_customer_id( $user_id );
-		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_amazon_renewal' ) );
+		$active_token = $this->create_card_token( $user_id, 'pm_amazon_renewal' );
+		$order->add_payment_token( $active_token );
 		$order->save();
 
 		$service = new RecordingPaymentProcessingService();
@@ -1184,7 +1190,163 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
-		$this->assertSame( array( 'scheduled_subscription_payment' => true ), $service->last_checkout_context->get_provider_data() );
+		$this->assertSame(
+			array(
+				'scheduled_subscription_payment'    => true,
+				'saved_payment_method_display_name' => $active_token->get_display_name(),
+			),
+			$service->last_checkout_context->get_provider_data()
+		);
+	}
+
+	/**
+	 * @testdox Unusable saved renewal methods fail through the native lifecycle with an actionable note.
+	 */
+	public function test_scheduled_subscription_payment_fails_unusable_saved_method_with_actionable_note(): void {
+		$user_id = self::factory()->user->create();
+		$order   = $this->create_order();
+		$token   = $this->create_card_token( $user_id, 'pm_unusable_saved_method' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->add_payment_token( $token );
+		$order->update_meta_data( '_payment_method_id', 'pm_unusable_saved_method' );
+		$order->save();
+
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Last native request.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $last_request_data = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @throws WooPaymentsApiException Always, to model the unusable saved method.
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->last_request_data = $request_data;
+
+				throw new WooPaymentsApiException( 'Provider diagnostic for pm_unusable_saved_method.', 'payment_method_no_longer_available', 400, 'invalid_request_error', '', array(), 'pi_unusable_saved_method' );
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_renewal' );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( WooPaymentsCustomerService::class, $customer_service );
+		wc_get_container()->reset_all_resolved();
+
+		$status_changes         = 0;
+		$status_change_callback = static function ( int $order_id, string $from, string $to ) use ( $order, &$status_changes ): void {
+			unset( $from );
+			if ( $order->get_id() === $order_id && 'failed' === $to ) {
+				++$status_changes;
+			}
+		};
+		add_action(
+			'woocommerce_order_status_changed',
+			$status_change_callback,
+			10,
+			3
+		);
+
+		try {
+			$gateway = new NativeWooPaymentsGateway();
+			$gateway->init(
+				wc_get_container()->get( PaymentProcessingService::class ),
+				wc_get_container()->get( WooPaymentsProvider::class )
+			);
+			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+			$order            = wc_get_order( $order->get_id() );
+			$notes            = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+			$actionable_notes = array_filter(
+				$notes,
+				static fn( $note ): bool => false !== strpos( (string) $note->content, 'the saved payment method <strong>' . $token->get_display_name() . '</strong> can no longer be used' )
+			);
+			$raw_notes        = array_filter(
+				$notes,
+				static fn( $note ): bool => false !== strpos( (string) $note->content, 'Provider diagnostic' ) || false !== strpos( (string) $note->content, 'pm_unusable_saved_method' )
+			);
+
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$this->assertSame( 'failed', $order->get_status() );
+			$this->assertSame( 1, $status_changes );
+			$this->assertCount( 1, $actionable_notes );
+			$this->assertCount( 0, $raw_notes );
+			$this->assertArrayNotHasKey( 'saved_payment_method_display_name', $api_client->last_request_data );
+			$this->assertSame( OrderPaymentStore::GATEWAY_ID, $order->get_payment_method() );
+			$this->assertSame( 'pm_unusable_saved_method', $order->get_meta( '_payment_method_id', true ) );
+			$order->update_meta_data( '_intention_status', 'processing' );
+			$order->save_meta_data();
+			$this->assertSame( 'processing', $order->get_meta( '_intention_status', true ) );
+
+			wc_get_container()->get( WooPaymentsEventIngestor::class )->process(
+				array(
+					'id'   => 'evt_unusable_method_replay',
+					'type' => 'payment_intent.payment_failed',
+					'data' => array(
+						'object' => array(
+							'id'                 => 'pi_unusable_saved_method',
+							'status'             => 'requires_payment_method',
+							'currency'           => 'usd',
+							'payment_method'     => 'pm_unusable_saved_method',
+							'metadata'           => array(
+								'order_id'  => (string) $order->get_id(),
+								'order_key' => $order->get_order_key(),
+							),
+							'last_payment_error' => array(
+								'code'           => 'payment_method_no_longer_available',
+								'message'        => 'Raw provider diagnostic for pm_unusable_saved_method.',
+								'payment_method' => array(
+									'id'   => 'pm_unusable_saved_method',
+									'type' => 'card',
+								),
+							),
+						),
+					),
+				)
+			);
+			$order            = wc_get_order( $order->get_id() );
+			$notes            = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+			$actionable_notes = array_filter(
+				$notes,
+				static fn( $note ): bool => false !== strpos( (string) $note->content, 'the saved payment method <strong>' . $token->get_display_name() . '</strong> can no longer be used' )
+			);
+			$raw_notes        = array_filter(
+				$notes,
+				static fn( $note ): bool => false !== strpos( (string) $note->content, 'Raw provider diagnostic' ) || false !== strpos( (string) $note->content, 'pm_unusable_saved_method' )
+			);
+
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$this->assertSame( 'failed', $order->get_status() );
+			$this->assertSame( 1, $status_changes );
+			$this->assertSame( 'pi_unusable_saved_method', $order->get_meta( '_intent_id', true ) );
+			$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+			$this->assertCount( 1, $actionable_notes );
+			$this->assertCount( 0, $raw_notes );
+		} finally {
+			remove_action( 'woocommerce_order_status_changed', $status_change_callback, 10 );
+			delete_transient( 'wcpay_processed_event_' . md5( 'evt_unusable_method_replay' ) );
+			wp_cache_delete( 'wcpay_claimed_event_' . md5( 'evt_unusable_method_replay' ), 'woopayments_events' );
+			$this->reset_container_replacements();
+			wc_get_container()->reset_all_resolved();
+		}
 	}
 
 	/**
@@ -1337,7 +1499,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			),
 			$service->last_checkout_context->get_payment_data()
 		);
-		$this->assertSame( array( 'scheduled_subscription_payment' => true ), $service->last_checkout_context->get_provider_data() );
+		$this->assertSame(
+			array(
+				'scheduled_subscription_payment'    => true,
+				'saved_payment_method_display_name' => $active_token->get_display_name(),
+			),
+			$service->last_checkout_context->get_provider_data()
+		);
 	}
 
 	/**
@@ -1351,7 +1519,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$user_id = self::factory()->user->create();
 			$order   = $this->create_order();
 			$order->set_customer_id( $user_id );
-			$order->add_payment_token( $this->create_card_token( $user_id, 'pm_tokenized_renewal' ) );
+			$active_token = $this->create_card_token( $user_id, 'pm_tokenized_renewal' );
+			$order->add_payment_token( $active_token );
 			$order->save();
 
 			$service = new RecordingPaymentProcessingService();
@@ -1368,7 +1537,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				),
 				$service->last_checkout_context->get_payment_data()
 			);
-			$this->assertSame( array( 'scheduled_subscription_payment' => true ), $service->last_checkout_context->get_provider_data() );
+			$this->assertSame(
+				array(
+					'scheduled_subscription_payment'    => true,
+					'saved_payment_method_display_name' => $active_token->get_display_name(),
+				),
+				$service->last_checkout_context->get_provider_data()
+			);
 		} finally {
 			delete_option( '_wcpay_feature_subscriptions' );
 			delete_option( '_wcpay_feature_stripe_billing' );
@@ -1391,7 +1566,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$subscription->update_meta_data( '_stripe_customer_id', 'cus_subscription_current' );
 		$subscription->save();
 		$renewal->set_customer_id( $user_id );
-		$renewal->add_payment_token( $this->create_card_token( $user_id, 'pm_renewal' ) );
+		$active_token = $this->create_card_token( $user_id, 'pm_renewal' );
+		$renewal->add_payment_token( $active_token );
 		$renewal->save();
 
 		add_filter(
@@ -1415,8 +1591,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'cus_subscription_current', $renewal->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame(
 			array(
-				'scheduled_subscription_payment' => true,
-				'renewal_mandate'                => 'mandate_parent',
+				'scheduled_subscription_payment'    => true,
+				'saved_payment_method_display_name' => $active_token->get_display_name(),
+				'renewal_mandate'                   => 'mandate_parent',
 			),
 			$service->last_checkout_context->get_provider_data()
 		);
