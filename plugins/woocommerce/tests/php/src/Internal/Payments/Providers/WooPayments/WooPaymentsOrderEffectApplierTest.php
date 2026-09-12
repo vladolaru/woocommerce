@@ -103,7 +103,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox PaymentIntent effects carry display metadata without mutating display details before lifecycle application.
+	 * @testdox Completed PaymentIntent effects persist display details before lifecycle application.
 	 */
 	public function test_payment_intent_effects_persist_display_details(): void {
 		$order = $this->create_woopayments_order();
@@ -158,9 +158,9 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'txn_display', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_payment_transaction_id'] );
 		$this->assertSame( $plan, $applied_outcome->get_effect_plan() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( '', $order->get_meta( 'last4', true ) );
-		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
-		$this->assertSame( 'WooPayments', $order->get_payment_method_title() );
+		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
+		$this->assertSame( 'visa', $order->get_meta( '_card_brand', true ) );
+		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
 
 		$applier->apply_payment_method_display_details( $order, $result );
 		$order = wc_get_order( $order->get_id() );
@@ -169,6 +169,92 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
 		$this->assertSame( 'visa', $order->get_meta( '_card_brand', true ) );
 		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+	}
+
+	/**
+	 * @testdox A completed PaymentIntent without display details keeps the generic lifecycle title.
+	 */
+	public function test_completed_payment_intent_without_display_details_keeps_generic_lifecycle_title(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method_title( 'Card' );
+		$order->save();
+
+		$this->create_applier()->apply(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_missing_display' ),
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_missing_display', '', 'pm_missing_display' ),
+			WooPaymentsOrderEffectPlan::for_payment_intent(
+				array(
+					'id'       => 'pi_missing_display',
+					'status'   => 'succeeded',
+					'currency' => 'usd',
+					'charges'  => array( 'data' => array( array( 'id' => 'ch_missing_display' ) ) ),
+				),
+				false
+			)
+		);
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'WooPayments', $reloaded->get_payment_method_title() );
+	}
+
+	/**
+	 * @testdox Failed and customer-action PaymentIntents do not apply completed card display details early.
+	 * @dataProvider incomplete_payment_intent_data
+	 *
+	 * @param string $outcome_status Provider outcome status.
+	 * @param string $intent_status  PaymentIntent status.
+	 */
+	public function test_incomplete_payment_intents_do_not_apply_completed_card_display_details_early( string $outcome_status, string $intent_status ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method_title( 'Card' );
+		$order->save();
+
+		$this->create_applier()->apply(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_incomplete_display' ),
+			new PaymentOutcome( $outcome_status, 'pi_incomplete_display', '', 'pm_incomplete_display' ),
+			WooPaymentsOrderEffectPlan::for_payment_intent(
+				array(
+					'id'       => 'pi_incomplete_display',
+					'status'   => $intent_status,
+					'currency' => 'usd',
+					'charges'  => array(
+						'data' => array(
+							array(
+								'id'                     => 'ch_incomplete_display',
+								'payment_method_details' => array(
+									'type' => 'card',
+									'card' => array(
+										'display_brand' => 'visa',
+										'funding'       => 'credit',
+										'last4'         => '4242',
+									),
+								),
+							),
+						),
+					),
+				),
+				false
+			)
+		);
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'WooPayments', $reloaded->get_payment_method_title() );
+		$this->assertSame( '', $reloaded->get_meta( 'last4', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_card_brand', true ) );
+	}
+
+	/**
+	 * Provide unsuccessful PaymentIntent outcomes that must not use the completed display branch.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function incomplete_payment_intent_data(): array {
+		return array(
+			'failed'          => array( PaymentOutcome::STATUS_FAILED, 'requires_payment_method' ),
+			'requires action' => array( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, 'requires_action' ),
+		);
 	}
 
 	/**

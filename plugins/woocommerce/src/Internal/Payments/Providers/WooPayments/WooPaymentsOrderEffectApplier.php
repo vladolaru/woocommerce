@@ -111,7 +111,12 @@ class WooPaymentsOrderEffectApplier {
 					}
 				}
 
-				$this->apply_generic_payment_method_title( $context->get_order() );
+				$display_effects = $this->compose_payment_method_display_details( $context->get_order(), $plan->get_provider_result() );
+				if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && ! empty( $display_effects ) ) {
+					$this->apply_composed_payment_method_display_details( $context->get_order(), $display_effects );
+				} else {
+					$this->apply_generic_payment_method_title( $context->get_order() );
+				}
 
 				return $this->enrich_outcome_for_lifecycle( $context, $outcome, $plan );
 
@@ -530,7 +535,8 @@ class WooPaymentsOrderEffectApplier {
 			 *
 			 * @param string $suffix Express-checkout payment-method title suffix.
 			 */
-			$suffix = (string) apply_filters( 'wcpay_payment_request_payment_method_title_suffix', 'WooPayments' );
+			$suffix = apply_filters( 'wcpay_payment_request_payment_method_title_suffix', 'WooPayments' );
+			$suffix = is_string( $suffix ) ? $suffix : 'WooPayments';
 
 			return '' === $suffix ? $title : $title . ' (' . $suffix . ')';
 		}

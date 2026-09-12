@@ -145,20 +145,15 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 					return $outcome;
 				}
 			);
-		$effect_applier->expects( $this->once() )
+		$effect_applier->expects( $this->never() )
 			->method( 'apply_payment_method_display_details' )
-			->with( $order, array( 'status' => 'succeeded' ) )
-			->willReturnCallback(
-				static function () use ( &$call_sequence ): void {
-					$call_sequence[] = 'display';
-				}
-			);
+			->with( $order, array( 'status' => 'succeeded' ) );
 		$gateway_adapter->expects( $this->once() )
 			->method( 'finalize_charge_idempotency_key' )
 			->with( $order, $outcome )
 			->willReturnCallback(
 				function () use ( &$call_sequence ): void {
-					$this->assertSame( array( 'apply', 'display' ), $call_sequence, 'Charge key finalization must follow payment-method display projection.' );
+					$this->assertSame( array( 'apply' ), $call_sequence, 'Charge key finalization must remain after the completed PaymentIntent pre-lifecycle effect.' );
 				}
 			);
 

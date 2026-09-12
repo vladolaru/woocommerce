@@ -22,9 +22,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHt
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
+use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
 
 /**
@@ -710,6 +713,255 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'pre:charge', 'lifecycle:WooPayments', 'post:charge' ), $sequence->getArrayCopy() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+	}
+
+	/**
+	 * @testdox A completed PaymentIntent exposes its card title to synchronous lifecycle observers for direct checkout and scheduled renewal.
+	 * @dataProvider completed_payment_intent_context_data
+	 *
+	 * @param bool $scheduled_subscription_payment Whether this is a scheduled subscription renewal.
+	 */
+	public function test_completed_payment_intent_exposes_card_title_to_synchronous_lifecycle_observers( bool $scheduled_subscription_payment ): void {
+		$order                 = $this->create_woopayments_order( '10.00' );
+		$unrelated_order       = $this->create_woopayments_order( '10.00' );
+		$subscription          = $this->create_woopayments_order( '10.00' );
+		$result                = $this->completed_link_payment_intent_result();
+		$sequence              = new \ArrayObject();
+		$provider              = $this->completed_payment_intent_provider( $result, $sequence );
+		$context               = $this->completed_payment_intent_context( $order, $scheduled_subscription_payment );
+		$filter_calls          = 0;
+		$credential_sync_calls = 0;
+		$display_sync_calls    = 0;
+		add_filter(
+			'wcpay_payment_request_payment_method_title_suffix',
+			static function ( string $suffix ) use ( &$filter_calls, $sequence ): string {
+				++$filter_calls;
+				$sequence[] = 'suffix';
+				return $suffix;
+			}
+		);
+		add_filter(
+			'woocommerce_woopayments_related_subscriptions_for_order',
+			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription, &$credential_sync_calls, &$display_sync_calls, $sequence ): array {
+				if ( $order->get_id() !== $filtered_order->get_id() ) {
+					return $subscriptions;
+				}
+
+				if ( 'Link (WooPayments)' === $filtered_order->get_payment_method_title() ) {
+					++$display_sync_calls;
+					$sequence[] = 'display-sync';
+				} else {
+					++$credential_sync_calls;
+					$sequence[] = 'credential-sync';
+				}
+				return array( $subscription );
+			},
+			10,
+			2
+		);
+		$observed = array();
+		$observer = static function ( int $order_id ) use ( $order, &$observed, $sequence ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$reloaded = wc_get_order( $order_id );
+			if ( ! $reloaded instanceof WC_Order ) {
+				return;
+			}
+
+			$observed[] = array(
+				'id'                   => $reloaded->get_id(),
+				'payment_method'       => $reloaded->get_payment_method(),
+				'payment_method_title' => $reloaded->get_payment_method_title(),
+				'last4'                => $reloaded->get_meta( 'last4', true ),
+				'card_brand'           => $reloaded->get_meta( '_card_brand', true ),
+			);
+			$sequence[] = 'lifecycle:' . $reloaded->get_payment_method_title();
+		};
+		add_action( 'woocommerce_payment_complete', $observer );
+
+		try {
+			$this->sut->process_checkout_outcome( $context, $provider );
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $observer );
+			remove_all_filters( 'wcpay_payment_request_payment_method_title_suffix' );
+			remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
+		}
+
+		$order           = wc_get_order( $order->get_id() );
+		$unrelated_order = wc_get_order( $unrelated_order->get_id() );
+
+		$this->assertSame(
+			array(
+				array(
+					'id'                   => $order instanceof WC_Order ? $order->get_id() : 0,
+					'payment_method'       => OrderPaymentStore::GATEWAY_ID,
+					'payment_method_title' => 'Link (WooPayments)',
+					'last4'                => '',
+					'card_brand'           => '',
+				),
+			),
+			$observed
+		);
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'Link (WooPayments)', $order->get_payment_method_title() );
+		$this->assertSame( 1, $filter_calls );
+		$this->assertSame( $scheduled_subscription_payment ? 1 : 0, $credential_sync_calls );
+		$this->assertSame( 1, $display_sync_calls );
+		$this->assertSame(
+			$scheduled_subscription_payment
+				? array( 'transport:scheduled', 'credential-sync', 'suffix', 'display-sync', 'lifecycle:Link (WooPayments)', 'finalization' )
+				: array( 'transport:direct', 'suffix', 'display-sync', 'lifecycle:Link (WooPayments)', 'finalization' ),
+			$sequence->getArrayCopy()
+		);
+		$this->assertSame( '', $order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( 'Link (WooPayments)', $subscription->get_payment_method_title() );
+		$this->assertInstanceOf( WC_Order::class, $unrelated_order );
+		$this->assertSame( 'pending', $unrelated_order->get_status() );
+		$this->assertSame( '', $unrelated_order->get_payment_method_title() );
+	}
+
+	/**
+	 * Provide direct-checkout and scheduled-renewal contexts for the synchronous observer regression.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function completed_payment_intent_context_data(): array {
+		return array(
+			'direct checkout'   => array( false ),
+			'scheduled renewal' => array( true ),
+		);
+	}
+
+	/**
+	 * @testdox A completed card PaymentIntent exposes its Visa title and card metadata to synchronous lifecycle observers for direct checkout and scheduled renewal.
+	 * @dataProvider completed_payment_intent_context_data
+	 *
+	 * @param bool $scheduled_subscription_payment Whether this is a scheduled subscription renewal.
+	 */
+	public function test_completed_card_payment_intent_exposes_card_title_and_metadata_to_synchronous_lifecycle_observers( bool $scheduled_subscription_payment ): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_payment_method( 'cheque' );
+		$order->save();
+		$sequence = new \ArrayObject();
+		$provider = $this->completed_payment_intent_provider( $this->completed_card_payment_intent_result(), $sequence );
+		$context  = $this->completed_payment_intent_context( $order, $scheduled_subscription_payment );
+		$observed = array();
+		$observer = static function ( int $order_id ) use ( $order, &$observed, $sequence ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$reloaded = wc_get_order( $order_id );
+			if ( ! $reloaded instanceof WC_Order ) {
+				return;
+			}
+
+			$observed[] = array(
+				'payment_method'       => $reloaded->get_payment_method(),
+				'payment_method_title' => $reloaded->get_payment_method_title(),
+				'last4'                => $reloaded->get_meta( 'last4', true ),
+				'card_brand'           => $reloaded->get_meta( '_card_brand', true ),
+			);
+			$sequence[] = 'lifecycle:' . $reloaded->get_payment_method_title();
+		};
+		add_action( 'woocommerce_payment_complete', $observer );
+
+		try {
+			$this->sut->process_checkout_outcome( $context, $provider );
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $observer );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertSame(
+			array(
+				array(
+					'payment_method'       => OrderPaymentStore::GATEWAY_ID,
+					'payment_method_title' => 'Visa credit card',
+					'last4'                => '4242',
+					'card_brand'           => 'visa',
+				),
+			),
+			$observed
+		);
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $order->get_payment_method() );
+		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
+		$this->assertSame( 'visa', $order->get_meta( '_card_brand', true ) );
+		$this->assertSame(
+			$scheduled_subscription_payment
+				? array( 'transport:scheduled', 'lifecycle:Visa credit card', 'finalization' )
+				: array( 'transport:direct', 'lifecycle:Visa credit card', 'finalization' ),
+			$sequence->getArrayCopy()
+		);
+		$this->assertSame( '', $order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+	}
+
+	/**
+	 * @testdox Completed express PaymentIntents ignore malformed title suffix filter returns through the payment lifecycle.
+	 * @dataProvider malformed_payment_request_suffix_data
+	 *
+	 * @param mixed $suffix Filter return value.
+	 */
+	public function test_completed_express_payment_intents_ignore_malformed_title_suffix_filter_returns_through_payment_lifecycle( $suffix ): void {
+		$order           = $this->create_woopayments_order( '10.00' );
+		$sequence        = new \ArrayObject();
+		$provider        = $this->completed_payment_intent_provider( $this->completed_link_payment_intent_result(), $sequence );
+		$filter_calls    = 0;
+		$lifecycle_calls = 0;
+		add_filter(
+			'wcpay_payment_request_payment_method_title_suffix',
+			static function () use ( $suffix, &$filter_calls, $sequence ) {
+				++$filter_calls;
+				$sequence[] = 'suffix';
+				return $suffix;
+			}
+		);
+		$observer = static function ( int $order_id ) use ( $order, &$lifecycle_calls, $sequence ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			++$lifecycle_calls;
+			$reloaded   = wc_get_order( $order_id );
+			$sequence[] = 'lifecycle:' . ( $reloaded instanceof WC_Order ? $reloaded->get_payment_method_title() : '' );
+		};
+		add_action( 'woocommerce_payment_complete', $observer );
+
+		try {
+			$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_malformed_suffix' ), $provider );
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $observer );
+			remove_all_filters( 'wcpay_payment_request_payment_method_title_suffix' );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 1, $filter_calls );
+		$this->assertSame( 1, $lifecycle_calls );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( 'Link (WooPayments)', $order->get_payment_method_title() );
+		$this->assertSame( array( 'transport:direct', 'suffix', 'lifecycle:Link (WooPayments)', 'finalization' ), $sequence->getArrayCopy() );
+		$this->assertSame( '', $order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+	}
+
+	/**
+	 * Provide malformed public suffix filter returns.
+	 *
+	 * @return array<string,array{mixed}>
+	 */
+	public function malformed_payment_request_suffix_data(): array {
+		return array(
+			'array'                 => array( array( 'unexpected' ) ),
+			'non-stringable object' => array( new \stdClass() ),
+		);
 	}
 
 	/**
@@ -2099,6 +2351,187 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'order_meta'  => array( '_wcpay_refund_status' => 'successful' ),
 				'refund_meta' => array( '_wcpay_refund_id' => $provider_refund_id ),
 			)
+		);
+	}
+
+	/**
+	 * Build a checkout context for a completed PaymentIntent lifecycle test.
+	 *
+	 * Scheduled contexts use the same saved-token marker and order-attached token routing as native renewals.
+	 *
+	 * @param WC_Order $order                        Payment order.
+	 * @param bool     $scheduled_subscription_payment Whether this is a scheduled subscription renewal.
+	 * @return PaymentContext
+	 */
+	private function completed_payment_intent_context( WC_Order $order, bool $scheduled_subscription_payment ): PaymentContext {
+		if ( ! $scheduled_subscription_payment ) {
+			return PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_lifecycle_title' );
+		}
+
+		$user_id = self::factory()->user->create();
+		$token   = new WC_Payment_Token_CC();
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_user_id( $user_id );
+		$token->set_token( 'pm_scheduled_renewal' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->save();
+		$order->set_customer_id( $user_id );
+		$order->add_payment_token( $token );
+		$order->save();
+
+		return PaymentContext::for_checkout(
+			$order,
+			OrderPaymentStore::GATEWAY_ID,
+			'pm_lifecycle_title',
+			array(
+				'payment_token'       => (string) $token->get_id(),
+				'save_payment_method' => false,
+			),
+			array(
+				'scheduled_subscription_payment'    => true,
+				'saved_payment_method_display_name' => $token->get_display_name(),
+			)
+		);
+	}
+
+	/**
+	 * Build a real WooPayments provider with only the remote charge transport isolated.
+	 *
+	 * @param array<string,mixed> $result   Expanded completed PaymentIntent response.
+	 * @param \ArrayObject        $sequence Lifecycle sequence recorder.
+	 * @return WooPaymentsProvider
+	 */
+	private function completed_payment_intent_provider( array $result, \ArrayObject $sequence ): WooPaymentsProvider {
+		$adapter  = new class( $result, $sequence ) extends WooPaymentsProviderGatewayAdapter {
+			/**
+			 * Expanded PaymentIntent transport result.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $result;
+
+			/**
+			 * Lifecycle sequence recorder.
+			 *
+			 * @var \ArrayObject<int,string>
+			 */
+			private \ArrayObject $sequence;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $result   Expanded completed PaymentIntent response.
+			 * @param \ArrayObject        $sequence Lifecycle sequence recorder.
+			 */
+			public function __construct( array $result, \ArrayObject $sequence ) {
+				$this->result   = $result;
+				$this->sequence = $sequence;
+			}
+
+			/**
+			 * Return a completed PaymentIntent without making a remote transport request.
+			 *
+			 * @param PaymentContext $context         Payment context.
+			 * @param string         $idempotency_key Charge idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				$is_recurring = true === ( $context->get_provider_data()['scheduled_subscription_payment'] ?? false );
+				if ( $is_recurring && ! \WC_Payment_Tokens::get( (int) ( $context->get_payment_data()['payment_token'] ?? 0 ) ) instanceof WC_Payment_Token_CC ) {
+					throw new RuntimeException( 'Scheduled renewal fixture requires its persisted saved card.' );
+				}
+
+				$context->get_order()->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $idempotency_key );
+				$context->get_order()->save_meta_data();
+				$this->sequence[] = $is_recurring ? 'transport:scheduled' : 'transport:direct';
+
+				return ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_lifecycle_title', '', 'pm_lifecycle_title' ) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $this->result, $is_recurring ) );
+			}
+
+			/**
+			 * Finalize the stored charge idempotency key after the payment lifecycle.
+			 *
+			 * @param WC_Order       $order   Payment order.
+			 * @param PaymentOutcome $outcome Completed charge outcome.
+			 */
+			public function finalize_charge_idempotency_key( WC_Order $order, PaymentOutcome $outcome ): void {
+				parent::finalize_charge_idempotency_key( $order, $outcome );
+				$this->sequence[] = 'finalization';
+			}
+		};
+		$provider = new WooPaymentsProvider();
+		$provider->init(
+			$adapter,
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient::class ),
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService::class ),
+			null,
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+		);
+
+		return $provider;
+	}
+
+	/**
+	 * Build the expanded completed card PaymentIntent returned by the provider for card-title lifecycle tests.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function completed_card_payment_intent_result(): array {
+		return array(
+			'id'       => 'pi_lifecycle_title',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_lifecycle_title',
+						'currency'               => 'usd',
+						'amount'                 => 1000,
+						'application_fee_amount' => 35,
+						'balance_transaction'    => array( 'id' => 'txn_lifecycle_title' ),
+						'payment_method_details' => array(
+							'type' => 'card',
+							'card' => array(
+								'brand'         => 'visa',
+								'display_brand' => 'visa',
+								'last4'         => '4242',
+								'funding'       => 'credit',
+							),
+						),
+					),
+				),
+			),
+		);
+	}
+
+	/**
+	 * Build the expanded completed Link PaymentIntent returned by the provider for title-suffix lifecycle tests.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function completed_link_payment_intent_result(): array {
+		return array(
+			'id'       => 'pi_lifecycle_title',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_lifecycle_title',
+						'currency'               => 'usd',
+						'amount'                 => 1000,
+						'application_fee_amount' => 35,
+						'balance_transaction'    => array( 'id' => 'txn_lifecycle_title' ),
+						'payment_method_details' => array(
+							'type' => 'card',
+							'card' => array( 'wallet' => array( 'type' => 'link' ) ),
+						),
+					),
+				),
+			),
 		);
 	}
 
