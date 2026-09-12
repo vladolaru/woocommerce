@@ -12,6 +12,9 @@
 	var elementCurrency = null;
 	var productAddToCartPromise = Promise.resolve();
 	var productAddToCartErrorMessage = '';
+	var iapiPreviewRequestId = 0;
+	var iapiLastSelection = null;
+	var iapiSelectionRefreshTimer = null;
 	var navigate = function ( url ) {
 		window.location.href = url;
 	};
@@ -1181,14 +1184,26 @@
 	}
 
 	function getSelectedProduct() {
-		var form = document.querySelector( 'form.cart' );
+		var form =
+			document.querySelector( 'form.cart' ) ||
+			document.querySelector(
+				'form.wp-block-add-to-cart-with-options'
+			);
 		var quantityField;
 		var variationId;
 		var variation = [];
 		var id;
 		var quantity;
+		var isIapiForm;
 
 		if ( ! form ) {
+			return null;
+		}
+
+		isIapiForm = form.classList.contains(
+			'wp-block-add-to-cart-with-options'
+		);
+		if ( isIapiForm && form.classList.contains( 'is-invalid' ) ) {
 			return null;
 		}
 
@@ -1200,7 +1215,9 @@
 		id = parseInt(
 			getFieldValue(
 				form,
-				'button[name="add-to-cart"], input[name="add-to-cart"]'
+				isIapiForm
+					? 'input[name="add-to-cart"], input[name="product_id"]'
+					: 'button[name="add-to-cart"], input[name="add-to-cart"]'
 			) || 0,
 			10
 		);
@@ -1222,10 +1239,115 @@
 		} );
 
 		return {
-			id: variationId || id,
+			id: isIapiForm ? id : variationId || id,
 			quantity: quantity > 0 ? quantity : 1,
 			variation: variation,
 		};
+	}
+
+	function requestIapiProductPreview( product ) {
+		var apiFetch = getApiFetch();
+		var headers = Object.assign( {}, getStoreApiHeaders( true, true ), {
+			'X-WooPayments-Tokenized-Cart-Session': '',
+			'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
+		} );
+
+		return apiFetch( {
+			method: 'POST',
+			path: addQueryArgs( '/wc/store/v1/cart/add-item', {
+				currency: (
+					( config.checkout && config.checkout.currency_code ) ||
+					''
+				).toUpperCase(),
+			} ),
+			headers: headers,
+			data: product,
+			parse: false,
+		} ).then( function ( response ) {
+			var nextNonce =
+				response &&
+				response.headers &&
+				typeof response.headers.get === 'function'
+					? response.headers.get( 'Nonce' )
+					: null;
+
+			if ( nextNonce ) {
+				config.nonce = config.nonce || {};
+				config.nonce.store_api_nonce = nextNonce;
+			}
+
+			return response && typeof response.json === 'function'
+				? response.json()
+				: response;
+		} );
+	}
+
+	function refreshIapiProductPreview() {
+		var product = filterSelectedProduct( getSelectedProduct() );
+		var requestId;
+
+		if ( ! product ) {
+			iapiPreviewRequestId++;
+			return;
+		}
+
+		requestId = ++iapiPreviewRequestId;
+		requestIapiProductPreview( product )
+			.then( function ( cartData ) {
+				if ( requestId !== iapiPreviewRequestId ) {
+					return;
+				}
+
+				cachedCartData = cartData;
+				return updateElementsForCart( cartData );
+			} )
+			.catch( function () {} );
+	}
+
+	function watchIapiVariationSelection() {
+		var form;
+		var variationSelectors;
+
+		if ( ! isProduct() || typeof window.MutationObserver !== 'function' ) {
+			return;
+		}
+
+		form = document.querySelector(
+			'form.wp-block-add-to-cart-with-options'
+		);
+		if ( ! form ) {
+			return;
+		}
+
+		variationSelectors = form.querySelectorAll(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		);
+		if ( ! variationSelectors.length ) {
+			return;
+		}
+
+		iapiLastSelection = JSON.stringify( getSelectedProduct() );
+
+		variationSelectors.forEach( function ( selector ) {
+			new window.MutationObserver( function () {
+				window.clearTimeout( iapiSelectionRefreshTimer );
+				iapiSelectionRefreshTimer = window.setTimeout( function () {
+					var selection = JSON.stringify( getSelectedProduct() );
+					iapiSelectionRefreshTimer = null;
+
+					if ( selection === iapiLastSelection ) {
+						return;
+					}
+
+					iapiLastSelection = selection;
+					refreshIapiProductPreview();
+				}, 250 );
+			} ).observe( selector, {
+				subtree: true,
+				childList: true,
+				attributes: true,
+			} );
+		} );
 	}
 
 	function getAddressLine( address, index ) {
@@ -1524,8 +1646,18 @@
 	}
 
 	function startProductCartRequest() {
-		var product = filterSelectedProduct( getSelectedProduct() );
+		var selectedProduct = getSelectedProduct();
+		var product;
 
+		if ( iapiSelectionRefreshTimer !== null ) {
+			window.clearTimeout( iapiSelectionRefreshTimer );
+			iapiSelectionRefreshTimer = null;
+		}
+
+		iapiLastSelection = JSON.stringify( selectedProduct );
+		product = filterSelectedProduct( selectedProduct );
+
+		iapiPreviewRequestId++;
 		productAddToCartErrorMessage = '';
 
 		if ( ! product ) {
@@ -1872,6 +2004,7 @@
 			getButtonContext() === 'pay_for_order'
 		) {
 			initExpressCheckout();
+			watchIapiVariationSelection();
 		}
 
 		$( document.body ).on( 'updated_checkout', function () {

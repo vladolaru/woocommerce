@@ -503,6 +503,65 @@ describe( 'WooPayments WooPay checkout', () => {
 		);
 	} );
 
+	test( 'adds a valid IAPI variation with its current named form fields before WooPay init', async () => {
+		document.body.innerHTML =
+			'<form class="wp-block-add-to-cart-with-options">' +
+			'<input type="hidden" name="add-to-cart" value="257" />' +
+			'<input type="hidden" name="product_id" value="257" />' +
+			'<input type="hidden" name="variation_id" value="263" />' +
+			'<input type="hidden" name="attribute_pa_color" value="blue" />' +
+			'<input type="hidden" name="attribute_size" value="large" />' +
+			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
+			'</form>';
+		window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
+		window.wcpay_core_woopay_config.woopayButton.context = 'product';
+
+		require( '../woopayments-woopay' );
+
+		document.querySelector( '#wcpay-woopay-button button' ).click();
+		await flushPromises();
+
+		expect( global.jQuery.post ).toHaveBeenNthCalledWith(
+			1,
+			'/?wc-ajax=wcpay_add_to_cart',
+			expect.objectContaining( {
+				security: 'add-to-cart-nonce',
+				product_id: '257',
+				variation_id: '263',
+				attribute_pa_color: 'blue',
+				attribute_size: 'large',
+			} )
+		);
+	} );
+
+	test( 'does not add an invalid IAPI product form before WooPay init', async () => {
+		document.body.innerHTML =
+			'<form class="wp-block-add-to-cart-with-options is-invalid">' +
+			'<input type="hidden" name="add-to-cart" value="257" />' +
+			'<input type="hidden" name="product_id" value="257" />' +
+			'<input type="hidden" name="variation_id" value="" />' +
+			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
+			'<div id="wcpay-core-payment-errors" hidden></div>' +
+			'</form>';
+		window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
+		window.wcpay_core_woopay_config.confirmationErrorMessage =
+			'Choose product options before using WooPay.';
+		window.wcpay_core_woopay_config.woopayButton.context = 'product';
+
+		require( '../woopayments-woopay' );
+
+		document.querySelector( '#wcpay-woopay-button button' ).click();
+		await flushPromises();
+
+		expect( global.jQuery.post ).not.toHaveBeenCalledWith(
+			'/?wc-ajax=wcpay_add_to_cart',
+			expect.anything()
+		);
+		expect(
+			document.getElementById( 'wcpay-core-payment-errors' ).textContent
+		).toBe( 'Choose product options before using WooPay.' );
+	} );
+
 	test( 'records WooPay save-info offer and checkbox events', () => {
 		require( '../woopayments-woopay' );
 

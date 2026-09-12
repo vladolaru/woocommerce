@@ -205,6 +205,7 @@ describe( 'WooPayments express checkout', () => {
 	} );
 
 	afterEach( () => {
+		jest.useRealTimers();
 		delete global.jQuery;
 		delete global.$;
 		delete window.jQuery;
@@ -716,6 +717,382 @@ describe( 'WooPayments express checkout', () => {
 			expect.objectContaining( {
 				shippingAddressRequired: false,
 			} )
+		);
+	} );
+
+	test( 'adds an IAPI variation with its parent product ID and current form attributes', async () => {
+		const resolveClick = jest.fn();
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			'<input name="attribute_pa_color" value="outside-form" />' +
+			'<form class="wp-block-add-to-cart-with-options">' +
+			'<input type="hidden" name="add-to-cart" value="257" />' +
+			'<input type="hidden" name="product_id" value="257" />' +
+			'<input type="hidden" name="variation_id" value="263" />' +
+			'<input type="hidden" name="attribute_pa_color" value="blue" />' +
+			'<input type="hidden" name="attribute_size" value="large" />' +
+			'<input type="hidden" name="attribute_empty" value="" />' +
+			'</form>' +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Variable Widget', amount: 2500 } ],
+			total: { label: 'Variable Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'variable',
+		};
+		window.wp.apiFetch.mockResolvedValue( {
+			needs_shipping: false,
+			totals: {
+				total_price: '3000',
+				total_refund: '0',
+				currency_code: 'USD',
+			},
+		} );
+
+		require( '../woopayments-express-checkout' );
+		await flushPromises();
+
+		await expressHandlers.click( { resolve: resolveClick } );
+		await flushPromises();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				method: 'POST',
+				path: '/wc/store/v1/cart/add-item?currency=USD',
+				data: {
+					id: 257,
+					quantity: 1,
+					variation: [
+						{ attribute: 'attribute_pa_color', value: 'blue' },
+						{ attribute: 'attribute_size', value: 'large' },
+					],
+				},
+			} )
+		);
+		expect( resolveClick ).toHaveBeenCalled();
+	} );
+
+	test( 'does not resolve an IAPI product click or add an invalid form to the cart', async () => {
+		const resolveClick = jest.fn();
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			'<form class="wp-block-add-to-cart-with-options is-invalid">' +
+			'<input type="hidden" name="add-to-cart" value="257" />' +
+			'<input type="hidden" name="product_id" value="257" />' +
+			'<input type="hidden" name="variation_id" value="" />' +
+			'</form>' +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Variable Widget', amount: 2500 } ],
+			total: { label: 'Variable Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'variable',
+		};
+
+		require( '../woopayments-express-checkout' );
+		await flushPromises();
+
+		await expressHandlers.click( { resolve: resolveClick } );
+
+		expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+		expect( resolveClick ).not.toHaveBeenCalled();
+	} );
+
+	test( 'refreshes the IAPI product preview once after its selected attributes are replaced', async () => {
+		jest.useFakeTimers();
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			'<form class="wp-block-add-to-cart-with-options">' +
+			'<input type="hidden" name="add-to-cart" value="257" />' +
+			'<input type="hidden" name="product_id" value="257" />' +
+			'<input type="hidden" name="variation_id" value="263" />' +
+			'<div class="wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute">' +
+			'<input type="hidden" name="attribute_pa_color" value="blue" />' +
+			'</div>' +
+			'</form>' +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Variable Widget', amount: 2500 } ],
+			total: { label: 'Variable Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'variable',
+		};
+		window.wp.apiFetch.mockResolvedValue( {
+			needs_shipping: false,
+			totals: {
+				total_price: '4000',
+				total_refund: '0',
+				currency_code: 'USD',
+			},
+		} );
+
+		require( '../woopayments-express-checkout' );
+		await Promise.resolve();
+
+		document.querySelector(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		).innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="red" />';
+		await Promise.resolve();
+		jest.advanceTimersByTime( 250 );
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				method: 'POST',
+				path: '/wc/store/v1/cart/add-item?currency=USD',
+				headers: expect.objectContaining( {
+					'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
+				} ),
+				data: {
+					id: 257,
+					quantity: 1,
+					variation: [
+						{ attribute: 'attribute_pa_color', value: 'red' },
+					],
+				},
+			} )
+		);
+		expect( elements.update ).toHaveBeenCalledWith(
+			expect.objectContaining( { amount: 4000 } )
+		);
+	} );
+
+	test( 'does not retain an ephemeral IAPI preview session for a later product click', async () => {
+		const resolveClick = jest.fn();
+		jest.useFakeTimers();
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			'<form class="wp-block-add-to-cart-with-options">' +
+			'<input type="hidden" name="add-to-cart" value="257" />' +
+			'<input type="hidden" name="product_id" value="257" />' +
+			'<input type="hidden" name="variation_id" value="263" />' +
+			'<div class="wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute">' +
+			'<input type="hidden" name="attribute_pa_color" value="blue" />' +
+			'</div>' +
+			'</form>' +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Variable Widget', amount: 2500 } ],
+			total: { label: 'Variable Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'variable',
+		};
+		window.wp.apiFetch
+			.mockResolvedValueOnce(
+				getStoreApiResponse(
+					{
+						needs_shipping: false,
+						totals: {
+							total_price: '4000',
+							total_refund: '0',
+							currency_code: 'USD',
+						},
+					},
+					{
+						'X-WooPayments-Tokenized-Cart-Session':
+							'ephemeral-preview-session',
+					}
+				)
+			)
+			.mockResolvedValueOnce(
+				getStoreApiResponse( {
+					needs_shipping: false,
+					totals: {
+						total_price: '4000',
+						total_refund: '0',
+						currency_code: 'USD',
+					},
+				} )
+			);
+
+		require( '../woopayments-express-checkout' );
+		await Promise.resolve();
+
+		document.querySelector(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		).innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="red" />';
+		await Promise.resolve();
+		jest.advanceTimersByTime( 250 );
+		await Promise.resolve();
+		await Promise.resolve();
+
+		await expressHandlers.click( { resolve: resolveClick } );
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 2 );
+		expect( window.wp.apiFetch.mock.calls[ 1 ][ 0 ].headers ).toMatchObject(
+			{
+				'X-WooPayments-Tokenized-Cart-Session': '',
+			}
+		);
+	} );
+
+	test( 'does not preview an IAPI selection after its express checkout click starts', async () => {
+		const resolveClick = jest.fn();
+		jest.useFakeTimers();
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			'<form class="wp-block-add-to-cart-with-options">' +
+			'<input type="hidden" name="add-to-cart" value="257" />' +
+			'<input type="hidden" name="product_id" value="257" />' +
+			'<input type="hidden" name="variation_id" value="263" />' +
+			'<div class="wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute">' +
+			'<input type="hidden" name="attribute_pa_color" value="blue" />' +
+			'</div>' +
+			'</form>' +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Variable Widget', amount: 2500 } ],
+			total: { label: 'Variable Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'variable',
+		};
+		window.wp.apiFetch.mockResolvedValue(
+			getStoreApiResponse( {
+				needs_shipping: false,
+				totals: {
+					total_price: '4000',
+					total_refund: '0',
+					currency_code: 'USD',
+				},
+			} )
+		);
+
+		require( '../woopayments-express-checkout' );
+		await Promise.resolve();
+
+		document.querySelector(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		).innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="red" />';
+		await Promise.resolve();
+
+		await expressHandlers.click( { resolve: resolveClick } );
+		jest.advanceTimersByTime( 250 );
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( window.wp.apiFetch.mock.calls[ 0 ][ 0 ].headers ).not.toHaveProperty(
+			'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart'
+		);
+		expect( resolveClick ).toHaveBeenCalled();
+	} );
+
+	test( 'ignores a stale IAPI preview response after a newer selection refreshes the amount', async () => {
+		const firstPreview = createDeferred();
+		jest.useFakeTimers();
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			'<form class="wp-block-add-to-cart-with-options">' +
+			'<input type="hidden" name="add-to-cart" value="257" />' +
+			'<input type="hidden" name="product_id" value="257" />' +
+			'<input type="hidden" name="variation_id" value="263" />' +
+			'<div class="wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute">' +
+			'<input type="hidden" name="attribute_pa_color" value="blue" />' +
+			'</div>' +
+			'</form>' +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Variable Widget', amount: 2500 } ],
+			total: { label: 'Variable Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'variable',
+		};
+		window.wp.apiFetch
+			.mockReturnValueOnce( firstPreview.promise )
+			.mockResolvedValueOnce( {
+				needs_shipping: false,
+				totals: {
+					total_price: '5000',
+					total_refund: '0',
+					currency_code: 'USD',
+				},
+			} );
+
+		require( '../woopayments-express-checkout' );
+		await Promise.resolve();
+
+		const selector = document.querySelector(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		);
+		selector.innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="red" />';
+		await Promise.resolve();
+		jest.advanceTimersByTime( 250 );
+		await Promise.resolve();
+
+		selector.innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="green" />';
+		await Promise.resolve();
+		jest.advanceTimersByTime( 250 );
+		await Promise.resolve();
+		await Promise.resolve();
+
+		firstPreview.resolve(
+			getStoreApiResponse( {
+				needs_shipping: false,
+				totals: {
+					total_price: '4000',
+					total_refund: '0',
+					currency_code: 'USD',
+				},
+			} )
+		);
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 2 );
+		expect( elements.update ).toHaveBeenCalledWith(
+			expect.objectContaining( { amount: 5000 } )
+		);
+		expect( elements.update ).not.toHaveBeenCalledWith(
+			expect.objectContaining( { amount: 4000 } )
 		);
 	} );
 

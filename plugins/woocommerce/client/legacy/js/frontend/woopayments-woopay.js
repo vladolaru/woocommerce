@@ -437,6 +437,15 @@
 			return true;
 		}
 
+		if (
+			form.classList.contains( 'wp-block-add-to-cart-with-options' ) &&
+			form.classList.contains( 'is-invalid' )
+		) {
+			setError( config.confirmationErrorMessage || '' );
+			isWooPayRequesting = false;
+			return false;
+		}
+
 		button = form.querySelector( '.single_add_to_cart_button' );
 		if (
 			button &&
