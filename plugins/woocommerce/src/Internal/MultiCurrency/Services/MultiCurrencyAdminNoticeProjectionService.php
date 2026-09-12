@@ -21,8 +21,10 @@ class MultiCurrencyAdminNoticeProjectionService {
 	private const RATE_PROVIDER_UNAVAILABLE_DISMISSED_OPTION = 'wcpay_multi_currency_rate_provider_unavailable_notice_dismissed';
 	private const NOTICE_OPTION_HIDDEN_VALUE                 = 'no';
 	private const RATE_PROVIDER_UNAVAILABLE_HIDDEN_VALUE     = 'yes';
-	private const HIDE_NOTICE_QUERY_ARG                      = 'wcpay-multi-currency-hide-notice';
-	private const NONCE_QUERY_ARG                            = '_wcpay_multi_currency_notice_nonce';
+	private const CANONICAL_HIDE_NOTICE_QUERY_ARG            = 'wc-multi-currency-hide-notice';
+	private const LEGACY_HIDE_NOTICE_QUERY_ARG               = 'wcpay-multi-currency-hide-notice';
+	private const CANONICAL_NONCE_QUERY_ARG                  = 'wc-multi-currency-notice-nonce';
+	private const LEGACY_NONCE_QUERY_ARG                     = '_wcpay_multi_currency_notice_nonce';
 
 	/**
 	 * Project admin notice hook metadata.
@@ -131,8 +133,8 @@ class MultiCurrencyAdminNoticeProjectionService {
 	 * @since 11.0.0
 	 */
 	public static function get_hide_notice_intent( array $query, bool $nonce_valid, bool $can_manage_woocommerce ): array {
-		$notice_key = self::get_clean_query_arg( $query, self::HIDE_NOTICE_QUERY_ARG );
-		$nonce      = self::get_clean_query_arg( $query, self::NONCE_QUERY_ARG );
+		$notice_key = self::get_clean_query_arg( $query, self::CANONICAL_HIDE_NOTICE_QUERY_ARG, self::LEGACY_HIDE_NOTICE_QUERY_ARG );
+		$nonce      = self::get_clean_query_arg( $query, self::CANONICAL_NONCE_QUERY_ARG, self::LEGACY_NONCE_QUERY_ARG );
 		if ( null === $notice_key || null === $nonce ) {
 			return self::get_noop_hide_intent();
 		}
@@ -199,16 +201,32 @@ class MultiCurrencyAdminNoticeProjectionService {
 	/**
 	 * Get a sanitized scalar query argument.
 	 *
-	 * @param array<string,mixed> $query Query arguments.
-	 * @param string              $key   Query argument key.
+	 * @param array<string,mixed> $query        Query arguments.
+	 * @param string              $canonical_key Canonical query argument key.
+	 * @param string              $legacy_key    Legacy query argument key.
 	 * @return string|null
 	 */
-	private static function get_clean_query_arg( array $query, string $key ): ?string {
-		$raw_value = $query[ $key ] ?? null;
+	private static function get_clean_query_arg( array $query, string $canonical_key, string $legacy_key ): ?string {
+		$raw_value = $query[ $canonical_key ] ?? null;
+		if ( is_scalar( $raw_value ) ) {
+			return self::clean_query_arg( $raw_value );
+		}
+
+		$raw_value = $query[ $legacy_key ] ?? null;
 		if ( ! is_scalar( $raw_value ) ) {
 			return null;
 		}
 
+		return self::clean_query_arg( $raw_value );
+	}
+
+	/**
+	 * Sanitize a scalar query argument.
+	 *
+	 * @param scalar $raw_value Query argument value.
+	 * @return string|null
+	 */
+	private static function clean_query_arg( $raw_value ): ?string {
 		$clean_value = wc_clean( wp_unslash( (string) $raw_value ) );
 
 		return is_string( $clean_value ) && '' !== $clean_value ? $clean_value : null;

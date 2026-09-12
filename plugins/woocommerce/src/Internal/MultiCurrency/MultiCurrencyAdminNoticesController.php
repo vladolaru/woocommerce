@@ -23,8 +23,10 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	private const ADMIN_NOTICES_HOOK                         = 'admin_notices';
 	private const WP_LOADED_HOOK                             = 'wp_loaded';
 	private const NOTICE_OPTION                              = 'wcpay_multi_currency_show_store_currency_changed_notice';
-	private const NOTICE_QUERY                               = 'wcpay-multi-currency-hide-notice';
-	private const NONCE_QUERY                                = '_wcpay_multi_currency_notice_nonce';
+	private const CANONICAL_NOTICE_QUERY                     = 'wc-multi-currency-hide-notice';
+	private const LEGACY_NOTICE_QUERY                        = 'wcpay-multi-currency-hide-notice';
+	private const CANONICAL_NONCE_QUERY                      = 'wc-multi-currency-notice-nonce';
+	private const LEGACY_NONCE_QUERY                         = '_wcpay_multi_currency_notice_nonce';
 	private const NONCE_ACTION                               = 'wcpay_multi_currency_hide_notices_nonce';
 	private const ERROR_INVALID_NONCE                        = 'invalid_nonce';
 	private const ERROR_FORBIDDEN                            = 'forbidden';
@@ -151,10 +153,21 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 			return '';
 		}
 
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+		$dismiss_url = remove_query_arg(
+			array(
+				self::CANONICAL_NOTICE_QUERY,
+				self::LEGACY_NOTICE_QUERY,
+				self::CANONICAL_NONCE_QUERY,
+				self::LEGACY_NONCE_QUERY,
+			),
+			$request_uri
+		);
+
 		return wp_nonce_url(
-			add_query_arg( self::NOTICE_QUERY, (string) $notice['key'] ),
+			add_query_arg( self::CANONICAL_NOTICE_QUERY, (string) $notice['key'], $dismiss_url ),
 			self::NONCE_ACTION,
-			self::NONCE_QUERY
+			self::CANONICAL_NONCE_QUERY
 		);
 	}
 
@@ -164,13 +177,44 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_notice_nonce_valid(): bool {
-		if ( ! isset( $_GET[ self::NONCE_QUERY ] ) || ! is_scalar( $_GET[ self::NONCE_QUERY ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			return false;
-		}
-
-		$nonce = wc_clean( wp_unslash( (string) $_GET[ self::NONCE_QUERY ] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$nonce = $this->get_clean_query_arg( self::CANONICAL_NONCE_QUERY, self::LEGACY_NONCE_QUERY );
 
 		return is_string( $nonce ) && (bool) wp_verify_nonce( $nonce, self::NONCE_ACTION );
+	}
+
+	/**
+	 * Get a sanitized canonical query argument or its legacy fallback.
+	 *
+	 * @param string $canonical_key Canonical query argument key.
+	 * @param string $legacy_key    Legacy query argument key.
+	 * @return string|null
+	 */
+	private function get_clean_query_arg( string $canonical_key, string $legacy_key ): ?string {
+		$query_args = wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+		$raw_value = $query_args[ $canonical_key ] ?? null;
+		if ( is_scalar( $raw_value ) ) {
+			return $this->clean_query_arg( $raw_value );
+		}
+
+		$raw_value = $query_args[ $legacy_key ] ?? null;
+		if ( is_scalar( $raw_value ) ) {
+			return $this->clean_query_arg( $raw_value );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Sanitize a scalar query argument.
+	 *
+	 * @param scalar $raw_value Query argument value.
+	 * @return string|null
+	 */
+	private function clean_query_arg( $raw_value ): ?string {
+		$clean_value = wc_clean( (string) $raw_value );
+
+		return is_string( $clean_value ) && '' !== $clean_value ? $clean_value : null;
 	}
 
 	/**

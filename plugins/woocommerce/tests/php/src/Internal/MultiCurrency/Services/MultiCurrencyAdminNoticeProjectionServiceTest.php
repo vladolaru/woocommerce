@@ -175,9 +175,54 @@ class MultiCurrencyAdminNoticeProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should project hide intent for valid currency changed dismissal.
+	 * @testdox Should project hide intent for valid canonical and legacy currency changed dismissals.
+	 *
+	 * @dataProvider valid_currency_changed_dismissal_query_provider
+	 *
+	 * @param array<string,mixed> $query Query arguments.
 	 */
-	public function test_projects_hide_intent_for_valid_currency_changed_dismissal(): void {
+	public function test_projects_hide_intent_for_valid_currency_changed_dismissal( array $query ): void {
+		$this->assertSame(
+			array(
+				'should_hide'  => true,
+				'option_name'  => 'wcpay_multi_currency_show_store_currency_changed_notice',
+				'option_value' => 'no',
+				'error'        => null,
+			),
+			MultiCurrencyAdminNoticeProjectionService::get_hide_notice_intent(
+				$query,
+				true,
+				true
+			)
+		);
+	}
+
+	/**
+	 * Provide valid canonical and legacy currency-changed dismissal queries.
+	 *
+	 * @return array<string,array{query:array<string,string>}>
+	 */
+	public function valid_currency_changed_dismissal_query_provider(): array {
+		return array(
+			'canonical query keys' => array(
+				'query' => array(
+					'wc-multi-currency-hide-notice'  => 'currency_changed',
+					'wc-multi-currency-notice-nonce' => 'nonce',
+				),
+			),
+			'legacy query keys'    => array(
+				'query' => array(
+					'wcpay-multi-currency-hide-notice'   => 'currency_changed',
+					'_wcpay_multi_currency_notice_nonce' => 'nonce',
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should prefer canonical query values over legacy values.
+	 */
+	public function test_projects_hide_intent_with_canonical_query_values_when_legacy_values_conflict(): void {
 		$this->assertSame(
 			array(
 				'should_hide'  => true,
@@ -187,12 +232,59 @@ class MultiCurrencyAdminNoticeProjectionServiceTest extends WC_Unit_Test_Case {
 			),
 			MultiCurrencyAdminNoticeProjectionService::get_hide_notice_intent(
 				array(
-					'_wcpay_multi_currency_notice_nonce' => 'nonce',
-					'wcpay-multi-currency-hide-notice'   => 'currency_changed',
+					'wc-multi-currency-hide-notice'      => 'currency_changed',
+					'wc-multi-currency-notice-nonce'     => 'nonce',
+					'wcpay-multi-currency-hide-notice'   => 'rate_provider_unavailable',
+					'_wcpay_multi_currency_notice_nonce' => 'legacy-nonce',
 				),
 				true,
 				true
 			)
+		);
+	}
+
+	/**
+	 * @testdox Should not fall back to legacy query values when canonical scalar values are invalid.
+	 *
+	 * @dataProvider invalid_canonical_query_value_provider
+	 *
+	 * @param array<string,mixed> $query Query arguments.
+	 */
+	public function test_projects_noop_hide_intent_when_canonical_scalar_query_value_is_invalid( array $query ): void {
+		$this->assertSame(
+			array(
+				'should_hide'  => false,
+				'option_name'  => null,
+				'option_value' => null,
+				'error'        => null,
+			),
+			MultiCurrencyAdminNoticeProjectionService::get_hide_notice_intent( $query, true, true )
+		);
+	}
+
+	/**
+	 * Provide invalid canonical scalar values with valid legacy counterparts.
+	 *
+	 * @return array<string,array{query:array<string,string>}>
+	 */
+	public function invalid_canonical_query_value_provider(): array {
+		return array(
+			'invalid canonical notice' => array(
+				'query' => array(
+					'wc-multi-currency-hide-notice'      => '',
+					'wc-multi-currency-notice-nonce'     => 'nonce',
+					'wcpay-multi-currency-hide-notice'   => 'currency_changed',
+					'_wcpay_multi_currency_notice_nonce' => 'legacy-nonce',
+				),
+			),
+			'invalid canonical nonce'  => array(
+				'query' => array(
+					'wc-multi-currency-hide-notice'      => 'currency_changed',
+					'wc-multi-currency-notice-nonce'     => '',
+					'wcpay-multi-currency-hide-notice'   => 'rate_provider_unavailable',
+					'_wcpay_multi_currency_notice_nonce' => 'legacy-nonce',
+				),
+			),
 		);
 	}
 }
