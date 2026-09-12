@@ -961,7 +961,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				enableHiding: false,
 				enableSorting: false,
 				filterBy: {
-					operators: [ 'before', 'after', 'between', 'on' ],
+					operators: [ 'between', 'before', 'after', 'on' ],
 				},
 				getValue: () => query.date_start || '',
 			},
@@ -1352,7 +1352,7 @@ const FeesReport = ( { now }: { now: Date } ) => {
 				type: 'date',
 				enableSorting: true,
 				filterBy: {
-					operators: [ 'before', 'after', 'between', 'on' ],
+					operators: [ 'between', 'on', 'before', 'after' ],
 				},
 				getValue: ( { item }: { item: ReportsFee } ) => item.date || '',
 				render: ( { item }: { item: ReportsFee } ) => (

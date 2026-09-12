@@ -68,7 +68,11 @@ const mockDataViews = jest.fn(
 			id: string;
 			label: string;
 			header?: string;
-			filterBy?: unknown;
+			filterBy?:
+				| false
+				| {
+						operators: string[];
+				  };
 			render?: ( props: {
 				item: Record< string, unknown >;
 			} ) => ReactNode;
@@ -462,6 +466,19 @@ describe( 'WooPaymentsReportsPage', () => {
 			'18 balance report rows loaded.',
 			'polite'
 		);
+	} );
+
+	it( 'defaults the Balance DataViews Date filter to Between', async () => {
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		expect(
+			mockDataViews.mock.calls
+				.at( -1 )?.[ 0 ]
+				.fields?.find( ( field ) => field.id === 'date' )?.filterBy
+		).toEqual( {
+			operators: [ 'between', 'before', 'after', 'on' ],
+		} );
 	} );
 
 	it( 'downloads the loaded Balance summary with business and account identity CSV columns', async () => {
@@ -925,6 +942,19 @@ describe( 'WooPaymentsReportsPage', () => {
 				user_timezone: expect.stringMatching( /^[+-]\d{2}:\d{2}$/ ),
 			} )
 		);
+	} );
+
+	it( 'defaults the Fees DataViews Date filter to Between', async () => {
+		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		expect(
+			mockDataViews.mock.calls
+				.at( -1 )?.[ 0 ]
+				.fields?.find( ( field ) => field.id === 'date' )?.filterBy
+		).toEqual( {
+			operators: [ 'between', 'on', 'before', 'after' ],
+		} );
 	} );
 
 	it( 'renders Fees error and empty states', async () => {
