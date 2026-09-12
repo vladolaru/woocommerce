@@ -234,6 +234,24 @@
 		return normalizeAppearanceValueForStripe( value );
 	}
 
+	function resolveCurrentColor( color, textColor ) {
+		if (
+			typeof color !== 'string' ||
+			'currentcolor' !== color.trim().toLowerCase()
+		) {
+			return color;
+		}
+
+		if (
+			typeof textColor === 'string' &&
+			'currentcolor' === textColor.trim().toLowerCase()
+		) {
+			return '#000000';
+		}
+
+		return textColor;
+	}
+
 	function getCachedAppearance( location, version ) {
 		var raw;
 		var cached;
@@ -381,6 +399,7 @@
 		normalizeAppearanceForStripe: normalizeAppearanceForStripe,
 		normalizeAppearanceValueForStripe: normalizeAppearanceValueForStripe,
 		parseColor: parseColor,
+		resolveCurrentColor: resolveCurrentColor,
 		setCachedAppearance: setCachedAppearance,
 		toRgbString: toRgbString,
 	};

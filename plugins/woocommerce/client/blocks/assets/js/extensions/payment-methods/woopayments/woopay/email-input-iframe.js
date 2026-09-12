@@ -2,6 +2,7 @@
  * Internal dependencies
  */
 import { recordWooPaymentsUserEvent, getTracksIdentity } from '../tracks';
+import { ensureBlocksWooPayAppearance } from '../upe-styles';
 
 /*
  * WooPay email-input / OTP flow — port of the WooPayments plugin's
@@ -132,11 +133,13 @@ const postWooPayAjax = async ( paymentSettings, endpoint, data ) => {
 	return response.json();
 };
 
-// The plugin's resolveWoopayAppearance(): the Blocks checkout only ever
-// carries the server-computed appearance.
 const getWooPayAppearance = ( paymentSettings ) =>
 	paymentSettings.isWooPayGlobalThemeSupportEnabled
-		? paymentSettings.woopayAppearance || null
+		? ensureBlocksWooPayAppearance(
+				paymentSettings.stylesCacheVersion,
+				document,
+				paymentSettings
+		  )
 		: null;
 
 /**
@@ -154,12 +157,12 @@ export const initWooPay = ( paymentSettings, userEmail, userSession ) => {
 
 	isInitRequesting = true;
 
-	const globalTheme = paymentSettings.isWooPayGlobalThemeSupportEnabled;
-
 	return postWooPayAjax( paymentSettings, 'init_woopay', {
 		_wpnonce: paymentSettings.initWooPayNonce || '',
-		appearance: globalTheme ? paymentSettings.woopayAppearance : null,
-		font_rules: globalTheme ? paymentSettings.woopayFontRules : null,
+		appearance: getWooPayAppearance( paymentSettings ),
+		font_rules: paymentSettings.isWooPayGlobalThemeSupportEnabled
+			? paymentSettings.woopayFontRules
+			: null,
 		email: userEmail,
 		user_session: userSession,
 		order_id: paymentSettings.orderId || '',

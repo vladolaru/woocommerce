@@ -20,7 +20,7 @@ class WooPaymentsFrontendStylesService implements RegisterHooksInterface {
 
 	private const STYLES_CACHE_VERSION_OPTION = 'wcpay_styles_cache_version';
 
-	private const STYLES_CACHE_SCHEMA_VERSION = 'appearance-extractor-v3';
+	private const STYLES_CACHE_SCHEMA_VERSION = 'appearance-extractor-v4';
 
 	/**
 	 * Runtime owner arbiter.

@@ -43,13 +43,13 @@ class WooPaymentsFrontendStylesServiceTest extends WC_Unit_Test_Case {
 		$second = $service->get_styles_cache_version();
 
 		$this->assertSame( $first, $second );
-		$this->assertStringEndsWith( '|appearance-extractor-v3', $first );
+		$this->assertStringEndsWith( '|appearance-extractor-v4', $first );
 
 		$service->invalidate_styles_cache_version();
 		$third = $service->get_styles_cache_version();
 
 		$this->assertNotSame( $first, $third );
-		$this->assertStringEndsWith( '|appearance-extractor-v3', $third );
+		$this->assertStringEndsWith( '|appearance-extractor-v4', $third );
 	}
 
 	/**

@@ -406,15 +406,27 @@ describe( 'WooPay email input (blocks)', () => {
 		iframe.dispatchEvent( new window.Event( 'load' ) );
 		await flushPromises();
 
-		expect( getAjaxCalls( 'get_woopay_session' ) ).toEqual( [
-			{
+		const [ sessionRequest ] = getAjaxCalls( 'get_woopay_session' );
+		expect( sessionRequest ).toEqual(
+			expect.objectContaining( {
 				_ajax_nonce: 'session-nonce',
 				order_id: '',
 				key: '',
 				billing_email: '',
-				appearance: JSON.stringify( { theme: 'stripe' } ),
-			},
-		] );
+			} )
+		);
+		expect( JSON.parse( sessionRequest.appearance ) ).toEqual(
+			expect.objectContaining( {
+				rules: expect.objectContaining( {
+					'.Link': expect.objectContaining( {
+						color: expect.any( String ),
+					} ),
+					'.Footer-link': expect.objectContaining( {
+						color: expect.any( String ),
+					} ),
+				} ),
+			} )
+		);
 		expect( postMessage ).toHaveBeenCalledWith(
 			{
 				action: 'setSessionData',
@@ -448,10 +460,10 @@ describe( 'WooPay email input (blocks)', () => {
 		await flushPromises();
 		await flushPromises();
 
-		expect( getAjaxCalls( 'init_woopay' ) ).toEqual( [
-			{
+		const [ initRequest ] = getAjaxCalls( 'init_woopay' );
+		expect( initRequest ).toEqual(
+			expect.objectContaining( {
 				_wpnonce: 'init-nonce',
-				appearance: JSON.stringify( { theme: 'stripe' } ),
 				font_rules: JSON.stringify( [
 					{ cssSrc: 'https://fonts.wp.com/font.css' },
 				] ),
@@ -460,11 +472,96 @@ describe( 'WooPay email input (blocks)', () => {
 				order_id: '',
 				key: '',
 				billing_email: '',
-			},
-		] );
+			} )
+		);
+		expect( JSON.parse( initRequest.appearance ) ).toEqual(
+			expect.objectContaining( {
+				rules: expect.objectContaining( {
+					'.Link': expect.objectContaining( {
+						color: expect.any( String ),
+					} ),
+					'.Footer-link': expect.objectContaining( {
+						color: expect.any( String ),
+					} ),
+				} ),
+			} )
+		);
 		expect( navigate ).toHaveBeenCalledWith(
 			`${ WOOPAY_HOST }/checkout/?session=1`
 		);
+	} );
+
+	test( 'enriches the first email payload before the card payment method mounts', async () => {
+		document.body.innerHTML =
+			'<form class="wc-block-checkout wc-block-checkout__form">' +
+			'<input type="radio" name="payment-method" checked value="other-gateway" />' +
+			'<div class="wc-block-checkout__contact-fields">' +
+			'<p>Checkout <a href="#checkout">link</a></p>' +
+			'<div class="wc-block-components-text-input">' +
+			'<input type="email" id="email" value="shopper@example.com" />' +
+			'<label for="email">Email</label>' +
+			'</div></div>' +
+			'<div id="payment-method"></div></form>' +
+			'<footer><a href="#footer">Footer link</a></footer>';
+		expect(
+			document.querySelector( '#wcpay-core-blocks-payment-element' )
+		).toBeNull();
+		jest.spyOn( window, 'getComputedStyle' ).mockImplementation(
+			( element ) => {
+				const isCheckoutLink = element.matches(
+					'.wc-block-checkout a'
+				);
+				const isFooterLink = element.matches( 'footer a' );
+				let color = 'rgb(10, 20, 30)';
+
+				if ( isCheckoutLink ) {
+					color = 'rgb(1, 2, 3)';
+				} else if ( isFooterLink ) {
+					color = 'rgb(4, 5, 6)';
+				}
+
+				const style = {
+					color,
+					'font-family': isCheckoutLink
+						? 'Checkout Font'
+						: 'Base Font',
+					'font-size': '16px',
+					'font-weight': '400',
+					'font-style': 'normal',
+					'text-decoration': 'none',
+					'letter-spacing': 'normal',
+					'line-height': 'normal',
+					'box-shadow': 'none',
+				};
+
+				return {
+					backgroundColor: 'rgb(255, 255, 255)',
+					getPropertyValue: ( property ) => style[ property ] || '',
+				};
+			}
+		);
+
+		await initWooPay(
+			{
+				...baseSettings,
+				stylesCacheVersion: 'appearance-extractor-v4',
+				woopayAppearance: null,
+			},
+			'shopper@example.com',
+			'session-token'
+		);
+
+		const [ request ] = getAjaxCalls( 'init_woopay' );
+		const appearance = JSON.parse( request.appearance );
+		expect( appearance.rules[ '.Link' ] ).toEqual(
+			expect.objectContaining( {
+				color: 'rgb(1, 2, 3)',
+				fontFamily: 'Checkout Font',
+			} )
+		);
+		expect( appearance.rules[ '.Footer-link' ] ).toEqual( {
+			color: 'rgb(4, 5, 6)',
+		} );
 	} );
 
 	test( 'redirects straight away on redirect_to_woopay_skip_session_init', async () => {

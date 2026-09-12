@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from '@wordpress/element';
  * Internal dependencies
  */
 import { recordWooPaymentsUserEvent } from '../tracks';
+import { ensureBlocksWooPayAppearance } from '../upe-styles';
 
 const PAYMENT_METHOD_NAME = 'woocommerce_payments';
 const settings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
@@ -451,7 +452,15 @@ const getWooPayMinimumSessionRedirectUrl = ( sessionData ) => {
 const getWooPaySessionData = async () => {
 	const body = new window.URLSearchParams();
 	body.append( '_ajax_nonce', settings.woopaySessionNonce || '' );
-	appendWooPayRequestValue( body, 'appearance', settings.woopayAppearance );
+	appendWooPayRequestValue(
+		body,
+		'appearance',
+		ensureBlocksWooPayAppearance(
+			settings.stylesCacheVersion,
+			document,
+			settings
+		)
+	);
 	appendWooPayRequestValue( body, 'font_rules', settings.woopayFontRules );
 	body.append( 'email', getWooPayEmail() );
 	body.append( 'user_session', settings.woopayUserSession || '' );
@@ -624,7 +633,11 @@ const WooPayExpressContent = () => {
 		appendWooPayRequestValue(
 			body,
 			'appearance',
-			settings.woopayAppearance
+			ensureBlocksWooPayAppearance(
+				settings.stylesCacheVersion,
+				document,
+				settings
+			)
 		);
 		appendWooPayRequestValue(
 			body,

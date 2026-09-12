@@ -11,6 +11,7 @@ const {
 	normalizeAppearanceForStripe,
 	normalizeAppearanceValueForStripe,
 	parseColor,
+	resolveCurrentColor,
 	setCachedAppearance,
 	toRgbString,
 } = appearanceUtils;
@@ -23,6 +24,7 @@ export {
 	maybePersistWooPayAppearance,
 	normalizeAppearanceForStripe,
 	normalizeAppearanceValueForStripe,
+	resolveCurrentColor,
 	setCachedAppearance,
 };
 
@@ -175,6 +177,17 @@ const appearanceSelectors = {
 		containerSelectors: [
 			'.wp-block-woocommerce-checkout-order-summary-block',
 		],
+		linkSelectors: [
+			'.wc-block-checkout a',
+			'.wc-block-components-main a',
+			'main a',
+			'.entry-content a',
+			'.site-content a',
+			'#content a',
+			'#primary a',
+			'a',
+		],
+		footerLinkSelectors: [ '.site-footer a', 'footer a' ],
 	},
 	bnplCartBlock: {
 		appendTarget: '.wc-block-cart .wc-block-components-quantity-selector',
@@ -757,6 +770,50 @@ export const getAppearance = (
 	return appearance;
 };
 
+const getWooPayAppearance = ( appearance, selectors, scope ) => {
+	const textColor = resolveCurrentColor(
+		( appearance.variables && appearance.variables.colorText ) || '#000000',
+		'#000000'
+	);
+	const linkRules = getFieldStyles(
+		selectors.linkSelectors,
+		'.Text',
+		null,
+		scope
+	);
+	const linkColor = resolveCurrentColor(
+		linkRules.color || textColor,
+		textColor
+	);
+	const footerLinkRules = getFieldStyles(
+		selectors.footerLinkSelectors,
+		'.Text',
+		null,
+		scope
+	);
+	const footerLinkColor = resolveCurrentColor(
+		footerLinkRules.color || linkColor,
+		textColor
+	);
+
+	return {
+		...appearance,
+		rules: {
+			...appearance.rules,
+			'.Link': { ...linkRules, color: linkColor },
+			'.Footer-link': { color: footerLinkColor },
+		},
+	};
+};
+
+const maybeUpdateWooPayAppearance = ( appearance, paymentSettings ) => {
+	if ( paymentSettings?.isWooPayGlobalThemeSupportEnabled ) {
+		paymentSettings.woopayAppearance = appearance;
+	}
+
+	maybePersistWooPayAppearance( appearance, paymentSettings );
+};
+
 export const getBlocksCheckoutAppearance = (
 	stylesCacheVersion,
 	scope = document,
@@ -767,7 +824,14 @@ export const getBlocksCheckoutAppearance = (
 		stylesCacheVersion
 	);
 	if ( cachedAppearance ) {
-		maybePersistWooPayAppearance( cachedAppearance, paymentSettings );
+		maybeUpdateWooPayAppearance(
+			getWooPayAppearance(
+				cachedAppearance,
+				getSelectors( 'blocks_checkout', scope ),
+				scope
+			),
+			paymentSettings
+		);
 		return cachedAppearance;
 	}
 
@@ -784,7 +848,40 @@ export const getBlocksCheckoutAppearance = (
 		);
 		window.dispatchEvent( new Event( 'wcpay-appearance-cached' ) );
 	}
-	maybePersistWooPayAppearance( appearance, paymentSettings );
+	maybeUpdateWooPayAppearance(
+		getWooPayAppearance(
+			appearance,
+			getSelectors( 'blocks_checkout', scope ),
+			scope
+		),
+		paymentSettings
+	);
 
 	return appearance;
+};
+
+const hasWooPayLinkRules = ( appearance ) =>
+	Boolean(
+		appearance?.rules?.[ '.Link' ]?.color &&
+			appearance?.rules?.[ '.Footer-link' ]?.color
+	);
+
+export const ensureBlocksWooPayAppearance = (
+	stylesCacheVersion,
+	scope = document,
+	paymentSettings = {}
+) => {
+	if ( ! paymentSettings?.isWooPayGlobalThemeSupportEnabled ) {
+		return paymentSettings?.woopayAppearance || null;
+	}
+
+	if ( ! hasWooPayLinkRules( paymentSettings.woopayAppearance ) ) {
+		getBlocksCheckoutAppearance(
+			stylesCacheVersion,
+			scope,
+			paymentSettings
+		);
+	}
+
+	return paymentSettings.woopayAppearance || null;
 };

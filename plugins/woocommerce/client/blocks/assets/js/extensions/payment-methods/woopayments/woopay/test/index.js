@@ -82,6 +82,12 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		document.body.innerHTML = '';
 		Object.assign( getMockPaymentMethodSettings(), {
 			isWoopayFirstPartyAuthEnabled: false,
+			isWooPayGlobalThemeSupportEnabled: false,
+			stylesCacheVersion: undefined,
+			woopayAppearance: {
+				theme: 'stripe',
+				labels: 'floating',
+			},
 			woopayButton: {
 				...getMockPaymentMethodSettings().woopayButton,
 				context: 'checkout',
@@ -163,6 +169,93 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				family: 'Inter',
 			},
 		] );
+	} );
+
+	it( 'enriches the first express payload while another gateway is selected', async () => {
+		const paymentSettings = getMockPaymentMethodSettings();
+		Object.assign( paymentSettings, {
+			isWooPayGlobalThemeSupportEnabled: true,
+			stylesCacheVersion: 'appearance-extractor-v4',
+			woopayAppearance: null,
+		} );
+		document.body.innerHTML =
+			'<form class="wc-block-checkout wc-block-checkout__form">' +
+			'<input type="radio" name="payment-method" checked value="other-gateway" />' +
+			'<div class="wc-block-checkout__contact-fields">' +
+			'<p>Checkout <a href="#checkout">link</a></p>' +
+			'<div class="wc-block-components-text-input">' +
+			'<input type="email" id="email" value="shopper@example.com" />' +
+			'<label for="email">Email</label>' +
+			'</div></div>' +
+			'<div id="payment-method"></div></form>' +
+			'<footer><a href="#footer">Footer link</a></footer>';
+		expect(
+			document.querySelector( '#wcpay-core-blocks-payment-element' )
+		).toBeNull();
+		jest.spyOn( window, 'getComputedStyle' ).mockImplementation(
+			( element ) => {
+				const isCheckoutLink = element.matches(
+					'.wc-block-checkout a'
+				);
+				const isFooterLink = element.matches( 'footer a' );
+				let color = 'rgb(10, 20, 30)';
+
+				if ( isCheckoutLink ) {
+					color = 'rgb(1, 2, 3)';
+				} else if ( isFooterLink ) {
+					color = 'rgb(4, 5, 6)';
+				}
+
+				const style = {
+					color,
+					'font-family': isCheckoutLink
+						? 'Checkout Font'
+						: 'Base Font',
+					'font-size': '16px',
+					'font-weight': '400',
+					'font-style': 'normal',
+					'text-decoration': 'none',
+					'letter-spacing': 'normal',
+					'line-height': 'normal',
+					'box-shadow': 'none',
+				};
+
+				return {
+					backgroundColor: 'rgb(255, 255, 255)',
+					getPropertyValue: ( property ) => style[ property ] || '',
+				};
+			}
+		);
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				result: 'success',
+				url: 'https://pay.woo.test/session',
+			} ),
+		} );
+
+		registerWooPay();
+		const expressRegistration =
+			registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
+		render( createElement( expressRegistration.content.type ) );
+		fireEvent.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
+
+		await waitFor( () => {
+			const initRequest = window.fetch.mock.calls.find(
+				( [ url ] ) => url === '/?wc-ajax=wcpay_init_woopay'
+			);
+			const appearance = JSON.parse(
+				initRequest[ 1 ].body.get( 'appearance' )
+			);
+			expect( appearance.rules[ '.Link' ] ).toEqual(
+				expect.objectContaining( {
+					color: 'rgb(1, 2, 3)',
+					fontFamily: 'Checkout Font',
+				} )
+			);
+			expect( appearance.rules[ '.Footer-link' ] ).toEqual( {
+				color: 'rgb(4, 5, 6)',
+			} );
+		} );
 	} );
 
 	it( 'records WooPay express load and click events', async () => {

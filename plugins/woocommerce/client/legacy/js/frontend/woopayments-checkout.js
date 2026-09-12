@@ -90,6 +90,17 @@
 		'form.checkout',
 		'body',
 	];
+	var classicLinkSelectors = [
+		'form.checkout a',
+		'.woocommerce a',
+		'main a',
+		'.entry-content a',
+		'.site-content a',
+		'#content a',
+		'#primary a',
+		'a',
+	];
+	var classicFooterLinkSelectors = [ '.site-footer a', 'footer a' ];
 	var checkoutBillingFieldIds = [
 		'billing_first_name',
 		'billing_last_name',
@@ -1301,20 +1312,56 @@
 		return appearanceUtils.normalizeAppearanceForStripe( appearance );
 	}
 
-	function getClassicCheckoutAppearance() {
+	function getClassicWooPayAppearance( appearance ) {
+		var textColor = appearanceUtils.resolveCurrentColor(
+			( appearance.variables && appearance.variables.colorText ) ||
+				'#000000',
+			'#000000'
+		);
+		var linkRules = getElementStyles(
+			queryFirst( classicLinkSelectors ),
+			classicTextStyleProps
+		);
+		var linkColor = appearanceUtils.resolveCurrentColor(
+			linkRules.color || textColor,
+			textColor
+		);
+		var footerLinkRules = getElementStyles(
+			queryFirst( classicFooterLinkSelectors ),
+			[ 'color' ]
+		);
+		var footerLinkColor = appearanceUtils.resolveCurrentColor(
+			footerLinkRules.color || linkColor,
+			textColor
+		);
+
+		return Object.assign( {}, appearance, {
+			rules: Object.assign( {}, appearance.rules, {
+				'.Link': Object.assign( {}, linkRules, { color: linkColor } ),
+				'.Footer-link': { color: footerLinkColor },
+			} ),
+		} );
+	}
+
+	function getClassicCheckoutAppearance( forWooPay ) {
 		var version = config.stylesCacheVersion || '';
 		var cachedAppearance = appearanceUtils.getCachedAppearance(
 			classicCheckoutAppearanceLocation,
 			version
 		);
 		var appearance;
+		var cachedWooPayAppearance;
+		var wooPayAppearance;
 
 		if ( cachedAppearance ) {
+			cachedWooPayAppearance = getClassicWooPayAppearance(
+				cachedAppearance
+			);
 			appearanceUtils.maybePersistWooPayAppearance(
-				cachedAppearance,
+				cachedWooPayAppearance,
 				config
 			);
-			return cachedAppearance;
+			return forWooPay ? cachedWooPayAppearance : cachedAppearance;
 		}
 
 		appearance = getClassicCheckoutAppearanceFromPage();
@@ -1336,9 +1383,10 @@
 				new window.Event( 'wcpay-appearance-cached' )
 			);
 		}
-		appearanceUtils.maybePersistWooPayAppearance( appearance, config );
+		wooPayAppearance = getClassicWooPayAppearance( appearance );
+		appearanceUtils.maybePersistWooPayAppearance( wooPayAppearance, config );
 
-		return appearance;
+		return forWooPay ? wooPayAppearance : appearance;
 	}
 
 	function recordPlaceOrderButtonClick( event ) {
@@ -2665,7 +2713,7 @@
 		}
 
 		return baseConfig.isShortcodeCheckout
-			? getClassicCheckoutAppearance()
+			? getClassicCheckoutAppearance( true )
 			: null;
 	}
 
@@ -2684,7 +2732,7 @@
 
 		if ( baseConfig.isWooPayGlobalThemeSupportEnabled ) {
 			if ( baseConfig.isShortcodeCheckout ) {
-				appearance = getClassicCheckoutAppearance();
+				appearance = getClassicCheckoutAppearance( true );
 				fontRules = appearanceUtils.getFontRulesFromPage();
 			} else {
 				appearance = baseConfig.woopayAppearance || null;

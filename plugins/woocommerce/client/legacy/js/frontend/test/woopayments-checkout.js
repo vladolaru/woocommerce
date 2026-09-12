@@ -1116,6 +1116,67 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	test( 'enriches cached classic WooPay appearance without adding link rules to Stripe Elements', async () => {
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<p class="form-row"><label for="billing_first_name">First name</label><input id="billing_first_name" type="text" /></p>' +
+			'<a class="checkout-link">Checkout link</a>' +
+			'<footer><a>Footer link</a></footer>' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'<button id="place_order" type="button">Place order</button>' +
+			'</form>';
+		window.wcpay_core_checkout_config.isWooPayGlobalThemeSupportEnabled = true;
+		window.wcpay_core_checkout_config.woopaySessionNonce = 'session-nonce';
+		window.wcpay_core_checkout_config.wcAjaxUrl = '/?wc-ajax=%%endpoint%%';
+		window.localStorage.setItem(
+			'wcpay_appearance_classic_checkout',
+			JSON.stringify( {
+				version: 'styles-v1',
+				appearance: {
+					variables: { colorText: 'rgb(29, 35, 39)' },
+					rules: { '.Input': { fontSize: '16px' } },
+				},
+			} )
+		);
+		jest.spyOn( window, 'getComputedStyle' ).mockImplementation(
+			( element ) => ( {
+				getPropertyValue: ( property ) => {
+					if (
+						element.matches &&
+						element.matches( '.checkout-link' )
+					) {
+						return property === 'color' ? 'rgb(1, 2, 3)' : '';
+					}
+					if ( element.matches && element.matches( 'footer a' ) ) {
+						return property === 'color' ? 'currentColor' : '';
+					}
+					return property === 'color' ? 'rgb(29, 35, 39)' : '';
+				},
+			} )
+		);
+
+		require( '../woopayments-checkout' );
+		bodyEventHandlers.payment_method_selected();
+		await flushPromises();
+
+		expect( stripeElementsOptions.appearance.rules ).not.toHaveProperty(
+			'.Link'
+		);
+		const persistenceRequest = window.fetch.mock.calls.find(
+			( [ url ] ) =>
+				url === '/?wc-ajax=wcpay_shopper_set_woopay_appearance'
+		);
+		expect(
+			persistenceRequest[ 1 ].body.get( 'appearance[rules][.Link][color]' )
+		).toBe( 'rgb(1, 2, 3)' );
+		expect(
+			persistenceRequest[ 1 ].body.get(
+				'appearance[rules][.Footer-link][color]'
+			)
+		).toBe( 'rgb(29, 35, 39)' );
+	} );
+
 	test( 'omits computed alpha color values from generated classic Stripe Elements appearance rules', () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +

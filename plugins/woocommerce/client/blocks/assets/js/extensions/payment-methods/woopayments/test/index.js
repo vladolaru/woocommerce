@@ -17,6 +17,7 @@ import {
 	getFieldStyles,
 	normalizeAppearanceForStripe,
 	normalizeAppearanceValueForStripe,
+	resolveCurrentColor,
 } from '../upe-styles';
 
 jest.mock( '@fingerprintjs/fingerprintjs', () => ( {
@@ -1193,6 +1194,18 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 	} );
 
+	it( 'resolves only whole currentColor values for WooPay link rules', () => {
+		expect( resolveCurrentColor( ' CuRrEnTcOlOr ', 'rgb(1, 2, 3)' ) ).toBe(
+			'rgb(1, 2, 3)'
+		);
+		expect( resolveCurrentColor( 'currentColor', ' CURRENTCOLOR ' ) ).toBe(
+			'#000000'
+		);
+		expect( resolveCurrentColor( 'rgb(4, 5, 6)', 'rgb(1, 2, 3)' ) ).toBe(
+			'rgb(4, 5, 6)'
+		);
+	} );
+
 	it( 'omits computed alpha color values from generated Stripe Elements appearance rules', () => {
 		document.body.innerHTML = '<input id="wcpay-test-input" />';
 		const originalGetComputedStyle = window.getComputedStyle;
@@ -1365,17 +1378,14 @@ describe( 'wc-payment-method-woopayments', () => {
 			} )
 		);
 		window.fetch = jest.fn().mockResolvedValue( { ok: true } );
+		const paymentSettings = {
+			isWooPayGlobalThemeSupportEnabled: true,
+			wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
+			woopaySessionNonce: 'session-nonce',
+		};
 
-		getBlocksCheckoutAppearance( 'styles-v1', document, {
-			isWooPayGlobalThemeSupportEnabled: true,
-			wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
-			woopaySessionNonce: 'session-nonce',
-		} );
-		getBlocksCheckoutAppearance( 'styles-v1', document, {
-			isWooPayGlobalThemeSupportEnabled: true,
-			wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
-			woopaySessionNonce: 'session-nonce',
-		} );
+		getBlocksCheckoutAppearance( 'styles-v1', document, paymentSettings );
+		getBlocksCheckoutAppearance( 'styles-v1', document, paymentSettings );
 		await Promise.resolve();
 
 		expect( window.fetch ).toHaveBeenCalledTimes( 1 );
@@ -1390,6 +1400,93 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( body.get( '_ajax_nonce' ) ).toBe( 'session-nonce' );
 		expect( body.get( 'appearance[rules][.Input][fontSize]' ) ).toBe(
 			'16px'
+		);
+		expect( paymentSettings.woopayAppearance.rules ).toHaveProperty( [
+			'.Link',
+		] );
+	} );
+
+	it( 'persists WooPay link rules without adding them to the cached Blocks card appearance', async () => {
+		jest.resetModules();
+		const {
+			getBlocksCheckoutAppearance: getFreshBlocksCheckoutAppearance,
+		} = require( '../upe-styles' );
+		makeBlocksAppearanceFixture( 'absolute' );
+		document.body.insertAdjacentHTML(
+			'beforeend',
+			'<a class="wc-block-checkout-link">Checkout link</a><footer><a>Footer link</a></footer>'
+		);
+		window.getComputedStyle.mockImplementation( ( element ) => ( {
+			getPropertyValue: ( property ) => {
+				if ( element.matches?.( '.wc-block-checkout-link' ) ) {
+					return property === 'color' ? 'rgb(1, 2, 3)' : '';
+				}
+				if ( element.matches?.( 'footer a' ) ) {
+					return property === 'color' ? ' CuRrEnTcOlOr ' : '';
+				}
+				return (
+					{
+						'background-color': 'rgb(255, 255, 255)',
+						color: 'rgb(29, 35, 39)',
+						'font-size': '13px',
+						position: 'absolute',
+						transform: 'none',
+						'line-height': '12px',
+						'padding-top': '10px',
+						'padding-bottom': '10px',
+					}[ property ] || ''
+				);
+			},
+		} ) );
+		window.fetch = jest.fn().mockResolvedValue( { ok: true } );
+
+		const paymentSettings = {
+			isWooPayGlobalThemeSupportEnabled: true,
+			wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
+			woopaySessionNonce: 'session-nonce',
+		};
+		const appearance = getFreshBlocksCheckoutAppearance(
+			'styles-v1',
+			document,
+			paymentSettings
+		);
+		await Promise.resolve();
+
+		expect( appearance.rules ).not.toHaveProperty( [ '.Link' ] );
+		expect( appearance.rules ).not.toHaveProperty( [ '.Footer-link' ] );
+		const body = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( body.get( 'appearance[rules][.Link][color]' ) ).toBe(
+			'rgb(1, 2, 3)'
+		);
+		expect( body.get( 'appearance[rules][.Footer-link][color]' ) ).toBe(
+			'rgb(29, 35, 39)'
+		);
+		expect( paymentSettings.woopayAppearance.rules[ '.Link' ].color ).toBe(
+			'rgb(1, 2, 3)'
+		);
+	} );
+
+	it( 'falls back missing Blocks link rules to the computed text color', async () => {
+		jest.resetModules();
+		const {
+			getBlocksCheckoutAppearance: getFreshBlocksCheckoutAppearance,
+		} = require( '../upe-styles' );
+		makeBlocksAppearanceFixture( 'absolute' );
+		window.fetch = jest.fn().mockResolvedValue( { ok: true } );
+
+		getFreshBlocksCheckoutAppearance( 'styles-v1', document, {
+			isWooPayGlobalThemeSupportEnabled: true,
+			wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
+			woopaySessionNonce: 'session-nonce',
+		} );
+		await Promise.resolve();
+
+		const body = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( body.get( 'appearance[rules][.Link][color]' ) ).toBe(
+			'rgb(29, 35, 39)'
+		);
+		expect( body.get( 'appearance[rules][.Footer-link][color]' ) ).toBe(
+			'rgb(29, 35, 39)'
 		);
 	} );
 
