@@ -4,8 +4,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAddressProvider;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Unit_Test_Case;
 use WP_Error;
@@ -138,6 +141,131 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should retain address JWT state and request a token when account refresh is indeterminate.
+	 */
+	public function test_get_jwt_retains_address_jwt_state_when_account_refresh_is_indeterminate(): void {
+		$account_api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Number of account requests.
+			 *
+			 * @var int
+			 */
+			public int $request_count = 0;
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Fail a transient account request.
+			 *
+			 * @param string $woocommerce_store_id WooCommerce store ID.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException Always throws a transient failure.
+			 */
+			public function get_account( string $woocommerce_store_id = '' ): array {
+				++$this->request_count;
+
+				if ( 1 === $this->request_count ) {
+					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+				}
+
+				return array();
+			}
+		};
+		$account_service    = new class( $account_api_client ) extends WooPaymentsAccountService {
+			/**
+			 * Fake native API client.
+			 *
+			 * @var WooPaymentsApiClient
+			 */
+			private WooPaymentsApiClient $api_client;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param WooPaymentsApiClient $api_client Fake native API client.
+			 */
+			public function __construct( WooPaymentsApiClient $api_client ) {
+				$this->api_client = $api_client;
+			}
+
+			/**
+			 * Get the fake native API client.
+			 *
+			 * @return WooPaymentsApiClient|null
+			 */
+			protected function get_api_client(): ?WooPaymentsApiClient {
+				return $this->api_client;
+			}
+		};
+		$account_service->init( new LegacyProxy() );
+
+		$token_api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Number of token requests.
+			 *
+			 * @var int
+			 */
+			public int $request_count = 0;
+
+			/**
+			 * Get a valid address autocomplete token.
+			 *
+			 * @return array<string,string>
+			 */
+			public function get_address_autocomplete_token(): array {
+				++$this->request_count;
+
+				return array(
+					'token' => JsonWebToken::create(
+						array(
+							'iss' => 'test-issuer',
+							'aud' => 'test-audience',
+							'exp' => time() + HOUR_IN_SECONDS,
+							'iat' => time(),
+						),
+						'test-secret'
+					),
+				);
+			}
+		};
+
+		update_option( 'woocommerce_address_autocomplete_enabled', 'yes' );
+		$preserved_jwt = JsonWebToken::create(
+			array(
+				'iss' => 'test-issuer',
+				'aud' => 'test-audience',
+				'exp' => time() + HOUR_IN_SECONDS,
+				'iat' => time(),
+			),
+			'test-secret'
+		);
+		update_option( 'wcpay_address_autocomplete_jwt', $preserved_jwt );
+
+		$provider = new WooPaymentsAddressProvider();
+		$provider->init( new StaticNativeRuntimeArbiter( true ), $token_api_client, $account_service );
+		$this->providers[] = $provider;
+
+		$result     = $provider->get_jwt();
+		$cached_jwt = get_option( 'woocommerce_payments_address_autocomplete_jwt' );
+
+		$this->assertIsString( $result, 'An indeterminate account refresh should still retrieve a usable address JWT.' );
+		$this->assertTrue( JsonWebToken::shallow_validate( $result ) );
+		$this->assertSame( 1, $account_api_client->request_count, 'The account service should make one transient refresh attempt.' );
+		$this->assertSame( 1, $token_api_client->request_count, 'The address provider should attempt one token request after an indeterminate account refresh.' );
+		$this->assertSame( $preserved_jwt, get_option( 'wcpay_address_autocomplete_jwt' ), 'An indeterminate account refresh must not delete the preserved client JWT.' );
+		$this->assertIsArray( $cached_jwt );
+		$this->assertSame( $result, $cached_jwt['data'], 'A valid replacement JWT should be cached by the Core provider.' );
+		$this->assertFalse( get_option( 'woocommerce_payments_jwt_retry_data' ), 'A successful token request should not leave retry metadata.' );
+	}
+
+	/**
 	 * @testdox Should return an error and clear cached address JWT data when the account is not connected.
 	 */
 	public function test_get_address_service_jwt_returns_error_when_account_is_not_connected(): void {
@@ -208,10 +336,11 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_gateway_enabled', 'has_account', 'is_account_rejected', 'is_account_under_review' ) )
+			->onlyMethods( array( 'is_gateway_enabled', 'has_account', 'has_account_or_is_connection_indeterminate', 'is_account_rejected', 'is_account_under_review' ) )
 			->getMock();
 		$account_service->method( 'is_gateway_enabled' )->willReturn( $gateway_enabled );
 		$account_service->method( 'has_account' )->willReturn( $has_account );
+		$account_service->method( 'has_account_or_is_connection_indeterminate' )->willReturn( $has_account );
 		$account_service->method( 'is_account_rejected' )->willReturn( $account_rejected );
 		$account_service->method( 'is_account_under_review' )->willReturn( $account_under_review );
 

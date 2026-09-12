@@ -138,7 +138,7 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	 * @return string|WP_Error
 	 */
 	public function get_address_service_jwt() {
-		if ( ! $this->account_service->has_account() ) {
+		if ( ! $this->account_service->has_account_or_is_connection_indeterminate() ) {
 			$this->clear_cached_jwt();
 
 			return new WP_Error(

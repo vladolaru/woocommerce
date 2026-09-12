@@ -425,6 +425,198 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should distinguish an indeterminate account refresh from a confirmed disconnected account.
+	 */
+	public function test_distinguishes_indeterminate_account_refresh_from_confirmed_disconnection(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => null,
+				'fetched'            => time(),
+				'errored'            => true,
+				'consecutive_errors' => 1,
+			)
+		);
+
+		$indeterminate_service = $this->create_service();
+
+		$this->assertFalse( $indeterminate_service->has_account(), 'A transient refresh failure without stale data must not appear as a connected account to ordinary consumers.' );
+		$this->assertTrue( $indeterminate_service->has_account_or_is_connection_indeterminate(), 'Address-token cleanup must preserve state while account connection is indeterminate.' );
+
+		delete_option( 'wcpay_account_data' );
+		$empty_response_api_client = $this->create_counting_account_api_client( array() );
+		$disconnected_service      = $this->create_service_with_api_client( $empty_response_api_client );
+
+		$this->assertFalse( $disconnected_service->has_account_or_is_connection_indeterminate(), 'A successful empty account response must remain a confirmed disconnection.' );
+		$this->assertSame( 1, $empty_response_api_client->calls, 'A confirmed disconnected account should be derived from one successful account response.' );
+	}
+
+	/**
+	 * @testdox Should accept only canonical no-stale errored account cache wrappers when refresh is disabled.
+	 *
+	 * @dataProvider indeterminate_account_cache_wrappers
+	 *
+	 * @param array<string,mixed>|false $cache_contents Cache contents, or false when no option exists.
+	 * @param bool                      $expected       Whether the wrapper is a canonical indeterminate state.
+	 */
+	public function test_accepts_only_canonical_no_stale_errored_account_cache_wrappers_when_refresh_is_disabled( $cache_contents, bool $expected ): void {
+		if ( false === $cache_contents ) {
+			delete_option( 'wcpay_account_data' );
+		} else {
+			update_option( 'wcpay_account_data', $cache_contents );
+		}
+
+		$sut = $this->create_service();
+		$sut->disable_refresh();
+
+		$this->assertSame( $expected, $sut->has_account_or_is_connection_indeterminate() );
+	}
+
+	/**
+	 * Provide account cache wrappers for indeterminate connection checks.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|false,1:bool}>
+	 */
+	public function indeterminate_account_cache_wrappers(): array {
+		return array(
+			'canonical no-stale error' => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				true,
+			),
+			'missing data'             => array(
+				array(
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'scalar data'              => array(
+				array(
+					'data'               => 'unexpected',
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'empty data'               => array(
+				array(
+					'data'               => array(),
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'missing fetched'          => array(
+				array(
+					'data'               => null,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'nonnumeric fetched'       => array(
+				array(
+					'data'               => null,
+					'fetched'            => 'not-a-time',
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'zero fetched'             => array(
+				array(
+					'data'               => null,
+					'fetched'            => 0,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'negative fetched'         => array(
+				array(
+					'data'               => null,
+					'fetched'            => -1,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'missing error count'      => array(
+				array(
+					'data'    => null,
+					'fetched' => 1,
+					'errored' => true,
+				),
+				false,
+			),
+			'nonnumeric error count'   => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 'one',
+				),
+				false,
+			),
+			'zero error count'         => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 0,
+				),
+				false,
+			),
+			'negative error count'     => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => -1,
+				),
+				false,
+			),
+			'integer errored flag'     => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => 1,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'string errored flag'      => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => 'yes',
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'no option'                => array( false, false ),
+			'empty wrapper'            => array( array(), false ),
+			'successful empty account' => array(
+				array(
+					'data'               => array(),
+					'fetched'            => 1,
+					'errored'            => false,
+					'consecutive_errors' => 0,
+				),
+				false,
+			),
+		);
+	}
+
+	/**
 	 * @testdox Account liveness should be tri-state: live, test, or unknown when undetermined.
 	 */
 	public function test_get_account_is_live_reports_tristate_liveness(): void {
@@ -1029,6 +1221,8 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $stale_account, $result );
 		$this->assertSame( 1, $api_client->calls );
+		$this->assertTrue( $sut->has_account_or_is_connection_indeterminate(), 'Stale valid account data should remain connected after a failed refresh.' );
+		$this->assertSame( 1, $api_client->calls, 'Checking the connection state should reuse the refreshed cache.' );
 		$this->assertSame( array(), $refreshed );
 		$this->assertIsArray( $cached );
 		$this->assertSame( $stale_account, $cached['data'] );

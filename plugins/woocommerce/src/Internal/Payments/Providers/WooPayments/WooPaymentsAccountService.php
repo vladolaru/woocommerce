@@ -886,6 +886,32 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether an account exists or its connection state cannot be determined after a refresh failure.
+	 *
+	 * Address-token cache cleanup must not treat a transient account refresh failure as a confirmed disconnect.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function has_account_or_is_connection_indeterminate(): bool {
+		if ( $this->has_account() ) {
+			return true;
+		}
+
+		$cache = $this->get_account_cache();
+
+		return is_array( $cache )
+			&& array_key_exists( 'data', $cache )
+			&& null === $cache['data']
+			&& is_numeric( $cache['fetched'] ?? null )
+			&& 0 < (float) $cache['fetched']
+			&& true === ( $cache['errored'] ?? null )
+			&& is_numeric( $cache['consecutive_errors'] ?? null )
+			&& 0 < (float) $cache['consecutive_errors'];
+	}
+
+	/**
 	 * Tell whether the cached account can currently receive payments.
 	 *
 	 * @return bool
