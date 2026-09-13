@@ -115,7 +115,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
 		delete_option( 'wcpay_account_deletion_pending_id' );
-		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_row_38_update_first', 'evt_row_38_update_second', 'evt_row_38_update_replay', 'evt_row_38_cache_first', 'evt_row_38_cache_replay', 'evt_row_38_missing_id', 'evt_row_38_lost_first', 'evt_row_38_lost_second', 'evt_row_38_lost_replay', 'evt_claimed', 'evt_claim_release' ) as $event_id ) {
+		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_row_38_update_first', 'evt_row_38_update_second', 'evt_row_38_update_replay', 'evt_row_38_cache_first', 'evt_row_38_cache_replay', 'evt_row_38_missing_id', 'evt_row_38_lost_first', 'evt_row_38_lost_second', 'evt_row_38_lost_replay', 'evt_row_39_missing_id', 'evt_row_39_null_id', 'evt_row_39_non_scalar_id', 'evt_claimed', 'evt_claim_release' ) as $event_id ) {
 			delete_transient( 'wcpay_processed_event_' . md5( $event_id ) );
 			wp_cache_delete( 'wcpay_claimed_event_' . md5( $event_id ), 'woopayments_events' );
 		}
@@ -2325,6 +2325,69 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				'id=ch_123',
 			)
 		);
+	}
+
+	/**
+	 * @testdox A created dispute without an ID records one bare note and clears caches on replay.
+	 */
+	public function test_dispute_created_without_id_adds_bare_note_and_invalidates_caches_on_replay(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->save();
+
+		$missing_id_event       = $this->create_dispute_event( 'charge.dispute.created', 'needs_response' );
+		$missing_id_event['id'] = 'evt_row_39_missing_id';
+		unset( $missing_id_event['data']['object']['id'] );
+		$null_id_event                         = $missing_id_event;
+		$null_id_event['id']                   = 'evt_row_39_null_id';
+		$null_id_event['data']['object']['id'] = null;
+
+		$this->sut->process( $missing_id_event );
+		$this->seed_dispute_cache_options();
+		$this->sut->process( $null_id_event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'Payment has been disputed for' ) );
+		$this->assertOrderLacksNoteContaining( $order, array( 'Payment has been disputed for', 'Dispute ID' ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assert_dispute_cache_options_deleted();
+	}
+
+	/**
+	 * @testdox A created dispute with a non-scalar ID fails before order or cache effects.
+	 */
+	public function test_dispute_created_with_non_scalar_id_fails_closed(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->save();
+
+		$event       = $this->create_dispute_event( 'charge.dispute.created', 'needs_response', array( 'id' => array( 'not-scalar' ) ) );
+		$event['id'] = 'evt_row_39_non_scalar_id';
+		$this->seed_dispute_cache_options();
+
+		$exception = null;
+		try {
+			$this->sut->process( $event );
+		} catch ( RuntimeException $caught ) {
+			$exception = $caught;
+		}
+
+		$this->assertInstanceOf( RuntimeException::class, $exception );
+		$this->assertStringContainsString( 'Expected scalar dispute webhook property: id', $exception->getMessage() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertOrderLacksNoteContaining( $order, array( 'Payment has been disputed' ) );
+		$this->assertOrderLacksNoteContaining( $order, array( 'A payment inquiry has been raised' ) );
+		foreach ( $this->get_dispute_cache_option_keys() as $key ) {
+			$this->assertSame( array( 'stale' => true ), get_option( $key, false ), "Expected dispute cache option {$key} to remain after failed validation." );
+		}
 	}
 
 	/**

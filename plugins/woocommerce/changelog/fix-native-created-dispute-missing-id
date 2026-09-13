@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Allow dispute-created webhooks without an ID to record the legacy bare order note instead of retrying indefinitely.

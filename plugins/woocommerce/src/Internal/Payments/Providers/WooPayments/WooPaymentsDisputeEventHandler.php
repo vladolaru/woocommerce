@@ -189,7 +189,7 @@ class WooPaymentsDisputeEventHandler {
 	 */
 	private function process_dispute_created( WC_Order $order, array $event_object, string $charge_id, string $balance_transaction_id ): void {
 		$evidence   = $this->get_required_array( $event_object, 'evidence_details' );
-		$dispute_id = $this->get_required_string( $event_object, 'id' );
+		$dispute_id = isset( $event_object['id'] ) ? $this->get_required_string( $event_object, 'id' ) : '';
 		$status     = $this->get_required_string( $event_object, 'status' );
 		$is_inquiry = 0 === strpos( $status, 'warning_' );
 		$amount     = $this->get_formatted_dispute_amount( $order, $this->get_required_int( $event_object, 'amount' ) );
