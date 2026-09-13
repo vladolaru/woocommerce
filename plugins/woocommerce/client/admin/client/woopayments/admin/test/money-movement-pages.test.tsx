@@ -6,12 +6,14 @@ import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
 import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { getSettings, setSettings } from '@wordpress/date';
 
 /**
  * Internal dependencies
  */
 import { WooPaymentsDisputesPage } from '../money-movement/disputes-page';
 import { WooPaymentsPaymentSummarySection } from '../money-movement/transaction-detail-sections';
+import { WooPaymentsTransactionTimeline } from '../money-movement/transaction-timeline';
 import { WooPaymentsTransactionDetailsPage } from '../money-movement/transaction-details-page';
 import { WooPaymentsTransactionsPage } from '../money-movement/transactions-page';
 import {
@@ -5657,5 +5659,144 @@ describe( 'WooPayments money movement pages', () => {
 		expect( mockGetCharge ).toHaveBeenCalledWith( 'ch_test' );
 		expect( mockGetPaymentIntent ).toHaveBeenCalledWith( 'pi_test' );
 		expect( mockGetTransaction ).not.toHaveBeenCalled();
+	} );
+
+	it( 'uses the WordPress site timezone and locale for timeline dates', () => {
+		const originalSettings = getSettings();
+		const originalResolvedOptions =
+			Intl.DateTimeFormat.prototype.resolvedOptions;
+		const monthsShort = [ ...originalSettings.l10n.monthsShort ];
+		monthsShort[ 5 ] = 'SiteJune';
+		const browserZone = 'America/Los_Angeles';
+		const browserFormatter = new Intl.DateTimeFormat( 'en-US', {
+			timeZone: browserZone,
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric',
+		} );
+		const browserDateSpy = jest
+			.spyOn( Date.prototype, 'toLocaleDateString' )
+			.mockImplementation( function () {
+				return browserFormatter.format( this );
+			} );
+		const browserZoneSpy = jest
+			.spyOn( Intl.DateTimeFormat.prototype, 'resolvedOptions' )
+			.mockImplementation( function () {
+				return {
+					...originalResolvedOptions.call( this ),
+					timeZone: browserZone,
+				};
+			} );
+
+		try {
+			setSettings( {
+				...originalSettings,
+				timezone: {
+					...originalSettings.timezone,
+					string: 'Europe/Bucharest',
+				},
+				l10n: {
+					...originalSettings.l10n,
+					locale: 'row34-site-locale',
+					monthsShort,
+				},
+			} );
+			expect( browserDateSpy.getMockImplementation() ).toBeDefined();
+			expect( new Date( 1780266600 * 1000 ).toLocaleDateString() ).toBe(
+				'May 31, 2026'
+			);
+			expect( new Intl.DateTimeFormat().resolvedOptions().timeZone ).toBe(
+				browserZone
+			);
+
+			render(
+				<WooPaymentsTransactionTimeline
+					events={ [
+						{
+							type: 'captured',
+							message: 'Payment captured.',
+							datetime: 1780273800,
+						},
+						{
+							type: 'unknown',
+							message: 'Site midnight boundary.',
+							datetime: 1780266600,
+						},
+						{
+							type: 'unknown',
+							message: 'Same-day seconds control.',
+							datetime: 1780290000,
+						},
+					] }
+				/>
+			);
+
+			expect( screen.getAllByText( 'SiteJune 1, 2026' ) ).toHaveLength(
+				4
+			);
+		} finally {
+			browserDateSpy.mockRestore();
+			browserZoneSpy.mockRestore();
+			setSettings( originalSettings );
+		}
+	} );
+
+	it( 'uses a fixed site offset and preserves timeline date precedence', () => {
+		const originalSettings = getSettings();
+
+		try {
+			setSettings( {
+				...originalSettings,
+				timezone: {
+					...originalSettings.timezone,
+					string: '',
+					offset: 3,
+				},
+			} );
+			render(
+				<WooPaymentsTransactionTimeline
+					events={ [
+						{
+							type: 'unknown',
+							message: 'Created.',
+							created: 1780266600,
+						},
+						{
+							type: 'unknown',
+							message: 'Datetime wins.',
+							datetime: 1780266600,
+							created: 1,
+						},
+					] }
+				/>
+			);
+			expect( screen.getAllByText( 'Jun 1, 2026' ) ).toHaveLength( 2 );
+		} finally {
+			setSettings( originalSettings );
+		}
+	} );
+
+	it( 'renders invalid dates but omits missing and falsy timeline dates', () => {
+		render(
+			<WooPaymentsTransactionTimeline
+				events={ [
+					{
+						type: 'unknown',
+						message: 'Invalid.',
+						datetime: 'invalid',
+					},
+					{ type: 'unknown', message: 'Missing.' },
+					{
+						type: 'unknown',
+						message: 'Falsy.',
+						datetime: 0,
+						created: 0,
+					},
+				] }
+			/>
+		);
+
+		expect( screen.getAllByText( '-' ) ).toHaveLength( 1 );
+		expect( document.querySelectorAll( 'time' ) ).toHaveLength( 1 );
 	} );
 } );

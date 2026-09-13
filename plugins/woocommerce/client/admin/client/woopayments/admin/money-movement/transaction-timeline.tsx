@@ -2,13 +2,14 @@
  * External dependencies
  */
 import type { ReactNode } from 'react';
+import { dateI18n } from '@wordpress/date';
 import { __, sprintf, TranslatableText } from '@wordpress/i18n';
 
 /**
  * Internal dependencies
  */
 import type { WooPaymentsTimelineEvent } from './types';
-import { formatAmount, formatDate, formatLabel } from './utils';
+import { formatAmount, formatLabel } from './utils';
 
 type TimelineDisplayEvent = {
 	message: ReactNode;
@@ -21,6 +22,18 @@ const hasDisplayValue = ( value: unknown ) =>
 
 const getEventDate = ( event: WooPaymentsTimelineEvent ) =>
 	event.datetime || event.created;
+
+const formatTimelineDate = ( value: string | number ) => {
+	const timestamp =
+		typeof value === 'number' && value < 10000000000 ? value * 1000 : value;
+	const date = new Date( timestamp );
+
+	if ( Number.isNaN( date.getTime() ) ) {
+		return '-';
+	}
+
+	return dateI18n( 'M j, Y', date );
+};
 
 const getString = (
 	record: Record< string, unknown >,
@@ -435,7 +448,9 @@ export const WooPaymentsTransactionTimeline = ( {
 								) ) }
 							</ul>
 						) }
-						{ row.date && <time>{ formatDate( row.date ) }</time> }
+						{ row.date && (
+							<time>{ formatTimelineDate( row.date ) }</time>
+						) }
 					</li>
 				) ) }
 			</ol>
