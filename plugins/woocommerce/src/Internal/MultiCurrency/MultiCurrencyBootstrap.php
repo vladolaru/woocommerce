@@ -130,7 +130,11 @@ final class MultiCurrencyBootstrap {
 			return;
 		}
 
-		$this->register_roots( $container, array_merge( ( $this->provider_roots_resolver )(), $roots ) );
+		if ( array( MultiCurrencyExplicitPriceController::class ) !== $roots ) {
+			$roots = array_merge( ( $this->provider_roots_resolver )(), $roots );
+		}
+
+		$this->register_roots( $container, $roots );
 	}
 
 	/**
@@ -147,18 +151,21 @@ final class MultiCurrencyBootstrap {
 			return $this->get_roots_for_tier( 'configured', $request );
 		}
 
+		$has_explicit_price_filter = false !== has_filter( 'wcpay_multi_currency_should_output_explicit_price' );
 		if ( in_array( $request, array( 'front', 'ajax', 'cli' ), true ) ) {
-			return array();
+			return $has_explicit_price_filter ? array( MultiCurrencyExplicitPriceController::class ) : array();
 		}
 
 		try {
 			$has_foreign_currency_orders = $usage_detector->has_foreign_currency_orders();
 		} catch ( \RuntimeException $error ) {
 			// Preserve recovery services when order history cannot be determined.
-			return $this->get_roots_for_tier( 'historical', $request );
+			$roots = $this->get_roots_for_tier( 'historical', $request );
+			return $has_explicit_price_filter ? array_merge( $roots, array( MultiCurrencyExplicitPriceController::class ) ) : $roots;
 		}
 
-		return $this->get_roots_for_tier( $has_foreign_currency_orders ? 'historical' : 'empty', $request );
+		$roots = $this->get_roots_for_tier( $has_foreign_currency_orders ? 'historical' : 'empty', $request );
+		return $has_explicit_price_filter ? array_merge( $roots, array( MultiCurrencyExplicitPriceController::class ) ) : $roots;
 	}
 
 	/**

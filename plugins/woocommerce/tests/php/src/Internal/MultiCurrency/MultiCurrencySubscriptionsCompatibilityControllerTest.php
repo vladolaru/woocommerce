@@ -43,6 +43,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		'woocommerce_add_to_cart',
 		'woocommerce_cart_item_removed',
 		'woocommerce_cart_item_restored',
+		'wcpay_multi_currency_should_output_explicit_price',
 	);
 
 	/**
@@ -203,12 +204,21 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$subscription = $this->create_subscription( 'EUR' );
 		$details      = array( 'price' => 'placeholder' );
 		$sut->set_backtrace_calls( array( 'WC_Subscription->get_formatted_order_total' ) );
+		$calls = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$calls ): bool {
+				$calls[] = $current_default;
+				return ! $current_default;
+			}
+		);
 
 		$this->assertSame( $details, $sut->maybe_set_current_my_account_subscription( $details, $subscription ) );
 		$this->assertSame( 'EUR', $sut->override_selected_currency( false ) );
 		$this->assertSame( '<span>$10.00</span> EUR', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00</span>' ) );
 		$this->assertSame( '<span>$10.00</span> EUR', $sut->maybe_clear_current_my_account_subscription( '<span>$10.00</span> EUR', $subscription ) );
 		$this->assertFalse( $sut->override_selected_currency( false ) );
+		$this->assertSame( array(), $calls );
 	}
 
 	/**

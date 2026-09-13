@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Merchants can use a filter attached before WooCommerce initializes payments to control explicit currency codes on Multi-Currency totals.

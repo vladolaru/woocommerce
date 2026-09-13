@@ -600,6 +600,59 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should let the public filter suppress the native refund-note fallback currency output.
+	 */
+	public function test_public_filter_suppresses_native_refund_note_fallback_currency_output(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$defaults = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$defaults ): bool {
+				$defaults[] = $current_default;
+				return false;
+			}
+		);
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->save();
+
+		$note   = ( new WooPaymentsOrderNoteService() )->format_created_refund_note( $order, 4.00, 'USD', 're_123', 'Requested by customer', false );
+		$amount = html_entity_decode( wp_strip_all_tags( wc_price( 4.00, array( 'currency' => 'USD' ) ) ) );
+		$note   = html_entity_decode( wp_strip_all_tags( $note ) );
+
+		$this->assertStringContainsString( $amount, $note );
+		$this->assertStringNotContainsString( $amount . ' USD', $note );
+		$this->assertSame( array( true ), $defaults );
+	}
+
+	/**
+	 * @testdox Should not apply the public filter to hidden plugin refund candidates.
+	 */
+	public function test_public_filter_does_not_apply_to_hidden_plugin_refund_candidates(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->save();
+		$sut    = new WooPaymentsOrderNoteService();
+		$method = new \ReflectionMethod( $sut, 'format_plugin_amount_candidates' );
+		$method->setAccessible( true );
+		$candidates = $method->invoke( $sut, $order, 4.00, 'USD' );
+		$calls      = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$calls ): bool {
+				$calls[] = $current_default;
+				return ! $current_default;
+			}
+		);
+
+		$this->assertSame( $candidates, $method->invoke( $sut, $order, 4.00, 'USD' ) );
+		$this->assertSame( array(), $calls );
+	}
+
+	/**
 	 * @testdox Created-refund candidates retain the plugin pending hyperlink without a reason.
 	 */
 	public function test_created_refund_candidates_for_pending_without_reason(): void {

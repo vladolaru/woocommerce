@@ -12,6 +12,57 @@ use WC_Unit_Test_Case;
 class MultiCurrencyExplicitPriceProjectionServiceTest extends WC_Unit_Test_Case {
 
 	/**
+	 * @testdox Should coerce raw public filter values after applying the default.
+	 *
+	 * @dataProvider public_filter_coercion_data
+	 *
+	 * @param mixed $filtered_value Filter callback value.
+	 * @param bool  $expected       Expected PHP boolean coercion.
+	 */
+	public function test_coerces_raw_public_filter_values_after_applying_default( $filtered_value, bool $expected ): void {
+		$defaults = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$defaults, $filtered_value ) {
+				$defaults[] = $current_default;
+				return $filtered_value;
+			}
+		);
+
+		$this->assertSame( $expected, MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( true ) );
+		$this->assertSame( array( true ), $defaults );
+	}
+
+	/**
+	 * Data for raw public filter coercion.
+	 *
+	 * @return array<string,array{mixed,bool}>
+	 */
+	public static function public_filter_coercion_data(): array {
+		return array(
+			'zero string'     => array( '0', false ),
+			'non-empty array' => array( array( 'force' ), true ),
+		);
+	}
+
+	/**
+	 * @testdox Should propagate exceptions from the public filter.
+	 */
+	public function test_propagates_public_filter_exceptions(): void {
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function (): bool {
+				throw new \RuntimeException( 'Callback failed.' );
+			}
+		);
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'Callback failed.' );
+
+		MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( false );
+	}
+
+	/**
 	 * @testdox Should project explicit price hook manifest.
 	 */
 	public function test_projects_explicit_price_hook_manifest(): void {

@@ -1382,7 +1382,7 @@ class WooPaymentsOrderNoteService {
 		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
 			$formatted_price,
 			strtoupper( $order->get_currency() ),
-			$this->has_configured_additional_currency()
+			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( $this->has_configured_additional_currency() )
 		);
 	}
 

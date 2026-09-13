@@ -16,6 +16,25 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 class MultiCurrencyExplicitPriceProjectionService {
 
 	/**
+	 * Determine whether formatted prices should include an explicit currency code.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param bool $default_should_output Whether explicit currency output is enabled by default.
+	 * @return bool Whether explicit currency output should be enabled.
+	 */
+	public static function should_output_explicit_price( bool $default_should_output ): bool {
+		/**
+		 * Filters whether native Multi-Currency prices should include an explicit currency code.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param bool $default Whether explicit currency output is enabled by default.
+		 */
+		return (bool) apply_filters( 'wcpay_multi_currency_should_output_explicit_price', $default_should_output );
+	}
+
+	/**
 	 * Project the explicit price hook/filter manifest.
 	 *
 	 * @return array{filters: array<int,array<string,mixed>>, actions: array<int,array<string,mixed>>}

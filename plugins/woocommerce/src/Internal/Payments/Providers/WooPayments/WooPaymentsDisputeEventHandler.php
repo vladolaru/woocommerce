@@ -463,7 +463,7 @@ class WooPaymentsDisputeEventHandler {
 		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
 			$price,
 			strtoupper( $currency ),
-			$this->should_output_explicit_dispute_currency( $currency )
+			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( $this->should_output_explicit_dispute_currency( $currency ) )
 		);
 	}
 

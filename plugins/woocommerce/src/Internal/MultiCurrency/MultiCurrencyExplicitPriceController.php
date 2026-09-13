@@ -136,10 +136,12 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 	 */
 	private function should_output_explicit_price(): bool {
 		try {
-			return $this->state_builder_factory->create()->build()->has_additional_currencies_enabled();
+			$default = $this->state_builder_factory->create()->build()->has_additional_currencies_enabled();
 		} catch ( \Throwable $e ) {
-			return false;
+			$default = false;
 		}
+
+		return MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( $default );
 	}
 
 	/**

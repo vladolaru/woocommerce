@@ -159,6 +159,37 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should let the public filter suppress native dispute currency output.
+	 */
+	public function test_public_filter_suppresses_native_dispute_currency_output(): void {
+		$previous_store_currency     = get_option( 'woocommerce_currency' );
+		$previous_enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
+		$defaults                    = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$defaults ): bool {
+				$defaults[] = $current_default;
+				return false;
+			}
+		);
+
+		try {
+			update_option( 'woocommerce_currency', 'USD' );
+			update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+			$order = wc_create_order();
+			$order->set_currency( 'USD' );
+
+			$amount = $this->invoke_private( 'get_formatted_dispute_amount', array( $order, 5000 ) );
+
+			$this->assertStringNotContainsString( '$50.00 USD', wp_strip_all_tags( html_entity_decode( $amount ) ) );
+			$this->assertSame( array( true ), $defaults );
+		} finally {
+			update_option( 'woocommerce_currency', $previous_store_currency );
+			update_option( 'wcpay_multi_currency_enabled_currencies', $previous_enabled_currencies );
+		}
+	}
+
+	/**
 	 * @testdox Legacy dispute markers backfill the unified identity onto the existing note.
 	 */
 	public function test_legacy_dispute_marker_backfills_unified_identity(): void {

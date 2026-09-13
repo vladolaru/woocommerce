@@ -67,6 +67,29 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should let the public filter suppress native refund-event currency output.
+	 */
+	public function test_public_filter_suppresses_native_refund_event_currency_output(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$defaults = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$defaults ): bool {
+				$defaults[] = $current_default;
+				return false;
+			}
+		);
+		$order  = $this->create_refundable_order();
+		$method = new \ReflectionMethod( $this->sut, 'format_refund_amount' );
+		$method->setAccessible( true );
+
+		$amount = $method->invoke( $this->sut, 4.00, 'USD', $order );
+
+		$this->assertStringNotContainsString( ' USD', wp_strip_all_tags( html_entity_decode( $amount ) ) );
+		$this->assertSame( array( true ), $defaults );
+	}
+
+	/**
 	 * @testdox A successful synchronous refund and its webhook converge on one canonical note and refund row.
 	 */
 	public function test_successful_synchronous_refund_followed_by_webhook_converges(): void {

@@ -9,7 +9,11 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyExplicitPriceController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
 use WC_Unit_Test_Case;
@@ -67,11 +71,17 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				return array( 'ProviderRoot' );
 			}
 		);
+		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
 
-		$sut->register( $container, '__return_false' );
+		try {
+			$sut->register( $container, '__return_false' );
+		} finally {
+			remove_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
+		}
 
 		$this->assertSame( array( MultiCurrencyRuntimeArbiter::class ), $container->resolved );
 		$this->assertSame( 0, $resolver_calls );
+		$this->assertFalse( has_filter( 'woocommerce_cart_total' ) );
 	}
 
 	/** @testdox Should order and de-duplicate provider roots before core roots. */
@@ -143,6 +153,85 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 0, $resolver_calls );
 		$this->assertSame( array(), $container->registered );
+		$this->assertFalse( has_filter( 'woocommerce_cart_total' ) );
+		$this->assertFalse( has_filter( 'woocommerce_get_formatted_order_total' ) );
+		$this->assertFalse( has_action( 'woocommerce_admin_order_totals_after_tax' ) );
+		$this->assertFalse( has_action( 'woocommerce_admin_order_totals_after_total' ) );
+	}
+
+	/**
+	 * @testdox Should apply the explicit price filter from a core-owned single-currency front request.
+	 */
+	public function test_core_owned_single_currency_front_request_registers_explicit_price_filter_without_provider_roots(): void {
+		$controller     = $this->create_explicit_price_controller( false );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false, false, $controller );
+		$resolver_calls = 0;
+		$defaults       = array();
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$resolver_calls ): array {
+				++$resolver_calls;
+				return array( 'ProviderRoot' );
+			}
+		);
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$defaults ): bool {
+				$defaults[] = $current_default;
+				return true;
+			}
+		);
+
+		$sut->register( $container, '__return_false' );
+
+		$this->assertSame( '$10.30 USD', apply_filters( 'woocommerce_cart_total', '$10.30' ) );
+		$this->assertSame( array( false ), $defaults );
+		$this->assertSame( 0, $container->foreign_currency_order_checks );
+		$this->assertSame( 0, $resolver_calls );
+		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
+		$this->assertSame( 100, has_filter( 'woocommerce_cart_total', array( $controller, 'get_explicit_price' ) ) );
+		$this->assertNotContains( 'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Services\\MultiCurrencyStateBuilderFactory', $container->resolved );
+	}
+
+	/**
+	 * @testdox Should retain provider roots for an empty core-owned REST request without the public filter.
+	 */
+	public function test_empty_core_owned_rest_request_retains_provider_roots_without_the_public_filter(): void {
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$resolver_calls = 0;
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$resolver_calls ): array {
+				++$resolver_calls;
+				return array( 'ProviderRoot' );
+			}
+		);
+
+		$sut->register( $container, '__return_true' );
+
+		$this->assertSame( 1, $resolver_calls );
+		$this->assertSame( array( 'ProviderRoot', self::CORE_ROOTS[21] ), $container->registered );
+	}
+
+	/** @testdox Should append the existing controller to empty REST roots when the public filter is attached before bootstrap. */
+	public function test_empty_core_owned_rest_request_appends_the_existing_controller_when_the_public_filter_is_attached(): void {
+		$controller     = $this->create_explicit_price_controller( false );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false, false, $controller );
+		$resolver_calls = 0;
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$resolver_calls ): array {
+				++$resolver_calls;
+				return array( 'ProviderRoot' );
+			}
+		);
+		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
+
+		try {
+			$sut->register( $container, '__return_true' );
+		} finally {
+			remove_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
+		}
+
+		$this->assertSame( 1, $resolver_calls );
+		$this->assertSame( array( 'ProviderRoot', self::CORE_ROOTS[21], MultiCurrencyExplicitPriceController::class ), $container->registered );
 	}
 
 	/** @testdox Should not resolve provider roots for an empty AJAX request. */
@@ -255,7 +344,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$rest       = self::CORE_ROOTS[21];
 		$override   = self::CORE_ROOTS[22];
 		$admin      = array( self::CORE_ROOTS[24], self::CORE_ROOTS[25] );
-
 		return array(
 			'configured front' => array( true, false, 'front', array_merge( $base, $price, $compat, $storefront ) ),
 			'configured ajax'  => array( true, false, 'ajax', array_merge( $base, $price, $compat, array( self::CORE_ROOTS[19], self::CORE_ROOTS[20] ), $history ) ),
@@ -359,13 +447,14 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @param string $owner Multi-Currency owner.
-	 * @param bool   $configured Whether extra configured currencies exist.
-	 * @param bool   $historical                                      Whether historical orders exist.
-	 * @param bool   $throw_on_foreign_currency_order_detection      Whether historical-order detection throws.
+	 * @param string                                    $owner Multi-Currency owner.
+	 * @param bool                                      $configured Whether extra configured currencies exist.
+	 * @param bool                                      $historical Whether historical orders exist.
+	 * @param bool                                      $throw_on_foreign_currency_order_detection Whether historical-order detection throws.
+	 * @param MultiCurrencyExplicitPriceController|null $explicit_price_controller Existing explicit-price controller.
 	 * @return RuntimeContainer&object{resolved:array<int,string>,registered:array<int,string>,foreign_currency_order_checks:int}
 	 */
-	private function make_container( string $owner, bool $configured, bool $historical, bool $throw_on_foreign_currency_order_detection = false ): RuntimeContainer {
+	private function make_container( string $owner, bool $configured, bool $historical, bool $throw_on_foreign_currency_order_detection = false, ?MultiCurrencyExplicitPriceController $explicit_price_controller = null ): RuntimeContainer {
 		$arbiter = new class( $owner ) extends MultiCurrencyRuntimeArbiter {
 			/** @var string */
 			private $owner;
@@ -383,9 +472,14 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			public function get_runtime_owner(): string {
 				return $this->owner;
 			}
+
+			/** Tell whether core may register the configured owner. @return bool Whether core owns the runtime. */
+			public function should_core_register(): bool {
+				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+			}
 		};
 
-		return new class( $arbiter, $configured, $historical, $throw_on_foreign_currency_order_detection ) extends RuntimeContainer {
+		return new class( $arbiter, $configured, $historical, $throw_on_foreign_currency_order_detection, $explicit_price_controller ) extends RuntimeContainer {
 			/** @var array<int,string> */
 			public array $resolved = array();
 
@@ -407,20 +501,25 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			/** @var bool */
 			private $throw_on_foreign_currency_order_detection;
 
+			/** @var MultiCurrencyExplicitPriceController|null */
+			private $explicit_price_controller;
+
 			/**
 			 * Initialize the recording container.
 			 *
-			 * @param MultiCurrencyRuntimeArbiter $arbiter Runtime owner arbiter.
-			 * @param bool                        $configured Whether extra configured currencies exist.
-			 * @param bool                        $historical                                 Whether historical orders exist.
-			 * @param bool                        $throw_on_foreign_currency_order_detection Whether historical-order detection throws.
+			 * @param MultiCurrencyRuntimeArbiter               $arbiter Runtime owner arbiter.
+			 * @param bool                                      $configured Whether extra configured currencies exist.
+			 * @param bool                                      $historical Whether historical orders exist.
+			 * @param bool                                      $throw_on_foreign_currency_order_detection Whether historical-order detection throws.
+			 * @param MultiCurrencyExplicitPriceController|null $explicit_price_controller Existing explicit-price controller.
 			 */
-			public function __construct( MultiCurrencyRuntimeArbiter $arbiter, bool $configured, bool $historical, bool $throw_on_foreign_currency_order_detection ) {
+			public function __construct( MultiCurrencyRuntimeArbiter $arbiter, bool $configured, bool $historical, bool $throw_on_foreign_currency_order_detection, ?MultiCurrencyExplicitPriceController $explicit_price_controller ) {
 				parent::__construct( array() );
 				$this->arbiter                                   = $arbiter;
 				$this->configured                                = $configured;
 				$this->historical                                = $historical;
 				$this->throw_on_foreign_currency_order_detection = $throw_on_foreign_currency_order_detection;
+				$this->explicit_price_controller                 = $explicit_price_controller;
 			}
 
 			/**
@@ -486,6 +585,11 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 					};
 				}
 
+				if ( MultiCurrencyExplicitPriceController::class === $class_name && null !== $this->explicit_price_controller ) {
+					$this->registered[] = $class_name;
+					return $this->explicit_price_controller;
+				}
+
 				$registered = &$this->registered;
 				return new class( $class_name, $registered ) {
 					/** @var string */
@@ -512,5 +616,38 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				};
 			}
 		};
+	}
+
+	/**
+	 * Create the existing explicit-price controller with a fixed state default.
+	 *
+	 * @param bool $has_additional_currencies_enabled Whether the controller state has additional currencies.
+	 * @return MultiCurrencyExplicitPriceController Explicit-price controller.
+	 */
+	private function create_explicit_price_controller( bool $has_additional_currencies_enabled ): MultiCurrencyExplicitPriceController {
+		$state = $this->createMock( MultiCurrencyState::class );
+		$state->method( 'has_additional_currencies_enabled' )->willReturn( $has_additional_currencies_enabled );
+		$builder = $this->getMockBuilder( MultiCurrencyStateBuilder::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'build' ) )
+			->getMock();
+		$builder->method( 'build' )->willReturn( $state );
+		$factory = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'create' ) )
+			->getMock();
+		$factory->method( 'create' )->willReturn( $builder );
+		$controller = new MultiCurrencyExplicitPriceController();
+		$controller->init(
+			new class() extends MultiCurrencyRuntimeArbiter {
+				/** Tell whether core may register. @return bool */
+				public function should_core_register(): bool {
+					return true;
+				}
+			},
+			$factory
+		);
+
+		return $controller;
 	}
 }

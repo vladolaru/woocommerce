@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
@@ -375,7 +376,7 @@ class WooPaymentsRefundEventHandler {
 			return (string) call_user_func( $extension_formatter, $formatted_amount, $order );
 		}
 
-		if ( ! $this->should_output_native_explicit_price() ) {
+		if ( ! MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( $this->should_output_native_explicit_price() ) ) {
 			return $formatted_amount;
 		}
 

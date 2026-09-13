@@ -26,6 +26,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 		'woocommerce_admin_order_totals_after_tax',
 		'woocommerce_admin_order_totals_after_total',
 		'wc_price_args',
+		'wcpay_multi_currency_should_output_explicit_price',
 	);
 
 	/**
@@ -107,6 +108,80 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 		$sut->unregister_formatted_woocommerce_price_filter();
 
 		$this->assertFalse( has_filter( 'wc_price_args', array( $sut, 'get_explicit_price_args' ) ) );
+	}
+
+	/**
+	 * @testdox Should let the public filter disable every configured explicit-price projection.
+	 */
+	public function test_public_filter_disables_configured_cart_order_and_admin_explicit_price_projections(): void {
+		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$order = $this->createMock( \WC_Order::class );
+		$order->method( 'get_currency' )->willReturn( 'BRL' );
+		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_false' );
+		$sut->register();
+
+		$this->assertSame( '$10.30', apply_filters( 'woocommerce_cart_total', '$10.30' ) );
+		$this->assertSame( 'R$ 5,90', apply_filters( 'woocommerce_get_formatted_order_total', 'R$ 5,90', $order ) );
+		do_action( 'woocommerce_admin_order_totals_after_tax', 123 );
+		$this->assertSame(
+			array(
+				'price_format' => '%1$s%2$s',
+				'currency'     => 'USD',
+			),
+			apply_filters(
+				'wc_price_args',
+				array(
+					'price_format' => '%1$s%2$s',
+					'currency'     => 'USD',
+				)
+			)
+		);
+		do_action( 'woocommerce_admin_order_totals_after_total', 123 );
+	}
+
+	/**
+	 * @testdox Should let the public filter force explicit output after state construction fails.
+	 */
+	public function test_public_filter_can_force_explicit_output_after_state_construction_fails(): void {
+		$controller = new MultiCurrencyExplicitPriceController();
+		$factory    = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'create' ) )
+			->getMock();
+		$factory->method( 'create' )->willThrowException( new \RuntimeException( 'State failed.' ) );
+		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ), $factory );
+		$defaults = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$defaults ): bool {
+				$defaults[] = $current_default;
+				return true;
+			}
+		);
+
+		$this->assertSame( '$10.30 USD', $controller->get_explicit_price( '$10.30' ) );
+		$this->assertSame( array( false ), $defaults );
+	}
+
+	/**
+	 * @testdox Should run the public filter once before empty-currency and existing-suffix guards.
+	 */
+	public function test_public_filter_runs_once_before_output_guards(): void {
+		$controller = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$empty      = $this->createMock( \WC_Order::class );
+		$empty->method( 'get_currency' )->willReturn( '' );
+		$defaults = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$defaults ): bool {
+				$defaults[] = $current_default;
+				return true;
+			}
+		);
+
+		$this->assertSame( '$10.30', $controller->get_explicit_price( '$10.30', $empty ) );
+		$this->assertSame( '$10.30 USD', $controller->get_explicit_price( '$10.30 USD' ) );
+		$this->assertSame( array( false, false ), $defaults );
 	}
 
 	/**
