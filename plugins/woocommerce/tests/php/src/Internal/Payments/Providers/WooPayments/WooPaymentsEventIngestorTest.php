@@ -115,7 +115,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
 		delete_option( 'wcpay_account_deletion_pending_id' );
-		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_claimed', 'evt_claim_release' ) as $event_id ) {
+		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_row_38_update_first', 'evt_row_38_update_second', 'evt_row_38_update_replay', 'evt_row_38_cache_first', 'evt_row_38_cache_replay', 'evt_row_38_missing_id', 'evt_row_38_lost_first', 'evt_row_38_lost_second', 'evt_row_38_lost_replay', 'evt_claimed', 'evt_claim_release' ) as $event_id ) {
 			delete_transient( 'wcpay_processed_event_' . md5( $event_id ) );
 			wp_cache_delete( 'wcpay_claimed_event_' . md5( $event_id ), 'woopayments_events' );
 		}
@@ -2347,7 +2347,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertOrderHasNote( $order, $message . '. See <a href="' . $this->get_expected_dispute_url( 'ch_123' ) . '">dispute overview</a> for more details.' );
+		$this->assertOrderHasNote( $order, $message . '. See <a href="' . $this->get_expected_dispute_url( 'ch_123' ) . '">dispute overview</a> for more details. (Dispute ID: du_123)' );
 	}
 
 	/**
@@ -2393,6 +2393,81 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertOrderHasNoteContaining( $order, array( 'Payment dispute has been updated', 'dispute overview' ) );
 		$this->assertOrderLacksNoteContaining( $order, array( 'Zahlungsdisput wurde aktualisiert', 'Disputuebersicht' ) );
+	}
+
+	/**
+	 * @testdox Distinct disputes on one charge each record their own funds-withdrawn note.
+	 */
+	public function test_dispute_updates_record_a_note_per_dispute(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->save();
+
+		$first_event        = $this->create_dispute_event( 'charge.dispute.funds_withdrawn', 'needs_response', array( 'id' => 'dp_first' ) );
+		$second_event       = $this->create_dispute_event( 'charge.dispute.funds_withdrawn', 'needs_response', array( 'id' => 'dp_second' ) );
+		$replay_event       = $first_event;
+		$first_event['id']  = 'evt_row_38_update_first';
+		$second_event['id'] = 'evt_row_38_update_second';
+		$replay_event['id'] = 'evt_row_38_update_replay';
+
+		$this->sut->process( $first_event );
+		$this->sut->process( $second_event );
+		$this->sut->process( $replay_event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertCount( 2, $this->get_order_notes_containing( $order, 'Payment dispute and fees have been deducted from your next payout' ) );
+		$this->assertOrderHasNoteContaining( $order, array( 'Payment dispute and fees have been deducted from your next payout', '(Dispute ID: dp_first)' ) );
+		$this->assertOrderHasNoteContaining( $order, array( 'Payment dispute and fees have been deducted from your next payout', '(Dispute ID: dp_second)' ) );
+	}
+
+	/**
+	 * @testdox A duplicate dispute update keeps one note and still clears stale dispute caches.
+	 */
+	public function test_dispute_update_redelivery_invalidates_caches_without_duplicate_note(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->save();
+
+		$first_event        = $this->create_dispute_event( 'charge.dispute.updated', 'needs_response', array( 'id' => 'dp_cache_replay' ) );
+		$replay_event       = $first_event;
+		$first_event['id']  = 'evt_row_38_cache_first';
+		$replay_event['id'] = 'evt_row_38_cache_replay';
+
+		$this->sut->process( $first_event );
+		$this->seed_dispute_cache_options();
+		$this->sut->process( $replay_event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'Payment dispute has been updated' ) );
+		$this->assert_dispute_cache_options_deleted();
+	}
+
+	/**
+	 * @testdox A dispute update without an ID records the bare note and clears stale caches.
+	 */
+	public function test_dispute_update_without_id_adds_bare_note_and_invalidates_caches(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->save();
+
+		$event       = $this->create_dispute_event( 'charge.dispute.updated', 'needs_response' );
+		$event['id'] = 'evt_row_38_missing_id';
+		unset( $event['data']['object']['id'] );
+		$this->seed_dispute_cache_options();
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'Payment dispute has been updated' ) );
+		$this->assertOrderLacksNoteContaining( $order, array( 'Payment dispute has been updated', 'Dispute ID' ) );
+		$this->assert_dispute_cache_options_deleted();
 	}
 
 	/**
@@ -2495,6 +2570,49 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Dispute lost.', $refunds[0]->get_reason() );
 		$this->assertSame( '', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
 		$this->assertOrderHasNote( $order, 'Dispute has been closed with status lost. See <a href="' . $this->get_expected_dispute_url( 'ch_123' ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details. (Dispute ID: du_123)' );
+	}
+
+	/**
+	 * @testdox Distinct lost disputes on one charge each create their own refund and note.
+	 */
+	public function test_dispute_closed_lost_creates_refund_for_each_distinct_dispute(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->save();
+
+		$sut = $this->create_ingestor(
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new LegacyProxy(),
+			new WooPaymentsLegacyRuntime(),
+			$this->create_dispute_summary_api_client(
+				array(
+					'disputed_amount' => 500,
+					'currency'        => 'usd',
+				)
+			)
+		);
+
+		$first_event        = $this->create_dispute_event( 'charge.dispute.closed', 'lost', array( 'id' => 'dp_lost_first' ) );
+		$second_event       = $this->create_dispute_event( 'charge.dispute.closed', 'lost', array( 'id' => 'dp_lost_second' ) );
+		$replay_event       = $first_event;
+		$first_event['id']  = 'evt_row_38_lost_first';
+		$second_event['id'] = 'evt_row_38_lost_second';
+		$replay_event['id'] = 'evt_row_38_lost_replay';
+
+		$sut->process( $first_event );
+		$sut->process( $second_event );
+		$sut->process( $replay_event );
+
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = $order instanceof WC_Order ? $order->get_refunds() : array();
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 2, $refunds );
+		$this->assertEqualsCanonicalizing( array( -5.0, -5.0 ), array_map( static fn( WC_Order_Refund $refund ): float => (float) $refund->get_total(), $refunds ) );
+		$this->assertCount( 2, $this->get_order_notes_containing( $order, 'Dispute has been closed with status lost' ) );
+		$this->assertOrderHasNoteContaining( $order, array( 'Dispute has been closed with status lost', '(Dispute ID: dp_lost_first)' ) );
+		$this->assertOrderHasNoteContaining( $order, array( 'Dispute has been closed with status lost', '(Dispute ID: dp_lost_second)' ) );
 	}
 
 	/**
@@ -4409,6 +4527,27 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		}
 
 		$this->addToAssertionCount( 1 );
+	}
+
+	/**
+	 * Get the order notes containing a text fragment.
+	 *
+	 * @param WC_Order $order    Order object.
+	 * @param string   $fragment Required note fragment.
+	 * @return object[]
+	 */
+	private function get_order_notes_containing( WC_Order $order, string $fragment ): array {
+		return array_values(
+			array_filter(
+				wc_get_order_notes(
+					array(
+						'order_id' => $order->get_id(),
+						'type'     => 'any',
+					)
+				),
+				static fn( $note ): bool => false !== strpos( (string) $note->content, $fragment )
+			)
+		);
 	}
 
 	/**

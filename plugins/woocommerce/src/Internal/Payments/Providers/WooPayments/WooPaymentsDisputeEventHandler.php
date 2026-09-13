@@ -148,9 +148,8 @@ class WooPaymentsDisputeEventHandler {
 			return;
 		}
 
-		if ( $this->process_dispute_updated( $order, $event_object, $event_type, $charge_id, $balance_transaction_id ) ) {
-			$this->dispute_cache_service->delete_dispute_caches();
-		}
+		$this->process_dispute_updated( $order, $event_object, $event_type, $charge_id, $balance_transaction_id );
+		$this->dispute_cache_service->delete_dispute_caches();
 	}
 
 	/**
@@ -308,7 +307,7 @@ class WooPaymentsDisputeEventHandler {
 	 * @return bool True when a new update note was applied.
 	 */
 	private function process_dispute_updated( WC_Order $order, array $event_object, string $event_type, string $charge_id, string $balance_transaction_id ): bool {
-		$dispute_id = $this->get_required_string( $event_object, 'id' );
+		$dispute_id = isset( $event_object['id'] ) && is_scalar( $event_object['id'] ) ? (string) $event_object['id'] : '';
 		$status     = $this->get_required_string( $event_object, 'status' );
 
 		switch ( $event_type ) {
@@ -325,11 +324,14 @@ class WooPaymentsDisputeEventHandler {
 				$note_type = 'updated';
 		}
 
-		$note = sprintf(
-			/* translators: %1: the dispute message, %2: the dispute details URL */
-			__( '%1$s. See <a href="%2$s">dispute overview</a> for more details.', 'woocommerce' ),
-			$message,
-			esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
+		$note = $this->append_dispute_id_to_note(
+			sprintf(
+				/* translators: %1: the dispute message, %2: the dispute details URL */
+				__( '%1$s. See <a href="%2$s">dispute overview</a> for more details.', 'woocommerce' ),
+				$message,
+				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
+			),
+			$dispute_id
 		);
 
 		return $this->add_dispute_order_note_once( $order, $note, $dispute_id, $status, $note_type );
