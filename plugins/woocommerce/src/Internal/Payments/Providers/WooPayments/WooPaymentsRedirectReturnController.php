@@ -107,6 +107,12 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
+		// The order-received URL also accepts Create Account POSTs that retain redirect query arguments.
+		$request_method = sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ?? '' ) );
+		if ( ! is_string( $request_method ) || 'GET' !== strtoupper( $request_method ) ) {
+			return;
+		}
+
 		$nonce = $this->get_query_string( '_wpnonce' );
 		if ( '' === $nonce || ! wp_verify_nonce( $nonce, 'wcpay_process_redirect_order_nonce' ) ) {
 			return;

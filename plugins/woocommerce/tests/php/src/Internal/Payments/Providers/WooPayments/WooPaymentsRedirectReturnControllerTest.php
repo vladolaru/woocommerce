@@ -49,6 +49,20 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	private array $original_get = array();
 
 	/**
+	 * Original request method.
+	 *
+	 * @var mixed
+	 */
+	private $original_request_method;
+
+	/**
+	 * Whether the request method existed before the test.
+	 *
+	 * @var bool
+	 */
+	private bool $original_request_method_was_set = false;
+
+	/**
 	 * Original HPOS datastore caching option.
 	 *
 	 * @var mixed
@@ -78,6 +92,10 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->original_hpos_cache_option = get_option( CustomOrdersTableController::HPOS_DATASTORE_CACHING_ENABLED_OPTION, null );
 		$this->original_myaccount_page_id = get_option( 'woocommerce_myaccount_page_id', null );
 		$_GET                             = array();
+
+		$this->original_request_method_was_set = array_key_exists( 'REQUEST_METHOD', $GLOBALS['_SERVER'] );
+		$this->original_request_method         = $GLOBALS['_SERVER']['REQUEST_METHOD'] ?? null;
+		$GLOBALS['_SERVER']['REQUEST_METHOD']  = 'GET';
 		WC()->cart->empty_cart();
 		wc_clear_notices();
 	}
@@ -95,6 +113,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		unset( $wp->query_vars['payment-methods'] );
 		set_query_var( 'order-received', '' );
 		$_GET = $this->original_get;
+		if ( ! $this->original_request_method_was_set ) {
+			unset( $GLOBALS['_SERVER']['REQUEST_METHOD'] );
+		} else {
+			$GLOBALS['_SERVER']['REQUEST_METHOD'] = $this->original_request_method;
+		}
 		remove_all_filters( 'woocommerce_is_order_received_page' );
 		remove_all_filters( 'woocommerce_logging_class' );
 		remove_all_filters( 'woocommerce_woopayments_is_recurring_payment' );
@@ -118,12 +141,141 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A valid positive-total redirect return confirms the order, saves the token, and empties the cart.
+	 * @testdox A Create Account POST retaining a valid redirect query is left for Core without payment processing.
 	 */
-	public function test_handle_wp_confirms_positive_total_redirect_return(): void {
-		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
-		$order   = $this->create_order( '50.00', $user_id, true );
+	public function test_handle_wp_ignores_create_account_post_with_retained_redirect_query(): void {
+		$order = $this->create_order();
+		$order->set_billing_email( 'guest@example.com' );
+		$order->save();
 		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
+
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_create_account', 'pm_create_account' );
+		$confirmation_owner         = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
+		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_create_account' );
+
+		$original_post    = $GLOBALS['_POST'];
+		$original_request = $GLOBALS['_REQUEST'];
+		$form_post        = array(
+			'create-account' => '1',
+			'email'          => 'guest@example.com',
+			'password'       => 'guest-password',
+			'_wpnonce'       => wp_create_nonce( 'wc_create_account' ),
+		);
+		try {
+			$GLOBALS['_SERVER']['REQUEST_METHOD'] = 'POST';
+			$GLOBALS['_POST']                     = $form_post;
+			$GLOBALS['_REQUEST']                  = array_merge( $GLOBALS['_GET'], $form_post );
+
+			$this->sut->handle_wp();
+
+			$reloaded = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $reloaded );
+			$this->assertSame( 0, $api_client->payment_intent_reads );
+			$this->assertSame( 'pending', $reloaded->get_status() );
+			$this->assertSame( 1, WC()->cart->get_cart_contents_count() );
+			$this->assertSame( $form_post, $GLOBALS['_POST'] );
+			$this->assertSame( $form_post['_wpnonce'], $GLOBALS['_REQUEST']['_wpnonce'] );
+		} finally {
+			$GLOBALS['_POST']    = $original_post;
+			$GLOBALS['_REQUEST'] = $original_request;
+		}
+	}
+
+	/**
+	 * @testdox Non-GET and malformed request methods never process a redirect return.
+	 * @dataProvider invalid_redirect_request_method_provider
+	 *
+	 * @param mixed $request_method Request method fixture.
+	 */
+	public function test_handle_wp_ignores_invalid_redirect_request_methods( $request_method ): void {
+		$order   = $this->create_order();
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
+
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_invalid_method', 'pm_invalid_method' );
+		$confirmation_owner         = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
+		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_invalid_method' );
+
+		if ( null === $request_method ) {
+			unset( $GLOBALS['_SERVER']['REQUEST_METHOD'] );
+		} else {
+			$GLOBALS['_SERVER']['REQUEST_METHOD'] = $request_method;
+		}
+
+		$this->sut->handle_wp();
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 0, $api_client->payment_intent_reads );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( 1, WC()->cart->get_cart_contents_count() );
+	}
+
+	/**
+	 * @testdox A malformed request-method sanitizer result fails closed before redirect processing.
+	 */
+	public function test_handle_wp_ignores_malformed_sanitized_request_method(): void {
+		$order   = $this->create_order();
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
+
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_malformed_method', 'pm_malformed_method' );
+		$confirmation_owner         = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
+		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_malformed_method' );
+
+		$filter = static function ( $sanitized_value, $original_value ) {
+			return 'GET' === $original_value ? array( 'GET' ) : $sanitized_value;
+		};
+		add_filter( 'sanitize_text_field', $filter, 10, 2 );
+		try {
+			$this->sut->handle_wp();
+
+			$reloaded = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $reloaded );
+			$this->assertSame( 0, $api_client->payment_intent_reads );
+			$this->assertSame( 'pending', $reloaded->get_status() );
+			$this->assertCount( 0, $reloaded->get_payment_tokens() );
+			$this->assertSame( 1, WC()->cart->get_cart_contents_count() );
+		} finally {
+			remove_filter( 'sanitize_text_field', $filter, 10 );
+		}
+	}
+
+	/**
+	 * Invalid redirect request methods.
+	 *
+	 * @return array<string,array{request_method:mixed}>
+	 */
+	public function invalid_redirect_request_method_provider(): array {
+		return array(
+			'PUT'        => array( 'request_method' => 'PUT' ),
+			'empty'      => array( 'request_method' => '' ),
+			'missing'    => array( 'request_method' => null ),
+			'non-scalar' => array( 'request_method' => array( 'GET' ) ),
+		);
+	}
+
+	/**
+	 * @testdox A valid positive-total redirect return confirms the order, saves the token, and empties the cart.
+	 * @dataProvider valid_redirect_request_method_provider
+	 *
+	 * @param string $request_method Request method fixture.
+	 */
+	public function test_handle_wp_confirms_positive_total_redirect_return( string $request_method ): void {
+		$GLOBALS['_SERVER']['REQUEST_METHOD'] = $request_method;
+		$user_id                              = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order                                = $this->create_order( '50.00', $user_id, true );
+		$product                              = \WC_Helper_Product::create_simple_product();
 		WC()->cart->add_to_cart( $product->get_id() );
 
 		$api_client                 = new RedirectReturnApiClientStub();
@@ -155,6 +307,19 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_return', $api_client->last_payment_intent_id );
 		$this->assertCount( 1, $reloaded->get_payment_tokens() );
 		$this->assertSame( 0, WC()->cart->get_cart_contents_count() );
+	}
+
+	/**
+	 * Valid redirect request methods.
+	 *
+	 * @return array<string,array{request_method:string}>
+	 */
+	public function valid_redirect_request_method_provider(): array {
+		return array(
+			'canonical GET'  => array( 'request_method' => 'GET' ),
+			'lowercase get'  => array( 'request_method' => 'get' ),
+			'mixed case GeT' => array( 'request_method' => 'GeT' ),
+		);
 	}
 
 	/**
