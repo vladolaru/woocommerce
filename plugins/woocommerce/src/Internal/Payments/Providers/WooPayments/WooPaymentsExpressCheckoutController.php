@@ -336,6 +336,14 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			return true;
 		}
 
+		$main_query = $GLOBALS['wp_the_query'] ?? null;
+		if ( $main_query instanceof \WP_Query && $main_query->is_singular() ) {
+			$host = $main_query->get_queried_object();
+			if ( $host instanceof \WP_Post && has_shortcode( $host->post_content, 'product_page' ) ) {
+				return true;
+			}
+		}
+
 		$post_id = function_exists( 'get_queried_object_id' ) ? get_queried_object_id() : 0;
 		$post    = $post_id ? get_post( $post_id ) : null;
 

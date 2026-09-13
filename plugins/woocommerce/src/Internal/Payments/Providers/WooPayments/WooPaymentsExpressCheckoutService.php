@@ -39,6 +39,20 @@ class WooPaymentsExpressCheckoutService {
 	private WooPaymentsFrontendTrackingController $frontend_tracking_controller;
 
 	/**
+	 * Whether the stable product-page shortcode context has been resolved.
+	 *
+	 * @var bool
+	 */
+	private bool $product_page_shortcode_context_resolved = false;
+
+	/**
+	 * Product resolved from the stable product-page shortcode context.
+	 *
+	 * @var \WC_Product|null
+	 */
+	private ?\WC_Product $product_page_shortcode_product = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -623,7 +637,7 @@ class WooPaymentsExpressCheckoutService {
 	 */
 	private function get_product_for_product_page(): ?\WC_Product {
 		$current_product = $GLOBALS['product'] ?? null;
-		if ( $current_product instanceof \WC_Product ) {
+		if ( doing_action( 'woocommerce_after_add_to_cart_form' ) && $current_product instanceof \WC_Product ) {
 			return $current_product;
 		}
 
@@ -643,17 +657,28 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
-	 * Get the product from a product_page shortcode in the current post.
+	 * Get the product from a product_page shortcode in the main query host.
 	 *
 	 * @return \WC_Product|null
 	 */
 	private function get_product_from_product_page_shortcode(): ?\WC_Product {
-		$post = get_post();
-		if ( ! $post instanceof \WP_Post || ! has_shortcode( $post->post_content, 'product_page' ) ) {
+		if ( $this->product_page_shortcode_context_resolved ) {
+			return $this->product_page_shortcode_product;
+		}
+
+		$main_query = $GLOBALS['wp_the_query'] ?? null;
+		if ( ! $main_query instanceof \WP_Query || ! $main_query->is_singular() ) {
 			return null;
 		}
 
-		if ( ! preg_match_all( '/' . get_shortcode_regex( array( 'product_page' ) ) . '/', $post->post_content, $matches, PREG_SET_ORDER ) ) {
+		$host = $main_query->get_queried_object();
+		if ( ! $host instanceof \WP_Post ) {
+			return null;
+		}
+
+		$this->product_page_shortcode_context_resolved = true;
+
+		if ( ! preg_match_all( '/' . get_shortcode_regex( array( 'product_page' ) ) . '/', $host->post_content, $matches, PREG_SET_ORDER ) ) {
 			return null;
 		}
 
@@ -662,9 +687,13 @@ class WooPaymentsExpressCheckoutService {
 				continue;
 			}
 
+			if ( '[' === $shortcode[1] && ']' === $shortcode[6] ) {
+				continue;
+			}
+
 			$atts = shortcode_parse_atts( $shortcode[3] );
 			if ( ! is_array( $atts ) ) {
-				continue;
+				return null;
 			}
 
 			$product_id = isset( $atts['id'] ) ? absint( $atts['id'] ) : 0;
@@ -674,10 +703,10 @@ class WooPaymentsExpressCheckoutService {
 				$product_id = '' !== $sku ? wc_get_product_id_by_sku( $sku ) : 0;
 			}
 
-			$product = $product_id ? wc_get_product( $product_id ) : null;
-			if ( $product instanceof \WC_Product ) {
-				return $product;
-			}
+			$product                              = $product_id ? wc_get_product( $product_id ) : null;
+			$this->product_page_shortcode_product = $product instanceof \WC_Product ? $product : null;
+
+			return $this->product_page_shortcode_product;
 		}
 
 		return null;

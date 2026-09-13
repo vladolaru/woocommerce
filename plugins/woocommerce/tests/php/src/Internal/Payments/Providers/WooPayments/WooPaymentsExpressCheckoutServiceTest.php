@@ -41,6 +41,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_is_cart' );
 		remove_all_filters( 'woocommerce_is_product' );
 		$this->set_order_pay_query_var( 0 );
+		unset( $GLOBALS['product'] );
 		wp_reset_postdata();
 		parent::tearDown();
 	}
@@ -563,8 +564,12 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should build product page express checkout params for product_page shortcode pages.
+	 * @dataProvider product_page_shortcode_syntax_provider
+	 *
+	 * @param string $shortcode_template Product-page shortcode template.
+	 * @param bool   $use_sku            Whether to substitute an SKU instead of an ID.
 	 */
-	public function test_builds_product_page_shortcode_express_checkout_params(): void {
+	public function test_builds_product_page_shortcode_express_checkout_params( string $shortcode_template, bool $use_sku ): void {
 		$product = \WC_Helper_Product::create_simple_product(
 			true,
 			array(
@@ -574,21 +579,178 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 				'price'         => '7.89',
 			)
 		);
-		$page_id = self::factory()->post->create(
-			array(
-				'post_type'    => 'page',
-				'post_status'  => 'publish',
-				'post_content' => '[product_page id="' . $product->get_id() . '"]',
-			)
-		);
-		$this->go_to( get_permalink( $page_id ) );
+		$product->set_sku( 'shortcode-widget-' . $product->get_id() );
+		$product->save();
+		$value = $use_sku ? $product->get_sku() : (string) $product->get_id();
+		$this->set_current_page_with_content( sprintf( $shortcode_template, $value ) );
 		unset( $GLOBALS['product'] );
 
-		$params = $this->create_service()->get_express_checkout_params( 'product' );
+		$service = $this->create_service();
+		$params  = $service->get_express_checkout_params( 'product' );
 
-		$this->assertTrue( $this->create_service()->should_show_payment_request_button( 'product' ) );
+		$this->assertTrue( $service->should_show_payment_request_button( 'product' ) );
 		$this->assertSame( 'Shortcode Widget', $params['product']['displayItems'][0]['label'] );
 		$this->assertSame( 789, $params['product']['total']['amount'] );
+	}
+
+	/**
+	 * Provide supported product-page shortcode syntaxes.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function product_page_shortcode_syntax_provider(): array {
+		return array(
+			'double-quoted ID'     => array( '[product_page id="%s"]', false ),
+			'single-quoted ID'     => array( "[product_page id='%s']", false ),
+			'unquoted ID'          => array( '[product_page id=%s]', false ),
+			'attributes after ID'  => array( '[product_page id="%s" show_title="false"]', false ),
+			'attributes before ID' => array( '[product_page show_title="false" id="%s"]', false ),
+			'double-quoted SKU'    => array( '[product_page sku="%s"]', true ),
+			'single-quoted SKU'    => array( "[product_page sku='%s']", true ),
+			'unquoted SKU'         => array( '[product_page sku=%s]', true ),
+		);
+	}
+
+	/**
+	 * @testdox Should ignore an unrelated global product on product_page shortcode hosts.
+	 */
+	public function test_product_page_shortcode_ignores_unrelated_global_product(): void {
+		$shortcode_product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Shortcode Product',
+				'price'         => '12.34',
+				'regular_price' => '12.34',
+				'virtual'       => true,
+			)
+		);
+		$unrelated_product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Unrelated Product',
+				'price'         => '98.76',
+				'regular_price' => '98.76',
+				'virtual'       => true,
+			)
+		);
+		$this->set_current_page_with_content( '[product_page id="' . $shortcode_product->get_id() . '"]' );
+		$GLOBALS['product'] = $unrelated_product;
+
+		$service = $this->create_service();
+		$params  = $service->get_express_checkout_params( 'product' );
+
+		$this->assertTrue( $service->should_show_payment_request_button( 'product' ) );
+		$this->assertSame( 'Shortcode Product', $params['product']['displayItems'][0]['label'] );
+		$this->assertSame( 1234, $params['product']['total']['amount'] );
+
+		$hook_label        = '';
+		$read_hook_product = static function () use ( $service, &$hook_label ): void {
+			$hook_label = $service->get_express_checkout_params( 'product' )['product']['displayItems'][0]['label'];
+		};
+		add_action( 'woocommerce_after_add_to_cart_form', $read_hook_product );
+
+		try {
+			/**
+			 * Fires after the add-to-cart form so the product global has a defined owner.
+			 *
+			 * @since 11.2.0
+			 */
+			do_action( 'woocommerce_after_add_to_cart_form' );
+		} finally {
+			remove_action( 'woocommerce_after_add_to_cart_form', $read_hook_product );
+		}
+
+		$this->assertSame( 'Unrelated Product', $hook_label );
+	}
+
+	/**
+	 * @testdox Should resolve a product_page SKU once per request.
+	 */
+	public function test_product_page_shortcode_resolves_sku_once_per_request(): void {
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Cached SKU Product',
+				'price'         => '12.34',
+				'regular_price' => '12.34',
+				'virtual'       => true,
+			)
+		);
+		$product->set_sku( 'cached-shortcode-sku' );
+		$product->save();
+		$this->set_current_page_with_content( '[product_page sku="cached-shortcode-sku"]' );
+		unset( $GLOBALS['product'] );
+
+		$lookups      = 0;
+		$count_lookup = static function ( $product_id ) use ( &$lookups ) {
+			++$lookups;
+			return $product_id;
+		};
+		add_filter( 'woocommerce_get_product_id_by_sku', $count_lookup );
+
+		try {
+			$service = $this->create_service();
+			$this->assertTrue( $service->should_show_payment_request_button( 'product' ) );
+			$this->assertSame( 'Cached SKU Product', $service->get_express_checkout_params( 'product' )['product']['displayItems'][0]['label'] );
+			$this->assertTrue( $service->should_show_payment_request_button( 'product' ) );
+			$this->assertSame( 'Cached SKU Product', $service->get_express_checkout_params( 'product' )['product']['displayItems'][0]['label'] );
+		} finally {
+			remove_filter( 'woocommerce_get_product_id_by_sku', $count_lookup );
+		}
+
+		$this->assertSame( 1, $lookups );
+	}
+
+	/**
+	 * @testdox Should ignore escaped product_page shortcode text.
+	 */
+	public function test_product_page_shortcode_ignores_escaped_shortcode_text(): void {
+		$product = \WC_Helper_Product::create_simple_product( true );
+		$this->set_current_page_with_content( '[[product_page id="' . $product->get_id() . '"]]' );
+		unset( $GLOBALS['product'] );
+
+		$service = $this->create_service();
+
+		$this->assertFalse( $service->should_show_payment_request_button( 'product' ) );
+		$this->assertSame( array(), $service->get_express_checkout_params( 'product' )['product'] );
+	}
+
+	/**
+	 * @testdox Should keep the first live product_page shortcode result when its product is missing.
+	 */
+	public function test_product_page_shortcode_does_not_skip_a_missing_first_product(): void {
+		$product = \WC_Helper_Product::create_simple_product( true );
+		$this->set_current_page_with_content( '[product_page id="999999"] [product_page id="' . $product->get_id() . '"]' );
+		unset( $GLOBALS['product'] );
+
+		$service = $this->create_service();
+
+		$this->assertFalse( $service->should_show_payment_request_button( 'product' ) );
+		$this->assertSame( array(), $service->get_express_checkout_params( 'product' )['product'] );
+	}
+
+	/**
+	 * @testdox Should resolve product_page shortcode context after an early query call.
+	 */
+	public function test_product_page_shortcode_context_recovers_after_an_early_call(): void {
+		$this->reset_main_query();
+		$service = $this->create_service();
+		$this->assertFalse( $service->should_show_payment_request_button( 'product' ) );
+
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Late Query Product',
+				'price'         => '12.34',
+				'regular_price' => '12.34',
+				'virtual'       => true,
+			)
+		);
+		$this->set_current_page_with_content( '[product_page id="' . $product->get_id() . '"]' );
+		unset( $GLOBALS['product'] );
+
+		$this->assertTrue( $service->should_show_payment_request_button( 'product' ) );
+		$this->assertSame( 'Late Query Product', $service->get_express_checkout_params( 'product' )['product']['displayItems'][0]['label'] );
 	}
 
 	/**
@@ -1119,5 +1281,34 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$this->go_to( get_permalink( $product->get_id() ) );
 		setup_postdata( $post );
 		add_filter( 'woocommerce_is_product', '__return_true' );
+	}
+
+	/**
+	 * Set the current request to a page containing the given content.
+	 *
+	 * @param string $content Page content.
+	 */
+	private function set_current_page_with_content( string $content ): void {
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+
+		global $post;
+		$this->go_to( get_permalink( $page_id ) );
+		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Set the page global for the shortcode request under test.
+		setup_postdata( $post );
+	}
+
+	/**
+	 * Reset the main query to its pre-request state.
+	 */
+	private function reset_main_query(): void {
+		unset( $GLOBALS['wp_query'], $GLOBALS['wp_the_query'] );
+		$GLOBALS['wp_the_query'] = new \WP_Query(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Reset main-query globals to simulate pre-request resolution.
+		$GLOBALS['wp_query']     = $GLOBALS['wp_the_query']; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Reset main-query globals to simulate pre-request resolution.
 	}
 }

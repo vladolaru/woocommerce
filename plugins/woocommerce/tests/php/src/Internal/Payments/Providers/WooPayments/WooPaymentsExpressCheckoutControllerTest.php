@@ -4,8 +4,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Unit_Test_Case;
 
 /**
@@ -256,6 +259,51 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should use the live SKU shortcode product for localized data and the rendered Express Checkout container.
+	 */
+	public function test_product_page_shortcode_with_sku_uses_live_product_for_express_checkout(): void {
+		$escaped_product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Escaped Widget',
+				'price'         => '9.87',
+				'regular_price' => '9.87',
+				'virtual'       => true,
+			)
+		);
+		$live_product    = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Live SKU Widget',
+				'price'         => '12.34',
+				'regular_price' => '12.34',
+				'virtual'       => true,
+			)
+		);
+		$live_product->set_sku( 'live-shortcode-sku' );
+		$live_product->save();
+
+		$content = '[[product_page id="' . $escaped_product->get_id() . '"]] [product_page sku="live-shortcode-sku"]';
+		$this->set_current_page_with_content( $content );
+		unset( $GLOBALS['product'] );
+
+		$this->sut = $this->create_controller( true, true, $this->create_real_service() );
+		$this->sut->enqueue_frontend_assets();
+
+		$localized_data = wp_scripts()->get_data( 'wc-woopayments-express-checkout', 'data' );
+		$this->assertIsString( $localized_data );
+		$this->assertStringContainsString( '"label":"Live SKU Widget"', $localized_data );
+		$this->assertStringContainsString( '"amount":1234', $localized_data );
+		$this->assertStringNotContainsString( 'Escaped Widget', $localized_data );
+
+		$this->sut->register();
+		$this->setExpectedDeprecated( 'Theme without comments.php' );
+		$output = do_shortcode( $content );
+
+		$this->assertStringContainsString( 'id="wcpay-express-checkout-element"', $output );
+	}
+
+	/**
 	 * @testdox Should render no ECE container or assets when payment request is disabled.
 	 */
 	public function test_display_express_checkout_buttons_renders_nothing_when_payment_request_is_disabled(): void {
@@ -389,13 +437,69 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
 
-		$service                                     = $service ?? new RecordingExpressCheckoutService();
-		$service->should_show_payment_request_button = $payment_request_on;
+		$service = $service ?? new RecordingExpressCheckoutService();
+		if ( $service instanceof RecordingExpressCheckoutService ) {
+			$service->should_show_payment_request_button = $payment_request_on;
+		}
 
 		$controller = new WooPaymentsExpressCheckoutController();
 		$controller->init( $arbiter, $service, $this->createStub( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService::class ) );
 
 		return $controller;
+	}
+
+	/**
+	 * Create the real Express Checkout service for controller integration tests.
+	 *
+	 * @return WooPaymentsExpressCheckoutService
+	 */
+	private function create_real_service(): WooPaymentsExpressCheckoutService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'is_test_mode_enabled', 'get_gateway_setting', 'is_payment_request_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_account_id' )->willReturn( 'acct_123' );
+		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'          => 'US',
+				'payments_enabled' => true,
+				'capabilities'     => array(),
+			)
+		);
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'is_payment_request_enabled' )->willReturn( true );
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) {
+				$settings = array(
+					'manual_capture'                   => 'no',
+					'payment_request'                  => 'yes',
+					'payment_request_button_type'      => 'default',
+					'payment_request_button_theme'     => 'dark',
+					'payment_request_button_size'      => 'medium',
+					'express_checkout_product_methods' => array( 'payment_request' ),
+				);
+
+				return array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback;
+			}
+		);
+
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+
+		$tracking_controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_shopper_tracking_enabled' ) )
+			->getMock();
+		$tracking_controller->method( 'is_shopper_tracking_enabled' )->willReturn( true );
+
+		$service = new WooPaymentsExpressCheckoutService();
+		$service->init( $account_service, $provider, $tracking_controller );
+
+		return $service;
 	}
 
 	/**
