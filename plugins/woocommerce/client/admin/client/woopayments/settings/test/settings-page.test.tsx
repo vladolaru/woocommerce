@@ -1217,17 +1217,17 @@ describe( 'WooPaymentsSettingsPage', () => {
 				base: {
 					percentage_rate: 0,
 					fixed_rate: 300,
-					currency: 'JPY',
+					currency: 'uGx',
 				},
 				additional: {
 					percentage_rate: 0,
 					fixed_rate: 0,
-					currency: 'JPY',
+					currency: 'uGx',
 				},
 				fx: {
 					percentage_rate: 0,
 					fixed_rate: 0,
-					currency: 'JPY',
+					currency: 'uGx',
 				},
 				discount: [],
 			},
@@ -1239,7 +1239,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			name: 'From 2.61% + $0.27 fee details',
 		} );
 		const zeroDecimalFeeButton = screen.getByRole( 'button', {
-			name: 'From 0% + ¥300 fee details',
+			name: 'From 0% + UGX\u00a0300 fee details',
 		} );
 		const discountBadge = screen.getByText( /10% off fees through/ );
 

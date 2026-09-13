@@ -29,6 +29,7 @@ import {
 } from './payment-method-definitions';
 import type { PmPromotion } from '../promotions/types';
 import { getSettingsPaymentsProviderRouteUrl } from '../admin/utils';
+import { isWooPaymentsZeroDecimalDisplayCurrency } from '../currency';
 
 type PaymentMethodStatus = {
 	status?: string;
@@ -123,24 +124,6 @@ const REQUIREMENTS_LABELS: Record< string, string > = {
 	),
 	external_account: __( 'Bank account', 'woocommerce' ),
 };
-const ZERO_DECIMAL_CURRENCY_CODES = new Set( [
-	'BIF',
-	'CLP',
-	'DJF',
-	'GNF',
-	'JPY',
-	'KMF',
-	'KRW',
-	'MGA',
-	'PYG',
-	'RWF',
-	'UGX',
-	'VND',
-	'VUV',
-	'XAF',
-	'XOF',
-	'XPF',
-] );
 const ADDITIONAL_PAYMENT_METHODS_DOCUMENTATION_URL =
 	'https://woocommerce.com/document/woopayments/payment-methods/additional-payment-methods/#method-cant-be-enabled';
 const BNPL_DOCUMENTATION_URL =
@@ -283,7 +266,7 @@ const formatFeeCurrency = (
 
 	const currencyCode = currency.toUpperCase();
 	const isZeroDecimalCurrency =
-		ZERO_DECIMAL_CURRENCY_CODES.has( currencyCode );
+		isWooPaymentsZeroDecimalDisplayCurrency( currencyCode );
 
 	try {
 		return new Intl.NumberFormat( undefined, {

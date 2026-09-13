@@ -505,6 +505,12 @@ describe( 'WooPaymentsReportsPage', () => {
 	} );
 
 	it( 'downloads the loaded Balance summary with business and account identity CSV columns', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			starting_balance: {
+				amount: 0,
+			},
+		} );
 		renderReportsPage();
 
 		await screen.findByRole( 'heading', { name: 'Balance summary' } );
@@ -512,11 +518,60 @@ describe( 'WooPaymentsReportsPage', () => {
 			screen.getByRole( 'button', { name: 'Export' } )
 		);
 
+		const csv = mockDownloadCSVFile.mock.calls[ 0 ][ 1 ];
+
 		expect( mockDownloadCSVFile ).toHaveBeenCalledWith(
 			'balance-report-2026-06-01-to-2026-06-19.csv',
-			expect.stringContaining(
-				'business_name,woopayments_account_id,row_key,label,amount,count,currency,period_start,period_end\n"Native Merchant LLC",acct_native_123,starting_balance,"Starting balance",1000,,usd,2026-06-01,2026-06-19'
-			)
+			expect.any( String )
+		);
+		expect( csv ).toContain(
+			'"Native Merchant LLC",acct_native_123,starting_balance,"Starting balance",0,,usd,2026-06-01,2026-06-19'
+		);
+		expect( csv ).toContain(
+			'total_charges_captured,"Total charges captured",1626.72,8,usd'
+		);
+		expect( csv ).toContain( 'fees,Fees,-60.64,,usd' );
+		expect( csv ).toContain( 'reader_fees,"Reader costs",-1.5,,usd' );
+		expect( csv ).toContain( 'payouts,Payouts,11026.08,2,usd' );
+		expect( csv ).not.toContain( '$' );
+		expect( csv ).not.toContain( ' USD' );
+	} );
+
+	it( 'keeps mixed-case zero-decimal Balance CSV amounts in provider units', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			currency: 'jPy',
+		} );
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Export' } )
+		);
+
+		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+			'total_charges_captured,"Total charges captured",162672,8,jpy'
+		);
+	} );
+
+	it( 'converts mixed-case UGX Balance CSV amounts from provider minor units', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			currency: 'uGx',
+			total_charges_captured: {
+				amount: 12345,
+				count: 8,
+			},
+		} );
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Export' } )
+		);
+
+		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+			'total_charges_captured,"Total charges captured",123.45,8,ugx'
 		);
 	} );
 

@@ -54,6 +54,7 @@ import {
 	getTransactionDetailsRoute,
 } from '../money-movement/utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
 
 type WooPaymentsReportsPageProps = {
 	now?: Date;
@@ -809,7 +810,13 @@ const getBalanceCsv = (
 			{ value: identity.accountId, display: identity.accountId },
 			{ value: row.id, display: row.id },
 			{ value: row.label, display: row.label },
-			{ value: row.amount, display: String( row.amount ) },
+			{
+				value: getWooPaymentsAmountFromMinorUnits(
+					row.amount,
+					currency
+				),
+				display: '',
+			},
 			{ value: row.count ?? '', display: String( row.count ?? '' ) },
 			{ value: currency.toLowerCase(), display: currency.toLowerCase() },
 			{ value: periodStart, display: periodStart },
