@@ -267,25 +267,33 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @since 11.0.0
 	 */
 	public function confirm_fetched_intent_for_order( WC_Order $order, array $intent, bool $save_payment_method ): void {
-		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
+		$status                                        = isset( $intent['status'] ) ? (string) $intent['status'] : '';
+		$should_apply_display_details_before_lifecycle = false;
 
 		if ( $this->is_authorized_intent_status( $status ) ) {
-			$token_save_error = $this->maybe_save_payment_method_for_order(
+			$token_save_result = $this->maybe_save_payment_method_for_order(
 				$order,
 				$intent,
 				array( 'should_save_payment_method' => $save_payment_method ? 'true' : 'false' )
 			);
-			if ( null !== $token_save_error ) {
+			if ( null !== $token_save_result['error'] ) {
 				throw new WooPaymentsIntentConfirmationException(
-					esc_html( (string) ( $token_save_error['error']['message'] ?? '' ) ),
-					(int) ( $token_save_error['status_code'] ?? 409 )
+					esc_html( (string) ( $token_save_result['error']['error']['message'] ?? '' ) ),
+					(int) ( $token_save_result['error']['status_code'] ?? 409 )
 				);
+			}
+
+			$should_apply_display_details_before_lifecycle = 0.0 < (float) $order->get_total()
+				&& $token_save_result['token'] instanceof \WC_Payment_Token_CC
+				&& $this->has_full_charge_card_identity( $intent );
+			if ( $should_apply_display_details_before_lifecycle ) {
+				$this->apply_payment_method_display_details( $order, $intent );
 			}
 		}
 
 		$event = $this->build_lifecycle_event_from_intent( $intent, $order );
 		$this->lifecycle_service->apply( $order, $event, new WooPaymentsPersistenceProfile() );
-		if ( $this->is_authorized_intent_status( $status ) ) {
+		if ( $this->is_authorized_intent_status( $status ) && ! $should_apply_display_details_before_lifecycle ) {
 			$this->apply_payment_method_display_details( $order, $intent );
 		}
 
@@ -536,24 +544,72 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether a PaymentIntent contains the full non-Link card identity required before lifecycle hooks run.
+	 *
+	 * @param array<string,mixed> $intent Native PaymentIntent response.
+	 * @return bool
+	 */
+	private function has_full_charge_card_identity( array $intent ): bool {
+		$intent_id = isset( $intent['id'] ) && is_scalar( $intent['id'] ) ? (string) $intent['id'] : '';
+		if ( 0 !== strpos( $intent_id, 'pi_' ) ) {
+			return false;
+		}
+
+		$charge  = WooPaymentsOrderEffects::latest_charge( $intent );
+		$details = $charge['payment_method_details'] ?? null;
+		if ( ! is_array( $details ) || ! isset( $details['type'] ) || ! is_scalar( $details['type'] ) || 'card' !== (string) $details['type'] || ! isset( $details['card'] ) || ! is_array( $details['card'] ) ) {
+			return false;
+		}
+
+		$card        = $details['card'];
+		$wallet_type = isset( $card['wallet']['type'] ) && is_scalar( $card['wallet']['type'] ) ? sanitize_key( (string) $card['wallet']['type'] ) : '';
+		if ( 'link' === $wallet_type || ! $this->has_nonempty_scalar_card_field( $card, 'last4' ) || ! $this->has_nonempty_scalar_card_field( $card, 'brand' ) || ! $this->has_nonempty_scalar_card_field( $card, 'funding' ) ) {
+			return false;
+		}
+
+		$networks  = isset( $card['networks'] ) && is_array( $card['networks'] ) ? $card['networks'] : array();
+		$available = isset( $networks['available'] ) && is_array( $networks['available'] ) ? $networks['available'] : array();
+		$network   = $card['display_brand'] ?? $card['network'] ?? $networks['preferred'] ?? $available[0] ?? null;
+
+		return is_scalar( $network ) && '' !== trim( (string) $network );
+	}
+
+	/**
+	 * Tell whether a card field has a nonempty scalar value.
+	 *
+	 * @param array<string,mixed> $card Card details.
+	 * @param string              $field Card field name.
+	 * @return bool
+	 */
+	private function has_nonempty_scalar_card_field( array $card, string $field ): bool {
+		return isset( $card[ $field ] ) && is_scalar( $card[ $field ] ) && '' !== trim( (string) $card[ $field ] );
+	}
+
+	/**
 	 * Persist a requested payment method as a WooCommerce token before completing the order.
 	 *
 	 * @param WC_Order            $order   Order being updated.
 	 * @param array<string,mixed> $intent  Native intent response.
 	 * @param array<string,mixed> $request Request data.
-	 * @return array<string,mixed>|null Error response when token saving must block checkout.
+	 * @return array{error:array<string,mixed>|null,token:\WC_Payment_Token|null} Token result and any blocking error response.
 	 */
-	private function maybe_save_payment_method_for_order( WC_Order $order, array $intent, array $request ): ?array {
+	private function maybe_save_payment_method_for_order( WC_Order $order, array $intent, array $request ): array {
 		$is_recurring               = $this->is_recurring_payment( $order );
 		$should_save_payment_method = $is_recurring || $this->should_save_payment_method( $request ) || $this->is_subscription_change_payment_request( $request );
 		if ( ! $should_save_payment_method ) {
-			return null;
+			return array(
+				'error' => null,
+				'token' => null,
+			);
 		}
 
 		$payment_method_id = $this->get_result_payment_method_id( $intent );
 		$user_id           = $this->get_token_user_id( $order );
 		if ( '' === $payment_method_id || 0 >= $user_id ) {
-			return $is_recurring ? $this->recurring_token_save_error_response() : null;
+			return array(
+				'error' => $is_recurring ? $this->recurring_token_save_error_response() : null,
+				'token' => null,
+			);
 		}
 
 		try {
@@ -562,15 +618,24 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 				$this->token_service->attach_token_to_order( $order, $token );
 				$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $this->get_result_customer_id( $intent ) );
 
-				return null;
+				return array(
+					'error' => null,
+					'token' => $token,
+				);
 			}
 		} catch ( Throwable $exception ) {
 			$this->log_token_save_error( $payment_method_id, $exception );
 
-			return $is_recurring ? $this->recurring_token_save_error_response() : null;
+			return array(
+				'error' => $is_recurring ? $this->recurring_token_save_error_response() : null,
+				'token' => null,
+			);
 		}
 
-		return $is_recurring ? $this->recurring_token_save_error_response() : null;
+		return array(
+			'error' => $is_recurring ? $this->recurring_token_save_error_response() : null,
+			'token' => null,
+		);
 	}
 
 	/**

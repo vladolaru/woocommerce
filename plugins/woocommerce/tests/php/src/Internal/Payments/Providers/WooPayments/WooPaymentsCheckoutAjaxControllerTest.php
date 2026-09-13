@@ -1074,6 +1074,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$order = $this->create_woopayments_order( '10.00' );
 		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'WooPayments' );
 		$order->update_meta_data( '_intent_id', 'pi_native' );
 		$order->save();
 
@@ -1104,6 +1105,24 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 					'currency'       => 'usd',
 					'customer'       => 'cus_native',
 					'payment_method' => 'pm_native',
+					'charges'        => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                     => 'ch_native',
+								'payment_method'         => 'pm_native',
+								'payment_method_details' => array(
+									'type' => 'card',
+									'card' => array(
+										'brand'   => 'visa',
+										'funding' => 'credit',
+										'last4'   => '4242',
+										'network' => 'visa',
+									),
+								),
+							),
+						),
+					),
 				);
 			}
 		};
@@ -1123,13 +1142,38 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$sut           = $this->create_controller( $api_client, null, $token_service );
 
-		$status_at_token_attach = '';
-		$record_order_status    = function ( int $order_id ) use ( &$status_at_token_attach ): void {
+		$status_at_token_attach          = '';
+		$payment_complete_observations   = array();
+		$payment_complete_observer_count = 0;
+		$record_order_status             = function ( int $order_id ) use ( &$status_at_token_attach ): void {
 			$order = wc_get_order( $order_id );
 
 			$status_at_token_attach = $order instanceof WC_Order ? $order->get_status() : '';
 		};
+		$record_payment_complete         = function ( int $order_id ) use ( $order, $user_id, &$payment_complete_observations, &$payment_complete_observer_count ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$observed_order = wc_get_order( $order_id );
+			$tokens         = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
+			$token          = $tokens[0] ?? null;
+
+			++$payment_complete_observer_count;
+			$payment_complete_observations = array(
+				'gateway'        => $observed_order instanceof WC_Order ? $observed_order->get_payment_method() : '',
+				'title'          => $observed_order instanceof WC_Order ? $observed_order->get_payment_method_title() : '',
+				'last4'          => $observed_order instanceof WC_Order ? $observed_order->get_meta( 'last4', true ) : '',
+				'brand'          => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_card_brand', true ) : '',
+				'details'        => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_payment_method_details', true ) : '',
+				'raw_details'    => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_raw_payment_method_details', true ) : '',
+				'payment_method' => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_payment_method_id', true ) : '',
+				'tokens'         => $tokens,
+				'token'          => $token,
+			);
+		};
 		add_action( 'woocommerce_payment_token_added_to_order', $record_order_status, 10, 1 );
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
 
 		try {
 			$response = $sut->get_update_order_status_response(
@@ -1142,6 +1186,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			);
 		} finally {
 			remove_action( 'woocommerce_payment_token_added_to_order', $record_order_status, 10 );
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
 		}
 
 		$order  = wc_get_order( $order->get_id() );
@@ -1155,6 +1200,378 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
 		$this->assertSame( 'pm_native', $token->get_token() );
 		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
+		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertSame( 1, $payment_complete_observer_count );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $payment_complete_observations['gateway'] );
+		$this->assertSame( 'Visa credit card', $payment_complete_observations['title'] );
+		$this->assertSame( '4242', $payment_complete_observations['last4'] );
+		$this->assertSame( 'visa', $payment_complete_observations['brand'] );
+		$this->assertStringContainsString( '"last4":"4242"', (string) $payment_complete_observations['details'] );
+		$this->assertSame( '', $payment_complete_observations['raw_details'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['payment_method'] );
+		$this->assertCount( 1, $payment_complete_observations['tokens'] );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $payment_complete_observations['token'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['token']->get_token() );
+		$this->assertSame( 'visa', $payment_complete_observations['token']->get_card_type() );
+		$this->assertSame( '4242', $payment_complete_observations['token']->get_last4() );
+
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
+		try {
+			$response = $sut->get_update_order_status_response(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'pi_native',
+					'should_save_payment_method' => 'true',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
+		}
+
+		$order        = wc_get_order( $order->get_id() );
+		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
+		$active_token = $order instanceof WC_Order ? $token_service->get_active_token_for_order( $order ) : null;
+
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 1, $payment_complete_observer_count );
+		$this->assertCount( 1, $tokens );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $active_token );
+		$this->assertSame( 'pm_native', $active_token->get_token() );
+		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+	}
+
+	/**
+	 * @testdox Order-status callbacks keep excluded charge card shapes on the established post-lifecycle display path.
+	 *
+	 * @dataProvider excluded_charge_card_shapes
+	 *
+	 * @param array<string,mixed>|null $charge                  PaymentIntent charge data, if present.
+	 * @param string                   $expected_observed_title Expected title at the lifecycle boundary.
+	 * @param int                      $expected_status_code    Expected response status code.
+	 */
+	public function test_update_order_status_keeps_excluded_charge_card_shapes_on_post_lifecycle_display_path( ?array $charge, string $expected_observed_title, int $expected_status_code ): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'WooPayments' );
+		$order->update_meta_data( '_intent_id', 'pi_excluded_shape' );
+		$order->save();
+
+		$api_client              = new class( $charge ) extends WooPaymentsApiClient {
+			/**
+			 * Charge data returned with the PaymentIntent.
+			 *
+			 * @var array<string,mixed>|null
+			 */
+			private ?array $charge;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed>|null $charge Charge data returned with the PaymentIntent.
+			 */
+			public function __construct( ?array $charge ) {
+				$this->charge = $charge;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_excluded_shape' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				$intent = array(
+					'id'                   => 'pi_excluded_shape',
+					'status'               => 'succeeded',
+					'currency'             => 'usd',
+					'customer'             => 'cus_native',
+					'payment_method'       => 'pm_native',
+					'payment_method_types' => array( 'card' ),
+				);
+				if ( null !== $this->charge ) {
+					$intent['charges'] = array(
+						'total_count' => 1,
+						'data'        => array( $this->charge ),
+					);
+				}
+
+				return $intent;
+			}
+		};
+		$token_service           = $this->create_token_service(
+			array(
+				'pm_native' => array(
+					'id'   => 'pm_native',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$sut                     = $this->create_controller( $api_client, null, $token_service );
+		$observed_title          = '';
+		$observer_count          = 0;
+		$record_payment_complete = function ( int $order_id ) use ( $order, &$observed_title, &$observer_count ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$observed_order = wc_get_order( $order_id );
+			++$observer_count;
+			$observed_title = $observed_order instanceof WC_Order ? $observed_order->get_payment_method_title() : '';
+		};
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
+
+		try {
+			$response = $sut->get_update_order_status_response(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'pi_excluded_shape',
+					'should_save_payment_method' => 'true',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $expected_status_code, $response['status_code'] );
+		$this->assertSame( 1, $observer_count );
+		$this->assertSame( $expected_observed_title, $observed_title );
+		if ( 200 === $expected_status_code ) {
+			$this->assertNotSame( 'WooPayments', $order->get_payment_method_title() );
+		}
+	}
+
+	/**
+	 * Provide charge card shapes excluded from the pre-lifecycle identity projection.
+	 *
+	 * @return array<string,array{array<string,mixed>|null,string,int}>
+	 */
+	public function excluded_charge_card_shapes(): array {
+		return array(
+			'missing charge details'                  => array( null, 'WooPayments', 200 ),
+			'partial card details'                    => array(
+				array(
+					'id'                     => 'ch_partial',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array( 'last4' => '4242' ),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'missing card funding'                    => array(
+				array(
+					'id'                     => 'ch_missing_funding',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'   => 'visa',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'link wrapped card'                       => array(
+				array(
+					'id'                     => 'ch_link',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+							'wallet'  => array( 'type' => 'link' ),
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'card present'                            => array(
+				array(
+					'id'                     => 'ch_card_present',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type'         => 'card_present',
+						'card_present' => array( 'last4' => '4242' ),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'capitalized card type'                   => array(
+				array(
+					'id'                     => 'ch_capitalized_card_type',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'Card',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'uppercase card type'                     => array(
+				array(
+					'id'                     => 'ch_uppercase_card_type',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'CARD',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'spaced card type'                        => array(
+				array(
+					'id'                     => 'ch_spaced_card_type',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'ca rd',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'whitespace card type'                    => array(
+				array(
+					'id'                     => 'ch_whitespace_card_type',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => ' card ',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'empty display brand shadows network'     => array(
+				array(
+					'id'                     => 'ch_empty_display_brand',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'         => 'visa',
+							'display_brand' => '',
+							'funding'       => 'credit',
+							'last4'         => '4242',
+							'network'       => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'malformed display brand shadows network' => array(
+				array(
+					'id'                     => 'ch_malformed_display_brand',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'         => 'visa',
+							'display_brand' => array( 'visa' ),
+							'funding'       => 'credit',
+							'last4'         => '4242',
+							'network'       => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				500,
+			),
+			'non-array available network'             => array(
+				array(
+					'id'                     => 'ch_string_available',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'    => 'visa',
+							'funding'  => 'credit',
+							'last4'    => '4242',
+							'networks' => array( 'available' => 'visa' ),
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'valid available network'                 => array(
+				array(
+					'id'                     => 'ch_available_network',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'    => 'visa',
+							'funding'  => 'credit',
+							'last4'    => '4242',
+							'networks' => array( 'available' => array( 'visa' ) ),
+						),
+					),
+				),
+				'Visa credit card',
+				200,
+			),
+		);
 	}
 
 	/**
@@ -1262,10 +1679,28 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$order->set_customer_id( $user_id );
 		$order->set_status( $renewal_status );
+		$order->set_payment_method_title( 'WooPayments' );
 		$order->update_meta_data( '_intent_id', 'pi_native' );
 		$order->save();
 		$subscription->set_customer_id( $user_id );
 		$subscription->set_payment_method_title( 'WooPayments' );
+		$subscription->update_meta_data( '_payment_method_id', 'pm_old' );
+		$subscription->update_meta_data( '_stripe_customer_id', 'cus_old' );
+		$subscription->save();
+		$old_token = new WC_Payment_Token_CC();
+		$old_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$old_token->set_token( 'pm_old' );
+		$old_token->set_user_id( $user_id );
+		$old_token->set_card_type( 'mastercard' );
+		$old_token->set_last4( '1111' );
+		$old_token->set_expiry_month( 1 );
+		$old_token->set_expiry_year( 2030 );
+		$old_token->save();
+		$order->add_payment_token( $old_token );
+		$order->update_meta_data( '_payment_method_id', 'pm_old' );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_old' );
+		$order->save();
+		$subscription->add_payment_token( $old_token );
 		$subscription->save();
 		$unrelated->set_customer_id( $user_id );
 		$unrelated->set_payment_method( 'cheque' );
@@ -1278,7 +1713,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			$order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ),
 		);
 
-		$api_client    = new class() extends WooPaymentsApiClient {
+		$api_client                      = new class() extends WooPaymentsApiClient {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -1305,10 +1740,28 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 					'currency'       => 'usd',
 					'customer'       => 'cus_native',
 					'payment_method' => 'pm_native',
+					'charges'        => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                     => 'ch_native',
+								'payment_method'         => 'pm_native',
+								'payment_method_details' => array(
+									'type' => 'card',
+									'card' => array(
+										'brand'   => 'visa',
+										'funding' => 'credit',
+										'last4'   => '4242',
+										'network' => 'visa',
+									),
+								),
+							),
+						),
+					),
 				);
 			}
 		};
-		$token_service = $this->create_token_service(
+		$token_service                   = $this->create_token_service(
 			array(
 				'pm_native' => array(
 					'id'   => 'pm_native',
@@ -1322,19 +1775,54 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$sut           = $this->create_controller( $api_client, null, $token_service );
+		$sut                             = $this->create_controller( $api_client, null, $token_service );
+		$payment_complete_observations   = array();
+		$payment_complete_observer_count = 0;
+		$record_payment_complete         = function ( int $order_id ) use ( $order, $subscription, $token_service, &$payment_complete_observations, &$payment_complete_observer_count ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
 
-		$response = $sut->get_update_order_status_response(
-			array(
-				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
-				'order_id'                   => $order->get_id(),
-				'intent_id'                  => 'pi_native',
-				'should_save_payment_method' => 'false',
-			)
-		);
-		$order    = wc_get_order( $order->get_id() );
-		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
-		$token    = $tokens[0] ?? null;
+			$observed_order            = wc_get_order( $order_id );
+			$observed_subscription     = wc_get_order( $subscription->get_id() );
+			$active_order_token        = $observed_order instanceof WC_Order ? $token_service->get_active_token_for_order( $observed_order ) : null;
+			$active_subscription_token = $observed_subscription instanceof WC_Order ? $token_service->get_active_token_for_order( $observed_subscription ) : null;
+
+			++$payment_complete_observer_count;
+			$payment_complete_observations = array(
+				'gateway'                        => $observed_order instanceof WC_Order ? $observed_order->get_payment_method() : '',
+				'title'                          => $observed_order instanceof WC_Order ? $observed_order->get_payment_method_title() : '',
+				'last4'                          => $observed_order instanceof WC_Order ? $observed_order->get_meta( 'last4', true ) : '',
+				'brand'                          => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_card_brand', true ) : '',
+				'details'                        => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_payment_method_details', true ) : '',
+				'raw_details'                    => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_raw_payment_method_details', true ) : '',
+				'payment_method'                 => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_payment_method_id', true ) : '',
+				'token'                          => $active_order_token,
+				'subscription_token'             => $observed_subscription instanceof WC_Order ? $observed_subscription->get_payment_tokens() : array(),
+				'active_subscription_token'      => $active_subscription_token,
+				'subscription_method'            => $observed_subscription instanceof WC_Order ? $observed_subscription->get_payment_method() : '',
+				'subscription_title'             => $observed_subscription instanceof WC_Order ? $observed_subscription->get_payment_method_title() : '',
+				'subscription_payment_method_id' => $observed_subscription instanceof WC_Order ? $observed_subscription->get_meta( '_payment_method_id', true ) : '',
+				'subscription_customer_id'       => $observed_subscription instanceof WC_Order ? $observed_subscription->get_meta( '_stripe_customer_id', true ) : '',
+			);
+		};
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
+
+		try {
+			$response = $sut->get_update_order_status_response(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'pi_native',
+					'should_save_payment_method' => 'false',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
+		}
+		$order  = wc_get_order( $order->get_id() );
+		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
+		$token  = $order instanceof WC_Order ? $token_service->get_active_token_for_order( $order ) : null;
 
 		$subscription = wc_get_order( $subscription->get_id() );
 		$unrelated    = wc_get_order( $unrelated->get_id() );
@@ -1344,34 +1832,63 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $unrelated );
 		$this->assertSame( 200, $response['status_code'] );
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
-		$this->assertCount( 1, $tokens );
+		$this->assertCount( 2, $tokens );
 		$this->assertSame( $user_id, $token->get_user_id() );
 		$this->assertContains( $token->get_id(), $order->get_payment_tokens(), 'Saved cards should be linked to the parent order.' );
+		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $order->get_payment_tokens() ) );
 		$this->assertContains( $token->get_id(), $subscription->get_payment_tokens(), 'Saved cards should be linked to the renewal subscription.' );
+		$this->assertContains( $old_token->get_id(), $order->get_payment_tokens(), 'Historical cards should remain linked to the renewal order.' );
+		$this->assertContains( $old_token->get_id(), $subscription->get_payment_tokens(), 'Historical cards should remain linked to the renewal subscription.' );
 		$this->assertSame( 'pm_native', $subscription->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_native', $subscription->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $subscription->get_payment_method() );
-		$this->assertSame( 'WooPayments', $subscription->get_payment_method_title() );
+		$this->assertSame( 'Visa credit card', $subscription->get_payment_method_title() );
+		$this->assertSame( 1, $payment_complete_observer_count );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $payment_complete_observations['gateway'] );
+		$this->assertSame( 'Visa credit card', $payment_complete_observations['title'] );
+		$this->assertSame( '4242', $payment_complete_observations['last4'] );
+		$this->assertSame( 'visa', $payment_complete_observations['brand'] );
+		$this->assertStringContainsString( '"last4":"4242"', (string) $payment_complete_observations['details'] );
+		$this->assertSame( '', $payment_complete_observations['raw_details'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['payment_method'] );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $payment_complete_observations['token'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['token']->get_token() );
+		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $payment_complete_observations['subscription_token'] ) );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $payment_complete_observations['active_subscription_token'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['active_subscription_token']->get_token() );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $payment_complete_observations['subscription_method'] );
+		$this->assertSame( 'Visa credit card', $payment_complete_observations['subscription_title'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['subscription_payment_method_id'] );
+		$this->assertSame( 'cus_native', $payment_complete_observations['subscription_customer_id'] );
 		$this->assertSame( array(), $unrelated->get_payment_tokens() );
 		$this->assertSame( 'pm_unrelated', $unrelated->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_unrelated', $unrelated->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( 'cheque', $unrelated->get_payment_method() );
 		$this->assertSame( 'Check payments', $unrelated->get_payment_method_title() );
 
-		$response     = $sut->get_update_order_status_response(
-			array(
-				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
-				'order_id'                   => $order->get_id(),
-				'intent_id'                  => 'pi_native',
-				'should_save_payment_method' => 'false',
-			)
-		);
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
+		try {
+			$response = $sut->get_update_order_status_response(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'pi_native',
+					'should_save_payment_method' => 'false',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
+		}
+		$order        = wc_get_order( $order->get_id() );
 		$subscription = wc_get_order( $subscription->get_id() );
 		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
 
 		$this->assertSame( 200, $response['status_code'] );
-		$this->assertCount( 1, $tokens );
-		$this->assertSame( array( $token->get_id() ), array_values( $subscription->get_payment_tokens() ) );
+		$this->assertSame( 1, $payment_complete_observer_count );
+		$this->assertCount( 2, $tokens );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $subscription->get_payment_tokens() ) );
 	}
 
 	/**
@@ -1491,6 +2008,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$order = $this->create_woopayments_order( '10.00' );
 		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'WooPayments' );
 		$order->update_meta_data( '_intent_id', 'pi_native' );
 		$order->save();
 
@@ -1521,6 +2039,24 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 					'currency'       => 'usd',
 					'customer'       => 'cus_native',
 					'payment_method' => 'pm_native',
+					'charges'        => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                     => 'ch_native',
+								'payment_method'         => 'pm_native',
+								'payment_method_details' => array(
+									'type' => 'card',
+									'card' => array(
+										'brand'   => 'visa',
+										'funding' => 'credit',
+										'last4'   => '4242',
+										'network' => 'visa',
+									),
+								),
+							),
+						),
+					),
 				);
 			}
 		};
@@ -1558,6 +2094,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 409, $response['status_code'] );
 		$this->assertSame( 'Unable to save payment method for subscription. Please try again or use a different payment method.', $response['error']['message'] );
 		$this->assertNotSame( 'completed', $order->get_status() );
+		$this->assertSame( 'WooPayments', $order->get_payment_method_title() );
+		$this->assertSame( '', $order->get_meta( 'last4', true ) );
 		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'Recurring orders should not be completed when their required token cannot be saved.' );
 	}
 
