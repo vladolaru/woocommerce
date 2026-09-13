@@ -56,6 +56,25 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should use the configured store currency when the display currency is filtered.
+	 */
+	public function test_has_additional_enabled_currencies_uses_the_configured_currency_when_the_display_currency_is_filtered(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$currency_filter = static function ( string $currency ): string {
+			unset( $currency );
+
+			return 'EUR';
+		};
+		add_filter( 'woocommerce_currency', $currency_filter, 1 );
+
+		try {
+			$this->assertTrue( ( new MultiCurrencyUsageDetector() )->has_additional_enabled_currencies() );
+		} finally {
+			remove_filter( 'woocommerce_currency', $currency_filter, 1 );
+		}
+	}
+
+	/**
 	 * @testdox Should query posts order metadata when HPOS is disabled.
 	 */
 	public function test_has_foreign_currency_orders_queries_posts_table(): void {

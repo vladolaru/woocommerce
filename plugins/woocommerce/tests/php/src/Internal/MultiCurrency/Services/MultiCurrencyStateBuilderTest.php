@@ -310,6 +310,35 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should use the configured store currency for automatic provider rates when the display currency is filtered.
+	 */
+	public function test_uses_the_configured_store_currency_for_automatic_provider_rates_when_the_display_currency_is_filtered(): void {
+		$currency_from = array();
+		$registry      = new CurrencyRateProviderRegistry();
+		$registry->register( $this->create_recording_available_rate_provider( $currency_from ) );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
+		$currency_filter = static function ( string $currency ): string {
+			unset( $currency );
+
+			return 'EUR';
+		};
+		add_filter( 'woocommerce_currency', $currency_filter, 1 );
+
+		try {
+			$state = $this->create_builder( $registry )->build();
+		} finally {
+			remove_filter( 'woocommerce_currency', $currency_filter, 1 );
+		}
+
+		$this->assertSame( 'USD', $state->get_default_currency()->get_code() );
+		$this->assertTrue( $state->get_default_currency()->get_is_default() );
+		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_available_currencies() ) );
+		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
+		$this->assertSame( array( 'usd' ), $currency_from );
+	}
+
+	/**
 	 * @testdox Should select compatibility override currency when enabled.
 	 */
 	public function test_selects_compatibility_override_currency_when_enabled(): void {
@@ -596,6 +625,69 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 				unset( $currency_from, $currencies_to );
 
 				return $this->rates;
+			}
+		};
+	}
+
+	/**
+	 * Create an available rate provider that records its source currency.
+	 *
+	 * @param string[] $currency_from Source currencies captured by reference.
+	 * @return CurrencyRateProvider
+	 */
+	private function create_recording_available_rate_provider( array &$currency_from ): CurrencyRateProvider {
+		return new class( $currency_from ) implements CurrencyRateProvider {
+			/** @var string[] */
+			private array $currency_from;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string[] $currency_from Source currencies captured by reference.
+			 */
+			public function __construct( array &$currency_from ) {
+				$this->currency_from = &$currency_from;
+			}
+
+			/**
+			 * Get the provider identifier.
+			 *
+			 * @return string
+			 */
+			public function get_id(): string {
+				return 'recording-provider';
+			}
+
+			/**
+			 * Tell whether automatic rates are available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Get supported currencies.
+			 *
+			 * @return string[]
+			 */
+			public function get_supported_currencies(): array {
+				return array();
+			}
+
+			/**
+			 * Get rates and record the source currency.
+			 *
+			 * @param string        $source Currency to convert from.
+			 * @param string[]|null $currencies_to Currencies to convert into.
+			 * @return array<string,float>
+			 */
+			public function get_currency_rates( string $source, ?array $currencies_to = null ): array {
+				unset( $currencies_to );
+				$this->currency_from[] = $source;
+
+				return array( 'gbp' => 0.82 );
 			}
 		};
 	}
