@@ -26,6 +26,7 @@ import {
 	getWooPaymentsReportsFeesSummary,
 	requestWooPaymentsReportsFeesExport,
 } from '../reports/data';
+import { formatAmount as formatMoneyMovementAmount } from '../money-movement/utils';
 
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
@@ -479,6 +480,28 @@ describe( 'WooPaymentsReportsPage', () => {
 		).toEqual( {
 			operators: [ 'between', 'before', 'after', 'on' ],
 		} );
+	} );
+
+	it( 'formats Balance amounts with the standard admin helper and prints the same visible table', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			currency: 'cad',
+		} );
+
+		renderReportsPage();
+
+		const dataViews = await screen.findByTestId( 'reports-dataviews' );
+		expect(
+			within( dataViews ).getByText(
+				formatMoneyMovementAmount( 162672, 'cad' )
+			)
+		).toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Print' } )
+		);
+
+		expect( printSpy ).toHaveBeenCalledTimes( 1 );
 	} );
 
 	it( 'downloads the loaded Balance summary with business and account identity CSV columns', async () => {

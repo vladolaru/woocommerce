@@ -49,7 +49,10 @@ import type {
 	ReportsTab,
 } from './types';
 import './style.scss';
-import { getTransactionDetailsRoute } from '../money-movement/utils';
+import {
+	formatAmount as formatMoneyMovementAmount,
+	getTransactionDetailsRoute,
+} from '../money-movement/utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 
 type WooPaymentsReportsPageProps = {
@@ -979,7 +982,12 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				type: 'integer',
 				getValue: ( { item }: { item: BalanceRow } ) => item.amount,
 				render: ( { item }: { item: BalanceRow } ) => (
-					<span>{ formatAmount( item.amount, reportCurrency ) }</span>
+					<span>
+						{ formatMoneyMovementAmount(
+							item.amount,
+							reportCurrency
+						) }
+					</span>
 				),
 			},
 		],
