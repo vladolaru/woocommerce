@@ -103,6 +103,8 @@ class MultiCurrencyDomainMapTest extends WC_Unit_Test_Case {
 		$this->assertContains( 'wcpay_multi_currency_enable_auto_currency', $option_keys, 'Automatic currency switching setting must be preserved.' );
 		$this->assertContains( 'wcpay_multi_currency_enable_storefront_switcher', $option_keys, 'Storefront switcher setting must be preserved.' );
 		$this->assertContains( 'wcpay_multi_currency_setup_completed', $option_keys, 'Setup completion state must be preserved.' );
+		$this->assertContains( 'wcpay_multi_currency_cache_autodetect_done', $option_keys, 'Cache auto-detection completion must be preserved.' );
+		$this->assertContains( 'wcpay_multi_currency_cache_recommendation_dismissed', $option_keys, 'Cache recommendation dismissal must be preserved.' );
 		$this->assertContains( 'wcpay_multi_currency_exchange_rate_{currency}', $option_keys, 'Per-currency exchange-rate settings must be preserved.' );
 	}
 

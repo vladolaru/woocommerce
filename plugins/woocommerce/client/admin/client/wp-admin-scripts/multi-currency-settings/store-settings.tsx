@@ -5,12 +5,15 @@ import apiFetch from '@wordpress/api-fetch';
 import {
 	Button,
 	CheckboxControl,
+	Icon,
+	Notice,
 	RadioControl,
 	Spinner,
 } from '@wordpress/components';
 import { useDispatch } from '@wordpress/data';
 import { useEffect, useMemo, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
+import { info } from '@wordpress/icons';
 
 /**
  * Internal dependencies
@@ -37,6 +40,8 @@ const normalizeStoreSettings = (
 		response.wcpay_multi_currency_enable_storefront_switcher
 	),
 	renderingMode: response.wcpay_multi_currency_rendering_mode || 'speed',
+	shouldRecommendCacheMode: response.should_recommend_cache_mode,
+	cacheRecommendationDismissed: response.cache_recommendation_dismissed,
 	isCacheOptimizedFeatureEnabled: response.is_cache_optimized_feature_enabled,
 	siteTheme: response.site_theme,
 } );
@@ -48,6 +53,8 @@ const serializeStoreSettings = ( settings: StoreSettingsState ) => ( {
 	wcpay_multi_currency_enable_storefront_switcher:
 		settings.enableStorefrontSwitcher ? 'yes' : 'no',
 	wcpay_multi_currency_rendering_mode: settings.renderingMode,
+	wcpay_multi_currency_cache_recommendation_dismissed:
+		settings.cacheRecommendationDismissed ? 'yes' : 'no',
 } );
 
 const areSettingsEqual = (
@@ -63,7 +70,11 @@ const areSettingsEqual = (
 			draftSettings.enableAutoCurrency &&
 		currentSettings.enableStorefrontSwitcher ===
 			draftSettings.enableStorefrontSwitcher &&
-		currentSettings.renderingMode === draftSettings.renderingMode
+		currentSettings.renderingMode === draftSettings.renderingMode &&
+		currentSettings.shouldRecommendCacheMode ===
+			draftSettings.shouldRecommendCacheMode &&
+		currentSettings.cacheRecommendationDismissed ===
+			draftSettings.cacheRecommendationDismissed
 	);
 };
 
@@ -130,8 +141,8 @@ export function StoreLevelSettings() {
 		);
 	};
 
-	const saveSettings = async () => {
-		if ( ! draftSettings || isSaving || ! isDirty ) {
+	const saveSettings = async ( settings = draftSettings, force = false ) => {
+		if ( ! settings || isSaving || ( ! force && ! isDirty ) ) {
 			return;
 		}
 
@@ -141,20 +152,46 @@ export function StoreLevelSettings() {
 			const response = await apiFetch< StoreSettingsResponse >( {
 				path: `${ REST_BASE }/update-settings`,
 				method: 'POST',
-				data: serializeStoreSettings( draftSettings ),
+				data: serializeStoreSettings( settings ),
 			} );
 			const normalizedSettings = normalizeStoreSettings( response );
 
 			setCurrentSettings( normalizedSettings );
 			setDraftSettings( normalizedSettings );
 			createSuccessNotice( __( 'Store settings saved.', 'woocommerce' ) );
-		} catch ( error ) {
+		} catch {
 			createErrorNotice(
 				__( 'Error saving store settings.', 'woocommerce' )
 			);
 		} finally {
 			setIsSaving( false );
 		}
+	};
+
+	const useCacheRenderingMode = (): void => {
+		if ( ! draftSettings || isSaving ) {
+			return;
+		}
+
+		const nextSettings = {
+			...draftSettings,
+			renderingMode: 'cache' as RenderingMode,
+		};
+		setDraftSettings( nextSettings );
+		void saveSettings( nextSettings, true );
+	};
+
+	const dismissCacheRecommendation = (): void => {
+		if ( ! draftSettings || isSaving ) {
+			return;
+		}
+
+		const nextSettings = {
+			...draftSettings,
+			cacheRecommendationDismissed: true,
+		};
+		setDraftSettings( nextSettings );
+		void saveSettings( nextSettings, true );
 	};
 
 	if ( isLoading ) {
@@ -233,12 +270,38 @@ export function StoreLevelSettings() {
 					}
 				/>
 			) }
+			{ draftSettings.shouldRecommendCacheMode && (
+				<Notice
+					status="info"
+					politeness="polite"
+					onRemove={ dismissCacheRecommendation }
+				>
+					<div className="woocommerce-multi-currency-settings__cache-recommendation-content">
+						<Icon icon={ info } aria-hidden="true" />
+						<p>
+							{ __(
+								'We detected that your store uses page caching. Switching Multi-Currency to the caching-optimized rendering mode lets your host cache pages effectively.',
+								'woocommerce'
+							) }
+						</p>
+					</div>
+					<Button
+						variant="secondary"
+						isBusy={ isSaving }
+						disabled={ isSaving }
+						accessibleWhenDisabled
+						onClick={ useCacheRenderingMode }
+					>
+						{ __( 'Use caching mode', 'woocommerce' ) }
+					</Button>
+				</Notice>
+			) }
 			<Button
 				variant="primary"
 				isBusy={ isSaving }
 				disabled={ isSaving || ! isDirty }
 				accessibleWhenDisabled
-				onClick={ saveSettings }
+				onClick={ () => void saveSettings() }
 			>
 				{ __( 'Save changes', 'woocommerce' ) }
 			</Button>

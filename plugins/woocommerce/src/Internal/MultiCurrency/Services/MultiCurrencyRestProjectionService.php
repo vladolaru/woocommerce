@@ -204,6 +204,11 @@ class MultiCurrencyRestProjectionService {
 				'required' => false,
 				'enum'     => array( 'speed', 'cache' ),
 			),
+			MultiCurrencyCacheRenderingService::DISMISSED_OPTION => array(
+				'type'     => 'string',
+				'required' => false,
+				'enum'     => array( 'yes', 'no' ),
+			),
 		);
 	}
 }

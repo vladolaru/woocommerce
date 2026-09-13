@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
@@ -44,6 +45,13 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 * @var MultiCurrencyRuntimeArbiter
 	 */
 	private MultiCurrencyRuntimeArbiter $arbiter;
+
+	/**
+	 * Cache rendering service.
+	 *
+	 * @var MultiCurrencyCacheRenderingService
+	 */
+	private MultiCurrencyCacheRenderingService $cache_rendering_service;
 
 	/**
 	 * State builder.
@@ -85,14 +93,16 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter           $arbiter                    Runtime owner arbiter.
-	 * @param MultiCurrencyStateBuilderFactory      $state_builder_factory      State builder factory.
-	 * @param MultiCurrencyProjectionServiceFactory $projection_service_factory Projection service factory.
+	 * @param MultiCurrencyRuntimeArbiter             $arbiter                    Runtime owner arbiter.
+	 * @param MultiCurrencyStateBuilderFactory        $state_builder_factory      State builder factory.
+	 * @param MultiCurrencyProjectionServiceFactory   $projection_service_factory Projection service factory.
+	 * @param MultiCurrencyCacheRenderingService|null $cache_rendering_service Cache rendering service.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory, MultiCurrencyProjectionServiceFactory $projection_service_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory, MultiCurrencyProjectionServiceFactory $projection_service_factory, ?MultiCurrencyCacheRenderingService $cache_rendering_service = null ): void {
 		$this->arbiter                    = $arbiter;
 		$this->state_builder_factory      = $state_builder_factory;
 		$this->projection_service_factory = $projection_service_factory;
+		$this->cache_rendering_service    = $cache_rendering_service ?? wc_get_container()->get( MultiCurrencyCacheRenderingService::class );
 		$this->namespace                  = self::REST_NAMESPACE;
 		$this->rest_base                  = self::REST_BASE;
 	}
@@ -267,7 +277,15 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 * @return WP_REST_Response
 	 */
 	public function get_settings(): WP_REST_Response {
-		return rest_ensure_response( $this->get_frontend_projection_service()->get_settings() );
+		return rest_ensure_response(
+			array_merge(
+				$this->get_frontend_projection_service()->get_settings(),
+				array(
+					'should_recommend_cache_mode'    => $this->cache_rendering_service->should_recommend_cache_mode(),
+					'cache_recommendation_dismissed' => $this->cache_rendering_service->is_cache_recommendation_dismissed(),
+				)
+			)
+		);
 	}
 
 	/**
@@ -282,6 +300,16 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 
 		foreach ( $this->get_updateable_settings() as $option_name ) {
 			if ( ! isset( $params[ $option_name ] ) ) {
+				continue;
+			}
+
+			if ( MultiCurrencyCacheRenderingService::DISMISSED_OPTION === $option_name ) {
+				$value = $params[ $option_name ];
+				if ( ! is_string( $value ) || ! in_array( $value, array( 'yes', 'no' ), true ) ) {
+					continue;
+				}
+
+				update_option( $option_name, $value );
 				continue;
 			}
 
@@ -459,6 +487,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 			self::OPTION_PREFIX . '_enable_auto_currency',
 			self::OPTION_PREFIX . '_enable_storefront_switcher',
 			self::OPTION_PREFIX . '_rendering_mode',
+			MultiCurrencyCacheRenderingService::DISMISSED_OPTION,
 		);
 	}
 

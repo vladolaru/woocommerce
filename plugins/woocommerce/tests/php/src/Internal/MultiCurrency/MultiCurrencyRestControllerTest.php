@@ -10,6 +10,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCachingEnvironment;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
@@ -52,6 +54,9 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		'wcpay_multi_currency_enable_auto_currency',
 		'wcpay_multi_currency_enable_storefront_switcher',
 		'wcpay_multi_currency_rendering_mode',
+		'_wcpay_feature_mc_cache_optimized',
+		'wcpay_multi_currency_cache_autodetect_done',
+		'wcpay_multi_currency_cache_recommendation_dismissed',
 		'wcpay_multi_currency_stored_customer_currencies',
 		'wcpay_multi_currency_cached_currencies',
 	);
@@ -380,6 +385,81 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should project cache recommendation state and persist an explicit dismissal.
+	 */
+	public function test_projects_cache_recommendation_state_and_persists_an_explicit_dismissal(): void {
+		update_option( '_wcpay_feature_mc_cache_optimized', '1' );
+		update_option( 'wcpay_multi_currency_rendering_mode', 'speed' );
+		$cache_rendering_service = $this->getMockBuilder( MultiCurrencyCacheRenderingService::class )
+			->onlyMethods( array( 'maybe_auto_enable_cache_rendering_mode' ) )
+			->getMock();
+		$cache_rendering_service->expects( $this->never() )->method( 'maybe_auto_enable_cache_rendering_mode' );
+		$cache_rendering_service->init( $this->create_active_caching_environment() );
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			null,
+			true,
+			null,
+			$cache_rendering_service
+		);
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/update-settings' );
+		$request->set_param( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		$request->set_param( 'wcpay_multi_currency_enable_storefront_switcher', 'no' );
+		$request->set_param( 'wcpay_multi_currency_cache_recommendation_dismissed', 'yes' );
+
+		$get_data = $sut->get_settings()->get_data();
+		$this->assertFalse( get_option( MultiCurrencyCacheRenderingService::AUTODETECT_DONE_OPTION ) );
+		$update_data = $sut->update_settings( $request )->get_data();
+
+		$this->assertTrue( $get_data['should_recommend_cache_mode'] );
+		$this->assertFalse( $get_data['cache_recommendation_dismissed'] );
+		$this->assertSame( 'yes', get_option( MultiCurrencyCacheRenderingService::DISMISSED_OPTION ) );
+		$this->assertTrue( $update_data['cache_recommendation_dismissed'] );
+		$this->assertFalse( $update_data['should_recommend_cache_mode'] );
+
+		$request->set_param( 'wcpay_multi_currency_cache_recommendation_dismissed', 'no' );
+		$restored_data = $sut->update_settings( $request )->get_data();
+
+		$this->assertSame( 'no', get_option( MultiCurrencyCacheRenderingService::DISMISSED_OPTION ) );
+		$this->assertFalse( $restored_data['cache_recommendation_dismissed'] );
+		$this->assertTrue( $restored_data['should_recommend_cache_mode'] );
+	}
+
+	/**
+	 * @testdox Should reject invalid cache recommendation dismissals.
+	 *
+	 * @dataProvider get_invalid_cache_recommendation_dismissals
+	 * @param mixed $dismissal Invalid dismissal value.
+	 */
+	public function test_rejects_invalid_cache_recommendation_dismissals( $dismissal ): void {
+		update_option( 'wcpay_multi_currency_cache_recommendation_dismissed', 'no' );
+		$sut     = $this->create_controller();
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/update-settings' );
+		$request->set_param( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		$request->set_param( 'wcpay_multi_currency_enable_storefront_switcher', 'no' );
+		$request->set_param( 'wcpay_multi_currency_cache_recommendation_dismissed', $dismissal );
+
+		$sut->update_settings( $request );
+
+		$this->assertSame( 'no', get_option( 'wcpay_multi_currency_cache_recommendation_dismissed' ) );
+	}
+
+	/**
+	 * Get invalid cache recommendation dismissal values.
+	 *
+	 * @return array<string,array{0:mixed}>
+	 */
+	public function get_invalid_cache_recommendation_dismissals(): array {
+		return array(
+			'other string' => array( 'maybe' ),
+			'array'        => array( array( 'yes' ) ),
+			'object'       => array( new \stdClass() ),
+			'boolean'      => array( true ),
+			'number'       => array( 1 ),
+		);
+	}
+
+	/**
 	 * @testdox Should return public config with cache control header.
 	 */
 	public function test_returns_public_config_with_cache_control_header(): void {
@@ -398,23 +478,26 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a REST controller.
 	 *
-	 * @param string                         $owner                 Runtime owner.
-	 * @param MultiCurrencyStateBuilder|null $state_builder         State builder.
-	 * @param bool                           $cache_optimized_mode  Whether cache mode is active.
-	 * @param bool|null                      $provider_available    Whether a registered provider is available.
+	 * @param string                                  $owner                   Runtime owner.
+	 * @param MultiCurrencyStateBuilder|null          $state_builder           State builder.
+	 * @param bool                                    $cache_optimized_mode    Whether cache mode is active.
+	 * @param bool|null                               $provider_available      Whether a registered provider is available.
+	 * @param MultiCurrencyCacheRenderingService|null $cache_rendering_service Cache rendering service.
 	 * @return MultiCurrencyRestController
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
 		?MultiCurrencyStateBuilder $state_builder = null,
 		bool $cache_optimized_mode = true,
-		?bool $provider_available = null
+		?bool $provider_available = null,
+		?MultiCurrencyCacheRenderingService $cache_rendering_service = null
 	): MultiCurrencyRestController {
 		$controller = new MultiCurrencyRestController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
+			$cache_rendering_service
 		);
 		$state_builder = $state_builder ?? $this->create_state_builder();
 		$controller->set_state_builder( $state_builder );
@@ -424,6 +507,25 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		$this->controllers[] = $controller;
 
 		return $controller;
+	}
+
+	/**
+	 * Create an active deterministic cache environment.
+	 *
+	 * @return MultiCurrencyCachingEnvironment
+	 */
+	private function create_active_caching_environment(): MultiCurrencyCachingEnvironment {
+		return new class() extends MultiCurrencyCachingEnvironment {
+			/**
+			 * Tell whether a constant is defined.
+			 *
+			 * @param string $name Constant name.
+			 * @return bool Whether the constant is defined.
+			 */
+			protected function is_constant_defined( string $name ): bool {
+				return 'LSCWP_V' === $name;
+			}
+		};
 	}
 
 	/**

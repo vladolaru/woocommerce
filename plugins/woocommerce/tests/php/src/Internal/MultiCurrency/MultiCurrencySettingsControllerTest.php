@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsPage;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use WC_Unit_Test_Case;
 
 /**
@@ -26,6 +27,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		'admin_print_scripts',
 		'woocommerce_admin_field_wcpay_multi_currency_settings_page',
 		'admin_enqueue_scripts',
+		'admin_init',
 	);
 
 	/**
@@ -56,6 +58,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'admin_print_scripts', array( $sut, 'handle_admin_print_scripts' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $sut, 'render_settings_container' ) ) );
 		$this->assertFalse( has_action( 'admin_enqueue_scripts', array( $sut, 'handle_admin_enqueue_scripts' ) ) );
+		$this->assertFalse( has_action( 'admin_init', array( $sut, 'handle_admin_init' ) ) );
 	}
 
 	/**
@@ -75,6 +78,78 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $sut, 'render_settings_container' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_admin_field_wcpay_currencies_settings_onboarding_cta', array( $sut, 'render_onboarding_cta' ) ) );
 		$this->assertSame( 10, has_action( 'admin_enqueue_scripts', array( $sut, 'handle_admin_enqueue_scripts' ) ) );
+		$this->assertSame( 10, has_action( 'admin_init', array( $sut, 'handle_admin_init' ) ) );
+	}
+
+	/**
+	 * @testdox Should run cache auto-detection only for an authorized core admin request.
+	 */
+	public function test_runs_cache_auto_detection_only_for_an_authorized_core_admin_request(): void {
+		$service = $this->getMockBuilder( MultiCurrencyCacheRenderingService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'maybe_auto_enable_cache_rendering_mode' ) )
+			->getMock();
+		$service->expects( $this->once() )->method( 'maybe_auto_enable_cache_rendering_mode' );
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			array( 'cache_rendering_service' => $service )
+		);
+		$user_id = $this->factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user_id );
+
+		$sut->register();
+		$this->assertSame( 10, has_action( 'admin_init', array( $sut, 'handle_admin_init' ) ) );
+		$sut->handle_admin_init();
+	}
+
+	/**
+	 * @testdox Should not run cache auto-detection outside an admin request.
+	 */
+	public function test_does_not_run_cache_auto_detection_outside_an_admin_request(): void {
+		$service = $this->getMockBuilder( MultiCurrencyCacheRenderingService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'maybe_auto_enable_cache_rendering_mode' ) )
+			->getMock();
+		$service->expects( $this->never() )->method( 'maybe_auto_enable_cache_rendering_mode' );
+		$sut = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			array(
+				'cache_rendering_service' => $service,
+				'is_admin'                => false,
+			)
+		);
+
+		$sut->handle_admin_init();
+	}
+
+	/**
+	 * @testdox Should not run cache auto-detection without the WooCommerce capability.
+	 */
+	public function test_does_not_run_cache_auto_detection_without_the_woocommerce_capability(): void {
+		$service = $this->getMockBuilder( MultiCurrencyCacheRenderingService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'maybe_auto_enable_cache_rendering_mode' ) )
+			->getMock();
+		$service->expects( $this->never() )->method( 'maybe_auto_enable_cache_rendering_mode' );
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			array( 'cache_rendering_service' => $service )
+		);
+		$user_id = $this->factory()->user->create( array( 'role' => 'subscriber' ) );
+		wp_set_current_user( $user_id );
+
+		$sut->handle_admin_init();
+	}
+
+	/**
+	 * @testdox Should not register cache auto-detection when no runtime owns multi-currency.
+	 */
+	public function test_does_not_register_cache_auto_detection_without_a_runtime_owner(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_NONE );
+
+		$sut->register();
+
+		$this->assertFalse( has_action( 'admin_init', array( $sut, 'handle_admin_init' ) ) );
 	}
 
 	/**
@@ -266,8 +341,9 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencySettingsController
 	 */
 	private function create_controller( string $owner, array $options = array() ): MultiCurrencySettingsController {
-		$controller = new MultiCurrencySettingsController();
-		$controller->init( $this->create_arbiter( $owner ) );
+		$controller              = new MultiCurrencySettingsController();
+		$cache_rendering_service = $options['cache_rendering_service'] ?? null;
+		$controller->init( $this->create_arbiter( $owner ), $cache_rendering_service );
 		$controller->set_admin_request_resolver(
 			static fn(): bool => (bool) ( $options['is_admin'] ?? true )
 		);

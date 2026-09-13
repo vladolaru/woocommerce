@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
+
 /**
  * B0 extraction boundary for the native multi-currency core domain.
  *
@@ -78,6 +80,8 @@ class MultiCurrencyDomainMap {
 			'wcpay_multi_currency_enable_auto_currency',
 			'wcpay_multi_currency_enable_storefront_switcher',
 			'wcpay_multi_currency_rendering_mode',
+			MultiCurrencyCacheRenderingService::AUTODETECT_DONE_OPTION,
+			MultiCurrencyCacheRenderingService::DISMISSED_OPTION,
 			'wcpay_multi_currency_setup_completed',
 			'wcpay_multi_currency_exchange_rate_{currency}',
 			'wcpay_multi_currency_manual_rate_{currency}',

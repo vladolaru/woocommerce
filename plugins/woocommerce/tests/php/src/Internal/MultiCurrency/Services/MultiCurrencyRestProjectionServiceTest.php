@@ -176,6 +176,11 @@ class MultiCurrencyRestProjectionServiceTest extends WC_Unit_Test_Case {
 						'required' => false,
 						'enum'     => array( 'speed', 'cache' ),
 					),
+					'wcpay_multi_currency_cache_recommendation_dismissed' => array(
+						'type'     => 'string',
+						'required' => false,
+						'enum'     => array( 'yes', 'no' ),
+					),
 				),
 			),
 			$routes['update_settings']

@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -25,6 +26,13 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * @var MultiCurrencyRuntimeArbiter
 	 */
 	private MultiCurrencyRuntimeArbiter $arbiter;
+
+	/**
+	 * Cache rendering service.
+	 *
+	 * @var MultiCurrencyCacheRenderingService
+	 */
+	private MultiCurrencyCacheRenderingService $cache_rendering_service;
 
 	/**
 	 * Admin request resolver.
@@ -80,10 +88,12 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter $arbiter Runtime owner arbiter.
+	 * @param MultiCurrencyRuntimeArbiter             $arbiter                 Runtime owner arbiter.
+	 * @param MultiCurrencyCacheRenderingService|null $cache_rendering_service Cache rendering service.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ?MultiCurrencyCacheRenderingService $cache_rendering_service = null ): void {
+		$this->arbiter                 = $arbiter;
+		$this->cache_rendering_service = $cache_rendering_service ?? wc_get_container()->get( MultiCurrencyCacheRenderingService::class );
 	}
 
 	/**
@@ -176,6 +186,21 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 		$this->add_action_once( 'admin_print_scripts', array( $this, 'handle_admin_print_scripts' ) );
 		$this->add_action_once( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $this, 'render_settings_container' ) );
 		$this->add_action_once( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
+		$this->add_action_once( 'admin_init', array( $this, 'handle_admin_init' ) );
+	}
+
+	/**
+	 * Try cache rendering mode auto-detection for authorized admin requests.
+	 *
+	 * @since 11.2.0
+	 * @internal
+	 */
+	public function handle_admin_init(): void {
+		if ( ! $this->is_admin_request() || ! current_user_can( 'manage_woocommerce' ) ) {
+			return;
+		}
+
+		$this->cache_rendering_service->maybe_auto_enable_cache_rendering_mode();
 	}
 
 	/**
