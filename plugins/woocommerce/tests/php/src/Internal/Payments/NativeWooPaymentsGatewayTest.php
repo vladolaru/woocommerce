@@ -2793,6 +2793,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['_wcsnonce'] = wp_create_nonce( 'wcs_change_payment_method' );
 
 		$_POST['woocommerce_change_payment'] = (string) $order->get_id();
+		$_GET['change_payment_method']       = (string) $order->get_id();
 
 		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
 
@@ -2812,6 +2813,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
 		$this->assertTrue( $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['recurring_payment'] ?? false );
+		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'A validated subscription payment-method change must reach the provider context.' );
 		$this->assertSame(
 			array(
 				array(
@@ -2991,7 +2993,71 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
 		$this->assertFalse( $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['recurring_payment'] ?? false );
+		$this->assertFalse( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false );
 		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+	}
+
+	/**
+	 * @dataProvider invalid_subscription_change_authority_requests
+	 * @testdox Subscription-change provider data requires a valid nonce and the exact processed subscription.
+	 *
+	 * @param string $nonce Nonce request value.
+	 * @param bool   $use_mismatched_subscription Whether the request names a different real subscription.
+	 */
+	public function test_process_payment_rejects_invalid_subscription_change_request_authority( string $nonce, bool $use_mismatched_subscription ): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$request_id                             = $use_mismatched_subscription ? $order->get_id() + 1 : $order->get_id();
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id(), $request_id );
+		if ( '' !== $nonce ) {
+			$_POST['_wcsnonce'] = 'valid' === $nonce ? wp_create_nonce( 'wcs_change_payment_method' ) : $nonce;
+		}
+		$_POST['woocommerce_change_payment']                               = (string) $request_id;
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertFalse( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false );
+	}
+
+	/**
+	 * @return array<string,array{string,bool}>
+	 */
+	public static function invalid_subscription_change_authority_requests(): array {
+		return array(
+			'missing nonce'                => array( '', false ),
+			'invalid nonce'                => array( 'invalid-nonce', false ),
+			'mismatched real subscription' => array( 'valid', true ),
+		);
+	}
+
+	/**
+	 * @testdox Should transport validated saved-method subscription changes without changing new-method semantics.
+	 */
+	public function test_process_payment_transports_validated_saved_method_subscription_change(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = '123';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertFalse( $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false, 'Saved-method handling must keep its existing new-method-only save policy.' );
+		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'Validated saved-method changes must preserve provider billing.' );
 	}
 
 	/**

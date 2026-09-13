@@ -439,6 +439,21 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A validated subscription change reuses an existing guest session customer without updating it.
+	 */
+	public function test_subscription_change_customer_resolution_reuses_guest_session_customer_without_update(): void {
+		$order      = $this->create_checkout_order();
+		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
+		$sut        = $this->create_sut( false, $api_client );
+
+		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
+
+		$this->assertSame( 'cus_guest', $sut->get_or_create_customer_id_for_subscription_payment_method_change( $order ) );
+		$this->assertSame( array(), $api_client->updated_customers );
+		$this->assertSame( array(), $api_client->created_customers );
+	}
+
+	/**
 	 * @testdox Orders with WooPayments customer meta should reuse that customer before user storage.
 	 */
 	public function test_get_or_create_customer_id_reuses_order_customer_meta_before_user_storage(): void {
@@ -457,7 +472,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Changing a subscription's payment method should not overwrite the provider customer.
+	 * @testdox A validated subscription payment-method change should not overwrite the provider customer.
 	 */
 	public function test_customer_update_is_skipped_when_changing_subscription_payment_method(): void {
 		$user_id    = $this->factory->user->create( array( 'user_login' => 'pm-change-customer' ) );
@@ -467,18 +482,14 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_stripe_customer_id', 'cus_subscription' );
 		$order->save();
 
-		$this->fake_wcs_is_subscription();
-		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id(), (string) $order->get_id() );
-		$_GET['change_payment_method']          = (string) $order->get_id();
-
 		$sut = $this->create_sut( false, $api_client );
 
-		$this->assertSame( 'cus_subscription', $sut->get_or_create_customer_id_for_order( $order ) );
+		$this->assertSame( 'cus_subscription', $sut->get_or_create_customer_id_for_subscription_payment_method_change( $order ) );
 		$this->assertSame( array(), $api_client->updated_customers, 'A payment-method change must not push the subscription\'s stale billing to the provider customer.' );
 	}
 
 	/**
-	 * @testdox A user-persisted customer should also be left untouched on a subscription payment-method change.
+	 * @testdox A validated subscription change should leave a user-persisted customer untouched.
 	 */
 	public function test_user_persisted_customer_update_is_skipped_when_changing_subscription_payment_method(): void {
 		$user_id    = $this->factory->user->create( array( 'user_login' => 'pm-change-user-customer' ) );
@@ -487,14 +498,31 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		update_user_option( $user_id, '_wcpay_customer_id_live', 'cus_user' );
 
+		$sut = $this->create_sut( false, $api_client );
+
+		$this->assertSame( 'cus_user', $sut->get_or_create_customer_id_for_subscription_payment_method_change( $order ) );
+		$this->assertSame( array(), $api_client->updated_customers );
+	}
+
+	/**
+	 * @testdox An unrelated subscription request value should not suppress an ordinary customer update.
+	 */
+	public function test_customer_update_runs_for_an_ordinary_order_with_an_unrelated_subscription_request_value(): void {
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'unrelated-subscription-request' ) );
+		$order      = $this->create_checkout_order( $user_id );
+		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
+
+		$order->update_meta_data( '_stripe_customer_id', 'cus_order' );
+		$order->save();
+
 		$this->fake_wcs_is_subscription();
-		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id(), (string) $order->get_id() );
-		$_GET['change_payment_method']          = (string) $order->get_id();
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() + 1 );
+		$_GET['change_payment_method']          = (string) ( $order->get_id() + 1 );
 
 		$sut = $this->create_sut( false, $api_client );
 
-		$this->assertSame( 'cus_user', $sut->get_or_create_customer_id_for_order( $order ) );
-		$this->assertSame( array(), $api_client->updated_customers );
+		$this->assertSame( 'cus_order', $sut->get_or_create_customer_id_for_order( $order ) );
+		$this->assertCount( 1, $api_client->updated_customers, 'Ordinary customer resolution must not inspect unrelated request globals.' );
 	}
 
 	/**
@@ -538,6 +566,20 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A validated subscription change should create a missing customer once.
+	 */
+	public function test_subscription_change_customer_resolution_creates_a_missing_customer_once(): void {
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'subscription-change-creation' ) );
+		$order      = $this->create_checkout_order( $user_id );
+		$api_client = $this->create_customer_api_client( array( 'cus_created' ) );
+		$sut        = $this->create_sut( false, $api_client );
+
+		$this->assertSame( 'cus_created', $sut->get_or_create_customer_id_for_subscription_payment_method_change( $order ) );
+		$this->assertCount( 1, $api_client->created_customers );
+		$this->assertSame( array(), $api_client->updated_customers );
+	}
+
+	/**
 	 * @testdox Losing the creation lock should reuse the concurrently created customer instead of creating a duplicate.
 	 */
 	public function test_get_or_create_customer_id_reuses_customer_created_by_concurrent_request(): void {
@@ -568,6 +610,41 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'cus_existing', $result );
 		$this->assertSame( array(), $api_client->created_customers );
+		$this->assertCount( 1, $api_client->updated_customers );
+		$this->assertSame( 'cus_existing', $api_client->updated_customers[0]['customer_id'] );
+		$this->assertNotFalse( wp_cache_get( 'wcpay_customer_create_' . $user_id, 'woopayments' ) );
+
+		wp_cache_delete( 'wcpay_customer_create_' . $user_id, 'woopayments' );
+	}
+
+	/**
+	 * @testdox A subscription-change lock loser reuses the winning customer without updating it.
+	 */
+	public function test_subscription_change_customer_resolution_reuses_customer_created_by_concurrent_request_without_update(): void {
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'concurrent-change' ) );
+		$order      = $this->create_checkout_order( $user_id );
+		$api_client = $this->create_customer_api_client( array( 'cus_should_not_be_created' ) );
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( false );
+
+		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->getMock();
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
+		$sut->method( 'get_customer_id_by_user_id' )->willReturnOnConsecutiveCalls( null, 'cus_existing' );
+
+		wp_cache_add( 'wcpay_customer_create_' . $user_id, 1, 'woopayments', 10 );
+
+		$result = $sut->get_or_create_customer_id_for_subscription_payment_method_change( $order );
+
+		$this->assertSame( 'cus_existing', $result );
+		$this->assertSame( array(), $api_client->created_customers );
+		$this->assertSame( array(), $api_client->updated_customers );
+		$this->assertNotFalse( wp_cache_get( 'wcpay_customer_create_' . $user_id, 'woopayments' ) );
 
 		wp_cache_delete( 'wcpay_customer_create_' . $user_id, 'woopayments' );
 	}

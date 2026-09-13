@@ -274,22 +274,40 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_or_create_customer_id_for_order( WC_Order $order ): string {
-		// A subscription carries the billing details from when it was created, which can be
-		// years stale. Swapping its payment method is no signal those details changed, so
-		// refreshing the provider customer from them would overwrite fresher data with stale
-		// data. Resolve or create the customer, but leave an existing one untouched.
-		$skip_customer_update = $this->is_changing_payment_method_for_subscription();
+		return $this->resolve_customer_id_for_order( $order, true );
+	}
+
+	/**
+	 * Get or create a customer ID without refreshing an existing customer from a subscription.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order Subscription order being charged.
+	 * @return string
+	 */
+	public function get_or_create_customer_id_for_subscription_payment_method_change( WC_Order $order ): string {
+		return $this->resolve_customer_id_for_order( $order, false );
+	}
+
+	/**
+	 * Resolve a customer ID and optionally refresh an existing customer from the order.
+	 *
+	 * @param WC_Order $order                  Order being charged.
+	 * @param bool     $should_update_customer Whether an existing customer should be refreshed.
+	 * @return string
+	 */
+	private function resolve_customer_id_for_order( WC_Order $order, bool $should_update_customer ): string {
 
 		$order_customer_id = (string) $order->get_meta( '_stripe_customer_id', true );
 		if ( '' !== $order_customer_id ) {
-			return $skip_customer_update ? $order_customer_id : $this->update_customer_for_order( $order_customer_id, $order );
+			return $should_update_customer ? $this->update_customer_for_order( $order_customer_id, $order ) : $order_customer_id;
 		}
 
 		$user_id     = $this->get_order_user_id( $order );
 		$customer_id = $this->get_customer_id_by_user_id( $user_id );
 
 		if ( null !== $customer_id ) {
-			return $skip_customer_update ? $customer_id : $this->update_customer_for_order( $customer_id, $order );
+			return $should_update_customer ? $this->update_customer_for_order( $customer_id, $order ) : $customer_id;
 		}
 
 		// Guard against concurrent checkouts creating duplicate remote customers
@@ -311,7 +329,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			$customer_id = $this->get_customer_id_by_user_id( $user_id );
 			if ( null !== $customer_id ) {
 				// The winning request already created and persisted the customer.
-				return $this->update_customer_for_order( $customer_id, $order );
+				return $should_update_customer ? $this->update_customer_for_order( $customer_id, $order ) : $customer_id;
 			}
 			// The lock holder has not persisted yet (or there is no persistent
 			// object cache); create anyway to avoid regressing below today. We
@@ -650,24 +668,6 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 */
 	private function get_customer_id_option(): string {
 		return $this->account_service->is_test_mode_enabled() ? self::TEST_CUSTOMER_ID_OPTION : self::LIVE_CUSTOMER_ID_OPTION;
-	}
-
-	/**
-	 * Tell whether the current request is changing a subscription's payment method.
-	 *
-	 * Mirrors the plugin's subscriptions-utilities predicate: a change_payment_method
-	 * request parameter naming a real subscription.
-	 *
-	 * @return bool
-	 */
-	private function is_changing_payment_method_for_subscription(): bool {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request detection; no state is changed based on it.
-		if ( ! isset( $_GET['change_payment_method'] ) || ! function_exists( 'wcs_is_subscription' ) ) {
-			return false;
-		}
-
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request detection; no state is changed based on it.
-		return (bool) wcs_is_subscription( wc_clean( wp_unslash( $_GET['change_payment_method'] ) ) );
 	}
 
 	/**

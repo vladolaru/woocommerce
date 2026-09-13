@@ -1508,7 +1508,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $existing_intent_result;
 		}
 
-		$is_subscription_change = $this->is_subscription_change_payment_request( $order );
+		$is_subscription_change                = $this->is_subscription_change_payment_request( $order );
+		$is_subscription_payment_method_change = $this->is_subscription_payment_method_change_request( $order );
 
 		// Runs after the intent check so that a reachable intent still produces the richer
 		// response, including the amount-mismatch message. This catches the same-order
@@ -1528,7 +1529,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$this->id,
 			$this->get_request_payment_method_id(),
 			$this->get_checkout_payment_data( $is_subscription_change ),
-			$this->get_checkout_provider_data( $is_subscription_change )
+			$this->get_checkout_provider_data( $is_subscription_change, $is_subscription_payment_method_change )
 		);
 		$outcome = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
 		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
@@ -2154,12 +2155,23 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	private function is_subscription_change_payment_request( WC_Order $order ): bool {
-		if ( ! isset( $_POST['_wcsnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_wcsnonce'] ) ), 'wcs_change_payment_method' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( ! $this->is_subscription_payment_method_change_request( $order ) ) {
 			return false;
 		}
 
 		$token_key = 'wc-' . $this->id . '-payment-token';
-		if ( isset( $_POST[ $token_key ] ) && 'new' !== sanitize_text_field( wp_unslash( $_POST[ $token_key ] ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+
+		return ! isset( $_POST[ $token_key ] ) || 'new' === sanitize_text_field( wp_unslash( $_POST[ $token_key ] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+	}
+
+	/**
+	 * Tell whether the current request is a validated WC Subscriptions payment-method change.
+	 *
+	 * @param WC_Order $order Subscription order.
+	 * @return bool
+	 */
+	private function is_subscription_payment_method_change_request( WC_Order $order ): bool {
+		if ( ! isset( $_POST['_wcsnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_wcsnonce'] ) ), 'wcs_change_payment_method' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			return false;
 		}
 
@@ -2510,10 +2522,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Get WooPayments-scoped checkout provider data.
 	 *
-	 * @param bool $is_subscription_change Whether this is a validated new-method subscription change.
+	 * @param bool $is_subscription_change                Whether this is a validated new-method subscription change.
+	 * @param bool $is_subscription_payment_method_change Whether this is a validated subscription payment-method change.
 	 * @return array<string,mixed>
 	 */
-	private function get_checkout_provider_data( bool $is_subscription_change = false ): array {
+	private function get_checkout_provider_data( bool $is_subscription_change = false, bool $is_subscription_payment_method_change = false ): array {
 		$cvc_key = 'wc-' . $this->id . '-payment-cvc-confirmation';
 
 		$save_user_in_woopay = $this->get_woopay_session_service()->should_save_user_in_woopay();
@@ -2542,6 +2555,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		if ( $is_subscription_change ) {
 			$provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT ] = true;
+		}
+
+		if ( $is_subscription_payment_method_change ) {
+			$provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] = true;
 		}
 
 		return $provider_data;

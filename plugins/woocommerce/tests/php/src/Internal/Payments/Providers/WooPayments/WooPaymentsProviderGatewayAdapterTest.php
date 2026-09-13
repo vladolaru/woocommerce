@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
@@ -1588,6 +1589,186 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 'cus_recreated', $outcome->get_customer_id() );
 		$this->assertSame( 0, $gateway->processed_order_id );
+	}
+
+	/**
+	 * @testdox Charge should resolve a validated subscription change without updating the existing customer.
+	 */
+	public function test_charge_uses_the_subscription_change_customer_resolver_for_validated_context(): void {
+		$order            = $this->create_woopayments_order();
+		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				if ( 'cus_change' !== $request_data['customer'] || 'key_change' !== $idempotency_key ) {
+					throw new \RuntimeException( 'Validated changes must use the no-update customer resolver.' );
+				}
+
+				return array(
+					'id'             => 'pi_change',
+					'status'         => 'succeeded',
+					'client_secret'  => 'secret_change',
+					'customer'       => 'cus_change',
+					'payment_method' => 'pm_change',
+					'currency'       => 'usd',
+					'charges'        => array(
+						'total_count' => 0,
+						'data'        => array(),
+					),
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order', 'get_or_create_customer_id_for_subscription_payment_method_change' ) )
+			->getMock();
+
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_subscription_payment_method_change' )
+			->with( $this->isInstanceOf( WC_Order::class ) )
+			->willReturn( 'cus_change' );
+		$customer_service->expects( $this->never() )
+			->method( 'get_or_create_customer_id_for_order' );
+
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$outcome = $sut->charge(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'pm_change',
+				array(),
+				array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true )
+			),
+			'key_change'
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'cus_change', $outcome->get_customer_id() );
+	}
+
+	/**
+	 * @dataProvider provider_subscription_change_transport_provider
+	 * @testdox Validated subscription changes reuse an existing customer without a provider update for both native intent transports.
+	 *
+	 * @param string $total Order total selecting PaymentIntent or SetupIntent transport.
+	 * @param string $expected_intent Expected intent type.
+	 */
+	public function test_validated_subscription_change_uses_real_customer_service_without_update( string $total, string $expected_intent ): void {
+		$order      = $this->create_woopayments_order( $total );
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client = $this->create_recording_customer_intent_api_client();
+
+		$order->update_meta_data( '_stripe_customer_id', 'cus_change' );
+		$order->save();
+
+		$sut     = $this->create_adapter(
+			$gateway,
+			$api_client,
+			$this->create_real_customer_service( $api_client )
+		);
+		$outcome = $sut->charge(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'pm_change',
+				array(),
+				array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true )
+			),
+			'key_change_real'
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'cus_change', $outcome->get_customer_id() );
+		$this->assertSame( array(), $api_client->updated_customers );
+		$this->assertSame( array(), $api_client->created_customers );
+		$this->assertCount( 1, $api_client->intent_requests );
+		$this->assertSame( $expected_intent, $api_client->intent_requests[0]['type'] );
+		$this->assertSame( 'cus_change', $api_client->intent_requests[0]['request_data']['customer'] );
+		$this->assertSame( 'key_change_real', $api_client->intent_requests[0]['idempotency_key'] );
+	}
+
+	/**
+	 * @testdox Ordinary native checkout updates an existing customer before creating its intent.
+	 */
+	public function test_ordinary_native_charge_updates_existing_customer_with_real_customer_service(): void {
+		$order      = $this->create_woopayments_order();
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client = $this->create_recording_customer_intent_api_client();
+
+		$order->set_billing_email( 'subject@example.com' );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_ordinary' );
+		$order->save();
+
+		$outcome = $this->create_adapter( $gateway, $api_client, $this->create_real_customer_service( $api_client ) )->charge(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_ordinary' ),
+			'key_ordinary_real'
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertCount( 1, $api_client->updated_customers );
+		$this->assertSame( 'cus_ordinary', $api_client->updated_customers[0]['customer_id'] );
+		$this->assertSame( 'subject@example.com', $api_client->updated_customers[0]['customer_data']['email'] );
+		$this->assertSame( array(), $api_client->created_customers );
+		$this->assertCount( 1, $api_client->intent_requests );
+	}
+
+	/**
+	 * Provider cases for native PaymentIntent and SetupIntent subscription-change transport.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function provider_subscription_change_transport_provider(): array {
+		return array(
+			'payment intent' => array( '10.00', 'payment' ),
+			'setup intent'   => array( '0.00', 'setup' ),
+		);
+	}
+
+	/**
+	 * @dataProvider provider_subscription_change_transport_provider
+	 * @testdox Validated subscription changes recreate a missing remote customer and retry the same native intent idempotently.
+	 *
+	 * @param string $total Order total selecting PaymentIntent or SetupIntent transport.
+	 * @param string $expected_intent Expected intent type.
+	 */
+	public function test_validated_subscription_change_recovers_missing_remote_customer( string $total, string $expected_intent ): void {
+		$order      = $this->create_woopayments_order( $total );
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client = $this->create_recording_customer_intent_api_client( true );
+
+		$order->update_meta_data( '_stripe_customer_id', 'cus_missing' );
+		$order->save();
+
+		$outcome = $this->create_adapter( $gateway, $api_client, $this->create_real_customer_service( $api_client ) )->charge(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_change', array(), array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true ) ),
+			'key_recovery_real'
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'cus_created', $outcome->get_customer_id() );
+		$this->assertSame( array(), $api_client->updated_customers );
+		$this->assertCount( 1, $api_client->created_customers );
+		$this->assertCount( 2, $api_client->intent_requests );
+		$this->assertSame( $expected_intent, $api_client->intent_requests[0]['type'] );
+		$this->assertSame( 'cus_missing', $api_client->intent_requests[0]['request_data']['customer'] );
+		$this->assertSame( 'cus_created', $api_client->intent_requests[1]['request_data']['customer'] );
+		$this->assertSame( 'key_recovery_real', $api_client->intent_requests[0]['idempotency_key'] );
+		$this->assertSame( 'key_recovery_real', $api_client->intent_requests[1]['idempotency_key'] );
 	}
 
 	/**
@@ -4389,6 +4570,137 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 
 		return $sut;
+	}
+
+	/**
+	 * Create a real customer service backed by the recording native API client.
+	 *
+	 * @param WooPaymentsApiClient $api_client Recording native API client.
+	 * @return WooPaymentsCustomerService
+	 */
+	private function create_real_customer_service( WooPaymentsApiClient $api_client ): WooPaymentsCustomerService {
+		$service = new WooPaymentsCustomerService();
+		$service->init( $api_client, $this->create_account_service( false ), new WooPaymentsSessionService(), new StaticNativeRuntimeArbiter( true ) );
+
+		return $service;
+	}
+
+	/**
+	 * Create a native API client that records customer and intent operations.
+	 *
+	 * @param bool $missing_customer_on_first_intent Whether the first intent should report a missing customer.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_recording_customer_intent_api_client( bool $missing_customer_on_first_intent = false ): WooPaymentsApiClient {
+		return new class( $missing_customer_on_first_intent ) extends WooPaymentsApiClient {
+			/** @var array<int,array{customer_id:string,customer_data:array<string,mixed>}> */
+			public array $updated_customers = array();
+
+			/** @var array<int,array<string,mixed>> */
+			public array $created_customers = array();
+
+			/** @var array<int,array{type:string,request_data:array<string,mixed>,idempotency_key:string}> */
+			public array $intent_requests = array();
+
+			/** @var bool */
+			private bool $missing_customer_on_first_intent;
+
+			/**
+			 * @param bool $missing_customer_on_first_intent Whether the first intent should report a missing customer.
+			 */
+			public function __construct( bool $missing_customer_on_first_intent ) {
+				$this->missing_customer_on_first_intent = $missing_customer_on_first_intent;
+			}
+
+			/**
+			 * Tell whether native transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Record a customer update.
+			 *
+			 * @param string              $customer_id Customer ID.
+			 * @param array<string,mixed> $customer_data Customer data.
+			 */
+			public function update_customer( string $customer_id, array $customer_data = array() ): void {
+				$this->updated_customers[] = array(
+					'customer_id'   => $customer_id,
+					'customer_data' => $customer_data,
+				);
+			}
+
+			/**
+			 * Record a customer creation.
+			 *
+			 * @param array<string,mixed> $customer_data Customer data.
+			 * @return string
+			 */
+			public function create_customer( array $customer_data ): string {
+				$this->created_customers[] = $customer_data;
+
+				return 'cus_created';
+			}
+
+			/**
+			 * Record a PaymentIntent attempt.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				$this->intent_requests[] = array(
+					'type'            => 'payment',
+					'request_data'    => $request_data,
+					'idempotency_key' => $idempotency_key,
+				);
+				if ( $this->missing_customer_on_first_intent && 1 === count( $this->intent_requests ) ) {
+					throw new WooPaymentsApiException( 'No such customer.', 'resource_missing', 404 );
+				}
+
+				return array(
+					'id'             => 'pi_change',
+					'status'         => 'succeeded',
+					'customer'       => $request_data['customer'],
+					'payment_method' => 'pm_change',
+					'currency'       => 'usd',
+					'charges'        => array(
+						'total_count' => 0,
+						'data'        => array(),
+					),
+				);
+			}
+
+			/**
+			 * Record a SetupIntent attempt.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				$this->intent_requests[] = array(
+					'type'            => 'setup',
+					'request_data'    => $request_data,
+					'idempotency_key' => $idempotency_key,
+				);
+				if ( $this->missing_customer_on_first_intent && 1 === count( $this->intent_requests ) ) {
+					throw new WooPaymentsApiException( 'No such customer.', 'resource_missing', 404 );
+				}
+
+				return array(
+					'id'             => 'seti_change',
+					'status'         => 'succeeded',
+					'customer'       => $request_data['customer'],
+					'payment_method' => 'pm_change',
+				);
+			}
+		};
 	}
 
 	/**

@@ -73,6 +73,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
 		delete_transient( 'wcpay_store_terminal_readers' );
 		delete_transient( 'wcpay_store_terminal_locations' );
+		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
 		parent::tearDown();
 	}
 
@@ -929,6 +930,45 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'cus_user', $this->api_client->updated_customers[0]['customer_id'] );
 		$this->assertSame( 'order@example.com', $this->api_client->updated_customers[0]['customer_data']['email'] );
 		$this->assertSame( 'cus_user', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
+	}
+
+	/**
+	 * @testdox Customer creation should update a cached user customer despite an unrelated subscription request value.
+	 */
+	public function test_create_customer_updates_cached_user_customer_with_an_unrelated_subscription_request_value(): void {
+		$user_id = $this->factory->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
+
+		$order = $this->create_order();
+		$order->set_customer_id( $user_id );
+		$order->set_billing_email( 'ordinary-order@example.com' );
+		$order->save();
+
+		$this->fake_wcs_is_subscription();
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() + 1 );
+		$_GET['change_payment_method']          = (string) ( $order->get_id() + 1 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_customer' );
+		$request->set_param( 'order_id', $order->get_id() );
+
+		$response = $this->sut->create_customer( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'id' => 'cus_user' ), $response->get_data() );
+		$this->assertCount( 1, $this->api_client->updated_customers );
+		$this->assertSame( 'ordinary-order@example.com', $this->api_client->updated_customers[0]['customer_data']['email'] );
+	}
+
+	/**
+	 * Define a test-only wcs_is_subscription() backed by $GLOBALS['wcpay_test_subscription_ids'].
+	 */
+	private function fake_wcs_is_subscription(): void {
+		if ( function_exists( 'wcs_is_subscription' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test-only shim for the WooCommerce Subscriptions predicate.
+		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( $subscription_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ) || in_array( absint( $subscription_id ), $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
 	}
 
 	/**

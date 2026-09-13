@@ -38,6 +38,15 @@ class WooPaymentsIntentRequestBuilder {
 	public const PROVIDER_DATA_RECURRING_PAYMENT = 'recurring_payment';
 
 	/**
+	 * Provider-data key for validated subscription payment-method changes.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @var string
+	 */
+	public const PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE = 'subscription_payment_method_change';
+
+	/**
 	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService

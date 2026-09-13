@@ -376,7 +376,7 @@ class WooPaymentsProviderGatewayAdapter {
 
 		$this->assert_total_meets_cached_platform_minimum( $order );
 
-		$customer_id     = $this->customer_service->get_or_create_customer_id_for_order( $order );
+		$customer_id     = $this->get_customer_id_for_context( $context );
 		$request_data    = $this->request_builder->charge_request_data( $context, $payment_credential, $customer_id, $is_recurring );
 		$idempotency_key = $this->resolve_charge_idempotency_key( $order, $idempotency_key );
 
@@ -733,7 +733,7 @@ class WooPaymentsProviderGatewayAdapter {
 			return $this->missing_payment_credential_outcome();
 		}
 
-		$customer_id  = $this->customer_service->get_or_create_customer_id_for_order( $order );
+		$customer_id  = $this->get_customer_id_for_context( $context );
 		$request_data = $this->request_builder->setup_intent_request_data( $context, $payment_credential, $customer_id, $is_recurring );
 
 		try {
@@ -763,6 +763,20 @@ class WooPaymentsProviderGatewayAdapter {
 		);
 
 		return $outcome->with_effect_plan( $plan );
+	}
+
+	/**
+	 * Resolve the customer required for a native provider request.
+	 *
+	 * @param PaymentContext $context Payment context.
+	 * @return string
+	 */
+	private function get_customer_id_for_context( PaymentContext $context ): string {
+		if ( ! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] ) ) {
+			return $this->customer_service->get_or_create_customer_id_for_subscription_payment_method_change( $context->get_order() );
+		}
+
+		return $this->customer_service->get_or_create_customer_id_for_order( $context->get_order() );
 	}
 
 	/**
