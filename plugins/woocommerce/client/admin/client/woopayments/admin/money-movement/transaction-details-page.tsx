@@ -43,7 +43,7 @@ import type {
 	WooPaymentsTimelineEvent,
 	WooPaymentsTransaction,
 } from './types';
-import { formatAmount, getErrorMessage } from './utils';
+import { formatAmount, getDisputeId, getErrorMessage } from './utils';
 import { WooPaymentsTransactionDisputeDetails } from './transaction-dispute-details';
 import {
 	hasPaymentOrderContext,
@@ -84,7 +84,7 @@ type LoadTransactionOptions = {
 };
 
 const DETAIL_ACTION_FOCUS_SELECTOR =
-	'.woocommerce-woopayments-money-movement__authorization-actions, .woocommerce-woopayments-money-movement__authorization-notice, .woocommerce-woopayments-money-movement__refund-actions, .woocommerce-woopayments-money-movement__refund-modal';
+	'.woocommerce-woopayments-money-movement__authorization-actions, .woocommerce-woopayments-money-movement__authorization-notice, .woocommerce-woopayments-money-movement__refund-actions, .woocommerce-woopayments-money-movement__refund-modal, .woocommerce-woopayments-money-movement__dispute-response';
 
 const isPaymentIntentId = ( id: string ) => id.startsWith( 'pi_' );
 
@@ -492,6 +492,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		null
 	);
 	const refundActionsRef = useRef< HTMLDivElement | null >( null );
+	const refundModalOpenerRef = useRef< HTMLElement | null >( null );
 	const shouldFocusDetailsHeadingRef = useRef( false );
 
 	useEffect( () => {
@@ -758,18 +759,34 @@ export const WooPaymentsTransactionDetailsPage = () => {
 	const refundOrderUrl = transaction
 		? getTransactionOrderUrl( transaction )
 		: '';
+	const isOpenRefundInquiry =
+		!! transaction?.dispute &&
+		isDisputeInquiry( transaction.dispute ) &&
+		isDisputeAwaitingResponse( transaction.dispute );
+	const currentInquiryId =
+		isOpenRefundInquiry && transaction?.dispute
+			? getDisputeId( transaction.dispute )
+			: '';
+	const fullRefundAmount = transaction?.amount;
+	const hasValidFullRefundData =
+		!! paymentIntentId &&
+		!! chargeId &&
+		!! refundOrderId &&
+		typeof fullRefundAmount === 'number' &&
+		Number.isFinite( fullRefundAmount ) &&
+		fullRefundAmount > 0;
 	const isRefundEligible =
 		!! transaction &&
 		isTransactionRefundEligible( transaction, refundOrderId );
 	const isPartiallyRefunded =
 		!! transaction && isTransactionPartiallyRefunded( transaction );
-	const showFullRefundAction = isRefundEligible && ! isPartiallyRefunded;
+	const showFullRefundAction =
+		isRefundEligible &&
+		! isPartiallyRefunded &&
+		hasValidFullRefundData &&
+		( ! isOpenRefundInquiry || !! currentInquiryId );
 	const showPartialRefundAction = isRefundEligible && !! refundOrderUrl;
 	const showRefundActions = showFullRefundAction || showPartialRefundAction;
-	const isOpenRefundInquiry =
-		!! transaction?.dispute &&
-		isDisputeInquiry( transaction.dispute ) &&
-		isDisputeAwaitingResponse( transaction.dispute );
 	const pendingAction =
 		pendingAuthorizationAction?.routeKey === routeKey &&
 		pendingAuthorizationAction?.paymentIntentId === paymentIntentId
@@ -780,7 +797,15 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		pendingRefundAction?.routeKey === routeKey &&
 		pendingRefundAction?.paymentIntentId === paymentIntentId;
 
-	const focusRefundActions = () => {
+	const focusRefundModalOpener = () => {
+		const opener = refundModalOpenerRef.current;
+		refundModalOpenerRef.current = null;
+
+		if ( opener?.isConnected ) {
+			opener.focus();
+			return;
+		}
+
 		const actionButton =
 			refundActionsRef.current?.querySelector( 'button' );
 		if ( actionButton instanceof HTMLButtonElement ) {
@@ -794,15 +819,27 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		}
 
 		setIsRefundModalOpen( false );
-		window.setTimeout( focusRefundActions, 0 );
+		window.setTimeout( focusRefundModalOpener, 0 );
 	};
 
 	const handleRefundModalOpen = () => {
+		refundModalOpenerRef.current = null;
 		setRefundReason( null );
 		setIsRefundModalOpen( true );
 		recordEvent( 'payments_transactions_details_refund_modal_open', {
 			payment_intent_id: paymentIntentId,
 		} );
+	};
+
+	const handleInquiryRefundModalOpen = () => {
+		const ownerDocument =
+			refundActionsRef.current?.ownerDocument ||
+			paymentDetailsHeadingRef.current?.ownerDocument;
+		const activeElement = ownerDocument?.activeElement;
+		refundModalOpenerRef.current =
+			activeElement instanceof HTMLElement ? activeElement : null;
+		setRefundReason( null );
+		setIsRefundModalOpen( true );
 	};
 
 	const handlePartialRefund = () => {
@@ -824,11 +861,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 
 		if (
 			! transaction ||
-			! paymentIntentId ||
-			! chargeId ||
-			! refundOrderId ||
-			typeof transaction.amount !== 'number' ||
-			transaction.amount <= 0
+			! hasValidFullRefundData ||
+			typeof fullRefundAmount !== 'number' ||
+			( isOpenRefundInquiry && ! currentInquiryId )
 		) {
 			getNotices().createErrorNotice(
 				__(
@@ -853,9 +888,13 @@ export const WooPaymentsTransactionDetailsPage = () => {
 				payment_intent_id: paymentIntentId,
 			} );
 
-			if ( isOpenRefundInquiry && transaction.dispute ) {
+			if (
+				isOpenRefundInquiry &&
+				transaction.dispute &&
+				currentInquiryId
+			) {
 				recordEvent( 'wcpay_dispute_inquiry_refund_click', {
-					dispute_id: transaction.dispute.id,
+					dispute_id: currentInquiryId,
 					dispute_status: transaction.dispute.status,
 					dispute_reason: transaction.dispute.reason,
 					on_page: 'transaction_details',
@@ -864,7 +903,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 
 			await refundWooPaymentsCharge( {
 				chargeId,
-				amount: transaction.amount,
+				amount: fullRefundAmount,
 				reason: refundReason === 'other' ? null : refundReason,
 				orderId: refundOrderId,
 			} );
@@ -1186,6 +1225,11 @@ export const WooPaymentsTransactionDetailsPage = () => {
 						{ transaction.dispute && (
 							<WooPaymentsTransactionDisputeDetails
 								transaction={ transaction }
+								onIssueRefund={
+									showFullRefundAction
+										? handleInquiryRefundModalOpen
+										: undefined
+								}
 							/>
 						) }
 						{ showCaptureNotice && (

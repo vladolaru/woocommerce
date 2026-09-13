@@ -3,6 +3,7 @@
  */
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { recordEvent } from '@woocommerce/tracks';
 import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 
@@ -40,6 +41,9 @@ import { getWooPaymentsAccountSettings } from '../../settings/api';
 const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
 const mockHistoryPush = jest.fn();
+const mockRecordEvent = recordEvent as jest.MockedFunction<
+	typeof recordEvent
+>;
 let mockHistoryNavigate: ( ( to: string ) => void ) | null = null;
 
 jest.mock( '@woocommerce/navigation', () => ( {
@@ -548,6 +552,7 @@ describe( 'WooPayments money movement pages', () => {
 		} );
 		mockCreateSuccessNotice.mockReset();
 		mockCreateErrorNotice.mockReset();
+		mockRecordEvent.mockReset();
 		mockHistoryPush.mockReset();
 		mockHistoryPush.mockImplementation(
 			( to: string ) => mockHistoryNavigate?.( to )
@@ -632,6 +637,134 @@ describe( 'WooPayments money movement pages', () => {
 			within( summary ).getByText( 'Custom brand ending in 4242' )
 		).toBeInTheDocument();
 		expect( summary.querySelector( 'img' ) ).toBeNull();
+	} );
+
+	it.each( [
+		[ 'a zero amount', { amount: 0 }, { id: 'du_incomplete' }, {} ],
+		[
+			'a missing amount',
+			{ amount: undefined },
+			{ id: 'du_incomplete' },
+			{ amount: undefined },
+		],
+		[
+			'a nonfinite amount',
+			{ amount: Number.POSITIVE_INFINITY },
+			{ id: 'du_incomplete' },
+			{},
+		],
+		[ 'a missing charge ID', { id: '' }, { id: 'du_incomplete' }, {} ],
+		[ 'a missing order ID', { order: {} }, { id: 'du_incomplete' }, {} ],
+		[ 'a missing inquiry ID', {}, {}, {} ],
+	] )(
+		'keeps inquiries with %s unavailable from the primary refund action',
+		async (
+			_label,
+			chargeOverrides,
+			disputeOverrides,
+			intentOverrides
+		) => {
+			mockGetPaymentIntent.mockResolvedValue( {
+				id: 'pi_incomplete_inquiry',
+				status: 'succeeded',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				...intentOverrides,
+				charge: {
+					id: 'ch_incomplete_inquiry',
+					payment_intent: 'pi_incomplete_inquiry',
+					balance_transaction: 'txn_incomplete_inquiry',
+					type: 'charge',
+					amount: 5000,
+					currency: 'usd',
+					created: 1781712000,
+					captured: true,
+					amount_refunded: 0,
+					refunded: false,
+					order: { id: 123, number: '123' },
+					...chargeOverrides,
+					dispute: {
+						status: 'warning_needs_response',
+						reason: 'fraudulent',
+						...disputeOverrides,
+					},
+				},
+			} );
+			mockGetTimeline.mockResolvedValue( { data: [] } );
+
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions/details?id=pi_incomplete_inquiry&transaction_id=txn_incomplete_inquiry',
+					] }
+				>
+					<WooPaymentsTransactionDetailsPage />
+				</MemoryRouter>
+			);
+
+			const issueRefundButton = await screen.findByRole( 'button', {
+				name: 'Issue refund',
+			} );
+			expect( issueRefundButton ).toHaveAttribute(
+				'aria-disabled',
+				'true'
+			);
+			expect( issueRefundButton ).toHaveAccessibleDescription(
+				'A full refund is not available for this transaction.'
+			);
+			await userEvent.click( issueRefundButton );
+			expect(
+				screen.queryByRole( 'dialog', { name: 'Refund transaction' } )
+			).not.toBeInTheDocument();
+			expect( mockRecordEvent ).not.toHaveBeenCalled();
+			expect( mockRefundCharge ).not.toHaveBeenCalled();
+		}
+	);
+
+	it( 'keeps an inquiry without a payment intent unavailable from the primary refund action', async () => {
+		mockGetCharge.mockResolvedValue( {
+			id: 'ch_missing_payment_intent',
+			balance_transaction: 'txn_missing_payment_intent',
+			type: 'charge',
+			amount: 5000,
+			currency: 'usd',
+			created: 1781712000,
+			captured: true,
+			amount_refunded: 0,
+			refunded: false,
+			order: { id: 123, number: '123' },
+			dispute: {
+				id: 'du_missing_payment_intent',
+				status: 'warning_needs_response',
+				reason: 'fraudulent',
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=ch_missing_payment_intent&transaction_id=txn_missing_payment_intent',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		const issueRefundButton = await screen.findByRole( 'button', {
+			name: 'Issue refund',
+		} );
+		expect( issueRefundButton ).toHaveAttribute( 'aria-disabled', 'true' );
+		expect( issueRefundButton ).toHaveAccessibleDescription(
+			'A full refund is not available for this transaction.'
+		);
+		await userEvent.click( issueRefundButton );
+		expect(
+			screen.queryByRole( 'dialog', { name: 'Refund transaction' } )
+		).not.toBeInTheDocument();
+		expect( mockRecordEvent ).not.toHaveBeenCalled();
+		expect( mockRefundCharge ).not.toHaveBeenCalled();
 	} );
 
 	it( 'prefers each usable balance field and currency over conflicting flat settlement values', () => {
@@ -3559,7 +3692,212 @@ describe( 'WooPayments money movement pages', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'keeps the refund modal open and dispatches an error notice when refunding fails', async () => {
+	it( 'opens the eligible inquiry refund modal from the primary action', async () => {
+		let resolveRefund!: (
+			value: Awaited< ReturnType< typeof refundWooPaymentsCharge > >
+		) => void;
+		let refundPromise!: ReturnType< typeof refundWooPaymentsCharge >;
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_primary_inquiry_refund',
+			status: 'succeeded',
+			amount: 5000,
+			currency: 'usd',
+			created: 1781712000,
+			charge: {
+				id: 'ch_primary_inquiry_refund',
+				payment_intent: 'pi_primary_inquiry_refund',
+				balance_transaction: 'txn_primary_inquiry_refund',
+				type: 'charge',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				captured: true,
+				amount_refunded: 0,
+				refunded: false,
+				order: {
+					id: 123,
+					number: '123',
+				},
+				dispute: {
+					dispute_id: 'du_primary_inquiry',
+					status: 'warning_needs_response',
+					reason: 'fraudulent',
+				},
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+		mockRefundCharge.mockImplementation(
+			() =>
+				( refundPromise = new Promise<
+					Awaited< ReturnType< typeof refundWooPaymentsCharge > >
+				>( ( resolve ) => {
+					resolveRefund = resolve;
+				} ) )
+		);
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_primary_inquiry_refund&transaction_id=txn_primary_inquiry_refund',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		const issueRefundButton = await screen.findByRole( 'button', {
+			name: 'Issue refund',
+		} );
+		expect( issueRefundButton ).not.toHaveAttribute(
+			'aria-disabled',
+			'true'
+		);
+
+		await userEvent.click( issueRefundButton );
+
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_dispute_inquiry_refund_modal_view',
+			{
+				dispute_id: 'du_primary_inquiry',
+				dispute_status: 'warning_needs_response',
+				dispute_reason: 'fraudulent',
+				on_page: 'transaction_details',
+			}
+		);
+		expect( mockRecordEvent ).not.toHaveBeenCalledWith(
+			'payments_transactions_details_refund_modal_open',
+			expect.anything()
+		);
+		let dialog = await screen.findByRole( 'dialog', {
+			name: 'Refund transaction',
+		} );
+		expect(
+			within( dialog ).getByText(
+				'Issuing a refund will close the inquiry, returning the amount in question back to the cardholder. No additional fees apply.'
+			)
+		).toBeInTheDocument();
+		expect( within( dialog ).getByText( '$50.00' ) ).toBeInTheDocument();
+		expect(
+			within( dialog ).queryByRole( 'link', {
+				name: 'Go to the order',
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByText(
+				'A full refund is not available for this transaction.'
+			)
+		).not.toBeInTheDocument();
+		mockRecordEvent.mockClear();
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+		await waitFor( () => expect( issueRefundButton ).toHaveFocus() );
+
+		await userEvent.click( issueRefundButton );
+		dialog = await screen.findByRole( 'dialog', {
+			name: 'Refund transaction',
+		} );
+		await userEvent.keyboard( '{Escape}' );
+		await waitFor( () => expect( issueRefundButton ).toHaveFocus() );
+
+		mockRecordEvent.mockClear();
+		await userEvent.click( issueRefundButton );
+		dialog = await screen.findByRole( 'dialog', {
+			name: 'Refund transaction',
+		} );
+
+		await userEvent.click(
+			within( dialog ).getByLabelText( 'Requested by customer' )
+		);
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', {
+				name: 'Refund transaction',
+			} )
+		);
+
+		await waitFor( () =>
+			expect( mockRefundCharge ).toHaveBeenCalledWith( {
+				chargeId: 'ch_primary_inquiry_refund',
+				amount: 5000,
+				reason: 'requested_by_customer',
+				orderId: 123,
+			} )
+		);
+		expect(
+			within( dialog ).getByRole( 'button', {
+				name: 'Refunding transaction',
+			} )
+		).toHaveAttribute( 'aria-disabled', 'true' );
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', {
+				name: 'Refunding transaction',
+			} )
+		);
+		expect( mockRefundCharge ).toHaveBeenCalledTimes( 1 );
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+		await userEvent.keyboard( '{Escape}' );
+		expect( dialog ).toBeInTheDocument();
+		expect( mockRefundCharge ).toHaveBeenCalledTimes( 1 );
+
+		await act( async () => {
+			resolveRefund( {
+				id: 555,
+				order_id: 123,
+				amount: '50.00',
+				reason: 'requested_by_customer',
+				status: 'completed',
+			} );
+			await refundPromise;
+			await Promise.resolve();
+		} );
+		expect(
+			mockRecordEvent.mock.calls.filter(
+				( [ event ] ) =>
+					event === 'wcpay_dispute_inquiry_refund_modal_view'
+			)
+		).toHaveLength( 1 );
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'payments_transactions_details_refund_full',
+			{ payment_intent_id: 'pi_primary_inquiry_refund' }
+		);
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_dispute_inquiry_refund_click',
+			{
+				dispute_id: 'du_primary_inquiry',
+				dispute_status: 'warning_needs_response',
+				dispute_reason: 'fraudulent',
+				on_page: 'transaction_details',
+			}
+		);
+		expect(
+			mockRecordEvent.mock.calls.filter(
+				( [ event ] ) => event === 'wcpay_dispute_inquiry_refund_click'
+			)
+		).toHaveLength( 1 );
+		expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+			'Refunded payment #pi_primary_inquiry_refund.'
+		);
+		await waitFor( () =>
+			expect(
+				screen.queryByRole( 'dialog', { name: 'Refund transaction' } )
+			).not.toBeInTheDocument()
+		);
+		await waitFor( () =>
+			expect(
+				screen.getByRole( 'heading', { name: 'Payment details' } )
+			).toHaveFocus()
+		);
+	} );
+
+	it( 'keeps an inquiry refund reason selected and retries after a refund failure', async () => {
+		let rejectInitialRefund!: ( error: Error ) => void;
+		let resolveRetryRefund!: (
+			value: Awaited< ReturnType< typeof refundWooPaymentsCharge > >
+		) => void;
+		let initialRefundPromise!: ReturnType< typeof refundWooPaymentsCharge >;
+		let retryRefundPromise!: ReturnType< typeof refundWooPaymentsCharge >;
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_refund_error',
 			status: 'succeeded',
@@ -3582,10 +3920,31 @@ describe( 'WooPayments money movement pages', () => {
 					number: '123',
 					url: 'http://example.com/wp-admin/post.php?post=123&action=edit',
 				},
+				dispute: {
+					id: 'du_refund_error',
+					status: 'warning_needs_response',
+					reason: 'fraudulent',
+				},
 			},
 		} );
 		mockGetTimeline.mockResolvedValue( { data: [] } );
-		mockRefundCharge.mockRejectedValue( new Error( 'Gateway failed.' ) );
+		mockRefundCharge
+			.mockImplementationOnce(
+				() =>
+					( initialRefundPromise = new Promise<
+						Awaited< ReturnType< typeof refundWooPaymentsCharge > >
+					>( ( _resolve, reject ) => {
+						rejectInitialRefund = reject;
+					} ) )
+			)
+			.mockImplementationOnce(
+				() =>
+					( retryRefundPromise = new Promise<
+						Awaited< ReturnType< typeof refundWooPaymentsCharge > >
+					>( ( resolve ) => {
+						resolveRetryRefund = resolve;
+					} ) )
+			);
 
 		render(
 			<MemoryRouter
@@ -3597,22 +3956,24 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		const refundActionsButton = await screen.findByRole( 'button', {
-			name: 'Transaction actions',
+		const issueRefundButton = await screen.findByRole( 'button', {
+			name: 'Issue refund',
 		} );
-		await act( async () => {
-			await userEvent.click( refundActionsButton );
-		} );
-		await act( async () => {
-			await userEvent.click(
-				screen.getByRole( 'menuitem', { name: 'Refund in full' } )
-			);
-		} );
+		await userEvent.click( issueRefundButton );
 		const refundButton = await screen.findByRole( 'button', {
 			name: 'Refund transaction',
 		} );
+		await userEvent.click(
+			screen.getByLabelText( 'Requested by customer' )
+		);
+		await userEvent.click( refundButton );
+		await waitFor( () =>
+			expect( mockRefundCharge ).toHaveBeenCalledTimes( 1 )
+		);
 		await act( async () => {
-			await userEvent.click( refundButton );
+			rejectInitialRefund( new Error( 'Gateway failed.' ) );
+			await initialRefundPromise.catch( () => undefined );
+			await Promise.resolve();
 		} );
 
 		await waitFor( () =>
@@ -3623,7 +3984,160 @@ describe( 'WooPayments money movement pages', () => {
 		expect(
 			screen.getByRole( 'dialog', { name: 'Refund transaction' } )
 		).toBeInTheDocument();
+		expect(
+			screen.getByLabelText( 'Requested by customer' )
+		).toBeChecked();
+		expect( refundButton ).not.toHaveAttribute( 'aria-disabled', 'true' );
 		expect( mockGetPaymentIntent ).toHaveBeenCalledTimes( 1 );
+		expect( mockCreateSuccessNotice ).not.toHaveBeenCalled();
+		await userEvent.click( refundButton );
+		await waitFor( () =>
+			expect( mockRefundCharge ).toHaveBeenCalledTimes( 2 )
+		);
+		expect( mockRefundCharge ).toHaveBeenLastCalledWith( {
+			chargeId: 'ch_refund_error',
+			amount: 5000,
+			reason: 'requested_by_customer',
+			orderId: 123,
+		} );
+		await act( async () => {
+			resolveRetryRefund( {
+				id: 556,
+				order_id: 123,
+				amount: '50.00',
+				reason: 'requested_by_customer',
+				status: 'completed',
+			} );
+			await retryRefundPromise;
+			await Promise.resolve();
+		} );
+		await waitFor( () =>
+			expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+				'Refunded payment #pi_refund_error.'
+			)
+		);
+		await waitFor( () =>
+			expect(
+				screen.queryByRole( 'dialog', { name: 'Refund transaction' } )
+			).not.toBeInTheDocument()
+		);
+		await waitFor( () =>
+			expect(
+				screen.getByRole( 'heading', { name: 'Payment details' } )
+			).toHaveFocus()
+		);
+	} );
+
+	it( 'does not apply a held inquiry refund after the detail route changes', async () => {
+		let resolveRefund!: (
+			value: Awaited< ReturnType< typeof refundWooPaymentsCharge > >
+		) => void;
+		mockGetPaymentIntent
+			.mockResolvedValueOnce( {
+				id: 'pi_held_inquiry_refund',
+				status: 'succeeded',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				charge: {
+					id: 'ch_held_inquiry_refund',
+					payment_intent: 'pi_held_inquiry_refund',
+					balance_transaction: 'txn_held_inquiry_refund',
+					type: 'charge',
+					amount: 5000,
+					currency: 'usd',
+					created: 1781712000,
+					captured: true,
+					amount_refunded: 0,
+					refunded: false,
+					order: { id: 123, number: '123' },
+					dispute: {
+						id: 'du_held_inquiry_refund',
+						status: 'warning_needs_response',
+						reason: 'fraudulent',
+					},
+				},
+			} )
+			.mockResolvedValueOnce( {
+				id: 'pi_other',
+				status: 'succeeded',
+				amount: 9900,
+				currency: 'usd',
+				created: 1781712100,
+				charge: {
+					id: 'ch_other',
+					payment_intent: 'pi_other',
+					balance_transaction: 'txn_other',
+					type: 'charge',
+					amount: 9900,
+					currency: 'usd',
+					created: 1781712100,
+					captured: true,
+					amount_refunded: 0,
+					refunded: false,
+					order: { id: 456, number: '456' },
+				},
+			} );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+		mockRefundCharge.mockImplementation(
+			() =>
+				new Promise<
+					Awaited< ReturnType< typeof refundWooPaymentsCharge > >
+				>( ( resolve ) => {
+					resolveRefund = resolve;
+				} )
+		);
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_held_inquiry_refund&transaction_id=txn_held_inquiry_refund',
+				] }
+			>
+				<RouteChangeButton to="/woopayments/transactions/details?id=pi_other&transaction_id=txn_other" />
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		await userEvent.click(
+			await screen.findByRole( 'button', { name: 'Issue refund' } )
+		);
+		const dialog = await screen.findByRole( 'dialog', {
+			name: 'Refund transaction',
+		} );
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', {
+				name: 'Refund transaction',
+			} )
+		);
+		await waitFor( () =>
+			expect( mockRefundCharge ).toHaveBeenCalledTimes( 1 )
+		);
+
+		const routeChangeButton = screen.getByText(
+			'Load another transaction'
+		);
+		await userEvent.click( routeChangeButton );
+		expect( await screen.findByText( 'pi_other' ) ).toBeInTheDocument();
+
+		await act( async () => {
+			resolveRefund( {
+				id: 557,
+				order_id: 123,
+				amount: '50.00',
+				reason: null,
+				status: 'completed',
+			} );
+			await Promise.resolve();
+		} );
+
+		expect( mockGetPaymentIntent ).toHaveBeenCalledTimes( 2 );
+		expect( mockCreateSuccessNotice ).not.toHaveBeenCalled();
+		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
+		expect(
+			screen.queryByRole( 'dialog', { name: 'Refund transaction' } )
+		).not.toBeInTheDocument();
+		expect( routeChangeButton ).toHaveFocus();
 	} );
 
 	it( 'captures an uncaptured authorization from transaction details and reloads the detail data', async () => {
@@ -4767,7 +5281,80 @@ describe( 'WooPayments money movement pages', () => {
 		);
 	} );
 
-	it( 'shows inquiry refund guidance without issuing a refund inline', async () => {
+	it.each( [
+		[
+			'uncaptured',
+			{ captured: false, amount_refunded: 0, refunded: false },
+		],
+		[
+			'partially refunded',
+			{ captured: true, amount_refunded: 1000, refunded: false },
+		],
+		[
+			'fully refunded',
+			{ captured: true, amount_refunded: 5000, refunded: true },
+		],
+	] )(
+		'keeps %s inquiries unavailable from the primary refund action',
+		async ( _state, refundState ) => {
+			mockGetPaymentIntent.mockResolvedValue( {
+				id: 'pi_ineligible_inquiry',
+				status: 'succeeded',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				charge: {
+					id: 'ch_ineligible_inquiry',
+					payment_intent: 'pi_ineligible_inquiry',
+					balance_transaction: 'txn_ineligible_inquiry',
+					type: 'charge',
+					amount: 5000,
+					currency: 'usd',
+					created: 1781712000,
+					...refundState,
+					order: {
+						id: 123,
+						number: '123',
+						url: 'http://example.com/wp-admin/post.php?post=123&action=edit',
+					},
+					dispute: {
+						id: 'du_ineligible_inquiry',
+						status: 'warning_needs_response',
+						reason: 'fraudulent',
+					},
+				},
+			} );
+			mockGetTimeline.mockResolvedValue( { data: [] } );
+
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions/details?id=pi_ineligible_inquiry&transaction_id=txn_ineligible_inquiry',
+					] }
+				>
+					<WooPaymentsTransactionDetailsPage />
+				</MemoryRouter>
+			);
+
+			const issueRefundButton = await screen.findByRole( 'button', {
+				name: 'Issue refund',
+			} );
+			expect( issueRefundButton ).toHaveAttribute(
+				'aria-disabled',
+				'true'
+			);
+			expect( issueRefundButton ).toHaveAccessibleDescription(
+				'A full refund is not available for this transaction.'
+			);
+			await userEvent.click( issueRefundButton );
+			expect(
+				screen.queryByRole( 'dialog', { name: 'Refund transaction' } )
+			).not.toBeInTheDocument();
+			expect( mockRefundCharge ).not.toHaveBeenCalled();
+		}
+	);
+
+	it( 'keeps inquiry refunds unavailable when the transaction cannot be fully refunded', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_test',
 			charge: {
@@ -4806,8 +5393,12 @@ describe( 'WooPayments money movement pages', () => {
 		expect(
 			screen.getByRole( 'button', { name: 'Issue refund' } )
 		).toHaveAccessibleDescription(
-			'Issue the refund from the full refund flow before responding to this inquiry.'
+			'A full refund is not available for this transaction.'
 		);
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Issue refund' } )
+		);
+		expect( mockRefundCharge ).not.toHaveBeenCalled();
 	} );
 
 	it( 'renders resolved dispute guidance and submitted evidence links', async () => {

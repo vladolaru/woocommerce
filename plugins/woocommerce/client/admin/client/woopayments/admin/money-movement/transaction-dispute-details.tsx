@@ -138,10 +138,12 @@ const DisputeDocumentationLink = ( {
 const RespondToDisputeActions = ( {
 	dispute,
 	onAccept,
+	onIssueRefund,
 	isAccepting,
 }: {
 	dispute: WooPaymentsDispute;
 	onAccept: () => void;
+	onIssueRefund?: () => void;
 	isAccepting: boolean;
 } ) => {
 	const disputeId = getDisputeId( dispute );
@@ -179,9 +181,27 @@ const RespondToDisputeActions = ( {
 				{ isInquiryStatus ? (
 					<Button
 						variant="secondary"
-						disabled
+						disabled={ ! onIssueRefund }
 						accessibleWhenDisabled
-						aria-describedby={ REFUND_GUIDANCE_ID }
+						aria-describedby={
+							onIssueRefund ? undefined : REFUND_GUIDANCE_ID
+						}
+						onClick={
+							onIssueRefund
+								? () => {
+										recordEvent(
+											'wcpay_dispute_inquiry_refund_modal_view',
+											{
+												dispute_id: disputeId,
+												dispute_status: dispute.status,
+												dispute_reason: dispute.reason,
+												on_page: 'transaction_details',
+											}
+										);
+										onIssueRefund();
+								  }
+								: undefined
+						}
 					>
 						{ __( 'Issue refund', 'woocommerce' ) }
 					</Button>
@@ -198,13 +218,13 @@ const RespondToDisputeActions = ( {
 					</Button>
 				) }
 			</div>
-			{ isInquiryStatus && (
+			{ isInquiryStatus && ! onIssueRefund && (
 				<p
 					id={ REFUND_GUIDANCE_ID }
 					className="woocommerce-woopayments-money-movement__notice"
 				>
 					{ __(
-						'Issue the refund from the full refund flow before responding to this inquiry.',
+						'A full refund is not available for this transaction.',
 						'woocommerce'
 					) }
 				</p>
@@ -248,8 +268,10 @@ const ResolvedDisputeActions = ( {
 
 export const WooPaymentsTransactionDisputeDetails = ( {
 	transaction,
+	onIssueRefund,
 }: {
 	transaction: WooPaymentsTransaction;
+	onIssueRefund?: () => void;
 } ) => {
 	const [ currentDispute, setCurrentDispute ] = useState<
 		WooPaymentsDispute | undefined
@@ -392,6 +414,7 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 						dispute={ currentDispute }
 						isAccepting={ isAccepting }
 						onAccept={ () => setIsAcceptModalOpen( true ) }
+						onIssueRefund={ onIssueRefund }
 					/>
 				) : (
 					<ResolvedDisputeActions dispute={ currentDispute } />
