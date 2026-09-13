@@ -781,6 +781,11 @@ const hasBalanceActivity = ( rows: BalanceRow[] ) =>
 			( row.amount !== 0 || Number( row.count ?? 0 ) > 0 )
 	);
 
+const getBalanceCsvAmount = ( row: BalanceRow ) =>
+	row.id === 'payouts' && row.amount !== 0
+		? -Math.abs( row.amount )
+		: row.amount;
+
 const getBalanceCsv = (
 	rows: BalanceRow[],
 	summary: ReportsBalanceSummary,
@@ -812,7 +817,7 @@ const getBalanceCsv = (
 			{ value: row.label, display: row.label },
 			{
 				value: getWooPaymentsAmountFromMinorUnits(
-					row.amount,
+					getBalanceCsvAmount( row ),
 					currency
 				),
 				display: '',

@@ -532,7 +532,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 		expect( csv ).toContain( 'fees,Fees,-60.64,,usd' );
 		expect( csv ).toContain( 'reader_fees,"Reader costs",-1.5,,usd' );
-		expect( csv ).toContain( 'payouts,Payouts,11026.08,2,usd' );
+		expect( csv ).toContain( 'payouts,Payouts,-11026.08,2,usd' );
 		expect( csv ).not.toContain( '$' );
 		expect( csv ).not.toContain( ' USD' );
 	} );
@@ -551,6 +551,9 @@ describe( 'WooPaymentsReportsPage', () => {
 
 		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
 			'total_charges_captured,"Total charges captured",162672,8,jpy'
+		);
+		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+			'payouts,Payouts,-1102608,2,jpy'
 		);
 	} );
 
@@ -572,6 +575,49 @@ describe( 'WooPaymentsReportsPage', () => {
 
 		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
 			'total_charges_captured,"Total charges captured",123.45,8,ugx'
+		);
+		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+			'payouts,Payouts,-11026.08,2,ugx'
+		);
+	} );
+
+	it( 'projects already-negative Payouts CSV amounts as negative', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			payouts: {
+				amount: -1102608,
+				count: 2,
+			},
+		} );
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Export' } )
+		);
+
+		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+			'payouts,Payouts,-11026.08,2,usd'
+		);
+	} );
+
+	it( 'keeps zero Payouts CSV amounts numeric and unsigned', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			payouts: {
+				amount: 0,
+				count: 2,
+			},
+		} );
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Export' } )
+		);
+
+		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+			'payouts,Payouts,0,2,usd'
 		);
 	} );
 
