@@ -490,34 +490,89 @@ class WooPaymentsTokenService {
 	 * @return WC_Payment_Token|null Saved token, or null when details are unavailable.
 	 */
 	public function get_or_create_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token {
+		return $this->resolve_token_and_payment_method_details_for_user( $payment_method_id, $user_id )['token'];
+	}
+
+	/**
+	 * Resolve a saved token and the authoritative payment-method details used to create it.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $payment_method_id              Provider payment method ID.
+	 * @param int    $user_id                         User ID.
+	 * @param bool   $include_existing_token_details Whether to retrieve details for an existing token.
+	 * @return array{token:WC_Payment_Token|null,payment_method_details:array<string,mixed>}
+	 */
+	public function resolve_token_and_payment_method_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
 		if ( 0 >= $user_id || '' === trim( $payment_method_id ) ) {
-			return null;
+			return array(
+				'token'                  => null,
+				'payment_method_details' => array(),
+			);
 		}
 
 		$existing_native_token = $this->get_existing_native_token_for_user( $payment_method_id, $user_id );
 		if ( $existing_native_token instanceof WC_Payment_Token ) {
-			return $existing_native_token;
+			return array(
+				'token'                  => $existing_native_token,
+				'payment_method_details' => $include_existing_token_details ? $this->get_bound_payment_method_details( $payment_method_id ) : array(),
+			);
 		}
 
-		$payment_method = $this->payment_method_details_service->get_payment_method_details( $payment_method_id );
-		$method_type    = isset( $payment_method['type'] ) ? (string) $payment_method['type'] : '';
+		$payment_method = $this->get_bound_payment_method_details( $payment_method_id );
+		$method_type    = isset( $payment_method['type'] ) && is_scalar( $payment_method['type'] ) ? (string) $payment_method['type'] : '';
 		$gateway_id     = self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ $method_type ] ?? '';
 		if ( '' === $gateway_id ) {
-			return null;
+			return array(
+				'token'                  => null,
+				'payment_method_details' => $payment_method,
+			);
 		}
 
-		$provider_token = isset( $payment_method['id'] ) && '' !== (string) $payment_method['id']
-			? (string) $payment_method['id']
-			: $payment_method_id;
-		$existing_token = $this->get_existing_token_for_user( $provider_token, $user_id, $gateway_id );
+		$existing_token = $this->get_existing_token_for_user( $payment_method_id, $user_id, $gateway_id );
 		if ( $existing_token instanceof WC_Payment_Token ) {
-			return $existing_token;
+			return array(
+				'token'                  => $existing_token,
+				'payment_method_details' => $payment_method,
+			);
 		}
 
-		$payment_method['id']   = $provider_token;
+		$payment_method['id']   = $payment_method_id;
 		$payment_method['type'] = $method_type;
 
-		return $this->create_token_for_user_from_payment_method( $payment_method, $user_id );
+		return array(
+			'token'                  => $this->create_token_for_user_from_payment_method( $payment_method, $user_id ),
+			'payment_method_details' => $payment_method,
+		);
+	}
+
+	/**
+	 * Get provider details only when their identity matches the requested payment method.
+	 *
+	 * @param string $payment_method_id Provider payment method ID.
+	 * @return array<string,mixed>
+	 */
+	private function get_bound_payment_method_details( string $payment_method_id ): array {
+		try {
+			$payment_method = $this->payment_method_details_service->get_payment_method_details( $payment_method_id );
+		} catch ( Throwable $exception ) {
+			return array();
+		}
+
+		if ( array_key_exists( 'id', $payment_method ) ) {
+			if ( ! is_scalar( $payment_method['id'] ) ) {
+				return array();
+			}
+
+			$response_payment_method_id = trim( (string) $payment_method['id'] );
+			if ( '' !== $response_payment_method_id && $payment_method_id !== $response_payment_method_id ) {
+				return array();
+			}
+		}
+
+		$payment_method['id'] = $payment_method_id;
+
+		return $payment_method;
 	}
 
 	/**

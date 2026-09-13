@@ -19,11 +19,18 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
@@ -2331,6 +2338,214 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A zero-total recurring SetupIntent exposes actual card identity before lifecycle for new and saved cards.
+	 * @dataProvider zero_total_recurring_card_context_data
+	 *
+	 * @param bool $use_saved_token Whether the checkout uses an existing saved token.
+	 */
+	public function test_zero_total_recurring_setup_intent_exposes_card_identity_to_synchronous_lifecycle_observers( bool $use_saved_token ): void {
+		$user_id      = self::factory()->user->create();
+		$order        = $this->create_woopayments_order( '0.00' );
+		$subscription = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'Card' );
+		$order->save();
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_payment_method_title( 'Card' );
+		$subscription->save();
+		$details       = array(
+			'id'   => 'pm_free_trial',
+			'type' => 'card',
+			'card' => array(
+				'brand'     => 'visa',
+				'network'   => 'visa',
+				'funding'   => 'credit',
+				'last4'     => '4242',
+				'exp_month' => 12,
+				'exp_year'  => 2030,
+			),
+		);
+		$details_reads = new \ArrayObject( array( 0 ) );
+		$token         = null;
+		if ( $use_saved_token ) {
+			$token = new WC_Payment_Token_CC();
+			$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+			$token->set_user_id( $user_id );
+			$token->set_token( 'pm_free_trial' );
+			$token->set_card_type( 'visa' );
+			$token->set_last4( '4242' );
+			$token->set_expiry_month( '12' );
+			$token->set_expiry_year( '2030' );
+			$token->save();
+			$order->add_payment_token( $token );
+			$order->save();
+		}
+		$provider = $this->completed_setup_intent_provider( $details, $details_reads );
+		$context  = PaymentContext::for_checkout(
+			$order,
+			OrderPaymentStore::GATEWAY_ID,
+			$use_saved_token ? '' : 'pm_free_trial',
+			$use_saved_token ? array( 'payment_token' => (string) $token->get_id() ) : array(),
+			array( 'recurring_payment' => true )
+		);
+		$observed = array();
+		add_filter(
+			'woocommerce_woopayments_related_subscriptions_for_order',
+			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
+				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
+			},
+			10,
+			2
+		);
+		$capture_observer_state    = static function ( int $order_id, string $hook ) use ( $order, $subscription, &$observed ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$reloaded_order        = wc_get_order( $order_id );
+			$reloaded_subscription = wc_get_order( $subscription->get_id() );
+			if ( ! $reloaded_order instanceof WC_Order || ! $reloaded_subscription instanceof WC_Order ) {
+				return;
+			}
+
+			$order_token_ids        = $reloaded_order->get_payment_tokens();
+			$subscription_token_ids = $reloaded_subscription->get_payment_tokens();
+			$order_active_token_id  = end( $order_token_ids );
+			$order_active_token     = false === $order_active_token_id ? null : \WC_Payment_Tokens::get( (int) $order_active_token_id );
+			$observed[]             = array(
+				'hook'                        => $hook,
+				'order_gateway'               => $reloaded_order->get_payment_method(),
+				'order_title'                 => $reloaded_order->get_payment_method_title(),
+				'order_last4'                 => $reloaded_order->get_meta( 'last4', true ),
+				'order_card_brand'            => $reloaded_order->get_meta( '_card_brand', true ),
+				'order_details'               => json_decode( (string) $reloaded_order->get_meta( '_wcpay_payment_method_details', true ), true ),
+				'order_raw_details'           => $reloaded_order->get_meta( '_wcpay_raw_payment_method_details', true ),
+				'order_payment_method'        => $reloaded_order->get_meta( '_payment_method_id', true ),
+				'order_customer'              => $reloaded_order->get_meta( '_stripe_customer_id', true ),
+				'order_token_ids'             => $order_token_ids,
+				'active_token_id'             => $order_active_token instanceof \WC_Payment_Token ? $order_active_token->get_id() : 0,
+				'active_token_provider'       => $order_active_token instanceof \WC_Payment_Token ? $order_active_token->get_token() : '',
+				'subscription_gateway'        => $reloaded_subscription->get_payment_method(),
+				'subscription_title'          => $reloaded_subscription->get_payment_method_title(),
+				'subscription_tokens'         => $subscription_token_ids,
+				'subscription_payment_method' => $reloaded_subscription->get_meta( '_payment_method_id', true ),
+				'subscription_customer'       => $reloaded_subscription->get_meta( '_stripe_customer_id', true ),
+				'subscription_last4'          => $reloaded_subscription->get_meta( 'last4', true ),
+				'subscription_card_brand'     => $reloaded_subscription->get_meta( '_card_brand', true ),
+				'subscription_details'        => $reloaded_subscription->get_meta( '_wcpay_payment_method_details', true ),
+				'subscription_raw_details'    => $reloaded_subscription->get_meta( '_wcpay_raw_payment_method_details', true ),
+			);
+		};
+		$status_observer           = static function ( int $order_id ) use ( $capture_observer_state ): void {
+			$capture_observer_state( $order_id, 'status' );
+		};
+		$payment_complete_observer = static function ( int $order_id ) use ( $capture_observer_state ): void {
+			$capture_observer_state( $order_id, 'payment_complete' );
+		};
+		add_action( 'woocommerce_order_status_completed', $status_observer, 1 );
+		add_action( 'woocommerce_payment_complete', $payment_complete_observer, 1 );
+
+		try {
+			$this->sut->process_checkout_outcome( $context, $provider );
+		} finally {
+			remove_action( 'woocommerce_order_status_completed', $status_observer, 1 );
+			remove_action( 'woocommerce_payment_complete', $payment_complete_observer, 1 );
+			remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
+		}
+
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$expected_token_ids = $order->get_payment_tokens();
+		$expected_token_id  = end( $expected_token_ids );
+		$this->assertSame(
+			array(
+				array(
+					'hook'                        => 'status',
+					'order_gateway'               => OrderPaymentStore::GATEWAY_ID,
+					'order_title'                 => 'Visa credit card',
+					'order_last4'                 => '4242',
+					'order_card_brand'            => 'visa',
+					'order_details'               => array(
+						'type' => 'card',
+						'card' => $details['card'],
+					),
+					'order_raw_details'           => '',
+					'order_payment_method'        => 'pm_free_trial',
+					'order_customer'              => 'cus_free_trial',
+					'order_token_ids'             => $expected_token_ids,
+					'active_token_id'             => $expected_token_id,
+					'active_token_provider'       => 'pm_free_trial',
+					'subscription_gateway'        => OrderPaymentStore::GATEWAY_ID,
+					'subscription_title'          => 'Visa credit card',
+					'subscription_tokens'         => $expected_token_ids,
+					'subscription_payment_method' => 'pm_free_trial',
+					'subscription_customer'       => 'cus_free_trial',
+					'subscription_last4'          => '',
+					'subscription_card_brand'     => '',
+					'subscription_details'        => '',
+					'subscription_raw_details'    => '',
+				),
+				array(
+					'hook'                        => 'payment_complete',
+					'order_gateway'               => OrderPaymentStore::GATEWAY_ID,
+					'order_title'                 => 'Visa credit card',
+					'order_last4'                 => '4242',
+					'order_card_brand'            => 'visa',
+					'order_details'               => array(
+						'type' => 'card',
+						'card' => $details['card'],
+					),
+					'order_raw_details'           => '',
+					'order_payment_method'        => 'pm_free_trial',
+					'order_customer'              => 'cus_free_trial',
+					'order_token_ids'             => $expected_token_ids,
+					'active_token_id'             => $expected_token_id,
+					'active_token_provider'       => 'pm_free_trial',
+					'subscription_gateway'        => OrderPaymentStore::GATEWAY_ID,
+					'subscription_title'          => 'Visa credit card',
+					'subscription_tokens'         => $expected_token_ids,
+					'subscription_payment_method' => 'pm_free_trial',
+					'subscription_customer'       => 'cus_free_trial',
+					'subscription_last4'          => '',
+					'subscription_card_brand'     => '',
+					'subscription_details'        => '',
+					'subscription_raw_details'    => '',
+				),
+			),
+			$observed
+		);
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $order->get_payment_method() );
+		$this->assertSame( 'pm_free_trial', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_free_trial', $order->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'seti_free_trial', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'Visa credit card', $subscription->get_payment_method_title() );
+		$this->assertSame( 'pm_free_trial', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_free_trial', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( '', $subscription->get_meta( 'last4', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_card_brand', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertSame( 1, $details_reads[0] );
+		$this->assertCount( 1, $order->get_payment_tokens() );
+		$this->assertCount( 1, $subscription->get_payment_tokens() );
+		$this->assertStringContainsString( '"type":"card"', (string) $order->get_meta( '_wcpay_payment_method_details', true ) );
+	}
+
+	/**
+	 * Provide new-card and existing-saved-card zero-total SetupIntent contexts.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function zero_total_recurring_card_context_data(): array {
+		return array(
+			'new card'            => array( false ),
+			'existing saved card' => array( true ),
+		);
+	}
+
+	/**
 	 * Build a successful provider refund outcome that links the WC refund via `_wcpay_refund_id`.
 	 *
 	 * This mirrors the live WooPayments synchronous and webhook paths, both of which stamp the
@@ -2395,6 +2610,118 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'saved_payment_method_display_name' => $token->get_display_name(),
 			)
 		);
+	}
+
+	/**
+	 * Build a real WooPayments SetupIntent provider with a counted payment-method detail seam.
+	 *
+	 * @param array<string,mixed>   $payment_method_details Canonical provider payment-method details.
+	 * @param \ArrayObject<int,int> $details_reads Payment-method detail read counter.
+	 * @return WooPaymentsProvider
+	 */
+	private function completed_setup_intent_provider( array $payment_method_details, $details_reads ): WooPaymentsProvider {
+		$details_service = new class( $payment_method_details, $details_reads ) extends WooPaymentsPaymentMethodDetailsService {
+			/** @var array<string,mixed> */
+			private array $payment_method_details;
+
+			/** @var \ArrayObject<int,int> */
+			private \ArrayObject $details_reads;
+
+			/**
+			 * @param array<string,mixed>   $payment_method_details Canonical provider payment-method details.
+			 * @param \ArrayObject<int,int> $details_reads Payment-method detail read counter.
+			 */
+			public function __construct( array $payment_method_details, $details_reads ) {
+				$this->payment_method_details = $payment_method_details;
+				$this->details_reads          = $details_reads;
+			}
+
+			/**
+			 * @param string $payment_method_id Provider payment-method ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_method_details( string $payment_method_id ): array {
+				++$this->details_reads[0];
+
+				return 'pm_free_trial' === $payment_method_id ? $this->payment_method_details : array();
+			}
+		};
+		$token_service   = new WooPaymentsTokenService();
+		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ) );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_account_country', 'get_mode' ) )
+			->getMock();
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+		$account_service->method( 'get_mode' )->willReturn( 'test' );
+		$legacy_runtime = $this->getMockBuilder( WooPaymentsLegacyRuntime::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_logger' ) )
+			->getMock();
+		$legacy_runtime->method( 'get_logger' )->willReturn( null );
+		$effect_applier = new WooPaymentsOrderEffectApplier();
+		$effect_applier->init(
+			$token_service,
+			new WooPaymentsOrderDataService(),
+			$account_service,
+			$legacy_runtime,
+			new WooPaymentsOrderNoteService(),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+		$api_client       = new class() extends \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient {
+			/**
+			 * Tell the adapter to use its native SetupIntent transport.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return the isolated successful SetupIntent transport response.
+			 *
+			 * @param array<string,mixed> $request_data SetupIntent request data.
+			 * @param string              $idempotency_key Request idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $request_data, $idempotency_key );
+
+				return array(
+					'id'             => 'seti_free_trial',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_free_trial',
+					'payment_method' => 'pm_free_trial',
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_free_trial' );
+		$adapter = new WooPaymentsProviderGatewayAdapter();
+		$adapter->init(
+			$legacy_runtime,
+			$api_client,
+			$customer_service,
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			new WooPaymentsOrderNoteService(),
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class )
+		);
+		$provider = new WooPaymentsProvider();
+		$provider->init(
+			$adapter,
+			$api_client,
+			$account_service,
+			null,
+			$effect_applier
+		);
+
+		return $provider;
 	}
 
 	/**

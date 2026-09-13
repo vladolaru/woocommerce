@@ -551,6 +551,172 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A zero-total recurring redirect return exposes card identity before status and payment-complete observers.
+	 */
+	public function test_handle_wp_redirects_zero_total_recurring_setup_intent_through_the_pre_lifecycle_identity_owner(): void {
+		$user_id      = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order        = $this->create_order( '0.00', $user_id );
+		$subscription = $this->create_order( '0.00', $user_id );
+		$order->set_payment_method_title( 'Card' );
+		$order->save();
+		$subscription->set_payment_method_title( 'Card' );
+		$subscription->save();
+		$details                  = array(
+			'id'   => 'pm_redirect_card',
+			'type' => 'card',
+			'card' => array(
+				'brand'     => 'visa',
+				'network'   => 'visa',
+				'funding'   => 'credit',
+				'last4'     => '4242',
+				'exp_month' => 12,
+				'exp_year'  => 2030,
+			),
+		);
+		$api_client               = new RedirectReturnApiClientStub();
+		$api_client->setup_intent = array(
+			'id'             => 'seti_redirect_card',
+			'status'         => 'succeeded',
+			'customer'       => 'cus_redirect_card',
+			'payment_method' => 'pm_redirect_card',
+		);
+		$details_reads            = new \ArrayObject( array( 0 ) );
+		$token_service            = $this->create_token_service( array( 'pm_redirect_card' => $details ), $details_reads );
+		$confirmation_owner       = $this->create_confirmation_owner( $api_client, $token_service );
+		$this->sut                = $this->create_controller( true, $confirmation_owner, $api_client, $token_service );
+		$observed                 = array();
+		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
+		add_filter(
+			'woocommerce_woopayments_related_subscriptions_for_order',
+			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
+				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
+			},
+			10,
+			2
+		);
+		$capture_observer_state    = static function ( int $order_id, string $hook ) use ( $order, $subscription, &$observed ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$reloaded_order        = wc_get_order( $order_id );
+			$reloaded_subscription = wc_get_order( $subscription->get_id() );
+			if ( ! $reloaded_order instanceof WC_Order || ! $reloaded_subscription instanceof WC_Order ) {
+				return;
+			}
+
+			$order_token_ids = $reloaded_order->get_payment_tokens();
+			$active_token_id = end( $order_token_ids );
+			$active_token    = false === $active_token_id ? null : \WC_Payment_Tokens::get( (int) $active_token_id );
+			$observed[]      = array(
+				'hook'                        => $hook,
+				'order_gateway'               => $reloaded_order->get_payment_method(),
+				'order_title'                 => $reloaded_order->get_payment_method_title(),
+				'order_last4'                 => $reloaded_order->get_meta( 'last4', true ),
+				'order_card_brand'            => $reloaded_order->get_meta( '_card_brand', true ),
+				'order_details'               => json_decode( (string) $reloaded_order->get_meta( '_wcpay_payment_method_details', true ), true ),
+				'order_payment_method'        => $reloaded_order->get_meta( '_payment_method_id', true ),
+				'order_customer'              => $reloaded_order->get_meta( '_stripe_customer_id', true ),
+				'order_token_ids'             => $order_token_ids,
+				'active_token_id'             => $active_token instanceof \WC_Payment_Token ? $active_token->get_id() : 0,
+				'active_token_provider'       => $active_token instanceof \WC_Payment_Token ? $active_token->get_token() : '',
+				'subscription_gateway'        => $reloaded_subscription->get_payment_method(),
+				'subscription_title'          => $reloaded_subscription->get_payment_method_title(),
+				'subscription_token_ids'      => $reloaded_subscription->get_payment_tokens(),
+				'subscription_payment_method' => $reloaded_subscription->get_meta( '_payment_method_id', true ),
+				'subscription_customer'       => $reloaded_subscription->get_meta( '_stripe_customer_id', true ),
+				'subscription_last4'          => $reloaded_subscription->get_meta( 'last4', true ),
+				'subscription_card_brand'     => $reloaded_subscription->get_meta( '_card_brand', true ),
+				'subscription_details'        => $reloaded_subscription->get_meta( '_wcpay_payment_method_details', true ),
+			);
+		};
+		$status_observer           = static function ( int $order_id ) use ( $capture_observer_state ): void {
+			$capture_observer_state( $order_id, 'status' );
+		};
+		$payment_complete_observer = static function ( int $order_id ) use ( $capture_observer_state ): void {
+			$capture_observer_state( $order_id, 'payment_complete' );
+		};
+		add_action( 'woocommerce_order_status_completed', $status_observer, 1 );
+		add_action( 'woocommerce_payment_complete', $payment_complete_observer, 1 );
+		$this->set_setup_intent_return_request( $order, 'seti_redirect_card' );
+
+		try {
+			$this->sut->handle_wp();
+		} finally {
+			remove_action( 'woocommerce_order_status_completed', $status_observer, 1 );
+			remove_action( 'woocommerce_payment_complete', $payment_complete_observer, 1 );
+			remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
+		}
+
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$token_ids       = $order->get_payment_tokens();
+		$active_token    = $token_service->get_active_token_for_order( $order );
+		$active_token_id = $active_token instanceof \WC_Payment_Token ? $active_token->get_id() : 0;
+		$this->assertInstanceOf( \WC_Payment_Token::class, $active_token );
+		$this->assertSame( 'pm_redirect_card', $active_token->get_token() );
+		$this->assertSame(
+			array(
+				array(
+					'hook'                        => 'status',
+					'order_gateway'               => OrderPaymentStore::GATEWAY_ID,
+					'order_title'                 => 'Visa credit card',
+					'order_last4'                 => '4242',
+					'order_card_brand'            => 'visa',
+					'order_details'               => array(
+						'type' => 'card',
+						'card' => $details['card'],
+					),
+					'order_payment_method'        => 'pm_redirect_card',
+					'order_customer'              => 'cus_redirect_card',
+					'order_token_ids'             => $token_ids,
+					'active_token_id'             => $active_token_id,
+					'active_token_provider'       => 'pm_redirect_card',
+					'subscription_gateway'        => OrderPaymentStore::GATEWAY_ID,
+					'subscription_title'          => 'Visa credit card',
+					'subscription_token_ids'      => $token_ids,
+					'subscription_payment_method' => 'pm_redirect_card',
+					'subscription_customer'       => 'cus_redirect_card',
+					'subscription_last4'          => '',
+					'subscription_card_brand'     => '',
+					'subscription_details'        => '',
+				),
+				array(
+					'hook'                        => 'payment_complete',
+					'order_gateway'               => OrderPaymentStore::GATEWAY_ID,
+					'order_title'                 => 'Visa credit card',
+					'order_last4'                 => '4242',
+					'order_card_brand'            => 'visa',
+					'order_details'               => array(
+						'type' => 'card',
+						'card' => $details['card'],
+					),
+					'order_payment_method'        => 'pm_redirect_card',
+					'order_customer'              => 'cus_redirect_card',
+					'order_token_ids'             => $token_ids,
+					'active_token_id'             => $active_token_id,
+					'active_token_provider'       => 'pm_redirect_card',
+					'subscription_gateway'        => OrderPaymentStore::GATEWAY_ID,
+					'subscription_title'          => 'Visa credit card',
+					'subscription_token_ids'      => $token_ids,
+					'subscription_payment_method' => 'pm_redirect_card',
+					'subscription_customer'       => 'cus_redirect_card',
+					'subscription_last4'          => '',
+					'subscription_card_brand'     => '',
+					'subscription_details'        => '',
+				),
+			),
+			$observed
+		);
+		$this->assertSame( 1, $api_client->setup_intent_reads );
+		$this->assertSame( 1, $details_reads[0] );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertCount( 1, $token_ids );
+	}
+
+	/**
 	 * @testdox A successful setup-intent return on the payment-methods page adds a notice and clears the current user's cached methods.
 	 */
 	public function test_handle_wp_maps_successful_account_setup_intent_return(): void {
@@ -736,18 +902,24 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * Create a token service test double.
 	 *
 	 * @param array<string,array<string,mixed>> $payment_method_details Payment method details.
+	 * @param \ArrayObject<int,int>|null        $details_reads          Optional payment-method detail read counter.
 	 * @return WooPaymentsTokenService
 	 */
-	private function create_token_service( array $payment_method_details = array() ): WooPaymentsTokenService {
-		$details_service = new class( $payment_method_details ) extends WooPaymentsPaymentMethodDetailsService {
+	private function create_token_service( array $payment_method_details = array(), ?\ArrayObject $details_reads = null ): WooPaymentsTokenService {
+		$details_service = new class( $payment_method_details, $details_reads ) extends WooPaymentsPaymentMethodDetailsService {
 			/** @var array<string,array<string,mixed>> */
 			private array $details;
 
+			/** @var \ArrayObject<int,int>|null */
+			private ?\ArrayObject $details_reads;
+
 			/**
 			 * @param array<string,array<string,mixed>> $details Payment method details.
+			 * @param \ArrayObject<int,int>|null        $details_reads Optional payment-method detail read counter.
 			 */
-			public function __construct( array $details ) {
-				$this->details = $details;
+			public function __construct( array $details, ?\ArrayObject $details_reads ) {
+				$this->details       = $details;
+				$this->details_reads = $details_reads;
 			}
 
 			/**
@@ -755,6 +927,10 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			 * @return array<string,mixed>
 			 */
 			public function get_payment_method_details( string $payment_method_id ): array {
+				if ( $this->details_reads instanceof \ArrayObject ) {
+					++$this->details_reads[0];
+				}
+
 				return $this->details[ $payment_method_id ] ?? array();
 			}
 		};

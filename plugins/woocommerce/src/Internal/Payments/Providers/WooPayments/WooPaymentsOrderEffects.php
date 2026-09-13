@@ -43,12 +43,116 @@ class WooPaymentsOrderEffects {
 			$express_checkout_type = $wallet_type;
 		}
 
+		return self::compose_payment_method_display_effects( $payment_method_details, $payment_method_type, $wallet_type, $express_checkout_type );
+	}
+
+	/**
+	 * Compose display effects from the payment method confirmed by a SetupIntent.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $payment_method       Provider payment method response.
+	 * @param string              $express_checkout_type Existing express-checkout identity.
+	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string}|array{}
+	 */
+	public static function compose_setup_intent_payment_method_display_details( array $payment_method, string $express_checkout_type = '' ): array {
+		$payment_method_type   = isset( $payment_method['type'] ) && is_scalar( $payment_method['type'] ) ? (string) $payment_method['type'] : '';
+		$card                  = isset( $payment_method['card'] ) && is_array( $payment_method['card'] ) ? $payment_method['card'] : array();
+		$wallet_type           = isset( $card['wallet']['type'] ) && is_scalar( $card['wallet']['type'] ) ? (string) $card['wallet']['type'] : '';
+		$express_checkout_type = sanitize_key( $express_checkout_type );
+
+		if ( 'link' === $payment_method_type ) {
+			return self::compose_payment_method_display_effects( array( 'type' => 'link' ), 'link', '', '', false );
+		}
+
+		if ( 'card' !== $payment_method_type || empty( $card ) ) {
+			return array();
+		}
+
+		if ( 'link' === $wallet_type ) {
+			return self::compose_payment_method_display_effects(
+				array(
+					'type' => 'card',
+					'card' => array( 'wallet' => array( 'type' => 'link' ) ),
+				),
+				'card',
+				'link',
+				'',
+				false
+			);
+		}
+
+		if ( ! self::has_coherent_setup_intent_card_identity( $card ) ) {
+			return array();
+		}
+
+		$payment_method = array(
+			'type' => 'card',
+			'card' => $card,
+		);
+		if ( '' === $express_checkout_type ) {
+			$express_checkout_type = $wallet_type;
+		}
+
+		return self::compose_payment_method_display_effects( $payment_method, $payment_method_type, $wallet_type, $express_checkout_type );
+	}
+
+	/**
+	 * Tell whether provider card details can safely establish a card identity.
+	 *
+	 * @param array<string,mixed> $card Provider card details.
+	 * @return bool
+	 */
+	private static function has_coherent_setup_intent_card_identity( array $card ): bool {
+		if (
+			! self::has_nonempty_scalar( $card['brand'] ?? null )
+			|| ! self::has_nonempty_scalar( $card['last4'] ?? null )
+			|| ! isset( $card['funding'] )
+			|| ! is_scalar( $card['funding'] )
+			|| ! in_array( (string) $card['funding'], array( 'credit', 'debit', 'prepaid', 'unknown' ), true )
+		) {
+			return false;
+		}
+
+		$networks = isset( $card['networks'] ) && is_array( $card['networks'] ) ? $card['networks'] : array();
+		if ( ( isset( $card['networks'] ) && ! is_array( $card['networks'] ) ) || ( isset( $networks['available'] ) && ! is_array( $networks['available'] ) ) ) {
+			return false;
+		}
+
+		$available = $networks['available'] ?? array();
+		$network   = $card['display_brand'] ?? $card['network'] ?? $networks['preferred'] ?? $available[0] ?? null;
+
+		return self::has_nonempty_scalar( $network );
+	}
+
+	/**
+	 * Tell whether a provider value is a non-empty scalar.
+	 *
+	 * @param mixed $value Provider value.
+	 * @return bool
+	 */
+	private static function has_nonempty_scalar( $value ): bool {
+		return is_scalar( $value ) && '' !== trim( (string) $value );
+	}
+
+	/**
+	 * Compose display effects from a normalized provider payment-method detail object.
+	 *
+	 * @param array<string,mixed> $payment_method_details Provider payment method details.
+	 * @param string              $payment_method_type    Provider payment method type.
+	 * @param string              $wallet_type            Wrapped wallet type.
+	 * @param string              $express_checkout_type  Existing express-checkout identity.
+	 * @param bool                $persist_payment_method_details Whether to persist normalized detail metadata.
+	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string}|array{}
+	 */
+	private static function compose_payment_method_display_effects( array $payment_method_details, string $payment_method_type, string $wallet_type, string $express_checkout_type, bool $persist_payment_method_details = true ): array {
+
 		if ( '' === $payment_method_type && '' === $express_checkout_type ) {
 			return array();
 		}
 
 		$meta = array();
-		if ( ! empty( $payment_method_details ) ) {
+		if ( $persist_payment_method_details && ! empty( $payment_method_details ) ) {
 			$encoded_details = wp_json_encode( self::payment_method_details_for_order_meta( $payment_method_details ) );
 			if ( false !== $encoded_details ) {
 				$meta['_wcpay_payment_method_details'] = $encoded_details;

@@ -19,6 +19,7 @@ use RuntimeException;
 use WC_Order;
 use WC_Payment_Token_CC;
 use WC_Payment_Token_ECheck;
+use WC_Payment_Tokens;
 use WC_Unit_Test_Case;
 
 /**
@@ -201,6 +202,126 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
 		$this->assertSame( $existing_token->get_id(), $token->get_id(), 'Existing tokens should be reused instead of duplicated.' );
+	}
+
+	/**
+	 * @testdox Resolving a new token returns the authoritative payment-method details with it.
+	 */
+	public function test_resolves_new_token_with_authoritative_payment_method_details(): void {
+		$user_id = $this->factory()->user->create();
+		$details = array(
+			'id'   => 'pm_explicit_result',
+			'type' => 'card',
+			'card' => array(
+				'brand'     => 'visa',
+				'last4'     => '4242',
+				'exp_month' => 12,
+				'exp_year'  => 2030,
+			),
+		);
+		$sut     = $this->create_service( array( 'pm_explicit_result' => $details ) );
+
+		$result = $sut->resolve_token_and_payment_method_details_for_user( 'pm_explicit_result', $user_id );
+
+		$this->assertSame( array( 'token', 'payment_method_details' ), array_keys( $result ) );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $result['token'] );
+		$this->assertSame( $details, $result['payment_method_details'] );
+	}
+
+	/**
+	 * @testdox Rejects details returned for a different provider payment method.
+	 */
+	public function test_rejects_payment_method_details_with_a_mismatched_response_id(): void {
+		$user_id = $this->factory()->user->create();
+		$sut     = $this->create_service(
+			array(
+				'pm_requested' => array(
+					'id'   => 'pm_returned',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+
+		$result = $sut->resolve_token_and_payment_method_details_for_user( 'pm_requested', $user_id );
+
+		$this->assertNull( $result['token'] );
+		$this->assertSame( array(), $result['payment_method_details'] );
+		$this->assertSame( array(), WC_Payment_Tokens::get_customer_tokens( $user_id ) );
+	}
+
+	/**
+	 * @testdox Binds a missing provider response ID to the requested payment method.
+	 */
+	public function test_binds_a_missing_payment_method_response_id_to_the_requested_id(): void {
+		$user_id = $this->factory()->user->create();
+		$sut     = $this->create_service(
+			array(
+				'pm_requested' => array(
+					'id'   => '',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+
+		$result = $sut->resolve_token_and_payment_method_details_for_user( 'pm_requested', $user_id );
+
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $result['token'] );
+		$this->assertSame( 'pm_requested', $result['token']->get_token() );
+		$this->assertSame( 'pm_requested', $result['payment_method_details']['id'] );
+	}
+
+	/**
+	 * @testdox The token-only method returns the token from the explicit resolution result.
+	 */
+	public function test_token_only_method_returns_the_token_from_the_explicit_resolution_result(): void {
+		$user_id = $this->factory()->user->create();
+		$token   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_wrapper_contract' );
+		$sut     = new class( $token ) extends WooPaymentsTokenService {
+			/** @var WC_Payment_Token_CC */
+			private WC_Payment_Token_CC $token;
+
+			/** @var int */
+			public int $resolution_calls = 0;
+
+			/**
+			 * @param WC_Payment_Token_CC $token Token returned by the explicit result method.
+			 */
+			public function __construct( WC_Payment_Token_CC $token ) {
+				$this->token = $token;
+			}
+
+			/**
+			 * @param string $payment_method_id Provider payment method ID.
+			 * @param int    $resolved_user_id  User ID.
+			 * @param bool   $include_existing_token_details Whether existing-token details are requested.
+			 * @return array{token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>}
+			 */
+			public function resolve_token_and_payment_method_details_for_user( string $payment_method_id, int $resolved_user_id, bool $include_existing_token_details = false ): array {
+				unset( $include_existing_token_details );
+				unset( $payment_method_id, $resolved_user_id );
+				++$this->resolution_calls;
+
+				return array(
+					'token'                  => $this->token,
+					'payment_method_details' => array( 'type' => 'card' ),
+				);
+			}
+		};
+
+		$this->assertSame( $token, $sut->get_or_create_token_for_user( 'pm_wrapper_contract', $user_id ) );
+		$this->assertSame( 1, $sut->resolution_calls );
 	}
 
 	/**

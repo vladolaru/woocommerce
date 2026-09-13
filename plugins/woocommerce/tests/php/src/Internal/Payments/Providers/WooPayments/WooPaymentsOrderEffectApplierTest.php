@@ -857,6 +857,239 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Succeeded SetupIntent effects persist card identity after token attachment.
+	 */
+	public function test_succeeded_setup_intent_effects_persist_card_identity(): void {
+		$user_id = $this->factory()->user->create();
+		$order   = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'Card' );
+		$order->save();
+		$outcome                = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'seti_card_identity', '', 'pm_card_identity', 'cus_card_identity' );
+		$plan                   = WooPaymentsOrderEffectPlan::for_setup_intent(
+			array(
+				'id'             => 'seti_card_identity',
+				'status'         => 'succeeded',
+				'payment_method' => 'pm_card_identity',
+			),
+			true,
+			array()
+		);
+		$payment_method_details = array(
+			'id'   => 'pm_card_identity',
+			'type' => 'card',
+			'card' => array(
+				'brand'     => 'visa',
+				'funding'   => 'credit',
+				'last4'     => '4242',
+				'network'   => 'visa',
+				'exp_month' => 12,
+				'exp_year'  => 2030,
+			),
+		);
+		$details_service        = new class( $payment_method_details ) extends WooPaymentsPaymentMethodDetailsService {
+			/**
+			 * Number of provider detail reads.
+			 *
+			 * @var int
+			 */
+			public int $get_payment_method_details_calls = 0;
+
+			/**
+			 * Payment method details returned to the token service.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $payment_method_details;
+
+			/**
+			 * @param array<string,mixed> $payment_method_details Payment method details returned to the token service.
+			 */
+			public function __construct( array $payment_method_details ) {
+				$this->payment_method_details = $payment_method_details;
+			}
+
+			/**
+			 * @param string $payment_method_id Provider payment method ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_method_details( string $payment_method_id ): array {
+				++$this->get_payment_method_details_calls;
+
+				return 'pm_card_identity' === $payment_method_id ? $this->payment_method_details : array();
+			}
+		};
+		$token_service          = new class() extends WooPaymentsTokenService {
+			/**
+			 * Number of calls through the explicit token resolution result method.
+			 *
+			 * @var int
+			 */
+			public int $resolve_token_and_payment_method_details_for_user_calls = 0;
+
+			/**
+			 * @param string $payment_method_id Provider payment method ID.
+			 * @param int    $user_id           User ID.
+			 * @param bool   $include_existing_token_details Whether existing-token details are requested.
+			 * @return array{token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>}
+			 */
+			public function resolve_token_and_payment_method_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
+				++$this->resolve_token_and_payment_method_details_for_user_calls;
+
+				return parent::resolve_token_and_payment_method_details_for_user( $payment_method_id, $user_id, $include_existing_token_details );
+			}
+		};
+		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ) );
+
+		$this->create_applier( $token_service )->apply( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card_identity' ), $outcome, $plan );
+		$order  = wc_get_order( $order->get_id() );
+		$tokens = \WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
+		$this->assertSame( 'visa', $order->get_meta( '_card_brand', true ) );
+		$this->assertSame( 'pm_card_identity', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertStringContainsString( '"last4":"4242"', (string) $order->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertCount( 1, $tokens );
+		$this->assertSame( 1, $token_service->resolve_token_and_payment_method_details_for_user_calls );
+		$this->assertSame( 1, $details_service->get_payment_method_details_calls );
+	}
+
+	/**
+	 * @testdox SetupIntent Link identity removes stale card and express display metadata.
+	 * @dataProvider setup_intent_link_identity_data
+	 *
+	 * @param array<string,mixed> $payment_method Authoritative Link payment-method details.
+	 */
+	public function test_setup_intent_link_identity_removes_stale_card_display_metadata( array $payment_method ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_payment_method_title( 'Visa credit card' );
+		$order->update_meta_data( 'last4', '4242' );
+		$order->update_meta_data( '_card_brand', 'visa' );
+		$order->update_meta_data( '_wcpay_payment_method_details', '{"type":"card"}' );
+		$order->update_meta_data( '_wcpay_express_checkout_payment_method', 'apple_pay' );
+		$order->save();
+
+		$applied = $this->create_applier()->apply_setup_intent_payment_method_display_details( $order, $payment_method );
+		$order   = wc_get_order( $order->get_id() );
+
+		$this->assertTrue( $applied );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'Link', $order->get_payment_method_title() );
+		$this->assertSame( '', $order->get_meta( 'last4', true ) );
+		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_express_checkout_payment_method', true ) );
+	}
+
+	/**
+	 * Provide raw and wrapped Link payment-method details.
+	 *
+	 * @return array<string,array{payment_method:array<string,mixed>}>
+	 */
+	public function setup_intent_link_identity_data(): array {
+		return array(
+			'raw Link'          => array( 'payment_method' => array( 'type' => 'link' ) ),
+			'wrapped Link card' => array(
+				'payment_method' => array(
+					'type' => 'card',
+					'card' => array(
+						'brand'  => 'visa',
+						'last4'  => '4242',
+						'wallet' => array( 'type' => 'link' ),
+					),
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Partial SetupIntent card data removes stale card display metadata before generic fallback.
+	 */
+	public function test_partial_setup_intent_card_data_removes_stale_card_display_metadata(): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_payment_method_title( 'Card' );
+		$order->update_meta_data( 'last4', '4242' );
+		$order->update_meta_data( '_card_brand', 'visa' );
+		$order->update_meta_data( '_wcpay_payment_method_details', '{"type":"card"}' );
+		$order->update_meta_data( '_wcpay_raw_payment_method_details', '{"id":"pm_old","type":"card"}' );
+		$order->save();
+
+		$applied = $this->create_applier()->apply_setup_intent_payment_method_display_details( $order, array( 'type' => 'card' ), '', 'pm_new', 'pm_old' );
+		$order   = wc_get_order( $order->get_id() );
+
+		$this->assertFalse( $applied );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'Card', $order->get_payment_method_title() );
+		$this->assertSame( '', $order->get_meta( 'last4', true ) );
+		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_raw_payment_method_details', true ) );
+	}
+
+	/**
+	 * @testdox A same-payment-method SetupIntent replay clears stale card identity after a display lookup failure.
+	 */
+	public function test_setup_intent_replay_with_empty_display_data_preserves_existing_card_identity(): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_payment_method_title( 'Visa credit card' );
+		$order->update_meta_data( 'last4', '4242' );
+		$order->update_meta_data( '_card_brand', 'visa' );
+		$order->update_meta_data( '_wcpay_payment_method_details', '{"type":"card"}' );
+		$order->save();
+
+		$applied = $this->create_applier()->apply_setup_intent_payment_method_display_details( $order, array(), '', 'pm_same', 'pm_same' );
+		$order   = wc_get_order( $order->get_id() );
+
+		$this->assertFalse( $applied );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'Card', $order->get_payment_method_title() );
+		$this->assertSame( '', $order->get_meta( 'last4', true ) );
+		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_payment_method_details', true ) );
+	}
+
+	/**
+	 * @testdox Malformed, partial, and Link same-method caches cannot create card identity.
+	 * @dataProvider unsafe_same_method_payment_method_details_cache_data
+	 *
+	 * @param string $cached_details Unsafe normalized payment-method cache.
+	 */
+	public function test_unsafe_same_method_payment_method_details_cache_cannot_create_card_identity( string $cached_details ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_payment_method_title( 'Card' );
+		$order->update_meta_data( '_payment_method_id', 'pm_same_cache' );
+		$order->update_meta_data( '_wcpay_payment_method_details', $cached_details );
+		$order->save();
+		$applier = $this->create_applier();
+
+		$details = $applier->get_same_method_payment_method_details( $order, 'pm_same_cache', 'pm_same_cache' );
+		$applied = $applier->apply_setup_intent_payment_method_display_details( $order, $details, '', 'pm_same_cache', 'pm_same_cache' );
+		$order   = wc_get_order( $order->get_id() );
+
+		$this->assertSame( array(), $details );
+		$this->assertFalse( $applied );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'Card', $order->get_payment_method_title() );
+		$this->assertSame( '', $order->get_meta( 'last4', true ) );
+		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
+	}
+
+	/**
+	 * Provide invalid same-method normalized caches.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function unsafe_same_method_payment_method_details_cache_data(): array {
+		return array(
+			'malformed JSON' => array( '{' ),
+			'partial card'   => array( '{"type":"card","card":{"last4":"4242"}}' ),
+			'wrapped Link'   => array( '{"type":"card","card":{"last4":"4242","funding":"credit","network":"visa","wallet":{"type":"link"}}}' ),
+		);
+	}
+
+	/**
 	 * @testdox Capture effects delegate successful fee details to the order data service.
 	 */
 	public function test_capture_effects_delegate_fee_details(): void {

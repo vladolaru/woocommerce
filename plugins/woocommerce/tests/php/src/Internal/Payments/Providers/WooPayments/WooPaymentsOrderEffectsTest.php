@@ -385,6 +385,167 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox SetupIntent card projection requires the provider's exact raw card type.
+	 */
+	public function test_setup_intent_display_projection_requires_exact_raw_card_type(): void {
+		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
+			array(
+				'type' => 'Card',
+				'card' => array(
+					'brand'    => 'visa',
+					'last4'    => '4242',
+					'customer' => 'cus_must_not_be_cached',
+				),
+			)
+		);
+
+		$this->assertSame( array(), $effects );
+	}
+
+	/**
+	 * @testdox SetupIntent card projection rejects incoherent card identity details.
+	 * @dataProvider incoherent_setup_intent_card_details_data
+	 *
+	 * @param array<string,mixed> $payment_method Incoherent provider payment-method details.
+	 */
+	public function test_setup_intent_card_display_projection_rejects_incoherent_details( array $payment_method ): void {
+		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details( $payment_method );
+
+		$this->assertSame( array(), $effects );
+	}
+
+	/**
+	 * Provide malformed card identity provider responses.
+	 *
+	 * @return array<string,array{array<string,mixed>}>
+	 */
+	public function incoherent_setup_intent_card_details_data(): array {
+		$valid = array(
+			'type' => 'card',
+			'card' => array(
+				'brand'   => 'visa',
+				'network' => 'visa',
+				'funding' => 'credit',
+				'last4'   => '4242',
+			),
+		);
+
+		return array(
+			'brand only'                   => array(
+				array(
+					'type' => 'card',
+					'card' => array( 'brand' => 'visa' ),
+				),
+			),
+			'missing last4'                => array(
+				array(
+					'type' => 'card',
+					'card' => array(
+						'brand'   => 'visa',
+						'network' => 'visa',
+						'funding' => 'credit',
+					),
+				),
+			),
+			'empty last4'                  => array( array_replace_recursive( $valid, array( 'card' => array( 'last4' => '' ) ) ) ),
+			'array last4'                  => array( array_replace_recursive( $valid, array( 'card' => array( 'last4' => array( '4242' ) ) ) ) ),
+			'missing funding'              => array( array_replace_recursive( $valid, array( 'card' => array( 'funding' => null ) ) ) ),
+			'unsupported funding'          => array( array_replace_recursive( $valid, array( 'card' => array( 'funding' => 'charge' ) ) ) ),
+			'array funding'                => array( array_replace_recursive( $valid, array( 'card' => array( 'funding' => array( 'credit' ) ) ) ) ),
+			'empty selected title source'  => array( array_replace_recursive( $valid, array( 'card' => array( 'display_brand' => '' ) ) ) ),
+			'array selected title source'  => array( array_replace_recursive( $valid, array( 'card' => array( 'display_brand' => array( 'visa' ) ) ) ) ),
+			'non-array networks available' => array(
+				array_replace_recursive(
+					$valid,
+					array(
+						'card' => array(
+							'network'  => null,
+							'networks' => array( 'available' => 'visa' ),
+						),
+					)
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox SetupIntent card projection caches only its normalized type and card subtree.
+	 */
+	public function test_setup_intent_card_display_projection_omits_top_level_provider_data_from_cache(): void {
+		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
+			array(
+				'id'              => 'pm_card_identity',
+				'type'            => 'card',
+				'customer'        => 'cus_must_not_be_cached',
+				'billing_details' => array(
+					'email' => 'must-not-be-cached@example.test',
+				),
+				'card'            => array(
+					'brand'   => 'visa',
+					'network' => 'visa',
+					'funding' => 'credit',
+					'last4'   => '4242',
+				),
+			)
+		);
+		$details = json_decode( $effects['meta']['_wcpay_payment_method_details'], true );
+
+		$this->assertSame( '4242', $effects['meta']['last4'] );
+		$this->assertIsArray( $details );
+		$this->assertSame( 'card', $details['type'] );
+		$this->assertSame( '4242', $details['card']['last4'] );
+		$this->assertArrayNotHasKey( 'customer', $details );
+		$this->assertArrayNotHasKey( 'billing_details', $details );
+	}
+
+	/**
+	 * @testdox SetupIntent Link projection does not cache provider payment-method details.
+	 */
+	public function test_setup_intent_link_display_projection_avoids_payment_method_details_cache(): void {
+		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
+			array(
+				'id'              => 'pm_link_identity',
+				'type'            => 'link',
+				'customer'        => 'cus_must_not_be_cached',
+				'billing_details' => array(
+					'email' => 'must-not-be-cached@example.test',
+				),
+			)
+		);
+
+		$this->assertSame( 'link', $effects['payment_method_type'] );
+		$this->assertSame( array( 'type' => 'link' ), $effects['payment_method_details'] );
+		$this->assertArrayNotHasKey( '_wcpay_payment_method_details', $effects['meta'] );
+	}
+
+	/**
+	 * @testdox Wrapped Link card projection uses Link without retaining card details.
+	 */
+	public function test_setup_intent_wrapped_link_card_display_projection_uses_plain_link_title(): void {
+		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
+			array(
+				'type' => 'card',
+				'card' => array(
+					'brand'  => 'visa',
+					'last4'  => '4242',
+					'wallet' => array( 'type' => 'link' ),
+				),
+			),
+			'apple_pay'
+		);
+
+		$this->assertSame( '', $effects['express_checkout_type'] );
+		$this->assertSame( array(), $effects['meta'] );
+		$this->assertSame(
+			array(
+				'type' => 'card',
+				'card' => array( 'wallet' => array( 'type' => 'link' ) ),
+			),
+			$effects['payment_method_details']
+		);
+	}
+
+	/**
 	 * @testdox SEPA metadata omits provider-only expected debit dates.
 	 */
 	public function test_display_projection_omits_non_persisted_sepa_details(): void {

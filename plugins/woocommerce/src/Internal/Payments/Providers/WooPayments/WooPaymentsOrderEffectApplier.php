@@ -105,7 +105,8 @@ class WooPaymentsOrderEffectApplier {
 		switch ( $plan->get_type() ) {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
 				if ( $plan->should_apply_token_effects() ) {
-					$outcome = $this->apply_token_effects( $context, $outcome, $plan->is_recurring() );
+					$token_effects = $this->apply_token_effects( $context, $outcome, $plan->is_recurring() );
+					$outcome       = $token_effects['outcome'];
 					if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 						return $outcome;
 					}
@@ -121,13 +122,31 @@ class WooPaymentsOrderEffectApplier {
 				return $this->enrich_outcome_for_lifecycle( $context, $outcome, $plan );
 
 			case WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT:
+				$payment_method_details     = array();
+				$previous_payment_method_id = (string) $context->get_order()->get_meta( '_payment_method_id', true );
 				if ( $plan->should_apply_token_effects() ) {
-					$outcome = $this->apply_token_effects( $context, $outcome, $plan->is_recurring() );
+					$token_effects          = $this->apply_token_effects( $context, $outcome, $plan->is_recurring() );
+					$outcome                = $token_effects['outcome'];
+					$payment_method_details = $token_effects['payment_method_details'];
 					if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 						return $outcome;
 					}
 				}
 				$this->persist_setup_intent_details( $context->get_order(), $outcome, $plan->get_setup_meta() );
+				$provider_result = $plan->get_provider_result();
+				if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && 'succeeded' === (string) ( $provider_result['status'] ?? '' ) && 0 === strpos( (string) ( $provider_result['id'] ?? '' ), 'seti_' ) ) {
+					if ( empty( $payment_method_details ) && '' !== $outcome->get_payment_method_id() ) {
+						$payment_method_details = $this->get_same_method_payment_method_details( $context->get_order(), $outcome->get_payment_method_id(), $previous_payment_method_id );
+						if ( empty( $payment_method_details ) ) {
+							$payment_method_details = $this->token_service->resolve_token_and_payment_method_details_for_user(
+								$outcome->get_payment_method_id(),
+								$context->get_order()->get_user_id(),
+								true
+							)['payment_method_details'];
+						}
+					}
+					$this->apply_setup_intent_payment_method_display_details( $context->get_order(), $payment_method_details, '', $outcome->get_payment_method_id(), $previous_payment_method_id );
+				}
 				return $outcome;
 
 			case WooPaymentsOrderEffectPlan::TYPE_CAPTURE:
@@ -423,6 +442,104 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
+	 * Apply payment-method display details confirmed by a SetupIntent.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order            $order           Order being updated.
+	 * @param array<string,mixed> $payment_method  Provider payment method response.
+	 * @param string              $account_country            Connected account country override.
+	 * @param string              $payment_method_id          Current provider payment method ID.
+	 * @param string              $previous_payment_method_id Provider payment method ID before this SetupIntent.
+	 * @return bool Whether details were safely applied.
+	 */
+	public function apply_setup_intent_payment_method_display_details( WC_Order $order, array $payment_method, string $account_country = '', string $payment_method_id = '', string $previous_payment_method_id = '' ): bool {
+		unset( $payment_method_id, $previous_payment_method_id );
+
+		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
+			$payment_method,
+			''
+		);
+		if ( empty( $effects ) ) {
+			$this->clear_setup_intent_card_identity( $order );
+			$type  = isset( $payment_method['type'] ) && is_scalar( $payment_method['type'] ) ? (string) $payment_method['type'] : '';
+			$title = $this->non_card_payment_method_title( $type );
+			if ( '' !== $title ) {
+				$order->set_payment_method_title( $title );
+				$order->save();
+				$this->sync_payment_method_to_subscriptions( $order );
+
+				return false;
+			}
+			$this->apply_generic_setup_intent_card_title( $order, $account_country );
+
+			return false;
+		}
+
+		$this->clear_setup_intent_card_identity( $order );
+		$this->apply_composed_payment_method_display_details( $order, $effects, $account_country );
+
+		return true;
+	}
+
+	/**
+	 * Remove display metadata that belongs to a previous card payment method.
+	 *
+	 * @param WC_Order $order Order being updated.
+	 * @return void
+	 */
+	private function clear_setup_intent_card_identity( WC_Order $order ): void {
+		$order->delete_meta_data( 'last4' );
+		$order->delete_meta_data( '_card_brand' );
+		$order->delete_meta_data( '_wcpay_payment_method_details' );
+		$order->delete_meta_data( '_wcpay_raw_payment_method_details' );
+		$order->delete_meta_data( '_wcpay_express_checkout_payment_method' );
+	}
+
+	/**
+	 * Get trusted normalized details retained for a replay of the same payment method.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order Order being updated.
+	 * @param string   $payment_method_id Current provider payment method ID.
+	 * @param string   $previous_payment_method_id Provider payment method ID before this attempt.
+	 * @return array<string,mixed>
+	 */
+	public function get_same_method_payment_method_details( WC_Order $order, string $payment_method_id, string $previous_payment_method_id ): array {
+		if ( '' === $payment_method_id || $payment_method_id !== $previous_payment_method_id ) {
+			return array();
+		}
+
+		$details = json_decode( (string) $order->get_meta( '_wcpay_payment_method_details', true ), true );
+		$effects = is_array( $details ) ? WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details( $details ) : array();
+		if ( empty( $effects ) || 'card' !== $effects['payment_method_type'] || ! isset( $effects['meta']['last4'], $effects['meta']['_card_brand'] ) ) {
+			return array();
+		}
+
+		return $details;
+	}
+
+	/**
+	 * Clear stale card identity and use the established generic card title.
+	 *
+	 * @param WC_Order $order           Order being updated.
+	 * @param string   $account_country Connected account country override.
+	 * @return void
+	 */
+	private function apply_generic_setup_intent_card_title( WC_Order $order, string $account_country ): void {
+		$display_country = strtoupper( trim( '' !== $account_country ? $account_country : $this->account_service->get_account_country() ) );
+		if ( '' === $display_country ) {
+			$display_country = strtoupper( trim( (string) $order->get_billing_country() ) );
+		}
+
+		$title = $this->registered_payment_method_title( 'card', $display_country );
+		$order->set_payment_method_title( '' !== $title ? $title : __( 'Card', 'woocommerce' ) );
+		$order->save();
+		$this->sync_payment_method_to_subscriptions( $order );
+	}
+
+	/**
 	 * Compose payment-method display effects for an order without writing them.
 	 *
 	 * @param WC_Order            $order           Order being projected.
@@ -705,9 +822,9 @@ class WooPaymentsOrderEffectApplier {
 	 * @param PaymentContext $context      Payment context.
 	 * @param PaymentOutcome $outcome      Provider outcome.
 	 * @param bool           $is_recurring Whether recurring token persistence is required.
-	 * @return PaymentOutcome
+	 * @return array{outcome:PaymentOutcome,payment_method_details:array<string,mixed>}
 	 */
-	private function apply_token_effects( PaymentContext $context, PaymentOutcome $outcome, bool $is_recurring ): PaymentOutcome {
+	private function apply_token_effects( PaymentContext $context, PaymentOutcome $outcome, bool $is_recurring ): array {
 		$payment_data      = $context->get_payment_data();
 		$payment_method_id = $outcome->get_payment_method_id();
 		$customer_id       = $outcome->get_customer_id();
@@ -718,29 +835,54 @@ class WooPaymentsOrderEffectApplier {
 				$payment_token_id = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
 				$token            = $this->token_service->get_valid_token_from_token_id( $payment_token_id, $order->get_user_id() );
 				if ( $token instanceof WC_Payment_Token && $this->attach_and_sync_token( $order, $token, $payment_method_id, $customer_id ) ) {
-					return $outcome;
+					return array(
+						'outcome'                => $outcome,
+						'payment_method_details' => array(),
+					);
 				}
 
-				return $is_recurring ? $this->recurring_token_save_failed_outcome( $outcome ) : $outcome;
+				return array(
+					'outcome'                => $is_recurring ? $this->recurring_token_save_failed_outcome( $outcome ) : $outcome,
+					'payment_method_details' => array(),
+				);
 			}
 
 			if ( empty( $payment_data['save_payment_method'] ) && ! $is_recurring ) {
-				return $outcome;
+				return array(
+					'outcome'                => $outcome,
+					'payment_method_details' => array(),
+				);
 			}
 
 			if ( '' === $payment_method_id || 0 >= $order->get_user_id() ) {
-				return $is_recurring ? $this->recurring_token_save_failed_outcome( $outcome ) : $outcome;
+				return array(
+					'outcome'                => $is_recurring ? $this->recurring_token_save_failed_outcome( $outcome ) : $outcome,
+					'payment_method_details' => array(),
+				);
 			}
 
-			$token = $this->token_service->get_or_create_token_for_user( $payment_method_id, $order->get_user_id() );
+			if ( 0 === strpos( $outcome->get_provider_payment_id(), 'seti_' ) ) {
+				$token_result           = $this->token_service->resolve_token_and_payment_method_details_for_user( $payment_method_id, $order->get_user_id() );
+				$token                  = $token_result['token'];
+				$payment_method_details = $token_result['payment_method_details'];
+			} else {
+				$token                  = $this->token_service->get_or_create_token_for_user( $payment_method_id, $order->get_user_id() );
+				$payment_method_details = array();
+			}
 			if ( $token instanceof WC_Payment_Token && $this->attach_and_sync_token( $order, $token, $payment_method_id, $customer_id ) ) {
-				return $outcome;
+				return array(
+					'outcome'                => $outcome,
+					'payment_method_details' => $payment_method_details,
+				);
 			}
 		} catch ( Throwable $exception ) {
 			$this->log_token_save_error( $payment_method_id, $exception );
 		}
 
-		return $is_recurring ? $this->recurring_token_save_failed_outcome( $outcome ) : $outcome;
+		return array(
+			'outcome'                => $is_recurring ? $this->recurring_token_save_failed_outcome( $outcome ) : $outcome,
+			'payment_method_details' => array(),
+		);
 	}
 
 	/**
