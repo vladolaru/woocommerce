@@ -716,6 +716,76 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * Provides WooPay product quantities and their expected cart values.
+	 *
+	 * @return array<string,array{0:mixed,1:int|float,2:bool,3:?string}>
+	 */
+	public function add_to_cart_quantities_provider(): array {
+		return array(
+			'decimal quantity'           => array( '0.25', 0.25, true, null ),
+			'localized decimal quantity' => array( '0,25', 0.25, true, ',' ),
+			'default integer quantity'   => array( '3', 3, false, null ),
+			'mixed text quantity'        => array( 'abc3', 1, true, null ),
+			'numeric prefix quantity'    => array( '0.25junk', 1, true, null ),
+			'non-scalar quantity'        => array( array( '0.25' ), 1, true, null ),
+		);
+	}
+
+	/**
+	 * @testdox Product-page add-to-cart should normalize $request_quantity to $expected_quantity.
+	 * @dataProvider add_to_cart_quantities_provider
+	 *
+	 * @param mixed       $request_quantity  Quantity received from the product form.
+	 * @param int|float   $expected_quantity Expected cart quantity.
+	 * @param bool        $fractional_store  Whether the store accepts fractional stock amounts.
+	 * @param string|null $decimal_separator Optional store decimal separator.
+	 */
+	public function test_add_to_cart_normalizes_quantity( $request_quantity, $expected_quantity, bool $fractional_store, ?string $decimal_separator ): void {
+		if ( ! function_exists( 'wc_load_cart' ) ) {
+			$this->markTestSkipped( 'Cart bootstrap is unavailable.' );
+		}
+		wc_load_cart();
+
+		if ( $fractional_store ) {
+			remove_filter( 'woocommerce_stock_amount', 'intval' );
+			add_filter( 'woocommerce_stock_amount', 'floatval' );
+		}
+
+		$decimal_separator_filter = static function () use ( $decimal_separator ): string {
+			return (string) $decimal_separator;
+		};
+		if ( null !== $decimal_separator ) {
+			add_filter( 'wc_get_price_decimal_separator', $decimal_separator_filter );
+		}
+
+		try {
+			$product   = \WC_Helper_Product::create_simple_product();
+			$this->sut = $this->create_controller( true, true );
+			$_POST     = array( // phpcs:ignore WordPress.Security.NonceVerification.Missing
+				'security'   => wp_create_nonce( 'wcpay-add-to-cart' ),
+				'product_id' => (string) $product->get_id(),
+				'quantity'   => $request_quantity,
+			);
+			$_REQUEST  = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+
+			$response   = $this->dispatch_add_to_cart_ajax();
+			$cart_items = WC()->cart->get_cart();
+			$item       = reset( $cart_items );
+
+			$this->assertSame( 'success', $response['result'] );
+			$this->assertSame( $expected_quantity, $item['quantity'] );
+		} finally {
+			if ( null !== $decimal_separator ) {
+				remove_filter( 'wc_get_price_decimal_separator', $decimal_separator_filter );
+			}
+			if ( $fractional_store ) {
+				remove_filter( 'woocommerce_stock_amount', 'floatval' );
+				add_filter( 'woocommerce_stock_amount', 'intval' );
+			}
+		}
+	}
+
+	/**
 	 * Create the System Under Test.
 	 *
 	 * @param bool                                 $native_register Whether native should register hooks.

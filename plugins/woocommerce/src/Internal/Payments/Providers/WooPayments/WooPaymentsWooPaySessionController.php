@@ -448,15 +448,38 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			);
 		}
 
-		$quantity = isset( $request['quantity'] ) ? (int) wc_stock_amount( $request['quantity'] ) : 1;
-		$quantity = max( 1, $quantity );
+		$quantity     = 1;
+		$raw_quantity = $request['quantity'] ?? null;
+		if ( is_scalar( $raw_quantity ) ) {
+			$clean_quantity = wc_clean( (string) $raw_quantity );
+			if ( ! is_string( $clean_quantity ) ) {
+				$clean_quantity = '';
+			}
+			$locale                    = localeconv();
+			$decimal_separators        = array_filter(
+				array(
+					'.',
+					wc_get_price_decimal_separator(),
+					$locale['decimal_point'],
+					$locale['mon_decimal_point'],
+				)
+			);
+			$normalized_quantity       = str_replace( array_unique( $decimal_separators ), '.', $clean_quantity );
+			$is_valid_decimal_quantity = 1 === preg_match( '/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/', $normalized_quantity );
+			if ( $is_valid_decimal_quantity ) {
+				$quantity = wc_stock_amount(
+					(float) wc_format_decimal( $normalized_quantity )
+				);
+				$quantity = $quantity > 0 ? $quantity : 1;
+			}
+		}
 
 		/**
 		 * Filters whether WooCommerce should add the WooPay product to the cart.
 		 *
 		 * @param bool $passed     Whether validation passed.
 		 * @param int  $product_id Product ID.
-		 * @param int  $quantity   Quantity.
+		 * @param int|float $quantity   Quantity.
 		 *
 		 * @since 11.0.0
 		 */
