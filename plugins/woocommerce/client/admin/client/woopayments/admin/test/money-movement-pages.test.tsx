@@ -3893,6 +3893,92 @@ describe( 'WooPayments money movement pages', () => {
 		);
 	} );
 
+	it( 'retains the initiating inquiry when several dispute panes can issue a refund', async () => {
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_multiple_inquiries',
+			status: 'succeeded',
+			amount: 5000,
+			currency: 'usd',
+			charge: {
+				id: 'ch_multiple_inquiries',
+				payment_intent: 'pi_multiple_inquiries',
+				captured: true,
+				amount: 5000,
+				currency: 'usd',
+				amount_refunded: 0,
+				refunded: false,
+				order: { id: 123, number: '123' },
+				dispute: {
+					id: 'dp_older_inquiry',
+					status: 'warning_needs_response',
+					reason: 'fraudulent',
+					created: 1000,
+				},
+				disputes: [
+					{
+						id: 'dp_newer_inquiry',
+						status: 'warning_needs_response',
+						reason: 'duplicate',
+						created: 2000,
+					},
+					{
+						id: 'dp_older_inquiry',
+						status: 'warning_needs_response',
+						reason: 'fraudulent',
+						created: 1000,
+					},
+				],
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+		mockRefundCharge.mockReturnValue( new Promise( () => undefined ) );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_multiple_inquiries',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		const issueRefundButtons = await screen.findAllByRole( 'button', {
+			name: 'Issue refund',
+		} );
+		expect( issueRefundButtons ).toHaveLength( 2 );
+		await userEvent.click( issueRefundButtons[ 0 ] );
+
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_dispute_inquiry_refund_modal_view',
+			{
+				dispute_id: 'dp_older_inquiry',
+				dispute_status: 'warning_needs_response',
+				dispute_reason: 'fraudulent',
+				on_page: 'transaction_details',
+			}
+		);
+
+		const dialog = await screen.findByRole( 'dialog', {
+			name: 'Refund transaction',
+		} );
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', {
+				name: 'Refund transaction',
+			} )
+		);
+
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_dispute_inquiry_refund_click',
+			{
+				dispute_id: 'dp_older_inquiry',
+				dispute_status: 'warning_needs_response',
+				dispute_reason: 'fraudulent',
+				on_page: 'transaction_details',
+			}
+		);
+	} );
+
 	it( 'keeps an inquiry refund reason selected and retries after a refund failure', async () => {
 		let rejectInitialRefund!: ( error: Error ) => void;
 		let resolveRetryRefund!: (
@@ -4974,6 +5060,153 @@ describe( 'WooPayments money movement pages', () => {
 		);
 	} );
 
+	it( 'renders every charge dispute oldest-first with shared ordinals and refund admission', async () => {
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_multiple_disputes',
+			status: 'succeeded',
+			amount: 5000,
+			currency: 'usd',
+			created: 1781712000,
+			charge: {
+				id: 'ch_multiple_disputes',
+				payment_intent: 'pi_multiple_disputes',
+				balance_transaction: {
+					id: 'txn_multiple_disputes',
+					amount: 5000,
+					currency: 'usd',
+					fee: 180,
+					net: 4820,
+				},
+				type: 'charge',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				captured: true,
+				amount_refunded: 0,
+				refunded: false,
+				order: {
+					id: 123,
+					number: '123',
+					url: 'http://example.com/wp-admin/post.php?post=123&action=edit',
+				},
+				dispute: {
+					id: 'dp_newer',
+					status: 'won',
+					reason: 'duplicate',
+					created: 2000,
+					amount: 2000,
+					currency: 'usd',
+				},
+				disputes: [
+					{
+						id: 'dp_newer',
+						status: 'won',
+						reason: 'duplicate',
+						created: 2000,
+						amount: 2000,
+						currency: 'usd',
+						balance_transactions: [ { amount: -2000, fee: 1500 } ],
+					},
+					{
+						id: 'dp_older',
+						status: 'needs_response',
+						reason: 'fraudulent',
+						created: 1000,
+						amount: 3000,
+						currency: 'usd',
+						balance_transactions: [ { amount: -3000, fee: 1500 } ],
+					},
+				],
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( {
+			data: [
+				{
+					type: 'dispute.created',
+					dispute_id: 'dp_older',
+					amount: 3000,
+					currency: 'usd',
+					created: 1000,
+				},
+				{
+					type: 'captured',
+					amount: 5000,
+					currency: 'usd',
+					created: 900,
+				},
+			],
+		} );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_multiple_disputes&transaction_id=txn_multiple_disputes',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		const disputeHeadings = await screen.findAllByRole( 'heading', {
+			name: 'Dispute details',
+		} );
+		expect( disputeHeadings ).toHaveLength( 2 );
+		expect(
+			screen
+				.getAllByText( /^Dispute \d of 2$/ )
+				.map( ( node ) => node.textContent )
+		).toEqual( [ 'Dispute 1 of 2', 'Dispute 2 of 2' ] );
+
+		const disputeSections = disputeHeadings.map(
+			( heading ) => heading.closest( 'section' ) as HTMLElement
+		);
+		expect(
+			disputeSections.map(
+				( section ) =>
+					getDetailValue( section, 'Dispute ID' ).textContent
+			)
+		).toEqual( [ 'dp_older', 'dp_newer' ] );
+		expect(
+			new Set(
+				disputeSections.map( ( section ) =>
+					section.getAttribute( 'aria-labelledby' )
+				)
+			).size
+		).toBe( 2 );
+		disputeSections.forEach( ( section ) => {
+			const headingId = section.getAttribute( 'aria-labelledby' );
+			expect( headingId ).not.toBeNull();
+			expect( document.getElementById( headingId || '' ) ).not.toBeNull();
+		} );
+
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect(
+			within( summary ).getByText( 'Disputed: Response needed' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Refunded: -$50.00' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Fees: -$31.80' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Net: -$31.80' )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', { name: 'Transaction actions' } )
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'A dispute was opened for $30.00. · Dispute 1 of 2'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'A payment of $50.00 was successfully charged.' )
+		).toBeInTheDocument();
+	} );
+
 	it( 'accepts a dispute from the transaction detail decision layer', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_test',
@@ -5581,6 +5814,95 @@ describe( 'WooPayments money movement pages', () => {
 			screen.getAllByText( expectedEventDate ).length
 		).toBeGreaterThan( 0 );
 		expect( mockGetTimeline ).toHaveBeenCalledWith( 'pi_test' );
+	} );
+
+	it( 'qualifies only known multi-dispute timeline events', () => {
+		const { rerender } = render(
+			<WooPaymentsTransactionTimeline
+				events={ [
+					{
+						type: 'dispute.created',
+						dispute_id: 'dp_first',
+						amount: 1000,
+						currency: 'usd',
+					},
+					{
+						type: 'dispute.created',
+						dispute_id: 'dp_second',
+						amount: 2000,
+						currency: 'usd',
+					},
+					{
+						type: 'dispute.created',
+						dispute_id: 'dp_unknown',
+						amount: 3000,
+						currency: 'usd',
+					},
+					{ type: 'captured', amount: 4000, currency: 'usd' },
+				] }
+				disputeOrder={ {
+					orderById: { dp_first: 1, dp_second: 2 },
+					orderedDisputes: [],
+					total: 2,
+				} }
+			/>
+		);
+
+		expect(
+			screen.getByText(
+				'A dispute was opened for $10.00. · Dispute 1 of 2'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'A dispute was opened for $20.00. · Dispute 2 of 2'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'A dispute was opened for $30.00.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'A payment of $40.00 was successfully charged.' )
+		).toBeInTheDocument();
+
+		rerender(
+			<WooPaymentsTransactionTimeline
+				events={ [
+					{
+						type: 'dispute.created',
+						dispute_id: 'dp_first',
+						amount: 1000,
+						currency: 'usd',
+					},
+				] }
+				disputeOrder={ {
+					orderById: { dp_first: 1 },
+					orderedDisputes: [],
+					total: 1,
+				} }
+			/>
+		);
+		expect(
+			screen.getByText( 'A dispute was opened for $10.00.' )
+		).toBeInTheDocument();
+		expect( screen.queryByText( /· Dispute/ ) ).not.toBeInTheDocument();
+
+		rerender(
+			<WooPaymentsTransactionTimeline
+				events={ [
+					{
+						type: 'dispute.created',
+						dispute_id: 'dp_first',
+						amount: 1000,
+						currency: 'usd',
+					},
+				] }
+			/>
+		);
+		expect(
+			screen.getByText( 'A dispute was opened for $10.00.' )
+		).toBeInTheDocument();
+		expect( screen.queryByText( /· Dispute/ ) ).not.toBeInTheDocument();
 	} );
 
 	it( 'announces timeline errors through the stable transaction detail status region', async () => {

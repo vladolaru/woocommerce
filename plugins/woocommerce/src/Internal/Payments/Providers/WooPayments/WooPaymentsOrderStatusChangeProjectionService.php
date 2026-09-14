@@ -47,14 +47,23 @@ class WooPaymentsOrderStatusChangeProjectionService {
 	private LegacyProxy $legacy_proxy;
 
 	/**
+	 * WooPayments account state.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy $legacy_proxy The legacy proxy.
+	 * @param LegacyProxy               $legacy_proxy    The legacy proxy.
+	 * @param WooPaymentsAccountService $account_service WooPayments account state.
 	 */
-	final public function init( LegacyProxy $legacy_proxy ): void {
-		$this->legacy_proxy = $legacy_proxy;
+	final public function init( LegacyProxy $legacy_proxy, WooPaymentsAccountService $account_service ): void {
+		$this->legacy_proxy    = $legacy_proxy;
+		$this->account_service = $account_service;
 	}
 
 	/**
@@ -92,10 +101,11 @@ class WooPaymentsOrderStatusChangeProjectionService {
 	 *                             store's), as plain display text - markup stripped and HTML entities
 	 *                             decoded - ready to place in modal copy as text, not as HTML.
 	 * - `refunded_amount`         (float)  Amount already refunded, in the order's currency.
+	 * - `charge_id`              (string) Provider charge ID when the order belongs to the active account mode.
 	 *
 	 * @param WC_Order $order Order being edited.
 	 * @return array<string,mixed> The status-change confirmation config.
-	 * @phpstan-return array{order_status: string, can_refund: bool, refund_amount: float, formatted_refund_amount: string, refunded_amount: float}
+	 * @phpstan-return array{order_status: string, can_refund: bool, refund_amount: float, formatted_refund_amount: string, refunded_amount: float, charge_id: string}
 	 *
 	 * @since 11.0.0
 	 */
@@ -108,7 +118,37 @@ class WooPaymentsOrderStatusChangeProjectionService {
 			'refund_amount'           => $refund_amount,
 			'formatted_refund_amount' => $this->format_in_order_currency( $order, $refund_amount ),
 			'refunded_amount'         => (float) $order->get_total_refunded(),
+			'charge_id'               => $this->get_charge_id_for_active_mode( $order ),
 		);
+	}
+
+	/**
+	 * Get the provider charge ID when the order belongs to the active account mode.
+	 *
+	 * Orders created before WooPayments persisted `_wcpay_mode` are treated as compatible, matching the legacy client. The plugin's historical `prod` value maps to native `live`; malformed metadata and explicit cross-mode orders fail closed so the browser never reads or displays a charge from the wrong account mode.
+	 *
+	 * @param WC_Order $order Order being edited.
+	 * @return string Provider charge ID, or an empty string when it must not be read.
+	 */
+	private function get_charge_id_for_active_mode( WC_Order $order ): string {
+		$charge_id  = $order->get_meta( '_charge_id', true );
+		$order_mode = $order->get_meta( '_wcpay_mode', true );
+
+		if ( ! is_scalar( $charge_id ) || ! is_scalar( $order_mode ) ) {
+			return '';
+		}
+
+		$charge_id  = trim( (string) $charge_id );
+		$order_mode = trim( (string) $order_mode );
+		if ( 'prod' === $order_mode ) {
+			$order_mode = 'live';
+		}
+
+		if ( '' === $charge_id || ( '' !== $order_mode && $order_mode !== $this->account_service->get_mode() ) ) {
+			return '';
+		}
+
+		return $charge_id;
 	}
 
 	/**

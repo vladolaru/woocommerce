@@ -36,8 +36,10 @@ const getDisputeChallengeUrl = ( disputeId: string ) =>
 	getSettingsPaymentsProviderRouteUrl(
 		getDisputeChallengeRoute( disputeId )
 	);
-const REFUND_GUIDANCE_ID =
+const REFUND_GUIDANCE_ID_PREFIX =
 	'woocommerce-woopayments-transaction-dispute-refund-guidance';
+const HEADING_ID_PREFIX =
+	'woocommerce-woopayments-transaction-dispute-details-heading';
 
 const isAwaitingResponse = ( status?: string ) =>
 	ACTIONABLE_DISPUTE_STATUSES.some(
@@ -140,11 +142,13 @@ const RespondToDisputeActions = ( {
 	onAccept,
 	onIssueRefund,
 	isAccepting,
+	refundGuidanceId,
 }: {
 	dispute: WooPaymentsDispute;
 	onAccept: () => void;
 	onIssueRefund?: () => void;
 	isAccepting: boolean;
+	refundGuidanceId: string;
 } ) => {
 	const disputeId = getDisputeId( dispute );
 	const isInquiryStatus = isInquiry( dispute.status );
@@ -184,7 +188,7 @@ const RespondToDisputeActions = ( {
 						disabled={ ! onIssueRefund }
 						accessibleWhenDisabled
 						aria-describedby={
-							onIssueRefund ? undefined : REFUND_GUIDANCE_ID
+							onIssueRefund ? undefined : refundGuidanceId
 						}
 						onClick={
 							onIssueRefund
@@ -220,7 +224,7 @@ const RespondToDisputeActions = ( {
 			</div>
 			{ isInquiryStatus && ! onIssueRefund && (
 				<p
-					id={ REFUND_GUIDANCE_ID }
+					id={ refundGuidanceId }
 					className="woocommerce-woopayments-money-movement__notice"
 				>
 					{ __(
@@ -268,14 +272,20 @@ const ResolvedDisputeActions = ( {
 
 export const WooPaymentsTransactionDisputeDetails = ( {
 	transaction,
+	dispute,
+	ordinal,
+	total,
 	onIssueRefund,
 }: {
 	transaction: WooPaymentsTransaction;
+	dispute: WooPaymentsDispute;
+	ordinal: number;
+	total: number;
 	onIssueRefund?: () => void;
 } ) => {
 	const [ currentDispute, setCurrentDispute ] = useState<
 		WooPaymentsDispute | undefined
-	>( transaction.dispute );
+	>( dispute );
 	const [ isAcceptModalOpen, setIsAcceptModalOpen ] = useState( false );
 	const [ isAccepting, setIsAccepting ] = useState( false );
 	const [ shouldFocusDisputeDetails, setShouldFocusDisputeDetails ] =
@@ -285,8 +295,8 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 	const shouldRestoreFocusAfterAcceptRef = useRef( false );
 
 	useEffect( () => {
-		setCurrentDispute( transaction.dispute );
-	}, [ transaction.dispute ] );
+		setCurrentDispute( dispute );
+	}, [ dispute ] );
 
 	useEffect( () => {
 		if ( ! shouldFocusDisputeDetails || isAcceptModalOpen ) {
@@ -302,6 +312,12 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 	}
 
 	const disputeId = getDisputeId( currentDispute );
+	const idSuffix = `${ ordinal }-${ disputeId || 'unknown' }`.replace(
+		/[^a-zA-Z0-9_-]/g,
+		'-'
+	);
+	const headingId = `${ HEADING_ID_PREFIX }-${ idSuffix }`;
+	const refundGuidanceId = `${ REFUND_GUIDANCE_ID_PREFIX }-${ idSuffix }`;
 	const dueDate = getDueDate( currentDispute );
 	const isAwaitingResponseStatus = isAwaitingResponse(
 		currentDispute.status
@@ -367,13 +383,19 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 	return (
 		<section
 			className="woocommerce-woopayments-overview-card woocommerce-woopayments-money-movement__dispute-details"
-			aria-labelledby="woocommerce-woopayments-transaction-dispute-details-heading"
+			aria-labelledby={ headingId }
 		>
-			<h3
-				id="woocommerce-woopayments-transaction-dispute-details-heading"
-				ref={ disputeHeadingRef }
-				tabIndex={ -1 }
-			>
+			{ total > 1 && (
+				<p className="woocommerce-woopayments-money-movement__dispute-label">
+					{ sprintf(
+						/* translators: 1: dispute position, 2: total disputes on the charge. */
+						__( 'Dispute %1$d of %2$d', 'woocommerce' ),
+						ordinal,
+						total
+					) }
+				</p>
+			) }
+			<h3 id={ headingId } ref={ disputeHeadingRef } tabIndex={ -1 }>
 				{ __( 'Dispute details', 'woocommerce' ) }
 			</h3>
 			<dl className="woocommerce-woopayments-money-movement__details woocommerce-woopayments-money-movement__details--nested">
@@ -413,6 +435,7 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 					<RespondToDisputeActions
 						dispute={ currentDispute }
 						isAccepting={ isAccepting }
+						refundGuidanceId={ refundGuidanceId }
 						onAccept={ () => setIsAcceptModalOpen( true ) }
 						onIssueRefund={ onIssueRefund }
 					/>

@@ -171,7 +171,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 		$config = $this->parse_emitted_config( $inline );
 
 		$this->assertSame(
-			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount' ),
+			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id' ),
 			array_keys( $config ),
 			'The config contract is consumed by the browser and must not drift.'
 		);
@@ -189,6 +189,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 		$this->assertIsNotString( $config['refunded_amount'] );
 		$this->assertEqualsWithDelta( 0.0, $config['refunded_amount'], 0.001 );
 		$this->assertStringContainsString( '"refunded_amount":0', $inline, 'Amounts must cross as JSON numbers.' );
+		$this->assertSame( '', $config['charge_id'], 'An order without a provider charge must not trigger a charge read.' );
 	}
 
 	/**

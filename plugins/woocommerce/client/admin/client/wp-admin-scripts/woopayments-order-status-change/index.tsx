@@ -22,6 +22,7 @@
 import { Notice } from '@wordpress/components';
 import domReady from '@wordpress/dom-ready';
 import { createRoot } from '@wordpress/element';
+import { __ } from '@wordpress/i18n';
 import type { ReactNode } from 'react';
 
 /**
@@ -31,8 +32,11 @@ import { CancelConfirmationModal } from './cancel-confirmation-modal';
 import { getOrderStatusChangeDecision } from './strategies';
 import { getOrderStatusField } from './order-status-field';
 import { RefundConfirmationModal } from './refund-confirmation-modal';
+import { WooPaymentsOrderDisputeNotice } from './order-dispute-notice';
+import type { WooPaymentsOrderStatusChangeConfig } from './types';
 
 const CONTAINER_CLASS_NAME = 'woocommerce-woopayments-order-status-change';
+const DISPUTE_CONTAINER_CLASS_NAME = `${ CONTAINER_CLASS_NAME }__dispute-notice`;
 
 /**
  * The sliver of jQuery this entry needs.
@@ -84,15 +88,77 @@ function onStatusChange( field: HTMLSelectElement, handler: () => void ): void {
  *
  * @return The mount point.
  */
-function createContainer( field: HTMLSelectElement ): HTMLDivElement {
+function createContainer(
+	field: HTMLSelectElement,
+	className = CONTAINER_CLASS_NAME
+): HTMLDivElement {
 	const container = document.createElement( 'div' );
-	container.className = CONTAINER_CLASS_NAME;
+	container.className = className;
 
 	const anchor = field.closest( '.form-field' ) ?? field;
 	anchor.parentNode?.insertBefore( container, anchor.nextSibling );
 
 	return container;
 }
+
+const getRefundLockMessage = ( status: string ) => {
+	if ( status === 'needs_response' ) {
+		return __(
+			'Refunds and order editing are disabled during disputes.',
+			'woocommerce'
+		);
+	}
+
+	if ( status === 'under_review' ) {
+		return __(
+			'Refunds and order editing are disabled during an active dispute.',
+			'woocommerce'
+		);
+	}
+
+	if ( status === 'lost' ) {
+		return __(
+			'Refunds and order editing have been disabled as a result of a lost dispute.',
+			'woocommerce'
+		);
+	}
+
+	if ( status === 'charge_refunded' ) {
+		return __(
+			'Refunds and order editing have been disabled because the payment was refunded to resolve a dispute.',
+			'woocommerce'
+		);
+	}
+
+	return __(
+		'Refunds and order editing are disabled while this payment has a dispute.',
+		'woocommerce'
+	);
+};
+
+const disableOrderRefund = (
+	status: string,
+	config: WooPaymentsOrderStatusChangeConfig
+) => {
+	config.can_refund = false;
+
+	const refundButton = document.querySelector( 'button.refund-items' );
+	if ( ! ( refundButton instanceof HTMLButtonElement ) ) {
+		return;
+	}
+
+	const message = getRefundLockMessage( status );
+	refundButton.disabled = true;
+	refundButton.setAttribute( 'aria-disabled', 'true' );
+
+	const helpTip = refundButton.parentElement?.querySelector(
+		'.woocommerce-help-tip'
+	);
+	if ( helpTip instanceof HTMLElement ) {
+		helpTip.title = message;
+		helpTip.setAttribute( 'aria-label', message );
+	}
+};
 
 /**
  * Wire the status dropdown up to the confirmation flow.
@@ -111,6 +177,18 @@ function initialize(): void {
 	}
 
 	const root = createRoot( createContainer( field ) );
+	if ( config.charge_id ) {
+		createRoot(
+			createContainer( field, DISPUTE_CONTAINER_CLASS_NAME )
+		).render(
+			<WooPaymentsOrderDisputeNotice
+				chargeId={ config.charge_id }
+				onDisableOrderRefund={ ( status ) =>
+					disableOrderRefund( status, config )
+				}
+			/>
+		);
+	}
 
 	const render = ( view: ReactNode ): void => {
 		root.render( view );

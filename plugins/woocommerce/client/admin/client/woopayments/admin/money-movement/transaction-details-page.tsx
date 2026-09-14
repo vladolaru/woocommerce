@@ -44,6 +44,14 @@ import type {
 	WooPaymentsTransaction,
 } from './types';
 import { formatAmount, getDisputeId, getErrorMessage } from './utils';
+import {
+	getChargeDisputes,
+	getDisputeBalanceAdjustments,
+	getDisputeOrdinals,
+	isDisputeAwaitingResponse,
+	isDisputeInquiry,
+	isDisputeRefundable,
+} from './dispute-utils';
 import { WooPaymentsTransactionDisputeDetails } from './transaction-dispute-details';
 import {
 	hasPaymentOrderContext,
@@ -118,6 +126,64 @@ const getBalanceTransactionAmount = (
 	}
 
 	return undefined;
+};
+
+const getFiniteNumber = ( value: unknown ) =>
+	typeof value === 'number' && Number.isFinite( value ) ? value : undefined;
+
+const getDisputeAdjustedChargeAmounts = ( charge: WooPaymentsCharge ) => {
+	const adjustments = getDisputeBalanceAdjustments( charge );
+	if ( adjustments.fee === 0 && adjustments.refunded === 0 ) {
+		return {
+			amountRefunded: charge.amount_refunded,
+			balanceTransaction: charge.balance_transaction,
+			fee: getBalanceTransactionAmount(
+				charge.balance_transaction,
+				'fee'
+			),
+			net: getBalanceTransactionAmount(
+				charge.balance_transaction,
+				'net'
+			),
+		};
+	}
+
+	const balanceTransaction =
+		charge.balance_transaction &&
+		typeof charge.balance_transaction === 'object'
+			? charge.balance_transaction
+			: undefined;
+	const baseFee =
+		getFiniteNumber( balanceTransaction?.fee ) ??
+		getFiniteNumber( charge.application_fee_amount );
+	const baseAmount =
+		getFiniteNumber( balanceTransaction?.amount ) ??
+		getFiniteNumber( charge.amount );
+	const refundedAmount =
+		( getFiniteNumber( charge.amount_refunded ) ?? 0 ) +
+		adjustments.refunded;
+	const fee = baseFee === undefined ? undefined : baseFee + adjustments.fee;
+	const net =
+		baseAmount === undefined || fee === undefined
+			? undefined
+			: baseAmount - fee - refundedAmount;
+	const adjustedBalanceTransaction = balanceTransaction
+		? { ...balanceTransaction }
+		: undefined;
+	if ( adjustedBalanceTransaction && fee !== undefined ) {
+		adjustedBalanceTransaction.fee = fee;
+	}
+	if ( adjustedBalanceTransaction && net !== undefined ) {
+		adjustedBalanceTransaction.net = net;
+	}
+
+	return {
+		amountRefunded: refundedAmount,
+		balanceTransaction:
+			adjustedBalanceTransaction || charge.balance_transaction,
+		fee,
+		net,
+	};
 };
 
 const getIntentCharge = ( intent: WooPaymentsPaymentIntent ) =>
@@ -226,22 +292,6 @@ const getTransactionOrderId = ( transaction: WooPaymentsTransaction ) => {
 const getTransactionOrderUrl = ( transaction: WooPaymentsTransaction ) =>
 	typeof transaction.order?.url === 'string' ? transaction.order.url : '';
 
-const isDisputeInquiry = ( dispute: WooPaymentsDispute ) =>
-	typeof dispute.status === 'string' &&
-	dispute.status.startsWith( 'warning' );
-
-const isDisputeAwaitingResponse = ( dispute: WooPaymentsDispute ) =>
-	dispute.status === 'needs_response' ||
-	dispute.status === 'warning_needs_response';
-
-const isDisputeRefundable = ( dispute?: WooPaymentsDispute ) => {
-	if ( ! dispute?.status ) {
-		return true;
-	}
-
-	return isDisputeInquiry( dispute ) || dispute.status === 'won';
-};
-
 const isTransactionPartiallyRefunded = (
 	transaction: WooPaymentsTransaction
 ) =>
@@ -260,7 +310,7 @@ const isTransactionRefundEligible = (
 		return false;
 	}
 
-	return isDisputeRefundable( transaction.dispute );
+	return getChargeDisputes( transaction ).every( isDisputeRefundable );
 };
 
 const getTimelineId = (
@@ -282,6 +332,7 @@ const normalizeCharge = (
 	const balanceTransactionId = getBalanceTransactionId(
 		charge.balance_transaction
 	);
+	const adjustedAmounts = getDisputeAdjustedChargeAmounts( charge );
 
 	return {
 		id: transactionId || balanceTransactionId || charge.id || fallbackId,
@@ -303,13 +354,14 @@ const normalizeCharge = (
 		payment_method_details: charge.payment_method_details,
 		outcome: charge.outcome,
 		dispute: charge.dispute,
-		balance_transaction: charge.balance_transaction,
+		disputes: charge.disputes,
+		balance_transaction: adjustedAmounts.balanceTransaction,
 		application_fee_amount: charge.application_fee_amount,
-		amount_refunded: charge.amount_refunded,
+		amount_refunded: adjustedAmounts.amountRefunded,
 		refunded: charge.refunded,
 		captured: charge.captured,
-		fee: getBalanceTransactionAmount( charge.balance_transaction, 'fee' ),
-		net: getBalanceTransactionAmount( charge.balance_transaction, 'net' ),
+		fee: adjustedAmounts.fee,
+		net: adjustedAmounts.net,
 		status: charge.status,
 	};
 };
@@ -339,6 +391,9 @@ const normalizePaymentIntent = (
 		payment_intent_id: intent.id,
 		order: transaction.order || intent.order,
 		dispute: transaction.dispute || intent.dispute,
+		disputes: transaction.disputes?.length
+			? transaction.disputes
+			: intent.disputes,
 		sales_channel:
 			transaction.sales_channel || intent.sales_channel || undefined,
 		status:
@@ -476,6 +531,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 	const [ pendingRefundAction, setPendingRefundAction ] =
 		useState< PendingRefundAction >( null );
 	const [ isRefundModalOpen, setIsRefundModalOpen ] = useState( false );
+	const [ refundTargetDispute, setRefundTargetDispute ] = useState<
+		WooPaymentsDispute | undefined
+	>( undefined );
 	const [ refundReason, setRefundReason ] = useState< RefundReason >( null );
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
@@ -500,6 +558,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		setPendingAuthorizationAction( null );
 		setPendingRefundAction( null );
 		setIsRefundModalOpen( false );
+		setRefundTargetDispute( undefined );
 		setRefundReason( null );
 	}, [ routeKey ] );
 
@@ -759,13 +818,22 @@ export const WooPaymentsTransactionDetailsPage = () => {
 	const refundOrderUrl = transaction
 		? getTransactionOrderUrl( transaction )
 		: '';
+	const disputes = transaction ? getChargeDisputes( transaction ) : [];
+	const disputeOrder = transaction
+		? getDisputeOrdinals( transaction )
+		: { orderById: {}, orderedDisputes: [], total: 0 };
+	const defaultRefundInquiry = disputes.find(
+		( dispute ) =>
+			isDisputeInquiry( dispute ) && isDisputeAwaitingResponse( dispute )
+	);
+	const refundInquiry = refundTargetDispute || defaultRefundInquiry;
 	const isOpenRefundInquiry =
-		!! transaction?.dispute &&
-		isDisputeInquiry( transaction.dispute ) &&
-		isDisputeAwaitingResponse( transaction.dispute );
+		!! refundInquiry &&
+		isDisputeInquiry( refundInquiry ) &&
+		isDisputeAwaitingResponse( refundInquiry );
 	const currentInquiryId =
-		isOpenRefundInquiry && transaction?.dispute
-			? getDisputeId( transaction.dispute )
+		isOpenRefundInquiry && refundInquiry
+			? getDisputeId( refundInquiry )
 			: '';
 	const fullRefundAmount = transaction?.amount;
 	const hasValidFullRefundData =
@@ -825,13 +893,14 @@ export const WooPaymentsTransactionDetailsPage = () => {
 	const handleRefundModalOpen = () => {
 		refundModalOpenerRef.current = null;
 		setRefundReason( null );
+		setRefundTargetDispute( undefined );
 		setIsRefundModalOpen( true );
 		recordEvent( 'payments_transactions_details_refund_modal_open', {
 			payment_intent_id: paymentIntentId,
 		} );
 	};
 
-	const handleInquiryRefundModalOpen = () => {
+	const handleInquiryRefundModalOpen = ( dispute: WooPaymentsDispute ) => {
 		const ownerDocument =
 			refundActionsRef.current?.ownerDocument ||
 			paymentDetailsHeadingRef.current?.ownerDocument;
@@ -839,6 +908,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		refundModalOpenerRef.current =
 			activeElement instanceof HTMLElement ? activeElement : null;
 		setRefundReason( null );
+		setRefundTargetDispute( dispute );
 		setIsRefundModalOpen( true );
 	};
 
@@ -888,15 +958,11 @@ export const WooPaymentsTransactionDetailsPage = () => {
 				payment_intent_id: paymentIntentId,
 			} );
 
-			if (
-				isOpenRefundInquiry &&
-				transaction.dispute &&
-				currentInquiryId
-			) {
+			if ( isOpenRefundInquiry && refundInquiry && currentInquiryId ) {
 				recordEvent( 'wcpay_dispute_inquiry_refund_click', {
 					dispute_id: currentInquiryId,
-					dispute_status: transaction.dispute.status,
-					dispute_reason: transaction.dispute.reason,
+					dispute_status: refundInquiry.status,
+					dispute_reason: refundInquiry.reason,
 					on_page: 'transaction_details',
 				} );
 			}
@@ -920,6 +986,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 			}
 
 			setIsRefundModalOpen( false );
+			setRefundTargetDispute( undefined );
 			setRefundReason( null );
 			shouldFocusDetailsHeadingRef.current = true;
 			getNotices().createSuccessNotice(
@@ -1222,15 +1289,34 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							transactionResourceId={ transactionResourceId }
 							type={ transaction.type }
 						/>
-						{ transaction.dispute && (
-							<WooPaymentsTransactionDisputeDetails
-								transaction={ transaction }
-								onIssueRefund={
-									showFullRefundAction
-										? handleInquiryRefundModalOpen
-										: undefined
-								}
-							/>
+						{ disputeOrder.orderedDisputes.map(
+							( dispute, index ) => {
+								const disputeId = getDisputeId( dispute );
+
+								return (
+									<WooPaymentsTransactionDisputeDetails
+										key={ `${
+											disputeId || 'dispute'
+										}-${ index }` }
+										transaction={ transaction }
+										dispute={ dispute }
+										ordinal={
+											disputeOrder.orderById[
+												disputeId
+											] || index + 1
+										}
+										total={ disputeOrder.total }
+										onIssueRefund={
+											showFullRefundAction
+												? () =>
+														handleInquiryRefundModalOpen(
+															dispute
+														)
+												: undefined
+										}
+									/>
+								);
+							}
 						) }
 						{ showCaptureNotice && (
 							<section className="woocommerce-woopayments-overview-card woocommerce-woopayments-money-movement__authorization-notice">
@@ -1288,6 +1374,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 						) }
 						<WooPaymentsTransactionTimeline
 							events={ timelineEvents }
+							disputeOrder={ disputeOrder }
 						/>
 					</div>
 					{ isRefundModalOpen && (

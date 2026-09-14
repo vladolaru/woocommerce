@@ -1,12 +1,16 @@
 /**
  * External dependencies
  */
-import { act, within } from '@testing-library/react';
+import apiFetch from '@wordpress/api-fetch';
+import { act, waitFor, within } from '@testing-library/react';
 
 // Holding on to the ready callback lets every test boot the entry against its
 // own DOM and config without re-requiring the module — a fresh require would
 // give the entry its own React copy, which Testing Library's `act` cannot flush.
 let mockReadyCallback: () => void = () => {};
+const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
+
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
 jest.mock( '@wordpress/dom-ready', () => ( callback: () => void ) => {
 	mockReadyCallback = callback;
@@ -73,6 +77,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 	// `@wordpress/a11y`'s live regions with it and silence every announcement.
 	beforeEach( () => {
 		jest.clearAllMocks();
+		mockApiFetch.mockResolvedValue( {} );
 		orderScreen?.remove();
 		orderScreen = document.createElement( 'div' );
 		orderScreen.innerHTML = `
@@ -84,6 +89,12 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 						<option value="wc-refunded">Refunded</option>
 					</select>
 				</p>
+				<div id="woocommerce-order-items">
+					<span>
+						<button type="button" class="refund-items">Refund</button>
+						<span class="woocommerce-help-tip"></span>
+					</span>
+				</div>
 			</form>
 		`;
 		document.body.appendChild( orderScreen );
@@ -112,6 +123,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 				refund_amount: 42.5,
 				formatted_refund_amount: '$42.50',
 				refunded_amount: 0,
+				charge_id: '',
 			};
 		} );
 
@@ -155,6 +167,12 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 				orderScreenQueries().queryByText( /confirmation/ )
 			).not.toBeInTheDocument();
 		} );
+
+		it( 'does not request a charge when PHP projected no active-mode charge ID', () => {
+			bootEntry();
+
+			expect( mockApiFetch ).not.toHaveBeenCalled();
+		} );
 	} );
 
 	it( 'shows and announces why a refund is refused', () => {
@@ -164,6 +182,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 			refund_amount: 42.5,
 			formatted_refund_amount: '$42.50',
 			refunded_amount: 0,
+			charge_id: '',
 		};
 
 		bootEntry();
@@ -177,5 +196,71 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 		expect(
 			document.getElementById( 'a11y-speak-assertive' )?.textContent
 		).toContain( 'Order cannot be refunded' );
+	} );
+
+	it( 'locks order refunds when any fetched dispute blocks them', async () => {
+		window.woocommerceWooPaymentsOrderStatusChange = {
+			order_status: 'wc-processing',
+			can_refund: true,
+			refund_amount: 42.5,
+			formatted_refund_amount: '$42.50',
+			refunded_amount: 0,
+			charge_id: 'ch_disputed',
+		};
+		mockApiFetch.mockResolvedValue( {
+			disputes: [
+				{ id: 'dp_won', status: 'won' },
+				{ id: 'dp_lost', status: 'lost' },
+			],
+		} );
+
+		bootEntry();
+
+		const refundButton = orderScreenQueries().getByRole( 'button', {
+			name: 'Refund',
+		} );
+		await waitFor( () => expect( refundButton ).toBeDisabled() );
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( mockApiFetch ).toHaveBeenCalledWith( {
+			path: '/wc/v3/payments/charges/ch_disputed',
+			method: 'GET',
+		} );
+		expect( refundButton ).toHaveAttribute( 'aria-disabled', 'true' );
+		expect(
+			orderScreen?.querySelector( '.woocommerce-help-tip' )
+		).toHaveAccessibleName(
+			'Refunds and order editing have been disabled as a result of a lost dispute.'
+		);
+
+		selectStatus( 'wc-refunded' );
+		expect(
+			orderScreenQueries().getByText( 'Order cannot be refunded' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'uses a truthful accessible lock reason for an unknown dispute status', async () => {
+		window.woocommerceWooPaymentsOrderStatusChange = {
+			order_status: 'wc-processing',
+			can_refund: true,
+			refund_amount: 42.5,
+			formatted_refund_amount: '$42.50',
+			refunded_amount: 0,
+			charge_id: 'ch_unknown_dispute',
+		};
+		mockApiFetch.mockResolvedValue( {
+			dispute: { id: 'dp_unknown', status: 'future_status' },
+		} );
+
+		bootEntry();
+
+		const refundButton = orderScreenQueries().getByRole( 'button', {
+			name: 'Refund',
+		} );
+		await waitFor( () => expect( refundButton ).toBeDisabled() );
+		expect(
+			orderScreen?.querySelector( '.woocommerce-help-tip' )
+		).toHaveAccessibleName(
+			'Refunds and order editing are disabled while this payment has a dispute.'
+		);
 	} );
 } );

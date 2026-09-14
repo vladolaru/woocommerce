@@ -9,6 +9,7 @@ import { __, sprintf, TranslatableText } from '@wordpress/i18n';
  * Internal dependencies
  */
 import type { WooPaymentsTimelineEvent } from './types';
+import type { WooPaymentsDisputeOrder } from './dispute-utils';
 import { formatAmount, formatLabel } from './utils';
 
 type TimelineDisplayEvent = {
@@ -69,6 +70,29 @@ const getAmount = ( event: WooPaymentsTimelineEvent, ...keys: string[] ) => {
 
 const getCurrency = ( event: WooPaymentsTimelineEvent ) =>
 	getString( event, 'currency' ) || 'usd';
+
+const qualifyDisputeMessage = (
+	message: ReactNode,
+	event: WooPaymentsTimelineEvent,
+	disputeOrder?: WooPaymentsDisputeOrder
+) => {
+	const disputeId = getString( event, 'dispute_id' );
+	const ordinal = disputeId
+		? disputeOrder?.orderById[ disputeId ]
+		: undefined;
+
+	if ( ! ordinal || ! disputeOrder || disputeOrder.total <= 1 ) {
+		return message;
+	}
+
+	return sprintf(
+		/* translators: 1: timeline message, 2: dispute position, 3: total disputes on the charge. */
+		__( '%1$s · Dispute %2$d of %3$d', 'woocommerce' ),
+		String( message ),
+		ordinal,
+		disputeOrder.total
+	);
+};
 
 const getTimelineUserName = ( event: WooPaymentsTimelineEvent ) =>
 	typeof event.user?.username === 'string' ? event.user.username : '';
@@ -185,7 +209,8 @@ const createAmountMessage = (
 };
 
 const mapTimelineEvent = (
-	event: WooPaymentsTimelineEvent
+	event: WooPaymentsTimelineEvent,
+	disputeOrder?: WooPaymentsDisputeOrder
 ): TimelineDisplayEvent[] => {
 	const date = getEventDate( event );
 	const type = event.type || '';
@@ -375,7 +400,11 @@ const mapTimelineEvent = (
 
 			return [
 				{
-					message: disputedAmount || getFallbackMessage( event ),
+					message: qualifyDisputeMessage(
+						disputedAmount || getFallbackMessage( event ),
+						event,
+						disputeOrder
+					),
 					date,
 				},
 			];
@@ -425,10 +454,14 @@ const mapTimelineEvent = (
 
 export const WooPaymentsTransactionTimeline = ( {
 	events,
+	disputeOrder,
 }: {
 	events: WooPaymentsTimelineEvent[];
+	disputeOrder?: WooPaymentsDisputeOrder;
 } ) => {
-	const rows = events.flatMap( mapTimelineEvent );
+	const rows = events.flatMap( ( event ) =>
+		mapTimelineEvent( event, disputeOrder )
+	);
 
 	if ( ! rows.length ) {
 		return null;

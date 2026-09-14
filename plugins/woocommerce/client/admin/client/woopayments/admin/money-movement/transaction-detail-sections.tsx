@@ -23,6 +23,7 @@ import {
 	formatLabel,
 	getChargeChannelLabel,
 } from './utils';
+import { getPrimaryDispute } from './dispute-utils';
 
 type CardDetails = NonNullable< WooPaymentsPaymentMethodDetails[ 'card' ] >;
 type CountryMap = Record< string, string >;
@@ -571,7 +572,7 @@ const disputeStatusLabels: Record< string, string > = {
 };
 
 const getDisputeStatusLabel = ( transaction: WooPaymentsTransaction ) => {
-	const disputeStatus = transaction.dispute?.status || '';
+	const disputeStatus = getPrimaryDispute( transaction )?.status || '';
 	const disputeLabel =
 		disputeStatusLabels[ disputeStatus ] || formatLabel( disputeStatus );
 
@@ -606,7 +607,7 @@ const getPaymentSummaryStatusLabel = (
 		return formatLabel( transaction.status );
 	}
 
-	if ( transaction.dispute?.status ) {
+	if ( getPrimaryDispute( transaction )?.status ) {
 		return getDisputeStatusLabel( transaction );
 	}
 

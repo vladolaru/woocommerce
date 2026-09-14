@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeProjectionService;
+use WC_Install;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -182,13 +183,110 @@ class WooPaymentsOrderStatusChangeProjectionServiceTest extends WC_Unit_Test_Cas
 	}
 
 	/**
+	 * @testdox Should expose the provider charge only when the order and account modes match.
+	 *
+	 * @dataProvider charge_projection_mode_provider
+	 *
+	 * @param string|null $order_mode      Persisted order mode, or null for a legacy order.
+	 * @param bool        $account_is_test Whether the active account is in test mode.
+	 * @param string      $expected        Expected projected charge ID.
+	 */
+	public function test_projects_charge_id_only_for_the_active_account_mode( ?string $order_mode, bool $account_is_test, string $expected ): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_charge_id', '  ch_mode_matched  ' );
+		if ( null !== $order_mode ) {
+			$order->update_meta_data( '_wcpay_mode', $order_mode );
+		}
+		$order->save();
+
+		$test_mode = static fn(): bool => $account_is_test;
+		add_filter( 'wcpay_test_mode', $test_mode );
+
+		try {
+			$config = $this->sut->get_config( $order );
+		} finally {
+			remove_filter( 'wcpay_test_mode', $test_mode );
+		}
+
+		$this->assertSame( $expected, $config['charge_id'] );
+	}
+
+	/**
+	 * Charge projection mode cases.
+	 *
+	 * @return array<string,array{0:string|null,1:bool,2:string}>
+	 */
+	public function charge_projection_mode_provider(): array {
+		return array(
+			'legacy order in live mode'      => array( null, false, 'ch_mode_matched' ),
+			'legacy order in test mode'      => array( null, true, 'ch_mode_matched' ),
+			'live order in live mode'        => array( 'live', false, 'ch_mode_matched' ),
+			'plugin live order in live mode' => array( 'prod', false, 'ch_mode_matched' ),
+			'test order in test mode'        => array( 'test', true, 'ch_mode_matched' ),
+			'test order in live mode'        => array( 'test', false, '' ),
+			'live order in test mode'        => array( 'live', true, '' ),
+		);
+	}
+
+	/**
+	 * @testdox Should reject malformed provider charge and mode metadata.
+	 */
+	public function test_rejects_malformed_charge_projection_metadata(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_charge_id', array( 'ch_not_scalar' ) );
+		$order->update_meta_data( '_wcpay_mode', array( 'live' ) );
+		$order->save();
+
+		$config = $this->sut->get_config( $order );
+
+		$this->assertSame( '', $config['charge_id'] );
+	}
+
+	/**
+	 * @testdox Should keep projected charge context isolated to the active site.
+	 * @group ms-required
+	 */
+	public function test_projects_charge_id_from_the_active_site_and_restores_main_site(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Multisite is required.' );
+		}
+
+		$main_blog_id = get_current_blog_id();
+		$other_blog   = self::factory()->blog->create();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
+		$order = $this->create_order();
+		$order->update_meta_data( '_charge_id', 'ch_main_site' );
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
+		$order->save();
+
+		switch_to_blog( $other_blog );
+		try {
+			WC_Install::create_tables();
+			( new \ActionScheduler_StoreSchema() )->register_tables( true );
+			( new \ActionScheduler_LoggerSchema() )->register_tables( true );
+			update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+			$other_order = $this->create_order();
+			$other_order->update_meta_data( '_charge_id', 'ch_other_site' );
+			$other_order->update_meta_data( '_wcpay_mode', 'test' );
+			$other_order->save();
+
+			$this->assertSame( 'ch_other_site', $this->sut->get_config( $other_order )['charge_id'] );
+		} finally {
+			restore_current_blog();
+		}
+
+		$this->assertSame( $main_blog_id, get_current_blog_id() );
+		$this->assertSame( 'ch_main_site', $this->sut->get_config( $order )['charge_id'] );
+	}
+
+	/**
 	 * @testdox Should project exactly the documented config keys.
 	 */
 	public function test_projects_exactly_the_documented_config_keys(): void {
 		$config = $this->sut->get_config( $this->create_order() );
 
 		$this->assertSame(
-			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount' ),
+			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id' ),
 			array_keys( $config ),
 			'The config contract is consumed by the browser and must not drift.'
 		);

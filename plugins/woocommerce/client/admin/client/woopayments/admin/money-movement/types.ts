@@ -23,6 +23,7 @@ export interface WooPaymentsTransaction {
 	sales_channel?: string;
 	outcome?: WooPaymentsPaymentOutcome;
 	dispute?: WooPaymentsDispute;
+	disputes?: WooPaymentsDispute[];
 	balance_transaction?: string | WooPaymentsBalanceTransaction;
 	application_fee_amount?: number;
 	amount_refunded?: number;
@@ -137,6 +138,7 @@ export interface WooPaymentsCharge {
 	sales_channel?: string;
 	outcome?: WooPaymentsPaymentOutcome;
 	dispute?: WooPaymentsDispute;
+	disputes?: WooPaymentsDispute[];
 	application_fee_amount?: number;
 	amount_refunded?: number;
 	refunded?: boolean;
@@ -151,6 +153,7 @@ export interface WooPaymentsPaymentIntent {
 		data?: WooPaymentsCharge[];
 	};
 	dispute?: WooPaymentsDispute;
+	disputes?: WooPaymentsDispute[];
 	amount?: number;
 	currency?: string;
 	created?: number | string;

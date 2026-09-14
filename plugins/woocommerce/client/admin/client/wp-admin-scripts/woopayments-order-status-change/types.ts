@@ -23,6 +23,8 @@ export interface WooPaymentsOrderStatusChangeConfig {
 	formatted_refund_amount: string;
 	/** Amount already refunded, echoed back to the refund AJAX for its optimistic-lock check. */
 	refunded_amount: number;
+	/** Provider charge ID when this order belongs to the active account mode. */
+	charge_id: string;
 }
 
 /**

@@ -16,6 +16,7 @@ const createConfig = (
 	refund_amount: 25,
 	formatted_refund_amount: '$25.00',
 	refunded_amount: 0,
+	charge_id: '',
 	...overrides,
 } );
 
@@ -166,7 +167,7 @@ describe( 'getOrderStatusChangeDecision', () => {
 
 		it( 'refuses a refund on a genuine boolean false', () => {
 			const config = parseConfig(
-				'{"order_status":"wc-processing","can_refund":false,"refund_amount":25,"formatted_refund_amount":"$25.00","refunded_amount":0}'
+				'{"order_status":"wc-processing","can_refund":false,"refund_amount":25,"formatted_refund_amount":"$25.00","refunded_amount":0,"charge_id":""}'
 			);
 
 			expect( config.can_refund ).toBe( false );
@@ -180,7 +181,7 @@ describe( 'getOrderStatusChangeDecision', () => {
 
 		it( 'refuses a refund on a genuine numeric zero', () => {
 			const config = parseConfig(
-				'{"order_status":"wc-processing","can_refund":true,"refund_amount":0,"formatted_refund_amount":"$0.00","refunded_amount":25}'
+				'{"order_status":"wc-processing","can_refund":true,"refund_amount":0,"formatted_refund_amount":"$0.00","refunded_amount":25,"charge_id":""}'
 			);
 
 			expect( typeof config.refund_amount ).toBe( 'number' );
@@ -194,7 +195,7 @@ describe( 'getOrderStatusChangeDecision', () => {
 
 		it( 'confirms a refund on a genuine positive amount', () => {
 			const config = parseConfig(
-				'{"order_status":"wc-processing","can_refund":true,"refund_amount":25,"formatted_refund_amount":"$25.00","refunded_amount":0}'
+				'{"order_status":"wc-processing","can_refund":true,"refund_amount":25,"formatted_refund_amount":"$25.00","refunded_amount":0,"charge_id":""}'
 			);
 
 			expect(
