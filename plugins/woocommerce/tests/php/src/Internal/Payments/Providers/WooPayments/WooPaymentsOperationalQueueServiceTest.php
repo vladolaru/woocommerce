@@ -4,6 +4,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use ActionScheduler_Store;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -12,7 +17,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIp
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Data_Store;
 use WC_Order;
@@ -52,6 +56,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_test_mode_enabled_date' );
 		delete_transient( 'wcpay_test_to_live_eligible' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
 		$this->delete_notes_with_name( 'wc-payments-notes-test-to-live' );
 		$this->delete_instant_deposit_note();
 		remove_filter( 'woocommerce_email_classes', '__return_empty_array', 20 );
@@ -369,6 +374,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_settings_save_auto_adds_currencies_for_enabled_methods(): void {
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		$this->register_unavailable_rate_provider();
 		update_option(
 			MultiCurrencyCacheInterface::CURRENCIES_KEY,
 			array(
@@ -399,6 +405,26 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
 		$this->assertIsArray( $enabled_currencies );
 		$this->assertContains( 'EUR', $enabled_currencies, 'Enabling iDEAL must auto-enable its EUR requirement.' );
+	}
+
+	/**
+	 * Register an unavailable automatic-rate provider so the test exercises the production cache-fallback path.
+	 */
+	private function register_unavailable_rate_provider(): void {
+		$provider = $this->createMock( CurrencyRateProvider::class );
+		$provider->method( 'get_id' )->willReturn( 'test-outage' );
+		$provider->method( 'is_available' )->willReturn( false );
+
+		$registrar = $this->createMock( CurrencyRateProviderRegistrarInterface::class );
+		$registrar->method( 'register' )->willReturnCallback(
+			static function ( CurrencyRateProviderRegistry $registry ) use ( $provider ): void {
+				$registry->register( $provider );
+			}
+		);
+
+		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars(
+			array( $registrar )
+		);
 	}
 
 	/**
