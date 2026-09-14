@@ -1211,10 +1211,10 @@ const FeesReport = ( { now }: { now: Date } ) => {
 		perPage: 25,
 		fields: [
 			'date',
-			'transaction_id',
 			'payment_method',
 			'type',
 			'order_id',
+			'transaction_id',
 			'transaction_currency',
 			'amount',
 			'fees',

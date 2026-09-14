@@ -1068,6 +1068,24 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 	} );
 
+	it( 'uses the Fees default column order', async () => {
+		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		expect( mockDataViews.mock.calls.at( -1 )?.[ 0 ].view?.fields ).toEqual(
+			[
+				'date',
+				'payment_method',
+				'type',
+				'order_id',
+				'transaction_id',
+				'transaction_currency',
+				'amount',
+				'fees',
+			]
+		);
+	} );
+
 	it( 'defaults the Fees DataViews Date filter to Between', async () => {
 		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
 
