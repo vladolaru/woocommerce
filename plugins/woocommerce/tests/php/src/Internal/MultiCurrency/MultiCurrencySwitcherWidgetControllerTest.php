@@ -23,6 +23,8 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 */
 	private array $hooks = array(
 		'widgets_init',
+		'wcpay_multi_currency_theme_widget_instance',
+		'wcpay_multi_currency_theme_widget_args',
 	);
 
 	/**
@@ -78,6 +80,227 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( MultiCurrencySwitcherWidget::class, $first_widget );
 		$this->assertSame( $first_widget, $sut->get_registered_widget() );
 		$this->assertTrue( in_array( $first_widget, $wp_widget_factory->widgets, true ), 'The widget instance must be registered with the widget factory, whatever key derivation the WordPress version uses.' );
+	}
+
+	/**
+	 * @testdox Should return empty markup before the switcher widget is registered.
+	 */
+	public function test_returns_empty_markup_before_switcher_widget_is_registered(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+
+		$this->assertTrue( method_exists( $sut, 'get_switcher_widget_markup' ), 'The controller must expose the template-tag rendering method.' );
+		if ( ! method_exists( $sut, 'get_switcher_widget_markup' ) ) {
+			return;
+		}
+
+		$this->assertSame( '', $sut->get_switcher_widget_markup() );
+	}
+
+	/**
+	 * @testdox Should return empty markup when the widget factory is malformed.
+	 */
+	public function test_returns_empty_markup_when_widget_factory_is_malformed(): void {
+		global $wp_widget_factory;
+
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$original_widgets = $wp_widget_factory->widgets;
+		$sut->handle_widgets_init();
+		$wp_widget_factory->widgets = null;
+
+		try {
+			$this->assertSame( '', $sut->get_switcher_widget_markup() );
+		} finally {
+			$wp_widget_factory->widgets = $original_widgets;
+		}
+	}
+
+	/**
+	 * @testdox Should return empty markup when the registered widget is absent from the factory.
+	 */
+	public function test_returns_empty_markup_when_registered_widget_is_absent_from_factory(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut->handle_widgets_init();
+		$this->remove_registered_switcher_widgets();
+
+		$this->assertSame( '', $sut->get_switcher_widget_markup() );
+	}
+
+	/**
+	 * @testdox Should use the actual widget factory key and apply legacy theme filters in order.
+	 */
+	public function test_renders_with_actual_factory_key_and_applies_legacy_theme_filters_in_order(): void {
+		global $wp_widget_factory;
+
+		$projection = $this->create_projection_service();
+		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $projection );
+		$sut->handle_widgets_init();
+		$widget = $sut->get_registered_widget();
+		$key    = array_search( $widget, $wp_widget_factory->widgets, true );
+		unset( $wp_widget_factory->widgets[ $key ] );
+		$wp_widget_factory->widgets[711] = $widget;
+		$filter_order                    = array();
+
+		add_filter(
+			'wcpay_multi_currency_theme_widget_instance',
+			static function ( $instance ) use ( &$filter_order ) {
+				unset( $instance );
+				$filter_order[] = 'instance';
+				return array(
+					'title' => 'Theme currency',
+				);
+			}
+		);
+		add_filter(
+			'wcpay_multi_currency_theme_widget_args',
+			static function ( $args ) use ( &$filter_order ) {
+				unset( $args );
+				$filter_order[] = 'args';
+				return array(
+					'before_widget' => '<section>',
+					'after_widget'  => '</section>',
+				);
+			}
+		);
+
+		$markup = $sut->get_switcher_widget_markup( array( 'title' => 'Caller title' ), array( 'before_widget' => '<aside>' ) );
+
+		$this->assertSame( '<form>Switcher</form>', $markup );
+		$this->assertSame( array( 'instance', 'args' ), $filter_order );
+		$this->assertSame( array( 'title' => 'Theme currency' ), $projection->last_instance );
+		$this->assertSame( '<section>', $projection->last_args['before_widget'] );
+		$this->assertSame( '</section>', $projection->last_args['after_widget'] );
+	}
+
+	/**
+	 * @testdox Should retain caller arrays when legacy theme filters return malformed values.
+	 */
+	public function test_retains_caller_arrays_when_legacy_theme_filters_return_malformed_values(): void {
+		$projection = $this->create_projection_service();
+		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $projection );
+		$instance   = array( 'title' => 'Caller title' );
+		$args       = array( 'before_widget' => '<aside>' );
+		$sut->handle_widgets_init();
+		add_filter( 'wcpay_multi_currency_theme_widget_instance', static fn() => 'not an array' );
+		add_filter( 'wcpay_multi_currency_theme_widget_args', static fn() => 'not an array' );
+
+		$sut->get_switcher_widget_markup( $instance, $args );
+
+		$this->assertSame( $instance, $projection->last_instance );
+		$this->assertSame( $args['before_widget'], $projection->last_args['before_widget'] );
+	}
+
+	/**
+	 * @testdox Should not render core markup when no runtime owns multi-currency.
+	 */
+	public function test_does_not_render_core_markup_when_no_runtime_owns_multi_currency(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_NONE );
+		$sut->handle_widgets_init();
+
+		$this->assertSame( '', $sut->get_switcher_widget_markup() );
+	}
+
+	/**
+	 * @testdox Should not render core markup when the plugin owns multi-currency.
+	 */
+	public function test_does_not_render_core_markup_when_plugin_owns_multi_currency(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut->handle_widgets_init();
+
+		$this->assertSame( '', $sut->get_switcher_widget_markup() );
+	}
+
+	/**
+	 * @testdox Should delegate to the client facade only when the plugin owns multi-currency.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_delegates_to_client_facade_only_when_plugin_owns_multi_currency(): void {
+		if ( ! function_exists( 'WC_Payments_Multi_Currency' ) ) {
+			eval( 'function WC_Payments_Multi_Currency() { return $GLOBALS["row_86_multi_currency_client"]; }' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Isolated process fixture for the client-first compatibility function.
+		}
+		$client                                  = new class() {
+			/**
+			 * Last client instance settings.
+			 *
+			 * @var array
+			 */
+			public array $received_instance = array();
+
+			/**
+			 * Last client widget arguments.
+			 *
+			 * @var array
+			 */
+			public array $received_args = array();
+
+			/**
+			 * Get client switcher markup.
+			 *
+			 * @param array $instance Widget instance settings.
+			 * @param array $args     Widget arguments.
+			 * @return string
+			 */
+			public function get_switcher_widget_markup( array $instance = array(), array $args = array() ): string {
+				$this->received_instance = $instance;
+				$this->received_args     = $args;
+
+				return '<form>Client switcher</form>';
+			}
+		};
+		$GLOBALS['row_86_multi_currency_client'] = $client;
+		$instance                                = array( 'title' => 'Client title' );
+		$args                                    = array( 'before_widget' => '<aside>' );
+		$sut                                     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+
+		try {
+			$this->assertSame( '<form>Client switcher</form>', $sut->get_switcher_widget_markup( $instance, $args ) );
+			$this->assertSame( $instance, $client->received_instance );
+			$this->assertSame( $args, $client->received_args );
+		} finally {
+			unset( $GLOBALS['row_86_multi_currency_client'] );
+		}
+	}
+
+	/**
+	 * @testdox Should clean the output buffer when widget rendering throws.
+	 */
+	public function test_cleans_output_buffer_when_widget_rendering_throws(): void {
+		$projection = new class() extends MultiCurrencySwitcherProjectionService {
+			/**
+			 * Constructor.
+			 */
+			public function __construct() {}
+
+			/**
+			 * Throw while projecting widget markup.
+			 *
+			 * @param array $instance           Widget instance settings.
+			 * @param array $args               Widget arguments.
+			 * @param array $query_args         Query arguments.
+			 * @param bool  $switching_disabled Whether switching is disabled.
+			 * @return string
+			 */
+			public function get_widget_markup( array $instance = array(), array $args = array(), array $query_args = array(), bool $switching_disabled = false ): string {
+				unset( $instance, $args, $query_args );
+				if ( $switching_disabled ) {
+					return '';
+				}
+
+				throw new \RuntimeException( 'Rendering failed.' );
+			}
+		};
+		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $projection );
+		$level      = ob_get_level();
+		$sut->handle_widgets_init();
+
+		try {
+			$sut->get_switcher_widget_markup();
+			$this->fail( 'Expected widget rendering to throw.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'Rendering failed.', $exception->getMessage() );
+			$this->assertSame( $level, ob_get_level() );
+		}
 	}
 
 	/**
@@ -343,6 +566,10 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function remove_registered_switcher_widgets(): void {
 		global $wp_widget_factory;
+
+		if ( ! isset( $wp_widget_factory->widgets ) || ! is_array( $wp_widget_factory->widgets ) ) {
+			return;
+		}
 
 		foreach ( $wp_widget_factory->widgets as $widget_key => $widget ) {
 			if ( $widget instanceof MultiCurrencySwitcherWidget ) {

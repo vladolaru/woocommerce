@@ -123,6 +123,67 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the registered switcher widget markup.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array $instance Widget instance settings.
+	 * @param array $args     Widget arguments.
+	 * @return string Currency switcher widget markup.
+	 */
+	public function get_switcher_widget_markup( array $instance = array(), array $args = array() ): string {
+		global $wp_widget_factory;
+
+		if ( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN === $this->arbiter->get_runtime_owner() && function_exists( 'WC_Payments_Multi_Currency' ) ) {
+			$plugin_multi_currency = \WC_Payments_Multi_Currency(); // phpcs:ignore WordPress.NamingConventions.ValidFunctionName.FunctionNameInvalid -- WooPayments public compatibility facade.
+			if ( is_object( $plugin_multi_currency ) && is_callable( array( $plugin_multi_currency, 'get_switcher_widget_markup' ) ) ) {
+				return (string) call_user_func( array( $plugin_multi_currency, 'get_switcher_widget_markup' ), $instance, $args );
+			}
+		}
+
+		if ( ! $this->arbiter->should_core_register() || ! is_object( $this->widget ) || ! is_object( $wp_widget_factory ) || ! isset( $wp_widget_factory->widgets ) || ! is_array( $wp_widget_factory->widgets ) ) {
+			return '';
+		}
+
+		$widget_key = array_search( $this->widget, $wp_widget_factory->widgets, true );
+		if ( false === $widget_key ) {
+			return '';
+		}
+
+		/**
+		 * Filters the currency switcher widget instance settings used by themes.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param array $instance Widget instance settings.
+		 */
+		$filtered_instance = apply_filters( 'wcpay_multi_currency_theme_widget_instance', $instance );
+		$instance          = is_array( $filtered_instance ) ? $filtered_instance : $instance;
+
+		/**
+		 * Filters the currency switcher widget arguments used by themes.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param array $args Widget arguments.
+		 */
+		$filtered_args = apply_filters( 'wcpay_multi_currency_theme_widget_args', $args );
+		$args          = is_array( $filtered_args ) ? $filtered_args : $args;
+		$buffer_level  = ob_get_level();
+
+		ob_start();
+		try {
+			the_widget( (string) $widget_key, $instance, $args );
+
+			return (string) ob_get_clean();
+		} finally {
+			while ( ob_get_level() > $buffer_level ) {
+				ob_end_clean();
+			}
+		}
+	}
+
+	/**
 	 * Get the switcher projection service.
 	 *
 	 * @return MultiCurrencySwitcherProjectionService

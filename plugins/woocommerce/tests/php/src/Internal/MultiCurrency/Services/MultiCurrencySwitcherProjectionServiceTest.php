@@ -84,7 +84,7 @@ class MultiCurrencySwitcherProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'class="currency-switcher-holder"', $markup );
 		$this->assertStringContainsString( 'line-height: 1.4;', $markup );
 		$this->assertStringContainsString( 'class="js-woopayments-currency-switcher"', $markup );
-		$this->assertStringContainsString( 'aria-label="Currency"', $markup );
+		$this->assertStringContainsString( 'aria-label="Select your currency"', $markup );
 		$this->assertStringContainsString( 'border: 0px solid;', $markup );
 		$this->assertStringContainsString( 'border-radius: 6px;', $markup );
 		$this->assertStringContainsString( 'border-color: #654321;', $markup );

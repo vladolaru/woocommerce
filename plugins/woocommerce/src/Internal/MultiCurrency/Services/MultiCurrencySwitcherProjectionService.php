@@ -351,7 +351,7 @@ class MultiCurrencySwitcherProjectionService {
 	private function get_accessible_label( string $title ): string {
 		$title = trim( wp_strip_all_tags( $title ) );
 
-		return '' !== $title ? $title : __( 'Currency', 'woocommerce' );
+		return '' !== $title ? $title : __( 'Select your currency', 'woocommerce' );
 	}
 
 	/**
