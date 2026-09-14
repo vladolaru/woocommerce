@@ -86,6 +86,41 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not use a null array offset when no selected currency is stored.
+	 */
+	public function test_does_not_use_null_array_offset_without_stored_currency(): void {
+		wp_set_current_user( 0 );
+		if ( function_exists( 'WC' ) && WC()->session ) {
+			WC()->session->__unset( MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY );
+		}
+
+		$null_offset_deprecations = array();
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- Scoped handler asserting that PHP 8.5 emits no null-offset deprecation; restored in finally below.
+		set_error_handler(
+			static function ( $error_number, $error_message ) use ( &$null_offset_deprecations ) {
+				unset( $error_number );
+				if ( false !== stripos( (string) $error_message, 'null as an array offset' ) ) {
+					$null_offset_deprecations[] = (string) $error_message;
+
+					return true;
+				}
+
+				return false;
+			},
+			E_DEPRECATED
+		);
+
+		try {
+			$state = $this->create_builder()->build();
+		} finally {
+			restore_error_handler();
+		}
+
+		$this->assertSame( 'USD', $state->get_selected_currency()->get_code() );
+		$this->assertSame( array(), $null_offset_deprecations );
+	}
+
+	/**
 	 * @testdox Should build manual enabled currencies without a provider.
 	 */
 	public function test_builds_manual_enabled_currencies_without_provider(): void {
