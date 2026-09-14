@@ -1,3 +1,11 @@
+// The header and Reports content mount in separate roots.
+// prettier-ignore
+body.woocommerce_page_wc-settings.woocommerce-settings-payments-tab:has(.woocommerce-woopayments-reports) {
+	.woocommerce-layout__header {
+		background: #fff;
+	}
+}
+
 .woocommerce-woopayments-reports {
 	max-width: 1120px;
 
