@@ -158,7 +158,7 @@ class MultiCurrencyRuntimeRegistry {
 				self::hook_entry( 'woocommerce_variation_prices', 'get_variation_price_range', 99 ),
 				self::hook_entry( 'woocommerce_get_variation_prices_hash', 'add_exchange_rate_to_variation_prices_hash', 99 ),
 				self::hook_entry( 'woocommerce_shipping_zone_shipping_methods', 'convert_free_shipping_method_min_amount', 99 ),
-				self::hook_entry( 'woocommerce_shipping_method_add_rate_args', 'convert_shipping_method_rate_cost', 99 ),
+				self::hook_entry( 'woocommerce_shipping_method_add_rate_args', 'convert_shipping_method_rate_cost', 99, 2 ),
 				self::hook_entry( 'woocommerce_coupon_get_amount', 'get_coupon_amount', 99, 2 ),
 				self::hook_entry( 'woocommerce_coupon_get_minimum_amount', 'get_coupon_min_max_amount', 99 ),
 				self::hook_entry( 'woocommerce_coupon_get_maximum_amount', 'get_coupon_min_max_amount', 99 ),

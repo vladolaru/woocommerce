@@ -21,9 +21,10 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 
-	private const FILTER_SHOULD_CONVERT_PRODUCT_PRICE = 'wcpay_multi_currency_should_convert_product_price';
-	private const FILTER_SHOULD_CONVERT_COUPON_AMOUNT = 'wcpay_multi_currency_should_convert_coupon_amount';
-	private const STORE_API_COLLECTION_DATA_ROUTE     = '/wc/store/v1/products/collection-data';
+	private const FILTER_SHOULD_CONVERT_PRODUCT_PRICE   = 'wcpay_multi_currency_should_convert_product_price';
+	private const FILTER_SHOULD_CONVERT_COUPON_AMOUNT   = 'wcpay_multi_currency_should_convert_coupon_amount';
+	private const FILTER_SHOULD_CONVERT_SHIPPING_AMOUNT = 'wcpay_multi_currency_should_convert_shipping_amount';
+	private const STORE_API_COLLECTION_DATA_ROUTE       = '/wc/store/v1/products/collection-data';
 
 	/**
 	 * Runtime owner arbiter.
@@ -118,7 +119,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		$this->add_filter_once( 'woocommerce_variation_prices', array( $this, 'get_variation_price_range' ), 99 );
 		$this->add_filter_once( 'woocommerce_get_variation_prices_hash', array( $this, 'add_exchange_rate_to_variation_prices_hash' ), 99 );
 		$this->add_filter_once( 'woocommerce_shipping_zone_shipping_methods', array( $this, 'convert_free_shipping_method_min_amount' ), 99 );
-		$this->add_filter_once( 'woocommerce_shipping_method_add_rate_args', array( $this, 'convert_shipping_method_rate_cost' ), 99 );
+		$this->add_filter_once( 'woocommerce_shipping_method_add_rate_args', array( $this, 'convert_shipping_method_rate_cost' ), 99, 2 );
 		$this->add_filter_once( 'woocommerce_coupon_get_amount', array( $this, 'get_coupon_amount' ), 99, 2 );
 		$this->add_filter_once( 'woocommerce_coupon_get_minimum_amount', array( $this, 'get_coupon_min_max_amount' ), 99 );
 		$this->add_filter_once( 'woocommerce_coupon_get_maximum_amount', array( $this, 'get_coupon_min_max_amount' ), 99 );
@@ -197,11 +198,16 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	/**
 	 * Project shipping add-rate cost args.
 	 *
-	 * @param mixed $args Shipping rate args.
+	 * @param mixed $args            Shipping rate args.
+	 * @param mixed $shipping_method Shipping method object.
 	 * @return mixed
 	 */
-	public function convert_shipping_method_rate_cost( $args ) {
+	public function convert_shipping_method_rate_cost( $args, $shipping_method = null ) {
 		if ( ! is_array( $args ) || ! isset( $args['cost'] ) ) {
+			return $args;
+		}
+
+		if ( ! $this->should_convert_shipping_amount( $shipping_method ) ) {
 			return $args;
 		}
 
@@ -470,6 +476,28 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		 * @since 11.0.0
 		 */
 		return (bool) apply_filters( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, true, $product );
+	}
+
+	/**
+	 * Tell whether shipping amount conversion should run.
+	 *
+	 * @param mixed $shipping_method Shipping method object.
+	 * @return bool
+	 */
+	private function should_convert_shipping_amount( $shipping_method = null ): bool {
+		if ( ! $shipping_method ) {
+			return true;
+		}
+
+		/**
+		 * Filters whether a shipping amount should be converted.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param bool  $should_convert Whether the shipping amount should be converted.
+		 * @param mixed $shipping_method Shipping method object.
+		 */
+		return (bool) apply_filters( self::FILTER_SHOULD_CONVERT_SHIPPING_AMOUNT, true, $shipping_method );
 	}
 
 	/**

@@ -149,6 +149,33 @@ class MultiCurrencyRuntimeRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preserve the shipping cost converter's two accepted arguments in the frontend price manifest.
+	 */
+	public function test_frontend_price_manifest_preserves_shipping_cost_converter_accepted_arguments(): void {
+		$hook_groups = MultiCurrencyRuntimeRegistry::get_core_hook_groups();
+		$entries     = array_values(
+			array_filter(
+				$hook_groups['frontend_prices']['filters'],
+				static function ( array $entry ): bool {
+					return 'woocommerce_shipping_method_add_rate_args' === $entry['hook'] && 'convert_shipping_method_rate_cost' === $entry['callback'];
+				}
+			)
+		);
+
+		$this->assertSame(
+			array(
+				array(
+					'hook'          => 'woocommerce_shipping_method_add_rate_args',
+					'callback'      => 'convert_shipping_method_rate_cost',
+					'priority'      => 99,
+					'accepted_args' => 2,
+				),
+			),
+			$entries
+		);
+	}
+
+	/**
 	 * @testdox Should preserve the WooPayments frontend currency hook surface.
 	 */
 	public function test_frontend_currency_manifest_contains_preserved_hooks(): void {

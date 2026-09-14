@@ -43,6 +43,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		'query_loop_block_query_vars',
 		'wcpay_multi_currency_should_convert_product_price',
 		'wcpay_multi_currency_should_convert_coupon_amount',
+		'wcpay_multi_currency_should_convert_shipping_amount',
 	);
 
 	/**
@@ -167,6 +168,38 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		);
 		$this->assertSame( 20.0, $sut->get_coupon_amount( '5.00', $this->create_coupon() ) );
 		$this->assertSame( 20.0, $sut->get_coupon_min_max_amount( '10.00' ) );
+	}
+
+	/**
+	 * @testdox Should skip shipping cost conversion when the shipping method filter returns false.
+	 */
+	public function test_skips_shipping_cost_conversion_when_shipping_method_filter_returns_false(): void {
+		$sut             = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$shipping_method = new \WC_Shipping_Flat_Rate( 0 );
+
+		$sut->register();
+
+		$this->assertSame(
+			array( 'cost' => 6.0 ),
+			apply_filters( 'woocommerce_shipping_method_add_rate_args', array( 'cost' => '2.00' ), $shipping_method )
+		);
+
+		add_filter(
+			'wcpay_multi_currency_should_convert_shipping_amount',
+			function ( $should_convert, $method ) use ( $shipping_method ) {
+				$this->assertTrue( $should_convert );
+				$this->assertSame( $shipping_method, $method );
+
+				return false;
+			},
+			10,
+			2
+		);
+
+		$this->assertSame(
+			array( 'cost' => '2.00' ),
+			apply_filters( 'woocommerce_shipping_method_add_rate_args', array( 'cost' => '2.00' ), $shipping_method )
+		);
 	}
 
 	/**
