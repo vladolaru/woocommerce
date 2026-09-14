@@ -1098,13 +1098,14 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function is_reports_enabled(): bool {
-		$enabled = $this->legacy_proxy->call_function( 'get_option', self::REPORTS_AREA_FLAG_OPTION, '0' );
-
-		if ( '1' !== (string) $enabled ) {
-			return false;
+		$account_data = $this->get_preserved_account_data_snapshot();
+		if ( array_key_exists( 'reports_area_enabled', $account_data ) && null !== $account_data['reports_area_enabled'] ) {
+			return (bool) $account_data['reports_area_enabled'];
 		}
 
-		return $this->has_account();
+		$enabled = $this->legacy_proxy->call_function( 'get_option', self::REPORTS_AREA_FLAG_OPTION, '0' );
+
+		return '1' === (string) $enabled;
 	}
 
 	/**

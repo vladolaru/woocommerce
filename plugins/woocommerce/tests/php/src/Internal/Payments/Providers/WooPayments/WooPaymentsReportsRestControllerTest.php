@@ -108,6 +108,24 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Reports routes deny disabled Reports and missing accounts before calling the platform API.
+	 */
+	public function test_routes_require_enabled_reports_and_an_account_before_calling_the_platform_api(): void {
+		$this->create_controller( true, false, true )->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees' ) );
+
+		$this->assertSame( 403, $response->get_status() );
+		$this->assertSame( array(), $this->api_client->last_call );
+
+		$this->create_controller( true, true, false )->register_routes();
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees' ) );
+
+		$this->assertSame( 403, $response->get_status() );
+		$this->assertSame( array(), $this->api_client->last_call );
+	}
+
+	/**
 	 * @testdox Balance report forwards date range and lowercase currency to the reporting endpoint.
 	 */
 	public function test_balance_report_forwards_sanitized_query(): void {
@@ -565,9 +583,10 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 *
 	 * @param bool $native_register Whether native should own route registration.
 	 * @param bool $reports_enabled Whether Reports are enabled.
+	 * @param bool $has_account Whether an account exists.
 	 * @return WooPaymentsReportsRestController
 	 */
-	private function create_controller( bool $native_register, bool $reports_enabled ): WooPaymentsReportsRestController {
+	private function create_controller( bool $native_register, bool $reports_enabled, bool $has_account = true ): WooPaymentsReportsRestController {
 		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_native_register' ) )
@@ -576,9 +595,14 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_reports_enabled' ) )
+			->onlyMethods( array( 'has_account', 'is_reports_enabled' ) )
 			->getMock();
 		$account_service->method( 'is_reports_enabled' )->willReturn( $reports_enabled );
+		if ( $reports_enabled ) {
+			$account_service->method( 'has_account' )->willReturn( $has_account );
+		} else {
+			$account_service->expects( $this->never() )->method( 'has_account' );
+		}
 
 		$controller = new WooPaymentsReportsRestController();
 		$controller->init( $arbiter, $this->api_client, $account_service, $this->create_order_service() );

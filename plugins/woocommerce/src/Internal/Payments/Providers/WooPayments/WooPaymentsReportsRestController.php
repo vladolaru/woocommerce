@@ -57,6 +57,13 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	private WooPaymentsApiClient $api_client;
 
 	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * WooPayments local order context service.
 	 *
 	 * @var WooPaymentsMoneyMovementOrderService
@@ -79,10 +86,10 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 		WooPaymentsAccountService $account_service,
 		WooPaymentsMoneyMovementOrderService $order_service
 	): void {
-		$this->arbiter       = $arbiter;
-		$this->api_client    = $api_client;
-		$this->order_service = $order_service;
-		unset( $account_service );
+		$this->arbiter         = $arbiter;
+		$this->api_client      = $api_client;
+		$this->account_service = $account_service;
+		$this->order_service   = $order_service;
 	}
 
 	/**
@@ -119,7 +126,7 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function check_permission(): bool {
-		return current_user_can( 'manage_woocommerce' );
+		return current_user_can( 'manage_woocommerce' ) && $this->account_service->is_reports_enabled() && $this->account_service->has_account();
 	}
 
 	/**

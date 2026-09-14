@@ -188,6 +188,29 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Reports availability reads the preserved server flag for each multisite blog.
+	 * @group multisite
+	 */
+	public function test_reports_availability_is_isolated_across_multisite_blog_switches(): void {
+		$this->skipWithoutMultisite();
+		update_option( 'wcpay_account_data', array( 'data' => array( 'reports_area_enabled' => true ) ) );
+		update_option( '_wcpay_feature_reports_area', '0' );
+
+		$sut = $this->create_service();
+		$this->assertTrue( $sut->is_reports_enabled() );
+
+		$blog_id                    = self::factory()->blog->create();
+		$this->multisite_blog_ids[] = $blog_id;
+		switch_to_blog( $blog_id );
+		update_option( 'wcpay_account_data', array( 'data' => array( 'reports_area_enabled' => false ) ) );
+		update_option( '_wcpay_feature_reports_area', '1' );
+		$this->assertFalse( $sut->is_reports_enabled() );
+
+		restore_current_blog();
+		$this->assertTrue( $sut->is_reports_enabled() );
+	}
+
+	/**
 	 * @testdox Should expose whether the native WooPayments gateway is enabled.
 	 */
 	public function test_exposes_gateway_enabled_state_from_gateway_settings(): void {
@@ -898,46 +921,69 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose Reports eligibility from the preserved feature flag when an account exists.
+	 * @testdox Reports availability follows preserved server values before the local fallback without a refresh.
+	 * @dataProvider reports_availability_provider
+	 *
+	 * @param mixed  $server_value Server Reports flag.
+	 * @param bool   $include_server_value Whether to preserve the server Reports flag.
+	 * @param string $local_value Local Reports fallback value.
+	 * @param bool   $expected Whether Reports should be available.
 	 */
-	public function test_exposes_reports_feature_flag_from_preserved_option(): void {
-		update_option( 'wcpay_account_data', array( 'data' => $this->get_valid_live_account_payload() ) );
+	public function test_reports_availability_follows_preserved_server_values_before_local_fallback( $server_value, bool $include_server_value, string $local_value, bool $expected ): void {
+		$account_data = $this->get_valid_live_account_payload();
+		if ( $include_server_value ) {
+			$account_data['reports_area_enabled'] = $server_value;
+		}
+		update_option( 'wcpay_account_data', array( 'data' => $account_data ) );
+		update_option( '_wcpay_feature_reports_area', $local_value );
+		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload() );
+		$sut        = $this->create_service_with_api_client( $api_client );
+
+		$this->assertSame( $expected, $sut->is_reports_enabled() );
+		$this->assertSame( 0, $api_client->calls, 'Resolving Reports availability should not refresh account data.' );
+	}
+
+	/**
+	 * Reports availability payload fixtures.
+	 *
+	 * @return array<string,array{mixed,bool,string,bool}>
+	 */
+	public static function reports_availability_provider(): array {
+		return array(
+			'server true overrides local off'     => array( true, true, '0', true ),
+			'server false overrides local on'     => array( false, true, '1', false ),
+			'missing server value falls back on'  => array( null, false, '1', true ),
+			'missing server value falls back off' => array( null, false, '0', false ),
+			'null server value falls back on'     => array( null, true, '1', true ),
+			'null server value falls back off'    => array( null, true, '0', false ),
+			'truthy string server value enables'  => array( 'false', true, '0', true ),
+			'falsey string server value disables' => array( '0', true, '1', false ),
+		);
+	}
+
+	/**
+	 * @testdox Reports local fallback does not require an account.
+	 */
+	public function test_reports_local_fallback_does_not_require_an_account(): void {
 		update_option( '_wcpay_feature_reports_area', '1' );
+		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload() );
+		$sut        = $this->create_service_with_api_client( $api_client );
 
-		$sut = $this->create_service();
-
-		$this->assertTrue( method_exists( $sut, 'is_reports_enabled' ), 'Reports eligibility should be part of the native account service contract.' );
 		$this->assertTrue( $sut->is_reports_enabled() );
-
-		update_option( '_wcpay_feature_reports_area', '0' );
-		$sut = $this->create_service();
-
-		$this->assertFalse( $sut->is_reports_enabled() );
+		$this->assertSame( 0, $api_client->calls, 'Reports local fallback should not refresh account data.' );
 	}
 
 	/**
-	 * @testdox Should fail closed for Reports when the flag is enabled but no account exists.
+	 * @testdox Reports availability does not refresh account data when no server flag is preserved.
 	 */
-	public function test_reports_feature_flag_requires_an_account(): void {
-		update_option( '_wcpay_feature_reports_area', '1' );
-
-		$sut = $this->create_service();
-
-		$this->assertTrue( method_exists( $sut, 'is_reports_enabled' ), 'Reports eligibility should be part of the native account service contract.' );
-		$this->assertFalse( $sut->is_reports_enabled() );
-	}
-
-	/**
-	 * @testdox Should not read account data when the Reports feature flag is disabled.
-	 */
-	public function test_reports_feature_flag_disabled_short_circuits_account_read(): void {
+	public function test_reports_availability_does_not_refresh_account_data_without_a_server_flag(): void {
 		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload() );
 		$sut        = $this->create_service_with_api_client( $api_client );
 
 		update_option( '_wcpay_feature_reports_area', '0' );
 
 		$this->assertFalse( $sut->is_reports_enabled() );
-		$this->assertSame( 0, $api_client->calls, 'Disabled Reports should not trigger an account refresh.' );
+		$this->assertSame( 0, $api_client->calls, 'Resolving Reports availability should not trigger an account refresh.' );
 	}
 
 	/**
@@ -1124,6 +1170,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 						),
 					),
 					'pre_check_save_my_info'    => true,
+					'reports_area_enabled'      => true,
 					'account_details'           => array(
 						'business_type' => 'individual',
 					),
@@ -1153,6 +1200,8 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $result, $refreshed );
 		$this->assertArrayHasKey( 'fraud_mitigation_settings', $cached['data'] );
 		$this->assertArrayHasKey( 'account_details', $cached['data'] );
+		$this->assertTrue( $cached['data']['reports_area_enabled'] );
+		$this->assertTrue( $sut->is_reports_enabled() );
 		$this->assertSame( 'acct_native_123', $sut->get_account_id() );
 	}
 
