@@ -216,8 +216,11 @@ class WooPaymentsIntentRequestBuilder {
 	 */
 	public function setup_intent_request_data( PaymentContext $context, string $payment_credential, string $customer_id, bool $is_recurring ): array {
 		$order                = $context->get_order();
+		$provider_data        = $context->get_provider_data();
+		$is_renewal           = ! empty( $provider_data['scheduled_subscription_payment'] );
+		$is_recurring         = $is_renewal || $is_recurring;
 		$payment_type         = $is_recurring ? 'recurring' : 'single';
-		$subscription_payment = 'recurring' === $payment_type ? 'initial' : 'no';
+		$subscription_payment = $is_renewal ? 'renewal' : ( $is_recurring ? 'initial' : 'no' );
 		$payment_method_types = $this->payment_method_types_for_request( $context, (string) $order->get_currency() );
 		$request_data         = array(
 			'customer'             => $customer_id,
@@ -229,10 +232,9 @@ class WooPaymentsIntentRequestBuilder {
 			'payment_method_types' => $payment_method_types,
 		);
 
-		// Setup intents are always customer-present, so a link/sepa type must
-		// carry the same online mandate acceptance the charge path pairs with
-		// it — the provider refuses a Link setup intent without one.
-		if ( self::is_mandate_data_required( $payment_method_types ) ) {
+		// Customer-present Link and SEPA setup intents need online acceptance,
+		// but scheduled renewals are merchant-initiated and must not fabricate it.
+		if ( ! $is_renewal && self::is_mandate_data_required( $payment_method_types ) ) {
 			$mandate_data = self::mandate_data( $order );
 			if ( null !== $mandate_data ) {
 				$request_data['mandate_data'] = $mandate_data;
@@ -243,7 +245,7 @@ class WooPaymentsIntentRequestBuilder {
 			$request_data['payment_method'] = $payment_credential;
 		}
 
-		return WooPaymentsPlatformPaymentMethodContext::from_provider_data( $context->get_provider_data() )->apply_to_request_data( $request_data );
+		return WooPaymentsPlatformPaymentMethodContext::from_provider_data( $provider_data )->apply_to_request_data( $request_data );
 	}
 
 	/**

@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
@@ -30,6 +31,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use WC_Order;
+use WC_Payment_Token;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
 use WP_Error;
@@ -2672,6 +2674,111 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Zero-total scheduled Link renewals should omit online mandate acceptance at transport.
+	 */
+	public function test_zero_total_scheduled_link_renewal_omits_online_mandate_at_transport(): void {
+		$user_id          = $this->factory()->user->create();
+		$order            = $this->create_woopayments_order( '0.00' );
+		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$saved_token      = $this->create_link_token( $user_id, 'pm_link' );
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/** @var array<string,mixed> */
+			public array $last_request_data = array();
+
+			/** @var string */
+			public string $last_idempotency_key = '';
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a setup intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				$this->last_request_data    = $request_data;
+				$this->last_idempotency_key = $idempotency_key;
+
+				return array(
+					'id'             => 'seti_renewal',
+					'status'         => 'succeeded',
+					'client_secret'  => 'seti_renewal_secret_abc',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_link',
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+
+		$order->set_customer_id( $user_id );
+		$order->set_customer_ip_address( '203.0.113.8' );
+		$order->add_payment_token( $saved_token );
+		$order->save();
+
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_native' );
+
+		$token_service = $this->create_single_order_resolution_token_service( $saved_token, $order, 'pm_link', 'link' );
+		$server_keys   = array( 'HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR' );
+		$server_state  = array();
+		foreach ( $server_keys as $server_key ) {
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- The test restores raw superglobal state exactly.
+			$server_value                = $_SERVER[ $server_key ] ?? null;
+			$server_state[ $server_key ] = array(
+				'present' => array_key_exists( $server_key, $_SERVER ),
+				'value'   => $server_value,
+			);
+			unset( $_SERVER[ $server_key ] );
+		}
+
+		try {
+			$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
+			$outcome = $sut->charge(
+				PaymentContext::for_checkout(
+					$order,
+					OrderPaymentStore::GATEWAY_ID,
+					'',
+					array( 'payment_token' => (string) $saved_token->get_id() ),
+					array( 'scheduled_subscription_payment' => true )
+				),
+				'key_zero_renewal'
+			);
+
+			$this->assertSame( 'key_zero_renewal', $api_client->last_idempotency_key );
+			$this->assertSame( 'cus_native', $api_client->last_request_data['customer'] );
+			$this->assertSame( 'pm_link', $api_client->last_request_data['payment_method'] );
+			$this->assertSame( array( 'card', 'link' ), $api_client->last_request_data['payment_method_types'] );
+			$this->assertArrayNotHasKey( 'mandate_data', $api_client->last_request_data );
+			$this->assertInstanceOf( WooPaymentsPaymentType::class, $api_client->last_request_data['metadata']['payment_type'] );
+			$this->assertSame( 'recurring', (string) $api_client->last_request_data['metadata']['payment_type'] );
+			$this->assertSame( 'renewal', $api_client->last_request_data['metadata']['subscription_payment'] );
+			$this->assertSame( 'regular_subscription', $api_client->last_request_data['metadata']['payment_context'] );
+			$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		} finally {
+			foreach ( $server_state as $server_key => $state ) {
+				if ( $state['present'] ) {
+					$_SERVER[ $server_key ] = $state['value'];
+				} else {
+					unset( $_SERVER[ $server_key ] );
+				}
+			}
+		}
+	}
+
+	/**
 	 * @testdox Scheduled renewal failures normalize unusable saved payment methods without changing other outcome data.
 	 *
 	 * @dataProvider unusable_saved_method_transport_failure_data
@@ -4815,6 +4922,32 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Create a token service that permits one order-scoped saved-credential resolution.
+	 *
+	 * @param WC_Payment_Token $token               Saved WooCommerce token.
+	 * @param WC_Order         $order               Renewal order that owns the token.
+	 * @param string           $payment_method_id   Provider payment method ID.
+	 * @param string           $payment_method_type Provider payment method type.
+	 * @return WooPaymentsTokenService
+	 */
+	private function create_single_order_resolution_token_service( WC_Payment_Token $token, WC_Order $order, string $payment_method_id, string $payment_method_type ): WooPaymentsTokenService {
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'resolve_payment_method_type_from_order_token_id', 'resolve_payment_method_id_from_order_token_id' ) )
+			->getMock();
+		$token_service->expects( $this->once() )
+			->method( 'resolve_payment_method_type_from_order_token_id' )
+			->with( (string) $token->get_id(), $this->identicalTo( $order ) )
+			->willReturn( $payment_method_type );
+		$token_service->expects( $this->once() )
+			->method( 'resolve_payment_method_id_from_order_token_id' )
+			->with( (string) $token->get_id(), $this->identicalTo( $order ) )
+			->willReturn( $payment_method_id );
+
+		return $token_service;
+	}
+
+	/**
 	 * Create a persisted WooPayments card token.
 	 *
 	 * @param int    $user_id           User ID.
@@ -4830,6 +4963,24 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$token->set_last4( '4242' );
 		$token->set_expiry_month( '12' );
 		$token->set_expiry_year( '2030' );
+		$token->save();
+
+		return $token;
+	}
+
+	/**
+	 * Create a persisted WooPayments Link token.
+	 *
+	 * @param int    $user_id           User ID.
+	 * @param string $payment_method_id Provider payment method ID.
+	 * @return WooPaymentsLinkToken
+	 */
+	private function create_link_token( int $user_id, string $payment_method_id ): WooPaymentsLinkToken {
+		$token = new WooPaymentsLinkToken();
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_user_id( $user_id );
+		$token->set_token( $payment_method_id );
+		$token->set_email( 'buyer@example.com' );
 		$token->save();
 
 		return $token;
