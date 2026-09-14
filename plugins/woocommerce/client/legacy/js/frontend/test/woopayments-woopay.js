@@ -215,6 +215,45 @@ describe( 'WooPayments WooPay checkout', () => {
 			);
 		} );
 
+	test( 'adds a classic variable product when its button has no value', async () => {
+		document.body.innerHTML =
+			'<form class="variations_form cart">' +
+			'<input type="hidden" name="product_id" value="257" />' +
+			'<input type="hidden" name="variation_id" value="263" />' +
+			'<select name="attribute_pa_color"><option value="blue" selected>Blue</option></select>' +
+			'<input type="number" name="quantity" value="2" />' +
+			'<button type="submit" class="single_add_to_cart_button" name="add-to-cart">Add to cart</button>' +
+			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
+			'</form>';
+		window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
+		window.wcpay_core_woopay_config.woopayButton.context = 'product';
+
+		require( '../woopayments-woopay' );
+
+		document.querySelector( '#wcpay-woopay-button button' ).click();
+		await flushPromises();
+
+		expect( global.jQuery.post ).toHaveBeenNthCalledWith(
+			1,
+			'/?wc-ajax=wcpay_add_to_cart',
+			expect.objectContaining( {
+				security: 'add-to-cart-nonce',
+				product_id: '257',
+				variation_id: '263',
+				attribute_pa_color: 'blue',
+				quantity: '2',
+			} )
+		);
+		expect( global.jQuery.post ).toHaveBeenNthCalledWith(
+			2,
+			'/?wc-ajax=wcpay_init_woopay',
+			expect.objectContaining( {
+				_wpnonce: 'init-nonce',
+				user_session: 'qwerty123',
+			} )
+		);
+	} );
+
 		test( 'sends first-party WooPay session data through WooPay Connect before redirecting', async () => {
 			const postMessage = jest.fn();
 			Object.defineProperty( window.HTMLIFrameElement.prototype, 'contentWindow', {
