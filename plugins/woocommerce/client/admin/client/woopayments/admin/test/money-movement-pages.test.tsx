@@ -5905,6 +5905,95 @@ describe( 'WooPayments money movement pages', () => {
 		expect( screen.queryByText( /· Dispute/ ) ).not.toBeInTheDocument();
 	} );
 
+	it( 'qualifies every provider dispute timeline event for known disputes', () => {
+		render(
+			<WooPaymentsTransactionTimeline
+				events={ [
+					{ type: 'dispute_needs_response', dispute_id: 'dp_first' },
+					{ type: 'dispute_in_review', dispute_id: 'dp_second' },
+					{ type: 'dispute_won', dispute_id: 'dp_first' },
+					{ type: 'dispute_lost', dispute_id: 'dp_second' },
+					{
+						type: 'dispute_warning_closed',
+						dispute_id: 'dp_first',
+					},
+					{
+						type: 'dispute_charge_refunded',
+						dispute_id: 'dp_second',
+					},
+					{
+						type: 'dispute_needs_response',
+						dispute_id: 'dp_unknown',
+					},
+					{ type: 'captured', amount: 4000, currency: 'usd' },
+				] }
+				disputeOrder={ {
+					orderById: { dp_first: 1, dp_second: 2 },
+					orderedDisputes: [],
+					total: 2,
+				} }
+			/>
+		);
+
+		expect(
+			screen.getByText( 'Dispute needs response · Dispute 1 of 2' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Dispute in review · Dispute 2 of 2' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Dispute won · Dispute 1 of 2' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Dispute lost · Dispute 2 of 2' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Dispute warning closed · Dispute 1 of 2' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Dispute charge refunded · Dispute 2 of 2' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Dispute needs response' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'A payment of $40.00 was successfully charged.' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'preserves provider dispute labels when events include amounts', () => {
+		render(
+			<WooPaymentsTransactionTimeline
+				events={ [
+					{
+						type: 'dispute_needs_response',
+						dispute_id: 'dp_first',
+						amount: 1000,
+						currency: 'usd',
+					},
+					{
+						type: 'dispute_won',
+						dispute_id: 'dp_second',
+						amount: 2000,
+						currency: 'usd',
+					},
+				] }
+				disputeOrder={ {
+					orderById: { dp_first: 1, dp_second: 2 },
+					orderedDisputes: [],
+					total: 2,
+				} }
+			/>
+		);
+
+		expect(
+			screen.getByText( 'Dispute needs response · Dispute 1 of 2' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Dispute won · Dispute 2 of 2' )
+		).toBeInTheDocument();
+	} );
+
 	it( 'announces timeline errors through the stable transaction detail status region', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_test',

@@ -409,6 +409,22 @@ const mapTimelineEvent = (
 				},
 			];
 		}
+		case 'dispute_needs_response':
+		case 'dispute_in_review':
+		case 'dispute_won':
+		case 'dispute_lost':
+		case 'dispute_warning_closed':
+		case 'dispute_charge_refunded':
+			return [
+				{
+					message: qualifyDisputeMessage(
+						getFallbackMessage( event ),
+						event,
+						disputeOrder
+					),
+					date,
+				},
+			];
 		case 'financing_paydown': {
 			const message = createAmountMessage(
 				/* translators: %s: formatted amount. */
