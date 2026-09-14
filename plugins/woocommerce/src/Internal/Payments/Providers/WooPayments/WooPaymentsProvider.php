@@ -114,10 +114,12 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	 * @return array<string,array<string,array<int,class-string>>> Root classes in registration order.
 	 */
 	public static function get_bootstrap_root_matrix(): array {
-		$connected_admin           = array(
+		$connected_rest_controllers = WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots();
+		$connected_admin            = array(
 			WooPaymentsCutoverController::class,
 			WooPaymentsCutoverReconciliationJob::class,
 			WooPaymentsAdminNavigationController::class,
+			WooPaymentsAdminRestRouteRegistrar::class,
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
 			LegacyAdminLinkHandler::class,
@@ -133,7 +135,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsOperationalQueueService::class,
 			WooPaymentsTestModeOrderEmailService::class,
 		);
-		$connected_ajax            = array(
+		$connected_ajax             = array(
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
 			WooPaymentsCustomerService::class,
@@ -146,33 +148,26 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsOperationalQueueService::class,
 			WooPaymentsTestModeOrderEmailService::class,
 		);
-		$connected_rest            = array(
-			WooPaymentsAccountService::class,
-			WooPaymentsWebhookReliabilityService::class,
-			WooPaymentsMerchantRestController::class,
-			WooPaymentsCustomerService::class,
-			WooPaymentsOrderAdminActionsController::class,
-			WooPaymentsWooPayOrderStatusSync::class,
-			WooPaymentsApplePayDomainService::class,
-			WooPaymentsWebhookRestController::class,
-			WooPaymentsMobileRestController::class,
-			WooPaymentsAccountSessionRestController::class,
-			WooPaymentsCustomersRestController::class,
-			WooPaymentsDepositsRestController::class,
-			WooPaymentsPaymentDetailsRestController::class,
-			WooPaymentsAuthorizationsRestController::class,
-			WooPaymentsTransactionsRestController::class,
-			WooPaymentsDisputesRestController::class,
-			WooPaymentsDisputeReadinessRestController::class,
-			WooPaymentsCapitalRestController::class,
-			WooPaymentsDocumentsRestController::class,
-			WooPaymentsReportsRestController::class,
-			WooPaymentsTosRestController::class,
-			WooPaymentsOrderTrackingService::class,
-			WooPaymentsOperationalQueueService::class,
-			WooPaymentsTestModeOrderEmailService::class,
+		$connected_rest             = array_merge(
+			array(
+				WooPaymentsAccountService::class,
+				WooPaymentsWebhookReliabilityService::class,
+			),
+			array_slice( $connected_rest_controllers, 0, 1 ),
+			array(
+				WooPaymentsCustomerService::class,
+				WooPaymentsOrderAdminActionsController::class,
+				WooPaymentsWooPayOrderStatusSync::class,
+				WooPaymentsApplePayDomainService::class,
+			),
+			array_slice( $connected_rest_controllers, 1 ),
+			array(
+				WooPaymentsOrderTrackingService::class,
+				WooPaymentsOperationalQueueService::class,
+				WooPaymentsTestModeOrderEmailService::class,
+			)
 		);
-		$connected_cron            = array(
+		$connected_cron             = array(
 			WooPaymentsCutoverReconciliationJob::class,
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
@@ -185,11 +180,11 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsOrderAdminActionsController::class,
 			WooPaymentsTestModeOrderEmailService::class,
 		);
-		$active_prefix             = array(
+		$active_prefix              = array(
 			NativePaymentsGatewayRegistry::class,
 			self::class,
 		);
-		$active_maintenance_prefix = array_merge(
+		$active_maintenance_prefix  = array_merge(
 			array( WooPaymentsCutoverNormalizationRunner::class ),
 			$active_prefix
 		);

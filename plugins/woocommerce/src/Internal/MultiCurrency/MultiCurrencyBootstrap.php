@@ -21,6 +21,13 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 final class MultiCurrencyBootstrap {
 
+	/**
+	 * Runtime container retained for an admin-originated internal REST dispatch.
+	 *
+	 * @var Container|RuntimeContainer|null
+	 */
+	private $admin_rest_container = null;
+
 	/** Base lifecycle root. @var array<int,class-string> */
 	private const BASE = array(
 		MultiCurrencyStoreCurrencyLifecycleController::class,
@@ -125,9 +132,17 @@ final class MultiCurrencyBootstrap {
 			return;
 		}
 
-		$roots = $this->get_core_roots( $container, $this->classify_request( $is_rest_api_request ) );
+		$request = $this->classify_request( $is_rest_api_request );
+		$roots   = $this->get_core_roots( $container, $request );
 		if ( empty( $roots ) ) {
 			return;
+		}
+
+		if ( 'admin' === $request ) {
+			$this->admin_rest_container = $container;
+			if ( false === has_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ) ) ) {
+				add_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ), 0 );
+			}
 		}
 
 		if ( array( MultiCurrencyExplicitPriceController::class ) !== $roots ) {
@@ -135,6 +150,25 @@ final class MultiCurrencyBootstrap {
 		}
 
 		$this->register_roots( $container, $roots );
+	}
+
+	/**
+	 * Register the native Multi-Currency REST controller during an internal dispatch from an admin page.
+	 *
+	 * @since 11.2.0
+	 */
+	public function register_admin_rest_controller(): void {
+		if ( null === $this->admin_rest_container ) {
+			return;
+		}
+
+		/**
+		 * Native Multi-Currency REST controller.
+		 *
+		 * @var MultiCurrencyRestController $controller
+		 */
+		$controller = $this->admin_rest_container->get( MultiCurrencyRestController::class );
+		$controller->register();
 	}
 
 	/**
