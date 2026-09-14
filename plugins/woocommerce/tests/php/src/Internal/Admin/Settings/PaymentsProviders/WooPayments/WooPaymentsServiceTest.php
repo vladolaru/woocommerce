@@ -86,6 +86,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 	private const PENDING_PAYMENT_METHODS_PROJECTION_OPTION = 'woocommerce_woopayments_pending_payment_method_projection';
 
+	private const TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT = 'test_drive_account_settings_for_live_account';
+
 	/**
 	 * Set up test.
 	 */
@@ -248,6 +250,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		remove_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_project_pending_onboarding_payment_methods' ) );
 		delete_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
+		delete_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
 
 		parent::tearDown();
 	}
@@ -843,6 +846,110 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native KYC finalization restores test-drive payment methods and keeps Link mutually exclusive with WooPay.
+	 */
+	public function test_finish_native_onboarding_kyc_session_restores_test_drive_payment_methods(): void {
+		$fresh_account = $this->get_native_finalize_projection_account(
+			array(
+				'capabilities' => array(
+					'card_payments' => 'active',
+					'link_payments' => 'active',
+				),
+				'fees'         => array(
+					'card' => array(),
+					'link' => array(),
+				),
+			)
+		);
+		$this->arrange_native_finalize_projection( array( $fresh_account ), array( 'card' => true ) );
+		set_transient(
+			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
+			array(
+				'capabilities'            => array(
+					'card_payments' => array( 'requested' => 'true' ),
+					'link_payments' => array( 'requested' => 'true' ),
+				),
+				'enabled_payment_methods' => array( 'card', 'link' ),
+			),
+			HOUR_IN_SECONDS
+		);
+		update_option(
+			WooPaymentsSettingsService::SETTINGS_OPTION,
+			array(
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertTrue( $response['success'] );
+		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'no', $settings['platform_checkout'] );
+		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
+	}
+
+	/**
+	 * @testdox Native KYC finalization leaves WooPay enabled when no restored method conflicts with it.
+	 */
+	public function test_finish_native_onboarding_kyc_session_preserves_woopay_without_link(): void {
+		$this->arrange_native_finalize_projection(
+			array( $this->get_native_finalize_projection_account() ),
+			array( 'card' => true )
+		);
+		update_option(
+			WooPaymentsSettingsService::SETTINGS_OPTION,
+			array(
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+
+		$this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertSame( 'yes', get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['platform_checkout'] );
+	}
+
+	/**
+	 * @testdox Native KYC finalization ignores and consumes malformed test-drive payment-method state.
+	 */
+	public function test_finish_native_onboarding_kyc_session_ignores_malformed_test_drive_payment_methods(): void {
+		$this->arrange_native_finalize_projection(
+			array(
+				$this->get_native_finalize_projection_account(
+					array(
+						'capabilities' => array( 'link_payments' => 'active' ),
+						'fees'         => array( 'link' => array() ),
+					)
+				),
+			),
+			array( 'card' => true )
+		);
+		set_transient(
+			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
+			array(
+				'enabled_payment_methods' => array( '', array( 'link' ), 'not-a-payment-method', 'l!i@n#k' ),
+			),
+			HOUR_IN_SECONDS
+		);
+		update_option(
+			WooPaymentsSettingsService::SETTINGS_OPTION,
+			array(
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+
+		$this->sut->finish_onboarding_kyc_session( 'US' );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( array( 'card' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', $settings['platform_checkout'] );
+		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
+	}
+
+	/**
 	 * @testdox Native KYC finalization survives account refresh failure and retries payment-method projection after a later refresh.
 	 */
 	public function test_finish_native_onboarding_kyc_session_defers_payment_method_projection_after_refresh_failure(): void {
@@ -881,6 +988,61 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'card', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * @testdox Native KYC finalization preserves test-drive methods across a failed refresh and restores them on retry.
+	 */
+	public function test_finish_native_onboarding_kyc_session_retries_test_drive_payment_method_restore(): void {
+		$fresh_account = $this->get_native_finalize_projection_account(
+			array(
+				'capabilities' => array(
+					'card_payments' => 'active',
+					'link_payments' => 'active',
+				),
+				'fees'         => array(
+					'card' => array(),
+					'link' => array(),
+				),
+			)
+		);
+		$fixture       = $this->arrange_native_finalize_projection(
+			array(
+				new \RuntimeException( 'Temporary account refresh failure.' ),
+				$fresh_account,
+			),
+			array( 'card' => true )
+		);
+		set_transient(
+			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
+			array(
+				'capabilities'            => array( 'link_payments' => array( 'requested' => 'true' ) ),
+				'enabled_payment_methods' => array( 'card', 'link' ),
+			),
+			HOUR_IN_SECONDS
+		);
+		update_option(
+			WooPaymentsSettingsService::SETTINGS_OPTION,
+			array(
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertTrue( $response['success'] );
+		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
+		$this->assertNotFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+
+		$fixture['account_service']->refresh_account_data();
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'no', $settings['platform_checkout'] );
+		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
 	}
 
@@ -999,7 +1161,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 					return array( 'enabled_payment_method_ids' => array( 'card', 'ideal' ) );
 				}
 			);
-		$fixture   = $this->arrange_native_finalize_projection(
+		$fixture = $this->arrange_native_finalize_projection(
 			array(
 				$this->get_native_finalize_projection_account(),
 				$this->get_native_finalize_projection_account(),
@@ -1010,6 +1172,14 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			$settings_service
 		);
+		set_transient(
+			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
+			array(
+				'capabilities'            => array( 'card_payments' => array( 'requested' => 'true' ) ),
+				'enabled_payment_methods' => array( 'card' ),
+			),
+			HOUR_IN_SECONDS
+		);
 		$callbacks = $this->get_refresh_projection_callbacks();
 		$this->assertCount( 1, $callbacks );
 		$this->assertSame( $this->sut, $callbacks[0]['callback'][0] );
@@ -1018,10 +1188,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $response['success'] );
 		$this->assertSame( 1, $update_attempts, 'The finalization refresh should make one projection attempt.' );
 		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
+		$this->assertNotFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 
 		$fixture['account_service']->refresh_account_data();
 
 		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 	}
 
 	/**
@@ -1209,6 +1381,14 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				'test_mode' => 'yes',
 			)
 		);
+		set_transient(
+			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
+			array(
+				'capabilities'            => array( 'link_payments' => array( 'requested' => 'true' ) ),
+				'enabled_payment_methods' => array( 'card', 'link' ),
+			),
+			HOUR_IN_SECONDS
+		);
 
 		$result          = $this->sut->get_onboarding_kyc_session(
 			$location,
@@ -1222,6 +1402,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'accs_secret_live', $result['clientSecret'] );
 		$this->assertTrue( $captured_call['live_account'] );
+		$this->assertSame( array( 'requested' => 'true' ), $captured_call['account_data']['capabilities']['link_payments'] );
+		$this->assertNotFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 		$this->assertIsArray( $settings );
 		$this->assertSame( 'no', $settings['test_mode'] );
 		$this->assertSame( 'pk_live_native', $account_service->get_publishable_key() );
@@ -1530,6 +1712,109 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native test-drive disable captures enabled payment methods before account deletion.
+	 */
+	public function test_disable_test_account_captures_native_test_drive_payment_methods_before_delete(): void {
+		$snapshot_at_delete = false;
+		$api_client         = new class( $snapshot_at_delete ) extends WooPaymentsApiClient {
+			/**
+			 * Snapshot observed when account deletion begins.
+			 *
+			 * @var mixed
+			 */
+			private $snapshot_at_delete;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param mixed $snapshot_at_delete Snapshot observed when account deletion begins.
+			 */
+			public function __construct( &$snapshot_at_delete ) {
+				$this->snapshot_at_delete = &$snapshot_at_delete;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Observe the transition snapshot before returning a successful deletion.
+			 *
+			 * @param bool $test_mode Whether to delete a test-mode account.
+			 * @return array<string,string>
+			 */
+			public function delete_account( bool $test_mode = false ): array {
+				if ( ! $test_mode ) {
+					throw new \LogicException( 'Expected a test-mode account deletion.' );
+				}
+
+				$this->snapshot_at_delete = get_transient( 'test_drive_account_settings_for_live_account' );
+
+				return array( 'result' => 'success' );
+			}
+		};
+
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					return ! $this->is_woopayments_class( $class_to_check );
+				},
+			)
+		);
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'        => 'acct_test_drive',
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+					'is_test_drive'     => true,
+					'is_live'           => false,
+				),
+			)
+		);
+		update_option(
+			WooPaymentsSettingsService::SETTINGS_OPTION,
+			array(
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'link', 'link', '', array( 'invalid' ) ),
+			)
+		);
+
+		$this->sut = new WooPaymentsService();
+		$this->sut->init(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$this->create_native_finalize_adapter(),
+			$this->create_legacy_runtime(),
+			$api_client,
+			$this->create_native_account_service()
+		);
+
+		$response = $this->sut->disable_test_account( 'US' );
+
+		$this->assertTrue( $response['success'] );
+		$this->assertSame(
+			array(
+				'capabilities'            => array(
+					'card_payments' => array( 'requested' => 'true' ),
+					'link_payments' => array( 'requested' => 'true' ),
+				),
+				'enabled_payment_methods' => array( 'card', 'link' ),
+			),
+			$snapshot_at_delete
+		);
+	}
+
+	/**
 	 * Test native onboarding reset immediately clears stale account readiness.
 	 *
 	 * @return void
@@ -1629,6 +1914,11 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
+		set_transient(
+			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
+			array( 'enabled_payment_methods' => array( 'card', 'link' ) ),
+			HOUR_IN_SECONDS
+		);
 
 		$this->sut = new WooPaymentsService();
 		$this->sut->init(
@@ -1648,6 +1938,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $cached );
 		$this->assertSame( array(), $cached['data'] );
 		$this->assertSame( 'no', get_option( 'wcpay_onboarding_test_mode' ) );
+		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 	}
 
 	/**
@@ -12803,22 +13094,26 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Get a fresh account payload for native finalize projection tests.
 	 *
+	 * @param array<string,mixed> $overrides Account data overrides.
 	 * @return array<string,mixed>
 	 */
-	private function get_native_finalize_projection_account(): array {
-		return array(
-			'account_id'        => 'acct_finalized_native',
-			'is_live'           => true,
-			'payments_enabled'  => true,
-			'details_submitted' => true,
-			'capabilities'      => array(
-				'card_payments'  => 'active',
-				'ideal_payments' => 'active',
+	private function get_native_finalize_projection_account( array $overrides = array() ): array {
+		return array_replace_recursive(
+			array(
+				'account_id'        => 'acct_finalized_native',
+				'is_live'           => true,
+				'payments_enabled'  => true,
+				'details_submitted' => true,
+				'capabilities'      => array(
+					'card_payments'  => 'active',
+					'ideal_payments' => 'active',
+				),
+				'fees'              => array(
+					'card'  => array(),
+					'ideal' => array(),
+				),
 			),
-			'fees'              => array(
-				'card'  => array(),
-				'ideal' => array(),
-			),
+			$overrides
 		);
 	}
 
@@ -13195,6 +13490,39 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			$steps[ $step_id ]['statuses'] ?? array(),
 			sprintf( 'The "%s" onboarding step should be marked completed on a successful disable.', $step_id )
 		);
+	}
+
+	/**
+	 * @testdox Native test-drive payment-method snapshots remain scoped to the active multisite blog.
+	 * @group ms-required
+	 */
+	public function test_native_test_drive_payment_method_snapshot_is_site_scoped(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'This assertion requires the multisite test configuration.' );
+		}
+
+		$main_site_id = get_current_blog_id();
+		$subsite_id   = self::factory()->blog->create();
+		set_transient(
+			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
+			array( 'enabled_payment_methods' => array( 'card' ) ),
+			HOUR_IN_SECONDS
+		);
+
+		switch_to_blog( $subsite_id );
+		try {
+			set_transient(
+				self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
+				array( 'enabled_payment_methods' => array( 'card', 'link' ) ),
+				HOUR_IN_SECONDS
+			);
+			$this->assertSame( array( 'card', 'link' ), $this->invoke_private_method( 'get_test_drive_enabled_payment_method_ids' ) );
+		} finally {
+			restore_current_blog();
+		}
+
+		$this->assertSame( $main_site_id, get_current_blog_id() );
+		$this->assertSame( array( 'card' ), $this->invoke_private_method( 'get_test_drive_enabled_payment_method_ids' ) );
 	}
 
 	/**

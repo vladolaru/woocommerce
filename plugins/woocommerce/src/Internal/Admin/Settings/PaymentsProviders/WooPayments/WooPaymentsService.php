@@ -105,6 +105,9 @@ class WooPaymentsService {
 	const NOX_ONBOARDING_LOCKED_KEY = 'woocommerce_woopayments_nox_onboarding_locked';
 
 	private const PENDING_PAYMENT_METHODS_PROJECTION_OPTION = 'woocommerce_woopayments_pending_payment_method_projection';
+
+	private const TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT = 'test_drive_account_settings_for_live_account';
+
 	/**
 	 * The TTL for the onboarding lock.
 	 * This is to prevent the onboarding from being locked indefinitely in case of uncaught errors.
@@ -1910,6 +1913,8 @@ class WooPaymentsService {
 			);
 		}
 
+		$this->proxy->call_function( 'delete_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
+
 		// Record an event for the onboarding reset.
 		$this->record_event(
 			self::EVENT_PREFIX . 'onboarding_reset',
@@ -1975,6 +1980,7 @@ class WooPaymentsService {
 
 			if ( $had_test_account ) {
 				if ( $this->should_use_native_onboarding_action_api() ) {
+					$this->save_native_test_drive_settings_for_live_account();
 					$response = $this->delete_native_onboarding_account( true );
 				} else {
 					// The legacy endpoint runs after releasing the shared onboarding lock.
@@ -3135,6 +3141,15 @@ class WooPaymentsService {
 	private function create_native_onboarding_kyc_session( array $self_assessment_data, array $capabilities ): array {
 		$setup_mode = $this->provider->is_in_dev_mode( $this->get_payment_gateway() ) ? 'test' : 'live';
 		$this->set_native_onboarding_test_mode( 'live' !== $setup_mode );
+		if ( 'live' === $setup_mode ) {
+			$registry = new WooPaymentsPaymentMethodRegistry();
+			foreach ( $this->get_test_drive_enabled_payment_method_ids() as $payment_method_id ) {
+				$definition = $registry->get( $payment_method_id );
+				if ( null !== $definition ) {
+					$capabilities[ $definition->get_account_capability_key() ] = true;
+				}
+			}
+		}
 
 		$session = $this->get_native_api_client()->initialize_onboarding_embedded_kyc(
 			'live' === $setup_mode,
@@ -3241,6 +3256,8 @@ class WooPaymentsService {
 	 * @return bool Whether the projection completed or deliberately had nothing to update.
 	 */
 	private function update_native_enabled_payment_methods_from_nox_profile( string $location, array $account_data ): bool {
+		$test_drive_settings      = $this->proxy->call_function( 'get_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
+		$has_test_drive_settings  = false !== $test_drive_settings;
 		$selected_payment_methods = $this->get_nox_profile_onboarding_step_data_entry(
 			self::ONBOARDING_STEP_PAYMENT_METHODS,
 			$location,
@@ -3266,10 +3283,21 @@ class WooPaymentsService {
 				continue;
 			}
 
-			$selected_definitions[] = $definition;
+			$selected_definitions[ $definition->get_id() ] = $definition;
+		}
+
+		foreach ( $this->get_test_drive_enabled_payment_method_ids() as $payment_method_id ) {
+			$definition = $registry->get( $payment_method_id );
+			if ( null !== $definition ) {
+				$selected_definitions[ $definition->get_id() ] = $definition;
+			}
 		}
 
 		if ( empty( $selected_definitions ) ) {
+			if ( $has_test_drive_settings ) {
+				$this->proxy->call_function( 'delete_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
+			}
+
 			return true;
 		}
 
@@ -3302,13 +3330,98 @@ class WooPaymentsService {
 			$enabled_payment_methods[] = $definition->get_id();
 		}
 
-		$result = $settings_service->update_settings(
-			array(
-				'enabled_payment_method_ids' => array_values( array_unique( array_map( 'strval', $enabled_payment_methods ) ) ),
-			)
-		);
+		$enabled_payment_methods = array_values( array_unique( array_map( 'strval', $enabled_payment_methods ) ) );
+		$params                  = array( 'enabled_payment_method_ids' => $enabled_payment_methods );
+		if ( in_array( 'link', $enabled_payment_methods, true ) ) {
+			$params['is_woopay_enabled'] = false;
+		}
+
+		$result = $settings_service->update_settings( $params );
+		if ( ! is_wp_error( $result ) && $has_test_drive_settings ) {
+			$this->proxy->call_function( 'delete_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
+		}
 
 		return ! is_wp_error( $result );
+	}
+
+	/**
+	 * Save enabled native test-drive payment methods before deleting the account.
+	 */
+	private function save_native_test_drive_settings_for_live_account(): void {
+		$settings                = $this->proxy->call_function( 'get_option', WooPaymentsSettingsService::SETTINGS_OPTION, array() );
+		$enabled_payment_methods = is_array( $settings ) && is_array( $settings['upe_enabled_payment_method_ids'] ?? null )
+			? $this->normalize_test_drive_payment_method_ids( $settings['upe_enabled_payment_method_ids'] )
+			: array();
+
+		$this->proxy->call_function(
+			'set_transient',
+			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
+			array(
+				'capabilities'            => $this->get_test_drive_payment_method_capabilities( $enabled_payment_methods ),
+				'enabled_payment_methods' => $enabled_payment_methods,
+			),
+			HOUR_IN_SECONDS
+		);
+	}
+
+	/**
+	 * Read normalized payment method IDs from the current site's transition snapshot.
+	 *
+	 * @return string[]
+	 */
+	private function get_test_drive_enabled_payment_method_ids(): array {
+		$settings = $this->proxy->call_function( 'get_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
+		if ( ! is_array( $settings ) || ! is_array( $settings['enabled_payment_methods'] ?? null ) ) {
+			return array();
+		}
+
+		return $this->normalize_test_drive_payment_method_ids( $settings['enabled_payment_methods'] );
+	}
+
+	/**
+	 * Normalize payment method IDs against the native registry vocabulary.
+	 *
+	 * @param array<int,mixed> $payment_method_ids Payment method IDs.
+	 * @return string[]
+	 */
+	private function normalize_test_drive_payment_method_ids( array $payment_method_ids ): array {
+		$registry       = new WooPaymentsPaymentMethodRegistry();
+		$normalized_ids = array();
+
+		foreach ( $payment_method_ids as $payment_method_id ) {
+			if ( ! is_scalar( $payment_method_id ) ) {
+				continue;
+			}
+
+			$payment_method_id = strtolower( trim( (string) $payment_method_id ) );
+			if ( '' === $payment_method_id || sanitize_key( $payment_method_id ) !== $payment_method_id || null === $registry->get( $payment_method_id ) ) {
+				continue;
+			}
+
+			$normalized_ids[] = $payment_method_id;
+		}
+
+		return array_values( array_unique( $normalized_ids ) );
+	}
+
+	/**
+	 * Build client-compatible capability requests for captured payment methods.
+	 *
+	 * @param string[] $payment_method_ids Payment method IDs.
+	 * @return array<string,array{requested:string}>
+	 */
+	private function get_test_drive_payment_method_capabilities( array $payment_method_ids ): array {
+		$registry     = new WooPaymentsPaymentMethodRegistry();
+		$capabilities = array();
+
+		foreach ( $payment_method_ids as $payment_method_id ) {
+			$definition = $registry->get( $payment_method_id );
+			if ( null !== $definition ) {
+				$capabilities[ $definition->get_account_capability_key() ] = array( 'requested' => 'true' );
+			}
+		}
+
+		return $capabilities;
 	}
 
 	/**
