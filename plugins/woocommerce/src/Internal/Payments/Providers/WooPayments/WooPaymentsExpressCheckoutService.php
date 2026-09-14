@@ -344,10 +344,6 @@ class WooPaymentsExpressCheckoutService {
 			return false;
 		}
 
-		if ( '' === $order->get_billing_email() ) {
-			return false;
-		}
-
 		$key = $this->get_pay_for_order_key();
 		if ( '' === $key || ! hash_equals( $order->get_order_key(), $key ) ) {
 			return false;

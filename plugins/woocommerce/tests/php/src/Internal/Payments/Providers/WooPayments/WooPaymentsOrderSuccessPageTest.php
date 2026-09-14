@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -39,6 +40,10 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			remove_action( 'woocommerce_order_details_before_order_table', array( $page, 'unregister_payment_method_title_override' ) );
 			remove_action( 'woocommerce_order_details_before_order_table', array( $page, 'maybe_render_multibanco_payment_instructions' ) );
 			remove_action( 'wp_enqueue_scripts', array( $page, 'enqueue_assets' ) );
+			remove_filter( 'woocommerce_order_email_verification_required', array( $page, 'maybe_skip_email_verification_after_payment' ) );
+		}
+		if ( WC() && WC()->session ) {
+			WC()->session->set( 'wcpay_paid_intent_id', null );
 		}
 		wp_dequeue_script( 'wc-woopayments-order-success' );
 		wp_deregister_script( 'wc-woopayments-order-success' );
@@ -363,6 +368,100 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$plugin_owned = $this->create_page( false );
 		$plugin_owned->register();
 		$this->assertFalse( has_filter( 'woocommerce_thankyou_order_received_text', array( $plugin_owned, 'replace_order_received_text_for_failed_orders' ) ) );
+	}
+
+	/**
+	 * @testdox Should register the paid-intent email-verification exception only when native owns runtime.
+	 */
+	public function test_registers_paid_intent_email_verification_exception_only_when_native_owns_runtime(): void {
+		$plugin_owned = $this->create_page( false );
+		$native_owned = $this->create_page( true );
+
+		$plugin_owned->register();
+		$this->assertFalse( has_filter( 'woocommerce_order_email_verification_required', array( $plugin_owned, 'maybe_skip_email_verification_after_payment' ) ) );
+
+		$native_owned->register();
+		$this->registered_pages[] = $native_owned;
+		$this->assertSame( 10, has_filter( 'woocommerce_order_email_verification_required', array( $native_owned, 'maybe_skip_email_verification_after_payment' ) ) );
+
+		global $wp_filter;
+		$callbacks = $wp_filter['woocommerce_order_email_verification_required']->callbacks[10];
+		$matching  = array_filter(
+			$callbacks,
+			static function ( array $callback ) use ( $native_owned ): bool {
+				return array( $native_owned, 'maybe_skip_email_verification_after_payment' ) === $callback['function'];
+			}
+		);
+
+		$this->assertCount( 1, $matching );
+		$this->assertSame( 3, reset( $matching )['accepted_args'] );
+	}
+
+	/**
+	 * @testdox Should waive order-received email verification for the exact session-paid native intent.
+	 */
+	public function test_skips_email_verification_for_matching_session_paid_intent(): void {
+		$page  = $this->create_page( true );
+		$order = $this->create_thankyou_order( 'processing', OrderPaymentStore::GATEWAY_ID, 'pi_mock' );
+		WC()->session->set( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, 'pi_mock' );
+		$page->register();
+		$this->registered_pages[] = $page;
+
+		$this->assertFalse( $page->maybe_skip_email_verification_after_payment( true, $order, 'order-received' ) );
+		$this->assertFalse( apply_filters( 'woocommerce_order_email_verification_required', true, $order, 'order-received' ) );
+	}
+
+	/**
+	 * @testdox Should preserve email-verification requirements outside the exact paid-intent session match.
+	 *
+	 * @dataProvider email_verification_exception_negative_cases
+	 *
+	 * @param mixed  $required Incoming filter value.
+	 * @param string $context Filter context.
+	 * @param bool   $pass_order Whether to pass a WC order to the callback.
+	 * @param string $payment_method Payment method on the test order.
+	 * @param string $order_intent_id Order PaymentIntent ID.
+	 * @param bool   $has_session Whether a WC session is available.
+	 * @param string $session_intent_id Session PaymentIntent ID.
+	 */
+	public function test_keeps_email_verification_requirement_without_exact_paid_intent_match( $required, string $context, bool $pass_order, string $payment_method, string $order_intent_id, bool $has_session, string $session_intent_id ): void {
+		$page             = $this->create_page( true );
+		$order            = $this->create_thankyou_order( 'processing', $payment_method, $order_intent_id );
+		$original_session = WC()->session;
+
+		if ( $has_session ) {
+			WC()->session->set( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, $session_intent_id );
+		} else {
+			WC()->session = null;
+		}
+
+		try {
+			$result = $page->maybe_skip_email_verification_after_payment( $required, $pass_order ? $order : 'not-an-order', $context );
+		} finally {
+			WC()->session = $original_session;
+		}
+
+		$this->assertSame( $required, $result );
+	}
+
+	/**
+	 * Provide contexts that must not waive email verification.
+	 *
+	 * @return array<string,array{0:mixed,1:string,2:bool,3:string,4:string,5:bool,6:string}>
+	 */
+	public function email_verification_exception_negative_cases(): array {
+		return array(
+			'false input'              => array( false, 'order-received', true, OrderPaymentStore::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'nonboolean input'         => array( 'required', 'order-received', true, OrderPaymentStore::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'wrong context'            => array( true, 'checkout', true, OrderPaymentStore::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'non-order input'          => array( true, 'order-received', false, OrderPaymentStore::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'provider-suffixed method' => array( true, 'order-received', true, OrderPaymentStore::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_mock', true, 'pi_mock' ),
+			'other method'             => array( true, 'order-received', true, 'cod', 'pi_mock', true, 'pi_mock' ),
+			'absent session'           => array( true, 'order-received', true, OrderPaymentStore::GATEWAY_ID, 'pi_mock', false, 'pi_mock' ),
+			'empty session intent'     => array( true, 'order-received', true, OrderPaymentStore::GATEWAY_ID, 'pi_mock', true, '' ),
+			'empty order intent'       => array( true, 'order-received', true, OrderPaymentStore::GATEWAY_ID, '', true, 'pi_mock' ),
+			'mismatching intent'       => array( true, 'order-received', true, OrderPaymentStore::GATEWAY_ID, 'pi_order', true, 'pi_session' ),
+		);
 	}
 
 	/**

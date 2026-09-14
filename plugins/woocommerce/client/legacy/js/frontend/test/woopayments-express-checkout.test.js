@@ -830,6 +830,319 @@ describe( 'woopayments-express-checkout', () => {
 	} );
 
 	describe( 'placeOrder', () => {
+		it( 'uses the stored order identity while filling only missing contact fields from the wallet', async () => {
+			const params = baseParams( {
+				button_context: 'pay_for_order',
+				order_id: 123,
+				key: 'wc_order_key',
+				billing_email: '',
+			} );
+			const cachedCartData = cartResponse( {
+				billing_address: {
+					first_name: 'Merchant',
+					last_name: 'Order',
+					company: 'Merchant Co',
+					address_1: '10 Merchant Street',
+					address_2: 'Suite 5',
+					city: 'Berlin',
+					state: 'BE',
+					postcode: '10115',
+					country: 'DE',
+					email: '',
+					phone: '',
+				},
+				shipping_address: {
+					first_name: 'Merchant',
+					last_name: 'Order',
+					address_1: '10 Merchant Street',
+					city: 'Berlin',
+					state: 'BE',
+					postcode: '10115',
+					country: 'DE',
+					phone: '',
+				},
+			} );
+			const testables = loadModule( params );
+			testables.setState( { cachedCartData } );
+			apiFetch.mockResolvedValue( { payment_result: {} } );
+
+			await testables.placeOrder( 'ctoken_123', {
+				billingDetails: {
+					email: 'wallet@example.com',
+					phone: '(212) 555-0100',
+					address: {
+						line1: '99 Wallet Avenue',
+						city: 'New York',
+						country: 'US',
+					},
+				},
+			} );
+
+			const request = apiFetch.mock.calls[ 0 ][ 0 ];
+			expect( request ).toMatchObject( {
+				method: 'POST',
+				path: '/wc/store/v1/checkout/123',
+				data: {
+					key: 'wc_order_key',
+					billing_email: '',
+					payment_method: 'woocommerce_payments',
+					billing_address: {
+						first_name: 'Merchant',
+						last_name: 'Order',
+						company: 'Merchant Co',
+						address_1: '10 Merchant Street',
+						address_2: 'Suite 5',
+						city: 'Berlin',
+						state: 'BE',
+						postcode: '10115',
+						country: 'DE',
+						email: 'wallet@example.com',
+						phone: '2125550100',
+					},
+					shipping_address: {
+						first_name: 'Merchant',
+						last_name: 'Order',
+						address_1: '10 Merchant Street',
+						city: 'Berlin',
+						state: 'BE',
+						postcode: '10115',
+						country: 'DE',
+						phone: '2125550100',
+					},
+					payment_data: [
+						{
+							key: 'wcpay-confirmation-token',
+							value: 'ctoken_123',
+						},
+						{
+							key: 'wcpay-express-payment-method-types',
+							value: JSON.stringify( [ 'card' ] ),
+						},
+						{
+							key: 'wcpay-express-checkout-context',
+							value: 'pay_for_order',
+						},
+						{
+							key: 'wcpay-fraud-prevention-token',
+							value: '',
+						},
+					],
+					extensions: {},
+				},
+			} );
+			expect( cachedCartData.billing_address.email ).toBe( '' );
+			expect( cachedCartData.billing_address.address_1 ).toBe(
+				'10 Merchant Street'
+			);
+		} );
+
+		it( 'keeps nonempty order contact details when the wallet provides different values', async () => {
+			const testables = loadModule(
+				baseParams( {
+					button_context: 'pay_for_order',
+					order_id: 123,
+					key: 'wc_order_key',
+					billing_email: 'order@example.com',
+				} )
+			);
+			testables.setState( {
+				cachedCartData: cartResponse( {
+					billing_address: {
+						email: 'order@example.com',
+						phone: '5550100',
+					},
+					shipping_address: { phone: '5550101' },
+				} ),
+			} );
+			apiFetch.mockResolvedValue( { payment_result: {} } );
+
+			await testables.placeOrder( 'ctoken_123', {
+				billingDetails: {
+					email: 'wallet@example.com',
+					phone: '212 555 0100',
+				},
+			} );
+
+			const requestData = apiFetch.mock.calls[ 0 ][ 0 ].data;
+			expect( requestData.billing_email ).toBe( 'order@example.com' );
+			expect( requestData.billing_address.email ).toBe(
+				'order@example.com'
+			);
+			expect( requestData.billing_address.phone ).toBe( '5550100' );
+			expect( requestData.shipping_address.phone ).toBe( '5550101' );
+		} );
+
+		it.each( [
+			[ 'a successful response', null ],
+			[
+				'a payment failure after address persistence',
+				{ code: 'woocommerce_rest_checkout_process_payment_error' },
+			],
+			[
+				'an unparsed payment failure after address persistence',
+				{ status: 400 },
+			],
+		] )(
+			'uses the first persisted wallet email to authorize a retry after %s',
+			async ( _description, firstError ) => {
+				const params = baseParams( {
+					button_context: 'pay_for_order',
+					order_id: 123,
+					key: 'wc_order_key',
+					billing_email: '',
+				} );
+				const testables = loadModule( params );
+				testables.setState( {
+					cachedCartData: cartResponse( {
+						billing_address: { email: '', phone: '' },
+						shipping_address: { phone: '' },
+					} ),
+				} );
+				if ( firstError ) {
+					apiFetch.mockRejectedValueOnce( firstError );
+					await expect(
+						testables.placeOrder( 'ctoken_123', {
+							billingDetails: {
+								email: 'first@example.com',
+								phone: '212 555 0100',
+							},
+						} )
+					).rejects.toBe( firstError );
+				} else {
+					apiFetch.mockResolvedValueOnce( { payment_result: {} } );
+					await testables.placeOrder( 'ctoken_123', {
+						billingDetails: {
+							email: 'first@example.com',
+							phone: '212 555 0100',
+						},
+					} );
+				}
+
+				expect( params.billing_email ).toBe( 'first@example.com' );
+				testables.setState( {
+					cachedCartData: cartResponse( {
+						billing_address: {
+							email: 'first@example.com',
+							phone: '2125550100',
+						},
+						shipping_address: { phone: '2125550100' },
+					} ),
+				} );
+				apiFetch.mockResolvedValueOnce( { payment_result: {} } );
+
+				await testables.placeOrder( 'ctoken_456', {
+					billingDetails: {
+						email: 'second@example.com',
+						phone: '646 555 0111',
+					},
+				} );
+
+				const retryData = apiFetch.mock.calls[ 1 ][ 0 ].data;
+				expect( retryData.billing_email ).toBe( 'first@example.com' );
+				expect( retryData.billing_address.email ).toBe(
+					'first@example.com'
+				);
+				expect( retryData.billing_address.phone ).toBe( '2125550100' );
+				expect( retryData.shipping_address.phone ).toBe( '2125550100' );
+			}
+		);
+
+		it.each( [
+			'woocommerce_rest_invalid_billing_email',
+			'woocommerce_rest_invalid_order',
+			'woocommerce_rest_invalid_user',
+			'woocommerce_rest_invalid_address',
+			'woocommerce_rest_invalid_address_country',
+		] )(
+			'does not use an unpersisted wallet email to authorize a retry after %s',
+			async ( code ) => {
+				const params = baseParams( {
+					button_context: 'pay_for_order',
+					order_id: 123,
+					key: 'wc_order_key',
+					billing_email: '',
+				} );
+				const testables = loadModule( params );
+				const error = { code };
+				testables.setState( {
+					cachedCartData: cartResponse( {
+						billing_address: { email: '', phone: '' },
+						shipping_address: { phone: '' },
+					} ),
+				} );
+				apiFetch.mockRejectedValueOnce( error );
+
+				await expect(
+					testables.placeOrder( 'ctoken_123', {
+						billingDetails: { email: 'wallet@example.com' },
+					} )
+				).rejects.toBe( error );
+
+				expect( params.billing_email ).toBe( '' );
+				apiFetch.mockResolvedValueOnce( { payment_result: {} } );
+				await testables.placeOrder( 'ctoken_456', {
+					billingDetails: { email: 'second@example.com' },
+				} );
+
+				expect( apiFetch.mock.calls[ 1 ][ 0 ].data.billing_email ).toBe(
+					''
+				);
+			}
+		);
+
+		it( 'does not invent an authorization email when the wallet email is absent or invalid', async () => {
+			const params = baseParams( {
+				button_context: 'pay_for_order',
+				order_id: 123,
+				key: 'wc_order_key',
+				billing_email: '',
+			} );
+			const testables = loadModule( params );
+			const error = { code: 'woocommerce_rest_invalid_billing_email' };
+			testables.setState( {
+				cachedCartData: cartResponse( {
+					billing_address: { email: '', phone: '' },
+					shipping_address: { phone: '' },
+				} ),
+			} );
+			apiFetch.mockRejectedValueOnce( error );
+
+			await expect(
+				testables.placeOrder( 'ctoken_123', {
+					billingDetails: { email: 'not an email' },
+				} )
+			).rejects.toBe( error );
+
+			expect( apiFetch.mock.calls[ 0 ][ 0 ].data.billing_email ).toBe(
+				''
+			);
+			expect(
+				apiFetch.mock.calls[ 0 ][ 0 ].data.billing_address.email
+			).toBe( 'not an email' );
+			expect( params.billing_email ).toBe( '' );
+		} );
+
+		it( 'keeps an absent authorization email absent after a successful payment', async () => {
+			const params = baseParams( {
+				button_context: 'pay_for_order',
+				order_id: 123,
+				key: 'wc_order_key',
+				billing_email: '',
+			} );
+			const testables = loadModule( params );
+			testables.setState( {
+				cachedCartData: cartResponse( {
+					billing_address: { email: '', phone: '' },
+					shipping_address: { phone: '' },
+				} ),
+			} );
+			apiFetch.mockResolvedValueOnce( { payment_result: {} } );
+
+			await testables.placeOrder( 'ctoken_123', { billingDetails: {} } );
+
+			expect( params.billing_email ).toBe( '' );
+		} );
+
 		it( 'refreshes the shipping address from the wallet confirm event', async () => {
 			const testables = loadModule( baseParams() );
 			testables.setState( {

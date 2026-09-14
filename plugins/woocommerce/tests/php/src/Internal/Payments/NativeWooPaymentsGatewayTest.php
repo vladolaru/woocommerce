@@ -87,6 +87,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		unset( $_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-new-payment-method' ] );
 		unset( $_POST['update_all_subscriptions_payment_method'] );
 		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS['wcpay_test_cart_contains_subscription'] );
+		if ( WC() && WC()->session ) {
+			WC()->session->set( 'wcpay_paid_intent_id', null );
+		}
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
 			\WC_Subscriptions_Change_Payment_Gateway::reset();
 		}
@@ -2190,9 +2193,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should process payments through the native processing service.
 	 */
 	public function test_process_payment_delegates_to_processing_service(): void {
-		$order   = $this->create_order();
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$order                     = $this->create_order();
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_mock' );
+		$gateway                   = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$result = $gateway->process_payment( $order->get_id() );
@@ -2202,6 +2206,64 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['is_platform_payment_method'] );
+		$this->assertSame( 'pi_mock', WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
+	}
+
+	/**
+	 * @testdox Should store no paid-intent witness for non-completed or ID-less payment outcomes.
+	 *
+	 * @dataProvider outcomes_without_paid_intent_witness
+	 *
+	 * @param string $status Provider outcome status.
+	 * @param string $provider_payment_id Provider payment ID.
+	 */
+	public function test_process_payment_does_not_store_paid_intent_witness_for_non_completed_or_idless_outcomes( string $status, string $provider_payment_id ): void {
+		$order                     = $this->create_order();
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( $status, $provider_payment_id );
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+		WC()->session->set( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, null );
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertNull( WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
+	}
+
+	/**
+	 * Provide outcomes that do not prove a completed paid intent.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function outcomes_without_paid_intent_witness(): array {
+		return array(
+			'failed'             => array( PaymentOutcome::STATUS_FAILED, 'pi_failed' ),
+			'pending'            => array( PaymentOutcome::STATUS_PENDING_ASYNC, 'pi_pending' ),
+			'redirect'           => array( PaymentOutcome::STATUS_REQUIRES_REDIRECT, 'pi_redirect' ),
+			'authorized'         => array( PaymentOutcome::STATUS_AUTHORIZED, 'pi_authorized' ),
+			'empty completed ID' => array( PaymentOutcome::STATUS_COMPLETED, '' ),
+		);
+	}
+
+	/**
+	 * @testdox Should complete a payment without a paid-intent witness when the WC session is unavailable.
+	 */
+	public function test_process_payment_skips_paid_intent_witness_without_wc_session(): void {
+		$order                     = $this->create_order();
+		$service                   = new RecordingPaymentProcessingService();
+		$gateway                   = new NativeWooPaymentsGateway();
+		$original_session          = WC()->session;
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_mock' );
+		$gateway->init( $service, new WooPaymentsProvider() );
+		WC()->session = null;
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			WC()->session = $original_session;
+		}
+
+		$this->assertSame( 'success', $result['result'] );
 	}
 
 	/**
@@ -3096,6 +3158,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$result
 		);
 		$this->assertNull( $service->last_checkout_context );
+		$this->assertNull( WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'pending', $order->get_status() );
 	}
@@ -3344,6 +3407,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
 		$this->assertSame( 0, $service->checkout_attempt_count, 'An already-paid order must never reach the processing service.' );
+		$this->assertNull( WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
 	}
 
 	/**

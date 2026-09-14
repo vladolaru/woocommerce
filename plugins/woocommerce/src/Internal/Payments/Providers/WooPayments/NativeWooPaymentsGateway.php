@@ -1534,6 +1534,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$outcome = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
 		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
 		self::maybe_add_failed_checkout_notice( $outcome );
+		$this->maybe_store_paid_intent_in_session( $outcome );
 
 		$result = self::format_checkout_result( $context, $order, $outcome );
 		if (
@@ -1550,6 +1551,27 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$result = $this->maybe_add_order_pay_save_intent_to_confirmation_redirect( $context, $order, $result );
 
 		return $result;
+	}
+
+	/**
+	 * Store evidence that the current session completed a native PaymentIntent.
+	 *
+	 * @param PaymentOutcome $outcome Provider checkout outcome.
+	 * @return void
+	 */
+	private function maybe_store_paid_intent_in_session( PaymentOutcome $outcome ): void {
+		$intent_id = $outcome->get_provider_payment_id();
+		if (
+			PaymentOutcome::STATUS_COMPLETED !== $outcome->get_status()
+			|| '' === $intent_id
+			|| ! function_exists( 'WC' )
+			|| ! WC()
+			|| ! WC()->session
+		) {
+			return;
+		}
+
+		WC()->session->set( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, $intent_id );
 	}
 
 	/**

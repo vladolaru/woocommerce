@@ -31,6 +31,13 @@
 
 	var GENERIC_PAYMENT_ERROR_MESSAGE =
 		'Unable to process this payment, please try again.';
+	var ERRORS_BEFORE_PERSISTENCE = [
+		'woocommerce_rest_invalid_billing_email',
+		'woocommerce_rest_invalid_order',
+		'woocommerce_rest_invalid_user',
+		'woocommerce_rest_invalid_address',
+		'woocommerce_rest_invalid_address_country',
+	];
 
 	var ORDER_ATTRIBUTION_ELEMENT_ID =
 		'wcpay-express-checkout__order-attribution-inputs';
@@ -990,21 +997,67 @@
 
 	function placeOrder( confirmationTokenId, event ) {
 		if ( isPayForOrder() ) {
+			// Keep merchant address and tax fields; only fill missing contact data.
+			var billingAddress = Object.assign(
+				{},
+				cachedCartData && cachedCartData.billing_address
+			);
+			var shippingAddress = Object.assign(
+				{},
+				cachedCartData && cachedCartData.shipping_address
+			);
+			var billingDetails = event && event.billingDetails;
+			var walletEmail = billingDetails && billingDetails.email;
+			var walletPhone = getWalletBillingPhone( event );
+
+			if ( ! billingAddress.email ) {
+				billingAddress.email = walletEmail;
+			}
+			if ( ! billingAddress.phone ) {
+				billingAddress.phone = walletPhone;
+			}
+			if ( ! shippingAddress.phone ) {
+				shippingAddress.phone = walletPhone;
+			}
+
+			var submittedBillingEmail = billingAddress.email;
+
 			return requestOrder( {
 				method: 'POST',
 				path: '/wc/store/v1/checkout/' + config.order_id,
 				data: {
 					key: config.key,
+					// The stored email authorizes this request; wallet email is mutation data.
 					billing_email: config.billing_email,
 					payment_method: 'woocommerce_payments',
-					billing_address:
-						cachedCartData && cachedCartData.billing_address,
-					shipping_address:
-						cachedCartData && cachedCartData.shipping_address,
+					billing_address: billingAddress,
+					shipping_address: shippingAddress,
 					payment_data: getPaymentData( confirmationTokenId ),
 					extensions: getPlaceOrderExtensions(),
 				},
-			} );
+			} ).then(
+				function ( response ) {
+					// The Store API has persisted the submitted address before payment returns.
+					if ( submittedBillingEmail ) {
+						config.billing_email = submittedBillingEmail;
+					}
+
+					return response;
+				},
+				function ( error ) {
+					// These validation and authorization errors occur before address persistence.
+					if (
+						ERRORS_BEFORE_PERSISTENCE.indexOf(
+							error && error.code
+						) === -1 &&
+						submittedBillingEmail
+					) {
+						config.billing_email = submittedBillingEmail;
+					}
+
+					throw error;
+				}
+			);
 		}
 
 		var placeOrderHeaders = {

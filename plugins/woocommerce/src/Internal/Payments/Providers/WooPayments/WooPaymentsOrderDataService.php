@@ -17,6 +17,11 @@ use WC_Order;
  */
 class WooPaymentsOrderDataService {
 
+	/**
+	 * WC session key that proves this session completed a native PaymentIntent.
+	 */
+	public const PAID_INTENT_ID_SESSION_KEY = 'wcpay_paid_intent_id';
+
 	private const META_KEY_STRIPE_EXCHANGE_RATE = '_wcpay_multi_currency_stripe_exchange_rate';
 
 	/**

@@ -1244,9 +1244,39 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fail closed for pay-for-order when billing email is missing.
+	 * @testdox Should allow an authorized owner to pay for an order without a billing email.
 	 */
-	public function test_payment_request_fails_closed_for_pay_for_order_without_billing_email(): void {
+	public function test_payment_request_allows_pay_for_order_without_billing_email(): void {
+		$user_id = self::factory()->user->create();
+		$order   = wc_create_order();
+		$order->set_total( '24.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_billing_email( '' );
+		$order->save();
+		wp_set_current_user( $user_id );
+		$_GET['pay_for_order'] = 'true';
+		$_GET['key']           = $order->get_order_key();
+		$this->set_order_pay_query_var( $order->get_id() );
+
+		$empty_billing_email = static function ( string $email, \WC_Order $filtered_order ) use ( $order ): string {
+			return $order->get_id() === $filtered_order->get_id() ? '' : $email;
+		};
+		add_filter( 'woocommerce_order_get_billing_email', $empty_billing_email, 10, 2 );
+
+		try {
+			$service = $this->create_service();
+
+			$this->assertTrue( $service->should_show_payment_request_button( 'pay_for_order' ) );
+			$this->assertSame( '', $service->get_express_checkout_params( 'pay_for_order' )['billing_email'] );
+		} finally {
+			remove_filter( 'woocommerce_order_get_billing_email', $empty_billing_email, 10 );
+		}
+	}
+
+	/**
+	 * @testdox Should allow a guest to pay for an order without a billing email using its exact key.
+	 */
+	public function test_payment_request_allows_guest_pay_for_order_without_billing_email(): void {
 		$order = wc_create_order();
 		$order->set_total( '24.00' );
 		$order->save();
@@ -1254,7 +1284,72 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$_GET['key']           = $order->get_order_key();
 		$this->set_order_pay_query_var( $order->get_id() );
 
-		$this->assertFalse( $this->create_service()->should_show_payment_request_button( 'pay_for_order' ) );
+		$this->assertTrue( $this->create_service()->should_show_payment_request_button( 'pay_for_order' ) );
+	}
+
+	/**
+	 * @testdox Should retain pay-for-order authorization and availability boundaries without a billing email.
+	 *
+	 * @dataProvider pay_for_order_ineligible_cases
+	 *
+	 * @param string $scenario Ineligible boundary to exercise.
+	 */
+	public function test_payment_request_keeps_pay_for_order_boundaries_without_billing_email( string $scenario ): void {
+		$user_id = self::factory()->user->create();
+		$order   = wc_create_order();
+		$order->set_total( '24.00' );
+		$order->set_customer_id( $user_id );
+		$order->save();
+		wp_set_current_user( $user_id );
+		$_GET['pay_for_order'] = 'true';
+		$_GET['key']           = $order->get_order_key();
+		$this->set_order_pay_query_var( $order->get_id() );
+
+		$settings             = array();
+		$can_process_payments = true;
+		switch ( $scenario ) {
+			case 'missing key':
+				unset( $_GET['key'] );
+				break;
+			case 'wrong key':
+				$_GET['key'] = 'wc_order_wrong';
+				break;
+			case 'wrong user':
+				wp_set_current_user( self::factory()->user->create() );
+				break;
+			case 'missing order':
+				$this->set_order_pay_query_var( 999999 );
+				break;
+			case 'nonpayable order':
+				$order->set_status( 'processing' );
+				$order->save();
+				break;
+			case 'unavailable provider':
+				$can_process_payments = false;
+				break;
+			case 'no allowed method':
+				$settings = array( 'express_checkout_checkout_methods' => array() );
+				break;
+		}
+
+		$this->assertFalse( $this->create_service( $settings, $can_process_payments )->should_show_payment_request_button( 'pay_for_order' ) );
+	}
+
+	/**
+	 * Provide pay-for-order boundaries that must remain closed.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function pay_for_order_ineligible_cases(): array {
+		return array(
+			'missing key'            => array( 'missing key' ),
+			'wrong key'              => array( 'wrong key' ),
+			'wrong user'             => array( 'wrong user' ),
+			'missing order'          => array( 'missing order' ),
+			'nonpayable order'       => array( 'nonpayable order' ),
+			'unavailable provider'   => array( 'unavailable provider' ),
+			'no allowed method type' => array( 'no allowed method' ),
+		);
 	}
 
 	/**

@@ -136,6 +136,10 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		}
 
+		if ( false === has_filter( 'woocommerce_order_email_verification_required', array( $this, 'maybe_skip_email_verification_after_payment' ) ) ) {
+			add_filter( 'woocommerce_order_email_verification_required', array( $this, 'maybe_skip_email_verification_after_payment' ), 10, 3 );
+		}
+
 		// Priority 11 so the notices append after the store's own order-received text
 		// customizations, matching the WooPayments extension. The same filter renders on
 		// the classic thank-you template and the blocks order-confirmation page.
@@ -154,6 +158,36 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		if ( false === has_action( 'wp_footer', array( $this, 'output_footer_scripts' ) ) ) {
 			add_action( 'wp_footer', array( $this, 'output_footer_scripts' ) );
 		}
+	}
+
+	/**
+	 * Skip order-received email verification only for the session that paid the native intent.
+	 *
+	 * @param mixed $required Whether email verification is required.
+	 * @param mixed $order Order being displayed.
+	 * @param mixed $context Verification context.
+	 * @return mixed
+	 */
+	public function maybe_skip_email_verification_after_payment( $required, $order, $context ) {
+		if (
+			true !== $required
+			|| 'order-received' !== $context
+			|| ! $order instanceof WC_Order
+			|| OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method()
+			|| ! function_exists( 'WC' )
+			|| ! WC()
+			|| ! WC()->session
+		) {
+			return $required;
+		}
+
+		$intent_id         = (string) $order->get_meta( '_intent_id', true );
+		$session_intent_id = (string) WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, '' );
+		if ( '' === $intent_id || '' === $session_intent_id || ! hash_equals( $intent_id, $session_intent_id ) ) {
+			return $required;
+		}
+
+		return false;
 	}
 
 	/**
