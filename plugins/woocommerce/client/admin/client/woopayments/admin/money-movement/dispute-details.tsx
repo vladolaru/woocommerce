@@ -8,8 +8,33 @@ import { useLocation } from 'react-router-dom';
  * Internal dependencies
  */
 import { getWooPaymentsDispute } from './data';
+import type { WooPaymentsDispute } from './types';
 import { getTransactionDetailsRoute } from './utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+
+const DISPUTES_LIST_ROUTE = '/woopayments/disputes';
+
+const hasTransactionReference = ( dispute: WooPaymentsDispute ) => {
+	const charge =
+		typeof dispute.charge === 'object' ? dispute.charge : undefined;
+	const balanceTransaction = charge?.balance_transaction;
+	const references = [
+		dispute.payment_intent,
+		dispute.transaction_id,
+		dispute.charge_id,
+		typeof dispute.charge === 'string' ? dispute.charge : undefined,
+		charge?.id,
+		charge?.payment_intent,
+		typeof balanceTransaction === 'string'
+			? balanceTransaction
+			: balanceTransaction?.id,
+	];
+
+	return references.some(
+		( reference ) =>
+			typeof reference === 'string' && reference.trim() !== ''
+	);
+};
 
 export const WooPaymentsDisputeDetailsRedirect = () => {
 	const location = useLocation();
@@ -31,11 +56,23 @@ export const WooPaymentsDisputeDetailsRedirect = () => {
 		if ( id && ! id.startsWith( 'ch_' ) && ! id.startsWith( 'py_' ) ) {
 			getWooPaymentsDispute( id )
 				.then( ( dispute ) => {
-					redirectTo( getTransactionDetailsRoute( dispute ) );
+					redirectTo(
+						hasTransactionReference( dispute )
+							? getTransactionDetailsRoute( dispute )
+							: DISPUTES_LIST_ROUTE
+					);
 				} )
 				.catch( () => {
-					redirectTo( getTransactionDetailsRoute( { id } ) );
+					redirectTo( DISPUTES_LIST_ROUTE );
 				} );
+
+			return () => {
+				isMounted = false;
+			};
+		}
+
+		if ( ! id ) {
+			redirectTo( DISPUTES_LIST_ROUTE );
 
 			return () => {
 				isMounted = false;
