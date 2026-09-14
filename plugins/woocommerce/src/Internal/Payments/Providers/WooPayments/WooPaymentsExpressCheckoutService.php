@@ -424,7 +424,9 @@ class WooPaymentsExpressCheckoutService {
 		 *
 		 * @since 11.0.0
 		 */
-		return (bool) apply_filters( 'woocommerce_woopayments_express_checkout_is_product_supported', $supported, $product, $this );
+		$supported = (bool) apply_filters( 'woocommerce_woopayments_express_checkout_is_product_supported', $supported, $product, $this );
+
+		return $supported && $product->is_purchasable() && $product->is_in_stock();
 	}
 
 	/**

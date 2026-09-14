@@ -771,6 +771,92 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should apply product availability after the public product-support filters.
+	 */
+	public function test_payment_request_requires_purchasable_product_after_support_filters(): void {
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'virtual'       => true,
+				'price'         => '12.34',
+				'regular_price' => '12.34',
+			)
+		);
+		$this->set_current_product( $product );
+
+		$events        = array();
+		$legacy_filter = static function ( bool $supported ) use ( &$events ): bool {
+			$events[] = 'legacy';
+			return $supported;
+		};
+		$native_filter = static function ( bool $supported ) use ( &$events ): bool {
+			$events[] = 'native';
+			self::assertTrue( $supported );
+			return true;
+		};
+		$deny_purchase = static function ( bool $purchasable, \WC_Product $filtered_product ) use ( &$events, $product ): bool {
+			if ( $filtered_product->get_id() === $product->get_id() ) {
+				$events[] = 'purchasable';
+				return false;
+			}
+
+			return $purchasable;
+		};
+		add_filter( 'wcpay_payment_request_is_product_supported', $legacy_filter );
+		add_filter( 'woocommerce_woopayments_express_checkout_is_product_supported', $native_filter );
+		add_filter( 'woocommerce_is_purchasable', $deny_purchase, 10, 2 );
+
+		try {
+			$this->assertFalse( $this->create_service()->should_show_payment_request_button( 'product' ) );
+			$this->assertSame( array( 'legacy', 'native', 'purchasable' ), $events );
+		} finally {
+			remove_filter( 'wcpay_payment_request_is_product_supported', $legacy_filter );
+			remove_filter( 'woocommerce_woopayments_express_checkout_is_product_supported', $native_filter );
+			remove_filter( 'woocommerce_is_purchasable', $deny_purchase );
+		}
+	}
+
+	/**
+	 * @testdox Should hide product-page payment request buttons when the product is out of stock.
+	 */
+	public function test_payment_request_requires_in_stock_product(): void {
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'virtual'       => true,
+				'price'         => '12.34',
+				'regular_price' => '12.34',
+			)
+		);
+		$product->set_stock_status( 'outofstock' );
+		$product->save();
+		$this->set_current_product( $product );
+
+		$this->assertFalse( $this->create_service()->should_show_payment_request_button( 'product' ) );
+	}
+
+	/**
+	 * @testdox Should show product-page payment request buttons for backordered products.
+	 */
+	public function test_payment_request_allows_backordered_product(): void {
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'virtual'       => true,
+				'price'         => '12.34',
+				'regular_price' => '12.34',
+			)
+		);
+		$product->set_manage_stock( true );
+		$product->set_stock_quantity( 0 );
+		$product->set_backorders( 'yes' );
+		$product->save();
+		$this->set_current_product( $product );
+
+		$this->assertTrue( $this->create_service()->should_show_payment_request_button( 'product' ) );
+	}
+
+	/**
 	 * @testdox Should preserve the public WooPayments supported product types filter contract.
 	 */
 	public function test_product_support_preserves_public_supported_types_filter_contract(): void {
