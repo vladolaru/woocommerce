@@ -23,7 +23,10 @@ import {
 	formatLabel,
 	getChargeChannelLabel,
 } from './utils';
-import { getPrimaryDispute } from './dispute-utils';
+import {
+	getDisputeBalanceAdjustments,
+	getPrimaryDispute,
+} from './dispute-utils';
 
 type CardDetails = NonNullable< WooPaymentsPaymentMethodDetails[ 'card' ] >;
 type CountryMap = Record< string, string >;
@@ -671,6 +674,13 @@ export const WooPaymentsPaymentSummarySection = ( {
 	const hasRefundedAmount =
 		typeof transaction.amount_refunded === 'number' &&
 		transaction.amount_refunded > 0;
+	const disputeWithdrawnAmount =
+		getDisputeBalanceAdjustments( transaction ).refunded;
+	const refundedAmountLabel = disputeWithdrawnAmount
+		? /* translators: %s: formatted withdrawn amount. */
+		  __( 'Deducted: %s', 'woocommerce' )
+		: /* translators: %s: formatted withdrawn amount. */
+		  __( 'Refunded: %s', 'woocommerce' );
 
 	return (
 		<section
@@ -717,8 +727,7 @@ export const WooPaymentsPaymentSummarySection = ( {
 				{ hasRefundedAmount && (
 					<span>
 						{ sprintf(
-							/* translators: %s: formatted refunded amount. */
-							__( 'Refunded: %s', 'woocommerce' ),
+							refundedAmountLabel,
 							formatAmount(
 								-Math.abs(
 									Number( transaction.amount_refunded )

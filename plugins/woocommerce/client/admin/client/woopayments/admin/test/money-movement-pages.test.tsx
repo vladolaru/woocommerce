@@ -840,6 +840,89 @@ describe( 'WooPayments money movement pages', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( 'labels a zero-fee dispute withdrawal as deducted', () => {
+		render(
+			<WooPaymentsPaymentSummarySection
+				transaction={ {
+					status: 'succeeded',
+					amount: 5000,
+					amount_refunded: 2000,
+					currency: 'usd',
+					dispute: {
+						status: 'needs_response',
+						balance_transactions: [ { amount: -2000, fee: 0 } ],
+					},
+				} }
+			/>
+		);
+
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect(
+			within( summary ).getByText( 'Deducted: -$20.00' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).queryByText( /Refunded:/ )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'keeps an inquiry customer refund labelled as refunded', () => {
+		render(
+			<WooPaymentsPaymentSummarySection
+				transaction={ {
+					status: 'succeeded',
+					amount: 5000,
+					amount_refunded: 1000,
+					currency: 'usd',
+					dispute: {
+						status: 'warning_needs_response',
+					},
+				} }
+			/>
+		);
+
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect(
+			within( summary ).getByText( 'Refunded: -$10.00' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).queryByText( /Deducted:/ )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'keeps a reversed dispute customer refund labelled as refunded', () => {
+		render(
+			<WooPaymentsPaymentSummarySection
+				transaction={ {
+					status: 'succeeded',
+					amount: 5000,
+					amount_refunded: 1000,
+					currency: 'usd',
+					dispute: {
+						status: 'won',
+						balance_transactions: [
+							{ amount: -2000, fee: 1500 },
+							{ amount: 2000, fee: -1500 },
+						],
+					},
+				} }
+			/>
+		);
+
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect(
+			within( summary ).getByText( 'Refunded: -$10.00' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).queryByText( /Deducted:/ )
+		).not.toBeInTheDocument();
+	} );
+
 	it( 'keeps same-currency settlement output unchanged', () => {
 		render(
 			<WooPaymentsPaymentSummarySection
@@ -5187,7 +5270,7 @@ describe( 'WooPayments money movement pages', () => {
 			within( summary ).getByText( 'Disputed: Response needed' )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Refunded: -$50.00' )
+			within( summary ).getByText( 'Deducted: -$50.00' )
 		).toBeInTheDocument();
 		expect(
 			within( summary ).getByText( 'Fees: -$31.80' )
