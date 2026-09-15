@@ -2,13 +2,13 @@
 	"assets": {
 		"blocks-express-checkout.css": {
 			"allow_new": true,
-			"raw_bytes": 900,
-			"gzip_bytes": 350
+			"raw_bytes": 766,
+			"gzip_bytes": 269
 		},
 		"blocks-express-checkout.js": {
 			"allow_new": true,
-			"raw_bytes": 32232,
-			"gzip_bytes": 10550
+			"raw_bytes": 33368,
+			"gzip_bytes": 10897
 		},
 		"multi-currency-analytics.js": {
 			"allow_missing": true
@@ -26,16 +26,20 @@
 			"allow_missing": true
 		},
 		"classic-card.css": {
-			"raw_growth_bytes": 2992,
-			"gzip_growth_bytes": 803
+			"raw_growth_bytes": 2633,
+			"gzip_growth_bytes": 747
+		},
+		"express-checkout.js": {
+			"raw_growth_bytes": 23263,
+			"gzip_growth_bytes": 3275
 		},
 		"woopay-direct-checkout.js": {
-			"raw_growth_bytes": 12000,
-			"gzip_growth_bytes": 6000
+			"raw_growth_bytes": 12077,
+			"gzip_growth_bytes": 3356
 		},
-		"woopay-express-button.js": {
-			"raw_growth_bytes": 12000,
-			"gzip_growth_bytes": 6000
+		"woopay.js": {
+			"raw_growth_bytes": 14297,
+			"gzip_growth_bytes": 5174
 		}
 	}
 }

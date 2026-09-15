@@ -64,9 +64,9 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Redirect and mandate runtime values match the WooPayments 10.8 request shape.
+	 * @testdox Redirect and mandate runtime values match the WooPayments 11.1 request shape.
 	 */
-	public function test_redirect_and_mandate_runtime_values_match_10_8_request_shape(): void {
+	public function test_redirect_and_mandate_runtime_values_match_11_1_request_shape(): void {
 		$order = wc_create_order();
 		$order->set_currency( 'EUR' );
 		$order->set_total( '25.00' );
@@ -99,7 +99,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 					'type'   => 'online',
 					'online' => array(
 						'ip_address' => \WC_Geolocation::get_ip_address(),
-						'user_agent' => 'WooCommerce Payments/10.8.0; ' . get_bloginfo( 'url' ),
+						'user_agent' => 'WooCommerce Payments/11.1.0; ' . get_bloginfo( 'url' ),
 					),
 				),
 			),

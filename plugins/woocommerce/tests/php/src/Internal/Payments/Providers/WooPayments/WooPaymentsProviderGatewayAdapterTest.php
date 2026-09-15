@@ -2038,7 +2038,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 					'type'   => 'online',
 					'online' => array(
 						'ip_address' => \WC_Geolocation::get_ip_address(),
-						'user_agent' => 'WooCommerce Payments/10.8.0; ' . get_bloginfo( 'url' ),
+						'user_agent' => 'WooCommerce Payments/11.1.0; ' . get_bloginfo( 'url' ),
 					),
 				),
 			),

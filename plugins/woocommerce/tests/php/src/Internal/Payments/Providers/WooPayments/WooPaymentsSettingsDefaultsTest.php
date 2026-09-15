@@ -12,7 +12,7 @@ use WC_Unit_Test_Case;
 class WooPaymentsSettingsDefaultsTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should return each WooPayments 10.8.0 form-field default.
+	 * @testdox Should return each WooPayments 11.1.0 form-field default.
 	 *
 	 * @dataProvider form_field_defaults_provider
 	 * @param string $key Setting key.
@@ -23,11 +23,11 @@ class WooPaymentsSettingsDefaultsTest extends WC_Unit_Test_Case {
 			$this->fail( 'WooPaymentsSettingsDefaults should provide the pinned WooPayments form-field defaults.' );
 		}
 
-		$this->assertSame( $expected, WooPaymentsSettingsDefaults::get( $key ), "The {$key} default should match WooPayments 10.8.0." );
+		$this->assertSame( $expected, WooPaymentsSettingsDefaults::get( $key ), "The {$key} default should match WooPayments 11.1.0." );
 	}
 
 	/**
-	 * @testdox Should expose the complete WooPayments 10.8.0 form-field defaults table.
+	 * @testdox Should expose the complete WooPayments 11.1.0 form-field defaults table.
 	 */
 	public function test_all_returns_the_complete_pinned_form_field_defaults_table(): void {
 		if ( ! class_exists( WooPaymentsSettingsDefaults::class ) ) {
@@ -43,7 +43,7 @@ class WooPaymentsSettingsDefaultsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide literal defaults from the WooPayments 10.8.0 gateway form fields.
+	 * Provide literal defaults from the WooPayments 11.1.0 gateway form fields.
 	 *
 	 * @return array<string,array{string,mixed}>
 	 */

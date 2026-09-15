@@ -13,7 +13,7 @@ REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 DEFAULT_EXTENSION_ROOT="$(cd "$REPO_ROOT/.." && pwd)/woocommerce-payments"
 
 EXTENSION_ROOT="${WCPAY_EXTENSION_ROOT:-$DEFAULT_EXTENSION_ROOT}"
-EXTENSION_REF="${WCPAY_EXTENSION_REF:-10.8.0}"
+EXTENSION_REF="${WCPAY_EXTENSION_REF:-11.1.0}"
 MANIFEST="$SELF_DIR/subsystem-disposition.md"
 WORKFLOW_LEDGER="$SELF_DIR/workflow-ledger.md"
 
@@ -36,12 +36,12 @@ while [ "$#" -gt 0 ]; do
 			shift 2
 			;;
 		-h|--help)
-			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--extension-ref 10.8.0|worktree] [--manifest PATH] [--workflow-ledger PATH]" >&2
+			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--extension-ref 11.1.0|worktree] [--manifest PATH] [--workflow-ledger PATH]" >&2
 			exit 2
 			;;
 		*)
 			echo "Unknown arg: $1" >&2
-			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--extension-ref 10.8.0|worktree] [--manifest PATH] [--workflow-ledger PATH]" >&2
+			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--extension-ref 11.1.0|worktree] [--manifest PATH] [--workflow-ledger PATH]" >&2
 			exit 2
 			;;
 	esac
@@ -63,13 +63,13 @@ if [ "$EXTENSION_REF" = "worktree" ]; then
 		echo "Extension root does not contain includes/ or src/: $EXTENSION_ROOT" >&2
 		exit 2
 	fi
-elif [ "$EXTENSION_REF" = "10.8.0" ]; then
-	if ! ORACLE_COMMIT="$(git -C "$EXTENSION_ROOT" rev-parse --verify 'refs/tags/10.8.0^{commit}' 2>/dev/null)" || [ -z "$ORACLE_COMMIT" ]; then
-		echo "Extension root does not contain the required 10.8.0 tag: $EXTENSION_ROOT" >&2
+elif [ "$EXTENSION_REF" = "11.1.0" ]; then
+	if ! ORACLE_COMMIT="$(git -C "$EXTENSION_ROOT" rev-parse --verify 'refs/tags/11.1.0^{commit}' 2>/dev/null)" || [ -z "$ORACLE_COMMIT" ]; then
+		echo "Extension root does not contain the required 11.1.0 tag: $EXTENSION_ROOT" >&2
 		exit 2
 	fi
 else
-	echo "Unsupported extension ref: $EXTENSION_REF (expected 10.8.0 or worktree)" >&2
+	echo "Unsupported extension ref: $EXTENSION_REF (expected 11.1.0 or worktree)" >&2
 	exit 2
 fi
 

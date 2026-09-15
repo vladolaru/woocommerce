@@ -538,12 +538,12 @@ jobs:
           E2E_WOOPAYMENTS_DIAGNOSTICS_DIR: '${{ runner.temp }}/woopayments-native-diagnostics'
         run: bash plugins/woocommerce/tests/e2e/envs/woopayments-native/assert-ci-fixture-clean.sh
 
-      - name: 'Compare measured WooPayments bundles with 10.8.0'
+      - name: 'Compare measured WooPayments bundles with 11.1.0'
         run: |
-          reference_zip="$RUNNER_TEMP/woocommerce-payments-10.8.0.zip"
-          reference_dir="$RUNNER_TEMP/woocommerce-payments-10.8.0"
-          curl --fail --location --silent --show-error https://github.com/Automattic/woocommerce-payments/releases/download/10.8.0/woocommerce-payments.zip --output "$reference_zip"
-          echo '9b80d9002e831f62d72bba09dec8b09ca3dc8116c637bae94c74160063767cc9  '"$reference_zip" | sha256sum --check
+          reference_zip="$RUNNER_TEMP/woocommerce-payments-11.1.0.zip"
+          reference_dir="$RUNNER_TEMP/woocommerce-payments-11.1.0"
+          curl --fail --location --silent --show-error https://github.com/Automattic/woocommerce-payments/releases/download/11.1.0/woocommerce-payments.zip --output "$reference_zip"
+          echo 'd655a77f24f638a3a57edbfd192c6d9e1196970b23320d289a48fc443ca7ffb1  '"$reference_zip" | sha256sum --check
           mkdir -p "$reference_dir"
           unzip -q "$reference_zip" -d "$reference_dir"
           bash tools/woopayments-merge/bundle-size-gate.sh capture --repo "$reference_dir/woocommerce-payments" --profile wcpay-plugin --out "$RUNNER_TEMP/wcpay-reference.json"

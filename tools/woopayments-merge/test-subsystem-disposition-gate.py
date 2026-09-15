@@ -13,12 +13,68 @@ SCRIPT = REPO / "tools/woopayments-merge/subsystem-disposition-gate.sh"
 VERIFY = REPO / "tools/woopayments-merge/verify.sh"
 MANIFEST = REPO / "tools/woopayments-merge/subsystem-disposition.md"
 
+ADDED_11_1_SOURCE_PATHS = {
+    "includes/admin/attach-rate/class-wc-payments-abstract-admin-notice.php",
+    "includes/admin/attach-rate/class-wc-payments-admin-notices.php",
+    "includes/admin/attach-rate/class-wc-payments-notice-naming.php",
+    "includes/admin/attach-rate/class-wc-payments-one-and-done-notice.php",
+    "includes/admin/attach-rate/class-wc-payments-post-kyc-activation-notice.php",
+    "includes/admin/attach-rate/class-wc-payments-test-to-live-notice.php",
+    "includes/admin/class-wc-rest-payments-dispute-readiness-controller.php",
+    "includes/admin/class-wc-rest-payments-survey-controller.php",
+    "includes/core/server/request/class-get-reporting-balance-summary.php",
+    "includes/core/server/request/class-get-transactions-summary.php",
+    "includes/exceptions/class-blocked-by-fraud-rules-exception.php",
+    "includes/express-checkout/class-wc-payments-express-checkout-currency-guard.php",
+    "includes/express-checkout/class-wc-payments-express-checkout-store-api-extension.php",
+    "includes/migrations/class-multi-currency-cache-autodetect-existing-install.php",
+    "includes/multi-currency/CachingEnvironment.php",
+    "includes/reports/class-wc-rest-payments-reports-balance-controller.php",
+    "includes/reports/class-wc-rest-payments-reports-fees-controller.php",
+    "src/Internal/Abilities/AbilitiesRegistrar.php",
+    "src/Internal/Abilities/Domain/AbstractWCPayAbility.php",
+    "src/Internal/Abilities/Domain/AcceptDispute.php",
+    "src/Internal/Abilities/Domain/GetAccount.php",
+    "src/Internal/Abilities/Domain/GetActiveLoanSummary.php",
+    "src/Internal/Abilities/Domain/GetAuthorizations.php",
+    "src/Internal/Abilities/Domain/GetAuthorizationsSummary.php",
+    "src/Internal/Abilities/Domain/GetBalance.php",
+    "src/Internal/Abilities/Domain/GetCharge.php",
+    "src/Internal/Abilities/Domain/GetDeposits.php",
+    "src/Internal/Abilities/Domain/GetDepositsOverview.php",
+    "src/Internal/Abilities/Domain/GetDepositsSummary.php",
+    "src/Internal/Abilities/Domain/GetDispute.php",
+    "src/Internal/Abilities/Domain/GetDisputes.php",
+    "src/Internal/Abilities/Domain/GetDisputesSummary.php",
+    "src/Internal/Abilities/Domain/GetFeesSummary.php",
+    "src/Internal/Abilities/Domain/GetFraudOutcomes.php",
+    "src/Internal/Abilities/Domain/GetPaymentIntent.php",
+    "src/Internal/Abilities/Domain/GetTimeline.php",
+    "src/Internal/Abilities/Domain/GetTransactions.php",
+    "src/Internal/Abilities/Domain/GetTransactionsSummary.php",
+    "src/Internal/Abilities/Domain/RefundCharge.php",
+    "src/Internal/Abilities/Domain/SubmitDisputeEvidence.php",
+    "src/Internal/Abilities/Domain/UploadDisputeEvidenceFile.php",
+    "src/Internal/Experiment/Experiment.php",
+    "src/Internal/Experiment/ReviewPromptExperiment.php",
+    "src/Internal/Service/DisputeReadinessService.php",
+    "src/Internal/Service/DisputeService.php",
+    "src/Internal/Service/FileService.php",
+    "src/Internal/Service/RefundService.php",
+}
+
+REMOVED_11_1_SOURCE_PATHS = {
+    "includes/admin/class-wc-payments-admin-banner.php",
+    "includes/payment-methods/Configs/Definitions/GiropayDefinition.php",
+    "includes/payment-methods/Configs/Definitions/SofortDefinition.php",
+}
+
 
 def run_gate(
     extension_root: Path,
     manifest: Path,
     *,
-    extension_ref: str = "worktree",
+    extension_ref: str | None = "worktree",
     workflow_ledger: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [
@@ -28,9 +84,9 @@ def run_gate(
         str(extension_root),
         "--manifest",
         str(manifest),
-        "--extension-ref",
-        extension_ref,
     ]
+    if extension_ref is not None:
+        command.extend(["--extension-ref", extension_ref])
     if workflow_ledger is not None:
         command.extend(["--workflow-ledger", str(workflow_ledger)])
 
@@ -73,6 +129,16 @@ def touch(path: Path) -> None:
     path.write_text("<?php\n", encoding="utf-8")
 
 
+def committed_manifest_source_paths() -> set[str]:
+    paths: set[str] = set()
+    for line in MANIFEST.read_text(encoding="utf-8").splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 2 or not cells[1].startswith("`") or not cells[1].endswith("`"):
+            continue
+        paths.add(cells[1].strip("`"))
+    return paths
+
+
 def test_gate_fails_when_extension_file_is_not_matched_by_manifest_row() -> None:
     with tempfile.TemporaryDirectory(prefix="subsystem-disposition-gate-test-") as tmp:
         root = Path(tmp)
@@ -91,6 +157,27 @@ def test_gate_fails_when_extension_file_is_not_matched_by_manifest_row() -> None
         assert result.returncode == 1
         assert "unmatched extension files" in result.stdout
         assert "includes/missing.php" in result.stdout
+
+
+def test_committed_manifest_covers_the_exact_11_1_source_inventory() -> None:
+    with tempfile.TemporaryDirectory(prefix="subsystem-disposition-11-1-test-") as tmp:
+        extension_root = Path(tmp) / "extension"
+        source_paths = (committed_manifest_source_paths() - REMOVED_11_1_SOURCE_PATHS) | ADDED_11_1_SOURCE_PATHS
+        for source_path in source_paths:
+            if source_path.endswith("/"):
+                (extension_root / source_path).mkdir(parents=True, exist_ok=True)
+            else:
+                touch(extension_root / source_path)
+
+        result = run_gate(extension_root, MANIFEST)
+
+        assert len(ADDED_11_1_SOURCE_PATHS) == 47
+        assert len(REMOVED_11_1_SOURCE_PATHS) == 3
+        assert len([path for path in source_paths if path.endswith(".php")]) == 394
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "manifest rows: 396" in result.stdout
+        assert "extension files: 394" in result.stdout
+        assert "RESULT: PASS - 394 extension files covered by 396 manifest rows." in result.stdout
 
 
 def test_gate_accepts_exact_rows_and_signed_dropped_rows() -> None:
@@ -242,18 +329,18 @@ def test_gate_reads_the_versioned_oracle_tree_without_changing_the_worktree() ->
             cwd=extension_root,
             check=True,
         )
-        subprocess.run(["git", "tag", "10.8.0"], cwd=extension_root, check=True)
+        subprocess.run(["git", "tag", "11.1.0"], cwd=extension_root, check=True)
         versioned_file.unlink()
         write_manifest(
             manifest,
             "| Deprecated file | `includes/deprecated.php` | `SUPERSEDED` | deprecation cleanup | unit test |  |  |  |\n",
         )
 
-        versioned_result = run_gate(extension_root, manifest, extension_ref="10.8.0")
+        versioned_result = run_gate(extension_root, manifest, extension_ref=None)
         worktree_result = run_gate(extension_root, manifest)
 
         assert versioned_result.returncode == 0, versioned_result.stdout + versioned_result.stderr
-        assert "extension ref: 10.8.0" in versioned_result.stdout
+        assert "extension ref: 11.1.0" in versioned_result.stdout
         assert worktree_result.returncode == 1
         assert "manifest source patterns matching no extension files" in worktree_result.stdout
 
@@ -346,7 +433,7 @@ def test_verify_runs_subsystem_disposition_gate() -> None:
     assert "subsystem-disposition-gate.sh" in verify_source
 
 
-def test_plan_specific_payment_method_dispositions_are_pinned() -> None:
+def test_plan_specific_payment_method_dispositions_follow_11_1_inventory() -> None:
     manifest = MANIFEST.read_text(encoding="utf-8")
     rows = {
         cells[1].strip(" `"): cells
@@ -357,15 +444,14 @@ def test_plan_specific_payment_method_dispositions_are_pinned() -> None:
     }
 
     apple_pay = rows["includes/class-wc-payments-apple-pay-registration.php"]
-    giropay = rows["includes/payment-methods/Configs/Definitions/GiropayDefinition.php"]
-    sofort = rows["includes/payment-methods/Configs/Definitions/SofortDefinition.php"]
+    deprecation_migration = rows[
+        "includes/migrations/class-payment-method-deprecation-settings-update.php"
+    ]
 
     assert apple_pay[2] == "`PORTED`"
-    for row in (giropay, sofort):
-        assert row[2] == "`DROPPED`"
-        assert row[5] == "Native WooPayments plan D13"
-        assert row[6]
-        assert "deprecated" in row[7].lower()
+    assert deprecation_migration[2] == "`SUPERSEDED`"
+    assert "includes/payment-methods/Configs/Definitions/GiropayDefinition.php" not in rows
+    assert "includes/payment-methods/Configs/Definitions/SofortDefinition.php" not in rows
 
 
 def test_task_5_5_disposition_corrections_and_client_rows_are_pinned() -> None:

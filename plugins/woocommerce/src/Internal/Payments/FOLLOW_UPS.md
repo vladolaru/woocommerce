@@ -6,7 +6,7 @@ One entry per outstanding obligation for the native WooPayments implementation. 
 
 ### Client-version bump review (D2)
 
-`WooPaymentsClientVersion::VERSION` declares the WooPayments plugin release whose platform behavior the native runtime was verified against (currently `10.8.0`). The platform gates payment-method availability (`minimum_client_version`), account-status mapping, and response shapes on the version each request reports, so the constant must move deliberately, on a cadence:
+`WooPaymentsClientVersion::VERSION` declares the WooPayments plugin release whose platform behavior the native runtime was verified against (currently `11.1.0`). The platform gates payment-method availability (`minimum_client_version`), account-status mapping, and response shapes on the version each request reports, so the constant must move deliberately, on a cadence:
 
 1. For each WooPayments release above the current constant, review every platform-side `is_client_version_at_least()` gate and `minimum_client_version` entry between the two versions.
 2. Port the behavior each gate unlocks into the native runtime.

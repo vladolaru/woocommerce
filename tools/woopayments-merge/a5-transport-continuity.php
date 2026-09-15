@@ -126,7 +126,7 @@ if ( ! is_array( $request ) ) {
 			$failures[] = 'unexpected_content_type';
 		}
 
-		if ( ! isset( $headers['User-Agent'] ) || 'WooCommerce Payments/10.8.0' !== $headers['User-Agent'] ) {
+		if ( ! isset( $headers['User-Agent'] ) || 'WooCommerce Payments/11.1.0' !== $headers['User-Agent'] ) {
 			$failures[] = 'unexpected_user_agent';
 		}
 

@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 /**
  * WooPayments gateway form-field defaults.
  *
- * Defaults are copied from the WooPayments client repository's `10.8.0` tag,
+ * Defaults are copied from the WooPayments client repository's `11.1.0` tag,
  * `includes/class-wc-payment-gateway-wcpay.php::get_form_fields()`.
  *
  * @since 11.2.0
@@ -44,7 +44,7 @@ final class WooPaymentsSettingsDefaults {
 	}
 
 	/**
-	 * Get WooPayments 10.8.0 gateway form-field defaults for the current locale.
+	 * Get WooPayments 11.1.0 gateway form-field defaults for the current locale.
 	 *
 	 * @return array<string,mixed> WooPayments form-field defaults.
 	 */

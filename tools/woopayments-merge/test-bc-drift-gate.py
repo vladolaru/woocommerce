@@ -33,6 +33,7 @@ CATEGORY_FIXTURE_SOURCES = {
         "}\n"
         "as_schedule_single_action( time(), array(), 'wcpay_fixture_job' );\n"
         "update_option( 'wcpay_fixture_option', 1 );\n"
+        "get_option( 'admin_email' );\n"
         "register_rest_route( 'wc/v3', '/payments/fixture' );\n"
         "do_action( 'wcpay_fixture_hook' );\n"
     ),
@@ -40,7 +41,8 @@ CATEGORY_FIXTURE_SOURCES = {
     "includes/class-database-cache.php": "<?php\n",
     "includes/class-wc-payments-localization-service.php": "<?php\n",
     "includes/constants/class-track-events.php": (
-        "<?php\nclass Track_Events {\n\tconst FIXTURE_EVENT = 'wcpay_fixture_event';\n}\n"
+        "<?php\nclass Track_Events {\n\tconst FIXTURE_EVENT = 'wcpay_fixture_event';\n"
+        "\tconst REQUIRES_ACTION = 'requires_action';\n}\n"
     ),
 }
 
@@ -66,8 +68,8 @@ def make_pinned_source(
     run("git", "config", "user.email", "oracle@example.test", cwd=source)
     run("git", "config", "user.name", "Oracle Fixture", cwd=source)
     run("git", "add", ".", cwd=source)
-    run("git", "commit", "-qm", "WooPayments 10.8 fixture", cwd=source)
-    run("git", "tag", "10.8.0", cwd=source)
+    run("git", "commit", "-qm", "WooPayments 11.1 fixture", cwd=source)
+    run("git", "tag", "11.1.0", cwd=source)
 
     harness = tmp_path / "harness"
     harness.mkdir()
@@ -77,7 +79,7 @@ def make_pinned_source(
     env.update(
         {
             "WCPAY_SRC": str(source),
-            "WCPAY_SOURCE_REF": "10.8.0",
+            "WCPAY_SOURCE_REF": "11.1.0",
         }
     )
     return source, gate, env
@@ -85,7 +87,7 @@ def make_pinned_source(
 
 def test_update_records_source_ref_and_commit_provenance(tmp_path: Path) -> None:
     source, gate, env = make_pinned_source(tmp_path)
-    expected_commit = run("git", "rev-parse", "10.8.0^{commit}", cwd=source).stdout.strip()
+    expected_commit = run("git", "rev-parse", "11.1.0^{commit}", cwd=source).stdout.strip()
 
     update = run("bash", str(gate), "--update", cwd=gate.parent, env=env)
     check = run("bash", str(gate), cwd=gate.parent, env=env)
@@ -93,8 +95,35 @@ def test_update_records_source_ref_and_commit_provenance(tmp_path: Path) -> None
     assert update.returncode == 0, update.stdout
     assert check.returncode == 0, check.stdout
     assert (gate.parent / "bc-drift-baseline/source-provenance.txt").read_text(encoding="utf-8") == (
-        f"source_ref=10.8.0\nsource_commit={expected_commit}\n"
+        f"source_ref=11.1.0\nsource_commit={expected_commit}\n"
     )
+
+
+def test_update_defaults_to_the_current_parity_floor(tmp_path: Path) -> None:
+    source, gate, env = make_pinned_source(tmp_path)
+    expected_commit = run("git", "rev-parse", "11.1.0^{commit}", cwd=source).stdout.strip()
+    env.pop("WCPAY_SOURCE_REF", None)
+
+    update = run("bash", str(gate), "--update", cwd=gate.parent, env=env)
+
+    assert update.returncode == 0, update.stdout
+    assert (gate.parent / "bc-drift-baseline/source-provenance.txt").read_text(encoding="utf-8") == (
+        f"source_ref=11.1.0\nsource_commit={expected_commit}\n"
+    )
+
+
+def test_baseline_is_independent_of_source_directory_name(tmp_path: Path) -> None:
+    source, gate, env = make_pinned_source(tmp_path)
+    assert run("bash", str(gate), "--update", cwd=gate.parent, env=env).returncode == 0
+    for directory_name in ("wcpay-11.1.0", "wcpay-[11]+.1"):
+        alternate_source = tmp_path / directory_name
+        alternate_source.symlink_to(source, target_is_directory=True)
+        alternate_env = dict(env)
+        alternate_env["WCPAY_SRC"] = str(alternate_source)
+
+        check = run("bash", str(gate), cwd=gate.parent, env=alternate_env)
+
+        assert check.returncode == 0, check.stdout
 
 
 def test_check_rejects_source_checked_out_after_pinned_ref(tmp_path: Path) -> None:
@@ -107,7 +136,7 @@ def test_check_rejects_source_checked_out_after_pinned_ref(tmp_path: Path) -> No
     result = run("bash", str(gate), cwd=gate.parent, env=env)
 
     assert result.returncode != 0
-    assert "must be checked out at WooPayments ref 10.8.0" in result.stdout
+    assert "must be checked out at WooPayments ref 11.1.0" in result.stdout
 
 
 def test_update_writes_nonempty_baseline_for_every_category(tmp_path: Path) -> None:
@@ -147,9 +176,9 @@ def test_update_refusal_does_not_clobber_existing_baseline(tmp_path: Path) -> No
     (source / "includes/constants/class-track-events.php").write_text("<?php\n", encoding="utf-8")
     run("git", "add", ".", cwd=source)
     run("git", "commit", "-qm", "drop tracks constants", cwd=source)
-    run("git", "tag", "10.8.1", cwd=source)
+    run("git", "tag", "11.1.1", cwd=source)
     env = dict(env)
-    env["WCPAY_SOURCE_REF"] = "10.8.1"
+    env["WCPAY_SOURCE_REF"] = "11.1.1"
     provenance_before = (gate.parent / "bc-drift-baseline/source-provenance.txt").read_text(encoding="utf-8")
 
     update = run("bash", str(gate), "--update", cwd=gate.parent, env=env)
@@ -169,4 +198,4 @@ def test_check_rejects_dirty_pinned_source(tmp_path: Path) -> None:
     result = run("bash", str(gate), cwd=gate.parent, env=env)
 
     assert result.returncode != 0
-    assert "WooPayments source must be clean at ref 10.8.0" in result.stdout
+    assert "WooPayments source must be clean at ref 11.1.0" in result.stdout

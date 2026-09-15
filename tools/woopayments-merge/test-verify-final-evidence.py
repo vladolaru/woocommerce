@@ -38,7 +38,7 @@ def test_verifier_propagates_the_validated_runner_and_pinned_source_contracts() 
     source = SCRIPT.read_text(encoding="utf-8")
 
     assert 'WCPAY_SOURCE_ROOT="${WCPAY_EXTENSION_ROOT:-$WCPAY_REPO}"' in source
-    assert 'env WCPAY_SRC="$WCPAY_SOURCE_ROOT" WCPAY_SOURCE_REF="${WCPAY_EXTENSION_REF:-10.8.0}" bash "$SELF_DIR/bc-drift-gate.sh"' in source
+    assert 'env WCPAY_SRC="$WCPAY_SOURCE_ROOT" WCPAY_SOURCE_REF="${WCPAY_EXTENSION_REF:-11.1.0}" bash "$SELF_DIR/bc-drift-gate.sh"' in source
     assert 'WOOPAYMENTS_APPROVED_REF_CONTAINER="$container"' in source
     assert 'WOOPAYMENTS_APPROVED_TARGET_CONTAINER="$container"' in source
     assert "export WOOPAYMENTS_APPROVED_REF_CONTAINER WOOPAYMENTS_APPROVED_TARGET_CONTAINER" in source

@@ -35,7 +35,7 @@ final class WooPaymentsClientVersion {
 	 *
 	 * @var string
 	 */
-	public const VERSION = '10.8.0';
+	public const VERSION = '11.1.0';
 
 	/**
 	 * Build the client identity string reported to the platform.

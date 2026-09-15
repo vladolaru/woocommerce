@@ -65,16 +65,16 @@ retired stand-down model needed one; the settled model does not). Plugin active-
 working trees (the reference's WC + plugin). All your changes go in **`woocommerce-develop-2`** only.
 
 **BC-drift source pin (READ THIS when the drift gate blocks):** `bc-drift-gate.sh` requires the
-WooPayments source checkout to be **clean at the pinned ref** (`10.8.0` by default). The shared
+WooPayments source checkout to be **clean at the pinned ref** (`11.1.0` by default). The shared
 `~/Work/a8c/woocommerce-payments` clone also serves day-to-day work, so a pull or branch switch
 there blocks the gate (and every `verify.sh` run) with "must be checked out at WooPayments ref…".
 Two supported ways out — never bypass the gate:
 
-- **Realign the clone:** `git -C ~/Work/a8c/woocommerce-payments switch --detach 10.8.0` (both
-  local envs mount the same clone as the live plugin, so realign only when the stores can run 10.8.0).
+- **Realign the clone:** `git -C ~/Work/a8c/woocommerce-payments switch --detach 11.1.0` (both
+  local envs mount the same clone as the live plugin, so realign only when the stores can run 11.1.0).
 - **Point the gate at a pinned worktree instead** (leaves the shared clone alone):
-  `git -C ~/Work/a8c/woocommerce-payments worktree add /tmp/wcpay-10.8.0 10.8.0`, then run with
-  `WCPAY_SRC=/tmp/wcpay-10.8.0`. `WCPAY_SOURCE_REF` selects a different pin; the special value
+  `mkdir -p "$TMPDIR" && git -C ~/Work/a8c/woocommerce-payments worktree add "$TMPDIR/wcpay-11.1.0" 11.1.0`, then run with
+  `WCPAY_SRC="$TMPDIR/wcpay-11.1.0"`. `WCPAY_SOURCE_REF` selects a different pin; the special value
   `worktree` accepts the current HEAD state (only for deliberately re-baselining — pair with
   `--update` and a disposition pass, never for a normal check).
 
@@ -134,8 +134,8 @@ loop on:
   but not green either. Fix the precondition and re-run.
 
 The A0 self-check must be green **before any native code exists** — that is the proof the harness
-itself is trustworthy. (Validated 2026-07-14: the self-check loop runs 12 gates — 11 PASS, with
-`drift gate (BC + tracks)` BLOCKED whenever the shared plugin clone is off the 10.8.0 pin, see §1.)
+itself is trustworthy. The current 11.1.0 floor requires a fresh A0 self-check; the retained
+2026-07-14 validation ran against 10.8.0 and is historical only.
 Self-check proves only the **no-false-positive** half of trust; the fail-closed half (gates still
 detect injected differences) is proven by the harness self-tests — `run-self-tests.sh`, run
 automatically as the first `--full-evidence` gate and runnable standalone anytime (~8 min).

@@ -15,7 +15,7 @@ class WooPaymentsClientVersionTest extends WC_Unit_Test_Case {
 	 * @testdox Should declare the WCPay version the native runtime was verified against; a bump is a deliberate, reviewed change.
 	 */
 	public function test_version_is_the_verified_platform_contract(): void {
-		$this->assertSame( '10.8.0', WooPaymentsClientVersion::VERSION, 'Bumping the declared client version requires reviewing every platform gate between the versions first — see the class docblock before changing this.' );
+		$this->assertSame( '11.1.0', WooPaymentsClientVersion::VERSION, 'Bumping the declared client version requires reviewing every platform gate between the versions first — see the class docblock before changing this.' );
 	}
 
 	/**

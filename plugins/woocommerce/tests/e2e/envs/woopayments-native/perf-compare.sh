@@ -5,8 +5,8 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
 readonly REFERENCE_DIRECTORY='woocommerce-payments-reference'
-readonly REFERENCE_SHA256='9b80d9002e831f62d72bba09dec8b09ca3dc8116c637bae94c74160063767cc9'
-readonly REFERENCE_URL='https://github.com/Automattic/woocommerce-payments/releases/download/10.8.0/woocommerce-payments.zip'
+readonly REFERENCE_SHA256='d655a77f24f638a3a57edbfd192c6d9e1196970b23320d289a48fc443ca7ffb1'
+readonly REFERENCE_URL='https://github.com/Automattic/woocommerce-payments/releases/download/11.1.0/woocommerce-payments.zip'
 readonly PROBE_SOURCE='wp-content/plugins/woocommerce/tests/e2e/envs/woopayments-native/perf-probe.php'
 readonly PROBE_TARGET='wp-content/mu-plugins/woopayments-native-perf-probe.php'
 readonly CLI_HELPER_MARKER='woocommerce-native-perf-helper'
@@ -121,7 +121,7 @@ install_reference() {
 	local version
 	if ! store_helper install-reference "$REFERENCE_URL" "$REFERENCE_SHA256" "$REFERENCE_DIRECTORY" > /dev/null; then return 1; fi
 	if ! version="$(store_wp plugin get woocommerce-payments-reference --field=version)"; then return 1; fi
-	[[ "$version" == '10.8.0' ]] || { echo 'The reference plugin is not WooPayments 10.8.0.' >&2; return 1; }
+	[[ "$version" == '11.1.0' ]] || { echo 'The reference plugin is not WooPayments 11.1.0.' >&2; return 1; }
 }
 
 cleanup() {

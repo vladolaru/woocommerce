@@ -1565,7 +1565,7 @@ if [ "$WITH_TRACKS" -eq 1 ]; then
 fi
 
 # 1. BC + Tracks static drift gate (source-level; independent of stores).
-gate "drift gate (BC + tracks)" env WCPAY_SRC="$WCPAY_SOURCE_ROOT" WCPAY_SOURCE_REF="${WCPAY_EXTENSION_REF:-10.8.0}" bash "$SELF_DIR/bc-drift-gate.sh"
+gate "drift gate (BC + tracks)" env WCPAY_SRC="$WCPAY_SOURCE_ROOT" WCPAY_SOURCE_REF="${WCPAY_EXTENSION_REF:-11.1.0}" bash "$SELF_DIR/bc-drift-gate.sh"
 gate "subsystem disposition inventory" bash "$SELF_DIR/subsystem-disposition-gate.sh"
 # Static native contract gates (source-level; previously enforcement orphans that
 # nothing ran — a hook rename or Tracks-owner move sailed through a green loop).

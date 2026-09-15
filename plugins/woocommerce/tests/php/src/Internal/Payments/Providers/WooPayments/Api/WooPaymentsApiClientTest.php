@@ -62,7 +62,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * Preserved WooPayments V1 client capability user agent.
 	 */
-	private const EXPECTED_USER_AGENT = 'WooCommerce Payments/10.8.0';
+	private const EXPECTED_USER_AGENT = 'WooCommerce Payments/11.1.0';
 
 	/**
 	 * @testdox Should create account links through the site-scoped user-token endpoint.

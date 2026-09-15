@@ -28,7 +28,7 @@ set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 WCPAY_SRC="${WCPAY_SRC:-$REPO_ROOT/../woocommerce-payments}"
-WCPAY_SOURCE_REF="${WCPAY_SOURCE_REF:-10.8.0}"
+WCPAY_SOURCE_REF="${WCPAY_SOURCE_REF:-11.1.0}"
 BASELINE_DIR="$SELF_DIR/bc-drift-baseline"
 PROVENANCE_FILE="$BASELINE_DIR/source-provenance.txt"
 
@@ -103,9 +103,23 @@ CLIENT="$WCPAY_SRC/client"
 ROOTFILE="$WCPAY_SRC/woocommerce-payments.php"
 SCAN="$INC $SRC"
 
+# Strip the source path before any content filtering so a checkout directory named `wcpay-*`
+# cannot make an unrelated source line satisfy a WooPayments-specific pattern.
+strip_source_prefix() {
+	awk -v source_root="$WCPAY_SRC" '
+		index( $0, source_root ) == 1 {
+			relative_line = substr( $0, length( source_root ) + 1 );
+			sub( "^/", "", relative_line );
+			print relative_line;
+			next;
+		}
+		{ print; }
+	'
+}
+
 # Strip the source path prefix and ":<line>:" so the signature is churn-stable, then sort-unique.
 normalize() {
-	sed -E "s#${WCPAY_SRC}/?##g" \
+	strip_source_prefix \
 		| sed -E 's/^([^:]+):[0-9]+:[[:space:]]*/\1: /' \
 		| sed -E 's/[[:space:]]+$//' \
 		| grep -v -e '^[[:space:]]*$' \
@@ -119,10 +133,10 @@ probe_scheduler() {
 	{
 		grep -rHn "GROUP_ID\|group_id\|'woocommerce_payments'\|\"woocommerce_payments\"" $SCAN --include="*.php"
 		grep -rHn "as_schedule_single_action\|as_schedule_recurring_action\|as_enqueue_async_action\|schedule_job\|as_unschedule_action\|as_unschedule_all_actions\|as_cancel_action" $SCAN --include="*.php"
-		grep -rHn "wcpay_\|'woocommerce_payments_" $SCAN --include="*.php" | grep "schedule\|as_enqueue\|as_schedule\|add_action"
+		grep -rHn "wcpay_\|'woocommerce_payments_" $SCAN --include="*.php" | strip_source_prefix | grep "schedule\|as_enqueue\|as_schedule\|add_action"
 		grep -rHn "wp_schedule_event\|wp_schedule_single_event\|wp_unschedule_event\|wp_clear_scheduled_hook\|wp_next_scheduled\|wp_unschedule_hook" $SCAN --include="*.php"
 		grep -rHn "add_action.*wcpay_\|add_action.*woocommerce_payments_" $SCAN --include="*.php"
-		grep -rHn "const.*HOOK\|const.*ACTION\|const.*EVENT" $SCAN --include="*.php" | grep -i "wcpay\|woocommerce_pay"
+		grep -rHn "const.*HOOK\|const.*ACTION\|const.*EVENT" $SCAN --include="*.php" | strip_source_prefix | grep -i "wcpay\|woocommerce_pay"
 		grep -rHn "wcpay_failed_event\|failed_webhook\|failed_event" $SCAN --include="*.php"
 	} 2>/dev/null | grep -v vendor | grep -v '/tests/' | normalize
 }
@@ -145,11 +159,11 @@ probe_persisted_data() {
 		grep -rHn "update_meta_data\|add_meta_data\|get_meta\|delete_meta_data" "$INC" "$SRC" --include="*.php"
 		grep -rHn "update_post_meta\|get_post_meta\|add_post_meta\|delete_post_meta" "$INC" "$SRC" --include="*.php"
 		grep -rHn "update_user_meta\|get_user_meta\|add_user_meta\|delete_user_meta\|update_user_option\|get_user_option" "$INC" "$SRC" --include="*.php"
-		grep -rHn "get_option\|update_option\|add_option\|delete_option" "$INC" "$SRC" --include="*.php" | grep -iE "wcpay|woopay|woocommerce_payments|woocommerce_woopayments|nox_profile|nox_lock|platform_checkout"
+		grep -rHn "get_option\|update_option\|add_option\|delete_option" "$INC" "$SRC" --include="*.php" | strip_source_prefix | grep -iE "wcpay|woopay|woocommerce_payments|woocommerce_woopayments|nox_profile|nox_lock|platform_checkout"
 		grep -rHn "set_transient\|get_transient\|delete_transient" "$INC" "$SRC" --include="*.php"
 		grep -rHn "WC()->session\|->session->set\|->session->get\|->session->has\|->session->__unset" "$INC" "$SRC" --include="*.php"
 		grep -Hn "^	const " "$INC/class-database-cache.php"
-		grep -rHn "^	const .*META_KEY\|^	const .*OPTION\|^	const .*SESSION_KEY\|^	const .*TRANSIENT\|^	const .*KEY\b" "$INC" "$SRC" --include="*.php" | grep -iE "wcpay|woopay|stripe|intent|charge|currency|invoice|subscription|product_id|product_price"
+		grep -rHn "^	const .*META_KEY\|^	const .*OPTION\|^	const .*SESSION_KEY\|^	const .*TRANSIENT\|^	const .*KEY\b" "$INC" "$SRC" --include="*.php" | strip_source_prefix | grep -iE "wcpay|woopay|stripe|intent|charge|currency|invoice|subscription|product_id|product_price"
 	} 2>/dev/null | grep -v "vendor\|/tests\|node_modules" | normalize
 }
 
