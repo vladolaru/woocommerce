@@ -972,4 +972,99 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 			$sut->format_cancel_failed_note_candidates( 'Not <now>.' )
 		);
 	}
+
+	/**
+	 * @testdox Should format actionable early-fraud-warning notes with safe transaction and refund links.
+	 */
+	public function test_formats_actionable_early_fraud_warning_note_candidates(): void {
+		$sut = new WooPaymentsOrderNoteService();
+
+		$notes = $sut->format_early_fraud_warning_note_candidates( 'ch_early_warning', true, 'made_with_stolen_card' );
+
+		$transaction_url = $sut->transaction_url( '', 'ch_early_warning' );
+		$this->assertSame(
+			array(
+				'Payment has received an early fraud warning with reason &quot;Made with stolen card&quot;. <a href="' . $transaction_url . '" class="wcpay-efw-refund-link" target="_blank" rel="noopener noreferrer">Refunding the payment now</a> can prevent a dispute. See <a href="' . $transaction_url . '" target="_blank" rel="noopener noreferrer">payment details</a> for more information.',
+			),
+			$notes
+		);
+	}
+
+	/**
+	 * @testdox Should preserve distinct Core and seeded plugin catalog candidates for cutover deduplication.
+	 */
+	public function test_formats_seeded_plugin_catalog_early_fraud_warning_note_candidate(): void {
+		$this->install_test_translations(
+			array(
+				'woocommerce-payments' => array(
+					'Payment has received an early fraud warning with reason "%1$s". <refund>Refunding the payment now</refund> can prevent a dispute. See <a>payment details</a> for more information.' => 'Legacy warning: "%1$s". <refund>Refund now</refund>. See <a>legacy details</a>.',
+					'Made with stolen card' => 'Legacy stolen card',
+				),
+			)
+		);
+		$sut = new WooPaymentsOrderNoteService();
+
+		$notes = $sut->format_early_fraud_warning_note_candidates( 'ch_early_warning', true, 'made_with_stolen_card' );
+
+		$this->assertCount( 2, $notes );
+		$this->assertStringContainsString( 'Payment has received an early fraud warning with reason &quot;Made with stolen card&quot;.', $notes[0] );
+		$this->assertStringContainsString( 'Legacy warning: &quot;Legacy stolen card&quot;.', $notes[1] );
+		$this->assertStringContainsString( '<a href="' . $sut->transaction_url( '', 'ch_early_warning' ) . '" class="wcpay-efw-refund-link" target="_blank" rel="noopener noreferrer">Refund now</a>', $notes[1] );
+		$this->assertStringContainsString( '<a href="' . $sut->transaction_url( '', 'ch_early_warning' ) . '" target="_blank" rel="noopener noreferrer">legacy details</a>', $notes[1] );
+	}
+
+	/**
+	 * @testdox Should omit unknown reasons and refund links from resolved early fraud warning notes.
+	 */
+	public function test_formats_resolved_early_fraud_warning_without_unknown_reason_or_refund_link(): void {
+		$notes = ( new WooPaymentsOrderNoteService() )->format_early_fraud_warning_note_candidates( 'ch_<unsafe>', false, '<unknown>' );
+
+		$this->assertCount( 1, $notes );
+		$this->assertStringContainsString( 'no longer actionable', $notes[0] );
+		$this->assertStringNotContainsString( '&lt;unknown&gt;', $notes[0] );
+		$this->assertStringNotContainsString( 'wcpay-efw-refund-link', $notes[0] );
+		$this->assertStringContainsString( 'target="_blank" rel="noopener noreferrer"', $notes[0] );
+		$this->assertStringNotContainsString( 'ch_<unsafe>', $notes[0] );
+	}
+
+	/**
+	 * @testdox Should use the generic actionable warning copy for an unknown reason.
+	 */
+	public function test_formats_actionable_early_fraud_warning_without_unknown_reason(): void {
+		$notes = ( new WooPaymentsOrderNoteService() )->format_early_fraud_warning_note_candidates( 'ch_early_warning', true, '<unknown>' );
+
+		$this->assertCount( 1, $notes );
+		$this->assertStringContainsString( 'Payment has received an early fraud warning.', $notes[0] );
+		$this->assertStringNotContainsString( '&lt;unknown&gt;', $notes[0] );
+		$this->assertStringContainsString( 'class="wcpay-efw-refund-link"', $notes[0] );
+	}
+
+	/**
+	 * @testdox Should provide only the seven known early fraud warning reason labels.
+	 *
+	 * @dataProvider early_fraud_warning_reason_provider
+	 *
+	 * @param string $fraud_type Expected provider reason.
+	 * @param string $label Expected merchant label.
+	 */
+	public function test_gets_known_early_fraud_warning_reason_labels( string $fraud_type, string $label ): void {
+		$this->assertSame( $label, ( new WooPaymentsOrderNoteService() )->get_early_fraud_warning_reason_for_display( $fraud_type ) );
+	}
+
+	/**
+	 * @return array<string,array{string,string}>
+	 */
+	public function early_fraud_warning_reason_provider(): array {
+		return array(
+			'card never received'    => array( 'card_never_received', 'Card never received' ),
+			'fraudulent application' => array( 'fraudulent_card_application', 'Fraudulent card application' ),
+			'counterfeit card'       => array( 'made_with_counterfeit_card', 'Made with counterfeit card' ),
+			'lost card'              => array( 'made_with_lost_card', 'Made with lost card' ),
+			'stolen card'            => array( 'made_with_stolen_card', 'Made with stolen card' ),
+			'other'                  => array( 'misc', 'Other' ),
+			'unauthorized use'       => array( 'unauthorized_use_of_card', 'Unauthorized use of card' ),
+			'unknown'                => array( 'unknown', '' ),
+			'empty'                  => array( '', '' ),
+		);
+	}
 }

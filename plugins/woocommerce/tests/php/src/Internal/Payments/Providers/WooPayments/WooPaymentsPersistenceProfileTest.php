@@ -39,6 +39,7 @@ class WooPaymentsPersistenceProfileTest extends WC_Unit_Test_Case {
 		$this->assertSame( '-1', $this->sut->get_lock_sentinel() );
 		$this->assertSame( 300, $this->sut->get_lock_ttl_seconds() );
 		$this->assertSame( '_wcpay_refund_id', $this->sut->get_processed_refund_link_meta_key() );
+		$this->assertSame( '_wcpay_early_fraud_warning', WooPaymentsPersistenceProfile::EARLY_FRAUD_WARNING_META_KEY );
 		$this->assertSame(
 			array(
 				'_intent_id',
@@ -50,6 +51,7 @@ class WooPaymentsPersistenceProfileTest extends WC_Unit_Test_Case {
 				'_wcpay_fraud_meta_box_type',
 				'_wcpay_fraud_outcome_status',
 				'_wcpay_fraud_ruleset_results',
+				'_wcpay_early_fraud_warning',
 				'_wcpay_intent_currency',
 				'_wcpay_open_dispute_ids',
 				'_wcpay_refund_id',

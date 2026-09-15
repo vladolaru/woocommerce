@@ -3,6 +3,7 @@
  */
 import apiFetch from '@wordpress/api-fetch';
 import { act, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 // Holding on to the ready callback lets every test boot the entry against its
 // own DOM and config without re-requiring the module — a fresh require would
@@ -41,9 +42,10 @@ const bootEntry = () => {
 };
 
 const selectStatus = ( value: string ) => {
-	const field = document.getElementById(
-		'order_status'
-	) as HTMLSelectElement;
+	const field = document.getElementById( 'order_status' );
+	if ( ! ( field instanceof window.HTMLSelectElement ) ) {
+		throw new Error( 'Expected the order status field.' );
+	}
 
 	act( () => {
 		field.value = value;
@@ -51,12 +53,18 @@ const selectStatus = ( value: string ) => {
 	} );
 };
 
-let orderScreen: HTMLDivElement | null = null;
+let orderScreen: ReturnType< typeof document.createElement > | null = null;
 
 // Modal stand-ins and the error notice all render inside the order screen, so
 // scoping queries there keeps them clear of @wordpress/a11y's live regions,
 // which repeat announced text at the end of `document.body`.
-const orderScreenQueries = () => within( orderScreen as HTMLElement );
+const orderScreenQueries = () => {
+	if ( ! orderScreen ) {
+		throw new Error( 'Expected the order screen fixture.' );
+	}
+
+	return within( orderScreen );
+};
 
 describe( 'woopayments-order-status-change entrypoint', () => {
 	// The entry owns its own React root, so nothing here goes through Testing
@@ -113,6 +121,37 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 				'.woocommerce-woopayments-order-status-change'
 			)
 		).not.toBeInTheDocument();
+	} );
+
+	it( 'opens the inline refund panel when the status field is absent', () => {
+		window.woocommerceWooPaymentsOrderStatusChange = {
+			order_status: 'wc-processing',
+			can_refund: true,
+			refund_amount: 42.5,
+			formatted_refund_amount: '$42.50',
+			refunded_amount: 0,
+			charge_id: '',
+		};
+		const refundButton = orderScreenQueries().getByRole( 'button', {
+			name: 'Refund',
+		} );
+		const click = jest.fn();
+		refundButton.addEventListener( 'click', click );
+		document.getElementById( 'order_status' )?.remove();
+		const link = document.createElement( 'a' );
+		link.href = 'https://example.test/transaction';
+		link.className = 'wcpay-efw-refund-link';
+		orderScreen?.appendChild( link );
+
+		bootEntry();
+		link.dispatchEvent(
+			new window.MouseEvent( 'click', {
+				bubbles: true,
+				cancelable: true,
+			} )
+		);
+
+		expect( click ).toHaveBeenCalledTimes( 1 );
 	} );
 
 	describe( 'on a refundable WooPayments order', () => {
@@ -263,4 +302,78 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 			'Refunds and order editing are disabled while this payment has a dispute.'
 		);
 	} );
+
+	it( 'opens the inline refund panel from an actionable early fraud warning link', async () => {
+		window.woocommerceWooPaymentsOrderStatusChange = {
+			order_status: 'wc-processing',
+			can_refund: true,
+			refund_amount: 42.5,
+			formatted_refund_amount: '$42.50',
+			refunded_amount: 0,
+			charge_id: '',
+		};
+		const refundButton = orderScreenQueries().getByRole( 'button', {
+			name: 'Refund',
+		} );
+		const click = jest.fn();
+		const scrollIntoView = jest.fn();
+		refundButton.addEventListener( 'click', click );
+		const refundPanel = orderScreen?.querySelector(
+			'#woocommerce-order-items'
+		);
+		if ( refundPanel instanceof window.HTMLElement ) {
+			refundPanel.scrollIntoView = scrollIntoView;
+		}
+		const link = document.createElement( 'a' );
+		link.href = 'https://example.test/transaction';
+		link.className = 'wcpay-efw-refund-link';
+		link.textContent = 'Refund this payment';
+		orderScreen?.appendChild( link );
+
+		bootEntry();
+		await userEvent.click(
+			orderScreenQueries().getByRole( 'link', {
+				name: 'Refund this payment',
+			} )
+		);
+
+		expect( click ).toHaveBeenCalledTimes( 1 );
+		expect( scrollIntoView ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it.each( [ 'missing', 'disabled' ] )(
+		'preserves early fraud warning link navigation when the refund button is %s',
+		( refundButtonState ) => {
+			window.woocommerceWooPaymentsOrderStatusChange = {
+				order_status: 'wc-processing',
+				can_refund: true,
+				refund_amount: 42.5,
+				formatted_refund_amount: '$42.50',
+				refunded_amount: 0,
+				charge_id: '',
+			};
+			const refundButton = orderScreenQueries().getByRole( 'button', {
+				name: 'Refund',
+			} );
+			if ( refundButtonState === 'missing' ) {
+				refundButton.remove();
+			} else {
+				refundButton.disabled = true;
+			}
+			const link = document.createElement( 'a' );
+			link.href = 'https://example.test/transaction';
+			link.className = 'wcpay-efw-refund-link';
+			link.textContent = 'Refund this payment';
+			orderScreen?.appendChild( link );
+
+			bootEntry();
+			const click = new window.MouseEvent( 'click', {
+				bubbles: true,
+				cancelable: true,
+			} );
+			link.dispatchEvent( click );
+
+			expect( click.defaultPrevented ).toBe( false );
+		}
+	);
 } );

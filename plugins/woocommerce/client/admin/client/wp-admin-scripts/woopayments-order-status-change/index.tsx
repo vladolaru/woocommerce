@@ -37,6 +37,7 @@ import type { WooPaymentsOrderStatusChangeConfig } from './types';
 
 const CONTAINER_CLASS_NAME = 'woocommerce-woopayments-order-status-change';
 const DISPUTE_CONTAINER_CLASS_NAME = `${ CONTAINER_CLASS_NAME }__dispute-notice`;
+let hasBoundEarlyFraudWarningRefundListener = false;
 
 /**
  * The sliver of jQuery this entry needs.
@@ -76,6 +77,46 @@ function onStatusChange( field: HTMLSelectElement, handler: () => void ): void {
 	}
 
 	field.addEventListener( 'change', handler );
+}
+
+/**
+ * Open Core's existing inline refund panel from an early fraud warning link.
+ */
+function bindEarlyFraudWarningRefundListener(): void {
+	if ( hasBoundEarlyFraudWarningRefundListener ) {
+		return;
+	}
+
+	document.addEventListener( 'click', ( event ) => {
+		if ( ! ( event.target instanceof Element ) ) {
+			return;
+		}
+
+		const link = event.target.closest( '.wcpay-efw-refund-link' );
+		if ( ! ( link instanceof HTMLAnchorElement ) ) {
+			return;
+		}
+
+		const refundButton = document.querySelector( 'button.refund-items' );
+		if (
+			! ( refundButton instanceof HTMLButtonElement ) ||
+			refundButton.disabled
+		) {
+			return;
+		}
+
+		event.preventDefault();
+		refundButton.click();
+
+		const refundPanel =
+			document.querySelector( '.wc-order-refund-items' ) ??
+			document.querySelector( '#woocommerce-order-items' );
+		if ( refundPanel instanceof HTMLElement ) {
+			refundPanel.scrollIntoView?.();
+		}
+	} );
+
+	hasBoundEarlyFraudWarningRefundListener = true;
 }
 
 /**
@@ -169,6 +210,8 @@ function initialize(): void {
 	if ( ! config ) {
 		return;
 	}
+
+	bindEarlyFraudWarningRefundListener();
 
 	const field = getOrderStatusField();
 

@@ -189,6 +189,118 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should render an actionable early fraud warning before the normal risk panel.
+	 */
+	public function test_renders_actionable_early_fraud_warning_before_risk_level(): void {
+		$order = $this->create_woopayments_order(
+			array(
+				'_wcpay_fraud_meta_box_type' => 'allow',
+				'_charge_id'                 => 'ch_early_warning',
+				'_charge_risk_level'         => 'normal',
+				'_wcpay_early_fraud_warning' => array(
+					'efw_id'         => 'efw_123',
+					'efw_actionable' => true,
+					'efw_type'       => 'made_with_stolen_card',
+					'created'        => 123,
+				),
+			)
+		);
+
+		$html = $this->render_meta_box( $order );
+
+		$this->assertStringContainsString( 'Early fraud warning', $html );
+		$this->assertStringContainsString( 'Reported reason: Made with stolen card', $html );
+		$this->assertStringContainsString( 'Refund this payment', $html );
+		$this->assertStringContainsString( 'wcpay-efw-refund-link', $html );
+		$this->assertStringContainsString( 'id=ch_early_warning', $html );
+		$this->assertStringContainsString( 'target="_blank" rel="noopener noreferrer"', $html );
+		$warning_position = strpos( $html, 'Early fraud warning' );
+		$risk_position    = strpos( $html, 'Normal' );
+		$action_position  = strpos( $html, 'Adjust risk filters' );
+		$this->assertIsInt( $warning_position );
+		$this->assertIsInt( $risk_position );
+		$this->assertIsInt( $action_position );
+		$this->assertLessThan( $risk_position, $warning_position );
+		$this->assertLessThan( $action_position, $warning_position );
+	}
+
+	/**
+	 * @testdox Should render a resolved early fraud warning without a refund action.
+	 */
+	public function test_renders_resolved_early_fraud_warning_without_refund_action(): void {
+		$order = $this->create_woopayments_order(
+			array(
+				'_wcpay_fraud_meta_box_type' => 'allow',
+				'_wcpay_early_fraud_warning' => array(
+					'efw_id'         => 'efw_123',
+					'efw_actionable' => false,
+					'efw_type'       => 'unknown_reason',
+					'created'        => 123,
+				),
+			)
+		);
+
+		$html = $this->render_meta_box( $order );
+
+		$this->assertStringContainsString( 'Early fraud warning resolved', $html );
+		$this->assertStringContainsString( 'This payment was refunded or disputed, so the warning is no longer actionable.', $html );
+		$this->assertStringNotContainsString( 'Refund this payment', $html );
+		$this->assertStringNotContainsString( 'Reported reason:', $html );
+	}
+
+	/**
+	 * @testdox Should omit malformed early fraud warning evidence.
+	 *
+	 * @dataProvider malformed_early_fraud_warning_provider
+	 *
+	 * @param mixed $stored_warning Malformed stored warning evidence.
+	 */
+	public function test_omits_malformed_early_fraud_warning_evidence( $stored_warning ): void {
+		$order = $this->create_woopayments_order(
+			array(
+				'_wcpay_fraud_meta_box_type' => 'allow',
+				'_wcpay_early_fraud_warning' => $stored_warning,
+			)
+		);
+
+		$html = $this->render_meta_box( $order );
+
+		$this->assertStringNotContainsString( 'Early fraud warning', $html );
+	}
+
+	/**
+	 * @testdox Should keep provider charge data inside the actionable warning link URL.
+	 */
+	public function test_escapes_the_early_fraud_warning_transaction_link(): void {
+		$order    = $this->create_woopayments_order(
+			array(
+				'_wcpay_fraud_meta_box_type' => 'allow',
+				'_charge_id'                 => 'ch_" onmouseover="alert(1)',
+				'_wcpay_early_fraud_warning' => array(
+					'efw_id'         => 'efw_123',
+					'efw_actionable' => true,
+					'efw_type'       => '',
+					'created'        => 123,
+				),
+			)
+		);
+		$html     = $this->render_meta_box( $order );
+		$document = new \DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$document->loadHTML( $html );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		$links = ( new \DOMXPath( $document ) )->query( '//a[contains(concat(" ", normalize-space(@class), " "), " wcpay-efw-refund-link ")]' );
+
+		$this->assertInstanceOf( \DOMNodeList::class, $links );
+		$this->assertSame( 1, $links->length );
+		$link = $links->item( 0 );
+		$this->assertInstanceOf( \DOMElement::class, $link );
+		$this->assertFalse( $link->hasAttribute( 'onmouseover' ) );
+		$this->assertStringContainsString( 'id=ch_', $link->getAttribute( 'href' ) );
+	}
+
+	/**
 	 * @testdox Active block and review panels render escaped triggered filters before their primary action.
 	 *
 	 * @dataProvider active_fraud_type_provider
@@ -357,6 +469,65 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Malformed stored early fraud warning cases.
+	 *
+	 * @return array<string,array{mixed}>
+	 */
+	public function malformed_early_fraud_warning_provider(): array {
+		return array(
+			'scalar'       => array( 'not-an-array' ),
+			'missing key'  => array(
+				array(
+					'efw_id'         => 'efw_123',
+					'efw_actionable' => true,
+					'efw_type'       => '',
+				),
+			),
+			'extra key'    => array(
+				array(
+					'efw_id'         => 'efw_123',
+					'efw_actionable' => true,
+					'efw_type'       => '',
+					'created'        => 123,
+					'charge'         => 'ch_123',
+				),
+			),
+			'wrong ID'     => array(
+				array(
+					'efw_id'         => 123,
+					'efw_actionable' => true,
+					'efw_type'       => '',
+					'created'        => 123,
+				),
+			),
+			'wrong state'  => array(
+				array(
+					'efw_id'         => 'efw_123',
+					'efw_actionable' => 'yes',
+					'efw_type'       => '',
+					'created'        => 123,
+				),
+			),
+			'wrong reason' => array(
+				array(
+					'efw_id'         => 'efw_123',
+					'efw_actionable' => true,
+					'efw_type'       => array(),
+					'created'        => 123,
+				),
+			),
+			'wrong time'   => array(
+				array(
+					'efw_id'         => 'efw_123',
+					'efw_actionable' => true,
+					'efw_type'       => '',
+					'created'        => -1,
+				),
+			),
+		);
+	}
+
+	/**
 	 * Create the System Under Test.
 	 *
 	 * @param bool $native_register Whether native should register.
@@ -376,9 +547,9 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a WooPayments order with fraud meta.
 	 *
-	 * @param array<string,string> $meta                 Order meta.
-	 * @param string               $payment_method       Payment method ID.
-	 * @param string               $payment_method_title Payment method title.
+	 * @param array<string,mixed> $meta                 Order meta.
+	 * @param string              $payment_method       Payment method ID.
+	 * @param string              $payment_method_title Payment method title.
 	 * @return WC_Order
 	 */
 	private function create_woopayments_order( array $meta, string $payment_method = 'woocommerce_payments', string $payment_method_title = 'WooPayments' ): WC_Order {

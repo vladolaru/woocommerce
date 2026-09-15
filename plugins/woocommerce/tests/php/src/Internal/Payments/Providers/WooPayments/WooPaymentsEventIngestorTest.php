@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
@@ -115,7 +116,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
 		delete_option( 'wcpay_account_deletion_pending_id' );
-		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_row_38_update_first', 'evt_row_38_update_second', 'evt_row_38_update_replay', 'evt_row_38_cache_first', 'evt_row_38_cache_replay', 'evt_row_38_missing_id', 'evt_row_38_lost_first', 'evt_row_38_lost_second', 'evt_row_38_lost_replay', 'evt_row_39_missing_id', 'evt_row_39_null_id', 'evt_row_39_non_scalar_id', 'evt_claimed', 'evt_claim_release' ) as $event_id ) {
+		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_row_38_update_first', 'evt_row_38_update_second', 'evt_row_38_update_replay', 'evt_row_38_cache_first', 'evt_row_38_cache_replay', 'evt_row_38_missing_id', 'evt_row_38_lost_first', 'evt_row_38_lost_second', 'evt_row_38_lost_replay', 'evt_row_39_missing_id', 'evt_row_39_null_id', 'evt_row_39_non_scalar_id', 'evt_claimed', 'evt_claim_release', 'evt_early_warning_created', 'evt_early_warning_updated', 'evt_early_warning_hooks', 'evt_early_warning_mode_mismatch', 'evt_early_warning_retry' ) as $event_id ) {
 			delete_transient( 'wcpay_processed_event_' . md5( $event_id ) );
 			wp_cache_delete( 'wcpay_claimed_event_' . md5( $event_id ), 'woopayments_events' );
 		}
@@ -2853,6 +2854,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertNotContains( 'invoice.paid', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
 		$this->assertNotContains( 'invoice.payment_failed', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
 		$this->assertNotContains( 'invoice.upcoming', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
+		$this->assertNotContains( 'radar.early_fraud_warning.created', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
+		$this->assertNotContains( 'radar.early_fraud_warning.updated', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
 	}
 
 	/**
@@ -4331,13 +4334,14 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * Build an ingestor from the core collaborators, wiring its event handlers from the container
 	 * and the supplied runtime and API client.
 	 *
-	 * @param OrderPaymentLifecycleService $lifecycle_service Order lifecycle service.
-	 * @param LegacyProxy                  $legacy_proxy      Legacy proxy.
-	 * @param WooPaymentsLegacyRuntime     $legacy_runtime    WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient         $api_client        Native WooPayments API client.
+	 * @param OrderPaymentLifecycleService                  $lifecycle_service Order lifecycle service.
+	 * @param LegacyProxy                                   $legacy_proxy      Legacy proxy.
+	 * @param WooPaymentsLegacyRuntime                      $legacy_runtime    WooPayments legacy runtime.
+	 * @param WooPaymentsApiClient                          $api_client                       Native WooPayments API client.
+	 * @param WooPaymentsEarlyFraudWarningEventHandler|null $early_fraud_warning_event_handler Optional early fraud warning handler.
 	 * @return WooPaymentsEventIngestor
 	 */
-	private function create_ingestor( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client ): WooPaymentsEventIngestor {
+	private function create_ingestor( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null ): WooPaymentsEventIngestor {
 		$sut = new WooPaymentsEventIngestor();
 		$sut->init(
 			$lifecycle_service,
@@ -4347,10 +4351,291 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			$this->create_dispute_event_handler( $legacy_runtime, $api_client ),
 			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
 			wc_get_container()->get( WooPaymentsAccountEventHandler::class ),
-			$this->create_notification_event_handler()
+			$this->create_notification_event_handler(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$early_fraud_warning_event_handler
 		);
 
 		return $sut;
+	}
+
+	/**
+	 * Build an early fraud warning handler that records routed objects.
+	 *
+	 * @param string[] $sequence     Shared delivery sequence.
+	 * @param bool     $should_throw Whether processing should throw.
+	 * @return WooPaymentsEarlyFraudWarningEventHandler
+	 */
+	private function create_recording_early_fraud_warning_handler( array &$sequence, bool $should_throw = false ): WooPaymentsEarlyFraudWarningEventHandler {
+		$handler               = new class( $sequence ) extends WooPaymentsEarlyFraudWarningEventHandler {
+			/**
+			 * Shared delivery sequence.
+			 *
+			 * @var string[]
+			 */
+			private $sequence;
+
+			/**
+			 * Routed event objects.
+			 *
+			 * @var array<int,array{0:string,1:array<string,mixed>}>
+			 */
+			public array $processed_events = array();
+
+			/**
+			 * Whether processing should throw.
+			 *
+			 * @var bool
+			 */
+			public bool $should_throw = false;
+
+			/**
+			 * Set the shared delivery sequence.
+			 *
+			 * @param string[] $sequence Shared delivery sequence.
+			 */
+			public function __construct( array &$sequence ) {
+				$this->sequence =& $sequence;
+			}
+
+			/**
+			 * Tell whether this fake supports the supplied event.
+			 *
+			 * @param string $event_type Provider event type.
+			 * @return bool
+			 */
+			public function is_supported_event( string $event_type ): bool {
+				return in_array( $event_type, array( 'radar.early_fraud_warning.created', 'radar.early_fraud_warning.updated' ), true );
+			}
+
+			/**
+			 * Record an early fraud warning event object.
+			 *
+			 * @param string              $event_type   Provider event type.
+			 * @param array<string,mixed> $event_object Provider event object.
+			 * @throws RuntimeException When configured to fail.
+			 */
+			public function process( string $event_type, array $event_object ): void {
+				$this->sequence[]         = 'handler';
+				$this->processed_events[] = array( $event_type, $event_object );
+				if ( $this->should_throw ) {
+					throw new RuntimeException( 'Recorded early fraud warning failure.' );
+				}
+			}
+		};
+		$handler->should_throw = $should_throw;
+
+		return $handler;
+	}
+
+	/**
+	 * Build an early fraud warning event.
+	 *
+	 * @param string $event_id Provider event ID.
+	 * @return array<string,mixed>
+	 */
+	private function create_early_fraud_warning_event( string $event_id ): array {
+		return array(
+			'id'       => $event_id,
+			'type'     => 'radar.early_fraud_warning.created',
+			'livemode' => false,
+			'data'     => array(
+				'object' => array(
+					'charge'     => 'ch_early_warning',
+					'id'         => 'efw_123',
+					'actionable' => true,
+					'created'    => 123,
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should route an early fraud warning without applying payment lifecycle effects.
+	 */
+	public function test_routes_early_fraud_warning_created_event(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_early_warning' );
+		$order->save();
+
+		$this->sut->process(
+			array(
+				'id'       => 'evt_early_warning_created',
+				'type'     => 'radar.early_fraud_warning.created',
+				'livemode' => false,
+				'data'     => array(
+					'object' => array(
+						'charge'     => 'ch_early_warning',
+						'id'         => 'efw_123',
+						'actionable' => true,
+						'created'    => 123,
+					),
+				),
+			)
+		);
+
+		$this->assertSame(
+			array(
+				'efw_id'         => 'efw_123',
+				'efw_actionable' => true,
+				'efw_type'       => '',
+				'created'        => 123,
+			),
+			wc_get_order( $order->get_id() )->get_meta( '_wcpay_early_fraud_warning', true )
+		);
+	}
+
+	/**
+	 * @testdox Should route an early fraud warning update without lifecycle effects.
+	 */
+	public function test_routes_early_fraud_warning_updated_event(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_early_warning_updated' );
+		$order->update_meta_data(
+			'_wcpay_early_fraud_warning',
+			array(
+				'efw_id'         => 'efw_123',
+				'efw_actionable' => true,
+				'efw_type'       => '',
+				'created'        => 123,
+			)
+		);
+		$order->save();
+
+		$this->sut->process(
+			array(
+				'id'       => 'evt_early_warning_updated',
+				'type'     => 'radar.early_fraud_warning.updated',
+				'livemode' => false,
+				'data'     => array(
+					'object' => array(
+						'charge'     => 'ch_early_warning_updated',
+						'id'         => 'efw_123',
+						'actionable' => false,
+						'created'    => 123,
+					),
+				),
+			)
+		);
+
+		$this->assertSame( false, wc_get_order( $order->get_id() )->get_meta( '_wcpay_early_fraud_warning', true )['efw_actionable'] );
+	}
+
+	/**
+	 * @testdox Should preserve delivery hook order and arguments around early fraud warning handling.
+	 */
+	public function test_early_fraud_warning_preserves_delivery_hook_order_and_arguments(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$sequence   = array();
+		$handler    = $this->create_recording_early_fraud_warning_handler( $sequence );
+		$sut        = $this->create_ingestor(
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new LegacyProxy(),
+			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
+			new class() extends WooPaymentsApiClient {},
+			$handler
+		);
+		$event      = $this->create_early_fraud_warning_event( 'evt_early_warning_hooks' );
+		$hook_calls = array();
+		add_action(
+			'woocommerce_payments_before_webhook_delivery',
+			static function ( string $event_type, array $event_body ) use ( &$sequence, &$hook_calls ): void {
+				$sequence[]   = 'before';
+				$hook_calls[] = array( $event_type, $event_body );
+			},
+			10,
+			2
+		);
+		add_action(
+			'woocommerce_payments_after_webhook_delivery',
+			static function ( string $event_type, array $event_body ) use ( &$sequence, &$hook_calls ): void {
+				$sequence[]   = 'after';
+				$hook_calls[] = array( $event_type, $event_body );
+			},
+			10,
+			2
+		);
+
+		$sut->process( $event );
+
+		$this->assertSame( array( 'before', 'handler', 'after' ), $sequence );
+		$this->assertSame(
+			array(
+				array( 'radar.early_fraud_warning.created', $event ),
+				array( 'radar.early_fraud_warning.created', $event ),
+			),
+			$hook_calls
+		);
+		$this->assertSame( array( array( 'radar.early_fraud_warning.created', $event['data']['object'] ) ), $handler->processed_events );
+	}
+
+	/**
+	 * @testdox Should skip early fraud warning lookup and hooks when the webhook mode mismatches.
+	 */
+	public function test_early_fraud_warning_mode_mismatch_skips_lazy_handler_and_order_lookup(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$runtime = new WooPaymentsLegacyRuntime();
+		$runtime->init( new LegacyRuntimeProxy( true ) );
+		$sut        = $this->create_ingestor(
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new LegacyProxy(),
+			$runtime,
+			new class() extends WooPaymentsApiClient {}
+		);
+		$hook_calls = array();
+		add_action(
+			'woocommerce_payments_before_webhook_delivery',
+			static function () use ( &$hook_calls ): void {
+				$hook_calls[] = 'before';
+			}
+		);
+		$event                             = $this->create_early_fraud_warning_event( 'evt_early_warning_mode_mismatch' );
+		$event['livemode']                 = true;
+		$event['data']['object']['charge'] = 'ch_that_does_not_exist';
+
+		$sut->process( $event );
+
+		$this->assertSame( array(), $hook_calls );
+		$this->assertSame( 1, get_transient( 'wcpay_processed_event_' . md5( 'evt_early_warning_mode_mismatch' ) ) );
+	}
+
+	/**
+	 * @testdox Should release a failed early warning claim, retry it, mark success, and short-circuit its replay.
+	 */
+	public function test_early_fraud_warning_failure_releases_claim_and_remains_retryable(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$sequence = array();
+		$handler  = $this->create_recording_early_fraud_warning_handler( $sequence, true );
+		$sut      = $this->create_ingestor(
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new LegacyProxy(),
+			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
+			new class() extends WooPaymentsApiClient {},
+			$handler
+		);
+		$event    = $this->create_early_fraud_warning_event( 'evt_early_warning_retry' );
+
+		try {
+			$sut->process( $event );
+			$this->fail( 'Expected early fraud warning handler failure.' );
+		} catch ( RuntimeException $exception ) {
+			$this->assertSame( 'Recorded early fraud warning failure.', $exception->getMessage() );
+		}
+		$this->assertFalse( get_transient( 'wcpay_processed_event_' . md5( 'evt_early_warning_retry' ) ) );
+		$this->assertFalse( wp_cache_get( 'wcpay_claimed_event_' . md5( 'evt_early_warning_retry' ), 'woopayments_events' ) );
+
+		$handler->should_throw = false;
+		$sut->process( $event );
+		$sut->process( $event );
+
+		$this->assertCount( 2, $handler->processed_events );
+		$this->assertSame( 1, get_transient( 'wcpay_processed_event_' . md5( 'evt_early_warning_retry' ) ) );
 	}
 
 	/**

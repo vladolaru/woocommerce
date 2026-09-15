@@ -63,6 +63,14 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceProfile {
 	public const PROCESSED_REFUND_LINK_META_KEY = '_wcpay_refund_id';
 
 	/**
+	 * Provider early fraud warning evidence stored on the order.
+	 *
+	 * @since 11.2.0
+	 * @var string
+	 */
+	public const EARLY_FRAUD_WARNING_META_KEY = '_wcpay_early_fraud_warning';
+
+	/**
 	 * WooPayments Bucket-E order/refund meta keys that native code must preserve.
 	 *
 	 * @var string[]
@@ -77,6 +85,7 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceProfile {
 		'_wcpay_fraud_meta_box_type',
 		'_wcpay_fraud_outcome_status',
 		'_wcpay_fraud_ruleset_results',
+		self::EARLY_FRAUD_WARNING_META_KEY,
 		'_wcpay_intent_currency',
 		'_wcpay_open_dispute_ids',
 		'_wcpay_refund_id',

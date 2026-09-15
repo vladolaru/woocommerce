@@ -152,6 +152,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 		$meta_box_type = $this->get_fraud_meta_box_type( $order );
 		$risk_level    = (string) $order->get_meta( self::META_RISK_LEVEL, true );
 
+		$this->print_early_fraud_warning_block( $order, $charge_id );
 		$this->print_risk_level_block( $risk_level );
 
 		$show_adjust_risk_filters_link = true;
@@ -366,6 +367,58 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Print compatible early fraud warning evidence before the risk panel.
+	 *
+	 * @param WC_Order $order     Order containing early fraud warning evidence.
+	 * @param string   $charge_id Provider charge ID.
+	 */
+	private function print_early_fraud_warning_block( WC_Order $order, string $charge_id ): void {
+		$warning = $order->get_meta( WooPaymentsPersistenceProfile::EARLY_FRAUD_WARNING_META_KEY, true );
+		if (
+			! is_array( $warning )
+			|| array() !== array_diff( array( 'efw_id', 'efw_actionable', 'efw_type', 'created' ), array_keys( $warning ) )
+			|| array() !== array_diff( array_keys( $warning ), array( 'efw_id', 'efw_actionable', 'efw_type', 'created' ) )
+			|| ! is_string( $warning['efw_id'] )
+			|| ! is_bool( $warning['efw_actionable'] )
+			|| ! is_string( $warning['efw_type'] )
+			|| ! is_int( $warning['created'] )
+			|| 0 > $warning['created']
+		) {
+			return;
+		}
+
+		$actionable  = $warning['efw_actionable'];
+		$reason      = $this->get_note_service()->get_early_fraud_warning_reason_for_display( $warning['efw_type'] );
+		$status      = $actionable ? __( 'Early fraud warning', 'woocommerce' ) : __( 'Early fraud warning resolved', 'woocommerce' );
+		$description = $actionable
+			? __( 'The card issuer flagged this payment as likely fraudulent. Refunding it now can prevent a dispute.', 'woocommerce' )
+			: __( 'This payment was refunded or disputed, so the warning is no longer actionable.', 'woocommerce' );
+
+		echo '<div class="wcpay-early-fraud-warning wcpay-early-fraud-warning--' . esc_attr( $actionable ? 'actionable' : 'resolved' ) . '">';
+		echo '<p class="wcpay-early-fraud-warning__status"><span class="wcpay-fraud-risk-meta-icon wcpay-fraud-risk-meta-icon--' . esc_attr( $actionable ? 'review' : 'allow' ) . '" aria-hidden="true"></span> ' . esc_html( $status ) . '</p>';
+		if ( '' !== $reason ) {
+			printf(
+				'<p>%s</p>',
+				esc_html(
+					sprintf(
+						/* translators: %s: early fraud warning reason. */
+						__( 'Reported reason: %s', 'woocommerce' ),
+						$reason
+					)
+				)
+			);
+		}
+		echo '<p>' . esc_html( $description ) . '</p>';
+		if ( $actionable ) {
+			$transaction_url = $this->get_transaction_url( '', $charge_id );
+			if ( '' !== $transaction_url ) {
+				echo '<p><a class="wcpay-efw-refund-link" href="' . esc_url( $transaction_url ) . '" target="_blank" rel="noopener noreferrer">' . esc_html__( 'Refund this payment', 'woocommerce' ) . '</a></p>';
+			}
+		}
+		echo '</div>';
+	}
+
+	/**
 	 * Print the risk level block when the risk level is known.
 	 *
 	 * @param string $risk_level Risk level.
@@ -521,6 +574,31 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 .wcpay-fraud-risk-level {
 	border-bottom: 1px solid #ddd;
 	padding: 8px 12px;
+}
+
+.wcpay-early-fraud-warning {
+	border-bottom: 1px solid #ddd;
+	padding: 8px 12px;
+}
+
+.wcpay-early-fraud-warning > p {
+	margin: 0 0 6px;
+}
+
+.wcpay-early-fraud-warning > p:last-child {
+	margin-bottom: 0;
+}
+
+.wcpay-early-fraud-warning__status {
+	font-weight: 600;
+}
+
+.wcpay-early-fraud-warning--actionable .wcpay-early-fraud-warning__status {
+	color: #b16202;
+}
+
+.wcpay-early-fraud-warning--resolved .wcpay-early-fraud-warning__status {
+	color: #008a20;
 }
 
 .wcpay-fraud-risk-level > p {

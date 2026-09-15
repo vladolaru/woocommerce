@@ -174,38 +174,47 @@ class WooPaymentsEventIngestor {
 	private ?WooPaymentsAdminMenuBadgeService $admin_menu_badge_service = null;
 
 	/**
+	 * WooPayments early fraud warning event handler.
+	 *
+	 * @var WooPaymentsEarlyFraudWarningEventHandler|null
+	 */
+	private ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLifecycleService          $lifecycle_service          Order lifecycle service.
-	 * @param LegacyProxy                           $legacy_proxy               Legacy proxy.
-	 * @param WooPaymentsLegacyRuntime              $legacy_runtime             WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient                  $api_client                 Native WooPayments API client.
-	 * @param WooPaymentsDisputeEventHandler        $dispute_event_handler      Dispute event handler.
-	 * @param WooPaymentsRefundEventHandler         $refund_event_handler       Refund event handler.
-	 * @param WooPaymentsAccountEventHandler        $account_event_handler      Account event handler.
-	 * @param WooPaymentsNotificationEventHandler   $notification_event_handler Notification event handler.
-	 * @param WooPaymentsOrderDataService|null      $order_data_service         WooPayments order data service.
-	 * @param WooPaymentsAccountService|null        $account_service            WooPayments account service.
-	 * @param WooPaymentsOrderEffectApplier|null    $order_effect_applier       Optional order effect applier.
-	 * @param WooPaymentsOrderNoteService|null      $order_note_service         Optional order note service.
-	 * @param WooPaymentsAdminMenuBadgeService|null $admin_menu_badge_service Optional admin menu badge service.
+	 * @param OrderPaymentLifecycleService                  $lifecycle_service                  Order lifecycle service.
+	 * @param LegacyProxy                                   $legacy_proxy                       Legacy proxy.
+	 * @param WooPaymentsLegacyRuntime                      $legacy_runtime                     WooPayments legacy runtime.
+	 * @param WooPaymentsApiClient                          $api_client                         Native WooPayments API client.
+	 * @param WooPaymentsDisputeEventHandler                $dispute_event_handler              Dispute event handler.
+	 * @param WooPaymentsRefundEventHandler                 $refund_event_handler               Refund event handler.
+	 * @param WooPaymentsAccountEventHandler                $account_event_handler              Account event handler.
+	 * @param WooPaymentsNotificationEventHandler           $notification_event_handler         Notification event handler.
+	 * @param WooPaymentsOrderDataService|null              $order_data_service                 WooPayments order data service.
+	 * @param WooPaymentsAccountService|null                $account_service                    WooPayments account service.
+	 * @param WooPaymentsOrderEffectApplier|null            $order_effect_applier               Optional order effect applier.
+	 * @param WooPaymentsOrderNoteService|null              $order_note_service                 Optional order note service.
+	 * @param WooPaymentsAdminMenuBadgeService|null         $admin_menu_badge_service           Optional admin menu badge service.
+	 * @param WooPaymentsEarlyFraudWarningEventHandler|null $early_fraud_warning_event_handler Optional early fraud warning event handler.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null, ?WooPaymentsOrderNoteService $order_note_service = null, ?WooPaymentsAdminMenuBadgeService $admin_menu_badge_service = null ): void {
-		$this->lifecycle_service          = $lifecycle_service;
-		$this->legacy_proxy               = $legacy_proxy;
-		$this->legacy_runtime             = $legacy_runtime;
-		$this->api_client                 = $api_client;
-		$this->dispute_event_handler      = $dispute_event_handler;
-		$this->refund_event_handler       = $refund_event_handler;
-		$this->account_event_handler      = $account_event_handler;
-		$this->notification_event_handler = $notification_event_handler;
-		$this->order_data_service         = $order_data_service;
-		$this->account_service            = $account_service;
-		$this->order_effect_applier       = $order_effect_applier;
-		$this->order_note_service         = $order_note_service;
-		$this->admin_menu_badge_service   = $admin_menu_badge_service;
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null, ?WooPaymentsOrderNoteService $order_note_service = null, ?WooPaymentsAdminMenuBadgeService $admin_menu_badge_service = null, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null ): void {
+		$this->lifecycle_service                 = $lifecycle_service;
+		$this->legacy_proxy                      = $legacy_proxy;
+		$this->legacy_runtime                    = $legacy_runtime;
+		$this->api_client                        = $api_client;
+		$this->dispute_event_handler             = $dispute_event_handler;
+		$this->refund_event_handler              = $refund_event_handler;
+		$this->account_event_handler             = $account_event_handler;
+		$this->notification_event_handler        = $notification_event_handler;
+		$this->order_data_service                = $order_data_service;
+		$this->account_service                   = $account_service;
+		$this->order_effect_applier              = $order_effect_applier;
+		$this->order_note_service                = $order_note_service;
+		$this->admin_menu_badge_service          = $admin_menu_badge_service;
+		$this->early_fraud_warning_event_handler = $early_fraud_warning_event_handler;
 	}
 
 	/**
@@ -320,6 +329,12 @@ class WooPaymentsEventIngestor {
 		}
 
 		$event_object = $this->get_event_object( $event );
+		if ( $this->get_early_fraud_warning_event_handler()->is_supported_event( $event_type ) ) {
+			$this->get_early_fraud_warning_event_handler()->process( $event_type, $event_object );
+			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
+			return;
+		}
+
 		if ( $this->dispute_event_handler->is_supported_event( $event_type ) ) {
 			$this->dispute_event_handler->process( $event_type, $event_object );
 			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
@@ -898,6 +913,19 @@ class WooPaymentsEventIngestor {
 		}
 
 		return $this->order_note_service;
+	}
+
+	/**
+	 * Get the WooPayments early fraud warning event handler.
+	 *
+	 * @return WooPaymentsEarlyFraudWarningEventHandler
+	 */
+	private function get_early_fraud_warning_event_handler(): WooPaymentsEarlyFraudWarningEventHandler {
+		if ( null === $this->early_fraud_warning_event_handler ) {
+			$this->early_fraud_warning_event_handler = wc_get_container()->get( WooPaymentsEarlyFraudWarningEventHandler::class );
+		}
+
+		return $this->early_fraud_warning_event_handler;
 	}
 
 	/**

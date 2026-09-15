@@ -424,6 +424,120 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build an early fraud warning rendering from one known catalog.
+	 *
+	 * @param string $charge_id  Provider charge ID.
+	 * @param bool   $actionable Whether refunding can still prevent a dispute.
+	 * @param string $fraud_type Provider fraud warning reason.
+	 * @param string $text_domain Translation catalog to render.
+	 * @return string
+	 */
+	private function format_early_fraud_warning_note_for_domain( string $charge_id, bool $actionable, string $fraud_type, string $text_domain ): string {
+		$transaction_url = esc_url_raw( $this->transaction_url( '', $charge_id ) );
+		$reason          = $this->get_early_fraud_warning_reason_for_domain( $fraud_type, $text_domain );
+
+		if ( ! $actionable ) {
+			$note_format = 'woocommerce-payments' === $text_domain
+				? __( 'The early fraud warning received for this payment is no longer actionable, because the payment was refunded or disputed. See <a>payment details</a> for more information.', 'woocommerce-payments' ) // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				: __( 'The early fraud warning received for this payment is no longer actionable, because the payment was refunded or disputed. See <a>payment details</a> for more information.', 'woocommerce' );
+
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					$note_format,
+					array( 'a' => '' !== $transaction_url ? '<a href="%1$s" target="_blank" rel="noopener noreferrer">' : '<code>' )
+				),
+				$transaction_url
+			);
+		}
+
+		if ( '' === $reason ) {
+			$note_format = 'woocommerce-payments' === $text_domain
+				? __( 'Payment has received an early fraud warning. <refund>Refunding the payment now</refund> can prevent a dispute. See <a>payment details</a> for more information.', 'woocommerce-payments' ) // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				: __( 'Payment has received an early fraud warning. <refund>Refunding the payment now</refund> can prevent a dispute. See <a>payment details</a> for more information.', 'woocommerce' );
+
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					$note_format,
+					array(
+						'refund' => '' !== $transaction_url ? '<a href="%1$s" class="wcpay-efw-refund-link" target="_blank" rel="noopener noreferrer">' : '<code>',
+						'a'      => '' !== $transaction_url ? '<a href="%1$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+					)
+				),
+				$transaction_url
+			);
+		}
+
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: early fraud warning reason. */
+			$note_format = __( 'Payment has received an early fraud warning with reason "%1$s". <refund>Refunding the payment now</refund> can prevent a dispute. See <a>payment details</a> for more information.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: early fraud warning reason. */
+			$note_format = __( 'Payment has received an early fraud warning with reason "%1$s". <refund>Refunding the payment now</refund> can prevent a dispute. See <a>payment details</a> for more information.', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'refund' => '' !== $transaction_url ? '<a href="%2$s" class="wcpay-efw-refund-link" target="_blank" rel="noopener noreferrer">' : '<code>',
+					'a'      => '' !== $transaction_url ? '<a href="%2$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$reason,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Map a known early fraud warning reason with one translation catalog.
+	 *
+	 * @param string $fraud_type Provider fraud warning reason.
+	 * @param string $text_domain Translation catalog to render.
+	 * @return string
+	 */
+	private function get_early_fraud_warning_reason_for_domain( string $fraud_type, string $text_domain ): string {
+		if ( 'woocommerce-payments' === $text_domain ) {
+			switch ( $fraud_type ) {
+				case 'card_never_received':
+					return __( 'Card never received', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'fraudulent_card_application':
+					return __( 'Fraudulent card application', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'made_with_counterfeit_card':
+					return __( 'Made with counterfeit card', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'made_with_lost_card':
+					return __( 'Made with lost card', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'made_with_stolen_card':
+					return __( 'Made with stolen card', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'misc':
+					return __( 'Other', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'unauthorized_use_of_card':
+					return __( 'Unauthorized use of card', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			}
+
+			return '';
+		}
+
+		switch ( $fraud_type ) {
+			case 'card_never_received':
+				return __( 'Card never received', 'woocommerce' );
+			case 'fraudulent_card_application':
+				return __( 'Fraudulent card application', 'woocommerce' );
+			case 'made_with_counterfeit_card':
+				return __( 'Made with counterfeit card', 'woocommerce' );
+			case 'made_with_lost_card':
+				return __( 'Made with lost card', 'woocommerce' );
+			case 'made_with_stolen_card':
+				return __( 'Made with stolen card', 'woocommerce' );
+			case 'misc':
+				return __( 'Other', 'woocommerce' );
+			case 'unauthorized_use_of_card':
+				return __( 'Unauthorized use of card', 'woocommerce' );
+		}
+
+		return '';
+	}
+
+	/**
 	 * Build a payment-success rendering from one known catalog.
 	 *
 	 * @param WC_Order $order                  Order object.
@@ -1207,6 +1321,35 @@ class WooPaymentsOrderNoteService {
 		return Utils::wc_payments_legacy_admin_url(
 			rawurlencode( '/payments/transactions/details' ),
 			array( 'id' => '' !== $intent_id ? $intent_id : $charge_id )
+		);
+	}
+
+	/**
+	 * Get the merchant-facing label for a known early fraud warning reason.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $fraud_type Provider fraud warning reason.
+	 * @return string
+	 */
+	public function get_early_fraud_warning_reason_for_display( string $fraud_type ): string {
+		return $this->get_early_fraud_warning_reason_for_domain( $fraud_type, 'woocommerce' );
+	}
+
+	/**
+	 * Build Core and legacy-plugin renderings for an early fraud warning note.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $charge_id  Provider charge ID.
+	 * @param bool   $actionable Whether refunding can still prevent a dispute.
+	 * @param string $fraud_type Provider fraud warning reason.
+	 * @return string[] Core rendering first, then legacy-plugin compatibility rendering.
+	 */
+	public function format_early_fraud_warning_note_candidates( string $charge_id, bool $actionable, string $fraud_type ): array {
+		return $this->unique_note_candidates(
+			$this->format_early_fraud_warning_note_for_domain( $charge_id, $actionable, $fraud_type, 'woocommerce' ),
+			$this->format_early_fraud_warning_note_for_domain( $charge_id, $actionable, $fraud_type, 'woocommerce-payments' )
 		);
 	}
 
