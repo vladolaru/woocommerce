@@ -93,6 +93,7 @@ type LoadTransactionOptions = {
 
 const DETAIL_ACTION_FOCUS_SELECTOR =
 	'.woocommerce-woopayments-money-movement__authorization-actions, .woocommerce-woopayments-money-movement__authorization-notice, .woocommerce-woopayments-money-movement__refund-actions, .woocommerce-woopayments-money-movement__refund-modal, .woocommerce-woopayments-money-movement__dispute-response';
+const REFUND_DIALOG_ID = 'woocommerce-woopayments-refund-dialog';
 
 const isPaymentIntentId = ( id: string ) => id.startsWith( 'pi_' );
 
@@ -403,6 +404,12 @@ const normalizePaymentIntent = (
 	};
 };
 
+const setRefundDialogId = ( overlay: HTMLDivElement | null ) => {
+	overlay
+		?.querySelector( '[role="dialog"]' )
+		?.setAttribute( 'id', REFUND_DIALOG_ID );
+};
+
 const RefundModal = ( {
 	formattedAmount,
 	isOpenInquiry,
@@ -423,6 +430,7 @@ const RefundModal = ( {
 	onRefund: () => void;
 } ) => (
 	<Modal
+		ref={ setRefundDialogId }
 		className="woocommerce-woopayments-money-movement__refund-modal"
 		title={ __( 'Refund transaction', 'woocommerce' ) }
 		onRequestClose={ onClose }
@@ -890,8 +898,8 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		window.setTimeout( focusRefundModalOpener, 0 );
 	};
 
-	const handleRefundModalOpen = () => {
-		refundModalOpenerRef.current = null;
+	const handleRefundModalOpen = ( opener?: HTMLElement ) => {
+		refundModalOpenerRef.current = opener || null;
 		setRefundReason( null );
 		setRefundTargetDispute( undefined );
 		setIsRefundModalOpen( true );
@@ -1375,6 +1383,13 @@ export const WooPaymentsTransactionDetailsPage = () => {
 						<WooPaymentsTransactionTimeline
 							events={ timelineEvents }
 							disputeOrder={ disputeOrder }
+							onRefund={
+								showFullRefundAction
+									? handleRefundModalOpen
+									: undefined
+							}
+							refundDialogId={ REFUND_DIALOG_ID }
+							isRefundDialogOpen={ isRefundModalOpen }
 						/>
 					</div>
 					{ isRefundModalOpen && (

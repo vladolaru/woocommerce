@@ -237,6 +237,10 @@ export interface WooPaymentsTimelineEvent {
 	message?: string;
 	datetime?: number | string;
 	created?: number | string;
+	/** Whether the provider considers an early fraud warning actionable. */
+	efw_actionable?: boolean;
+	/** Stripe fraud type reported for an early fraud warning. */
+	efw_type?: string;
 	user?: {
 		username?: string;
 		[ key: string ]: unknown;

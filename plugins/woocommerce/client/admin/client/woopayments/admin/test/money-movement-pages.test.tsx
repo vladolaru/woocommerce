@@ -16,6 +16,7 @@ import { WooPaymentsPaymentSummarySection } from '../money-movement/transaction-
 import { WooPaymentsTransactionTimeline } from '../money-movement/transaction-timeline';
 import { WooPaymentsTransactionDetailsPage } from '../money-movement/transaction-details-page';
 import { WooPaymentsTransactionsPage } from '../money-movement/transactions-page';
+import type { WooPaymentsTimelineEvent } from '../money-movement/types';
 import {
 	getWooPaymentsDisputes,
 	getWooPaymentsDisputesSummary,
@@ -5722,6 +5723,352 @@ describe( 'WooPayments money movement pages', () => {
 		);
 
 		expect( await screen.findByText( message ) ).toBeInTheDocument();
+	} );
+
+	describe( 'WooPaymentsTransactionTimeline early fraud warnings', () => {
+		it( 'renders an actionable warning with the known reason and refund action', async () => {
+			const onRefund = jest.fn();
+
+			render(
+				<WooPaymentsTransactionTimeline
+					events={ [
+						{
+							type: 'early_fraud_warning',
+							datetime: 1781712200,
+							efw_actionable: true,
+							efw_type: 'made_with_stolen_card',
+						},
+					] }
+					onRefund={ onRefund }
+					refundDialogId="refund-dialog"
+					isRefundDialogOpen={ false }
+				/>
+			);
+
+			expect(
+				screen.getByText(
+					'Payment status changed to Early fraud warning.'
+				)
+			).toBeInTheDocument();
+			expect(
+				screen.getByText( 'Payment received an early fraud warning' )
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'heading', { name: 'Timeline' } )
+					.nextElementSibling?.children
+			).toHaveLength( 2 );
+			expect(
+				screen.getByText(
+					'The card issuer flagged this payment as likely fraudulent.'
+				)
+			).toBeInTheDocument();
+			expect(
+				screen.getByText( 'Reported reason: Made with stolen card' )
+			).toBeInTheDocument();
+			const refundButton = screen.getByRole( 'button', {
+				name: 'Refund this payment',
+			} );
+			expect( refundButton.closest( 'li' ) ).toHaveTextContent(
+				'Refunding this payment now can prevent a dispute. Refund this payment'
+			);
+			expect( refundButton ).toHaveAttribute( 'aria-haspopup', 'dialog' );
+			expect( refundButton ).toHaveAttribute( 'aria-expanded', 'false' );
+			expect( refundButton ).not.toHaveAttribute( 'aria-controls' );
+
+			await userEvent.click( refundButton );
+
+			expect( onRefund ).toHaveBeenCalledTimes( 1 );
+			expect( onRefund ).toHaveBeenCalledWith( refundButton );
+		} );
+
+		it.each( [
+			[ 'card_never_received', 'Card never received' ],
+			[ 'fraudulent_card_application', 'Fraudulent card application' ],
+			[ 'made_with_counterfeit_card', 'Made with counterfeit card' ],
+			[ 'made_with_lost_card', 'Made with lost card' ],
+			[ 'made_with_stolen_card', 'Made with stolen card' ],
+			[ 'misc', 'Other' ],
+			[ 'unauthorized_use_of_card', 'Unauthorized use of card' ],
+		] )( 'maps the %s provider reason', ( providerReason, label ) => {
+			render(
+				<WooPaymentsTransactionTimeline
+					events={ [
+						{
+							type: 'early_fraud_warning',
+							efw_actionable: true,
+							efw_type: providerReason,
+						},
+					] }
+				/>
+			);
+
+			expect(
+				screen.getByText( `Reported reason: ${ label }` )
+			).toBeInTheDocument();
+		} );
+
+		it.each( [
+			'future_card_pattern',
+			'constructor',
+			'toString',
+			'__proto__',
+		] )( 'omits the unknown %s provider reason', ( providerReason ) => {
+			render(
+				<WooPaymentsTransactionTimeline
+					events={ [
+						{
+							type: 'early_fraud_warning',
+							efw_actionable: true,
+							efw_type: providerReason,
+						},
+					] }
+					onRefund={ jest.fn() }
+					refundDialogId="refund-dialog"
+					isRefundDialogOpen={ false }
+				/>
+			);
+
+			expect(
+				screen.getByText( 'Payment received an early fraud warning' )
+			).toBeInTheDocument();
+			expect(
+				screen.queryByText( providerReason )
+			).not.toBeInTheDocument();
+			expect(
+				screen.queryByText( /Reported reason:/ )
+			).not.toBeInTheDocument();
+			expect(
+				screen.getByRole( 'button', { name: 'Refund this payment' } )
+			).toBeInTheDocument();
+		} );
+
+		it( 'keeps prevention guidance as plain text without a refund callback', () => {
+			render(
+				<WooPaymentsTransactionTimeline
+					events={ [
+						{
+							type: 'early_fraud_warning',
+							efw_actionable: true,
+						},
+					] }
+				/>
+			);
+
+			expect(
+				screen.getByText(
+					'Refunding this payment now can prevent a dispute.'
+				)
+			).toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'button', { name: 'Refund this payment' } )
+			).not.toBeInTheDocument();
+		} );
+
+		it.each( [
+			[ 'false', false ],
+			[ 'string true', 'true' ],
+			[ 'numeric one', 1 ],
+			[ 'an object', { value: true } ],
+		] )(
+			'renders the resolved state for %s actionable data',
+			( _label, actionable ) => {
+				render(
+					<WooPaymentsTransactionTimeline
+						events={ [
+							{
+								type: 'early_fraud_warning',
+								efw_actionable: actionable,
+								efw_type: 'card_never_received',
+							} as WooPaymentsTimelineEvent,
+						] }
+						onRefund={ jest.fn() }
+						refundDialogId="refund-dialog"
+						isRefundDialogOpen={ false }
+					/>
+				);
+
+				expect(
+					screen.getByText(
+						'Payment status changed to Early fraud warning resolved.'
+					)
+				).toBeInTheDocument();
+				expect(
+					screen.getByText(
+						'This early fraud warning is no longer actionable.'
+					)
+				).toBeInTheDocument();
+				expect(
+					screen.getByRole( 'heading', { name: 'Timeline' } )
+						.nextElementSibling?.children
+				).toHaveLength( 2 );
+				expect(
+					screen.getByText(
+						'The payment was refunded or disputed, so no further action is needed to avoid a dispute.'
+					)
+				).toBeInTheDocument();
+				expect(
+					screen.getByText( 'Reported reason: Card never received' )
+				).toBeInTheDocument();
+				expect(
+					screen.queryByRole( 'button', {
+						name: 'Refund this payment',
+					} )
+				).not.toBeInTheDocument();
+			}
+		);
+	} );
+
+	describe( 'transaction details early fraud warning refund flow', () => {
+		it( 'opens the eligible refund dialog and restores focus to the timeline action', async () => {
+			mockGetPaymentIntent.mockResolvedValue( {
+				id: 'pi_efw_refund',
+				status: 'succeeded',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				charge: {
+					id: 'ch_efw_refund',
+					payment_intent: 'pi_efw_refund',
+					balance_transaction: 'txn_efw_refund',
+					type: 'charge',
+					amount: 5000,
+					currency: 'usd',
+					created: 1781712000,
+					captured: true,
+					amount_refunded: 0,
+					refunded: false,
+					order: {
+						id: 123,
+						number: '123',
+						url: 'http://example.com/wp-admin/post.php?post=123&action=edit',
+					},
+				},
+			} );
+			mockGetTimeline.mockResolvedValue( {
+				data: [
+					{
+						type: 'early_fraud_warning',
+						datetime: 1781712200,
+						efw_actionable: true,
+						efw_type: 'made_with_stolen_card',
+					},
+				],
+			} );
+
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions/details?id=pi_efw_refund&transaction_id=txn_efw_refund',
+					] }
+				>
+					<WooPaymentsTransactionDetailsPage />
+				</MemoryRouter>
+			);
+
+			const refundButton = await screen.findByRole( 'button', {
+				name: 'Refund this payment',
+			} );
+			expect( refundButton ).toHaveAttribute( 'aria-expanded', 'false' );
+			expect( refundButton ).not.toHaveAttribute( 'aria-controls' );
+
+			await userEvent.click( refundButton );
+
+			const dialog = await screen.findByRole( 'dialog', {
+				name: 'Refund transaction',
+			} );
+			expect( dialog ).toHaveAttribute(
+				'id',
+				'woocommerce-woopayments-refund-dialog'
+			);
+			expect( refundButton ).toHaveAttribute( 'aria-expanded', 'true' );
+			expect( refundButton ).toHaveAttribute(
+				'aria-controls',
+				dialog.id
+			);
+			expect( mockRecordEvent ).toHaveBeenCalledWith(
+				'payments_transactions_details_refund_modal_open',
+				{ payment_intent_id: 'pi_efw_refund' }
+			);
+
+			await userEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+			);
+
+			await waitFor( () =>
+				expect(
+					screen.queryByRole( 'dialog', {
+						name: 'Refund transaction',
+					} )
+				).not.toBeInTheDocument()
+			);
+			await waitFor( () => expect( refundButton ).toHaveFocus() );
+			expect( refundButton ).toHaveAttribute( 'aria-expanded', 'false' );
+			expect( refundButton ).not.toHaveAttribute( 'aria-controls' );
+		} );
+
+		it( 'keeps warning guidance but omits the refund action when ineligible', async () => {
+			mockGetPaymentIntent.mockResolvedValue( {
+				id: 'pi_efw_partial_refund',
+				status: 'succeeded',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				charge: {
+					id: 'ch_efw_partial_refund',
+					payment_intent: 'pi_efw_partial_refund',
+					balance_transaction: 'txn_efw_partial_refund',
+					type: 'charge',
+					amount: 5000,
+					currency: 'usd',
+					created: 1781712000,
+					captured: true,
+					amount_refunded: 1000,
+					refunded: false,
+					order: {
+						id: 123,
+						number: '123',
+						url: 'http://example.com/wp-admin/post.php?post=123&action=edit',
+					},
+				},
+			} );
+			mockGetTimeline.mockResolvedValue( {
+				data: [
+					{
+						type: 'early_fraud_warning',
+						datetime: 1781712200,
+						efw_actionable: true,
+						efw_type: 'made_with_stolen_card',
+					},
+				],
+			} );
+
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions/details?id=pi_efw_partial_refund&transaction_id=txn_efw_partial_refund',
+					] }
+				>
+					<WooPaymentsTransactionDetailsPage />
+				</MemoryRouter>
+			);
+
+			expect(
+				await screen.findByText(
+					'Payment received an early fraud warning'
+				)
+			).toBeInTheDocument();
+			expect(
+				screen.getByText(
+					'Refunding this payment now can prevent a dispute.'
+				)
+			).toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'button', { name: 'Refund this payment' } )
+			).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'dialog', { name: 'Refund transaction' } )
+			).not.toBeInTheDocument();
+		} );
 	} );
 
 	it( 'renders reference-shaped timeline event details with datetime values', async () => {

@@ -1,9 +1,11 @@
 /**
  * External dependencies
  */
-import type { ReactNode } from 'react';
+import { Button } from '@wordpress/components';
 import { dateI18n } from '@wordpress/date';
+import { createInterpolateElement } from '@wordpress/element';
 import { __, sprintf, TranslatableText } from '@wordpress/i18n';
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -16,6 +18,22 @@ type TimelineDisplayEvent = {
 	message: ReactNode;
 	body?: ReactNode[];
 	date?: string | number;
+};
+
+const earlyFraudWarningFraudTypeLabels: Record< string, string > = {
+	card_never_received: __( 'Card never received', 'woocommerce' ),
+	fraudulent_card_application: __(
+		'Fraudulent card application',
+		'woocommerce'
+	),
+	made_with_counterfeit_card: __(
+		'Made with counterfeit card',
+		'woocommerce'
+	),
+	made_with_lost_card: __( 'Made with lost card', 'woocommerce' ),
+	made_with_stolen_card: __( 'Made with stolen card', 'woocommerce' ),
+	misc: __( 'Other', 'woocommerce' ),
+	unauthorized_use_of_card: __( 'Unauthorized use of card', 'woocommerce' ),
 };
 
 const hasDisplayValue = ( value: unknown ) =>
@@ -210,7 +228,10 @@ const createAmountMessage = (
 
 const mapTimelineEvent = (
 	event: WooPaymentsTimelineEvent,
-	disputeOrder?: WooPaymentsDisputeOrder
+	disputeOrder?: WooPaymentsDisputeOrder,
+	onRefund?: ( opener: HTMLElement ) => void,
+	refundDialogId?: string,
+	isRefundDialogOpen = false
 ): TimelineDisplayEvent[] => {
 	const date = getEventDate( event );
 	const type = event.type || '';
@@ -440,6 +461,104 @@ const mapTimelineEvent = (
 				},
 			];
 		}
+		case 'early_fraud_warning': {
+			const fraudType = getString( event, 'efw_type' );
+			const fraudTypeLabel =
+				fraudType &&
+				Object.prototype.hasOwnProperty.call(
+					earlyFraudWarningFraudTypeLabels,
+					fraudType
+				)
+					? earlyFraudWarningFraudTypeLabels[ fraudType ]
+					: undefined;
+			const reportedReason = fraudTypeLabel
+				? sprintf(
+						/* translators: %s: card network reported fraud reason. */
+						__( 'Reported reason: %s', 'woocommerce' ),
+						fraudTypeLabel
+				  )
+				: null;
+
+			if ( event.efw_actionable !== true ) {
+				return [
+					{
+						message: __(
+							'Payment status changed to Early fraud warning resolved.',
+							'woocommerce'
+						),
+						date,
+					},
+					{
+						message: __(
+							'This early fraud warning is no longer actionable.',
+							'woocommerce'
+						),
+						body: [
+							__(
+								'The payment was refunded or disputed, so no further action is needed to avoid a dispute.',
+								'woocommerce'
+							),
+							reportedReason,
+						].filter( Boolean ),
+						date,
+					},
+				];
+			}
+
+			const refundGuidance = onRefund
+				? createInterpolateElement(
+						__(
+							'Refunding this payment now can prevent a dispute. <refund>Refund this payment</refund>',
+							'woocommerce'
+						),
+						{
+							refund: (
+								<Button
+									variant="link"
+									aria-haspopup="dialog"
+									aria-expanded={ isRefundDialogOpen }
+									aria-controls={
+										isRefundDialogOpen
+											? refundDialogId
+											: undefined
+									}
+									onClick={ (
+										clickEvent: ReactMouseEvent< HTMLButtonElement >
+									) => onRefund( clickEvent.currentTarget ) }
+								/>
+							),
+						}
+				  )
+				: __(
+						'Refunding this payment now can prevent a dispute.',
+						'woocommerce'
+				  );
+
+			return [
+				{
+					message: __(
+						'Payment status changed to Early fraud warning.',
+						'woocommerce'
+					),
+					date,
+				},
+				{
+					message: __(
+						'Payment received an early fraud warning',
+						'woocommerce'
+					),
+					body: [
+						__(
+							'The card issuer flagged this payment as likely fraudulent.',
+							'woocommerce'
+						),
+						reportedReason,
+						refundGuidance,
+					].filter( Boolean ),
+					date,
+				},
+			];
+		}
 		case 'fraud_outcome_manual_approve':
 		case 'fraud_outcome_manual_block':
 			return [ { message: getFallbackMessage( event ), date } ];
@@ -471,12 +590,24 @@ const mapTimelineEvent = (
 export const WooPaymentsTransactionTimeline = ( {
 	events,
 	disputeOrder,
+	onRefund,
+	refundDialogId,
+	isRefundDialogOpen = false,
 }: {
 	events: WooPaymentsTimelineEvent[];
 	disputeOrder?: WooPaymentsDisputeOrder;
+	onRefund?: ( opener: HTMLElement ) => void;
+	refundDialogId?: string;
+	isRefundDialogOpen?: boolean;
 } ) => {
 	const rows = events.flatMap( ( event ) =>
-		mapTimelineEvent( event, disputeOrder )
+		mapTimelineEvent(
+			event,
+			disputeOrder,
+			onRefund,
+			refundDialogId,
+			isRefundDialogOpen
+		)
 	);
 
 	if ( ! rows.length ) {
