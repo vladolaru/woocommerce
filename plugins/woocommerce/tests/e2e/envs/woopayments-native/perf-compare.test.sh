@@ -109,6 +109,9 @@ fake_pnpm() {
 			if [[ "$3" == '_wcpay_feature_customer_multi_currency' ]]; then
 				printf 'MULTI_CURRENCY_FEATURE\t%s\n' "$4" >> "$root/events.log"
 			fi
+			if [[ "$3" == 'woocommerce_feature_multi_currency_enabled' ]]; then
+				printf 'CORE_MULTI_CURRENCY_FEATURE\t%s\n' "$4" >> "$root/events.log"
+			fi
 			if [[ "$3" == 'woocommerce_native_payments_perf_probe_control' ]]; then
 				state="$(printf '%s' "$4" | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')"
 				printf '%s\n' "$state" > "$root/current-state"
@@ -225,6 +228,12 @@ fail() { echo "$1" >&2; exit 1; }
 php -r '
 define( "ABSPATH", __DIR__ );
 $registered = array();
+function wp_unslash( $value ) {
+	return $value;
+}
+function sanitize_text_field( $value ) {
+	return $value;
+}
 function get_option() {
 	return array( "state" => "baseline_noop", "reference_plugin_slug" => "woocommerce-payments-reference/woocommerce-payments.php" );
 }
@@ -256,6 +265,12 @@ $registered_filters = array();
 $registered_actions = array();
 $upload_dir = $argv[2];
 $_SERVER["HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_PERF_TRACE"] = "baseline_noop";
+function wp_unslash( $value ) {
+	return $value;
+}
+function sanitize_text_field( $value ) {
+	return $value;
+}
 function get_option() {
 	return array( "state" => "baseline_noop", "reference_plugin_slug" => "woocommerce-payments-reference/woocommerce-payments.php" );
 }
@@ -308,6 +323,12 @@ define( "ABSPATH", __DIR__ );
 define( "WP_PLUGIN_DIR", "/plugins" );
 $registered_actions = array();
 $_SERVER["HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_PERF_TRACE"] = "baseline_noop";
+function wp_unslash( $value ) {
+	return $value;
+}
+function sanitize_text_field( $value ) {
+	return $value;
+}
 function get_option() {
 	return array( "state" => "baseline_noop", "reference_plugin_slug" => "woocommerce-payments-reference/woocommerce-payments.php" );
 }
@@ -332,6 +353,12 @@ define( "ABSPATH", __DIR__ );
 $registered_filters = array();
 $control_state = $argv[2];
 $_SERVER["HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_PERF_TRACE"] = $argv[3];
+function wp_unslash( $value ) {
+	return $value;
+}
+function sanitize_text_field( $value ) {
+	return $value;
+}
 function get_option() {
 	global $control_state;
 	return array( "state" => $control_state, "reference_plugin_slug" => "woocommerce-payments-reference/woocommerce-payments.php" );
@@ -347,7 +374,41 @@ exit( in_array( "query", $registered_filters, true ) ? 1 : 0 );
 }
 
 assert_trace_is_rejected disabled baseline_noop
-assert_trace_is_rejected active_native active_native
+assert_trace_is_rejected active_native disabled
+
+assert_legacy_facade_suppression() {
+	local control_state="$1" expected="$2"
+	php -r '
+define( "ABSPATH", __DIR__ );
+$registered_filters = array();
+$control_state = $argv[2];
+function wp_unslash( $value ) {
+	return $value;
+}
+function sanitize_text_field( $value ) {
+	return $value;
+}
+function get_option() {
+	global $control_state;
+	return array( "state" => $control_state, "reference_plugin_slug" => "woocommerce-payments-reference/woocommerce-payments.php" );
+}
+function add_filter( $hook, $callback ) {
+	global $registered_filters;
+	$registered_filters[ $hook ] = $callback;
+}
+function add_action() {}
+require $argv[1];
+$hook = "woocommerce_native_payments_should_load_legacy_facades";
+$registered = isset( $registered_filters[ $hook ] );
+if ( "suppressed" === $argv[3] ) {
+	exit( $registered && false === call_user_func( $registered_filters[ $hook ], true ) ? 0 : 1 );
+}
+exit( $registered ? 1 : 0 );
+' "$PROBE" "$control_state" "$expected" || fail "The $control_state probe state did not leave legacy facade ownership $expected."
+}
+
+assert_legacy_facade_suppression active_native unchanged
+assert_legacy_facade_suppression active_plugin suppressed
 
 setup_case() {
 	local name="$1" root="$TEST_ROOT/$1"
@@ -381,7 +442,7 @@ assert_cleaned() {
 run_case local-pass pass 0 local
 local_root="$TEST_ROOT/local-pass"; local_output="$local_root/output/result.tsv"
 expected_account='{"data":{"account_id":"acct_native_ci","country":"US","default_currency":"usd","payments_enabled":true,"payouts_enabled":true,"details_submitted":true,"is_live":false,"test_publishable_key":"pk_test_native_ci","live_publishable_key":"","statement_descriptor":"NATIVE CI","statement_descriptor_kanji":"","statement_descriptor_kana":"","business_profile":{"name":"Native CI store","url":"https://example.test","support_address":{"country":"US"},"support_email":"support@example.test","support_phone":"+10000000000"},"branding":{"logo":"","icon":"","primary_color":"#000000","secondary_color":"#ffffff"},"communications_email":"owner@example.test","store_currencies":{"default":"usd"},"customer_currencies":{"supported":["usd","eur","aud","cad","chf","gbp","jpy","nzd","sek"]},"account_details":{"account_status":{"text":"Enabled"},"payout_status":{"text":"Enabled"},"banner":null},"deposits":{"interval":"daily","weekly_anchor":"monday","monthly_anchor":1,"delay_days":2,"status":"enabled","restrictions":"","completed_waiting_period":true},"platform_checkout_eligible":true,"capabilities":{"card_payments":"active","klarna_payments":"active"},"supported_payment_methods":["card","klarna"],"fees":{"card":[],"klarna":[]}},"fetched":1788898000,"errored":false,"consecutive_errors":0}'
-[[ "$(grep -Fc $'ACCOUNT_DATA\t'"$expected_account" "$local_root/events.log")" == 21 ]] || fail 'Connected and active states did not use the complete seed-time account cache.'
+[[ "$(grep -Fc $'ACCOUNT_DATA\t'"$expected_account" "$local_root/events.log")" == 23 ]] || fail 'Connected and active states did not use the complete seed-time account cache.'
 [[ "$(grep -c $'^SEED_TIME\t1788898000$' "$local_root/events.log")" == 1 ]] || fail 'The account cache timestamp was not captured exactly once at seed time.'
 [[ "$(wc -l < "$local_output" | tr -d ' ')" == 32 ]] || fail 'Local output is not the complete 30-row matrix plus timing row.'
 [[ "$(grep -c $'^CURL\tprimary-warmup\t' "$local_root/samples.log")" == 30 ]] || fail 'Local matrix did not warm all six states across five routes.'
@@ -391,13 +452,14 @@ for target in '/' '/?post_type=product' '/?product=perf-product' '/?page_id=6' '
 	grep -Fq $'CURL\tprimary-capture\tbaseline_noop\thttp://canonical.native.test:8187'"$target"$'\t' "$local_root/samples.log" || fail "The canonical measured route was not used: $target"
 done
 [[ "$(grep -c $'^CURL\ttiming\t' "$local_root/samples.log")" == 18 ]] || fail 'Local timing did not run nine alternating pairs.'
-[[ "$(awk -F '\t' '$2 == "population" && $4 ~ /wc\/store\/v1\/cart/ { count++ } END { print count + 0 }' "$local_root/samples.log")" == 26 ]] || fail 'Every state/timing/attribution sample did not prove a populated Store API cart.'
+[[ "$(awk -F '\t' '$2 == "population" && $4 ~ /wc\/store\/v1\/cart/ { count++ } END { print count + 0 }' "$local_root/samples.log")" == 28 ]] || fail 'Every state/timing/attribution sample did not prove a populated Store API cart.'
 [[ "$(grep -c $'^CURL\tattribution\tbaseline_noop\t.*\tX-WooCommerce-Native-Payments-Perf-Trace: baseline_noop$' "$local_root/samples.log")" == 1 ]] || fail 'Local attribution did not trace baseline_noop exactly once.'
 [[ "$(grep -c $'^CURL\tattribution\tdisabled\t.*\tX-WooCommerce-Native-Payments-Perf-Trace: disabled$' "$local_root/samples.log")" == 1 ]] || fail 'Local attribution did not trace disabled exactly once.'
 [[ "$(grep -c $'^DB_EXPORT\t' "$local_root/events.log")" == 1 ]] || fail 'The disposable database was not exported exactly once.'
-[[ "$(grep -c $'^DB_IMPORT\t' "$local_root/events.log")" == 37 ]] || fail 'The disposable database reset count is wrong.'
-[[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$local_root/events.log")" == 26 ]] || fail 'Every local state preparation must disable Multi-Currency before native-tier measurement.'
-[[ "$(grep -c $'^REFERENCE_ACTIVATE$' "$local_root/events.log")" == 10 ]] || fail 'The isolated reference was not activated for its ten samples.'
+[[ "$(grep -c $'^DB_IMPORT\t' "$local_root/events.log")" == 39 ]] || fail 'The disposable database reset count is wrong.'
+[[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$local_root/events.log")" == 28 ]] || fail 'Every local state preparation must disable Multi-Currency before native-tier measurement.'
+[[ "$(grep -c $'^CORE_MULTI_CURRENCY_FEATURE\t"no"$' "$local_root/events.log")" == 28 ]] || fail 'Every local state preparation must disable the independent Core Multi-Currency feature before native-tier measurement.'
+[[ "$(grep -c $'^REFERENCE_ACTIVATE$' "$local_root/events.log")" == 11 ]] || fail 'The isolated reference was not activated for its eleven samples.'
 awk '/^DB_EXPORT/{seen=1} /^DB_IMPORT/ && !seen{exit 1}' "$local_root/events.log" || fail 'Database import preceded the one export.'
 [[ "$(awk '$1 == "SEED" || $1 == "STORE_OPEN" || $1 == "PRODUCT_READY" || $1 == "DB_EXPORT" { printf "%s ", $1 }' "$local_root/events.log" | head -c 40)" == 'SEED STORE_OPEN PRODUCT_READY DB_EXPORT ' ]] || fail 'The open store and product were not ready after seed and before the one database export.'
 awk '/^SEED$/{seed=NR} /^SEED_TIME\t/{seed_time=NR} /^DB_EXPORT\t/{exported=NR} END{exit seed < seed_time && seed_time < exported ? 0 : 1}' "$local_root/events.log" || fail 'The account timestamp was not captured after seed and before export.'

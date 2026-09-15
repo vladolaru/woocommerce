@@ -203,6 +203,7 @@ prepare_state() {
 	set_option_json 'woocommerce_native_payments_state' '"'"$native_state"'"' || return 1
 	set_option_json 'woocommerce_native_payments_killswitch' 'false' || return 1
 	set_option_json '_wcpay_feature_customer_multi_currency' '"0"' || return 1
+	set_option_json 'woocommerce_feature_multi_currency_enabled' '"no"' || return 1
 	set_option_json 'wcpay_account_data' "$account" || return 1
 	set_option_json 'woocommerce_woocommerce_payments_settings' "$settings" || return 1
 	if [[ "$MODE" == local && "$state" == active_plugin ]]; then

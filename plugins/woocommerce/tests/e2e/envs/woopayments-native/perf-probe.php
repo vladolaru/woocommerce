@@ -259,6 +259,9 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		}
 		$this->trace_state = $this->get_trace_state();
 
+		if ( 'active_plugin' === $this->get_control_value( 'state' ) ) {
+			add_filter( 'woocommerce_native_payments_should_load_legacy_facades', array( $this, 'suppress_native_legacy_facades' ) );
+		}
 		add_filter( 'woocommerce_native_payments_bootstrap_enabled', array( $this, 'control_bootstrap' ) );
 		add_filter( 'woocommerce_native_payments_enabled', array( $this, 'enable_native_runtime' ) );
 		add_filter( 'pre_http_request', array( $this, 'count_http_request' ), PHP_INT_MIN );
@@ -332,6 +335,17 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 	public function enable_native_runtime( $_enabled ): bool {
 		unset( $_enabled );
 		return true;
+	}
+
+	/**
+	 * Keep the native compatibility facades available to the isolated reference plugin.
+	 *
+	 * @param mixed $_should_load Whether Core should load its legacy facades.
+	 * @return bool False while the reference plugin owns the measured runtime.
+	 */
+	public function suppress_native_legacy_facades( $_should_load ): bool {
+		unset( $_should_load );
+		return false;
 	}
 
 	/**
