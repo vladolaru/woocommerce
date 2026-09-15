@@ -26,6 +26,7 @@ const TEMPLATE_PARTS_API = '/wp-json/wp/v2/template-parts';
 const SWITCHER_BLOCK =
 	'<!-- wp:woocommerce-payments/multi-currency-switcher /-->';
 const SWITCHER_BLOCK_NAME = 'woocommerce-payments/multi-currency-switcher';
+const SWITCHER_ACCESSIBLE_NAME = 'Select your currency';
 
 // One run-stable virtual product priced so the manual EUR rate below converts
 // it to a whole amount: USD 10.00 × 0.80 = EUR 8.00, immune to charm pricing
@@ -181,7 +182,10 @@ async function ensureSmokeProduct(
 }
 
 function currencySwitcher( page: Page ) {
-	return page.getByRole( 'combobox', { name: 'Currency', exact: true } );
+	return page.getByRole( 'combobox', {
+		name: SWITCHER_ACCESSIBLE_NAME,
+		exact: true,
+	} );
 }
 
 /**

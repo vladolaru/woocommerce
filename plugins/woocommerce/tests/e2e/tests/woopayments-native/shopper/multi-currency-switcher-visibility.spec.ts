@@ -55,6 +55,7 @@ const CHECKOUT_PAGE_SETTING_API =
 
 const BLOCK_NAME = 'woocommerce-payments/multi-currency-switcher';
 const SWITCHER_BLOCK = `<!-- wp:${ BLOCK_NAME } /-->`;
+const SWITCHER_ACCESSIBLE_NAME = 'Select your currency';
 
 const PRODUCT_PRICE = '10.00';
 
@@ -221,18 +222,18 @@ async function readCurrencyBaseline( adminApi: APIRequestContext ): Promise< {
 /**
  * Currency switchers rendered inside the page or post body.
  *
- * Scoped to core's own post-content wrapper (`core/post-content` always emits
- * `entry-content`) rather than the whole document, because the standing
- * store's theme header may carry its own switcher placement and a page-wide
- * locator would alias it with the one under test.
+ * Scoped to the main content landmark rather than the whole document because
+ * the standing store's theme header may carry its own switcher placement and
+ * a page-wide locator would alias it with the one under test.
  *
  * @param page Page rendering the content.
  * @return Locator matching every in-content switcher.
  */
 function contentSwitchers( page: Page ): Locator {
-	return page
-		.locator( '.entry-content' )
-		.getByRole( 'combobox', { name: 'Currency', exact: true } );
+	return page.getByRole( 'main' ).getByRole( 'combobox', {
+		name: SWITCHER_ACCESSIBLE_NAME,
+		exact: true,
+	} );
 }
 
 /**
@@ -247,7 +248,10 @@ function contentSwitchers( page: Page ): Locator {
  * @return Locator matching every switcher on the page.
  */
 function anySwitcher( page: Page ): Locator {
-	return page.getByRole( 'combobox', { name: 'Currency', exact: true } );
+	return page.getByRole( 'combobox', {
+		name: SWITCHER_ACCESSIBLE_NAME,
+		exact: true,
+	} );
 }
 
 async function createRunProduct(

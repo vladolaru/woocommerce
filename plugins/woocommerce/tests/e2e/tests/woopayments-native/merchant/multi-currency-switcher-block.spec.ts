@@ -71,6 +71,7 @@ const POSTS_API = '/wp-json/wp/v2/posts';
 
 const BLOCK_NAME = 'woocommerce-payments/multi-currency-switcher';
 const BLOCK_TITLE = 'Currency switcher';
+const SWITCHER_ACCESSIBLE_NAME = 'Select your currency';
 
 // Inspector copy authored by core
 // (client/blocks/assets/js/blocks/multi-currency-switcher/block.js).
@@ -380,18 +381,18 @@ async function deleteRunPost(
 /**
  * Currency switchers rendered inside the post body.
  *
- * Scoped to core's own post-content wrapper (`core/post-content` always emits
- * `entry-content`) rather than the whole document: the standing store's theme
- * header may carry its own switcher placement, and a page-wide locator would
- * alias it with the one this spec published.
+ * Scoped to the main content landmark rather than the whole document: the
+ * standing store's theme header may carry its own switcher placement, and a
+ * page-wide locator would alias it with the one this spec published.
  *
  * @param page Page rendering the post.
  * @return Locator matching every in-content switcher.
  */
 function contentSwitchers( page: Page ): Locator {
-	return page
-		.locator( '.entry-content' )
-		.getByRole( 'combobox', { name: 'Currency', exact: true } );
+	return page.getByRole( 'main' ).getByRole( 'combobox', {
+		name: SWITCHER_ACCESSIBLE_NAME,
+		exact: true,
+	} );
 }
 
 /**
