@@ -303,6 +303,95 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Review authorizations use held-for-review candidates and retain ruleset evidence.
+	 */
+	public function test_review_intent_projects_ruleset_meta_and_held_for_review_note_candidates(): void {
+		$order  = $this->create_woopayments_order();
+		$result = array(
+			'id'       => 'pi_review',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'fraud_outcome'         => 'review',
+				'fraud_ruleset_results' => '{"avs_verification":"review","new_<rule>":"block","order_items_threshold":"allow"}',
+			),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_review',
+						'currency'               => 'usd',
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			),
+		);
+
+		$applied = $this->create_applier()->apply(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_review' ),
+			new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_review' ),
+			WooPaymentsOrderEffectPlan::for_payment_intent( $result, false )
+		);
+		$data    = $applied->get_data();
+
+		$this->assertSame( '{"avs_verification":"review","new_<rule>":"block","order_items_threshold":"allow"}', $data[ PaymentOutcome::DATA_META ]['_wcpay_fraud_ruleset_results'] );
+		$this->assertStringContainsString( '<strong>held for review</strong>', $data[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertStringContainsString( 'Place in review if the AVS verification fails', $data[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertStringContainsString( 'New &lt;rule&gt;', $data[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertStringNotContainsString( 'order items threshold', $data[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $data );
+	}
+
+	/**
+	 * @testdox Review intents with malformed evidence retain the generic held-for-review note.
+	 *
+	 * @dataProvider invalid_review_ruleset_provider
+	 *
+	 * @param mixed $ruleset_results Provider ruleset metadata.
+	 */
+	public function test_review_intent_with_invalid_or_non_array_rules_uses_generic_held_note_without_ruleset_meta( $ruleset_results ): void {
+		$order   = $this->create_woopayments_order();
+		$result  = array(
+			'id'       => 'pi_review_invalid',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'fraud_outcome'         => 'review',
+				'fraud_ruleset_results' => $ruleset_results,
+			),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			),
+		);
+		$outcome = $this->create_applier()->apply(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_review_invalid' ),
+			new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_review_invalid' ),
+			WooPaymentsOrderEffectPlan::for_payment_intent( $result, false )
+		);
+		$data    = $outcome->get_data();
+
+		$this->assertArrayNotHasKey( '_wcpay_fraud_ruleset_results', $data[ PaymentOutcome::DATA_META ] );
+		$this->assertStringContainsString( '<strong>held for review</strong> by one or more risk filters.', $data[ PaymentOutcome::DATA_NOTE ] );
+	}
+
+	/**
+	 * Invalid fraud-ruleset metadata values.
+	 *
+	 * @return array<string,array{0:mixed}>
+	 */
+	public function invalid_review_ruleset_provider(): array {
+		return array(
+			'invalid JSON'     => array( '{invalid' ),
+			'scalar JSON'      => array( '"review"' ),
+			'provider map'     => array( array( 'avs_verification' => 'review' ) ),
+			'empty JSON array' => array( '[]' ),
+		);
+	}
+
+	/**
 	 * @testdox Started PaymentIntent effects carry exact note equivalents.
 	 */
 	public function test_started_payment_intent_effects_carry_note_equivalents(): void {

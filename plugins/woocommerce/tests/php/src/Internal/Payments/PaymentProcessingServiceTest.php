@@ -2255,6 +2255,109 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Replayed held-for-review intents repair rule evidence without duplicating equivalent notes.
+	 */
+	public function test_review_intent_replay_repairs_rule_evidence_and_deduplicates_content_sensitive_notes(): void {
+		$translation_filter = static function ( string $translation, string $text, string $domain ): string {
+			if ( 'woocommerce-payments' !== $domain ) {
+				return $translation;
+			}
+
+			return '&#x26D4; A payment of %1$s was <strong>held for review</strong> by the following risk filters:<br>%2$s<br><br><a>View more details</a>.' === $text
+				? '&#x26D4; Eine Zahlung von %1$s wurde von den folgenden Risikofiltern <strong>zur Überprüfung zurückgehalten</strong>:<br>%2$s<br><br><a>Weitere Details anzeigen</a>.'
+				: $translation;
+		};
+		add_filter( 'gettext', $translation_filter, 10, 3 );
+		switch_to_locale( 'de_DE' );
+
+		try {
+			$order          = $this->create_woopayments_order( '12.00' );
+			$note_service   = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+			$initial_rules  = array( 'avs_verification' => 'review' );
+			$plugin_note    = $note_service->format_fraud_held_for_review_note_candidates( $order, 'pi_review_replay', 'ch_review_replay', $initial_rules )[1];
+			$initial_result = '{"avs_verification":"review"}';
+			$order->add_order_note( $plugin_note );
+
+			$this->sut->process_checkout(
+				PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_review_replay' ),
+				$this->review_payment_intent_provider( $initial_rules )
+			);
+			$order = wc_get_order( $order->get_id() );
+
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$this->assertSame( 'on-hold', $order->get_status() );
+			$this->assertSame( $initial_result, $order->get_meta( '_wcpay_fraud_ruleset_results', true ) );
+			$this->assertCount(
+				1,
+				array_filter(
+					wc_get_order_notes(
+						array(
+							'order_id' => $order->get_id(),
+							'type'     => 'any',
+						)
+					),
+					static fn( object $note ): bool => str_contains( (string) $note->content, 'pi_review_replay' )
+				),
+				'The seeded WooPayments-catalog rendering must satisfy the equivalent note identity.'
+			);
+
+			$this->sut->process_checkout(
+				PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_review_replay' ),
+				$this->review_payment_intent_provider( $initial_rules )
+			);
+			$order = wc_get_order( $order->get_id() );
+
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$this->assertSame( $initial_result, $order->get_meta( '_wcpay_fraud_ruleset_results', true ) );
+			$this->assertCount(
+				1,
+				array_filter(
+					wc_get_order_notes(
+						array(
+							'order_id' => $order->get_id(),
+							'type'     => 'any',
+						)
+					),
+					static fn( object $note ): bool => str_contains( (string) $note->content, 'pi_review_replay' )
+				),
+				'An identical replay must not add another held-for-review note.'
+			);
+
+			$order->update_meta_data( '_wcpay_fraud_ruleset_results', 'stale evidence' );
+			$order->save();
+			$changed_rules  = array(
+				'avs_verification' => 'review',
+				'address_mismatch' => 'block',
+			);
+			$changed_result = '{"avs_verification":"review","address_mismatch":"block"}';
+			$this->sut->process_checkout(
+				PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_review_replay' ),
+				$this->review_payment_intent_provider( $changed_rules )
+			);
+			$order = wc_get_order( $order->get_id() );
+
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$this->assertSame( $changed_result, $order->get_meta( '_wcpay_fraud_ruleset_results', true ) );
+			$this->assertCount(
+				2,
+				array_filter(
+					wc_get_order_notes(
+						array(
+							'order_id' => $order->get_id(),
+							'type'     => 'any',
+						)
+					),
+					static fn( object $note ): bool => str_contains( (string) $note->content, 'pi_review_replay' )
+				),
+				'Changed filter evidence must produce a distinct content-sensitive held-for-review note.'
+			);
+		} finally {
+			remove_filter( 'gettext', $translation_filter, 10 );
+			restore_current_locale();
+		}
+	}
+
+	/**
 	 * @testdox Should support zero-total checkout without a provider-specific payment operation.
 	 */
 	public function test_process_checkout_supports_non_stripe_zero_total_provider_without_charge(): void {
@@ -2719,6 +2822,76 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$account_service,
 			null,
 			$effect_applier
+		);
+
+		return $provider;
+	}
+
+	/**
+	 * Build a real WooPayments provider that returns a held-for-review PaymentIntent response.
+	 *
+	 * The adapter isolates only its remote transport; the production provider, effect applier, and payment lifecycle remain in use.
+	 *
+	 * @param array<string,string> $ruleset_results Fired fraud-rule results.
+	 * @return WooPaymentsProvider
+	 */
+	private function review_payment_intent_provider( array $ruleset_results ): WooPaymentsProvider {
+		$adapter  = new class( $ruleset_results ) extends WooPaymentsProviderGatewayAdapter {
+			/**
+			 * Fired fraud-rule results returned by the isolated transport.
+			 *
+			 * @var array<string,string>
+			 */
+			private array $ruleset_results;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,string> $ruleset_results Fired fraud-rule results.
+			 */
+			public function __construct( array $ruleset_results ) {
+				$this->ruleset_results = $ruleset_results;
+			}
+
+			/**
+			 * Return a review PaymentIntent without making a remote transport request.
+			 *
+			 * @param PaymentContext $context         Payment context.
+			 * @param string         $idempotency_key Charge idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+
+				$result = array(
+					'id'       => 'pi_review_replay',
+					'status'   => 'requires_capture',
+					'currency' => 'usd',
+					'metadata' => array(
+						'fraud_outcome'         => 'review',
+						'fraud_ruleset_results' => wp_json_encode( $this->ruleset_results ),
+					),
+					'charges'  => array(
+						'data' => array(
+							array(
+								'id'                     => 'ch_review_replay',
+								'currency'               => 'usd',
+								'payment_method_details' => array( 'type' => 'card' ),
+							),
+						),
+					),
+				);
+
+				return ( new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_review_replay', '', 'pm_review_replay' ) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $result, false ) );
+			}
+		};
+		$provider = new WooPaymentsProvider();
+		$provider->init(
+			$adapter,
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient::class ),
+			wc_get_container()->get( WooPaymentsAccountService::class ),
+			null,
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 
 		return $provider;

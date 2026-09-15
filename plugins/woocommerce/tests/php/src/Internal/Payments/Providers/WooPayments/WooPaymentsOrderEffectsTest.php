@@ -249,6 +249,31 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Pre-capture review intents persist their nonempty ruleset evidence.
+	 */
+	public function test_payment_intent_meta_persists_nonempty_review_ruleset_only(): void {
+		$intent = array(
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'fraud_outcome'         => 'review',
+				'fraud_ruleset_results' => '{"avs_verification":"review","new_platform_rule":"block"}',
+			),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			),
+		);
+
+		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', 'live' );
+
+		$this->assertSame( '{"avs_verification":"review","new_platform_rule":"block"}', $meta['_wcpay_fraud_ruleset_results'] );
+	}
+
+	/**
 	 * @testdox Pre-capture intents with an allow outcome keep the allow fraud meta box.
 	 */
 	public function test_payment_intent_meta_keeps_allow_box_for_allowed_authorizations(): void {

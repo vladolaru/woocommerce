@@ -36,6 +36,8 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 
 	private const META_FRAUD_OUTCOME_STATUS = '_wcpay_fraud_outcome_status';
 
+	private const META_FRAUD_RULESET_RESULTS = '_wcpay_fraud_ruleset_results';
+
 	private const TYPE_ALLOW = 'allow';
 
 	private const TYPE_BLOCK = 'block';
@@ -64,6 +66,13 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	 * @var NativePaymentsRuntimeArbiter
 	 */
 	private NativePaymentsRuntimeArbiter $arbiter;
+
+	/**
+	 * Order-note service used for fraud-rule labels.
+	 *
+	 * @var WooPaymentsOrderNoteService|null
+	 */
+	private ?WooPaymentsOrderNoteService $note_service = null;
 
 	/**
 	 * Initialize the class instance.
@@ -166,6 +175,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 					__( 'Blocked', 'woocommerce' ),
 					__( 'The payment for this order was blocked by your risk filtering. There is no pending authorization, and the order can be cancelled to reduce any held stock.', 'woocommerce' )
 				);
+				$this->print_triggered_risk_filters( $order );
 				$this->print_action_link(
 					__( 'View more details', 'woocommerce' ),
 					$this->get_transaction_url(
@@ -201,6 +211,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 					__( 'Held for review', 'woocommerce' ),
 					__( 'The payment for this order was held for review by your risk filtering. You can review the details and determine whether to approve or block the payment.', 'woocommerce' )
 				);
+				$this->print_triggered_risk_filters( $order );
 				$this->print_action_link(
 					__( 'Review payment', 'woocommerce' ),
 					$this->get_transaction_url(
@@ -411,6 +422,48 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Print fired fraud filters when compatible evidence is stored on the order.
+	 *
+	 * @param WC_Order $order Order instance.
+	 */
+	private function print_triggered_risk_filters( WC_Order $order ): void {
+		$encoded_results = $order->get_meta( self::META_FRAUD_RULESET_RESULTS, true );
+		if ( ! is_string( $encoded_results ) ) {
+			return;
+		}
+
+		$ruleset_results = json_decode( $encoded_results, true );
+		if ( ! is_array( $ruleset_results ) || array() === $ruleset_results ) {
+			return;
+		}
+
+		$labels = $this->get_note_service()->get_fraud_ruleset_result_labels_for_display( $ruleset_results );
+		if ( array() === $labels ) {
+			return;
+		}
+
+		echo '<p>' . esc_html__( 'Triggered risk filters:', 'woocommerce' ) . '</p>';
+		echo '<ul class="wcpay-fraud-risk-triggered-filters">';
+		foreach ( $labels as $label ) {
+			echo '<li>' . esc_html( $label ) . '</li>';
+		}
+		echo '</ul>';
+	}
+
+	/**
+	 * Get the shared order-note service without changing the initializer contract.
+	 *
+	 * @return WooPaymentsOrderNoteService
+	 */
+	private function get_note_service(): WooPaymentsOrderNoteService {
+		if ( null === $this->note_service ) {
+			$this->note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		}
+
+		return $this->note_service;
+	}
+
+	/**
 	 * Get the native transaction details URL.
 	 *
 	 * @param string               $primary_id  Usually the Payment Intent ID, but can be an order ID.
@@ -542,6 +595,12 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 
 .wcpay-fraud-risk-action > p:last-child {
 	margin-bottom: 0;
+}
+
+.wcpay-fraud-risk-triggered-filters {
+	list-style: disc outside;
+	margin-block: 0 6px;
+	margin-inline: 1.8em 0;
 }
 
 .wcpay-fraud-risk-meta-allow,

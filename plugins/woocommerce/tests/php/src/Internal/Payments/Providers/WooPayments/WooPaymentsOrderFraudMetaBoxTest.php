@@ -189,6 +189,50 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Active block and review panels render escaped triggered filters before their primary action.
+	 *
+	 * @dataProvider active_fraud_type_provider
+	 *
+	 * @param string $type           Active fraud panel type.
+	 * @param string $primary_action Primary action label.
+	 */
+	public function test_renders_triggered_rules_for_block_and_review_before_primary_action( string $type, string $primary_action ): void {
+		$order = $this->create_woopayments_order(
+			array(
+				'_wcpay_fraud_meta_box_type'   => $type,
+				'_wcpay_fraud_ruleset_results' => '{"avs_verification":"review","new_<rule>":"block","order_items_threshold":"allow"}',
+				'_intent_id'                   => 'pi_review',
+			)
+		);
+
+		$html = $this->render_meta_box( $order );
+
+		$this->assertSame( 1, substr_count( $html, 'Triggered risk filters:' ) );
+		$this->assertStringContainsString( '<ul class="wcpay-fraud-risk-triggered-filters"><li>Place in review if the AVS verification fails</li><li>New &lt;rule&gt;</li></ul>', $html );
+		$this->assertStringNotContainsString( 'Order items threshold', $html );
+		$this->assertLessThan( strpos( $html, '>' . $primary_action . '</a>' ), strpos( $html, 'Triggered risk filters:' ) );
+	}
+
+	/**
+	 * @testdox Empty, invalid, and resolved-review fraud results do not render a triggered-filter list.
+	 *
+	 * @dataProvider non_active_or_invalid_ruleset_provider
+	 *
+	 * @param string $type    Fraud panel type.
+	 * @param string $ruleset Stored ruleset JSON.
+	 */
+	public function test_omits_triggered_rules_for_empty_invalid_and_resolved_review_states( string $type, string $ruleset ): void {
+		$order = $this->create_woopayments_order(
+			array(
+				'_wcpay_fraud_meta_box_type'   => $type,
+				'_wcpay_fraud_ruleset_results' => $ruleset,
+			)
+		);
+
+		$this->assertStringNotContainsString( 'Triggered risk filters:', $this->render_meta_box( $order ) );
+	}
+
+	/**
 	 * @testdox Should render Learn more copy without risk-filter settings for non-card WooPayments orders.
 	 */
 	public function test_renders_non_card_woopayments_copy_without_adjust_filters_link(): void {
@@ -256,6 +300,34 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 			'review expired'   => array( 'review_expired', 'Held for review', 'The payment for this order was held for review by your risk filtering. The authorization for the charge appears to have expired.', 'Review payment', null ),
 			'review failed'    => array( 'review_failed', 'Held for review', 'The payment for this order was held for review by your risk filtering. The authorization for the charge appears to have failed.', 'Review payment', null ),
 			'terminal payment' => array( 'terminal_payment', 'No action taken', 'The payment for this order was done in person and has bypassed your risk filtering.', null, null ),
+		);
+	}
+
+	/**
+	 * Active fraud panels with a primary action.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function active_fraud_type_provider(): array {
+		return array(
+			'block'  => array( 'block', 'View more details' ),
+			'review' => array( 'review', 'Review payment' ),
+		);
+	}
+
+	/**
+	 * Inactive panels and unusable persisted results.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function non_active_or_invalid_ruleset_provider(): array {
+		return array(
+			'empty JSON array' => array( 'review', '[]' ),
+			'invalid JSON'     => array( 'review', '{invalid' ),
+			'all allowed'      => array( 'block', '{"avs_verification":"allow"}' ),
+			'review approved'  => array( 'review_allowed', '{"avs_verification":"review"}' ),
+			'non-card'         => array( 'not_card', '{"avs_verification":"review"}' ),
+			'terminal'         => array( 'terminal_payment', '{"avs_verification":"review"}' ),
 		);
 	}
 

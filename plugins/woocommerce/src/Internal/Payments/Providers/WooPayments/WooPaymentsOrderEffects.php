@@ -421,13 +421,43 @@ class WooPaymentsOrderEffects {
 				$box_type = $was_held_for_review ? 'review_allowed' : 'allow';
 			}
 
-			return array(
+			$meta = array(
 				'_wcpay_fraud_outcome_status' => $fraud_outcome,
 				'_wcpay_fraud_meta_box_type'  => $is_card ? $box_type : 'not_card',
 			);
+
+			if ( 'review' === $fraud_outcome && $entering_review_hold ) {
+				$ruleset_results = self::get_fraud_ruleset_results( $intent );
+				$encoded_results = wp_json_encode( $ruleset_results );
+				if ( array() !== $ruleset_results && is_string( $encoded_results ) ) {
+					$meta['_wcpay_fraud_ruleset_results'] = $encoded_results;
+				}
+			}
+
+			return $meta;
 		}
 
 		return $is_card ? array() : array( '_wcpay_fraud_meta_box_type' => 'not_card' );
+	}
+
+	/**
+	 * Get the fired fraud ruleset results from a PaymentIntent response.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $intent Native PaymentIntent response.
+	 * @return array<mixed> Fired fraud ruleset results, when present and valid.
+	 */
+	public static function get_fraud_ruleset_results( array $intent ): array {
+		$metadata = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
+		$encoded  = $metadata['fraud_ruleset_results'] ?? null;
+		if ( ! is_string( $encoded ) ) {
+			return array();
+		}
+
+		$ruleset_results = json_decode( $encoded, true );
+
+		return is_array( $ruleset_results ) && array() !== $ruleset_results ? $ruleset_results : array();
 	}
 
 	/**

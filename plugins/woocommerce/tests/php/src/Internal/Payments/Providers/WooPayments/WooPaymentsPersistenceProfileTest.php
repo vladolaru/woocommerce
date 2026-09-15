@@ -49,6 +49,7 @@ class WooPaymentsPersistenceProfileTest extends WC_Unit_Test_Case {
 				'_stripe_customer_id',
 				'_wcpay_fraud_meta_box_type',
 				'_wcpay_fraud_outcome_status',
+				'_wcpay_fraud_ruleset_results',
 				'_wcpay_intent_currency',
 				'_wcpay_open_dispute_ids',
 				'_wcpay_refund_id',

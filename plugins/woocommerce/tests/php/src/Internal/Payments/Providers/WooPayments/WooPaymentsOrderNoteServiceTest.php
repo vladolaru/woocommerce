@@ -386,6 +386,44 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Held-for-review notes use exact Core and plugin candidates with shared labels.
+	 */
+	public function test_formats_fraud_held_for_review_note_candidates_and_ruleset_labels(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->set_total( '25.00' );
+		$order->save();
+		$sut = new WooPaymentsOrderNoteService();
+
+		$ruleset_results = array(
+			'new_platform_rule'        => 'unexpected',
+			'avs_verification'         => 'review',
+			'international_ip_address' => 'block',
+			'order_items_threshold'    => 'allow',
+			0                          => 'review',
+			'bad_outcome'              => array(),
+		);
+		$candidates      = $sut->format_fraud_held_for_review_note_candidates( $order, 'pi_review_test', 'ch_review_test', $ruleset_results );
+		$mapper          = new \ReflectionMethod( WooPaymentsOrderNoteService::class, 'get_ruleset_result_labels' );
+
+		$this->assertTrue( $mapper->isPrivate(), 'The existing ruleset mapper must remain private for subclass compatibility.' );
+		$this->assertStringContainsString( '<strong>held for review</strong>', $candidates[0] );
+		$this->assertStringContainsString( 'Place in review if the AVS verification fails', $candidates[0] );
+		$this->assertStringContainsString( 'Block if the country resolved from customer IP is not listed in your selling countries', $candidates[0] );
+		$this->assertStringContainsString( 'New platform rule', $candidates[0] );
+		$this->assertStringNotContainsString( 'Order items threshold', $candidates[0] );
+		$this->assertSame(
+			array(
+				'New platform rule',
+				'Place in review if the AVS verification fails',
+				'Block if the country resolved from customer IP is not listed in your selling countries',
+			),
+			$sut->get_fraud_ruleset_result_labels_for_display( $ruleset_results )
+		);
+	}
+
+	/**
 	 * @testdox Unknown risk filter keys render as readable labels.
 	 */
 	public function test_formats_fraud_blocked_note_with_unknown_rule_key(): void {

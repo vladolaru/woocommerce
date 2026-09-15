@@ -282,6 +282,24 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build exact Core- and plugin-catalog renderings of a fraud-held payment note.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order            $order           Order object.
+	 * @param string              $intent_id       Held payment intent ID.
+	 * @param string              $charge_id       Held charge ID.
+	 * @param array<string,mixed> $ruleset_results Fired fraud-rule results, keyed by rule.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 */
+	public function format_fraud_held_for_review_note_candidates( WC_Order $order, string $intent_id, string $charge_id, array $ruleset_results ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_fraud_held_for_review_note_for_domain( $order, $intent_id, $charge_id, $ruleset_results, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
 	 * Build the blocked-transaction details URL for a fraud-blocked payment note.
 	 *
 	 * Links the note to the specific blocked attempt: the intent id when the
@@ -688,6 +706,81 @@ class WooPaymentsOrderNoteService {
 			$formatted_amount,
 			$transaction_url
 		);
+	}
+
+	/**
+	 * Build a fraud-held payment rendering from one known catalog.
+	 *
+	 * @param WC_Order            $order            Order object.
+	 * @param string              $intent_id        Held payment intent ID.
+	 * @param string              $charge_id        Held charge ID.
+	 * @param array<string,mixed> $ruleset_results  Fired fraud-rule results, keyed by rule.
+	 * @param string              $text_domain      Translation catalog to render.
+	 * @param string              $formatted_amount Preformatted order amount.
+	 * @return string
+	 */
+	private function format_fraud_held_for_review_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, array $ruleset_results, string $text_domain, string $formatted_amount ): string {
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id );
+		$labels          = $this->get_ruleset_result_labels( $ruleset_results, $text_domain );
+
+		if ( array() !== $labels ) {
+			$rules_list = '&#8226; ' . implode( '<br>&#8226; ', array_map( 'esc_html', $labels ) );
+
+			if ( 'woocommerce-payments' === $text_domain ) {
+				/* translators: %1$s: the held amount, %2$s: the list of risk filters that held the payment. */
+				$note_format = __( '&#x26D4; A payment of %1$s was <strong>held for review</strong> by the following risk filters:<br>%2$s<br><br><a>View more details</a>.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			} else {
+				/* translators: %1$s: the held amount, %2$s: the list of risk filters that held the payment. */
+				$note_format = __( '&#x26D4; A payment of %1$s was <strong>held for review</strong> by the following risk filters:<br>%2$s<br><br><a>View more details</a>.', 'woocommerce' );
+			}
+
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					$note_format,
+					array(
+						'strong' => '<strong>',
+						'br'     => '<br>',
+						'a'      => '' !== $transaction_url ? '<a href="%3$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+					)
+				),
+				$formatted_amount,
+				$rules_list,
+				$transaction_url
+			);
+		}
+
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: the held amount. */
+			$note_format = __( '&#x26D4; A payment of %1$s was <strong>held for review</strong> by one or more risk filters.<br><br><a>View more details</a>.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: the held amount. */
+			$note_format = __( '&#x26D4; A payment of %1$s was <strong>held for review</strong> by one or more risk filters.<br><br><a>View more details</a>.', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'br'     => '<br>',
+					'a'      => '' !== $transaction_url ? '<a href="%2$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Get merchant-facing Core labels for fired fraud-rule results.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,string> $ruleset_results Fired fraud-rule results, keyed by rule.
+	 * @return string[]
+	 */
+	public function get_fraud_ruleset_result_labels_for_display( array $ruleset_results ): array {
+		return $this->get_ruleset_result_labels( $ruleset_results, 'woocommerce' );
 	}
 
 	/**

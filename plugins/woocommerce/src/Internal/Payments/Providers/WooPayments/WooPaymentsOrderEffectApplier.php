@@ -281,10 +281,18 @@ class WooPaymentsOrderEffectApplier {
 			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;
 			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
 		} elseif ( in_array( $status, array( 'requires_capture', 'processing' ), true ) && '' !== $intent_id ) {
-			$note_candidates                                      = $this->note_service->format_payment_authorized_note_candidates( $order, $intent_id, $charge_id );
-			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
-			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED;
-			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
+			$metadata      = isset( $result['metadata'] ) && is_array( $result['metadata'] ) ? $result['metadata'] : array();
+			$fraud_outcome = isset( $metadata['fraud_outcome'] ) && is_string( $metadata['fraud_outcome'] ) ? $metadata['fraud_outcome'] : '';
+			if ( 'review' === $fraud_outcome ) {
+				$note_candidates                                      = $this->note_service->format_fraud_held_for_review_note_candidates( $order, $intent_id, $charge_id, WooPaymentsOrderEffects::get_fraud_ruleset_results( $result ) );
+				$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
+				$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
+			} else {
+				$note_candidates                                      = $this->note_service->format_payment_authorized_note_candidates( $order, $intent_id, $charge_id );
+				$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
+				$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED;
+				$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
+			}
 		} elseif ( in_array( $status, array( 'requires_action', 'requires_confirmation' ), true ) && '' !== $intent_id ) {
 			$note_candidates                                      = $this->note_service->format_payment_started_note_candidates( $order, $intent_id );
 			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
