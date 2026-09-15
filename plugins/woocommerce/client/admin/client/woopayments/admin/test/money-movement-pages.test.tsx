@@ -5770,43 +5770,123 @@ describe( 'WooPayments money movement pages', () => {
 		[
 			'won',
 			'You won this dispute. The disputed amount and dispute fee have been returned to your account.',
+			{},
 		],
 		[
 			'lost',
 			'This dispute was lost. The disputed amount and dispute fee have been deducted from your account.',
+			{ effective_fee: { amount: 1500, currency: 'usd' } },
 		],
-	] )( 'renders %s dispute outcome guidance', async ( status, message ) => {
-		mockGetPaymentIntent.mockResolvedValue( {
-			id: 'pi_test',
-			charge: {
-				id: 'ch_test',
-				balance_transaction: 'txn_test',
-				type: 'charge',
-				amount: 5000,
-				currency: 'usd',
-				created: 1781712000,
-				payment_intent: 'pi_test',
-				dispute: {
-					id: 'dp_test',
-					status,
-					reason: 'fraudulent',
+	] )(
+		'renders %s dispute outcome guidance',
+		async ( status, message, disputeDetails ) => {
+			mockGetPaymentIntent.mockResolvedValue( {
+				id: 'pi_test',
+				charge: {
+					id: 'ch_test',
+					balance_transaction: 'txn_test',
+					type: 'charge',
+					amount: 5000,
+					currency: 'usd',
+					created: 1781712000,
+					payment_intent: 'pi_test',
+					dispute: {
+						id: 'dp_test',
+						status,
+						reason: 'fraudulent',
+						...disputeDetails,
+					},
 				},
+			} );
+			mockGetTimeline.mockResolvedValue( { data: [] } );
+
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions/details?id=pi_test&transaction_id=txn_test',
+					] }
+				>
+					<WooPaymentsTransactionDetailsPage />
+				</MemoryRouter>
+			);
+
+			expect( await screen.findByText( message ) ).toBeInTheDocument();
+		}
+	);
+
+	it.each( [
+		[
+			'an explicit null annotation',
+			{
+				effective_fee: null,
+				balance_transactions: [
+					{
+						fee: 1500,
+						reporting_category: 'dispute',
+					},
+				],
 			},
-		} );
-		mockGetTimeline.mockResolvedValue( { data: [] } );
+		],
+		[
+			'a legacy reversal',
+			{
+				balance_transactions: [
+					{
+						fee: 1500,
+						reporting_category: 'dispute',
+					},
+					{
+						fee: -1500,
+						reporting_category: 'dispute_reversal',
+					},
+				],
+			},
+		],
+	] )(
+		'omits a lost dispute fee for %s',
+		async ( _label, disputeDetails ) => {
+			mockGetPaymentIntent.mockResolvedValue( {
+				id: 'pi_test',
+				charge: {
+					id: 'ch_test',
+					balance_transaction: 'txn_test',
+					type: 'charge',
+					amount: 5000,
+					currency: 'usd',
+					created: 1781712000,
+					payment_intent: 'pi_test',
+					dispute: {
+						id: 'dp_test',
+						status: 'lost',
+						reason: 'fraudulent',
+						...disputeDetails,
+					},
+				},
+			} );
+			mockGetTimeline.mockResolvedValue( { data: [] } );
 
-		render(
-			<MemoryRouter
-				initialEntries={ [
-					'/woopayments/transactions/details?id=pi_test&transaction_id=txn_test',
-				] }
-			>
-				<WooPaymentsTransactionDetailsPage />
-			</MemoryRouter>
-		);
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions/details?id=pi_test&transaction_id=txn_test',
+					] }
+				>
+					<WooPaymentsTransactionDetailsPage />
+				</MemoryRouter>
+			);
 
-		expect( await screen.findByText( message ) ).toBeInTheDocument();
-	} );
+			expect(
+				await screen.findByText(
+					'This dispute was lost. The disputed amount has been deducted from your account.'
+				)
+			).toBeInTheDocument();
+			expect(
+				screen.queryByText(
+					'This dispute was lost. The disputed amount and dispute fee have been deducted from your account.'
+				)
+			).not.toBeInTheDocument();
+		}
+	);
 
 	describe( 'WooPaymentsTransactionTimeline early fraud warnings', () => {
 		it( 'renders an actionable warning with the known reason and refund action', async () => {

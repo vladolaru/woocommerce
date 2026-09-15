@@ -107,7 +107,8 @@ export interface WooPaymentsDispute {
 	evidence?: WooPaymentsDisputeEvidence;
 	evidence_details?: WooPaymentsDisputeEvidenceDetails;
 	metadata?: WooPaymentsDisputeMetadata;
-	balance_transactions?: Array< Record< string, unknown > >;
+	effective_fee?: { amount?: number; currency?: string } | null;
+	balance_transactions?: WooPaymentsDisputeBalanceTransaction[];
 	issuer_evidence?: Record< string, unknown > | null;
 	enhanced_eligibility_types?: string[];
 	order?: {
@@ -119,6 +120,14 @@ export interface WooPaymentsDispute {
 	};
 	customer_name?: string;
 	customer_email?: string;
+}
+
+export interface WooPaymentsDisputeBalanceTransaction {
+	amount?: unknown;
+	fee?: unknown;
+	currency?: unknown;
+	reporting_category?: unknown;
+	[ key: string ]: unknown;
 }
 
 export interface WooPaymentsCharge {

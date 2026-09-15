@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
  */
 import { closeWooPaymentsDispute } from './data';
 import { ACTIONABLE_DISPUTE_STATUSES } from './dispute-evidence-fields';
+import { hasEffectiveDisputeFee } from './dispute-utils';
 import type { WooPaymentsDispute, WooPaymentsTransaction } from './types';
 import {
 	formatAmount,
@@ -75,10 +76,15 @@ const getResolvedStatusDescription = ( dispute: WooPaymentsDispute ) => {
 				'woocommerce'
 			);
 		case 'lost':
-			return __(
-				'This dispute was lost. The disputed amount and dispute fee have been deducted from your account.',
-				'woocommerce'
-			);
+			return hasEffectiveDisputeFee( dispute )
+				? __(
+						'This dispute was lost. The disputed amount and dispute fee have been deducted from your account.',
+						'woocommerce'
+				  )
+				: __(
+						'This dispute was lost. The disputed amount has been deducted from your account.',
+						'woocommerce'
+				  );
 		case 'warning_under_review':
 			return __(
 				"The customer's bank is reviewing the submitted inquiry evidence.",

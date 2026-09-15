@@ -6,6 +6,7 @@ import {
 	getDisputeBalanceAdjustments,
 	getDisputeOrdinals,
 	getPrimaryDispute,
+	hasEffectiveDisputeFee,
 	isDisputeRefundable,
 } from '../money-movement/dispute-utils';
 
@@ -86,6 +87,104 @@ describe( 'WooPayments dispute utilities', () => {
 				],
 			} )
 		).toEqual( { fee: 3025, refunded: 1800 } );
+	} );
+
+	describe( 'effective dispute fee detection', () => {
+		const legacyFeeRow = {
+			amount: -5000,
+			currency: 'usd',
+			fee: 1500,
+			reporting_category: 'dispute',
+		};
+
+		it.each( [
+			[
+				'positive annotated amount',
+				{
+					effective_fee: { amount: 1500, currency: 'usd' },
+				},
+				true,
+			],
+			[
+				'negative annotated amount',
+				{
+					effective_fee: { amount: -1500, currency: 'usd' },
+				},
+				true,
+			],
+			[
+				'explicit null annotation with a legacy fee row',
+				{
+					effective_fee: null,
+					balance_transactions: [ legacyFeeRow ],
+				},
+				false,
+			],
+			[
+				'zero annotated amount',
+				{
+					effective_fee: { amount: 0, currency: 'usd' },
+				},
+				false,
+			],
+			[
+				'NaN annotated amount',
+				{
+					effective_fee: { amount: Number.NaN, currency: 'usd' },
+				},
+				false,
+			],
+			[
+				'infinite annotated amount',
+				{
+					effective_fee: {
+						amount: Number.POSITIVE_INFINITY,
+						currency: 'usd',
+					},
+				},
+				false,
+			],
+			[
+				'annotated fee without an amount',
+				{
+					effective_fee: { currency: 'usd' },
+				},
+				false,
+			],
+			[
+				'legacy dispute fee row',
+				{ balance_transactions: [ legacyFeeRow ] },
+				true,
+			],
+			[
+				'legacy dispute reversal row',
+				{
+					balance_transactions: [
+						legacyFeeRow,
+						{
+							amount: 5000,
+							currency: 'usd',
+							fee: -1500,
+							reporting_category: 'dispute_reversal',
+						},
+					],
+				},
+				false,
+			],
+			[
+				'zero legacy dispute fee',
+				{
+					balance_transactions: [ { ...legacyFeeRow, fee: 0 } ],
+				},
+				false,
+			],
+			[ 'missing fee data', {}, false ],
+		] )(
+			'detects the effective fee for %s',
+			( _label, dispute, expected ) => {
+				expect( hasEffectiveDisputeFee( dispute ) ).toBe( expected );
+			}
+		);
 	} );
 
 	it( 'fails refund admission closed for absent, unknown, and active statuses', () => {
