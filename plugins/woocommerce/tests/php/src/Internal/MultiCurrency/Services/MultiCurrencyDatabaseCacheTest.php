@@ -109,6 +109,31 @@ class MultiCurrencyDatabaseCacheTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should read legacy cache data without error metadata.
+	 */
+	public function test_get_handles_legacy_cache_entry_without_errored_key(): void {
+		$cached_data = array(
+			'currencies' => array( 'eur' => 1.2 ),
+			'updated'    => 123,
+		);
+		update_option(
+			$this->cache_key,
+			array(
+				'data'    => $cached_data,
+				'fetched' => time(),
+			),
+			false
+		);
+
+		$admin_api_context = $this->createMock( \Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext::class );
+		$admin_api_context->method( 'is_admin_api_request' )->willReturn( true );
+
+		$cache = new MultiCurrencyDatabaseCache( $admin_api_context );
+
+		$this->assertSame( $cached_data, $cache->get( $this->cache_key ), 'Legacy cache data should remain readable when error metadata is absent.' );
+	}
+
+	/**
 	 * @testdox Should not refresh expired FX rates inside Action Scheduler jobs.
 	 */
 	public function test_does_not_refresh_inside_action_scheduler_jobs(): void {
