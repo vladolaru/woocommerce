@@ -61,7 +61,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 
 	private const NORMALIZED_OPTION = 'woocommerce_native_woopayments_cutover_normalization_version';
 
-	private const NORMALIZATION_VERSION = '3';
+	private const NORMALIZATION_VERSION = '4';
 
 	private const LOCATIONS = array( 'product', 'cart', 'checkout' );
 
@@ -169,7 +169,8 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	 * @return array{ran:bool,changes:string[]}
 	 */
 	public function run(): array {
-		if ( self::NORMALIZATION_VERSION === (string) get_option( self::NORMALIZED_OPTION, '' ) ) {
+		$completed_normalization_version = (string) get_option( self::NORMALIZED_OPTION, '' );
+		if ( self::NORMALIZATION_VERSION === $completed_normalization_version ) {
 			$alloptions = wp_load_alloptions();
 			if ( ! array_key_exists( self::NORMALIZED_OPTION, $alloptions ) ) {
 				wp_set_option_autoload( self::NORMALIZED_OPTION, true );
@@ -181,40 +182,45 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			);
 		}
 
-		$changes          = array();
-		$previous_version = $this->get_previous_version();
-		$settings         = $this->get_gateway_settings();
+		$changes           = array();
+		$settings          = $this->get_gateway_settings();
+		$incremental_rerun = '3' === $completed_normalization_version;
+		$previous_version  = '';
 
-		if ( $this->should_migrate_payment_request_split_settings( $settings, $previous_version ) ) {
-			$changes[] = 'payment_request_split_settings';
-		}
+		if ( ! $incremental_rerun ) {
+			$previous_version = $this->get_previous_version();
 
-		if ( $this->migrate_express_checkout_locations( $settings, $previous_version ) ) {
-			$changes[] = 'express_checkout_locations';
-		}
+			if ( $this->should_migrate_payment_request_split_settings( $settings, $previous_version ) ) {
+				$changes[] = 'payment_request_split_settings';
+			}
 
-		if ( $this->add_amazon_pay_to_express_checkout_locations( $settings, $previous_version ) ) {
-			$changes[] = 'amazon_pay_express_checkout_locations';
-		}
+			if ( $this->migrate_express_checkout_locations( $settings, $previous_version ) ) {
+				$changes[] = 'express_checkout_locations';
+			}
 
-		if ( $this->normalize_payment_request_button_size( $settings, $previous_version ) ) {
-			$changes[] = 'payment_request_button_size';
-		}
+			if ( $this->add_amazon_pay_to_express_checkout_locations( $settings, $previous_version ) ) {
+				$changes[] = 'amazon_pay_express_checkout_locations';
+			}
 
-		if ( $this->normalize_payment_request_button_type( $settings, $previous_version ) ) {
-			$changes[] = 'payment_request_button_type';
-		}
+			if ( $this->normalize_payment_request_button_size( $settings, $previous_version ) ) {
+				$changes[] = 'payment_request_button_size';
+			}
 
-		if ( $this->normalize_manual_capture_payment_methods( $settings ) ) {
-			$changes[] = 'manual_capture_payment_methods';
-		}
+			if ( $this->normalize_payment_request_button_type( $settings, $previous_version ) ) {
+				$changes[] = 'payment_request_button_type';
+			}
 
-		if ( $this->normalize_link_woopay_mutual_exclusion( $settings ) ) {
-			$changes[] = 'link_woopay_mutual_exclusion';
-		}
+			if ( $this->normalize_manual_capture_payment_methods( $settings ) ) {
+				$changes[] = 'manual_capture_payment_methods';
+			}
 
-		if ( $this->add_missing_form_field_defaults( $settings ) ) {
-			$changes[] = 'form_field_defaults';
+			if ( $this->normalize_link_woopay_mutual_exclusion( $settings ) ) {
+				$changes[] = 'link_woopay_mutual_exclusion';
+			}
+
+			if ( $this->add_missing_form_field_defaults( $settings ) ) {
+				$changes[] = 'form_field_defaults';
+			}
 		}
 
 		$projection = $this->get_gateway_settings_synchronizer()->persist( $settings );
@@ -234,20 +240,22 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			$changes[] = 'split_gateway_settings';
 		}
 
-		if ( $this->delete_appearance_transients() ) {
-			$changes[] = 'appearance_transients';
-		}
+		if ( ! $incremental_rerun ) {
+			if ( $this->delete_appearance_transients() ) {
+				$changes[] = 'appearance_transients';
+			}
 
-		if ( $this->delete_deprecated_options() ) {
-			$changes[] = 'deprecated_flags_and_options';
-		}
+			if ( $this->delete_deprecated_options() ) {
+				$changes[] = 'deprecated_flags_and_options';
+			}
 
-		if ( $this->delete_bnpl_announcement_state() ) {
-			$changes[] = 'bnpl_announcement_state';
-		}
+			if ( $this->delete_bnpl_announcement_state() ) {
+				$changes[] = 'bnpl_announcement_state';
+			}
 
-		if ( $this->mark_multi_currency_cache_autodetect_done( $previous_version ) ) {
-			$changes[] = 'multi_currency_cache_autodetect';
+			if ( $this->mark_multi_currency_cache_autodetect_done( $previous_version ) ) {
+				$changes[] = 'multi_currency_cache_autodetect';
+			}
 		}
 
 		update_option( self::NORMALIZED_OPTION, self::NORMALIZATION_VERSION, true );

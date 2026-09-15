@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Native WooPayments reruns deprecated Sofort settings cleanup for stores normalized before the payment-method registry correction.

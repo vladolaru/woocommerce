@@ -111,7 +111,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		$expected_split_settings = array( 'enabled' => 'yes' );
 		$this->assertSame( $expected_split_settings, get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' ) );
 		$this->assertSame( $expected_split_settings, get_option( 'woocommerce_woocommerce_payments_google_pay_settings' ) );
-		$this->assertSame( '3', get_option( self::NORMALIZED_OPTION ) );
+		$this->assertSame( '4', get_option( self::NORMALIZED_OPTION ) );
 
 		$second_summary = $this->create_runner()->run();
 
@@ -127,14 +127,14 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		$alloptions = wp_load_alloptions( true );
 
 		$this->assertTrue( $summary['ran'] );
-		$this->assertSame( '3', $alloptions[ self::NORMALIZED_OPTION ] ?? null, 'Completed cutover normalization must not leave its marker as a request-level option read.' );
+		$this->assertSame( '4', $alloptions[ self::NORMALIZED_OPTION ] ?? null, 'Completed cutover normalization must not leave its marker as a request-level option read.' );
 	}
 
 	/**
 	 * @testdox Repairs a historical non-autoloaded marker without rerunning cutover normalization.
 	 */
 	public function test_run_repairs_historical_non_autoloaded_marker_without_rerunning_normalization(): void {
-		add_option( self::NORMALIZED_OPTION, '3', '', false );
+		add_option( self::NORMALIZED_OPTION, '4', '', false );
 
 		$this->assertArrayNotHasKey( self::NORMALIZED_OPTION, wp_load_alloptions( true ), 'The historical marker fixture must begin outside alloptions.' );
 
@@ -143,7 +143,107 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $summary['ran'] );
 		$this->assertSame( array( 'already_normalized' ), $summary['changes'] );
-		$this->assertSame( '3', $alloptions[ self::NORMALIZED_OPTION ] ?? null, 'An existing cutover marker must be repaired into alloptions.' );
+		$this->assertSame( '4', $alloptions[ self::NORMALIZED_OPTION ] ?? null, 'An existing cutover marker must be repaired into alloptions.' );
+	}
+
+	/**
+	 * @testdox Reruns only deprecated method cleanup for the previous completed marker.
+	 */
+	public function test_run_reruns_deprecated_method_cleanup_from_previous_completed_marker(): void {
+		update_option( self::NORMALIZED_OPTION, '3' );
+		update_option( self::VERSION_OPTION, '10.4.0' );
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'upe_enabled_payment_method_ids'    => array( 'card', 'ideal', 'sofort' ),
+				'upe_available_payment_methods'     => array( 'card', 'ideal', 'sofort' ),
+				'express_checkout_product_methods'  => array( 'payment_request' ),
+				'express_checkout_cart_methods'     => array( 'woopay' ),
+				'express_checkout_checkout_methods' => array(),
+			)
+		);
+		update_option(
+			'woocommerce_woocommerce_payments_sofort_settings',
+			array(
+				'enabled' => 'yes',
+				'custom'  => 'preserve-me',
+			)
+		);
+
+		$summary = $this->create_runner()->run();
+		$stored  = get_option( self::SETTINGS_OPTION );
+
+		$this->assertTrue( $summary['ran'] );
+		$this->assertSame( array( 'deprecated_payment_methods', 'split_gateway_settings' ), $summary['changes'] );
+		$this->assertSame( array( 'card', 'ideal' ), $stored['upe_enabled_payment_method_ids'] );
+		$this->assertSame( array( 'card', 'ideal' ), $stored['upe_available_payment_methods'] );
+		$this->assertSame( array( 'payment_request' ), $stored['express_checkout_product_methods'] );
+		$this->assertSame( array( 'woopay' ), $stored['express_checkout_cart_methods'] );
+		$this->assertSame( array(), $stored['express_checkout_checkout_methods'] );
+		$this->assertArrayNotHasKey( 'manual_capture', $stored );
+		$this->assertSame(
+			array(
+				'enabled'                        => 'no',
+				'custom'                         => 'preserve-me',
+				'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+			),
+			get_option( 'woocommerce_woocommerce_payments_sofort_settings' )
+		);
+		$this->assertSame( '4', wp_load_alloptions( true )[ self::NORMALIZED_OPTION ] ?? null );
+
+		$second_summary = $this->create_runner()->run();
+
+		$this->assertFalse( $second_summary['ran'] );
+		$this->assertSame( array( 'already_normalized' ), $second_summary['changes'] );
+	}
+
+	/**
+	 * @testdox Retains the previous marker when a deprecated split gateway update fails and retries it.
+	 */
+	public function test_run_retries_deprecated_method_cleanup_after_split_gateway_write_failure(): void {
+		$option_name = 'woocommerce_woocommerce_payments_sofort_settings';
+		update_option( self::NORMALIZED_OPTION, '3' );
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'upe_enabled_payment_method_ids' => array( 'card', 'sofort' ),
+				'upe_available_payment_methods'  => array( 'card', 'sofort' ),
+			)
+		);
+		update_option(
+			$option_name,
+			array(
+				'enabled' => 'yes',
+				'custom'  => 'preserve-me',
+			)
+		);
+		$reject_update = static fn( $value, $old_value ) => $old_value;
+		add_filter( 'pre_update_option_' . $option_name, $reject_update, 10, 2 );
+
+		try {
+			$failed_summary = $this->create_runner()->run();
+		} finally {
+			remove_filter( 'pre_update_option_' . $option_name, $reject_update, 10 );
+		}
+
+		$this->assertFalse( $failed_summary['ran'] );
+		$this->assertSame( array( 'settings_persistence_failed' ), $failed_summary['changes'] );
+		$this->assertSame( '3', get_option( self::NORMALIZED_OPTION ) );
+		$this->assertSame( array( 'card' ), get_option( self::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( array( 'card' ), get_option( self::SETTINGS_OPTION )['upe_available_payment_methods'] );
+		$this->assertSame( 'yes', get_option( $option_name )['enabled'] );
+
+		$retry_summary = $this->create_runner()->run();
+
+		$this->assertTrue( $retry_summary['ran'] );
+		$this->assertSame( array( 'split_gateway_settings' ), $retry_summary['changes'] );
+		$this->assertSame( '4', get_option( self::NORMALIZED_OPTION ) );
+		$this->assertSame( 'no', get_option( $option_name )['enabled'] );
+
+		$third_summary = $this->create_runner()->run();
+
+		$this->assertFalse( $third_summary['ran'] );
+		$this->assertSame( array( 'already_normalized' ), $third_summary['changes'] );
 	}
 
 	/**
