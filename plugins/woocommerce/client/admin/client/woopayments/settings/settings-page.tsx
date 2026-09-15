@@ -1506,7 +1506,6 @@ const TransactionsSettingsSection = ( {
 	const [ supportPhone, setSupportPhone ] =
 		useAccountBusinessSupportPhone() as StringSetting;
 	const [ initialSupportEmail ] = useState( supportEmail );
-	const [ initialSupportPhone ] = useState( supportPhone );
 	const [ hasSupportEmailBlurred, setHasSupportEmailBlurred ] =
 		useState( false );
 	const [ hasSupportPhoneChanged, setHasSupportPhoneChanged ] =
@@ -1549,6 +1548,9 @@ const TransactionsSettingsSection = ( {
 		! supportPhoneServerError &&
 		! isSupportPhoneEmpty &&
 		isSupportPhoneFormatValid;
+	const hasSupportPhoneLocalError =
+		isSupportPhoneEmpty ||
+		( hasSupportPhoneChanged && ! isSupportPhoneFormatValid );
 	const supportEmailError =
 		supportEmailServerError ||
 		( supportEmail === '' && initialSupportEmail !== ''
@@ -1562,17 +1564,11 @@ const TransactionsSettingsSection = ( {
 			: '' );
 	const supportPhoneError =
 		supportPhoneServerError ||
-		( isSupportPhoneEmpty && initialSupportPhone !== ''
+		( hasSupportPhoneLocalError
 			? __(
-					'Support phone number cannot be empty once it has been set before, please specify.',
+					'A support phone number is required. Please enter a valid phone number.',
 					'woocommerce'
 			  )
-			: '' ) ||
-		( isSupportPhoneEmpty
-			? __( 'Support phone number cannot be empty.', 'woocommerce' )
-			: '' ) ||
-		( hasSupportPhoneChanged && ! isSupportPhoneFormatValid
-			? __( 'Please enter a valid phone number.', 'woocommerce' )
 			: '' );
 
 	useEffect( () => {
@@ -1793,13 +1789,13 @@ const TransactionsSettingsSection = ( {
 						</div>
 						<BaseControl
 							label={ __(
-								'Support phone number',
+								'Support phone number (required)',
 								'woocommerce'
 							) }
 							help={
 								<>
 									{ __(
-										'This may be visible on receipts, invoices, and automated emails from your store.',
+										"This number may appear on customer bank statements and in-person purchase receipts, but not in order emails. Use a number you're comfortable sharing publicly.",
 										'woocommerce'
 									) }
 									{ isTestModeOnboarding && (

@@ -3581,7 +3581,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 				'Provide contact information where customers can reach you for support.'
 			)
 		).toBeInTheDocument();
-
 		const supportEmail = within( section ).getByRole( 'textbox', {
 			name: 'Support email',
 		} );
@@ -3601,16 +3600,27 @@ describe( 'WooPaymentsSettingsPage', () => {
 		await userEvent.type( supportEmail, 'support@example.com' );
 
 		const supportPhone = within( section ).getByRole( 'textbox', {
-			name: 'Support phone number',
+			name: 'Support phone number (required)',
 		} );
 		await userEvent.clear( supportPhone );
 		await userEvent.type( supportPhone, '12345' );
 		fireEvent.blur( supportPhone );
 
 		expect(
-			within( section ).getByText( 'Please enter a valid phone number.' )
+			within( section ).getByText(
+				'A support phone number is required. Please enter a valid phone number.'
+			)
 		).toBeInTheDocument();
 		expect( supportPhone ).toHaveAttribute( 'aria-invalid', 'true' );
+		expect( supportPhone ).toHaveAttribute(
+			'aria-describedby',
+			'woopayments-support-phone-error'
+		);
+		expect(
+			within( section ).getByText(
+				"This number may appear on customer bank statements and in-person purchase receipts, but not in order emails. Use a number you're comfortable sharing publicly."
+			)
+		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'button', { name: 'Save changes' } )
 		).toHaveAttribute( 'aria-disabled', 'true' );
@@ -3727,15 +3737,62 @@ describe( 'WooPaymentsSettingsPage', () => {
 		render( <WooPaymentsSettingsPage /> );
 
 		const section = getSettingsSectionByName( 'Transactions' );
+		const supportPhone = within( section ).getByRole( 'textbox', {
+			name: 'Support phone number (required)',
+		} );
 
 		expect(
 			within( section ).getByText(
-				'Support phone number cannot be empty.'
+				'A support phone number is required. Please enter a valid phone number.'
 			)
 		).toBeInTheDocument();
+		expect( supportPhone ).toHaveAttribute( 'aria-invalid', 'true' );
+		expect( supportPhone ).toHaveAttribute(
+			'aria-describedby',
+			'woopayments-support-phone-error'
+		);
 		expect(
 			screen.getByRole( 'button', { name: 'Save changes' } )
 		).toHaveAttribute( 'aria-disabled', 'true' );
+	} );
+
+	it( 'shows the support phone server error before the local validation message', () => {
+		mockUseAccountBusinessSupportPhone.mockImplementation( () =>
+			useState( '' )
+		);
+		mockUseGetSavingError.mockReturnValue( {
+			data: {
+				details: {
+					account_business_support_phone: {
+						message:
+							'Enter the support phone number on your account.',
+					},
+				},
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getSettingsSectionByName( 'Transactions' );
+		const supportPhone = within( section ).getByRole( 'textbox', {
+			name: 'Support phone number (required)',
+		} );
+
+		expect(
+			within( section ).getByText(
+				'Enter the support phone number on your account.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( section ).queryByText(
+				'A support phone number is required. Please enter a valid phone number.'
+			)
+		).not.toBeInTheDocument();
+		expect( supportPhone ).toHaveAttribute( 'aria-invalid', 'true' );
+		expect( supportPhone ).toHaveAttribute(
+			'aria-describedby',
+			'woopayments-support-phone-error'
+		);
 	} );
 
 	it( 'announces the page-level save busy state accessibly', () => {
