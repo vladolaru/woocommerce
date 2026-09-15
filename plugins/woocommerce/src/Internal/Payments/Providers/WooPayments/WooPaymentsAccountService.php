@@ -104,6 +104,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 	private const ACCOUNT_DELETION_PENDING_OPTION = 'wcpay_account_deletion_pending_id';
 
+	private const INCENTIVES_USAGE_OPTION = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments';
+
+	private const INCENTIVES_USAGE_VERSION_OPTION = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version';
+
 	private const DATABASE_CACHE_OPTIONS = array(
 		self::ACCOUNT_OPTION,
 		'wcpay_address_autocomplete_jwt',
@@ -503,6 +507,12 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$this->legacy_proxy->call_function( 'delete_option', self::NOX_ONBOARDING_LOCKED_OPTION );
 
 		$this->clear_preserved_database_cache();
+
+		try {
+			$this->legacy_proxy->call_function( 'delete_option', self::INCENTIVES_USAGE_OPTION );
+		} finally {
+			$this->legacy_proxy->call_function( 'delete_option', self::INCENTIVES_USAGE_VERSION_OPTION );
+		}
 	}
 
 	/**

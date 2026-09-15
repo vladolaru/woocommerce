@@ -42,6 +42,8 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
 		delete_option( 'wcpay_account_deletion_pending_id' );
 		delete_option( '_wcpay_feature_reports_area' );
+		delete_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' );
+		delete_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' );
 		foreach ( $this->get_preserved_database_cache_keys() as $cache_key ) {
 			delete_option( $cache_key );
 		}
@@ -1062,6 +1064,8 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_test_mode_enabled_date', 123 );
 		update_option( 'woocommerce_woopayments_nox_profile', array( 'id' => 'nox_profile' ) );
 		update_option( 'woocommerce_woopayments_nox_onboarding_locked', 'yes' );
+		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments', 'yes' );
+		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version', 2 );
 		set_transient( 'wcpay_stripe_onboarding_state', 'state', DAY_IN_SECONDS );
 		set_transient( 'woopay_enabled_by_default', true, DAY_IN_SECONDS );
 		set_transient( 'wcpay_onboarding_init_in_progress', 'yes', DAY_IN_SECONDS );
@@ -1085,11 +1089,70 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( get_option( 'wcpay_test_mode_enabled_date' ) );
 		$this->assertFalse( get_option( 'woocommerce_woopayments_nox_profile' ) );
 		$this->assertFalse( get_option( 'woocommerce_woopayments_nox_onboarding_locked' ) );
+		$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' ) );
+		$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' ) );
 		$this->assertFalse( get_transient( 'wcpay_stripe_onboarding_state' ) );
 		$this->assertFalse( get_transient( 'woopay_enabled_by_default' ) );
 		$this->assertFalse( get_transient( 'wcpay_onboarding_init_in_progress' ) );
 		$this->assertFalse( get_transient( 'wcpay_test_to_live_eligible' ) );
 		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
+	}
+
+	/**
+	 * @testdox Should clear incentive usage state only for the reset account's site.
+	 * @group multisite
+	 */
+	public function test_cleanup_after_account_reset_clears_incentive_usage_state_only_for_current_blog(): void {
+		$this->skipWithoutMultisite();
+		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments', 'yes' );
+		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version', 2 );
+
+		$blog_id                    = self::factory()->blog->create();
+		$this->multisite_blog_ids[] = $blog_id;
+		switch_to_blog( $blog_id );
+
+		try {
+			update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments', 'yes' );
+			update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version', 2 );
+
+			$this->create_service()->cleanup_after_account_reset();
+
+			$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' ), 'The reset subsite should re-evaluate WooPayments usage.' );
+			$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' ), 'The reset subsite should not retain the prior eligibility logic version.' );
+		} finally {
+			restore_current_blog();
+		}
+
+		$this->assertSame( 'yes', get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' ), 'Resetting a subsite should preserve the main-site usage value.' );
+		$this->assertSame( 2, get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' ), 'Resetting a subsite should preserve the main-site logic version.' );
+	}
+
+	/**
+	 * @testdox Should delete the incentive logic version and propagate when deleting the usage value throws.
+	 */
+	public function test_cleanup_after_account_reset_deletes_incentive_version_when_usage_deletion_throws(): void {
+		$usage_option   = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments';
+		$version_option = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version';
+		update_option( $usage_option, 'yes' );
+		update_option( $version_option, 2 );
+
+		$expected_exception = new RuntimeException( 'Incentive usage deletion failed.' );
+		$throw_on_delete    = static function () use ( $expected_exception ): void {
+			throw $expected_exception;
+		};
+		add_action( "delete_option_{$usage_option}", $throw_on_delete );
+
+		$caught_exception = null;
+		try {
+			$this->create_service()->cleanup_after_account_reset();
+		} catch ( RuntimeException $exception ) {
+			$caught_exception = $exception;
+		} finally {
+			remove_action( "delete_option_{$usage_option}", $throw_on_delete );
+		}
+
+		$this->assertSame( $expected_exception, $caught_exception, 'The original option-deletion exception should propagate.' );
+		$this->assertFalse( get_option( $version_option ), 'The paired logic version should still be deleted.' );
 	}
 
 	/**
