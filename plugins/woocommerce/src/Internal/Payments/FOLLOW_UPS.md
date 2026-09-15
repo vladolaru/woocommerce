@@ -16,6 +16,10 @@ Never bumping silently costs native stores new payment methods and response impr
 
 ## Deferred mechanisms (from the 2026-08-20 mechanism-parity review programme)
 
+### Core container PSR-11 declaration mismatch
+
+Core's `Container` docblock promises `Psr\Container\ContainerInterface` as an injectable type hint, but the class does not implement that interface; this is a candidate for its own small owner-led trunk PR.
+
 ### Pay-for-order express wallet contact backfill (S5, L-2)
 
 The plugin's classic pay-for-order express flow backfills the wallet-provided email/phone onto the order (plugin `client/checkout/express-checkout/order-api.js:56-75`). The native classic pay-for-order express branch never ported that backfill, so a wallet payer's contact details do not reach the order. Pre-existing before S5; not a regression.

@@ -7,10 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Psr\Container\ContainerInterface;
 
 /**
  * Defers native WooPayments REST controller resolution for admin requests until WordPress initializes its REST server.
@@ -23,9 +23,9 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	/**
 	 * WooCommerce dependency container.
 	 *
-	 * @var ContainerInterface
+	 * @var Container
 	 */
-	private ContainerInterface $container;
+	private Container $container;
 
 	/**
 	 * Initialize the registrar.
@@ -34,9 +34,9 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	 *
 	 * @internal
 	 *
-	 * @param ContainerInterface $container WooCommerce dependency container.
+	 * @param Container $container WooCommerce dependency container.
 	 */
-	final public function init( ContainerInterface $container ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
+	final public function init( Container $container ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
 		$this->container = $container;
 	}
 

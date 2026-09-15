@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Container;
+use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
@@ -17,7 +19,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentDetailsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
-use Psr\Container\ContainerInterface;
 use ReflectionMethod;
 use WC_REST_Unit_Test_Case;
 
@@ -27,6 +28,23 @@ use WC_REST_Unit_Test_Case;
 class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 
 	/**
+	 * @testdox Should resolve through the WooCommerce dependency container.
+	 */
+	public function test_resolves_through_woocommerce_container(): void {
+		$previous_container      = $GLOBALS['wc_container'];
+		$GLOBALS['wc_container'] = new Container();
+
+		try {
+			$this->assertInstanceOf(
+				WooPaymentsAdminRestRouteRegistrar::class,
+				wc_get_container()->get( WooPaymentsAdminRestRouteRegistrar::class )
+			);
+		} finally {
+			$GLOBALS['wc_container'] = $previous_container;
+		}
+	}
+
+	/**
 	 * @testdox Should register native routes when an admin page dispatches an internal REST request.
 	 */
 	public function test_registers_routes_for_internal_requests_with_admin_screen(): void {
@@ -34,7 +52,9 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 
 		$previous_screen = $current_screen;
 		$controller      = $this->create_payment_details_controller();
-		$container       = $this->create_container( NativePaymentsState::CONNECTED, $controller );
+		$fixture         = $this->create_container( NativePaymentsState::CONNECTED, $controller );
+		$container       = $fixture['container'];
+		$runtime         = $fixture['runtime'];
 		$bootstrap       = new NativePaymentsBootstrap(
 			array( WooPaymentsProvider::class, 'get_bootstrap_root_matrix' ),
 			static fn(): array => array()
@@ -54,8 +74,8 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 			$this->assertSame( 'edit-page', get_current_screen()->id );
 			$this->assertArrayHasKey( '/wc/v3/payments/charges/(?P<charge_id>\w+)', $this->server->get_routes() );
 		} finally {
-			if ( $container->registrar ) {
-				remove_action( 'rest_api_init', array( $container->registrar, 'register_rest_controllers' ), 0 );
+			if ( $runtime->registrar ) {
+				remove_action( 'rest_api_init', array( $runtime->registrar, 'register_rest_controllers' ), 0 );
 			}
 			remove_action( 'rest_api_init', array( $controller, 'register_routes' ) );
 			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the screen snapshot taken above.
@@ -71,7 +91,9 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_resolves_only_route_controllers_for_effective_state( string $state ): void {
 		$controller = $this->create_payment_details_controller();
-		$container  = $this->create_container( $state, $controller );
+		$fixture    = $this->create_container( $state, $controller );
+		$container  = $fixture['container'];
+		$runtime    = $fixture['runtime'];
 		$registrar  = new WooPaymentsAdminRestRouteRegistrar();
 		$registrar->init( $container );
 
@@ -86,8 +108,8 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 				$expected[] = WooPaymentsWooPaySessionController::class;
 			}
 
-			$this->assertSame( $expected, $container->resolved );
-			$this->assertNotContains( WooPaymentsAccountService::class, $container->resolved );
+			$this->assertSame( $expected, $runtime->resolved );
+			$this->assertNotContains( WooPaymentsAccountService::class, $runtime->resolved );
 		} finally {
 			remove_action( 'rest_api_init', array( $controller, 'register_routes' ) );
 		}
@@ -125,15 +147,19 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 	 *
 	 * @param string                                  $state      Effective native state.
 	 * @param WooPaymentsPaymentDetailsRestController $controller Real route owner.
-	 * @return ContainerInterface&object{registrar:?WooPaymentsAdminRestRouteRegistrar,resolved:array<int,string>}
+	 * @return array{container:Container,runtime:RuntimeContainer&object{registrar:?WooPaymentsAdminRestRouteRegistrar,resolved:array<int,string>}}
 	 */
-	private function create_container( string $state, WooPaymentsPaymentDetailsRestController $controller ): ContainerInterface {
-		return new class( $state, $controller ) implements ContainerInterface {
+	private function create_container( string $state, WooPaymentsPaymentDetailsRestController $controller ): array {
+		$container = new Container();
+		$runtime   = new class( $container, $state, $controller ) extends RuntimeContainer {
 			/** @var array<int,string> */
 			public array $resolved = array();
 
 			/** @var WooPaymentsAdminRestRouteRegistrar|null */
 			public ?WooPaymentsAdminRestRouteRegistrar $registrar = null;
+
+			/** @var Container */
+			private Container $container;
 
 			/** @var string */
 			private $state;
@@ -144,10 +170,13 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 			/**
 			 * Initialize the controlled container.
 			 *
+			 * @param Container                               $container  WooCommerce dependency container.
 			 * @param string                                  $state      Effective native state.
 			 * @param WooPaymentsPaymentDetailsRestController $controller Real route owner.
 			 */
-			public function __construct( string $state, WooPaymentsPaymentDetailsRestController $controller ) {
+			public function __construct( Container $container, string $state, WooPaymentsPaymentDetailsRestController $controller ) {
+				parent::__construct( array( Container::class => $container ) );
+				$this->container  = $container;
 				$this->state      = $state;
 				$this->controller = $controller;
 			}
@@ -163,7 +192,7 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 				if ( WooPaymentsAdminRestRouteRegistrar::class === $id ) {
 					if ( null === $this->registrar ) {
 						$this->registrar = new WooPaymentsAdminRestRouteRegistrar();
-						$this->registrar->init( $this );
+						$this->registrar->init( $this->container );
 					}
 
 					return $this->registrar;
@@ -212,5 +241,14 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 				return true;
 			}
 		};
+
+		$inner_container = new \ReflectionProperty( Container::class, 'container' );
+		$inner_container->setAccessible( true );
+		$inner_container->setValue( $container, $runtime );
+
+		return array(
+			'container' => $container,
+			'runtime'   => $runtime,
+		);
 	}
 }
