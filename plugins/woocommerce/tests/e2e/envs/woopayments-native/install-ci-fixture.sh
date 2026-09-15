@@ -9,12 +9,16 @@ readonly IDENTITY_ASSERT_CODE='$manager = new Automattic\Jetpack\Connection\Mana
 readonly AUTHORIZATION_CACHE_CLEAR_CODE='delete_option( "wcpay_authorization_summary_cache" ); delete_option( "wcpay_test_authorization_summary_cache" ); wp_cache_delete( "wcpay_authorization_summary_cache", "options" ); wp_cache_delete( "wcpay_test_authorization_summary_cache", "options" );'
 readonly ACCOUNT_CACHE_PREPARE_CODE='$fixture = WooCommerce_WooPayments_Native_CI_Provider_Fixture::registered_instance(); if ( ! $fixture ) { fwrite( STDERR, "The WooPayments CI provider fixture is not registered.\n" ); exit( 1 ); } $account = $fixture->prepare_physical_account_cache_for_run( static function (): array { return wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService::class )->refresh_account_data(); } ); echo wp_json_encode( array( "account_id" => $account["account_id"] ?? "" ) );'
 
+install_file() {
+	"${WP_ENV[@]}" sh -c 'source="$1"; target="$2"; if [ "$source" -ef "$target" ] || cmp -s "$source" "$target"; then exit 0; fi; cp -- "$source" "$target"' sh "$1" "$2"
+}
+
 cd "$PLUGIN_ROOT"
 readonly source_dir='wp-content/plugins/woocommerce/tests/e2e/envs/woopayments-native'
 "${WP_ENV[@]}" mkdir -p wp-content/mu-plugins
-"${WP_ENV[@]}" cp "$source_dir/ci-provider-fixture.php" wp-content/mu-plugins/ci-provider-fixture.php
-"${WP_ENV[@]}" cp "$source_dir/stripe-messaging-adapter.js" wp-content/mu-plugins/stripe-messaging-adapter.js
-"${WP_ENV[@]}" cp "$source_dir/../../test-plugins/woopayments-native-runtime/woopayments-native-runtime.php" wp-content/mu-plugins/woopayments-native-runtime.php
+install_file "$source_dir/ci-provider-fixture.php" wp-content/mu-plugins/ci-provider-fixture.php
+install_file "$source_dir/stripe-messaging-adapter.js" wp-content/mu-plugins/stripe-messaging-adapter.js
+install_file "$source_dir/../../test-plugins/woopayments-native-runtime/woopayments-native-runtime.php" wp-content/mu-plugins/woopayments-native-runtime.php
 "${WP_ENV[@]}" wp config set E2E_WOOPAYMENTS_NATIVE true --raw
 "${WP_ENV[@]}" wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE true --raw
 "${WP_ENV[@]}" wp option delete e2e_woopayments_native_provider_state

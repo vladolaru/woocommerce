@@ -10,6 +10,24 @@ trap 'rm -rf "$TEST_ROOT"' EXIT
 mkdir -p "$TEST_ROOT/bin" "$TEST_ROOT/diagnostics"
 touch "$TEST_ROOT/commands.log"
 printf 'true\n' > "$TEST_ROOT/fixture-state"
+readonly CONTAINER_ROOT="$TEST_ROOT/container"
+readonly RUNTIME_SOURCE='wp-content/plugins/woocommerce/tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php'
+readonly RUNTIME_TARGET='wp-content/mu-plugins/woopayments-native-runtime.php'
+
+mkdir -p "$(dirname "$CONTAINER_ROOT/$RUNTIME_SOURCE")" "$(dirname "$CONTAINER_ROOT/$RUNTIME_TARGET")"
+printf '<?php\n// Fake mounted WooPayments runtime.\n' > "$CONTAINER_ROOT/$RUNTIME_SOURCE"
+ln "$CONTAINER_ROOT/$RUNTIME_SOURCE" "$CONTAINER_ROOT/$RUNTIME_TARGET"
+mkdir -p "$CONTAINER_ROOT/wp-content/plugins/woocommerce/tests/e2e/envs/woopayments-native"
+printf '<?php\n// Fake provider fixture.\n' > "$CONTAINER_ROOT/wp-content/plugins/woocommerce/tests/e2e/envs/woopayments-native/ci-provider-fixture.php"
+printf '// Fake Stripe messaging adapter.\n' > "$CONTAINER_ROOT/wp-content/plugins/woocommerce/tests/e2e/envs/woopayments-native/stripe-messaging-adapter.js"
+readonly RUNTIME_SOURCE_SHA256="$(shasum -a 256 "$CONTAINER_ROOT/$RUNTIME_SOURCE" | awk '{ print $1 }')"
+
+assert_runtime_source_unchanged() {
+	if [[ "$(shasum -a 256 "$CONTAINER_ROOT/$RUNTIME_SOURCE" | awk '{ print $1 }')" != "$RUNTIME_SOURCE_SHA256" ]]; then
+		echo 'Installing native fixtures must not modify the mounted runtime source.' >&2
+		exit 1
+	fi
+}
 
 if [[ "$(jq -r '.testsEnvironment' "$PLUGIN_ROOT/.wp-env.e2e.json")" != 'false' ]]; then
 	echo 'The E2E config service contract changed; update the smoke service proof.' >&2
@@ -20,6 +38,22 @@ cat > "$TEST_ROOT/bin/pnpm" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${E2E_FAKE_COMMAND_LOG:?}"
+arguments=( "$@" )
+for index in "${!arguments[@]}"; do
+	if [[ "${arguments[$index]}" == 'cli' ]]; then
+		container_command="${arguments[$(( index + 1 ))]}"
+		container_arguments=( "${arguments[@]:$(( index + 2 ))}" )
+		break
+	fi
+done
+case "${container_command:-}" in
+	mkdir|sh|cmp|cp)
+		(
+			cd "${E2E_FAKE_CONTAINER_ROOT:?}"
+			command "$container_command" "${container_arguments[@]}"
+		)
+		;;
+esac
 if [[ "$*" == *'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE false --raw'* ]]; then
 	printf 'false\n' > "${E2E_FAKE_FIXTURE_STATE:?}"
 fi
@@ -44,13 +78,20 @@ readonly -a PROFILE_ENV=(
 	PATH="$TEST_ROOT/bin:$PATH"
 	E2E_FAKE_COMMAND_LOG="$TEST_ROOT/commands.log"
 	E2E_FAKE_FIXTURE_STATE="$TEST_ROOT/fixture-state"
+	E2E_FAKE_CONTAINER_ROOT="$CONTAINER_ROOT"
 	E2E_WOOPAYMENTS_NATIVE_STORE_DIR="$PLUGIN_ROOT"
 	E2E_WOOPAYMENTS_DIAGNOSTICS_DIR="$TEST_ROOT/diagnostics"
 	E2E_WOOPAYMENTS_WP_ENV_CONFIG='.wp-env.e2e.json'
 )
 
 env "${PROFILE_ENV[@]}" "$SCRIPT_DIR/fresh-activation-smoke.sh"
+assert_runtime_source_unchanged
+env "${PROFILE_ENV[@]}" "$SCRIPT_DIR/fresh-activation-smoke.sh"
+assert_runtime_source_unchanged
 env "${PROFILE_ENV[@]}" "$SCRIPT_DIR/install-ci-fixture.sh"
+assert_runtime_source_unchanged
+env "${PROFILE_ENV[@]}" "$SCRIPT_DIR/install-ci-fixture.sh"
+assert_runtime_source_unchanged
 env "${PROFILE_ENV[@]}" "$SCRIPT_DIR/assert-ci-fixture-clean.sh"
 
 if [[ "$(wc -l < "$TEST_ROOT/commands.log" | tr -d ' ')" -lt 8 ]]; then
@@ -69,11 +110,11 @@ if ! grep -Fq 'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE false --raw' "$TEST_
 	echo 'Fresh activation must explicitly disable the connected-account fixture.' >&2
 	exit 1
 fi
-if [[ "$(grep -Fc 'get_option( "wcpay_account_data", "__missing__" )' "$TEST_ROOT/commands.log")" -ne 1 ]]; then
+if [[ "$(grep -Fc 'get_option( "wcpay_account_data", "__missing__" )' "$TEST_ROOT/commands.log")" -ne 2 ]]; then
 	echo 'Fresh activation must observe the physical account option as absent immediately before activation.' >&2
 	exit 1
 fi
-if [[ "$(grep -Fc 'get_option( "woocommerce_woopayments_account_cache", "__missing__" )' "$TEST_ROOT/commands.log")" -ne 1 ]]; then
+if [[ "$(grep -Fc 'get_option( "woocommerce_woopayments_account_cache", "__missing__" )' "$TEST_ROOT/commands.log")" -ne 2 ]]; then
 	echo 'Fresh activation must observe the legacy account option as absent immediately before activation.' >&2
 	exit 1
 fi
