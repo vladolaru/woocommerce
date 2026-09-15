@@ -373,7 +373,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 					),
 				)
 			),
-			esc_url( 'https://woocommerce.com/document/woopayments/payment-methods/apple-pay/#domain-registration' )
+			esc_url( 'https://woocommerce.com/document/woopayments/payment-methods/apple-pay/#button-does-not-appear' )
 		);
 		$check_log_text = sprintf(
 			wp_kses(

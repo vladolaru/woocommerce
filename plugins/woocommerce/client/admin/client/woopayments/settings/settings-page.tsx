@@ -575,10 +575,7 @@ const SettingsLoadingSections = () => {
 			lines: 6,
 			description: (
 				<ExternalLink href={ PAYOUT_SCHEDULE_DOC_URL }>
-					{ __(
-						'Learn more about pending schedules',
-						'woocommerce'
-					) }
+					{ __( 'Learn more about payout schedules', 'woocommerce' ) }
 				</ExternalLink>
 			),
 		},
@@ -1900,7 +1897,7 @@ const PayoutsSettingsSection = () => {
 					</p>
 					<ExternalLink href={ PAYOUT_SCHEDULE_DOC_URL }>
 						{ __(
-							'Learn more about pending schedules',
+							'Learn more about payout schedules',
 							'woocommerce'
 						) }
 					</ExternalLink>

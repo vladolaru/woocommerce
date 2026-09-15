@@ -125,7 +125,7 @@ const REQUIREMENTS_LABELS: Record< string, string > = {
 	external_account: __( 'Bank account', 'woocommerce' ),
 };
 const ADDITIONAL_PAYMENT_METHODS_DOCUMENTATION_URL =
-	'https://woocommerce.com/document/woopayments/payment-methods/additional-payment-methods/#method-cant-be-enabled';
+	'https://woocommerce.com/document/woopayments/payment-methods/local-payment-methods/#method-cant-be-enabled';
 const BNPL_DOCUMENTATION_URL =
 	'https://woocommerce.com/document/woopayments/payment-methods/buy-now-pay-later/#contact-support';
 const DELAYED_APPROVAL_DOCUMENTATION_URL =

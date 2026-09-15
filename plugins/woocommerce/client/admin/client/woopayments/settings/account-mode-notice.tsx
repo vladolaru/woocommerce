@@ -18,7 +18,7 @@ type AccountModeNoticeState = {
 };
 
 const LEARN_MORE_URL =
-	'https://woocommerce.com/document/woopayments/startup-guide/#sign-up-process';
+	'https://woocommerce.com/document/woopayments/startup-guide/#signup-process';
 const RESET_ACCOUNT_URL =
 	'https://woocommerce.com/document/woopayments/startup-guide/#resetting';
 const WORDPRESS_ENVIRONMENT_URL =

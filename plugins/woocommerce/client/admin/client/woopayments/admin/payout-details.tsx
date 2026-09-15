@@ -46,7 +46,7 @@ import './style.scss';
 type PayoutTransactionSummary = Record< string, unknown >;
 
 const INSTANT_PAYOUTS_DOCS_URL =
-	'https://woocommerce.com/document/woopayments/payouts/instant-payouts/#transactions';
+	'https://woocommerce.com/document/woopayments/payouts/instant-payouts/#request-an-instant-payout';
 
 const DEFAULT_PAYOUT_TRANSACTIONS_QUERY = {
 	page: 1,

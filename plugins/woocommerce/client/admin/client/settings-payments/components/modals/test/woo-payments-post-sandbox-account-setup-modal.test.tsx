@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { recordEvent } from '@woocommerce/tracks';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, screen } from '@testing-library/react';
 
 /**
  * Internal dependencies
@@ -14,6 +14,25 @@ jest.mock( '@woocommerce/tracks', () => ( {
 } ) );
 
 describe( 'WooPaymentsPostSandboxAccountSetupModal', () => {
+	it( 'renders signup help at the WooPayments signup process documentation', () => {
+		render(
+			<WooPaymentsPostSandboxAccountSetupModal
+				isOpen={ true }
+				devMode={ false }
+				onClose={ jest.fn() }
+			/>
+		);
+
+		expect(
+			screen.getByRole( 'link', {
+				name: 'Learn more',
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/startup-guide/#signup-process'
+		);
+	} );
+
 	it( 'should record settings_payments_switch_to_live_account_click event when Activate Payments button is clicked', () => {
 		const { getByRole } = render(
 			<WooPaymentsPostSandboxAccountSetupModal

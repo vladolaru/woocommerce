@@ -332,6 +332,9 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'Express checkouts:', $output );
 		$this->assertStringContainsString( 'Apple Pay domain verification failed with the following error:', $output );
 		$this->assertStringContainsString( 'Test error message', $output );
+		$this->assertStringContainsString( 'https://woocommerce.com/document/woopayments/payment-methods/apple-pay/#button-does-not-appear', $output );
+		$this->assertStringContainsString( 'target="_blank"', $output );
+		$this->assertStringContainsString( 'rel="noopener noreferrer"', $output );
 		$this->assertFalse( get_option( self::ERROR_OPTION ) );
 	}
 

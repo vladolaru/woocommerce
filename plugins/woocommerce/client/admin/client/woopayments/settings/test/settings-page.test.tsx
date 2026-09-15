@@ -665,6 +665,18 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect(
 			screen.getByRole( 'heading', { name: 'Payouts' } )
 		).toBeInTheDocument();
+		const loadingPayoutsSection = getSettingsSectionByName( 'Payouts' );
+		expect(
+			getSectionLinkByHref(
+				loadingPayoutsSection,
+				'https://woocommerce.com/document/woopayments/payouts/payout-schedule/'
+			)
+		).toHaveTextContent( /Learn more about payout schedules/ );
+		expect(
+			within( loadingPayoutsSection ).queryByRole( 'link', {
+				name: /^Learn more about pending schedules/,
+			} )
+		).not.toBeInTheDocument();
 		expect(
 			screen.getByRole( 'heading', { name: 'Account notifications' } )
 		).toBeInTheDocument();
@@ -734,14 +746,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 				'https://woocommerce.com/in-person-payments/'
 			)
 		).toHaveTextContent( /In-Person Payments/ );
-
-		const payoutsSection = getSettingsSectionByName( 'Payouts' );
-		expect(
-			getSectionLinkByHref(
-				payoutsSection,
-				'https://woocommerce.com/document/woopayments/payouts/payout-schedule/'
-			)
-		).toHaveTextContent( /Learn more about pending schedules/ );
 
 		const notificationsSection = getSettingsSectionByName(
 			'Account notifications'
@@ -1880,7 +1884,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 				.find(
 					( link ) =>
 						link.getAttribute( 'href' ) ===
-						'https://woocommerce.com/document/woopayments/payment-methods/additional-payment-methods/#method-cant-be-enabled'
+						'https://woocommerce.com/document/woopayments/payment-methods/local-payment-methods/#method-cant-be-enabled'
 				)
 		).toBeInTheDocument();
 	} );
@@ -2803,6 +2807,19 @@ describe( 'WooPaymentsSettingsPage', () => {
 				'Provide additional details about your business so you can begin accepting real payments.'
 			)
 		).toBeInTheDocument();
+		const testAccountNotice = screen
+			.getByText( 'You are using a test account.' )
+			.closest(
+				'.woopayments-settings-account-mode-notice'
+			) as HTMLElement;
+		expect(
+			within( testAccountNotice ).getByRole( 'link', {
+				name: /^Learn more/,
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/startup-guide/#signup-process'
+		);
 
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Activate payments' } )
@@ -3146,6 +3163,19 @@ describe( 'WooPaymentsSettingsPage', () => {
 				name: 'Payout schedule',
 			} )
 		).toHaveAttribute( 'id', 'payout-schedule' );
+		expect(
+			within( section ).getByRole( 'link', {
+				name: /^Learn more about payout schedules/,
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/payouts/payout-schedule/'
+		);
+		expect(
+			within( section ).queryByRole( 'link', {
+				name: /^Learn more about pending schedules/,
+			} )
+		).not.toBeInTheDocument();
 		expect(
 			within( section ).getByRole( 'heading', {
 				name: 'Payout bank account',

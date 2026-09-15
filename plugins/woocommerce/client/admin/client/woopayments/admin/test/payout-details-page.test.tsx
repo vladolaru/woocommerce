@@ -651,6 +651,12 @@ describe( 'WooPayments payout details admin surface', () => {
 					"We're unable to show transaction history on instant payouts. Learn more"
 			)
 		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: 'Learn more' } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/payouts/instant-payouts/#request-an-instant-payout'
+		);
 		expect( mockGetTransactions ).not.toHaveBeenCalled();
 		expect(
 			screen.queryByRole( 'link', {
