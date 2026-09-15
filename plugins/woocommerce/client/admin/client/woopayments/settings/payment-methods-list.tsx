@@ -18,6 +18,7 @@ import {
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { info as infoIcon } from '@wordpress/icons';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 /**
  * Internal dependencies
@@ -132,6 +133,57 @@ const DELAYED_APPROVAL_DOCUMENTATION_URL =
 	'https://woocommerce.com/document/woopayments/payment-methods/local-payment-methods/#approval-delays';
 const CONTACT_SUPPORT_URL =
 	'https://woocommerce.com/my-account/contact-support/';
+const FEES_DOCUMENTATION_URL =
+	'https://woocommerce.com/document/woopayments/fees/';
+const COUNTRY_FEE_DOCUMENTATION_SECTION_SLUGS: Record< string, string > = {
+	AE: 'united-arab-emirates',
+	AU: 'australia',
+	AT: 'austria',
+	BE: 'belgium',
+	BG: 'bulgaria',
+	CA: 'canada',
+	CY: 'cyprus',
+	CZ: 'czech-republic',
+	FR: 'france',
+	LU: 'luxembourg',
+	DE: 'germany',
+	DK: 'denmark',
+	EE: 'estonia',
+	FI: 'finland',
+	GR: 'greece',
+	HK: 'hong-kong',
+	HR: 'croatia',
+	HU: 'hungary',
+	IE: 'ireland',
+	IT: 'italy',
+	JP: 'japan',
+	LT: 'lithuania',
+	LV: 'latvia',
+	MT: 'malta',
+	NL: 'netherlands',
+	NO: 'norway',
+	NZ: 'new-zealand',
+	PL: 'poland',
+	PT: 'portugal',
+	SG: 'singapore',
+	SI: 'slovenia',
+	SK: 'slovakia',
+	SE: 'sweden',
+	ES: 'spain',
+	CH: 'switzerland',
+	GB: 'united-kingdom',
+	US: 'united-states',
+	RO: 'romania',
+};
+
+const getCountryFeeDocumentationSectionSlug = ( country?: string ) =>
+	country &&
+	Object.prototype.hasOwnProperty.call(
+		COUNTRY_FEE_DOCUMENTATION_SECTION_SLUGS,
+		country
+	)
+		? COUNTRY_FEE_DOCUMENTATION_SECTION_SLUGS[ country ]
+		: undefined;
 
 const getStatus = (
 	definition: WooPaymentsPaymentMethodDefinition,
@@ -494,13 +546,71 @@ const getDiscountTooltipText = ( discountFee?: FeeAmount ) => {
 const FeeDetails = ( {
 	feeStructure,
 	tooltipId,
+	accountCountry,
 }: {
 	feeStructure?: FeeStructure;
 	tooltipId: string;
+	accountCountry?: string;
 } ) => {
 	const [ isTooltipOpen, setIsTooltipOpen ] = useState( false );
+	const triggerRef = useRef< HTMLButtonElement >( null );
+	const wrapperRef = useRef< HTMLDivElement >( null );
+	const shouldSuppressNextFocusOpenRef = useRef( false );
+	const restoreFocusToTrigger = () => {
+		shouldSuppressNextFocusOpenRef.current = true;
+		triggerRef.current?.focus();
+
+		const ownerWindow = triggerRef.current?.ownerDocument.defaultView;
+		ownerWindow?.setTimeout( () => {
+			shouldSuppressNextFocusOpenRef.current = false;
+		}, 0 );
+	};
+	const handleTriggerFocus = () => {
+		if ( shouldSuppressNextFocusOpenRef.current ) {
+			return;
+		}
+
+		setIsTooltipOpen( true );
+	};
+
+	useEffect( () => {
+		if ( ! isTooltipOpen || ! wrapperRef.current ) {
+			return;
+		}
+
+		const wrapper = wrapperRef.current;
+		const ownerDocument = wrapper.ownerDocument;
+		const handleKeyDown = ( event: KeyboardEvent ) => {
+			if (
+				event.key === 'Escape' &&
+				ownerDocument.activeElement &&
+				wrapper.contains( ownerDocument.activeElement )
+			) {
+				event.stopPropagation();
+				setIsTooltipOpen( false );
+				restoreFocusToTrigger();
+			}
+		};
+
+		ownerDocument.addEventListener( 'keydown', handleKeyDown, true );
+
+		return () => {
+			ownerDocument.removeEventListener( 'keydown', handleKeyDown, true );
+		};
+	}, [ isTooltipOpen ] );
+
+	const handleEscape = ( event: ReactKeyboardEvent< HTMLElement > ) => {
+		if ( event.key !== 'Escape' ) {
+			return;
+		}
+
+		event.stopPropagation();
+		setIsTooltipOpen( false );
+		restoreFocusToTrigger();
+	};
 	const feeDescription = formatMethodFeesDescription( feeStructure );
 	const baseFee = feeStructure?.base;
+
 	if ( ! feeDescription || ! baseFee ) {
 		return null;
 	}
@@ -512,6 +622,23 @@ const FeeDetails = ( {
 		discountMultiplier
 	);
 	const fxFee = formatFeeAmount( feeStructure?.fx );
+	const feeDocumentationSectionSlug =
+		getCountryFeeDocumentationSectionSlug( accountCountry );
+	const feeDocumentationUrl = feeDocumentationSectionSlug
+		? `${ FEES_DOCUMENTATION_URL }#${ feeDocumentationSectionSlug }`
+		: FEES_DOCUMENTATION_URL;
+	const feeDetailsLabel = sprintf(
+		/* translators: %s: Payment method fee amount. */
+		__( '%s fee details', 'woocommerce' ),
+		feeDescription
+	);
+	const feeDocumentationLabel = feeDocumentationSectionSlug
+		? __(
+				'Learn more about WooPayments Fees in your country',
+				'woocommerce'
+		  )
+		: __( 'Learn more about WooPayments Fees', 'woocommerce' );
+	const feeDetailsLabelId = `${ tooltipId }-label`;
 	const totalFee = {
 		percentage_rate:
 			( baseFee.percentage_rate || 0 ) * discountMultiplier +
@@ -526,7 +653,8 @@ const FeeDetails = ( {
 	};
 
 	return (
-		<span
+		<div
+			ref={ wrapperRef }
 			className="woopayments-settings-payment-method-item__fee-wrapper"
 			onBlur={ ( event ) => {
 				const nextFocusedElement = event.relatedTarget;
@@ -538,38 +666,46 @@ const FeeDetails = ( {
 				}
 			} }
 			onMouseEnter={ () => setIsTooltipOpen( true ) }
-			onMouseLeave={ () => setIsTooltipOpen( false ) }
+			onMouseLeave={ () => {
+				const activeElement =
+					wrapperRef.current?.ownerDocument.activeElement;
+				if (
+					! activeElement ||
+					! wrapperRef.current?.contains( activeElement )
+				) {
+					setIsTooltipOpen( false );
+				}
+			} }
 		>
 			<button
+				ref={ triggerRef }
 				type="button"
 				className="woopayments-settings-payment-method-item__fee-pill"
-				aria-label={ sprintf(
-					/* translators: %s: Payment method fee amount. */
-					__( '%s fee details', 'woocommerce' ),
-					feeDescription
-				) }
+				aria-label={ feeDetailsLabel }
+				aria-haspopup="dialog"
 				aria-expanded={ isTooltipOpen }
-				// Only reference the tooltip while it is mounted; otherwise
+				// Only reference the dialog while it is mounted; otherwise
 				// aria-controls points at a non-existent element.
 				aria-controls={ isTooltipOpen ? tooltipId : undefined }
-				aria-describedby={ isTooltipOpen ? tooltipId : undefined }
 				onClick={ () => setIsTooltipOpen( true ) }
-				onFocus={ () => setIsTooltipOpen( true ) }
-				onKeyDown={ ( event ) => {
-					if ( event.key === 'Escape' ) {
-						event.stopPropagation();
-						setIsTooltipOpen( false );
-					}
-				} }
+				onFocus={ handleTriggerFocus }
+				onKeyDown={ handleEscape }
 			>
 				{ feeDescription }
 			</button>
 			{ isTooltipOpen && (
-				<span
+				<div
 					id={ tooltipId }
-					role="tooltip"
+					role="dialog"
+					aria-labelledby={ feeDetailsLabelId }
 					className="woopayments-settings-payment-method-item__fees-tooltip"
 				>
+					<span
+						id={ feeDetailsLabelId }
+						className="screen-reader-text"
+					>
+						{ feeDetailsLabel }
+					</span>
 					<span>
 						<span>{ __( 'Base fee', 'woocommerce' ) }</span>
 						<span>{ baseFeeDescription }</span>
@@ -602,9 +738,15 @@ const FeeDetails = ( {
 						</span>
 						<strong>{ formatFeeAmount( totalFee ) }</strong>
 					</span>
-				</span>
+					<ExternalLink
+						href={ feeDocumentationUrl }
+						onKeyDown={ handleEscape }
+					>
+						{ feeDocumentationLabel }
+					</ExternalLink>
+				</div>
 			) }
-		</span>
+		</div>
 	);
 };
 
@@ -1131,6 +1273,7 @@ const PaymentMethodRow = ( {
 	isManualCaptureEnabled,
 	isMultiCurrencyEnabled,
 	storeCurrency,
+	accountCountry,
 	onEnable,
 	onDisable,
 	onDismissDuplicateNotice,
@@ -1146,6 +1289,7 @@ const PaymentMethodRow = ( {
 	isManualCaptureEnabled: boolean;
 	isMultiCurrencyEnabled?: boolean;
 	storeCurrency?: string;
+	accountCountry?: string;
 	onEnable: ( methodId: string ) => void;
 	onDisable: ( methodId: string ) => void;
 	onDismissDuplicateNotice?: ( notices: Record< string, string[] > ) => void;
@@ -1279,6 +1423,7 @@ const PaymentMethodRow = ( {
 					<FeeDetails
 						feeStructure={ feeStructure }
 						tooltipId={ feeTooltipId }
+						accountCountry={ accountCountry }
 					/>
 				</div>
 			</div>
@@ -1382,6 +1527,7 @@ export const WooPaymentsPaymentMethodsList = ( {
 					isManualCaptureEnabled={ isManualCaptureEnabled }
 					isMultiCurrencyEnabled={ isMultiCurrencyEnabled }
 					storeCurrency={ storeCurrency }
+					accountCountry={ accountCountry }
 					onEnable={ onEnable }
 					onDisable={ onDisable }
 					onDismissDuplicateNotice={ onDismissDuplicateNotice }

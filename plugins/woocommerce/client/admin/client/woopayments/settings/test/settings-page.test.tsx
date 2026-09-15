@@ -1175,7 +1175,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'renders reference fee and discount details on payment method rows', async () => {
+	it( 'renders accessible account-country fee details on payment method rows', async () => {
 		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
 			'card',
 			'alipay',
@@ -1249,21 +1249,33 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		expect( cardFeeButton ).toBeInTheDocument();
 		expect( zeroDecimalFeeButton ).toBeInTheDocument();
+		expect( cardFeeButton ).toHaveAttribute( 'aria-haspopup', 'dialog' );
 		expect( discountBadge ).not.toHaveAttribute( 'title' );
 		expect( discountBadge ).toHaveAccessibleDescription(
 			expect.stringContaining(
 				'first $1,000.00 of total payment volume or through'
 			)
 		);
-		// While collapsed the tooltip is unmounted, so the trigger must not
+		// While collapsed the dialog is unmounted, so the trigger must not
 		// reference it with a dangling aria-controls IDREF.
 		expect( cardFeeButton ).not.toHaveAttribute( 'aria-controls' );
 
 		await userEvent.click( cardFeeButton );
-		// Once expanded, aria-controls points at the mounted tooltip.
+		const feeDetailsDialog = screen.getByRole( 'dialog', {
+			name: 'From 2.61% + $0.27 fee details',
+		} );
+		// Once expanded, aria-controls points at the mounted dialog.
 		expect( cardFeeButton ).toHaveAttribute(
 			'aria-controls',
-			screen.getByRole( 'tooltip' ).id
+			feeDetailsDialog.id
+		);
+		expect( screen.queryByRole( 'tooltip' ) ).not.toBeInTheDocument();
+		const feesLink = within( feeDetailsDialog ).getByRole( 'link', {
+			name: /^Learn more about WooPayments Fees in your country/,
+		} );
+		expect( feesLink ).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/fees/#united-states'
 		);
 		expect(
 			screen.getAllByText( 'Base fee' ).length
@@ -1278,11 +1290,105 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeGreaterThanOrEqual( 1 );
 		expect( screen.getByText( '4.51% + $0.27' ) ).toBeInTheDocument();
 
+		feesLink.focus();
+		expect( feesLink ).toHaveFocus();
+		const feeWrapper = cardFeeButton.closest(
+			'.woopayments-settings-payment-method-item__fee-wrapper'
+		);
+		if ( ! feeWrapper ) {
+			throw new Error( 'Fee wrapper should exist.' );
+		}
+		fireEvent.mouseLeave( feeWrapper );
+		expect( feeDetailsDialog ).toBeInTheDocument();
+
 		await userEvent.keyboard( '{Escape}' );
+		await waitFor( () => {
+			expect(
+				screen.queryByRole( 'dialog', {
+					name: 'From 2.61% + $0.27 fee details',
+				} )
+			).not.toBeInTheDocument();
+		} );
 		expect( cardFeeButton ).toHaveAttribute( 'aria-expanded', 'false' );
-		// Collapsing unmounts the tooltip, so the IDREF is dropped again.
+		// Collapsing unmounts the dialog, so the IDREF is dropped again.
 		expect( cardFeeButton ).not.toHaveAttribute( 'aria-controls' );
+		expect( cardFeeButton ).toHaveFocus();
 	} );
+
+	it.each( [
+		[
+			'GB',
+			'Learn more about WooPayments Fees in your country',
+			'https://woocommerce.com/document/woopayments/fees/#united-kingdom',
+		],
+		[
+			'SE',
+			'Learn more about WooPayments Fees in your country',
+			'https://woocommerce.com/document/woopayments/fees/#sweden',
+		],
+		[
+			'BR',
+			'Learn more about WooPayments Fees',
+			'https://woocommerce.com/document/woopayments/fees/',
+		],
+		[
+			'constructor',
+			'Learn more about WooPayments Fees',
+			'https://woocommerce.com/document/woopayments/fees/',
+		],
+		[
+			'toString',
+			'Learn more about WooPayments Fees',
+			'https://woocommerce.com/document/woopayments/fees/',
+		],
+		[
+			'__proto__',
+			'Learn more about WooPayments Fees',
+			'https://woocommerce.com/document/woopayments/fees/',
+		],
+		[
+			undefined,
+			'Learn more about WooPayments Fees',
+			'https://woocommerce.com/document/woopayments/fees/',
+		],
+	] )(
+		'links fee details for account country %s',
+		async ( accountCountry, linkLabel, expectedUrl ) => {
+			mockUseGetSettings.mockReturnValue( {
+				account_country: accountCountry,
+				store_currency: 'USD',
+				is_multi_currency_enabled: true,
+				feature_flags: DEFAULT_FEATURE_FLAGS,
+				available_payment_method_ids: [ 'card' ],
+			} );
+			mockUseGetAvailablePaymentMethodIds.mockReturnValue( [ 'card' ] );
+			mockUseGetPaymentMethodStatuses.mockReturnValue( {
+				card_payments: { status: 'active' },
+			} );
+			mockUseGetAccountFees.mockReturnValue( {
+				card: {
+					base: {
+						percentage_rate: 0.029,
+						fixed_rate: 30,
+						currency: 'USD',
+					},
+				},
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			await userEvent.click(
+				screen.getByRole( 'button', {
+					name: 'From 2.9% + $0.30 fee details',
+				} )
+			);
+			expect(
+				screen.getByRole( 'link', {
+					name: new RegExp( `^${ linkLabel }` ),
+				} )
+			).toHaveAttribute( 'href', expectedUrl );
+		}
+	);
 
 	it( 'renders badge payment method promotions on matching payment method rows', async () => {
 		mockUseGetSettings.mockReturnValue( {

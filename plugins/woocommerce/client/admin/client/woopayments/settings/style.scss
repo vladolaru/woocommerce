@@ -155,7 +155,7 @@
 		}
 	}
 
-	@media screen and ( prefers-reduced-motion: reduce ) {
+	@media screen and (prefers-reduced-motion: reduce) {
 		.woopayments-settings-loadable-placeholder {
 			animation: none;
 		}
@@ -448,7 +448,9 @@
 		opacity: 0;
 		pointer-events: auto;
 		transform: translateY(-4px);
-		transition: opacity 120ms ease, transform 120ms ease;
+		transition:
+			opacity 120ms ease,
+			transform 120ms ease;
 
 		> span {
 			display: flex;
@@ -458,6 +460,11 @@
 
 		strong {
 			color: $white;
+		}
+
+		a {
+			color: $white;
+			text-decoration: underline;
 		}
 	}
 
@@ -480,7 +487,9 @@
 		opacity: 0;
 		pointer-events: auto;
 		transform: translateY(-4px);
-		transition: opacity 120ms ease, transform 120ms ease;
+		transition:
+			opacity 120ms ease,
+			transform 120ms ease;
 
 		a {
 			color: $white;
