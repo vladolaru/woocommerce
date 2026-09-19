@@ -1106,6 +1106,28 @@ assert_same( false, $options['wcpay_account_data']['errored'], 'mid-run request 
 $fixture->restore_pre_fixture_physical_account_cache();
 $audit = $fixture->audit();
 assert_true( true === $audit['clean'], 'a covered fixture run must remain clean after restoring the pre-fixture cache' );
+$complete_fixture_state   = get_option( 'e2e_woopayments_native_provider_state' );
+$incomplete_fixture_state = $complete_fixture_state;
+unset( $incomplete_fixture_state['jetpack_identity_baseline'] );
+update_option( 'e2e_woopayments_native_provider_state', $incomplete_fixture_state );
+$missing_identity_baseline_audit = $fixture->audit();
+assert_same( false, $missing_identity_baseline_audit['jetpack_identity']['restored'], 'a prepared fixture must fail closed when its Jetpack identity baseline is missing' );
+assert_same( false, $missing_identity_baseline_audit['state_restored'], 'a missing prepared Jetpack identity baseline must fail aggregate restoration' );
+assert_same( false, $missing_identity_baseline_audit['clean'], 'a missing prepared Jetpack identity baseline must make the audit non-clean' );
+$partial_fixture_state                              = $complete_fixture_state;
+$partial_fixture_state['jetpack_identity_baseline'] = array(
+	'jetpack_options' => array(
+		'exists' => false,
+		'value'  => null,
+	),
+);
+update_option( 'e2e_woopayments_native_provider_state', $partial_fixture_state );
+$partial_identity_baseline_audit = $fixture->audit();
+assert_same( false, $partial_identity_baseline_audit['jetpack_identity']['restored'], 'a prepared fixture must fail closed when its Jetpack identity baseline is partial' );
+assert_same( false, $partial_identity_baseline_audit['state_restored'], 'a partial prepared Jetpack identity baseline must fail aggregate restoration' );
+assert_same( false, $partial_identity_baseline_audit['clean'], 'a partial prepared Jetpack identity baseline must make the audit non-clean' );
+update_option( 'e2e_woopayments_native_provider_state', $complete_fixture_state );
+assert_true( true === $fixture->audit()['clean'], 'restoring complete prepared lifecycle state must make the audit clean again' );
 assert_true( true === $audit['physical_account_cache']['run_restored'], 'the readonly run must end at its connected physical-cache baseline' );
 assert_true( true === $audit['physical_account_cache']['pre_fixture_restored'], 'audit must restore the physical cache captured before fixture preparation' );
 assert_true( true === $audit['physical_account_cache']['restored'], 'physical-cache restoration requires both run and pre-fixture restoration' );

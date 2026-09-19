@@ -24,6 +24,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	private const FRAUD_SERVICES_TRANSIENT_TIMEOUT_OPTION = '_transient_timeout_woocommerce_woopayments_public_fraud_services';
 	private const JETPACK_OPTIONS_OPTION                  = 'jetpack_options';
 	private const JETPACK_PRIVATE_OPTIONS_OPTION          = 'jetpack_private_options';
+	private const PHYSICAL_STATE_LIFECYCLE                = 'physical_state_lifecycle';
 	private const BLOG_ID                                 = 777;
 	private const REQUIRED_ROUTES                         = array(
 		'GET accounts',
@@ -98,6 +99,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			$state['fraud_services_transient_baseline']    = $this->absent_fraud_services_transient_snapshot();
 			$state['pre_fixture_jetpack_identity']         = $pre_fixture_jetpack_identity;
 			$state['jetpack_identity_baseline']            = $pre_fixture_jetpack_identity;
+			$state[ self::PHYSICAL_STATE_LIFECYCLE ]       = 'prepared';
 			unset( $state['physical_account_cache_restoration'], $state['test_mode_premise_restoration'], $state['fraud_services_transient_restoration'], $state['jetpack_identity_restoration'] );
 			update_option( self::STATE_OPTION, $state );
 			$this->restore_option( self::FRAUD_SERVICES_TRANSIENT_OPTION, false, null );
@@ -191,6 +193,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'run_isolated'         => $jetpack_identity_run_isolated,
 			'pre_fixture_restored' => $jetpack_identity_pre_restored,
 		);
+		$state[ self::PHYSICAL_STATE_LIFECYCLE ]       = 'restored';
 		update_option( self::STATE_OPTION, $state );
 		return array_merge(
 			$restoration,
@@ -502,13 +505,15 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			$this->fraud_services_transient_snapshot(),
 			$state['fraud_services_transient_baseline'] ?? null,
 			$state['pre_fixture_fraud_services_transient'] ?? null,
-			$state['fraud_services_transient_restoration'] ?? null
+			$state['fraud_services_transient_restoration'] ?? null,
+			$state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null
 		);
 		$jetpack_identity           = $this->physical_state_audit(
 			$this->jetpack_identity_snapshot(),
 			$state['jetpack_identity_baseline'] ?? null,
 			$state['pre_fixture_jetpack_identity'] ?? null,
-			$state['jetpack_identity_restoration'] ?? null
+			$state['jetpack_identity_restoration'] ?? null,
+			$state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null
 		);
 		$state_restored             = $mutable_state === $baseline_state
 			&& $this->canonicalize( $retained_state ) === $expected_retain
@@ -1052,10 +1057,10 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * Determines whether two exact physical option snapshots match.
 	 *
 	 * @param array<string,array{exists:bool,value:mixed}> $first First snapshot.
-	 * @param array<string,array{exists:bool,value:mixed}> $second Second snapshot.
+	 * @param mixed                                        $second Second snapshot.
 	 */
-	private function option_snapshots_match( array $first, array $second ): bool {
-		return $first === $second;
+	private function option_snapshots_match( array $first, $second ): bool {
+		return is_array( $second ) && $first === $second;
 	}
 
 	/**
@@ -1065,14 +1070,26 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * @param array<string,array{exists:bool,value:mixed}>|null       $run_baseline Protected run baseline.
 	 * @param array<string,array{exists:bool,value:mixed}>|null       $pre_fixture Original physical state.
 	 * @param array{run_isolated:bool,pre_fixture_restored:bool}|null $restoration Final-restoration record.
+	 * @param string|null                                             $lifecycle Fixture physical-state lifecycle marker.
 	 * @return array{run_isolated:bool,pre_fixture_restored:bool,restored:bool}
 	 */
-	private function physical_state_audit( array $current, $run_baseline, $pre_fixture, $restoration ): array {
-		if ( ! is_array( $run_baseline ) || ! is_array( $pre_fixture ) ) {
+	private function physical_state_audit( array $current, $run_baseline, $pre_fixture, $restoration, ?string $lifecycle ): array {
+		if ( null === $lifecycle ) {
 			return array(
 				'run_isolated'         => true,
 				'pre_fixture_restored' => true,
 				'restored'             => true,
+			);
+		}
+		if (
+			! in_array( $lifecycle, array( 'prepared', 'restored' ), true )
+			|| ! $this->option_snapshot_pair_is_complete( $current, $run_baseline )
+			|| ! $this->option_snapshot_pair_is_complete( $current, $pre_fixture )
+		) {
+			return array(
+				'run_isolated'         => false,
+				'pre_fixture_restored' => false,
+				'restored'             => false,
 			);
 		}
 		$run_isolated         = $this->option_snapshots_match( $current, $run_baseline );
@@ -1086,6 +1103,24 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'pre_fixture_restored' => $pre_fixture_restored,
 			'restored'             => $run_isolated && $pre_fixture_restored,
 		);
+	}
+
+	/**
+	 * Determines whether a fixture physical-state snapshot has every expected option state.
+	 *
+	 * @param array<string,array{exists:bool,value:mixed}> $expected Complete expected option names.
+	 * @param mixed                                        $snapshot Candidate physical-state snapshot.
+	 */
+	private function option_snapshot_pair_is_complete( array $expected, $snapshot ): bool {
+		if ( ! is_array( $snapshot ) || array_keys( $expected ) !== array_keys( $snapshot ) ) {
+			return false;
+		}
+		foreach ( $snapshot as $option ) {
+			if ( ! is_array( $option ) || ! is_bool( $option['exists'] ?? null ) || ! array_key_exists( 'value', $option ) ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
