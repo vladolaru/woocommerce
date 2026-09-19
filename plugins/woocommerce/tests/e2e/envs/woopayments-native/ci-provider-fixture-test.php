@@ -1222,4 +1222,90 @@ remove_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_ca
 assert_same( '__missing__', get_option( 'jetpack_private_options', '__missing__' ), 'an originally absent private Jetpack identity must remain absent after restoration' );
 add_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
 
+$repeat_original_account_cache                                       = array(
+	'data'               => null,
+	'fetched'            => 246,
+	'errored'            => true,
+	'consecutive_errors' => 2,
+);
+$options['wcpay_account_data']                                       = $repeat_original_account_cache;
+$options['wcpay_onboarding_test_mode']                               = 'before-reinstall';
+$options['_transient_woocommerce_woopayments_public_fraud_services'] = $seeded_fraud_services_transient;
+$options['_transient_timeout_woocommerce_woopayments_public_fraud_services'] = $seeded_fraud_services_timeout;
+$options['jetpack_options']         = $seeded_jetpack_options;
+$options['jetpack_private_options'] = $seeded_jetpack_private_options;
+$fixture->prepare_physical_account_cache_for_run(
+	static function () use ( $fixture ): array {
+		$account = $fixture->account_cache()['data'];
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $account,
+				'fetched'            => 901,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		return $account;
+	}
+);
+$fixture->reconcile_fixture_state_before_reinstall();
+delete_option( 'e2e_woopayments_native_provider_state' );
+$fixture->prepare_physical_account_cache_for_run(
+	static function () use ( $fixture ): array {
+		$account = $fixture->account_cache()['data'];
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $account,
+				'fetched'            => 902,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		return $account;
+	}
+);
+$fixture->restore_pre_fixture_physical_account_cache();
+assert_same( $repeat_original_account_cache, $options['wcpay_account_data'], 'a repeated fixture installation must restore the original physical account cache after one final cleanup' );
+assert_same( 'before-reinstall', $options['wcpay_onboarding_test_mode'], 'a repeated fixture installation must restore the original test-mode option after one final cleanup' );
+assert_same( $seeded_fraud_services_transient, $options['_transient_woocommerce_woopayments_public_fraud_services'], 'a repeated fixture installation must restore the original public fraud-services transient after one final cleanup' );
+assert_same( $seeded_fraud_services_timeout, $options['_transient_timeout_woocommerce_woopayments_public_fraud_services'], 'a repeated fixture installation must restore the original public fraud-services timeout after one final cleanup' );
+assert_same( $seeded_jetpack_options, $options['jetpack_options'], 'a repeated fixture installation must restore the original public Jetpack identity after one final cleanup' );
+assert_same( $seeded_jetpack_private_options, $options['jetpack_private_options'], 'a repeated fixture installation must restore the original private Jetpack identity after one final cleanup' );
+
+$fixture->prepare_physical_account_cache_for_run(
+	static function () use ( $fixture ): array {
+		$account = $fixture->account_cache()['data'];
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $account,
+				'fetched'            => 903,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		return $account;
+	}
+);
+$malformed_lifecycle_state = get_option( 'e2e_woopayments_native_provider_state', array() );
+if ( ! is_array( $malformed_lifecycle_state ) ) {
+	throw new RuntimeException( 'The standalone fixture test requires persisted lifecycle state.' );
+}
+unset( $malformed_lifecycle_state['pre_fixture_jetpack_identity'] );
+update_option( 'e2e_woopayments_native_provider_state', $malformed_lifecycle_state );
+$run_account_cache = $options['wcpay_account_data'];
+$run_test_mode     = $options['wcpay_onboarding_test_mode'];
+try {
+	$fixture->reconcile_fixture_state_before_reinstall();
+	throw new RuntimeException( 'A malformed prepared lifecycle must fail before physical restoration.' );
+} catch ( RuntimeException $exception ) {
+	assert_same( 'The WooPayments fixture lifecycle state is invalid.', $exception->getMessage(), 'a malformed prepared lifecycle must fail closed without exposing captured values' );
+}
+assert_same( $run_account_cache, $options['wcpay_account_data'], 'a malformed prepared lifecycle must not restore the physical account cache partially' );
+assert_same( $run_test_mode, $options['wcpay_onboarding_test_mode'], 'a malformed prepared lifecycle must not restore test mode partially' );
+assert_same( '__missing__', get_option( '_transient_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'a malformed prepared lifecycle must not restore the fraud-services transient partially' );
+assert_same( '__missing__', get_option( '_transient_timeout_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'a malformed prepared lifecycle must not restore the fraud-services timeout partially' );
+
 echo "ci-provider-fixture.php tests passed.\n";

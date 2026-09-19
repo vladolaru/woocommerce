@@ -157,6 +157,12 @@ if ! grep -Fq 'restore_pre_fixture_physical_account_cache' "$TEST_ROOT/commands.
 	echo 'The always-run audit must restore the captured pre-fixture physical cache.' >&2
 	exit 1
 fi
+reconcile_line="$(grep -n 'reconcile_fixture_state_before_reinstall' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1 || true)"
+provider_state_delete_line="$(grep -n 'wp option delete e2e_woopayments_native_provider_state' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1 || true)"
+if [[ -z "$reconcile_line" || -z "$provider_state_delete_line" || "$reconcile_line" -ge "$provider_state_delete_line" ]]; then
+	echo 'Repeat fixture installation must reconcile prepared physical state before deleting provider state.' >&2
+	exit 1
+fi
 fixture_enable_line="$(grep -n 'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE true --raw' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1)"
 cache_refresh_line="$(grep -n 'prepare_physical_account_cache_for_run' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1)"
 if [[ "$fixture_enable_line" -ge "$cache_refresh_line" ]]; then
