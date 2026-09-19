@@ -67,6 +67,12 @@ if [[ "$*" == *'get_option( "wcpay_account_data", "__missing__" )'* ]]; then
 		exit 1
 	fi
 fi
+if [[ "$*" == *'DEFAULT_JETPACK__API_BASE'* && "$*" == *'DEFAULT_JETPACK__WPCOM_JSON_API_BASE'* ]]; then
+	if [[ "$*" != *'https://jetpack.wordpress.com/jetpack.'* || "$*" != *'https://public-api.wordpress.com'* || "${E2E_FAKE_JETPACK_API_BASE:-https://jetpack.wordpress.com/jetpack.}" != 'https://jetpack.wordpress.com/jetpack.' || "${E2E_FAKE_JETPACK_WPCOM_JSON_API_BASE:-https://public-api.wordpress.com}" != 'https://public-api.wordpress.com' ]]; then
+		echo 'Readonly WooPayments fixture requires the canonical public Jetpack transport.' >&2
+		exit 1
+	fi
+fi
 if [[ "$*" == *'provider-fixture-audit'* ]]; then
 	printf '{"requests":8,"failures":[],"coverage":true,"state_restored":true,"clean":true}\n'
 fi
@@ -161,6 +167,74 @@ for cache_key in wcpay_authorization_summary_cache wcpay_test_authorization_summ
 		echo "Fixture installation must clear authorization object cache: $cache_key" >&2
 		exit 1
 	fi
+done
+
+assert_rejected_transport() {
+	local transport="$1"
+	local transport_base="$2"
+	local output="$TEST_ROOT/transport-preflight.out"
+	local api_base='https://jetpack.wordpress.com/jetpack.'
+	local wpcom_json_api_base='https://public-api.wordpress.com'
+	local preflight_line
+	local mutation_commands
+
+	case "$transport" in
+		JETPACK__API_BASE)
+			api_base="$transport_base"
+			;;
+		JETPACK__WPCOM_JSON_API_BASE)
+			wpcom_json_api_base="$transport_base"
+			;;
+		*)
+			echo "Unknown Jetpack transport: $transport" >&2
+			exit 1
+			;;
+	esac
+
+	: > "$TEST_ROOT/commands.log"
+	if env "${PROFILE_ENV[@]}" "E2E_FAKE_JETPACK_API_BASE=$api_base" "E2E_FAKE_JETPACK_WPCOM_JSON_API_BASE=$wpcom_json_api_base" "$SCRIPT_DIR/install-ci-fixture.sh" > "$output" 2>&1; then
+		echo "Readonly WooPayments fixture must reject transport override: $transport=$transport_base" >&2
+		exit 1
+	fi
+	if ! grep -Fxq 'Readonly WooPayments fixture requires the canonical public Jetpack transport.' "$output"; then
+		echo "Readonly WooPayments fixture must diagnose transport override: $transport=$transport_base" >&2
+		exit 1
+	fi
+	preflight_line="$(grep -n 'DEFAULT_JETPACK__API_BASE' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1)"
+	if [[ -z "$preflight_line" ]]; then
+		echo "Readonly WooPayments fixture must check the effective Jetpack transport: $transport=$transport_base" >&2
+		exit 1
+	fi
+	mutation_commands="$(tail -n "+$(( preflight_line + 1 ))" "$TEST_ROOT/commands.log")"
+	if grep -Fq 'run cli sh -c' <<< "$mutation_commands"; then
+		echo "Readonly WooPayments fixture must not copy fixture files after rejecting: $transport=$transport_base" >&2
+		exit 1
+	fi
+	if grep -Fq 'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE true --raw' <<< "$mutation_commands"; then
+		echo "Readonly WooPayments fixture must not enable the fixture after rejecting: $transport=$transport_base" >&2
+		exit 1
+	fi
+	if grep -Fq 'wp option delete' <<< "$mutation_commands"; then
+		echo "Readonly WooPayments fixture must not delete options after rejecting: $transport=$transport_base" >&2
+		exit 1
+	fi
+	if grep -Fq 'refresh_account_data()' <<< "$mutation_commands"; then
+		echo "Readonly WooPayments fixture must not refresh account data after rejecting: $transport=$transport_base" >&2
+		exit 1
+	fi
+}
+
+readonly -a REJECTED_TRANSPORTS=(
+	'JETPACK__API_BASE|http://wpcom.localhost:30001/jetpack.'
+	'JETPACK__WPCOM_JSON_API_BASE|http://wpcom.localhost:30001'
+	'JETPACK__WPCOM_JSON_API_BASE|https://public-api.wordpress.com.evil.test'
+	'JETPACK__WPCOM_JSON_API_BASE|https://user@public-api.wordpress.com'
+	'JETPACK__WPCOM_JSON_API_BASE|https://public-api.wordpress.com:443'
+)
+
+for rejected_transport in "${REJECTED_TRANSPORTS[@]}"; do
+	IFS='|' read -r transport transport_base <<< "$rejected_transport"
+	assert_rejected_transport "$transport" "$transport_base"
 done
 
 test -s "$TEST_ROOT/diagnostics/native/provider-fixture-audit.json"
