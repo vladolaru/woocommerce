@@ -167,10 +167,14 @@ if [[ -z "$reconcile_line" || -z "$provider_state_delete_line" || "$reconcile_li
 	echo 'Repeat fixture installation must reconcile prepared physical state before deleting provider state.' >&2
 	exit 1
 fi
+if ! grep -Fq 'get_option( "e2e_woopayments_native_provider_state"' "$TEST_ROOT/commands.log" || ! grep -Fq 'new WooCommerce_WooPayments_Native_CI_Provider_Fixture()' "$TEST_ROOT/commands.log"; then
+	echo 'An unregistered fixture with persisted provider state must instantiate and reconcile before reset.' >&2
+	exit 1
+fi
 fixture_enable_line="$(grep -n 'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE true --raw' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1)"
 cache_refresh_line="$(grep -n 'prepare_physical_account_cache_for_run' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1)"
-if [[ "$fixture_enable_line" -ge "$cache_refresh_line" ]]; then
-	echo 'The provider fixture must be enabled before refreshing the physical account cache.' >&2
+if [[ "$reconcile_line" -ge "$fixture_enable_line" || "$fixture_enable_line" -ge "$cache_refresh_line" ]]; then
+	echo 'The provider fixture must reconcile before enabling and refreshing the physical account cache.' >&2
 	exit 1
 fi
 for cache_key in wcpay_authorization_summary_cache wcpay_test_authorization_summary_cache; do

@@ -1355,4 +1355,53 @@ remove_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_ca
 assert_same( $run_jetpack_private_options, get_option( 'jetpack_private_options' ), 'a prepared lifecycle missing a core fixture key must not restore private Jetpack identity' );
 add_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
 
+$unregistered_original_account_cache                                 = array(
+	'data'               => null,
+	'fetched'            => 357,
+	'errored'            => true,
+	'consecutive_errors' => 3,
+);
+$options['wcpay_account_data']                                       = $unregistered_original_account_cache;
+$options['wcpay_onboarding_test_mode']                               = 'before-unregistered-reinstall';
+$options['_transient_woocommerce_woopayments_public_fraud_services'] = $seeded_fraud_services_transient;
+$options['_transient_timeout_woocommerce_woopayments_public_fraud_services'] = $seeded_fraud_services_timeout;
+$options['jetpack_options']         = $seeded_jetpack_options;
+$options['jetpack_private_options'] = $seeded_jetpack_private_options;
+$fixture->prepare_physical_account_cache_for_run(
+	static function () use ( $fixture ): array {
+		$account = $fixture->account_cache()['data'];
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $account,
+				'fetched'            => 905,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		return $account;
+	}
+);
+/** @var callable $account_cache_callback */
+$account_cache_callback = array( $fixture, 'account_cache' );
+remove_filter( 'pre_option_wcpay_account_data', $account_cache_callback );
+remove_filter( 'pre_option_jetpack_options', $jetpack_options_callback );
+remove_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
+remove_filter( 'pre_update_option_jetpack_options', $jetpack_update_callback );
+remove_filter( 'pre_update_option_jetpack_private_options', $jetpack_update_callback );
+$registered_instance = new ReflectionProperty( WooCommerce_WooPayments_Native_CI_Provider_Fixture::class, 'registered_instance' );
+if ( PHP_VERSION_ID < 80100 ) {
+	$registered_instance->setAccessible( true );
+}
+$registered_instance->setValue( null, null );
+assert_same( null, WooCommerce_WooPayments_Native_CI_Provider_Fixture::registered_instance(), 'the pre-enable fixture class must have no registered instance' );
+$unregistered_fixture = new WooCommerce_WooPayments_Native_CI_Provider_Fixture();
+$unregistered_fixture->reconcile_fixture_state_before_reinstall();
+assert_same( $unregistered_original_account_cache, $options['wcpay_account_data'], 'an unregistered fixture must restore the original physical account cache before reinstall reset' );
+assert_same( 'before-unregistered-reinstall', $options['wcpay_onboarding_test_mode'], 'an unregistered fixture must restore the original test-mode option before reinstall reset' );
+assert_same( $seeded_fraud_services_transient, $options['_transient_woocommerce_woopayments_public_fraud_services'], 'an unregistered fixture must restore the original public fraud-services transient before reinstall reset' );
+assert_same( $seeded_fraud_services_timeout, $options['_transient_timeout_woocommerce_woopayments_public_fraud_services'], 'an unregistered fixture must restore the original public fraud-services timeout before reinstall reset' );
+assert_same( $seeded_jetpack_options, $options['jetpack_options'], 'an unregistered fixture must restore the original public Jetpack identity before reinstall reset' );
+assert_same( $seeded_jetpack_private_options, $options['jetpack_private_options'], 'an unregistered fixture must restore the original private Jetpack identity before reinstall reset' );
+
 echo "ci-provider-fixture.php tests passed.\n";
