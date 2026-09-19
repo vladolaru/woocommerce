@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayPreflightGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Shadow\NativePaymentsShadowMode;
 use ReflectionMethod;
@@ -235,6 +236,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
+		WooPaymentsWooPayPreflightGuard::class,
 		self::WCPAY . 'WooPaymentsCheckoutBridge',
 		self::WCPAY . 'WooPaymentsAddressProvider',
 		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
@@ -495,6 +497,24 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertContains( self::WCPAY . 'WooPaymentsOrderTrackingService', $active_front, 'Active shopper order creation must retain tracking hooks.' );
+	}
+
+	/** @testdox Registers the WooPay preflight guard only for active REST requests. */
+	public function test_provider_matrix_bounds_woopay_preflight_guard_to_active_rest(): void {
+		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
+
+		foreach ( $matrix as $state => $request_groups ) {
+			foreach ( $request_groups as $request_type => $roots ) {
+				if ( NativePaymentsState::ACTIVE === $state && 'rest' === $request_type ) {
+					$this->assertContains( WooPaymentsWooPayPreflightGuard::class, $roots );
+					continue;
+				}
+
+				$this->assertNotContains( WooPaymentsWooPayPreflightGuard::class, $roots, $state . ' ' . $request_type . ' must not register the WooPay preflight guard.' );
+			}
+
+			$this->assertArrayNotHasKey( 'cli', $request_groups, $state . ' CLI requests must not register the WooPay preflight guard.' );
+		}
 	}
 
 	/** @testdox Should defer merchant routes on connected and active admin requests until internal REST initialization. */

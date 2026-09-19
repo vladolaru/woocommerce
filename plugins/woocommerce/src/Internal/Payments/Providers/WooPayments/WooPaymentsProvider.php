@@ -250,6 +250,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 					$active_prefix,
 					$connected_rest,
 					array(
+						WooPaymentsWooPayPreflightGuard::class,
 						WooPaymentsCheckoutBridge::class,
 						WooPaymentsAddressProvider::class,
 						WooPaymentsDuplicatePaymentPreventionService::class,
