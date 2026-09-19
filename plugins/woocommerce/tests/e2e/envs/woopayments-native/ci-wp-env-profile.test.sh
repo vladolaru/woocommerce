@@ -67,11 +67,8 @@ if [[ "$*" == *'get_option( "wcpay_account_data", "__missing__" )'* ]]; then
 		exit 1
 	fi
 fi
-if [[ "$*" == *'DEFAULT_JETPACK__API_BASE'* && "$*" == *'DEFAULT_JETPACK__WPCOM_JSON_API_BASE'* ]]; then
-	if [[ "$*" != *'https://jetpack.wordpress.com/jetpack.'* || "$*" != *'https://public-api.wordpress.com'* || "${E2E_FAKE_JETPACK_API_BASE:-https://jetpack.wordpress.com/jetpack.}" != 'https://jetpack.wordpress.com/jetpack.' || "${E2E_FAKE_JETPACK_WPCOM_JSON_API_BASE:-https://public-api.wordpress.com}" != 'https://public-api.wordpress.com' ]]; then
-		echo 'Readonly WooPayments fixture requires the canonical public Jetpack transport.' >&2
-		exit 1
-	fi
+if [[ "${container_command:-}" == 'wp' && "${container_arguments[0]:-}" == 'eval' && "${container_arguments[1]:-}" == *'DEFAULT_JETPACK__API_BASE'* && "${container_arguments[1]:-}" == *'DEFAULT_JETPACK__WPCOM_JSON_API_BASE'* ]]; then
+	php -r 'namespace Automattic\Jetpack\Connection { class Utils { const DEFAULT_JETPACK__API_BASE = "https://jetpack.wordpress.com/jetpack."; const DEFAULT_JETPACK__WPCOM_JSON_API_BASE = "https://public-api.wordpress.com"; } } namespace { if ( "true" === getenv( "E2E_FAKE_JETPACK_API_BASE_IS_DEFINED" ) ) { define( "JETPACK__API_BASE", getenv( "E2E_FAKE_JETPACK_API_BASE" ) ); } if ( "true" === getenv( "E2E_FAKE_JETPACK_WPCOM_JSON_API_BASE_IS_DEFINED" ) ) { define( "JETPACK__WPCOM_JSON_API_BASE", getenv( "E2E_FAKE_JETPACK_WPCOM_JSON_API_BASE" ) ); } eval( $argv[1] ); }' "${container_arguments[1]}"
 fi
 if [[ "$*" == *'provider-fixture-audit'* ]]; then
 	printf '{"requests":8,"failures":[],"coverage":true,"state_restored":true,"clean":true}\n'
@@ -176,7 +173,6 @@ assert_rejected_transport() {
 	local api_base='https://jetpack.wordpress.com/jetpack.'
 	local wpcom_json_api_base='https://public-api.wordpress.com'
 	local preflight_line
-	local mutation_commands
 
 	case "$transport" in
 		JETPACK__API_BASE)
@@ -192,7 +188,7 @@ assert_rejected_transport() {
 	esac
 
 	: > "$TEST_ROOT/commands.log"
-	if env "${PROFILE_ENV[@]}" "E2E_FAKE_JETPACK_API_BASE=$api_base" "E2E_FAKE_JETPACK_WPCOM_JSON_API_BASE=$wpcom_json_api_base" "$SCRIPT_DIR/install-ci-fixture.sh" > "$output" 2>&1; then
+	if env "${PROFILE_ENV[@]}" "E2E_FAKE_JETPACK_API_BASE_IS_DEFINED=true" "E2E_FAKE_JETPACK_API_BASE=$api_base" "E2E_FAKE_JETPACK_WPCOM_JSON_API_BASE_IS_DEFINED=true" "E2E_FAKE_JETPACK_WPCOM_JSON_API_BASE=$wpcom_json_api_base" "$SCRIPT_DIR/install-ci-fixture.sh" > "$output" 2>&1; then
 		echo "Readonly WooPayments fixture must reject transport override: $transport=$transport_base" >&2
 		exit 1
 	fi
@@ -205,20 +201,23 @@ assert_rejected_transport() {
 		echo "Readonly WooPayments fixture must check the effective Jetpack transport: $transport=$transport_base" >&2
 		exit 1
 	fi
-	mutation_commands="$(tail -n "+$(( preflight_line + 1 ))" "$TEST_ROOT/commands.log")"
-	if grep -Fq 'run cli sh -c' <<< "$mutation_commands"; then
+	if [[ "$preflight_line" -ne 1 ]]; then
+		echo "Readonly WooPayments fixture must preflight before every wp-env command: $transport=$transport_base" >&2
+		exit 1
+	fi
+	if grep -Fq 'run cli sh -c' "$TEST_ROOT/commands.log"; then
 		echo "Readonly WooPayments fixture must not copy fixture files after rejecting: $transport=$transport_base" >&2
 		exit 1
 	fi
-	if grep -Fq 'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE true --raw' <<< "$mutation_commands"; then
+	if grep -Fq 'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE true --raw' "$TEST_ROOT/commands.log"; then
 		echo "Readonly WooPayments fixture must not enable the fixture after rejecting: $transport=$transport_base" >&2
 		exit 1
 	fi
-	if grep -Fq 'wp option delete' <<< "$mutation_commands"; then
+	if grep -Fq 'wp option delete' "$TEST_ROOT/commands.log"; then
 		echo "Readonly WooPayments fixture must not delete options after rejecting: $transport=$transport_base" >&2
 		exit 1
 	fi
-	if grep -Fq 'refresh_account_data()' <<< "$mutation_commands"; then
+	if grep -Fq 'refresh_account_data()' "$TEST_ROOT/commands.log"; then
 		echo "Readonly WooPayments fixture must not refresh account data after rejecting: $transport=$transport_base" >&2
 		exit 1
 	fi
