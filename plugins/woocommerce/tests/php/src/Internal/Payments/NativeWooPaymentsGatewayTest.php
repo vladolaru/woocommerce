@@ -3136,6 +3136,93 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reject WooPay preflight checks with invalid fraud-prevention tokens before changing the order status.
+	 */
+	public function test_process_payment_rejects_woopay_preflight_with_invalid_fraud_token_before_status_change(): void {
+		wc_clear_notices();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+		$order->update_status( 'failed' );
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
+		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
+		$_POST['is-woopay-preflight-check']                     = '1';
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( true, $session )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertSame(
+			array(
+				'result'         => 'failure',
+				'redirect'       => '',
+				'payment_method' => '',
+			),
+			$result
+		);
+		$this->assertSame(
+			"We're not able to process this payment. Please refresh the page and try again.",
+			wc_get_notices( 'error' )[0]['notice'] ?? ''
+		);
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertNull( $service->last_checkout_context );
+	}
+
+	/**
+	 * @testdox Should reject rate-limited WooPay preflight checks before changing the order status.
+	 */
+	public function test_process_payment_rejects_rate_limited_woopay_preflight_before_status_change(): void {
+		wc_clear_notices();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+		$order->update_status( 'failed' );
+		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
+		$_POST['is-woopay-preflight-check'] = '1';
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertSame(
+			array(
+				'result'         => 'failure',
+				'redirect'       => '',
+				'payment_method' => '',
+			),
+			$result
+		);
+		$this->assertSame( 'Your payment was not processed.', wc_get_notices( 'error' )[0]['notice'] ?? '' );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertNull( $service->last_checkout_context );
+	}
+
+	/**
 	 * @testdox Should short-circuit WooPay preflight checks before charging an order.
 	 */
 	public function test_process_payment_short_circuits_woopay_preflight_checks(): void {

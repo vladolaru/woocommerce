@@ -1455,15 +1455,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		if ( ! empty( $_POST['is-woopay-preflight-check'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
-			$order->update_status( 'pending' );
-
-			return array(
-				'result'   => 'success',
-				'redirect' => '',
-			);
-		}
-
 		$fraud_prevention_error = $this->get_fraud_prevention_error_message( true );
 		if ( '' !== $fraud_prevention_error ) {
 			wc_add_notice( $fraud_prevention_error, 'error', array( 'icon' => 'error' ) );
@@ -1483,6 +1474,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				'result'         => 'failure',
 				'redirect'       => '',
 				'payment_method' => '',
+			);
+		}
+
+		if ( ! empty( $_POST['is-woopay-preflight-check'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$order->update_status( 'pending' );
+
+			return array(
+				'result'   => 'success',
+				'redirect' => '',
 			);
 		}
 
