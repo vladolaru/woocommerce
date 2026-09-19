@@ -376,6 +376,40 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should default Multi-Currency to enabled when the feature option is absent.
+	 */
+	public function test_get_settings_defaults_multi_currency_to_enabled_when_option_is_absent(): void {
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertTrue( $settings['is_multi_currency_enabled'] );
+	}
+
+	/**
+	 * @testdox Should preserve an explicit Multi-Currency disable.
+	 */
+	public function test_get_settings_preserves_explicit_multi_currency_disable(): void {
+		update_option( '_wcpay_feature_customer_multi_currency', '0' );
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertFalse( $settings['is_multi_currency_enabled'] );
+	}
+
+	/**
+	 * @testdox Should persist and read back an explicit Multi-Currency disable.
+	 */
+	public function test_update_settings_persists_and_reads_multi_currency_disable(): void {
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+
+		$settings = $this->sut->update_settings( array( 'is_multi_currency_enabled' => false ) );
+
+		$this->assertSame( '0', get_option( '_wcpay_feature_customer_multi_currency' ) );
+		$this->assertFalse( $settings['is_multi_currency_enabled'] );
+	}
+
+	/**
 	 * @testdox Should expose and persist form-field defaults when settings have not been saved.
 	 */
 	public function test_get_settings_round_trip_persists_form_field_defaults_when_settings_are_absent(): void {
