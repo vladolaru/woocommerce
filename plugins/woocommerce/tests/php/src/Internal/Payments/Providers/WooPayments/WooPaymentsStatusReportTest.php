@@ -133,6 +133,17 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Status data defaults Multi-Currency to enabled when the option is absent.
+	 */
+	public function test_status_data_defaults_multi_currency_to_enabled_when_option_is_absent(): void {
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+
+		$data = $this->get_sut()->get_status_data();
+
+		$this->assertTrue( $data['multi_currency']['enabled'] );
+	}
+
+	/**
 	 * @testdox Status data reports the WooPayments rate provider as unavailable when the registry has no available provider.
 	 */
 	public function test_status_data_reports_rate_provider_unavailable_from_registry_state(): void {

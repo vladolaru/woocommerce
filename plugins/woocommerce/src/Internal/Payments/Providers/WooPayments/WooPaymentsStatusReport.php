@@ -195,7 +195,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		$enabled_payment_methods   = $this->get_enabled_payment_methods();
 		$payment_request_locations = $this->get_express_checkout_method_locations( 'payment_request' );
 		$woopay_locations          = $this->get_express_checkout_method_locations( 'woopay' );
-		$multi_currency_enabled    = '1' === (string) get_option( self::MULTI_CURRENCY_FLAG_OPTION, '0' );
+		$multi_currency_enabled    = '1' === (string) get_option( self::MULTI_CURRENCY_FLAG_OPTION, '1' );
 
 		return array(
 			'runtime_owner'           => $this->arbiter->get_runtime_owner(),
