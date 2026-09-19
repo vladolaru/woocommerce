@@ -12,7 +12,8 @@ define( 'E2E_WOOPAYMENTS_NATIVE_FIXTURE', true );
 
 $options = array();
 /** @var ArrayObject<string,array{0:callable,1:int,2:int}> $filters */
-$filters = new ArrayObject();
+$filters                  = new ArrayObject();
+$discarded_option_updates = array();
 
 require __DIR__ . '/ci-provider-fixture-test-wp-error.php';
 
@@ -91,7 +92,7 @@ function get_option( string $name, $default_value = false ) {
  * @param bool|null $autoload Whether WordPress should autoload the option.
  */
 function update_option( string $name, $value, ?bool $autoload = null ): bool {
-	global $filters, $options;
+	global $discarded_option_updates, $filters, $options;
 	unset( $autoload );
 	$old_value = get_option( $name );
 	$filter    = $filters[ 'pre_update_option_' . $name ] ?? null;
@@ -100,6 +101,9 @@ function update_option( string $name, $value, ?bool $autoload = null ): bool {
 	}
 	if ( $value === $old_value ) {
 		return false;
+	}
+	if ( in_array( $name, $discarded_option_updates, true ) ) {
+		return true;
 	}
 	$options[ $name ] = $value;
 	return true;
@@ -248,8 +252,18 @@ assert_true(
 	3 === count( $user_token_parts ) && '' !== $user_token_parts[0] && '' !== $user_token_parts[1] && '1' === $user_token_parts[2],
 	'dummy Jetpack user token must satisfy the stored key.secret.user_id parser before signing reduces it to key.secret'
 );
-$cache = $fixture->account_cache();
+$discarded_option_updates[] = 'e2e_woopayments_native_provider_state';
+try {
+	$fixture->account_cache();
+	assert_true( false, 'fixture state initialization must fail when its unstarted lifecycle cannot be persisted' );
+} catch ( RuntimeException $error ) {
+	assert_same( 'The WooPayments unstarted physical-state lifecycle could not be persisted.', $error->getMessage(), 'fixture state initialization must report unstarted lifecycle persistence failures' );
+}
+$discarded_option_updates = array();
+$cache                    = $fixture->account_cache();
 assert_true( isset( $filters['pre_option_wcpay_account_data'] ), 'fixture must own account-cache reads for consistent provider state' );
+$initial_fixture_state = get_option( 'e2e_woopayments_native_provider_state' );
+assert_same( 'unstarted', $initial_fixture_state['physical_state_lifecycle'], 'the deliberately pre-run fixture state must persist an explicit unstarted lifecycle marker' );
 $options['wcpay_account_data'] = $cache;
 assert_true( 'acct_native_ci' === $cache['data']['account_id'], 'fixture account cache must establish a connected account' );
 assert_true( true === $cache['data']['payments_enabled'], 'fixture account cache must establish payment readiness' );
@@ -1041,7 +1055,28 @@ $options['jetpack_options']                    = $seeded_jetpack_options;
 $options['jetpack_private_options']            = $seeded_jetpack_private_options;
 $options['wcpay_account_data']                 = $fresh_activation_cache;
 $options['e2e_woopayments_native_failure_log'] = array();
-$refreshed_account                             = $fixture->prepare_physical_account_cache_for_run(
+$discarded_option_updates[]                    = 'e2e_woopayments_native_provider_state';
+$failed_persistence_refresh_called             = false;
+try {
+	$fixture->prepare_physical_account_cache_for_run(
+		static function () use ( &$failed_persistence_refresh_called ): array {
+			$failed_persistence_refresh_called = true;
+			return array();
+		}
+	);
+	assert_true( false, 'fixture preparation must fail when its physical-state lifecycle cannot be persisted' );
+} catch ( RuntimeException $error ) {
+	assert_same( 'The WooPayments physical-state lifecycle could not be persisted.', $error->getMessage(), 'fixture preparation must report physical-state persistence failures' );
+}
+assert_same( false, $failed_persistence_refresh_called, 'fixture preparation must abort before refreshing the account when lifecycle persistence fails' );
+assert_same( $seeded_fraud_services_transient, $options['_transient_woocommerce_woopayments_public_fraud_services'], 'fixture preparation must not mutate the public fraud-services transient before lifecycle persistence succeeds' );
+assert_same( $seeded_fraud_services_timeout, $options['_transient_timeout_woocommerce_woopayments_public_fraud_services'], 'fixture preparation must not mutate the public fraud-services timeout before lifecycle persistence succeeds' );
+assert_same( $seeded_jetpack_options, $options['jetpack_options'], 'fixture preparation must not mutate public Jetpack identity before lifecycle persistence succeeds' );
+assert_same( $seeded_jetpack_private_options, $options['jetpack_private_options'], 'fixture preparation must not mutate private Jetpack identity before lifecycle persistence succeeds' );
+assert_same( $fresh_activation_cache, $options['wcpay_account_data'], 'fixture preparation must not mutate the physical account cache before lifecycle persistence succeeds' );
+assert_same( '__missing__', get_option( 'wcpay_onboarding_test_mode', '__missing__' ), 'fixture preparation must not enable test mode before lifecycle persistence succeeds' );
+$discarded_option_updates = array();
+$refreshed_account        = $fixture->prepare_physical_account_cache_for_run(
 	static function () use ( $fixture, &$filters ): array {
 		assert_true( ! isset( $filters['pre_option_wcpay_account_data'] ), 'the connected pre-option filter must not mask the production cache refresh' );
 		assert_same( 'yes', get_option( 'wcpay_onboarding_test_mode', '__missing__' ), 'fixture preparation must explicitly enable test-mode onboarding before refreshing a non-live account' );
@@ -1107,6 +1142,15 @@ $fixture->restore_pre_fixture_physical_account_cache();
 $audit = $fixture->audit();
 assert_true( true === $audit['clean'], 'a covered fixture run must remain clean after restoring the pre-fixture cache' );
 $complete_fixture_state   = get_option( 'e2e_woopayments_native_provider_state' );
+$markerless_fixture_state = $complete_fixture_state;
+unset( $markerless_fixture_state['physical_state_lifecycle'] );
+update_option( 'e2e_woopayments_native_provider_state', $markerless_fixture_state );
+$markerless_lifecycle_audit = $fixture->audit();
+assert_same( false, $markerless_lifecycle_audit['fraud_services_transient']['restored'], 'a completed fixture must fail closed when its fraud-services lifecycle marker is missing' );
+assert_same( false, $markerless_lifecycle_audit['jetpack_identity']['restored'], 'a completed fixture must fail closed when its Jetpack identity lifecycle marker is missing' );
+assert_same( false, $markerless_lifecycle_audit['state_restored'], 'a completed fixture with a missing lifecycle marker must fail aggregate restoration' );
+assert_same( false, $markerless_lifecycle_audit['clean'], 'a completed fixture with a missing lifecycle marker must make the audit non-clean' );
+update_option( 'e2e_woopayments_native_provider_state', $complete_fixture_state );
 $incomplete_fixture_state = $complete_fixture_state;
 unset( $incomplete_fixture_state['jetpack_identity_baseline'] );
 update_option( 'e2e_woopayments_native_provider_state', $incomplete_fixture_state );

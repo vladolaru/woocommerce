@@ -102,6 +102,17 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			$state[ self::PHYSICAL_STATE_LIFECYCLE ]       = 'prepared';
 			unset( $state['physical_account_cache_restoration'], $state['test_mode_premise_restoration'], $state['fraud_services_transient_restoration'], $state['jetpack_identity_restoration'] );
 			update_option( self::STATE_OPTION, $state );
+			$persisted_state = get_option( self::STATE_OPTION, array() );
+			if (
+				! is_array( $persisted_state )
+				|| 'prepared' !== ( $persisted_state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null )
+				|| ! $this->option_snapshots_match( $pre_fixture_fraud_services_transient, $persisted_state['pre_fixture_fraud_services_transient'] ?? null )
+				|| ! $this->option_snapshots_match( $state['fraud_services_transient_baseline'], $persisted_state['fraud_services_transient_baseline'] ?? null )
+				|| ! $this->option_snapshots_match( $pre_fixture_jetpack_identity, $persisted_state['pre_fixture_jetpack_identity'] ?? null )
+				|| ! $this->option_snapshots_match( $pre_fixture_jetpack_identity, $persisted_state['jetpack_identity_baseline'] ?? null )
+			) {
+				throw new RuntimeException( 'The WooPayments physical-state lifecycle could not be persisted.' );
+			}
 			$this->restore_option( self::FRAUD_SERVICES_TRANSIENT_OPTION, false, null );
 			$this->restore_option( self::FRAUD_SERVICES_TRANSIENT_TIMEOUT_OPTION, false, null );
 			if ( ! $this->option_snapshots_match( $this->fraud_services_transient_snapshot(), $state['fraud_services_transient_baseline'] ) ) {
@@ -575,7 +586,10 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		return plugin_dir_url( __FILE__ ) . 'stripe-messaging-adapter.js';
 	}
 
-	/** @return array<string,mixed> */
+	/**
+	 * @return array<string,mixed>
+	 * @throws RuntimeException When the unstarted physical-state lifecycle cannot be persisted.
+	 */
 	private function state(): array {
 		$state = get_option( self::STATE_OPTION, array() );
 		if ( is_array( $state ) && isset( $state['account'], $state['transactions'], $state['deposits'] ) ) {
@@ -660,11 +674,12 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'test_mode'      => true,
 		);
 		$state                                    = array(
-			'account'                    => $account,
-			'settings'                   => $settings,
-			'woopay_webhook_secret_hash' => null,
-			'expected_retained_state'    => array( 'webhook_secret_hash' => null ),
-			'transactions'               => array(
+			self::PHYSICAL_STATE_LIFECYCLE => 'unstarted',
+			'account'                      => $account,
+			'settings'                     => $settings,
+			'woopay_webhook_secret_hash'   => null,
+			'expected_retained_state'      => array( 'webhook_secret_hash' => null ),
+			'transactions'                 => array(
 				array(
 					'id'             => 'ch_ci_1',
 					'transaction_id' => 'ch_ci_1',
@@ -678,7 +693,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 					'status'         => 'succeeded',
 				),
 			),
-			'deposits'                   => array(
+			'deposits'                     => array(
 				array(
 					'id'           => 'po_ci_paid',
 					'status'       => 'paid',
@@ -704,8 +719,8 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 					'arrival_date' => 1704585600,
 				),
 			),
-			'disputes'                   => array(),
-			'overview'                   => array(
+			'disputes'                     => array(),
+			'overview'                     => array(
 				'balance' => array(
 					'available' => array(
 						array(
@@ -731,7 +746,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				),
 				'account' => array( 'default_currency' => 'usd' ),
 			),
-			'fraud_ruleset'              => $fraud_ruleset,
+			'fraud_ruleset'                => $fraud_ruleset,
 		);
 		$state['audit_baseline']                  = $this->canonicalize(
 			array(
@@ -749,7 +764,11 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			)
 		);
 		update_option( self::STATE_OPTION, $state );
-		return $state;
+		$persisted_state = get_option( self::STATE_OPTION, array() );
+		if ( ! is_array( $persisted_state ) || 'unstarted' !== ( $persisted_state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null ) ) {
+			throw new RuntimeException( 'The WooPayments unstarted physical-state lifecycle could not be persisted.' );
+		}
+		return $persisted_state;
 	}
 
 	/**
@@ -1074,7 +1093,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * @return array{run_isolated:bool,pre_fixture_restored:bool,restored:bool}
 	 */
 	private function physical_state_audit( array $current, $run_baseline, $pre_fixture, $restoration, ?string $lifecycle ): array {
-		if ( null === $lifecycle ) {
+		if ( 'unstarted' === $lifecycle ) {
 			return array(
 				'run_isolated'         => true,
 				'pre_fixture_restored' => true,
