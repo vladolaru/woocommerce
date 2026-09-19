@@ -24,6 +24,7 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 	/** @var array<int,string> Hooks the preflight guard may change. */
 	private const GUARDED_HOOKS = array(
 		'rest_request_before_callbacks',
+		'rest_request_after_callbacks',
 		'woocommerce_store_api_checkout_update_order_meta',
 		'woocommerce_store_api_checkout_order_processed',
 		'woocommerce_order_status_pending',
@@ -69,19 +70,24 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** @testdox Registers one REST pre-callback and keeps repeated registration idempotent. */
-	public function test_registers_pre_callback_once(): void {
-		$guard    = new WooPaymentsWooPayPreflightGuard();
-		$callback = array( $guard, 'suppress_checkout_side_effects' );
+	/** @testdox Registers request callbacks once and keeps repeated registration idempotent. */
+	public function test_registers_request_callbacks_once(): void {
+		$guard           = new WooPaymentsWooPayPreflightGuard();
+		$before_callback = array( $guard, 'suppress_checkout_side_effects' );
+		$after_callback  = array( $guard, 'restore_checkout_side_effects' );
 
-		$this->assertFalse( has_filter( 'rest_request_before_callbacks', $callback ) );
+		$this->assertFalse( has_filter( 'rest_request_before_callbacks', $before_callback ) );
+		$this->assertFalse( has_filter( 'rest_request_after_callbacks', $after_callback ) );
 
 		$guard->register();
 		$guard->register();
 
-		$this->assertSame( 10, has_filter( 'rest_request_before_callbacks', $callback ) );
+		$this->assertSame( 10, has_filter( 'rest_request_before_callbacks', $before_callback ) );
 		$this->assertCount( 1, $GLOBALS['wp_filter']['rest_request_before_callbacks']->callbacks[10] );
 		$this->assertSame( 3, array_values( $GLOBALS['wp_filter']['rest_request_before_callbacks']->callbacks[10] )[0]['accepted_args'] );
+		$this->assertSame( 10, has_filter( 'rest_request_after_callbacks', $after_callback ) );
+		$this->assertCount( 1, $GLOBALS['wp_filter']['rest_request_after_callbacks']->callbacks[10] );
+		$this->assertSame( 3, array_values( $GLOBALS['wp_filter']['rest_request_after_callbacks']->callbacks[10] )[0]['accepted_args'] );
 	}
 
 	/** @testdox Leaves checkout hooks unchanged for unrelated, malformed, and missing-marker requests. */
@@ -311,6 +317,153 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 		$this->assertNull( apply_filters( 'woocommerce_coupon_get_usage_limit', 5, $coupon ) );
 		$this->assertSame( 0, apply_filters( 'woocommerce_coupon_get_usage_limit_per_user', 1, 123, $coupon ) );
 		$this->assertNull( $service->last_checkout_context );
+	}
+
+	/** @testdox Restores checkout hooks after a preflight request before the next checkout request. */
+	public function test_restores_checkout_hooks_after_preflight_request(): void {
+		$guard                = new WooPaymentsWooPayPreflightGuard();
+		$order                = $this->create_order();
+		$coupon               = $this->create_coupon();
+		$action_counts        = array(
+			'meta'      => 0,
+			'processed' => 0,
+			'pending'   => 0,
+		);
+		$registration_calls   = 0;
+		$coupon_limit_calls   = 0;
+		$per_user_limit_calls = 0;
+
+		add_action(
+			'woocommerce_store_api_checkout_update_order_meta',
+			static function ( WC_Order $hook_order ) use ( $order, &$action_counts ): void {
+				if ( $order === $hook_order ) {
+					++$action_counts['meta'];
+				}
+			},
+			20,
+			1
+		);
+		add_action(
+			'woocommerce_store_api_checkout_order_processed',
+			static function ( WC_Order $hook_order ) use ( $order, &$action_counts ): void {
+				if ( $order === $hook_order ) {
+					++$action_counts['processed'];
+				}
+			},
+			30,
+			1
+		);
+		add_action(
+			'woocommerce_order_status_pending',
+			static function ( int $order_id, WC_Order $hook_order ) use ( $order, &$action_counts ): void {
+				if ( $order->get_id() === $order_id && $order === $hook_order ) {
+					++$action_counts['pending'];
+				}
+			},
+			40,
+			2
+		);
+		add_filter(
+			'woocommerce_checkout_registration_required',
+			static function ( $required ) use ( &$registration_calls ) {
+				++$registration_calls;
+
+				return 'sentinel-' . $required;
+			},
+			50,
+			1
+		);
+		add_filter(
+			'woocommerce_coupon_get_usage_limit',
+			static function ( $limit, WC_Coupon $hook_coupon ) use ( $coupon, &$coupon_limit_calls ): int {
+				if ( 5 === $limit && $coupon->get_id() === $hook_coupon->get_id() ) {
+					++$coupon_limit_calls;
+				}
+
+				return 6;
+			},
+			5,
+			2
+		);
+		add_filter(
+			'woocommerce_coupon_get_usage_limit_per_user',
+			static function ( $limit, $user_id, WC_Coupon $hook_coupon ) use ( $coupon, &$per_user_limit_calls ): int {
+				if ( 1 === $limit && 123 === $user_id && $coupon->get_id() === $hook_coupon->get_id() ) {
+					++$per_user_limit_calls;
+				}
+
+				return 2;
+			},
+			5,
+			3
+		);
+		$guard->register();
+
+		$preflight_request  = new WP_REST_Request( 'POST', '/wc/store/v1/checkout' );
+		$preflight_response = new \stdClass();
+		$preflight_request->set_body_params(
+			array(
+				'payment_data' => array(
+					array(
+						'key'   => 'is-woopay-preflight-check',
+						'value' => true,
+					),
+				),
+			)
+		);
+
+		$this->assertSame( $preflight_response, apply_filters( 'rest_request_before_callbacks', $preflight_response, array(), $preflight_request ) );
+		do_action( 'woocommerce_store_api_checkout_update_order_meta', $order );
+		do_action( 'woocommerce_store_api_checkout_order_processed', $order );
+		do_action( 'woocommerce_order_status_pending', $order->get_id(), $order );
+		$this->assertSame(
+			array(
+				'meta'      => 0,
+				'processed' => 0,
+				'pending'   => 0,
+			),
+			$action_counts
+		);
+		$this->assertSame( 'original', apply_filters( 'woocommerce_checkout_registration_required', 'original' ) );
+		$this->assertNull( apply_filters( 'woocommerce_coupon_get_usage_limit', 5, $coupon ) );
+		$this->assertSame( 0, apply_filters( 'woocommerce_coupon_get_usage_limit_per_user', 1, 123, $coupon ) );
+		$this->assertSame( 0, $registration_calls );
+		$this->assertSame( 1, $coupon_limit_calls );
+		$this->assertSame( 1, $per_user_limit_calls );
+		$this->assertSame( $preflight_response, apply_filters( 'rest_request_after_callbacks', $preflight_response, array(), $preflight_request ) );
+
+		$following_request  = new WP_REST_Request( 'POST', '/wc/store/v1/checkout' );
+		$following_response = new \stdClass();
+		$following_request->set_body_params(
+			array(
+				'payment_data' => array(
+					array(
+						'key'   => 'ordinary-request',
+						'value' => true,
+					),
+				),
+			)
+		);
+
+		$this->assertSame( $following_response, apply_filters( 'rest_request_before_callbacks', $following_response, array(), $following_request ) );
+		do_action( 'woocommerce_store_api_checkout_update_order_meta', $order );
+		do_action( 'woocommerce_store_api_checkout_order_processed', $order );
+		do_action( 'woocommerce_order_status_pending', $order->get_id(), $order );
+		$this->assertSame(
+			array(
+				'meta'      => 1,
+				'processed' => 1,
+				'pending'   => 1,
+			),
+			$action_counts
+		);
+		$this->assertSame( 'sentinel-original', apply_filters( 'woocommerce_checkout_registration_required', 'original' ) );
+		$this->assertSame( 6, apply_filters( 'woocommerce_coupon_get_usage_limit', 5, $coupon ) );
+		$this->assertSame( 2, apply_filters( 'woocommerce_coupon_get_usage_limit_per_user', 1, 123, $coupon ) );
+		$this->assertSame( 1, $registration_calls );
+		$this->assertSame( 2, $coupon_limit_calls );
+		$this->assertSame( 2, $per_user_limit_calls );
+		$this->assertSame( $following_response, apply_filters( 'rest_request_after_callbacks', $following_response, array(), $following_request ) );
 	}
 
 	/**
