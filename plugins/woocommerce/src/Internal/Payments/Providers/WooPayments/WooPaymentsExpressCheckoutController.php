@@ -111,10 +111,12 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			&& ! empty( $_GET['_wpnonce'] )
 			&& wp_verify_nonce( sanitize_key( wp_unslash( $_GET['_wpnonce'] ) ), 'wcpay-set-redirect-url' )
 		) {
-			$url = rawurldecode( esc_url_raw( wp_unslash( $_GET['wcpay_express_checkout_redirect_url'] ) ) );
-			// Sets a redirect URL cookie for 10 minutes, which we will redirect to after authentication.
-			// Users have a 10 minute window to log in / create an account before the URL expires.
-			wc_setcookie( 'wcpay_express_checkout_redirect_url', $url, time() + MINUTE_IN_SECONDS * 10 );
+			$url = $this->validate_redirect_target( wp_unslash( $_GET['wcpay_express_checkout_redirect_url'] ), true ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- The helper validates the unslashed target.
+			if ( ! empty( $url ) ) {
+				// Sets a redirect URL cookie for 10 minutes, which we will redirect to after authentication.
+				// Users have a 10 minute window to log in / create an account before the URL expires.
+				wc_setcookie( 'wcpay_express_checkout_redirect_url', $url, time() + MINUTE_IN_SECONDS * 10 );
+			}
 
 			$my_account_url = get_permalink( get_option( 'woocommerce_myaccount_page_id' ) );
 			if ( is_string( $my_account_url ) && wp_safe_redirect( $my_account_url ) ) {
@@ -130,15 +132,39 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_login_redirect_url( $redirect ) {
-		$url = esc_url_raw( wp_unslash( $_COOKIE['wcpay_express_checkout_redirect_url'] ?? '' ) );
+		$has_cookie = array_key_exists( 'wcpay_express_checkout_redirect_url', $_COOKIE );
+		$url        = $has_cookie ? $this->validate_redirect_target( wp_unslash( $_COOKIE['wcpay_express_checkout_redirect_url'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- The helper validates the unslashed target.
+
+		if ( $has_cookie ) {
+			wc_setcookie( 'wcpay_express_checkout_redirect_url', '' );
+		}
 
 		if ( empty( $url ) ) {
 			return $redirect;
 		}
 
-		wc_setcookie( 'wcpay_express_checkout_redirect_url', '' );
-
 		return $url;
+	}
+
+	/**
+	 * Validate an express checkout redirect target.
+	 *
+	 * @param mixed $candidate        Candidate redirect target.
+	 * @param bool  $raw_url_encoded  Whether the candidate is raw URL encoded.
+	 * @return string
+	 */
+	private function validate_redirect_target( $candidate, bool $raw_url_encoded = false ): string {
+		if ( ! is_string( $candidate ) ) {
+			return '';
+		}
+
+		if ( $raw_url_encoded ) {
+			$candidate = rawurldecode( $candidate );
+		}
+
+		$sanitized = esc_url_raw( $candidate );
+
+		return wp_validate_redirect( $sanitized, '' );
 	}
 
 	/**

@@ -345,25 +345,236 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$my_account_page_id = $this->factory()->post->create( array( 'post_type' => 'page' ) );
 		update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
 
-		$_GET['wcpay_express_checkout_redirect_url'] = rawurlencode( 'https://example.test/checkout/' );
+		$checkout_url                                = home_url( '/checkout/' );
+		$_GET['wcpay_express_checkout_redirect_url'] = rawurlencode( $checkout_url );
 		$_GET['_wpnonce']                            = wp_create_nonce( 'wcpay-set-redirect-url' );
 
 		$captured_redirect = null;
-		add_filter(
-			'wp_redirect',
-			function ( $location ) use ( &$captured_redirect ) {
-				$captured_redirect = $location;
-				return false;
+		$capture_redirect  = static function ( $location ) use ( &$captured_redirect ) {
+			$captured_redirect = $location;
+			return false;
+		};
+		add_filter( 'wp_redirect', $capture_redirect );
+		add_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
+
+		try {
+			$this->sut->handle_express_checkout_redirect();
+
+			$this->assertSame( get_permalink( $my_account_page_id ), $captured_redirect );
+		} finally {
+			remove_filter( 'wp_redirect', $capture_redirect );
+			remove_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
+			unset( $_GET['wcpay_express_checkout_redirect_url'], $_GET['_wpnonce'] );
+			delete_option( 'woocommerce_myaccount_page_id' );
+		}
+	}
+
+	/**
+	 * @dataProvider provide_valid_ingress_redirect_targets
+	 * @testdox Should stash each valid express checkout redirect target exactly once and only redirect to My Account.
+	 *
+	 * @param string $target       Expected stashed target.
+	 * @param bool   $allow_host  Whether the target host is explicitly allowed.
+	 */
+	public function test_handle_express_checkout_redirect_stashes_valid_targets_once( string $target, bool $allow_host ): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$my_account_page_id = $this->factory()->post->create( array( 'post_type' => 'page' ) );
+		update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
+
+		$_GET['wcpay_express_checkout_redirect_url'] = rawurlencode( $target );
+		$_GET['_wpnonce']                            = wp_create_nonce( 'wcpay-set-redirect-url' );
+
+		$cookie_values  = array();
+		$capture_cookie = static function ( bool $enabled, string $name, string $value ) use ( &$cookie_values ): bool {
+			unset( $enabled );
+			if ( 'wcpay_express_checkout_redirect_url' === $name ) {
+				$cookie_values[] = $value;
 			}
+			return false;
+		};
+		add_filter( 'woocommerce_set_cookie_enabled', $capture_cookie, 10, 3 );
+
+		$redirect_locations = array();
+		$capture_redirect   = static function ( $location ) use ( &$redirect_locations ) {
+			$redirect_locations[] = $location;
+			return false;
+		};
+		add_filter( 'wp_redirect', $capture_redirect );
+
+		$allowed_hosts = null;
+		if ( $allow_host ) {
+			$allowed_hosts = static function ( array $hosts ): array {
+				$hosts[] = 'allowed.example';
+				return $hosts;
+			};
+			add_filter( 'allowed_redirect_hosts', $allowed_hosts );
+		}
+
+		try {
+			$this->sut->handle_express_checkout_redirect();
+
+			$nonempty_cookie_values = array_values(
+				array_filter(
+					$cookie_values,
+					static function ( string $value ): bool {
+						return '' !== $value;
+					}
+				)
+			);
+			$this->assertSame( array( $target ), $nonempty_cookie_values );
+			$this->assertSame( array( get_permalink( $my_account_page_id ) ), $redirect_locations );
+		} finally {
+			if ( $allow_host && null !== $allowed_hosts ) {
+				remove_filter( 'allowed_redirect_hosts', $allowed_hosts );
+			}
+			remove_filter( 'woocommerce_set_cookie_enabled', $capture_cookie );
+			remove_filter( 'wp_redirect', $capture_redirect );
+			unset( $_GET['wcpay_express_checkout_redirect_url'], $_GET['_wpnonce'] );
+			delete_option( 'woocommerce_myaccount_page_id' );
+		}
+	}
+
+	/**
+	 * Provide valid ingress redirect targets.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function provide_valid_ingress_redirect_targets(): array {
+		return array(
+			'local absolute target'   => array( home_url( '/checkout/' ), false ),
+			'relative target'         => array( '/checkout/', false ),
+			'allowed external target' => array( 'https://allowed.example/checkout/', true ),
+			'retained percent escape' => array( home_url( '/checkout/?next=%2Faccount' ), false ),
 		);
+	}
 
-		$this->sut->handle_express_checkout_redirect();
+	/**
+	 * @testdox Should not persist an external express checkout redirect target.
+	 */
+	public function test_handle_express_checkout_redirect_does_not_persist_external_target(): void {
+		$this->sut = $this->create_controller( true, true );
 
-		$this->assertSame( get_permalink( $my_account_page_id ), $captured_redirect );
+		$my_account_page_id = $this->factory()->post->create( array( 'post_type' => 'page' ) );
+		update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
 
-		remove_all_filters( 'wp_redirect' );
-		unset( $_GET['wcpay_express_checkout_redirect_url'], $_GET['_wpnonce'] );
-		delete_option( 'woocommerce_myaccount_page_id' );
+		$_GET['wcpay_express_checkout_redirect_url'] = rawurlencode( 'https://evil.example/phish' );
+		$_GET['_wpnonce']                            = wp_create_nonce( 'wcpay-set-redirect-url' );
+
+		$cookie_values  = array();
+		$capture_cookie = static function ( bool $enabled, string $name, string $value ) use ( &$cookie_values ): bool {
+			unset( $enabled );
+			if ( 'wcpay_express_checkout_redirect_url' === $name ) {
+				$cookie_values[] = $value;
+			}
+			return false;
+		};
+		add_filter( 'woocommerce_set_cookie_enabled', $capture_cookie, 10, 3 );
+
+		$redirect_locations = array();
+		$capture_redirect   = static function ( $location ) use ( &$redirect_locations ) {
+			$redirect_locations[] = $location;
+			return false;
+		};
+		add_filter( 'wp_redirect', $capture_redirect );
+
+		try {
+			$this->sut->handle_express_checkout_redirect();
+
+			$this->assertSame( array( get_permalink( $my_account_page_id ) ), $redirect_locations );
+			$this->assertNotContains( 'https://evil.example/phish', $cookie_values );
+			$this->assertSame( array(), array_values( array_filter( $cookie_values ) ) );
+		} finally {
+			remove_filter( 'woocommerce_set_cookie_enabled', $capture_cookie );
+			remove_filter( 'wp_redirect', $capture_redirect );
+			unset( $_GET['wcpay_express_checkout_redirect_url'], $_GET['_wpnonce'] );
+			delete_option( 'woocommerce_myaccount_page_id' );
+		}
+	}
+
+	/**
+	 * @testdox Should not persist a scheme-relative external express checkout redirect target.
+	 */
+	public function test_handle_express_checkout_redirect_does_not_persist_scheme_relative_external_target(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$my_account_page_id = $this->factory()->post->create( array( 'post_type' => 'page' ) );
+		update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
+
+		$_GET['wcpay_express_checkout_redirect_url'] = rawurlencode( '//evil.example/phish' );
+		$_GET['_wpnonce']                            = wp_create_nonce( 'wcpay-set-redirect-url' );
+
+		$cookie_values  = array();
+		$capture_cookie = static function ( bool $enabled, string $name, string $value ) use ( &$cookie_values ): bool {
+			unset( $enabled );
+			if ( 'wcpay_express_checkout_redirect_url' === $name ) {
+				$cookie_values[] = $value;
+			}
+			return false;
+		};
+		add_filter( 'woocommerce_set_cookie_enabled', $capture_cookie, 10, 3 );
+
+		$redirect_locations = array();
+		$capture_redirect   = static function ( $location ) use ( &$redirect_locations ) {
+			$redirect_locations[] = $location;
+			return false;
+		};
+		add_filter( 'wp_redirect', $capture_redirect );
+
+		try {
+			$this->sut->handle_express_checkout_redirect();
+
+			$this->assertSame( array( get_permalink( $my_account_page_id ) ), $redirect_locations );
+			$this->assertNotContains( '//evil.example/phish', $cookie_values );
+			$this->assertSame( array(), array_values( array_filter( $cookie_values ) ) );
+		} finally {
+			remove_filter( 'woocommerce_set_cookie_enabled', $capture_cookie );
+			remove_filter( 'wp_redirect', $capture_redirect );
+			unset( $_GET['wcpay_express_checkout_redirect_url'], $_GET['_wpnonce'] );
+			delete_option( 'woocommerce_myaccount_page_id' );
+		}
+	}
+
+	/**
+	 * @testdox Should ignore a non-string express checkout redirect query value.
+	 */
+	public function test_handle_express_checkout_redirect_ignores_non_string_query_value(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$my_account_page_id = $this->factory()->post->create( array( 'post_type' => 'page' ) );
+		update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
+
+		$_GET['wcpay_express_checkout_redirect_url'] = array( 'https://evil.example/phish' );
+		$_GET['_wpnonce']                            = wp_create_nonce( 'wcpay-set-redirect-url' );
+
+		$cookie_values  = array();
+		$capture_cookie = static function ( bool $enabled, string $name, string $value ) use ( &$cookie_values ): bool {
+			unset( $enabled );
+			if ( 'wcpay_express_checkout_redirect_url' === $name ) {
+				$cookie_values[] = $value;
+			}
+			return false;
+		};
+		add_filter( 'woocommerce_set_cookie_enabled', $capture_cookie, 10, 3 );
+
+		$redirect_locations = array();
+		$capture_redirect   = static function ( $location ) use ( &$redirect_locations ) {
+			$redirect_locations[] = $location;
+			return false;
+		};
+		add_filter( 'wp_redirect', $capture_redirect );
+
+		try {
+			$this->sut->handle_express_checkout_redirect();
+
+			$this->assertSame( array( get_permalink( $my_account_page_id ) ), $redirect_locations );
+			$this->assertSame( array(), array_values( array_filter( $cookie_values ) ) );
+		} finally {
+			remove_filter( 'woocommerce_set_cookie_enabled', $capture_cookie );
+			remove_filter( 'wp_redirect', $capture_redirect );
+			unset( $_GET['wcpay_express_checkout_redirect_url'], $_GET['_wpnonce'] );
+			delete_option( 'woocommerce_myaccount_page_id' );
+		}
 	}
 
 	/**
@@ -372,23 +583,21 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	public function test_handle_express_checkout_redirect_ignores_invalid_nonce(): void {
 		$this->sut = $this->create_controller( true, true );
 
-		$_GET['wcpay_express_checkout_redirect_url'] = rawurlencode( 'https://example.test/checkout/' );
+		$_GET['wcpay_express_checkout_redirect_url'] = rawurlencode( home_url( '/checkout/' ) );
 		$_GET['_wpnonce']                            = 'invalid';
 
 		$captured_redirect = null;
-		add_filter(
-			'wp_redirect',
-			function ( $location ) use ( &$captured_redirect ) {
-				$captured_redirect = $location;
-				return false;
-			}
-		);
+		$capture_redirect  = static function ( $location ) use ( &$captured_redirect ) {
+			$captured_redirect = $location;
+			return false;
+		};
+		add_filter( 'wp_redirect', $capture_redirect );
 
 		$this->sut->handle_express_checkout_redirect();
 
 		$this->assertNull( $captured_redirect );
 
-		remove_all_filters( 'wp_redirect' );
+		remove_filter( 'wp_redirect', $capture_redirect );
 		unset( $_GET['wcpay_express_checkout_redirect_url'], $_GET['_wpnonce'] );
 	}
 
@@ -398,14 +607,19 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	public function test_get_login_redirect_url_uses_stashed_cookie(): void {
 		$this->sut = $this->create_controller( true, true );
 
-		$_COOKIE['wcpay_express_checkout_redirect_url'] = 'https://example.test/checkout/';
+		$checkout_url                                   = home_url( '/checkout/' );
+		$_COOKIE['wcpay_express_checkout_redirect_url'] = $checkout_url;
+		add_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
 
-		$this->assertSame(
-			'https://example.test/checkout/',
-			$this->sut->get_login_redirect_url( 'https://example.test/my-account/' )
-		);
-
-		unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+		try {
+			$this->assertSame(
+				$checkout_url,
+				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+			);
+		} finally {
+			remove_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
+			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+		}
 	}
 
 	/**
@@ -417,9 +631,248 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
 
 		$this->assertSame(
-			'https://example.test/my-account/',
-			$this->sut->get_login_redirect_url( 'https://example.test/my-account/' )
+			home_url( '/my-account/' ),
+			$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
 		);
+	}
+
+	/**
+	 * @dataProvider provide_valid_cookie_redirect_targets
+	 * @testdox Should preserve valid cookie target $target byte-for-byte and clear it exactly once.
+	 *
+	 * @param string $target      Valid cookie redirect target.
+	 * @param bool   $allow_host Whether the target host is explicitly allowed.
+	 */
+	public function test_get_login_redirect_url_preserves_valid_cookie_and_clears_it_once( string $target, bool $allow_host ): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$_COOKIE['wcpay_express_checkout_redirect_url'] = $target;
+		$cookie_values                                  = array();
+		$capture_cookie                                 = static function ( bool $enabled, string $name, string $value ) use ( &$cookie_values ): bool {
+			unset( $enabled );
+			if ( 'wcpay_express_checkout_redirect_url' === $name ) {
+				$cookie_values[] = $value;
+			}
+			return false;
+		};
+		add_filter( 'woocommerce_set_cookie_enabled', $capture_cookie, 10, 3 );
+
+		$allowed_hosts = null;
+		if ( $allow_host ) {
+			$allowed_hosts = static function ( array $hosts ): array {
+				$hosts[] = 'allowed.example';
+				return $hosts;
+			};
+			add_filter( 'allowed_redirect_hosts', $allowed_hosts );
+		}
+
+		try {
+			$this->assertSame( $target, $this->sut->get_login_redirect_url( home_url( '/my-account/' ) ) );
+			$this->assertSame( array( '' ), $cookie_values );
+		} finally {
+			if ( $allow_host && null !== $allowed_hosts ) {
+				remove_filter( 'allowed_redirect_hosts', $allowed_hosts );
+			}
+			remove_filter( 'woocommerce_set_cookie_enabled', $capture_cookie );
+			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+		}
+	}
+
+	/**
+	 * Provide valid cookie redirect targets.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function provide_valid_cookie_redirect_targets(): array {
+		return array(
+			'local absolute target retains percent escape' => array( home_url( '/checkout/?next=%2Faccount' ), false ),
+			'relative target'                              => array( '/checkout/', false ),
+			'allowed external target'                      => array( 'https://allowed.example/checkout/', true ),
+		);
+	}
+
+	/**
+	 * @dataProvider provide_non_string_login_redirect_fallbacks
+	 * @testdox Should preserve a non-string caller fallback when the cookie is absent or invalid.
+	 *
+	 * @param bool              $has_cookie            Whether the redirect cookie is present.
+	 * @param mixed             $cookie_value          Redirect cookie value.
+	 * @param mixed             $fallback              Caller-provided fallback.
+	 * @param array<int,string> $expected_cookie_values Expected target-cookie writes.
+	 */
+	public function test_get_login_redirect_url_preserves_non_string_fallback( bool $has_cookie, $cookie_value, $fallback, array $expected_cookie_values ): void {
+		$this->sut = $this->create_controller( true, true );
+
+		if ( $has_cookie ) {
+			$_COOKIE['wcpay_express_checkout_redirect_url'] = $cookie_value;
+		} else {
+			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+		}
+
+		$cookie_values  = array();
+		$capture_cookie = static function ( bool $enabled, string $name, string $value ) use ( &$cookie_values ): bool {
+			unset( $enabled );
+			if ( 'wcpay_express_checkout_redirect_url' === $name ) {
+				$cookie_values[] = $value;
+			}
+			return false;
+		};
+		add_filter( 'woocommerce_set_cookie_enabled', $capture_cookie, 10, 3 );
+
+		try {
+			$result = $this->sut->get_login_redirect_url( $fallback );
+
+			$this->assertSame( $expected_cookie_values, $cookie_values );
+			$this->assertSame( $fallback, $result );
+		} finally {
+			remove_filter( 'woocommerce_set_cookie_enabled', $capture_cookie );
+			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+		}
+	}
+
+	/**
+	 * Provide non-string login redirect fallbacks.
+	 *
+	 * @return array<string,array{bool,mixed,mixed,array<int,string>}>
+	 */
+	public function provide_non_string_login_redirect_fallbacks(): array {
+		return array(
+			'absent cookie with array fallback'   => array( false, null, array( 'fallback' ), array() ),
+			'invalid cookie with object fallback' => array( true, 'https://evil.example/phish', new \stdClass(), array( '' ) ),
+		);
+	}
+
+	/**
+	 * @testdox Should reject an external stashed express checkout URL and clear its cookie.
+	 */
+	public function test_get_login_redirect_url_rejects_external_stashed_url(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$_COOKIE['wcpay_express_checkout_redirect_url'] = 'https://evil.example/phish';
+		$cookie_values                                  = array();
+		$capture_cookie                                 = static function ( bool $enabled, string $name, string $value ) use ( &$cookie_values ): bool {
+			unset( $enabled );
+			if ( 'wcpay_express_checkout_redirect_url' === $name ) {
+				$cookie_values[] = $value;
+			}
+			return false;
+		};
+		add_filter( 'woocommerce_set_cookie_enabled', $capture_cookie, 10, 3 );
+
+		try {
+			$this->assertSame(
+				home_url( '/my-account/' ),
+				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+			);
+			$this->assertSame( array( '' ), $cookie_values );
+		} finally {
+			remove_filter( 'woocommerce_set_cookie_enabled', $capture_cookie );
+			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+		}
+	}
+
+	/**
+	 * @testdox Should reject a non-string stashed express checkout URL and clear its cookie.
+	 */
+	public function test_get_login_redirect_url_rejects_non_string_cookie_value(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$_COOKIE['wcpay_express_checkout_redirect_url'] = array( 'https://evil.example/phish' );
+		$cookie_values                                  = array();
+		$capture_cookie                                 = static function ( bool $enabled, string $name, string $value ) use ( &$cookie_values ): bool {
+			unset( $enabled );
+			if ( 'wcpay_express_checkout_redirect_url' === $name ) {
+				$cookie_values[] = $value;
+			}
+			return false;
+		};
+		add_filter( 'woocommerce_set_cookie_enabled', $capture_cookie, 10, 3 );
+
+		try {
+			$this->assertSame(
+				home_url( '/my-account/' ),
+				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+			);
+			$this->assertSame( array( '' ), $cookie_values );
+		} finally {
+			remove_filter( 'woocommerce_set_cookie_enabled', $capture_cookie );
+			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+		}
+	}
+
+	/**
+	 * @testdox Should reject a scheme-relative external stashed express checkout URL and clear its cookie.
+	 */
+	public function test_get_login_redirect_url_rejects_scheme_relative_stashed_url(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$_COOKIE['wcpay_express_checkout_redirect_url'] = '//evil.example/phish';
+		$cookie_values                                  = array();
+		$capture_cookie                                 = static function ( bool $enabled, string $name, string $value ) use ( &$cookie_values ): bool {
+			unset( $enabled );
+			if ( 'wcpay_express_checkout_redirect_url' === $name ) {
+				$cookie_values[] = $value;
+			}
+			return false;
+		};
+		add_filter( 'woocommerce_set_cookie_enabled', $capture_cookie, 10, 3 );
+
+		try {
+			$this->assertSame(
+				home_url( '/my-account/' ),
+				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+			);
+			$this->assertSame( array( '' ), $cookie_values );
+		} finally {
+			remove_filter( 'woocommerce_set_cookie_enabled', $capture_cookie );
+			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+		}
+	}
+
+	/**
+	 * @testdox Should preserve an external stashed URL when its host is explicitly allowed.
+	 */
+	public function test_get_login_redirect_url_preserves_external_stashed_url_for_allowed_host(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$_COOKIE['wcpay_express_checkout_redirect_url'] = 'https://evil.example/phish';
+		$allowed_hosts                                  = static function ( array $hosts ): array {
+			$hosts[] = 'evil.example';
+			return $hosts;
+		};
+		add_filter( 'allowed_redirect_hosts', $allowed_hosts );
+		add_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
+
+		try {
+			$this->assertSame(
+				'https://evil.example/phish',
+				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+			);
+		} finally {
+			remove_filter( 'allowed_redirect_hosts', $allowed_hosts );
+			remove_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
+			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+		}
+	}
+
+	/**
+	 * @testdox Should preserve a relative stashed express checkout URL.
+	 */
+	public function test_get_login_redirect_url_preserves_relative_stashed_url(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$_COOKIE['wcpay_express_checkout_redirect_url'] = '/checkout/';
+		add_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
+
+		try {
+			$this->assertSame(
+				'/checkout/',
+				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+			);
+		} finally {
+			remove_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
+			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+		}
 	}
 
 	/**
