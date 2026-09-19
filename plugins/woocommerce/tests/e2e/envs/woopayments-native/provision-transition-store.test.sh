@@ -15,6 +15,17 @@ TEST_ROOT="$(
 )"
 SEED_MANIFEST="$TEST_ROOT/transition-seed.json"
 printf '{}\n' > "$SEED_MANIFEST"
+PROFILE_LOG="$TEST_ROOT/profile.log"
+PROFILE_PROVISIONER="$TEST_ROOT/profile-transition-provisioner.sh"
+cat > "$PROFILE_PROVISIONER" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == 'plan' || "${1:-}" == 'create' ]]; then
+	printf '%s %s\n' "$1" "${E2E_TRANSITION_SEED_PROFILE:-missing}" >> "${E2E_FAKE_PROFILE_LOG:?}"
+fi
+exec "${E2E_FAKE_PROFILE_TARGET:?}" "$@"
+SH
+chmod 0700 "$PROFILE_PROVISIONER"
 
 cleanup() {
 	rm -rf "$TEST_ROOT"
@@ -68,13 +79,30 @@ expect_failure env \
 	E2E_TRANSITION_RUN_ID='missing-seed' \
 	"$PROVISION_SCRIPT" create
 
+# Dropping either explicit input must fail before even calling the provisioner.
+for missing_wcs_input in archive manifest; do
+	expect_failure env \
+		TMPDIR="$TEST_ROOT" \
+		E2E_TRANSITION_RUN_ID="wcs-missing-$missing_wcs_input" \
+		E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+		E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
+		E2E_TRANSITION_WCS_ARCHIVE="$( [[ "$missing_wcs_input" == archive ]] || printf '%s' "$SEED_MANIFEST" )" \
+		E2E_TRANSITION_WCS_MANIFEST="$( [[ "$missing_wcs_input" == manifest ]] || printf '%s' "$SEED_MANIFEST" )" \
+		E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
+		"$PROVISION_SCRIPT" create
+	grep -Fq 'WCS archive and manifest must be supplied together' "$TEST_ROOT/expected-error"
+	test ! -e "$TEST_ROOT/woopayments-native-transition-wcs-missing-$missing_wcs_input"
+done
+
 allocation="$(
 	env \
 		TMPDIR="$TEST_ROOT" \
 		E2E_TRANSITION_RUN_ID='run-safe' \
 		E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
 		E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
-		E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
+		E2E_TRANSITION_STORE_PROVISIONER="$PROFILE_PROVISIONER" \
+		E2E_FAKE_PROFILE_LOG="$PROFILE_LOG" \
+		E2E_FAKE_PROFILE_TARGET="$FIXTURES/fake-transition-provisioner.sh" \
 		"$PROVISION_SCRIPT" create
 )"
 
@@ -89,7 +117,10 @@ node -e '
 	if ( ! /^[a-f0-9]{64}$/.test( allocation.teardown_token ) ) process.exit( 1 );
 	if ( ! allocation.allocation_path.endsWith( "/allocation.json" ) ) process.exit( 1 );
 	if ( "rollback_receipt" in allocation ) process.exit( 1 );
+	if ( "optional_artifacts" in allocation ) process.exit( 1 );
+	if ( Object.keys( allocation ).sort().join( "," ) !== "account_id,allocation_path,base_url,plugin_version,run_id,seed_hash,store_id,teardown_token,workspace,wpcom_blog_id" ) process.exit( 1 );
 ' "$allocation"
+test "$(< "$PROFILE_LOG")" = $'plan 10.5.0\ncreate 10.5.0'
 receipt_path="$TEST_ROOT/woopayments-native-transition-run-safe/rollback-receipt"
 test -f "$receipt_path"
 node -e '
@@ -102,6 +133,79 @@ if grep -Eq 'transition-store-test|transition\.localhost' "$receipt_path"; then
 	echo 'Rollback receipt must remain opaque.' >&2
 	exit 1
 fi
+
+profile_11_log="$TEST_ROOT/profile-11.log"
+profile_11_allocation="$(
+	env \
+		TMPDIR="$TEST_ROOT" \
+		E2E_TRANSITION_RUN_ID='run-profile-11' \
+		E2E_TRANSITION_SEED_PROFILE='11.1.0' \
+		E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+		E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
+		E2E_TRANSITION_STORE_PROVISIONER="$PROFILE_PROVISIONER" \
+		E2E_FAKE_PROFILE_LOG="$profile_11_log" \
+		E2E_FAKE_PROFILE_TARGET="$FIXTURES/fake-transition-provisioner.sh" \
+		E2E_FAKE_TRANSITION_PLUGIN_VERSION='11.1.0' \
+		"$PROVISION_SCRIPT" create
+)"
+profile_11_allocation_path="$TEST_ROOT/woopayments-native-transition-run-profile-11/allocation.json"
+profile_11_seed_hash="$(shasum -a 256 "$FIXTURES/transition-seed.tar.gz" | awk '{ print $1 }')"
+node -e '
+	const { readFileSync } = require( "node:fs" );
+	const returned = JSON.parse( process.argv[ 1 ] );
+	const stored = JSON.parse( readFileSync( process.argv[ 2 ], "utf8" ) );
+	for ( const allocation of [ returned, stored ] ) {
+		if ( allocation.plugin_version !== "11.1.0" ) process.exit( 1 );
+		if ( allocation.seed_hash !== process.argv[ 3 ] ) process.exit( 1 );
+	}
+' "$profile_11_allocation" "$profile_11_allocation_path" "$profile_11_seed_hash"
+test "$(< "$profile_11_log")" = $'plan 11.1.0\ncreate 11.1.0'
+
+cp "$SEED_MANIFEST" "$TEST_ROOT/wcs.json"
+cp "$FIXTURES/transition-seed.tar.gz" "$TEST_ROOT/wcs.tar.gz"
+chmod 0444 "$TEST_ROOT/wcs.json" "$TEST_ROOT/wcs.tar.gz"
+for invalid_wcs_input in missing symlink writable; do
+	invalid_wcs_path="$TEST_ROOT/wcs-$invalid_wcs_input"
+	if [[ "$invalid_wcs_input" == symlink ]]; then ln -s "$TEST_ROOT/wcs.tar.gz" "$invalid_wcs_path"; fi
+	if [[ "$invalid_wcs_input" == writable ]]; then cp "$TEST_ROOT/wcs.tar.gz" "$invalid_wcs_path"; chmod 0644 "$invalid_wcs_path"; fi
+	expect_failure env TMPDIR="$TEST_ROOT" E2E_TRANSITION_RUN_ID="wcs-$invalid_wcs_input" \
+		E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
+		E2E_TRANSITION_WCS_ARCHIVE="$invalid_wcs_path" E2E_TRANSITION_WCS_MANIFEST="$TEST_ROOT/wcs.json" \
+		E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" "$PROVISION_SCRIPT" create
+	test ! -e "$TEST_ROOT/woopayments-native-transition-wcs-$invalid_wcs_input"
+done
+wcs_allocation="$(env TMPDIR="$TEST_ROOT" E2E_TRANSITION_RUN_ID=wcs-paired \
+	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
+	E2E_TRANSITION_WCS_ARCHIVE="$TEST_ROOT/wcs.tar.gz" E2E_TRANSITION_WCS_MANIFEST="$TEST_ROOT/wcs.json" \
+	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" "$PROVISION_SCRIPT" create)"
+node -e '
+	const assert = require("node:assert/strict");
+	const fs = require("node:fs");
+	const crypto = require("node:crypto");
+	const allocation = JSON.parse(process.argv[1]);
+	const saved = JSON.parse(fs.readFileSync(allocation.allocation_path));
+	assert.deepEqual(saved, allocation);
+	assert.deepEqual(Object.keys(allocation.optional_artifacts), ["woocommerce-subscriptions"]);
+	const artifact = allocation.optional_artifacts["woocommerce-subscriptions"];
+	assert.equal(artifact.plugin, "woocommerce-subscriptions");
+	assert.equal(artifact.plugin_version, "9.2.0");
+	assert.equal(artifact.source_commit, "4008f7f515f5ea76eea4d9149514b8c1774e51ba");
+	assert.equal(artifact.archive_sha256, crypto.createHash("sha256").update(fs.readFileSync(process.argv[2])).digest("hex"));
+	assert.ok(!JSON.stringify(artifact).includes(process.argv[3]));
+' "$wcs_allocation" "$TEST_ROOT/wcs.tar.gz" "$TEST_ROOT"
+for mismatch in missing extra hash; do
+	expect_failure env TMPDIR="$TEST_ROOT" E2E_TRANSITION_RUN_ID="wcs-mismatch-$mismatch" \
+		E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
+		E2E_TRANSITION_WCS_ARCHIVE="$TEST_ROOT/wcs.tar.gz" E2E_TRANSITION_WCS_MANIFEST="$TEST_ROOT/wcs.json" \
+		E2E_FAKE_WCS_MISMATCH="$mismatch" E2E_FAKE_PROVISIONER_LOG="$TEST_ROOT/wcs-rollback.log" \
+		E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" "$PROVISION_SCRIPT" create
+	test ! -e "$TEST_ROOT/woopayments-native-transition-wcs-mismatch-$mismatch"
+done
+test "$(wc -l < "$TEST_ROOT/wcs-rollback.log" | tr -d ' ')" = 3
+env TMPDIR="$TEST_ROOT" E2E_FAKE_PROVISIONER_LOG="$TEST_ROOT/wcs-destroy.log" \
+	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" "$PROVISION_SCRIPT" destroy --allocation "$wcs_allocation"
+test -f "$TEST_ROOT/wcs.json"
+test -f "$TEST_ROOT/wcs.tar.gz"
 
 tampered="$(
 	node -e '

@@ -2,12 +2,45 @@
 
 set -euo pipefail
 
+optional_artifacts=''
+if [[ "${1:-}" == plan || "${1:-}" == create ]]; then
+	optional_artifacts="$(node -e '
+		const { createHash } = require("node:crypto");
+		const { readFileSync } = require("node:fs");
+		const args = process.argv.slice(2);
+		const archiveIndex = args.indexOf("--wcs-archive");
+		const manifestIndex = args.indexOf("--wcs-manifest");
+		if (archiveIndex < 0 && manifestIndex < 0) process.exit(0);
+		if (archiveIndex < 0 || manifestIndex < 0) process.exit(1);
+		const hash = path => createHash("sha256").update(readFileSync(path)).digest("hex");
+		const identity = {
+			plugin: "woocommerce-subscriptions", plugin_version: "9.2.0",
+			source_commit: "4008f7f515f5ea76eea4d9149514b8c1774e51ba", source_date_epoch: 1788854213,
+			archive_format: "tar.gz", archive_profile: "wcs-transition-v1", directory_mode: "0555", file_mode: "0444",
+			archive_sha256: hash(args[archiveIndex + 1]), manifest_sha256: hash(args[manifestIndex + 1]),
+			canonical_tar_sha256: "a".repeat(64), canonical_tree_sha256: "b".repeat(64),
+		};
+		if (process.argv[1] === "create") {
+			const expected = JSON.parse(process.env.E2E_TRANSITION_EXPECTED_WCS_IDENTITY);
+			if (expected["woocommerce-subscriptions"].archive_sha256 !== identity.archive_sha256) process.exit(1);
+			if (process.env.E2E_FAKE_WCS_MISMATCH === "missing") process.exit(0);
+			if (process.env.E2E_FAKE_WCS_MISMATCH === "extra") identity.host_path = args[archiveIndex + 1];
+			if (process.env.E2E_FAKE_WCS_MISMATCH === "hash") identity.canonical_tree_sha256 = "c".repeat(64);
+		}
+		process.stdout.write(JSON.stringify({"woocommerce-subscriptions": identity}));
+	' "$@")"
+fi
+
 case "${1:-}" in
 	plan)
-		printf '{"base_url":"%s","store_id":"%s","plugin_version":"%s"}\n' \
+		node -e '
+			const result = {base_url: process.argv[1], store_id: process.argv[2], plugin_version: process.argv[3]};
+			if (process.argv[4]) result.optional_artifacts = JSON.parse(process.argv[4]);
+			console.log(JSON.stringify(result));
+		' \
 			"${E2E_FAKE_TRANSITION_BASE_URL:-http://transition.localhost:8899}" \
 			"${E2E_FAKE_TRANSITION_STORE_ID:-transition-store-test}" \
-			"${E2E_FAKE_TRANSITION_PLUGIN_VERSION:-10.5.0}"
+			"${E2E_FAKE_TRANSITION_PLUGIN_VERSION:-10.5.0}" "$optional_artifacts"
 		;;
 	create)
 		workspace=''
@@ -101,8 +134,9 @@ case "${1:-}" in
 			} else if ( process.argv[ 4 ] === "invalid" ) {
 				result.rollback_receipt = "invalid receipt";
 			}
+			if ( process.argv[ 7 ] ) result.optional_artifacts = JSON.parse( process.argv[ 7 ] );
 			process.stdout.write( `${ JSON.stringify( result ) }\n` );
-		' "$actual_base_url" "$actual_store_id" "$plugin_version" "$receipt_mode" "$wpcom_blog_id" "$account_id"
+		' "$actual_base_url" "$actual_store_id" "$plugin_version" "$receipt_mode" "$wpcom_blog_id" "$account_id" "$optional_artifacts"
 		if [[ "${E2E_FAKE_CREATE_PARTIAL_FAILURE:-0}" == '1' ]]; then
 			echo 'Fake transition create failed after creating the store.' >&2
 			exit 1

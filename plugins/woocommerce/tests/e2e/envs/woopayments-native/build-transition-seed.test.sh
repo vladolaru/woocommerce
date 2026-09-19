@@ -99,6 +99,44 @@ frontend_lock_hash="$(
 	shasum -a 256 "$TEST_ROOT/tree/woocommerce-payments/package-lock.json" |
 		awk '{ print $1 }'
 )"
+composer_lock_hash="$(
+	shasum -a 256 "$TEST_ROOT/tree/woocommerce-payments/composer.lock" |
+		awk '{ print $1 }'
+)"
+
+profile_11_tree="$TEST_ROOT/profile-11-tree"
+cp -R "$TEST_ROOT/tree" "$profile_11_tree"
+sed -i.bak 's/10\.5\.0/11.1.0/g' "$profile_11_tree/woocommerce-payments/woocommerce-payments.php" "$profile_11_tree/woocommerce-payments/package.json"
+rm "$profile_11_tree/woocommerce-payments/woocommerce-payments.php.bak" "$profile_11_tree/woocommerce-payments/package.json.bak"
+printf '24.17.0\n' > "$profile_11_tree/woocommerce-payments/.nvmrc"
+node -e '
+	const { readFileSync, writeFileSync } = require( "node:fs" );
+	const path = process.argv[ 1 ];
+	const manifest = JSON.parse( readFileSync( path, "utf8" ) );
+	manifest.packageManager = "pnpm@11.13.1+sha512.b2fc7683b8a6525414e7d13e1ba28caaddde96bf66ec540bfaeb7e702b81f3e0be4d1f295edf7f9fe0396740a8dce4509c582ddf79891f4543fea32d37645f25";
+	writeFileSync( path, `${ JSON.stringify( manifest, null, "\t" ) }\n` );
+' "$profile_11_tree/woocommerce-payments/package.json"
+rm "$profile_11_tree/woocommerce-payments/package-lock.json"
+cat > "$profile_11_tree/woocommerce-payments/pnpm-lock.yaml" <<'YAML'
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+
+importers:
+  .:
+    devDependencies:
+      fake-webpack:
+        version: 5.93.0
+YAML
+profile_11_frontend_lock_hash="$(
+	shasum -a 256 "$profile_11_tree/woocommerce-payments/pnpm-lock.yaml" |
+		awk '{ print $1 }'
+)"
+profile_11_composer_lock_hash="$(
+	shasum -a 256 "$profile_11_tree/woocommerce-payments/composer.lock" |
+		awk '{ print $1 }'
+)"
 mkdir -p "$TEST_ROOT/poison-home/xdg/git"
 cat > "$TEST_ROOT/poison-home/.gitconfig" <<'CONFIG'
 [core]
@@ -134,6 +172,7 @@ run_builder() {
 		E2E_TRANSITION_NPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-npm.sh" \
 		E2E_TRANSITION_TEST_MODE=1 \
 		E2E_TRANSITION_FRONTEND_LOCK_SHA256="$frontend_lock_hash" \
+		E2E_TRANSITION_COMPOSER_LOCK_SHA256="$composer_lock_hash" \
 		E2E_FAKE_SEED_TREE="$TEST_ROOT/tree" \
 		E2E_FAKE_COMMAND_LOG="$TEST_ROOT/commands.log" \
 		E2E_FAKE_COMPOSER_SECRET='must-not-be-persisted' \
@@ -143,6 +182,111 @@ run_builder() {
 		"$@" \
 		"$BUILDER" --output-dir "$output_path"
 }
+
+run_profile_11_builder() {
+	local output_path="$1"
+	local command_log="$2"
+	local generated_mtime="$3"
+	env \
+		TMPDIR="$TEST_ROOT" \
+		E2E_TRANSITION_WCPAY_REPO="$TEST_ROOT/repository" \
+		E2E_TRANSITION_GIT_BIN="$SCRIPT_DIR/test-fixtures/bin/git" \
+		E2E_TRANSITION_ARCHIVE_GIT_BIN="$ARCHIVE_GIT_BIN" \
+		E2E_TRANSITION_GZIP_BIN="$GZIP_BIN" \
+		E2E_TRANSITION_COMPOSER_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-composer.sh" \
+		E2E_TRANSITION_NODE_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-node.sh" \
+		E2E_TRANSITION_NPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-npm.sh" \
+		E2E_TRANSITION_PNPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-frontend-pnpm.sh" \
+		E2E_TRANSITION_TEST_MODE=1 \
+		E2E_TRANSITION_FRONTEND_LOCK_SHA256="$profile_11_frontend_lock_hash" \
+		E2E_TRANSITION_COMPOSER_LOCK_SHA256="$profile_11_composer_lock_hash" \
+		E2E_FAKE_SEED_TREE="$profile_11_tree" \
+		E2E_FAKE_GIT_COMMIT='f85392666c9b543cd24dbbf903e0dbe4cb2c5cee' \
+		E2E_FAKE_COMMAND_LOG="$command_log" \
+		E2E_FAKE_NODE_VERSION='v24.17.0' \
+		E2E_FAKE_GENERATED_MTIME="$generated_mtime" \
+		E2E_FAKE_COMPOSER_SECRET='must-not-be-persisted' \
+		E2E_FAKE_PNPM_SECRET='frontend-secret-must-not-be-persisted' \
+		HOME="$TEST_ROOT/poison-home" \
+		XDG_CONFIG_HOME="$TEST_ROOT/poison-home/xdg" \
+		"$BUILDER" --profile 11.1.0 --output-dir "$output_path"
+}
+
+profile_11_commands="$TEST_ROOT/profile-11-commands.log"
+profile_11_output="$(
+	run_profile_11_builder \
+		"$TEST_ROOT/profile-11-output-one" \
+		"$profile_11_commands" \
+		'200102020202'
+)"
+profile_11_second_output="$(
+	run_profile_11_builder \
+		"$TEST_ROOT/profile-11-output-two" \
+		"$profile_11_commands" \
+		'203011111111'
+)"
+profile_11_archive_path="$(node -p 'JSON.parse(process.argv[1]).archive_path' "$profile_11_output")"
+profile_11_manifest_path="$(node -p 'JSON.parse(process.argv[1]).manifest_path' "$profile_11_output")"
+profile_11_second_archive_path="$(node -p 'JSON.parse(process.argv[1]).archive_path' "$profile_11_second_output")"
+profile_11_second_manifest_path="$(node -p 'JSON.parse(process.argv[1]).manifest_path' "$profile_11_second_output")"
+cmp "$profile_11_archive_path" "$profile_11_second_archive_path"
+cmp "$profile_11_manifest_path" "$profile_11_second_manifest_path"
+test "$(basename "$profile_11_archive_path")" = 'woocommerce-payments-11.1.0-f85392666c9b543cd24dbbf903e0dbe4cb2c5cee.tar.gz'
+test "$(basename "$profile_11_manifest_path")" = 'woocommerce-payments-11.1.0-f85392666c9b543cd24dbbf903e0dbe4cb2c5cee.json'
+profile_11_canonical_tar_hash="$(
+	"$GZIP_BIN" -cd "$profile_11_archive_path" |
+		shasum -a 256 |
+		awk '{ print $1 }'
+)"
+node -e '
+	const { createHash } = require( "node:crypto" );
+	const { readFileSync } = require( "node:fs" );
+	const manifest = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+	const archiveDigest = createHash( "sha256" ).update( readFileSync( process.argv[ 2 ] ) ).digest( "hex" );
+	const expectedBundleContents = [
+		"generated index JavaScript\n",
+		"generated index CSS\n",
+		"generated checkout JavaScript\n",
+		"generated blocks checkout JavaScript\n",
+	];
+	const expectedBundleHashes = expectedBundleContents.map( ( contents ) => createHash( "sha256" ).update( contents ).digest( "hex" ) );
+	if ( manifest.schema_version !== 2 ) process.exit( 1 );
+	if ( manifest.plugin_version !== "11.1.0" ) process.exit( 1 );
+	if ( manifest.source_commit !== "f85392666c9b543cd24dbbf903e0dbe4cb2c5cee" ) process.exit( 1 );
+	if ( manifest.archive_sha256 !== archiveDigest ) process.exit( 1 );
+	if ( manifest.canonical_tar_sha256 !== process.argv[ 5 ] ) process.exit( 1 );
+	if ( manifest.dependency_lock_sha256 !== process.argv[ 4 ] ) process.exit( 1 );
+	if ( manifest.frontend_lock_sha256 !== process.argv[ 3 ] ) process.exit( 1 );
+	if ( manifest.frontend_lock_file !== "pnpm-lock.yaml" ) process.exit( 1 );
+	if ( manifest.frontend_package_manager !== "pnpm" ) process.exit( 1 );
+	if ( manifest.frontend_package_manager_declaration !== "pnpm@11.13.1+sha512.b2fc7683b8a6525414e7d13e1ba28caaddde96bf66ec540bfaeb7e702b81f3e0be4d1f295edf7f9fe0396740a8dce4509c582ddf79891f4543fea32d37645f25" ) process.exit( 1 );
+	if ( manifest.frontend_package_manager_version !== "11.13.1" ) process.exit( 1 );
+	if ( manifest.frontend_lockfile_version !== "9.0" ) process.exit( 1 );
+	if ( manifest.frontend_node_line !== "24.17.0" ) process.exit( 1 );
+	if ( JSON.stringify( Object.keys( manifest.build_toolchain ).sort() ) !== JSON.stringify( [
+		"composer", "git", "gzip", "node", "pnpm", "zlib",
+	] ) ) process.exit( 1 );
+	if ( manifest.build_toolchain.node !== "v24.17.0" ) process.exit( 1 );
+	if ( manifest.build_toolchain.pnpm !== "11.13.1" ) process.exit( 1 );
+	if ( JSON.stringify( manifest.frontend_bundles.map( ( value ) => value.sha256 ) ) !== JSON.stringify( expectedBundleHashes ) ) process.exit( 1 );
+	if ( JSON.stringify( manifest ).includes( "must-not-be-persisted" ) ) process.exit( 1 );
+	if ( JSON.stringify( manifest ).includes( "frontend-secret-must-not-be-persisted" ) ) process.exit( 1 );
+' \
+	"$profile_11_manifest_path" \
+	"$profile_11_archive_path" \
+	"$profile_11_frontend_lock_hash" \
+	"$profile_11_composer_lock_hash" \
+	"$profile_11_canonical_tar_hash"
+grep -Fq 'pnpm install --frozen-lockfile --ignore-scripts' "$profile_11_commands"
+grep -Fq 'pnpm run build:client' "$profile_11_commands"
+if grep -Eq '^npm ' "$profile_11_commands"; then
+	echo 'The pnpm profile invoked npm.' >&2
+	exit 1
+fi
+test ! -e "$profile_11_tree/woocommerce-payments/package-lock.json"
+test ! -e "$profile_11_tree/woocommerce-payments/vendor"
+test ! -e "$profile_11_tree/woocommerce-payments/node_modules"
+test ! -e "$profile_11_tree/woocommerce-payments/dist"
 
 red_case_failed=0
 wrong_node_log="$TEST_ROOT/wrong-node-commands.log"
@@ -396,6 +540,33 @@ cp \
 	"$TEST_ROOT/original-package-lock.json" \
 	"$TEST_ROOT/tree/woocommerce-payments/package-lock.json"
 
+node -e '
+	const { readFileSync, writeFileSync } = require( "node:fs" );
+	const lock = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+	lock.lockfileVersion = 2;
+	writeFileSync( process.argv[ 1 ], `${ JSON.stringify( lock ) }\n` );
+' "$TEST_ROOT/tree/woocommerce-payments/package-lock.json"
+non_v3_frontend_lock_hash="$(
+	shasum -a 256 "$TEST_ROOT/tree/woocommerce-payments/package-lock.json" |
+		awk '{ print $1 }'
+)"
+non_v3_commands="$TEST_ROOT/non-v3-commands.log"
+if run_builder \
+	"$TEST_ROOT/non-v3-lockfile" \
+	E2E_TRANSITION_FRONTEND_LOCK_SHA256="$non_v3_frontend_lock_hash" \
+	E2E_FAKE_COMMAND_LOG="$non_v3_commands" > /dev/null 2>&1; then
+	echo 'The seed builder accepted a package-lock.json outside lockfile version 3.' >&2
+	red_case_failed=1
+fi
+if [[ -f "$non_v3_commands" ]] &&
+	grep -Eq '^composer install |^npm ci ' "$non_v3_commands"; then
+	echo 'The seed builder installed dependencies before rejecting a non-v3 package-lock.json.' >&2
+	red_case_failed=1
+fi
+cp \
+	"$TEST_ROOT/original-package-lock.json" \
+	"$TEST_ROOT/tree/woocommerce-payments/package-lock.json"
+
 if run_builder \
 	"$TEST_ROOT/partial-dist" \
 	E2E_FAKE_NPM_MODE='partial' > /dev/null 2>&1; then
@@ -573,8 +744,25 @@ done
 
 # Named profiles must be selected on the command line; the builder must never
 # infer a mutable version from the source checkout or its environment.
-if run_builder "$TEST_ROOT/implicit-profile" > /dev/null; then
-	:
+implicit_profile_commands="$TEST_ROOT/implicit-profile-commands.log"
+if run_builder \
+	"$TEST_ROOT/implicit-profile" \
+	E2E_FAKE_COMMAND_LOG="$implicit_profile_commands" > "$TEST_ROOT/implicit-profile.json"; then
+	implicit_profile_manifest="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv.at(-1))).manifest_path' "$TEST_ROOT/implicit-profile.json")"
+	node -e '
+		const manifest = JSON.parse( require( "node:fs" ).readFileSync( process.argv[ 1 ] ) );
+		if ( manifest.plugin_version !== "10.5.0" ) process.exit( 1 );
+		if ( manifest.frontend_lock_file !== "package-lock.json" ) process.exit( 1 );
+		if ( manifest.frontend_package_manager !== "npm" ) process.exit( 1 );
+		if ( manifest.frontend_package_manager_declaration !== "" ) process.exit( 1 );
+		if ( manifest.frontend_package_manager_version !== "10.2.4" ) process.exit( 1 );
+		if ( manifest.frontend_lockfile_version !== 3 ) process.exit( 1 );
+	' "$implicit_profile_manifest"
+	grep -Fq 'npm ci --ignore-scripts --no-audit --no-fund' "$implicit_profile_commands"
+	if grep -Eq '^pnpm ' "$implicit_profile_commands"; then
+		echo 'The implicit npm profile invoked pnpm.' >&2
+		exit 1
+	fi
 else
 	echo 'The default immutable 10.5.0 profile is no longer buildable.' >&2
 	exit 1

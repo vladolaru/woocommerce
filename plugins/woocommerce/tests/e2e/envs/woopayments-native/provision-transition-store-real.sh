@@ -10,11 +10,40 @@ case "$SEED_PROFILE" in
 		readonly SEED_COMMIT='a1f755fc903966387f8629f78f75976ac8d2016e'
 		readonly SEED_VERSION='10.5.0'
 		FRONTEND_LOCK_SHA256='6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1'
+		COMPOSER_LOCK_SHA256=''
+		FRONTEND_LOCK_FILE='package-lock.json'
+		FRONTEND_LOCKFILE_VERSION='3'
+		FRONTEND_NODE_LINE='20.11'
+		FRONTEND_NODE_VERSION='v20.11.1'
+		FRONTEND_PACKAGE_MANAGER='npm'
+		FRONTEND_PACKAGE_MANAGER_DECLARATION=''
+		FRONTEND_PACKAGE_MANAGER_VERSION='10.2.4'
 		;;
 	10.4.0)
 		readonly SEED_COMMIT='e2a6e70f21ff5827a9e67abeb4bc44c9ccabeb3d'
 		readonly SEED_VERSION='10.4.0'
 		FRONTEND_LOCK_SHA256='934b317f080dc26760be7364ef64a748b33f6055e03e7accec37f23461ae7bb7'
+		COMPOSER_LOCK_SHA256=''
+		FRONTEND_LOCK_FILE='package-lock.json'
+		FRONTEND_LOCKFILE_VERSION='3'
+		FRONTEND_NODE_LINE='20.11'
+		FRONTEND_NODE_VERSION='v20.11.1'
+		FRONTEND_PACKAGE_MANAGER='npm'
+		FRONTEND_PACKAGE_MANAGER_DECLARATION=''
+		FRONTEND_PACKAGE_MANAGER_VERSION='10.2.4'
+		;;
+	11.1.0)
+		readonly SEED_COMMIT='f85392666c9b543cd24dbbf903e0dbe4cb2c5cee'
+		readonly SEED_VERSION='11.1.0'
+		FRONTEND_LOCK_SHA256='646d5dd3abdd6ff5fab9dd61d5d3e99d327f954201c318faaa97ef963919ac9e'
+		COMPOSER_LOCK_SHA256='6081f229ace8deef9607ebfbf841576a5582b7d6a21b83a69f39dcf4def48c7c'
+		FRONTEND_LOCK_FILE='pnpm-lock.yaml'
+		FRONTEND_LOCKFILE_VERSION='9.0'
+		FRONTEND_NODE_LINE='24.17.0'
+		FRONTEND_NODE_VERSION='v24.17.0'
+		FRONTEND_PACKAGE_MANAGER='pnpm'
+		FRONTEND_PACKAGE_MANAGER_DECLARATION='pnpm@11.13.1+sha512.b2fc7683b8a6525414e7d13e1ba28caaddde96bf66ec540bfaeb7e702b81f3e0be4d1f295edf7f9fe0396740a8dce4509c582ddf79891f4543fea32d37645f25'
+		FRONTEND_PACKAGE_MANAGER_VERSION='11.13.1'
 		;;
 	*)
 		echo "Unknown immutable transition seed profile: $SEED_PROFILE" >&2
@@ -25,7 +54,15 @@ if [[ "${E2E_TRANSITION_TEST_MODE:-0}" == '1' ]] &&
 	[[ -n "${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-}" ]]; then
 	FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256}"
 fi
-readonly FRONTEND_LOCK_SHA256
+if [[ "${E2E_TRANSITION_TEST_MODE:-0}" == '1' ]] &&
+	[[ -n "${E2E_TRANSITION_COMPOSER_LOCK_SHA256:-}" ]]; then
+	COMPOSER_LOCK_SHA256="${E2E_TRANSITION_COMPOSER_LOCK_SHA256}"
+fi
+readonly FRONTEND_LOCK_SHA256 COMPOSER_LOCK_SHA256
+readonly FRONTEND_LOCK_FILE FRONTEND_LOCKFILE_VERSION
+readonly FRONTEND_NODE_LINE FRONTEND_NODE_VERSION
+readonly FRONTEND_PACKAGE_MANAGER FRONTEND_PACKAGE_MANAGER_DECLARATION
+readonly FRONTEND_PACKAGE_MANAGER_VERSION
 readonly SCRIPT_DIR="$(
 	cd "$(dirname "${BASH_SOURCE[0]}")"
 	pwd -P
@@ -49,11 +86,15 @@ readonly STATE_WRITER="$SCRIPT_DIR/write-transition-state.js"
 workspace=''
 seed_archive=''
 seed_manifest=''
+wcs_archive=''
+wcs_manifest=''
+optional_artifacts=''
 run_id=''
 base_url=''
 store_id=''
 rollback_receipt_file=''
 wp_env_bin=''
+wcs_wp_env_package=''
 
 parse_arguments() {
 	while (( $# > 0 )); do
@@ -68,6 +109,14 @@ parse_arguments() {
 				;;
 			--seed-manifest)
 				seed_manifest="${2:-}"
+				shift 2
+				;;
+			--wcs-archive)
+				wcs_archive="${2:?--wcs-archive requires a path}"
+				shift 2
+				;;
+			--wcs-manifest)
+				wcs_manifest="${2:?--wcs-manifest requires a path}"
 				shift 2
 				;;
 			--run-id)
@@ -129,6 +178,219 @@ validate_wp_env_binary() {
 		return 1
 	fi
 	wp_env_bin="$resolved_wp_env_bin"
+	if [[ -n "$optional_artifacts" ]]; then
+		node -e '
+			const { realpathSync } = require("node:fs");
+			const approved = [realpathSync(process.argv[2] + "/node_modules/.bin/wp-env"), realpathSync(process.argv[3] + "/bin/wp-env")];
+			if (process.argv[5] === "1") approved.push(realpathSync(process.argv[4] + "/test-fixtures/fake-transition-pnpm.sh"));
+			if (!approved.includes(process.argv[1])) {
+				console.error("WCS wp-env executable is outside the pinned adapter boundary.");
+				process.exit(1);
+			}
+		' "$wp_env_bin" "$PLUGIN_ROOT" "$wcs_wp_env_package" "$SCRIPT_DIR" "${E2E_TRANSITION_TEST_MODE:-0}"
+	fi
+}
+
+validate_wcs() {
+	if [[ -z "$wcs_archive" && -z "$wcs_manifest" ]]; then
+		if [[ -n "${E2E_TRANSITION_EXPECTED_WCS_IDENTITY:-}" ]]; then
+			echo 'WCS create identity does not match the validated plan.' >&2
+			return 1
+		fi
+		return 0
+	fi
+	if [[ -z "$wcs_archive" || -z "$wcs_manifest" ]]; then
+		echo 'WCS archive and manifest must be supplied together.' >&2
+		return 1
+	fi
+	python3 - "$wcs_archive" "$wcs_manifest" "${1:-}" "${E2E_TRANSITION_EXPECTED_WCS_IDENTITY:-$optional_artifacts}" <<'PY'
+import gzip
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+import tarfile
+
+PLUGIN = 'woocommerce-subscriptions'
+EPOCH = 1788854213
+PACKAGES = {
+    'automattic/jetpack-constants': {'version': 'v3.0.12', 'source_reference': '672be0a51baadfc6eee0ffd3bf8e9db691a8ab27', 'dist_reference': '672be0a51baadfc6eee0ffd3bf8e9db691a8ab27'},
+    'composer/installers': {'version': 'v2.3.0', 'source_reference': '12fb2dfe5e16183de69e784a7b84046c43d97e8e', 'dist_reference': '12fb2dfe5e16183de69e784a7b84046c43d97e8e'},
+}
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+def read_input(name):
+    descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'rb') as stream:
+        metadata = os.fstat(stream.fileno())
+        require(stat.S_ISREG(metadata.st_mode) and metadata.st_uid == os.getuid()
+            and not metadata.st_mode & 0o222, 'Inputs must be caller-owned regular read-only nonsymlink files.')
+        return stream.read()
+
+try:
+    archive_bytes = read_input(sys.argv[1])
+    manifest_bytes = read_input(sys.argv[2])
+    manifest = json.loads(manifest_bytes)
+    fixed = {'schema_version': 1, 'plugin': PLUGIN, 'plugin_version': '9.2.0',
+        'source_commit': '4008f7f515f5ea76eea4d9149514b8c1774e51ba', 'source_date_epoch': EPOCH,
+        'archive_format': 'tar.gz', 'archive_profile': 'wcs-transition-v1',
+        'main_file': PLUGIN + '.php', 'main_file_version': '9.2.0', 'production_composer_packages': PACKAGES}
+    require(isinstance(manifest, dict) and all(manifest.get(key) == value for key, value in fixed.items()), 'Manifest differs from the approved WCS identity.')
+    require(manifest.get('archive_sha256') == sha(archive_bytes), 'Archive SHA-256 mismatch.')
+    require(archive_bytes[:10] == bytes.fromhex('1f8b08000000000002ff'), 'Noncanonical gzip header.')
+    canonical = gzip.decompress(archive_bytes)
+    require(manifest.get('canonical_tar_sha256') == sha(canonical), 'Canonical tar SHA-256 mismatch.')
+    files = {}
+    directories = set()
+    names = []
+    records = []
+    rebuilt = io.BytesIO()
+    with tarfile.open(fileobj=io.BytesIO(canonical), mode='r:') as archive, tarfile.open(fileobj=rebuilt, mode='w', format=tarfile.PAX_FORMAT) as output:
+        for member in archive:
+            name = member.name
+            parts = name.split('/')
+            require(name and '\\' not in name and not any(ord(c) < 32 or ord(c) == 127 for c in name)
+                and all(part not in ('', '.', '..', '.git') for part in parts)
+                and parts[0] == PLUGIN, 'Unsafe path or unexpected WCS archive root.')
+            require(name not in names and (member.isdir() or member.isreg()), 'Duplicate, symlink, or special archive member.')
+            require(len(parts) > 1 or member.isdir(), 'WCS root must be a directory.')
+            names.append(name)
+            info = tarfile.TarInfo(name)
+            info.mtime = EPOCH
+            if member.isdir():
+                directories.add(name)
+                info.type = tarfile.DIRTYPE
+                info.mode = 0o555
+                output.addfile(info)
+            else:
+                content = archive.extractfile(member).read()
+                files[name] = content
+                info.mode = 0o444
+                info.size = len(content)
+                output.addfile(info, io.BytesIO(content))
+                records.append(sha(content) + '  ' + name + '\n')
+    require(names == sorted(names) and PLUGIN in directories, 'Noncanonical archive ordering or missing root.')
+    require(all('/'.join(name.split('/')[:-1]) in directories for name in names if '/' in name), 'Missing or conflicting parent directory.')
+    require(rebuilt.getvalue() == canonical, 'Archive metadata, modes, or tar encoding are not canonical.')
+    require(type(manifest.get('file_count')) is int and manifest['file_count'] == len(files)
+        and manifest.get('canonical_tree_sha256') == sha(''.join(records).encode()), 'Canonical tree identity mismatch.')
+    main = files.get(PLUGIN + '/' + PLUGIN + '.php', b'').decode()
+    require(re.findall(r'^\s*\*\s*Version:\s*(\S+)\s*$', main, re.MULTILINE) == ['9.2.0'], 'WCS main-file version mismatch.')
+    installed = json.loads(files.get(PLUGIN + '/vendor/composer/installed.json', b'{}'))
+    observed = {}
+    for package in installed.get('packages', []):
+        name = package['name']
+        require(name not in observed, 'Duplicate installed Composer package.')
+        observed[name] = {'version': package['version'], 'source_reference': package['source']['reference'], 'dist_reference': package['dist']['reference']}
+    require(observed == PACKAGES, 'Installed Composer packages differ from the approved WCS identity.')
+    identity = {key: manifest[key] for key in ('plugin', 'plugin_version', 'source_commit', 'source_date_epoch', 'archive_format', 'archive_profile', 'archive_sha256', 'canonical_tar_sha256', 'canonical_tree_sha256')}
+    identity['manifest_sha256'] = sha(manifest_bytes)
+    identity['directory_mode'] = '0555'
+    identity['file_mode'] = '0444'
+    optional = {PLUGIN: identity}
+    require(not sys.argv[4] or json.loads(sys.argv[4]) == optional, 'WCS create identity does not match the validated plan.')
+    if sys.argv[3]:
+        destination = Path(sys.argv[3])
+        require(not destination.exists() and not destination.is_symlink(), 'WCS extraction requires an unused private destination.')
+        destination.mkdir(mode=0o700)
+        for name in sorted(directories):
+            (destination / name).mkdir(mode=0o700)
+        for name, content in files.items():
+            with (destination / name).open('xb') as stream:
+                stream.write(content)
+            (destination / name).chmod(0o444)
+            if os.environ.get('E2E_TRANSITION_TEST_MODE') == '1' and os.environ.get('E2E_TRANSITION_WCS_FAIL_POINT') == 'during-extraction':
+                raise ValueError('Injected failure during WCS extraction.')
+        for name in sorted(directories, reverse=True):
+            (destination / name).chmod(0o555)
+    if not sys.argv[3]:
+        print(json.dumps(optional, sort_keys=True, separators=(',', ':')))
+except (OSError, ValueError, KeyError, TypeError, AttributeError, EOFError, tarfile.TarError) as error:
+    sys.exit('WCS artifact validation failed: ' + str(error))
+PY
+}
+
+prepare_wcs_compose_adapter() {
+	node -e '
+		const fs = require("node:fs"), path = require("node:path"), Module = require("node:module");
+		const packageRoot = path.dirname(require.resolve("@wordpress/env/package.json", {paths: [process.argv[1]]}));
+		const source = path.resolve(process.argv[2], "wcs/woocommerce-subscriptions");
+		const filename = process.argv[2] + "/wcs-compose-preload.cjs";
+		const content = "const packageRoot = " + JSON.stringify(packageRoot) + ";\nconst source = " + JSON.stringify(source) + ";\n" + fs.readFileSync(0, "utf8");
+		const adapter = new Module(filename, module);
+		adapter.filename = filename;
+		adapter.paths = module.paths;
+		adapter._compile(content, filename);
+		const environment = {mappings: {"wp-content/plugins/woocommerce-subscriptions": {path: source}}, pluginSources: [], themeSources: [], port: 19086};
+		for (const testsEnvironment of [false, true]) adapter.exports({workDirectoryPath: process.argv[2] + "/wp-env-home", testsEnvironment, env: {development: environment, tests: environment}});
+		if (process.argv[3] === "write") fs.writeFileSync(filename, content, {flag: "wx", mode: 0o400});
+		else process.stdout.write(packageRoot);
+	' "$PLUGIN_ROOT" "$workspace" "$1" <<'JS'
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const packageInfo = JSON.parse(fs.readFileSync(packageRoot + '/package.json'));
+assert.equal(packageInfo.name, '@wordpress/env', 'Unexpected WCS wp-env package');
+assert.equal(packageInfo.version, '11.9.0', 'Unsupported WCS wp-env version');
+for (const [file, expected] of Object.entries({
+    'lib/runtime/docker/build-docker-compose-config.js': 'eb5f583d621f8b237befb9e1eb7505441570226120b2d9c4d3e94a137491099e',
+    'lib/runtime/docker/docker-config.js': '6079197094c9139efb49694bdc7e72c9d3760b611648bf644ad0625420f18100',
+    'lib/cli.js': 'c676f587fd1a7c4b4029f1d55fbb4f02d027f12db792a7bfc521668b1133f47c',
+})) {
+    assert.equal(crypto.createHash('sha256').update(fs.readFileSync(packageRoot + '/' + file)).digest('hex'), expected, 'Unsupported WCS wp-env module: ' + file);
+}
+const builderPath = require.resolve(packageRoot + '/lib/runtime/docker/build-docker-compose-config.js');
+const original = require(builderPath);
+assert.equal(typeof original, 'function', 'Unexpected WCS compose builder export');
+const target = '/var/www/html/wp-content/plugins/woocommerce-subscriptions';
+const mount = source + ':' + target;
+assert.ok(!source.includes(':') && !/[\r\n]/.test(source), 'Unsafe WCS mount source');
+function buildReadOnlyCompose(config) {
+    assert.ok(config && typeof config.testsEnvironment === 'boolean', 'Ambiguous WCS tests environment');
+    const environments = config.testsEnvironment ? ['development', 'tests'] : ['development'];
+    for (const name of environments) assert.equal(config.env?.[name]?.mappings?.['wp-content/plugins/woocommerce-subscriptions']?.path, source, 'Unexpected WCS mapping source');
+    const compose = original(config);
+    const expectedServices = ['mysql', 'wordpress', 'cli', 'phpmyadmin'];
+    if (config.testsEnvironment) expectedServices.push('tests-mysql', 'tests-wordpress', 'tests-cli', 'tests-phpmyadmin');
+    assert.deepEqual(Object.keys(compose.services).sort(), expectedServices.sort(), 'Unexpected WCS compose service shape');
+    for (const [name, service] of Object.entries(compose.services)) {
+        const ownsWcs = ['wordpress', 'cli', 'tests-wordpress', 'tests-cli'].includes(name);
+        if (name.endsWith('phpmyadmin')) {
+            assert.equal(service.volumes, undefined, 'Unexpected WCS phpmyadmin volumes');
+            continue;
+        }
+        assert.ok(Array.isArray(service.volumes) && service.volumes.every(value => typeof value === 'string'), 'Unexpected WCS volume shape');
+        let matches = 0;
+        service.volumes = service.volumes.map(volume => {
+            const [host, container] = volume.split(':');
+            const normalizedHost = path.resolve(host);
+            const normalizedSource = path.resolve(source);
+            const exposesSource = path.isAbsolute(host) && (normalizedHost === normalizedSource || normalizedHost.startsWith(normalizedSource + '/') || normalizedSource.startsWith(normalizedHost + '/'));
+            if (exposesSource || container === target || container?.startsWith(target + '/')) {
+                assert.ok(ownsWcs && volume === mount, 'Unexpected WCS alias, nested mount, or access mode');
+                matches++;
+                return mount + ':ro';
+            }
+            return volume;
+        });
+        assert.equal(matches, ownsWcs ? 1 : 0, 'Missing or duplicate WCS service mount: ' + name);
+    }
+    return compose;
+}
+require.cache[builderPath].exports = buildReadOnlyCompose;
+module.exports = buildReadOnlyCompose;
+JS
 }
 
 validate_seed() {
@@ -160,7 +422,11 @@ validate_seed() {
 			.update( readFileSync( process.argv[ 2 ] ) )
 			.digest( "hex" );
 		const toolchain = manifest.build_toolchain;
-		const toolchainKeys = [ "composer", "git", "gzip", "node", "npm", "zlib" ];
+		const packageManager = process.argv[ 13 ];
+		const toolchainKeys = [ "composer", "git", "gzip", "node", packageManager, "zlib" ].sort();
+		const expectedLockfileVersion = packageManager === "npm"
+			? Number( process.argv[ 10 ] )
+			: process.argv[ 10 ];
 		const hasExactToolchain =
 			toolchain !== null &&
 			typeof toolchain === "object" &&
@@ -174,8 +440,8 @@ validate_seed() {
 					toolchain[ key ].length <= 256 &&
 					!/[\u0000-\u001f\u007f]/u.test( toolchain[ key ] )
 			) &&
-			toolchain.node === "v20.11.1" &&
-			toolchain.npm === "10.2.4";
+			toolchain.node === process.argv[ 12 ] &&
+			toolchain[ packageManager ] === process.argv[ 15 ];
 		if (
 			manifest.schema_version !== 2 ||
 			manifest.plugin !== "woocommerce-payments" ||
@@ -188,11 +454,16 @@ validate_seed() {
 			manifest.archive_format !== "tar.gz" ||
 			! hasExactToolchain ||
 			! /^[a-f0-9]{64}$/.test( manifest.dependency_lock_sha256 ) ||
+			( process.argv[ 8 ] && manifest.dependency_lock_sha256 !== process.argv[ 8 ] ) ||
 			! Number.isSafeInteger( manifest.production_package_count ) ||
 			manifest.production_package_count <= 0 ||
 			manifest.frontend_lock_sha256 !== process.argv[ 5 ] ||
-			manifest.frontend_lockfile_version !== 3 ||
-			manifest.frontend_node_line !== "20.11" ||
+			manifest.frontend_lock_file !== process.argv[ 9 ] ||
+			manifest.frontend_package_manager !== packageManager ||
+			manifest.frontend_package_manager_declaration !== process.argv[ 14 ] ||
+			manifest.frontend_package_manager_version !== process.argv[ 15 ] ||
+			manifest.frontend_lockfile_version !== expectedLockfileVersion ||
+			manifest.frontend_node_line !== process.argv[ 11 ] ||
 			manifest.frontend_build_script !== "build:client" ||
 			JSON.stringify( manifest.executable_seed_files ) !== JSON.stringify( [
 				"vendor/autoload_packages.php",
@@ -226,7 +497,15 @@ validate_seed() {
 		"$SEED_COMMIT" \
 		"$FRONTEND_LOCK_SHA256" \
 		"$canonical_tar_hash" \
-		"$ARCHIVE_PROFILE"
+		"$ARCHIVE_PROFILE" \
+		"$COMPOSER_LOCK_SHA256" \
+		"$FRONTEND_LOCK_FILE" \
+		"$FRONTEND_LOCKFILE_VERSION" \
+		"$FRONTEND_NODE_LINE" \
+		"$FRONTEND_NODE_VERSION" \
+		"$FRONTEND_PACKAGE_MANAGER" \
+		"$FRONTEND_PACKAGE_MANAGER_DECLARATION" \
+		"$FRONTEND_PACKAGE_MANAGER_VERSION"
 
 	if ! tar -tzf "$seed_archive" |
 		grep -Fqx 'woocommerce-payments/woocommerce-payments.php'; then
@@ -253,7 +532,7 @@ validate_seed() {
 		'woocommerce-payments/composer.lock'
 		'woocommerce-payments/.nvmrc'
 		'woocommerce-payments/package.json'
-		'woocommerce-payments/package-lock.json'
+		"woocommerce-payments/$FRONTEND_LOCK_FILE"
 		'woocommerce-payments/vendor/autoload_packages.php'
 		'woocommerce-payments/vendor/autoload.php'
 		'woocommerce-payments/vendor/composer/installed.php'
@@ -288,9 +567,7 @@ validate_seed() {
 		const frontendManifest = JSON.parse(
 			readFileSync( process.argv[ 4 ], "utf8" )
 		);
-		const frontendLock = JSON.parse(
-			readFileSync( process.argv[ 5 ], "utf8" )
-		);
+		const frontendLockContents = readFileSync( process.argv[ 5 ], "utf8" );
 		const installed = Array.isArray( installedDocument )
 			? installedDocument
 			: installedDocument.packages;
@@ -318,18 +595,29 @@ validate_seed() {
 			JSON.stringify( normalize( lock.packages ) ) !==
 				JSON.stringify( normalize( installed ) ) ||
 			frontendLockHash !== manifest.frontend_lock_sha256 ||
-			frontendLock.lockfileVersion !== manifest.frontend_lockfile_version ||
-			frontendLock.name !== "woocommerce-payments" ||
-			frontendLock.version !== process.argv[ 8 ] ||
-			frontendLock.packages?.[ "" ]?.name !== "woocommerce-payments" ||
-			frontendLock.packages?.[ "" ]?.version !== process.argv[ 8 ] ||
 			frontendManifest.name !== "woocommerce-payments" ||
 			frontendManifest.version !== process.argv[ 8 ] ||
 			frontendManifest.scripts?.[ "build:client" ] !==
 				"NODE_ENV=production webpack" ||
+			( frontendManifest.packageManager ?? "" ) !== process.argv[ 10 ] ||
 			readFileSync( process.argv[ 6 ], "utf8" ).trim() !==
 				manifest.frontend_node_line
 		) process.exit( 1 );
+		if ( process.argv[ 9 ] === "npm" ) {
+			const frontendLock = JSON.parse( frontendLockContents );
+			if (
+				frontendLock.lockfileVersion !== manifest.frontend_lockfile_version ||
+				frontendLock.name !== "woocommerce-payments" ||
+				frontendLock.version !== process.argv[ 8 ] ||
+				frontendLock.packages?.[ "" ]?.name !== "woocommerce-payments" ||
+				frontendLock.packages?.[ "" ]?.version !== process.argv[ 8 ]
+			) process.exit( 1 );
+		} else if (
+			frontendLockContents.split( /\r?\n/u, 1 )[ 0 ] !==
+				`lockfileVersion: ${ String.fromCharCode( 39 ) }${ manifest.frontend_lockfile_version }${ String.fromCharCode( 39 ) }`
+		) {
+			process.exit( 1 );
+		}
 		for ( const bundle of manifest.frontend_bundles ) {
 			const digest = createHash( "sha256" )
 				.update( readFileSync( join( process.argv[ 7 ], bundle.path ) ) )
@@ -341,10 +629,12 @@ validate_seed() {
 		"$validation_root/woocommerce-payments/composer.lock" \
 		"$validation_root/woocommerce-payments/vendor/composer/installed.json" \
 		"$validation_root/woocommerce-payments/package.json" \
-		"$validation_root/woocommerce-payments/package-lock.json" \
+		"$validation_root/woocommerce-payments/$FRONTEND_LOCK_FILE" \
 		"$validation_root/woocommerce-payments/.nvmrc" \
 		"$validation_root/woocommerce-payments" \
-		"$SEED_VERSION"; then
+		"$SEED_VERSION" \
+		"$FRONTEND_PACKAGE_MANAGER" \
+		"$FRONTEND_PACKAGE_MANAGER_DECLARATION"; then
 		rm -rf "$validation_root"
 		echo 'Transition seed executable dependencies or frontend bundles do not match its safe manifest.' >&2
 		exit 1
@@ -380,8 +670,9 @@ emit_plan() {
 			base_url: `http://transition-${ process.argv[ 1 ] }.localhost:${ process.argv[ 2 ] }`,
 			store_id: `woopayments-native-transition-${ process.argv[ 1 ] }`,
 			plugin_version: process.argv[ 3 ],
+			...( process.argv[ 4 ] ? { optional_artifacts: JSON.parse( process.argv[ 4 ] ) } : {} ),
 		} ) }\n` );
-	' "$run_id" "$port" "$SEED_VERSION"
+	' "$run_id" "$port" "$SEED_VERSION" "$optional_artifacts"
 }
 
 validate_base_store_identity() {
@@ -490,6 +781,12 @@ write_initial_state() {
 			wp_env_destroyed: false,
 			phase: "prepared",
 		};
+		if ( process.argv[ 14 ] ) {
+			state.optional_artifacts = JSON.parse( process.argv[ 14 ] );
+			state.wcs_extraction_phase = "pending";
+			state.wcs_mount_mode = "ro";
+			state.wcs_wp_env_version = "11.9.0";
+		}
 		const stateDescriptor = openSync( process.argv[ 1 ], "wx", 0o600 );
 		try {
 			writeFileSync( stateDescriptor, `${ JSON.stringify( state ) }\n` );
@@ -516,7 +813,8 @@ write_initial_state() {
 		"$workspace/wp-env-home" \
 		"$port" \
 		"$port_lease_path" \
-		"$port_lease_candidate_path"
+		"$port_lease_candidate_path" \
+		"$optional_artifacts"
 }
 
 update_state() {
@@ -911,7 +1209,13 @@ release_port_lease() {
 wp_env() {
 	(
 		cd "$workspace/store"
-		WP_ENV_HOME="$workspace/wp-env-home" "$wp_env_bin" "$@"
+		if [[ -n "$optional_artifacts" ]] &&
+			! { [[ "${E2E_TRANSITION_TEST_MODE:-0}" == 1 ]] && [[ "$wp_env_bin" == "$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" ]]; }; then
+			WP_ENV_HOME="$workspace/wp-env-home" node --require "$workspace/wcs-compose-preload.cjs" \
+				-e 'require(process.argv[1])().parse(process.argv.slice(2));' "$wcs_wp_env_package/lib/cli.js" "$@"
+		else
+			WP_ENV_HOME="$workspace/wp-env-home" "$wp_env_bin" "$@"
+		fi
 	)
 }
 
@@ -1364,6 +1668,7 @@ emit_create_result() {
 		if ( process.argv[ 12 ] ) result.network_final_site_states = JSON.parse( process.argv[ 12 ] );
 		if ( process.argv[ 13 ] ) result.network_mixed_site_states = JSON.parse( process.argv[ 13 ] );
 		if ( process.argv[ 14 ] ) result.network_excluded_site_states = JSON.parse( process.argv[ 14 ] );
+		if ( process.argv[ 15 ] ) result.optional_artifacts = JSON.parse( process.argv[ 15 ] );
 		process.stdout.write( `${ JSON.stringify( result ) }\n` );
 	' \
 		"$base_url" \
@@ -1379,7 +1684,8 @@ emit_create_result() {
 		"$(state_field network_secondary_site_id 2> /dev/null || true)" \
 		"$(state_field network_final_site_states 2> /dev/null || true)" \
 		"$(state_field network_mixed_site_states 2> /dev/null || true)" \
-		"$(state_field network_excluded_site_states 2> /dev/null || true)"
+		"$(state_field network_excluded_site_states 2> /dev/null || true)" \
+		"$optional_artifacts"
 }
 
 write_durable_receipt() {
@@ -1485,6 +1791,16 @@ create_store() {
 	}
 	trap on_create_error ERR
 	acquire_port_lease
+	if [[ -n "$optional_artifacts" ]]; then
+		update_state wcs_extraction_phase extracting
+		validate_wcs "$workspace/wcs"
+		update_state wcs_extraction_phase extracted
+		if [[ "${E2E_TRANSITION_TEST_MODE:-0}" == 1 && "${E2E_TRANSITION_WCS_FAIL_POINT:-}" == after-extraction ]]; then
+			echo 'Injected failure after WCS extraction.' >&2
+			false
+		fi
+		prepare_wcs_compose_adapter write
+	fi
 
 	local core_repo="${E2E_TRANSITION_CORE_REPO:-$PLUGIN_ROOT}"
 	local dev_tools="${E2E_TRANSITION_DEV_TOOLS_REPO:-$PROJECTS_ROOT/woocommerce-payments-dev-tools}"
@@ -1518,6 +1834,7 @@ create_store() {
 				"wp-content/mu-plugins/woopayments-native-runtime.php": process.argv[ 8 ],
 			},
 		};
+		if ( process.argv[ 9 ] ) config.mappings[ "wp-content/plugins/woocommerce-subscriptions" ] = process.argv[ 9 ];
 		writeFileSync( process.argv[ 1 ], `${ JSON.stringify( config, null, 2 ) }\n`, {
 			mode: 0o600,
 			flag: "wx",
@@ -1530,7 +1847,8 @@ create_store() {
 		"$workspace/seed/woocommerce-payments" \
 		"$dev_tools" \
 		"$PLUGIN_ROOT/tests/e2e/bin" \
-		"$PLUGIN_ROOT/tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php"
+		"$PLUGIN_ROOT/tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php" \
+		"$( [[ -z "$optional_artifacts" ]] || printf '%s' "$workspace/wcs/woocommerce-subscriptions" )"
 
 	update_state wp_env_start_attempted true boolean
 	update_state phase 'wp-env-start-attempted'
@@ -1740,6 +2058,10 @@ destroy_store() {
 	base_url="$(state_field base_url)"
 	store_id="$(state_field store_id)"
 	run_id="$(state_field run_id)"
+	optional_artifacts="$(state_field optional_artifacts 2> /dev/null || true)"
+	if [[ -n "$optional_artifacts" ]]; then
+		wcs_wp_env_package="$(prepare_wcs_compose_adapter check)"
+	fi
 	require_safe_identity
 	validate_base_store_identity
 	validate_wp_env_binary
@@ -1766,6 +2088,9 @@ destroy_store() {
 	if [[ -d "$workspace/seed" && ! -L "$workspace/seed" ]]; then
 		find "$workspace/seed" -type d -exec chmod u+w {} +
 	fi
+	if [[ -d "$workspace/wcs" && ! -L "$workspace/wcs" ]]; then
+		find "$workspace/wcs" -type d -exec chmod u+w {} +
+	fi
 	release_port_lease
 	update_state phase 'destroyed'
 }
@@ -1777,12 +2102,16 @@ parse_arguments "$@"
 case "$action" in
 	plan)
 		require_safe_identity
+		optional_artifacts="$(validate_wcs)"
+		if [[ -n "$optional_artifacts" ]]; then wcs_wp_env_package="$(prepare_wcs_compose_adapter check)"; fi
 		validate_seed
 		validate_wp_env_binary
 		emit_plan
 		;;
 	create)
 		require_safe_identity
+		optional_artifacts="$(validate_wcs)"
+		if [[ -n "$optional_artifacts" ]]; then wcs_wp_env_package="$(prepare_wcs_compose_adapter check)"; fi
 		validate_seed
 		create_store
 		;;

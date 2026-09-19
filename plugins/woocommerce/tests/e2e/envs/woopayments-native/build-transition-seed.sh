@@ -3,9 +3,6 @@
 set -euo pipefail
 umask 077
 
-readonly FRONTEND_NODE_LINE='20.11'
-readonly FRONTEND_NODE_VERSION='v20.11.1'
-readonly FRONTEND_NPM_VERSION='10.2.4'
 readonly ARCHIVE_PROFILE='git-sha1-fixed-pax+gzip-n9-v1'
 readonly SCRIPT_DIR="$(
 	cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -22,6 +19,7 @@ readonly GZIP_BIN="${E2E_TRANSITION_GZIP_BIN:-gzip}"
 readonly COMPOSER_BIN="${E2E_TRANSITION_COMPOSER_BIN:-composer}"
 readonly NODE_BIN="${E2E_TRANSITION_NODE_BIN:-node}"
 readonly NPM_BIN="${E2E_TRANSITION_NPM_BIN:-npm}"
+readonly PNPM_BIN="${E2E_TRANSITION_PNPM_BIN:-pnpm}"
 readonly TEMP_ROOT="${TMPDIR:?TMPDIR is required}"
 
 output_dir=''
@@ -48,11 +46,43 @@ case "$seed_profile" in
 		readonly SEED_COMMIT='a1f755fc903966387f8629f78f75976ac8d2016e'
 		readonly SEED_VERSION='10.5.0'
 		FRONTEND_LOCK_SHA256='6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1'
+		COMPOSER_LOCK_SHA256=''
+		FRONTEND_LOCK_FILE='package-lock.json'
+		FRONTEND_LOCKFILE_VERSION='3'
+		FRONTEND_NODE_LINE='20.11'
+		FRONTEND_NODE_VERSION='v20.11.1'
+		FRONTEND_PACKAGE_MANAGER='npm'
+		FRONTEND_PACKAGE_MANAGER_BIN="$NPM_BIN"
+		FRONTEND_PACKAGE_MANAGER_DECLARATION=''
+		FRONTEND_PACKAGE_MANAGER_VERSION='10.2.4'
 		;;
 	10.4.0)
 		readonly SEED_COMMIT='e2a6e70f21ff5827a9e67abeb4bc44c9ccabeb3d'
 		readonly SEED_VERSION='10.4.0'
 		FRONTEND_LOCK_SHA256='934b317f080dc26760be7364ef64a748b33f6055e03e7accec37f23461ae7bb7'
+		COMPOSER_LOCK_SHA256=''
+		FRONTEND_LOCK_FILE='package-lock.json'
+		FRONTEND_LOCKFILE_VERSION='3'
+		FRONTEND_NODE_LINE='20.11'
+		FRONTEND_NODE_VERSION='v20.11.1'
+		FRONTEND_PACKAGE_MANAGER='npm'
+		FRONTEND_PACKAGE_MANAGER_BIN="$NPM_BIN"
+		FRONTEND_PACKAGE_MANAGER_DECLARATION=''
+		FRONTEND_PACKAGE_MANAGER_VERSION='10.2.4'
+		;;
+	11.1.0)
+		readonly SEED_COMMIT='f85392666c9b543cd24dbbf903e0dbe4cb2c5cee'
+		readonly SEED_VERSION='11.1.0'
+		FRONTEND_LOCK_SHA256='646d5dd3abdd6ff5fab9dd61d5d3e99d327f954201c318faaa97ef963919ac9e'
+		COMPOSER_LOCK_SHA256='6081f229ace8deef9607ebfbf841576a5582b7d6a21b83a69f39dcf4def48c7c'
+		FRONTEND_LOCK_FILE='pnpm-lock.yaml'
+		FRONTEND_LOCKFILE_VERSION='9.0'
+		FRONTEND_NODE_LINE='24.17.0'
+		FRONTEND_NODE_VERSION='v24.17.0'
+		FRONTEND_PACKAGE_MANAGER='pnpm'
+		FRONTEND_PACKAGE_MANAGER_BIN="$PNPM_BIN"
+		FRONTEND_PACKAGE_MANAGER_DECLARATION='pnpm@11.13.1+sha512.b2fc7683b8a6525414e7d13e1ba28caaddde96bf66ec540bfaeb7e702b81f3e0be4d1f295edf7f9fe0396740a8dce4509c582ddf79891f4543fea32d37645f25'
+		FRONTEND_PACKAGE_MANAGER_VERSION='11.13.1'
 		;;
 	*)
 		echo "Unknown immutable transition seed profile: $seed_profile" >&2
@@ -64,7 +94,15 @@ if [[ "${E2E_TRANSITION_TEST_MODE:-0}" == '1' ]] &&
 	[[ -n "${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-}" ]]; then
 	FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256}"
 fi
-readonly FRONTEND_LOCK_SHA256
+if [[ "${E2E_TRANSITION_TEST_MODE:-0}" == '1' ]] &&
+	[[ -n "${E2E_TRANSITION_COMPOSER_LOCK_SHA256:-}" ]]; then
+	COMPOSER_LOCK_SHA256="${E2E_TRANSITION_COMPOSER_LOCK_SHA256}"
+fi
+readonly FRONTEND_LOCK_SHA256 COMPOSER_LOCK_SHA256
+readonly FRONTEND_LOCK_FILE FRONTEND_LOCKFILE_VERSION
+readonly FRONTEND_NODE_LINE FRONTEND_NODE_VERSION
+readonly FRONTEND_PACKAGE_MANAGER FRONTEND_PACKAGE_MANAGER_BIN
+readonly FRONTEND_PACKAGE_MANAGER_DECLARATION FRONTEND_PACKAGE_MANAGER_VERSION
 
 if [[ -z "$output_dir" ]]; then
 	echo 'build-transition-seed.sh requires --output-dir.' >&2
@@ -197,7 +235,7 @@ plugin_file="$plugin_root/woocommerce-payments.php"
 composer_lock="$plugin_root/composer.lock"
 node_version_file="$plugin_root/.nvmrc"
 package_manifest="$plugin_root/package.json"
-frontend_lock="$plugin_root/package-lock.json"
+frontend_lock="$plugin_root/$FRONTEND_LOCK_FILE"
 if [[ ! -f "$plugin_file" ]] ||
 	! grep -Eq "^[[:space:]]*\\*[[:space:]]*Version:[[:space:]]*${SEED_VERSION//./\\.}[[:space:]]*$" "$plugin_file"; then
 	echo "The approved seed tree does not identify WooPayments $SEED_VERSION." >&2
@@ -232,9 +270,9 @@ if [[ "$executing_node_version" != "$FRONTEND_NODE_VERSION" ]]; then
 	echo "Transition frontend build requires Node ${FRONTEND_NODE_VERSION#v}; found ${executing_node_version:-no executable version}." >&2
 	exit 1
 fi
-executing_npm_version="$("$NPM_BIN" --version 2> /dev/null || true)"
-if [[ "$executing_npm_version" != "$FRONTEND_NPM_VERSION" ]]; then
-	echo "Transition frontend build requires npm $FRONTEND_NPM_VERSION; found ${executing_npm_version:-no executable version}." >&2
+executing_frontend_package_manager_version="$("$FRONTEND_PACKAGE_MANAGER_BIN" --version 2> /dev/null || true)"
+if [[ "$executing_frontend_package_manager_version" != "$FRONTEND_PACKAGE_MANAGER_VERSION" ]]; then
+	echo "Transition frontend build requires $FRONTEND_PACKAGE_MANAGER $FRONTEND_PACKAGE_MANAGER_VERSION; found ${executing_frontend_package_manager_version:-no executable version}." >&2
 	exit 1
 fi
 if ! composer_version_output="$("$COMPOSER_BIN" --version 2>&1)"; then
@@ -262,22 +300,41 @@ if [[ "$frontend_lock_hash" != "$FRONTEND_LOCK_SHA256" ]]; then
 	echo 'The approved seed frontend lock does not match the pinned commit provenance.' >&2
 	exit 1
 fi
+dependency_lock_hash="$(shasum -a 256 "$composer_lock" | awk '{ print $1 }')"
+if [[ -n "$COMPOSER_LOCK_SHA256" && "$dependency_lock_hash" != "$COMPOSER_LOCK_SHA256" ]]; then
+	echo 'The approved seed Composer lock does not match the pinned commit provenance.' >&2
+	exit 1
+fi
 if ! "$NODE_BIN" -e '
 	const { readFileSync } = require( "node:fs" );
 	const manifest = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
-	const lock = JSON.parse( readFileSync( process.argv[ 2 ], "utf8" ) );
-	const root = lock.packages?.[ "" ];
 	if (
 		manifest.name !== "woocommerce-payments" ||
 		manifest.version !== process.argv[ 3 ] ||
 		manifest.scripts?.[ "build:client" ] !== "NODE_ENV=production webpack" ||
+		( manifest.packageManager ?? "" ) !== process.argv[ 4 ]
+	) process.exit( 1 );
+' "$package_manifest" "$frontend_lock" "$SEED_VERSION" "$FRONTEND_PACKAGE_MANAGER_DECLARATION"; then
+	echo "The approved seed frontend metadata does not match WooPayments $SEED_VERSION." >&2
+	exit 1
+fi
+if [[ "$FRONTEND_PACKAGE_MANAGER" == 'npm' ]] && ! "$NODE_BIN" -e '
+	const { readFileSync } = require( "node:fs" );
+	const lock = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+	const root = lock.packages?.[ "" ];
+	if (
 		lock.name !== "woocommerce-payments" ||
-		lock.version !== process.argv[ 3 ] ||
+		lock.version !== process.argv[ 2 ] ||
 		lock.lockfileVersion !== 3 ||
 		root?.name !== "woocommerce-payments" ||
-		root?.version !== process.argv[ 3 ]
+		root?.version !== process.argv[ 2 ]
 	) process.exit( 1 );
-' "$package_manifest" "$frontend_lock" "$SEED_VERSION"; then
+' "$frontend_lock" "$SEED_VERSION"; then
+	echo "The approved seed frontend metadata does not match WooPayments $SEED_VERSION." >&2
+	exit 1
+fi
+if [[ "$FRONTEND_PACKAGE_MANAGER" == 'pnpm' ]] &&
+	! grep -Eq "^lockfileVersion:[[:space:]]*['\"]?${FRONTEND_LOCKFILE_VERSION//./\\.}['\"]?[[:space:]]*$" "$frontend_lock"; then
 	echo "The approved seed frontend metadata does not match WooPayments $SEED_VERSION." >&2
 	exit 1
 fi
@@ -291,20 +348,40 @@ fi
 	--no-ansi \
 	--optimize-autoloader > /dev/null
 
-if ! (
-	cd "$plugin_root"
-	"$NPM_BIN" ci --ignore-scripts --no-audit --no-fund
-) > /dev/null 2>&1; then
-	echo 'Locked transition frontend dependency installation failed.' >&2
-	exit 1
-fi
-if ! (
-	cd "$plugin_root"
-	"$NPM_BIN" run --ignore-scripts build:client
-) > /dev/null 2>&1; then
-	echo 'Pinned transition frontend production build failed.' >&2
-	exit 1
-fi
+case "$FRONTEND_PACKAGE_MANAGER" in
+	npm)
+		if ! (
+			cd "$plugin_root"
+			"$FRONTEND_PACKAGE_MANAGER_BIN" ci --ignore-scripts --no-audit --no-fund
+		) > /dev/null 2>&1; then
+			echo 'Locked transition frontend dependency installation failed.' >&2
+			exit 1
+		fi
+		if ! (
+			cd "$plugin_root"
+			"$FRONTEND_PACKAGE_MANAGER_BIN" run --ignore-scripts build:client
+		) > /dev/null 2>&1; then
+			echo 'Pinned transition frontend production build failed.' >&2
+			exit 1
+		fi
+		;;
+	pnpm)
+		if ! (
+			cd "$plugin_root"
+			"$FRONTEND_PACKAGE_MANAGER_BIN" install --frozen-lockfile --ignore-scripts
+		) > /dev/null 2>&1; then
+			echo 'Locked transition frontend dependency installation failed.' >&2
+			exit 1
+		fi
+		if ! (
+			cd "$plugin_root"
+			"$FRONTEND_PACKAGE_MANAGER_BIN" run build:client
+		) > /dev/null 2>&1; then
+			echo 'Pinned transition frontend production build failed.' >&2
+			exit 1
+		fi
+		;;
+esac
 rm -rf "$plugin_root/node_modules"
 validate_seed_tree
 
@@ -362,7 +439,6 @@ production_package_count="$(
 		"$composer_lock" \
 		"$extracted/woocommerce-payments/vendor/composer/installed.json"
 )"
-dependency_lock_hash="$(shasum -a 256 "$composer_lock" | awk '{ print $1 }')"
 readonly -a FRONTEND_BUNDLES=(
 	'dist/index.js'
 	'dist/index.css'
@@ -464,13 +540,17 @@ archive_hash="$(shasum -a 256 "$archive_path" | awk '{ print $1 }')"
 			git: process.argv[ 16 ],
 			gzip: process.argv[ 17 ],
 			node: process.argv[ 18 ],
-			npm: process.argv[ 19 ],
+			[ process.argv[ 22 ] ]: process.argv[ 19 ],
 			zlib: process.argv[ 20 ],
 		},
 		dependency_lock_sha256: process.argv[ 5 ],
 		production_package_count: Number( process.argv[ 6 ] ),
 		frontend_lock_sha256: process.argv[ 7 ],
-		frontend_lockfile_version: 3,
+		frontend_lock_file: process.argv[ 21 ],
+		frontend_package_manager: process.argv[ 22 ],
+		frontend_package_manager_declaration: process.argv[ 23 ],
+		frontend_package_manager_version: process.argv[ 19 ],
+		frontend_lockfile_version: process.argv[ 22 ] === "npm" ? Number( process.argv[ 24 ] ) : process.argv[ 24 ],
 		frontend_node_line: process.argv[ 8 ],
 		frontend_build_script: "build:client",
 		executable_seed_files: [
@@ -510,8 +590,12 @@ archive_hash="$(shasum -a 256 "$archive_path" | awk '{ print $1 }')"
 	"$archive_git_version" \
 	"$gzip_version" \
 	"$executing_node_version" \
-	"$executing_npm_version" \
-	"$zlib_version"
+	"$executing_frontend_package_manager_version" \
+	"$zlib_version" \
+	"$FRONTEND_LOCK_FILE" \
+	"$FRONTEND_PACKAGE_MANAGER" \
+	"$FRONTEND_PACKAGE_MANAGER_DECLARATION" \
+	"$FRONTEND_LOCKFILE_VERSION"
 chmod 0444 "$archive_path" "$manifest_path"
 
 "$NODE_BIN" -e '

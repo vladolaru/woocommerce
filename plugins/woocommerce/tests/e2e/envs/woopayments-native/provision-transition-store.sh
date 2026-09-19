@@ -4,6 +4,7 @@ set -euo pipefail
 
 readonly ACTION="${1:-}"
 shift || true
+readonly E2E_TRANSITION_SEED_PROFILE="${E2E_TRANSITION_SEED_PROFILE:-10.5.0}"
 
 ROLLBACK_ARMED=0
 ROLLBACK_PROVISIONER=''
@@ -179,6 +180,37 @@ validate_rollback_receipt_file() {
 	' "$receipt_path"
 }
 
+optional_artifact_identity() {
+	node -e '
+		const assert = require( "node:assert/strict" );
+		const { createHash } = require( "node:crypto" );
+		const { readFileSync } = require( "node:fs" );
+		const result = JSON.parse( process.argv[ 1 ] );
+		if ( ! process.argv[ 2 ] ) {
+			assert.equal( result.optional_artifacts, undefined );
+			process.exit( 0 );
+		}
+		const artifacts = result.optional_artifacts;
+		assert.deepEqual( Object.keys( artifacts ), [ "woocommerce-subscriptions" ] );
+		const artifact = artifacts[ "woocommerce-subscriptions" ];
+		const fixed = {
+			plugin: "woocommerce-subscriptions", plugin_version: "9.2.0",
+			source_commit: "4008f7f515f5ea76eea4d9149514b8c1774e51ba", source_date_epoch: 1788854213,
+			archive_format: "tar.gz", archive_profile: "wcs-transition-v1",
+			directory_mode: "0555", file_mode: "0444",
+		};
+		const digests = [ "archive_sha256", "manifest_sha256", "canonical_tar_sha256", "canonical_tree_sha256" ];
+		assert.deepEqual( Object.keys( artifact ).sort(), [ ...Object.keys( fixed ), ...digests ].sort() );
+		for ( const [ key, value ] of Object.entries( fixed ) ) assert.equal( artifact[ key ], value );
+		for ( const key of digests ) assert.match( artifact[ key ], /^[a-f0-9]{64}$/ );
+		for ( const [ key, path ] of [ [ "archive_sha256", process.argv[ 2 ] ], [ "manifest_sha256", process.argv[ 3 ] ] ] ) {
+			assert.equal( artifact[ key ], createHash( "sha256" ).update( readFileSync( path ) ).digest( "hex" ) );
+		}
+		const sorted = Object.fromEntries( Object.entries( artifact ).sort( ( a, b ) => a[ 0 ].localeCompare( b[ 0 ] ) ) );
+		process.stdout.write( JSON.stringify( { "woocommerce-subscriptions": sorted } ) );
+	' "$1" "${E2E_TRANSITION_WCS_ARCHIVE:-}" "${E2E_TRANSITION_WCS_MANIFEST:-}"
+}
+
 create_store() {
 	readonly RUN_ID="${E2E_TRANSITION_RUN_ID:?E2E_TRANSITION_RUN_ID is required}"
 	readonly SEED_ARCHIVE="${E2E_TRANSITION_SEED_ARCHIVE:?E2E_TRANSITION_SEED_ARCHIVE is required}"
@@ -190,6 +222,23 @@ create_store() {
 	require_command node
 	require_command shasum
 	require_command openssl
+	local optional_arguments=()
+	if [[ -n "${E2E_TRANSITION_WCS_ARCHIVE:-}" || -n "${E2E_TRANSITION_WCS_MANIFEST:-}" ]]; then
+		if [[ -z "${E2E_TRANSITION_WCS_ARCHIVE:-}" || -z "${E2E_TRANSITION_WCS_MANIFEST:-}" ]]; then
+			echo 'WCS archive and manifest must be supplied together.' >&2
+			exit 1
+		fi
+		node -e '
+			const { lstatSync } = require( "node:fs" );
+			for ( const path of process.argv.slice( 1 ) ) {
+				const stat = lstatSync( path );
+				if ( ! stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid() || ( stat.mode & 0o222 ) ) {
+					throw Error( "WCS inputs must be caller-owned regular read-only nonsymlink files." );
+				}
+			}
+		' "$E2E_TRANSITION_WCS_ARCHIVE" "$E2E_TRANSITION_WCS_MANIFEST"
+		optional_arguments=( --wcs-archive "$E2E_TRANSITION_WCS_ARCHIVE" --wcs-manifest "$E2E_TRANSITION_WCS_MANIFEST" )
+	fi
 
 	if [[ ! -f "$SEED_ARCHIVE" ]]; then
 		echo "Immutable transition seed archive does not exist: $SEED_ARCHIVE" >&2
@@ -217,12 +266,15 @@ create_store() {
 
 	local planned
 	planned="$(
-		"$PROVISIONER" plan \
+		env E2E_TRANSITION_SEED_PROFILE="$E2E_TRANSITION_SEED_PROFILE" "$PROVISIONER" plan \
 			--workspace "$WORKSPACE" \
 			--seed-archive "$SEED_ARCHIVE" \
 			--seed-manifest "$SEED_MANIFEST" \
-			--run-id "$RUN_ID"
+			--run-id "$RUN_ID" \
+			${optional_arguments[@]+"${optional_arguments[@]}"}
 	)"
+	local planned_artifacts
+	planned_artifacts="$(optional_artifact_identity "$planned")"
 	local base_url
 	local store_id
 	local plugin_version
@@ -244,13 +296,15 @@ create_store() {
 	local create_status
 	set +e
 	created="$(
-		"$PROVISIONER" create \
+		env E2E_TRANSITION_SEED_PROFILE="$E2E_TRANSITION_SEED_PROFILE" \
+			E2E_TRANSITION_EXPECTED_WCS_IDENTITY="$planned_artifacts" "$PROVISIONER" create \
 			--workspace "$WORKSPACE" \
 			--seed-archive "$SEED_ARCHIVE" \
 			--seed-manifest "$SEED_MANIFEST" \
 			--run-id "$RUN_ID" \
 			--base-url "$base_url" \
-				--store-id "$store_id"
+			--store-id "$store_id" \
+			${optional_arguments[@]+"${optional_arguments[@]}"}
 	)"
 	create_status=$?
 	set -e
@@ -297,6 +351,12 @@ create_store() {
 		echo 'Transition provisioner result does not exactly match its validated plan.' >&2
 		exit 1
 	fi
+	local created_artifacts
+	created_artifacts="$(optional_artifact_identity "$created")"
+	if [[ "$created_artifacts" != "$planned_artifacts" ]]; then
+		echo 'Transition optional artifact result does not exactly match its validated plan.' >&2
+		exit 1
+	fi
 
 	local seed_hash
 	local teardown_token
@@ -324,6 +384,7 @@ create_store() {
 			workspace: process.argv[ 9 ],
 			allocation_path: process.argv[ 10 ],
 		};
+		if ( process.argv[ 11 ] ) allocation.optional_artifacts = JSON.parse( process.argv[ 11 ] );
 		const json = `${ JSON.stringify( allocation ) }\n`;
 		const allocationFd = openSync(
 			allocation.allocation_path,
@@ -343,7 +404,7 @@ create_store() {
 			closeSync( workspaceFd );
 		}
 		process.stdout.write( json );
-	' "$base_url" "$store_id" "$seed_hash" "$plugin_version" "$wpcom_blog_id" "$account_id" "$teardown_token" "$RUN_ID" "$WORKSPACE" "$ALLOCATION_PATH"
+	' "$base_url" "$store_id" "$seed_hash" "$plugin_version" "$wpcom_blog_id" "$account_id" "$teardown_token" "$RUN_ID" "$WORKSPACE" "$ALLOCATION_PATH" "$planned_artifacts"
 	)"
 	ROLLBACK_ARMED=0
 	WORKSPACE_CLEANUP_ARMED=0

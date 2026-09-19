@@ -264,6 +264,10 @@ node -e '
 		dependency_lock_sha256: process.argv[ 3 ],
 		production_package_count: 2,
 		frontend_lock_sha256: process.argv[ 4 ],
+		frontend_lock_file: "package-lock.json",
+		frontend_package_manager: "npm",
+		frontend_package_manager_declaration: "",
+		frontend_package_manager_version: "10.2.4",
 		frontend_lockfile_version: 3,
 		frontend_node_line: "20.11",
 		frontend_build_script: "build:client",
@@ -328,7 +332,84 @@ node -e '
 	if ( plan.base_url !== "http://transition-real-run.localhost:19091" ) process.exit( 1 );
 	if ( plan.store_id !== "woopayments-native-transition-real-run" ) process.exit( 1 );
 	if ( plan.plugin_version !== "10.5.0" ) process.exit( 1 );
+	if ( "optional_artifacts" in plan ) process.exit( 1 );
 ' "$plan"
+
+# A tiny canonical artifact exercises the same bytes and manifest contract as the release.
+python3 - "$TEST_ROOT" <<'PY'
+import gzip, hashlib, io, json, pathlib, tarfile
+root = pathlib.Path(__import__('sys').argv[1])
+slug = 'woocommerce-subscriptions'
+packages = {
+    'automattic/jetpack-constants': {'version': 'v3.0.12', 'source_reference': '672be0a51baadfc6eee0ffd3bf8e9db691a8ab27', 'dist_reference': '672be0a51baadfc6eee0ffd3bf8e9db691a8ab27'},
+    'composer/installers': {'version': 'v2.3.0', 'source_reference': '12fb2dfe5e16183de69e784a7b84046c43d97e8e', 'dist_reference': '12fb2dfe5e16183de69e784a7b84046c43d97e8e'},
+}
+files = {slug + '/' + slug + '.php': b'<?php\n/**\n * Plugin Name: WooCommerce Subscriptions\n * Version: 9.2.0\n */\n',
+    slug + '/vendor/composer/installed.json': json.dumps({'packages': [dict(name=name, version=p['version'], source={'reference': p['source_reference']}, dist={'reference': p['dist_reference']}) for name, p in packages.items()]}).encode()}
+sha = lambda value: hashlib.sha256(value).hexdigest()
+def artifact(name, mutation=None):
+    content = files.copy()
+    if mutation == 'header': content[slug + '/' + slug + '.php'] = content[slug + '/' + slug + '.php'].replace(b'9.2.0', b'9.1.0')
+    if mutation in ('escape', 'absolute', 'git', 'root', 'symlink', 'hardlink', 'fifo', 'duplicate'):
+        content[{'escape': slug + '/../escaped', 'absolute': '/escaped', 'git': slug + '/.git/config', 'root': 'other/file', 'symlink': slug + '/link', 'hardlink': slug + '/hard', 'fifo': slug + '/fifo', 'duplicate': slug + '/duplicate'}[mutation]] = b'bad'
+    data = io.BytesIO()
+    records = []
+    with tarfile.open(fileobj=data, mode='w', format=tarfile.PAX_FORMAT) as tar:
+        directories = {slug, slug + '/vendor', slug + '/vendor/composer'}
+        for path in sorted(directories | set(content)):
+            info = tarfile.TarInfo(path); info.mtime = 1788854213; info.mode = 0o555 if path in directories else 0o444
+            if path in directories: info.type = tarfile.DIRTYPE; tar.addfile(info)
+            else:
+                if path.endswith('/link'): info.type = tarfile.SYMTYPE; info.linkname = '/outside'
+                elif path.endswith('/hard'): info.type = tarfile.LNKTYPE; info.linkname = slug + '/' + slug + '.php'
+                elif path.endswith('/fifo'): info.type = tarfile.FIFOTYPE
+                info.size = len(content[path]) if info.isreg() else 0
+                tar.addfile(info, io.BytesIO(content[path]))
+                if mutation == 'duplicate' and path.endswith('/duplicate'): tar.addfile(info, io.BytesIO(content[path]))
+                records.append(sha(content[path]) + '  ' + path + '\n')
+    canonical = data.getvalue()
+    zipped = io.BytesIO()
+    with gzip.GzipFile(filename='', fileobj=zipped, mode='wb', compresslevel=9, mtime=0) as stream: stream.write(canonical)
+    manifest = {'schema_version': 1, 'plugin': slug, 'plugin_version': '9.2.0', 'main_file': slug + '.php', 'main_file_version': '9.2.0',
+        'source_commit': '4008f7f515f5ea76eea4d9149514b8c1774e51ba', 'source_date_epoch': 1788854213,
+        'archive_format': 'tar.gz', 'archive_profile': 'wcs-transition-v1', 'production_composer_packages': packages,
+        'archive_sha256': sha(zipped.getvalue()), 'canonical_tar_sha256': sha(canonical), 'canonical_tree_sha256': sha(''.join(records).encode()), 'file_count': len(records)}
+    if mutation in ('plugin', 'plugin_version', 'source_commit', 'archive_profile', 'main_file', 'main_file_version'): manifest[mutation] = 'wrong'
+    if mutation in ('source_date_epoch', 'file_count'): manifest[mutation] = 1
+    if mutation in ('archive_sha256', 'canonical_tar_sha256', 'canonical_tree_sha256'): manifest[mutation] = '0' * 64
+    if mutation and mutation.startswith('packages-'):
+        manifest['production_composer_packages'] = json.loads(json.dumps(packages))
+        if mutation == 'packages-missing': del manifest['production_composer_packages']['composer/installers']
+        elif mutation == 'packages-extra': manifest['production_composer_packages']['extra/package'] = packages['composer/installers']
+        else: manifest['production_composer_packages']['composer/installers']['dist_reference'] = '0' * 40
+    for suffix, value in [('.tar.gz', zipped.getvalue()), ('.json', json.dumps(manifest).encode())]:
+        path = root / (name + suffix); path.write_bytes(value); path.chmod(0o444)
+artifact('wcs')
+for mutation in ['header', 'escape', 'absolute', 'git', 'root', 'symlink', 'hardlink', 'fifo', 'duplicate', 'plugin', 'plugin_version', 'source_commit', 'source_date_epoch', 'archive_profile', 'main_file', 'main_file_version', 'file_count', 'archive_sha256', 'canonical_tar_sha256', 'canonical_tree_sha256', 'packages-missing', 'packages-extra', 'packages-reference']:
+    artifact('wcs-invalid-' + mutation, mutation)
+PY
+wcs_plan="$(
+	E2E_TRANSITION_PORT=19091 "$PROVISIONER" plan --workspace "$workspace" \
+		--seed-archive "$TEST_ROOT/seed.tar.gz" --seed-manifest "$TEST_ROOT/seed.json" --run-id real-run \
+		--wcs-archive "$TEST_ROOT/wcs.tar.gz" --wcs-manifest "$TEST_ROOT/wcs.json"
+)"
+test "$(find "$workspace" -mindepth 1 -print)" = "$before_plan"
+node -e '
+	const assert = require("node:assert/strict");
+	const fs = require("node:fs");
+	const artifact = JSON.parse(process.argv[1]).optional_artifacts["woocommerce-subscriptions"];
+	const manifest = JSON.parse(fs.readFileSync(process.argv[2]));
+	for (const key of ["plugin", "plugin_version", "source_commit", "archive_sha256", "canonical_tar_sha256", "canonical_tree_sha256"]) assert.equal(artifact[key], manifest[key]);
+' "$wcs_plan" "$TEST_ROOT/wcs.json"
+if E2E_TRANSITION_WP_ENV_BIN=/usr/bin/true E2E_TRANSITION_PORT=19091 "$PROVISIONER" plan \
+	--workspace "$workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" --seed-manifest "$TEST_ROOT/seed.json" \
+	--run-id real-run --wcs-archive "$TEST_ROOT/wcs.tar.gz" --wcs-manifest "$TEST_ROOT/wcs.json" \
+	> /dev/null 2> "$TEST_ROOT/wcs-unapproved-binary-error"; then
+	echo 'WCS plan accepted an executable outside the pinned wp-env adapter boundary.' >&2
+	exit 1
+fi
+grep -Fq 'WCS wp-env executable is outside the pinned adapter boundary' "$TEST_ROOT/wcs-unapproved-binary-error"
+test "$(find "$workspace" -mindepth 1 -print)" = "$before_plan"
 
 node - "$TEST_ROOT" <<'JS'
 const fs = require( 'node:fs' );
@@ -364,6 +445,184 @@ older_plan="$(E2E_TRANSITION_SEED_PROFILE=10.4.0 \
 	--seed-archive "$TEST_ROOT/older-seed.tar.gz" --seed-manifest "$TEST_ROOT/older-seed.json" --run-id older-profile)"
 node -e 'if ( JSON.parse( process.argv[1] ).plugin_version !== "10.4.0" ) process.exit( 1 );' "$older_plan"
 test "$(find "$workspace" -mindepth 1 -print)" = "$before_plan"
+
+profile_11_tree="$TEST_ROOT/profile-11-seed"
+cp -R "$TEST_ROOT/seed" "$profile_11_tree"
+node - "$profile_11_tree/woocommerce-payments" <<'JS'
+const fs = require( 'node:fs' );
+const root = process.argv[ 2 ];
+for ( const file of [ 'woocommerce-payments.php', 'package.json' ] ) {
+	const path = `${ root }/${ file }`;
+	fs.writeFileSync( path, fs.readFileSync( path, 'utf8' ).replaceAll( '10.5.0', '11.1.0' ) );
+}
+const manifestPath = `${ root }/package.json`;
+const manifest = JSON.parse( fs.readFileSync( manifestPath, 'utf8' ) );
+manifest.packageManager = 'pnpm@11.13.1+sha512.b2fc7683b8a6525414e7d13e1ba28caaddde96bf66ec540bfaeb7e702b81f3e0be4d1f295edf7f9fe0396740a8dce4509c582ddf79891f4543fea32d37645f25';
+fs.writeFileSync( manifestPath, `${ JSON.stringify( manifest, null, '\t' ) }\n` );
+fs.writeFileSync( `${ root }/.nvmrc`, '24.17.0\n' );
+fs.rmSync( `${ root }/package-lock.json` );
+fs.writeFileSync( `${ root }/pnpm-lock.yaml`, `lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n\nimporters:\n  .:\n    devDependencies:\n      fake-webpack:\n        version: 5.93.0\n` );
+JS
+chmod -R a-w "$profile_11_tree/woocommerce-payments"
+tar -czf "$TEST_ROOT/profile-11-seed.tar.gz" -C "$profile_11_tree" woocommerce-payments
+chmod -R u+w "$profile_11_tree/woocommerce-payments"
+profile_11_seed_hash="$(shasum -a 256 "$TEST_ROOT/profile-11-seed.tar.gz" | awk '{ print $1 }')"
+profile_11_canonical_hash="$(gzip -cd "$TEST_ROOT/profile-11-seed.tar.gz" | shasum -a 256 | awk '{ print $1 }')"
+profile_11_frontend_lock_hash="$(shasum -a 256 "$profile_11_tree/woocommerce-payments/pnpm-lock.yaml" | awk '{ print $1 }')"
+profile_11_composer_lock_hash="$(shasum -a 256 "$profile_11_tree/woocommerce-payments/composer.lock" | awk '{ print $1 }')"
+node - \
+	"$TEST_ROOT/seed.json" \
+	"$TEST_ROOT/profile-11-seed.json" \
+	"$profile_11_seed_hash" \
+	"$profile_11_canonical_hash" \
+	"$profile_11_frontend_lock_hash" \
+	"$profile_11_composer_lock_hash" <<'JS'
+const fs = require( 'node:fs' );
+const manifest = JSON.parse( fs.readFileSync( process.argv[ 2 ], 'utf8' ) );
+Object.assign( manifest, {
+	plugin_version: '11.1.0',
+	source_commit: 'f85392666c9b543cd24dbbf903e0dbe4cb2c5cee',
+	archive_sha256: process.argv[ 4 ],
+	canonical_tar_sha256: process.argv[ 5 ],
+	dependency_lock_sha256: process.argv[ 7 ],
+	frontend_lock_sha256: process.argv[ 6 ],
+	frontend_lock_file: 'pnpm-lock.yaml',
+	frontend_package_manager: 'pnpm',
+	frontend_package_manager_declaration: 'pnpm@11.13.1+sha512.b2fc7683b8a6525414e7d13e1ba28caaddde96bf66ec540bfaeb7e702b81f3e0be4d1f295edf7f9fe0396740a8dce4509c582ddf79891f4543fea32d37645f25',
+	frontend_package_manager_version: '11.13.1',
+	frontend_lockfile_version: '9.0',
+	frontend_node_line: '24.17.0',
+} );
+delete manifest.build_toolchain.npm;
+manifest.build_toolchain.node = 'v24.17.0';
+manifest.build_toolchain.pnpm = '11.13.1';
+fs.writeFileSync( process.argv[ 3 ], `${ JSON.stringify( manifest ) }\n` );
+JS
+chmod 0444 "$TEST_ROOT/profile-11-seed.tar.gz" "$TEST_ROOT/profile-11-seed.json"
+
+profile_11_plan="$(
+	env \
+		E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+		E2E_TRANSITION_COMPOSER_LOCK_SHA256="$profile_11_composer_lock_hash" \
+		E2E_TRANSITION_FRONTEND_LOCK_SHA256="$profile_11_frontend_lock_hash" \
+		E2E_TRANSITION_PORT=19092 \
+		"$PROVISIONER" plan \
+		--workspace "$workspace" \
+		--seed-archive "$TEST_ROOT/profile-11-seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/profile-11-seed.json" \
+		--run-id profile-11
+)"
+node -e '
+	const plan = JSON.parse( process.argv[ 1 ] );
+	if ( plan.plugin_version !== "11.1.0" ) process.exit( 1 );
+	if ( plan.base_url !== "http://transition-profile-11.localhost:19092" ) process.exit( 1 );
+' "$profile_11_plan"
+test "$(find "$workspace" -mindepth 1 -print)" = "$before_plan"
+
+make_invalid_profile_11_manifest() {
+	local variant="$1"
+	local variant_manifest="$TEST_ROOT/profile-11-$variant.json"
+	node - "$TEST_ROOT/profile-11-seed.json" "$variant_manifest" "$variant" <<'JS'
+const fs = require( 'node:fs' );
+const manifest = JSON.parse( fs.readFileSync( process.argv[ 2 ], 'utf8' ) );
+switch ( process.argv[ 4 ] ) {
+	case 'wrong-source-commit': manifest.source_commit = '0'.repeat( 40 ); break;
+	case 'wrong-plugin-version': manifest.plugin_version = '11.1.1'; break;
+	case 'wrong-node-line': manifest.frontend_node_line = '24.16.0'; break;
+	case 'wrong-node-version': manifest.build_toolchain.node = 'v24.16.0'; break;
+	case 'wrong-pnpm-version':
+		manifest.frontend_package_manager_version = '11.13.0';
+		manifest.build_toolchain.pnpm = '11.13.0';
+		break;
+	case 'wrong-pnpm-declaration': manifest.frontend_package_manager_declaration = 'pnpm@11.13.0'; break;
+	case 'wrong-frontend-lock-file': manifest.frontend_lock_file = 'package-lock.json'; break;
+	case 'wrong-frontend-lock-hash': manifest.frontend_lock_sha256 = '0'.repeat( 64 ); break;
+	case 'wrong-frontend-lock-version': manifest.frontend_lockfile_version = 9; break;
+	case 'wrong-composer-lock-hash': manifest.dependency_lock_sha256 = '0'.repeat( 64 ); break;
+	case 'wrong-toolchain-key-set': manifest.build_toolchain.npm = '10.2.4'; break;
+	default: process.exit( 2 );
+}
+fs.writeFileSync( process.argv[ 3 ], `${ JSON.stringify( manifest ) }\n` );
+JS
+	chmod 0444 "$variant_manifest"
+}
+
+for invalid_profile_11_manifest in \
+	wrong-source-commit \
+	wrong-plugin-version \
+	wrong-node-line \
+	wrong-node-version \
+	wrong-pnpm-version \
+	wrong-pnpm-declaration \
+	wrong-frontend-lock-file \
+	wrong-frontend-lock-hash \
+	wrong-frontend-lock-version \
+	wrong-composer-lock-hash \
+	wrong-toolchain-key-set; do
+	make_invalid_profile_11_manifest "$invalid_profile_11_manifest"
+done
+
+profile_11_package_lock_tree="$TEST_ROOT/profile-11-package-lock-tree"
+cp -R "$profile_11_tree" "$profile_11_package_lock_tree"
+rm "$profile_11_package_lock_tree/woocommerce-payments/pnpm-lock.yaml"
+sed 's/10\.5\.0/11.1.0/g' "$TEST_ROOT/seed/woocommerce-payments/package-lock.json" > \
+	"$profile_11_package_lock_tree/woocommerce-payments/package-lock.json"
+tar -czf "$TEST_ROOT/profile-11-package-lock-seed.tar.gz" -C "$profile_11_package_lock_tree" woocommerce-payments
+node - \
+	"$TEST_ROOT/profile-11-seed.json" \
+	"$TEST_ROOT/profile-11-package-lock-seed.json" \
+	"$TEST_ROOT/profile-11-package-lock-seed.tar.gz" <<'JS'
+const fs = require( 'node:fs' );
+const { createHash } = require( 'node:crypto' );
+const { gunzipSync } = require( 'node:zlib' );
+const manifest = JSON.parse( fs.readFileSync( process.argv[ 2 ], 'utf8' ) );
+const archive = fs.readFileSync( process.argv[ 4 ] );
+manifest.archive_sha256 = createHash( 'sha256' ).update( archive ).digest( 'hex' );
+manifest.canonical_tar_sha256 = createHash( 'sha256' ).update( gunzipSync( archive ) ).digest( 'hex' );
+fs.writeFileSync( process.argv[ 3 ], `${ JSON.stringify( manifest ) }\n` );
+JS
+chmod 0444 "$TEST_ROOT/profile-11-package-lock-seed.tar.gz" "$TEST_ROOT/profile-11-package-lock-seed.json"
+
+assert_profile_11_rejected_before_workspace_mutation() {
+	local variant="$1"
+	local archive="${2:-$TEST_ROOT/profile-11-seed.tar.gz}"
+	local manifest="${3:-$TEST_ROOT/profile-11-$variant.json}"
+	local rejection_workspace="$TEST_ROOT/profile-11-$variant-workspace"
+	mkdir "$rejection_workspace"
+	if env \
+		E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+		E2E_TRANSITION_COMPOSER_LOCK_SHA256="$profile_11_composer_lock_hash" \
+		E2E_TRANSITION_FRONTEND_LOCK_SHA256="$profile_11_frontend_lock_hash" \
+		E2E_TRANSITION_PORT=19092 \
+		"$PROVISIONER" plan \
+		--workspace "$rejection_workspace" \
+		--seed-archive "$archive" \
+		--seed-manifest "$manifest" \
+		--run-id "profile-11-${variant//_/-}" > /dev/null 2>&1; then
+		echo "Plan accepted the invalid 11.1.0 transition seed: $variant." >&2
+		exit 1
+	fi
+	test ! -n "$(find "$rejection_workspace" -mindepth 1 -print -quit)"
+}
+
+for invalid_profile_11_manifest in \
+	wrong-source-commit \
+	wrong-plugin-version \
+	wrong-node-line \
+	wrong-node-version \
+	wrong-pnpm-version \
+	wrong-pnpm-declaration \
+	wrong-frontend-lock-file \
+	wrong-frontend-lock-hash \
+	wrong-frontend-lock-version \
+	wrong-composer-lock-hash \
+	wrong-toolchain-key-set; do
+	assert_profile_11_rejected_before_workspace_mutation "$invalid_profile_11_manifest"
+done
+assert_profile_11_rejected_before_workspace_mutation \
+	package-lock-substituted \
+	"$TEST_ROOT/profile-11-package-lock-seed.tar.gz" \
+	"$TEST_ROOT/profile-11-package-lock-seed.json"
 
 # A profile names both artifact identities, so a manifest from either profile
 # cannot be paired with the other profile before the run workspace is touched.
@@ -632,7 +891,8 @@ run_provisioner() {
 	env \
 		TMPDIR="$SHARED_TMPDIR" \
 		E2E_TRANSITION_PORT="${E2E_TRANSITION_PORT:-19091}" \
-		E2E_TRANSITION_FRONTEND_LOCK_SHA256="$frontend_lock_hash" \
+		E2E_TRANSITION_FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-$frontend_lock_hash}" \
+		E2E_TRANSITION_COMPOSER_LOCK_SHA256="${E2E_TRANSITION_COMPOSER_LOCK_SHA256:-}" \
 		E2E_TRANSITION_CORE_REPO="$TEST_ROOT/mounts/core" \
 		E2E_TRANSITION_DEV_TOOLS_REPO="$TEST_ROOT/mounts/dev-tools" \
 		E2E_TRANSITION_WP_ENV_BIN="${E2E_TRANSITION_WP_ENV_BIN:-$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh}" \
@@ -660,6 +920,229 @@ run_provisioner() {
 		E2E_TRANSITION_TEST_KILL_AFTER_LEASE_RELEASE="${E2E_TRANSITION_TEST_KILL_AFTER_LEASE_RELEASE:-0}" \
 		"$PROVISIONER" "$@"
 }
+
+assert_wcs_rejected_before_mutation() {
+	local case_name="$1"
+	shift
+	local rejected_workspace="$TEST_ROOT/wcs-rejected-$case_name"
+	local rejected_log="$TEST_ROOT/wcs-rejected-$case_name.log"
+	mkdir "$rejected_workspace"
+	for action in plan create; do
+		if run_provisioner "$rejected_workspace" "$TEST_ROOT/wcs-rejected-runtime" "$rejected_log" \
+			"$action" --workspace "$rejected_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
+			--seed-manifest "$TEST_ROOT/seed.json" --run-id wcs-rejected \
+			--base-url http://transition-wcs-rejected.localhost:19091 --store-id woopayments-native-transition-wcs-rejected \
+			"$@" > /dev/null 2> "$TEST_ROOT/wcs-rejected-stderr"; then
+			echo "WCS $action accepted invalid artifact: $case_name" >&2
+			exit 1
+		fi
+		grep -Eq 'WCS (artifact validation failed|archive and manifest must be supplied together|create identity does not match)' "$TEST_ROOT/wcs-rejected-stderr"
+		test -z "$(find "$rejected_workspace" -mindepth 1 -print -quit)"
+		test ! -s "$rejected_log"
+	done
+}
+for invalid_wcs_manifest in "$TEST_ROOT"/wcs-invalid-*.json; do
+	assert_wcs_rejected_before_mutation "$(basename "$invalid_wcs_manifest" .json)" \
+		--wcs-archive "${invalid_wcs_manifest%.json}.tar.gz" --wcs-manifest "$invalid_wcs_manifest"
+done
+assert_wcs_rejected_before_mutation archive-only --wcs-archive "$TEST_ROOT/wcs.tar.gz"
+assert_wcs_rejected_before_mutation manifest-only --wcs-manifest "$TEST_ROOT/wcs.json"
+for input in archive manifest; do
+	if [[ "$input" == archive ]]; then source_input="$TEST_ROOT/wcs.tar.gz"; else source_input="$TEST_ROOT/wcs.json"; fi
+	ln -s "$source_input" "$TEST_ROOT/wcs-symlink-$input"
+	cp "$source_input" "$TEST_ROOT/wcs-writable-$input"
+	chmod 0644 "$TEST_ROOT/wcs-writable-$input"
+	for kind in symlink writable; do
+		archive_input="$TEST_ROOT/wcs.tar.gz"
+		manifest_input="$TEST_ROOT/wcs.json"
+		if [[ "$input" == archive ]]; then archive_input="$TEST_ROOT/wcs-$kind-$input"; else manifest_input="$TEST_ROOT/wcs-$kind-$input"; fi
+		assert_wcs_rejected_before_mutation "$kind-$input" --wcs-archive "$archive_input" --wcs-manifest "$manifest_input"
+	done
+done
+E2E_TRANSITION_EXPECTED_WCS_IDENTITY='{}' assert_wcs_rejected_before_mutation changed-since-plan \
+	--wcs-archive "$TEST_ROOT/wcs.tar.gz" --wcs-manifest "$TEST_ROOT/wcs.json"
+
+for extraction_failpoint in during-extraction after-extraction; do
+	recovery_workspace="$TEST_ROOT/wcs-$extraction_failpoint"
+	recovery_log="$TEST_ROOT/wcs-$extraction_failpoint.log"
+	mkdir "$recovery_workspace"
+	if E2E_TRANSITION_WCS_FAIL_POINT="$extraction_failpoint" E2E_TRANSITION_PORT=19086 \
+		run_provisioner "$recovery_workspace" "$TEST_ROOT/wcs-extraction-runtime" "$recovery_log" \
+		create --workspace "$recovery_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" --seed-manifest "$TEST_ROOT/seed.json" \
+		--run-id wcs-extraction --base-url http://transition-wcs-extraction.localhost:19086 --store-id woopayments-native-transition-wcs-extraction \
+		--wcs-archive "$TEST_ROOT/wcs.tar.gz" --wcs-manifest "$TEST_ROOT/wcs.json" > "$TEST_ROOT/wcs-extraction-result" 2> "$TEST_ROOT/wcs-extraction-error"; then
+		echo "WCS extraction failure injection did not fail: $extraction_failpoint" >&2
+		exit 1
+	fi
+	node -e '
+		const assert = require("node:assert/strict"), fs = require("node:fs");
+		const state = JSON.parse(fs.readFileSync(process.argv[1] + "/resource-state.json"));
+		const result = JSON.parse(fs.readFileSync(process.argv[2]));
+		assert.equal(result.status, "failed");
+		assert.equal(result.rollback_receipt, fs.readFileSync(process.argv[1] + "/rollback-receipt", "utf8"));
+		assert.deepEqual(state.optional_artifacts, JSON.parse(process.argv[3]).optional_artifacts);
+		assert.deepEqual(result.optional_artifacts, state.optional_artifacts);
+		assert.equal(state.wp_env_start_attempted, false);
+		assert.equal(state.wcs_extraction_phase, process.argv[4] === "during-extraction" ? "extracting" : "extracted");
+		assert.ok(fs.existsSync(process.argv[1] + "/wcs/woocommerce-subscriptions/vendor/composer/installed.json"));
+	' "$recovery_workspace" "$TEST_ROOT/wcs-extraction-result" "$wcs_plan" "$extraction_failpoint"
+	test ! -s "$recovery_log"
+	run_provisioner "$recovery_workspace" "$TEST_ROOT/wcs-extraction-runtime" "$recovery_log" \
+		destroy --workspace "$recovery_workspace" --rollback-receipt-file "$recovery_workspace/rollback-receipt"
+	test -w "$recovery_workspace/wcs/woocommerce-subscriptions"
+	# This is the same final owned-workspace removal performed by wrapper rollback.
+	rm -rf -- "$recovery_workspace"
+	test ! -e "$recovery_workspace"
+	test "$(mode_of "$TEST_ROOT/wcs.tar.gz")" = 444
+	test "$(mode_of "$TEST_ROOT/wcs.json")" = 444
+done
+
+wcs_workspace="$TEST_ROOT/wcs-create"
+wcs_log="$TEST_ROOT/wcs-create.log"
+wcs_runtime="$TEST_ROOT/wcs-runtime"
+mkdir "$wcs_workspace"
+wcs_before="$(shasum -a 256 "$TEST_ROOT/wcs.tar.gz" "$TEST_ROOT/wcs.json")"
+wcs_created="$(E2E_TRANSITION_PORT=19086 run_provisioner "$wcs_workspace" "$wcs_runtime" "$wcs_log" \
+	create --workspace "$wcs_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" --seed-manifest "$TEST_ROOT/seed.json" \
+	--run-id wcs-create --base-url http://transition-wcs-create.localhost:19086 --store-id woopayments-native-transition-wcs-create \
+	--wcs-archive "$TEST_ROOT/wcs.tar.gz" --wcs-manifest "$TEST_ROOT/wcs.json")"
+node -e '
+	const assert = require("node:assert/strict");
+	const fs = require("node:fs");
+	const path = require("node:path");
+	const workspace = process.argv[1];
+	const planned = JSON.parse(process.argv[2]).optional_artifacts;
+	const created = JSON.parse(process.argv[3]);
+	const state = JSON.parse(fs.readFileSync(path.join(workspace, "resource-state.json")));
+	assert.deepEqual(created.optional_artifacts, planned);
+	assert.deepEqual(state.optional_artifacts, planned);
+	assert.equal(created.rollback_receipt, fs.readFileSync(path.join(workspace, "rollback-receipt"), "utf8"));
+	const config = JSON.parse(fs.readFileSync(path.join(workspace, "store/.wp-env.json")));
+	assert.equal(config.mappings["wp-content/plugins/woocommerce-subscriptions"], workspace + "/wcs/woocommerce-subscriptions");
+	const visit = directory => {
+		assert.equal(fs.statSync(directory).mode & 0o777, 0o555);
+		for (const name of fs.readdirSync(directory)) {
+			const item = path.join(directory, name), stat = fs.lstatSync(item);
+			assert.ok(!stat.isSymbolicLink());
+			if (stat.isDirectory()) visit(item); else assert.equal(stat.mode & 0o777, 0o444);
+		}
+	};
+	visit(config.mappings["wp-content/plugins/woocommerce-subscriptions"]);
+	assert.ok(!JSON.stringify(planned).includes(process.argv[4]));
+' "$wcs_workspace" "$wcs_plan" "$wcs_created" "$TEST_ROOT"
+if grep -Eq 'plugin (activate|install).*woocommerce-subscriptions' "$wcs_log"; then
+	echo 'The provisioner activated WCS.' >&2
+	exit 1
+fi
+# Exercise the installed compose builder, not a fake mount implementation.
+node - "$wcs_workspace" "$SCRIPT_DIR/../../../.." <<'JS'
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const workspace = process.argv[2];
+const packageRoot = path.dirname(require.resolve('@wordpress/env/package.json', {paths: [process.argv[3]]}));
+const adapter = workspace + '/wcs-compose-preload.cjs';
+const builderPath = require.resolve(packageRoot + '/lib/runtime/docker/build-docker-compose-config.js');
+const originalBuilder = require(builderPath);
+if (fs.existsSync(adapter)) require(adapter);
+const builder = require(builderPath);
+const {parseSourceString} = require(packageRoot + '/lib/config/parse-source-string.js');
+const sourceConfig = parseSourceString(workspace + '/wcs/woocommerce-subscriptions', {cacheDirectoryPath: workspace});
+const source = sourceConfig.path;
+const target = '/var/www/html/wp-content/plugins/woocommerce-subscriptions';
+const environment = {mappings: {'wp-content/plugins/woocommerce-subscriptions': sourceConfig}, pluginSources: [], themeSources: [], port: 19086, configDirectoryPath: workspace + '/store'};
+const makeConfig = testsEnvironment => ({workDirectoryPath: workspace + '/wp-env-home', testsEnvironment, env: {development: environment, tests: environment}});
+for (const testsEnvironment of [false, true]) {
+    const compose = builder(makeConfig(testsEnvironment));
+    const services = testsEnvironment ? ['wordpress', 'cli', 'tests-wordpress', 'tests-cli'] : ['wordpress', 'cli'];
+    for (const service of services) {
+        const mounts = compose.services[service].volumes.filter(volume => volume.includes(target));
+        assert.deepEqual(mounts, [source + ':' + target + ':ro'], service + ' must mount WCS read-only at the Docker boundary');
+        if (testsEnvironment && process.env.E2E_TRANSITION_WCS_DOCKER_PROBE_IMAGE) {
+            const {spawnSync} = require('node:child_process');
+            const commands = [
+                'file=/var/www/html/wp-content/plugins/woocommerce-subscriptions/woocommerce-subscriptions.php',
+                'directory=/var/www/html/wp-content/plugins/woocommerce-subscriptions',
+                'test "$(id -u)" = "$(stat -c %u "$file")" || exit 10',
+                'if chmod 0644 "$file"; then exit 11; fi',
+                'if chmod 0755 "$directory"; then exit 12; fi',
+                'if printf tampered >> "$file"; then exit 13; fi',
+                'if mv "$file" "$directory/replaced.php"; then exit 14; fi',
+            ].join('\n');
+            const probe = spawnSync('docker', ['run', '--rm', '--pull', 'never', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', process.getuid() + ':' + process.getgid(), '--volume', mounts[0], '--entrypoint', 'sh', process.env.E2E_TRANSITION_WCS_DOCKER_PROBE_IMAGE, '-c', commands], {encoding: 'utf8', timeout: 30000});
+            assert.equal(probe.status, 0, service + ' Docker probe failed: ' + probe.stderr);
+            console.log('WCS Docker read-only probe passed: ' + service + ' (chmod file/directory, overwrite, replace rejected)');
+        }
+    }
+}
+assert.equal(fs.statSync(adapter).mode & 0o777, 0o400);
+const state = JSON.parse(fs.readFileSync(workspace + '/resource-state.json'));
+assert.equal(state.wcs_mount_mode, 'ro');
+assert.equal(state.wcs_wp_env_version, '11.9.0');
+for (const fault of ['missing-service', 'extra-service', 'object-volume', 'missing-volume', 'duplicate-volume', 'wrong-source', 'nested-target', 'writable-alias', 'wrong-export']) {
+    delete require.cache[require.resolve(adapter)];
+    require.cache[builderPath].exports = fault === 'wrong-export' ? {} : config => {
+        const compose = originalBuilder(config);
+        const volumes = compose.services.wordpress.volumes;
+        if (fault === 'missing-service') delete compose.services.cli;
+        if (fault === 'extra-service') compose.services.extra = {};
+        if (fault === 'object-volume') volumes.push({source, target});
+        if (fault === 'missing-volume') compose.services.wordpress.volumes = volumes.filter(volume => !volume.includes(target));
+        if (fault === 'duplicate-volume') volumes.push(source + ':' + target);
+        if (fault === 'wrong-source') compose.services.wordpress.volumes = volumes.map(volume => volume.includes(target) ? '/wrong:' + target : volume);
+        if (fault === 'nested-target') volumes.push('/wrong:' + target + '/vendor');
+        if (fault === 'writable-alias') volumes.push(source + ':/writable-wcs');
+        return compose;
+    };
+    assert.throws(() => { require(adapter); require(builderPath)(makeConfig(false)); }, /WCS/, fault);
+}
+for (const fault of ['package-version', 'module-hash']) {
+    const root = workspace + '/' + fault;
+    fs.mkdirSync(root);
+    fs.writeFileSync(root + '/package.json', JSON.stringify({name: '@wordpress/env', version: fault === 'package-version' ? '99.0.0' : '11.9.0'}));
+    if (fault === 'module-hash') {
+        fs.mkdirSync(root + '/lib/runtime/docker', {recursive: true});
+        fs.writeFileSync(root + '/lib/runtime/docker/build-docker-compose-config.js', 'module.exports = () => ({});');
+    }
+    const Module = require('node:module');
+    const testModule = new Module(workspace + '/adapter-' + fault + '.cjs', module);
+    const content = fs.readFileSync(adapter, 'utf8').replace(JSON.stringify(packageRoot), JSON.stringify(root));
+    assert.throws(() => testModule._compile(content, testModule.id), /Unsupported WCS wp-env/, fault);
+}
+JS
+run_provisioner "$wcs_workspace" "$wcs_runtime" "$wcs_log" destroy --workspace "$wcs_workspace" \
+	--rollback-receipt-file "$wcs_workspace/rollback-receipt"
+test "$(mode_of "$wcs_workspace/wcs/woocommerce-subscriptions")" = 755
+test "$wcs_before" = "$(shasum -a 256 "$TEST_ROOT/wcs.tar.gz" "$TEST_ROOT/wcs.json")"
+test "$(mode_of "$TEST_ROOT/wcs.tar.gz")" = 444
+test "$(mode_of "$TEST_ROOT/wcs.json")" = 444
+node -e '
+	const assert = require("node:assert/strict");
+	const state = JSON.parse(require("node:fs").readFileSync(process.argv[1]));
+	assert.equal(state.phase, "destroyed");
+	assert.deepEqual(state.optional_artifacts, JSON.parse(process.argv[2]).optional_artifacts);
+' "$wcs_workspace/resource-state.json" "$wcs_plan"
+
+wcs_failed_workspace="$TEST_ROOT/wcs-failed-create"
+mkdir "$wcs_failed_workspace"
+if E2E_TRANSITION_PORT=19086 E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL=1 \
+	run_provisioner "$wcs_failed_workspace" "$TEST_ROOT/wcs-failed-runtime" "$TEST_ROOT/wcs-failed.log" \
+	create --workspace "$wcs_failed_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" --seed-manifest "$TEST_ROOT/seed.json" \
+	--run-id wcs-failed --base-url http://transition-wcs-failed.localhost:19086 --store-id woopayments-native-transition-wcs-failed \
+	--wcs-archive "$TEST_ROOT/wcs.tar.gz" --wcs-manifest "$TEST_ROOT/wcs.json" > "$TEST_ROOT/wcs-failed-result" 2> /dev/null; then
+	echo 'WCS partial-create failure injection did not fail.' >&2
+	exit 1
+fi
+node -e '
+	const assert = require("node:assert/strict"), fs = require("node:fs");
+	const failed = JSON.parse(fs.readFileSync(process.argv[1]));
+	const state = JSON.parse(fs.readFileSync(process.argv[2]));
+	assert.equal(failed.status, "failed");
+	assert.deepEqual(failed.optional_artifacts, JSON.parse(process.argv[3]).optional_artifacts);
+	assert.deepEqual(state.optional_artifacts, failed.optional_artifacts);
+' "$TEST_ROOT/wcs-failed-result" "$wcs_failed_workspace/resource-state.json" "$wcs_plan"
+run_provisioner "$wcs_failed_workspace" "$TEST_ROOT/wcs-failed-runtime" "$TEST_ROOT/wcs-failed.log" \
+	destroy --workspace "$wcs_failed_workspace" --rollback-receipt-file "$wcs_failed_workspace/rollback-receipt"
 
 binary_create_port=19087
 for invalid_wp_env in "$TEST_ROOT/missing-wp-env" "$non_executable_wp_env"; do
@@ -805,6 +1288,9 @@ node -e '
 	if ( Object.hasOwn( config, "testsPort" ) ) process.exit( 1 );
 	if ( config.config.WP_SITEURL !== "http://transition-create-run.localhost:19091" ) process.exit( 1 );
 	if ( config.config.WP_HOME !== "http://transition-create-run.localhost:19091" ) process.exit( 1 );
+	if ( "wp-content/plugins/woocommerce-subscriptions" in config.mappings ) process.exit( 1 );
+	if ( "optional_artifacts" in JSON.parse( readFileSync( process.argv[ 3 ] + "/resource-state.json", "utf8" ) ) ) process.exit( 1 );
+	if ( require( "node:fs" ).existsSync( process.argv[ 3 ] + "/wcs-compose-preload.cjs" ) ) process.exit( 1 );
 	if ( config.mappings[ "wp-content/plugins/woocommerce" ] !== process.argv[ 2 ] ) process.exit( 1 );
 	if ( config.mappings[ "wp-content/plugins/woocommerce-payments" ] !== `${ process.argv[ 3 ] }/seed/woocommerce-payments` ) process.exit( 1 );
 	if ( config.mappings[ "wp-content/plugins/woocommerce-payments-dev-tools" ] !== process.argv[ 4 ] ) process.exit( 1 );
@@ -865,6 +1351,67 @@ test -f "$create_runtime/account"
 test ! -e "$create_runtime/wp-env"
 test ! -e "$create_lease_path"
 test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).port_lease_released" "$create_workspace/resource-state.json")" = 'true'
+
+profile_11_wp_env="$TEST_ROOT/profile-11-wp-env"
+cat > "$profile_11_wp_env" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *'plugin get woocommerce-payments --field=version'* ]]; then
+	printf '11.1.0\n'
+	exit 0
+fi
+exec "${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
+SH
+chmod 0700 "$profile_11_wp_env"
+profile_11_workspace="$TEST_ROOT/woopayments-native-transition-profile-11-create"
+profile_11_runtime="$TEST_ROOT/runtime-profile-11-create"
+profile_11_log="$TEST_ROOT/profile-11-create-commands.log"
+mkdir "$profile_11_workspace"
+profile_11_result="$(
+	E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+	E2E_TRANSITION_FRONTEND_LOCK_SHA256="$profile_11_frontend_lock_hash" \
+	E2E_TRANSITION_COMPOSER_LOCK_SHA256="$profile_11_composer_lock_hash" \
+	E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_TRANSITION_SCENARIO=cutover-reconciliation \
+	E2E_TRANSITION_PORT=19092 \
+	run_provisioner "$profile_11_workspace" "$profile_11_runtime" "$profile_11_log" \
+		create \
+		--workspace "$profile_11_workspace" \
+		--seed-archive "$TEST_ROOT/profile-11-seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/profile-11-seed.json" \
+		--run-id profile-11-create \
+		--base-url 'http://transition-profile-11-create.localhost:19092' \
+		--store-id 'woopayments-native-transition-profile-11-create'
+)"
+node -e '
+	const { createHash } = require( "node:crypto" );
+	const { readFileSync } = require( "node:fs" );
+	const result = JSON.parse( process.argv[ 1 ] );
+	const state = JSON.parse( readFileSync( process.argv[ 2 ], "utf8" ) );
+	const config = JSON.parse( readFileSync( process.argv[ 3 ], "utf8" ) );
+	const seedHash = createHash( "sha256" ).update( readFileSync( process.argv[ 4 ] ) ).digest( "hex" );
+	if ( result.plugin_version !== "11.1.0" ) process.exit( 1 );
+	if ( state.plugin_version !== "11.1.0" || state.seed_hash !== seedHash ) process.exit( 1 );
+	if ( config.mappings[ "wp-content/plugins/woocommerce-payments" ] !== `${ process.argv[ 5 ] }/seed/woocommerce-payments` ) process.exit( 1 );
+' \
+	"$profile_11_result" \
+	"$profile_11_workspace/resource-state.json" \
+	"$profile_11_workspace/store/.wp-env.json" \
+	"$TEST_ROOT/profile-11-seed.tar.gz" \
+	"$profile_11_workspace"
+cmp \
+	"$profile_11_tree/woocommerce-payments/pnpm-lock.yaml" \
+	"$profile_11_workspace/seed/woocommerce-payments/pnpm-lock.yaml"
+test ! -e "$profile_11_workspace/seed/woocommerce-payments/package-lock.json"
+E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+	E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	run_provisioner "$profile_11_workspace" "$profile_11_runtime" "$profile_11_log" \
+	destroy \
+	--workspace "$profile_11_workspace" \
+	--rollback-receipt-file "$profile_11_workspace/rollback-receipt"
+test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).phase" "$profile_11_workspace/resource-state.json")" = 'destroyed'
 
 state_failure_workspace="$TEST_ROOT/native-state-failure"
 state_failure_runtime="$TEST_ROOT/native-state-failure-runtime"

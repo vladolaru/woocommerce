@@ -8,6 +8,21 @@ SCRIPT_DIR="$(
 )"
 ORCHESTRATOR="$SCRIPT_DIR/run-saved-method-transition.sh"
 TEST_ROOT="$(mktemp -d "${TMPDIR:?TMPDIR is required}/woopayments-transition-orchestrator-test.XXXXXX")"
+WRAPPER_PROBE="$TEST_ROOT/wrapper-probe.sh"
+
+cat > "$WRAPPER_PROBE" <<'SH'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf 'wrapper action=%s E2E_TRANSITION_SEED_PROFILE=%s E2E_TRANSITION_WCS_ARCHIVE=%s E2E_TRANSITION_WCS_MANIFEST=%s\n' \
+	"${1:-}" \
+	"${E2E_TRANSITION_SEED_PROFILE:-}" \
+	"${E2E_TRANSITION_WCS_ARCHIVE:-}" \
+	"${E2E_TRANSITION_WCS_MANIFEST:-}" >> "${E2E_FAKE_COMMAND_LOG:?}"
+exec "${E2E_FAKE_WRAPPED_TRANSITION_WRAPPER:?}" "$@"
+SH
+chmod +x "$WRAPPER_PROBE"
 
 cleanup() {
 	rm -rf "$TEST_ROOT"
@@ -17,24 +32,37 @@ trap cleanup EXIT
 run_orchestrator() {
 	local run_id="${1:-orchestrator-run}"
 	local scenario="${2:-}"
-	local seed_profile="${3:-10.5.0}"
+	local seed_profile="${3:-}"
 	local pending_migrator_hook="${4:-0}"
-	local -a scenario_environment=()
+	local wcs_archive="${5:-}"
+	local wcs_manifest="${6:-}"
+	local wrapped_transition_wrapper="${7:-$SCRIPT_DIR/test-fixtures/fake-transition-wrapper.sh}"
+	local -a transition_environment=()
 	if [[ -n "$scenario" ]]; then
-		scenario_environment+=( "E2E_TRANSITION_SCENARIO=$scenario" )
+		transition_environment+=( "E2E_TRANSITION_SCENARIO=$scenario" )
+	fi
+	if [[ -n "$seed_profile" ]]; then
+		transition_environment+=( "E2E_TRANSITION_SEED_PROFILE=$seed_profile" )
+	fi
+	if [[ -n "$wcs_archive" || -n "$wcs_manifest" ]]; then
+		transition_environment+=(
+			"E2E_TRANSITION_WCS_ARCHIVE=$wcs_archive"
+			"E2E_TRANSITION_WCS_MANIFEST=$wcs_manifest"
+		)
 	fi
 	env \
 		TMPDIR="$TEST_ROOT" \
 		E2E_TRANSITION_RUN_ID="$run_id" \
 		E2E_TRANSITION_SEED_ARCHIVE="$TEST_ROOT/seed.tar.gz" \
 		E2E_TRANSITION_SEED_MANIFEST="$TEST_ROOT/seed.json" \
-		E2E_TRANSITION_SEED_PROFILE="$seed_profile" \
 		E2E_TRANSITION_PENDING_MIGRATOR_HOOK="$pending_migrator_hook" \
 		E2E_TRANSITION_STORE_PROVISIONER="$SCRIPT_DIR/test-fixtures/fake-transition-provisioner.sh" \
-		E2E_TRANSITION_WRAPPER="$SCRIPT_DIR/test-fixtures/fake-transition-wrapper.sh" \
+		E2E_TRANSITION_WRAPPER="$WRAPPER_PROBE" \
+		E2E_FAKE_WRAPPED_TRANSITION_WRAPPER="$wrapped_transition_wrapper" \
 		E2E_TRANSITION_TEST_RUNNER="$SCRIPT_DIR/test-fixtures/fake-transition-test-runner.sh" \
 		E2E_FAKE_COMMAND_LOG="$TEST_ROOT/commands.log" \
-		${scenario_environment[@]+"${scenario_environment[@]}"} \
+		E2E_FAKE_PROVISIONER_LOG="$TEST_ROOT/commands.log" \
+		${transition_environment[@]+"${transition_environment[@]}"} \
 		"$ORCHESTRATOR"
 }
 
@@ -92,6 +120,7 @@ grep -Fq 'WCPAY_RUNTIME=transition' "$TEST_ROOT/commands.log"
 grep -Fq 'E2E_WOOPAYMENTS_WPCOM_BLOG_ID=77' "$TEST_ROOT/commands.log"
 grep -Fq 'E2E_WOOPAYMENTS_ACCOUNT_ID=acct_transition_77' "$TEST_ROOT/commands.log"
 grep -Fq 'E2E_WOOPAYMENTS_ACCOUNT_ALIAS=reference-client' "$TEST_ROOT/commands.log"
+grep -Fq 'E2E_TRANSITION_SEED_PROFILE=10.5.0 ' "$TEST_ROOT/commands.log"
 assert_exact_capabilities \
 	"$TEST_ROOT/commands.log" \
 	'saved-method-cutover' \
@@ -118,6 +147,79 @@ if assert_exact_capabilities \
 	exit 1
 fi
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
+
+: > "$TEST_ROOT/commands.log"
+run_orchestrator 'explicit-current-profile-run' '' '11.1.0'
+grep -Fq 'wrapper action=create E2E_TRANSITION_SEED_PROFILE=11.1.0 ' "$TEST_ROOT/commands.log"
+grep -Eq '^runner .* E2E_TRANSITION_SEED_PROFILE=11[.]1[.]0 ' "$TEST_ROOT/commands.log"
+grep -Fq -- '--workers=1' "$TEST_ROOT/commands.log"
+if grep -Fq -- '--retries' "$TEST_ROOT/commands.log"; then
+	echo 'The explicit transition profile added a Playwright retry override.' >&2
+	exit 1
+fi
+
+printf 'wcs archive\n' > "$TEST_ROOT/wcs.tar.gz"
+printf '{"artifact":"wcs"}\n' > "$TEST_ROOT/wcs.json"
+chmod 0444 "$TEST_ROOT/wcs.tar.gz" "$TEST_ROOT/wcs.json"
+: > "$TEST_ROOT/commands.log"
+run_orchestrator \
+	'explicit-wcs-profile-run' \
+	'' \
+	'11.1.0' \
+	'0' \
+	"$TEST_ROOT/wcs.tar.gz" \
+	"$TEST_ROOT/wcs.json" \
+	"$SCRIPT_DIR/provision-transition-store.sh"
+grep -Fq "wrapper action=create E2E_TRANSITION_SEED_PROFILE=11.1.0 E2E_TRANSITION_WCS_ARCHIVE=$TEST_ROOT/wcs.tar.gz E2E_TRANSITION_WCS_MANIFEST=$TEST_ROOT/wcs.json" "$TEST_ROOT/commands.log"
+node - "$TEST_ROOT/commands.log" "$TEST_ROOT/wcs.tar.gz" "$TEST_ROOT/wcs.json" <<'NODE'
+const { createHash } = require( 'node:crypto' );
+const { readFileSync } = require( 'node:fs' );
+
+const log = readFileSync( process.argv[ 2 ], 'utf8' );
+const runnerLine = log.split( '\n' ).find( ( line ) => line.startsWith( 'runner ' ) );
+if ( ! runnerLine ) {
+	throw new Error( 'The paired-WCS run did not reach the test runner.' );
+}
+for ( const path of process.argv.slice( 3 ) ) {
+	if ( runnerLine.includes( path ) ) {
+		throw new Error( `The test-runner log leaked caller host path ${ path }.` );
+	}
+}
+const marker = ' E2E_TRANSITION_OPTIONAL_ARTIFACTS=';
+const endMarker = ' E2E_WOOPAYMENTS_LOCK_DIR=';
+const start = runnerLine.indexOf( marker );
+const end = runnerLine.indexOf( endMarker, start );
+if ( start < 0 || end < 0 ) {
+	throw new Error( 'The test runner did not receive immutable optional-artifact identity.' );
+}
+const actual = JSON.parse( runnerLine.slice( start + marker.length, end ) );
+const hash = ( path ) => createHash( 'sha256' ).update( readFileSync( path ) ).digest( 'hex' );
+const expected = {
+	'woocommerce-subscriptions': {
+		archive_format: 'tar.gz',
+		archive_profile: 'wcs-transition-v1',
+		archive_sha256: hash( process.argv[ 3 ] ),
+		canonical_tar_sha256: 'a'.repeat( 64 ),
+		canonical_tree_sha256: 'b'.repeat( 64 ),
+		directory_mode: '0555',
+		file_mode: '0444',
+		manifest_sha256: hash( process.argv[ 4 ] ),
+		plugin: 'woocommerce-subscriptions',
+		plugin_version: '9.2.0',
+		source_commit: '4008f7f515f5ea76eea4d9149514b8c1774e51ba',
+		source_date_epoch: 1788854213,
+	},
+};
+if ( JSON.stringify( actual ) !== JSON.stringify( expected ) ) {
+	throw new Error( `Unexpected optional-artifact identity: ${ JSON.stringify( actual ) }` );
+}
+if ( ! runnerLine.includes( ' E2E_TRANSITION_SEED_PROFILE=11.1.0 ' ) ) {
+	throw new Error( 'The paired-WCS run lost its explicit seed profile.' );
+}
+if ( ! runnerLine.includes( ' --workers=1 ' ) || runnerLine.includes( ' --retries' ) ) {
+	throw new Error( 'The paired-WCS run changed Playwright worker or retry ownership.' );
+}
+NODE
 
 : > "$TEST_ROOT/commands.log"
 run_orchestrator 'cutover-old-profile-run' 'cutover-reconciliation' '10.4.0' '1'
