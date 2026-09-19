@@ -149,18 +149,10 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * @throws RuntimeException When persisted lifecycle state is incomplete or unknown.
 	 */
 	public function reconcile_fixture_state_before_reinstall(): void {
-		$missing = new stdClass();
-		$state   = get_option( self::STATE_OPTION, $missing );
-		if ( $missing === $state ) {
-			return;
-		}
-		if ( ! is_array( $state ) ) {
-			throw new RuntimeException( 'The WooPayments fixture lifecycle state is invalid.' );
-		}
-
+		$state     = $this->persisted_fixture_state();
 		$lifecycle = $state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null;
 		if ( 'prepared' === $lifecycle ) {
-			$this->restore_pre_fixture_physical_account_cache();
+			$this->restore_pre_fixture_physical_account_cache_from_state( $state );
 			return;
 		}
 		if ( 'restored' === $lifecycle ) {
@@ -181,7 +173,18 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * @throws RuntimeException When fixture preparation did not capture an account cache.
 	 */
 	public function restore_pre_fixture_physical_account_cache(): array {
-		$state = $this->state();
+		$state = $this->persisted_fixture_state();
+		return $this->restore_pre_fixture_physical_account_cache_from_state( $state );
+	}
+
+	/**
+	 * Restores physical state from a validated prepared lifecycle record.
+	 *
+	 * @param array<string,mixed> $state Persisted fixture state.
+	 * @return array{exists:bool,value:mixed,normalized:array<int|string,mixed>,run_normalized:array<int|string,mixed>,run_restored:bool,pre_fixture_restored:bool}
+	 * @throws RuntimeException When fixture preparation did not capture an account cache.
+	 */
+	private function restore_pre_fixture_physical_account_cache_from_state( array $state ): array {
 		$this->assert_prepared_physical_state( $state );
 
 		$pre_fixture_cache = $state['pre_fixture_physical_account_cache'] ?? null;
@@ -1152,7 +1155,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * @throws RuntimeException When fixture captures are incomplete.
 	 */
 	private function assert_prepared_physical_state( array $state ): void {
-		if ( 'prepared' !== ( $state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null ) ) {
+		if ( 'prepared' !== ( $state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null ) || ! $this->has_complete_fixture_core_state( $state ) ) {
 			throw new RuntimeException( 'The WooPayments fixture lifecycle state is invalid.' );
 		}
 		$this->assert_physical_state_captures( $state );
@@ -1165,6 +1168,9 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * @throws RuntimeException When fixture restoration state is incomplete.
 	 */
 	private function assert_restored_physical_state( array $state ): void {
+		if ( 'restored' !== ( $state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null ) || ! $this->has_complete_fixture_core_state( $state ) ) {
+			throw new RuntimeException( 'The WooPayments fixture lifecycle state is invalid.' );
+		}
 		$this->assert_physical_state_captures( $state );
 		$cache_restoration     = $state['physical_account_cache_restoration'] ?? null;
 		$test_mode_restoration = $state['test_mode_premise_restoration'] ?? null;
@@ -1182,6 +1188,38 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		) {
 			throw new RuntimeException( 'The WooPayments fixture lifecycle state is invalid.' );
 		}
+	}
+
+	/**
+	 * Reads lifecycle state without creating a default fixture record.
+	 *
+	 * @return array<string,mixed>
+	 * @throws RuntimeException When persisted lifecycle state is absent or malformed.
+	 */
+	private function persisted_fixture_state(): array {
+		$missing = new stdClass();
+		$state   = get_option( self::STATE_OPTION, $missing );
+		if ( $missing === $state || ! is_array( $state ) ) {
+			throw new RuntimeException( 'The WooPayments fixture lifecycle state is invalid.' );
+		}
+		return $state;
+	}
+
+	/**
+	 * Determines whether persisted state includes the complete provider fixture core.
+	 *
+	 * @param array<string,mixed> $state Persisted fixture state.
+	 */
+	private function has_complete_fixture_core_state( array $state ): bool {
+		return is_array( $state['account'] ?? null )
+			&& is_array( $state['settings'] ?? null )
+			&& is_array( $state['transactions'] ?? null )
+			&& is_array( $state['deposits'] ?? null )
+			&& is_array( $state['disputes'] ?? null )
+			&& is_array( $state['overview'] ?? null )
+			&& is_array( $state['fraud_ruleset'] ?? null )
+			&& is_array( $state['audit_baseline'] ?? null )
+			&& is_array( $state['expected_retained_state'] ?? null );
 	}
 
 	/**
@@ -1216,11 +1254,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	private function is_unstarted_physical_state( array $state ): bool {
 		if (
 			'unstarted' !== ( $state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null )
-			|| ! is_array( $state['account'] ?? null )
-			|| ! is_array( $state['transactions'] ?? null )
-			|| ! is_array( $state['deposits'] ?? null )
-			|| ! is_array( $state['audit_baseline'] ?? null )
-			|| ! is_array( $state['expected_retained_state'] ?? null )
+			|| ! $this->has_complete_fixture_core_state( $state )
 			|| ! is_array( $state['physical_account_cache_baseline'] ?? null )
 		) {
 			return false;

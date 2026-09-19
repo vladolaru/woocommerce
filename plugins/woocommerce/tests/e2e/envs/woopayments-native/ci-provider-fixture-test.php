@@ -1308,4 +1308,51 @@ assert_same( $run_test_mode, $options['wcpay_onboarding_test_mode'], 'a malforme
 assert_same( '__missing__', get_option( '_transient_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'a malformed prepared lifecycle must not restore the fraud-services transient partially' );
 assert_same( '__missing__', get_option( '_transient_timeout_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'a malformed prepared lifecycle must not restore the fraud-services timeout partially' );
 
+$fixture->prepare_physical_account_cache_for_run(
+	static function () use ( $fixture ): array {
+		$account = $fixture->account_cache()['data'];
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $account,
+				'fetched'            => 904,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		return $account;
+	}
+);
+$prepared_state_without_account = get_option( 'e2e_woopayments_native_provider_state', array() );
+if ( ! is_array( $prepared_state_without_account ) ) {
+	throw new RuntimeException( 'The standalone fixture test requires prepared lifecycle state.' );
+}
+unset( $prepared_state_without_account['account'] );
+update_option( 'e2e_woopayments_native_provider_state', $prepared_state_without_account );
+$run_account_cache = $options['wcpay_account_data'];
+$run_test_mode     = $options['wcpay_onboarding_test_mode'];
+remove_filter( 'pre_option_jetpack_options', $jetpack_options_callback );
+$run_jetpack_options = get_option( 'jetpack_options' );
+add_filter( 'pre_option_jetpack_options', $jetpack_options_callback );
+remove_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
+$run_jetpack_private_options = get_option( 'jetpack_private_options' );
+add_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
+try {
+	$fixture->reconcile_fixture_state_before_reinstall();
+	throw new RuntimeException( 'A prepared lifecycle missing a core fixture key must fail before normalization.' );
+} catch ( RuntimeException $exception ) {
+	assert_same( 'The WooPayments fixture lifecycle state is invalid.', $exception->getMessage(), 'a prepared lifecycle missing a core fixture key must fail closed without exposing captured values' );
+}
+assert_same( $prepared_state_without_account, get_option( 'e2e_woopayments_native_provider_state' ), 'a prepared lifecycle missing a core fixture key must remain unchanged after reconciliation fails' );
+assert_same( $run_account_cache, $options['wcpay_account_data'], 'a prepared lifecycle missing a core fixture key must not restore the physical account cache' );
+assert_same( $run_test_mode, $options['wcpay_onboarding_test_mode'], 'a prepared lifecycle missing a core fixture key must not restore test mode' );
+assert_same( '__missing__', get_option( '_transient_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'a prepared lifecycle missing a core fixture key must not restore the fraud-services transient' );
+assert_same( '__missing__', get_option( '_transient_timeout_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'a prepared lifecycle missing a core fixture key must not restore the fraud-services timeout' );
+remove_filter( 'pre_option_jetpack_options', $jetpack_options_callback );
+assert_same( $run_jetpack_options, get_option( 'jetpack_options' ), 'a prepared lifecycle missing a core fixture key must not restore public Jetpack identity' );
+add_filter( 'pre_option_jetpack_options', $jetpack_options_callback );
+remove_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
+assert_same( $run_jetpack_private_options, get_option( 'jetpack_private_options' ), 'a prepared lifecycle missing a core fixture key must not restore private Jetpack identity' );
+add_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
+
 echo "ci-provider-fixture.php tests passed.\n";

@@ -57,6 +57,10 @@ esac
 if [[ "$*" == *'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE false --raw'* ]]; then
 	printf 'false\n' > "${E2E_FAKE_FIXTURE_STATE:?}"
 fi
+if [[ "${E2E_FAKE_REPEAT_PROVIDER_STATE_ABSENT:-false}" == 'true' && "$*" == *'reconcile_fixture_state_before_reinstall'* ]]; then
+	echo 'The WooPayments fixture lifecycle state is invalid.' >&2
+	exit 1
+fi
 if [[ "$*" == *'get_option( "wcpay_account_data", "__missing__" )'* ]]; then
 	if [[ "$(< "${E2E_FAKE_FIXTURE_STATE:?}")" != 'false' ]]; then
 		echo 'The connected-account fixture was still enabled during the activation premise.' >&2
@@ -179,6 +183,39 @@ for cache_key in wcpay_authorization_summary_cache wcpay_test_authorization_summ
 		exit 1
 	fi
 done
+
+assert_absent_repeat_state_is_rejected() {
+	local output="$TEST_ROOT/absent-repeat-state.out"
+	local preflight_line
+
+	printf 'true\n' > "$TEST_ROOT/fixture-state"
+	: > "$TEST_ROOT/commands.log"
+	if env "${PROFILE_ENV[@]}" 'E2E_FAKE_REPEAT_PROVIDER_STATE_ABSENT=true' "$SCRIPT_DIR/install-ci-fixture.sh" > "$output" 2>&1; then
+		echo 'An enabled repeat fixture install must reject absent provider state.' >&2
+		exit 1
+	fi
+	if ! grep -Fxq 'The WooPayments fixture lifecycle state is invalid.' "$output"; then
+		echo 'An enabled repeat fixture install must diagnose absent provider state without values.' >&2
+		exit 1
+	fi
+	preflight_line="$(grep -n 'DEFAULT_JETPACK__API_BASE' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1 || true)"
+	if [[ "$preflight_line" != '1' ]]; then
+		echo 'An enabled repeat fixture install must retain canonical transport preflight as command one.' >&2
+		exit 1
+	fi
+	if grep -Fq 'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE true --raw' "$TEST_ROOT/commands.log"; then
+		echo 'An enabled repeat fixture install must reconcile before enabling the fixture again.' >&2
+		exit 1
+	fi
+	for prohibited_mutation in 'wp option delete' 'wcpay_authorization_summary_cache' 'is_connected()' 'prepare_physical_account_cache_for_run'; do
+		if grep -Fq "$prohibited_mutation" "$TEST_ROOT/commands.log"; then
+			echo "An enabled repeat fixture install must stop before mutation: $prohibited_mutation" >&2
+			exit 1
+		fi
+	done
+}
+
+assert_absent_repeat_state_is_rejected
 
 assert_rejected_transport() {
 	local transport="$1"
