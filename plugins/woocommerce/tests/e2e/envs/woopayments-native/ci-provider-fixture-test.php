@@ -91,8 +91,16 @@ function get_option( string $name, $default_value = false ) {
  * @param bool|null $autoload Whether WordPress should autoload the option.
  */
 function update_option( string $name, $value, ?bool $autoload = null ): bool {
-	global $options;
+	global $filters, $options;
 	unset( $autoload );
+	$old_value = get_option( $name );
+	$filter    = $filters[ 'pre_update_option_' . $name ] ?? null;
+	if ( is_array( $filter ) ) {
+		$value = ( $filter[0] )( $value, $old_value, $name );
+	}
+	if ( $value === $old_value ) {
+		return false;
+	}
 	$options[ $name ] = $value;
 	return true;
 }
@@ -1010,12 +1018,27 @@ assert_true( true === $audit['physical_account_cache']['restored'], 'audit must 
 assert_true( array( 'fetched' ) === $audit['physical_account_cache']['ignored_fields'], 'audit must ignore only the physical cache fetch timestamp' );
 assert_true( false === $audit['clean'], 'recorded fail-closed test probes must keep the audit non-clean' );
 
-$fresh_activation_cache                        = array(
+$fresh_activation_cache          = array(
 	'data'               => null,
 	'fetched'            => 123,
 	'errored'            => true,
 	'consecutive_errors' => 1,
 );
+$seeded_fraud_services_transient = array( 'stripe' => array( 'seed' => 'before' ) );
+$seeded_fraud_services_timeout   = 2000000000;
+$seeded_jetpack_options          = array(
+	'id'          => 4,
+	'master_user' => 4,
+	'register'    => 'physical-before-fixture',
+);
+$seeded_jetpack_private_options  = array(
+	'blog_token'  => 'dummy-before-fixture-blog-token',
+	'user_tokens' => array( 4 => 'dummy-before-fixture-user-token' ),
+);
+$options['_transient_woocommerce_woopayments_public_fraud_services']         = $seeded_fraud_services_transient;
+$options['_transient_timeout_woocommerce_woopayments_public_fraud_services'] = $seeded_fraud_services_timeout;
+$options['jetpack_options']                    = $seeded_jetpack_options;
+$options['jetpack_private_options']            = $seeded_jetpack_private_options;
 $options['wcpay_account_data']                 = $fresh_activation_cache;
 $options['e2e_woopayments_native_failure_log'] = array();
 $refreshed_account                             = $fixture->prepare_physical_account_cache_for_run(
@@ -1038,6 +1061,44 @@ $refreshed_account                             = $fixture->prepare_physical_acco
 );
 assert_true( 'acct_native_ci' === $refreshed_account['account_id'], 'fixture preparation must return the real refresh result' );
 assert_same( false, $options['wcpay_account_data']['errored'], 'fixture preparation must replace the fresh-activation error for the readonly run' );
+assert_same( '__missing__', get_option( '_transient_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'fixture preparation must remove the public fraud-services transient from physical storage' );
+assert_same( '__missing__', get_option( '_transient_timeout_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'fixture preparation must remove the public fraud-services transient timeout from physical storage' );
+assert_same( array(), $refreshed_account['fraud_services'], 'fixture account refreshes must establish an explicitly empty fraud-services baseline' );
+assert_same( 777, get_option( 'jetpack_options' )['id'], 'fixture reads must use the deterministic Jetpack public identity' );
+assert_same( 'dummyblog.blog-token', get_option( 'jetpack_private_options' )['blog_token'], 'fixture reads must use the deterministic Jetpack private identity' );
+/** @var callable $jetpack_options_callback */
+$jetpack_options_callback = array( $fixture, 'jetpack_options' );
+remove_filter( 'pre_option_jetpack_options', $jetpack_options_callback );
+assert_same( $seeded_jetpack_options, get_option( 'jetpack_options' ), 'physical public identity reads must preserve the value captured before fixture preparation' );
+add_filter( 'pre_option_jetpack_options', $jetpack_options_callback );
+/** @var callable $jetpack_private_options_callback */
+$jetpack_private_options_callback = array( $fixture, 'jetpack_private_options' );
+remove_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
+assert_same( $seeded_jetpack_private_options, get_option( 'jetpack_private_options' ), 'physical private identity reads must preserve the value captured before fixture preparation' );
+add_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
+update_option( 'jetpack_options', array( 'id' => 999 ) );
+update_option( 'jetpack_private_options', array( 'blog_token' => 'heartbeat-mutation' ) );
+assert_same( $seeded_jetpack_options, $options['jetpack_options'], 'heartbeat-style public identity updates must not reach physical storage' );
+assert_same( $seeded_jetpack_private_options, $options['jetpack_private_options'], 'heartbeat-style private identity updates must not reach physical storage' );
+assert_same( true, $fixture->audit()['jetpack_identity']['run_isolated'], 'guarded identity writes must preserve the protected run baseline' );
+update_option( '_transient_woocommerce_woopayments_public_fraud_services', array( 'stripe' => array( 'seed' => 'mutated' ) ) );
+update_option( '_transient_timeout_woocommerce_woopayments_public_fraud_services', 2000000001 );
+$transient_divergence_audit = $fixture->audit();
+assert_same( false, $transient_divergence_audit['fraud_services_transient']['run_isolated'], 'public fraud-services transient mutations must fail run isolation' );
+assert_same( false, $transient_divergence_audit['clean'], 'public fraud-services transient mutations must make the audit non-clean' );
+delete_option( '_transient_woocommerce_woopayments_public_fraud_services' );
+delete_option( '_transient_timeout_woocommerce_woopayments_public_fraud_services' );
+/** @var callable $jetpack_update_callback */
+$jetpack_update_callback = array( $fixture, 'prevent_jetpack_identity_update' );
+remove_filter( 'pre_update_option_jetpack_options', $jetpack_update_callback );
+update_option( 'jetpack_options', array( 'id' => 999 ) );
+add_filter( 'pre_update_option_jetpack_options', $jetpack_update_callback, 10, 3 );
+$identity_divergence_audit = $fixture->audit();
+assert_same( false, $identity_divergence_audit['jetpack_identity']['run_isolated'], 'physical public identity mutations that bypass the write guard must fail run isolation' );
+assert_same( false, $identity_divergence_audit['clean'], 'physical public identity mutations that bypass the write guard must make the audit non-clean' );
+remove_filter( 'pre_update_option_jetpack_options', $jetpack_update_callback );
+update_option( 'jetpack_options', $seeded_jetpack_options );
+add_filter( 'pre_update_option_jetpack_options', $jetpack_update_callback, 10, 3 );
 $midrun_audit = $fixture->audit();
 assert_same( false, $midrun_audit['physical_account_cache']['pre_fixture_restored'], 'mid-run request inspection must not perform final cache restoration' );
 assert_same( false, $midrun_audit['test_mode_premise']['pre_fixture_restored'], 'mid-run request inspection must not restore the test-mode premise before the readonly run ends' );
@@ -1051,6 +1112,14 @@ assert_true( true === $audit['physical_account_cache']['restored'], 'physical-ca
 assert_true( true === $audit['test_mode_premise']['pre_fixture_restored'], 'audit must restore the exact test-mode premise captured before fixture preparation' );
 assert_same( $fresh_activation_cache, $options['wcpay_account_data'], 'audit must restore the exact fresh-activation error wrapper' );
 assert_same( '__missing__', get_option( 'wcpay_onboarding_test_mode', '__missing__' ), 'audit must restore an originally absent test-mode onboarding option' );
+assert_same( $seeded_fraud_services_transient, $options['_transient_woocommerce_woopayments_public_fraud_services'], 'audit must restore the exact public fraud-services transient captured before fixture preparation' );
+assert_same( $seeded_fraud_services_timeout, $options['_transient_timeout_woocommerce_woopayments_public_fraud_services'], 'audit must restore the exact public fraud-services transient timeout captured before fixture preparation' );
+assert_same( $seeded_jetpack_options, $options['jetpack_options'], 'audit must restore the exact public Jetpack identity captured before fixture preparation' );
+assert_same( $seeded_jetpack_private_options, $options['jetpack_private_options'], 'audit must restore the exact private Jetpack identity captured before fixture preparation' );
+assert_same( true, $audit['fraud_services_transient']['pre_fixture_restored'], 'audit must report pre-fixture public fraud-services restoration without exposing its value' );
+assert_same( true, $audit['fraud_services_transient']['restored'], 'audit must report complete public fraud-services restoration' );
+assert_same( true, $audit['jetpack_identity']['pre_fixture_restored'], 'audit must report pre-fixture Jetpack identity restoration without exposing its values' );
+assert_same( true, $audit['jetpack_identity']['restored'], 'audit must report complete Jetpack identity restoration' );
 assert_true( 'acct_native_ci' === get_option( 'wcpay_account_data' )['data']['account_id'], 'the connected pre-option filter must not mask the physical restoration assertion' );
 update_option( 'wcpay_onboarding_test_mode', 'yes' );
 $diverged_premise_audit = $fixture->audit();
@@ -1058,5 +1127,33 @@ assert_same( false, $diverged_premise_audit['test_mode_premise']['pre_fixture_re
 assert_same( false, $diverged_premise_audit['clean'], 'test-mode premise divergence must keep the final audit non-clean' );
 delete_option( 'wcpay_onboarding_test_mode' );
 assert_same( true, $fixture->audit()['clean'], 'restoring the test-mode premise must make the otherwise clean audit pass again' );
+delete_option( '_transient_woocommerce_woopayments_public_fraud_services' );
+delete_option( '_transient_timeout_woocommerce_woopayments_public_fraud_services' );
+delete_option( 'jetpack_options' );
+delete_option( 'jetpack_private_options' );
+$fixture->prepare_physical_account_cache_for_run(
+	static function () use ( $fixture ): array {
+		$account = $fixture->account_cache()['data'];
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $account,
+				'fetched'            => 789,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		return $account;
+	}
+);
+$fixture->restore_pre_fixture_physical_account_cache();
+assert_same( '__missing__', get_option( '_transient_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'an originally absent public fraud-services transient must remain absent after restoration' );
+assert_same( '__missing__', get_option( '_transient_timeout_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'an originally absent public fraud-services timeout must remain absent after restoration' );
+remove_filter( 'pre_option_jetpack_options', $jetpack_options_callback );
+assert_same( '__missing__', get_option( 'jetpack_options', '__missing__' ), 'an originally absent public Jetpack identity must remain absent after restoration' );
+add_filter( 'pre_option_jetpack_options', $jetpack_options_callback );
+remove_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
+assert_same( '__missing__', get_option( 'jetpack_private_options', '__missing__' ), 'an originally absent private Jetpack identity must remain absent after restoration' );
+add_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
 
 echo "ci-provider-fixture.php tests passed.\n";

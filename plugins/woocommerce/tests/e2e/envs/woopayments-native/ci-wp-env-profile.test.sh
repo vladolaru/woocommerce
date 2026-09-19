@@ -71,7 +71,7 @@ if [[ "${container_command:-}" == 'wp' && "${container_arguments[0]:-}" == 'eval
 	php -r 'namespace Automattic\Jetpack\Connection { class Utils { const DEFAULT_JETPACK__API_BASE = "https://jetpack.wordpress.com/jetpack."; const DEFAULT_JETPACK__WPCOM_JSON_API_BASE = "https://public-api.wordpress.com"; } } namespace { if ( "true" === getenv( "E2E_FAKE_JETPACK_API_BASE_IS_DEFINED" ) ) { define( "JETPACK__API_BASE", getenv( "E2E_FAKE_JETPACK_API_BASE" ) ); } if ( "true" === getenv( "E2E_FAKE_JETPACK_WPCOM_JSON_API_BASE_IS_DEFINED" ) ) { define( "JETPACK__WPCOM_JSON_API_BASE", getenv( "E2E_FAKE_JETPACK_WPCOM_JSON_API_BASE" ) ); } eval( $argv[1] ); }' "${container_arguments[1]}"
 fi
 if [[ "$*" == *'provider-fixture-audit'* ]]; then
-	printf '{"requests":8,"failures":[],"coverage":true,"state_restored":true,"clean":true}\n'
+	printf '{"requests":8,"failures":[],"coverage":true,"state_restored":true,"fraud_services_transient":{"restored":true},"jetpack_identity":{"restored":true},"clean":true}\n'
 fi
 FAKE
 chmod +x "$TEST_ROOT/bin/pnpm"
@@ -143,6 +143,14 @@ if ! grep -Fq 'prepare_physical_account_cache_for_run' "$TEST_ROOT/commands.log"
 fi
 if ! grep -Fq 'refresh_account_data()' "$TEST_ROOT/commands.log"; then
 	echo 'The real account service must own the physical cache refresh.' >&2
+	exit 1
+fi
+if ! grep -Fq 'fraud_services_transient' "$TEST_ROOT/commands.log"; then
+	echo 'Fixture installation must verify public fraud-services transient isolation before refreshing account data.' >&2
+	exit 1
+fi
+if ! grep -Fq 'jetpack_identity' "$TEST_ROOT/commands.log"; then
+	echo 'Fixture installation must verify Jetpack identity isolation before refreshing account data.' >&2
 	exit 1
 fi
 if ! grep -Fq 'restore_pre_fixture_physical_account_cache' "$TEST_ROOT/commands.log"; then
@@ -237,7 +245,7 @@ for rejected_transport in "${REJECTED_TRANSPORTS[@]}"; do
 done
 
 test -s "$TEST_ROOT/diagnostics/native/provider-fixture-audit.json"
-jq -e '.coverage == true and .state_restored == true' \
+jq -e '.coverage == true and .state_restored == true and .fraud_services_transient.restored == true and .jetpack_identity.restored == true' \
 	"$TEST_ROOT/diagnostics/native/provider-fixture-audit.json" > /dev/null
 
 echo 'CI wp-env profile tests passed.'

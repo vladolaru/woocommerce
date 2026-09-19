@@ -17,11 +17,15 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	/** @var self|null */
 	private static $registered_instance;
 
-	private const STATE_OPTION       = 'e2e_woopayments_native_provider_state';
-	private const REQUEST_LOG_OPTION = 'e2e_woopayments_native_request_log';
-	private const FAILURE_LOG_OPTION = 'e2e_woopayments_native_failure_log';
-	private const BLOG_ID            = 777;
-	private const REQUIRED_ROUTES    = array(
+	private const STATE_OPTION                            = 'e2e_woopayments_native_provider_state';
+	private const REQUEST_LOG_OPTION                      = 'e2e_woopayments_native_request_log';
+	private const FAILURE_LOG_OPTION                      = 'e2e_woopayments_native_failure_log';
+	private const FRAUD_SERVICES_TRANSIENT_OPTION         = '_transient_woocommerce_woopayments_public_fraud_services';
+	private const FRAUD_SERVICES_TRANSIENT_TIMEOUT_OPTION = '_transient_timeout_woocommerce_woopayments_public_fraud_services';
+	private const JETPACK_OPTIONS_OPTION                  = 'jetpack_options';
+	private const JETPACK_PRIVATE_OPTIONS_OPTION          = 'jetpack_private_options';
+	private const BLOG_ID                                 = 777;
+	private const REQUIRED_ROUTES                         = array(
 		'GET accounts',
 		'GET transactions',
 		'GET transactions/summary',
@@ -40,6 +44,8 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		self::$registered_instance = $this;
 		add_filter( 'pre_option_jetpack_options', array( $this, 'jetpack_options' ) );
 		add_filter( 'pre_option_jetpack_private_options', array( $this, 'jetpack_private_options' ) );
+		add_filter( 'pre_update_option_jetpack_options', array( $this, 'prevent_jetpack_identity_update' ), 10, 3 );
+		add_filter( 'pre_update_option_jetpack_private_options', array( $this, 'prevent_jetpack_identity_update' ), 10, 3 );
 		add_filter( 'pre_option_wcpay_account_data', array( $this, 'account_cache' ) );
 		add_filter( 'pre_http_request', array( $this, 'intercept' ), PHP_INT_MIN, 3 );
 		add_filter( 'script_loader_src', array( $this, 'stripe_adapter_src' ), PHP_INT_MAX, 2 );
@@ -73,6 +79,8 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		$callback = array( $this, 'account_cache' );
 		$removed  = remove_filter( 'pre_option_wcpay_account_data', $callback );
 		try {
+			$pre_fixture_fraud_services_transient        = $this->fraud_services_transient_snapshot();
+			$pre_fixture_jetpack_identity                = $this->jetpack_identity_snapshot();
 			$missing                                     = new stdClass();
 			$physical                                    = get_option( 'wcpay_account_data', $missing );
 			$test_mode_premise                           = get_option( 'wcpay_onboarding_test_mode', $missing );
@@ -86,8 +94,17 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				'exists' => $missing !== $test_mode_premise,
 				'value'  => $missing === $test_mode_premise ? null : $test_mode_premise,
 			);
-			unset( $state['physical_account_cache_restoration'], $state['test_mode_premise_restoration'] );
+			$state['pre_fixture_fraud_services_transient'] = $pre_fixture_fraud_services_transient;
+			$state['fraud_services_transient_baseline']    = $this->absent_fraud_services_transient_snapshot();
+			$state['pre_fixture_jetpack_identity']         = $pre_fixture_jetpack_identity;
+			$state['jetpack_identity_baseline']            = $pre_fixture_jetpack_identity;
+			unset( $state['physical_account_cache_restoration'], $state['test_mode_premise_restoration'], $state['fraud_services_transient_restoration'], $state['jetpack_identity_restoration'] );
 			update_option( self::STATE_OPTION, $state );
+			$this->restore_option( self::FRAUD_SERVICES_TRANSIENT_OPTION, false, null );
+			$this->restore_option( self::FRAUD_SERVICES_TRANSIENT_TIMEOUT_OPTION, false, null );
+			if ( ! $this->option_snapshots_match( $this->fraud_services_transient_snapshot(), $state['fraud_services_transient_baseline'] ) ) {
+				throw new RuntimeException( 'The WooPayments public fraud-services transient could not be isolated.' );
+			}
 			update_option( 'wcpay_onboarding_test_mode', 'yes', false );
 			$cache_deleted = wp_cache_delete( 'wcpay_onboarding_test_mode', 'options' );
 			unset( $cache_deleted );
@@ -126,14 +143,30 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			throw new RuntimeException( 'The pre-fixture WooPayments account cache was not captured.' );
 		}
 
-		$run_cache             = $this->physical_account_cache_snapshot();
-		$run_normalized        = $run_cache['normalized'];
-		$run_baseline          = is_array( $state['physical_account_cache_baseline'] ?? null ) ? $state['physical_account_cache_baseline'] : array();
-		$run_restored          = $run_normalized === $run_baseline;
-		$restoration           = $this->restore_physical_account_cache( $pre_fixture_cache['exists'], $pre_fixture_cache['value'] );
-		$pre_cache_restored    = $restoration['exists'] === $pre_fixture_cache['exists']
+		$run_cache                            = $this->physical_account_cache_snapshot();
+		$run_normalized                       = $run_cache['normalized'];
+		$run_baseline                         = is_array( $state['physical_account_cache_baseline'] ?? null ) ? $state['physical_account_cache_baseline'] : array();
+		$run_restored                         = $run_normalized === $run_baseline;
+		$restoration                          = $this->restore_physical_account_cache( $pre_fixture_cache['exists'], $pre_fixture_cache['value'] );
+		$pre_cache_restored                   = $restoration['exists'] === $pre_fixture_cache['exists']
 			&& $restoration['value'] === $pre_fixture_cache['value'];
-		$pre_fixture_test_mode = $state['pre_fixture_test_mode_premise'] ?? null;
+		$pre_fixture_fraud_services_transient = $state['pre_fixture_fraud_services_transient'] ?? null;
+		$fraud_services_transient_baseline    = $state['fraud_services_transient_baseline'] ?? null;
+		if ( ! is_array( $pre_fixture_fraud_services_transient ) || ! is_array( $fraud_services_transient_baseline ) ) {
+			throw new RuntimeException( 'The pre-fixture WooPayments public fraud-services transient was not captured.' );
+		}
+		$fraud_services_run_isolated  = $this->option_snapshots_match( $this->fraud_services_transient_snapshot(), $fraud_services_transient_baseline );
+		$fraud_services_restoration   = $this->restore_option_pair( $pre_fixture_fraud_services_transient );
+		$fraud_services_pre_restored  = $this->option_snapshots_match( $fraud_services_restoration, $pre_fixture_fraud_services_transient );
+		$pre_fixture_jetpack_identity = $state['pre_fixture_jetpack_identity'] ?? null;
+		$jetpack_identity_baseline    = $state['jetpack_identity_baseline'] ?? null;
+		if ( ! is_array( $pre_fixture_jetpack_identity ) || ! is_array( $jetpack_identity_baseline ) ) {
+			throw new RuntimeException( 'The pre-fixture Jetpack identity was not captured.' );
+		}
+		$jetpack_identity_run_isolated = $this->option_snapshots_match( $this->jetpack_identity_snapshot(), $jetpack_identity_baseline );
+		$jetpack_identity_restoration  = $this->restore_jetpack_identity( $pre_fixture_jetpack_identity );
+		$jetpack_identity_pre_restored = $this->option_snapshots_match( $jetpack_identity_restoration, $pre_fixture_jetpack_identity );
+		$pre_fixture_test_mode         = $state['pre_fixture_test_mode_premise'] ?? null;
 		if ( ! is_array( $pre_fixture_test_mode ) || ! is_bool( $pre_fixture_test_mode['exists'] ?? null ) || ! array_key_exists( 'value', $pre_fixture_test_mode ) ) {
 			throw new RuntimeException( 'The pre-fixture WooPayments test-mode premise was not captured.' );
 		}
@@ -142,13 +175,21 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		$test_mode_pre_restored = $test_mode_restoration['exists'] === $pre_fixture_test_mode['exists']
 			&& $test_mode_restoration['value'] === $pre_fixture_test_mode['value'];
 
-		$state['physical_account_cache_restoration'] = array(
+		$state['physical_account_cache_restoration']   = array(
 			'run_normalized' => $run_normalized,
 			'run_restored'   => $run_restored,
 		);
-		$state['test_mode_premise_restoration']      = array(
+		$state['test_mode_premise_restoration']        = array(
 			'run_enabled'          => $test_mode_run_enabled,
 			'pre_fixture_restored' => $test_mode_pre_restored,
+		);
+		$state['fraud_services_transient_restoration'] = array(
+			'run_isolated'         => $fraud_services_run_isolated,
+			'pre_fixture_restored' => $fraud_services_pre_restored,
+		);
+		$state['jetpack_identity_restoration']         = array(
+			'run_isolated'         => $jetpack_identity_run_isolated,
+			'pre_fixture_restored' => $jetpack_identity_pre_restored,
 		);
 		update_option( self::STATE_OPTION, $state );
 		return array_merge(
@@ -192,6 +233,19 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'blog_token'  => 'dummyblog.blog-token',
 			'user_tokens' => array( 1 => 'dummyuser.user-token.1' ),
 		);
+	}
+
+	/**
+	 * Prevents filtered fixture identity from being persisted by recurring Jetpack option writes.
+	 *
+	 * @param mixed  $new_value Proposed option value.
+	 * @param mixed  $old_value Already filtered option value.
+	 * @param string $option Option name.
+	 * @return mixed
+	 */
+	public function prevent_jetpack_identity_update( $new_value, $old_value, string $option ) {
+		unset( $new_value, $option );
+		return $old_value;
 	}
 
 	/**
@@ -444,22 +498,36 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			}
 		}
 		$test_mode_premise_restored = $test_mode_run_enabled && $test_mode_pre_restored;
+		$fraud_services_transient   = $this->physical_state_audit(
+			$this->fraud_services_transient_snapshot(),
+			$state['fraud_services_transient_baseline'] ?? null,
+			$state['pre_fixture_fraud_services_transient'] ?? null,
+			$state['fraud_services_transient_restoration'] ?? null
+		);
+		$jetpack_identity           = $this->physical_state_audit(
+			$this->jetpack_identity_snapshot(),
+			$state['jetpack_identity_baseline'] ?? null,
+			$state['pre_fixture_jetpack_identity'] ?? null,
+			$state['jetpack_identity_restoration'] ?? null
+		);
 		$state_restored             = $mutable_state === $baseline_state
 			&& $this->canonicalize( $retained_state ) === $expected_retain
 			&& $physical_cache_restored
-			&& $test_mode_premise_restored;
+			&& $test_mode_premise_restored
+			&& $fraud_services_transient['restored']
+			&& $jetpack_identity['restored'];
 
 		return array(
-			'requests'               => $requests,
-			'failures'               => $failures,
-			'required_routes'        => self::REQUIRED_ROUTES,
-			'missing_routes'         => $missing,
-			'coverage'               => array() === $missing,
-			'state_restored'         => $state_restored,
-			'retained_state'         => array(
+			'requests'                 => $requests,
+			'failures'                 => $failures,
+			'required_routes'          => self::REQUIRED_ROUTES,
+			'missing_routes'           => $missing,
+			'coverage'                 => array() === $missing,
+			'state_restored'           => $state_restored,
+			'retained_state'           => array(
 				'webhook_secret_hash' => null === $retained_state['webhook_secret_hash'] ? null : '(sha256)',
 			),
-			'physical_account_cache' => array(
+			'physical_account_cache'   => array(
 				'ignored_fields'       => array( 'fetched' ),
 				'normalized'           => $physical_cache,
 				'run_normalized'       => $run_normalized,
@@ -467,12 +535,14 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				'pre_fixture_restored' => $pre_fixture_restored,
 				'restored'             => $physical_cache_restored,
 			),
-			'test_mode_premise'      => array(
+			'test_mode_premise'        => array(
 				'run_enabled'          => $test_mode_run_enabled,
 				'pre_fixture_restored' => $test_mode_pre_restored,
 				'restored'             => $test_mode_premise_restored,
 			),
-			'clean'                  => array() === $failures && array() === $missing && $state_restored,
+			'fraud_services_transient' => $fraud_services_transient,
+			'jetpack_identity'         => $jetpack_identity,
+			'clean'                    => array() === $failures && array() === $missing && $state_restored,
 		);
 	}
 
@@ -555,6 +625,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				'klarna_payments' => 'active',
 			),
 			'supported_payment_methods'  => array( 'card', 'klarna' ),
+			'fraud_services'             => array(),
 			'fees'                       => array(
 				'card'   => array(),
 				'klarna' => array(),
@@ -858,6 +929,163 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 */
 	private function is_list( array $value ): bool {
 		return array() === $value || array_keys( $value ) === range( 0, count( $value ) - 1 );
+	}
+
+	/**
+	 * Reads one physical option's exact existence and value.
+	 *
+	 * @param string $name Option name.
+	 * @return array{exists:bool,value:mixed}
+	 */
+	private function option_snapshot( string $name ): array {
+		$missing = new stdClass();
+		$current = get_option( $name, $missing );
+		return array(
+			'exists' => $missing !== $current,
+			'value'  => $missing === $current ? null : $current,
+		);
+	}
+
+	/**
+	 * Reads the public fraud-services transient pair.
+	 *
+	 * @return array<string,array{exists:bool,value:mixed}>
+	 */
+	private function fraud_services_transient_snapshot(): array {
+		return array(
+			self::FRAUD_SERVICES_TRANSIENT_OPTION         => $this->option_snapshot( self::FRAUD_SERVICES_TRANSIENT_OPTION ),
+			self::FRAUD_SERVICES_TRANSIENT_TIMEOUT_OPTION => $this->option_snapshot( self::FRAUD_SERVICES_TRANSIENT_TIMEOUT_OPTION ),
+		);
+	}
+
+	/**
+	 * Provides the expected absent fraud-services transient pair for a fixture run.
+	 *
+	 * @return array<string,array{exists:bool,value:mixed}>
+	 */
+	private function absent_fraud_services_transient_snapshot(): array {
+		return array(
+			self::FRAUD_SERVICES_TRANSIENT_OPTION         => array(
+				'exists' => false,
+				'value'  => null,
+			),
+			self::FRAUD_SERVICES_TRANSIENT_TIMEOUT_OPTION => array(
+				'exists' => false,
+				'value'  => null,
+			),
+		);
+	}
+
+	/**
+	 * Reads physical Jetpack identity options without the fixture read filters.
+	 *
+	 * @return array<string,array{exists:bool,value:mixed}>
+	 */
+	private function jetpack_identity_snapshot(): array {
+		$public_callback  = array( $this, 'jetpack_options' );
+		$private_callback = array( $this, 'jetpack_private_options' );
+		$public_removed   = remove_filter( 'pre_option_jetpack_options', $public_callback );
+		$private_removed  = remove_filter( 'pre_option_jetpack_private_options', $private_callback );
+		try {
+			return array(
+				self::JETPACK_OPTIONS_OPTION         => $this->option_snapshot( self::JETPACK_OPTIONS_OPTION ),
+				self::JETPACK_PRIVATE_OPTIONS_OPTION => $this->option_snapshot( self::JETPACK_PRIVATE_OPTIONS_OPTION ),
+			);
+		} finally {
+			if ( $public_removed ) {
+				add_filter( 'pre_option_jetpack_options', $public_callback );
+			}
+			if ( $private_removed ) {
+				add_filter( 'pre_option_jetpack_private_options', $private_callback );
+			}
+		}
+	}
+
+	/**
+	 * Restores an exact pair of physical options.
+	 *
+	 * @param array<string,array{exists:bool,value:mixed}> $snapshots Physical option snapshots.
+	 * @return array<string,array{exists:bool,value:mixed}>
+	 */
+	private function restore_option_pair( array $snapshots ): array {
+		$restoration = array();
+		foreach ( $snapshots as $name => $snapshot ) {
+			$restoration[ $name ] = $this->restore_option( $name, $snapshot['exists'], $snapshot['value'] );
+		}
+		return $restoration;
+	}
+
+	/**
+	 * Restores physical Jetpack identity options without fixture read or write filters.
+	 *
+	 * @param array<string,array{exists:bool,value:mixed}> $snapshots Physical identity snapshots.
+	 * @return array<string,array{exists:bool,value:mixed}>
+	 */
+	private function restore_jetpack_identity( array $snapshots ): array {
+		$public_read_callback   = array( $this, 'jetpack_options' );
+		$private_read_callback  = array( $this, 'jetpack_private_options' );
+		$public_write_callback  = array( $this, 'prevent_jetpack_identity_update' );
+		$private_write_callback = array( $this, 'prevent_jetpack_identity_update' );
+		$public_read_removed    = remove_filter( 'pre_option_jetpack_options', $public_read_callback );
+		$private_read_removed   = remove_filter( 'pre_option_jetpack_private_options', $private_read_callback );
+		$public_write_removed   = remove_filter( 'pre_update_option_jetpack_options', $public_write_callback );
+		$private_write_removed  = remove_filter( 'pre_update_option_jetpack_private_options', $private_write_callback );
+		try {
+			return $this->restore_option_pair( $snapshots );
+		} finally {
+			if ( $public_read_removed ) {
+				add_filter( 'pre_option_jetpack_options', $public_read_callback );
+			}
+			if ( $private_read_removed ) {
+				add_filter( 'pre_option_jetpack_private_options', $private_read_callback );
+			}
+			if ( $public_write_removed ) {
+				add_filter( 'pre_update_option_jetpack_options', $public_write_callback, 10, 3 );
+			}
+			if ( $private_write_removed ) {
+				add_filter( 'pre_update_option_jetpack_private_options', $private_write_callback, 10, 3 );
+			}
+		}
+	}
+
+	/**
+	 * Determines whether two exact physical option snapshots match.
+	 *
+	 * @param array<string,array{exists:bool,value:mixed}> $first First snapshot.
+	 * @param array<string,array{exists:bool,value:mixed}> $second Second snapshot.
+	 */
+	private function option_snapshots_match( array $first, array $second ): bool {
+		return $first === $second;
+	}
+
+	/**
+	 * Produces a public audit result for fixture-owned physical state without returning its values.
+	 *
+	 * @param array<string,array{exists:bool,value:mixed}>            $current Current snapshot.
+	 * @param array<string,array{exists:bool,value:mixed}>|null       $run_baseline Protected run baseline.
+	 * @param array<string,array{exists:bool,value:mixed}>|null       $pre_fixture Original physical state.
+	 * @param array{run_isolated:bool,pre_fixture_restored:bool}|null $restoration Final-restoration record.
+	 * @return array{run_isolated:bool,pre_fixture_restored:bool,restored:bool}
+	 */
+	private function physical_state_audit( array $current, $run_baseline, $pre_fixture, $restoration ): array {
+		if ( ! is_array( $run_baseline ) || ! is_array( $pre_fixture ) ) {
+			return array(
+				'run_isolated'         => true,
+				'pre_fixture_restored' => true,
+				'restored'             => true,
+			);
+		}
+		$run_isolated         = $this->option_snapshots_match( $current, $run_baseline );
+		$pre_fixture_restored = false;
+		if ( is_array( $restoration ) && is_bool( $restoration['run_isolated'] ?? null ) && is_bool( $restoration['pre_fixture_restored'] ?? null ) ) {
+			$run_isolated         = $restoration['run_isolated'];
+			$pre_fixture_restored = $restoration['pre_fixture_restored'] && $this->option_snapshots_match( $current, $pre_fixture );
+		}
+		return array(
+			'run_isolated'         => $run_isolated,
+			'pre_fixture_restored' => $pre_fixture_restored,
+			'restored'             => $run_isolated && $pre_fixture_restored,
+		);
 	}
 
 	/**
