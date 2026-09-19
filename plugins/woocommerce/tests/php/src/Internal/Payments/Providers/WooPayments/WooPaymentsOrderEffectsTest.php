@@ -602,18 +602,28 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	 * @testdox Refund projection accepts a separately rendered note without container resolution.
 	 */
 	public function test_refund_projection_accepts_rendered_note_separately_without_container_resolution(): void {
-		$effects = WooPaymentsOrderEffects::compose_refund_effect_data(
+		$equivalent_notes = array(
+			'Already rendered refund note.',
+			'Legacy catalog refund note.',
+		);
+		$effects          = WooPaymentsOrderEffects::compose_refund_effect_data(
 			array(
 				'id'                  => 're_native',
 				'status'              => 'pending',
 				'balance_transaction' => array( 'id' => 'txn_refund' ),
 			),
-			'Already rendered refund note.'
+			'Already rendered refund note.',
+			'refund:re_native:created_pending',
+			$equivalent_notes,
+			'_test_refund_note_identity'
 		);
 
 		$this->assertSame( 'pending', $effects[ PaymentOutcome::DATA_ORDER_META ]['_wcpay_refund_status'] );
 		$this->assertSame( 're_native', $effects[ PaymentOutcome::DATA_REFUND_META ]['_wcpay_refund_id'] );
 		$this->assertSame( 'txn_refund', $effects[ PaymentOutcome::DATA_REFUND_META ]['_wcpay_refund_transaction_id'] );
 		$this->assertSame( 'Already rendered refund note.', $effects[ PaymentOutcome::DATA_REFUND_NOTE ] );
+		$this->assertSame( 'refund:re_native:created_pending', $effects[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY ] );
+		$this->assertSame( $equivalent_notes, $effects[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] );
+		$this->assertSame( '_test_refund_note_identity', $effects[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ] );
 	}
 }

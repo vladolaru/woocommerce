@@ -1572,6 +1572,289 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A refund outcome adopts an equivalent note and backfills its provider-neutral structural identity.
+	 */
+	public function test_process_refund_adopts_equivalent_note_and_backfills_structural_identity(): void {
+		$identity    = 'refund:re_structural:created_successful';
+		$native_note = 'A refund of $10.99 was successfully processed. (<code>re_structural</code>)';
+		$locale_note = 'A refund of 10,99 $ was successfully processed. (<code>re_structural</code>)';
+		$order       = $this->create_woopayments_order( '10.99' );
+		$refund      = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 10.99,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$order->add_order_note( $locale_note );
+
+		$effect_data = array(
+			PaymentOutcome::DATA_REFUND_NOTE             => $native_note,
+			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY    => $identity,
+			PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS => array( $native_note, $locale_note ),
+			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY => '_test_provider_note_identity',
+		);
+		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_structural', '', '', '', $effect_data ) );
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 10.99 ), $provider );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertTrue( $result );
+		$this->assertSame( 1, $provider->refund_calls, 'The structural note reconciliation must not issue a second provider refund.' );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 1, $order->get_refunds() );
+		$refund_notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => str_contains( $note->content, 're_structural' )
+			)
+		);
+		$this->assertCount( 1, $refund_notes );
+		$this->assertSame( $locale_note, $refund_notes[0]->content );
+		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $refund_notes[0]->id, '_test_provider_note_identity', true ) );
+	}
+
+	/**
+	 * @testdox Mixed equivalent-note values are filtered while valid structural identity remains usable.
+	 */
+	public function test_process_refund_filters_mixed_equivalent_notes_before_structural_adoption(): void {
+		$identity    = 'refund:re_mixed_equivalents:created_successful';
+		$native_note = 'Native refund note. (<code>re_mixed_equivalents</code>)';
+		$locale_note = 'Localized refund note. (<code>re_mixed_equivalents</code>)';
+		$order       = $this->create_woopayments_order( '3.25' );
+		$refund      = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 3.25,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$order->add_order_note( $locale_note );
+
+		$provider = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_COMPLETED,
+				're_mixed_equivalents',
+				'',
+				'',
+				'',
+				array(
+					'refund_note'                   => $native_note,
+					'refund_note_identity'          => $identity,
+					'refund_note_equivalents'       => array( $native_note, 42, array( '_arbitrary_comment_meta' => 'injected' ), $locale_note ),
+					'refund_note_identity_meta_key' => '_test_provider_note_identity',
+				)
+			)
+		);
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 3.25 ), $provider );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertTrue( $result );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$refund_notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => str_contains( $note->content, 're_mixed_equivalents' )
+			)
+		);
+		$this->assertCount( 1, $refund_notes );
+		$this->assertSame( $locale_note, $refund_notes[0]->content );
+		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $refund_notes[0]->id, '_test_provider_note_identity', true ) );
+		$this->assertSame( '', get_comment_meta( $refund_notes[0]->id, '_arbitrary_comment_meta', true ) );
+	}
+
+	/**
+	 * @testdox Numeric equivalent-note values are not coerced into persisted-note content matches.
+	 */
+	public function test_process_refund_does_not_coerce_numeric_equivalent_note_candidates(): void {
+		$identity    = 'refund:re_numeric_equivalent:created_successful';
+		$native_note = 'Native refund note. (<code>re_numeric_equivalent</code>)';
+		$order       = $this->create_woopayments_order( '3.50' );
+		$refund      = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 3.50,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$coercion_trap_note_id = $order->add_order_note( '42' );
+
+		$provider = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_COMPLETED,
+				're_numeric_equivalent',
+				'',
+				'',
+				'',
+				array(
+					'refund_note'                   => $native_note,
+					'refund_note_identity'          => $identity,
+					'refund_note_equivalents'       => array( 42 ),
+					'refund_note_identity_meta_key' => '_test_provider_note_identity',
+				)
+			)
+		);
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 3.50 ), $provider );
+
+		$this->assertTrue( $result );
+		$native_notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => $native_note === $note->content
+			)
+		);
+		$this->assertCount( 1, $native_notes );
+		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $native_notes[0]->id, '_test_provider_note_identity', true ) );
+		$this->assertSame( array(), get_comment_meta( $coercion_trap_note_id ) );
+	}
+
+	/**
+	 * @testdox Malformed structural refund-note values fall back without creating comment metadata.
+	 * @dataProvider malformed_refund_note_identity_data
+	 *
+	 * @param mixed $identity          Structural note identity.
+	 * @param mixed $identity_meta_key Structural note identity meta key.
+	 */
+	public function test_process_refund_does_not_coerce_malformed_structural_note_values( $identity, $identity_meta_key ): void {
+		$note   = 'Existing exact refund note. (<code>re_malformed_structure</code>)';
+		$order  = $this->create_woopayments_order( '2.75' );
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 2.75,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$note_id = $order->add_order_note( $note );
+
+		$provider = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_COMPLETED,
+				're_malformed_structure',
+				'',
+				'',
+				'',
+				array(
+					'refund_note'                   => $note,
+					'refund_note_identity'          => $identity,
+					'refund_note_equivalents'       => array( $note ),
+					'refund_note_identity_meta_key' => $identity_meta_key,
+				)
+			)
+		);
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.75 ), $provider );
+
+		$this->assertTrue( $result );
+		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $order_note ): bool => $note === $order_note->content ) );
+		$this->assertSame( array(), get_comment_meta( $note_id ) );
+	}
+
+	/**
+	 * Provide malformed structural refund-note values.
+	 *
+	 * @return array<string,array{mixed,mixed}>
+	 */
+	public function malformed_refund_note_identity_data(): array {
+		return array(
+			'empty identity'             => array( '', '_test_provider_note_identity' ),
+			'array identity'             => array( array( 'refund:re_malformed_structure:created_successful' ), '_test_provider_note_identity' ),
+			'scalar non-string identity' => array( 42, '_test_provider_note_identity' ),
+			'empty meta key'             => array( 'refund:re_malformed_structure:created_successful', '' ),
+			'array meta key'             => array( 'refund:re_malformed_structure:created_successful', array( '_arbitrary_comment_meta' ) ),
+			'scalar non-string meta key' => array( 'refund:re_malformed_structure:created_successful', true ),
+		);
+	}
+
+	/**
+	 * @testdox Missing or malformed refund-note equivalents retain exact-content fallback without adding identity metadata.
+	 * @dataProvider malformed_refund_note_equivalents_data
+	 *
+	 * @param bool  $include_equivalents Whether to include the equivalents field.
+	 * @param mixed $equivalent_notes    Equivalent-note field value.
+	 */
+	public function test_process_refund_falls_back_when_equivalent_notes_are_absent_or_malformed( bool $include_equivalents, $equivalent_notes ): void {
+		$note        = 'Existing exact partial-structure refund note. (<code>re_partial_structure</code>)';
+		$order       = $this->create_woopayments_order( '2.25' );
+		$refund      = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 2.25,
+				'refund_payment' => false,
+			)
+		);
+		$effect_data = array(
+			PaymentOutcome::DATA_REFUND_NOTE          => $note,
+			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY => 'refund:re_partial_structure:created_successful',
+			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY => '_test_provider_note_identity',
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$note_id = $order->add_order_note( $note );
+
+		if ( $include_equivalents ) {
+			$effect_data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] = $equivalent_notes;
+		}
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_partial_structure', '', '', '', $effect_data ) );
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.25 ), $provider );
+
+		$this->assertTrue( $result );
+		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $order_note ): bool => $note === $order_note->content ) );
+		$this->assertSame( array(), get_comment_meta( $note_id ) );
+	}
+
+	/**
+	 * Provide absent and malformed refund-note equivalents.
+	 *
+	 * @return array<string,array{bool,mixed}>
+	 */
+	public function malformed_refund_note_equivalents_data(): array {
+		return array(
+			'absent equivalents'    => array( false, null ),
+			'non-array equivalents' => array( true, 'not-an-array' ),
+		);
+	}
+
+	/**
+	 * @testdox A legacy refund-note-only outcome retains exact-content deduplication without adding identity metadata.
+	 */
+	public function test_process_refund_legacy_note_only_outcome_retains_exact_content_deduplication(): void {
+		$note   = 'Legacy exact refund note. (<code>re_legacy_note</code>)';
+		$order  = $this->create_woopayments_order( '1.50' );
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 1.50,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$note_id  = $order->add_order_note( $note );
+		$provider = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_COMPLETED,
+				're_legacy_note',
+				'',
+				'',
+				'',
+				array( PaymentOutcome::DATA_REFUND_NOTE => $note )
+			)
+		);
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 1.50 ), $provider );
+
+		$this->assertTrue( $result );
+		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $order_note ): bool => $note === $order_note->content ) );
+		$this->assertSame( array(), get_comment_meta( $note_id ) );
+	}
+
+	/**
 	 * @testdox An AJAX-formatted refund amount must resolve to the exact local refund despite decimal scale differences.
 	 */
 	public function test_process_refund_matches_ajax_formatted_refund_amount(): void {

@@ -4,9 +4,16 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
+use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use WC_Order;
 use WC_Order_Refund;
 use WC_Unit_Test_Case;
@@ -97,22 +104,82 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 
 		try {
-			$order  = $this->create_refundable_order();
-			$refund = $this->create_local_refund( $order );
-			$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
-			$refund->save_meta_data();
-			$order->update_meta_data( '_wcpay_refund_status', 'successful' );
-			$order->add_order_note(
-				wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_created_refund_note(
-					$order,
-					4.00,
-					(string) $order->get_currency(),
-					're_123',
-					'Requested by customer',
-					false
+			$order              = $this->create_refundable_order();
+			$refund             = $this->create_local_refund( $order );
+			$provider_result    = array(
+				'id'                  => 're_123',
+				'status'              => 'succeeded',
+				'balance_transaction' => array( 'id' => 'txn_123' ),
+			);
+			$effect_applier     = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
+			$provider           = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_123' ), $effect_applier, $provider_result ) extends RecordingProvider implements ProviderOperationEffectApplier {
+				/**
+				 * WooPayments effect applier.
+				 *
+				 * @var WooPaymentsOrderEffectApplier
+				 */
+				private WooPaymentsOrderEffectApplier $effect_applier;
+
+				/**
+				 * Provider refund result.
+				 *
+				 * @var array<string,mixed>
+				 */
+				private array $provider_result;
+
+				/**
+				 * Constructor.
+				 *
+				 * @param PaymentOutcome                $outcome         Provider outcome.
+				 * @param WooPaymentsOrderEffectApplier $effect_applier WooPayments effect applier.
+				 * @param array<string,mixed>           $provider_result Provider refund result.
+				 */
+				public function __construct( PaymentOutcome $outcome, WooPaymentsOrderEffectApplier $effect_applier, array $provider_result ) {
+					parent::__construct( $outcome );
+					$this->effect_applier  = $effect_applier;
+					$this->provider_result = $provider_result;
+				}
+
+				/**
+				 * Apply the real WooPayments refund effects.
+				 *
+				 * @param PaymentContext $context   Payment context.
+				 * @param PaymentOutcome $outcome   Provider outcome.
+				 * @param string         $operation Operation name.
+				 * @return PaymentOutcome
+				 */
+				public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+					unset( $operation );
+
+					return $this->effect_applier->apply( $context, $outcome, WooPaymentsOrderEffectPlan::for_refund( $this->provider_result ) );
+				}
+			};
+			$processing_service = wc_get_container()->get( PaymentProcessingService::class );
+
+			$this->assertTrue( $processing_service->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 4.00, 'Requested by customer' ), $provider ) );
+			$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+			$synchronous_notes = array_values(
+				array_filter(
+					wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+					static fn( $note ): bool => str_contains( $note->content, 're_123' )
 				)
 			);
-			$order->save();
+			$this->assertCount( 1, $synchronous_notes );
+			$synchronous_note = $synchronous_notes[0]->content;
+
+			$this->install_test_translations(
+				array(
+					'woocommerce'          => array(
+						'A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)' => 'Eine Rueckerstattung von %1$s %5$s mit %2$s. Grund: %3$s. (<code>%4$s</code>)',
+						'was successfully processed' => 'wurde erfolgreich verarbeitet',
+					),
+					'woocommerce-payments' => array(
+						'A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)' => 'Eine Rueckerstattung von %1$s %5$s mit %2$s. Grund: %3$s. (<code>%4$s</code>)',
+						'was successfully processed' => 'wurde erfolgreich verarbeitet',
+					),
+				)
+			);
+			switch_to_locale( 'de_DE' );
 
 			$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
 
@@ -127,13 +194,8 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 				)
 			);
 			$this->assertCount( 1, $refund_notes );
-			$this->assertSame(
-				sprintf(
-					'A refund of %s USD was successfully processed using WooPayments. Reason: Requested by customer. (<code>re_123</code>)',
-					wc_price( 4.00, array( 'currency' => 'USD' ) )
-				),
-				$refund_notes[0]->content
-			);
+			$this->assertSame( $synchronous_note, $refund_notes[0]->content );
+			$this->assertSame( hash( 'sha256', 'refund:re_123:created_successful' ), get_comment_meta( $refund_notes[0]->id, WooPaymentsOrderNoteService::NOTE_IDENTITY_META_KEY, true ) );
 			$this->assertSame( '', $order->get_meta( '_wc_native_woopayments_refund_note_' . md5( 're_123|created_successful' ), true ) );
 		} finally {
 			false === $previous_enabled_currencies

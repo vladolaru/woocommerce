@@ -185,21 +185,29 @@ class WooPaymentsOrderEffectApplier {
 					);
 				}
 
-				$payment_data  = $context->get_payment_data();
-				$result        = $plan->get_provider_result();
-				$refund_id     = isset( $result['id'] ) ? (string) $result['id'] : $outcome->get_provider_payment_id();
-				$rendered_note = $this->note_service->format_created_refund_note(
+				$payment_data    = $context->get_payment_data();
+				$result          = $plan->get_provider_result();
+				$refund_id       = isset( $result['id'] ) ? (string) $result['id'] : $outcome->get_provider_payment_id();
+				$is_pending      = 'pending' === (string) ( $result['status'] ?? '' );
+				$note_candidates = $this->note_service->format_created_refund_note_candidates(
 					$context->get_order(),
 					(float) ( $payment_data['amount'] ?? 0.0 ),
 					(string) $context->get_order()->get_currency(),
 					$refund_id,
 					(string) ( $payment_data['reason'] ?? '' ),
-					'pending' === (string) ( $result['status'] ?? '' )
+					$is_pending
 				);
+				$note_identity   = sprintf( 'refund:%s:%s', $refund_id, $is_pending ? 'created_pending' : 'created_successful' );
 
 				return $this->merge_effect_data_into_outcome(
 					$outcome,
-					WooPaymentsOrderEffects::compose_refund_effect_data( $result, $rendered_note ),
+					WooPaymentsOrderEffects::compose_refund_effect_data(
+						$result,
+						$note_candidates[0],
+						$note_identity,
+						$note_candidates,
+						WooPaymentsOrderNoteService::NOTE_IDENTITY_META_KEY
+					),
 					$plan
 				);
 		}

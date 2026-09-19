@@ -24,11 +24,13 @@ class WooPaymentsOrderNoteService {
 	 */
 	private const FROD_UNSUPPORTED_COUNTRIES = array( 'HK', 'SG', 'AE' );
 	/**
-	 * Private identity metadata stored on WooPayments order-note comments.
+	 * Identity metadata stored on WooPayments order-note comments.
+	 *
+	 * @since 11.2.0
 	 *
 	 * @var string
 	 */
-	private const NOTE_IDENTITY_META_KEY = '_wc_woopayments_note_identity';
+	public const NOTE_IDENTITY_META_KEY = '_wc_woopayments_note_identity';
 
 	/**
 	 * Build a WooPayments-compatible payment-success note.
@@ -1367,7 +1369,7 @@ class WooPaymentsOrderNoteService {
 	 * @since 11.0.0
 	 */
 	public function format_created_refund_note( WC_Order $order, float $amount, string $currency, string $refund_id, string $reason, bool $is_pending ): string {
-		return $this->format_created_refund_note_candidates( $order, $amount, $currency, $refund_id, $reason, $is_pending )[0];
+		return $this->format_created_refund_note_for_domain( $order, $amount, $currency, $refund_id, $reason, $is_pending, 'woocommerce' );
 	}
 
 	/**
@@ -1384,7 +1386,7 @@ class WooPaymentsOrderNoteService {
 	 * @since 11.0.0
 	 */
 	public function format_created_refund_note_candidates( WC_Order $order, float $amount, string $currency, string $refund_id, string $reason, bool $is_pending ): array {
-		$notes = array( $this->format_created_refund_note_for_domain( $order, $amount, $currency, $refund_id, $reason, $is_pending, 'woocommerce' ) );
+		$notes = array( $this->format_created_refund_note( $order, $amount, $currency, $refund_id, $reason, $is_pending ) );
 
 		foreach ( $this->format_plugin_amount_candidates( $order, $amount, $currency ) as $formatted_amount ) {
 			$notes[] = $this->format_created_refund_note_for_domain( $order, $amount, $currency, $refund_id, $reason, $is_pending, 'woocommerce-payments', $formatted_amount );

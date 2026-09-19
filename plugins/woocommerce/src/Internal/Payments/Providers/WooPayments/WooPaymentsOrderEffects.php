@@ -560,26 +560,43 @@ class WooPaymentsOrderEffects {
 	/**
 	 * Compose local effects for a successful provider refund.
 	 *
-	 * @param array<string,mixed> $result        Provider refund response.
-	 * @param string              $rendered_note Rendered compatibility note.
+	 * @param array<string,mixed> $result                        Provider refund response.
+	 * @param string              $rendered_note                 Rendered compatibility note.
+	 * @param string              $refund_note_identity          Stable refund note identity.
+	 * @param array<mixed>        $refund_note_equivalents       Exact equivalent refund-note renderings.
+	 * @param string              $refund_note_identity_meta_key Comment-meta key for the stable identity.
 	 * @return array<string,mixed>
 	 */
-	public static function compose_refund_effect_data( array $result, string $rendered_note ): array {
+	public static function compose_refund_effect_data( array $result, string $rendered_note, string $refund_note_identity = '', array $refund_note_equivalents = array(), string $refund_note_identity_meta_key = '' ): array {
 		$refund_id              = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$provider_status        = isset( $result['status'] ) ? (string) $result['status'] : '';
 		$refund_status          = 'pending' === $provider_status ? 'pending' : 'successful';
 		$balance_transaction_id = self::balance_transaction_id( $result['balance_transaction'] ?? null );
 		$refund_meta            = array( '_wcpay_refund_id' => $refund_id );
-
-		if ( '' !== $balance_transaction_id ) {
-			$refund_meta['_wcpay_refund_transaction_id'] = $balance_transaction_id;
-		}
-
-		return array(
+		$effect_data            = array(
 			PaymentOutcome::DATA_ORDER_META  => array( '_wcpay_refund_status' => $refund_status ),
 			PaymentOutcome::DATA_REFUND_META => $refund_meta,
 			PaymentOutcome::DATA_REFUND_NOTE => $rendered_note,
 		);
+
+		if ( '' !== $balance_transaction_id ) {
+			$effect_data[ PaymentOutcome::DATA_REFUND_META ]['_wcpay_refund_transaction_id'] = $balance_transaction_id;
+		}
+
+		if ( '' !== $refund_note_identity ) {
+			$effect_data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY ] = $refund_note_identity;
+		}
+
+		$refund_note_equivalents = array_values( array_filter( $refund_note_equivalents, 'is_string' ) );
+		if ( ! empty( $refund_note_equivalents ) ) {
+			$effect_data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] = $refund_note_equivalents;
+		}
+
+		if ( '' !== $refund_note_identity_meta_key ) {
+			$effect_data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ] = $refund_note_identity_meta_key;
+		}
+
+		return $effect_data;
 	}
 
 	/**

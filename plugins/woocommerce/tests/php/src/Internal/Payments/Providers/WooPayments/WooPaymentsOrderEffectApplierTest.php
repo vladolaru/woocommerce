@@ -1594,7 +1594,22 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'is pending', $data[ PaymentOutcome::DATA_REFUND_NOTE ] );
 		$this->assertStringContainsString( 'Adjustment', $data[ PaymentOutcome::DATA_REFUND_NOTE ] );
 		$this->assertStringContainsString( 're_effects', $data[ PaymentOutcome::DATA_REFUND_NOTE ] );
+		$this->assertSame( 'refund:re_effects:created_pending', $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY ] );
+		$this->assertContains( $data[ PaymentOutcome::DATA_REFUND_NOTE ], $data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] );
+		$this->assertSame( WooPaymentsOrderNoteService::NOTE_IDENTITY_META_KEY, $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ] );
 		$this->assertSame( $plan, $applied_outcome->get_effect_plan() );
+
+		$successful_result  = array(
+			'id'     => 're_effects',
+			'status' => 'succeeded',
+		);
+		$successful_outcome = $this->create_applier()->apply(
+			PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ),
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_effects' ),
+			WooPaymentsOrderEffectPlan::for_refund( $successful_result )
+		);
+
+		$this->assertSame( 'refund:re_effects:created_successful', $successful_outcome->get_data()[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY ] );
 	}
 
 	/**

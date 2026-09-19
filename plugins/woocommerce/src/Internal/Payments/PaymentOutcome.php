@@ -130,6 +130,33 @@ class PaymentOutcome {
 	public const DATA_REFUND_NOTE = 'refund_note';
 
 	/**
+	 * Additional data key: stable refund note identity.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @var string
+	 */
+	public const DATA_REFUND_NOTE_IDENTITY = 'refund_note_identity';
+
+	/**
+	 * Additional data key: exact equivalent refund-note renderings.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @var string
+	 */
+	public const DATA_REFUND_NOTE_EQUIVALENTS = 'refund_note_equivalents';
+
+	/**
+	 * Additional data key: refund-note identity comment-meta key.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @var string
+	 */
+	public const DATA_REFUND_NOTE_IDENTITY_META_KEY = 'refund_note_identity_meta_key';
+
+	/**
 	 * Additional data key: provider error code.
 	 *
 	 * @var string

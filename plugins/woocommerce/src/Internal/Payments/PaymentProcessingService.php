@@ -451,15 +451,25 @@ class PaymentProcessingService {
 	 * @throws \RuntimeException When the exact refund or parent order cannot be reloaded.
 	 */
 	private function apply_refund_outcome( WC_Order $order, PaymentOutcome $outcome, ?string $refund_instance ): void {
-		$data        = $outcome->get_data();
-		$refund_meta = isset( $data[ PaymentOutcome::DATA_REFUND_META ] ) && is_array( $data[ PaymentOutcome::DATA_REFUND_META ] )
+		$data                          = $outcome->get_data();
+		$refund_meta                   = isset( $data[ PaymentOutcome::DATA_REFUND_META ] ) && is_array( $data[ PaymentOutcome::DATA_REFUND_META ] )
 			? $data[ PaymentOutcome::DATA_REFUND_META ]
 			: array();
-		$order_meta  = isset( $data[ PaymentOutcome::DATA_ORDER_META ] ) && is_array( $data[ PaymentOutcome::DATA_ORDER_META ] )
+		$order_meta                    = isset( $data[ PaymentOutcome::DATA_ORDER_META ] ) && is_array( $data[ PaymentOutcome::DATA_ORDER_META ] )
 			? $data[ PaymentOutcome::DATA_ORDER_META ]
 			: array();
-		$refund_note = isset( $data[ PaymentOutcome::DATA_REFUND_NOTE ] ) && is_string( $data[ PaymentOutcome::DATA_REFUND_NOTE ] )
+		$refund_note                   = isset( $data[ PaymentOutcome::DATA_REFUND_NOTE ] ) && is_string( $data[ PaymentOutcome::DATA_REFUND_NOTE ] )
 			? $data[ PaymentOutcome::DATA_REFUND_NOTE ]
+			: '';
+		$refund_note_equivalents_valid = isset( $data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] ) && is_array( $data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] );
+		$refund_note_identity          = $refund_note_equivalents_valid && isset( $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY ] ) && is_string( $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY ] )
+			? $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY ]
+			: '';
+		$refund_note_equivalents       = $refund_note_equivalents_valid
+			? array_values( array_filter( $data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ], 'is_string' ) )
+			: array();
+		$refund_note_identity_meta_key = isset( $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ] ) && is_string( $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ] )
+			? $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ]
 			: '';
 
 		if ( empty( $refund_meta ) && empty( $order_meta ) && '' === $refund_note ) {
@@ -487,7 +497,7 @@ class PaymentProcessingService {
 		}
 
 		if ( '' !== $refund_note ) {
-			$this->maybe_add_refund_note( $reloaded_order, $refund_note );
+			$this->maybe_add_refund_note( $reloaded_order, $refund_note, $refund_note_identity, $refund_note_equivalents, $refund_note_identity_meta_key );
 		}
 		$reloaded_order->save_meta_data();
 	}
@@ -558,13 +568,47 @@ class PaymentProcessingService {
 	/**
 	 * Add a WooPayments-compatible provider refund note if it does not already exist.
 	 *
-	 * @param WC_Order $order Parent order.
-	 * @param string   $note  Provider refund note.
+	 * @param WC_Order $order             Parent order.
+	 * @param string   $note              Provider refund note.
+	 * @param string   $identity          Stable refund note identity.
+	 * @param string[] $equivalent_notes  Exact equivalent refund-note renderings.
+	 * @param string   $identity_meta_key Comment-meta key for the stable identity.
 	 */
-	private function maybe_add_refund_note( WC_Order $order, string $note ): void {
-		if ( ! $this->order_note_exists( $order, $note ) ) {
-			$order->add_order_note( $note );
+	private function maybe_add_refund_note( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), string $identity_meta_key = '' ): void {
+		if ( '' === $identity || '' === $identity_meta_key ) {
+			if ( ! $this->order_note_exists( $order, $note ) ) {
+				$order->add_order_note( $note );
+			}
+			return;
 		}
+
+		$identity_hash         = hash( 'sha256', $identity );
+		$equivalent_notes      = array_values( array_unique( array_merge( array( $note ), $equivalent_notes ) ) );
+		$content_match_note_id = 0;
+		$notes                 = wc_get_order_notes(
+			array(
+				'order_id' => $order->get_id(),
+				'type'     => 'any',
+			)
+		);
+
+		foreach ( $notes as $order_note ) {
+			$note_identities = get_comment_meta( $order_note->id, $identity_meta_key, false );
+			if ( in_array( $identity_hash, $note_identities, true ) ) {
+				return;
+			}
+
+			if ( in_array( (string) $order_note->content, $equivalent_notes, true ) ) {
+				$content_match_note_id = $order_note->id;
+			}
+		}
+
+		if ( 0 < $content_match_note_id ) {
+			add_comment_meta( $content_match_note_id, $identity_meta_key, $identity_hash );
+			return;
+		}
+
+		$order->add_order_note( $note, 0, false, array( $identity_meta_key => $identity_hash ) );
 	}
 
 	/**
