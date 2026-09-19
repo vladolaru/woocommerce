@@ -14,6 +14,7 @@ $options = array();
 /** @var ArrayObject<string,array{0:callable,1:int,2:int}> $filters */
 $filters                  = new ArrayObject();
 $discarded_option_updates = array();
+$discarded_option_deletes = array();
 
 require __DIR__ . '/ci-provider-fixture-test-wp-error.php';
 
@@ -115,7 +116,10 @@ function update_option( string $name, $value, ?bool $autoload = null ): bool {
  * @param string $name Option name.
  */
 function delete_option( string $name ): bool {
-	global $options;
+	global $discarded_option_deletes, $options;
+	if ( in_array( $name, $discarded_option_deletes, true ) ) {
+		return false;
+	}
 	$existed = array_key_exists( $name, $options );
 	unset( $options[ $name ] );
 	return $existed;
@@ -252,15 +256,22 @@ assert_true(
 	3 === count( $user_token_parts ) && '' !== $user_token_parts[0] && '' !== $user_token_parts[1] && '1' === $user_token_parts[2],
 	'dummy Jetpack user token must satisfy the stored key.secret.user_id parser before signing reduces it to key.secret'
 );
+$registered_instance = new ReflectionProperty( WooCommerce_WooPayments_Native_CI_Provider_Fixture::class, 'registered_instance' );
+if ( PHP_VERSION_ID < 80100 ) {
+	$registered_instance->setAccessible( true );
+}
+$registered_instance->setValue( null, null );
 $discarded_option_updates[] = 'e2e_woopayments_native_provider_state';
 try {
-	$fixture->account_cache();
+	WooCommerce_WooPayments_Native_CI_Provider_Fixture::initialize_fixture_state_for_install();
 	assert_true( false, 'fixture state initialization must fail when its unstarted lifecycle cannot be persisted' );
 } catch ( RuntimeException $error ) {
-	assert_same( 'The WooPayments unstarted physical-state lifecycle could not be persisted.', $error->getMessage(), 'fixture state initialization must report unstarted lifecycle persistence failures' );
+	assert_same( 'The WooPayments physical-state lifecycle could not be persisted.', $error->getMessage(), 'fixture state initialization must report unstarted lifecycle persistence failures' );
 }
 $discarded_option_updates = array();
-$cache                    = $fixture->account_cache();
+WooCommerce_WooPayments_Native_CI_Provider_Fixture::initialize_fixture_state_for_install();
+$registered_instance->setValue( null, $fixture );
+$cache = $fixture->account_cache();
 assert_true( isset( $filters['pre_option_wcpay_account_data'] ), 'fixture must own account-cache reads for consistent provider state' );
 $initial_fixture_state = get_option( 'e2e_woopayments_native_provider_state' );
 assert_same( 'unstarted', $initial_fixture_state['physical_state_lifecycle'], 'the deliberately pre-run fixture state must persist an explicit unstarted lifecycle marker' );
@@ -1193,6 +1204,7 @@ assert_same( false, $diverged_premise_audit['test_mode_premise']['pre_fixture_re
 assert_same( false, $diverged_premise_audit['clean'], 'test-mode premise divergence must keep the final audit non-clean' );
 delete_option( 'wcpay_onboarding_test_mode' );
 assert_same( true, $fixture->audit()['clean'], 'restoring the test-mode premise must make the otherwise clean audit pass again' );
+WooCommerce_WooPayments_Native_CI_Provider_Fixture::initialize_fixture_state_for_install();
 delete_option( '_transient_woocommerce_woopayments_public_fraud_services' );
 delete_option( '_transient_timeout_woocommerce_woopayments_public_fraud_services' );
 delete_option( 'jetpack_options' );
@@ -1222,6 +1234,7 @@ remove_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_ca
 assert_same( '__missing__', get_option( 'jetpack_private_options', '__missing__' ), 'an originally absent private Jetpack identity must remain absent after restoration' );
 add_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
 
+WooCommerce_WooPayments_Native_CI_Provider_Fixture::initialize_fixture_state_for_install();
 $repeat_original_account_cache                                       = array(
 	'data'               => null,
 	'fetched'            => 246,
@@ -1250,7 +1263,7 @@ $fixture->prepare_physical_account_cache_for_run(
 	}
 );
 $fixture->reconcile_fixture_state_before_reinstall();
-delete_option( 'e2e_woopayments_native_provider_state' );
+WooCommerce_WooPayments_Native_CI_Provider_Fixture::initialize_fixture_state_for_install();
 $fixture->prepare_physical_account_cache_for_run(
 	static function () use ( $fixture ): array {
 		$account = $fixture->account_cache()['data'];
@@ -1274,6 +1287,7 @@ assert_same( $seeded_fraud_services_timeout, $options['_transient_timeout_woocom
 assert_same( $seeded_jetpack_options, $options['jetpack_options'], 'a repeated fixture installation must restore the original public Jetpack identity after one final cleanup' );
 assert_same( $seeded_jetpack_private_options, $options['jetpack_private_options'], 'a repeated fixture installation must restore the original private Jetpack identity after one final cleanup' );
 
+WooCommerce_WooPayments_Native_CI_Provider_Fixture::initialize_fixture_state_for_install();
 $fixture->prepare_physical_account_cache_for_run(
 	static function () use ( $fixture ): array {
 		$account = $fixture->account_cache()['data'];
@@ -1308,6 +1322,7 @@ assert_same( $run_test_mode, $options['wcpay_onboarding_test_mode'], 'a malforme
 assert_same( '__missing__', get_option( '_transient_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'a malformed prepared lifecycle must not restore the fraud-services transient partially' );
 assert_same( '__missing__', get_option( '_transient_timeout_woocommerce_woopayments_public_fraud_services', '__missing__' ), 'a malformed prepared lifecycle must not restore the fraud-services timeout partially' );
 
+$options['e2e_woopayments_native_provider_state'] = $initial_fixture_state;
 $fixture->prepare_physical_account_cache_for_run(
 	static function () use ( $fixture ): array {
 		$account = $fixture->account_cache()['data'];
@@ -1355,6 +1370,7 @@ remove_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_ca
 assert_same( $run_jetpack_private_options, get_option( 'jetpack_private_options' ), 'a prepared lifecycle missing a core fixture key must not restore private Jetpack identity' );
 add_filter( 'pre_option_jetpack_private_options', $jetpack_private_options_callback );
 
+$options['e2e_woopayments_native_provider_state']                    = $initial_fixture_state;
 $unregistered_original_account_cache                                 = array(
 	'data'               => null,
 	'fetched'            => 357,
@@ -1403,5 +1419,255 @@ assert_same( $seeded_fraud_services_transient, $options['_transient_woocommerce_
 assert_same( $seeded_fraud_services_timeout, $options['_transient_timeout_woocommerce_woopayments_public_fraud_services'], 'an unregistered fixture must restore the original public fraud-services timeout before reinstall reset' );
 assert_same( $seeded_jetpack_options, $options['jetpack_options'], 'an unregistered fixture must restore the original public Jetpack identity before reinstall reset' );
 assert_same( $seeded_jetpack_private_options, $options['jetpack_private_options'], 'an unregistered fixture must restore the original private Jetpack identity before reinstall reset' );
+
+$lifecycle_failures      = array();
+$lifecycle_options       = $options;
+$physical_option_names   = array_fill_keys(
+	array( 'wcpay_account_data', 'wcpay_onboarding_test_mode', '_transient_woocommerce_woopayments_public_fraud_services', '_transient_timeout_woocommerce_woopayments_public_fraud_services', 'jetpack_options', 'jetpack_private_options' ),
+	true
+);
+$refresh_fixture_account = static function () use ( $fixture ): array {
+	$cache = $fixture->account_cache();
+	update_option( 'wcpay_account_data', $cache );
+	return $cache['data'];
+};
+$run_lifecycle_case      = static function ( string $name, callable $test ) use ( &$lifecycle_failures, &$options, $lifecycle_options, $initial_fixture_state, &$discarded_option_updates, &$discarded_option_deletes, &$filters ): void {
+	$options = $lifecycle_options;
+	$options['e2e_woopayments_native_provider_state'] = $initial_fixture_state;
+	try {
+		$test();
+	} catch ( Throwable $error ) {
+		$lifecycle_failures[] = $name . ': ' . $error->getMessage();
+	} finally {
+		$discarded_option_updates = array();
+		$discarded_option_deletes = array();
+		unset( $filters['pre_update_option_e2e_woopayments_native_provider_state'] );
+	}
+};
+
+foreach ( array( 'absent', 'account', 'pre_fixture_test_mode_premise' ) as $corruption ) {
+	foreach ( array( 'account', 'provider' ) as $reader ) {
+		$run_lifecycle_case(
+			"read-$reader-$corruption",
+			static function () use ( $fixture, &$options, $physical_option_names, $refresh_fixture_account, $corruption, $reader ): void {
+				$fixture->prepare_physical_account_cache_for_run( $refresh_fixture_account );
+				if ( 'absent' === $corruption ) {
+					unset( $options['e2e_woopayments_native_provider_state'] );
+				} else {
+					unset( $options['e2e_woopayments_native_provider_state'][ $corruption ] );
+				}
+				$before_state    = $options['e2e_woopayments_native_provider_state'] ?? null;
+				$before_physical = array_intersect_key( $options, $physical_option_names );
+				$read_rejected   = false;
+				try {
+					if ( 'account' === $reader ) {
+						$fixture->account_cache();
+					} else {
+						$fixture->intercept( false, array( 'method' => 'GET' ), signed_provider_url( 'accounts' ) );
+					}
+				} catch ( RuntimeException $error ) {
+					$read_rejected = true;
+				}
+				assert_same( $before_state, $options['e2e_woopayments_native_provider_state'] ?? null, 'normal reads must preserve absent or malformed lifecycle state' );
+				assert_same( $before_physical, array_intersect_key( $options, $physical_option_names ), 'normal reads must not mutate physical options after lifecycle corruption' );
+				assert_true( $read_rejected, 'normal reads must reject incomplete lifecycle state' );
+				$rejected = false;
+				try {
+					$fixture->reconcile_fixture_state_before_reinstall();
+				} catch ( RuntimeException $error ) {
+					$rejected = true;
+				}
+				assert_true( $rejected, 'reinstall must still reject state after a normal read' );
+				assert_same( $before_state, $options['e2e_woopayments_native_provider_state'] ?? null, 'failed reconciliation must preserve the corrupted record' );
+				assert_same( $before_physical, array_intersect_key( $options, $physical_option_names ), 'failed reconciliation must preserve physical options' );
+			}
+		);
+	}
+}
+
+foreach ( array( 'pre_fixture_physical_account_cache', 'pre_fixture_test_mode_premise', 'account', 'audit_baseline', 'physical_account_cache_baseline', 'woopay_webhook_secret_hash' ) as $capture ) {
+	foreach ( array( 'strip', 'change' ) as $mutation ) {
+		$run_lifecycle_case(
+			"prepare-$mutation-$capture",
+			static function () use ( $fixture, &$options, $physical_option_names, $capture, $mutation ): void {
+				$before_physical = array_intersect_key( $options, $physical_option_names );
+				$valid_cache     = $fixture->account_cache();
+				add_filter(
+					'pre_update_option_e2e_woopayments_native_provider_state',
+					static function ( $value ) use ( $capture, $mutation ) {
+						if ( 'strip' === $mutation ) {
+							unset( $value[ $capture ] );
+						} else {
+							$value[ $capture ] = array( 'changed' => true );
+						}
+						return $value;
+					}
+				);
+				$refreshed = false;
+				$rejected  = false;
+				try {
+					$fixture->prepare_physical_account_cache_for_run(
+						static function () use ( &$refreshed, $valid_cache ): array {
+							$refreshed = true;
+							update_option( 'wcpay_account_data', $valid_cache );
+							return $valid_cache['data'];
+						}
+					);
+				} catch ( RuntimeException $error ) {
+					$rejected = true;
+				}
+				assert_same( $before_physical, array_intersect_key( $options, $physical_option_names ), 'partial preparation persistence must fail before any physical mutation' );
+				assert_true( $rejected, 'preparation must reject every stripped or changed capture and core field' );
+				assert_same( false, $refreshed, 'partial preparation persistence must abort before account refresh' );
+			}
+		);
+	}
+}
+
+foreach ( array( 'write', 'delete' ) as $failure_kind ) {
+	$run_lifecycle_case(
+		"restore-retry-$failure_kind",
+		static function () use ( $fixture, &$options, $physical_option_names, $refresh_fixture_account, &$discarded_option_updates, &$discarded_option_deletes, $failure_kind ): void {
+			if ( 'delete' === $failure_kind ) {
+				unset( $options['wcpay_onboarding_test_mode'] );
+			}
+			$original_physical = array_intersect_key( $options, $physical_option_names );
+			$fixture->prepare_physical_account_cache_for_run( $refresh_fixture_account );
+			$prepared = get_option( 'e2e_woopayments_native_provider_state' );
+			if ( 'write' === $failure_kind ) {
+				$discarded_option_updates[] = 'wcpay_account_data';
+			} else {
+				$discarded_option_deletes[] = 'wcpay_onboarding_test_mode';
+			}
+			$rejected = false;
+			try {
+				$fixture->restore_pre_fixture_physical_account_cache();
+			} catch ( RuntimeException $error ) {
+				$rejected = true;
+			}
+			$retry_state = get_option( 'e2e_woopayments_native_provider_state' );
+			assert_true( 'restored' !== $retry_state['physical_state_lifecycle'], 'failed restoration must remain retryable instead of being labeled restored' );
+			assert_true( $rejected, 'failed restoration must stop reinstall before reset' );
+			foreach ( $prepared as $key => $value ) {
+				if ( 0 === strpos( $key, 'pre_fixture_' ) ) {
+					assert_same( $value, $retry_state[ $key ], 'failed restoration must preserve every original capture' );
+				}
+			}
+			assert_same( false, $fixture->audit()['state_restored'], 'failed restoration must fail the aggregate audit' );
+			$discarded_option_updates = array();
+			$discarded_option_deletes = array();
+			$fixture->reconcile_fixture_state_before_reinstall();
+			assert_same( $original_physical, array_intersect_key( $options, $physical_option_names ), 'reconciliation retry must restore every exact original option' );
+			$audit = $fixture->audit();
+			assert_same( true, $audit['state_restored'], 'successful restoration retry must preserve the original clean run evidence' );
+			assert_same( true, $audit['physical_account_cache']['run_restored'], 'retry must retain the original account run observation' );
+			assert_same( true, $audit['test_mode_premise']['run_enabled'], 'retry must retain the original test-mode run observation' );
+			assert_same( true, $audit['fraud_services_transient']['run_isolated'], 'retry must retain the original transient run observation' );
+			assert_same( true, $audit['jetpack_identity']['run_isolated'], 'retry must retain the original identity run observation' );
+		}
+	);
+}
+
+foreach ( array( 'false-outcome', 'physical-divergence' ) as $invalid_restoration ) {
+	$run_lifecycle_case(
+		"restored-$invalid_restoration",
+		static function () use ( $fixture, &$options, $refresh_fixture_account, $invalid_restoration ): void {
+			$fixture->prepare_physical_account_cache_for_run( $refresh_fixture_account );
+			$fixture->restore_pre_fixture_physical_account_cache();
+			if ( 'false-outcome' === $invalid_restoration ) {
+				$options['e2e_woopayments_native_provider_state']['test_mode_premise_restoration']['pre_fixture_restored'] = false;
+			} else {
+				$options['jetpack_private_options'] = array( 'blog_token' => 'dummy.divergence' );
+			}
+			$before   = $options;
+			$rejected = false;
+			try {
+				$fixture->reconcile_fixture_state_before_reinstall();
+			} catch ( RuntimeException $error ) {
+				$rejected = true;
+			}
+			assert_true( $rejected, 'restored state must require successful outcomes and exact current originals before reset' );
+			assert_same( $before, $options, 'invalid restored state must fail without changing originals or physical options' );
+		}
+	);
+}
+
+$run_lifecycle_case(
+	'dirty-run-restoration-retry',
+	static function () use ( $fixture, &$options, $physical_option_names, $refresh_fixture_account, &$discarded_option_updates ): void {
+		$original_physical = array_intersect_key( $options, $physical_option_names );
+		$fixture->prepare_physical_account_cache_for_run( $refresh_fixture_account );
+		$options['jetpack_options'] = array( 'id' => 999 );
+		$discarded_option_updates[] = 'wcpay_account_data';
+		try {
+			$fixture->restore_pre_fixture_physical_account_cache();
+		} catch ( RuntimeException $error ) {
+			assert_same( 'The WooPayments physical-state restoration is incomplete.', $error->getMessage(), 'a restoration failure must expose only a generic diagnostic' );
+		}
+		$discarded_option_updates = array();
+		$fixture->reconcile_fixture_state_before_reinstall();
+		assert_same( $original_physical, array_intersect_key( $options, $physical_option_names ), 'retry must restore originals even when the original run was not isolated' );
+		$audit = $fixture->audit();
+		assert_same( false, $audit['jetpack_identity']['run_isolated'], 'retry must never replace failed original run evidence with already-restored identity' );
+		assert_same( true, $audit['jetpack_identity']['pre_fixture_restored'], 'physical restoration must remain distinct from original run isolation' );
+		assert_same( false, $audit['state_restored'], 'a successful cleanup retry must not turn a dirty run into clean evidence' );
+	}
+);
+
+$run_lifecycle_case(
+	'completed-cache-record-compatibility',
+	static function () use ( $fixture, &$options, $refresh_fixture_account ): void {
+		$fixture->prepare_physical_account_cache_for_run( $refresh_fixture_account );
+		$fixture->restore_pre_fixture_physical_account_cache();
+		unset( $options['e2e_woopayments_native_provider_state']['physical_account_cache_restoration']['pre_fixture_restored'] );
+		$before = $options;
+		$fixture->reconcile_fixture_state_before_reinstall();
+		assert_same( $before, $options, 'a previously completed exact cache restoration must remain valid without a new record field' );
+	}
+);
+$run_lifecycle_case(
+	'restoration-evidence-persistence',
+	static function () use ( $fixture, &$options, $refresh_fixture_account, &$discarded_option_updates ): void {
+		$fixture->prepare_physical_account_cache_for_run( $refresh_fixture_account );
+		$before                     = $options;
+		$discarded_option_updates[] = 'e2e_woopayments_native_provider_state';
+		$rejected                   = false;
+		try {
+			$fixture->restore_pre_fixture_physical_account_cache();
+		} catch ( RuntimeException $error ) {
+			$rejected = true;
+		}
+		assert_same( $before, $options, 'restoration must persist original run observations before the first physical write' );
+		assert_true( $rejected, 'restoration must stop when retry evidence cannot be persisted' );
+	}
+);
+$run_lifecycle_case(
+	'atomic-initialization-and-reset',
+	static function () use ( $fixture, &$options, $refresh_fixture_account, $physical_option_names, $registered_instance ): void {
+		delete_option( 'e2e_woopayments_native_provider_state' );
+		WooCommerce_WooPayments_Native_CI_Provider_Fixture::initialize_fixture_state_for_install();
+		assert_same( 'unstarted', get_option( 'e2e_woopayments_native_provider_state' )['physical_state_lifecycle'], 'explicit first install must persist unstarted state while unregistered' );
+		$original_physical = array_intersect_key( $options, $physical_option_names );
+		$fixture->prepare_physical_account_cache_for_run( $refresh_fixture_account );
+		WooCommerce_WooPayments_Native_CI_Provider_Fixture::initialize_fixture_state_for_install();
+		assert_same( $original_physical, array_intersect_key( $options, $physical_option_names ), 'atomic reset must restore originals before replacing provider state even when unregistered' );
+		assert_same( 'unstarted', get_option( 'e2e_woopayments_native_provider_state' )['physical_state_lifecycle'], 'atomic reset must leave a readable initialized record' );
+		assert_same( 'acct_native_ci', $fixture->account_cache()['data']['account_id'], 'normal reads must work immediately after explicit reset' );
+		$registered_instance->setValue( null, $fixture );
+		delete_option( 'e2e_woopayments_native_provider_state' );
+		$rejected = false;
+		try {
+			WooCommerce_WooPayments_Native_CI_Provider_Fixture::initialize_fixture_state_for_install();
+		} catch ( RuntimeException $error ) {
+			$rejected = true;
+		} finally {
+			$registered_instance->setValue( null, null );
+		}
+		assert_true( $rejected, 'an enabled reinstall must never initialize absent state' );
+		assert_same( '__missing__', get_option( 'e2e_woopayments_native_provider_state', '__missing__' ), 'rejected initialization must preserve absence' );
+	}
+);
+
+assert_same( array(), $lifecycle_failures, implode( "\n", $lifecycle_failures ) );
 
 echo "ci-provider-fixture.php tests passed.\n";

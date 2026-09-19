@@ -59,6 +59,22 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		return self::$registered_instance;
 	}
 
+	/**
+	 * Initializes a disabled first install or reconciles and atomically resets an existing lifecycle.
+	 *
+	 * @throws RuntimeException When existing lifecycle state cannot be safely replaced.
+	 */
+	public static function initialize_fixture_state_for_install(): void {
+		$missing = new stdClass();
+		$state   = get_option( self::STATE_OPTION, $missing );
+		$fixture = self::$registered_instance ?? new self();
+		if ( $missing !== $state || null !== self::$registered_instance ) {
+			$fixture->reconcile_fixture_state_before_reinstall();
+		}
+		$state = $fixture->default_state();
+		$fixture->persist_exact_state( $state );
+	}
+
 	/** @return array<string,mixed> */
 	public function account_cache(): array {
 		return array(
@@ -77,21 +93,24 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * @throws RuntimeException When the refresh does not establish a connected physical cache.
 	 */
 	public function prepare_physical_account_cache_for_run( callable $refresh_account_data ): array {
+		$state = $this->state();
+		if ( ! $this->is_unstarted_physical_state( $state ) ) {
+			throw new RuntimeException( 'The WooPayments fixture lifecycle state is invalid.' );
+		}
 		$callback = array( $this, 'account_cache' );
 		$removed  = remove_filter( 'pre_option_wcpay_account_data', $callback );
 		try {
-			$pre_fixture_fraud_services_transient        = $this->fraud_services_transient_snapshot();
-			$pre_fixture_jetpack_identity                = $this->jetpack_identity_snapshot();
-			$missing                                     = new stdClass();
-			$physical                                    = get_option( 'wcpay_account_data', $missing );
-			$test_mode_premise                           = get_option( 'wcpay_onboarding_test_mode', $missing );
-			$state                                       = $this->state();
-			$state['pre_fixture_physical_account_cache'] = array(
+			$pre_fixture_fraud_services_transient          = $this->fraud_services_transient_snapshot();
+			$pre_fixture_jetpack_identity                  = $this->jetpack_identity_snapshot();
+			$missing                                       = new stdClass();
+			$physical                                      = get_option( 'wcpay_account_data', $missing );
+			$test_mode_premise                             = get_option( 'wcpay_onboarding_test_mode', $missing );
+			$state['pre_fixture_physical_account_cache']   = array(
 				'exists'     => $missing !== $physical,
 				'value'      => $missing === $physical ? null : $physical,
 				'normalized' => $this->normalize_account_cache( $missing === $physical ? null : $physical ),
 			);
-			$state['pre_fixture_test_mode_premise']      = array(
+			$state['pre_fixture_test_mode_premise']        = array(
 				'exists' => $missing !== $test_mode_premise,
 				'value'  => $missing === $test_mode_premise ? null : $test_mode_premise,
 			);
@@ -101,18 +120,8 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			$state['jetpack_identity_baseline']            = $pre_fixture_jetpack_identity;
 			$state[ self::PHYSICAL_STATE_LIFECYCLE ]       = 'prepared';
 			unset( $state['physical_account_cache_restoration'], $state['test_mode_premise_restoration'], $state['fraud_services_transient_restoration'], $state['jetpack_identity_restoration'] );
-			update_option( self::STATE_OPTION, $state );
-			$persisted_state = get_option( self::STATE_OPTION, array() );
-			if (
-				! is_array( $persisted_state )
-				|| 'prepared' !== ( $persisted_state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null )
-				|| ! $this->option_snapshots_match( $pre_fixture_fraud_services_transient, $persisted_state['pre_fixture_fraud_services_transient'] ?? null )
-				|| ! $this->option_snapshots_match( $state['fraud_services_transient_baseline'], $persisted_state['fraud_services_transient_baseline'] ?? null )
-				|| ! $this->option_snapshots_match( $pre_fixture_jetpack_identity, $persisted_state['pre_fixture_jetpack_identity'] ?? null )
-				|| ! $this->option_snapshots_match( $pre_fixture_jetpack_identity, $persisted_state['jetpack_identity_baseline'] ?? null )
-			) {
-				throw new RuntimeException( 'The WooPayments physical-state lifecycle could not be persisted.' );
-			}
+			$this->assert_prepared_physical_state( $state );
+			$this->persist_exact_state( $state );
 			$this->restore_option( self::FRAUD_SERVICES_TRANSIENT_OPTION, false, null );
 			$this->restore_option( self::FRAUD_SERVICES_TRANSIENT_TIMEOUT_OPTION, false, null );
 			if ( ! $this->option_snapshots_match( $this->fraud_services_transient_snapshot(), $state['fraud_services_transient_baseline'] ) ) {
@@ -134,7 +143,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 
 			$state                                    = $this->state();
 			$state['physical_account_cache_baseline'] = $this->normalize_account_cache( $physical );
-			update_option( self::STATE_OPTION, $state );
+			$this->persist_exact_state( $state );
 			return $account;
 		} finally {
 			if ( $removed ) {
@@ -151,7 +160,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	public function reconcile_fixture_state_before_reinstall(): void {
 		$state     = $this->persisted_fixture_state();
 		$lifecycle = $state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null;
-		if ( 'prepared' === $lifecycle ) {
+		if ( in_array( $lifecycle, array( 'prepared', 'restoring' ), true ) ) {
 			$this->restore_pre_fixture_physical_account_cache_from_state( $state );
 			return;
 		}
@@ -186,57 +195,70 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 */
 	private function restore_pre_fixture_physical_account_cache_from_state( array $state ): array {
 		$this->assert_prepared_physical_state( $state );
+		if ( 'prepared' === $state[ self::PHYSICAL_STATE_LIFECYCLE ] ) {
+			$run_cache                                     = $this->physical_account_cache_snapshot();
+			$state['physical_account_cache_restoration']   = array(
+				'run_normalized' => $run_cache['normalized'],
+				'run_restored'   => $run_cache['normalized'] === $state['physical_account_cache_baseline'],
+			);
+			$state['test_mode_premise_restoration']        = array(
+				'run_enabled'          => 'yes' === get_option( 'wcpay_onboarding_test_mode', 'no' ),
+				'pre_fixture_restored' => false,
+			);
+			$state['fraud_services_transient_restoration'] = array(
+				'run_isolated'         => $this->option_snapshots_match( $this->fraud_services_transient_snapshot(), $state['fraud_services_transient_baseline'] ),
+				'pre_fixture_restored' => false,
+			);
+			$state['jetpack_identity_restoration']         = array(
+				'run_isolated'         => $this->option_snapshots_match( $this->jetpack_identity_snapshot(), $state['jetpack_identity_baseline'] ),
+				'pre_fixture_restored' => false,
+			);
+			$state[ self::PHYSICAL_STATE_LIFECYCLE ]       = 'restoring';
+			$this->persist_exact_state( $state );
+		}
 
-		$pre_fixture_cache = $state['pre_fixture_physical_account_cache'] ?? null;
+		$pre_fixture_cache     = $state['pre_fixture_physical_account_cache'];
+		$pre_fixture_test_mode = $state['pre_fixture_test_mode_premise'];
+		$this->restore_physical_account_cache( $pre_fixture_cache['exists'], $pre_fixture_cache['value'] );
+		$this->restore_option_pair( $state['pre_fixture_fraud_services_transient'] );
+		$this->restore_jetpack_identity( $state['pre_fixture_jetpack_identity'] );
+		$this->restore_option( 'wcpay_onboarding_test_mode', $pre_fixture_test_mode['exists'], $pre_fixture_test_mode['value'] );
 
-		$run_cache                            = $this->physical_account_cache_snapshot();
-		$run_normalized                       = $run_cache['normalized'];
-		$run_baseline                         = is_array( $state['physical_account_cache_baseline'] ?? null ) ? $state['physical_account_cache_baseline'] : array();
-		$run_restored                         = $run_normalized === $run_baseline;
-		$restoration                          = $this->restore_physical_account_cache( $pre_fixture_cache['exists'], $pre_fixture_cache['value'] );
-		$pre_cache_restored                   = $restoration['exists'] === $pre_fixture_cache['exists']
-			&& $restoration['value'] === $pre_fixture_cache['value'];
-		$pre_fixture_fraud_services_transient = $state['pre_fixture_fraud_services_transient'] ?? null;
-		$fraud_services_transient_baseline    = $state['fraud_services_transient_baseline'] ?? null;
-		$fraud_services_run_isolated          = $this->option_snapshots_match( $this->fraud_services_transient_snapshot(), $fraud_services_transient_baseline );
-		$fraud_services_restoration           = $this->restore_option_pair( $pre_fixture_fraud_services_transient );
-		$fraud_services_pre_restored          = $this->option_snapshots_match( $fraud_services_restoration, $pre_fixture_fraud_services_transient );
-		$pre_fixture_jetpack_identity         = $state['pre_fixture_jetpack_identity'] ?? null;
-		$jetpack_identity_baseline            = $state['jetpack_identity_baseline'] ?? null;
-		$jetpack_identity_run_isolated        = $this->option_snapshots_match( $this->jetpack_identity_snapshot(), $jetpack_identity_baseline );
-		$jetpack_identity_restoration         = $this->restore_jetpack_identity( $pre_fixture_jetpack_identity );
-		$jetpack_identity_pre_restored        = $this->option_snapshots_match( $jetpack_identity_restoration, $pre_fixture_jetpack_identity );
-		$pre_fixture_test_mode                = $state['pre_fixture_test_mode_premise'] ?? null;
-		$test_mode_run_enabled                = 'yes' === get_option( 'wcpay_onboarding_test_mode', 'no' );
-		$test_mode_restoration                = $this->restore_option( 'wcpay_onboarding_test_mode', $pre_fixture_test_mode['exists'], $pre_fixture_test_mode['value'] );
-		$test_mode_pre_restored               = $test_mode_restoration['exists'] === $pre_fixture_test_mode['exists']
-			&& $test_mode_restoration['value'] === $pre_fixture_test_mode['value'];
-
-		$state['physical_account_cache_restoration']   = array(
-			'run_normalized' => $run_normalized,
-			'run_restored'   => $run_restored,
-		);
-		$state['test_mode_premise_restoration']        = array(
-			'run_enabled'          => $test_mode_run_enabled,
-			'pre_fixture_restored' => $test_mode_pre_restored,
-		);
-		$state['fraud_services_transient_restoration'] = array(
-			'run_isolated'         => $fraud_services_run_isolated,
-			'pre_fixture_restored' => $fraud_services_pre_restored,
-		);
-		$state['jetpack_identity_restoration']         = array(
-			'run_isolated'         => $jetpack_identity_run_isolated,
-			'pre_fixture_restored' => $jetpack_identity_pre_restored,
-		);
-		$state[ self::PHYSICAL_STATE_LIFECYCLE ]       = 'restored';
-		update_option( self::STATE_OPTION, $state );
+		$restoration = $this->physical_account_cache_snapshot();
+		$outcomes    = $this->physical_restoration_outcomes( $state );
+		foreach ( $outcomes as $scope => $restored ) {
+			if ( 'physical_account_cache' !== $scope ) {
+				$state[ $scope . '_restoration' ]['pre_fixture_restored'] = $restored;
+			}
+		}
+		$all_restored                            = ! in_array( false, $outcomes, true );
+		$state[ self::PHYSICAL_STATE_LIFECYCLE ] = $all_restored ? 'restored' : 'restoring';
+		$this->persist_exact_state( $state );
+		if ( ! $all_restored ) {
+			throw new RuntimeException( 'The WooPayments physical-state restoration is incomplete.' );
+		}
 		return array_merge(
 			$restoration,
 			array(
-				'run_normalized'       => $run_normalized,
-				'run_restored'         => $run_restored,
-				'pre_fixture_restored' => $pre_cache_restored,
+				'run_normalized'       => $state['physical_account_cache_restoration']['run_normalized'],
+				'run_restored'         => $state['physical_account_cache_restoration']['run_restored'],
+				'pre_fixture_restored' => $outcomes['physical_account_cache'],
 			)
+		);
+	}
+
+	/**
+	 * Compares every current physical option with its captured original.
+	 *
+	 * @param array<string,mixed> $state Validated fixture captures.
+	 * @return array<string,bool>
+	 */
+	private function physical_restoration_outcomes( array $state ): array {
+		return array(
+			'physical_account_cache'   => $this->physical_account_cache_snapshot() === $state['pre_fixture_physical_account_cache'],
+			'test_mode_premise'        => $this->option_snapshot( 'wcpay_onboarding_test_mode' ) === $state['pre_fixture_test_mode_premise'],
+			'fraud_services_transient' => $this->fraud_services_transient_snapshot() === $state['pre_fixture_fraud_services_transient'],
+			'jetpack_identity'         => $this->jetpack_identity_snapshot() === $state['pre_fixture_jetpack_identity'],
 		);
 	}
 
@@ -485,7 +507,8 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			}
 		}
 		$missing                 = array_values( array_diff( self::REQUIRED_ROUTES, array_unique( $covered ) ) );
-		$state                   = $this->state();
+		$state                   = get_option( self::STATE_OPTION, array() );
+		$state                   = is_array( $state ) ? $state : array();
 		$mutable_state           = $this->canonicalize(
 			array(
 				'account'       => $state['account'] ?? null,
@@ -550,7 +573,14 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			$state['jetpack_identity_restoration'] ?? null,
 			$state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null
 		);
-		$state_restored             = $mutable_state === $baseline_state
+		$valid_lifecycle            = false;
+		try {
+			$this->state();
+			$valid_lifecycle = true;
+		} catch ( RuntimeException $error ) {
+			$valid_lifecycle = false;
+		}
+		$state_restored = $valid_lifecycle && $mutable_state === $baseline_state
 			&& $this->canonicalize( $retained_state ) === $expected_retain
 			&& $physical_cache_restored
 			&& $test_mode_premise_restored
@@ -612,13 +642,23 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 
 	/**
 	 * @return array<string,mixed>
-	 * @throws RuntimeException When the unstarted physical-state lifecycle cannot be persisted.
+	 * @throws RuntimeException When persisted lifecycle state is absent or malformed.
 	 */
 	private function state(): array {
-		$state = get_option( self::STATE_OPTION, array() );
-		if ( is_array( $state ) && isset( $state['account'], $state['transactions'], $state['deposits'] ) ) {
+		$state = $this->persisted_fixture_state();
+		if ( $this->is_unstarted_physical_state( $state ) ) {
 			return $state;
 		}
+		if ( 'restored' === ( $state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null ) ) {
+			$this->assert_restored_physical_state( $state );
+		} else {
+			$this->assert_prepared_physical_state( $state );
+		}
+		return $state;
+	}
+
+	/** @return array<string,mixed> */
+	private function default_state(): array {
 		$account                                  = array(
 			'account_id'                 => 'acct_native_ci',
 			'country'                    => 'US',
@@ -787,12 +827,22 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				'consecutive_errors' => 0,
 			)
 		);
+		return $state;
+	}
+
+	/**
+	 * Verifies the entire intended lifecycle record before physical state can change.
+	 *
+	 * @param array<string,mixed> $state Intended fixture state.
+	 * @throws RuntimeException When any field could not be persisted exactly.
+	 */
+	private function persist_exact_state( array $state ): void {
 		update_option( self::STATE_OPTION, $state );
-		$persisted_state = get_option( self::STATE_OPTION, array() );
-		if ( ! is_array( $persisted_state ) || 'unstarted' !== ( $persisted_state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null ) ) {
-			throw new RuntimeException( 'The WooPayments unstarted physical-state lifecycle could not be persisted.' );
+		$cache_deleted = wp_cache_delete( self::STATE_OPTION, 'options' );
+		unset( $cache_deleted );
+		if ( get_option( self::STATE_OPTION, null ) !== $state ) {
+			throw new RuntimeException( 'The WooPayments physical-state lifecycle could not be persisted.' );
 		}
-		return $persisted_state;
 	}
 
 	/**
@@ -1125,7 +1175,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			);
 		}
 		if (
-			! in_array( $lifecycle, array( 'prepared', 'restored' ), true )
+			! in_array( $lifecycle, array( 'prepared', 'restoring', 'restored' ), true )
 			|| ! $this->option_snapshot_pair_is_complete( $current, $run_baseline )
 			|| ! $this->option_snapshot_pair_is_complete( $current, $pre_fixture )
 		) {
@@ -1155,10 +1205,13 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * @throws RuntimeException When fixture captures are incomplete.
 	 */
 	private function assert_prepared_physical_state( array $state ): void {
-		if ( 'prepared' !== ( $state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null ) || ! $this->has_complete_fixture_core_state( $state ) ) {
+		if ( ! in_array( $state[ self::PHYSICAL_STATE_LIFECYCLE ] ?? null, array( 'prepared', 'restoring' ), true ) || ! $this->has_complete_fixture_core_state( $state ) ) {
 			throw new RuntimeException( 'The WooPayments fixture lifecycle state is invalid.' );
 		}
 		$this->assert_physical_state_captures( $state );
+		if ( 'restoring' === $state[ self::PHYSICAL_STATE_LIFECYCLE ] ) {
+			$this->assert_restoration_records( $state );
+		}
 	}
 
 	/**
@@ -1172,6 +1225,21 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			throw new RuntimeException( 'The WooPayments fixture lifecycle state is invalid.' );
 		}
 		$this->assert_physical_state_captures( $state );
+		$this->assert_restoration_records( $state );
+		foreach ( $this->physical_restoration_outcomes( $state ) as $scope => $restored ) {
+			if ( ! $restored || ( 'physical_account_cache' !== $scope && true !== $state[ $scope . '_restoration' ]['pre_fixture_restored'] ) ) {
+				throw new RuntimeException( 'The WooPayments fixture lifecycle state is invalid.' );
+			}
+		}
+	}
+
+	/**
+	 * Requires durable original run observations for every restoration retry.
+	 *
+	 * @param array<string,mixed> $state Persisted fixture state.
+	 * @throws RuntimeException When original run observations are incomplete.
+	 */
+	private function assert_restoration_records( array $state ): void {
 		$cache_restoration     = $state['physical_account_cache_restoration'] ?? null;
 		$test_mode_restoration = $state['test_mode_premise_restoration'] ?? null;
 		$fraud_restoration     = $state['fraud_services_transient_restoration'] ?? null;
@@ -1219,7 +1287,8 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			&& is_array( $state['overview'] ?? null )
 			&& is_array( $state['fraud_ruleset'] ?? null )
 			&& is_array( $state['audit_baseline'] ?? null )
-			&& is_array( $state['expected_retained_state'] ?? null );
+			&& is_array( $state['expected_retained_state'] ?? null )
+			&& array_key_exists( 'woopay_webhook_secret_hash', $state );
 	}
 
 	/**
@@ -1277,7 +1346,8 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		return is_array( $snapshot )
 			&& is_bool( $snapshot['exists'] ?? null )
 			&& array_key_exists( 'value', $snapshot )
-			&& ( ! $requires_normalized || is_array( $snapshot['normalized'] ?? null ) );
+			&& ( $snapshot['exists'] || null === $snapshot['value'] )
+			&& ( ! $requires_normalized || ( $snapshot['normalized'] ?? null ) === $this->normalize_account_cache( $snapshot['value'] ) );
 	}
 
 	/**
@@ -1302,7 +1372,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			return false;
 		}
 		foreach ( $snapshot as $option ) {
-			if ( ! is_array( $option ) || ! is_bool( $option['exists'] ?? null ) || ! array_key_exists( 'value', $option ) ) {
+			if ( ! $this->option_snapshot_is_complete( $option, false ) ) {
 				return false;
 			}
 		}

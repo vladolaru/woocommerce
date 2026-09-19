@@ -57,7 +57,7 @@ esac
 if [[ "$*" == *'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE false --raw'* ]]; then
 	printf 'false\n' > "${E2E_FAKE_FIXTURE_STATE:?}"
 fi
-if [[ "${E2E_FAKE_REPEAT_PROVIDER_STATE_ABSENT:-false}" == 'true' && "$*" == *'reconcile_fixture_state_before_reinstall'* ]]; then
+if [[ "${E2E_FAKE_REPEAT_PROVIDER_STATE_ABSENT:-false}" == 'true' && "$*" == *'initialize_fixture_state_for_install'* ]]; then
 	echo 'The WooPayments fixture lifecycle state is invalid.' >&2
 	exit 1
 fi
@@ -161,14 +161,9 @@ if ! grep -Fq 'restore_pre_fixture_physical_account_cache' "$TEST_ROOT/commands.
 	echo 'The always-run audit must restore the captured pre-fixture physical cache.' >&2
 	exit 1
 fi
-reconcile_line="$(grep -n 'reconcile_fixture_state_before_reinstall' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1 || true)"
-provider_state_delete_line="$(grep -n 'wp option delete e2e_woopayments_native_provider_state' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1 || true)"
-if [[ -z "$reconcile_line" || -z "$provider_state_delete_line" || "$reconcile_line" -ge "$provider_state_delete_line" ]]; then
-	echo 'Repeat fixture installation must reconcile prepared physical state before deleting provider state.' >&2
-	exit 1
-fi
-if ! grep -Fq 'get_option( "e2e_woopayments_native_provider_state"' "$TEST_ROOT/commands.log" || ! grep -Fq 'new WooCommerce_WooPayments_Native_CI_Provider_Fixture()' "$TEST_ROOT/commands.log"; then
-	echo 'An unregistered fixture with persisted provider state must instantiate and reconcile before reset.' >&2
+reconcile_line="$(grep -n 'initialize_fixture_state_for_install' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1 || true)"
+if [[ -z "$reconcile_line" ]] || grep -Fq 'wp option delete e2e_woopayments_native_provider_state' "$TEST_ROOT/commands.log"; then
+	echo 'Fixture installation must initialize or reconcile and reset provider state atomically without an absent-state window.' >&2
 	exit 1
 fi
 fixture_enable_line="$(grep -n 'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE true --raw' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1)"
