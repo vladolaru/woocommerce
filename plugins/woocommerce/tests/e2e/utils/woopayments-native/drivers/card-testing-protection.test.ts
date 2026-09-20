@@ -9,6 +9,7 @@ import type { JsonValue, ResourceLock } from '../resource-locks';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
 import {
 	NativeStoreWpCliRunner,
+	composeCardTestingProtectionEvidence,
 	validateCardTestingProtectionEvidence,
 	withCapturedCardTestingProtectionState,
 	type CardTestingProtectionScope,
@@ -1285,15 +1286,11 @@ test( 'captures the requested card-testing protection state and restores raw opt
 						eligible: true,
 						token: { length: 16, sha256: TOKEN_DIGEST },
 						accountEnabled: true,
-						renderedTokenSha256: TOKEN_DIGEST,
-						submittedTokenSha256: TOKEN_DIGEST,
 				  }
 				: {
 						eligible: false,
 						token: null,
 						accountEnabled: false,
-						renderedField: 'absent',
-						submittedTokenSha256: null,
 				  }
 		);
 		expect(
@@ -1332,8 +1329,6 @@ test( 'defaults card-testing protection capture to enabled token evidence', asyn
 		eligible: true,
 		token: { length: 16, sha256: TOKEN_DIGEST },
 		accountEnabled: true,
-		renderedTokenSha256: TOKEN_DIGEST,
-		submittedTokenSha256: TOKEN_DIGEST,
 	} );
 } );
 
@@ -1373,6 +1368,23 @@ test( 'accepts only complete public card-testing protection evidence branches', 
 		} )
 	).toThrow( 'exact public fields' );
 } );
+
+for ( const [ name, rendered, submitted ] of [
+	[ 'rendered digest mismatch', { tokenSha256: 'b'.repeat( 64 ) }, { tokenSha256: TOKEN_DIGEST } ],
+	[ 'submitted digest mismatch', { tokenSha256: TOKEN_DIGEST }, { tokenSha256: 'b'.repeat( 64 ) } ],
+	[ 'disabled rendered presence', { tokenSha256: TOKEN_DIGEST }, { field: 'absent' } ],
+	[ 'disabled submitted presence', { field: 'empty' }, { tokenSha256: TOKEN_DIGEST } ],
+] as const ) {
+	test( `rejects ${ name }`, () => {
+		const disabled = { eligible: false, token: null, accountEnabled: false } as const;
+		const enabled = { eligible: true, token: { length: 16, sha256: TOKEN_DIGEST }, accountEnabled: true } as const;
+		expect( () => composeCardTestingProtectionEvidence(
+			name.startsWith( 'disabled' ) ? disabled : enabled,
+			rendered,
+			submitted
+		) ).toThrow();
+	} );
+}
 
 test( 'executes native PHP mutations and restores exact controlled option rows for each target', async () => {
 	for ( const targetProtection of [ false, true ] as const ) {

@@ -73,6 +73,22 @@ export type CardTestingProtectionEvidence =
 			submittedTokenSha256: string;
 	  } >;
 
+export type CardTestingProtectionSessionEvidence =
+	| Readonly< { eligible: false; token: null; accountEnabled: false } >
+	| Readonly< {
+			eligible: true;
+			token: CardTestingTokenDigest;
+			accountEnabled: true;
+	  } >;
+
+export type CardTestingProtectionRenderedObservation =
+	| Readonly< { field: 'absent' | 'empty' } >
+	| Readonly< { tokenSha256: string } >;
+
+export type CardTestingProtectionSubmittedObservation =
+	| Readonly< { field: 'absent' | 'empty' } >
+	| Readonly< { tokenSha256: string } >;
+
 export interface CardTestingProtectionScope {
 	readonly classicCheckout: Readonly< {
 		pageId: number;
@@ -85,7 +101,7 @@ export interface CardTestingProtectionScope {
 	) => Promise< CardTestingTokenDigest >;
 	captureGuestSessionProtection: (
 		source: Page | BrowserContext
-	) => Promise< CardTestingProtectionEvidence >;
+	) => Promise< CardTestingProtectionSessionEvidence >;
 }
 
 export interface CardTestingProtectionControllerOptions {
@@ -513,6 +529,35 @@ export function validateCardTestingProtectionEvidence(
 		renderedTokenSha256: token.sha256,
 		submittedTokenSha256: token.sha256,
 	};
+}
+
+export function composeCardTestingProtectionEvidence(
+	session: CardTestingProtectionSessionEvidence,
+	rendered: CardTestingProtectionRenderedObservation,
+	submitted: CardTestingProtectionSubmittedObservation
+): CardTestingProtectionEvidence {
+	if ( session.eligible === false ) {
+		if ( 'tokenSha256' in rendered || 'tokenSha256' in submitted ) {
+			invalid( 'Disabled card-testing protection requires absent or empty rendered and submitted fields.' );
+		}
+		return validateCardTestingProtectionEvidence( {
+			eligible: false,
+			token: null,
+			accountEnabled: false,
+			renderedField: rendered.field,
+			submittedTokenSha256: null,
+		} );
+	}
+	if ( ! ( 'tokenSha256' in rendered ) || ! ( 'tokenSha256' in submitted ) ) {
+		invalid( 'Enabled card-testing protection requires rendered and submitted token observations.' );
+	}
+	return validateCardTestingProtectionEvidence( {
+		eligible: true,
+		token: session.token,
+		accountEnabled: true,
+		renderedTokenSha256: rendered.tokenSha256,
+		submittedTokenSha256: submitted.tokenSha256,
+	} );
 }
 
 function assertDeleteResult( value: unknown ): void {
@@ -1023,13 +1068,11 @@ export async function withCapturedCardTestingProtectionState< Result >(
 							if ( targetProtection ) {
 								const digest = assertTokenDigest( token );
 								tokenEvidenceCaptured = true;
-								return validateCardTestingProtectionEvidence( {
+								return {
 									eligible: true,
 									token: digest,
 									accountEnabled: true,
-									renderedTokenSha256: digest.sha256,
-									submittedTokenSha256: digest.sha256,
-								} );
+								};
 							}
 							if ( token !== null ) {
 								invalid(
@@ -1037,13 +1080,11 @@ export async function withCapturedCardTestingProtectionState< Result >(
 								);
 							}
 							tokenEvidenceCaptured = true;
-							return validateCardTestingProtectionEvidence( {
+							return {
 								eligible: false,
 								token: null,
 								accountEnabled: false,
-								renderedField: 'absent',
-								submittedTokenSha256: null,
-							} );
+							};
 						} catch ( error ) {
 							throw error instanceof
 								ResourceQuarantineRequiredError

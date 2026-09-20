@@ -1,7 +1,15 @@
 import {
+	composeCardTestingProtectionEvidence,
 	validateCardTestingProtectionEvidence,
 	type CardTestingProtectionEvidence,
+	type CardTestingProtectionRenderedObservation,
+	type CardTestingProtectionSessionEvidence,
+	type CardTestingProtectionSubmittedObservation,
 } from './card-testing-protection';
+import {
+	failedAttempt,
+	validateGenericDeclineFailedAttempt,
+} from './card-recovery';
 import type { FailedPaymentEvidence } from './failed-payment-evidence';
 
 const IMMUTABLE_PLUGIN_VERSION = '11.1.0';
@@ -130,9 +138,13 @@ export interface HistoricalPayForOrderEvidence {
 export interface HistoricalPayForOrderRecoveryDependencies {
 	readFailedFixture: () => Promise< HistoricalPayForOrderFixture >;
 	readFailedPayment: () => Promise< FailedPaymentEvidence >;
-	captureProtection: () => Promise< unknown >;
+	captureProtection: () => Promise< CardTestingProtectionSessionEvidence >;
 	cutOver: () => Promise< void >;
-	submitPayForOrder: () => Promise< { requestCount: number } >;
+	observeRenderedProtection: () => Promise< CardTestingProtectionRenderedObservation >;
+	submitPayForOrder: () => Promise< {
+		requestCount: number;
+		submittedProtection: CardTestingProtectionSubmittedObservation;
+	} >;
 	waitForListenerQuiescence: () => Promise< void >;
 	readColdRecoveryEvidence: () => Promise< HistoricalPayForOrderEvidence >;
 }
@@ -151,6 +163,16 @@ function validateRecordedClientDecline(
 		decline.capturedCharges !== 0
 	) {
 		fail( 'requires the reviewed failure-recovery boundary to confirm the exact client decline.' );
+	}
+	const attempt = failedAttempt(
+		decline,
+		fixture.order.id,
+		fixture.allocation.runId,
+		1
+	);
+	validateGenericDeclineFailedAttempt( attempt );
+	if ( attempt.orderCustomerId !== fixture.customerId ) {
+		fail( 'requires the failed order customer linkage.' );
 	}
 }
 
@@ -416,6 +438,10 @@ export function validateHistoricalPayForOrderRecovery(
 	fixture: HistoricalPayForOrderFixture,
 	evidence: HistoricalPayForOrderEvidence
 ): HistoricalPayForOrderEvidence {
+	evidence = {
+		...evidence,
+		protection: validateCardTestingProtectionEvidence( evidence.protection ),
+	};
 	validateImmutableFixture( fixture );
 	if ( evidence.fixtureChecksumSha256 !== fixture.checksumSha256 ) {
 		fail( 'requires the immutable fixture checksum.' );
@@ -443,15 +469,19 @@ export async function collectHistoricalPayForOrderRecovery(
 		fixture,
 		await dependencies.readFailedPayment()
 	);
-	const protection = validateCardTestingProtectionEvidence(
-		await dependencies.captureProtection()
-	);
-	validateProtection( fixture.protectionTarget, protection );
 	await dependencies.cutOver();
+	const protectionSession = await dependencies.captureProtection();
+	const rendered = await dependencies.observeRenderedProtection();
 	const submission = await dependencies.submitPayForOrder();
 	if ( submission.requestCount !== 1 ) {
 		fail( 'requires exactly one pay-for-order request after cutover.' );
 	}
+	const protection = composeCardTestingProtectionEvidence(
+		protectionSession,
+		rendered,
+		submission.submittedProtection
+	);
+	validateProtection( fixture.protectionTarget, protection );
 	await dependencies.waitForListenerQuiescence();
 	const cold = await dependencies.readColdRecoveryEvidence();
 	return validateHistoricalPayForOrderRecovery( fixture, {

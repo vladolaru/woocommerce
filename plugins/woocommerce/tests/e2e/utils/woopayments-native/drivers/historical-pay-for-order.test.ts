@@ -133,14 +133,30 @@ function evidence(): HistoricalPayForOrderEvidence {
 
 function failedPaymentEvidence(): FailedPaymentEvidence {
 	return {
+		orderStatus: 'failed',
+		orderTotal: '10.01',
+		orderCurrency: 'USD',
+		intentIdMeta: 'pi_declined',
+		chargeIdMeta: '',
+		intentionStatusMeta: 'requires_payment_method',
 		intentId: 'pi_declined',
 		intentStatus: 'requires_payment_method',
 		paymentMethodId: 'pm_declined',
+		intentAmount: 1001,
+		intentCurrency: 'usd',
+		amountReceived: 0,
 		errorCode: 'card_declined',
 		declineCode: 'generic_decline',
 		chargeIds: [],
+		chargeStatuses: [],
 		capturedCharges: 0,
-	} as FailedPaymentEvidence;
+		failureNoteCount: 1,
+		setupFutureUsage: null,
+		providerCustomerId: '',
+		providerAttachedPaymentMethodIds: [],
+		orderCustomerId: 73,
+		localTokenIds: [],
+	};
 }
 
 test( 'accepts exactly one immutable 11.1.0 failed order paid in place after native cutover', () => {
@@ -275,7 +291,7 @@ test( 'accepts false protection only with no token and rejects target drift', ()
 		renderedField: 'absent',
 		submittedTokenSha256: null,
 	};
-	expect( validateHistoricalPayForOrderRecovery( disabled, recovered ) ).toBe(
+	expect( validateHistoricalPayForOrderRecovery( disabled, recovered ) ).toEqual(
 		recovered
 	);
 	recovered.protection = {
@@ -302,7 +318,7 @@ test( 'rejects a usable token in the disabled protection branch', () => {
 	} as never;
 	expect( () =>
 		validateHistoricalPayForOrderRecovery( disabled, recovered )
-	).toThrow( 'no card-testing protection token' );
+	).toThrow( 'exact public fields' );
 } );
 
 for ( const [ name, mutate, expected ] of [
@@ -438,14 +454,22 @@ test( 'collects failed-order evidence before cutover and cold reads only after l
 		},
 		captureProtection: async () => {
 			stages.push( 'protection' );
-			return evidence().protection;
+			return {
+				eligible: true,
+				token: { length: 16, sha256: 'd'.repeat( 64 ) },
+				accountEnabled: true,
+			};
 		},
 		cutOver: async () => {
 			stages.push( 'cutover' );
 		},
+		observeRenderedProtection: async () => {
+			stages.push( 'rendered' );
+			return { tokenSha256: 'd'.repeat( 64 ) };
+		},
 		submitPayForOrder: async () => {
 			stages.push( 'pay-for-order' );
-			return { requestCount: 1 };
+			return { requestCount: 1, submittedProtection: { tokenSha256: 'd'.repeat( 64 ) } };
 		},
 		waitForListenerQuiescence: async () => {
 			stages.push( 'listener-quiescent' );
@@ -459,8 +483,9 @@ test( 'collects failed-order evidence before cutover and cold reads only after l
 	expect( stages ).toEqual( [
 		'failed-fixture',
 		'failed-payment',
-		'protection',
 		'cutover',
+		'protection',
+		'rendered',
 		'pay-for-order',
 		'listener-quiescent',
 		'cold-read',
@@ -474,9 +499,10 @@ for ( const requestCount of [ 0, 2 ] ) {
 			collectHistoricalPayForOrderRecovery( {
 				readFailedFixture: async () => FIXTURE,
 				readFailedPayment: async () => failedPaymentEvidence(),
-				captureProtection: async () => evidence().protection,
+				captureProtection: async () => ( { eligible: true, token: { length: 16, sha256: 'd'.repeat( 64 ) }, accountEnabled: true } ),
 				cutOver: async () => {},
-				submitPayForOrder: async () => ( { requestCount } ),
+				observeRenderedProtection: async () => ( { tokenSha256: 'd'.repeat( 64 ) } ),
+				submitPayForOrder: async () => ( { requestCount, submittedProtection: { tokenSha256: 'd'.repeat( 64 ) } } ),
 				waitForListenerQuiescence: async () => {},
 				readColdRecoveryEvidence: async () => {
 					coldRead = true;

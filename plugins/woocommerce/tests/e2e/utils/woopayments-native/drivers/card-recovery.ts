@@ -275,6 +275,20 @@ function validateAttempt(
 	}
 }
 
+export function validateGenericDeclineFailedAttempt(
+	attempt: CardRecoveryAttemptObservation
+): CardRecoveryAttemptObservation {
+	validateAttempt( attempt, FAILED_STATUS, 'failed attempt' );
+	validateFailedGraph(
+		attempt,
+		1001,
+		'card_declined',
+		'generic_decline',
+		'failed attempt exact 1001 usd generic-decline graph'
+	);
+	return attempt;
+}
+
 function validateFailedGraph(
 	attempt: CardRecoveryAttemptObservation,
 	expectedAmount: number,
@@ -954,7 +968,7 @@ function orderAmountMinor( total: string ): number {
 	return amount;
 }
 
-function failedAttempt(
+export function failedAttempt(
 	evidence: FailedPaymentEvidence,
 	orderId: number,
 	document: string,
