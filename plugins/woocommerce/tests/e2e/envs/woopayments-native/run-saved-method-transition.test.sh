@@ -315,6 +315,14 @@ if [[ -s "$TEST_ROOT/commands.log" ]]; then
 fi
 
 : > "$TEST_ROOT/commands.log"
+E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
+	run_orchestrator 'historical-pay-for-order-ctp-false-prior-success' 'historical-pay-for-order-ctp-false'
+if [[ ! -s "$campaign_boundary" ]]; then
+	echo 'A successful disabled historical pay-for-order scenario did not record campaign evidence.' >&2
+	exit 1
+fi
+
+: > "$TEST_ROOT/commands.log"
 if E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
 	E2E_FAKE_TEST_RUNNER_FAIL=1 \
 	run_orchestrator 'historical-pay-for-order-ctp-false-failed-run' 'historical-pay-for-order-ctp-false'; then
@@ -323,6 +331,17 @@ if E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
 fi
 if [[ -e "$campaign_boundary" ]]; then
 	echo 'A failed disabled historical pay-for-order scenario retained prior success evidence.' >&2
+	exit 1
+fi
+
+: > "$TEST_ROOT/commands.log"
+if E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
+	run_orchestrator 'historical-pay-for-order-ctp-true-after-failed-disabled' 'historical-pay-for-order-ctp-true'; then
+	echo 'The enabled historical pay-for-order scenario accepted evidence invalidated by a failed disabled run.' >&2
+	exit 1
+fi
+if [[ -s "$TEST_ROOT/commands.log" ]]; then
+	echo 'A failed disabled run allowed a later enabled allocation.' >&2
 	exit 1
 fi
 

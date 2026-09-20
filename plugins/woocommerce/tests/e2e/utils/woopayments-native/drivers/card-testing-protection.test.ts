@@ -1,4 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type { ProviderWriteSession } from '../../../fixtures/woopayments-native';
 import type { JsonValue, ResourceLock } from '../resource-locks';
@@ -43,6 +47,11 @@ const forceRow = {
 } as const;
 
 type Operation = CardTestingProtectionRunnerRequest[ 'operation' ];
+type ControlledOptionRow = {
+	exists: boolean;
+	valueBase64: string | null;
+	autoload: string | null;
+};
 
 function envelope(
 	payload: unknown,
@@ -117,107 +126,6 @@ class FakeRunner implements CardTestingProtectionRunner {
 	): Promise< unknown > {
 		this.requests.push( request );
 		return ( await this.override?.( request ) ) ?? defaultResult( request );
-	}
-}
-
-interface ControlledOptionRow {
-	exists: boolean;
-	valueBase64: string | null;
-	autoload: string | null;
-}
-
-class ControlledOptionRowsRunner implements CardTestingProtectionRunner {
-	private accountOption: ControlledOptionRow = accountRow;
-	private forceOption: ControlledOptionRow = {
-		exists: true,
-		valueBase64: Buffer.from( 'force-original-bytes' ).toString( 'base64' ),
-		autoload: 'no',
-	} as const satisfies ControlledOptionRow;
-	private protectionEligible = false;
-
-	public constructor( private readonly disabledTokenIsUsable = false ) {}
-
-	public get optionRows() {
-		return {
-			accountOption: this.accountOption,
-			forceOption: this.forceOption,
-		};
-	}
-
-	public async run(
-		request: CardTestingProtectionRunnerRequest
-	): Promise< unknown > {
-		switch ( request.operation ) {
-			case 'capture-state':
-				return envelope( {
-					accountOption: this.accountOption,
-					forceOption: this.forceOption,
-					accountConnected: true,
-					effectiveProtection: this.protectionEligible,
-					classicPageExists: false,
-				} );
-			case 'mutate-state': {
-				const targetProtection = request.input.targetProtection;
-				if ( typeof targetProtection !== 'boolean' ) {
-					throw new Error( 'Target protection was not supplied.' );
-				}
-				this.protectionEligible = targetProtection;
-				this.forceOption = targetProtection
-					? {
-							exists: true,
-							valueBase64: Buffer.from( '1' ).toString( 'base64' ),
-							autoload: 'on',
-					  }
-					: { exists: false, valueBase64: null, autoload: null };
-				return envelope( { pageId: 71 } );
-			}
-			case 'verify-mutated-state':
-				return envelope( {
-					accountConnected: true,
-					accountProtection:
-						this.protectionEligible ===
-						request.input.targetProtection,
-					cacheUsable: true,
-					forceProtection:
-						this.protectionEligible ===
-						( this.forceOption.exists &&
-							Buffer.from(
-								this.forceOption.valueBase64 ?? '',
-								'base64'
-							).toString() === '1' ),
-					pageMatches: true,
-				} );
-			case 'read-guest-session':
-				return envelope( {
-					cookieValid: true,
-					sessionExists: true,
-					token:
-						this.protectionEligible || this.disabledTokenIsUsable
-							? { length: 16, sha256: TOKEN_DIGEST }
-							: null,
-				} );
-			case 'delete-guest-session':
-				return envelope( { deleted: true } );
-			case 'verify-session-absent':
-				return envelope( { rawAbsent: true, cacheAbsent: true } );
-			case 'restore-state': {
-				const snapshot = request.input.snapshot as {
-					accountOption: ControlledOptionRow;
-					forceOption: ControlledOptionRow;
-				};
-				this.accountOption = snapshot.accountOption;
-				this.forceOption = snapshot.forceOption;
-				this.protectionEligible = false;
-				return envelope( { restored: true, pageAbsent: true } );
-			}
-			case 'verify-restored-state':
-				return envelope( {
-					rowsMatch: true,
-					effectiveProtection: this.protectionEligible,
-					pageAbsent: true,
-					sessionAbsent: true,
-				} );
-		}
 	}
 }
 
@@ -389,6 +297,144 @@ function runnerRequest(): CardTestingProtectionRunnerRequest {
 			slug: 'classic-checkout',
 		},
 	};
+}
+
+interface NativeOptionRuntimeState {
+	options: Record< string, { valueBase64: string; autoload: string } >;
+	posts: Array< Record< string, unknown > >;
+	nextPostId: number;
+}
+
+function initialNativeOptionRuntimeState(): NativeOptionRuntimeState {
+	const accountValue = execFileSync(
+		'php',
+		[
+			'-r',
+			"echo serialize( array( 'data' => array( 'account_id' => 'acct_native_test', 'card_testing_protection_eligible' => true ), 'fetched' => 41, 'errored' => false, 'consecutive_errors' => 2 ) );",
+		],
+		{ encoding: 'utf8' }
+	);
+	return {
+		options: {
+			wcpay_account_data: {
+				valueBase64: Buffer.from( accountValue ).toString( 'base64' ),
+				autoload: 'yes',
+			},
+			wcpaydev_force_card_testing_protection_on: {
+				valueBase64: Buffer.from( 'force-original-bytes' ).toString(
+					'base64'
+				),
+				autoload: 'no',
+			},
+		},
+		posts: [],
+		nextPostId: 1,
+	};
+}
+
+function readNativeOptionRuntimeState( path: string ): NativeOptionRuntimeState {
+	return JSON.parse( readFileSync( path, 'utf8' ) ) as NativeOptionRuntimeState;
+}
+
+function nativeOptionRuntimePhp( statePath: string ): string {
+	return String.raw`
+const WCPAY_E2E_TEST_STATE = ${ JSON.stringify( statePath ) };
+define( 'ARRAY_A', 'ARRAY_A' );
+function wcpay_e2e_test_read_state() { return json_decode( file_get_contents( WCPAY_E2E_TEST_STATE ), true, 32, JSON_THROW_ON_ERROR ); }
+function wcpay_e2e_test_write_state() { file_put_contents( WCPAY_E2E_TEST_STATE, json_encode( $GLOBALS['wcpay_e2e_test_state'], JSON_UNESCAPED_SLASHES ) ); }
+$GLOBALS['wcpay_e2e_test_state'] = wcpay_e2e_test_read_state();
+class WcpayE2eTestWpdb {
+	public $options = 'options';
+	public $posts = 'posts';
+	public $prefix = 'wp_';
+	public function prepare( $query, ...$args ) { return base64_encode( serialize( array( $query, $args ) ) ); }
+	public function get_results( $prepared ) {
+		$prepared = unserialize( base64_decode( $prepared ), array( 'allowed_classes' => false ) );
+		$query = $prepared[0];
+		$args = $prepared[1];
+		$state = $GLOBALS['wcpay_e2e_test_state'];
+		if ( false !== strpos( $query, 'option_value' ) ) {
+			$name = $args[1];
+			if ( ! isset( $state['options'][$name] ) ) { return array(); }
+			$row = $state['options'][$name];
+			return array( array( 'option_value' => base64_decode( $row['valueBase64'] ), 'autoload' => $row['autoload'] ) );
+		}
+		$rows = array();
+		foreach ( $state['posts'] as $row ) {
+			if ( $row['post_type'] === $args[1] && $row['post_name'] === $args[2] ) { $rows[] = $row; }
+		}
+		return $rows;
+	}
+	public function update( $table, $data, $where ) {
+		if ( $table !== $this->options || ! isset( $where['option_name'] ) || ! isset( $GLOBALS['wcpay_e2e_test_state']['options'][$where['option_name']] ) ) { return false; }
+		$name = $where['option_name'];
+		foreach ( $data as $key => $value ) {
+			$GLOBALS['wcpay_e2e_test_state']['options'][$name][$key === 'option_value' ? 'valueBase64' : $key] = $key === 'option_value' ? base64_encode( $value ) : $value;
+		}
+		wcpay_e2e_test_write_state();
+		return 1;
+	}
+	public function insert( $table, $data ) {
+		if ( $table !== $this->options || ! isset( $data['option_name'], $data['option_value'], $data['autoload'] ) ) { return false; }
+		$GLOBALS['wcpay_e2e_test_state']['options'][$data['option_name']] = array( 'valueBase64' => base64_encode( $data['option_value'] ), 'autoload' => $data['autoload'] );
+		wcpay_e2e_test_write_state();
+		return 1;
+	}
+	public function delete( $table, $where ) {
+		if ( $table !== $this->options || ! isset( $where['option_name'] ) ) { return false; }
+		unset( $GLOBALS['wcpay_e2e_test_state']['options'][$where['option_name']] );
+		wcpay_e2e_test_write_state();
+		return 1;
+	}
+	public function get_var() { return 0; }
+	public function esc_like( $value ) { return $value; }
+}
+$wpdb = new WcpayE2eTestWpdb();
+function get_home_url() { return '${ BASE_URL }'; }
+function get_site_url() { return '${ BASE_URL }'; }
+function wp_json_encode( $value, $flags = 0 ) { return json_encode( $value, $flags ); }
+function wp_cache_delete() { return true; }
+function is_serialized( $value ) { return 'b:0;' === $value || false !== @unserialize( $value, array( 'allowed_classes' => false ) ); }
+function maybe_serialize( $value ) { return serialize( $value ); }
+function is_wp_error() { return false; }
+function wp_insert_post( $post ) {
+	$id = $GLOBALS['wcpay_e2e_test_state']['nextPostId']++;
+	$GLOBALS['wcpay_e2e_test_state']['posts'][] = array( 'ID' => $id, 'post_name' => $post['post_name'], 'post_title' => $post['post_title'], 'post_content' => $post['post_content'], 'post_status' => $post['post_status'], 'post_type' => $post['post_type'] );
+	wcpay_e2e_test_write_state();
+	return $id;
+}
+function get_post( $id ) { foreach ( $GLOBALS['wcpay_e2e_test_state']['posts'] as $post ) { if ( $post['ID'] === $id ) { return $post; } } return null; }
+function wp_delete_post( $id ) {
+	$GLOBALS['wcpay_e2e_test_state']['posts'] = array_values( array_filter( $GLOBALS['wcpay_e2e_test_state']['posts'], function ( $post ) use ( $id ) { return $post['ID'] !== $id; } ) );
+	wcpay_e2e_test_write_state();
+	return array( 'ID' => $id );
+}
+`;
+}
+
+function nativeOptionRuntimeRunner( statePath: string ): NativeStoreWpCliRunner {
+	return new NativeStoreWpCliRunner( {
+		storeDirectory: '/controlled/native-store',
+		execFile: async ( _command, args ) =>
+			execFileSync(
+				'php',
+				[ '-r', `${ nativeOptionRuntimePhp( statePath ) }\n${ args.at( -1 ) }` ],
+				{ encoding: 'utf8' }
+			),
+	} );
+}
+
+function accountProtectionFromRawRow( row: ControlledOptionRow ): boolean {
+	const result = execFileSync(
+		'php',
+		[
+			'-r',
+			"echo json_encode( unserialize( base64_decode( $argv[1] ), array( 'allowed_classes' => false ) )['data']['card_testing_protection_eligible'] );",
+			row.valueBase64 ?? '',
+		],
+		{ encoding: 'utf8' }
+	);
+	return result.trim() === 'true';
 }
 
 test( 'runs canonical PHP with one standard native-store WP-CLI invocation', async () => {
@@ -1278,32 +1324,142 @@ test( 'defaults card-testing protection capture to enabled token evidence', asyn
 	} );
 } );
 
-test( 'restores controlled native option rows after each requested protection state', async () => {
+test( 'executes native PHP mutations and restores exact controlled option rows for each target', async () => {
 	for ( const targetProtection of [ false, true ] as const ) {
-		const { session } = makeSession( [] );
-		const { context } = fakeContext( [], [ COOKIE_VALUE ] );
-		const runner = new ControlledOptionRowsRunner();
-		const initialRows = runner.optionRows;
+		const workspace = mkdtempSync( join( tmpdir(), 'ctp-native-options-' ) );
+		const statePath = join( workspace, 'state.json' );
+		const initialState = initialNativeOptionRuntimeState();
+		writeFileSync( statePath, JSON.stringify( initialState ) );
+		const runner = nativeOptionRuntimeRunner( statePath );
+		const marker = 'woopayments-e2e-deadbeefdeadbeef';
+		const title = 'WooPayments E2E Classic Checkout ' + marker;
+		const content = '<!-- ' + marker + ' -->\n[woocommerce_checkout]';
 
-		await withCapturedCardTestingProtectionState(
-			session,
-			RUN_ID,
-			async ( scope ) => {
-				await scope.registerFreshContext( context as never );
-				await scope.captureGuestSessionProtection( context as never );
-			},
-			{ runner, targetProtection }
-		);
+		try {
+			const captured = ( await runner.run( {
+				operation: 'capture-state',
+				input: { baseURL: BASE_URL, marker, slug: 'classic-checkout' },
+			} ) ) as { payload: { accountOption: ControlledOptionRow; forceOption: ControlledOptionRow; effectiveProtection: boolean } };
+			const snapshot = {
+				accountOption: captured.payload.accountOption,
+				forceOption: captured.payload.forceOption,
+				classicCheckoutSlug: 'classic-checkout',
+				runMarker: marker,
+				originalEffectiveProtection: captured.payload.effectiveProtection,
+			};
+			const mutated = ( await runner.run( {
+				operation: 'mutate-state',
+				input: {
+					baseURL: BASE_URL,
+					content,
+					marker,
+					slug: 'classic-checkout',
+					targetProtection,
+					title,
+				},
+			} ) ) as { payload: { pageId: number } };
+			const stateAfterMutation = readNativeOptionRuntimeState( statePath );
+			const mutatedAccount = stateAfterMutation.options.wcpay_account_data;
 
-		expect( runner.optionRows ).toEqual( initialRows );
+			expect( mutatedAccount ).not.toEqual(
+				initialState.options.wcpay_account_data
+			);
+			expect(
+				accountProtectionFromRawRow( {
+					exists: true,
+					valueBase64: mutatedAccount.valueBase64,
+					autoload: mutatedAccount.autoload,
+				} )
+			).toBe( targetProtection );
+			if ( targetProtection ) {
+				expect(
+					stateAfterMutation.options
+						.wcpaydev_force_card_testing_protection_on
+				).toEqual( {
+					valueBase64: Buffer.from( '1' ).toString( 'base64' ),
+					autoload: 'no',
+				} );
+			} else {
+				expect(
+					stateAfterMutation.options
+						.wcpaydev_force_card_testing_protection_on
+				).toBeUndefined();
+			}
+			await expect(
+				runner.run( {
+					operation: 'verify-mutated-state',
+					input: {
+						baseURL: BASE_URL,
+						content,
+						marker,
+						pageId: mutated.payload.pageId,
+						slug: 'classic-checkout',
+						targetProtection,
+						title,
+					},
+				} )
+			).resolves.toEqual(
+				envelope( {
+					accountConnected: true,
+					accountProtection: true,
+					cacheUsable: true,
+					forceProtection: true,
+					pageMatches: true,
+				} )
+			);
+			await expect(
+				runner.run( {
+					operation: 'restore-state',
+					input: {
+						baseURL: BASE_URL,
+						content,
+						pageId: mutated.payload.pageId,
+						snapshot,
+						title,
+					},
+				} )
+			).resolves.toEqual( envelope( { restored: true, pageAbsent: true } ) );
+			expect( readNativeOptionRuntimeState( statePath ).options ).toEqual(
+				initialState.options
+			);
+			await expect(
+				runner.run( {
+					operation: 'verify-restored-state',
+					input: {
+						baseURL: BASE_URL,
+						content,
+						pageId: mutated.payload.pageId,
+						snapshot,
+						title,
+					},
+				} )
+			).resolves.toEqual(
+				envelope( {
+					rowsMatch: true,
+					effectiveProtection: true,
+					pageAbsent: true,
+					sessionAbsent: true,
+				} )
+			);
+		} finally {
+			rmSync( workspace, { recursive: true, force: true } );
+		}
 	}
 } );
 
 test( 'rejects a usable disabled card-testing protection token before restoration', async () => {
 	const { session } = makeSession( [] );
 	const { context } = fakeContext( [], [ COOKIE_VALUE ] );
-	const runner = new ControlledOptionRowsRunner( true );
-	const initialRows = runner.optionRows;
+	const runner = new FakeRunner(
+		replaceOperationResult(
+			'read-guest-session',
+			envelope( {
+				cookieValid: true,
+				sessionExists: true,
+				token: { length: 16, sha256: TOKEN_DIGEST },
+			} )
+		)
+	);
 
 	await expect(
 		withCapturedCardTestingProtectionState(
@@ -1316,7 +1472,7 @@ test( 'rejects a usable disabled card-testing protection token before restoratio
 			{ runner, targetProtection: false }
 		)
 	).rejects.toBeInstanceOf( ResourceQuarantineRequiredError );
-	expect( runner.optionRows ).toEqual( initialRows );
+	expect( operationNames( runner ) ).toContain( 'restore-state' );
 } );
 
 test( 'reads the percent-encoded session cookie a real store puts on the wire', async () => {
