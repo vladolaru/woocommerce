@@ -266,7 +266,10 @@ assert_exact_capabilities \
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
 
 : > "$TEST_ROOT/commands.log"
-if run_orchestrator 'historical-pay-for-order-ctp-true-without-false' 'historical-pay-for-order-ctp-true'; then
+campaign_id='historical-pay-for-order-campaign'
+campaign_boundary="$TEST_ROOT/woopayments-native-historical-pay-for-order-ctp-$campaign_id.json"
+if E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
+	run_orchestrator 'historical-pay-for-order-ctp-true-without-false' 'historical-pay-for-order-ctp-true'; then
 	echo 'The enabled historical pay-for-order scenario ran without a successful disabled allocation teardown.' >&2
 	exit 1
 fi
@@ -275,26 +278,57 @@ if [[ -s "$TEST_ROOT/commands.log" ]]; then
 	exit 1
 fi
 
+printf '{"campaignId":"stale-campaign","runId":"stale-run","scenario":"historical-pay-for-order-ctp-false","schemaVersion":1}\n' > "$campaign_boundary"
 : > "$TEST_ROOT/commands.log"
-failed_false_boundary="$TEST_ROOT/failed-false-destruction-boundary"
-if E2E_TRANSITION_CTP_FALSE_DESTRUCTION_BOUNDARY="$failed_false_boundary" \
+if E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
+	run_orchestrator 'historical-pay-for-order-ctp-true-stale-marker' 'historical-pay-for-order-ctp-true'; then
+	echo 'The enabled historical pay-for-order scenario accepted a stale marker.' >&2
+	exit 1
+fi
+if [[ -s "$TEST_ROOT/commands.log" ]]; then
+	echo 'A stale marker reached allocation or the test runner.' >&2
+	exit 1
+fi
+
+printf 'not-json\n' > "$campaign_boundary"
+: > "$TEST_ROOT/commands.log"
+if E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
+	run_orchestrator 'historical-pay-for-order-ctp-true-malformed-marker' 'historical-pay-for-order-ctp-true'; then
+	echo 'The enabled historical pay-for-order scenario accepted a malformed marker.' >&2
+	exit 1
+fi
+if [[ -s "$TEST_ROOT/commands.log" ]]; then
+	echo 'A malformed marker reached allocation or the test runner.' >&2
+	exit 1
+fi
+
+printf '{"campaignId":"other-campaign","runId":"other-run","scenario":"historical-pay-for-order-ctp-false","schemaVersion":1}\n' > "$campaign_boundary"
+: > "$TEST_ROOT/commands.log"
+if E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
+	run_orchestrator 'historical-pay-for-order-ctp-true-wrong-campaign' 'historical-pay-for-order-ctp-true'; then
+	echo 'The enabled historical pay-for-order scenario accepted evidence for another campaign.' >&2
+	exit 1
+fi
+if [[ -s "$TEST_ROOT/commands.log" ]]; then
+	echo 'Wrong-campaign evidence reached allocation or the test runner.' >&2
+	exit 1
+fi
+
+: > "$TEST_ROOT/commands.log"
+if E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
 	E2E_FAKE_TEST_RUNNER_FAIL=1 \
 	run_orchestrator 'historical-pay-for-order-ctp-false-failed-run' 'historical-pay-for-order-ctp-false'; then
 	echo 'The disabled historical pay-for-order scenario hid a test-runner failure.' >&2
 	exit 1
 fi
-if [[ -e "$failed_false_boundary" ]]; then
-	echo 'A failed disabled historical pay-for-order scenario recorded a destruction boundary.' >&2
-	exit 1
-fi
-if E2E_TRANSITION_CTP_FALSE_DESTRUCTION_BOUNDARY="$failed_false_boundary" \
-	run_orchestrator 'historical-pay-for-order-ctp-true-after-failed-false' 'historical-pay-for-order-ctp-true'; then
-	echo 'The enabled historical pay-for-order scenario accepted a failed disabled run.' >&2
+if [[ -e "$campaign_boundary" ]]; then
+	echo 'A failed disabled historical pay-for-order scenario retained prior success evidence.' >&2
 	exit 1
 fi
 
 : > "$TEST_ROOT/commands.log"
-run_orchestrator 'historical-pay-for-order-ctp-false-run' 'historical-pay-for-order-ctp-false'
+E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
+	run_orchestrator 'historical-pay-for-order-ctp-false-run' 'historical-pay-for-order-ctp-false'
 grep -Fq -- 'tests/woopayments-native/transitions/historical-money-records.spec.ts' "$TEST_ROOT/commands.log"
 grep -Fq -- '--grep=^plugin-origin failed order pays in place after cutover with card-testing protection disabled$' "$TEST_ROOT/commands.log"
 grep -Fq -- '--workers=1' "$TEST_ROOT/commands.log"
@@ -313,7 +347,8 @@ assert_exact_capabilities \
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
 
 : > "$TEST_ROOT/commands.log"
-run_orchestrator 'historical-pay-for-order-ctp-true-run' 'historical-pay-for-order-ctp-true'
+E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
+	run_orchestrator 'historical-pay-for-order-ctp-true-run' 'historical-pay-for-order-ctp-true'
 grep -Fq -- 'tests/woopayments-native/transitions/historical-money-records.spec.ts' "$TEST_ROOT/commands.log"
 grep -Fq -- '--grep=^plugin-origin failed order pays in place after cutover with card-testing protection enabled$' "$TEST_ROOT/commands.log"
 grep -Fq -- '--workers=1' "$TEST_ROOT/commands.log"
@@ -330,6 +365,17 @@ assert_exact_capabilities \
 	'basic-card-entry' \
 	'product/payment'
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
+
+: > "$TEST_ROOT/commands.log"
+if E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
+	run_orchestrator 'historical-pay-for-order-ctp-true-consumed-marker' 'historical-pay-for-order-ctp-true'; then
+	echo 'The enabled historical pay-for-order scenario reused consumed teardown evidence.' >&2
+	exit 1
+fi
+if [[ -s "$TEST_ROOT/commands.log" ]]; then
+	echo 'Consumed teardown evidence reached allocation or the test runner.' >&2
+	exit 1
+fi
 
 : > "$TEST_ROOT/commands.log"
 if run_orchestrator 'invalid-scenario-run' 'not-allowlisted'; then

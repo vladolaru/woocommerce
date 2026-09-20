@@ -357,10 +357,7 @@ function assertMutationResult( value: unknown ): number {
 	return payload.pageId;
 }
 
-function assertMutationProof(
-	value: unknown,
-	targetProtection: boolean
-): void {
+function assertMutationProof( value: unknown ): void {
 	const payload = assertPayload( value, [
 		'accountConnected',
 		'accountProtection',
@@ -370,9 +367,9 @@ function assertMutationProof(
 	] );
 	if (
 		payload.accountConnected !== true ||
-		payload.accountProtection !== targetProtection ||
+		payload.accountProtection !== true ||
 		payload.cacheUsable !== true ||
-		payload.forceProtection !== targetProtection ||
+		payload.forceProtection !== true ||
 		payload.pageMatches !== true
 	) {
 		invalid( 'Cold card-testing protection proof did not match mutation.' );
@@ -820,8 +817,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 							title,
 						},
 						session.baseURL
-					),
-					targetProtection
+					)
 				);
 
 				const scope: CardTestingProtectionScope = {

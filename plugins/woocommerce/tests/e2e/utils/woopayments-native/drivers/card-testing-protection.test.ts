@@ -120,6 +120,107 @@ class FakeRunner implements CardTestingProtectionRunner {
 	}
 }
 
+interface ControlledOptionRow {
+	exists: boolean;
+	valueBase64: string | null;
+	autoload: string | null;
+}
+
+class ControlledOptionRowsRunner implements CardTestingProtectionRunner {
+	private accountOption: ControlledOptionRow = accountRow;
+	private forceOption: ControlledOptionRow = {
+		exists: true,
+		valueBase64: Buffer.from( 'force-original-bytes' ).toString( 'base64' ),
+		autoload: 'no',
+	} as const satisfies ControlledOptionRow;
+	private protectionEligible = false;
+
+	public constructor( private readonly disabledTokenIsUsable = false ) {}
+
+	public get optionRows() {
+		return {
+			accountOption: this.accountOption,
+			forceOption: this.forceOption,
+		};
+	}
+
+	public async run(
+		request: CardTestingProtectionRunnerRequest
+	): Promise< unknown > {
+		switch ( request.operation ) {
+			case 'capture-state':
+				return envelope( {
+					accountOption: this.accountOption,
+					forceOption: this.forceOption,
+					accountConnected: true,
+					effectiveProtection: this.protectionEligible,
+					classicPageExists: false,
+				} );
+			case 'mutate-state': {
+				const targetProtection = request.input.targetProtection;
+				if ( typeof targetProtection !== 'boolean' ) {
+					throw new Error( 'Target protection was not supplied.' );
+				}
+				this.protectionEligible = targetProtection;
+				this.forceOption = targetProtection
+					? {
+							exists: true,
+							valueBase64: Buffer.from( '1' ).toString( 'base64' ),
+							autoload: 'on',
+					  }
+					: { exists: false, valueBase64: null, autoload: null };
+				return envelope( { pageId: 71 } );
+			}
+			case 'verify-mutated-state':
+				return envelope( {
+					accountConnected: true,
+					accountProtection:
+						this.protectionEligible ===
+						request.input.targetProtection,
+					cacheUsable: true,
+					forceProtection:
+						this.protectionEligible ===
+						( this.forceOption.exists &&
+							Buffer.from(
+								this.forceOption.valueBase64 ?? '',
+								'base64'
+							).toString() === '1' ),
+					pageMatches: true,
+				} );
+			case 'read-guest-session':
+				return envelope( {
+					cookieValid: true,
+					sessionExists: true,
+					token:
+						this.protectionEligible || this.disabledTokenIsUsable
+							? { length: 16, sha256: TOKEN_DIGEST }
+							: null,
+				} );
+			case 'delete-guest-session':
+				return envelope( { deleted: true } );
+			case 'verify-session-absent':
+				return envelope( { rawAbsent: true, cacheAbsent: true } );
+			case 'restore-state': {
+				const snapshot = request.input.snapshot as {
+					accountOption: ControlledOptionRow;
+					forceOption: ControlledOptionRow;
+				};
+				this.accountOption = snapshot.accountOption;
+				this.forceOption = snapshot.forceOption;
+				this.protectionEligible = false;
+				return envelope( { restored: true, pageAbsent: true } );
+			}
+			case 'verify-restored-state':
+				return envelope( {
+					rowsMatch: true,
+					effectiveProtection: this.protectionEligible,
+					pageAbsent: true,
+					sessionAbsent: true,
+				} );
+		}
+	}
+}
+
 interface FakeLockOptions {
 	recoveredValue?: JsonValue;
 	restoreOwned?: boolean;
@@ -1099,9 +1200,9 @@ test( 'captures the requested card-testing protection state and restores raw opt
 			if ( request.operation === 'verify-mutated-state' ) {
 				return envelope( {
 					accountConnected: true,
-					accountProtection: targetProtection,
+					accountProtection: true,
 					cacheUsable: true,
-					forceProtection: targetProtection,
+					forceProtection: true,
 					pageMatches: true,
 				} );
 			}
@@ -1175,6 +1276,47 @@ test( 'defaults card-testing protection capture to enabled token evidence', asyn
 		targetProtection: true,
 		token: { length: 16, sha256: TOKEN_DIGEST },
 	} );
+} );
+
+test( 'restores controlled native option rows after each requested protection state', async () => {
+	for ( const targetProtection of [ false, true ] as const ) {
+		const { session } = makeSession( [] );
+		const { context } = fakeContext( [], [ COOKIE_VALUE ] );
+		const runner = new ControlledOptionRowsRunner();
+		const initialRows = runner.optionRows;
+
+		await withCapturedCardTestingProtectionState(
+			session,
+			RUN_ID,
+			async ( scope ) => {
+				await scope.registerFreshContext( context as never );
+				await scope.captureGuestSessionProtection( context as never );
+			},
+			{ runner, targetProtection }
+		);
+
+		expect( runner.optionRows ).toEqual( initialRows );
+	}
+} );
+
+test( 'rejects a usable disabled card-testing protection token before restoration', async () => {
+	const { session } = makeSession( [] );
+	const { context } = fakeContext( [], [ COOKIE_VALUE ] );
+	const runner = new ControlledOptionRowsRunner( true );
+	const initialRows = runner.optionRows;
+
+	await expect(
+		withCapturedCardTestingProtectionState(
+			session,
+			RUN_ID,
+			async ( scope ) => {
+				await scope.registerFreshContext( context as never );
+				await scope.captureGuestSessionProtection( context as never );
+			},
+			{ runner, targetProtection: false }
+		)
+	).rejects.toBeInstanceOf( ResourceQuarantineRequiredError );
+	expect( runner.optionRows ).toEqual( initialRows );
 } );
 
 test( 'reads the percent-encoded session cookie a real store puts on the wire', async () => {

@@ -15,7 +15,68 @@ readonly WRAPPER="${E2E_TRANSITION_WRAPPER:-$SCRIPT_DIR/provision-transition-sto
 readonly REAL_PROVISIONER="${E2E_TRANSITION_STORE_PROVISIONER:-$SCRIPT_DIR/provision-transition-store-real.sh}"
 readonly RUN_ID="${E2E_TRANSITION_RUN_ID:?E2E_TRANSITION_RUN_ID is required}"
 readonly SCENARIO="${E2E_TRANSITION_SCENARIO:-saved-method}"
-readonly CTP_FALSE_DESTRUCTION_BOUNDARY="${E2E_TRANSITION_CTP_FALSE_DESTRUCTION_BOUNDARY:-${TMPDIR:?TMPDIR is required}/woopayments-native-historical-pay-for-order-ctp-false.destroyed}"
+CTP_CAMPAIGN_ID=''
+CTP_FALSE_DESTRUCTION_BOUNDARY=''
+
+configure_ctp_campaign() {
+	CTP_CAMPAIGN_ID="${E2E_TRANSITION_CTP_CAMPAIGN_ID:?E2E_TRANSITION_CTP_CAMPAIGN_ID is required for historical pay-for-order scenarios}"
+	if [[ ! "$CTP_CAMPAIGN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ || "$CTP_CAMPAIGN_ID" == "$RUN_ID" ]]; then
+		echo 'Historical pay-for-order requires a campaign ID distinct from the scenario run ID.' >&2
+		return 1
+	fi
+	CTP_FALSE_DESTRUCTION_BOUNDARY="${TMPDIR:?TMPDIR is required}/woopayments-native-historical-pay-for-order-ctp-$CTP_CAMPAIGN_ID.json"
+}
+
+record_ctp_false_destruction() {
+	local temporary_boundary="${CTP_FALSE_DESTRUCTION_BOUNDARY}.tmp.$RUN_ID"
+	if ! node -e '
+		const evidence = {
+			schemaVersion: 1,
+			campaignId: process.argv[ 1 ],
+			runId: process.argv[ 2 ],
+			scenario: "historical-pay-for-order-ctp-false",
+		};
+		process.stdout.write( JSON.stringify( evidence ) + "\n" );
+	' "$CTP_CAMPAIGN_ID" "$RUN_ID" > "$temporary_boundary" || ! mv -f "$temporary_boundary" "$CTP_FALSE_DESTRUCTION_BOUNDARY"; then
+		rm -f "$temporary_boundary"
+		return 1
+	fi
+}
+
+consume_ctp_false_destruction() {
+	local claimed_boundary="${CTP_FALSE_DESTRUCTION_BOUNDARY}.consumed.$RUN_ID"
+	if ! mv "$CTP_FALSE_DESTRUCTION_BOUNDARY" "$claimed_boundary" 2>/dev/null; then
+		return 1
+	fi
+	if ! node -e '
+		const { readFileSync } = require( "node:fs" );
+		let evidence;
+		try {
+			evidence = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+		} catch {
+			process.exit( 1 );
+		}
+		const expectedKeys = [ "campaignId", "runId", "scenario", "schemaVersion" ];
+		if (
+			Object.keys( evidence ).sort().join( "," ) !== expectedKeys.sort().join( "," ) ||
+			evidence.schemaVersion !== 1 ||
+			evidence.campaignId !== process.argv[ 2 ] ||
+			evidence.scenario !== "historical-pay-for-order-ctp-false" ||
+			typeof evidence.runId !== "string" ||
+			evidence.runId.length === 0 ||
+			evidence.runId === process.argv[ 3 ]
+		) {
+			process.exit( 1 );
+		}
+	' "$claimed_boundary" "$CTP_CAMPAIGN_ID" "$RUN_ID"; then
+		rm -f "$claimed_boundary"
+		return 1
+	fi
+	if ! rm -f "$claimed_boundary"; then
+		return 1
+	fi
+}
+
 SPEC=''
 GREP=''
 CAPABILITIES=()
@@ -71,6 +132,10 @@ case "$SCENARIO" in
 		)
 		;;
 	historical-pay-for-order-ctp-false)
+		if ! configure_ctp_campaign || ! rm -f "$CTP_FALSE_DESTRUCTION_BOUNDARY"; then
+			echo 'The disabled historical pay-for-order scenario could not invalidate its prior campaign boundary.' >&2
+			exit 65
+		fi
 		SPEC='tests/woopayments-native/transitions/historical-money-records.spec.ts'
 		GREP='^plugin-origin failed order pays in place after cutover with card-testing protection disabled$'
 		CAPABILITIES=(
@@ -86,6 +151,10 @@ case "$SCENARIO" in
 		)
 		;;
 	historical-pay-for-order-ctp-true)
+		if ! configure_ctp_campaign || ! consume_ctp_false_destruction; then
+			echo 'The enabled historical pay-for-order scenario requires valid unconsumed disabled teardown evidence for this campaign.' >&2
+			exit 65
+		fi
 		SPEC='tests/woopayments-native/transitions/historical-money-records.spec.ts'
 		GREP='^plugin-origin failed order pays in place after cutover with card-testing protection enabled$'
 		CAPABILITIES=(
@@ -99,10 +168,6 @@ case "$SCENARIO" in
 			'basic-card-entry'
 			'product/payment'
 		)
-		if [[ ! -s "$CTP_FALSE_DESTRUCTION_BOUNDARY" ]]; then
-			echo 'The enabled historical pay-for-order scenario requires a successful disabled allocation teardown.' >&2
-			exit 65
-		fi
 		;;
 	*)
 		echo "Unknown transition scenario: $SCENARIO" >&2
@@ -112,6 +177,8 @@ esac
 readonly SPEC
 readonly GREP
 readonly -a CAPABILITIES
+readonly CTP_CAMPAIGN_ID
+readonly CTP_FALSE_DESTRUCTION_BOUNDARY
 
 allocation=''
 teardown_started=0
@@ -128,7 +195,7 @@ teardown() {
 				primary_status=1
 			fi
 		elif [[ "$SCENARIO" == 'historical-pay-for-order-ctp-false' && "$primary_status" == '0' ]]; then
-			if ! printf '%s\n' "$RUN_ID" > "$CTP_FALSE_DESTRUCTION_BOUNDARY"; then
+			if ! record_ctp_false_destruction; then
 				echo 'Disabled historical pay-for-order teardown boundary could not be recorded.' >&2
 				primary_status=1
 			fi
