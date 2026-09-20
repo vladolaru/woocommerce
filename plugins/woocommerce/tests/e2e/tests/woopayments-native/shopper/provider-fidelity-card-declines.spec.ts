@@ -34,6 +34,11 @@ import {
 } from '../../../utils/woopayments-native/drivers/card-entry';
 import { withClassicCheckoutPage } from '../../../utils/woopayments-native/drivers/classic-checkout-page';
 import { readHighestOrderId } from '../../../utils/woopayments-native/drivers/classic-card-authentication';
+import {
+	convergeFailedPayment,
+	readOrderIdStatusDelta,
+	type FailedPaymentEvidence,
+} from '../../../utils/woopayments-native/drivers/failed-payment-evidence';
 import { decodeEscapedHtml } from '../../../utils/woopayments-native/store-api-text';
 import type { ProviderTestCard } from '../../../utils/woopayments-native/test-cards';
 
@@ -109,18 +114,6 @@ const PROVIDER_CURRENCY = 'usd';
 const TERMINAL_INTENT_STATUS = 'requires_payment_method';
 /** Statuses an order the store made but never took money for may hold. */
 const UNPAID_ORDER_STATUSES = [ 'pending', 'failed' ];
-/** Statuses that would mean money moved. */
-const PAID_ORDER_STATUSES = [
-	'processing',
-	'completed',
-	'on-hold',
-	'refunded',
-];
-
-// The family's fixed convergence contract.
-const CONVERGENCE_BUDGET_MS = 45_000;
-const CONVERGENCE_POLL_MS = 2_000;
-const CONVERGENCE_QUIET_MS = 4_000;
 /** The empty-attachment interval the negative SetupIntent cases require. */
 const ATTACHMENT_QUIET_MS = 10_000;
 const NOTICE_TIMEOUT_MS = 30_000;
@@ -427,298 +420,6 @@ function isCreateSetupIntentRequest( request: Request ): boolean {
 		request.url().includes( 'admin-ajax.php' ) &&
 		( request.postData() ?? '' ).includes( 'action=create_setup_intent' )
 	);
-}
-
-interface OrderDelta {
-	newOrderIds: number[];
-	paidOrderIds: number[];
-}
-
-/**
- * Orders created since a baseline, read twice two seconds apart and returned
- * only when both reads agree.
- *
- * The Classic authentication driver exports a near-identical helper, and this
- * one deliberately does not reuse it: that version also tracks whether each new
- * order carries provider identifiers, and quarantines when the two reads
- * disagree. On this family both behaviours are wrong. The ingested
- * `payment_intent.payment_failed` event attaches `_intent_id` to the order at an
- * arbitrary moment inside the interval, so provider-linkage legitimately changes
- * between the reads — and quarantining the shared account for a webhook arriving
- * on time would be a false alarm. What must be stable here is only which orders
- * exist and whether any of them was paid.
- */
-async function readOrderDelta(
-	session: ProviderWriteSession,
-	afterOrderId: number
-): Promise< OrderDelta > {
-	const read = async (): Promise< OrderDelta > => {
-		const listed = await readJson(
-			await session.adminApi.get(
-				'/wp-json/wc/v3/orders?status=any&per_page=50&orderby=id&order=desc'
-			),
-			'WooCommerce order list'
-		);
-		if ( ! Array.isArray( listed ) ) {
-			throw new Error( 'The order list did not return a collection.' );
-		}
-		const orders = listed
-			.map( ( value, index ) => {
-				const order = requireObject(
-					value,
-					`order list entry ${ index + 1 }`
-				);
-				return {
-					id: Number( order.id ),
-					status: String( order.status ),
-				};
-			} )
-			.filter( ( order ) => order.id > afterOrderId );
-
-		return {
-			newOrderIds: orders.map( ( order ) => order.id ).toSorted(),
-			paidOrderIds: orders
-				.filter( ( order ) =>
-					PAID_ORDER_STATUSES.includes( order.status )
-				)
-				.map( ( order ) => order.id )
-				.toSorted(),
-		};
-	};
-
-	const first = await read();
-	await delay( CONVERGENCE_POLL_MS );
-	const second = await read();
-	expect(
-		second,
-		'the set of orders this submission created must be stable across two reads'
-	).toEqual( first );
-
-	return second;
-}
-
-interface FailedPaymentEvidence {
-	orderStatus: string;
-	orderTotal: string;
-	orderCurrency: string;
-	intentIdMeta: string;
-	chargeIdMeta: string;
-	intentionStatusMeta: string;
-	intentId: string;
-	intentStatus: unknown;
-	intentAmount: unknown;
-	intentCurrency: unknown;
-	amountReceived: unknown;
-	errorCode: unknown;
-	declineCode: unknown;
-	chargeStatuses: string[];
-	capturedCharges: number;
-	failureNoteCount: number;
-}
-
-function orderMeta( order: Record< string, unknown >, key: string ): string {
-	const meta = Array.isArray( order.meta_data )
-		? ( order.meta_data as Array< { key?: unknown; value?: unknown } > )
-		: [];
-	const entry = meta.find( ( item ) => item.key === key );
-	return typeof entry?.value === 'string' ? entry.value : '';
-}
-
-/**
- * Collect every charge the provider exposes on an intent, across the three
- * shapes the payment-details controller passes through.
- */
-async function readIntentCharges(
-	session: ProviderWriteSession,
-	intent: Record< string, unknown >
-): Promise< Array< Record< string, unknown > > > {
-	const charges = intent.charges;
-	if (
-		typeof charges === 'object' &&
-		charges !== null &&
-		'data' in charges &&
-		Array.isArray( ( charges as { data: unknown[] } ).data )
-	) {
-		return ( charges as { data: unknown[] } ).data.map( ( value, index ) =>
-			requireObject( value, `intent charge ${ index + 1 }` )
-		);
-	}
-	if ( typeof intent.charge === 'object' && intent.charge !== null ) {
-		return [ requireObject( intent.charge, 'intent charge' ) ];
-	}
-	if ( typeof intent.latest_charge === 'string' && intent.latest_charge ) {
-		return [
-			requireObject(
-				await readJson(
-					await session.adminApi.get(
-						`/wp-json/wc/v3/payments/charges/${ encodeURIComponent(
-							intent.latest_charge
-						) }`
-					),
-					`provider charge ${ intent.latest_charge }`
-				),
-				'provider charge'
-			),
-		];
-	}
-	return [];
-}
-
-/**
- * One complete read of everything this family asserts about a failed payment:
- * the local order, the provider intent it names, and the failure effect the
- * order carries.
- */
-async function readFailedPaymentEvidence(
-	session: ProviderWriteSession,
-	orderId: number
-): Promise< FailedPaymentEvidence > {
-	const order = requireObject(
-		await readJson(
-			await session.adminApi.get( `/wp-json/wc/v3/orders/${ orderId }` ),
-			`WooCommerce order ${ orderId }`
-		),
-		'order'
-	);
-	const intentIdMeta = orderMeta( order, '_intent_id' );
-
-	const notes = await readJson(
-		await session.adminApi.get(
-			`/wp-json/wc/v3/orders/${ orderId }/notes?context=edit&per_page=100`
-		),
-		`WooCommerce order ${ orderId } notes`
-	);
-	if ( ! Array.isArray( notes ) ) {
-		throw new Error( 'The order notes route did not return a collection.' );
-	}
-	// The one local effect an ingested `payment_intent.payment_failed` applies.
-	// Counting it is how "no duplicate local failure effect" is observed.
-	const failureNoteCount = notes.filter( ( value ) => {
-		const note = ( value as { note?: unknown } ).note;
-		return (
-			typeof note === 'string' &&
-			note.includes( '<strong>failed</strong> using WooPayments' ) &&
-			( intentIdMeta === '' || note.includes( intentIdMeta ) )
-		);
-	} ).length;
-
-	const base = {
-		orderStatus: String( order.status ),
-		orderTotal: String( order.total ),
-		orderCurrency: String( order.currency ).toUpperCase(),
-		intentIdMeta,
-		chargeIdMeta: orderMeta( order, '_charge_id' ),
-		intentionStatusMeta: orderMeta( order, '_intention_status' ),
-		failureNoteCount,
-	};
-
-	if ( intentIdMeta === '' ) {
-		return {
-			...base,
-			intentId: '',
-			intentStatus: null,
-			intentAmount: null,
-			intentCurrency: null,
-			amountReceived: null,
-			errorCode: null,
-			declineCode: null,
-			chargeStatuses: [],
-			capturedCharges: 0,
-		};
-	}
-
-	const intent = requireObject(
-		await readJson(
-			await session.adminApi.get(
-				`/wp-json/wc/v3/payments/payment_intents/${ encodeURIComponent(
-					intentIdMeta
-				) }`
-			),
-			`provider intent ${ intentIdMeta }`
-		),
-		'provider intent'
-	);
-	const lastPaymentError =
-		typeof intent.last_payment_error === 'object' &&
-		intent.last_payment_error !== null
-			? ( intent.last_payment_error as Record< string, unknown > )
-			: {};
-	const charges = await readIntentCharges( session, intent );
-
-	return {
-		...base,
-		intentId: String( intent.id ),
-		intentStatus: intent.status,
-		intentAmount: intent.amount,
-		intentCurrency:
-			typeof intent.currency === 'string'
-				? intent.currency.toLowerCase()
-				: intent.currency,
-		amountReceived: intent.amount_received ?? null,
-		errorCode: lastPaymentError.code ?? null,
-		declineCode: lastPaymentError.decline_code ?? null,
-		chargeStatuses: charges.map( ( charge ) => String( charge.status ) ),
-		capturedCharges: charges.filter(
-			( charge ) => charge.captured === true
-		).length,
-	};
-}
-
-/**
- * Poll the exact order and its provider intent on the family's fixed budget,
- * and return the state only once it has stopped moving.
- *
- * Two consecutive identical terminal reads, then a four-second quiet interval
- * that must change nothing: a charge, capture or second failure effect landing
- * after the assertions would otherwise go unseen.
- */
-async function convergeFailedPayment(
-	session: ProviderWriteSession,
-	orderId: number
-): Promise< FailedPaymentEvidence > {
-	const deadline = Date.now() + CONVERGENCE_BUDGET_MS;
-	let previous = '';
-	let converged: FailedPaymentEvidence | undefined;
-
-	for (;;) {
-		const current = await readFailedPaymentEvidence( session, orderId );
-		const serialized = JSON.stringify( current );
-		if (
-			current.intentId !== '' &&
-			current.intentStatus === TERMINAL_INTENT_STATUS &&
-			serialized === previous
-		) {
-			converged = current;
-			break;
-		}
-		previous = serialized;
-
-		if ( Date.now() >= deadline ) {
-			throw new Error(
-				`Order ${ orderId } did not reach a stable terminal failed payment within ${ CONVERGENCE_BUDGET_MS }ms; ` +
-					`last read: ${ serialized }\n` +
-					'An empty intentIdMeta here almost always means the provider event listener is not running. ' +
-					'Native persists no intent identity on a decline, so the only thing that ever writes _intent_id ' +
-					'onto a failed order is the ingested payment_intent.payment_failed event, and that event only ' +
-					'reaches the store while the operator-run listener (`wpcom-local transact listen`) is forwarding ' +
-					'Stripe events into local WPCOM. The pull fallback cannot substitute: with the listener down the ' +
-					'platform never receives the event, so it has none queued to hand back.'
-			);
-		}
-		await delay( CONVERGENCE_POLL_MS );
-	}
-
-	await delay( CONVERGENCE_QUIET_MS );
-	const afterQuietInterval = await readFailedPaymentEvidence(
-		session,
-		orderId
-	);
-	expect(
-		afterQuietInterval,
-		'nothing may happen to the failed payment during the quiet interval'
-	).toEqual( converged );
-
-	return converged;
 }
 
 /**
@@ -1566,7 +1267,7 @@ async function runClassicDeclineCase(
 						checkoutCase.fixture.message
 					);
 
-					const delta = await readOrderDelta(
+					const delta = await readOrderIdStatusDelta(
 						session,
 						baselineOrderId
 					);
@@ -1661,7 +1362,10 @@ async function runBlocksDeclineCase(
 			);
 			expect( rejection.message ).toBe( checkoutCase.fixture.message );
 
-			const delta = await readOrderDelta( session, baselineOrderId );
+			const delta = await readOrderIdStatusDelta(
+				session,
+				baselineOrderId
+			);
 			expect(
 				delta.newOrderIds,
 				'one declined submission must leave exactly one order'
@@ -1785,7 +1489,10 @@ async function runSetupIntentDeclineCase(
 				).toEqual( after );
 
 				// And nothing else was created either.
-				const delta = await readOrderDelta( session, baselineOrderId );
+				const delta = await readOrderIdStatusDelta(
+					session,
+					baselineOrderId
+				);
 				expect(
 					delta.newOrderIds,
 					'a failed SetupIntent must create no order'
@@ -1868,6 +1575,11 @@ test.describe( 'WooPayments native card decline vocabulary', () => {
 				{
 					type: 'woopayments-contract',
 					description: CLASSIC_EXPIRED.contractId,
+				},
+				{
+					type: 'woopayments-contract',
+					description:
+						'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:121::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to expired card',
 				},
 			],
 			tag: PROVIDER_TAGS,

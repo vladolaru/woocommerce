@@ -2217,6 +2217,88 @@ describe( 'WooPayments checkout', () => {
 		).toHaveBeenCalledWith( 'submit' );
 	} );
 
+	test( 'creates a fresh payment method when retrying after a failed checkout attempt', async () => {
+		stripeMock.createPaymentMethod
+			.mockResolvedValueOnce( {
+				error: {
+					code: 'card_declined',
+					decline_code: 'generic_decline',
+					message: 'Your card was declined.',
+					type: 'card_error',
+				},
+			} )
+			.mockResolvedValueOnce( {
+				paymentMethod: { id: 'pm_retry_success' },
+			} );
+
+		require( '../woopayments-checkout' );
+
+		const submitCheckout =
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments;
+		const submittedPayloads = [];
+		global.jQuery.checkoutFormResult.trigger.mockImplementation(
+			( event ) => {
+				if ( event !== 'submit' ) {
+					return global.jQuery.checkoutFormResult;
+				}
+
+				expect( submitCheckout() ).toBe( true );
+				submittedPayloads.push( {
+					paymentMethod:
+						global.jQuery.checkoutFormFields[
+							'wcpay-payment-method'
+						].value,
+					errorCode:
+						global.jQuery.checkoutFormFields[
+							'wcpay-payment-method-error-code'
+						].value,
+					errorDeclineCode:
+						global.jQuery.checkoutFormFields[
+							'wcpay-payment-method-error-decline-code'
+						].value,
+					errorMessage:
+						global.jQuery.checkoutFormFields[
+							'wcpay-payment-method-error-message'
+						].value,
+					errorType:
+						global.jQuery.checkoutFormFields[
+							'wcpay-payment-method-error-type'
+						].value,
+				} );
+
+				return global.jQuery.checkoutFormResult;
+			}
+		);
+
+		expect( submitCheckout() ).toBe( false );
+		await flushPromises();
+
+		expect( submittedPayloads ).toHaveLength( 1 );
+
+		// WooCommerce's checkout layer owns rejecting the first server submission and re-arming the form.
+		// This fixture advances across that external transition; Task 4's browser contract owns the real form/control release.
+		expect( submitCheckout() ).toBe( false );
+		await flushPromises();
+
+		expect( submitElements ).toHaveBeenCalledTimes( 2 );
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 2 );
+		expect( submittedPayloads ).toHaveLength( 2 );
+		expect( submittedPayloads[ 0 ] ).toEqual( {
+			paymentMethod: 'woocommerce_payments_payment_method_error',
+			errorCode: 'card_declined',
+			errorDeclineCode: 'generic_decline',
+			errorMessage: 'Your card was declined.',
+			errorType: 'card_error',
+		} );
+		expect( submittedPayloads[ 1 ] ).toEqual( {
+			paymentMethod: 'pm_retry_success',
+			errorCode: '',
+			errorDeclineCode: '',
+			errorMessage: '',
+			errorType: '',
+		} );
+	} );
+
 	test( 'submits Stripe Elements before creating a checkout payment method', async () => {
 		require( '../woopayments-checkout' );
 

@@ -141,6 +141,14 @@ jest.mock( '@wordpress/data', () => ( {
 
 const originalFetch = window.fetch;
 
+/**
+ * Stripe createPaymentMethod result used by the new-card test harness.
+ *
+ * @typedef {Object} NewCardPaymentMethodResult
+ * @property {{ id: string, card: { fingerprint: string } }}                         [paymentMethod] - Successful payment method.
+ * @property {{ code: string, decline_code: string, message: string, type: string }} [error]         - Provider error.
+ */
+
 describe( 'wc-payment-method-woopayments', () => {
 	beforeEach( () => {
 		useSelect.mockImplementation( ( callback ) =>
@@ -182,6 +190,7 @@ describe( 'wc-payment-method-woopayments', () => {
 				return Promise.resolve( {} );
 			} ),
 		};
+		/** @type {jest.Mock<Promise<NewCardPaymentMethodResult>>} */
 		const createPaymentMethod = jest.fn( () => {
 			calls.push( 'createPaymentMethod' );
 			return Promise.resolve( {
@@ -813,6 +822,51 @@ describe( 'wc-payment-method-woopayments', () => {
 				'Your card number is invalid.',
 			'wcpay-payment-method-error-type': 'validation_error',
 			'wcpay-fingerprint': 'device_fp_123',
+		} );
+	} );
+
+	it( 'creates a fresh payment method when retrying after failed tokenization', async () => {
+		const harness = await setUpNewCardPayment();
+		harness.createPaymentMethod
+			.mockResolvedValueOnce( {
+				error: {
+					code: 'card_declined',
+					decline_code: 'generic_decline',
+					message: 'Your card was declined.',
+					type: 'card_error',
+				},
+			} )
+			.mockResolvedValueOnce( {
+				paymentMethod: {
+					id: 'pm_retry_success',
+					card: { fingerprint: 'fp_retry_success' },
+				},
+			} );
+
+		const firstResult = await harness.setupCallbacks[ 0 ]();
+		const secondResult = await harness.setupCallbacks[ 0 ]();
+
+		expect( harness.elementsInstance.submit ).toHaveBeenCalledTimes( 2 );
+		expect( harness.createPaymentMethod ).toHaveBeenCalledTimes( 2 );
+		expect( firstResult.meta.paymentMethodData ).toMatchObject( {
+			'wcpay-payment-method': 'woocommerce_payments_payment_method_error',
+			'wcpay-payment-method-error-code': 'card_declined',
+			'wcpay-payment-method-error-decline-code': 'generic_decline',
+			'wcpay-payment-method-error-message': 'Your card was declined.',
+			'wcpay-payment-method-error-type': 'card_error',
+		} );
+		expect( secondResult ).toEqual( {
+			type: 'success',
+			meta: {
+				paymentMethodData: {
+					'wcpay-payment-method': 'pm_retry_success',
+					'wcpay-payment-method-error-code': '',
+					'wcpay-payment-method-error-message': '',
+					'wcpay-fingerprint': 'device_fp_123',
+					'wcpay-is-platform-payment-method': 'true',
+					'wcpay-fraud-prevention-token': '',
+				},
+			},
 		} );
 	} );
 

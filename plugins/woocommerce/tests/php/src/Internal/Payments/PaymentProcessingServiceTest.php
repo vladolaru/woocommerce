@@ -120,6 +120,119 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed checkout attempt can be followed by a fresh successful attempt.
+	 */
+	public function test_failed_checkout_attempt_can_be_followed_by_a_fresh_successful_attempt(): void {
+		$order                  = $this->create_woopayments_order( '10.00' );
+		$failed_outcome         = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'pi_failed',
+			'',
+			'pm_failed',
+			'',
+			array(
+				'meta' => array(
+					'_intention_status' => 'requires_payment_method',
+				),
+			)
+		);
+		$success_outcome        = new PaymentOutcome(
+			PaymentOutcome::STATUS_COMPLETED,
+			'pi_succeeded',
+			'',
+			'pm_succeeded',
+			'',
+			array(
+				'meta' => array(
+					'_charge_id'        => 'ch_succeeded',
+					'_intention_status' => 'succeeded',
+				),
+			)
+		);
+		$provider               = new class( $failed_outcome, $success_outcome ) extends RecordingProvider {
+			/**
+			 * Outcomes returned in call order.
+			 *
+			 * @var PaymentOutcome[]
+			 */
+			private array $outcomes;
+
+			/**
+			 * Attempt keys received by the provider.
+			 *
+			 * @var string[]
+			 */
+			public array $idempotency_keys = array();
+
+			/**
+			 * Constructor.
+			 *
+			 * @param PaymentOutcome ...$outcomes Outcomes returned in call order.
+			 */
+			public function __construct( PaymentOutcome ...$outcomes ) {
+				parent::__construct( $outcomes[0] );
+				$this->outcomes = $outcomes;
+			}
+
+			/**
+			 * Charge an order through the provider.
+			 *
+			 * @param PaymentContext $context         Payment context.
+			 * @param string         $idempotency_key Per-attempt idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context );
+				$this->idempotency_keys[]   = $idempotency_key;
+				$this->last_idempotency_key = $idempotency_key;
+				$outcome                    = $this->outcomes[ $this->charge_calls ];
+				++$this->charge_calls;
+
+				return $outcome;
+			}
+		};
+		$payment_complete_calls = 0;
+		$observer               = static function ( int $order_id ) use ( $order, &$payment_complete_calls ): void {
+			if ( $order->get_id() === $order_id ) {
+				++$payment_complete_calls;
+			}
+		};
+		add_action( 'woocommerce_payment_complete', $observer );
+
+		try {
+			$first_result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_failed' ), $provider );
+			$this->assertFalse( $this->store->is_order_payment_locked( $order, $this->persistence_profile, $provider->idempotency_keys[0] ), 'The failed attempt must release the order payment lock.' );
+
+			$second_result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_succeeded' ), $provider );
+			$this->assertFalse( $this->store->is_order_payment_locked( $order, $this->persistence_profile, $provider->idempotency_keys[1] ), 'The successful attempt must release the order payment lock.' );
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $observer );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 2, $provider->charge_calls );
+		$this->assertCount( 2, $provider->idempotency_keys );
+		foreach ( $provider->idempotency_keys as $idempotency_key ) {
+			$this->assertMatchesRegularExpression(
+				'/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/',
+				$idempotency_key,
+				'Every checkout attempt must receive a nonempty UUID-v4 key.'
+			);
+		}
+		$this->assertNotSame( $provider->idempotency_keys[0], $provider->idempotency_keys[1], 'A retry must not reuse the failed attempt key.' );
+		$this->assertSame( 'failure', $first_result['result'] );
+		$this->assertSame( 'success', $second_result['result'] );
+		$this->assertSame( 1, $payment_complete_calls, 'The two attempts must apply exactly one paid effect.' );
+		$this->assertTrue( $order->is_paid() );
+		$this->assertSame( 'pi_succeeded', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'pm_succeeded', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'ch_succeeded', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
 	 * @testdox A failed outcome flagged to preserve the order status records meta and note without failing the order.
 	 */
 	public function test_process_checkout_preserves_order_status_for_flagged_failed_outcome(): void {
