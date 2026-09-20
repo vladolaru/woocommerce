@@ -1,0 +1,377 @@
+import type { CardTestingProtectionEvidence } from './card-testing-protection';
+
+const IMMUTABLE_PLUGIN_VERSION = '11.1.0';
+const IMMUTABLE_SOURCE_COMMIT = 'f85392666c9b543cd24dbbf903e0dbe4cb2c5cee';
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+
+type CleanupResource =
+	| 'order'
+	| 'intent'
+	| 'payment-method'
+	| 'charge'
+	| 'customer'
+	| 'product';
+
+export interface HistoricalPayForOrderFixture {
+	schemaVersion: 1;
+	source: {
+		pluginVersion: string;
+		sourceCommit: string;
+	};
+	allocation: {
+		runId: string;
+		storeId: string;
+		blogId: number;
+		accountId: string;
+	};
+	protectionTarget: false | true;
+	customerId: number;
+	productId: number;
+	order: {
+		id: number;
+		keySha256: string;
+		customerId: number;
+		currency: 'USD';
+		totalMinor: number;
+		status: 'failed';
+		paymentMethod: 'woocommerce_payments';
+		productLines: readonly [ { productId: number; quantity: 1 } ];
+		stockReduced: boolean;
+		noteCount: number;
+		emailCount: number;
+	};
+	myAccountPayLink: {
+		orderId: number;
+		orderKeySha256: string;
+		customerId: number;
+		pathSha256: string;
+	};
+	clientDecline: {
+		intentId: string;
+		intentStatus: 'requires_payment_method';
+		errorCode: 'card_declined';
+		declineCode: 'generic_decline';
+		paymentMethodId: string;
+		chargeIds: readonly [];
+		captureCount: 0;
+		cardLast4: '0002';
+	};
+	baseline: {
+		orderIds: readonly [ number ];
+		stockQuantity: number;
+		noteCount: number;
+		emailCount: number;
+	};
+	checksumSha256: string;
+}
+
+export interface HistoricalPayForOrderEvidence {
+	fixtureChecksumSha256: string;
+	protection: CardTestingProtectionEvidence;
+	order: {
+		id: number;
+		keySha256: string;
+		customerId: number;
+		currency: 'USD';
+		totalMinor: number;
+		status: 'processing' | 'completed';
+		paymentMethod: 'woocommerce_payments';
+		productLines: readonly [ { productId: number; quantity: 1 } ];
+		stockReduced: boolean;
+		noteCount: number;
+		emailCount: number;
+	};
+	nativeSuccess: {
+		intentId: string;
+		intentStatus: 'succeeded';
+		paymentMethodId: string;
+		chargeId: string;
+		captureCount: 1;
+		cardLast4: '4242';
+	};
+	cardinality: {
+		orderIds: readonly number[];
+		intentIds: readonly string[];
+		paidIntentIds: readonly string[];
+		orphanIntentIds: readonly string[];
+		stockReductionDelta: number;
+		paidNoteDelta: number;
+		customerEmailDelta: number;
+		listenerSideEffectCount: number;
+	};
+	listener: {
+		quiescent: boolean;
+		sideEffectCount: number;
+	};
+	journals: readonly {
+		submission: 'client-decline' | 'native-pay-for-order';
+		resolved: boolean;
+	}[];
+	cleanup: {
+		manifest: {
+			orderIds: readonly number[];
+			intentIds: readonly string[];
+			paymentMethodIds: readonly string[];
+			chargeIds: readonly string[];
+			customerIds: readonly number[];
+			productIds: readonly number[];
+		};
+		cleaned: readonly { resource: CleanupResource; id: string }[];
+	};
+}
+
+function fail( message: string ): never {
+	throw new Error( `Historical pay-for-order ${ message }` );
+}
+
+function isPositiveInteger( value: unknown ): value is number {
+	return Number.isSafeInteger( value ) && Number( value ) > 0;
+}
+
+function hasValue( value: unknown ): value is string {
+	return typeof value === 'string' && value !== '';
+}
+
+function sameValues( left: unknown, right: unknown ): boolean {
+	return JSON.stringify( left ) === JSON.stringify( right );
+}
+
+function validateImmutableFixture( fixture: HistoricalPayForOrderFixture ): void {
+	if (
+		fixture.schemaVersion !== 1 ||
+		fixture.source.pluginVersion !== IMMUTABLE_PLUGIN_VERSION ||
+		fixture.source.sourceCommit !== IMMUTABLE_SOURCE_COMMIT
+	) {
+		fail( 'requires the exact immutable 11.1.0 source.' );
+	}
+	if (
+		! hasValue( fixture.allocation.runId ) ||
+		! hasValue( fixture.allocation.storeId ) ||
+		! hasValue( fixture.allocation.accountId ) ||
+		! isPositiveInteger( fixture.allocation.blogId ) ||
+		! isPositiveInteger( fixture.customerId ) ||
+		! isPositiveInteger( fixture.productId ) ||
+		! SHA256_PATTERN.test( fixture.checksumSha256 )
+	) {
+		fail( 'requires exact allocated fixture identity.' );
+	}
+	if (
+		! isPositiveInteger( fixture.order.id ) ||
+		fixture.order.customerId !== fixture.customerId ||
+		fixture.order.currency !== 'USD' ||
+		! isPositiveInteger( fixture.order.totalMinor ) ||
+		fixture.order.status !== 'failed' ||
+		fixture.order.paymentMethod !== 'woocommerce_payments' ||
+		! SHA256_PATTERN.test( fixture.order.keySha256 ) ||
+		! sameValues( fixture.order.productLines, [
+			{ productId: fixture.productId, quantity: 1 },
+		] ) ||
+		fixture.order.stockReduced ||
+		! isPositiveInteger( fixture.order.noteCount ) ||
+		fixture.order.emailCount !== 0 ||
+		! sameValues( fixture.baseline.orderIds, [ fixture.order.id ] ) ||
+		fixture.baseline.stockQuantity < 1 ||
+		fixture.baseline.noteCount !== fixture.order.noteCount ||
+		fixture.baseline.emailCount !== fixture.order.emailCount
+	) {
+		fail( 'requires one exact failed-order identity before cutover.' );
+	}
+	if (
+		fixture.myAccountPayLink.orderId !== fixture.order.id ||
+		fixture.myAccountPayLink.orderKeySha256 !== fixture.order.keySha256 ||
+		fixture.myAccountPayLink.customerId !== fixture.customerId ||
+		! SHA256_PATTERN.test( fixture.myAccountPayLink.pathSha256 )
+	) {
+		fail( 'requires the failed order pay link identity.' );
+	}
+	if (
+		! hasValue( fixture.clientDecline.intentId ) ||
+		! hasValue( fixture.clientDecline.paymentMethodId ) ||
+		fixture.clientDecline.intentStatus !== 'requires_payment_method' ||
+		fixture.clientDecline.errorCode !== 'card_declined' ||
+		fixture.clientDecline.declineCode !== 'generic_decline' ||
+		fixture.clientDecline.chargeIds.length !== 0 ||
+		fixture.clientDecline.captureCount !== 0 ||
+		fixture.clientDecline.cardLast4 !== '0002'
+	) {
+		fail( 'requires the exact declined client payment with no charge or capture.' );
+	}
+}
+
+function validateProtection(
+	target: boolean,
+	protection: CardTestingProtectionEvidence
+): void {
+	if ( protection.targetProtection !== target ) {
+		fail( 'requires the exact card-testing protection target.' );
+	}
+	if ( ! target && protection.token !== null ) {
+		fail( 'requires no card-testing protection token when disabled.' );
+	}
+	if (
+		target &&
+		( protection.token === null ||
+			protection.token.length !== 16 ||
+			! SHA256_PATTERN.test( protection.token.sha256 ) )
+	) {
+		fail( 'requires one 16-character card-testing protection token digest when enabled.' );
+	}
+}
+
+function validateRecoveredOrder(
+	fixture: HistoricalPayForOrderFixture,
+	evidence: HistoricalPayForOrderEvidence
+): void {
+	const { order } = evidence;
+	if (
+		order.id !== fixture.order.id ||
+		order.keySha256 !== fixture.order.keySha256 ||
+		order.customerId !== fixture.customerId ||
+		order.currency !== fixture.order.currency ||
+		order.totalMinor !== fixture.order.totalMinor ||
+		order.paymentMethod !== fixture.order.paymentMethod ||
+		! sameValues( order.productLines, fixture.order.productLines ) ||
+		! order.stockReduced ||
+		order.noteCount !== fixture.order.noteCount + 1 ||
+		order.emailCount !== fixture.order.emailCount + 1
+	) {
+		fail( 'requires the same failed order key, customer, currency, total, and line after recovery.' );
+	}
+}
+
+function validatePaymentIdentities(
+	fixture: HistoricalPayForOrderFixture,
+	evidence: HistoricalPayForOrderEvidence
+): void {
+	const { clientDecline } = fixture;
+	const { nativeSuccess } = evidence;
+	if (
+		nativeSuccess.intentStatus !== 'succeeded' ||
+		nativeSuccess.captureCount !== 1 ||
+		nativeSuccess.cardLast4 !== '4242' ||
+		! hasValue( nativeSuccess.intentId ) ||
+		! hasValue( nativeSuccess.paymentMethodId ) ||
+		! hasValue( nativeSuccess.chargeId ) ||
+		nativeSuccess.intentId === clientDecline.intentId ||
+		nativeSuccess.paymentMethodId === clientDecline.paymentMethodId
+	) {
+		fail( 'requires distinct decline and success intent and PaymentMethod identities with one native capture.' );
+	}
+	if (
+		! sameValues( evidence.cardinality.intentIds, [
+			clientDecline.intentId,
+			nativeSuccess.intentId,
+		] ) ||
+		! sameValues( evidence.cardinality.paidIntentIds, [
+			nativeSuccess.intentId,
+		] ) ||
+		evidence.cardinality.orphanIntentIds.length !== 0
+	) {
+		fail( 'forbids an extra successful or orphaned payment intent.' );
+	}
+}
+
+function validateCardinalities(
+	fixture: HistoricalPayForOrderFixture,
+	evidence: HistoricalPayForOrderEvidence
+): void {
+	if ( ! sameValues( evidence.cardinality.orderIds, [ fixture.order.id ] ) ) {
+		fail( 'requires exactly one order after recovery.' );
+	}
+	if (
+		evidence.cardinality.stockReductionDelta !== 1 ||
+		evidence.cardinality.paidNoteDelta !== 1 ||
+		evidence.cardinality.customerEmailDelta !== 1 ||
+		evidence.cardinality.listenerSideEffectCount !== 1
+	) {
+		fail( 'requires each stock, note, email, and listener side-effect delta exactly once.' );
+	}
+	if (
+		! evidence.listener.quiescent ||
+		evidence.listener.sideEffectCount !== 1 ||
+		evidence.listener.sideEffectCount !==
+			evidence.cardinality.listenerSideEffectCount
+	) {
+		fail( 'requires one listener side effect after listener quiescence.' );
+	}
+	if (
+		evidence.journals.length !== 2 ||
+		! sameValues(
+			evidence.journals.map( ( journal ) => journal.submission ).toSorted(),
+			[ 'client-decline', 'native-pay-for-order' ]
+		) ||
+		evidence.journals.some( ( journal ) => ! journal.resolved )
+	) {
+		fail( 'requires at most two resolved payment submission journals.' );
+	}
+}
+
+function validateCleanup(
+	fixture: HistoricalPayForOrderFixture,
+	evidence: HistoricalPayForOrderEvidence
+): void {
+	const expected = {
+		orderIds: [ fixture.order.id ],
+		intentIds: [ fixture.clientDecline.intentId, evidence.nativeSuccess.intentId ],
+		paymentMethodIds: [
+			fixture.clientDecline.paymentMethodId,
+			evidence.nativeSuccess.paymentMethodId,
+		],
+		chargeIds: [ evidence.nativeSuccess.chargeId ],
+		customerIds: [ fixture.customerId ],
+		productIds: [ fixture.productId ],
+	};
+	if ( ! sameValues( evidence.cleanup.manifest, expected ) ) {
+		fail( 'requires an exact manifest of run-owned cleanup resources.' );
+	}
+	const manifestByResource: Record< CleanupResource, readonly ( number | string )[] > = {
+		order: expected.orderIds,
+		intent: expected.intentIds,
+		'payment-method': expected.paymentMethodIds,
+		charge: expected.chargeIds,
+		customer: expected.customerIds,
+		product: expected.productIds,
+	};
+	const cleaned = new Set< string >();
+	for ( const item of evidence.cleanup.cleaned ) {
+		const key = `${ item.resource }:${ item.id }`;
+		if (
+			cleaned.has( key ) ||
+			! manifestByResource[ item.resource ].includes(
+				item.resource === 'order' ||
+					item.resource === 'customer' ||
+					item.resource === 'product'
+					? Number( item.id )
+					: item.id
+			)
+		) {
+			fail( 'permits cleanup of manifest-owned resources only.' );
+		}
+		cleaned.add( key );
+	}
+}
+
+/**
+ * Validates that the plugin-origin declined order was paid once in place after native cutover.
+ *
+ * The browser scenario gathers the cold reads through the failure-recovery and card-testing-protection helpers; this oracle only accepts their complete, immutable evidence.
+ *
+ * @param fixture Immutable client-era failed-order evidence.
+ * @param evidence Native recovery and cleanup evidence gathered after listener quiescence.
+ * @return The accepted recovery evidence.
+ */
+export function validateHistoricalPayForOrderRecovery(
+	fixture: HistoricalPayForOrderFixture,
+	evidence: HistoricalPayForOrderEvidence
+): HistoricalPayForOrderEvidence {
+	validateImmutableFixture( fixture );
+	if ( evidence.fixtureChecksumSha256 !== fixture.checksumSha256 ) {
+		fail( 'requires the immutable fixture checksum.' );
+	}
+	validateProtection( fixture.protectionTarget, evidence.protection );
+	validateRecoveredOrder( fixture, evidence );
+	validatePaymentIdentities( fixture, evidence );
+	validateCardinalities( fixture, evidence );
+	validateCleanup( fixture, evidence );
+	return evidence;
+}
