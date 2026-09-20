@@ -424,6 +424,7 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsCliCommand::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayVerifiedEmailRestoreService::class )->register();
 
 		( new Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap(
 			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_bootstrap_root_matrix(),

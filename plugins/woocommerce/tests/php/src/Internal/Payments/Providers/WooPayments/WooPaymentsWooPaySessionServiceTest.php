@@ -3,10 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayVerifiedEmailRestoreService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayMailchimpBlocksIntegration;
@@ -1754,11 +1756,50 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$order->add_meta_data( 'woopay_merchant_customer_id', $user_id, true );
 		$order->save();
 
-		$this->create_service()->restore_order_customer_id_from_requests_with_verified_email( $order->get_id() );
+		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_runtime_owner' ) )
+			->getMock();
+		$arbiter->method( 'get_runtime_owner' )->willReturn( NativePaymentsRuntimeArbiter::OWNER_NONE );
+		$restore_service = new WooPaymentsWooPayVerifiedEmailRestoreService();
+		$restore_service->init( $arbiter );
+		$container                = wc_get_container();
+		$original_restore_service = $container->get( WooPaymentsWooPayVerifiedEmailRestoreService::class );
+		$container->replace( WooPaymentsWooPayVerifiedEmailRestoreService::class, $restore_service );
+
+		try {
+			$restore_service->register();
+			$this->create_service()->restore_order_customer_id_from_requests_with_verified_email( $order->get_id() );
+		} finally {
+			$container->reset_replacement( WooPaymentsWooPayVerifiedEmailRestoreService::class );
+			$original_restore_service->register();
+		}
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( $user_id, $order->get_customer_id() );
 		$this->assertFalse( $order->meta_exists( 'woopay_merchant_customer_id' ) );
+	}
+
+	/**
+	 * @testdox The public restore entry point delegates its permissive hook argument unchanged.
+	 */
+	public function test_restore_order_customer_id_delegates_hook_argument_unchanged(): void {
+		$hook_argument   = new \stdClass();
+		$restore_service = $this->getMockBuilder( WooPaymentsWooPayVerifiedEmailRestoreService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'restore_order_customer_id' ) )
+			->getMock();
+		$restore_service->expects( $this->once() )
+			->method( 'restore_order_customer_id' )
+			->with( $this->identicalTo( $hook_argument ) );
+
+		$container = wc_get_container();
+		$container->replace( WooPaymentsWooPayVerifiedEmailRestoreService::class, $restore_service );
+		try {
+			$this->create_service()->restore_order_customer_id_from_requests_with_verified_email( $hook_argument );
+		} finally {
+			$container->reset_replacement( WooPaymentsWooPayVerifiedEmailRestoreService::class );
+		}
 	}
 
 	/**

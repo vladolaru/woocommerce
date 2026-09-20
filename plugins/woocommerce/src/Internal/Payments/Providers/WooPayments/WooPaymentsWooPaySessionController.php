@@ -82,10 +82,6 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			add_action( 'woocommerce_order_payment_status_changed', array( $this->session_service, 'woopay_order_payment_status_changed' ) );
 		}
 
-		if ( false === has_action( 'woopay_restore_order_customer_id', array( $this->session_service, 'restore_order_customer_id_from_requests_with_verified_email' ) ) ) {
-			add_action( 'woopay_restore_order_customer_id', array( $this->session_service, 'restore_order_customer_id_from_requests_with_verified_email' ) );
-		}
-
 		if ( false === has_action( 'woocommerce_store_api_checkout_order_processed', array( $this->session_service, 'catch_woopay_checkout_errors' ) ) ) {
 			add_action( 'woocommerce_store_api_checkout_order_processed', array( $this->session_service, 'catch_woopay_checkout_errors' ), 1, 1 );
 		}

@@ -413,14 +413,7 @@ class WooPaymentsWooPaySessionService {
 	 * @since 11.0.0
 	 */
 	public function restore_order_customer_id_from_requests_with_verified_email( $order_id ): void {
-		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof WC_Order || ! $order->meta_exists( self::MERCHANT_CUSTOMER_ID_META ) ) {
-			return;
-		}
-
-		$order->set_customer_id( (int) $order->get_meta( self::MERCHANT_CUSTOMER_ID_META ) );
-		$order->delete_meta_data( self::MERCHANT_CUSTOMER_ID_META );
-		$order->save();
+		wc_get_container()->get( WooPaymentsWooPayVerifiedEmailRestoreService::class )->restore_order_customer_id( $order_id );
 	}
 
 	/**
