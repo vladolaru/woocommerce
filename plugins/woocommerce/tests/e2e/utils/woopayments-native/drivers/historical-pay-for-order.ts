@@ -1,4 +1,8 @@
-import type { CardTestingProtectionEvidence } from './card-testing-protection';
+import {
+	validateCardTestingProtectionEvidence,
+	type CardTestingProtectionEvidence,
+} from './card-testing-protection';
+import type { FailedPaymentEvidence } from './failed-payment-evidence';
 
 const IMMUTABLE_PLUGIN_VERSION = '11.1.0';
 const IMMUTABLE_SOURCE_COMMIT = 'f85392666c9b543cd24dbbf903e0dbe4cb2c5cee';
@@ -85,8 +89,11 @@ export interface HistoricalPayForOrderEvidence {
 		intentId: string;
 		intentStatus: 'succeeded';
 		paymentMethodId: string;
-		chargeId: string;
-		captureCount: 1;
+		charges: readonly {
+			id: string;
+			status: string;
+			captured: boolean;
+		}[];
 		cardLast4: '4242';
 	};
 	cardinality: {
@@ -118,6 +125,33 @@ export interface HistoricalPayForOrderEvidence {
 		};
 		cleaned: readonly { resource: CleanupResource; id: string }[];
 	};
+}
+
+export interface HistoricalPayForOrderRecoveryDependencies {
+	readFailedFixture: () => Promise< HistoricalPayForOrderFixture >;
+	readFailedPayment: () => Promise< FailedPaymentEvidence >;
+	captureProtection: () => Promise< unknown >;
+	cutOver: () => Promise< void >;
+	submitPayForOrder: () => Promise< { requestCount: number } >;
+	waitForListenerQuiescence: () => Promise< void >;
+	readColdRecoveryEvidence: () => Promise< HistoricalPayForOrderEvidence >;
+}
+
+function validateRecordedClientDecline(
+	fixture: HistoricalPayForOrderFixture,
+	decline: FailedPaymentEvidence
+): void {
+	if (
+		decline.intentId !== fixture.clientDecline.intentId ||
+		decline.intentStatus !== fixture.clientDecline.intentStatus ||
+		decline.paymentMethodId !== fixture.clientDecline.paymentMethodId ||
+		decline.errorCode !== fixture.clientDecline.errorCode ||
+		decline.declineCode !== fixture.clientDecline.declineCode ||
+		decline.chargeIds.length !== 0 ||
+		decline.capturedCharges !== 0
+	) {
+		fail( 'requires the reviewed failure-recovery boundary to confirm the exact client decline.' );
+	}
 }
 
 function fail( message: string ): never {
@@ -202,7 +236,7 @@ function validateProtection(
 	target: boolean,
 	protection: CardTestingProtectionEvidence
 ): void {
-	if ( protection.targetProtection !== target ) {
+	if ( protection.eligible !== target ) {
 		fail( 'requires the exact card-testing protection target.' );
 	}
 	if ( ! target && protection.token !== null ) {
@@ -224,6 +258,7 @@ function validateRecoveredOrder(
 ): void {
 	const { order } = evidence;
 	if (
+		( order.status !== 'processing' && order.status !== 'completed' ) ||
 		order.id !== fixture.order.id ||
 		order.keySha256 !== fixture.order.keySha256 ||
 		order.customerId !== fixture.customerId ||
@@ -247,15 +282,21 @@ function validatePaymentIdentities(
 	const { nativeSuccess } = evidence;
 	if (
 		nativeSuccess.intentStatus !== 'succeeded' ||
-		nativeSuccess.captureCount !== 1 ||
 		nativeSuccess.cardLast4 !== '4242' ||
 		! hasValue( nativeSuccess.intentId ) ||
 		! hasValue( nativeSuccess.paymentMethodId ) ||
-		! hasValue( nativeSuccess.chargeId ) ||
 		nativeSuccess.intentId === clientDecline.intentId ||
 		nativeSuccess.paymentMethodId === clientDecline.paymentMethodId
 	) {
-		fail( 'requires distinct decline and success intent and PaymentMethod identities with one native capture.' );
+		fail( 'requires distinct decline and success intent and PaymentMethod identities.' );
+	}
+	if (
+		nativeSuccess.charges.length !== 1 ||
+		nativeSuccess.charges[ 0 ].status !== 'succeeded' ||
+		nativeSuccess.charges[ 0 ].captured !== true ||
+		! hasValue( nativeSuccess.charges[ 0 ].id )
+	) {
+		fail( 'requires exactly one succeeded captured native charge.' );
 	}
 	if (
 		! sameValues( evidence.cardinality.intentIds, [
@@ -317,7 +358,7 @@ function validateCleanup(
 			fixture.clientDecline.paymentMethodId,
 			evidence.nativeSuccess.paymentMethodId,
 		],
-		chargeIds: [ evidence.nativeSuccess.chargeId ],
+		chargeIds: [ evidence.nativeSuccess.charges[ 0 ].id ],
 		customerIds: [ fixture.customerId ],
 		productIds: [ fixture.productId ],
 	};
@@ -349,6 +390,17 @@ function validateCleanup(
 		}
 		cleaned.add( key );
 	}
+	const expectedCleaned = new Set< string >(
+		Object.entries( manifestByResource ).flatMap( ( [ resource, ids ] ) =>
+			ids.map( ( id ) => `${ resource }:${ id }` )
+		)
+	);
+	if (
+		cleaned.size !== expectedCleaned.size ||
+		[ ...expectedCleaned ].some( ( key ) => ! cleaned.has( key ) )
+	) {
+		fail( 'requires complete cleanup of every manifest-owned resource.' );
+	}
 }
 
 /**
@@ -374,4 +426,37 @@ export function validateHistoricalPayForOrderRecovery(
 	validateCardinalities( fixture, evidence );
 	validateCleanup( fixture, evidence );
 	return evidence;
+}
+
+/**
+ * Collects the ordered, provider-free evidence boundary for a historical pay-for-order recovery.
+ *
+ * @param dependencies Failure-recovery, protection, cutover, submission, listener, and cold-read adapters.
+ * @return Validated recovery evidence.
+ */
+export async function collectHistoricalPayForOrderRecovery(
+	dependencies: HistoricalPayForOrderRecoveryDependencies
+): Promise< HistoricalPayForOrderEvidence > {
+	const fixture = await dependencies.readFailedFixture();
+	validateImmutableFixture( fixture );
+	validateRecordedClientDecline(
+		fixture,
+		await dependencies.readFailedPayment()
+	);
+	const protection = validateCardTestingProtectionEvidence(
+		await dependencies.captureProtection()
+	);
+	validateProtection( fixture.protectionTarget, protection );
+	await dependencies.cutOver();
+	const submission = await dependencies.submitPayForOrder();
+	if ( submission.requestCount !== 1 ) {
+		fail( 'requires exactly one pay-for-order request after cutover.' );
+	}
+	await dependencies.waitForListenerQuiescence();
+	const cold = await dependencies.readColdRecoveryEvidence();
+	return validateHistoricalPayForOrderRecovery( fixture, {
+		...cold,
+		fixtureChecksumSha256: fixture.checksumSha256,
+		protection,
+	} );
 }

@@ -59,12 +59,18 @@ export interface CardTestingTokenDigest {
 
 export type CardTestingProtectionEvidence =
 	| Readonly< {
-			targetProtection: false;
+			eligible: false;
 			token: null;
+			accountEnabled: false;
+			renderedField: 'absent' | 'empty';
+			submittedTokenSha256: null;
 	  } >
 	| Readonly< {
-			targetProtection: true;
+			eligible: true;
 			token: CardTestingTokenDigest;
+			accountEnabled: true;
+			renderedTokenSha256: string;
+			submittedTokenSha256: string;
 	  } >;
 
 export interface CardTestingProtectionScope {
@@ -430,6 +436,83 @@ function assertTokenDigest( value: unknown ): CardTestingTokenDigest {
 		invalid( 'WooCommerce session token proof is missing or malformed.' );
 	}
 	return { length: TOKEN_LENGTH, sha256: value.sha256 };
+}
+
+/**
+ * Validates the public-safe card-testing-protection evidence returned by a guest session capture.
+ *
+ * @param value Untrusted evidence crossing a driver boundary.
+ * @return The discriminated evidence with no raw session token.
+ */
+export function validateCardTestingProtectionEvidence(
+	value: unknown
+): CardTestingProtectionEvidence {
+	if ( typeof value !== 'object' || value === null || Array.isArray( value ) ) {
+		invalid( 'Card-testing protection evidence requires one object.' );
+	}
+	const evidence = value as Record< string, unknown >;
+	const keys = Object.keys( evidence ).toSorted();
+	if ( evidence.eligible === false ) {
+		if (
+			JSON.stringify( keys ) !==
+				JSON.stringify(
+					[
+						'accountEnabled',
+						'eligible',
+						'renderedField',
+						'submittedTokenSha256',
+						'token',
+					].toSorted()
+				) ||
+			evidence.token !== null ||
+			evidence.accountEnabled !== false ||
+			( evidence.renderedField !== 'absent' && evidence.renderedField !== 'empty' ) ||
+			evidence.submittedTokenSha256 !== null
+		) {
+			invalid( 'Card-testing protection evidence requires exact public fields for disabled protection.' );
+		}
+		return {
+			eligible: false,
+			token: null,
+			accountEnabled: false,
+			renderedField: evidence.renderedField,
+			submittedTokenSha256: null,
+		};
+	}
+	if (
+		JSON.stringify( keys ) !==
+			JSON.stringify(
+				[
+					'accountEnabled',
+					'eligible',
+					'renderedTokenSha256',
+					'submittedTokenSha256',
+					'token',
+				].toSorted()
+			) ||
+		evidence.eligible !== true ||
+		evidence.accountEnabled !== true
+	) {
+		invalid( 'Card-testing protection evidence requires exact public fields for enabled protection.' );
+	}
+	const token = assertTokenDigest( evidence.token );
+	if (
+		typeof evidence.renderedTokenSha256 !== 'string' ||
+		typeof evidence.submittedTokenSha256 !== 'string' ||
+		! SHA256_PATTERN.test( evidence.renderedTokenSha256 ) ||
+		! SHA256_PATTERN.test( evidence.submittedTokenSha256 ) ||
+		token.sha256 !== evidence.renderedTokenSha256 ||
+		token.sha256 !== evidence.submittedTokenSha256
+	) {
+		invalid( 'Card-testing protection evidence requires exact token digest equality.' );
+	}
+	return {
+		eligible: true,
+		token,
+		accountEnabled: true,
+		renderedTokenSha256: token.sha256,
+		submittedTokenSha256: token.sha256,
+	};
 }
 
 function assertDeleteResult( value: unknown ): void {
@@ -940,10 +1023,13 @@ export async function withCapturedCardTestingProtectionState< Result >(
 							if ( targetProtection ) {
 								const digest = assertTokenDigest( token );
 								tokenEvidenceCaptured = true;
-								return {
-									targetProtection: true,
+								return validateCardTestingProtectionEvidence( {
+									eligible: true,
 									token: digest,
-								};
+									accountEnabled: true,
+									renderedTokenSha256: digest.sha256,
+									submittedTokenSha256: digest.sha256,
+								} );
 							}
 							if ( token !== null ) {
 								invalid(
@@ -951,7 +1037,13 @@ export async function withCapturedCardTestingProtectionState< Result >(
 								);
 							}
 							tokenEvidenceCaptured = true;
-							return { targetProtection: false, token: null };
+							return validateCardTestingProtectionEvidence( {
+								eligible: false,
+								token: null,
+								accountEnabled: false,
+								renderedField: 'absent',
+								submittedTokenSha256: null,
+							} );
 						} catch ( error ) {
 							throw error instanceof
 								ResourceQuarantineRequiredError
@@ -967,7 +1059,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 						const evidence = await scope.captureGuestSessionProtection(
 							source
 						);
-						if ( evidence.targetProtection === false ) {
+						if ( evidence.eligible === false ) {
 							scopeViolated = true;
 							throw quarantine(
 								'WooCommerce disabled card-testing protection has no session token digest.',

@@ -9,6 +9,7 @@ import type { JsonValue, ResourceLock } from '../resource-locks';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
 import {
 	NativeStoreWpCliRunner,
+	validateCardTestingProtectionEvidence,
 	withCapturedCardTestingProtectionState,
 	type CardTestingProtectionScope,
 	type CardTestingProtectionRunner,
@@ -1281,10 +1282,19 @@ test( 'captures the requested card-testing protection state and restores raw opt
 		expect( evidence ).toEqual(
 			targetProtection
 				? {
-						targetProtection: true,
+						eligible: true,
 						token: { length: 16, sha256: TOKEN_DIGEST },
+						accountEnabled: true,
+						renderedTokenSha256: TOKEN_DIGEST,
+						submittedTokenSha256: TOKEN_DIGEST,
 				  }
-				: { targetProtection: false, token: null }
+				: {
+						eligible: false,
+						token: null,
+						accountEnabled: false,
+						renderedField: 'absent',
+						submittedTokenSha256: null,
+				  }
 		);
 		expect(
 			runner.requests.find(
@@ -1319,9 +1329,49 @@ test( 'defaults card-testing protection capture to enabled token evidence', asyn
 	);
 
 	expect( evidence ).toEqual( {
-		targetProtection: true,
+		eligible: true,
 		token: { length: 16, sha256: TOKEN_DIGEST },
+		accountEnabled: true,
+		renderedTokenSha256: TOKEN_DIGEST,
+		submittedTokenSha256: TOKEN_DIGEST,
 	} );
+} );
+
+test( 'accepts only complete public card-testing protection evidence branches', () => {
+	expect(
+		validateCardTestingProtectionEvidence( {
+			eligible: false,
+			token: null,
+			accountEnabled: false,
+			renderedField: 'absent',
+			submittedTokenSha256: null,
+		} )
+	).toEqual( {
+		eligible: false,
+		token: null,
+		accountEnabled: false,
+		renderedField: 'absent',
+		submittedTokenSha256: null,
+	} );
+	expect( () =>
+		validateCardTestingProtectionEvidence( {
+			eligible: true,
+			token: { length: 16, sha256: TOKEN_DIGEST },
+			accountEnabled: true,
+			renderedTokenSha256: TOKEN_DIGEST,
+			submittedTokenSha256: 'b'.repeat( 64 ),
+		} )
+	).toThrow( 'digest equality' );
+	expect( () =>
+		validateCardTestingProtectionEvidence( {
+			eligible: false,
+			token: null,
+			accountEnabled: false,
+			renderedField: 'empty',
+			submittedTokenSha256: null,
+			rawToken: 'private-token',
+		} )
+	).toThrow( 'exact public fields' );
 } );
 
 test( 'executes native PHP mutations and restores exact controlled option rows for each target', async () => {

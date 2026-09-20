@@ -1,10 +1,12 @@
 import { expect, test } from '@playwright/test';
 
 import {
+	collectHistoricalPayForOrderRecovery,
 	validateHistoricalPayForOrderRecovery,
 	type HistoricalPayForOrderEvidence,
 	type HistoricalPayForOrderFixture,
 } from './historical-pay-for-order';
+import type { FailedPaymentEvidence } from './failed-payment-evidence';
 
 const FIXTURE: HistoricalPayForOrderFixture = {
 	schemaVersion: 1,
@@ -63,8 +65,11 @@ function evidence(): HistoricalPayForOrderEvidence {
 	return {
 		fixtureChecksumSha256: 'c'.repeat( 64 ),
 		protection: {
-			targetProtection: true,
+			eligible: true,
 			token: { length: 16, sha256: 'd'.repeat( 64 ) },
+			accountEnabled: true,
+			renderedTokenSha256: 'd'.repeat( 64 ),
+			submittedTokenSha256: 'd'.repeat( 64 ),
 		},
 		order: {
 			id: 125,
@@ -83,8 +88,9 @@ function evidence(): HistoricalPayForOrderEvidence {
 			intentId: 'pi_succeeded',
 			intentStatus: 'succeeded',
 			paymentMethodId: 'pm_succeeded',
-			chargeId: 'ch_succeeded',
-			captureCount: 1,
+			charges: [
+				{ id: 'ch_succeeded', status: 'succeeded', captured: true },
+			],
 			cardLast4: '4242',
 		},
 		cardinality: {
@@ -113,11 +119,28 @@ function evidence(): HistoricalPayForOrderEvidence {
 			},
 			cleaned: [
 				{ resource: 'order', id: '125' },
+				{ resource: 'intent', id: 'pi_declined' },
+				{ resource: 'intent', id: 'pi_succeeded' },
+				{ resource: 'payment-method', id: 'pm_declined' },
 				{ resource: 'payment-method', id: 'pm_succeeded' },
 				{ resource: 'charge', id: 'ch_succeeded' },
+				{ resource: 'customer', id: '73' },
+				{ resource: 'product', id: '91' },
 			],
 		},
 	};
+}
+
+function failedPaymentEvidence(): FailedPaymentEvidence {
+	return {
+		intentId: 'pi_declined',
+		intentStatus: 'requires_payment_method',
+		paymentMethodId: 'pm_declined',
+		errorCode: 'card_declined',
+		declineCode: 'generic_decline',
+		chargeIds: [],
+		capturedCharges: 0,
+	} as FailedPaymentEvidence;
 }
 
 test( 'accepts exactly one immutable 11.1.0 failed order paid in place after native cutover', () => {
@@ -150,32 +173,43 @@ test( 'rejects an immutable source with the wrong source commit', () => {
 	).toThrow( 'immutable 11.1.0 source' );
 } );
 
-test( 'rejects a different order, customer, money, key, or product line after recovery', () => {
+for ( const [ name, mutate ] of [
+	[ 'order ID', ( recovered: HistoricalPayForOrderEvidence ) => ( recovered.order = { ...recovered.order, id: 126 } ) ],
+	[ 'order key', ( recovered: HistoricalPayForOrderEvidence ) => ( recovered.order = { ...recovered.order, keySha256: 'e'.repeat( 64 ) } ) ],
+	[ 'order customer', ( recovered: HistoricalPayForOrderEvidence ) => ( recovered.order = { ...recovered.order, customerId: 74 } ) ],
+	[ 'order currency', ( recovered: HistoricalPayForOrderEvidence ) => ( recovered.order = { ...recovered.order, currency: 'EUR' } as never ) ],
+	[ 'order total', ( recovered: HistoricalPayForOrderEvidence ) => ( recovered.order = { ...recovered.order, totalMinor: 1002 } ) ],
+	[ 'order product line', ( recovered: HistoricalPayForOrderEvidence ) => ( recovered.order = { ...recovered.order, productLines: [ { productId: 92, quantity: 1 } ] } ) ],
+] as const ) {
+	test( `rejects a changed ${ name } after recovery`, () => {
 	const recovered = evidence();
-	recovered.order = {
-		...recovered.order,
-		id: 126,
-		keySha256: 'e'.repeat( 64 ),
-		customerId: 74,
-		totalMinor: 1002,
-		productLines: [ { productId: 92, quantity: 1 } ],
-	};
+	mutate( recovered );
+	expect( () =>
+		validateHistoricalPayForOrderRecovery( FIXTURE, recovered )
+	).toThrow( 'same failed order' );
+	} );
+}
+
+test( 'rejects a cast recovered order status outside processing and completed', () => {
+	const recovered = evidence();
+	recovered.order = { ...recovered.order, status: 'failed' } as never;
 	expect( () =>
 		validateHistoricalPayForOrderRecovery( FIXTURE, recovered )
 	).toThrow( 'same failed order' );
 } );
 
-test( 'rejects reused decline intent and PaymentMethod identities', () => {
-	const recovered = evidence();
-	recovered.nativeSuccess = {
-		...recovered.nativeSuccess,
-		intentId: 'pi_declined',
-		paymentMethodId: 'pm_declined',
-	};
-	expect( () =>
-		validateHistoricalPayForOrderRecovery( FIXTURE, recovered )
-	).toThrow( 'distinct decline and success' );
-} );
+for ( const [ name, mutate ] of [
+	[ 'intent', ( recovered: HistoricalPayForOrderEvidence ) => ( recovered.nativeSuccess = { ...recovered.nativeSuccess, intentId: 'pi_declined' } ) ],
+	[ 'PaymentMethod', ( recovered: HistoricalPayForOrderEvidence ) => ( recovered.nativeSuccess = { ...recovered.nativeSuccess, paymentMethodId: 'pm_declined' } ) ],
+] as const ) {
+	test( `rejects a reused decline ${ name } identity`, () => {
+		const recovered = evidence();
+		mutate( recovered );
+		expect( () =>
+			validateHistoricalPayForOrderRecovery( FIXTURE, recovered )
+		).toThrow( 'distinct decline and success' );
+	} );
+}
 
 test( 'rejects a client decline that created a charge or capture', () => {
 	const declinedWithCharge = {
@@ -190,15 +224,42 @@ test( 'rejects a client decline that created a charge or capture', () => {
 	).toThrow( 'no charge or capture' );
 } );
 
+test( 'rejects a client decline that captured a charge', () => {
+	const capturedDecline = {
+		...FIXTURE,
+		clientDecline: {
+			...FIXTURE.clientDecline,
+			captureCount: 1,
+		},
+	} as unknown as HistoricalPayForOrderFixture;
+	expect( () =>
+		validateHistoricalPayForOrderRecovery( capturedDecline, evidence() )
+	).toThrow( 'no charge or capture' );
+} );
+
 test( 'rejects a native success without exactly one charge and capture', () => {
 	const recovered = evidence();
 	recovered.nativeSuccess = {
 		...recovered.nativeSuccess,
-		captureCount: 0,
+		charges: [ { id: 'ch_succeeded', status: 'succeeded', captured: false } ],
 	} as never;
 	expect( () =>
 		validateHistoricalPayForOrderRecovery( FIXTURE, recovered )
-	).toThrow( 'one native capture' );
+	).toThrow( 'exactly one succeeded captured' );
+} );
+
+test( 'rejects an extra successful charge', () => {
+	const recovered = evidence();
+	recovered.nativeSuccess = {
+		...recovered.nativeSuccess,
+		charges: [
+			...recovered.nativeSuccess.charges,
+			{ id: 'ch_extra', status: 'succeeded', captured: true },
+		],
+	};
+	expect( () =>
+		validateHistoricalPayForOrderRecovery( FIXTURE, recovered )
+	).toThrow( 'exactly one succeeded captured' );
 } );
 
 test( 'accepts false protection only with no token and rejects target drift', () => {
@@ -207,13 +268,22 @@ test( 'accepts false protection only with no token and rejects target drift', ()
 		protectionTarget: false as const,
 	};
 	const recovered = evidence();
-	recovered.protection = { targetProtection: false, token: null };
+	recovered.protection = {
+		eligible: false,
+		token: null,
+		accountEnabled: false,
+		renderedField: 'absent',
+		submittedTokenSha256: null,
+	};
 	expect( validateHistoricalPayForOrderRecovery( disabled, recovered ) ).toBe(
 		recovered
 	);
 	recovered.protection = {
-		targetProtection: true,
+		eligible: true,
 		token: { length: 16, sha256: 'd'.repeat( 64 ) },
+		accountEnabled: true,
+		renderedTokenSha256: 'd'.repeat( 64 ),
+		submittedTokenSha256: 'd'.repeat( 64 ),
 	};
 	expect( () =>
 		validateHistoricalPayForOrderRecovery( disabled, recovered )
@@ -224,8 +294,11 @@ test( 'rejects a usable token in the disabled protection branch', () => {
 	const disabled = { ...FIXTURE, protectionTarget: false as const };
 	const recovered = evidence();
 	recovered.protection = {
-		targetProtection: false,
+		eligible: false,
 		token: { length: 16, sha256: 'd'.repeat( 64 ) },
+		accountEnabled: false,
+		renderedField: 'empty',
+		submittedTokenSha256: null,
 	} as never;
 	expect( () =>
 		validateHistoricalPayForOrderRecovery( disabled, recovered )
@@ -244,28 +317,59 @@ for ( const [ name, mutate, expected ] of [
 		'exactly one order',
 	],
 	[
-		'extra successful and orphaned intents',
+		'extra successful intent',
 		( recovered: HistoricalPayForOrderEvidence ) => {
 			recovered.cardinality = {
 				...recovered.cardinality,
 				paidIntentIds: [ 'pi_succeeded', 'pi_extra' ],
-				orphanIntentIds: [ 'pi_orphan' ],
 			};
 		},
 		'extra successful or orphaned',
 	],
 	[
-		'wrong stock, note, email, and listener deltas',
+		'orphaned intent',
 		( recovered: HistoricalPayForOrderEvidence ) => {
 			recovered.cardinality = {
 				...recovered.cardinality,
-				stockReductionDelta: 2,
-				paidNoteDelta: 0,
-				customerEmailDelta: 2,
-				listenerSideEffectCount: 2,
+				orphanIntentIds: [ 'pi_orphan' ],
+			};
+		},
+		'extra successful or orphaned',
+	],
+	...[
+		[ 'stock', 'stockReductionDelta' ],
+		[ 'paid note', 'paidNoteDelta' ],
+		[ 'customer email', 'customerEmailDelta' ],
+		[ 'listener side effect', 'listenerSideEffectCount' ],
+	].map( ( [ sideEffectName, field ] ) => [
+		`${ sideEffectName } delta`,
+		( recovered: HistoricalPayForOrderEvidence ) => {
+			recovered.cardinality = {
+				...recovered.cardinality,
+				[ field ]: 0,
 			};
 		},
 		'side-effect delta',
+	] as const ),
+	[
+		'third journal',
+		( recovered: HistoricalPayForOrderEvidence ) => {
+			recovered.journals = [
+				...recovered.journals,
+				{ submission: 'native-pay-for-order', resolved: true },
+			];
+		},
+		'resolved payment submission journals',
+	],
+	[
+		'replayed journal',
+		( recovered: HistoricalPayForOrderEvidence ) => {
+			recovered.journals = [
+				{ submission: 'client-decline', resolved: true },
+				{ submission: 'client-decline', resolved: true },
+			];
+		},
+		'resolved payment submission journals',
 	],
 	[
 		'listener activity before quiescence',
@@ -294,6 +398,23 @@ for ( const [ name, mutate, expected ] of [
 		},
 		'manifest-owned resources only',
 	],
+	[
+		'empty cleanup',
+		( recovered: HistoricalPayForOrderEvidence ) => {
+			recovered.cleanup = { ...recovered.cleanup, cleaned: [] };
+		},
+		'complete cleanup',
+	],
+	[
+		'partial cleanup',
+		( recovered: HistoricalPayForOrderEvidence ) => {
+			recovered.cleanup = {
+				...recovered.cleanup,
+				cleaned: recovered.cleanup.cleaned.slice( 1 ),
+			};
+		},
+		'complete cleanup',
+	],
 ] as const ) {
 	test( `rejects ${ name }`, () => {
 	const recovered = evidence();
@@ -301,5 +422,68 @@ for ( const [ name, mutate, expected ] of [
 	expect( () =>
 		validateHistoricalPayForOrderRecovery( FIXTURE, recovered )
 	).toThrow( expected );
+	} );
+}
+
+test( 'collects failed-order evidence before cutover and cold reads only after listener quiescence', async () => {
+	const stages: string[] = [];
+	const result = await collectHistoricalPayForOrderRecovery( {
+		readFailedFixture: async () => {
+			stages.push( 'failed-fixture' );
+			return FIXTURE;
+		},
+		readFailedPayment: async () => {
+			stages.push( 'failed-payment' );
+			return failedPaymentEvidence();
+		},
+		captureProtection: async () => {
+			stages.push( 'protection' );
+			return evidence().protection;
+		},
+		cutOver: async () => {
+			stages.push( 'cutover' );
+		},
+		submitPayForOrder: async () => {
+			stages.push( 'pay-for-order' );
+			return { requestCount: 1 };
+		},
+		waitForListenerQuiescence: async () => {
+			stages.push( 'listener-quiescent' );
+		},
+		readColdRecoveryEvidence: async () => {
+			stages.push( 'cold-read' );
+			return evidence();
+		},
+	} );
+	expect( result.order.id ).toBe( 125 );
+	expect( stages ).toEqual( [
+		'failed-fixture',
+		'failed-payment',
+		'protection',
+		'cutover',
+		'pay-for-order',
+		'listener-quiescent',
+		'cold-read',
+	] );
+} );
+
+for ( const requestCount of [ 0, 2 ] ) {
+	test( `rejects ${ requestCount } post-cutover pay-for-order requests before cold reads`, async () => {
+		let coldRead = false;
+		await expect(
+			collectHistoricalPayForOrderRecovery( {
+				readFailedFixture: async () => FIXTURE,
+				readFailedPayment: async () => failedPaymentEvidence(),
+				captureProtection: async () => evidence().protection,
+				cutOver: async () => {},
+				submitPayForOrder: async () => ( { requestCount } ),
+				waitForListenerQuiescence: async () => {},
+				readColdRecoveryEvidence: async () => {
+					coldRead = true;
+					return evidence();
+				},
+			} )
+		).rejects.toThrow( 'exactly one pay-for-order request' );
+		expect( coldRead ).toBe( false );
 	} );
 }
