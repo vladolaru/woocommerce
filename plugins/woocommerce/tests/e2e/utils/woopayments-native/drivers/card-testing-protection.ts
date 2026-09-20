@@ -57,6 +57,16 @@ export interface CardTestingTokenDigest {
 	sha256: string;
 }
 
+export type CardTestingProtectionEvidence =
+	| Readonly< {
+			targetProtection: false;
+			token: null;
+	  } >
+	| Readonly< {
+			targetProtection: true;
+			token: CardTestingTokenDigest;
+	  } >;
+
 export interface CardTestingProtectionScope {
 	readonly classicCheckout: Readonly< {
 		pageId: number;
@@ -67,10 +77,14 @@ export interface CardTestingProtectionScope {
 	captureGuestSessionToken: (
 		source: Page | BrowserContext
 	) => Promise< CardTestingTokenDigest >;
+	captureGuestSessionProtection: (
+		source: Page | BrowserContext
+	) => Promise< CardTestingProtectionEvidence >;
 }
 
-interface ControllerOptions {
+export interface CardTestingProtectionControllerOptions {
 	runner?: CardTestingProtectionRunner;
+	targetProtection?: boolean;
 }
 
 interface TrackedGuestSession {
@@ -343,7 +357,10 @@ function assertMutationResult( value: unknown ): number {
 	return payload.pageId;
 }
 
-function assertMutationProof( value: unknown ): void {
+function assertMutationProof(
+	value: unknown,
+	targetProtection: boolean
+): void {
 	const payload = assertPayload( value, [
 		'accountConnected',
 		'accountProtection',
@@ -353,9 +370,9 @@ function assertMutationProof( value: unknown ): void {
 	] );
 	if (
 		payload.accountConnected !== true ||
-		payload.accountProtection !== true ||
+		payload.accountProtection !== targetProtection ||
 		payload.cacheUsable !== true ||
-		payload.forceProtection !== true ||
+		payload.forceProtection !== targetProtection ||
 		payload.pageMatches !== true
 	) {
 		invalid( 'Cold card-testing protection proof did not match mutation.' );
@@ -455,21 +472,21 @@ try {
 		$account_row = wcpay_e2e_row( $account_name ); $wrapper = wcpay_e2e_account_wrapper( $account_row );
 		wcpay_e2e_emit( array( 'accountOption' => $account_row, 'forceOption' => wcpay_e2e_row( $force_name ), 'accountConnected' => true, 'effectiveProtection' => (bool) ( $wrapper['data']['card_testing_protection_eligible'] ?? false ), 'classicPageExists' => 0 !== count( wcpay_e2e_pages( $input['slug'] ) ) ) );
 	} elseif ( 'mutate-state' === $operation ) {
-		wcpay_e2e_exact_keys( $input, array( 'baseURL', 'content', 'marker', 'slug', 'title' ) );
+		wcpay_e2e_exact_keys( $input, array( 'baseURL', 'content', 'marker', 'slug', 'targetProtection', 'title' ) ); if ( ! is_bool( $input['targetProtection'] ) ) { wcpay_e2e_fail(); }
 		if ( wcpay_e2e_pages( $input['slug'] ) ) { wcpay_e2e_fail(); }
 		$account_row = wcpay_e2e_row( $account_name ); $wrapper = wcpay_e2e_account_wrapper( $account_row );
-		$wrapper['data']['card_testing_protection_eligible'] = true; $wrapper['fetched'] = time(); $wrapper['errored'] = false; $wrapper['consecutive_errors'] = 0;
+		$wrapper['data']['card_testing_protection_eligible'] = $input['targetProtection']; $wrapper['fetched'] = time(); $wrapper['errored'] = false; $wrapper['consecutive_errors'] = 0;
 		global $wpdb; if ( false === $wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $wrapper ) ), array( 'option_name' => $account_name ), array( '%s' ), array( '%s' ) ) ) { wcpay_e2e_fail(); }
-		$force_row = wcpay_e2e_row( $force_name ); if ( $force_row['exists'] ) { $force_result = $wpdb->update( $wpdb->options, array( 'option_value' => '1' ), array( 'option_name' => $force_name ), array( '%s' ), array( '%s' ) ); } else { $force_result = $wpdb->insert( $wpdb->options, array( 'option_name' => $force_name, 'option_value' => '1', 'autoload' => 'on' ), array( '%s', '%s', '%s' ) ); } if ( false === $force_result ) { wcpay_e2e_fail(); }
+		$force_row = wcpay_e2e_row( $force_name ); if ( $input['targetProtection'] ) { if ( $force_row['exists'] ) { $force_result = $wpdb->update( $wpdb->options, array( 'option_value' => '1' ), array( 'option_name' => $force_name ), array( '%s' ), array( '%s' ) ); } else { $force_result = $wpdb->insert( $wpdb->options, array( 'option_name' => $force_name, 'option_value' => '1', 'autoload' => 'on' ), array( '%s', '%s', '%s' ) ); } if ( false === $force_result ) { wcpay_e2e_fail(); } } elseif ( $force_row['exists'] && false === $wpdb->delete( $wpdb->options, array( 'option_name' => $force_name ), array( '%s' ) ) ) { wcpay_e2e_fail(); }
 		wcpay_e2e_invalidate_option( $account_name ); wcpay_e2e_invalidate_option( $force_name );
 		$page_id = wp_insert_post( array( 'post_type' => 'page', 'post_status' => 'publish', 'post_name' => $input['slug'], 'post_title' => $input['title'], 'post_content' => $input['content'] ), true );
 		if ( is_wp_error( $page_id ) || ! is_int( $page_id ) || 0 >= $page_id ) { wcpay_e2e_fail(); }
 		$page = get_post( $page_id, ARRAY_A ); if ( ! wcpay_e2e_page_matches( $page, $input['slug'], $input['title'], $input['content'] ) || 1 !== count( wcpay_e2e_pages( $input['slug'] ) ) ) { wcpay_e2e_fail(); }
 		wcpay_e2e_emit( array( 'pageId' => $page_id ) );
 	} elseif ( 'verify-mutated-state' === $operation ) {
-		wcpay_e2e_exact_keys( $input, array( 'baseURL', 'content', 'marker', 'pageId', 'slug', 'title' ) );
+		wcpay_e2e_exact_keys( $input, array( 'baseURL', 'content', 'marker', 'pageId', 'slug', 'targetProtection', 'title' ) ); if ( ! is_bool( $input['targetProtection'] ) ) { wcpay_e2e_fail(); }
 		$wrapper = wcpay_e2e_account_wrapper( wcpay_e2e_row( $account_name ) ); $force_row = wcpay_e2e_row( $force_name ); $force_raw = $force_row['exists'] ? base64_decode( $force_row['valueBase64'], true ) : false; $page = get_post( $input['pageId'], ARRAY_A );
-		wcpay_e2e_emit( array( 'accountConnected' => true, 'accountProtection' => true === $wrapper['data']['card_testing_protection_eligible'], 'cacheUsable' => 0 < $wrapper['fetched'] && false === $wrapper['errored'] && 0 === $wrapper['consecutive_errors'], 'forceProtection' => true === $force_row['exists'] && '1' === $force_raw, 'pageMatches' => wcpay_e2e_page_matches( $page, $input['slug'], $input['title'], $input['content'] ) && 1 === count( wcpay_e2e_pages( $input['slug'] ) ) ) );
+		wcpay_e2e_emit( array( 'accountConnected' => true, 'accountProtection' => $input['targetProtection'] ? true === $wrapper['data']['card_testing_protection_eligible'] : false === $wrapper['data']['card_testing_protection_eligible'], 'cacheUsable' => 0 < $wrapper['fetched'] && false === $wrapper['errored'] && 0 === $wrapper['consecutive_errors'], 'forceProtection' => $input['targetProtection'] ? true === $force_row['exists'] && '1' === $force_raw : false === $force_row['exists'], 'pageMatches' => wcpay_e2e_page_matches( $page, $input['slug'], $input['title'], $input['content'] ) && 1 === count( wcpay_e2e_pages( $input['slug'] ) ) ) );
 	} elseif ( 'read-guest-session' === $operation ) {
 		wcpay_e2e_exact_keys( $input, array( 'baseURL' ) ); $cookie_name = base64_decode( $wcpay_e2e_cookie_name_base64, true ); $cookie_value = base64_decode( $wcpay_e2e_cookie_value_base64, true ); $customer_id = base64_decode( $wcpay_e2e_customer_id_base64, true ); if ( false === $cookie_name || false === $cookie_value || false === $customer_id || 0 !== strpos( $cookie_name, '${ SESSION_COOKIE_PREFIX }' ) || ! preg_match( '/^t_[a-f0-9]{30}$/D', $customer_id ) ) { wcpay_e2e_fail(); }
 		$_COOKIE[$cookie_name] = $cookie_value; $handler = new WC_Session_Handler(); $parsed = $handler->get_session_cookie(); if ( ! is_array( $parsed ) || 4 !== count( $parsed ) || ! hash_equals( $customer_id, (string) $parsed[0] ) ) { wcpay_e2e_emit( array( 'cookieValid' => false, 'sessionExists' => false, 'token' => null ) ); return; }
@@ -608,7 +625,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 	session: ProviderWriteSession,
 	runId: string,
 	callback: ( scope: CardTestingProtectionScope ) => Promise< Result >,
-	options: ControllerOptions = {}
+	options: CardTestingProtectionControllerOptions = {}
 ): Promise< Result > {
 	if ( session.runtime !== 'native' ) {
 		throw new Error(
@@ -622,6 +639,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 	}
 	assertSafeNativeStoreBaseUrl( session.baseURL );
 	const runner = options.runner ?? new NativeStoreWpCliRunner();
+	const targetProtection = options.targetProtection ?? true;
 	const marker = deterministicMarker( runId );
 	const title = `WooPayments E2E Classic Checkout ${ marker }`;
 	const content = `<!-- ${ marker } -->\n[woocommerce_checkout]`;
@@ -782,6 +800,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 							content,
 							marker,
 							slug: CLASSIC_CHECKOUT_SLUG,
+							targetProtection,
 							title,
 						},
 						session.baseURL
@@ -797,10 +816,12 @@ export async function withCapturedCardTestingProtectionState< Result >(
 							marker,
 							pageId,
 							slug: CLASSIC_CHECKOUT_SLUG,
+							targetProtection,
 							title,
 						},
 						session.baseURL
-					)
+					),
+					targetProtection
 				);
 
 				const scope: CardTestingProtectionScope = {
@@ -857,7 +878,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 								  );
 						}
 					},
-					captureGuestSessionToken: async ( source ) => {
+					captureGuestSessionProtection: async ( source ) => {
 						if ( sessionCaptureAttempted ) {
 							scopeViolated = true;
 							throw quarantine(
@@ -920,9 +941,21 @@ export async function withCapturedCardTestingProtectionState< Result >(
 								)
 							);
 							trackedSession.verified = true;
-							const digest = assertTokenDigest( token );
+							if ( targetProtection ) {
+								const digest = assertTokenDigest( token );
+								tokenEvidenceCaptured = true;
+								return {
+									targetProtection: true,
+									token: digest,
+								};
+							}
+							if ( token !== null ) {
+								invalid(
+									'WooCommerce disabled card-testing protection produced a usable session token.'
+								);
+							}
 							tokenEvidenceCaptured = true;
-							return digest;
+							return { targetProtection: false, token: null };
 						} catch ( error ) {
 							throw error instanceof
 								ResourceQuarantineRequiredError
@@ -931,8 +964,21 @@ export async function withCapturedCardTestingProtectionState< Result >(
 										'WooCommerce guest session evidence is missing or malformed.',
 										'uncertain-provider-write',
 										error
-								  );
+									  );
 						}
+					},
+					captureGuestSessionToken: async ( source ) => {
+						const evidence = await scope.captureGuestSessionProtection(
+							source
+						);
+						if ( evidence.targetProtection === false ) {
+							scopeViolated = true;
+							throw quarantine(
+								'WooCommerce disabled card-testing protection has no session token digest.',
+								'uncertain-provider-write'
+							);
+						}
+						return evidence.token;
 					},
 				};
 				callbackStarted = true;

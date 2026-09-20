@@ -266,6 +266,72 @@ assert_exact_capabilities \
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
 
 : > "$TEST_ROOT/commands.log"
+if run_orchestrator 'historical-pay-for-order-ctp-true-without-false' 'historical-pay-for-order-ctp-true'; then
+	echo 'The enabled historical pay-for-order scenario ran without a successful disabled allocation teardown.' >&2
+	exit 1
+fi
+if [[ -s "$TEST_ROOT/commands.log" ]]; then
+	echo 'The enabled historical pay-for-order scenario allocated or ran before the disabled teardown boundary.' >&2
+	exit 1
+fi
+
+: > "$TEST_ROOT/commands.log"
+failed_false_boundary="$TEST_ROOT/failed-false-destruction-boundary"
+if E2E_TRANSITION_CTP_FALSE_DESTRUCTION_BOUNDARY="$failed_false_boundary" \
+	E2E_FAKE_TEST_RUNNER_FAIL=1 \
+	run_orchestrator 'historical-pay-for-order-ctp-false-failed-run' 'historical-pay-for-order-ctp-false'; then
+	echo 'The disabled historical pay-for-order scenario hid a test-runner failure.' >&2
+	exit 1
+fi
+if [[ -e "$failed_false_boundary" ]]; then
+	echo 'A failed disabled historical pay-for-order scenario recorded a destruction boundary.' >&2
+	exit 1
+fi
+if E2E_TRANSITION_CTP_FALSE_DESTRUCTION_BOUNDARY="$failed_false_boundary" \
+	run_orchestrator 'historical-pay-for-order-ctp-true-after-failed-false' 'historical-pay-for-order-ctp-true'; then
+	echo 'The enabled historical pay-for-order scenario accepted a failed disabled run.' >&2
+	exit 1
+fi
+
+: > "$TEST_ROOT/commands.log"
+run_orchestrator 'historical-pay-for-order-ctp-false-run' 'historical-pay-for-order-ctp-false'
+grep -Fq -- 'tests/woopayments-native/transitions/historical-money-records.spec.ts' "$TEST_ROOT/commands.log"
+grep -Fq -- '--grep=^plugin-origin failed order pays in place after cutover with card-testing protection disabled$' "$TEST_ROOT/commands.log"
+grep -Fq -- '--workers=1' "$TEST_ROOT/commands.log"
+grep -Fq -- '--retries=0' "$TEST_ROOT/commands.log"
+assert_exact_capabilities \
+	"$TEST_ROOT/commands.log" \
+	'historical-pay-for-order-ctp-false' \
+	'card-decline-checkout' \
+	'card-decline-customer-state' \
+	'card-decline-setup-intent' \
+	'card-testing-protection-setting' \
+	'classic-checkout-page' \
+	'basic-card' \
+	'basic-card-entry' \
+	'product/payment'
+grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
+
+: > "$TEST_ROOT/commands.log"
+run_orchestrator 'historical-pay-for-order-ctp-true-run' 'historical-pay-for-order-ctp-true'
+grep -Fq -- 'tests/woopayments-native/transitions/historical-money-records.spec.ts' "$TEST_ROOT/commands.log"
+grep -Fq -- '--grep=^plugin-origin failed order pays in place after cutover with card-testing protection enabled$' "$TEST_ROOT/commands.log"
+grep -Fq -- '--workers=1' "$TEST_ROOT/commands.log"
+grep -Fq -- '--retries=0' "$TEST_ROOT/commands.log"
+assert_exact_capabilities \
+	"$TEST_ROOT/commands.log" \
+	'historical-pay-for-order-ctp-true' \
+	'card-decline-checkout' \
+	'card-decline-customer-state' \
+	'card-decline-setup-intent' \
+	'card-testing-protection-setting' \
+	'classic-checkout-page' \
+	'basic-card' \
+	'basic-card-entry' \
+	'product/payment'
+grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
+
+: > "$TEST_ROOT/commands.log"
 if run_orchestrator 'invalid-scenario-run' 'not-allowlisted'; then
 	echo 'The transition orchestrator accepted an unknown scenario.' >&2
 	exit 1

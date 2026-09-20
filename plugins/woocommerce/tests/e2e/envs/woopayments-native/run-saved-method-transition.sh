@@ -15,7 +15,9 @@ readonly WRAPPER="${E2E_TRANSITION_WRAPPER:-$SCRIPT_DIR/provision-transition-sto
 readonly REAL_PROVISIONER="${E2E_TRANSITION_STORE_PROVISIONER:-$SCRIPT_DIR/provision-transition-store-real.sh}"
 readonly RUN_ID="${E2E_TRANSITION_RUN_ID:?E2E_TRANSITION_RUN_ID is required}"
 readonly SCENARIO="${E2E_TRANSITION_SCENARIO:-saved-method}"
+readonly CTP_FALSE_DESTRUCTION_BOUNDARY="${E2E_TRANSITION_CTP_FALSE_DESTRUCTION_BOUNDARY:-${TMPDIR:?TMPDIR is required}/woopayments-native-historical-pay-for-order-ctp-false.destroyed}"
 SPEC=''
+GREP=''
 CAPABILITIES=()
 case "$SCENARIO" in
 	saved-method)
@@ -68,12 +70,47 @@ case "$SCENARIO" in
 			'basic-card'
 		)
 		;;
+	historical-pay-for-order-ctp-false)
+		SPEC='tests/woopayments-native/transitions/historical-money-records.spec.ts'
+		GREP='^plugin-origin failed order pays in place after cutover with card-testing protection disabled$'
+		CAPABILITIES=(
+			'historical-pay-for-order-ctp-false'
+			'card-decline-checkout'
+			'card-decline-customer-state'
+			'card-decline-setup-intent'
+			'card-testing-protection-setting'
+			'classic-checkout-page'
+			'basic-card'
+			'basic-card-entry'
+			'product/payment'
+		)
+		;;
+	historical-pay-for-order-ctp-true)
+		SPEC='tests/woopayments-native/transitions/historical-money-records.spec.ts'
+		GREP='^plugin-origin failed order pays in place after cutover with card-testing protection enabled$'
+		CAPABILITIES=(
+			'historical-pay-for-order-ctp-true'
+			'card-decline-checkout'
+			'card-decline-customer-state'
+			'card-decline-setup-intent'
+			'card-testing-protection-setting'
+			'classic-checkout-page'
+			'basic-card'
+			'basic-card-entry'
+			'product/payment'
+		)
+		if [[ ! -s "$CTP_FALSE_DESTRUCTION_BOUNDARY" ]]; then
+			echo 'The enabled historical pay-for-order scenario requires a successful disabled allocation teardown.' >&2
+			exit 65
+		fi
+		;;
 	*)
 		echo "Unknown transition scenario: $SCENARIO" >&2
 		exit 64
 		;;
 esac
 readonly SPEC
+readonly GREP
 readonly -a CAPABILITIES
 
 allocation=''
@@ -88,6 +125,11 @@ teardown() {
 			"$WRAPPER" destroy --allocation "$allocation"; then
 			echo 'Exact transition teardown failed; allocation state remains for recovery.' >&2
 			if (( primary_status == 0 )); then
+				primary_status=1
+			fi
+		elif [[ "$SCENARIO" == 'historical-pay-for-order-ctp-false' && "$primary_status" == '0' ]]; then
+			if ! printf '%s\n' "$RUN_ID" > "$CTP_FALSE_DESTRUCTION_BOUNDARY"; then
+				echo 'Disabled historical pay-for-order teardown boundary could not be recorded.' >&2
 				primary_status=1
 			fi
 		fi
@@ -194,22 +236,24 @@ if [[ "$EXECUTION_SCOPE" == 'ci' ]]; then
 fi
 
 readonly CONFIG='tests/e2e/envs/woopayments-native/playwright.config.ts'
+PLAYWRIGHT_ARGUMENTS=(
+	"--config=$CONFIG"
+	'--project=woopayments-native-transition'
+	"$SPEC"
+	'--workers=1'
+)
+if [[ -n "$GREP" ]]; then
+	PLAYWRIGHT_ARGUMENTS+=( "--grep=$GREP" '--retries=0' )
+fi
+readonly -a PLAYWRIGHT_ARGUMENTS
 if [[ -n "${E2E_TRANSITION_TEST_RUNNER:-}" ]]; then
 	(
 		cd "$PLUGIN_ROOT"
-		"$E2E_TRANSITION_TEST_RUNNER" \
-			"--config=$CONFIG" \
-			'--project=woopayments-native-transition' \
-			"$SPEC" \
-			'--workers=1'
+		"$E2E_TRANSITION_TEST_RUNNER" "${PLAYWRIGHT_ARGUMENTS[@]}"
 	)
 else
 	(
 		cd "$PLUGIN_ROOT"
-		pnpm exec playwright test \
-			"--config=$CONFIG" \
-			'--project=woopayments-native-transition' \
-			"$SPEC" \
-			'--workers=1'
+		pnpm exec playwright test "${PLAYWRIGHT_ARGUMENTS[@]}"
 	)
 fi

@@ -1076,6 +1076,107 @@ test( 'exposes only the public session token digest and keeps capture one-shot',
 	} );
 } );
 
+test( 'captures the requested card-testing protection state and restores raw options exactly', async () => {
+	const existingForceRow = {
+		exists: true,
+		valueBase64: Buffer.from( 'force-original-bytes' ).toString( 'base64' ),
+		autoload: 'no',
+	} as const;
+
+	for ( const targetProtection of [ false, true ] as const ) {
+		const { session } = makeSession( [] );
+		const { context } = fakeContext( [], [ COOKIE_VALUE ] );
+		const runner = new FakeRunner( ( request ) => {
+			if ( request.operation === 'capture-state' ) {
+				return envelope( {
+					accountOption: accountRow,
+					forceOption: existingForceRow,
+					accountConnected: true,
+					effectiveProtection: false,
+					classicPageExists: false,
+				} );
+			}
+			if ( request.operation === 'verify-mutated-state' ) {
+				return envelope( {
+					accountConnected: true,
+					accountProtection: targetProtection,
+					cacheUsable: true,
+					forceProtection: targetProtection,
+					pageMatches: true,
+				} );
+			}
+			if (
+				request.operation === 'read-guest-session' &&
+				targetProtection === false
+			) {
+				return envelope( {
+					cookieValid: true,
+					sessionExists: true,
+					token: null,
+				} );
+			}
+			return defaultResult( request );
+		} );
+
+		let evidence: unknown;
+		await withCapturedCardTestingProtectionState(
+			session,
+			RUN_ID,
+			async ( scope ) => {
+				await scope.registerFreshContext( context as never );
+				evidence = await scope.captureGuestSessionProtection(
+					context as never
+				);
+			},
+			{ runner, targetProtection }
+		);
+
+		expect( evidence ).toEqual(
+			targetProtection
+				? {
+						targetProtection: true,
+						token: { length: 16, sha256: TOKEN_DIGEST },
+				  }
+				: { targetProtection: false, token: null }
+		);
+		expect(
+			runner.requests.find(
+				( request ) => request.operation === 'mutate-state'
+			)?.input.targetProtection
+		).toBe( targetProtection );
+		expect(
+			runner.requests.find(
+				( request ) => request.operation === 'restore-state'
+			)?.input.snapshot
+		).toMatchObject( {
+			accountOption: accountRow,
+			forceOption: existingForceRow,
+		} );
+	}
+} );
+
+test( 'defaults card-testing protection capture to enabled token evidence', async () => {
+	const { session } = makeSession( [] );
+	const runner = new FakeRunner();
+	const { context } = fakeContext( [], [ COOKIE_VALUE ] );
+	let evidence: unknown;
+
+	await withCapturedCardTestingProtectionState(
+		session,
+		RUN_ID,
+		async ( scope ) => {
+			await scope.registerFreshContext( context as never );
+			evidence = await scope.captureGuestSessionProtection( context as never );
+		},
+		{ runner }
+	);
+
+	expect( evidence ).toEqual( {
+		targetProtection: true,
+		token: { length: 16, sha256: TOKEN_DIGEST },
+	} );
+} );
+
 test( 'reads the percent-encoded session cookie a real store puts on the wire', async () => {
 	const { session } = makeSession( [] );
 	const runner = new FakeRunner();
