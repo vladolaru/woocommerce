@@ -1413,6 +1413,74 @@ E2E_TRANSITION_SEED_PROFILE=11.1.0 \
 	--rollback-receipt-file "$profile_11_workspace/rollback-receipt"
 test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).phase" "$profile_11_workspace/resource-state.json")" = 'destroyed'
 
+historical_transition_port=19093
+for historical_scenario in historical-pay-for-order-ctp-false historical-pay-for-order-ctp-true; do
+	historical_workspace="$TEST_ROOT/$historical_scenario"
+	historical_runtime="$TEST_ROOT/$historical_scenario-runtime"
+	historical_log="$TEST_ROOT/$historical_scenario-commands.log"
+	mkdir "$historical_workspace"
+	E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+		E2E_TRANSITION_FRONTEND_LOCK_SHA256="$profile_11_frontend_lock_hash" \
+		E2E_TRANSITION_COMPOSER_LOCK_SHA256="$profile_11_composer_lock_hash" \
+		E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
+		E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+		E2E_TRANSITION_SCENARIO="$historical_scenario" \
+		E2E_TRANSITION_PORT="$historical_transition_port" \
+		run_provisioner "$historical_workspace" "$historical_runtime" "$historical_log" \
+		create \
+		--workspace "$historical_workspace" \
+		--seed-archive "$TEST_ROOT/profile-11-seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/profile-11-seed.json" \
+		--run-id "$historical_scenario" \
+		--base-url "http://transition-$historical_scenario.localhost:$historical_transition_port" \
+		--store-id "woopayments-native-transition-$historical_scenario" > /dev/null
+	if [[ ! -f "$historical_runtime/reference-account-seeded" ]]; then
+		echo "Historical scenario did not seed the exact validated reference account: $historical_scenario." >&2
+		exit 1
+	fi
+	if [[ -e "$historical_runtime/native-active-seeded" ]]; then
+		echo "Historical scenario incorrectly seeded native ACTIVE state: $historical_scenario." >&2
+		exit 1
+	fi
+	E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+		E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
+		E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+		run_provisioner "$historical_workspace" "$historical_runtime" "$historical_log" \
+		destroy \
+		--workspace "$historical_workspace" \
+		--rollback-receipt-file "$historical_workspace/rollback-receipt"
+	historical_transition_port=$((historical_transition_port + 1))
+done
+
+unseeded_workspace="$TEST_ROOT/unseeded-reference-account"
+unseeded_runtime="$TEST_ROOT/unseeded-reference-account-runtime"
+unseeded_log="$TEST_ROOT/unseeded-reference-account-commands.log"
+mkdir "$unseeded_workspace"
+E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+	E2E_TRANSITION_FRONTEND_LOCK_SHA256="$profile_11_frontend_lock_hash" \
+	E2E_TRANSITION_COMPOSER_LOCK_SHA256="$profile_11_composer_lock_hash" \
+	E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_TRANSITION_SCENARIO=unrelated-scenario \
+	E2E_TRANSITION_PORT="$historical_transition_port" \
+	run_provisioner "$unseeded_workspace" "$unseeded_runtime" "$unseeded_log" \
+	create \
+	--workspace "$unseeded_workspace" \
+	--seed-archive "$TEST_ROOT/profile-11-seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/profile-11-seed.json" \
+	--run-id unrelated-scenario \
+	--base-url "http://transition-unrelated-scenario.localhost:$historical_transition_port" \
+	--store-id woopayments-native-transition-unrelated-scenario > /dev/null
+test ! -e "$unseeded_runtime/reference-account-seeded"
+test ! -e "$unseeded_runtime/native-active-seeded"
+E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+	E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	run_provisioner "$unseeded_workspace" "$unseeded_runtime" "$unseeded_log" \
+	destroy \
+	--workspace "$unseeded_workspace" \
+	--rollback-receipt-file "$unseeded_workspace/rollback-receipt"
+
 state_failure_workspace="$TEST_ROOT/native-state-failure"
 state_failure_runtime="$TEST_ROOT/native-state-failure-runtime"
 state_failure_log="$TEST_ROOT/native-state-failure.log"
