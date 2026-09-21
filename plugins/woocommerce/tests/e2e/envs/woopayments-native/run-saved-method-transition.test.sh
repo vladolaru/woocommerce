@@ -149,6 +149,11 @@ fi
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
 
 : > "$TEST_ROOT/commands.log"
+E2E_WOOPAYMENTS_NATIVE_STORE_DIR='/caller-supplied-native-store' \
+	run_orchestrator 'native-store-directory-run'
+grep -Fq "E2E_WOOPAYMENTS_NATIVE_STORE_DIR=$TEST_ROOT/woopayments-native-transition-native-store-directory-run/store " "$TEST_ROOT/commands.log"
+
+: > "$TEST_ROOT/commands.log"
 run_orchestrator 'explicit-current-profile-run' '' '11.1.0'
 grep -Fq 'wrapper action=create E2E_TRANSITION_SEED_PROFILE=11.1.0 ' "$TEST_ROOT/commands.log"
 grep -Eq '^runner .* E2E_TRANSITION_SEED_PROFILE=11[.]1[.]0 ' "$TEST_ROOT/commands.log"
@@ -186,7 +191,7 @@ for ( const path of process.argv.slice( 3 ) ) {
 	}
 }
 const marker = ' E2E_TRANSITION_OPTIONAL_ARTIFACTS=';
-const endMarker = ' E2E_WOOPAYMENTS_LOCK_DIR=';
+const endMarker = ' E2E_WOOPAYMENTS_NATIVE_STORE_DIR=';
 const start = runnerLine.indexOf( marker );
 const end = runnerLine.indexOf( endMarker, start );
 if ( start < 0 || end < 0 ) {
