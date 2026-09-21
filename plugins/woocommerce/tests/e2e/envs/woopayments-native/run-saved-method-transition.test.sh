@@ -360,6 +360,7 @@ assert_exact_capabilities \
 	'card-decline-setup-intent' \
 	'card-testing-protection-setting' \
 	'classic-checkout-page' \
+	'soft-cutover' \
 	'basic-card' \
 	'basic-card-entry' \
 	'product/payment'
@@ -380,6 +381,7 @@ assert_exact_capabilities \
 	'card-decline-setup-intent' \
 	'card-testing-protection-setting' \
 	'classic-checkout-page' \
+	'soft-cutover' \
 	'basic-card' \
 	'basic-card-entry' \
 	'product/payment'
