@@ -22,6 +22,8 @@ const RUN_ID = 'run-protection-1';
 const COOKIE_NAME = 'wp_woocommerce_session_0123456789abcdef0123456789abcdef';
 const CUSTOMER_ID = 't_0123456789abcdef0123456789abcd';
 const COOKIE_VALUE = `${ CUSTOMER_ID }|2000000000|1999990000|signature`;
+const AUTHENTICATED_CUSTOMER_ID = '73';
+const AUTHENTICATED_COOKIE_VALUE = `${ AUTHENTICATED_CUSTOMER_ID }|2000000000|1999990000|signature`;
 const TOKEN_DIGEST = 'a'.repeat( 64 );
 
 /**
@@ -88,6 +90,7 @@ function defaultResult( request: CardTestingProtectionRunnerRequest ): unknown {
 				pageMatches: true,
 			} );
 		case 'read-guest-session':
+		case 'read-authenticated-session':
 			return envelope( {
 				cookieValid: true,
 				sessionExists: true,
@@ -1394,6 +1397,37 @@ test( 'defaults card-testing protection capture to enabled token evidence', asyn
 		token: { length: 16, sha256: TOKEN_DIGEST },
 		accountEnabled: true,
 	} );
+} );
+
+test( 'captures a fresh authenticated order-pay session only for its expected customer', async () => {
+	const { session } = makeSession( [] );
+	const runner = new FakeRunner( ( request ) =>
+		request.operation === 'read-authenticated-session'
+			? envelope( {
+				cookieValid: true,
+				sessionExists: true,
+				token: { length: 16, sha256: TOKEN_DIGEST },
+			} )
+			: defaultResult( request )
+	);
+	const { context } = fakeContext( [], [ AUTHENTICATED_COOKIE_VALUE ] );
+	let evidence: unknown;
+
+	await withCapturedCardTestingProtectionState(
+		session,
+		RUN_ID,
+		async ( scope ) => {
+			await scope.registerFreshContext( context as never );
+			evidence = await scope.captureAuthenticatedSessionProtection(
+				context as never,
+				73
+			);
+		},
+		{ runner }
+	);
+
+	expect( evidence ).toMatchObject( { eligible: true, accountEnabled: true } );
+	expect( runner.requests.find( ( request ) => request.operation === 'read-authenticated-session' )?.input.customerId ).toBe( AUTHENTICATED_CUSTOMER_ID );
 } );
 
 test( 'accepts only complete public card-testing protection evidence branches', () => {

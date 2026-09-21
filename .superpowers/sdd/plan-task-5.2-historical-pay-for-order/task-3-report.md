@@ -45,3 +45,41 @@ Output: exit 0; no whitespace errors.
 ## Concerns
 
 Only collection and non-executing metadata/static checks were authorized for Task 3. The live provider/browser path, external listener behavior, and cleanup effects remain deliberately unexecuted. The strict migration metadata gate has an unrelated existing inventory gap described above.
+
+## Fix round 1/5
+
+### RED
+
+Command: `pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/drivers/card-testing-protection.test.ts --grep "fresh authenticated order-pay"`
+
+Output: exit 1. The requested authenticated-session capture method did not exist and the helper quarantined during teardown after the missing capture path. This demonstrates the guest-only interface could not collect the logged-in order-pay session.
+
+Command: `pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/drivers/historical-pay-for-order.test.ts --grep "pre-teardown cleanup"`
+
+Output: exit 1; the validator accepted the fabricated `cleaned` receipt. This establishes that the browser-stage cleanup boundary was too broad before the correction.
+
+### Implementation
+
+Added an additive `captureAuthenticatedSessionProtection()` scope API. It preserves guest capture and guest cleanup, requires the registered zero-cookie context, parses and binds the numeric WooCommerce session customer to the expected positive order customer ID, and obtains public-safe token evidence through a new authenticated-session runner operation without deleting the customer's session.
+
+`requireEphemeralTransitionAllocation()` now returns its already validated allocation identity, which the historical fixture copies exactly. The scenario uses $10.01 with the plan's exact `0345` / `525` card tuple, treats rendered and submitted CTP evidence as separate boundaries, parses the one submitted checkout request for the wire token, and binds the order-pay URL, rendered order number/total, and receipt ID/key to the immutable failed order before cold provider reads.
+
+The historical recovery evidence now accepts only the exact run-owned cleanup manifest at browser stage; any `cleaned` property is rejected as a pre-teardown receipt. Actual deletion/allocation-destruction proof is reserved for Task 4. Native success also carries observed provider occurrence and capture-occurrence counts, and the unit suite includes a 1001-USD mutation for the reused generic-decline oracle.
+
+### GREEN
+
+Command: `pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/drivers/card-testing-protection.test.ts tests/e2e/utils/woopayments-native/drivers/historical-pay-for-order.test.ts`
+
+Output: exit 0; `84 passed (1.1s)`.
+
+Command: `E2E_TRANSITION_SEED_PROFILE=11.1.0 pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/playwright.config.ts --project=woopayments-native-transition tests/e2e/tests/woopayments-native/transitions/historical-money-records.spec.ts --list`
+
+Output: exit 0; the two exact planned titles collected once, `Total: 2 tests in 1 file`. The optional reporter environment probe reported localhost:8086 unavailable after collection; no browser case ran.
+
+Command: `node plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.mjs`
+
+Output: exit 0; `Validated 181 WooPayments client contracts.`
+
+Command: `/Users/vladolaru/Work/a8c/general/.verification-tool-overlays/bin/verify oxlint --new-vs=afd32983b4 <six changed TypeScript files>` and `git diff --check`
+
+Output: exit 0; Oxlint reported zero new findings (three pre-existing non-attributable findings) and diff check found no whitespace errors.

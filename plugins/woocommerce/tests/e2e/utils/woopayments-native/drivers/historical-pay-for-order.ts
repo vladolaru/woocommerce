@@ -16,14 +16,6 @@ const IMMUTABLE_PLUGIN_VERSION = '11.1.0';
 const IMMUTABLE_SOURCE_COMMIT = 'f85392666c9b543cd24dbbf903e0dbe4cb2c5cee';
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
-type CleanupResource =
-	| 'order'
-	| 'intent'
-	| 'payment-method'
-	| 'charge'
-	| 'customer'
-	| 'product';
-
 export interface HistoricalPayForOrderFixture {
 	schemaVersion: 1;
 	source: {
@@ -102,6 +94,8 @@ export interface HistoricalPayForOrderEvidence {
 			status: string;
 			captured: boolean;
 		}[];
+		occurrenceCount: number;
+		captureOccurrenceCount: number;
 		cardLast4: '4242';
 	};
 	cardinality: {
@@ -131,7 +125,6 @@ export interface HistoricalPayForOrderEvidence {
 			customerIds: readonly number[];
 			productIds: readonly number[];
 		};
-		cleaned: readonly { resource: CleanupResource; id: string }[];
 	};
 }
 
@@ -330,6 +323,8 @@ function validatePaymentIdentities(
 		nativeSuccess.cardLast4 !== '4242' ||
 		! hasValue( nativeSuccess.intentId ) ||
 		! hasValue( nativeSuccess.paymentMethodId ) ||
+		nativeSuccess.occurrenceCount !== 1 ||
+		nativeSuccess.captureOccurrenceCount !== 1 ||
 		nativeSuccess.intentId === clientDecline.intentId ||
 		nativeSuccess.paymentMethodId === clientDecline.paymentMethodId
 	) {
@@ -410,41 +405,8 @@ function validateCleanup(
 	if ( ! sameValues( evidence.cleanup.manifest, expected ) ) {
 		fail( 'requires an exact manifest of run-owned cleanup resources.' );
 	}
-	const manifestByResource: Record< CleanupResource, readonly ( number | string )[] > = {
-		order: expected.orderIds,
-		intent: expected.intentIds,
-		'payment-method': expected.paymentMethodIds,
-		charge: expected.chargeIds,
-		customer: expected.customerIds,
-		product: expected.productIds,
-	};
-	const cleaned = new Set< string >();
-	for ( const item of evidence.cleanup.cleaned ) {
-		const key = `${ item.resource }:${ item.id }`;
-		if (
-			cleaned.has( key ) ||
-			! manifestByResource[ item.resource ].includes(
-				item.resource === 'order' ||
-					item.resource === 'customer' ||
-					item.resource === 'product'
-					? Number( item.id )
-					: item.id
-			)
-		) {
-			fail( 'permits cleanup of manifest-owned resources only.' );
-		}
-		cleaned.add( key );
-	}
-	const expectedCleaned = new Set< string >(
-		Object.entries( manifestByResource ).flatMap( ( [ resource, ids ] ) =>
-			ids.map( ( id ) => `${ resource }:${ id }` )
-		)
-	);
-	if (
-		cleaned.size !== expectedCleaned.size ||
-		[ ...expectedCleaned ].some( ( key ) => ! cleaned.has( key ) )
-	) {
-		fail( 'requires complete cleanup of every manifest-owned resource.' );
+	if ( Object.keys( evidence.cleanup ).length !== 1 ) {
+		fail( 'rejects a pre-teardown cleanup receipt.' );
 	}
 }
 

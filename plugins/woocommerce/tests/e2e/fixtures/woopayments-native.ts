@@ -40,7 +40,10 @@ import {
 	ProviderSubmissionNotStartedError,
 	resolveProviderWriteAttempt,
 } from '../utils/woopayments-native/provider-write-journal';
-import { assertTransitionAllocation } from '../utils/woopayments-native/transition-allocation';
+import {
+	assertTransitionAllocation,
+	type TransitionAllocation,
+} from '../utils/woopayments-native/transition-allocation';
 import { waitForWordPressLoginReady } from '../utils/woopayments-native/wp-login';
 
 export { tags } from './fixtures';
@@ -293,7 +296,7 @@ export interface ProviderWriteSession {
 	readonly runId: string;
 	readonly baseURL: string;
 	requireApprovedProviderFixture: ( capability: string ) => void;
-	requireEphemeralTransitionAllocation: () => void;
+	requireEphemeralTransitionAllocation: () => TransitionAllocation;
 	assertCurrentRuntimeReady: (
 		runtime: WooPaymentsRuntime
 	) => Promise< void >;
@@ -377,7 +380,7 @@ export class WooPaymentsPilotRuntime implements ProviderWriteSession {
 		);
 	}
 
-	public requireEphemeralTransitionAllocation(): void {
+	public requireEphemeralTransitionAllocation(): TransitionAllocation {
 		if ( this.runtime !== 'transition' ) {
 			throw new Error(
 				'Saved-method cutover requires the transition runtime.'
@@ -390,7 +393,7 @@ export class WooPaymentsPilotRuntime implements ProviderWriteSession {
 			);
 		}
 
-		assertTransitionAllocation( allocation, {
+		return assertTransitionAllocation( allocation, {
 			baseUrl: this.baseURL,
 			storeId: this.storeId,
 			tempRoot: requireValue( 'TMPDIR' ),

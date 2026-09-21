@@ -41,13 +41,13 @@ const FAMILY_TAGS = [
 ];
 const GENERIC_DECLINE_CARD = {
 	number: '4000000000000002',
-	expiry: '0245',
-	securityCode: '424',
+	expiry: '0345',
+	securityCode: '525',
 } as const;
 const BASIC_CARD = {
 	number: '4242424242424242',
-	expiry: '0245',
-	securityCode: '424',
+	expiry: '0345',
+	securityCode: '525',
 } as const;
 
 interface JourneyState {
@@ -57,9 +57,32 @@ interface JourneyState {
 	paymentUrl?: string;
 	declinedIntentId?: string;
 	declinedPaymentMethodId?: string;
+	customerId?: number;
+	allocation?: {
+		runId: string;
+		storeId: string;
+		blogId: number;
+		accountId: string;
+	};
 	scope?: CardTestingProtectionScope;
 	browser?: PlaywrightClassicCardCheckoutBrowser;
 	successOrderId?: number;
+}
+
+function submittedProtection( body: string | null ) {
+	const tokens = new URLSearchParams( body ?? '' ).getAll(
+		'wcpay-fraud-prevention-token'
+	);
+	if ( tokens.length > 1 ) {
+		throw new Error( 'Historical pay-for-order observed multiple CTP wire values.' );
+	}
+	if ( tokens.length === 0 ) {
+		return { field: 'absent' as const };
+	}
+	if ( tokens[ 0 ] === '' ) {
+		return { field: 'empty' as const };
+	}
+	return { tokenSha256: sha256( tokens[ 0 ] ) };
 }
 
 function sha256( value: string ): string {
@@ -135,12 +158,18 @@ async function runHistoricalPayForOrder(
 						session.requireApprovedProviderFixture(
 							`historical-pay-for-order-ctp-${ protectionTarget ? 'true' : 'false' }`
 						);
-						session.requireEphemeralTransitionAllocation();
+						const allocation = session.requireEphemeralTransitionAllocation();
+						state.allocation = {
+							runId: allocation.run_id,
+							storeId: allocation.store_id,
+							blogId: allocation.wpcom_blog_id,
+							accountId: allocation.account_id,
+						};
 						await session.assertCurrentRuntimeReady( 'transition' );
 						await withClassicCheckoutPage( session, async ( checkout ) => {
 							const baselineOrderId = await readHighestOrderId( session );
 							await session.logInAsCustomer( page );
-							state.product = await session.createOwnedProduct( '10.99' );
+							state.product = await session.createOwnedProduct( '10.01' );
 							const browser = new PlaywrightClassicCardCheckoutBrowser(
 								page,
 								session.baseURL,
@@ -200,13 +229,14 @@ async function runHistoricalPayForOrder(
 				}
 				state.orderKey = orderKey;
 				state.paymentUrl = paymentUrl;
+				state.customerId = customerId;
 				const failedPayment = await convergeFailedPayment( session, orderId );
 				state.declinedIntentId = failedPayment.intentId;
 				state.declinedPaymentMethodId = failedPayment.paymentMethodId;
 				const fixture = {
 					schemaVersion: 1 as const,
 					source: { pluginVersion: '11.1.0', sourceCommit: 'f85392666c9b543cd24dbbf903e0dbe4cb2c5cee' },
-					allocation: { runId: session.runId, storeId: session.baseURL, blogId: 1, accountId: 'allocated-provider-account' },
+					allocation: requireValue( state.allocation, 'the validated transition allocation' ),
 					protectionTarget: protectionTarget as false | true,
 					customerId,
 					productId: product.id,
@@ -238,7 +268,13 @@ async function runHistoricalPayForOrder(
 				const scope = requireValue( state.scope, 'the card-testing protection scope' );
 				await scope.registerFreshContext( page );
 				await page.goto( requireValue( state.paymentUrl, 'the immutable order pay link' ) );
-				return scope.captureGuestSessionProtection( page );
+				expect( page.url() ).toBe( requireValue( state.paymentUrl, 'the immutable order pay link' ) );
+				await expect( page.getByText( new RegExp( `Order\\s*#?${ requireValue( state.orderId, 'the immutable order ID' ) }` ) ) ).toBeVisible();
+				await expect( page.getByText( /10\.01/ ) ).toBeVisible();
+				return scope.captureAuthenticatedSessionProtection(
+					page,
+					requireValue( state.customerId, 'the immutable order customer ID' )
+				);
 			},
 			observeRenderedProtection: async () => {
 				const scope = requireValue( state.scope, 'the card-testing protection scope' );
@@ -259,9 +295,10 @@ async function runHistoricalPayForOrder(
 						() => browser.waitForClassicReceipt()
 					)
 				);
-				state.successOrderId = observed.result.orderId;
-				const token = await browser.captureEffectiveFraudPreventionTokenDigest();
-				return { requestCount: observed.dispatch.requests.length, submittedProtection: token.present ? { tokenSha256: token.digest.sha256 } : { field: 'absent' as const } };
+				expect( observed.result.orderId ).toBe( requireValue( state.orderId, 'the immutable order ID' ) );
+				expect( observed.result.orderKey ).toBe( requireValue( state.orderKey, 'the immutable order key' ) );
+				state.successOrderId = requireValue( state.orderId, 'the immutable order ID' );
+				return { requestCount: observed.dispatch.requests.length, submittedProtection: submittedProtection( observed.dispatch.requests[ 0 ]?.body ?? null ) };
 			},
 			waitForListenerQuiescence: async () => {
 				const evidence = await getPaymentEvidence( session.adminApi, requireValue( state.successOrderId, 'the recovered order ID' ) );
@@ -283,10 +320,10 @@ async function runHistoricalPayForOrder(
 				return {
 					fixtureChecksumSha256: '', protection: { eligible: false, token: null, accountEnabled: false, renderedField: 'absent', submittedTokenSha256: null },
 					order: { id: orderId, keySha256: sha256( orderKey ), customerId, currency: 'USD', totalMinor: orderTotalMinor( order ), status: evidence.orderStatus as 'processing' | 'completed', paymentMethod: 'woocommerce_payments', productLines: [ { productId: product.id, quantity: 1 } ], stockReduced: true, noteCount: notes.length, emailCount: 1 },
-					nativeSuccess: { intentId: evidence.intentId, intentStatus: 'succeeded', paymentMethodId: evidence.paymentMethodId, charges: [ { id: evidence.chargeId, status: evidence.chargeStatus, captured: evidence.chargeCaptured } ], cardLast4: '4242' },
+					nativeSuccess: { intentId: evidence.intentId, intentStatus: 'succeeded', paymentMethodId: evidence.paymentMethodId, charges: [ { id: evidence.chargeId, status: evidence.chargeStatus, captured: evidence.chargeCaptured } ], occurrenceCount: evidence.occurrenceCount, captureOccurrenceCount: evidence.captureOccurrenceCount, cardLast4: '4242' },
 					cardinality: { orderIds: [ orderId ], intentIds: [ declinedIntentId, evidence.intentId ], paidIntentIds: [ evidence.intentId ], orphanIntentIds: [], stockReductionDelta: 1, paidNoteDelta: 1, customerEmailDelta: 1, listenerSideEffectCount: 1 },
 					listener: { quiescent: true, sideEffectCount: 1 }, journals: [ { submission: 'client-decline', resolved: true }, { submission: 'native-pay-for-order', resolved: true } ],
-					cleanup: { manifest: { orderIds: [ orderId ], intentIds: [ declinedIntentId, evidence.intentId ], paymentMethodIds: [ declinedPaymentMethodId, evidence.paymentMethodId ], chargeIds: [ evidence.chargeId ], customerIds: [ customerId ], productIds: [ product.id ] }, cleaned: [ { resource: 'order', id: String( orderId ) }, { resource: 'intent', id: declinedIntentId }, { resource: 'intent', id: evidence.intentId }, { resource: 'payment-method', id: declinedPaymentMethodId }, { resource: 'payment-method', id: evidence.paymentMethodId }, { resource: 'charge', id: evidence.chargeId }, { resource: 'customer', id: String( customerId ) }, { resource: 'product', id: String( product.id ) } ] },
+					cleanup: { manifest: { orderIds: [ orderId ], intentIds: [ declinedIntentId, evidence.intentId ], paymentMethodIds: [ declinedPaymentMethodId, evidence.paymentMethodId ], chargeIds: [ evidence.chargeId ], customerIds: [ customerId ], productIds: [ product.id ] } },
 				};
 			},
 		},

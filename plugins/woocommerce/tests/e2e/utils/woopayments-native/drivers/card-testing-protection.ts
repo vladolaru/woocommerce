@@ -38,6 +38,7 @@ type CardTestingProtectionOperation =
 	| 'mutate-state'
 	| 'verify-mutated-state'
 	| 'read-guest-session'
+	| 'read-authenticated-session'
 	| 'delete-guest-session'
 	| 'verify-session-absent'
 	| 'restore-state'
@@ -102,6 +103,10 @@ export interface CardTestingProtectionScope {
 	captureGuestSessionProtection: (
 		source: Page | BrowserContext
 	) => Promise< CardTestingProtectionSessionEvidence >;
+	captureAuthenticatedSessionProtection: (
+		source: Page | BrowserContext,
+		expectedCustomerId: number
+	) => Promise< CardTestingProtectionSessionEvidence >;
 }
 
 export interface CardTestingProtectionControllerOptions {
@@ -112,6 +117,7 @@ export interface CardTestingProtectionControllerOptions {
 interface TrackedGuestSession {
 	customerId: string;
 	verified: boolean;
+	guest: boolean;
 }
 
 interface TrackedSessionCookie {
@@ -297,6 +303,14 @@ function parseGuestCustomerId( cookieValue: string ): string {
 		invalid( 'WooCommerce guest session cookie has an invalid structure.' );
 	}
 	return parts[ 0 ];
+}
+
+function parseAuthenticatedCustomerId( cookieValue: string ): number {
+	const customerId = Number( cookieValue.split( '|' )[ 0 ] );
+	if ( ! Number.isSafeInteger( customerId ) || customerId <= 0 ) {
+		invalid( 'WooCommerce authenticated session has an invalid customer ID.' );
+	}
+	return customerId;
 }
 
 function quarantine(
@@ -647,8 +661,8 @@ try {
 		wcpay_e2e_exact_keys( $input, array( 'baseURL', 'content', 'marker', 'pageId', 'slug', 'targetProtection', 'title' ) ); if ( ! is_bool( $input['targetProtection'] ) ) { wcpay_e2e_fail(); }
 		$wrapper = wcpay_e2e_account_wrapper( wcpay_e2e_row( $account_name ) ); $force_row = wcpay_e2e_row( $force_name ); $force_raw = $force_row['exists'] ? base64_decode( $force_row['valueBase64'], true ) : false; $page = get_post( $input['pageId'], ARRAY_A );
 		wcpay_e2e_emit( array( 'accountConnected' => true, 'accountProtection' => $input['targetProtection'] ? true === $wrapper['data']['card_testing_protection_eligible'] : false === $wrapper['data']['card_testing_protection_eligible'], 'cacheUsable' => 0 < $wrapper['fetched'] && false === $wrapper['errored'] && 0 === $wrapper['consecutive_errors'], 'forceProtection' => $input['targetProtection'] ? true === $force_row['exists'] && '1' === $force_raw : false === $force_row['exists'], 'pageMatches' => wcpay_e2e_page_matches( $page, $input['slug'], $input['title'], $input['content'] ) && 1 === count( wcpay_e2e_pages( $input['slug'] ) ) ) );
-	} elseif ( 'read-guest-session' === $operation ) {
-		wcpay_e2e_exact_keys( $input, array( 'baseURL' ) ); $cookie_name = base64_decode( $wcpay_e2e_cookie_name_base64, true ); $cookie_value = base64_decode( $wcpay_e2e_cookie_value_base64, true ); $customer_id = base64_decode( $wcpay_e2e_customer_id_base64, true ); if ( false === $cookie_name || false === $cookie_value || false === $customer_id || 0 !== strpos( $cookie_name, '${ SESSION_COOKIE_PREFIX }' ) || ! preg_match( '/^t_[a-f0-9]{30}$/D', $customer_id ) ) { wcpay_e2e_fail(); }
+	} elseif ( 'read-guest-session' === $operation || 'read-authenticated-session' === $operation ) {
+		wcpay_e2e_exact_keys( $input, array( 'baseURL' ) ); $cookie_name = base64_decode( $wcpay_e2e_cookie_name_base64, true ); $cookie_value = base64_decode( $wcpay_e2e_cookie_value_base64, true ); $customer_id = base64_decode( $wcpay_e2e_customer_id_base64, true ); $guest = 'read-guest-session' === $operation; if ( false === $cookie_name || false === $cookie_value || false === $customer_id || 0 !== strpos( $cookie_name, '${ SESSION_COOKIE_PREFIX }' ) || ( $guest && ! preg_match( '/^t_[a-f0-9]{30}$/D', $customer_id ) ) || ( ! $guest && ! preg_match( '/^[1-9][0-9]*$/D', $customer_id ) ) ) { wcpay_e2e_fail(); }
 		$_COOKIE[$cookie_name] = $cookie_value; $handler = new WC_Session_Handler(); $parsed = $handler->get_session_cookie(); if ( ! is_array( $parsed ) || 4 !== count( $parsed ) || ! hash_equals( $customer_id, (string) $parsed[0] ) ) { wcpay_e2e_emit( array( 'cookieValid' => false, 'sessionExists' => false, 'token' => null ) ); return; }
 		global $wpdb; $raw_count = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE session_key = %s', $wpdb->prefix . 'woocommerce_sessions', $customer_id ) ); $data = $handler->get_session( $customer_id, null ); if ( 1 !== $raw_count || ! is_array( $data ) ) { wcpay_e2e_emit( array( 'cookieValid' => true, 'sessionExists' => false, 'token' => null ) ); return; }
 		$token = $data['wcpay-fraud-prevention-token'] ?? null; if ( ! is_string( $token ) || ${ TOKEN_LENGTH } !== strlen( $token ) ) { wcpay_e2e_emit( array( 'cookieValid' => true, 'sessionExists' => true, 'token' => null ) ); return; }
@@ -1088,6 +1102,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 							trackedSession = {
 								customerId,
 								verified: false,
+								guest: true,
 							};
 							const token = assertSessionIdentity(
 								await runOperation(
@@ -1147,6 +1162,78 @@ export async function withCapturedCardTestingProtectionState< Result >(
 						}
 						return evidence.token;
 					},
+					captureAuthenticatedSessionProtection: async (
+						source,
+						expectedCustomerId
+					) => {
+						if ( sessionCaptureAttempted ) {
+							scopeViolated = true;
+							throw quarantine(
+								'WooCommerce authenticated session capture may run only once.',
+								'uncertain-provider-write'
+							);
+						}
+						sessionCaptureAttempted = true;
+						const context = asContext( source );
+						if (
+							! freshContextVerified ||
+							context !== registeredContext ||
+							! Number.isSafeInteger( expectedCustomerId ) ||
+							expectedCustomerId <= 0
+						) {
+							scopeViolated = true;
+							throw quarantine(
+								'Authenticated session capture requires the registered fresh context and exact customer ID.',
+								'uncertain-provider-write'
+							);
+						}
+						try {
+							const cookies = await context.cookies( [ session.baseURL ] );
+							const sessionCookies = cookies.filter( ( cookie ) =>
+								cookie.name.startsWith( SESSION_COOKIE_PREFIX )
+							);
+							if ( sessionCookies.length !== 1 ) {
+								invalid( 'Expected exactly one WooCommerce authenticated session cookie.' );
+							}
+							const cookie = sessionCookies[ 0 ];
+							const cookieValue = decodeCookieValue( cookie.value );
+							const customerId = parseAuthenticatedCustomerId( cookieValue );
+							if ( customerId !== expectedCustomerId ) {
+								invalid( 'Authenticated session customer ID did not match the order customer.' );
+							}
+							trackedSession = {
+								customerId: String( customerId ),
+								verified: false,
+								guest: false,
+							};
+							const token = assertSessionIdentity(
+								await runOperation(
+									runner,
+									'read-authenticated-session',
+									{
+										baseURL: session.baseURL,
+										cookieName: cookie.name,
+										cookieValue,
+										customerId: String( customerId ),
+									},
+									session.baseURL
+								)
+							);
+							trackedSession.verified = true;
+							tokenEvidenceCaptured = true;
+							if ( targetProtection ) {
+								return { eligible: true, token: assertTokenDigest( token ), accountEnabled: true };
+							}
+							if ( token !== null ) {
+								invalid( 'WooCommerce disabled card-testing protection produced a usable session token.' );
+							}
+							return { eligible: false, token: null, accountEnabled: false };
+						} catch ( error ) {
+							throw error instanceof ResourceQuarantineRequiredError
+								? error
+								: quarantine( 'WooCommerce authenticated session evidence is missing or malformed.', 'uncertain-provider-write', error );
+						}
+					},
 				};
 				callbackStarted = true;
 				result = await callback( scope );
@@ -1203,6 +1290,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 					const candidateSession: TrackedGuestSession = {
 						customerId: parseGuestCustomerId( cookieValue ),
 						verified: false,
+						guest: true,
 					};
 					trackedSession = candidateSession;
 					assertSessionIdentity(
@@ -1229,7 +1317,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 			}
 
 			if ( registeredContext ) {
-				if ( trackedSession?.verified ) {
+				if ( trackedSession?.verified && trackedSession.guest ) {
 					try {
 						await assertWriteAuthorized( session );
 						assertDeleteResult(
@@ -1263,7 +1351,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 				} catch ( error ) {
 					cleanupErrors.push( toError( error ) );
 				}
-				if ( trackedSession?.verified ) {
+				if ( trackedSession?.verified && trackedSession.guest ) {
 					try {
 						assertSessionAbsent(
 							await runOperation(
@@ -1288,7 +1376,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 						await restoreAndProve(
 							assertSnapshot( originalValue ),
 							pageId,
-							trackedSession?.verified
+							trackedSession?.verified && trackedSession.guest
 								? trackedSession.customerId
 								: undefined
 						);

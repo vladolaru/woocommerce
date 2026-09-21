@@ -91,6 +91,8 @@ function evidence(): HistoricalPayForOrderEvidence {
 			charges: [
 				{ id: 'ch_succeeded', status: 'succeeded', captured: true },
 			],
+			occurrenceCount: 1,
+			captureOccurrenceCount: 1,
 			cardLast4: '4242',
 		},
 		cardinality: {
@@ -117,16 +119,6 @@ function evidence(): HistoricalPayForOrderEvidence {
 				customerIds: [ 73 ],
 				productIds: [ 91 ],
 			},
-			cleaned: [
-				{ resource: 'order', id: '125' },
-				{ resource: 'intent', id: 'pi_declined' },
-				{ resource: 'intent', id: 'pi_succeeded' },
-				{ resource: 'payment-method', id: 'pm_declined' },
-				{ resource: 'payment-method', id: 'pm_succeeded' },
-				{ resource: 'charge', id: 'ch_succeeded' },
-				{ resource: 'customer', id: '73' },
-				{ resource: 'product', id: '91' },
-			],
 		},
 	};
 }
@@ -233,10 +225,33 @@ test( 'rejects recorded failed evidence with a total different from the immutabl
 	} ) ) ).rejects.toThrow( 'immutable failed-order total' );
 } );
 
+test( 'rejects a generic-decline fixture that is not the exact 1001 USD provider tuple', async () => {
+	const fixture = {
+		...FIXTURE,
+		order: { ...FIXTURE.order, totalMinor: 1099 },
+	};
+	const dependencies = recoveryDependencies( {
+		...failedPaymentEvidence(),
+		orderTotal: '10.99',
+	} );
+	dependencies.preCutover.readFailedFixture = async () => fixture;
+	await expect( collectHistoricalPayForOrderRecovery( dependencies ) ).rejects.toThrow(
+		'exact 1001'
+	);
+} );
+
 test( 'accepts exactly one immutable 11.1.0 failed order paid in place after native cutover', () => {
 	expect( validateHistoricalPayForOrderRecovery( FIXTURE, evidence() ) ).toEqual(
 		evidence()
 	);
+} );
+
+test( 'rejects a pre-teardown cleanup receipt while retaining the exact cleanup manifest', () => {
+	const recovered = evidence() as unknown as HistoricalPayForOrderEvidence & {
+		cleanup: HistoricalPayForOrderEvidence[ 'cleanup' ] & { cleaned: unknown[] };
+	};
+	recovered.cleanup.cleaned = [];
+	expect( () => validateHistoricalPayForOrderRecovery( FIXTURE, recovered ) ).toThrow( 'pre-teardown cleanup receipt' );
 } );
 
 test( 'rejects an immutable source with the wrong plugin version', () => {
@@ -474,36 +489,6 @@ for ( const [ name, mutate, expected ] of [
 			recovered.journals[ 1 ].resolved = false;
 		},
 		'resolved payment submission journals',
-	],
-	[
-		'unowned cleanup resource',
-		( recovered: HistoricalPayForOrderEvidence ) => {
-			recovered.cleanup = {
-				...recovered.cleanup,
-				cleaned: [
-					...recovered.cleanup.cleaned,
-					{ resource: 'order', id: '999' },
-				],
-			};
-		},
-		'manifest-owned resources only',
-	],
-	[
-		'empty cleanup',
-		( recovered: HistoricalPayForOrderEvidence ) => {
-			recovered.cleanup = { ...recovered.cleanup, cleaned: [] };
-		},
-		'complete cleanup',
-	],
-	[
-		'partial cleanup',
-		( recovered: HistoricalPayForOrderEvidence ) => {
-			recovered.cleanup = {
-				...recovered.cleanup,
-				cleaned: recovered.cleanup.cleaned.slice( 1 ),
-			};
-		},
-		'complete cleanup',
 	],
 ] as const ) {
 	test( `rejects ${ name }`, () => {
