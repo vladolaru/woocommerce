@@ -151,6 +151,98 @@ test( 'failed evidence follows a string latest_charge relationship', async () =>
 	expect( calls ).toContain( '/wp-json/wc/v3/payments/charges/ch_failed' );
 } );
 
+test( 'failed evidence recognizes the WooPayments 11.1.0 legacy failed-payment note', async () => {
+	const replies = new Map< string, unknown >( [
+		[
+			'/wp-json/wc/v3/orders/71',
+			{
+				id: 71,
+				status: 'failed',
+				total: '10.01',
+				currency: 'USD',
+				meta_data: [ { key: '_intent_id', value: 'pi_failed' } ],
+			},
+		],
+		[
+			'/wp-json/wc/v3/orders/71/notes?context=edit&per_page=100',
+			[
+				{
+					note: 'A payment of <span class="woocommerce-Price-amount amount"><bdi><span class="woocommerce-Price-currencySymbol" translate="no" dir="auto">&#36;</span>10.01</bdi></span> <strong>failed</strong> to complete with the following message: <code>Error: Your card was declined. The bank did not return any further details with this decline</code>.',
+				},
+			],
+		],
+		[
+			'/wp-json/wc/v3/payments/payment_intents/pi_failed',
+			{
+				id: 'pi_failed',
+				status: 'requires_payment_method',
+				amount: 1001,
+				currency: 'usd',
+				amount_received: 0,
+				setup_future_usage: null,
+				customer: null,
+				payment_method: 'pm_failed',
+				last_payment_error: null,
+			},
+		],
+	] );
+	const session = {
+		adminApi: {
+			get: async ( path: string ) => response( replies.get( path ) ),
+		},
+	};
+
+	await expect( readFailedPaymentEvidence( session as never, 71 ) ).resolves.toMatchObject( {
+		failureNoteCount: 1,
+	} );
+} );
+
+test( 'failed evidence rejects a legacy-like note without its structured failure message', async () => {
+	const replies = new Map< string, unknown >( [
+		[
+			'/wp-json/wc/v3/orders/71',
+			{
+				id: 71,
+				status: 'failed',
+				total: '10.01',
+				currency: 'USD',
+				meta_data: [ { key: '_intent_id', value: 'pi_failed' } ],
+			},
+		],
+		[
+			'/wp-json/wc/v3/orders/71/notes?context=edit&per_page=100',
+			[
+				{
+					note: 'A payment <strong>failed</strong> to complete with the following message: Error: Your card was declined.',
+				},
+			],
+		],
+		[
+			'/wp-json/wc/v3/payments/payment_intents/pi_failed',
+			{
+				id: 'pi_failed',
+				status: 'requires_payment_method',
+				amount: 1001,
+				currency: 'usd',
+				amount_received: 0,
+				setup_future_usage: null,
+				customer: null,
+				payment_method: 'pm_failed',
+				last_payment_error: null,
+			},
+		],
+	] );
+	const session = {
+		adminApi: {
+			get: async ( path: string ) => response( replies.get( path ) ),
+		},
+	};
+
+	await expect( readFailedPaymentEvidence( session as never, 71 ) ).resolves.toMatchObject( {
+		failureNoteCount: 0,
+	} );
+} );
+
 test( 'failed evidence falls back to the observed order PaymentMethod when the provider omits it', async () => {
 	const replies = new Map< string, unknown >( [
 		[
