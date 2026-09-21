@@ -522,6 +522,15 @@ test( 'releases the transition lock after one cutover before entering the protec
 	] );
 } );
 
+test( 'does not turn runner-only cardinality, listener, or journal claims into browser evidence', async () => {
+	const result = await collectHistoricalPayForOrderRecovery(
+		recoveryDependencies( failedPaymentEvidence() )
+	);
+	expect( result ).not.toHaveProperty( 'cardinality' );
+	expect( result ).not.toHaveProperty( 'listener' );
+	expect( result ).not.toHaveProperty( 'journals' );
+} );
+
 test( 'leaves the transition stage on a pre-cutover failure without entering the protection stage', async () => {
 	const stages: string[] = [];
 	await expect(

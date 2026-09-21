@@ -83,3 +83,31 @@ Output: exit 0; `Validated 181 WooPayments client contracts.`
 Command: `/Users/vladolaru/Work/a8c/general/.verification-tool-overlays/bin/verify oxlint --new-vs=afd32983b4 <six changed TypeScript files>` and `git diff --check`
 
 Output: exit 0; Oxlint reported zero new findings (three pre-existing non-attributable findings) and diff check found no whitespace errors.
+
+## Fix round 2/5
+
+### RED
+
+The round-one review established the page-evidence RED: `form-pay.php` has no visible order number and contains multiple occurrences of the same amount, so the prior unscoped locators could not prove the required identity. The initial targeted TypeScript diagnostic also reported the changed-file errors for the missing `withClassicCheckoutPage()` run ID, missing bounded rejection timeout, widened literal capture count, and a `void` allocation override.
+
+### Implementation
+
+The browser case now uses Core's rendered document-title order identity and scopes the amount to the `form-pay.php` semantic Total row (`#order_review tfoot` row header plus `.product-total` cell). The exact URL/key remains the route identity, the authenticated session binds customer ownership, and the receipt still must match the original order ID/key.
+
+The staged collector now returns `HistoricalPayForOrderBrowserEvidence`, which deliberately excludes cardinality, listener, and submission-journal claims. It retains browser-observable order, provider success, CTP, and cleanup-manifest facts, while the existing full `HistoricalPayForOrderEvidence` validator remains the strict Task 4 receipt consumer. The added unit proves runner-only fields supplied by a cold-read adapter cannot leak into browser evidence.
+
+Updated every affected transition-allocation test implementation for the new validated-allocation return type and corrected the exact Classic page and decline-notice calls.
+
+### GREEN
+
+Command: `pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/drivers/historical-pay-for-order.test.ts tests/e2e/utils/woopayments-native/drivers/card-testing-protection.test.ts`
+
+Output: exit 0; `85 passed (1.1s)`.
+
+Command: `pnpm --dir plugins/woocommerce exec tsc --project tests/e2e/tsconfig.json --noEmit 2>&1 | rg "historical-money-records|historical-pay-for-order|card-testing-protection|woopayments-native\\.ts|pilot-runtime\\.test|store-transition\\.test"`
+
+Output: no remaining historical-pay-for-order, CTP, fixture, or allocation-override diagnostic. The full project still reports unrelated existing errors in `store-transition.test.ts:397` and `pilot-runtime.test.ts:3272`, which are outside this change's attributable interface paths.
+
+Command: exact collection command; `node plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.mjs`; `node --test plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.test.mjs`; changed-file Oxlint against `1ac94a2190`; and `git diff --check`.
+
+Output: all exit 0. Collection lists each retained title once, map validation reports 181 contracts, all 61 map tests pass, Oxlint reports zero new findings, and no whitespace errors exist. The reporter's post-collection localhost:8086 environment probe remains non-executing and unavailable.

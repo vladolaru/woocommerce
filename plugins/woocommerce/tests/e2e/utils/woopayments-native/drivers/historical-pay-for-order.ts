@@ -128,6 +128,12 @@ export interface HistoricalPayForOrderEvidence {
 	};
 }
 
+/** Browser-stage evidence; runner artifacts later add cardinality, listener, and journal receipts. */
+export type HistoricalPayForOrderBrowserEvidence = Omit<
+	HistoricalPayForOrderEvidence,
+	'cardinality' | 'listener' | 'journals'
+>;
+
 interface HistoricalPayForOrderPreCutoverDependencies {
 	withTransitionProviderLock: < Result >(
 		callback: () => Promise< Result >
@@ -148,7 +154,7 @@ interface HistoricalPayForOrderPostCutoverDependencies {
 		submittedProtection: CardTestingProtectionSubmittedObservation;
 	} >;
 	waitForListenerQuiescence: () => Promise< void >;
-	readColdRecoveryEvidence: () => Promise< HistoricalPayForOrderEvidence >;
+	readColdRecoveryEvidence: () => Promise< HistoricalPayForOrderBrowserEvidence >;
 }
 
 export interface HistoricalPayForOrderRecoveryDependencies {
@@ -292,7 +298,7 @@ function validateProtection(
 
 function validateRecoveredOrder(
 	fixture: HistoricalPayForOrderFixture,
-	evidence: HistoricalPayForOrderEvidence
+	evidence: Pick< HistoricalPayForOrderEvidence, 'order' >
 ): void {
 	const { order } = evidence;
 	if (
@@ -312,12 +318,11 @@ function validateRecoveredOrder(
 	}
 }
 
-function validatePaymentIdentities(
+function validateNativeSuccess(
 	fixture: HistoricalPayForOrderFixture,
-	evidence: HistoricalPayForOrderEvidence
+	nativeSuccess: HistoricalPayForOrderEvidence[ 'nativeSuccess' ]
 ): void {
 	const { clientDecline } = fixture;
-	const { nativeSuccess } = evidence;
 	if (
 		nativeSuccess.intentStatus !== 'succeeded' ||
 		nativeSuccess.cardLast4 !== '4242' ||
@@ -338,6 +343,21 @@ function validatePaymentIdentities(
 	) {
 		fail( 'requires exactly one succeeded captured native charge.' );
 	}
+	if (
+		nativeSuccess.intentId === clientDecline.intentId ||
+		nativeSuccess.paymentMethodId === clientDecline.paymentMethodId
+	) {
+		fail( 'requires distinct decline and success intent and PaymentMethod identities.' );
+	}
+}
+
+function validatePaymentIdentities(
+	fixture: HistoricalPayForOrderFixture,
+	evidence: HistoricalPayForOrderEvidence
+): void {
+	const { clientDecline } = fixture;
+	const { nativeSuccess } = evidence;
+	validateNativeSuccess( fixture, nativeSuccess );
 	if (
 		! sameValues( evidence.cardinality.intentIds, [
 			clientDecline.intentId,
@@ -389,7 +409,7 @@ function validateCardinalities(
 
 function validateCleanup(
 	fixture: HistoricalPayForOrderFixture,
-	evidence: HistoricalPayForOrderEvidence
+	evidence: Pick< HistoricalPayForOrderEvidence, 'cleanup' | 'nativeSuccess' >
 ): void {
 	const expected = {
 		orderIds: [ fixture.order.id ],
@@ -447,7 +467,7 @@ export function validateHistoricalPayForOrderRecovery(
  */
 export async function collectHistoricalPayForOrderRecovery(
 	dependencies: HistoricalPayForOrderRecoveryDependencies
-): Promise< HistoricalPayForOrderEvidence > {
+): Promise< HistoricalPayForOrderBrowserEvidence > {
 	const fixture = await dependencies.preCutover.withTransitionProviderLock(
 		async () => {
 			const recordedFixture =
@@ -482,10 +502,18 @@ export async function collectHistoricalPayForOrderRecovery(
 		validateProtection( fixture.protectionTarget, protection );
 		await dependencies.postCutover.waitForListenerQuiescence();
 		const cold = await dependencies.postCutover.readColdRecoveryEvidence();
-		return validateHistoricalPayForOrderRecovery( fixture, {
-			...cold,
+		const evidence: HistoricalPayForOrderBrowserEvidence = {
 			fixtureChecksumSha256: fixture.checksumSha256,
 			protection,
-		} );
+			order: cold.order,
+			nativeSuccess: cold.nativeSuccess,
+			cleanup: cold.cleanup,
+		};
+		validateImmutableFixture( fixture );
+		validateProtection( fixture.protectionTarget, evidence.protection );
+		validateRecoveredOrder( fixture, evidence );
+		validateNativeSuccess( fixture, evidence.nativeSuccess );
+		validateCleanup( fixture, evidence );
+		return evidence;
 	} );
 }

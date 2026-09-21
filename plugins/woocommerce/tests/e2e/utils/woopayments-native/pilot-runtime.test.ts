@@ -29,6 +29,7 @@ import {
 	WooPaymentsPilotRuntime,
 } from '../../fixtures/woopayments-native';
 import WooPaymentsKnownGapsReporter from '../../reporters/woopayments-known-gaps';
+import type { TransitionAllocation } from './transition-allocation';
 import { completeCardCheckout } from './drivers/checkout';
 import {
 	captureExactOrder,
@@ -358,7 +359,9 @@ function runtime(
 	class ApprovedPilotRuntime extends WooPaymentsPilotRuntime {
 		public override requireApprovedProviderFixture(): void {}
 
-		public override requireEphemeralTransitionAllocation(): void {}
+		public override requireEphemeralTransitionAllocation(): TransitionAllocation {
+			return {} as TransitionAllocation;
+		}
 
 		public override async withProviderWriteLocks< Result >(
 			lockOptions: {

@@ -23,7 +23,7 @@ import {
 import { readHighestOrderId } from '../../../utils/woopayments-native/drivers/classic-card-authentication';
 import {
 	collectHistoricalPayForOrderRecovery,
-	type HistoricalPayForOrderEvidence,
+	type HistoricalPayForOrderBrowserEvidence,
 } from '../../../utils/woopayments-native/drivers/historical-pay-for-order';
 import { waitForPaymentState } from '../../../utils/woopayments-native/provider-evidence';
 import { getPaymentEvidence } from '../../../utils/woopayments-native/record-evidence';
@@ -146,7 +146,7 @@ async function runHistoricalPayForOrder(
 	session: ProviderWriteSession,
 	page: import( '@playwright/test' ).Page,
 	protectionTarget: boolean
-): Promise< HistoricalPayForOrderEvidence > {
+): Promise< HistoricalPayForOrderBrowserEvidence > {
 	const state: JourneyState = {};
 
 	return collectHistoricalPayForOrderRecovery( {
@@ -166,7 +166,7 @@ async function runHistoricalPayForOrder(
 							accountId: allocation.account_id,
 						};
 						await session.assertCurrentRuntimeReady( 'transition' );
-						await withClassicCheckoutPage( session, async ( checkout ) => {
+						await withClassicCheckoutPage( session, session.runId, async ( checkout ) => {
 							const baselineOrderId = await readHighestOrderId( session );
 							await session.logInAsCustomer( page );
 							state.product = await session.createOwnedProduct( '10.01' );
@@ -194,7 +194,9 @@ async function runHistoricalPayForOrder(
 									const observed = await browser.observeSubmissionInterval(
 										( activate ) => session.performWrite( activate ),
 										async () => {
-											await browser.waitForCheckoutRejectionNotice();
+											if ( ! ( await browser.waitForCheckoutRejectionNotice( 30_000 ) ) ) {
+												throw new Error( 'Historical pay-for-order requires the bounded decline notice.' );
+											}
 											return readOrderIdStatusDelta(
 												session,
 												baselineOrderId
@@ -242,7 +244,7 @@ async function runHistoricalPayForOrder(
 					productId: product.id,
 					order: { id: orderId, keySha256: sha256( orderKey ), customerId, currency: 'USD' as const, totalMinor: orderTotalMinor( order ), status: 'failed' as const, paymentMethod: 'woocommerce_payments' as const, productLines: [ { productId: product.id, quantity: 1 } ] as const, stockReduced: false, noteCount: notes.length, emailCount: 0 },
 					myAccountPayLink: { orderId, orderKeySha256: sha256( orderKey ), customerId, pathSha256: sha256( new URL( paymentUrl ).pathname ) },
-					clientDecline: { intentId: failedPayment.intentId, intentStatus: 'requires_payment_method' as const, errorCode: 'card_declined' as const, declineCode: 'generic_decline' as const, paymentMethodId: failedPayment.paymentMethodId, chargeIds: [] as const, captureCount: 0, cardLast4: '0002' as const },
+					clientDecline: { intentId: failedPayment.intentId, intentStatus: 'requires_payment_method' as const, errorCode: 'card_declined' as const, declineCode: 'generic_decline' as const, paymentMethodId: failedPayment.paymentMethodId, chargeIds: [] as const, captureCount: 0 as const, cardLast4: '0002' as const },
 					baseline: { orderIds: [ orderId ] as const, stockQuantity: 1, noteCount: notes.length, emailCount: 0 },
 				};
 				return { ...fixture, checksumSha256: sha256( JSON.stringify( fixture ) ) };
@@ -269,8 +271,13 @@ async function runHistoricalPayForOrder(
 				await scope.registerFreshContext( page );
 				await page.goto( requireValue( state.paymentUrl, 'the immutable order pay link' ) );
 				expect( page.url() ).toBe( requireValue( state.paymentUrl, 'the immutable order pay link' ) );
-				await expect( page.getByText( new RegExp( `Order\\s*#?${ requireValue( state.orderId, 'the immutable order ID' ) }` ) ) ).toBeVisible();
-				await expect( page.getByText( /10\.01/ ) ).toBeVisible();
+				await expect( page ).toHaveTitle(
+					new RegExp( `Order\\s*#?${ requireValue( state.orderId, 'the immutable order ID' ) }` )
+				);
+				const totalRow = page.locator( '#order_review tfoot tr' ).filter( {
+					has: page.getByRole( 'rowheader', { name: /^Total:/i } ),
+				} );
+				await expect( totalRow.locator( 'td.product-total' ) ).toHaveText( /10\.01/ );
 				return scope.captureAuthenticatedSessionProtection(
 					page,
 					requireValue( state.customerId, 'the immutable order customer ID' )
@@ -321,8 +328,6 @@ async function runHistoricalPayForOrder(
 					fixtureChecksumSha256: '', protection: { eligible: false, token: null, accountEnabled: false, renderedField: 'absent', submittedTokenSha256: null },
 					order: { id: orderId, keySha256: sha256( orderKey ), customerId, currency: 'USD', totalMinor: orderTotalMinor( order ), status: evidence.orderStatus as 'processing' | 'completed', paymentMethod: 'woocommerce_payments', productLines: [ { productId: product.id, quantity: 1 } ], stockReduced: true, noteCount: notes.length, emailCount: 1 },
 					nativeSuccess: { intentId: evidence.intentId, intentStatus: 'succeeded', paymentMethodId: evidence.paymentMethodId, charges: [ { id: evidence.chargeId, status: evidence.chargeStatus, captured: evidence.chargeCaptured } ], occurrenceCount: evidence.occurrenceCount, captureOccurrenceCount: evidence.captureOccurrenceCount, cardLast4: '4242' },
-					cardinality: { orderIds: [ orderId ], intentIds: [ declinedIntentId, evidence.intentId ], paidIntentIds: [ evidence.intentId ], orphanIntentIds: [], stockReductionDelta: 1, paidNoteDelta: 1, customerEmailDelta: 1, listenerSideEffectCount: 1 },
-					listener: { quiescent: true, sideEffectCount: 1 }, journals: [ { submission: 'client-decline', resolved: true }, { submission: 'native-pay-for-order', resolved: true } ],
 					cleanup: { manifest: { orderIds: [ orderId ], intentIds: [ declinedIntentId, evidence.intentId ], paymentMethodIds: [ declinedPaymentMethodId, evidence.paymentMethodId ], chargeIds: [ evidence.chargeId ], customerIds: [ customerId ], productIds: [ product.id ] } },
 				};
 			},

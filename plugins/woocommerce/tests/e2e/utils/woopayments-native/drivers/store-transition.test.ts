@@ -410,7 +410,7 @@ test( 'polls normal HTTP traffic and reads state from the exact run-owned CLI al
 	} );
 	let httpReads = 0;
 	const session = {
-		requireEphemeralTransitionAllocation: () => {},
+		requireEphemeralTransitionAllocation: () => allocation,
 		adminApi: {
 			get: async ( path: string ) => {
 				expect( path ).toBe(
