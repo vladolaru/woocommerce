@@ -224,7 +224,12 @@ if [[ "$*" == *'transition_prepare_store'* ]]; then
 	exit 0
 fi
 
-if [[ "$*" == *'transition_prepare_classic_checkout'* ]]; then
+if (( $# == 5 )) &&
+	[[ "$1" == 'run' ]] &&
+	[[ "$2" == 'cli' ]] &&
+	[[ "$3" == 'wp' ]] &&
+	[[ "$4" == 'eval' ]] &&
+	[[ "$5" == *'transition_prepare_classic_checkout'* ]]; then
 	exit 0
 fi
 

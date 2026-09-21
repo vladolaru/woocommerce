@@ -26,6 +26,36 @@ SHARED_TMPDIR="$(
 	pwd -P
 )"
 
+classic_checkout_boundary_workspace="$TEST_ROOT/classic-checkout-boundary"
+classic_checkout_boundary_runtime="$TEST_ROOT/classic-checkout-boundary-runtime"
+classic_checkout_boundary_log="$TEST_ROOT/classic-checkout-boundary.log"
+mkdir -p "$classic_checkout_boundary_workspace/store" "$classic_checkout_boundary_runtime"
+printf '{"testsEnvironment":false}\n' > "$classic_checkout_boundary_workspace/store/.wp-env.json"
+touch "$classic_checkout_boundary_runtime/wp-env"
+(
+	cd "$classic_checkout_boundary_workspace/store"
+	env \
+		E2E_FAKE_TRANSITION_WORKSPACE="$classic_checkout_boundary_workspace" \
+		E2E_FAKE_RUNTIME_STATE="$classic_checkout_boundary_runtime" \
+		E2E_FAKE_COMMAND_LOG="$classic_checkout_boundary_log" \
+		WP_ENV_HOME="$classic_checkout_boundary_workspace/wp-env-home" \
+		"$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+		run cli wp eval '/* transition_prepare_classic_checkout */'
+)
+if (
+	cd "$classic_checkout_boundary_workspace/store"
+	env \
+		E2E_FAKE_TRANSITION_WORKSPACE="$classic_checkout_boundary_workspace" \
+		E2E_FAKE_RUNTIME_STATE="$classic_checkout_boundary_runtime" \
+		E2E_FAKE_COMMAND_LOG="$classic_checkout_boundary_log" \
+		WP_ENV_HOME="$classic_checkout_boundary_workspace/wp-env-home" \
+		"$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+		run cli wp eval '/* transition_prepare_classic_checkout */' unexpected-argument
+); then
+	echo 'Fake transition wp-env accepted a malformed Classic Checkout preparation command.' >&2
+	exit 1
+fi
+
 mode_of() {
 	stat -f '%Lp' "$1" 2> /dev/null || stat -c '%a' "$1"
 }
