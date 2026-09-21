@@ -221,6 +221,36 @@ validate_seed_tree() {
 	fi
 }
 
+strip_profile_11_documentation_symlinks() {
+	if [[ "$seed_profile" != '11.1.0' ]]; then
+		return
+	fi
+
+	local agents_skill_link="$plugin_root/.agents/skills/e2e-testing/SKILL.md"
+	local command_link="$plugin_root/.claude/commands/e2e-testing.md"
+	if [[ -e "$agents_skill_link" || -L "$agents_skill_link" ]]; then
+		if [[ ! -L "$agents_skill_link" ]] ||
+			[[ "$(readlink "$agents_skill_link")" != '../../../.claude/skills/e2e-testing/SKILL.md' ]]; then
+			echo 'The 11.1.0 seed contains an unexpected .agents e2e-testing link.' >&2
+			exit 1
+		fi
+		rm "$agents_skill_link"
+		rmdir "$plugin_root/.agents/skills/e2e-testing" 2> /dev/null || true
+		rmdir "$plugin_root/.agents/skills" 2> /dev/null || true
+		rmdir "$plugin_root/.agents" 2> /dev/null || true
+	fi
+	if [[ -e "$command_link" || -L "$command_link" ]]; then
+		if [[ ! -L "$command_link" ]] ||
+			[[ "$(readlink "$command_link")" != '../skills/e2e-testing/SKILL.md' ]]; then
+			echo 'The 11.1.0 seed contains an unexpected .claude e2e-testing link.' >&2
+			exit 1
+		fi
+		rm "$command_link"
+		rmdir "$plugin_root/.claude/commands" 2> /dev/null || true
+		rmdir "$plugin_root/.claude" 2> /dev/null || true
+	fi
+}
+
 raw_archive="$staging/source.tar"
 extracted="$staging/extracted"
 mkdir "$extracted"
@@ -260,6 +290,7 @@ if [[ -e "$plugin_root/vendor" || -e "$plugin_root/node_modules" || -e "$plugin_
 	echo 'The approved tracked seed unexpectedly contains mutable dependency or distribution artifacts.' >&2
 	exit 1
 fi
+strip_profile_11_documentation_symlinks
 validate_seed_tree
 if [[ "$(< "$node_version_file")" != "$FRONTEND_NODE_LINE" ]]; then
 	echo "The approved seed requires the pinned Node $FRONTEND_NODE_LINE line." >&2

@@ -212,6 +212,20 @@ run_profile_11_builder() {
 		"$BUILDER" --profile 11.1.0 --output-dir "$output_path"
 }
 
+add_profile_11_documentation_symlinks() {
+	mkdir -p \
+		"$profile_11_tree/woocommerce-payments/.agents/skills/e2e-testing" \
+		"$profile_11_tree/woocommerce-payments/.claude/commands"
+	ln -s \
+		'../../../.claude/skills/e2e-testing/SKILL.md' \
+		"$profile_11_tree/woocommerce-payments/.agents/skills/e2e-testing/SKILL.md"
+	ln -s \
+		'../skills/e2e-testing/SKILL.md' \
+		"$profile_11_tree/woocommerce-payments/.claude/commands/e2e-testing.md"
+}
+
+add_profile_11_documentation_symlinks
+
 profile_11_commands="$TEST_ROOT/profile-11-commands.log"
 profile_11_output="$(
 	run_profile_11_builder \
@@ -287,6 +301,49 @@ test ! -e "$profile_11_tree/woocommerce-payments/package-lock.json"
 test ! -e "$profile_11_tree/woocommerce-payments/vendor"
 test ! -e "$profile_11_tree/woocommerce-payments/node_modules"
 test ! -e "$profile_11_tree/woocommerce-payments/dist"
+
+rm "$profile_11_tree/woocommerce-payments/.agents/skills/e2e-testing/SKILL.md"
+ln -s \
+	'../../../.claude/skills/e2e-testing/WRONG.md' \
+	"$profile_11_tree/woocommerce-payments/.agents/skills/e2e-testing/SKILL.md"
+if run_profile_11_builder \
+	"$TEST_ROOT/profile-11-wrong-agents-target" \
+	"$profile_11_commands" \
+	'200102020202' > /dev/null 2>&1; then
+	echo 'The 11.1.0 seed builder accepted an approved .agents documentation link with the wrong target.' >&2
+	exit 1
+fi
+rm "$profile_11_tree/woocommerce-payments/.agents/skills/e2e-testing/SKILL.md"
+ln -s \
+	'../../../.claude/skills/e2e-testing/SKILL.md' \
+	"$profile_11_tree/woocommerce-payments/.agents/skills/e2e-testing/SKILL.md"
+
+rm "$profile_11_tree/woocommerce-payments/.claude/commands/e2e-testing.md"
+ln -s \
+	'../skills/e2e-testing/WRONG.md' \
+	"$profile_11_tree/woocommerce-payments/.claude/commands/e2e-testing.md"
+if run_profile_11_builder \
+	"$TEST_ROOT/profile-11-wrong-approved-target" \
+	"$profile_11_commands" \
+	'200102020202' > /dev/null 2>&1; then
+	echo 'The 11.1.0 seed builder accepted an approved documentation link with the wrong target.' >&2
+	exit 1
+fi
+rm "$profile_11_tree/woocommerce-payments/.claude/commands/e2e-testing.md"
+ln -s \
+	'../skills/e2e-testing/SKILL.md' \
+	"$profile_11_tree/woocommerce-payments/.claude/commands/e2e-testing.md"
+ln -s \
+	'payload.txt' \
+	"$profile_11_tree/woocommerce-payments/unapproved-documentation-link"
+if run_profile_11_builder \
+	"$TEST_ROOT/profile-11-unapproved-link" \
+	"$profile_11_commands" \
+	'200102020202' > /dev/null 2>&1; then
+	echo 'The 11.1.0 seed builder accepted an unapproved symbolic link.' >&2
+	exit 1
+fi
+rm "$profile_11_tree/woocommerce-payments/unapproved-documentation-link"
 
 red_case_failed=0
 wrong_node_log="$TEST_ROOT/wrong-node-commands.log"
