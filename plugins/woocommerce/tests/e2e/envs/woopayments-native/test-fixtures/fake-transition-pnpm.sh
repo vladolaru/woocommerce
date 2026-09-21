@@ -224,6 +224,10 @@ if [[ "$*" == *'transition_prepare_store'* ]]; then
 	exit 0
 fi
 
+if [[ "$*" == *'transition_prepare_classic_checkout'* ]]; then
+	exit 0
+fi
+
 case "$*" in
 	*'plugin activate '*|*'wc tool run install_pages'*|*'option update '*|*'option set '*|*'wcpay_dev local_wpcom_jetpack enable '*|*'wcpay_dev redirect_to '*|*'wcpay_dev set_blog_id '*)
 		exit 0

@@ -1812,6 +1812,10 @@ for historical_scenario in historical-pay-for-order-ctp-false historical-pay-for
 		echo "Historical scenario incorrectly seeded native ACTIVE state: $historical_scenario." >&2
 		exit 1
 	fi
+	if grep -Fq 'transition_prepare_classic_checkout' "$historical_log"; then
+		echo "Historical scenario provisioned a standing Classic Checkout page: $historical_scenario." >&2
+		exit 1
+	fi
 	E2E_TRANSITION_SEED_PROFILE=11.1.0 \
 		E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
 		E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
@@ -1844,6 +1848,10 @@ E2E_TRANSITION_SEED_PROFILE=11.1.0 \
 test ! -e "$unseeded_runtime/reference-account-seeded"
 test ! -e "$unseeded_runtime/native-active-seeded"
 test ! -e "$unseeded_runtime/native-available-seeded"
+if [[ "$(grep -Fc 'transition_prepare_classic_checkout' "$unseeded_log")" != '1' ]]; then
+	echo 'Non-historical scenario did not provision exactly one standing Classic Checkout page.' >&2
+	exit 1
+fi
 E2E_TRANSITION_SEED_PROFILE=11.1.0 \
 	E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
 	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \

@@ -2066,28 +2066,37 @@ create_store() {
 		) {
 			update_user_meta( $user_id, $key, $value );
 		}
-		$classic = get_page_by_path( "classic-checkout" );
-		if ( ! $classic ) {
-			$classic_id = wp_insert_post(
-				array(
-					"post_type" => "page",
-					"post_status" => "publish",
-					"post_title" => "Classic checkout",
-					"post_name" => "classic-checkout",
-					"post_content" => "<!-- wp:shortcode -->[woocommerce_checkout]<!-- /wp:shortcode -->",
-				),
-				true
-			);
-			if ( is_wp_error( $classic_id ) ) {
-				WP_CLI::error( $classic_id->get_error_message() );
-			}
-		}
 		$checkout_id = (int) get_option( "woocommerce_checkout_page_id" );
 		if ( $checkout_id <= 0 ) {
 			WP_CLI::error( "WooCommerce checkout page is missing." );
 		}
 		echo "prepared";
 	' > /dev/null
+	case "${E2E_TRANSITION_SCENARIO:-}" in
+		historical-pay-for-order-ctp-false|historical-pay-for-order-ctp-true)
+			;;
+		*)
+			store_wp eval '
+				/* transition_prepare_classic_checkout */
+				$classic = get_page_by_path( "classic-checkout" );
+				if ( ! $classic ) {
+					$classic_id = wp_insert_post(
+						array(
+							"post_type" => "page",
+							"post_status" => "publish",
+							"post_title" => "Classic checkout",
+							"post_name" => "classic-checkout",
+							"post_content" => "<!-- wp:shortcode -->[woocommerce_checkout]<!-- /wp:shortcode -->",
+						),
+						true
+					);
+					if ( is_wp_error( $classic_id ) ) {
+						WP_CLI::error( $classic_id->get_error_message() );
+					}
+				}
+			' > /dev/null
+			;;
+	esac
 	store_wp option update woocommerce_coming_soon no > /dev/null
 	store_wp option update woocommerce_currency USD > /dev/null
 	store_wp option update e2e_woopayments_transition_marker "$marker" > /dev/null
