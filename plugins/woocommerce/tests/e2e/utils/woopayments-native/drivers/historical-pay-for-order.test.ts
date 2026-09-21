@@ -50,7 +50,7 @@ const FIXTURE: HistoricalPayForOrderFixture = {
 		intentId: 'pi_declined',
 		intentStatus: 'requires_payment_method',
 		paymentMethodId: 'pm_declined',
-		chargeIds: [],
+		chargeIds: [ 'ch_declined' ],
 		captureCount: 0,
 		cardLast4: '0002',
 	},
@@ -117,7 +117,7 @@ function evidence(): HistoricalPayForOrderEvidence {
 				orderIds: [ 125 ],
 				intentIds: [ 'pi_declined', 'pi_succeeded' ],
 				paymentMethodIds: [ 'pm_declined', 'pm_succeeded' ],
-				chargeIds: [ 'ch_succeeded' ],
+				chargeIds: [ 'ch_declined', 'ch_succeeded' ],
 				customerIds: [ 73 ],
 				productIds: [ 91 ],
 			},
@@ -165,11 +165,11 @@ function failedPaymentEvidence(): FailedPaymentEvidence {
 		paymentMethodId: 'pm_declined',
 		intentAmount: 1001,
 		intentCurrency: 'usd',
-		amountReceived: 0,
+		amountReceived: null,
 		errorCode: null,
 		declineCode: null,
-		chargeIds: [],
-		chargeStatuses: [],
+		chargeIds: [ 'ch_declined' ],
+		chargeStatuses: [ 'failed' ],
 		capturedCharges: 0,
 		failureNoteCount: 1,
 		setupFutureUsage: null,
@@ -253,6 +253,63 @@ test( 'rejects recorded failed evidence with a total different from the immutabl
 		orderTotal: '9.99',
 	} ) ) ).rejects.toThrow( 'immutable failed-order total' );
 } );
+
+test( 'accepts a terminal decline with one failed uncaptured charge and omitted amount received', async () => {
+	const fixture = {
+		...FIXTURE,
+		clientDecline: {
+			...FIXTURE.clientDecline,
+			chargeIds: [ 'ch_declined' ],
+		},
+	} as unknown as HistoricalPayForOrderFixture;
+	const dependencies = recoveryDependencies( {
+		...failedPaymentEvidence(),
+		amountReceived: null,
+		chargeIds: [ 'ch_declined' ],
+		chargeStatuses: [ 'failed' ],
+	} );
+	dependencies.preCutover.readFailedFixture = async () => fixture;
+
+	await expect(
+		collectHistoricalPayForOrderRecovery( dependencies )
+	).resolves.toEqual( browserEvidence() );
+} );
+
+test( 'accepts a terminal decline with a numeric zero amount received', async () => {
+	await expect(
+		collectHistoricalPayForOrderRecovery(
+			recoveryDependencies( {
+				...failedPaymentEvidence(),
+				amountReceived: 0,
+			} )
+		)
+	).resolves.toEqual( browserEvidence() );
+} );
+
+const terminalDeclineFailures: Array<
+	[ string, Partial< FailedPaymentEvidence > ]
+> = [
+	[ 'a succeeded charge', { chargeStatuses: [ 'succeeded' ] } ],
+	[ 'a captured charge', { capturedCharges: 1 } ],
+	[ 'a positive received amount', { amountReceived: 1001 } ],
+	[ 'a changed charge identity', { chargeIds: [ 'ch_other' ] } ],
+	[ 'a missing charge status', { chargeStatuses: [] } ],
+];
+
+for ( const [ name, override ] of terminalDeclineFailures ) {
+	test( `rejects a terminal decline with ${ name }`, async () => {
+		await expect(
+			collectHistoricalPayForOrderRecovery(
+				recoveryDependencies( {
+					...failedPaymentEvidence(),
+					...override,
+				} )
+			)
+		).rejects.toThrow(
+			'one failed uncaptured charge and no money movement'
+		);
+	} );
+}
 
 for ( const route of [
 	'http://store.invalid/store/checkout/order-pay/125/?key=order-key&pay_for_order=true',
@@ -363,6 +420,14 @@ test( 'rejects a pre-teardown cleanup receipt while retaining the exact cleanup 
 	expect( () => validateHistoricalPayForOrderRecovery( FIXTURE, recovered ) ).toThrow( 'pre-teardown cleanup receipt' );
 } );
 
+test( 'rejects a cleanup manifest that omits the declined charge', () => {
+	const recovered = evidence();
+	recovered.cleanup.manifest.chargeIds = [ 'ch_succeeded' ];
+	expect( () =>
+		validateHistoricalPayForOrderRecovery( FIXTURE, recovered )
+	).toThrow( 'exact manifest of run-owned cleanup resources' );
+} );
+
 test( 'rejects an immutable source with the wrong plugin version', () => {
 	expect( () =>
 		validateHistoricalPayForOrderRecovery(
@@ -425,17 +490,20 @@ for ( const [ name, mutate ] of [
 	} );
 }
 
-test( 'rejects a client decline that created a charge or capture', () => {
-	const declinedWithCharge = {
+test( 'rejects a client decline with an extra charge identity', () => {
+	const declinedWithExtraCharge = {
 		...FIXTURE,
 		clientDecline: {
 			...FIXTURE.clientDecline,
-			chargeIds: [ 'ch_declined' ],
+			chargeIds: [ 'ch_declined', 'ch_extra' ],
 		},
 	} as unknown as HistoricalPayForOrderFixture;
 	expect( () =>
-		validateHistoricalPayForOrderRecovery( declinedWithCharge, evidence() )
-	).toThrow( 'no charge or capture' );
+		validateHistoricalPayForOrderRecovery(
+			declinedWithExtraCharge,
+			evidence()
+		)
+	).toThrow( 'one failed charge and no capture' );
 } );
 
 test( 'rejects a client decline that captured a charge', () => {
@@ -448,7 +516,7 @@ test( 'rejects a client decline that captured a charge', () => {
 	} as unknown as HistoricalPayForOrderFixture;
 	expect( () =>
 		validateHistoricalPayForOrderRecovery( capturedDecline, evidence() )
-	).toThrow( 'no charge or capture' );
+	).toThrow( 'one failed charge and no capture' );
 } );
 
 test( 'rejects a native success without exactly one charge and capture', () => {

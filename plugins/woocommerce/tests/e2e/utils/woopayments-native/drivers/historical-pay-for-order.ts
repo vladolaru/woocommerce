@@ -50,8 +50,8 @@ export interface HistoricalPayForOrderFixture {
 		intentId: string;
 		intentStatus: 'requires_payment_method';
 		paymentMethodId: string;
-		chargeIds: readonly [];
-		captureCount: 0;
+		chargeIds: readonly string[];
+		captureCount: number;
 		cardLast4: '0002';
 	};
 	baseline: {
@@ -311,13 +311,18 @@ function validateRecordedClientDecline(
 		decline.intentId !== fixture.clientDecline.intentId ||
 		decline.intentStatus !== fixture.clientDecline.intentStatus ||
 		decline.paymentMethodId !== fixture.clientDecline.paymentMethodId ||
-		decline.chargeIds.length !== 0 ||
+		JSON.stringify( decline.chargeIds ) !==
+			JSON.stringify( fixture.clientDecline.chargeIds ) ||
+		decline.chargeStatuses.length !== decline.chargeIds.length ||
+		decline.chargeStatuses.some( ( status ) => status !== 'failed' ) ||
 		decline.capturedCharges !== 0 ||
 		decline.chargeIdMeta !== '' ||
-		decline.amountReceived !== 0 ||
+		( decline.amountReceived !== null && decline.amountReceived !== 0 ) ||
 		decline.failureNoteCount < 1
 	) {
-		fail( 'requires a human-visible terminal decline with no charge or money movement.' );
+		fail(
+			'requires a human-visible terminal decline with one failed uncaptured charge and no money movement.'
+		);
 	}
 	if ( decline.orderCustomerId !== fixture.customerId ) {
 		fail( 'requires the failed order customer linkage.' );
@@ -395,11 +400,14 @@ function validateImmutableFixture( fixture: HistoricalPayForOrderFixture ): void
 		! hasValue( fixture.clientDecline.intentId ) ||
 		! hasValue( fixture.clientDecline.paymentMethodId ) ||
 		fixture.clientDecline.intentStatus !== 'requires_payment_method' ||
-		fixture.clientDecline.chargeIds.length !== 0 ||
+		fixture.clientDecline.chargeIds.length !== 1 ||
+		! hasValue( fixture.clientDecline.chargeIds[ 0 ] ) ||
 		fixture.clientDecline.captureCount !== 0 ||
 		fixture.clientDecline.cardLast4 !== '0002'
 	) {
-		fail( 'requires the exact declined client payment with no charge or capture.' );
+		fail(
+			'requires the exact declined client payment with one failed charge and no capture.'
+		);
 	}
 }
 
@@ -545,7 +553,10 @@ function validateCleanup(
 			fixture.clientDecline.paymentMethodId,
 			evidence.nativeSuccess.paymentMethodId,
 		],
-		chargeIds: [ evidence.nativeSuccess.charges[ 0 ].id ],
+		chargeIds: [
+			...fixture.clientDecline.chargeIds,
+			evidence.nativeSuccess.charges[ 0 ].id,
+		],
 		customerIds: [ fixture.customerId ],
 		productIds: [ fixture.productId ],
 	};

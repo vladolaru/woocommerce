@@ -59,6 +59,7 @@ interface JourneyState {
 	paymentUrl?: string;
 	declinedIntentId?: string;
 	declinedPaymentMethodId?: string;
+	declinedChargeIds?: string[];
 	customerId?: number;
 	allocation?: {
 		runId: string;
@@ -305,6 +306,7 @@ async function runHistoricalPayForOrder(
 				const failedPayment = await convergeFailedPayment( session, orderId );
 				state.declinedIntentId = failedPayment.intentId;
 				state.declinedPaymentMethodId = failedPayment.paymentMethodId;
+				state.declinedChargeIds = [ ...failedPayment.chargeIds ];
 				const observedOrder = failedOrderFields( order, product.id, stockQuantity );
 				const fixture = {
 					schemaVersion: 1 as const,
@@ -315,7 +317,14 @@ async function runHistoricalPayForOrder(
 					productId: product.id,
 					order: { id: orderId, keySha256: sha256( orderKey ), customerId, ...observedOrder, totalMinor: orderTotalMinor( order ), noteCount: notes.length, emailCount: 0 },
 					myAccountPayLink: { orderId, orderKeySha256: sha256( orderKey ), customerId, pathSha256: sha256( new URL( paymentUrl ).pathname ) },
-					clientDecline: { intentId: failedPayment.intentId, intentStatus: 'requires_payment_method' as const, paymentMethodId: failedPayment.paymentMethodId, chargeIds: [] as const, captureCount: 0 as const, cardLast4: '0002' as const },
+					clientDecline: {
+						intentId: failedPayment.intentId,
+						intentStatus: 'requires_payment_method' as const,
+						paymentMethodId: failedPayment.paymentMethodId,
+						chargeIds: [ ...failedPayment.chargeIds ],
+						captureCount: failedPayment.capturedCharges,
+						cardLast4: '0002' as const,
+					},
 					baseline: { orderIds: [ orderId ] as const, stockQuantity, noteCount: notes.length, emailCount: 0 },
 				};
 				return { ...fixture, checksumSha256: sha256( JSON.stringify( fixture ) ) };
@@ -396,6 +405,10 @@ async function runHistoricalPayForOrder(
 				const orderKey = String( order.order_key );
 				const declinedIntentId = requireValue( state.declinedIntentId, 'the declined PaymentIntent ID' );
 				const declinedPaymentMethodId = requireValue( state.declinedPaymentMethodId, 'the declined PaymentMethod ID' );
+				const declinedChargeIds = requireValue(
+					state.declinedChargeIds,
+					'the declined charge IDs'
+				);
 				if ( ! Number.isSafeInteger( customerId ) || customerId <= 0 || ! orderKey ) {
 					throw new Error( 'Historical pay-for-order requires a cold customer/order read.' );
 				}
@@ -403,7 +416,22 @@ async function runHistoricalPayForOrder(
 					fixtureChecksumSha256: '', protection: { eligible: false, token: null, accountEnabled: false, renderedField: 'absent', submittedTokenSha256: null },
 					order: { id: orderId, keySha256: sha256( orderKey ), customerId, currency: observedRecoveryCurrency( evidence.currency ), totalMinor: evidence.amountMinor, status: observedRecoveryStatus( evidence.orderStatus ), noteCount: notes.length },
 					nativeSuccess: { intentId: evidence.intentId, paymentMethodId: evidence.paymentMethodId, chargeId: evidence.chargeId, chargeStatus: evidence.chargeStatus, chargeCaptured: evidence.chargeCaptured, occurrenceCount: evidence.occurrenceCount, captureOccurrenceCount: evidence.captureOccurrenceCount },
-					cleanup: { manifest: { orderIds: [ orderId ], intentIds: [ declinedIntentId, evidence.intentId ], paymentMethodIds: [ declinedPaymentMethodId, evidence.paymentMethodId ], chargeIds: [ evidence.chargeId ], customerIds: [ customerId ], productIds: [ product.id ] } },
+					cleanup: {
+						manifest: {
+							orderIds: [ orderId ],
+							intentIds: [ declinedIntentId, evidence.intentId ],
+							paymentMethodIds: [
+								declinedPaymentMethodId,
+								evidence.paymentMethodId,
+							],
+							chargeIds: [
+								...declinedChargeIds,
+								evidence.chargeId,
+							],
+							customerIds: [ customerId ],
+							productIds: [ product.id ],
+						},
+					},
 				};
 			},
 		},
