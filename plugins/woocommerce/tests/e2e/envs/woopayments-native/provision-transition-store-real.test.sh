@@ -1441,6 +1441,10 @@ if [[ ! -f "$create_runtime/native-active-seeded" ]]; then
 	echo 'Cutover setup did not persist native ACTIVE state after the account seed.' >&2
 	exit 1
 fi
+if [[ -e "$create_runtime/native-available-seeded" ]]; then
+	echo 'Cutover setup incorrectly persisted native AVAILABLE state.' >&2
+	exit 1
+fi
 if grep -Fq '<!-- wp:woocommerce/checkout /-->' "$create_log"; then
 	echo 'Transition setup replaced the installed Checkout inner-block tree.' >&2
 	exit 1
@@ -1562,6 +1566,10 @@ for historical_scenario in historical-pay-for-order-ctp-false historical-pay-for
 		echo "Historical scenario did not seed the exact validated reference account: $historical_scenario." >&2
 		exit 1
 	fi
+	if [[ ! -f "$historical_runtime/native-available-seeded" ]]; then
+		echo "Historical scenario did not persist native AVAILABLE state after the account seed: $historical_scenario." >&2
+		exit 1
+	fi
 	if [[ -e "$historical_runtime/native-active-seeded" ]]; then
 		echo "Historical scenario incorrectly seeded native ACTIVE state: $historical_scenario." >&2
 		exit 1
@@ -1597,6 +1605,7 @@ E2E_TRANSITION_SEED_PROFILE=11.1.0 \
 	--store-id woopayments-native-transition-unrelated-scenario > /dev/null
 test ! -e "$unseeded_runtime/reference-account-seeded"
 test ! -e "$unseeded_runtime/native-active-seeded"
+test ! -e "$unseeded_runtime/native-available-seeded"
 E2E_TRANSITION_SEED_PROFILE=11.1.0 \
 	E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
 	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
@@ -1624,6 +1633,32 @@ run_provisioner "$state_failure_workspace" "$state_failure_runtime" "$state_fail
 	destroy --workspace "$state_failure_workspace" --rollback-receipt-file "$state_failure_workspace/rollback-receipt"
 test ! -e "$state_failure_runtime/wp-env"
 test ! -e "$SHARED_TMPDIR/woopayments-native-transition-port-leases/19146"
+
+available_state_failure_workspace="$TEST_ROOT/native-available-state-failure"
+available_state_failure_runtime="$TEST_ROOT/native-available-state-failure-runtime"
+available_state_failure_log="$TEST_ROOT/native-available-state-failure.log"
+mkdir "$available_state_failure_workspace"
+if E2E_FAKE_NATIVE_STATE_WRITE_FAIL=1 E2E_TRANSITION_SCENARIO=historical-pay-for-order-ctp-false E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+	E2E_TRANSITION_FRONTEND_LOCK_SHA256="$profile_11_frontend_lock_hash" \
+	E2E_TRANSITION_COMPOSER_LOCK_SHA256="$profile_11_composer_lock_hash" \
+	E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_TRANSITION_PORT=19147 \
+	run_provisioner "$available_state_failure_workspace" "$available_state_failure_runtime" "$available_state_failure_log" \
+	create --workspace "$available_state_failure_workspace" --seed-archive "$TEST_ROOT/profile-11-seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/profile-11-seed.json" --run-id native-available-state-failure \
+	--base-url 'http://transition-native-available-state-failure.localhost:19147' \
+	--store-id 'woopayments-native-transition-native-available-state-failure' > /dev/null 2> "$TEST_ROOT/native-available-state-failure.stderr"; then
+	echo 'Creation accepted a failed native AVAILABLE state write.' >&2
+	exit 1
+fi
+grep -Fq 'Native payments AVAILABLE state could not be seeded.' "$TEST_ROOT/native-available-state-failure.stderr"
+test ! -e "$available_state_failure_runtime/native-available-seeded"
+E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+	run_provisioner "$available_state_failure_workspace" "$available_state_failure_runtime" "$available_state_failure_log" \
+	destroy --workspace "$available_state_failure_workspace" --rollback-receipt-file "$available_state_failure_workspace/rollback-receipt"
+test ! -e "$available_state_failure_runtime/wp-env"
+test ! -e "$SHARED_TMPDIR/woopayments-native-transition-port-leases/19147"
 
 # Concurrent state writers must serialize: without a lock, two writers
 # read the same snapshot and one key's update is lost.

@@ -174,11 +174,12 @@ if [[ "$*" == *'transition_seed_reference_account'* ]]; then
 		}
 		class WC_Payments { public static function get_database_cache() { return new FixtureCache(); } }
 		class FixtureNativeState {
+			const AVAILABLE = "available";
 			const ACTIVE = "active";
 			public function write_state( $state ) {
-				if ( self::ACTIVE !== $state || ! is_file( getenv( "E2E_FAKE_RUNTIME_STATE" ) . "/reference-account-seeded" ) ) throw new RuntimeException( "Native ACTIVE state requires the reference account seed first" );
+				if ( ! in_array( $state, array( self::AVAILABLE, self::ACTIVE ), true ) || ! is_file( getenv( "E2E_FAKE_RUNTIME_STATE" ) . "/reference-account-seeded" ) ) throw new RuntimeException( "Native state requires the reference account seed first" );
 				if ( "1" === getenv( "E2E_FAKE_NATIVE_STATE_WRITE_FAIL" ) ) return false;
-				file_put_contents( getenv( "E2E_FAKE_RUNTIME_STATE" ) . "/native-active-seeded", "active" );
+				file_put_contents( getenv( "E2E_FAKE_RUNTIME_STATE" ) . "/native-" . $state . "-seeded", $state );
 				return true;
 			}
 		}

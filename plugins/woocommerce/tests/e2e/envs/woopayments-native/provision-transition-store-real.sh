@@ -1971,15 +1971,17 @@ create_store() {
 	store_wp wcpay_dev refresh_account_data > /dev/null
 	local payment_settings='{"enabled":"yes","saved_cards":"yes"}'
 	local seed_reference_account=false
+	local seed_native_available_state=false
 	local seed_native_active_state=false
 	case "${E2E_TRANSITION_SCENARIO:-}" in
 		cutover-reconciliation)
-		payment_settings='{"enabled":"yes","saved_cards":"yes","upe_enabled_payment_method_ids":["card","future_lpm"]}'
+			payment_settings='{"enabled":"yes","saved_cards":"yes","upe_enabled_payment_method_ids":["card","future_lpm"]}'
 			seed_reference_account=true
 			seed_native_active_state=true
 			;;
 		historical-pay-for-order-ctp-false|historical-pay-for-order-ctp-true)
 			seed_reference_account=true
+			seed_native_available_state=true
 			;;
 	esac
 	store_wp option set woocommerce_woocommerce_payments_settings \
@@ -1988,19 +1990,26 @@ create_store() {
 		printf '%s' "$reference_fixture" | node -e '
 			const { readFileSync } = require( "node:fs" );
 			const fixture = JSON.parse( readFileSync( 0, "utf8" ) );
-			fixture.seed_native_active_state = "true" === process.argv[ 1 ];
+			fixture.seed_native_available_state = "true" === process.argv[ 1 ];
+			fixture.seed_native_active_state = "true" === process.argv[ 2 ];
 			process.stdout.write( JSON.stringify( fixture ) );
-		' "$seed_native_active_state" | store_wp eval '
+		' "$seed_native_available_state" "$seed_native_active_state" | store_wp eval '
 			/* transition_seed_reference_account */
 			$fixture = json_decode( stream_get_contents( STDIN ), true, 512, JSON_THROW_ON_ERROR );
 			$account = $fixture["account_data"] ?? null;
+			$seed_native_available_state = $fixture["seed_native_available_state"] ?? null;
 			$seed_native_active_state = $fixture["seed_native_active_state"] ?? null;
-			if ( ! is_bool( $seed_native_active_state ) || ! is_array( $account ) || empty( $account ) || ( $account["account_id"] ?? null ) !== $fixture["account_id"] || false !== ( $account["is_live"] ?? null ) ) {
+			if ( ! is_bool( $seed_native_available_state ) || ! is_bool( $seed_native_active_state ) || ( $seed_native_available_state && $seed_native_active_state ) || ! is_array( $account ) || empty( $account ) || ( $account["account_id"] ?? null ) !== $fixture["account_id"] || false !== ( $account["is_live"] ?? null ) ) {
 				WP_CLI::error( "The reference account cache seed must match the exact non-live fixture." );
 			}
 			WC_Payments_Onboarding_Service::set_test_mode( true );
 			WC_Payments::get_database_cache()->add( WCPay\Database_Cache::ACCOUNT_KEY, $account );
-			if ( $seed_native_active_state ) {
+			if ( $seed_native_available_state ) {
+				$native_payments_state = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsState::class );
+				if ( ! $native_payments_state->write_state( Automattic\WooCommerce\Internal\Payments\NativePaymentsState::AVAILABLE ) ) {
+					WP_CLI::error( "Native payments AVAILABLE state could not be seeded." );
+				}
+			} elseif ( $seed_native_active_state ) {
 				$native_payments_state = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsState::class );
 				if ( ! $native_payments_state->write_state( Automattic\WooCommerce\Internal\Payments\NativePaymentsState::ACTIVE ) ) {
 					WP_CLI::error( "Native payments ACTIVE state could not be seeded." );
