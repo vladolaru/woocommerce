@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { dirname, join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { BrowserContext, Page } from '@playwright/test';
@@ -710,7 +711,7 @@ function nativeStorePhp( request: CardTestingProtectionRunnerRequest ): string {
 type NativeStoreExecFile = (
 	command: string,
 	args: string[],
-	options: { cwd: string }
+	options: { cwd: string; env: Record< string, string | undefined > }
 ) => Promise< string >;
 
 export interface NativeStoreWpCliRunnerOptions {
@@ -721,13 +722,13 @@ export interface NativeStoreWpCliRunnerOptions {
 function executeFile(
 	command: string,
 	args: string[],
-	options: { cwd: string }
+	options: { cwd: string; env: Record< string, string | undefined > }
 ): Promise< string > {
 	return new Promise( ( resolve, reject ) => {
 		execFile(
 			command,
 			args,
-			{ cwd: options.cwd, encoding: 'utf8' },
+			{ cwd: options.cwd, env: options.env, encoding: 'utf8' },
 			( error, stdout ) => {
 				if ( error ) {
 					reject( error );
@@ -761,11 +762,17 @@ export class NativeStoreWpCliRunner implements CardTestingProtectionRunner {
 		}
 
 		try {
+			const wpEnvBinary = join(
+				process.cwd(),
+				'node_modules/.bin/wp-env'
+			);
+			const wpEnvHome = join(
+				dirname( this.storeDirectory ),
+				'wp-env-home'
+			);
 			const stdout = await this.execFile(
-				'pnpm',
+				wpEnvBinary,
 				[
-					'exec',
-					'wp-env',
 					'run',
 					'cli',
 					'wp',
@@ -773,7 +780,10 @@ export class NativeStoreWpCliRunner implements CardTestingProtectionRunner {
 					'eval',
 					nativeStorePhp( request ),
 				],
-				{ cwd: this.storeDirectory }
+				{
+					cwd: this.storeDirectory,
+					env: { ...process.env, WP_ENV_HOME: wpEnvHome },
+				}
 			);
 			const jsonLine = stdout
 				.split( /\r?\n/ )

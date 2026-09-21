@@ -451,7 +451,7 @@ function accountProtectionFromRawRow( row: ControlledOptionRow ): boolean {
 test( 'runs canonical PHP with one standard native-store WP-CLI invocation', async () => {
 	const execFileCalls: unknown[][] = [];
 	const runner = new NativeStoreWpCliRunner( {
-		storeDirectory: '/test/native-store',
+		storeDirectory: '/test/workspace/store',
 		execFile: async ( ...args: unknown[] ) => {
 			execFileCalls.push( args );
 			return `Starting wp-env\n${ JSON.stringify(
@@ -469,11 +469,12 @@ test( 'runs canonical PHP with one standard native-store WP-CLI invocation', asy
 		string[],
 		Record< string, unknown >,
 	];
-	expect( command ).toBe( 'pnpm' );
-	expect( options ).toEqual( { cwd: '/test/native-store' } );
+	expect( command ).toBe( join( process.cwd(), 'node_modules/.bin/wp-env' ) );
+	expect( options ).toMatchObject( {
+		cwd: '/test/workspace/store',
+		env: { WP_ENV_HOME: '/test/workspace/wp-env-home' },
+	} );
 	expect( args.slice( 0, -1 ) ).toEqual( [
-		'exec',
-		'wp-env',
 		'run',
 		'cli',
 		'wp',
