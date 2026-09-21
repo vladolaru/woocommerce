@@ -68,6 +68,22 @@ fi
 if [[ "$*" == 'start' ]]; then
 	assert_recovery_state_precedes_mutation
 	node -e '
+		const { mkdirSync, realpathSync, writeFileSync } = require( "node:fs" );
+		const path = require( "node:path" );
+		const { loadConfig } = require( process.env.E2E_FAKE_WP_ENV_CONFIG_MODULE );
+		loadConfig( process.argv[ 1 ] ).then( ( config ) => {
+			const projectPath = path.join(
+				realpathSync( path.dirname( config.workDirectoryPath ) ),
+				path.basename( config.workDirectoryPath )
+			);
+			mkdirSync( path.join( projectPath, "wordpress-latest" ), { recursive: true } );
+			writeFileSync( path.join( projectPath, "docker-compose.yml" ), "services:\n  wordpress: {}\n", { mode: 0o600 } );
+		} ).catch( ( error ) => {
+			console.error( error );
+			process.exit( 1 );
+		} );
+	' "$PWD"
+	node -e '
 		const state = JSON.parse( require( "node:fs" ).readFileSync( process.argv[ 1 ], "utf8" ) );
 		require( "node:fs" ).writeFileSync(
 			process.argv[ 2 ],
@@ -77,6 +93,7 @@ if [[ "$*" == 'start' ]]; then
 		"$WORKSPACE/resource-state.json" \
 		"$RUNTIME_STATE/wp-env-intent-before-start"
 	touch "$RUNTIME_STATE/wp-env"
+	printf 'Fake wp-env start output.\n'
 	if [[ "${E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL:-0}" == '1' ]]; then
 		echo 'Fake wp-env start failed after creating the isolated environment.' >&2
 		exit 41

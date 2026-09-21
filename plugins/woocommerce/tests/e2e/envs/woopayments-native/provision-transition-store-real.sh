@@ -79,6 +79,7 @@ readonly WP_ENV_BIN_INPUT="${E2E_TRANSITION_WP_ENV_BIN:-$PLUGIN_ROOT/node_module
 readonly REFERENCE_STORE_DIR="${E2E_TRANSITION_REFERENCE_STORE_DIR:-$PROJECTS_ROOT/woocommerce-payments}"
 readonly REFERENCE_WP_BIN="${E2E_TRANSITION_REFERENCE_WP_BIN:-}"
 readonly DOCKER_BIN="${E2E_TRANSITION_DOCKER_BIN:-docker}"
+readonly FIND_BIN="${E2E_TRANSITION_FIND_BIN:-find}"
 readonly CURL_BIN="${E2E_TRANSITION_CURL_BIN:-curl}"
 readonly GZIP_BIN="${E2E_TRANSITION_GZIP_BIN:-gzip}"
 readonly STATE_WRITER="$SCRIPT_DIR/write-transition-state.js"
@@ -1219,6 +1220,132 @@ wp_env() {
 	)
 }
 
+wp_env_project_path() {
+	local wp_env_home="$workspace/wp-env-home"
+	local config_path="$workspace/store/.wp-env.json"
+	if [[ ! -d "$wp_env_home" || -L "$wp_env_home" ]] ||
+		[[ ! -f "$config_path" || -L "$config_path" ]]; then
+		return 1
+	fi
+	WP_ENV_HOME="$wp_env_home" node -e '
+		const { realpathSync } = require( "node:fs" );
+		const path = require( "node:path" );
+		const { loadConfig } = require( process.argv[ 1 ] );
+		loadConfig( process.argv[ 2 ] ).then( ( config ) => {
+			process.stdout.write(
+				path.join(
+					realpathSync( path.dirname( config.workDirectoryPath ) ),
+					path.basename( config.workDirectoryPath )
+				)
+			);
+		} ).catch( ( error ) => {
+			console.error( error );
+			process.exit( 1 );
+		} );
+	' "$PLUGIN_ROOT/node_modules/@wordpress/env/lib/config" "$workspace/store"
+}
+
+exact_wp_env_config_state() {
+	local project_path
+	local wordpress_path
+	local config_path
+	project_path="$(wp_env_project_path)" || return 2
+	if [[ ! -e "$project_path" && ! -L "$project_path" ]]; then
+		return 1
+	fi
+	if [[ ! -d "$project_path" || -L "$project_path" ]]; then
+		return 2
+	fi
+	wordpress_path="$project_path/wordpress-latest"
+	if [[ ! -e "$wordpress_path" && ! -L "$wordpress_path" ]]; then
+		return 1
+	fi
+	if [[ ! -d "$wordpress_path" || -L "$wordpress_path" ]]; then
+		return 2
+	fi
+	config_path="$wordpress_path/wp-config.php"
+	if [[ ! -e "$config_path" && ! -L "$config_path" ]]; then
+		return 1
+	fi
+	if [[ ! -f "$config_path" || -L "$config_path" ]]; then
+		return 2
+	fi
+	return 0
+}
+
+retain_wp_env_start_attempt() {
+	local attempt="$1"
+	local output_path="$workspace/wp-env-start-$attempt.log"
+	if [[ -e "$output_path" || -L "$output_path" ]]; then
+		echo "Transition wp-env start artifact already exists: $output_path" >&2
+		return 1
+	fi
+	if ( set -C; wp_env start > "$output_path" 2>&1 ); then
+		wp_env_start_status=0
+	else
+		wp_env_start_status=$?
+	fi
+	if [[ ! -f "$output_path" || -L "$output_path" ]] ||
+		[[ "$(file_mode "$output_path")" != '600' ]]; then
+		echo "Transition wp-env start artifact is unsafe: $output_path" >&2
+		return 1
+	fi
+}
+
+prepare_test_wp_env_start_artifact() {
+	local artifact_kind="${E2E_TRANSITION_TEST_START_ARTIFACT_KIND:-}"
+	local output_path="$workspace/wp-env-start-1.log"
+	if [[ "${E2E_TRANSITION_TEST_MODE:-0}" != 1 ]] || [[ -z "$artifact_kind" ]]; then
+		return 0
+	fi
+	if [[ -e "$output_path" || -L "$output_path" ]]; then
+		return 1
+	fi
+	case "$artifact_kind" in
+		overwrite)
+			printf 'pre-existing transition diagnostic\n' > "$output_path"
+			;;
+		symlink)
+			[[ -n "${E2E_TRANSITION_TEST_START_ARTIFACT_TARGET:-}" ]] || return 1
+			ln -s "$E2E_TRANSITION_TEST_START_ARTIFACT_TARGET" "$output_path"
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
+capture_exact_wp_env_wordpress_logs() {
+	local project_path
+	local compose_path
+	local compose_paths
+	local wp_env_home
+	local wordpress_path
+	local output_path="$workspace/wp-env-wordpress.log"
+	project_path="$(wp_env_project_path)" || return 1
+	wp_env_home="$(dirname "$project_path")"
+	compose_path="$project_path/docker-compose.yml"
+	wordpress_path="$project_path/wordpress-latest"
+	if [[ ! -d "$project_path" || -L "$project_path" ]] ||
+		[[ ! -d "$wordpress_path" || -L "$wordpress_path" ]] ||
+		[[ ! -f "$compose_path" || -L "$compose_path" ]]; then
+		return 1
+	fi
+	local enumeration_status
+	if compose_paths="$("$FIND_BIN" "$wp_env_home" -mindepth 2 -maxdepth 2 -name docker-compose.yml -print 2> /dev/null | LC_ALL=C sort)"; then
+		enumeration_status=0
+	else
+		enumeration_status=$?
+	fi
+	if (( enumeration_status != 0 )) || [[ "$compose_paths" != "$compose_path" ]] || [[ -e "$output_path" || -L "$output_path" ]]; then
+		return 1
+	fi
+	if ! ( set -C; "$DOCKER_BIN" compose --project-directory "$project_path" --file "$compose_path" logs wordpress > "$output_path" 2>&1 ); then
+		:
+	fi
+	[[ -f "$output_path" && ! -L "$output_path" && "$(file_mode "$output_path")" == '600' ]]
+}
+
 validate_exact_wp_env_scope() {
 	local expected_wp_env_home="$workspace/wp-env-home"
 	local config_path="$workspace/store/.wp-env.json"
@@ -1853,21 +1980,38 @@ create_store() {
 	update_state wp_env_start_attempted true boolean
 	update_state phase 'wp-env-start-attempted'
 	local wp_env_start_status
+	prepare_test_wp_env_start_artifact || on_create_error 1
 	trap - ERR
 	set +e
-	wp_env start > /dev/null
-	wp_env_start_status=$?
+	retain_wp_env_start_attempt 1
+	local wp_env_start_artifact_status=$?
 	set -e
 	trap on_create_error ERR
-	if (( wp_env_start_status != 0 )) && [[ ! -e "$workspace/store/wp-config.php" ]]; then
+	if (( wp_env_start_artifact_status != 0 )); then
+		on_create_error 1
+	fi
+	local wp_env_config_state=0
+	if (( wp_env_start_status != 0 )); then
 		trap - ERR
 		set +e
-		wp_env start > /dev/null
-		wp_env_start_status=$?
+		exact_wp_env_config_state
+		wp_env_config_state=$?
 		set -e
 		trap on_create_error ERR
 	fi
+	if (( wp_env_start_status != 0 && wp_env_config_state == 1 )); then
+		trap - ERR
+		set +e
+		retain_wp_env_start_attempt 2
+		wp_env_start_artifact_status=$?
+		set -e
+		trap on_create_error ERR
+		if (( wp_env_start_artifact_status != 0 )); then
+			on_create_error 1
+		fi
+	fi
 	if (( wp_env_start_status != 0 )); then
+		capture_exact_wp_env_wordpress_logs || true
 		on_create_error "$wp_env_start_status"
 	fi
 	update_state wp_env_created true boolean

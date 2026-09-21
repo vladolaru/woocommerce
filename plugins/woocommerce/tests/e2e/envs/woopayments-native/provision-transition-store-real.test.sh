@@ -896,6 +896,9 @@ run_provisioner() {
 		E2E_TRANSITION_CORE_REPO="$TEST_ROOT/mounts/core" \
 		E2E_TRANSITION_DEV_TOOLS_REPO="$TEST_ROOT/mounts/dev-tools" \
 		E2E_TRANSITION_WP_ENV_BIN="${E2E_TRANSITION_WP_ENV_BIN:-$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh}" \
+		E2E_TRANSITION_DOCKER_BIN="${E2E_TRANSITION_DOCKER_BIN:-$SCRIPT_DIR/test-fixtures/fake-transition-docker.sh}" \
+		E2E_TRANSITION_FIND_BIN="${E2E_TRANSITION_FIND_BIN:-find}" \
+		E2E_FAKE_WP_ENV_CONFIG_MODULE="$SCRIPT_DIR/../../../../node_modules/@wordpress/env/lib/config" \
 		E2E_TRANSITION_REFERENCE_WP_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-reference-wp.sh" \
 		E2E_TRANSITION_PNPM_BIN="$TEST_ROOT/poison-pnpm-must-not-run" \
 		E2E_FAKE_TRANSITION_WORKSPACE="$owned_workspace" \
@@ -907,6 +910,7 @@ run_provisioner() {
 		E2E_FAKE_ACCOUNT_RUNTIME="${E2E_FAKE_ACCOUNT_RUNTIME:-extension}" \
 		E2E_FAKE_ACCOUNT_MISMATCH="${E2E_FAKE_ACCOUNT_MISMATCH:-0}" \
 		E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL="${E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL:-0}" \
+		E2E_FAKE_WP_ENV_WORDPRESS_ARTIFACT_TARGET="${E2E_FAKE_WP_ENV_WORDPRESS_ARTIFACT_TARGET:-}" \
 		E2E_FAKE_WP_ENV_DESTROY_FAIL="${E2E_FAKE_WP_ENV_DESTROY_FAIL:-0}" \
 		E2E_FAKE_BLOG_REGISTER_AFTER_CREATE_FAIL="${E2E_FAKE_BLOG_REGISTER_AFTER_CREATE_FAIL:-0}" \
 		E2E_FAKE_BLOG_RECOVERY_MODE="${E2E_FAKE_BLOG_RECOVERY_MODE:-unique}" \
@@ -918,6 +922,8 @@ run_provisioner() {
 		E2E_TRANSITION_LEASE_FAIL_POINT="${E2E_TRANSITION_LEASE_FAIL_POINT:-}" \
 		E2E_TRANSITION_TEST_KILL_DURING_LEASE="${E2E_TRANSITION_TEST_KILL_DURING_LEASE:-}" \
 		E2E_TRANSITION_TEST_KILL_AFTER_LEASE_RELEASE="${E2E_TRANSITION_TEST_KILL_AFTER_LEASE_RELEASE:-0}" \
+		E2E_TRANSITION_TEST_START_ARTIFACT_KIND="${E2E_TRANSITION_TEST_START_ARTIFACT_KIND:-}" \
+		E2E_TRANSITION_TEST_START_ARTIFACT_TARGET="${E2E_TRANSITION_TEST_START_ARTIFACT_TARGET:-}" \
 		"$PROVISIONER" "$@"
 }
 
@@ -1248,31 +1254,84 @@ fi
 attempt=$((attempt + 1))
 printf '%s\n' "$attempt" > "$attempt_file"
 
+wp_env_project_path() {
+	node -e '
+		const { realpathSync } = require( "node:fs" );
+		const { loadConfig } = require( process.env.E2E_FAKE_WP_ENV_CONFIG_MODULE );
+		loadConfig( process.argv[ 1 ] ).then( ( config ) => {
+			process.stdout.write( realpathSync( config.workDirectoryPath ) );
+		} ).catch( ( error ) => {
+			console.error( error );
+			process.exit( 1 );
+		} );
+	' "$PWD"
+}
+
 case "${E2E_FAKE_WP_ENV_FIRST_START_MODE:?}" in
 	second-succeeds)
 		if (( attempt == 1 )); then
-			test ! -e "$PWD/wp-config.php"
+			printf 'Injected first start stdout.\n'
+			printf 'Injected first start stderr.\n' >&2
 			"${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
 			exit 45
 		fi
 		;;
-	config-exists-after-first-failure)
+	config-exists-after-first-failure|wordpress-artifact-overwrite-after-first-failure|wordpress-artifact-symlink-after-first-failure)
 		if (( attempt == 1 )); then
-			test ! -e "$PWD/wp-config.php"
 			"${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
-			touch "$PWD/wp-config.php"
+			wp_env_project="$(wp_env_project_path)"
+			touch "$wp_env_project/wordpress-latest/wp-config.php"
+			case "${E2E_FAKE_WP_ENV_FIRST_START_MODE}" in
+				wordpress-artifact-overwrite-after-first-failure)
+					printf 'pre-existing transition diagnostic\n' > "$E2E_FAKE_TRANSITION_WORKSPACE/wp-env-wordpress.log"
+					;;
+				wordpress-artifact-symlink-after-first-failure)
+					ln -s "${E2E_FAKE_WP_ENV_WORDPRESS_ARTIFACT_TARGET:?}" "$E2E_FAKE_TRANSITION_WORKSPACE/wp-env-wordpress.log"
+					;;
+			esac
 			exit 45
 		fi
 		;;
 	second-fails)
 		if (( attempt == 1 )); then
-			test ! -e "$PWD/wp-config.php"
 			"${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
 			exit 45
 		fi
 		if (( attempt == 2 )); then
 			"${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
 			exit 46
+		fi
+		;;
+	missing-wordpress-after-first-failure)
+		if (( attempt == 1 )); then
+			"${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
+			wp_env_project="$(wp_env_project_path)"
+			rm -rf "$wp_env_project/wordpress-latest"
+			exit 45
+		fi
+		;;
+	ambiguous-compose-after-first-failure)
+		if (( attempt == 1 )); then
+			"${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
+			wp_env_project="$(wp_env_project_path)"
+			touch "$wp_env_project/wordpress-latest/wp-config.php"
+			mkdir -p "$WP_ENV_HOME/wp-env-unrelated"
+			printf 'services:\n  wordpress: {}\n' > "$WP_ENV_HOME/wp-env-unrelated/docker-compose.yml"
+			exit 45
+		fi
+		;;
+	absent-compose-after-first-failure|ancestor-symlink-after-first-failure)
+		if (( attempt == 1 )); then
+			"${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
+			wp_env_project="$(wp_env_project_path)"
+			touch "$wp_env_project/wordpress-latest/wp-config.php"
+			if [[ "${E2E_FAKE_WP_ENV_FIRST_START_MODE}" == absent-compose-after-first-failure ]]; then
+				rm "$wp_env_project/docker-compose.yml"
+			else
+				mv "$wp_env_project/wordpress-latest" "$WP_ENV_HOME/wordpress-latest-target"
+				ln -s "$WP_ENV_HOME/wordpress-latest-target" "$wp_env_project/wordpress-latest"
+			fi
+			exit 45
 		fi
 		;;
 	*)
@@ -1284,6 +1343,17 @@ esac
 exec "${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
 SH
 chmod 0700 "$first_start_flake_wp_env"
+
+assert_run_artifact() {
+	local artifact="$1"
+	local expected="$2"
+	if [[ ! -f "$artifact" || -L "$artifact" ]] ||
+		[[ "$(mode_of "$artifact")" != '600' ]] ||
+		! grep -Fq "$expected" "$artifact"; then
+		echo "Transition start diagnostic artifact was invalid: $artifact" >&2
+		exit 1
+	fi
+}
 
 first_start_retry_port=19160
 first_start_retry_workspace="$TEST_ROOT/first-start-retry"
@@ -1300,18 +1370,44 @@ E2E_TRANSITION_PORT="$first_start_retry_port" \
 	--base-url "http://transition-first-start-retry.localhost:$first_start_retry_port" \
 	--store-id woopayments-native-transition-first-start-retry > /dev/null
 test "$(< "$first_start_retry_runtime/wp-env-start-attempts")" = '2'
+assert_run_artifact "$first_start_retry_workspace/wp-env-start-1.log" 'Injected first start stdout.'
+assert_run_artifact "$first_start_retry_workspace/wp-env-start-1.log" 'Injected first start stderr.'
+assert_run_artifact "$first_start_retry_workspace/wp-env-start-2.log" 'Fake wp-env start output.'
 E2E_TRANSITION_PORT="$first_start_retry_port" \
 	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
 	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
 	run_provisioner "$first_start_retry_workspace" "$first_start_retry_runtime" "$first_start_retry_log" \
 	destroy --workspace "$first_start_retry_workspace" --rollback-receipt-file "$first_start_retry_workspace/rollback-receipt"
 
+missing_wordpress_workspace="$TEST_ROOT/first-start-missing-wordpress"
+missing_wordpress_runtime="$TEST_ROOT/first-start-missing-wordpress-runtime"
+missing_wordpress_log="$TEST_ROOT/first-start-missing-wordpress.log"
+missing_wordpress_port=$((first_start_retry_port + 1))
+mkdir "$missing_wordpress_workspace"
+E2E_TRANSITION_PORT="$missing_wordpress_port" \
+	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_FAKE_WP_ENV_FIRST_START_MODE=missing-wordpress-after-first-failure \
+	run_provisioner "$missing_wordpress_workspace" "$missing_wordpress_runtime" "$missing_wordpress_log" \
+	create --workspace "$missing_wordpress_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/seed.json" --run-id first-start-missing-wordpress \
+	--base-url "http://transition-first-start-missing-wordpress.localhost:$missing_wordpress_port" \
+	--store-id woopayments-native-transition-first-start-missing-wordpress > /dev/null
+test "$(< "$missing_wordpress_runtime/wp-env-start-attempts")" = '2'
+assert_run_artifact "$missing_wordpress_workspace/wp-env-start-2.log" 'Fake wp-env start output.'
+E2E_TRANSITION_PORT="$missing_wordpress_port" \
+	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	run_provisioner "$missing_wordpress_workspace" "$missing_wordpress_runtime" "$missing_wordpress_log" \
+	destroy --workspace "$missing_wordpress_workspace" --rollback-receipt-file "$missing_wordpress_workspace/rollback-receipt"
+
 first_start_config_workspace="$TEST_ROOT/first-start-config"
 first_start_config_runtime="$TEST_ROOT/first-start-config-runtime"
 first_start_config_log="$TEST_ROOT/first-start-config.log"
 first_start_config_port=$((first_start_retry_port + 1))
 mkdir "$first_start_config_workspace"
-if E2E_TRANSITION_PORT="$first_start_config_port" \
+set +e
+E2E_TRANSITION_PORT="$first_start_config_port" \
 	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
 	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
 	E2E_FAKE_WP_ENV_FIRST_START_MODE=config-exists-after-first-failure \
@@ -1319,11 +1415,18 @@ if E2E_TRANSITION_PORT="$first_start_config_port" \
 	create --workspace "$first_start_config_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
 	--seed-manifest "$TEST_ROOT/seed.json" --run-id first-start-config \
 	--base-url "http://transition-first-start-config.localhost:$first_start_config_port" \
-	--store-id woopayments-native-transition-first-start-config > /dev/null; then
-	echo 'Transition create retried a failed first start after wp-config.php existed.' >&2
+	--store-id woopayments-native-transition-first-start-config > /dev/null
+first_start_config_status=$?
+set -e
+if [[ "$first_start_config_status" != 45 ]]; then
+	echo "Transition did not preserve the first start status (got $first_start_config_status)." >&2
 	exit 1
 fi
 test "$(< "$first_start_config_runtime/wp-env-start-attempts")" = '1'
+assert_run_artifact "$first_start_config_workspace/wp-env-start-1.log" 'Fake wp-env start output.'
+test ! -e "$first_start_config_workspace/wp-env-start-2.log"
+assert_run_artifact "$first_start_config_workspace/wp-env-wordpress.log" 'Fake exact WordPress service log.'
+test "$(< "$first_start_config_runtime/compose-wordpress-log-attempts")" = '1'
 E2E_TRANSITION_PORT="$first_start_config_port" \
 	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
 	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
@@ -1335,7 +1438,8 @@ first_start_second_failure_runtime="$TEST_ROOT/first-start-second-failure-runtim
 first_start_second_failure_log="$TEST_ROOT/first-start-second-failure.log"
 first_start_second_failure_port=$((first_start_config_port + 1))
 mkdir "$first_start_second_failure_workspace"
-if E2E_TRANSITION_PORT="$first_start_second_failure_port" \
+set +e
+E2E_TRANSITION_PORT="$first_start_second_failure_port" \
 	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
 	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
 	E2E_FAKE_WP_ENV_FIRST_START_MODE=second-fails \
@@ -1343,16 +1447,150 @@ if E2E_TRANSITION_PORT="$first_start_second_failure_port" \
 	create --workspace "$first_start_second_failure_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
 	--seed-manifest "$TEST_ROOT/seed.json" --run-id first-start-second-failure \
 	--base-url "http://transition-first-start-second-failure.localhost:$first_start_second_failure_port" \
-	--store-id woopayments-native-transition-first-start-second-failure > /dev/null; then
-	echo 'Transition create accepted a second failed wp-env start.' >&2
+	--store-id woopayments-native-transition-first-start-second-failure > /dev/null
+first_start_second_failure_status=$?
+set -e
+if [[ "$first_start_second_failure_status" != 46 ]]; then
+	echo "Transition did not preserve the second start status (got $first_start_second_failure_status)." >&2
 	exit 1
 fi
 test "$(< "$first_start_second_failure_runtime/wp-env-start-attempts")" = '2'
+assert_run_artifact "$first_start_second_failure_workspace/wp-env-start-1.log" 'Fake wp-env start output.'
+assert_run_artifact "$first_start_second_failure_workspace/wp-env-start-2.log" 'Fake wp-env start output.'
+assert_run_artifact "$first_start_second_failure_workspace/wp-env-wordpress.log" 'Fake exact WordPress service log.'
+test "$(< "$first_start_second_failure_runtime/compose-wordpress-log-attempts")" = '1'
 E2E_TRANSITION_PORT="$first_start_second_failure_port" \
 	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
 	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
 	run_provisioner "$first_start_second_failure_workspace" "$first_start_second_failure_runtime" "$first_start_second_failure_log" \
 	destroy --workspace "$first_start_second_failure_workspace" --rollback-receipt-file "$first_start_second_failure_workspace/rollback-receipt"
+
+first_start_ambiguous_workspace="$TEST_ROOT/first-start-ambiguous"
+first_start_ambiguous_runtime="$TEST_ROOT/first-start-ambiguous-runtime"
+first_start_ambiguous_log="$TEST_ROOT/first-start-ambiguous.log"
+first_start_ambiguous_port=$((first_start_second_failure_port + 1))
+mkdir "$first_start_ambiguous_workspace"
+if E2E_TRANSITION_PORT="$first_start_ambiguous_port" \
+	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_FAKE_WP_ENV_FIRST_START_MODE=ambiguous-compose-after-first-failure \
+	run_provisioner "$first_start_ambiguous_workspace" "$first_start_ambiguous_runtime" "$first_start_ambiguous_log" \
+	create --workspace "$first_start_ambiguous_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/seed.json" --run-id first-start-ambiguous \
+	--base-url "http://transition-first-start-ambiguous.localhost:$first_start_ambiguous_port" \
+	--store-id woopayments-native-transition-first-start-ambiguous > /dev/null; then
+	echo 'Transition create accepted an ambiguous wp-env Compose identity.' >&2
+	exit 1
+fi
+test "$(< "$first_start_ambiguous_runtime/wp-env-start-attempts")" = '1'
+assert_run_artifact "$first_start_ambiguous_workspace/wp-env-start-1.log" 'Fake wp-env start output.'
+test ! -e "$first_start_ambiguous_runtime/compose-wordpress-log-attempts"
+test ! -e "$first_start_ambiguous_workspace/wp-env-wordpress.log"
+E2E_TRANSITION_PORT="$first_start_ambiguous_port" \
+	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	run_provisioner "$first_start_ambiguous_workspace" "$first_start_ambiguous_runtime" "$first_start_ambiguous_log" \
+	destroy --workspace "$first_start_ambiguous_workspace" --rollback-receipt-file "$first_start_ambiguous_workspace/rollback-receipt"
+
+assert_terminal_start_case() {
+	local name="$1"
+	local mode="$2"
+	local port="$3"
+	local find_bin="${4:-find}"
+	local case_workspace="$TEST_ROOT/$name"
+	local case_runtime="$TEST_ROOT/$name-runtime"
+	local case_log="$TEST_ROOT/$name.log"
+	local case_status
+	mkdir "$case_workspace"
+	set +e
+	E2E_TRANSITION_PORT="$port" \
+		E2E_TRANSITION_FIND_BIN="$find_bin" \
+		E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+		E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+		E2E_FAKE_WP_ENV_FIRST_START_MODE="$mode" \
+		run_provisioner "$case_workspace" "$case_runtime" "$case_log" \
+		create --workspace "$case_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/seed.json" --run-id "$name" \
+		--base-url "http://transition-$name.localhost:$port" \
+		--store-id "woopayments-native-transition-$name" > /dev/null
+	case_status=$?
+	set -e
+	if [[ "$case_status" != 45 ]]; then
+		echo "Transition did not preserve status 45 for $name (got $case_status)." >&2
+		exit 1
+	fi
+	test "$(< "$case_runtime/wp-env-start-attempts")" = '1'
+	assert_run_artifact "$case_workspace/wp-env-start-1.log" 'Fake wp-env start output.'
+	test ! -e "$case_runtime/compose-wordpress-log-attempts"
+	test ! -e "$case_workspace/wp-env-wordpress.log"
+	E2E_TRANSITION_PORT="$port" \
+		E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+		E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+		run_provisioner "$case_workspace" "$case_runtime" "$case_log" \
+		destroy --workspace "$case_workspace" --rollback-receipt-file "$case_workspace/rollback-receipt"
+}
+
+assert_terminal_start_case first-start-absent-compose absent-compose-after-first-failure 19164
+assert_terminal_start_case first-start-ancestor-symlink ancestor-symlink-after-first-failure 19165
+
+failing_find="$TEST_ROOT/failing-find"
+printf '#!/usr/bin/env bash\nexit 68\n' > "$failing_find"
+chmod 0700 "$failing_find"
+assert_terminal_start_case first-start-enumeration-error config-exists-after-first-failure 19166 "$failing_find"
+
+assert_diagnostic_output_rejected() {
+	local name="$1"
+	local artifact="$2"
+	local target="$3"
+	local artifact_kind="$4"
+	local mode="$5"
+	local port="$6"
+	local output_workspace="$TEST_ROOT/$name"
+	local output_runtime="$TEST_ROOT/$name-runtime"
+	local output_log="$TEST_ROOT/$name.log"
+	local output_status
+	mkdir "$output_workspace"
+	set +e
+	E2E_TRANSITION_PORT="$port" \
+		E2E_TRANSITION_TEST_START_ARTIFACT_KIND="$([[ "$artifact" == wp-env-start-1.log ]] && printf '%s' "$artifact_kind")" \
+		E2E_TRANSITION_TEST_START_ARTIFACT_TARGET="$target" \
+		E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+		E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+		E2E_FAKE_WP_ENV_WORDPRESS_ARTIFACT_TARGET="$target" \
+		E2E_FAKE_WP_ENV_FIRST_START_MODE="$mode" \
+		run_provisioner "$output_workspace" "$output_runtime" "$output_log" \
+		create --workspace "$output_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/seed.json" --run-id "$name" \
+		--base-url "http://transition-$name.localhost:$port" \
+		--store-id "woopayments-native-transition-$name" > /dev/null
+	output_status=$?
+	set -e
+	if [[ "$output_status" == 0 ]]; then
+		echo "Transition accepted a pre-existing diagnostic artifact: $artifact." >&2
+		exit 1
+	fi
+	if [[ "$artifact_kind" == symlink ]]; then
+		if [[ -e "$target" || -L "$target" ]]; then
+			echo "Transition wrote through a diagnostic artifact symlink: $artifact." >&2
+			exit 1
+		fi
+	else
+		if [[ "$(< "$output_workspace/$artifact")" != 'pre-existing transition diagnostic' ]]; then
+			echo "Transition overwrote a diagnostic artifact: $artifact." >&2
+			exit 1
+		fi
+	fi
+	if [[ "$artifact" == wp-env-start-1.log && -e "$output_runtime/wp-env" ]] ||
+		[[ -e "$output_runtime/compose-wordpress-log-attempts" ]]; then
+		echo "Transition invoked a diagnostic command after rejecting $artifact." >&2
+		exit 1
+	fi
+}
+
+assert_diagnostic_output_rejected first-start-diagnostic-overwrite wp-env-start-1.log "$TEST_ROOT/start-diagnostic-overwrite-target" overwrite second-succeeds 19167
+assert_diagnostic_output_rejected first-start-diagnostic-symlink wp-env-start-1.log "$TEST_ROOT/start-diagnostic-symlink-target" symlink second-succeeds 19168
+assert_diagnostic_output_rejected first-wordpress-diagnostic-overwrite wp-env-wordpress.log "$TEST_ROOT/wordpress-diagnostic-overwrite-target" overwrite wordpress-artifact-overwrite-after-first-failure 19169
+assert_diagnostic_output_rejected first-wordpress-diagnostic-symlink wp-env-wordpress.log "$TEST_ROOT/wordpress-diagnostic-symlink-target" symlink wordpress-artifact-symlink-after-first-failure 19170
 
 create_workspace="$TEST_ROOT/woopayments-native-transition-create-run"
 create_runtime="$TEST_ROOT/runtime-create"
