@@ -1230,6 +1230,130 @@ for identity_field in site_url home marker wpcom_blog_id account_id is_live blog
 		destroy --workspace "$identity_workspace" --rollback-receipt-file "$identity_workspace/rollback-receipt"
 done
 
+first_start_flake_wp_env="$TEST_ROOT/first-start-flake-wp-env"
+cat > "$first_start_flake_wp_env" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$*" != 'start' ]]; then
+	exec "${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
+fi
+
+attempt_file="$E2E_FAKE_RUNTIME_STATE/wp-env-start-attempts"
+mkdir -p "$E2E_FAKE_RUNTIME_STATE"
+attempt=0
+if [[ -f "$attempt_file" ]]; then
+	attempt="$(< "$attempt_file")"
+fi
+attempt=$((attempt + 1))
+printf '%s\n' "$attempt" > "$attempt_file"
+
+case "${E2E_FAKE_WP_ENV_FIRST_START_MODE:?}" in
+	second-succeeds)
+		if (( attempt == 1 )); then
+			test ! -e "$PWD/wp-config.php"
+			"${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
+			exit 45
+		fi
+		;;
+	config-exists-after-first-failure)
+		if (( attempt == 1 )); then
+			test ! -e "$PWD/wp-config.php"
+			"${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
+			touch "$PWD/wp-config.php"
+			exit 45
+		fi
+		;;
+	second-fails)
+		if (( attempt == 1 )); then
+			test ! -e "$PWD/wp-config.php"
+			"${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
+			exit 45
+		fi
+		if (( attempt == 2 )); then
+			"${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
+			exit 46
+		fi
+		;;
+	*)
+		echo "Unknown first-start flake mode: ${E2E_FAKE_WP_ENV_FIRST_START_MODE}" >&2
+		exit 1
+		;;
+esac
+
+exec "${E2E_FAKE_WP_ENV_TARGET:?}" "$@"
+SH
+chmod 0700 "$first_start_flake_wp_env"
+
+first_start_retry_port=19160
+first_start_retry_workspace="$TEST_ROOT/first-start-retry"
+first_start_retry_runtime="$TEST_ROOT/first-start-retry-runtime"
+first_start_retry_log="$TEST_ROOT/first-start-retry.log"
+mkdir "$first_start_retry_workspace"
+E2E_TRANSITION_PORT="$first_start_retry_port" \
+	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_FAKE_WP_ENV_FIRST_START_MODE=second-succeeds \
+	run_provisioner "$first_start_retry_workspace" "$first_start_retry_runtime" "$first_start_retry_log" \
+	create --workspace "$first_start_retry_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/seed.json" --run-id first-start-retry \
+	--base-url "http://transition-first-start-retry.localhost:$first_start_retry_port" \
+	--store-id woopayments-native-transition-first-start-retry > /dev/null
+test "$(< "$first_start_retry_runtime/wp-env-start-attempts")" = '2'
+E2E_TRANSITION_PORT="$first_start_retry_port" \
+	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	run_provisioner "$first_start_retry_workspace" "$first_start_retry_runtime" "$first_start_retry_log" \
+	destroy --workspace "$first_start_retry_workspace" --rollback-receipt-file "$first_start_retry_workspace/rollback-receipt"
+
+first_start_config_workspace="$TEST_ROOT/first-start-config"
+first_start_config_runtime="$TEST_ROOT/first-start-config-runtime"
+first_start_config_log="$TEST_ROOT/first-start-config.log"
+first_start_config_port=$((first_start_retry_port + 1))
+mkdir "$first_start_config_workspace"
+if E2E_TRANSITION_PORT="$first_start_config_port" \
+	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_FAKE_WP_ENV_FIRST_START_MODE=config-exists-after-first-failure \
+	run_provisioner "$first_start_config_workspace" "$first_start_config_runtime" "$first_start_config_log" \
+	create --workspace "$first_start_config_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/seed.json" --run-id first-start-config \
+	--base-url "http://transition-first-start-config.localhost:$first_start_config_port" \
+	--store-id woopayments-native-transition-first-start-config > /dev/null; then
+	echo 'Transition create retried a failed first start after wp-config.php existed.' >&2
+	exit 1
+fi
+test "$(< "$first_start_config_runtime/wp-env-start-attempts")" = '1'
+E2E_TRANSITION_PORT="$first_start_config_port" \
+	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	run_provisioner "$first_start_config_workspace" "$first_start_config_runtime" "$first_start_config_log" \
+	destroy --workspace "$first_start_config_workspace" --rollback-receipt-file "$first_start_config_workspace/rollback-receipt"
+
+first_start_second_failure_workspace="$TEST_ROOT/first-start-second-failure"
+first_start_second_failure_runtime="$TEST_ROOT/first-start-second-failure-runtime"
+first_start_second_failure_log="$TEST_ROOT/first-start-second-failure.log"
+first_start_second_failure_port=$((first_start_config_port + 1))
+mkdir "$first_start_second_failure_workspace"
+if E2E_TRANSITION_PORT="$first_start_second_failure_port" \
+	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_FAKE_WP_ENV_FIRST_START_MODE=second-fails \
+	run_provisioner "$first_start_second_failure_workspace" "$first_start_second_failure_runtime" "$first_start_second_failure_log" \
+	create --workspace "$first_start_second_failure_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/seed.json" --run-id first-start-second-failure \
+	--base-url "http://transition-first-start-second-failure.localhost:$first_start_second_failure_port" \
+	--store-id woopayments-native-transition-first-start-second-failure > /dev/null; then
+	echo 'Transition create accepted a second failed wp-env start.' >&2
+	exit 1
+fi
+test "$(< "$first_start_second_failure_runtime/wp-env-start-attempts")" = '2'
+E2E_TRANSITION_PORT="$first_start_second_failure_port" \
+	E2E_TRANSITION_WP_ENV_BIN="$first_start_flake_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	run_provisioner "$first_start_second_failure_workspace" "$first_start_second_failure_runtime" "$first_start_second_failure_log" \
+	destroy --workspace "$first_start_second_failure_workspace" --rollback-receipt-file "$first_start_second_failure_workspace/rollback-receipt"
+
 create_workspace="$TEST_ROOT/woopayments-native-transition-create-run"
 create_runtime="$TEST_ROOT/runtime-create"
 create_log="$TEST_ROOT/create-commands.log"

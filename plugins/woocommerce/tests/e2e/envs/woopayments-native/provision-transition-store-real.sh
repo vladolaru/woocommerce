@@ -1783,7 +1783,7 @@ create_store() {
 		"$port_lease_candidate_path"
 
 	on_create_error() {
-		local status=$?
+		local status="${1:-$?}"
 		trap - ERR
 		update_state phase 'create-failed' || true
 		emit_create_result "$receipt" 'failed'
@@ -1853,12 +1853,22 @@ create_store() {
 	update_state wp_env_start_attempted true boolean
 	update_state phase 'wp-env-start-attempted'
 	local wp_env_start_status
+	trap - ERR
 	set +e
 	wp_env start > /dev/null
 	wp_env_start_status=$?
 	set -e
+	trap on_create_error ERR
+	if (( wp_env_start_status != 0 )) && [[ ! -e "$workspace/store/wp-config.php" ]]; then
+		trap - ERR
+		set +e
+		wp_env start > /dev/null
+		wp_env_start_status=$?
+		set -e
+		trap on_create_error ERR
+	fi
 	if (( wp_env_start_status != 0 )); then
-		return "$wp_env_start_status"
+		on_create_error "$wp_env_start_status"
 	fi
 	update_state wp_env_created true boolean
 	update_state phase 'wp-env-created'
