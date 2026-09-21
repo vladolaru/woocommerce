@@ -27,6 +27,7 @@ import {
 	ResourceQuarantineRequiredError,
 	submitBlocksCheckout,
 	WooPaymentsPilotRuntime,
+	type ProviderWriteSession,
 } from '../../fixtures/woopayments-native';
 import WooPaymentsKnownGapsReporter from '../../reporters/woopayments-known-gaps';
 import type { TransitionAllocation } from './transition-allocation';
@@ -3124,6 +3125,54 @@ test( 'legacy cutover restores the customer without requiring persisted reconcil
 		}
 		await rm( directory, { recursive: true, force: true } );
 	}
+} );
+
+test( 'soft cutover requests a two-minute native readiness wait', async () => {
+	let cutoverClicked = false;
+	const readinessCalls: Array< [ string, number | undefined ] > = [];
+	const cutoverLink = visibleLocator( {
+		click: async () => {
+			cutoverClicked = true;
+		},
+		getAttribute: async ( name ) =>
+			name === 'href'
+				? 'http://native.test/wp-admin/admin.php?wc_woopayments_cutover_action=disable_woopayments&_wc_woopayments_cutover_nonce=123456789a'
+				: null,
+	} );
+	const session = {
+		baseURL: 'http://native.test',
+		assertCanWrite: async () => {},
+		requireEphemeralTransitionAllocation: () => ( {} ),
+		requireApprovedProviderFixture: () => {},
+		logInAsAdmin: async () => {},
+		performWrite: async ( write: () => Promise< void > ) => write(),
+		assertCurrentRuntimeReady: async (
+			currentRuntime: 'native',
+			timeoutMs?: number
+		) => {
+			readinessCalls.push( [ currentRuntime, timeoutMs ] );
+		},
+		logInAsCustomer: async () => {},
+	} as unknown as ProviderWriteSession;
+	const page = {
+		goto: async () => {},
+		getByRole: (
+			role: string,
+			options?: { exact?: boolean; name?: string | RegExp }
+		) => {
+			expect( role ).toBe( 'link' );
+			expect( options ).toEqual( {
+				name: 'Start the switch',
+				exact: true,
+			} );
+			return cutoverLink;
+		},
+	} as unknown as Page;
+
+	await softCutOverEphemeralStore( session, page );
+
+	expect( cutoverClicked ).toBe( true );
+	expect( readinessCalls ).toEqual( [ [ 'native', 120_000 ] ] );
 } );
 
 test( 'blocks cutover after lock loss during admin preparation', async () => {

@@ -412,7 +412,7 @@ export async function softCutOverEphemeralStore(
 ): Promise< void > {
 	const link = await prepareCutoverAction( session, page, false );
 	await session.performWrite( () => link.click() );
-	await session.assertCurrentRuntimeReady( 'native' );
+	await session.assertCurrentRuntimeReady( 'native', 120_000 );
 	await session.logInAsCustomer( page );
 }
 

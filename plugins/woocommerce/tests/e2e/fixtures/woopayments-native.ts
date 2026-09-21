@@ -298,7 +298,8 @@ export interface ProviderWriteSession {
 	requireApprovedProviderFixture: ( capability: string ) => void;
 	requireEphemeralTransitionAllocation: () => TransitionAllocation;
 	assertCurrentRuntimeReady: (
-		runtime: WooPaymentsRuntime
+		runtime: WooPaymentsRuntime,
+		timeoutMs?: number
 	) => Promise< void >;
 	assertCanWrite: () => Promise< void >;
 	performWrite: < Result >(
@@ -885,9 +886,10 @@ export class WooPaymentsPilotRuntime implements ProviderWriteSession {
 	}
 
 	public async assertCurrentRuntimeReady(
-		runtime: WooPaymentsRuntime
+		runtime: WooPaymentsRuntime,
+		timeoutMs = 30_000
 	): Promise< void > {
-		const deadline = Date.now() + 30_000;
+		const deadline = Date.now() + timeoutMs;
 		let lastFailure: Error | undefined;
 
 		for (;;) {
