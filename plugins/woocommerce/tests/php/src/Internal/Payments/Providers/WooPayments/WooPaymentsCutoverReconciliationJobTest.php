@@ -43,9 +43,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * Action Scheduler fixture.
 	 *
-	 * @var WooPaymentsCutoverActionScheduler|null
+	 * @var RecordingWooPaymentsCutoverActionScheduler|null
 	 */
-	private ?WooPaymentsCutoverActionScheduler $scheduler = null;
+	private ?RecordingWooPaymentsCutoverActionScheduler $scheduler = null;
 
 	/**
 	 * Headless preflight fixture.
@@ -76,7 +76,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$request_token->setAccessible( true );
 			$request_token->setValue( null );
 			$this->state_store       = new WooPaymentsCutoverStateStore();
-			$this->scheduler         = new WooPaymentsCutoverActionScheduler();
+			$this->scheduler         = new RecordingWooPaymentsCutoverActionScheduler( $this->state_store );
 			$this->preflight_service = new WooPaymentsCutoverPreflightService();
 			$this->cleanup_state();
 			$this->sut = $this->create_job( true );
@@ -160,6 +160,29 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Task 3.1 one-click cutover dispatches accepted merchant work after releasing its state lease.
+	 */
+	public function test_enqueue_dispatches_accepted_merchant_work_after_releasing_its_state_lease(): void {
+		$scheduler = $this->require_scheduler();
+
+		$this->assertTrue( $this->require_sut()->enqueue( 'merchant' ) );
+
+		$this->assertSame( 1, $scheduler->dispatch_count, 'Accepted merchant work should request one immediate async dispatch.' );
+		$this->assertTrue( $scheduler->dispatch_observed_released_lease, 'The durable state lease must be released before the async request can race the job.' );
+	}
+
+	/**
+	 * @testdox Non-merchant cutover work retains the ordinary Action Scheduler dispatch path.
+	 */
+	public function test_enqueue_does_not_explicitly_dispatch_non_merchant_work(): void {
+		$scheduler = $this->require_scheduler();
+
+		$this->assertTrue( $this->require_sut()->enqueue( 'mandatory' ) );
+
+		$this->assertSame( 0, $scheduler->dispatch_count, 'Mandatory cutover work should retain the ordinary queue dispatch path.' );
+	}
+
+	/**
 	 * @testdox Duplicate enqueue preserves the active record and does not create another action.
 	 */
 	public function test_enqueue_is_idempotent_for_an_active_job(): void {
@@ -183,6 +206,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $sut->enqueue( 'merchant' ) );
 		$this->assertNull( $this->require_state_store()->get_record() );
 		$this->assertSame( 0, $this->count_cutover_actions() );
+		$this->assertSame( 0, $this->require_scheduler()->dispatch_count, 'Rejected merchant work must not request an async dispatch.' );
 	}
 
 	/**
@@ -195,6 +219,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $sut->enqueue( 'merchant' ) );
 		$this->assertNull( $this->require_state_store()->get_record() );
 		$this->assertSame( 0, $this->count_cutover_actions() );
+		$this->assertSame( 0, $this->require_scheduler()->dispatch_count, 'Ineligible merchant work must not request an async dispatch.' );
 	}
 
 	/**
@@ -1353,6 +1378,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$sut            = $this->create_job( true, $this->create_network_preflight_with_failures( array() ) );
 		try {
 			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$this->assertSame( 1, $this->require_scheduler()->dispatch_count, 'A network merchant start should request one immediate async dispatch.' );
+			$this->assertTrue( $this->require_scheduler()->dispatch_observed_released_lease, 'Network fan-out must release the main-site lease before dispatch.' );
 			$main_pending = $this->require_state_store()->get_record();
 			$this->assertIsArray( $main_pending );
 			switch_to_blog( $second_site_id );
@@ -3468,11 +3495,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * Require the scheduler fixture.
 	 *
-	 * @return WooPaymentsCutoverActionScheduler
+	 * @return RecordingWooPaymentsCutoverActionScheduler
 	 */
-	private function require_scheduler(): WooPaymentsCutoverActionScheduler {
+	private function require_scheduler(): RecordingWooPaymentsCutoverActionScheduler {
 		$this->assertTrue( class_exists( WooPaymentsCutoverActionScheduler::class ), 'The cutover scheduler has not been implemented yet.' );
-		$this->assertInstanceOf( WooPaymentsCutoverActionScheduler::class, $this->scheduler, 'The cutover scheduler has not been implemented yet.' );
+		$this->assertInstanceOf( RecordingWooPaymentsCutoverActionScheduler::class, $this->scheduler, 'The cutover scheduler test fixture has not been initialized.' );
 
 		return $this->scheduler;
 	}

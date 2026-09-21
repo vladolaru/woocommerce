@@ -71,6 +71,20 @@ class WooPaymentsCutoverActionScheduler {
 	}
 
 	/**
+	 * Dispatch the async queue runner when due work exists.
+	 *
+	 * @since 11.2.0
+	 */
+	public function dispatch_async(): void {
+		if ( ! class_exists( 'ActionScheduler_AsyncRequest_QueueRunner' ) || ! class_exists( 'ActionScheduler_Store' ) ) {
+			return;
+		}
+
+		$async_request = new \ActionScheduler_AsyncRequest_QueueRunner( \ActionScheduler_Store::instance() );
+		$async_request->maybe_dispatch();
+	}
+
+	/**
 	 * Get the pending or running action ID for one exact attempt.
 	 *
 	 * @since 11.2.0

@@ -89,6 +89,43 @@ class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Explicit dispatch sends one nonblocking loopback request when cutover work is due.
+	 */
+	public function test_dispatch_async_sends_nonblocking_request_for_due_work(): void {
+		$sut = $this->require_sut();
+		$sut->schedule( time() - 1, 5, 1 );
+		$requests = array();
+		$preempt  = static function ( $response, array $args, string $url ) use ( &$requests ) {
+			$requests[] = array(
+				'blocking' => $args['blocking'] ?? null,
+				'url'      => $url,
+			);
+
+			return array(
+				'headers'  => array(),
+				'body'     => '',
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'pre_http_request', $preempt, 10, 3 );
+
+		try {
+			$sut->dispatch_async();
+		} finally {
+			remove_filter( 'pre_http_request', $preempt, 10 );
+		}
+
+		$this->assertCount( 1, $requests, 'Due cutover work should request one immediate Action Scheduler loopback.' );
+		$this->assertFalse( $requests[0]['blocking'], 'The explicit queue dispatch must not block the merchant request.' );
+		$this->assertStringContainsString( 'action=as_async_request_queue_runner', $requests[0]['url'] );
+	}
+
+	/**
 	 * @testdox Finds and cancels only the exact generation and attempt.
 	 */
 	public function test_cancel_targets_only_the_exact_action_identity(): void {

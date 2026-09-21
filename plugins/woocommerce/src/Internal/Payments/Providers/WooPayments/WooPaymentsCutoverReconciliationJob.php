@@ -188,7 +188,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when durable work already exists or was scheduled.
 	 */
 	public function enqueue( string $source ): bool {
-		return $this->enqueue_with_context( $source, null, null );
+		$accepted = $this->enqueue_with_context( $source, null, null );
+		if ( $accepted && 'merchant' === $source ) {
+			$this->scheduler->dispatch_async();
+		}
+
+		return $accepted;
 	}
 
 	/**
