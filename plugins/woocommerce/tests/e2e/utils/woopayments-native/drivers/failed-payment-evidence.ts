@@ -135,20 +135,43 @@ function orderMeta( order: Record< string, unknown >, key: string ): string {
 	return typeof entry?.value === 'string' ? entry.value : '';
 }
 
-function paymentMethodId( intent: Record< string, unknown > ): string {
+function optionalPaymentMethodId( value: unknown ): string | undefined {
+	if ( value === null || value === undefined ) {
+		return undefined;
+	}
+	if ( typeof value === 'string' ) {
+		return requireString( value, 'PaymentMethod ID' );
+	}
+	return requireString(
+		requireObject( value, 'PaymentMethod' ).id,
+		'PaymentMethod ID'
+	);
+}
+
+function paymentMethodId(
+	intent: Record< string, unknown >,
+	orderPaymentMethodId: string
+): string {
 	const lastPaymentError =
 		typeof intent.last_payment_error === 'object' &&
 		intent.last_payment_error !== null
 			? ( intent.last_payment_error as Record< string, unknown > )
 			: {};
-	const paymentMethod =
-		lastPaymentError.payment_method ?? intent.payment_method;
-	if ( typeof paymentMethod === 'string' ) {
-		return requireString( paymentMethod, 'PaymentMethod ID' );
+	const providerPaymentMethodId =
+		optionalPaymentMethodId( lastPaymentError.payment_method ) ??
+		optionalPaymentMethodId( intent.payment_method );
+	if (
+		providerPaymentMethodId !== undefined &&
+		orderPaymentMethodId !== '' &&
+		providerPaymentMethodId !== orderPaymentMethodId
+	) {
+		throw new Error(
+			'Failed payment evidence PaymentMethod mismatch between provider intent and order metadata.'
+		);
 	}
-	return requireString(
-		requireObject( paymentMethod, 'PaymentMethod' ).id,
-		'PaymentMethod ID'
+	return providerPaymentMethodId ?? requireString(
+		orderPaymentMethodId,
+		'order PaymentMethod ID'
 	);
 }
 
@@ -445,6 +468,7 @@ export async function readFailedPaymentEvidence(
 		intentIdMeta,
 		chargeIdMeta: orderMeta( order, '_charge_id' ),
 		intentionStatusMeta: orderMeta( order, '_intention_status' ),
+		paymentMethodIdMeta: orderMeta( order, '_payment_method_id' ),
 		failureNoteCount,
 	};
 	if ( intentIdMeta === '' ) {
@@ -494,7 +518,7 @@ export async function readFailedPaymentEvidence(
 	return {
 		...base,
 		intentId: String( intent.id ),
-		paymentMethodId: paymentMethodId( intent ),
+		paymentMethodId: paymentMethodId( intent, base.paymentMethodIdMeta ),
 		intentStatus: intent.status,
 		intentAmount: intent.amount,
 		intentCurrency:

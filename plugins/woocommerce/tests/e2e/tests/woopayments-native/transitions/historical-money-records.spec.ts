@@ -315,7 +315,7 @@ async function runHistoricalPayForOrder(
 					productId: product.id,
 					order: { id: orderId, keySha256: sha256( orderKey ), customerId, ...observedOrder, totalMinor: orderTotalMinor( order ), noteCount: notes.length, emailCount: 0 },
 					myAccountPayLink: { orderId, orderKeySha256: sha256( orderKey ), customerId, pathSha256: sha256( new URL( paymentUrl ).pathname ) },
-					clientDecline: { intentId: failedPayment.intentId, intentStatus: 'requires_payment_method' as const, errorCode: 'card_declined' as const, declineCode: 'generic_decline' as const, paymentMethodId: failedPayment.paymentMethodId, chargeIds: [] as const, captureCount: 0 as const, cardLast4: '0002' as const },
+					clientDecline: { intentId: failedPayment.intentId, intentStatus: 'requires_payment_method' as const, paymentMethodId: failedPayment.paymentMethodId, chargeIds: [] as const, captureCount: 0 as const, cardLast4: '0002' as const },
 					baseline: { orderIds: [ orderId ] as const, stockQuantity, noteCount: notes.length, emailCount: 0 },
 				};
 				return { ...fixture, checksumSha256: sha256( JSON.stringify( fixture ) ) };

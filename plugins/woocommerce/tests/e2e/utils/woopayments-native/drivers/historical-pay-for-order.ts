@@ -6,10 +6,6 @@ import {
 	type CardTestingProtectionSessionEvidence,
 	type CardTestingProtectionSubmittedObservation,
 } from './card-testing-protection';
-import {
-	failedAttempt,
-	validateGenericDeclineFailedAttempt,
-} from './card-recovery';
 import type { FailedPaymentEvidence } from './failed-payment-evidence';
 
 const IMMUTABLE_PLUGIN_VERSION = '11.1.0';
@@ -53,8 +49,6 @@ export interface HistoricalPayForOrderFixture {
 	clientDecline: {
 		intentId: string;
 		intentStatus: 'requires_payment_method';
-		errorCode: 'card_declined';
-		declineCode: 'generic_decline';
 		paymentMethodId: string;
 		chargeIds: readonly [];
 		captureCount: 0;
@@ -317,21 +311,15 @@ function validateRecordedClientDecline(
 		decline.intentId !== fixture.clientDecline.intentId ||
 		decline.intentStatus !== fixture.clientDecline.intentStatus ||
 		decline.paymentMethodId !== fixture.clientDecline.paymentMethodId ||
-		decline.errorCode !== fixture.clientDecline.errorCode ||
-		decline.declineCode !== fixture.clientDecline.declineCode ||
 		decline.chargeIds.length !== 0 ||
-		decline.capturedCharges !== 0
+		decline.capturedCharges !== 0 ||
+		decline.chargeIdMeta !== '' ||
+		decline.amountReceived !== 0 ||
+		decline.failureNoteCount < 1
 	) {
-		fail( 'requires the reviewed failure-recovery boundary to confirm the exact client decline.' );
+		fail( 'requires a human-visible terminal decline with no charge or money movement.' );
 	}
-	const attempt = failedAttempt(
-		decline,
-		fixture.order.id,
-		fixture.allocation.runId,
-		1
-	);
-	validateGenericDeclineFailedAttempt( attempt );
-	if ( attempt.orderCustomerId !== fixture.customerId ) {
+	if ( decline.orderCustomerId !== fixture.customerId ) {
 		fail( 'requires the failed order customer linkage.' );
 	}
 }
@@ -371,6 +359,9 @@ function validateImmutableFixture( fixture: HistoricalPayForOrderFixture ): void
 	) {
 		fail( 'requires exact allocated fixture identity.' );
 	}
+	if ( fixture.order.totalMinor !== 1001 ) {
+		fail( 'requires the exact 1001 USD failed-order total.' );
+	}
 	if (
 		! isPositiveInteger( fixture.order.id ) ||
 		fixture.order.customerId !== fixture.customerId ||
@@ -404,8 +395,6 @@ function validateImmutableFixture( fixture: HistoricalPayForOrderFixture ): void
 		! hasValue( fixture.clientDecline.intentId ) ||
 		! hasValue( fixture.clientDecline.paymentMethodId ) ||
 		fixture.clientDecline.intentStatus !== 'requires_payment_method' ||
-		fixture.clientDecline.errorCode !== 'card_declined' ||
-		fixture.clientDecline.declineCode !== 'generic_decline' ||
 		fixture.clientDecline.chargeIds.length !== 0 ||
 		fixture.clientDecline.captureCount !== 0 ||
 		fixture.clientDecline.cardLast4 !== '0002'

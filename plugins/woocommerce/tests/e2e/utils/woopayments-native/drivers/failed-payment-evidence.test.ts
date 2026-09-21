@@ -151,6 +151,91 @@ test( 'failed evidence follows a string latest_charge relationship', async () =>
 	expect( calls ).toContain( '/wp-json/wc/v3/payments/charges/ch_failed' );
 } );
 
+test( 'failed evidence falls back to the observed order PaymentMethod when the provider omits it', async () => {
+	const replies = new Map< string, unknown >( [
+		[
+			'/wp-json/wc/v3/orders/71',
+			{
+				id: 71,
+				status: 'failed',
+				total: '10.01',
+				currency: 'USD',
+				meta_data: [
+					{ key: '_intent_id', value: 'pi_failed' },
+					{ key: '_intention_status', value: 'requires_payment_method' },
+					{ key: '_payment_method_id', value: 'pm_order_observed' },
+				],
+			},
+		],
+		[ '/wp-json/wc/v3/orders/71/notes?context=edit&per_page=100', [] ],
+		[
+			'/wp-json/wc/v3/payments/payment_intents/pi_failed',
+			{
+				id: 'pi_failed',
+				status: 'requires_payment_method',
+				amount: 1001,
+				currency: 'usd',
+				amount_received: 0,
+				setup_future_usage: null,
+				customer: null,
+				payment_method: null,
+				last_payment_error: null,
+			},
+		],
+	] );
+	const session = {
+		adminApi: {
+			get: async ( path: string ) => response( replies.get( path ) ),
+		},
+	};
+
+	await expect( readFailedPaymentEvidence( session as never, 71 ) ).resolves.toMatchObject( {
+		paymentMethodId: 'pm_order_observed',
+	} );
+} );
+
+test( 'failed evidence rejects disagreement between provider and observed order PaymentMethods', async () => {
+	const replies = new Map< string, unknown >( [
+		[
+			'/wp-json/wc/v3/orders/71',
+			{
+				id: 71,
+				status: 'failed',
+				total: '10.01',
+				currency: 'USD',
+				meta_data: [
+					{ key: '_intent_id', value: 'pi_failed' },
+					{ key: '_payment_method_id', value: 'pm_order_observed' },
+				],
+			},
+		],
+		[ '/wp-json/wc/v3/orders/71/notes?context=edit&per_page=100', [] ],
+		[
+			'/wp-json/wc/v3/payments/payment_intents/pi_failed',
+			{
+				id: 'pi_failed',
+				status: 'requires_payment_method',
+				amount: 1001,
+				currency: 'usd',
+				amount_received: 0,
+				setup_future_usage: null,
+				customer: null,
+				payment_method: 'pm_provider',
+				last_payment_error: null,
+			},
+		],
+	] );
+	const session = {
+		adminApi: {
+			get: async ( path: string ) => response( replies.get( path ) ),
+		},
+	};
+
+	await expect( readFailedPaymentEvidence( session as never, 71 ) ).rejects.toThrow(
+		'PaymentMethod mismatch between provider intent and order metadata'
+	);
+} );
+
 test( 'failed evidence rejects a provider intent whose ID differs from the order metadata', async () => {
 	const replies = new Map< string, unknown >( [
 		[
