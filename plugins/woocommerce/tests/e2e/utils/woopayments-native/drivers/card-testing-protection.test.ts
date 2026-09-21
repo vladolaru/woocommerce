@@ -450,6 +450,8 @@ function accountProtectionFromRawRow( row: ControlledOptionRow ): boolean {
 
 test( 'runs canonical PHP with one standard native-store WP-CLI invocation', async () => {
 	const execFileCalls: unknown[][] = [];
+	const environmentSentinel = 'WOO_E2E_NATIVE_STORE_ENV_SENTINEL';
+	const originalSentinel = process.env[ environmentSentinel ];
 	const runner = new NativeStoreWpCliRunner( {
 		storeDirectory: '/test/workspace/store',
 		execFile: async ( ...args: unknown[] ) => {
@@ -460,9 +462,18 @@ test( 'runs canonical PHP with one standard native-store WP-CLI invocation', asy
 		},
 	} );
 
-	await expect( runner.run( runnerRequest() ) ).resolves.toEqual(
-		envelope( { captured: true } )
-	);
+	process.env[ environmentSentinel ] = 'preserved';
+	try {
+		await expect( runner.run( runnerRequest() ) ).resolves.toEqual(
+			envelope( { captured: true } )
+		);
+	} finally {
+		if ( originalSentinel === undefined ) {
+			delete process.env[ environmentSentinel ];
+		} else {
+			process.env[ environmentSentinel ] = originalSentinel;
+		}
+	}
 	expect( execFileCalls ).toHaveLength( 1 );
 	const [ command, args, options ] = execFileCalls[ 0 ] as [
 		string,
@@ -474,6 +485,9 @@ test( 'runs canonical PHP with one standard native-store WP-CLI invocation', asy
 		cwd: '/test/workspace/store',
 		env: { WP_ENV_HOME: '/test/workspace/wp-env-home' },
 	} );
+	expect(
+		( options.env as Record< string, string > )[ environmentSentinel ]
+	).toBe( 'preserved' );
 	expect( args.slice( 0, -1 ) ).toEqual( [
 		'run',
 		'cli',
