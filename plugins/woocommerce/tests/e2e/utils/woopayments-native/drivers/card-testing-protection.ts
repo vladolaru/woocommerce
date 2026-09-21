@@ -787,7 +787,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 	callback: ( scope: CardTestingProtectionScope ) => Promise< Result >,
 	options: CardTestingProtectionControllerOptions = {}
 ): Promise< Result > {
-	if ( session.runtime !== 'native' ) {
+	if ( session.runtime !== 'native' && session.runtime !== 'transition' ) {
 		throw new Error(
 			'Card-testing protection state capture requires the native runtime.'
 		);
@@ -798,6 +798,9 @@ export async function withCapturedCardTestingProtectionState< Result >(
 		);
 	}
 	assertSafeNativeStoreBaseUrl( session.baseURL );
+	if ( session.runtime === 'transition' ) {
+		await session.assertCurrentRuntimeReady( 'native' );
+	}
 	const runner = options.runner ?? new NativeStoreWpCliRunner();
 	const targetProtection = options.targetProtection ?? true;
 	const marker = deterministicMarker( runId );

@@ -135,7 +135,9 @@ interface FakeLockOptions {
 	recoveredValue?: JsonValue;
 	restoreOwned?: boolean;
 	assertCanWrite?: () => void | Promise< void >;
+	assertCurrentRuntimeReady?: () => void | Promise< void >;
 	baseURL?: string;
+	runtime?: ProviderWriteSession[ 'runtime' ];
 }
 
 function makeSession(
@@ -172,11 +174,15 @@ function makeSession(
 		},
 	} as unknown as ResourceLock;
 	const session = {
-		runtime: 'native',
+		runtime: options.runtime ?? 'native',
 		runId: RUN_ID,
 		baseURL: options.baseURL ?? BASE_URL,
 		requireApprovedProviderFixture( capability: string ) {
 			events.push( `capability:${ capability }` );
+		},
+		async assertCurrentRuntimeReady( runtime: ProviderWriteSession[ 'runtime' ] ) {
+			events.push( `runtime-ready:${ runtime }` );
+			await options.assertCurrentRuntimeReady?.();
 		},
 		async assertCanWrite() {
 			events.push( 'assert-can-write' );
@@ -642,6 +648,64 @@ test( 'rejects the standing port-8082 store before locks, journal, or runner wor
 	expect( events ).toEqual( [] );
 	expect( journalValues ).toEqual( [] );
 	expect( runner.requests ).toEqual( [] );
+} );
+
+test( 'allows transition card protection only after native ownership is rechecked', async () => {
+	const transitionEvents: string[] = [];
+	const { session: transitionSession } = makeSession( transitionEvents, {
+		runtime: 'transition',
+	} );
+	const transitionRunner = new FakeRunner();
+
+	await withCapturedCardTestingProtectionState(
+		transitionSession,
+		RUN_ID,
+		async ( scope ) => captureFreshGuestSession( scope ),
+		{ runner: transitionRunner }
+	);
+
+	expect( transitionEvents[ 0 ] ).toBe( 'runtime-ready:native' );
+	expect(
+		transitionEvents.filter( ( event ) => event.startsWith( 'locks:' ) )
+	).toHaveLength( 1 );
+
+	const clientEvents: string[] = [];
+	const { session: clientSession } = makeSession( clientEvents, {
+		runtime: 'client',
+	} );
+	const clientRunner = new FakeRunner();
+	await expect(
+		withCapturedCardTestingProtectionState(
+			clientSession,
+			RUN_ID,
+			async () => {},
+			{ runner: clientRunner }
+		)
+	).rejects.toThrow( 'requires the native runtime' );
+	expect( clientEvents ).toEqual( [] );
+	expect( clientRunner.requests ).toEqual( [] );
+
+	const pluginOwnedEvents: string[] = [];
+	const { session: pluginOwnedTransition } = makeSession(
+		pluginOwnedEvents,
+		{
+			runtime: 'transition',
+			assertCurrentRuntimeReady: () => {
+				throw new Error( 'post-cutover native ownership is not proved' );
+			},
+		}
+	);
+	const pluginOwnedRunner = new FakeRunner();
+	await expect(
+		withCapturedCardTestingProtectionState(
+			pluginOwnedTransition,
+			RUN_ID,
+			async () => {},
+			{ runner: pluginOwnedRunner }
+		)
+	).rejects.toThrow( 'post-cutover native ownership is not proved' );
+	expect( pluginOwnedEvents ).toEqual( [ 'runtime-ready:native' ] );
+	expect( pluginOwnedRunner.requests ).toEqual( [] );
 } );
 
 test( 'requires a zero-cookie baseline and exact context identity before session capture', async () => {
