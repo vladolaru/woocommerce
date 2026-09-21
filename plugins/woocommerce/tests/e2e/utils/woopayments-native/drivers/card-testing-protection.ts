@@ -536,6 +536,41 @@ export function composeCardTestingProtectionEvidence(
 	rendered: CardTestingProtectionRenderedObservation,
 	submitted: CardTestingProtectionSubmittedObservation
 ): CardTestingProtectionEvidence {
+	if ( ! isPlainObject( session ) ) {
+		invalid( 'Card-testing protection session evidence requires one exact object.' );
+	}
+	if ( session.eligible === false ) {
+		if ( ! exactKeys( session, [ 'eligible', 'token', 'accountEnabled' ] ) || session.token !== null || session.accountEnabled !== false ) {
+			invalid( 'Card-testing protection disabled session evidence is malformed.' );
+		}
+	} else if (
+		session.eligible !== true ||
+		! exactKeys( session, [ 'eligible', 'token', 'accountEnabled' ] ) ||
+		session.accountEnabled !== true
+	) {
+		invalid( 'Card-testing protection enabled session evidence is malformed.' );
+	} else {
+		assertTokenDigest( session.token );
+	}
+	const validateWire = (
+		value: CardTestingProtectionRenderedObservation | CardTestingProtectionSubmittedObservation
+	): CardTestingProtectionRenderedObservation => {
+		if ( ! isPlainObject( value ) ) {
+			invalid( 'Card-testing protection wire observation requires one exact object.' );
+		}
+		if ( 'field' in value ) {
+			if ( ! exactKeys( value, [ 'field' ] ) || ( value.field !== 'absent' && value.field !== 'empty' ) ) {
+				invalid( 'Card-testing protection disabled wire observation is malformed.' );
+			}
+			return { field: value.field };
+		}
+		if ( ! exactKeys( value, [ 'tokenSha256' ] ) || typeof value.tokenSha256 !== 'string' || ! SHA256_PATTERN.test( value.tokenSha256 ) ) {
+			invalid( 'Card-testing protection enabled wire observation is malformed.' );
+		}
+		return { tokenSha256: value.tokenSha256 };
+	};
+	rendered = validateWire( rendered );
+	submitted = validateWire( submitted );
 	if ( session.eligible === false ) {
 		if ( 'tokenSha256' in rendered || 'tokenSha256' in submitted ) {
 			invalid( 'Disabled card-testing protection requires absent or empty rendered and submitted fields.' );

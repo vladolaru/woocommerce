@@ -159,6 +159,33 @@ function failedPaymentEvidence(): FailedPaymentEvidence {
 	};
 }
 
+function recoveryDependencies( decline: FailedPaymentEvidence ) {
+	return {
+		readFailedFixture: async () => FIXTURE,
+		readFailedPayment: async () => decline,
+		cutOver: async () => {},
+		captureProtection: async () => ( { eligible: true, token: { length: 16, sha256: 'd'.repeat( 64 ) }, accountEnabled: true } ),
+		observeRenderedProtection: async () => ( { tokenSha256: 'd'.repeat( 64 ) } ),
+		submitPayForOrder: async () => ( { requestCount: 1, submittedProtection: { tokenSha256: 'd'.repeat( 64 ) } } ),
+		waitForListenerQuiescence: async () => {},
+		readColdRecoveryEvidence: async () => evidence(),
+	};
+}
+
+test( 'rejects recorded failed evidence with a status different from the immutable failed order', async () => {
+	await expect( collectHistoricalPayForOrderRecovery( recoveryDependencies( {
+		...failedPaymentEvidence(),
+		orderStatus: 'pending',
+	} ) ) ).rejects.toThrow( 'immutable failed-order status' );
+} );
+
+test( 'rejects recorded failed evidence with a total different from the immutable failed order', async () => {
+	await expect( collectHistoricalPayForOrderRecovery( recoveryDependencies( {
+		...failedPaymentEvidence(),
+		orderTotal: '9.99',
+	} ) ) ).rejects.toThrow( 'immutable failed-order total' );
+} );
+
 test( 'accepts exactly one immutable 11.1.0 failed order paid in place after native cutover', () => {
 	expect( validateHistoricalPayForOrderRecovery( FIXTURE, evidence() ) ).toEqual(
 		evidence()

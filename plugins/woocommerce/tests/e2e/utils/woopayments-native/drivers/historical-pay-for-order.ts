@@ -153,6 +153,15 @@ function validateRecordedClientDecline(
 	fixture: HistoricalPayForOrderFixture,
 	decline: FailedPaymentEvidence
 ): void {
+	const expectedTotal = `${ Math.floor( fixture.order.totalMinor / 100 ) }.${ String(
+		fixture.order.totalMinor % 100
+	).padStart( 2, '0' ) }`;
+	if ( decline.orderStatus !== fixture.order.status ) {
+		fail( 'requires the immutable failed-order status.' );
+	}
+	if ( decline.orderTotal !== expectedTotal ) {
+		fail( 'requires the immutable failed-order total.' );
+	}
 	if (
 		decline.intentId !== fixture.clientDecline.intentId ||
 		decline.intentStatus !== fixture.clientDecline.intentStatus ||

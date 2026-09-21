@@ -1386,6 +1386,31 @@ for ( const [ name, rendered, submitted ] of [
 	} );
 }
 
+test( 'rejects malformed session and wire observations instead of normalizing them', () => {
+	const disabled = { eligible: false, token: null, accountEnabled: false } as const;
+	const enabled = { eligible: true, token: { length: 16, sha256: TOKEN_DIGEST }, accountEnabled: true } as const;
+	for ( const [ session, rendered, submitted ] of [
+		[ { eligible: false, token: null, accountEnabled: true }, { field: 'absent' }, { field: 'empty' } ],
+		[ { eligible: true, token: { length: 16, sha256: TOKEN_DIGEST }, accountEnabled: true, rawToken: 'secret' }, { tokenSha256: TOKEN_DIGEST }, { tokenSha256: TOKEN_DIGEST } ],
+		[ disabled, { field: 'invalid', raw: true }, { field: 'empty' } ],
+		[ disabled, { field: 'absent' }, { field: 'invalid', raw: true } ],
+		[ enabled, { tokenSha256: TOKEN_DIGEST, raw: true }, { tokenSha256: TOKEN_DIGEST } ],
+	] ) {
+		expect( () => composeCardTestingProtectionEvidence(
+			session as never,
+			rendered as never,
+			submitted as never
+		) ).toThrow();
+	}
+	expect( composeCardTestingProtectionEvidence( disabled, { field: 'empty' }, { field: 'absent' } ) ).toEqual( {
+		eligible: false,
+		token: null,
+		accountEnabled: false,
+		renderedField: 'empty',
+		submittedTokenSha256: null,
+	} );
+} );
+
 test( 'executes native PHP mutations and restores exact controlled option rows for each target', async () => {
 	for ( const targetProtection of [ false, true ] as const ) {
 		const workspace = mkdtempSync( join( tmpdir(), 'ctp-native-options-' ) );
