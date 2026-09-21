@@ -129,10 +129,148 @@ export interface HistoricalPayForOrderEvidence {
 }
 
 /** Browser-stage evidence; runner artifacts later add cardinality, listener, and journal receipts. */
-export type HistoricalPayForOrderBrowserEvidence = Omit<
-	HistoricalPayForOrderEvidence,
-	'cardinality' | 'listener' | 'journals'
->;
+export interface HistoricalPayForOrderBrowserEvidence {
+	fixtureChecksumSha256: string;
+	protection: CardTestingProtectionEvidence;
+	order: {
+		id: number;
+		keySha256: string;
+		customerId: number;
+		currency: 'USD';
+		totalMinor: number;
+		status: 'processing' | 'completed';
+		noteCount: number;
+	};
+	nativeSuccess: {
+		intentId: string;
+		paymentMethodId: string;
+		chargeId: string;
+		chargeStatus: string;
+		chargeCaptured: boolean;
+		occurrenceCount: number;
+		captureOccurrenceCount: number;
+	};
+	cleanup: HistoricalPayForOrderEvidence[ 'cleanup' ];
+}
+
+export interface HistoricalPayForOrderRunnerReceipt {
+	graph: Pick< HistoricalPayForOrderEvidence[ 'cardinality' ], 'orderIds' | 'intentIds' | 'paidIntentIds' | 'orphanIntentIds' >;
+	listener: {
+		quiescent: boolean;
+		sideEffects: readonly string[];
+	};
+	journals: HistoricalPayForOrderEvidence[ 'journals' ];
+	order: Pick< HistoricalPayForOrderEvidence[ 'order' ], 'paymentMethod' | 'productLines' >;
+	nativeSuccess: Pick< HistoricalPayForOrderEvidence[ 'nativeSuccess' ], 'intentStatus' | 'cardLast4' >;
+	stock: {
+		before: number;
+		after: number;
+	};
+	notes: {
+		before: number;
+		after: number;
+	};
+	emails: {
+		before: number;
+		after: number;
+	};
+}
+
+/** Adds runner receipts to browser observations before the strict final validator runs. */
+export function composeHistoricalPayForOrderEvidence(
+	fixture: HistoricalPayForOrderFixture,
+	browser: HistoricalPayForOrderBrowserEvidence,
+	receipt: HistoricalPayForOrderRunnerReceipt
+): HistoricalPayForOrderEvidence {
+	if (
+		! receipt.stock ||
+		! receipt.notes ||
+		! receipt.emails ||
+		! Number.isSafeInteger( receipt.stock.before ) ||
+		! Number.isSafeInteger( receipt.stock.after ) ||
+		! Number.isSafeInteger( receipt.notes.before ) ||
+		! Number.isSafeInteger( receipt.notes.after ) ||
+		! Number.isSafeInteger( receipt.emails.before ) ||
+		! Number.isSafeInteger( receipt.emails.after )
+	) {
+		fail( 'Task 4 receipt requires observed stock, note, and email counts.' );
+	}
+	if ( receipt.stock.before !== 1 || receipt.stock.after !== 0 ) {
+		fail( 'Task 4 receipt requires the observed managed-stock transition from 1 to 0.' );
+	}
+	if (
+		receipt.stock.before !== fixture.baseline.stockQuantity ||
+		receipt.notes.before !== fixture.baseline.noteCount ||
+		receipt.emails.before !== fixture.baseline.emailCount
+	) {
+		fail( 'Task 4 receipt does not match the immutable observed baseline.' );
+	}
+	return validateHistoricalPayForOrderRecovery( fixture, {
+		fixtureChecksumSha256: browser.fixtureChecksumSha256,
+		protection: browser.protection,
+		order: {
+			id: browser.order.id,
+			keySha256: browser.order.keySha256,
+			customerId: browser.order.customerId,
+			currency: browser.order.currency,
+			totalMinor: browser.order.totalMinor,
+			status: browser.order.status,
+			paymentMethod: receipt.order.paymentMethod,
+			productLines: receipt.order.productLines,
+			stockReduced: receipt.stock.after < receipt.stock.before,
+			noteCount: browser.order.noteCount,
+			emailCount: receipt.emails.after,
+		},
+		nativeSuccess: {
+			intentId: browser.nativeSuccess.intentId,
+			paymentMethodId: browser.nativeSuccess.paymentMethodId,
+			intentStatus: receipt.nativeSuccess.intentStatus,
+			cardLast4: receipt.nativeSuccess.cardLast4,
+			charges: [ { id: browser.nativeSuccess.chargeId, status: browser.nativeSuccess.chargeStatus, captured: browser.nativeSuccess.chargeCaptured } ],
+			occurrenceCount: browser.nativeSuccess.occurrenceCount,
+			captureOccurrenceCount: browser.nativeSuccess.captureOccurrenceCount,
+		},
+		cardinality: {
+			...receipt.graph,
+			stockReductionDelta: receipt.stock.before - receipt.stock.after,
+			paidNoteDelta: receipt.notes.after - receipt.notes.before,
+			customerEmailDelta: receipt.emails.after - receipt.emails.before,
+			listenerSideEffectCount: receipt.listener.sideEffects.length,
+		},
+		listener: {
+			quiescent: receipt.listener.quiescent,
+			sideEffectCount: receipt.listener.sideEffects.length,
+		},
+		journals: receipt.journals,
+		cleanup: browser.cleanup,
+	} );
+}
+
+export function validateHistoricalOrderPayTotal( total: string ): void {
+	if ( total !== '$10.01' ) {
+		fail( 'Historical pay-for-order requires the exact Total: $10.01 cell.' );
+	}
+}
+
+export function validateHistoricalOrderPayRoute(
+	route: string,
+	expected: { paymentUrl: string; orderId: number; orderKey: string }
+): void {
+	const actual = new URL( route );
+	const paymentUrl = new URL( expected.paymentUrl );
+	const expectedPath = paymentUrl.pathname;
+	if (
+		! expectedPath.endsWith( `/order-pay/${ expected.orderId }/` ) ||
+		actual.origin !== paymentUrl.origin ||
+		actual.pathname !== expectedPath ||
+		actual.searchParams.getAll( 'key' ).length !== 1 ||
+		actual.searchParams.get( 'key' ) !== expected.orderKey ||
+		actual.searchParams.getAll( 'pay_for_order' ).length !== 1 ||
+		! [ 'true', '1' ].includes( actual.searchParams.get( 'pay_for_order' ) ?? '' )
+	) {
+		throw new Error( 'Historical pay-for-order requires the exact rendered order-pay route.' );
+	}
+}
 
 interface HistoricalPayForOrderPreCutoverDependencies {
 	withTransitionProviderLock: < Result >(
@@ -511,9 +649,20 @@ export async function collectHistoricalPayForOrderRecovery(
 		};
 		validateImmutableFixture( fixture );
 		validateProtection( fixture.protectionTarget, evidence.protection );
-		validateRecoveredOrder( fixture, evidence );
-		validateNativeSuccess( fixture, evidence.nativeSuccess );
-		validateCleanup( fixture, evidence );
+		if (
+			evidence.order.id !== fixture.order.id ||
+			evidence.order.keySha256 !== fixture.order.keySha256 ||
+			evidence.order.customerId !== fixture.customerId ||
+			evidence.order.currency !== fixture.order.currency ||
+			evidence.order.totalMinor !== fixture.order.totalMinor ||
+			! [ 'processing', 'completed' ].includes( evidence.order.status ) ||
+			evidence.nativeSuccess.intentId === fixture.clientDecline.intentId ||
+			evidence.nativeSuccess.paymentMethodId === fixture.clientDecline.paymentMethodId ||
+			evidence.nativeSuccess.occurrenceCount !== 1 ||
+			evidence.nativeSuccess.captureOccurrenceCount !== 1
+		) {
+			fail( 'requires observed browser recovery identity and provider occurrence evidence.' );
+		}
 		return evidence;
 	} );
 }

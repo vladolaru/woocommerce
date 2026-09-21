@@ -2,7 +2,11 @@ import { expect, test } from '@playwright/test';
 
 import {
 	collectHistoricalPayForOrderRecovery,
+	composeHistoricalPayForOrderEvidence,
+	validateHistoricalOrderPayRoute,
+	validateHistoricalOrderPayTotal,
 	validateHistoricalPayForOrderRecovery,
+	type HistoricalPayForOrderBrowserEvidence,
 	type HistoricalPayForOrderEvidence,
 	type HistoricalPayForOrderFixture,
 } from './historical-pay-for-order';
@@ -54,7 +58,7 @@ const FIXTURE: HistoricalPayForOrderFixture = {
 	},
 	baseline: {
 		orderIds: [ 125 ],
-		stockQuantity: 4,
+		stockQuantity: 1,
 		noteCount: 1,
 		emailCount: 0,
 	},
@@ -120,6 +124,33 @@ function evidence(): HistoricalPayForOrderEvidence {
 				productIds: [ 91 ],
 			},
 		},
+	};
+}
+
+function browserEvidence(): HistoricalPayForOrderBrowserEvidence {
+	const full = evidence();
+	return {
+		fixtureChecksumSha256: full.fixtureChecksumSha256,
+		protection: full.protection,
+		order: {
+			id: full.order.id,
+			keySha256: full.order.keySha256,
+			customerId: full.order.customerId,
+			currency: full.order.currency,
+			totalMinor: full.order.totalMinor,
+			status: full.order.status,
+			noteCount: full.order.noteCount,
+		},
+		nativeSuccess: {
+			intentId: full.nativeSuccess.intentId,
+			paymentMethodId: full.nativeSuccess.paymentMethodId,
+			chargeId: full.nativeSuccess.charges[ 0 ].id,
+			chargeStatus: full.nativeSuccess.charges[ 0 ].status,
+			chargeCaptured: full.nativeSuccess.charges[ 0 ].captured,
+			occurrenceCount: full.nativeSuccess.occurrenceCount,
+			captureOccurrenceCount: full.nativeSuccess.captureOccurrenceCount,
+		},
+		cleanup: full.cleanup,
 	};
 }
 
@@ -205,7 +236,7 @@ function recoveryDependencies(
 			},
 			readColdRecoveryEvidence: async () => {
 				stages.push( 'cold-read' );
-				return evidence();
+				return browserEvidence();
 			},
 		},
 	};
@@ -225,6 +256,25 @@ test( 'rejects recorded failed evidence with a total different from the immutabl
 	} ) ) ).rejects.toThrow( 'immutable failed-order total' );
 } );
 
+for ( const route of [
+	'http://store.invalid/store/checkout/order-pay/125/?key=order-key&pay_for_order=true',
+	'http://store.invalid/store/checkout/order-pay/126/?key=order-key&pay_for_order=true',
+	'http://store.invalid/store/checkout/order-pay/125/?key=wrong&pay_for_order=true',
+	'http://store.invalid/store/checkout/order-pay/125/?key=order-key&key=order-key&pay_for_order=true',
+	'http://store.invalid/store/checkout/order-pay/125/?key=order-key&pay_for_order=true&pay_for_order=true',
+] ) {
+	test( `validates rendered order-pay route ${ route }`, () => {
+		const validate = () => validateHistoricalOrderPayRoute( route, {
+			paymentUrl: 'http://store.invalid/store/checkout/order-pay/125/?key=order-key&pay_for_order=true', orderId: 125, orderKey: 'order-key',
+		} );
+		if ( route.includes( '126' ) || route.includes( 'wrong' ) || route.includes( '&key=' ) || ( route.match( /pay_for_order/g )?.length ?? 0 ) > 1 ) {
+			expect( validate ).toThrow( 'exact rendered order-pay route' );
+		} else {
+			expect( validate ).not.toThrow();
+		}
+	} );
+}
+
 test( 'rejects a generic-decline fixture that is not the exact 1001 USD provider tuple', async () => {
 	const fixture = {
 		...FIXTURE,
@@ -240,10 +290,71 @@ test( 'rejects a generic-decline fixture that is not the exact 1001 USD provider
 	);
 } );
 
+test( 'rejects a rendered Total row that is not the exact historical order total', () => {
+	expect( () => validateHistoricalOrderPayTotal( '$10.99' ) ).toThrow(
+		'exact Total: $10.01 cell'
+	);
+	expect( () => validateHistoricalOrderPayTotal( '$10.01' ) ).not.toThrow();
+} );
+
 test( 'accepts exactly one immutable 11.1.0 failed order paid in place after native cutover', () => {
 	expect( validateHistoricalPayForOrderRecovery( FIXTURE, evidence() ) ).toEqual(
 		evidence()
 	);
+} );
+
+test( 'requires Task 4 receipt facts before composing final historical evidence', () => {
+	const full = evidence();
+	const { stockReductionDelta: _stockReductionDelta, paidNoteDelta: _paidNoteDelta, customerEmailDelta: _customerEmailDelta, listenerSideEffectCount: _listenerSideEffectCount, ...graph } = full.cardinality;
+	expect( composeHistoricalPayForOrderEvidence( FIXTURE, {
+		fixtureChecksumSha256: full.fixtureChecksumSha256,
+		protection: full.protection,
+		order: { id: full.order.id, keySha256: full.order.keySha256, customerId: full.order.customerId, currency: full.order.currency, totalMinor: full.order.totalMinor, status: full.order.status, noteCount: full.order.noteCount },
+		nativeSuccess: { intentId: full.nativeSuccess.intentId, paymentMethodId: full.nativeSuccess.paymentMethodId, chargeId: full.nativeSuccess.charges[ 0 ].id, chargeStatus: full.nativeSuccess.charges[ 0 ].status, chargeCaptured: full.nativeSuccess.charges[ 0 ].captured, occurrenceCount: full.nativeSuccess.occurrenceCount, captureOccurrenceCount: full.nativeSuccess.captureOccurrenceCount },
+		cleanup: full.cleanup,
+	}, {
+		graph,
+		listener: { quiescent: full.listener.quiescent, sideEffects: [ 'order-paid' ] }, journals: full.journals,
+		order: { paymentMethod: full.order.paymentMethod, productLines: full.order.productLines },
+		nativeSuccess: { intentStatus: full.nativeSuccess.intentStatus, cardLast4: full.nativeSuccess.cardLast4 },
+		stock: { before: 1, after: 0 },
+		notes: { before: FIXTURE.baseline.noteCount, after: full.order.noteCount },
+		emails: { before: FIXTURE.baseline.emailCount, after: full.order.emailCount },
+	} ) ).toEqual( full );
+} );
+
+test( 'rejects a Task 4 receipt without the observed managed-stock transition', () => {
+	const full = evidence();
+	const { stockReductionDelta: _stockReductionDelta, paidNoteDelta: _paidNoteDelta, customerEmailDelta: _customerEmailDelta, listenerSideEffectCount: _listenerSideEffectCount, ...graph } = full.cardinality;
+	expect( () => composeHistoricalPayForOrderEvidence( FIXTURE, browserEvidence(), {
+		graph,
+		listener: { quiescent: full.listener.quiescent, sideEffects: [ 'order-paid' ] },
+		journals: full.journals,
+		order: { paymentMethod: full.order.paymentMethod, productLines: full.order.productLines },
+		nativeSuccess: { intentStatus: full.nativeSuccess.intentStatus, cardLast4: full.nativeSuccess.cardLast4 },
+		stock: { before: 1, after: 1 },
+		notes: { before: FIXTURE.baseline.noteCount, after: full.order.noteCount },
+		emails: { before: FIXTURE.baseline.emailCount, after: full.order.emailCount },
+	} ) ).toThrow( 'managed-stock transition from 1 to 0' );
+} );
+
+test( 'rejects a Task 4 receipt missing observed email counts', () => {
+	const full = evidence();
+	const { stockReductionDelta: _stockReductionDelta, paidNoteDelta: _paidNoteDelta, customerEmailDelta: _customerEmailDelta, listenerSideEffectCount: _listenerSideEffectCount, ...graph } = full.cardinality;
+	const receipt = {
+		graph,
+		listener: { quiescent: full.listener.quiescent, sideEffects: [ 'order-paid' ] },
+		journals: full.journals,
+		order: { paymentMethod: full.order.paymentMethod, productLines: full.order.productLines },
+		nativeSuccess: { intentStatus: full.nativeSuccess.intentStatus, cardLast4: full.nativeSuccess.cardLast4 },
+		stock: { before: 1, after: 0 },
+		notes: { before: FIXTURE.baseline.noteCount, after: full.order.noteCount },
+	} as unknown;
+	expect( () => composeHistoricalPayForOrderEvidence(
+		FIXTURE,
+		browserEvidence(),
+		receipt as Parameters< typeof composeHistoricalPayForOrderEvidence >[ 2 ]
+	) ).toThrow( 'requires observed stock, note, and email counts' );
 } );
 
 test( 'rejects a pre-teardown cleanup receipt while retaining the exact cleanup manifest', () => {
@@ -584,7 +695,7 @@ for ( const requestCount of [ 0, 2 ] ) {
 					...dependencies.postCutover,
 					readColdRecoveryEvidence: async () => {
 						coldRead = true;
-						return evidence();
+						return browserEvidence();
 					},
 				},
 			} )

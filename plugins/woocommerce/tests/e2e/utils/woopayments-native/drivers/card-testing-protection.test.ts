@@ -1430,6 +1430,28 @@ test( 'captures a fresh authenticated order-pay session only for its expected cu
 	expect( runner.requests.find( ( request ) => request.operation === 'read-authenticated-session' )?.input.customerId ).toBe( AUTHENTICATED_CUSTOMER_ID );
 } );
 
+test( 'rejects an authenticated order-pay session for a different customer', async () => {
+	const { session } = makeSession( [] );
+	const { context } = fakeContext( [], [ AUTHENTICATED_COOKIE_VALUE ] );
+	const runner = new FakeRunner();
+
+	const error = await withCapturedCardTestingProtectionState(
+		session,
+		RUN_ID,
+		async ( scope ) => {
+			await scope.registerFreshContext( context as never );
+			return scope.captureAuthenticatedSessionProtection( context as never, 74 );
+		},
+		{ runner }
+	).catch( ( failure: unknown ) => failure );
+	expect( error ).toMatchObject( {
+		primaryError: expect.objectContaining( {
+			message: 'WooCommerce authenticated session evidence is missing or malformed.',
+		} ),
+	} );
+	expect( runner.requests.some( ( request ) => request.operation === 'read-authenticated-session' ) ).toBe( false );
+} );
+
 test( 'accepts only complete public card-testing protection evidence branches', () => {
 	expect(
 		validateCardTestingProtectionEvidence( {

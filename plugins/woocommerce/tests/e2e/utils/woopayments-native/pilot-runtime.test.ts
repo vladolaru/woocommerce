@@ -200,7 +200,7 @@ test( 'loads native readiness from the callback-bound setup artifact without cal
 
 async function removeOwnedLock(
 	lockDir: string,
-	kind: 'feature-setting' | 'record-event'
+	kind: 'account' | 'feature-setting' | 'record-event'
 ): Promise< void > {
 	const lockFiles = ( await readdir( lockDir ) ).filter( ( file ) =>
 		file.endsWith( '.lock' )
@@ -2694,6 +2694,30 @@ test( 'owns account, store, and record locks before a provider helper call', asy
 		expect( files.filter( ( file ) => file.endsWith( '.lock' ) ) ).toEqual(
 			[]
 		);
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'creates a run-owned product with the requested managed stock quantity', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+
+	try {
+		await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'historical-pay-for-order' },
+			async () => {
+				await pilotRuntime.createOwnedProduct( '10.01', {
+					managedStockQuantity: 1,
+				} );
+			}
+		);
+		expect( calls[ 0 ]?.data ).toMatchObject( {
+			regular_price: '10.01',
+			manage_stock: true,
+			stock_quantity: 1,
+		} );
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}

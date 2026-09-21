@@ -111,3 +111,41 @@ Output: no remaining historical-pay-for-order, CTP, fixture, or allocation-overr
 Command: exact collection command; `node plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.mjs`; `node --test plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.test.mjs`; changed-file Oxlint against `1ac94a2190`; and `git diff --check`.
 
 Output: all exit 0. Collection lists each retained title once, map validation reports 181 contracts, all 61 map tests pass, Oxlint reports zero new findings, and no whitespace errors exist. The reporter's post-collection localhost:8086 environment probe remains non-executing and unavailable.
+
+## Fix round 3/5
+
+Last updated: 2026-09-21 12:25 EEST
+
+### RED
+
+Command: `pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/drivers/historical-pay-for-order.test.ts tests/e2e/utils/woopayments-native/drivers/card-testing-protection.test.ts tests/e2e/utils/woopayments-native/pilot-runtime.test.ts`
+
+Output: exit 1; the new route, authenticated-customer, and receipt-composition expectations initially failed (`153 passed`, `3 failed`). The failures established that the previous route assertion did not preserve an install subdirectory, the nested authenticated-session failure needed to be asserted at its safe public boundary, and caller-supplied cardinalities could not satisfy a receipt composition without observed baseline counts.
+
+### Implementation
+
+The rendered-route proof now binds to the immutable `paymentUrl` origin and path, validates the embedded original order ID, requires one exact order key and one pay-for-order flag, and therefore preserves subdirectory or renamed-checkout installs. The page proof retains the semantic `Total:` row and the exact `$10.01` cell; authenticated session capture remains bound to the immutable customer ID.
+
+Browser evidence is explicit and contains only its independently observed CTP, REST, provider, and cleanup-manifest facts. A typed Task 4 receipt now supplies raw graph IDs, journals, listener side-effect receipts, and observed stock/note/email before-and-after counts. The composer derives all deltas and listener cardinality from those observations, requires the stock transition 1 to 0, proves the observed before counts equal the immutable fixture baseline, and constructs the strict final order without a cast. A managed-stock product option creates the exact run-owned $10.01 fixture at quantity 1.
+
+### GREEN
+
+Command: `pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/drivers/historical-pay-for-order.test.ts tests/e2e/utils/woopayments-native/drivers/card-testing-protection.test.ts tests/e2e/utils/woopayments-native/pilot-runtime.test.ts`
+
+Output: exit 0; `157 passed (17.1s)`.
+
+Command: `pnpm --dir plugins/woocommerce exec tsc --project tests/e2e/tsconfig.json --noEmit --pretty false 2>&1 | rg "(historical-pay-for-order|historical-money-records|woopayments-native\\.ts|card-testing-protection\\.test|pilot-runtime\\.test)"`
+
+Output: no output, so no attributable TypeScript diagnostic remains in any changed TypeScript file. The full configured TypeScript project continues to contain unrelated existing diagnostics outside this filtered changed-file set.
+
+Command: `E2E_TRANSITION_SEED_PROFILE=11.1.0 pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/playwright.config.ts --project=woopayments-native-transition tests/e2e/tests/woopayments-native/transitions/historical-money-records.spec.ts --list`
+
+Output: exit 0; the two exact required cases were collected once (`Total: 2 tests in 1 file`). The reporter made its non-executing post-collection localhost:8086 probe and received `ECONNREFUSED`; no browser/provider case ran.
+
+Command: `node plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.mjs && node --test plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.test.mjs`
+
+Output: exit 0; 181 contracts validated and all 61 map tests passed.
+
+Command: `/Users/vladolaru/Work/a8c/general/.verification-tool-overlays/bin/verify oxlint --new-vs=76a1cc98a4 <six changed TypeScript files>` and `git diff --check 76a1cc98a4 --`
+
+Output: exit 0; Oxlint found zero new findings (one pre-existing non-attributable finding) and diff check found no whitespace errors.
