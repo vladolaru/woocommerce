@@ -137,7 +137,7 @@ case "$SCENARIO" in
 			exit 65
 		fi
 		SPEC='tests/woopayments-native/transitions/historical-money-records.spec.ts'
-		GREP='^plugin-origin failed order pays in place after cutover with card-testing protection disabled$'
+		GREP='plugin-origin failed order pays in place after cutover with card-testing protection disabled'
 		CAPABILITIES=(
 			'historical-pay-for-order-ctp-false'
 			'card-decline-checkout'
@@ -156,7 +156,7 @@ case "$SCENARIO" in
 			exit 65
 		fi
 		SPEC='tests/woopayments-native/transitions/historical-money-records.spec.ts'
-		GREP='^plugin-origin failed order pays in place after cutover with card-testing protection enabled$'
+		GREP='plugin-origin failed order pays in place after cutover with card-testing protection enabled'
 		CAPABILITIES=(
 			'historical-pay-for-order-ctp-true'
 			'card-decline-checkout'

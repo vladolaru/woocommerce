@@ -349,7 +349,7 @@ fi
 E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
 	run_orchestrator 'historical-pay-for-order-ctp-false-run' 'historical-pay-for-order-ctp-false'
 grep -Fq -- 'tests/woopayments-native/transitions/historical-money-records.spec.ts' "$TEST_ROOT/commands.log"
-grep -Fq -- '--grep=^plugin-origin failed order pays in place after cutover with card-testing protection disabled$' "$TEST_ROOT/commands.log"
+grep -Fq -- '--grep=plugin-origin failed order pays in place after cutover with card-testing protection disabled' "$TEST_ROOT/commands.log"
 grep -Fq -- '--workers=1' "$TEST_ROOT/commands.log"
 grep -Fq -- '--retries=0' "$TEST_ROOT/commands.log"
 assert_exact_capabilities \
@@ -369,7 +369,7 @@ grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
 E2E_TRANSITION_CTP_CAMPAIGN_ID="$campaign_id" \
 	run_orchestrator 'historical-pay-for-order-ctp-true-run' 'historical-pay-for-order-ctp-true'
 grep -Fq -- 'tests/woopayments-native/transitions/historical-money-records.spec.ts' "$TEST_ROOT/commands.log"
-grep -Fq -- '--grep=^plugin-origin failed order pays in place after cutover with card-testing protection enabled$' "$TEST_ROOT/commands.log"
+grep -Fq -- '--grep=plugin-origin failed order pays in place after cutover with card-testing protection enabled' "$TEST_ROOT/commands.log"
 grep -Fq -- '--workers=1' "$TEST_ROOT/commands.log"
 grep -Fq -- '--retries=0' "$TEST_ROOT/commands.log"
 assert_exact_capabilities \
