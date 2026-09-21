@@ -159,16 +159,63 @@ function failedPaymentEvidence(): FailedPaymentEvidence {
 	};
 }
 
-function recoveryDependencies( decline: FailedPaymentEvidence ) {
+function recoveryDependencies(
+	decline: FailedPaymentEvidence,
+	stages: string[] = [],
+	requestCount = 1
+) {
 	return {
-		readFailedFixture: async () => FIXTURE,
-		readFailedPayment: async () => decline,
-		cutOver: async () => {},
-		captureProtection: async () => ( { eligible: true, token: { length: 16, sha256: 'd'.repeat( 64 ) }, accountEnabled: true } ),
-		observeRenderedProtection: async () => ( { tokenSha256: 'd'.repeat( 64 ) } ),
-		submitPayForOrder: async () => ( { requestCount: 1, submittedProtection: { tokenSha256: 'd'.repeat( 64 ) } } ),
-		waitForListenerQuiescence: async () => {},
-		readColdRecoveryEvidence: async () => evidence(),
+		preCutover: {
+			withTransitionProviderLock: async < Result >( callback: () => Promise< Result > ) => {
+				stages.push( 'transition-enter' );
+				try {
+					return await callback();
+				} finally {
+					stages.push( 'transition-exit' );
+				}
+			},
+			readFailedFixture: async () => {
+				stages.push( 'failed-fixture' );
+				return FIXTURE;
+			},
+			readFailedPayment: async () => {
+				stages.push( 'failed-payment' );
+				return decline;
+			},
+			cutOver: async () => {
+				stages.push( 'cutover' );
+				return { runtimeOwner: 'native' as const };
+			},
+		},
+		postCutover: {
+			withCardTestingProtectionLock: async < Result >( callback: () => Promise< Result > ) => {
+				stages.push( 'protection-enter' );
+				try {
+					return await callback();
+				} finally {
+					stages.push( 'protection-exit' );
+				}
+			},
+			captureProtection: async () => {
+				stages.push( 'protection' );
+				return { eligible: true as const, token: { length: 16 as const, sha256: 'd'.repeat( 64 ) }, accountEnabled: true as const };
+			},
+			observeRenderedProtection: async () => {
+				stages.push( 'rendered' );
+				return { tokenSha256: 'd'.repeat( 64 ) };
+			},
+			submitPayForOrder: async () => {
+				stages.push( 'pay-for-order' );
+				return { requestCount, submittedProtection: { tokenSha256: 'd'.repeat( 64 ) } };
+			},
+			waitForListenerQuiescence: async () => {
+				stages.push( 'listener-quiescent' );
+			},
+			readColdRecoveryEvidence: async () => {
+				stages.push( 'cold-read' );
+				return evidence();
+			},
+		},
 	};
 }
 
@@ -468,72 +515,83 @@ for ( const [ name, mutate, expected ] of [
 	} );
 }
 
-test( 'collects failed-order evidence before cutover and cold reads only after listener quiescence', async () => {
+test( 'releases the transition lock after one cutover before entering the protection stage', async () => {
 	const stages: string[] = [];
-	const result = await collectHistoricalPayForOrderRecovery( {
-		readFailedFixture: async () => {
-			stages.push( 'failed-fixture' );
-			return FIXTURE;
-		},
-		readFailedPayment: async () => {
-			stages.push( 'failed-payment' );
-			return failedPaymentEvidence();
-		},
-		captureProtection: async () => {
-			stages.push( 'protection' );
-			return {
-				eligible: true,
-				token: { length: 16, sha256: 'd'.repeat( 64 ) },
-				accountEnabled: true,
-			};
-		},
-		cutOver: async () => {
-			stages.push( 'cutover' );
-		},
-		observeRenderedProtection: async () => {
-			stages.push( 'rendered' );
-			return { tokenSha256: 'd'.repeat( 64 ) };
-		},
-		submitPayForOrder: async () => {
-			stages.push( 'pay-for-order' );
-			return { requestCount: 1, submittedProtection: { tokenSha256: 'd'.repeat( 64 ) } };
-		},
-		waitForListenerQuiescence: async () => {
-			stages.push( 'listener-quiescent' );
-		},
-		readColdRecoveryEvidence: async () => {
-			stages.push( 'cold-read' );
-			return evidence();
-		},
-	} );
+	const result = await collectHistoricalPayForOrderRecovery(
+		recoveryDependencies( failedPaymentEvidence(), stages )
+	);
 	expect( result.order.id ).toBe( 125 );
 	expect( stages ).toEqual( [
+		'transition-enter',
 		'failed-fixture',
 		'failed-payment',
 		'cutover',
+		'transition-exit',
+		'protection-enter',
 		'protection',
 		'rendered',
 		'pay-for-order',
 		'listener-quiescent',
 		'cold-read',
+		'protection-exit',
+	] );
+} );
+
+test( 'leaves the transition stage on a pre-cutover failure without entering the protection stage', async () => {
+	const stages: string[] = [];
+	await expect(
+		collectHistoricalPayForOrderRecovery(
+			recoveryDependencies(
+				{ ...failedPaymentEvidence(), orderStatus: 'pending' },
+				stages
+			)
+		)
+	).rejects.toThrow( 'immutable failed-order status' );
+	expect( stages ).toEqual( [
+		'transition-enter',
+		'failed-fixture',
+		'failed-payment',
+		'transition-exit',
+	] );
+} );
+
+test( 'does not enter the protection stage when cutover does not report the native runtime', async () => {
+	const stages: string[] = [];
+	const dependencies = recoveryDependencies( failedPaymentEvidence(), stages );
+	await expect(
+		collectHistoricalPayForOrderRecovery( {
+			...dependencies,
+			preCutover: {
+				...dependencies.preCutover,
+				cutOver: async () => JSON.parse( '{"runtimeOwner":"plugin"}' ),
+			},
+		} )
+	).rejects.toThrow( 'native runtime to complete cutover' );
+	expect( stages ).toEqual( [
+		'transition-enter',
+		'failed-fixture',
+		'failed-payment',
+		'transition-exit',
 	] );
 } );
 
 for ( const requestCount of [ 0, 2 ] ) {
 	test( `rejects ${ requestCount } post-cutover pay-for-order requests before cold reads`, async () => {
 		let coldRead = false;
+		const dependencies = recoveryDependencies(
+			failedPaymentEvidence(),
+			[],
+			requestCount
+		);
 		await expect(
 			collectHistoricalPayForOrderRecovery( {
-				readFailedFixture: async () => FIXTURE,
-				readFailedPayment: async () => failedPaymentEvidence(),
-				captureProtection: async () => ( { eligible: true, token: { length: 16, sha256: 'd'.repeat( 64 ) }, accountEnabled: true } ),
-				cutOver: async () => {},
-				observeRenderedProtection: async () => ( { tokenSha256: 'd'.repeat( 64 ) } ),
-				submitPayForOrder: async () => ( { requestCount, submittedProtection: { tokenSha256: 'd'.repeat( 64 ) } } ),
-				waitForListenerQuiescence: async () => {},
-				readColdRecoveryEvidence: async () => {
-					coldRead = true;
-					return evidence();
+				...dependencies,
+				postCutover: {
+					...dependencies.postCutover,
+					readColdRecoveryEvidence: async () => {
+						coldRead = true;
+						return evidence();
+					},
 				},
 			} )
 		).rejects.toThrow( 'exactly one pay-for-order request' );

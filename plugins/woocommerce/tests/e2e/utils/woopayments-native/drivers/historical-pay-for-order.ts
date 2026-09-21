@@ -135,11 +135,20 @@ export interface HistoricalPayForOrderEvidence {
 	};
 }
 
-export interface HistoricalPayForOrderRecoveryDependencies {
+interface HistoricalPayForOrderPreCutoverDependencies {
+	withTransitionProviderLock: < Result >(
+		callback: () => Promise< Result >
+	) => Promise< Result >;
 	readFailedFixture: () => Promise< HistoricalPayForOrderFixture >;
 	readFailedPayment: () => Promise< FailedPaymentEvidence >;
+	cutOver: () => Promise< { runtimeOwner: 'native' } >;
+}
+
+interface HistoricalPayForOrderPostCutoverDependencies {
+	withCardTestingProtectionLock: < Result >(
+		callback: () => Promise< Result >
+	) => Promise< Result >;
 	captureProtection: () => Promise< CardTestingProtectionSessionEvidence >;
-	cutOver: () => Promise< void >;
 	observeRenderedProtection: () => Promise< CardTestingProtectionRenderedObservation >;
 	submitPayForOrder: () => Promise< {
 		requestCount: number;
@@ -147,6 +156,11 @@ export interface HistoricalPayForOrderRecoveryDependencies {
 	} >;
 	waitForListenerQuiescence: () => Promise< void >;
 	readColdRecoveryEvidence: () => Promise< HistoricalPayForOrderEvidence >;
+}
+
+export interface HistoricalPayForOrderRecoveryDependencies {
+	preCutover: HistoricalPayForOrderPreCutoverDependencies;
+	postCutover: HistoricalPayForOrderPostCutoverDependencies;
 }
 
 function validateRecordedClientDecline(
@@ -472,30 +486,44 @@ export function validateHistoricalPayForOrderRecovery(
 export async function collectHistoricalPayForOrderRecovery(
 	dependencies: HistoricalPayForOrderRecoveryDependencies
 ): Promise< HistoricalPayForOrderEvidence > {
-	const fixture = await dependencies.readFailedFixture();
-	validateImmutableFixture( fixture );
-	validateRecordedClientDecline(
-		fixture,
-		await dependencies.readFailedPayment()
+	const fixture = await dependencies.preCutover.withTransitionProviderLock(
+		async () => {
+			const recordedFixture =
+				await dependencies.preCutover.readFailedFixture();
+			validateImmutableFixture( recordedFixture );
+			validateRecordedClientDecline(
+				recordedFixture,
+				await dependencies.preCutover.readFailedPayment()
+			);
+			const cutover = await dependencies.preCutover.cutOver();
+			if ( cutover.runtimeOwner !== 'native' ) {
+				fail( 'requires the native runtime to complete cutover.' );
+			}
+			return recordedFixture;
+		}
 	);
-	await dependencies.cutOver();
-	const protectionSession = await dependencies.captureProtection();
-	const rendered = await dependencies.observeRenderedProtection();
-	const submission = await dependencies.submitPayForOrder();
-	if ( submission.requestCount !== 1 ) {
-		fail( 'requires exactly one pay-for-order request after cutover.' );
-	}
-	const protection = composeCardTestingProtectionEvidence(
-		protectionSession,
-		rendered,
-		submission.submittedProtection
-	);
-	validateProtection( fixture.protectionTarget, protection );
-	await dependencies.waitForListenerQuiescence();
-	const cold = await dependencies.readColdRecoveryEvidence();
-	return validateHistoricalPayForOrderRecovery( fixture, {
-		...cold,
-		fixtureChecksumSha256: fixture.checksumSha256,
-		protection,
+
+	return dependencies.postCutover.withCardTestingProtectionLock( async () => {
+		const protectionSession =
+			await dependencies.postCutover.captureProtection();
+		const rendered =
+			await dependencies.postCutover.observeRenderedProtection();
+		const submission = await dependencies.postCutover.submitPayForOrder();
+		if ( submission.requestCount !== 1 ) {
+			fail( 'requires exactly one pay-for-order request after cutover.' );
+		}
+		const protection = composeCardTestingProtectionEvidence(
+			protectionSession,
+			rendered,
+			submission.submittedProtection
+		);
+		validateProtection( fixture.protectionTarget, protection );
+		await dependencies.postCutover.waitForListenerQuiescence();
+		const cold = await dependencies.postCutover.readColdRecoveryEvidence();
+		return validateHistoricalPayForOrderRecovery( fixture, {
+			...cold,
+			fixtureChecksumSha256: fixture.checksumSha256,
+			protection,
+		} );
 	} );
 }
