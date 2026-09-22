@@ -2405,6 +2405,98 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should retry a plugin-era failed intent on order pay.
+	 *
+	 * Oracle: WooPayments 11.1.0 commit f85392666c9b543cd24dbbf903e0dbe4cb2c5cee,
+	 * WC_Payment_Gateway_WCPay::process_payment(), and
+	 * Duplicate_Payment_Prevention_Service::check_payment_intent_attached_to_order_succeeded().
+	 *
+	 * @dataProvider plugin_failed_intent_order_pay_cases
+	 *
+	 * @param bool   $card_testing_protection_enabled Whether card-testing protection is enabled.
+	 * @param string $fraud_prevention_token          Posted fraud-prevention token.
+	 */
+	public function test_process_payment_retries_plugin_failed_intent_on_order_pay( bool $card_testing_protection_enabled, string $fraud_prevention_token ): void {
+		$order = $this->create_order();
+		$order->set_status( 'failed' );
+		$order->update_meta_data( '_intent_id', 'pi_plugin_failed' );
+		$order->save();
+
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, '0123456789abcdef' );
+		$_POST['woocommerce_pay']                               = '1';
+		$_POST['wcpay-payment-method']                          = 'pm_plugin_failed_recovery';
+		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = $fraud_prevention_token;
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_payment_intention' )
+			->with( 'pi_plugin_failed' )
+			->willReturn(
+				array(
+					'id'                => 'pi_plugin_failed',
+					'status'            => 'requires_payment_method',
+					'amount'            => 1200,
+					'amount_capturable' => 0,
+					'amount_received'   => 0,
+					'currency'          => strtolower( $order->get_currency() ),
+					'metadata'          => array( 'order_id' => (string) $order->get_id() ),
+					'charges'           => array(
+						'data' => array(
+							array(
+								'id'              => 'ch_plugin_failed',
+								'amount'          => 1200,
+								'amount_captured' => 0,
+								'captured'        => false,
+								'paid'            => false,
+							),
+						),
+					),
+				)
+			);
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( $card_testing_protection_enabled, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session ),
+			$this->create_duplicate_payment_prevention_service( $session, $api_client )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( 1, $service->checkout_attempt_count );
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
+		$this->assertSame( '0123456789abcdef', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
+	}
+
+	/**
+	 * Plugin-era failed intent recovery cases for order pay.
+	 *
+	 * @return array<string,array{bool,string}>
+	 */
+	public static function plugin_failed_intent_order_pay_cases(): array {
+		return array(
+			'card-testing protection disabled' => array( false, 'tampered-token' ),
+			'card-testing protection enabled'  => array( true, '0123456789abcdef' ),
+		);
+	}
+
+	/**
 	 * @testdox Should reject checkout before creating a payment context when the failed-transaction limiter is active.
 	 */
 	public function test_process_payment_rejects_checkout_when_failed_transaction_rate_limiter_is_active(): void {
