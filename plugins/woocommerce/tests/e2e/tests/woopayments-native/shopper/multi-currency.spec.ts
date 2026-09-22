@@ -155,7 +155,7 @@ async function createHistoricalOrder(
 	runId: string,
 	expectation: HistoricalOrderExpectation
 ): Promise< HistoricalOrder > {
-	const created = await readJson< HistoricalOrder >(
+	return readJson< HistoricalOrder >(
 		await adminApi.post( '/wp-json/wc/v3/orders', {
 			data: {
 				customer_id: customerId,
@@ -177,9 +177,15 @@ async function createHistoricalOrder(
 		} ),
 		`${ expectation.currency } historical order creation`
 	);
+}
 
+async function seedHistoricalOrderMetadata(
+	adminApi: APIRequestContext,
+	order: HistoricalOrder,
+	expectation: HistoricalOrderExpectation
+): Promise< HistoricalOrder > {
 	if ( Object.keys( expectation.meta ).length === 0 ) {
-		return created;
+		return order;
 	}
 
 	// Administrative order creation fires the current runtime's
@@ -188,7 +194,7 @@ async function createHistoricalOrder(
 	// scaffolding with the captured plugin-era values this historical fixture
 	// is specifically meant to preserve.
 	return readJson< HistoricalOrder >(
-		await adminApi.put( `/wp-json/wc/v3/orders/${ created.id }`, {
+		await adminApi.put( `/wp-json/wc/v3/orders/${ order.id }`, {
 			data: {
 				meta_data: Object.entries( expectation.meta ).map(
 					( [ key, value ] ) => ( { key, value } )
@@ -231,11 +237,22 @@ async function logInAsStandingCustomer( page: Page ): Promise< void > {
 	).toHaveValue( customer.email );
 }
 
+function currencySwitcher( page: Page ) {
+	return page.getByRole( 'combobox', {
+		name: SWITCHER_ACCESSIBLE_NAME,
+		exact: true,
+	} );
+}
+
 async function expectHistoricalOrdersRendered(
 	page: Page,
-	orders: HistoricalOrder[]
+	orders: HistoricalOrder[],
+	shopperCurrency?: string
 ): Promise< void > {
 	await page.goto( 'my-account/orders/' );
+	if ( shopperCurrency ) {
+		await expect( currencySwitcher( page ) ).toHaveValue( shopperCurrency );
+	}
 	for ( const [ index, order ] of orders.entries() ) {
 		const expectation = HISTORICAL_ORDER_EXPECTATIONS[ index ];
 		const row = page.locator( 'tr' ).filter( {
@@ -252,6 +269,11 @@ async function expectHistoricalOrdersRendered(
 		await expect( details ).toContainText( expectation.currency );
 		await expect( details ).toContainText( expectation.amount );
 		await page.goto( 'my-account/orders/' );
+		if ( shopperCurrency ) {
+			await expect( currencySwitcher( page ) ).toHaveValue(
+				shopperCurrency
+			);
+		}
 	}
 }
 
@@ -386,13 +408,6 @@ async function ensureSmokeProduct(
 	return created.id as number;
 }
 
-function currencySwitcher( page: Page ) {
-	return page.getByRole( 'combobox', {
-		name: SWITCHER_ACCESSIBLE_NAME,
-		exact: true,
-	} );
-}
-
 /**
  * First visible occurrence of a price text. Blocks surfaces render hidden
  * duplicates (for example the collapsed mobile order-summary header on
@@ -517,7 +532,7 @@ test(
 
 		try {
 			for ( const expectation of HISTORICAL_ORDER_EXPECTATIONS ) {
-				const order = await createHistoricalOrder(
+				let order = await createHistoricalOrder(
 					adminApi,
 					productId,
 					customerId,
@@ -525,6 +540,12 @@ test(
 					expectation
 				);
 				orders.push( order );
+				order = await seedHistoricalOrderMetadata(
+					adminApi,
+					order,
+					expectation
+				);
+				orders[ orders.length - 1 ] = order;
 				expect( historicalOrderSnapshot( order ) ).toEqual( {
 					customer_id: customerId,
 					currency: expectation.currency,
@@ -545,7 +566,7 @@ test(
 			await page.waitForURL( /[?&]currency=EUR/ );
 			await page.reload();
 			await expect( currencySwitcher( page ) ).toHaveValue( 'EUR' );
-			await expectHistoricalOrdersRendered( page, orders );
+			await expectHistoricalOrdersRendered( page, orders, 'EUR' );
 
 			for ( const order of orders ) {
 				const stored = await readJson< HistoricalOrder >(
