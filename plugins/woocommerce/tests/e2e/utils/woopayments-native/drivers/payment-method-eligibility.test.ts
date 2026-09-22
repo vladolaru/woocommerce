@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import type { ProviderWriteSession } from '../../../fixtures/woopayments-native';
+import type { PaymentEvidence } from '../record-evidence';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
 import {
 	createPaymentMethodEligibilityProviderGraph,
@@ -8,8 +9,11 @@ import {
 	parseRenderedCheckoutCurrency,
 	USD_TO_EUR,
 	validatePaymentMethodEligibilityObservation,
+	validatePaymentMethodEligibilityReconciliation,
+	validatePaymentMethodEligibilityRestoration,
 	withStoreDefaultCurrency,
 	type PaymentMethodEligibilityObservation,
+	type PaymentMethodEligibilityReconciliation,
 } from './payment-method-eligibility';
 
 function observation(
@@ -54,6 +58,48 @@ function currencyResponse( value: string ) {
 		ok: () => true,
 		json: async () => ( { value } ),
 		text: async () => '',
+	};
+}
+
+function reconciliation(): {
+	record: PaymentMethodEligibilityReconciliation;
+	evidence: PaymentEvidence;
+} {
+	const completeObservation = observation();
+	const retainedObservation = {
+		storeDefaultCurrency: completeObservation.storeDefaultCurrency,
+		before: completeObservation.before,
+		after: completeObservation.after,
+	};
+	return {
+		record: {
+			sourceResultSha256: 'a'.repeat( 64 ),
+			orderId: 4531,
+			expectedEvidence: {
+				runId: 'woopayments-run-94',
+				intentId: 'pi_payment_method_eligibility',
+				chargeId: 'py_payment_method_eligibility',
+				paymentMethodId: 'pm_payment_method_eligibility',
+				orderStatus: 'processing',
+			},
+			observation: retainedObservation,
+		},
+		evidence: {
+			runId: 'woopayments-run-94',
+			orderId: 4531,
+			orderKey: 'wc_order_payment_method_eligibility',
+			intentId: 'pi_payment_method_eligibility',
+			chargeId: 'py_payment_method_eligibility',
+			paymentMethodId: 'pm_payment_method_eligibility',
+			amountMinor: 1099,
+			currency: 'EUR',
+			orderStatus: 'processing',
+			providerStatus: 'succeeded',
+			chargeStatus: 'succeeded',
+			chargeCaptured: true,
+			occurrenceCount: 1,
+			captureOccurrenceCount: 1,
+		},
 	};
 }
 
@@ -453,4 +499,62 @@ test( 'rejects an invalid durable ID or non-singleton provider method type', () 
 			},
 		} )
 	).toThrow( /singleton card method type/ );
+} );
+
+test( 'accepts a retained observation only when its exact live graph still matches', () => {
+	const { record, evidence } = reconciliation();
+	const reconciled = validatePaymentMethodEligibilityReconciliation(
+		USD_TO_EUR,
+		record,
+		evidence,
+		observation().providerGraph
+	);
+
+	expect( reconciled.providerGraph.intentId ).toBe(
+		'pi_payment_method_eligibility'
+	);
+} );
+
+test( 'rejects a retained result digest or live identity that does not match', () => {
+	const { record, evidence } = reconciliation();
+	expect( () =>
+		validatePaymentMethodEligibilityReconciliation(
+			USD_TO_EUR,
+			{ ...record, sourceResultSha256: 'not-a-sha256' },
+			evidence,
+			observation().providerGraph
+		)
+	).toThrow( /source result SHA-256/ );
+	expect( () =>
+		validatePaymentMethodEligibilityReconciliation(
+			USD_TO_EUR,
+			record,
+			{ ...evidence, chargeId: 'py_different' },
+			observation().providerGraph
+		)
+	).toThrow( /live order and provider identities/ );
+} );
+
+test( 'accepts only the exact cold-read restoration state', () => {
+	const restored = {
+		defaultCurrency: 'USD' as const,
+		multiCurrencyEnabled: true,
+		enabledPaymentMethodIds: [ 'card', 'klarna' ],
+		enabledCurrencyCodes: [ 'USD', 'EUR' ],
+		usdSettings: {
+			exchange_rate_type: 'automatic',
+			manual_rate: null,
+			price_rounding: null,
+			price_charm: null,
+		},
+	};
+	expect(
+		validatePaymentMethodEligibilityRestoration( restored, restored )
+	).toEqual( restored );
+	expect( () =>
+		validatePaymentMethodEligibilityRestoration(
+			{ ...restored, enabledCurrencyCodes: [ 'USD' ] },
+			restored
+		)
+	).toThrow( /restored store state/ );
 } );

@@ -357,7 +357,7 @@ export interface StoreCurrencies {
 	default: CurrencyRecord;
 }
 
-interface SingleCurrencySettings {
+export interface SingleCurrencySettings {
 	exchange_rate_type: string;
 	manual_rate: unknown;
 	price_rounding: unknown;
@@ -400,7 +400,7 @@ export async function readStoreCurrencies(
 	);
 }
 
-async function readSingleCurrencySettings(
+export async function readSingleCurrencySettings(
 	restApi: APIRequestContext,
 	code: string
 ): Promise< SingleCurrencySettings > {
@@ -446,7 +446,7 @@ async function setEnabledCurrencies(
  * strict boolean and anything else means the settings surface changed shape
  * under us — which must fail rather than be read as "off".
  */
-async function readMultiCurrencyEnabled(
+export async function readMultiCurrencyEnabled(
 	restApi: APIRequestContext
 ): Promise< boolean > {
 	const paymentsSettings = await readJson< Record< string, unknown > >(

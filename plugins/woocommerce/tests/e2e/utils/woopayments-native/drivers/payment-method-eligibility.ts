@@ -5,11 +5,16 @@ import { getPaymentEvidence, type PaymentEvidence } from '../record-evidence';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
 import {
 	BANCONTACT,
+	readEnabledPaymentMethodIds,
+	readMultiCurrencyEnabled,
 	readShopperCartState,
 	readRedirectIntentRequest,
+	readSingleCurrencySettings,
+	readStoreCurrencies,
 	setShopperSessionCurrency,
 	type ShopperCartState,
 	type RedirectIntentRequest,
+	type SingleCurrencySettings,
 } from './redirect-methods';
 import {
 	readProviderCustomerId,
@@ -86,6 +91,33 @@ export interface PaymentMethodEligibilityObservation {
 	readonly before: PaymentMethodEligibilitySnapshot;
 	readonly after: PaymentMethodEligibilitySnapshot;
 	readonly providerGraph: PaymentMethodEligibilityProviderGraph;
+}
+
+export interface PaymentMethodEligibilityReconciliation {
+	readonly sourceResultSha256: string;
+	readonly orderId: number;
+	readonly expectedEvidence: Readonly<
+		Pick<
+			PaymentEvidence,
+			| 'runId'
+			| 'intentId'
+			| 'chargeId'
+			| 'paymentMethodId'
+			| 'orderStatus'
+		>
+	>;
+	readonly observation: Omit<
+		PaymentMethodEligibilityObservation,
+		'providerGraph'
+	>;
+}
+
+export interface PaymentMethodEligibilityRestoration {
+	readonly defaultCurrency: PaymentMethodEligibilityCurrency;
+	readonly multiCurrencyEnabled: boolean;
+	readonly enabledPaymentMethodIds: readonly string[];
+	readonly enabledCurrencyCodes: readonly string[];
+	readonly usdSettings: SingleCurrencySettings;
 }
 
 export interface UsdToEurEligibilityObservation
@@ -348,6 +380,95 @@ export function validatePaymentMethodEligibilityObservation<
 	}
 
 	return observation;
+}
+
+/**
+ * Join one retained browser observation to its exact live order/provider graph.
+ */
+export function validatePaymentMethodEligibilityReconciliation(
+	transition: PaymentMethodEligibilityTransition,
+	reconciliation: PaymentMethodEligibilityReconciliation,
+	evidence: PaymentEvidence,
+	providerGraph: PaymentMethodEligibilityProviderGraph
+): PaymentMethodEligibilityObservation {
+	if ( ! /^[0-9a-f]{64}$/u.test( reconciliation.sourceResultSha256 ) ) {
+		fail( 'reconciliation requires a lowercase source result SHA-256.' );
+	}
+	const expectedIdentity = {
+		orderId: reconciliation.orderId,
+		...reconciliation.expectedEvidence,
+	};
+	const liveIdentity = {
+		orderId: evidence.orderId,
+		runId: evidence.runId,
+		intentId: evidence.intentId,
+		chargeId: evidence.chargeId,
+		paymentMethodId: evidence.paymentMethodId,
+		orderStatus: evidence.orderStatus,
+	};
+	if (
+		JSON.stringify( liveIdentity ) !== JSON.stringify( expectedIdentity )
+	) {
+		fail(
+			`reconciliation live order and provider identities differ from the retained record: ${ JSON.stringify(
+				liveIdentity
+			) }.`
+		);
+	}
+	if (
+		providerGraph.intentId !== evidence.intentId ||
+		providerGraph.paymentMethodId !== evidence.paymentMethodId ||
+		providerGraph.amountMinor !== evidence.amountMinor ||
+		providerGraph.currency.toUpperCase() !== evidence.currency
+	) {
+		fail( 'reconciliation graph does not match its live order evidence.' );
+	}
+
+	return validatePaymentMethodEligibilityObservation( transition, {
+		...reconciliation.observation,
+		providerGraph,
+	} );
+}
+
+/** Validate a cold store read against the retained post-run baseline. */
+export function validatePaymentMethodEligibilityRestoration(
+	actual: PaymentMethodEligibilityRestoration,
+	expected: PaymentMethodEligibilityRestoration
+): PaymentMethodEligibilityRestoration {
+	if ( JSON.stringify( actual ) !== JSON.stringify( expected ) ) {
+		fail(
+			`restored store state differs from the retained baseline: ${ JSON.stringify(
+				actual
+			) }.`
+		);
+	}
+	return actual;
+}
+
+/** Read every store surface the completed family restored, without mutation. */
+export async function readPaymentMethodEligibilityRestoration(
+	session: ProviderWriteSession
+): Promise< PaymentMethodEligibilityRestoration > {
+	const [
+		defaultCurrency,
+		multiCurrencyEnabled,
+		enabledPaymentMethodIds,
+		currencies,
+		usdSettings,
+	] = await Promise.all( [
+		readConfiguredStoreDefaultCurrency( session ),
+		readMultiCurrencyEnabled( session.adminApi ),
+		readEnabledPaymentMethodIds( session.adminApi ),
+		readStoreCurrencies( session.adminApi ),
+		readSingleCurrencySettings( session.adminApi, 'USD' ),
+	] );
+	return {
+		defaultCurrency,
+		multiCurrencyEnabled,
+		enabledPaymentMethodIds,
+		enabledCurrencyCodes: Object.keys( currencies.enabled ?? {} ),
+		usdSettings,
+	};
 }
 
 export function parseRenderedCheckoutCurrency(
