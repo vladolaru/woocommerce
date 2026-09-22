@@ -1,3 +1,5 @@
+import type { BrowserContext } from '@playwright/test';
+
 import {
 	composeCardTestingProtectionEvidence,
 	validateCardTestingProtectionEvidence,
@@ -11,6 +13,37 @@ import type { FailedPaymentEvidence } from './failed-payment-evidence';
 const IMMUTABLE_PLUGIN_VERSION = '11.1.0';
 const IMMUTABLE_SOURCE_COMMIT = 'f85392666c9b543cd24dbbf903e0dbe4cb2c5cee';
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const WOOCOMMERCE_SESSION_COOKIE_PREFIX = 'wp_woocommerce_session_';
+
+export async function clearHistoricalWooCommerceSessionCookie(
+	context: Pick< BrowserContext, 'cookies' | 'clearCookies' >,
+	baseURL: string
+): Promise< void > {
+	const sessionCookies = ( await context.cookies( baseURL ) ).filter(
+		( cookie ) =>
+			cookie.name.startsWith( WOOCOMMERCE_SESSION_COOKIE_PREFIX )
+	);
+	if ( sessionCookies.length !== 1 ) {
+		throw new Error(
+			'Historical pay-for-order requires exactly one plugin-era WooCommerce session cookie.'
+		);
+	}
+	const [ sessionCookie ] = sessionCookies;
+	await context.clearCookies( {
+		name: sessionCookie.name,
+		domain: sessionCookie.domain,
+		path: sessionCookie.path,
+	} );
+	const remainingSessionCookies = ( await context.cookies( baseURL ) ).filter(
+		( cookie ) =>
+			cookie.name.startsWith( WOOCOMMERCE_SESSION_COOKIE_PREFIX )
+	);
+	if ( remainingSessionCookies.length !== 0 ) {
+		throw new Error(
+			'Historical pay-for-order requires the plugin-era WooCommerce session cookie to be absent before native capture.'
+		);
+	}
+}
 
 export interface HistoricalPayForOrderFixture {
 	schemaVersion: 1;

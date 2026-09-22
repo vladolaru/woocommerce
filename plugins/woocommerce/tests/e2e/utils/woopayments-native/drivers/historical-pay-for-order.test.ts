@@ -1,7 +1,8 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type BrowserContext } from '@playwright/test';
 
 import {
 	collectHistoricalPayForOrderRecovery,
+	clearHistoricalWooCommerceSessionCookie,
 	composeHistoricalPayForOrderEvidence,
 	validateHistoricalOrderPayRoute,
 	validateHistoricalOrderPayTotal,
@@ -180,6 +181,52 @@ function failedPaymentEvidence(): FailedPaymentEvidence {
 	};
 }
 
+type HistoricalCookie = {
+	name: string;
+	value: string;
+	domain: string;
+	path: string;
+};
+
+function cookie( name: string, value: string ): HistoricalCookie {
+	return { name, value, domain: 'store.invalid', path: '/' };
+}
+
+function historicalCookieContext(
+	initialCookies: HistoricalCookie[],
+	options: { retainClearedCookie?: boolean; clearError?: Error } = {}
+) {
+	let currentCookies = [ ...initialCookies ];
+	return {
+		async cookies() {
+			return currentCookies as Awaited<
+				ReturnType< BrowserContext[ 'cookies' ] >
+			>;
+		},
+		async clearCookies(
+			filter: Parameters< BrowserContext[ 'clearCookies' ] >[ 0 ]
+		) {
+			if ( options.clearError ) {
+				throw options.clearError;
+			}
+			if ( options.retainClearedCookie ) {
+				return;
+			}
+			currentCookies = currentCookies.filter(
+				( currentCookie ) =>
+					currentCookie.name !== filter.name ||
+					currentCookie.domain !== filter.domain ||
+					currentCookie.path !== filter.path
+			);
+		},
+		names() {
+			return currentCookies.map(
+				( currentCookie ) => currentCookie.name
+			);
+		},
+	};
+}
+
 function recoveryDependencies(
 	decline: FailedPaymentEvidence,
 	stages: string[] = [],
@@ -239,6 +286,79 @@ function recoveryDependencies(
 		},
 	};
 }
+
+test( 'clears only the one plugin-era WooCommerce session cookie', async () => {
+	const context = historicalCookieContext( [
+		cookie( 'wordpress_logged_in_fixture', 'auth' ),
+		cookie( 'wp_woocommerce_session_fixture', 'plugin-session' ),
+		cookie( 'unrelated', 'value' ),
+	] );
+
+	await clearHistoricalWooCommerceSessionCookie(
+		context,
+		'http://store.invalid'
+	);
+
+	expect( context.names() ).toEqual( [
+		'wordpress_logged_in_fixture',
+		'unrelated',
+	] );
+} );
+
+test( 'rejects a context without a plugin-era WooCommerce session cookie', async () => {
+	const context = historicalCookieContext( [
+		cookie( 'wordpress_logged_in_fixture', 'auth' ),
+	] );
+
+	await expect(
+		clearHistoricalWooCommerceSessionCookie(
+			context,
+			'http://store.invalid'
+		)
+	).rejects.toThrow( 'exactly one plugin-era WooCommerce session cookie' );
+} );
+
+test( 'rejects an ambiguous context with multiple WooCommerce session cookies', async () => {
+	const context = historicalCookieContext( [
+		cookie( 'wp_woocommerce_session_first', 'first' ),
+		cookie( 'wp_woocommerce_session_second', 'second' ),
+	] );
+
+	await expect(
+		clearHistoricalWooCommerceSessionCookie(
+			context,
+			'http://store.invalid'
+		)
+	).rejects.toThrow( 'exactly one plugin-era WooCommerce session cookie' );
+} );
+
+test( 'rejects a WooCommerce session cookie that survives deletion', async () => {
+	const context = historicalCookieContext(
+		[ cookie( 'wp_woocommerce_session_fixture', 'plugin-session' ) ],
+		{ retainClearedCookie: true }
+	);
+
+	await expect(
+		clearHistoricalWooCommerceSessionCookie(
+			context,
+			'http://store.invalid'
+		)
+	).rejects.toThrow( 'plugin-era WooCommerce session cookie to be absent' );
+} );
+
+test( 'propagates a WooCommerce session cookie deletion failure', async () => {
+	const context = historicalCookieContext(
+		[ cookie( 'wp_woocommerce_session_fixture', 'plugin-session' ) ],
+		{ clearError: new Error( 'clear failed' ) }
+	);
+
+	await expect(
+		clearHistoricalWooCommerceSessionCookie(
+			context,
+			'http://store.invalid'
+		)
+	).rejects.toThrow( 'clear failed' );
+} );
 
 test( 'rejects recorded failed evidence with a status different from the immutable failed order', async () => {
 	await expect( collectHistoricalPayForOrderRecovery( recoveryDependencies( {

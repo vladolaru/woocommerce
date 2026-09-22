@@ -23,6 +23,7 @@ import {
 import { readHighestOrderId } from '../../../utils/woopayments-native/drivers/classic-card-authentication';
 import {
 	collectHistoricalPayForOrderRecovery,
+	clearHistoricalWooCommerceSessionCookie,
 	validateHistoricalOrderPayRoute,
 	validateHistoricalOrderPayTotal,
 	type HistoricalPayForOrderBrowserEvidence,
@@ -284,6 +285,10 @@ async function runHistoricalPayForOrder(
 								}
 							);
 						} );
+						await clearHistoricalWooCommerceSessionCookie(
+							page.context(),
+							session.baseURL
+						);
 						return callback();
 					}
 				),
