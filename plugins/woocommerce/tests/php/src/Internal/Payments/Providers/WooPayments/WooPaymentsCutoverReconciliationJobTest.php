@@ -455,6 +455,139 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Reconciliation preserves the selected persisted fields of a plugin-origin subscription-shaped order graph exactly.
+	 */
+	public function test_reconciliation_preserves_plugin_origin_subscription_persistence_shape(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, '_wcpay_customer_id_test', 'cus_plugin_subscription' );
+
+		$token = new \WC_Payment_Token_CC();
+		$token->set_gateway_id( 'woocommerce_payments' );
+		$token->set_user_id( $user_id );
+		$token->set_token( 'pm_plugin_subscription' );
+		$token->set_default( true );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '02' );
+		$token->set_expiry_year( '2045' );
+		$token->save();
+		/** @var \WC_Payment_Token_Data_Store $token_data_store */
+		$token_data_store = \WC_Data_Store::load( 'payment-token' );
+		$token_data_store->set_default_status( $token->get_id(), true );
+
+		$parent_order = $this->create_plugin_shaped_order( $user_id, 'USD', '11.98', 'pi_plugin_subscription_parent' );
+		$parent_order->add_payment_token( $token );
+		$parent_order->update_meta_data( '_payment_method_id', 'pm_plugin_subscription' );
+		$parent_order->update_meta_data( '_stripe_customer_id', 'cus_plugin_subscription' );
+		$parent_order->update_meta_data( '_stripe_mandate_id', 'mandate_plugin_subscription' );
+		$parent_order->update_meta_data( '_wcpay_intent_status', 'succeeded' );
+		$parent_order->update_meta_data( '_wcpay_charge_id', 'ch_plugin_subscription_parent' );
+		$parent_order->save();
+
+		$subscription = wc_create_order( array( 'customer_id' => $user_id ) );
+		if ( ! $subscription instanceof \WC_Order ) {
+			throw new \RuntimeException( 'Could not create a plugin-shaped historical subscription.' );
+		}
+		$subscription->set_parent_id( $parent_order->get_id() );
+		$subscription->set_currency( 'USD' );
+		$subscription->set_total( '9.99' );
+		$subscription_status_filter = static function ( array $statuses ): array {
+			$statuses['wc-active'] = 'Active';
+			return $statuses;
+		};
+		add_filter( 'wc_order_statuses', $subscription_status_filter );
+		try {
+			$subscription->set_status( 'active' );
+			$subscription->set_payment_method( 'woocommerce_payments' );
+			$subscription->set_payment_method_title( 'Visa credit card' );
+			$subscription->add_payment_token( $token );
+			$subscription->update_meta_data( '_schedule_start', '2026-09-22 15:00:00' );
+			$subscription->update_meta_data( '_schedule_next_payment', '2026-10-22 15:00:00' );
+			$subscription->update_meta_data( '_billing_period', 'month' );
+			$subscription->update_meta_data( '_billing_interval', '1' );
+			$subscription->update_meta_data( '_requires_manual_renewal', 'false' );
+			$subscription->update_meta_data( '_payment_method_id', 'pm_plugin_subscription' );
+			$subscription->update_meta_data( '_stripe_customer_id', 'cus_plugin_subscription' );
+			$subscription->update_meta_data( '_stripe_mandate_id', 'mandate_plugin_subscription' );
+			$subscription->save();
+		} finally {
+			remove_filter( 'wc_order_statuses', $subscription_status_filter );
+		}
+
+		// Oracle: WooPayments 11.1.0 OrderService::get_payment_metadata() and token service preserve this WCS order/token graph; the read-only :8082 capture recorded the same USD 11.98 parent, USD 9.99 monthly renewal, Visa 4242, customer, gateway, and schedule shape.
+		$expected = array(
+			'parent'       => array(
+				'order_id'          => $parent_order->get_id(),
+				'customer_id'       => $user_id,
+				'currency'          => 'USD',
+				'total'             => '11.98',
+				'status'            => 'completed',
+				'payment_method'    => 'woocommerce_payments',
+				'transaction_id'    => 'pi_plugin_subscription_parent',
+				'payment_token_ids' => array( $token->get_id() ),
+				'meta'              => array(
+					'_payment_method_id'   => 'pm_plugin_subscription',
+					'_stripe_customer_id'  => 'cus_plugin_subscription',
+					'_stripe_mandate_id'   => 'mandate_plugin_subscription',
+					'_wcpay_intent_status' => 'succeeded',
+					'_wcpay_charge_id'     => 'ch_plugin_subscription_parent',
+				),
+			),
+			'subscription' => array(
+				'order_id'          => $subscription->get_id(),
+				'parent_order_id'   => $parent_order->get_id(),
+				'customer_id'       => $user_id,
+				'currency'          => 'USD',
+				'recurring_total'   => '9.99',
+				'status'            => 'active',
+				'payment_method'    => 'woocommerce_payments',
+				'payment_token_ids' => array( $token->get_id() ),
+				'meta'              => array(
+					'_schedule_start'          => '2026-09-22 15:00:00',
+					'_schedule_next_payment'   => '2026-10-22 15:00:00',
+					'_billing_period'          => 'month',
+					'_billing_interval'        => '1',
+					'_requires_manual_renewal' => 'false',
+					'_payment_method_id'       => 'pm_plugin_subscription',
+					'_stripe_customer_id'      => 'cus_plugin_subscription',
+					'_stripe_mandate_id'       => 'mandate_plugin_subscription',
+				),
+			),
+			'token'        => array(
+				'token_id'                   => $token->get_id(),
+				'provider_payment_method_id' => 'pm_plugin_subscription',
+				'gateway_id'                 => 'woocommerce_payments',
+				'type'                       => 'CC',
+				'is_default'                 => true,
+				'brand'                      => 'visa',
+				'last4'                      => '4242',
+				'expiry_month'               => '02',
+				'expiry_year'                => '2045',
+				'user_id'                    => $user_id,
+				'customer_id'                => 'cus_plugin_subscription',
+			),
+		);
+		$before   = $this->snapshot_historical_subscription_graph( $parent_order->get_id(), $subscription->get_id(), $token->get_id() );
+		$this->assertSame( $expected, $before, 'The fixture should match the exact WooPayments 11.1.0 and read-only :8082 subscription shape.' );
+
+		delete_option( 'woocommerce_native_woopayments_cutover_normalization_version' );
+		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		$normalization = new WooPaymentsCutoverNormalizationRunner();
+		$sut           = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$after = $this->snapshot_historical_subscription_graph( $parent_order->get_id(), $subscription->get_id(), $token->get_id() );
+		$this->assertSame( $expected, $after, 'Every selected persisted subscription-shaped order, parent order, token, customer, schedule, total, gateway, and provider metadata field should remain exact.' );
+		$this->assertSame( $before, $after, 'Cutover normalization must not rewrite the selected plugin-origin persistence fields.' );
+		$this->assertSame( '4', get_option( 'woocommerce_native_woopayments_cutover_normalization_version' ), 'The actual normalization runner should complete.' );
+	}
+
+	/**
 	 * @testdox Ownership verification cannot complete in its originating request and completes only after a fresh native-owned request.
 	 */
 	public function test_ownership_verification_requires_a_fresh_native_owned_request(): void {
@@ -3773,6 +3906,63 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			'expiry_year'                => $token->get_expiry_year(),
 			'user_id'                    => $token->get_user_id(),
 			'customer_id'                => get_user_option( '_wcpay_customer_id_test', $token->get_user_id() ),
+		);
+	}
+
+	/**
+	 * Cold-read selected persisted fields from one plugin-origin subscription-shaped order, its parent order, and saved card.
+	 *
+	 * @param int $parent_order_id Parent order ID.
+	 * @param int $subscription_id Subscription order ID.
+	 * @param int $token_id        Payment token ID.
+	 * @return array<string,mixed>
+	 */
+	private function snapshot_historical_subscription_graph( int $parent_order_id, int $subscription_id, int $token_id ): array {
+		$parent_order = wc_get_order( $parent_order_id );
+		$subscription = wc_get_order( $subscription_id );
+		if ( ! $parent_order instanceof \WC_Order || ! $subscription instanceof \WC_Order ) {
+			throw new \RuntimeException( 'Could not cold-read the historical subscription graph.' );
+		}
+
+		return array(
+			'parent'       => array(
+				'order_id'          => $parent_order->get_id(),
+				'customer_id'       => $parent_order->get_customer_id(),
+				'currency'          => $parent_order->get_currency(),
+				'total'             => $parent_order->get_total(),
+				'status'            => $parent_order->get_status(),
+				'payment_method'    => $parent_order->get_payment_method(),
+				'transaction_id'    => $parent_order->get_transaction_id(),
+				'payment_token_ids' => array_map( 'absint', $parent_order->get_payment_tokens() ),
+				'meta'              => array(
+					'_payment_method_id'   => (string) $parent_order->get_meta( '_payment_method_id', true ),
+					'_stripe_customer_id'  => (string) $parent_order->get_meta( '_stripe_customer_id', true ),
+					'_stripe_mandate_id'   => (string) $parent_order->get_meta( '_stripe_mandate_id', true ),
+					'_wcpay_intent_status' => (string) $parent_order->get_meta( '_wcpay_intent_status', true ),
+					'_wcpay_charge_id'     => (string) $parent_order->get_meta( '_wcpay_charge_id', true ),
+				),
+			),
+			'subscription' => array(
+				'order_id'          => $subscription->get_id(),
+				'parent_order_id'   => $subscription->get_parent_id(),
+				'customer_id'       => $subscription->get_customer_id(),
+				'currency'          => $subscription->get_currency(),
+				'recurring_total'   => $subscription->get_total(),
+				'status'            => $subscription->get_status(),
+				'payment_method'    => $subscription->get_payment_method(),
+				'payment_token_ids' => array_map( 'absint', $subscription->get_payment_tokens() ),
+				'meta'              => array(
+					'_schedule_start'          => (string) $subscription->get_meta( '_schedule_start', true ),
+					'_schedule_next_payment'   => (string) $subscription->get_meta( '_schedule_next_payment', true ),
+					'_billing_period'          => (string) $subscription->get_meta( '_billing_period', true ),
+					'_billing_interval'        => (string) $subscription->get_meta( '_billing_interval', true ),
+					'_requires_manual_renewal' => (string) $subscription->get_meta( '_requires_manual_renewal', true ),
+					'_payment_method_id'       => (string) $subscription->get_meta( '_payment_method_id', true ),
+					'_stripe_customer_id'      => (string) $subscription->get_meta( '_stripe_customer_id', true ),
+					'_stripe_mandate_id'       => (string) $subscription->get_meta( '_stripe_mandate_id', true ),
+				),
+			),
+			'token'        => $this->snapshot_historical_saved_card( $token_id ),
 		);
 	}
 

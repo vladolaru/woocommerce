@@ -2016,7 +2016,11 @@ create_store() {
 	fi
 	update_state wp_env_created true boolean
 	update_state phase 'wp-env-created'
-	store_wp plugin activate woocommerce woocommerce-payments woocommerce-payments-dev-tools > /dev/null
+	local plugins=( woocommerce woocommerce-payments woocommerce-payments-dev-tools )
+	if [[ -n "$optional_artifacts" ]]; then
+		plugins+=( woocommerce-subscriptions )
+	fi
+	store_wp plugin activate "${plugins[@]}" > /dev/null
 	local installed_version
 	installed_version="$(store_wp plugin get woocommerce-payments --field=version)"
 	if [[ "$installed_version" != "$SEED_VERSION" ]]; then

@@ -67,6 +67,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
 		update_option( 'woocommerce_currency', $this->original_currency );
+		unset( $GLOBALS['wcpay_test_renewal_order_ids'] );
 		parent::tearDown();
 	}
 
@@ -2674,6 +2675,140 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Customer-present early renewals should send recurring renewal metadata without off-session semantics.
+	 */
+	public function test_customer_present_early_renewal_uses_recurring_renewal_request_shape(): void {
+		$this->ensure_wcs_order_renewal_detector_double();
+		$user_id          = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order            = $this->create_woopayments_order( '9.99' );
+		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$saved_token      = $this->create_card_token( $user_id, 'pm_plugin_subscription' );
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Last request data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $last_request_data = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				if ( 'pm_plugin_subscription' !== $request_data['payment_method'] || 'key_early_renewal' !== $idempotency_key ) {
+					throw new \RuntimeException( 'Historical saved token was not resolved for the customer-present early renewal.' );
+				}
+
+				$this->last_request_data = $request_data;
+
+				return array(
+					'id'             => 'pi_plugin_subscription_renewal',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_plugin_subscription',
+					'payment_method' => 'pm_plugin_subscription',
+					'currency'       => 'usd',
+					'charges'        => array(
+						'total_count' => 0,
+						'data'        => array(),
+					),
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+
+		$order->set_customer_id( $user_id );
+		$order->set_currency( 'USD' );
+		$order->add_payment_token( $saved_token );
+		$order->update_meta_data( '_subscription_renewal', 4321 );
+		$order->save();
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_plugin_subscription' );
+
+		// Oracle: WooPayments 11.1.0 OrderService::get_payment_metadata() labels a customer-present renewal as recurring/renewal, and the read-only :8082 provider family records it without off_session.
+		$sut     = $this->create_adapter(
+			$gateway,
+			$api_client,
+			$customer_service,
+			$this->create_single_resolution_token_service( $saved_token, $user_id, 'pm_plugin_subscription' ),
+			$this->create_account_service( false, array( 'manual_capture' => 'yes' ) )
+		);
+		$outcome = $sut->charge(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'',
+				array(
+					'payment_token'       => (string) $saved_token->get_id(),
+					'save_payment_method' => false,
+				)
+			),
+			'key_early_renewal'
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 999, $api_client->last_request_data['amount'] );
+		$this->assertSame( 'usd', $api_client->last_request_data['currency'] );
+		$this->assertSame( 'cus_plugin_subscription', $api_client->last_request_data['customer'] );
+		$this->assertInstanceOf( WooPaymentsPaymentType::class, $api_client->last_request_data['metadata']['payment_type'] );
+		$this->assertSame( 'recurring', (string) $api_client->last_request_data['metadata']['payment_type'] );
+		$this->assertSame( 'renewal', $api_client->last_request_data['metadata']['subscription_payment'] );
+		$this->assertSame( 'regular_subscription', $api_client->last_request_data['metadata']['payment_context'] );
+		$this->assertSame( 'manual', $api_client->last_request_data['capture_method'] );
+		$this->assertSame( 'off_session', $api_client->last_request_data['setup_future_usage'] );
+		$this->assertArrayNotHasKey( 'off_session', $api_client->last_request_data );
+	}
+
+	/**
+	 * @testdox Customer-present early renewals retain online mandate data for methods that require it.
+	 */
+	public function test_customer_present_early_renewal_retains_online_mandate_data(): void {
+		$this->ensure_wcs_order_renewal_detector_double();
+		$order = $this->create_woopayments_order( '9.99' );
+		$order->set_currency( 'EUR' );
+		$order->set_customer_ip_address( '203.0.113.7' );
+		$order->save();
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$this->create_account_service( false ),
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+		$request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit', 'pm_sepa' ),
+			'pm_sepa',
+			'cus_plugin_subscription',
+			false
+		);
+
+		$this->assertSame( 'renewal', $request['metadata']['subscription_payment'] );
+		$this->assertSame( array( 'sepa_debit' ), $request['payment_method_types'] );
+		$this->assertSame( '203.0.113.7', $request['mandate_data']['customer_acceptance']['online']['ip_address'] );
+		$this->assertArrayNotHasKey( 'off_session', $request );
+	}
+
+	/**
 	 * @testdox Zero-total scheduled Link renewals should omit online mandate acceptance at transport.
 	 */
 	public function test_zero_total_scheduled_link_renewal_omits_online_mandate_at_transport(): void {
@@ -4608,6 +4743,18 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$gateway->available = false;
 
 		$this->assertFalse( $this->create_adapter( $gateway )->is_available() );
+	}
+
+	/**
+	 * Ensure a minimal WooCommerce Subscriptions renewal-order detector exists.
+	 */
+	private function ensure_wcs_order_renewal_detector_double(): void {
+		if ( function_exists( 'wcs_order_contains_renewal' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal-order detector.
+		eval( 'namespace { function wcs_order_contains_renewal( $order ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_renewal_order_ids"] ?? array(), true ); } }' );
 	}
 
 	/**

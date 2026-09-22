@@ -1038,7 +1038,8 @@ wcs_log="$TEST_ROOT/wcs-create.log"
 wcs_runtime="$TEST_ROOT/wcs-runtime"
 mkdir "$wcs_workspace"
 wcs_before="$(shasum -a 256 "$TEST_ROOT/wcs.tar.gz" "$TEST_ROOT/wcs.json")"
-wcs_created="$(E2E_TRANSITION_PORT=19086 run_provisioner "$wcs_workspace" "$wcs_runtime" "$wcs_log" \
+wcs_created="$(E2E_TRANSITION_PORT=19086 E2E_TRANSITION_SCENARIO=historical-subscription-renewal \
+	run_provisioner "$wcs_workspace" "$wcs_runtime" "$wcs_log" \
 	create --workspace "$wcs_workspace" --seed-archive "$TEST_ROOT/seed.tar.gz" --seed-manifest "$TEST_ROOT/seed.json" \
 	--run-id wcs-create --base-url http://transition-wcs-create.localhost:19086 --store-id woopayments-native-transition-wcs-create \
 	--wcs-archive "$TEST_ROOT/wcs.tar.gz" --wcs-manifest "$TEST_ROOT/wcs.json")"
@@ -1066,8 +1067,8 @@ node -e '
 	visit(config.mappings["wp-content/plugins/woocommerce-subscriptions"]);
 	assert.ok(!JSON.stringify(planned).includes(process.argv[4]));
 ' "$wcs_workspace" "$wcs_plan" "$wcs_created" "$TEST_ROOT"
-if grep -Eq 'plugin (activate|install).*woocommerce-subscriptions' "$wcs_log"; then
-	echo 'The provisioner activated WCS.' >&2
+if [[ "$(grep -Fc 'plugin activate woocommerce woocommerce-payments woocommerce-payments-dev-tools woocommerce-subscriptions' "$wcs_log")" != '1' ]]; then
+	echo 'The historical subscription provisioner did not activate WCS exactly once alongside the existing plugins.' >&2
 	exit 1
 fi
 # Exercise the installed compose builder, not a fake mount implementation.
@@ -1696,6 +1697,11 @@ grep -Fq "$create_workspace/wp-env-home" "$create_log"
 grep -Fq $'reference-wp\t' "$create_log"
 grep -Fq 'transition_inject_reference_fixture' "$create_log"
 grep -Fq 'wc tool run install_pages' "$create_log"
+if [[ "$(grep -Fc 'plugin activate woocommerce woocommerce-payments woocommerce-payments-dev-tools' "$create_log")" != '1' ]] ||
+	grep -Fq 'plugin activate woocommerce woocommerce-payments woocommerce-payments-dev-tools woocommerce-subscriptions' "$create_log"; then
+	echo 'A non-WCS allocation changed its plugin activation set.' >&2
+	exit 1
+fi
 if ! grep -Fq 'option set woocommerce_woocommerce_payments_settings --format=json {"enabled":"yes","saved_cards":"yes","upe_enabled_payment_method_ids":["card","future_lpm"]}' "$create_log"; then
 	echo 'Reconciliation store did not seed the exact unsupported payment method blocker.' >&2
 	exit 1

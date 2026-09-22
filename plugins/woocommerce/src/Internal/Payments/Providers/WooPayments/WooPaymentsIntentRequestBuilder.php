@@ -121,7 +121,8 @@ class WooPaymentsIntentRequestBuilder {
 		$order                = $context->get_order();
 		$payment_data         = $context->get_payment_data();
 		$provider_data        = $context->get_provider_data();
-		$is_renewal           = ! empty( $provider_data['scheduled_subscription_payment'] );
+		$is_scheduled_renewal = ! empty( $provider_data['scheduled_subscription_payment'] );
+		$is_renewal           = $is_scheduled_renewal || ( function_exists( 'wcs_order_contains_renewal' ) && (bool) wcs_order_contains_renewal( $order ) );
 		$is_recurring         = $is_renewal || $is_recurring;
 		$save_payment_method  = ! empty( $payment_data['save_payment_method'] ) || $is_recurring;
 		$payment_type         = $is_recurring ? 'recurring' : 'single';
@@ -129,7 +130,7 @@ class WooPaymentsIntentRequestBuilder {
 		$payment_method_types = $this->payment_method_types_for_request( $context, (string) $order->get_currency() );
 		$request_data         = array(
 			'amount'               => $this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ),
-			'capture_method'       => ! $is_renewal && 'yes' === $this->account_service->get_gateway_setting( 'manual_capture', 'no' ) ? 'manual' : 'automatic',
+			'capture_method'       => ! $is_scheduled_renewal && 'yes' === $this->account_service->get_gateway_setting( 'manual_capture', 'no' ) ? 'manual' : 'automatic',
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,
 			'description'          => self::intent_description( (string) $order->get_order_number() ),
@@ -150,7 +151,7 @@ class WooPaymentsIntentRequestBuilder {
 			$request_data['cvc_confirmation'] = (string) $provider_data['cvc_confirmation'];
 		}
 
-		if ( $is_renewal ) {
+		if ( $is_scheduled_renewal ) {
 			$request_data['off_session'] = true;
 			$renewal_mandate             = isset( $provider_data['renewal_mandate'] ) ? (string) $provider_data['renewal_mandate'] : '';
 			if ( '' !== $renewal_mandate ) {
@@ -162,7 +163,7 @@ class WooPaymentsIntentRequestBuilder {
 		// silently omits setup_future_usage for non-reusable types (BNPL,
 		// single-use redirects) even when a save was requested — the provider
 		// rejects the combination outright, failing the whole checkout.
-		if ( ! $is_renewal && $save_payment_method && $this->are_payment_method_types_reusable( $payment_method_types ) ) {
+		if ( ! $is_scheduled_renewal && $save_payment_method && $this->are_payment_method_types_reusable( $payment_method_types ) ) {
 			$request_data['setup_future_usage'] = 'off_session';
 		}
 
@@ -175,7 +176,7 @@ class WooPaymentsIntentRequestBuilder {
 		// renewals must not fabricate one (the platform authorizes MIT through
 		// the network-transaction-ID framework), and an acceptance without a
 		// valid shopper IP is refused by the provider outright.
-		if ( ! $is_renewal && self::is_mandate_data_required( $payment_method_types ) ) {
+		if ( ! $is_scheduled_renewal && self::is_mandate_data_required( $payment_method_types ) ) {
 			$mandate_data = self::mandate_data( $order );
 			if ( null !== $mandate_data ) {
 				$request_data['mandate_data'] = $mandate_data;

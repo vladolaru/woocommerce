@@ -2,28 +2,101 @@
 	"schema_version": 2,
 	"slice_id": "historical-subscriptions-my-account-renewal-deferral",
 	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
-	"verified_at_commit": "cc84da9aab69691fdd532c491b77cd552ac32719",
+	"verified_at_commit": "bc3ff3f34324a2b5505654feceeaf9ef0df76f57",
 	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
-	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
-	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
-	"contract_ids": ["default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-renew-subscription.spec.ts:45::Subscriptions › Renew a subscription in my account › should be able to renew a subscription in my account"],
-	"targets": [{"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-subscriptions.spec.ts", "contract": "pending"}],
+	"source_test_paths": [
+		"plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/WooPaymentsIntentRequestBuilder.php",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsCutoverReconciliationJobTest.php",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/NativeWooPaymentsGatewayTest.php",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsProviderGatewayAdapterTest.php",
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts"
+	],
+	"source_test_sha256": "10ef7fa2dd4c605e52922a0b36f5ab187f552cf12073493aa4965cacef8866e7",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-renew-subscription.spec.ts:45::Subscriptions › Renew a subscription in my account › should be able to renew a subscription in my account"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsCutoverReconciliationJobTest.php",
+			"contract": "the selected persisted WooPayments 11.1.0 customer, saved token, parent order, subscription-shaped order, schedule, gateway, and provider metadata fields remain exact through the real cutover normalization runner"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/NativeWooPaymentsGatewayTest.php",
+			"contract": "native early-renewal checkout reuses the exact plugin-origin token and subscription relationship under the recorded successful USD 9.99 outcome and stores the paid-intent witness"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsProviderGatewayAdapterTest.php",
+			"contract": "a customer-present WCS renewal sends recurring renewal metadata on the exact historical customer and token without scheduled-only off-session semantics"
+		}
+	],
 	"implementation_commits": [],
-	"verification": [],
-	"reviews": [{
-		"role": "deferral",
-		"verdict": "APPROVE",
-		"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
-		"summary": "Fresh independent review approved pre-review purchase SHA 99821cc2df7dedbd51787876894631c614df155cb578cf63661d6ec541099b49 and historical-renewal SHA 2a14af27115daec721cc0cdbdd827bf3a31af31f41e701e08eab49aff8f18b9b against mutated ledger SHA 605e9372de435cbfde44b60ce7647c9abf0df78199cb9345c85813df8b226c82 and baseline e5be9eb427d400ae7317912aa2be2d2c6495f324b9ea3a828182ce42bc9d713c at cc84da9aab69691fdd532c491b77cd552ac32719, with no findings. Exactly rows 149-150 change only fields 37-40. The independent steady-state and plugin-origin historical graphs preserve pinned Subscriptions artifacts, product and options, exact USD 11.98 initial and USD 9.99 renewal outcomes, local, provider and Action Scheduler cardinalities, customer-present subscription_payment renewal as a future RED without a known-gap claim, semantic accessibility, one serialized provider-writer lane, one versus two intentional dispatches, one exclusive listener, zero retries or replay, journals, restoration, retention, quarantine and drift without unsupported execution, defect, verification or closure claims."
-	}],
-	"closures": [],
+	"execution_boundary": {
+		"direct_browser_status": "deferred-before-playwright",
+		"run_id": "task-5-2-row-150-20260922-1837",
+		"reason": "The sole N-097 post-fix allocation mounted and activated WooCommerce Subscriptions 9.2.0, then stopped at the WooPayments 11.1.0 cached account identity probe before Playwright or any provider write.",
+		"rollback": "The allocation was removed through standard teardown with zero quarantine receipts, zero active attempts, zero plain locks, and 98 releases for 98 mutation guards.",
+		"listener": "The user-owned listener PID 20448 and Stripe child PID 20473 remained running and untouched."
+	},
+	"verification": [
+		{
+			"command": "pnpm --filter=@woocommerce/plugin-woocommerce test:e2e:woopayments:transition-unit",
+			"exit_code": 0,
+			"summary": "The full provider-free transition harness suite passed, including the regression that activates a validated mounted WooCommerce Subscriptions artifact while leaving non-WCS allocations unchanged."
+		},
+		{
+			"command": "E2E_TRANSITION_RUN_ID=task-5-2-row-150-20260922-1837 E2E_TRANSITION_SCENARIO=historical-subscription-renewal E2E_TRANSITION_SEED_PROFILE=11.1.0 E2E_TRANSITION_SEED_ARCHIVE=.agents/scratchpad/sessions/2026-09-03-native-payments-program-orientation/data/runs/transition-seed-11.1.0-real-1790023314/woocommerce-payments-11.1.0-f85392666c9b543cd24dbbf903e0dbe4cb2c5cee.tar.gz E2E_TRANSITION_SEED_MANIFEST=.agents/scratchpad/sessions/2026-09-03-native-payments-program-orientation/data/runs/transition-seed-11.1.0-real-1790023314/woocommerce-payments-11.1.0-f85392666c9b543cd24dbbf903e0dbe4cb2c5cee.json E2E_TRANSITION_WCS_ARCHIVE='<validated-WCS-9.2.0-archive-sha256:2514053d1d4f8bd872cb0397f7b91abc418344347ddb5d58518cac6f7e872f83>' E2E_TRANSITION_WCS_MANIFEST='<validated-WCS-9.2.0-manifest-sha256:67d9073cd9ef9e4accc873e4c717c62d3a93d5bfae8d9b11fb876499d847f92a>' bash plugins/woocommerce/tests/e2e/envs/woopayments-native/run-saved-method-transition.sh",
+			"exit_code": 1,
+			"summary": "The one permitted post-fix launch stopped at account identity validation before Playwright or a provider write. Browser proof is explicitly deferred under N-097; the run contributes no UI or financial claim."
+		},
+		{
+			"command": "pnpm --filter=@woocommerce/plugin-woocommerce test:php:env -- --filter '/(test_reconciliation_preserves_plugin_origin_subscription_persistence_shape|test_process_payment_reuses_plugin_origin_subscription_card_for_early_renewal|test_customer_present_early_renewal_uses_recurring_renewal_request_shape|test_customer_present_early_renewal_retains_online_mandate_data)/'",
+			"exit_code": 0,
+			"summary": "Passed 4 tests and 52 assertions. The real reconciliation runner preserved every selected historical persistence field; native checkout reused the exact token and subscription relationship; and customer-present renewal requests retained manual capture, future usage and online mandate behavior while carrying recurring/renewal metadata and no off_session field."
+		},
+		{
+			"command": "pnpm --filter=@woocommerce/plugin-woocommerce test:php:env -- --filter '/(WooPaymentsIntentRequestBuilderTest|WooPaymentsProviderGatewayAdapterTest)/'",
+			"exit_code": 0,
+			"summary": "The full request-builder and provider-adapter classes passed 111 tests and 531 assertions, preserving scheduled-renewal capture, off-session, mandate, and setup behavior around the metadata fix."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:subscription-provider-lifecycle\"",
+			"exit_code": 0,
+			"summary": "Retained provider evidence passed 7/7 with one worker and zero retries. Its renewal case produced distinct captured USD 9.99 renewals on the same saved credential without duplicate subscriptions, tokens, renewal orders, or actions; the initial case preserves the USD 11.98 signup-fee graph. Full evidence remains in subscription-provider-lifecycle-family-closure.json."
+		},
+		{
+			"command": "verify phpstan plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/WooPaymentsIntentRequestBuilder.php && verify semgrep plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/WooPaymentsIntentRequestBuilder.php",
+			"exit_code": 0,
+			"summary": "PHPStan reported no errors and Semgrep reported zero findings. Scoped PHPCS and PHP syntax were also clean for the production file and three focused test files."
+		},
+		{
+			"command": "PHPCS=phpcs-with-512M-wrapper composer run-script lint-branch",
+			"exit_code": 0,
+			"summary": "The required branch-wide PHP lint passed under the authorized temporary 512 MB ceiling after the default 128 MB process ceiling exhausted. The combined branch lint's JavaScript arm remains red on 317 pre-existing formatting errors in unrelated branch files; this slice changes no JavaScript or TypeScript."
+		}
+	],
+	"reviews": [
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"summary": "Independent final review found zero remaining actionable issues after the persistence claim was narrowed and customer-present manual capture, setup_future_usage, SEPA online mandate data, and off_session boundaries gained explicit assertions. Deliberate mutations of the scheduled-only conditions failed the strengthened tests."
+		},
+		{
+			"role": "reliability-and-closure",
+			"verdict": "APPROVE",
+			"summary": "Independent final review found zero remaining findings after the source bundle hash, historical invocation, timestamps, target paths, counts, and selected-field claims were reconciled. It confirmed the one-fix/one-relaunch N-097 boundary, pre-Playwright stop, zero provider writes, clean teardown, and untouched user-owned listener."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-renew-subscription.spec.ts:45::Subscriptions › Renew a subscription in my account › should be able to renew a subscription in my account",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsCutoverReconciliationJobTest.php;plugins/woocommerce/tests/php/src/Internal/Payments/NativeWooPaymentsGatewayTest.php;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsProviderGatewayAdapterTest.php",
+				"contract": "the selected persisted fields of the plugin-origin subscription-shaped order graph remain exact through cutover, native checkout reuses its saved credential for one recorded successful early renewal, and the request is recurring renewal metadata without scheduled-only semantics"
+			},
+			"provider_evidence": "plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/subscription-provider-lifecycle-family-closure.json",
+			"browser_limitation": "The direct My Account cutover route was not reached after the bounded allocation stopped before Playwright, so this closure makes no new My Account rendering or interaction claim."
+		}
+	],
 	"known_gaps": [],
-	"deferral": {
-		"blocker": "The historical subscription target is absent with pending contract and owner, standing transition readiness is unavailable, and the current disposable provisioner cannot install a pinned WooCommerce Subscriptions artifact or seed its exact signup-fee product. No approved exclusive listener or exact subscription, Action Scheduler and provider readers exist. The early-renewal metadata divergence is only a source-level executable risk, not a proven gap.",
-		"affected_scope": "One disposable version-pinned transition creates a plugin-origin graph under sole plugin ownership: one exact customer, USD 11.98 initial order, active subscription, reusable local token, provider customer and payment method, initial succeeded and captured intent and charge, next-payment date and one pending renewal action. A separately journaled one-way cutover makes native the sole owner while those identities, relationships, dates, provider attachments and cardinalities remain unchanged. My Account exposes the exact subscription link and one focusable Renew now link; its query identifies that subscription, one role-alert says Complete checkout to renew now., and the plugin-origin saved method is selected. One native Place order activation under a distinct durable journal creates exactly one USD 9.99 early-renewal order, one distinct succeeded and captured intent, charge and capture, zero new subscriptions, tokens, customers or attachments, no signup fee, the same subscription, customer and payment method, an advanced one-interval next-payment date and one rescheduled rather than duplicated renewal action. Provider metadata must say payment_type recurring and subscription_payment renewal; the scheduled-payment handler remains idle.",
-		"no_allowlisted_action_reason": "No local action can assign target ownership, satisfy native and transition readiness, extend the provisioner with an immutable private extension artifact, authorize exact readers or take ownership of the separate listener. A native-created subscription, rewritten historical metadata, repeated purchase, retrying checkout or accepting subscription_payment initial would invalidate the backward-compatibility proof. Hold one serialized provider-writer lane and one exclusive listener across the plugin seed, one-way cutover and native renewal; allow exactly two intentional one-shot submissions, zero Playwright retries, zero replay and bounded read-only reconciliation.",
-		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
-		"unlock_decision": "Approve target and owner, satisfy transition readiness, revalidate the immutable WooPayments seed, add a pinned compatible Subscriptions artifact, product and early-renewal options to the disposable provisioner, and establish one exclusive listener. Journal each financial submission, cutover, settings and cleanup separately; prove byte-exact pre/post historical identity, exact initial and renewal provider graphs, renewal metadata, Action Scheduler cardinality, accessible focus and notices, restoration and allocation teardown. Preserve subscription_payment renewal as the RED oracle and obtain fresh code, E2E, reliability, accessibility, security and drift review.",
-		"quarantine_status": "No allocation, extension, product, customer, order, subscription, token, provider object, listener, browser, writer, cutover, journal, setting mutation, restoration or quarantine was created; the separately owned listener remains untouched. Future seed, dispatch, cutover, metadata, callback, listener, scheduled-action, cleanup, restoration or teardown ambiguity must stop without reverse cutover or replay, retain immutable financial history and open journals, and quarantine the exact allocation, account, store, customer, subscription, related orders, tokens, provider graph, event interval and held locks. A proven pre-dispatch provisioning failure retains only local rollback evidence."
-	}
+	"deferral": null
 }

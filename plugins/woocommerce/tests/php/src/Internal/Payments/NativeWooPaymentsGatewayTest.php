@@ -2312,6 +2312,96 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A customer-present early renewal reuses the exact plugin-origin subscription-shaped order and saved card under the recorded successful outcome.
+	 */
+	public function test_process_payment_reuses_plugin_origin_subscription_card_for_early_renewal(): void {
+		$this->ensure_wcs_renewal_subscriptions_double();
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, '_wcpay_customer_id_test', 'cus_plugin_subscription' );
+
+		$token = $this->create_card_token( $user_id, 'pm_plugin_subscription' );
+		$token->set_expiry_month( '02' );
+		$token->set_expiry_year( '2045' );
+		$token->save();
+
+		$parent_order = $this->create_order();
+		$parent_order->set_customer_id( $user_id );
+		$parent_order->set_currency( 'USD' );
+		$parent_order->set_total( '11.98' );
+		$parent_order->set_payment_method( 'woocommerce_payments' );
+		$parent_order->add_payment_token( $token );
+		$parent_order->update_meta_data( '_payment_method_id', 'pm_plugin_subscription' );
+		$parent_order->update_meta_data( '_stripe_customer_id', 'cus_plugin_subscription' );
+		$parent_order->save();
+
+		$subscription = wc_create_order( array( 'customer_id' => $user_id ) );
+		if ( ! $subscription instanceof WC_Order ) {
+			throw new \RuntimeException( 'Could not create a plugin-shaped historical subscription.' );
+		}
+		$subscription->set_parent_id( $parent_order->get_id() );
+		$subscription->set_currency( 'USD' );
+		$subscription->set_total( '9.99' );
+		$subscription_status_filter = static function ( array $statuses ): array {
+			$statuses['wc-active'] = 'Active';
+			return $statuses;
+		};
+		add_filter( 'wc_order_statuses', $subscription_status_filter );
+		try {
+			$subscription->set_status( 'active' );
+			$subscription->set_payment_method( 'woocommerce_payments' );
+			$subscription->add_payment_token( $token );
+			$subscription->update_meta_data( '_payment_method_id', 'pm_plugin_subscription' );
+			$subscription->update_meta_data( '_stripe_customer_id', 'cus_plugin_subscription' );
+			$subscription->update_meta_data( '_schedule_start', '2026-09-22 15:00:00' );
+			$subscription->update_meta_data( '_schedule_next_payment', '2026-10-22 15:00:00' );
+			$subscription->save();
+		} finally {
+			remove_filter( 'wc_order_statuses', $subscription_status_filter );
+		}
+
+		$renewal_order = $this->create_order();
+		$renewal_order->set_customer_id( $user_id );
+		$renewal_order->set_currency( 'USD' );
+		$renewal_order->set_total( '9.99' );
+		$renewal_order->set_payment_method( 'woocommerce_payments' );
+		$renewal_order->add_payment_token( $token );
+		$renewal_order->update_meta_data( '_subscription_renewal', $subscription->get_id() );
+		$renewal_order->save();
+
+		// Oracle: WooPayments 11.1.0 OrderService::get_payment_metadata() preserves this renewal relationship, and the read-only :8082 provider family recorded a succeeded, captured USD 9.99 renewal on the same historical customer and Visa 4242 method.
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_plugin_subscription_renewal', '', 'pm_plugin_subscription', 'cus_plugin_subscription' );
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
+		$GLOBALS['wcpay_test_renewal_subscription_ids']                    = array( $renewal_order->get_id() => array( $subscription->get_id() ) );
+
+		try {
+			$result = $gateway->process_payment( $renewal_order->get_id() );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
+		}
+		$subscription_fresh = wc_get_order( $subscription->get_id() );
+		$renewal_fresh      = wc_get_order( $renewal_order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( WC_Order::class, $subscription_fresh );
+		$this->assertInstanceOf( WC_Order::class, $renewal_fresh );
+		$this->assertSame( $renewal_order->get_id(), $service->last_checkout_context->get_order_id() );
+		$this->assertSame( (string) $token->get_id(), $service->last_checkout_context->get_payment_data()['payment_token'] );
+		$this->assertSame( '9.99', $service->last_checkout_context->get_order()->get_total() );
+		$this->assertSame( 'USD', $service->last_checkout_context->get_order()->get_currency() );
+		$this->assertFalse( $service->last_checkout_context->get_provider_data()['scheduled_subscription_payment'] ?? false, 'A customer-present early renewal must not become an off-session scheduled renewal.' );
+		$this->assertSame( 'active', $subscription_fresh->get_status() );
+		$this->assertSame( array( $token->get_id() ), array_map( 'absint', $subscription_fresh->get_payment_tokens() ) );
+		$this->assertSame( $parent_order->get_id(), $subscription_fresh->get_parent_id() );
+		$this->assertSame( $subscription->get_id(), absint( $renewal_fresh->get_meta( '_subscription_renewal', true ) ) );
+		$this->assertSame( array( $token->get_id() ), array_map( 'absint', $renewal_fresh->get_payment_tokens() ) );
+		$this->assertSame( 'pi_plugin_subscription_renewal', WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
+	}
+
+	/**
 	 * @testdox Should store no paid-intent witness for non-completed or ID-less payment outcomes.
 	 *
 	 * @dataProvider outcomes_without_paid_intent_witness
