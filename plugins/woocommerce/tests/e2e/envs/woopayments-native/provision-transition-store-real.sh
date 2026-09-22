@@ -2136,6 +2136,9 @@ create_store() {
 			seed_reference_account=true
 			seed_native_available_state=true
 			;;
+		historical-tokens)
+			seed_reference_account=true
+			;;
 	esac
 	store_wp option set woocommerce_woocommerce_payments_settings \
 		--format=json "$payment_settings" > /dev/null

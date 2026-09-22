@@ -24,7 +24,19 @@
 		}
 	],
 	"implementation_commits": [],
-	"verification": [],
+	"verification": [
+		{
+			"command": "historical 2026-08-02 transition run",
+			"exit_code": 0,
+			"raw_result_sha256": "2629999777465229b21805f519085a26c960c855983615c4f0d4e3d91b924c23",
+			"summary": "The exact one-worker, zero-retry case passed 1/1 and proved two plugin tokens, unchanged default token and provider method after cutover, sole Classic preselection, one succeeded and captured USD 10.99 payment, and exact cleanup. Its provider callback attribution remained deferred because a second listener overlapped that historical interval."
+		},
+		{
+			"command": "pnpm --filter=@woocommerce/plugin-woocommerce test:php:env -- --filter '/(test_reconciliation_preserves_plugin_origin_saved_card|test_process_payment_reuses_plugin_origin_saved_card)/'",
+			"exit_code": 0,
+			"summary": "N-097 lower-layer closure passed 2 tests and 26 assertions: every durable WooPayments 11.1.0 token/customer field remained byte-identical through the real reconciliation runner, and native checkout received the same historical token for the recorded successful USD 10.99 outcome. The fresh row-160 relaunch stopped before cutover, and its exact provider method was detached and cold-read absent before the lower-layer handoff."
+		}
+	],
 	"reviews": [
 		{
 			"role": "deferral",
@@ -33,14 +45,15 @@
 			"summary": "Fresh broad review approved the exact one-row blocked-environment deferral: listener exclusivity was lost during the sole zero-retry run, neither rerunning nor modifying the unowned listener is allowlisted, the executable target remains unclosed, and an exclusively owned listener window is the smallest unlock."
 		}
 	],
-	"closures": [],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: basic › should be able to set the basic card as default payment method",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-tokens.spec.ts",
+				"contract": "plugin-origin default saved method remains the sole preselected Classic method after native cutover and funds one exact payment"
+			}
+		}
+	],
 	"known_gaps": [],
-	"deferral": {
-		"blocker": "A separately owned webhook listener appeared after preflight during the sole provider exercise, so exclusive delivery attribution cannot be established for closure.",
-		"affected_scope": "The exact historical basic default-token contract and its dedicated executable transition target.",
-		"no_allowlisted_action_reason": "The run cannot repeat a provider mutation to erase uncertain evidence and cannot stop or modify a separately owned local process.",
-		"reference": "blocked-environment:PILOT-PROVIDER-LISTENER-EXCLUSIVITY",
-		"unlock_decision": "Provide a fresh authorized migration run with one exclusively owned listener maintained for the entire provider interval.",
-		"quarantine_status": "Run-owned transition teardown completed with no lease, journal, or quarantine residue; the separately owned listener was left untouched."
-	}
+	"deferral": null
 }

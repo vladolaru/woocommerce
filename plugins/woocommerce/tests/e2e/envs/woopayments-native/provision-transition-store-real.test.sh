@@ -1856,6 +1856,42 @@ for historical_scenario in historical-pay-for-order-ctp-false historical-pay-for
 	historical_transition_port=$((historical_transition_port + 1))
 done
 
+historical_tokens_workspace="$TEST_ROOT/historical-tokens"
+historical_tokens_runtime="$TEST_ROOT/historical-tokens-runtime"
+historical_tokens_log="$TEST_ROOT/historical-tokens-commands.log"
+mkdir "$historical_tokens_workspace"
+E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+	E2E_TRANSITION_FRONTEND_LOCK_SHA256="$profile_11_frontend_lock_hash" \
+	E2E_TRANSITION_COMPOSER_LOCK_SHA256="$profile_11_composer_lock_hash" \
+	E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_TRANSITION_SCENARIO=historical-tokens \
+	E2E_TRANSITION_PORT="$historical_transition_port" \
+	run_provisioner "$historical_tokens_workspace" "$historical_tokens_runtime" "$historical_tokens_log" \
+	create \
+	--workspace "$historical_tokens_workspace" \
+	--seed-archive "$TEST_ROOT/profile-11-seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/profile-11-seed.json" \
+	--run-id historical-tokens \
+	--base-url "http://transition-historical-tokens.localhost:$historical_transition_port" \
+	--store-id woopayments-native-transition-historical-tokens > /dev/null
+if [[ ! -f "$historical_tokens_runtime/reference-account-seeded" ]]; then
+	echo 'Historical tokens did not seed the exact validated reference account.' >&2
+	exit 1
+fi
+if [[ -e "$historical_tokens_runtime/native-active-seeded" || -e "$historical_tokens_runtime/native-available-seeded" ]]; then
+	echo 'Historical tokens incorrectly seeded native state.' >&2
+	exit 1
+fi
+E2E_TRANSITION_SEED_PROFILE=11.1.0 \
+	E2E_TRANSITION_WP_ENV_BIN="$profile_11_wp_env" \
+	E2E_FAKE_WP_ENV_TARGET="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	run_provisioner "$historical_tokens_workspace" "$historical_tokens_runtime" "$historical_tokens_log" \
+	destroy \
+	--workspace "$historical_tokens_workspace" \
+	--rollback-receipt-file "$historical_tokens_workspace/rollback-receipt"
+historical_transition_port=$((historical_transition_port + 1))
+
 unseeded_workspace="$TEST_ROOT/unseeded-reference-account"
 unseeded_runtime="$TEST_ROOT/unseeded-reference-account-runtime"
 unseeded_log="$TEST_ROOT/unseeded-reference-account-commands.log"

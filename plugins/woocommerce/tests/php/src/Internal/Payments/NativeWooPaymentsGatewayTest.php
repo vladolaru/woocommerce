@@ -2275,6 +2275,43 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A plugin-origin saved card reaches native checkout unchanged and accepts the recorded successful outcome.
+	 */
+	public function test_process_payment_reuses_plugin_origin_saved_card(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, '_wcpay_customer_id_test', 'cus_plugin_history' );
+		$token = $this->create_card_token( $user_id, 'pm_plugin_history' );
+		$token->set_expiry_month( '02' );
+		$token->set_expiry_year( '2045' );
+		$token->save();
+		/** @var \WC_Payment_Token_Data_Store $token_data_store */
+		$token_data_store = \WC_Data_Store::load( 'payment-token' );
+		$token_data_store->set_default_status( $token->get_id(), true );
+
+		$order = $this->create_order();
+		$order->set_customer_id( $user_id );
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.99' );
+		$order->save();
+
+		// Oracle: WooPayments 11.1.0 writes this saved-card/customer shape, and the read-only :8082 capture recorded its native reuse as a succeeded, captured USD 10.99 payment.
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_plugin_history_use', '', 'pm_plugin_history', 'cus_plugin_history' );
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertSame( (string) $token->get_id(), $service->last_checkout_context->get_payment_data()['payment_token'] );
+		$this->assertSame( '10.99', $service->last_checkout_context->get_order()->get_total() );
+		$this->assertSame( 'USD', $service->last_checkout_context->get_order()->get_currency() );
+		$this->assertSame( 'pi_plugin_history_use', WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
+	}
+
+	/**
 	 * @testdox Should store no paid-intent witness for non-completed or ID-less payment outcomes.
 	 *
 	 * @dataProvider outcomes_without_paid_intent_witness

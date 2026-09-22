@@ -400,6 +400,61 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Reconciliation preserves a plugin-origin saved card and test customer relationship byte-for-byte.
+	 */
+	public function test_reconciliation_preserves_plugin_origin_saved_card(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, '_wcpay_customer_id_test', 'cus_plugin_history' );
+
+		$token = new \WC_Payment_Token_CC();
+		$token->set_gateway_id( 'woocommerce_payments' );
+		$token->set_user_id( $user_id );
+		$token->set_token( 'pm_plugin_history' );
+		$token->set_default( true );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '02' );
+		$token->set_expiry_year( '2045' );
+		$token->save();
+		/** @var \WC_Payment_Token_Data_Store $token_data_store */
+		$token_data_store = \WC_Data_Store::load( 'payment-token' );
+		$token_data_store->set_default_status( $token->get_id(), true );
+
+		// Oracle: WooPayments 11.1.0 WC_Payments_Token_Service::add_token_to_user() writes this WC_Payment_Token_CC shape, and the read-only :8082 capture recorded Visa 4242 expiring 02/2045 with the test customer option.
+		$expected = array(
+			'token_id'                   => $token->get_id(),
+			'provider_payment_method_id' => 'pm_plugin_history',
+			'gateway_id'                 => 'woocommerce_payments',
+			'type'                       => 'CC',
+			'is_default'                 => true,
+			'brand'                      => 'visa',
+			'last4'                      => '4242',
+			'expiry_month'               => '02',
+			'expiry_year'                => '2045',
+			'user_id'                    => $user_id,
+			'customer_id'                => 'cus_plugin_history',
+		);
+		$before   = $this->snapshot_historical_saved_card( $token->get_id() );
+		$this->assertSame( $expected, $before, 'The fixture should match the exact WooPayments 11.1.0 plugin-era shape.' );
+
+		delete_option( 'woocommerce_native_woopayments_cutover_normalization_version' );
+		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		$normalization = new WooPaymentsCutoverNormalizationRunner();
+		$sut           = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$after = $this->snapshot_historical_saved_card( $token->get_id() );
+		$this->assertSame( $expected, $after, 'Every historical token and customer field should remain exact.' );
+		$this->assertSame( $before, $after, 'Cutover normalization must not rewrite plugin-origin saved-card state.' );
+		$this->assertSame( '4', get_option( 'woocommerce_native_woopayments_cutover_normalization_version' ), 'The actual normalization runner should complete.' );
+	}
+
+	/**
 	 * @testdox Ownership verification cannot complete in its originating request and completes only after a fresh native-owned request.
 	 */
 	public function test_ownership_verification_requires_a_fresh_native_owned_request(): void {
@@ -3691,6 +3746,33 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			'payment_method_title' => $order->get_payment_method_title(),
 			'transaction_id'       => $order->get_transaction_id(),
 			'multi_currency_meta'  => $multi_currency_meta,
+		);
+	}
+
+	/**
+	 * Read one plugin-origin saved card and its WooPayments test customer relationship.
+	 *
+	 * @param int $token_id Payment token ID.
+	 * @return array<string,mixed>
+	 */
+	private function snapshot_historical_saved_card( int $token_id ): array {
+		$token = \WC_Payment_Tokens::get( $token_id );
+		if ( ! $token instanceof \WC_Payment_Token_CC ) {
+			throw new \RuntimeException( 'Could not cold-read the historical saved card.' );
+		}
+
+		return array(
+			'token_id'                   => $token->get_id(),
+			'provider_payment_method_id' => $token->get_token(),
+			'gateway_id'                 => $token->get_gateway_id(),
+			'type'                       => $token->get_type(),
+			'is_default'                 => $token->is_default(),
+			'brand'                      => $token->get_card_type(),
+			'last4'                      => $token->get_last4(),
+			'expiry_month'               => $token->get_expiry_month(),
+			'expiry_year'                => $token->get_expiry_year(),
+			'user_id'                    => $token->get_user_id(),
+			'customer_id'                => get_user_option( '_wcpay_customer_id_test', $token->get_user_id() ),
 		);
 	}
 

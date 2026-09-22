@@ -18,7 +18,8 @@
   "contract_ids": [
     "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-payment-methods-add-fail.spec.ts:71::Payment Methods › when attempting to add a declined-3ds card › it should not add the card",
     "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:146::Shopper can save and delete cards › Testing card: 3ds › should add the 3ds card as a new payment method",
-    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds › should be able to purchase with the saved 3ds card"
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds › should be able to purchase with the saved 3ds card",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:93::Saved cards › When using a 3ds card added on checkout › should process a payment with the saved card"
   ],
   "targets": [
     {
@@ -54,6 +55,11 @@
       "command": "focused Classic Card driver unit suite",
       "exit_code": 0,
       "summary": "Passed 36/36, including selecting Card while another migrated gateway remains enabled."
+    },
+    {
+      "command": "pnpm --filter=@woocommerce/plugin-woocommerce test:php:env -- --filter '/(test_reconciliation_preserves_plugin_origin_saved_card|test_process_payment_reuses_plugin_origin_saved_card)/'",
+      "exit_code": 0,
+      "summary": "N-097 lower-layer closure passed 2 tests and 26 assertions: every durable WooPayments 11.1.0 token/customer field remained byte-identical through the real reconciliation runner, and native checkout received the same historical token for the recorded successful USD 10.99 outcome. The direct row-127 transition used its launch plus one harness-fix relaunch and stopped before provider submission because the pinned plugin checkout exposed no semantic save-to-account control; both runs left zero attempts, quarantine, or held locks."
     }
   ],
   "reviews": [],
@@ -74,6 +80,13 @@
     },
     {
       "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds › should be able to purchase with the saved 3ds card",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
+        "contract": "one My Account 3DS token completes required SetupIntent and Classic PaymentIntent challenges and settles one exact USD 10.99 payment"
+      }
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:93::Saved cards › When using a 3ds card added on checkout › should process a payment with the saved card",
       "target": {
         "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
         "contract": "one My Account 3DS token completes required SetupIntent and Classic PaymentIntent challenges and settles one exact USD 10.99 payment"

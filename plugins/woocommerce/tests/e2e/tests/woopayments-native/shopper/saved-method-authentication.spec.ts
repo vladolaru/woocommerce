@@ -34,6 +34,9 @@ const CONTRACT_AUTHENTICATED_ADD =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:146::Shopper can save and delete cards › Testing card: 3ds › should add the 3ds card as a new payment method';
 const CONTRACT_AUTHENTICATED_PURCHASE =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds › should be able to purchase with the saved 3ds card';
+// WooPayments 11.1.0 on :8082 is the oracle for the plugin-era saved-token behavior this contract preserves.
+const CONTRACT_HISTORICAL_AUTHENTICATED_PURCHASE =
+	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:93::Saved cards › When using a 3ds card added on checkout › should process a payment with the saved card';
 
 const PRICE = '10.99';
 const AMOUNT_MINOR = 1099;
@@ -275,6 +278,10 @@ test.describe( 'WooPayments native saved-method authentication', () => {
 				{
 					type: 'woopayments-contract',
 					description: CONTRACT_AUTHENTICATED_PURCHASE,
+				},
+				{
+					type: 'woopayments-contract',
+					description: CONTRACT_HISTORICAL_AUTHENTICATED_PURCHASE,
 				},
 			],
 			tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_PROVIDER ],
