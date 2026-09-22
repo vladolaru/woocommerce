@@ -326,6 +326,80 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Reconciliation preserves plugin-origin USD and EUR order money records.
+	 */
+	public function test_reconciliation_preserves_plugin_origin_multi_currency_orders(): void {
+		$customer_id = $this->factory->user->create( array( 'role' => 'customer' ) );
+		$usd_order   = $this->create_plugin_shaped_order( $customer_id, 'USD', '10.00', 'pi_plugin_usd' );
+		$eur_order   = $this->create_plugin_shaped_order( $customer_id, 'EUR', '12.34', 'pi_plugin_eur' );
+
+		// Oracle: WooPayments 11.1.0 includes/multi-currency/FrontendPrices.php::add_order_meta() omits default-currency metadata and :8082 order 2210 recorded these exact EUR values.
+		$eur_order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.88' );
+		$eur_order->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
+		$eur_order->update_meta_data( '_wcpay_multi_currency_stripe_exchange_rate', '1.14382' );
+		$eur_order->save();
+
+		$before   = array(
+			'USD' => $this->snapshot_historical_money_order( $usd_order->get_id() ),
+			'EUR' => $this->snapshot_historical_money_order( $eur_order->get_id() ),
+		);
+		$expected = array(
+			'USD' => array(
+				'customer_id'          => $customer_id,
+				'currency'             => 'USD',
+				'total'                => '10.00',
+				'status'               => 'completed',
+				'payment_method'       => 'woocommerce_payments',
+				'payment_method_title' => 'Visa credit card',
+				'transaction_id'       => 'pi_plugin_usd',
+				'multi_currency_meta'  => array(),
+			),
+			'EUR' => array(
+				'customer_id'          => $customer_id,
+				'currency'             => 'EUR',
+				'total'                => '12.34',
+				'status'               => 'completed',
+				'payment_method'       => 'woocommerce_payments',
+				'payment_method_title' => 'Visa credit card',
+				'transaction_id'       => 'pi_plugin_eur',
+				'multi_currency_meta'  => array(
+					'_wcpay_multi_currency_order_default_currency' => array( 'USD' ),
+					'_wcpay_multi_currency_order_exchange_rate'    => array( '0.88' ),
+					'_wcpay_multi_currency_stripe_exchange_rate'   => array( '1.14382' ),
+				),
+			),
+		);
+		$this->assertSame(
+			$expected,
+			$before,
+			'The two fixtures should match the exact WooPayments 11.1.0 plugin-era oracle.'
+		);
+
+		delete_option( 'woocommerce_native_woopayments_cutover_normalization_version' );
+		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		$normalization = new WooPaymentsCutoverNormalizationRunner();
+		$sut           = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$after = array(
+			'USD' => $this->snapshot_historical_money_order( $usd_order->get_id() ),
+			'EUR' => $this->snapshot_historical_money_order( $eur_order->get_id() ),
+		);
+		$this->assertSame( $expected, $after, 'Every historical order field and multi-currency metadata value should remain exact.' );
+		$this->assertSame( $before, $after, 'Cutover normalization must not rewrite historical order money records.' );
+		$this->assertSame( '4', get_option( 'woocommerce_native_woopayments_cutover_normalization_version' ), 'The actual normalization runner should complete.' );
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $verification['state'], 'The controlled preflight cannot deactivate a plugin after actual normalization.' );
+		$this->assertSame( array( 'plugin_deactivation_failed' ), $verification['deferred_codes'], 'The attempt should stop only at the controlled post-normalization deactivation boundary.' );
+	}
+
+	/**
 	 * @testdox Ownership verification cannot complete in its originating request and completes only after a fresh native-owned request.
 	 */
 	public function test_ownership_verification_requires_a_fresh_native_owned_request(): void {
@@ -3555,6 +3629,69 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		}
 
 		return $events;
+	}
+
+	/**
+	 * Create a completed order with the fields written by WooPayments 11.1.0.
+	 *
+	 * @param int    $customer_id    Customer ID.
+	 * @param string $currency       Order currency.
+	 * @param string $total          Order total.
+	 * @param string $transaction_id WooPayments transaction ID.
+	 * @return \WC_Order
+	 */
+	private function create_plugin_shaped_order( int $customer_id, string $currency, string $total, string $transaction_id ): \WC_Order {
+		$order = wc_create_order( array( 'customer_id' => $customer_id ) );
+		if ( ! $order instanceof \WC_Order ) {
+			throw new \RuntimeException( 'Could not create a plugin-shaped historical order.' );
+		}
+		$order->set_currency( $currency );
+		$order->set_total( $total );
+		$order->set_status( 'completed' );
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_payment_method_title( 'Visa credit card' );
+		$order->set_transaction_id( $transaction_id );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Read the historical money fields and exact WooPayments multi-currency metadata.
+	 *
+	 * @param int $order_id Order ID.
+	 * @return array<string,mixed>
+	 */
+	private function snapshot_historical_money_order( int $order_id ): array {
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof \WC_Order ) {
+			throw new \RuntimeException( 'Could not cold-read the historical order.' );
+		}
+		$multi_currency_keys = array(
+			'_wcpay_multi_currency_order_exchange_rate',
+			'_wcpay_multi_currency_order_default_currency',
+			'_wcpay_multi_currency_stripe_exchange_rate',
+		);
+		$multi_currency_meta = array();
+		foreach ( $order->get_meta_data() as $meta ) {
+			$data = $meta->get_data();
+			$key  = (string) $data['key'];
+			if ( in_array( $key, $multi_currency_keys, true ) ) {
+				$multi_currency_meta[ $key ][] = (string) $data['value'];
+			}
+		}
+		ksort( $multi_currency_meta );
+
+		return array(
+			'customer_id'          => $order->get_customer_id(),
+			'currency'             => $order->get_currency(),
+			'total'                => $order->get_total(),
+			'status'               => $order->get_status(),
+			'payment_method'       => $order->get_payment_method(),
+			'payment_method_title' => $order->get_payment_method_title(),
+			'transaction_id'       => $order->get_transaction_id(),
+			'multi_currency_meta'  => $multi_currency_meta,
+		);
 	}
 
 	/**

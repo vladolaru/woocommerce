@@ -1,6 +1,12 @@
 import type { APIRequestContext, Page } from '@playwright/test';
 
-import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import {
+	expect,
+	tags,
+	test,
+	waitForWordPressLoginReady,
+} from '../../../fixtures/woopayments-native';
+import { customer } from '../../../test-data/data';
 
 const CONTRACT_PREFIX =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:';
@@ -21,6 +27,11 @@ const CONTRACT_IDS = [
 	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:248::Multi-currency widget setup › currency switching works on the frontend',
 ];
 
+const HISTORICAL_ORDER_CONTRACT_IDS = [
+	'default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:84::Multi-currency checkout › My account › should display the correct currency in the my account order history table',
+	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:96::Shopper Multi-Currency widget › Should not affect prices › at My account › Orders',
+];
+
 const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
 const TEMPLATE_PARTS_API = '/wp-json/wp/v2/template-parts';
 const SWITCHER_BLOCK =
@@ -38,16 +49,210 @@ const EUR_MANUAL_RATE = 0.8;
 const USD_PRICE_TEXT = /\$10\.00/;
 const EUR_PRICE_TEXT = /8,00\s*€/;
 
-async function readJson(
+async function readJson< Result = Record< string, unknown > >(
 	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
 	description: string
-): Promise< Record< string, unknown > > {
+): Promise< Result > {
 	if ( ! response.ok() ) {
 		throw new Error(
 			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
 		);
 	}
-	return ( await response.json() ) as Record< string, unknown >;
+	return ( await response.json() ) as Result;
+}
+
+interface HistoricalOrder {
+	id: number;
+	customer_id: number;
+	currency: string;
+	total: string;
+	status: string;
+	payment_method: string;
+	payment_method_title: string;
+	transaction_id: string;
+	meta_data: Array< { key: string; value: unknown } >;
+}
+
+interface HistoricalOrderExpectation {
+	currency: 'USD' | 'EUR';
+	total: string;
+	amount: RegExp;
+	meta: Record< string, string >;
+}
+
+const HISTORICAL_ORDER_EXPECTATIONS: HistoricalOrderExpectation[] = [
+	{
+		currency: 'USD',
+		total: '10.00',
+		amount: /\$10[.,]00/,
+		meta: {},
+	},
+	{
+		currency: 'EUR',
+		total: '12.34',
+		amount: /12[.,]34\s*€|€\s*12[.,]34/,
+		// Oracle: WooPayments 11.1.0 FrontendPrices::add_order_meta writes the
+		// order-time rate and USD default only for a converted order. The
+		// settlement rate is the exact value recorded on :8082 order 2210.
+		meta: {
+			_wcpay_multi_currency_order_exchange_rate: '0.88',
+			_wcpay_multi_currency_order_default_currency: 'USD',
+			_wcpay_multi_currency_stripe_exchange_rate: '1.14382',
+		},
+	},
+];
+
+function historicalOrderSnapshot( order: HistoricalOrder ) {
+	const multiCurrencyMeta = Object.fromEntries(
+		order.meta_data
+			.filter( ( entry ) =>
+				entry.key.startsWith( '_wcpay_multi_currency_' )
+			)
+			.map( ( entry ) => [ entry.key, String( entry.value ) ] )
+	);
+
+	return {
+		customer_id: order.customer_id,
+		currency: order.currency,
+		total: order.total,
+		status: order.status,
+		payment_method: order.payment_method,
+		payment_method_title: order.payment_method_title,
+		transaction_id: order.transaction_id,
+		multi_currency_meta: multiCurrencyMeta,
+	};
+}
+
+async function standingCustomerId(
+	adminApi: APIRequestContext
+): Promise< number > {
+	const customers = await readJson<
+		Array< { id: number; email: string; username: string } >
+	>(
+		await adminApi.get(
+			`/wp-json/wc/v3/customers?role=all&search=${ encodeURIComponent(
+				customer.email
+			) }`
+		),
+		'Standing customer lookup'
+	);
+	const match = customers.find(
+		( candidate ) =>
+			candidate.email === customer.email ||
+			candidate.username === customer.username
+	);
+	expect(
+		match,
+		'the shared store must contain the standing customer'
+	).toBeDefined();
+	return match!.id;
+}
+
+async function createHistoricalOrder(
+	adminApi: APIRequestContext,
+	productId: number,
+	customerId: number,
+	runId: string,
+	expectation: HistoricalOrderExpectation
+): Promise< HistoricalOrder > {
+	const created = await readJson< HistoricalOrder >(
+		await adminApi.post( '/wp-json/wc/v3/orders', {
+			data: {
+				customer_id: customerId,
+				currency: expectation.currency,
+				status: 'completed',
+				payment_method: 'woocommerce_payments',
+				payment_method_title: 'Visa credit card',
+				transaction_id: `pi_e2e_historical_${ runId }_${ expectation.currency.toLowerCase() }`,
+				line_items: [
+					{
+						product_id: productId,
+						quantity: 1,
+						subtotal: expectation.total,
+						total: expectation.total,
+					},
+				],
+				meta_data: [ { key: '_e2e_woopayments_run_id', value: runId } ],
+			},
+		} ),
+		`${ expectation.currency } historical order creation`
+	);
+
+	if ( Object.keys( expectation.meta ).length === 0 ) {
+		return created;
+	}
+
+	// Administrative order creation fires the current runtime's
+	// `woocommerce_new_order` projection, which derives an order-time rate
+	// from today's request context. A second REST write replaces that
+	// scaffolding with the captured plugin-era values this historical fixture
+	// is specifically meant to preserve.
+	return readJson< HistoricalOrder >(
+		await adminApi.put( `/wp-json/wc/v3/orders/${ created.id }`, {
+			data: {
+				meta_data: Object.entries( expectation.meta ).map(
+					( [ key, value ] ) => ( { key, value } )
+				),
+			},
+		} ),
+		`${ expectation.currency } historical order metadata seed`
+	);
+}
+
+async function deleteHistoricalOrder(
+	adminApi: APIRequestContext,
+	orderId: number
+): Promise< void > {
+	const deletion = await adminApi.delete(
+		`/wp-json/wc/v3/orders/${ orderId }`,
+		{ data: { force: true }, failOnStatusCode: false }
+	);
+	if ( ! deletion.ok() ) {
+		throw new Error(
+			`Historical order ${ orderId } cleanup failed: HTTP ${ deletion.status() } ${ await deletion.text() }`
+		);
+	}
+}
+
+async function logInAsStandingCustomer( page: Page ): Promise< void > {
+	await page.context().clearCookies();
+	await page.goto( 'wp-login.php' );
+	await waitForWordPressLoginReady( page );
+	await page
+		.getByLabel( 'Username or Email Address' )
+		.fill( customer.username );
+	await page
+		.getByRole( 'textbox', { name: 'Password' } )
+		.fill( customer.password );
+	await page.getByRole( 'button', { name: 'Log In' } ).click();
+	await page.goto( 'my-account/edit-account/' );
+	await expect(
+		page.getByRole( 'textbox', { name: /Email address/i } )
+	).toHaveValue( customer.email );
+}
+
+async function expectHistoricalOrdersRendered(
+	page: Page,
+	orders: HistoricalOrder[]
+): Promise< void > {
+	await page.goto( 'my-account/orders/' );
+	for ( const [ index, order ] of orders.entries() ) {
+		const expectation = HISTORICAL_ORDER_EXPECTATIONS[ index ];
+		const row = page.locator( 'tr' ).filter( {
+			has: page.getByText( `#${ order.id }`, { exact: true } ),
+		} );
+		await expect( row ).toHaveCount( 1 );
+		await expect( row ).toContainText( expectation.currency );
+		await expect( row ).toContainText( expectation.amount );
+		await expect( row ).toContainText( 'Completed' );
+
+		await row.getByText( `#${ order.id }`, { exact: true } ).click();
+		const details = page.locator( '.woocommerce-order-details' );
+		await expect( details ).toBeVisible();
+		await expect( details ).toContainText( expectation.currency );
+		await expect( details ).toContainText( expectation.amount );
+		await page.goto( 'my-account/orders/' );
+	}
 }
 
 /**
@@ -291,5 +496,72 @@ test(
 		await expect( visibleText( page, USD_PRICE_TEXT ) ).toBeVisible();
 		await switchCurrency( page, 'EUR' );
 		await expectConvertedPrices( page, EUR_PRICE_TEXT, USD_PRICE_TEXT );
+	}
+);
+
+test(
+	'historical orders keep their stored money and WooPayments metadata when shopper currency changes',
+	{
+		annotation: HISTORICAL_ORDER_CONTRACT_IDS.map( ( contractId ) => ( {
+			type: 'woopayments-contract',
+			description: contractId,
+		} ) ),
+		tag: [ tags.WOOPAYMENTS_NATIVE ],
+	},
+	async ( { adminApi, page, runId } ) => {
+		await ensureEnabledCurrencies( adminApi );
+		await ensureSwitcherPlacement( adminApi );
+		const productId = await ensureSmokeProduct( adminApi );
+		const customerId = await standingCustomerId( adminApi );
+		const orders: HistoricalOrder[] = [];
+
+		try {
+			for ( const expectation of HISTORICAL_ORDER_EXPECTATIONS ) {
+				const order = await createHistoricalOrder(
+					adminApi,
+					productId,
+					customerId,
+					runId,
+					expectation
+				);
+				orders.push( order );
+				expect( historicalOrderSnapshot( order ) ).toEqual( {
+					customer_id: customerId,
+					currency: expectation.currency,
+					total: expectation.total,
+					status: 'completed',
+					payment_method: 'woocommerce_payments',
+					payment_method_title: 'Visa credit card',
+					transaction_id: `pi_e2e_historical_${ runId }_${ expectation.currency.toLowerCase() }`,
+					multi_currency_meta: expectation.meta,
+				} );
+			}
+
+			await logInAsStandingCustomer( page );
+			await expectHistoricalOrdersRendered( page, orders );
+
+			await page.goto( 'my-account/orders/' );
+			await currencySwitcher( page ).selectOption( 'EUR' );
+			await page.waitForURL( /[?&]currency=EUR/ );
+			await page.reload();
+			await expect( currencySwitcher( page ) ).toHaveValue( 'EUR' );
+			await expectHistoricalOrdersRendered( page, orders );
+
+			for ( const order of orders ) {
+				const stored = await readJson< HistoricalOrder >(
+					await adminApi.get( `/wp-json/wc/v3/orders/${ order.id }` ),
+					`Historical order ${ order.id } re-read`
+				);
+				expect( historicalOrderSnapshot( stored ) ).toEqual(
+					historicalOrderSnapshot( order )
+				);
+			}
+		} finally {
+			await Promise.all(
+				orders.map( ( order ) =>
+					deleteHistoricalOrder( adminApi, order.id )
+				)
+			);
+		}
 	}
 );
