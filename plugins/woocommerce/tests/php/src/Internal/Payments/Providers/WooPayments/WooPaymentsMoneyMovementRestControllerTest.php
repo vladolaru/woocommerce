@@ -724,6 +724,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * Oracle: WooPayments 11.1.0 client/payment-details/summary/index.tsx plus charge and balance_transaction fields from the recorded M2 platform response.
+	 *
 	 * @testdox Payment detail intent route preserves shopper and settlement money independently.
 	 */
 	public function test_payment_detail_intent_route_preserves_shopper_and_settlement_money(): void {
@@ -733,16 +735,24 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			'id'       => 'pi_fx',
 			'amount'   => 1234,
 			'currency' => 'eur',
-			'charge'   => array(
-				'id'                  => 'ch_fx',
-				'amount'              => 1234,
-				'currency'            => 'eur',
-				'balance_transaction' => array(
-					'id'       => 'txn_fx',
-					'amount'   => 1424,
-					'fee'      => 87,
-					'net'      => 1337,
-					'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                  => 'ch_fx',
+						'payment_intent'      => 'pi_fx',
+						'status'              => 'succeeded',
+						'amount'              => 1234,
+						'currency'            => 'eur',
+						'captured'            => true,
+						'balance_transaction' => array(
+							'id'            => 'txn_fx',
+							'amount'        => 1415,
+							'fee'           => 86,
+							'net'           => 1329,
+							'currency'      => 'usd',
+							'exchange_rate' => 1.14667,
+						),
+					),
 				),
 			),
 		);
@@ -754,12 +764,13 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 1234, $data['amount'] );
 		$this->assertSame( 'eur', $data['currency'] );
-		$this->assertSame( 1234, $data['charge']['amount'] );
-		$this->assertSame( 'eur', $data['charge']['currency'] );
-		$this->assertSame( 1424, $data['charge']['balance_transaction']['amount'] );
-		$this->assertSame( 87, $data['charge']['balance_transaction']['fee'] );
-		$this->assertSame( 1337, $data['charge']['balance_transaction']['net'] );
-		$this->assertSame( 'usd', $data['charge']['balance_transaction']['currency'] );
+		$this->assertSame( 1234, $data['charges']['data'][0]['amount'] );
+		$this->assertSame( 'eur', $data['charges']['data'][0]['currency'] );
+		$this->assertSame( 1415, $data['charges']['data'][0]['balance_transaction']['amount'] );
+		$this->assertSame( 86, $data['charges']['data'][0]['balance_transaction']['fee'] );
+		$this->assertSame( 1329, $data['charges']['data'][0]['balance_transaction']['net'] );
+		$this->assertSame( 'usd', $data['charges']['data'][0]['balance_transaction']['currency'] );
+		$this->assertSame( 1.14667, $data['charges']['data'][0]['balance_transaction']['exchange_rate'] );
 	}
 
 	/**

@@ -2809,25 +2809,33 @@ describe( 'WooPayments money movement pages', () => {
 		);
 	} );
 
+	/** Oracle: WooPayments 11.1.0 client/payment-details/summary/index.tsx plus charge and balance_transaction fields from the recorded M2 platform response. */
 	it( 'renders charge gross in shopper currency and settlement amounts in balance currency', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_fx',
 			status: 'succeeded',
 			amount: 1234,
 			currency: 'eur',
-			charge: {
-				id: 'ch_fx',
-				payment_intent: 'pi_fx',
-				type: 'charge',
-				amount: 1234,
-				currency: 'eur',
-				balance_transaction: {
-					id: 'txn_fx',
-					amount: 1424,
-					fee: 87,
-					net: 1337,
-					currency: 'usd',
-				},
+			charges: {
+				data: [
+					{
+						id: 'ch_fx',
+						payment_intent: 'pi_fx',
+						type: 'charge',
+						status: 'succeeded',
+						amount: 1234,
+						currency: 'eur',
+						captured: true,
+						balance_transaction: {
+							id: 'txn_fx',
+							amount: 1415,
+							fee: 86,
+							net: 1329,
+							currency: 'usd',
+							exchange_rate: 1.14667,
+						},
+					},
+				],
 			},
 		} );
 		mockGetTimeline.mockResolvedValue( { data: [] } );
@@ -2852,13 +2860,13 @@ describe( 'WooPayments money movement pages', () => {
 		expect( within( summary ).getByText( '€12.34' ) ).toBeInTheDocument();
 		expect( within( summary ).getByText( 'EUR' ) ).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Converted amount: $14.24 USD' )
+			within( summary ).getByText( 'Converted amount: $14.15 USD' )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Fees: -$0.87 USD' )
+			within( summary ).getByText( 'Fees: -$0.86 USD' )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Net: $13.37 USD' )
+			within( summary ).getByText( 'Net: $13.29 USD' )
 		).toBeInTheDocument();
 	} );
 
