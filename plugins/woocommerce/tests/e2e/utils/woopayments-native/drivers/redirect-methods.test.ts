@@ -1,12 +1,14 @@
 import {
 	expect,
 	test,
+	type APIResponse,
 	type Frame,
 	type Page,
 	type Request,
 	type Route,
 } from '@playwright/test';
 
+import type { ProviderWriteSession } from '../../../fixtures/woopayments-native';
 import {
 	AFFIRM,
 	AFTERPAY,
@@ -17,6 +19,8 @@ import {
 	readProviderHandoffObservation,
 	readProviderHandoffRequestKind,
 	readReturnUrlFacts,
+	requiresCurrencySettingsRecreation,
+	withForeignCurrency,
 } from './redirect-methods';
 
 /**
@@ -80,6 +84,149 @@ test( 'a URL that names no order-received page fails rather than parsing', () =>
 
 const PROVIDER_REDIRECT =
 	'https://pay.example.test/authorize?payment_intent=pi_handoff';
+
+function apiResponse( payload: unknown ): APIResponse {
+	return {
+		ok: () => true,
+		status: () => 200,
+		text: async () => '',
+		json: async () => payload,
+	} as unknown as APIResponse;
+}
+
+test( 'recreates an enabled currency to restore an automatic nullable settings baseline', () => {
+	expect(
+		requiresCurrencySettingsRecreation( {
+			exchange_rate_type: 'automatic',
+			manual_rate: null,
+			price_rounding: null,
+			price_charm: null,
+		} )
+	).toBe( true );
+	expect(
+		requiresCurrencySettingsRecreation( {
+			exchange_rate_type: 'manual',
+			manual_rate: 1,
+			price_rounding: 0,
+			price_charm: 0,
+		} )
+	).toBe( false );
+} );
+
+test( 'restores an enabled automatic nullable currency through removal and re-enable', async () => {
+	const calls: Array< { url: string; data: unknown } > = [];
+	let enabledCodes = [ 'EUR', 'USD' ];
+	let settings: Record< string, unknown > = {
+		exchange_rate_type: 'automatic',
+		manual_rate: null,
+		price_rounding: null,
+		price_charm: null,
+	};
+	const currencies = () => ( {
+		available: {
+			USD: { code: 'USD', name: 'US Dollar', rate: 1, is_default: false },
+			EUR: { code: 'EUR', name: 'Euro', rate: 1, is_default: true },
+		},
+		enabled: Object.fromEntries(
+			enabledCodes.map( ( code ) => [
+				code,
+				{
+					code,
+					name: code,
+					rate: 1,
+					is_default: code === 'EUR',
+				},
+			] )
+		),
+		default: { code: 'EUR', name: 'Euro', rate: 1, is_default: true },
+	} );
+	const getHandlers = new Map< string, () => APIResponse >( [
+		[
+			'/wp-json/wc/v3/payments/settings',
+			() => apiResponse( { is_multi_currency_enabled: true } ),
+		],
+		[
+			'/wp-json/wc/v3/payments/multi-currency/currencies',
+			() => apiResponse( currencies() ),
+		],
+		[
+			'/wp-json/wc/v3/payments/multi-currency/currencies/USD',
+			() => apiResponse( settings ),
+		],
+	] );
+	const postHandlers = new Map< string, ( data: unknown ) => APIResponse >( [
+		[
+			'/wp-json/wc/v3/payments/multi-currency/currencies/USD',
+			( data ) => {
+				calls.push( {
+					url: '/wp-json/wc/v3/payments/multi-currency/currencies/USD',
+					data,
+				} );
+				settings = data as Record< string, unknown >;
+				return apiResponse( settings );
+			},
+		],
+		[
+			'/wp-json/wc/v3/payments/multi-currency/update-enabled-currencies',
+			( data ) => {
+				calls.push( {
+					url: '/wp-json/wc/v3/payments/multi-currency/update-enabled-currencies',
+					data,
+				} );
+				enabledCodes = ( data as { enabled: string[] } ).enabled;
+				settings = {
+					exchange_rate_type: 'automatic',
+					manual_rate: null,
+					price_rounding: null,
+					price_charm: null,
+				};
+				return apiResponse( currencies() );
+			},
+		],
+	] );
+	const session = {
+		adminApi: {
+			get: async ( url: string ) => getHandlers.get( url )!(),
+			post: async ( url: string, options: { data: unknown } ) =>
+				postHandlers.get( url )!( options.data ),
+		},
+		requireApprovedProviderFixture: () => undefined,
+		performWrite: async < Result >( write: () => Promise< Result > ) =>
+			write(),
+	} as unknown as ProviderWriteSession;
+
+	await withForeignCurrency(
+		session,
+		'USD',
+		'multi-currency-settlement-currency',
+		async () => {}
+	);
+	expect( calls ).toEqual( [
+		{
+			url: '/wp-json/wc/v3/payments/multi-currency/currencies/USD',
+			data: {
+				exchange_rate_type: 'manual',
+				manual_rate: 1,
+				price_rounding: 0,
+				price_charm: 0,
+			},
+		},
+		{
+			url: '/wp-json/wc/v3/payments/multi-currency/update-enabled-currencies',
+			data: { enabled: [ 'EUR' ] },
+		},
+		{
+			url: '/wp-json/wc/v3/payments/multi-currency/update-enabled-currencies',
+			data: { enabled: [ 'EUR', 'USD' ] },
+		},
+	] );
+	expect( settings ).toEqual( {
+		exchange_rate_type: 'automatic',
+		manual_rate: null,
+		price_rounding: null,
+		price_charm: null,
+	} );
+} );
 
 function providerHandoffPage() {
 	let currentUrl = 'http://localhost:8889/checkout/';

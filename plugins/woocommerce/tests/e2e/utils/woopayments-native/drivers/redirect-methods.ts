@@ -341,7 +341,7 @@ export async function withEnabledPaymentMethod< Result >(
 }
 
 /* -------------------------------------------------------------------------
- * Enabled-currency snapshot and byte restoration
+ * Enabled-currency snapshot and REST restoration
  * ---------------------------------------------------------------------- */
 
 interface CurrencyRecord {
@@ -367,6 +367,28 @@ interface SingleCurrencySettings {
 interface CurrencySnapshot {
 	enabledCodes: string[];
 	currencySettings: SingleCurrencySettings;
+}
+
+/**
+ * The single-currency route requires numeric rounding and charm values, so it
+ * cannot POST the nullable projection of an absent automatic configuration.
+ * Removing then re-enabling the currency is its supported way to clear those
+ * options and reproduce that projection exactly.
+ */
+export function requiresCurrencySettingsRecreation(
+	settings: Readonly< {
+		exchange_rate_type: string;
+		manual_rate: unknown;
+		price_rounding: unknown;
+		price_charm: unknown;
+	} >
+): boolean {
+	return (
+		settings.exchange_rate_type === 'automatic' &&
+		settings.manual_rate === null &&
+		settings.price_rounding === null &&
+		settings.price_charm === null
+	);
 }
 
 export async function readStoreCurrencies(
@@ -517,17 +539,33 @@ export async function withForeignCurrency< Result >(
 	let restorationError: unknown;
 	try {
 		if ( snapshot.enabledCodes.includes( code ) ) {
-			// The currency stays enabled, so its per-currency options are
-			// restored in place rather than deleted by removal.
-			await readJson(
-				await session.performWrite( () =>
-					restApi.post(
-						`${ MULTI_CURRENCY_API }/currencies/${ code }`,
-						{ data: snapshot.currencySettings }
-					)
-				),
-				`${ code } settings restore`
-			);
+			if (
+				requiresCurrencySettingsRecreation( snapshot.currencySettings )
+			) {
+				const withoutCurrency = snapshot.enabledCodes.filter(
+					( enabledCode ) => enabledCode !== code
+				);
+				if ( withoutCurrency.length === 0 ) {
+					fail(
+						`${ code } automatic nullable settings cannot be restored through the supported route while it is the only enabled currency.`
+					);
+				}
+				await setEnabledCurrencies(
+					session,
+					withoutCurrency,
+					`${ code } settings reset`
+				);
+			} else {
+				await readJson(
+					await session.performWrite( () =>
+						restApi.post(
+							`${ MULTI_CURRENCY_API }/currencies/${ code }`,
+							{ data: snapshot.currencySettings }
+						)
+					),
+					`${ code } settings restore`
+				);
+			}
 		}
 		await setEnabledCurrencies(
 			session,
@@ -1915,14 +1953,30 @@ export interface BlocksRedirectCheckoutOptions {
 	requireRequestEvidence?: boolean;
 }
 
-async function fillBlocksBilling(
+export type BlocksRedirectExistingCartOptions = Omit<
+	BlocksRedirectCheckoutOptions,
+	'product'
+>;
+
+export async function fillBlocksBilling(
 	page: Page,
 	runId: string,
 	address: BillingAddress
 ): Promise< void > {
 	const shipping = page.getByRole( 'group', { name: 'Shipping address' } );
 	const billing = page.getByRole( 'group', { name: 'Billing address' } );
+	for ( const selector of [
+		'.wc-block-checkout__shipping-fields .wc-block-components-address-address-wrapper:not(.is-editing) .wc-block-components-address-card__edit',
+		'.wc-block-checkout__billing-fields .wc-block-components-address-address-wrapper:not(.is-editing) .wc-block-components-address-card__edit',
+	] ) {
+		const edit = page.locator( selector );
+		if ( await edit.isVisible() ) {
+			await edit.click();
+			break;
+		}
+	}
 	const group = ( await shipping.isVisible() ) ? shipping : billing;
+	await expect( group ).toBeVisible();
 
 	await page
 		.getByRole( 'textbox', { name: 'Email address' } )
@@ -1946,7 +2000,7 @@ async function fillBlocksBilling(
 			.selectOption( address.state );
 	}
 	await group
-		.getByRole( 'textbox', { name: /^(?:ZIP Code|Postcode)/ } )
+		.getByRole( 'textbox', { name: /^(?:ZIP Code|Postcode|Postal code)/ } )
 		.fill( address.postcode );
 	await group
 		.getByRole( 'textbox', { name: 'Phone (optional)' } )
@@ -1960,22 +2014,36 @@ async function fillBlocksBilling(
  * conditional skip here would report a green run for a surface nobody drove,
  * which is exactly the residual the Blocks row records.
  */
-export async function driveBlocksRedirectCheckout(
+async function driveBlocksRedirectCheckoutInternal(
 	session: ProviderWriteSession,
 	page: Page,
-	options: BlocksRedirectCheckoutOptions
+	options: BlocksRedirectCheckoutOptions | BlocksRedirectExistingCartOptions,
+	existingCart: boolean
 ): Promise< RedirectHandoffObservation > {
-	const { method, product, runId } = options;
+	const { method, runId } = options;
 	await session.assertCanWrite();
 	if ( ! runId || runId !== session.runId ) {
 		fail( 'checkout requires the exact active run ID.' );
 	}
-
-	await page.goto( `?post_type=product&p=${ product.id }` );
-	await session.performWrite( () =>
-		page.getByRole( 'button', { name: 'Add to cart', exact: true } ).click()
-	);
-	await page.goto( 'checkout/' );
+	if ( existingCart ) {
+		const cart = await readShopperCartState( page );
+		if ( cart.itemsCount !== 1 ) {
+			fail(
+				`existing-cart ${ method.id } checkout requires exactly one Store API cart item, received ${ cart.itemsCount }.`
+			);
+		}
+	} else {
+		if ( ! ( 'product' in options ) ) {
+			fail( 'new-cart redirect checkout requires a product.' );
+		}
+		await page.goto( `?post_type=product&p=${ options.product.id }` );
+		await session.performWrite( () =>
+			page
+				.getByRole( 'button', { name: 'Add to cart', exact: true } )
+				.click()
+		);
+		await page.goto( 'checkout/' );
+	}
 	await fillBlocksBilling( page, runId, method.billing );
 
 	const option = page
@@ -1986,6 +2054,7 @@ export async function driveBlocksRedirectCheckout(
 		`${ method.id } is not offered on this store's Blocks checkout, so this case cannot be driven here; the method must be enabled and its Blocks payment method registered`
 	).toHaveCount( 1 );
 	await option.check();
+	await expect( option ).toBeChecked();
 
 	// Read before the submission so the order it creates is the delta.
 	const baselineOrderId = await readHighestOrderId( session );
@@ -2077,6 +2146,24 @@ export async function driveBlocksRedirectCheckout(
 			submittedFraudPreventionToken: { presence: 'absent' },
 		};
 	} );
+}
+
+/** Drive the legacy new-cart redirect checkout path. */
+export async function driveBlocksRedirectCheckout(
+	session: ProviderWriteSession,
+	page: Page,
+	options: BlocksRedirectCheckoutOptions
+): Promise< RedirectHandoffObservation > {
+	return driveBlocksRedirectCheckoutInternal( session, page, options, false );
+}
+
+/** Drive a redirect checkout from the current one-item cart without adding to it. */
+export async function driveBlocksRedirectCheckoutWithExistingCart(
+	session: ProviderWriteSession,
+	page: Page,
+	options: BlocksRedirectExistingCartOptions
+): Promise< RedirectHandoffObservation > {
+	return driveBlocksRedirectCheckoutInternal( session, page, options, true );
 }
 
 /* -------------------------------------------------------------------------

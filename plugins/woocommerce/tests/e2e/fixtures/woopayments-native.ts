@@ -318,7 +318,10 @@ export interface ProviderWriteSession {
 	logInAsCustomer: ( page: Page ) => Promise< void >;
 	createOwnedProduct: (
 		amount: string,
-		options?: { managedStockQuantity?: number }
+		options?: {
+			managedStockQuantity?: number;
+			taxStatus?: 'none' | 'taxable' | 'shipping';
+		}
 	) => Promise< OwnedProduct >;
 	setOrderRunId: ( orderId: number, runId: string ) => Promise< void >;
 	getOrderIdFromUrl: ( url: string ) => number;
@@ -407,7 +410,10 @@ export class WooPaymentsPilotRuntime implements ProviderWriteSession {
 
 	public async createOwnedProduct(
 		amount: string,
-		options: { managedStockQuantity?: number } = {}
+		options: {
+			managedStockQuantity?: number;
+			taxStatus?: 'none' | 'taxable' | 'shipping';
+		} = {}
 	): Promise< OwnedProduct > {
 		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'product/payment' );
@@ -417,7 +423,9 @@ export class WooPaymentsPilotRuntime implements ProviderWriteSession {
 			( ! Number.isSafeInteger( options.managedStockQuantity ) ||
 				options.managedStockQuantity < 0 )
 		) {
-			throw new Error( 'Run-owned product stock must be a non-negative integer.' );
+			throw new Error(
+				'Run-owned product stock must be a non-negative integer.'
+			);
 		}
 		const response = await this.performWrite( () =>
 			this.adminApi.post( '/wp-json/wc/v3/products', {
@@ -426,12 +434,15 @@ export class WooPaymentsPilotRuntime implements ProviderWriteSession {
 					type: 'simple',
 					virtual: true,
 					regular_price: amount,
+					...( options.taxStatus === undefined
+						? {}
+						: { tax_status: options.taxStatus } ),
 					...( options.managedStockQuantity === undefined
 						? {}
 						: {
 								manage_stock: true,
 								stock_quantity: options.managedStockQuantity,
-							} ),
+						  } ),
 					meta_data: [
 						{
 							key: '_e2e_woopayments_run_id',

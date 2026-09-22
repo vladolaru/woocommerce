@@ -10,11 +10,16 @@ import type { WooPaymentsRuntime } from '../runtime-readiness';
 import { ProviderSubmissionNotStartedError } from '../provider-write-journal';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
 import { enterProviderCardTriple } from './card-entry';
+import {
+	readHighestOrderId,
+	readOrderDeltaAfter,
+} from './classic-card-authentication';
 import type { ProviderTestCard } from '../test-cards';
 import type {
 	OwnedProduct,
 	ProviderWriteSession,
 } from '../../../fixtures/woopayments-native';
+import { readShopperCartState } from './redirect-methods';
 
 /**
  * The basic card, written out here rather than imported from `test-cards.ts`,
@@ -368,38 +373,41 @@ async function getBlocksCheckoutDiagnostics( page: Page ): Promise< unknown > {
 	};
 }
 
-export async function completeCardCheckout(
+/** Complete card payment from the current one-item checkout without adding to cart. */
+export async function completeCardCheckoutWithExistingCart(
 	session: ProviderWriteSession,
 	page: Page,
-	product: OwnedProduct,
 	runId: string
 ): Promise< number > {
 	await session.assertCanWrite();
-	session.requireApprovedProviderFixture( 'basic-card' );
-
-	await page.goto( `?post_type=product&p=${ product.id }` );
-	await session.performWrite( () =>
-		page
-			.getByRole( 'button', {
-				name: 'Add to cart',
-				exact: true,
-			} )
-			.click()
-	);
-	await page.goto( 'checkout/' );
+	const cart = await readShopperCartState( page );
+	if ( cart.itemsCount !== 1 ) {
+		throw new Error(
+			`Existing-cart card checkout requires exactly one Store API cart item, received ${ cart.itemsCount }.`
+		);
+	}
 	const isBlockCheckout = await fillCheckoutDetails( page, runId );
 
 	session.requireApprovedProviderFixture( 'basic-card-entry' );
 	await fillBasicTestCard( session, page, isBlockCheckout );
+	const selectedCard = isBlockCheckout
+		? page
+				.getByRole( 'group', { name: 'Payment options' } )
+				.getByRole( 'radio', { name: /Card/i } )
+		: page.getByLabel( /WooPayments|credit card/i );
+	let baselineOrderId = 0;
 	await session.withProviderSubmissionJournal(
 		`basic-card-${ isBlockCheckout ? 'blocks' : 'classic' }-checkout`,
 		async () => {
+			baselineOrderId = await readHighestOrderId( session );
 			if ( isBlockCheckout ) {
 				await submitBlocksCheckout( page, async ( button ) => {
+					await expect( selectedCard ).toBeChecked();
 					await session.performWrite( () => button.click() );
 					return 'dispatched';
 				} );
 			} else {
+				await expect( selectedCard ).toBeChecked();
 				await session.performWrite( () =>
 					page.getByRole( 'button', { name: /place order/i } ).click()
 				);
@@ -435,5 +443,25 @@ export async function completeCardCheckout(
 
 	const orderId = session.getOrderIdFromUrl( page.url() );
 	await session.setOrderRunId( orderId, runId );
+	expect(
+		( await readOrderDeltaAfter( session, baselineOrderId ) ).newOrderIds
+	).toEqual( [ orderId ] );
 	return orderId;
+}
+
+/** Add one product then complete card payment through the existing-cart path. */
+export async function completeCardCheckout(
+	session: ProviderWriteSession,
+	page: Page,
+	product: OwnedProduct,
+	runId: string
+): Promise< number > {
+	await session.assertCanWrite();
+	session.requireApprovedProviderFixture( 'basic-card' );
+	await page.goto( `?post_type=product&p=${ product.id }` );
+	await session.performWrite( () =>
+		page.getByRole( 'button', { name: 'Add to cart', exact: true } ).click()
+	);
+	await page.goto( 'checkout/' );
+	return completeCardCheckoutWithExistingCart( session, page, runId );
 }

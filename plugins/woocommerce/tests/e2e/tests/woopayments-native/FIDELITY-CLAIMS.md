@@ -541,6 +541,29 @@ Both implementations take `$intent->get_charge()` at checkout — the WooPayment
 
 Financial reconciliation covers only dimensions on driven orders and therefore requires explicit USD/non-default/converted fixtures; Bucket-E does not cover options, shopper session currency, or transitions. The runbook retains the full multi-currency matrix. This claim deliberately excludes settings/onboarding, switcher/UI formatting, payment-method visibility/eligibility, transaction-page navigation/link compatibility, historical migration/cutover, and refunds (covered by `refund-settlement`).
 
+## `multi-currency-payment-method-eligibility`
+
+### Claim
+
+> **Claim.** Payment-method eligibility follows the active shopper currency in both directions without changing the configured store default. A same-session USD-to-EUR switch retains Card and adds Bancontact, while a same-session EUR-to-USD switch retains Card and removes Bancontact. Each transition then pays once with the selected eligible method and leaves exactly one succeeded PaymentIntent, one captured charge, one order, and no reusable provider credential.
+>
+> **Falsified by.** Either transition showing a missing, duplicate, inaccessible, or hidden-but-enabled method; the configured default changing with the shopper session; the rendered checkout total and Store API cart disagreeing on currency; the selected method changing before dispatch; or the purchase producing the wrong method, amount, currency, state, order cardinality, provider cardinality, or reusable attachment.
+
+### Fixed run contract
+
+| Contract item | Fixed value |
+| --- | --- |
+| Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/playwright.config.ts --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:payment-method-eligibility"`, which collects exactly the two serial cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-payment-method-eligibility.spec.ts`. |
+| USD to EUR | Configured default remains USD; the same shopper cart/session changes from USD to EUR; the rendered total changes from USD to EUR; the exact accessible method set changes from Card to Card plus Bancontact; selected Bancontact creates one `1099 eur` succeeded PaymentIntent and captured charge. |
+| EUR to USD | Starts only after the first case restores cleanly; configured default remains EUR; the same shopper cart/session changes from EUR to USD; the rendered total changes from EUR to USD; the exact accessible method set changes from Card plus Bancontact to Card; selected Card creates one `1099 usd` succeeded PaymentIntent and captured charge. |
+| Product and shopper | Each case owns one fresh virtual, nontaxable product priced 10.99 and fills a Belgian billing address before both eligibility snapshots. |
+| Restoration | The configured default, enabled currency, neutral conversion settings, and enabled-method set are restored through their supported settings routes. Row 95 is forbidden after ambiguous row-94 restoration. |
+
+### Core-side proof and browser residue
+
+- `plugins/woocommerce/tests/php/src/Internal/Payments/NativeWooPaymentsGatewayTest.php` owns the one-gateway USD/Card, USD/Bancontact, EUR/Card, EUR/Bancontact, and return-to-USD availability matrix against the WooPayments client 11.1.0 currency rules.
+- The browser cases remain necessary for same-session checkout re-rendering, accessible control visibility, shopper selection, and the real order/PaymentIntent/charge graph. Lower-layer availability tests cannot prove those surfaces or effects.
+
 ## Excluded: `3ds-authentication`
 
 Exactly 12 rows are enumerated with treatment `excluded`. The corrected rationale is narrower than the decision's recorded premise: Core has substantial mocked/lower-layer customer-action proof in classic JS, Blocks JS, gateway, codec, processing, adapter, AJAX-controller, and error-message tests. What it does not have is a native provider/browser journey that invokes and proves a real challenge. A thin provider check therefore has no assembled authentication journey to join and cannot discharge these rows.

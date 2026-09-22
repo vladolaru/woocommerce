@@ -361,6 +361,71 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should recalculate availability when the checkout currency and payment method definition change.
+	 * WooPayments client 11.1.0 restricts Bancontact to EUR in `BancontactDefinition.php`, applied by `class-upe-payment-method.php::is_currency_valid()` and `is_enabled_at_checkout()`, while Card has no currency restriction.
+	 */
+	public function test_gateway_availability_recalculates_for_currency_and_payment_method_definition_changes(): void {
+		$registry              = new WooPaymentsPaymentMethodRegistry();
+		$card_definition       = $registry->get( 'card' );
+		$bancontact_definition = $registry->get( 'bancontact' );
+		$this->assertNotNull( $card_definition );
+		$this->assertNotNull( $bancontact_definition );
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'      => 'BE',
+				'capabilities' => array(
+					'card_payments'       => 'active',
+					'bancontact_payments' => 'active',
+				),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency        = 'USD';
+		$currency_filter = static function () use ( &$currency ): string {
+			return $currency;
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( $card_definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+
+			$payment_method_definition = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'payment_method_definition' );
+			$payment_method_definition->setAccessible( true );
+			$availability_matrix = array(
+				'USD/Card'                 => array( 'USD', $card_definition, true ),
+				'USD/Bancontact'           => array( 'USD', $bancontact_definition, false ),
+				'EUR/Card'                 => array( 'EUR', $card_definition, true ),
+				'EUR/Bancontact'           => array( 'EUR', $bancontact_definition, true ),
+				'USD/Bancontact after EUR' => array( 'USD', $bancontact_definition, false ),
+			);
+
+			foreach ( $availability_matrix as $case => $availability_case ) {
+				list( $currency, $definition, $expected ) = $availability_case;
+				$payment_method_definition->setValue( $gateway, $definition );
+
+				$this->assertSame( $expected, $gateway->is_available(), "Availability for {$case}" );
+			}
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
 	 * @testdox Shopper country rules should not restrict gateway availability by merchant country.
 	 * @dataProvider payment_method_country_availability_provider
 	 *

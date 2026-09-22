@@ -301,6 +301,12 @@ function runtime(
 				} );
 			}
 			if (
+				url ===
+				'/wp-json/wc/v3/orders?status=any&per_page=1&orderby=id&order=desc'
+			) {
+				return response( [] );
+			}
+			if (
 				url === '/wp-json/wc/v3/orders/42' &&
 				options.captureEvidenceError
 			) {
@@ -973,6 +979,15 @@ function lockLossPage(
 		context: () => ( {
 			clearCookies: async () => {},
 		} ),
+		request: {
+			get: async ( url: string ) => {
+				expect( url ).toBe( '/wp-json/wc/store/v1/cart' );
+				return response( {
+					items_count: 1,
+					totals: { currency_code: 'USD' },
+				} );
+			},
+		},
 		getByLabel: ( name: string | RegExp ) =>
 			locator( 'label', String( name ) ),
 		getByRole: ( role: string, roleOptions?: { name?: string | RegExp } ) =>
@@ -2718,6 +2733,29 @@ test( 'creates a run-owned product with the requested managed stock quantity', a
 			regular_price: '10.01',
 			manage_stock: true,
 			stock_quantity: 1,
+		} );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'creates a run-owned product with the requested tax status', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+
+	try {
+		await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'payment-method-eligibility' },
+			async () => {
+				await pilotRuntime.createOwnedProduct( '10.99', {
+					taxStatus: 'none',
+				} );
+			}
+		);
+		expect( calls[ 0 ]?.data ).toMatchObject( {
+			regular_price: '10.99',
+			tax_status: 'none',
 		} );
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
