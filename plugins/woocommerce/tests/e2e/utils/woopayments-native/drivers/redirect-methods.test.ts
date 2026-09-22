@@ -1,11 +1,21 @@
-import { expect, test } from '@playwright/test';
+import {
+	expect,
+	test,
+	type Frame,
+	type Page,
+	type Request,
+	type Route,
+} from '@playwright/test';
 
 import {
 	AFFIRM,
 	AFTERPAY,
 	ALIPAY,
 	BANCONTACT,
+	createProviderHandoffGate,
 	KLARNA,
+	readProviderHandoffObservation,
+	readProviderHandoffRequestKind,
 	readReturnUrlFacts,
 } from './redirect-methods';
 
@@ -67,6 +77,238 @@ test( 'a URL that names no order-received page fails rather than parsing', () =>
 		/is not a URL/
 	);
 } );
+
+const PROVIDER_REDIRECT =
+	'https://pay.example.test/authorize?payment_intent=pi_handoff';
+
+function providerHandoffPage() {
+	let currentUrl = 'http://localhost:8889/checkout/';
+	let routeHandler: ( ( route: Route ) => Promise< void > ) | undefined;
+	let frameNavigated: ( ( frame: Frame ) => void ) | undefined;
+	const mainFrame = {
+		url: () => currentUrl,
+	} as Frame;
+	const page = {
+		mainFrame: () => mainFrame,
+		url: () => currentUrl,
+		on: ( event: string, handler: ( frame: Frame ) => void ) => {
+			if ( event === 'framenavigated' ) {
+				frameNavigated = handler;
+			}
+		},
+		off: () => undefined,
+		route: async (
+			_matcher: ( url: URL ) => boolean,
+			handler: ( route: Route ) => Promise< void >
+		) => {
+			routeHandler = handler;
+		},
+		unroute: async () => {
+			routeHandler = undefined;
+		},
+		waitForURL: () => new Promise< never >( () => undefined ),
+	} as unknown as Page;
+
+	const request = ( url: string, redirectedFrom: Request | null = null ) =>
+		( {
+			isNavigationRequest: () => true,
+			frame: () => mainFrame,
+			url: () => url,
+			redirectedFrom: () => redirectedFrom,
+		} ) as Request;
+	const dispatch = async ( providerRequest: Request ) => {
+		let aborted = false;
+		let continued = false;
+		if ( ! routeHandler ) {
+			return { aborted, continued: true };
+		}
+		await routeHandler( {
+			request: () => providerRequest,
+			abort: async () => {
+				aborted = true;
+			},
+			continue: async () => {
+				continued = true;
+			},
+		} as Route );
+		return { aborted, continued };
+	};
+	const commit = ( url: string ) => {
+		currentUrl = url;
+		frameNavigated?.( mainFrame );
+	};
+
+	return { commit, dispatch, page, request };
+}
+
+interface ProviderHandoffCandidate {
+	orderId: number;
+	intentId: string;
+	sourceUrl: string;
+	destinationUrl: string;
+	frameIdentity: 'main-frame' | 'subframe';
+	navigationCount: number;
+	popupCount: number;
+	storeOrigin: string;
+	expectedDestinationUrl: string;
+}
+
+function handoffCandidate(
+	overrides: Partial< ProviderHandoffCandidate > = {}
+): ProviderHandoffCandidate {
+	return {
+		orderId: 4821,
+		intentId: 'pi_handoff',
+		storeOrigin: 'http://localhost:8889',
+		expectedDestinationUrl: PROVIDER_REDIRECT,
+		sourceUrl: 'http://localhost:8889/checkout/',
+		destinationUrl: PROVIDER_REDIRECT,
+		frameIdentity: 'main-frame' as const,
+		navigationCount: 1,
+		popupCount: 0,
+		...overrides,
+	};
+}
+
+test( 'handoff-only accepts one exact HTTPS provider navigation in the original main frame', () => {
+	expect( readProviderHandoffObservation( handoffCandidate() ) ).toEqual( {
+		orderId: 4821,
+		intentId: 'pi_handoff',
+		sourceUrl: 'http://localhost:8889/checkout/',
+		destinationUrl: PROVIDER_REDIRECT,
+		frameIdentity: 'main-frame',
+		navigationCount: 1,
+		popupCount: 0,
+	} );
+} );
+
+test( 'handoff-only treats an HTTPS redirect hop as part of the initial provider navigation', () => {
+	expect(
+		readProviderHandoffRequestKind( {
+			expectedDestinationUrl:
+				'https://pm-redirects.stripe.com/authorize/redirect',
+			requestUrl: 'https://pay.test.klarna.com/eu/checkout/',
+			redirectedFromUrls: [
+				'https://pm-redirects.stripe.com/authorize/redirect',
+			],
+		} )
+	).toBe( 'redirect-hop' );
+} );
+
+test( 'handoff-only waits for a validated redirect chain to commit in the main frame', async () => {
+	const browser = providerHandoffPage();
+	const gate = await createProviderHandoffGate(
+		browser.page,
+		'http://localhost:8889'
+	);
+	try {
+		let settled = false;
+		const observation = gate
+			.observe( {
+				orderId: 4821,
+				intentId: 'pi_handoff',
+				expectedDestinationUrl: PROVIDER_REDIRECT,
+			} )
+			.finally( () => {
+				settled = true;
+			} );
+		const initial = browser.request( PROVIDER_REDIRECT );
+		expect( await browser.dispatch( initial ) ).toEqual( {
+			aborted: false,
+			continued: true,
+		} );
+		await Promise.resolve();
+		expect( settled ).toBe( false );
+
+		const finalUrl = 'https://pay.test.klarna.com/eu/checkout/';
+		expect(
+			await browser.dispatch( browser.request( finalUrl, initial ) )
+		).toEqual( { aborted: false, continued: true } );
+		browser.commit( finalUrl );
+		expect( await observation ).toMatchObject( {
+			destinationUrl: PROVIDER_REDIRECT,
+			navigationCount: 1,
+		} );
+	} finally {
+		await gate.dispose();
+	}
+} );
+
+test( 'handoff-only rejects an independent navigation while the redirect chain is in flight', async () => {
+	const browser = providerHandoffPage();
+	const gate = await createProviderHandoffGate(
+		browser.page,
+		'http://localhost:8889'
+	);
+	try {
+		const observation = gate.observe( {
+			orderId: 4821,
+			intentId: 'pi_handoff',
+			expectedDestinationUrl: PROVIDER_REDIRECT,
+		} );
+		await browser.dispatch( browser.request( PROVIDER_REDIRECT ) );
+		expect(
+			await browser.dispatch(
+				browser.request( 'https://unrelated.example.test/' )
+			)
+		).toEqual( { aborted: true, continued: false } );
+		await expect( observation ).rejects.toThrow(
+			/did not reach the exact expected URL/
+		);
+	} finally {
+		await gate.dispose();
+	}
+} );
+
+const invalidHandoffCandidates = [
+	[
+		'URL mismatch',
+		handoffCandidate( {
+			destinationUrl: 'https://pay.example.test/another-intent',
+		} ),
+		/exact provider redirect/,
+	],
+	[
+		'HTTP destination',
+		handoffCandidate( {
+			destinationUrl:
+				'http://pay.example.test/authorize?payment_intent=pi_handoff',
+			expectedDestinationUrl:
+				'http://pay.example.test/authorize?payment_intent=pi_handoff',
+		} ),
+		/HTTPS/,
+	],
+	[
+		'same-origin destination',
+		handoffCandidate( {
+			storeOrigin: 'https://localhost:8889',
+			sourceUrl: 'https://localhost:8889/checkout/',
+			destinationUrl: 'https://localhost:8889/order-received/4821/',
+			expectedDestinationUrl:
+				'https://localhost:8889/order-received/4821/',
+		} ),
+		/off-store/,
+	],
+	[
+		'subframe navigation',
+		handoffCandidate( { frameIdentity: 'subframe' } ),
+		/original main frame/,
+	],
+	[ 'popup substitution', handoffCandidate( { popupCount: 1 } ), /popup/ ],
+	[
+		'second accepted navigation',
+		handoffCandidate( { navigationCount: 2 } ),
+		/exactly one/,
+	],
+] satisfies [ string, ProviderHandoffCandidate, RegExp ][];
+
+for ( const [ label, candidate, message ] of invalidHandoffCandidates ) {
+	test( `handoff-only rejects a ${ label }`, () => {
+		expect( () => readProviderHandoffObservation( candidate ) ).toThrow(
+			message
+		);
+	} );
+}
 
 test( 'the driven method catalog states the exact provider IDs and fixed amounts', () => {
 	// These are the fixed values `FIDELITY-CLAIMS.md` states for `A1`-`A5`, and

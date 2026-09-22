@@ -37,6 +37,7 @@ import {
 	withEnabledPaymentMethod,
 	withForeignCurrency,
 	type RedirectHandoffObservation,
+	type ClassicRedirectFollowMode,
 	type RedirectIntentRequest,
 	type RedirectMethod,
 } from '../../../utils/woopayments-native/drivers/redirect-methods';
@@ -143,6 +144,9 @@ const CONTRACT_BANCONTACT_PROTECTION_FALSE =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:125::Local payment method checkout with card testing › Card testing protection enabled: false › should successfully place order with Bancontact';
 const CONTRACT_BANCONTACT_PROTECTION_TRUE =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:125::Local payment method checkout with card testing › Card testing protection enabled: true › should successfully place order with Bancontact';
+const CONTRACT_KLARNA_HANDOFF =
+	'default::chromium::tests/e2e/specs/wcpay/shopper/klarna-checkout-purchase.spec.ts:57::Klarna Checkout › allows to use Klarna as a payment method';
+const KLARNA_HANDOFF_TAG = '@fidelity:klarna-handoff';
 
 const WOOPAYMENTS_GATEWAY = 'woocommerce_payments';
 const PAID_ORDER_STATUSES = [ 'processing', 'completed' ];
@@ -803,7 +807,7 @@ interface ClassicCaseOptions {
 	recordEvent: string;
 	journal: string;
 	/** Follow the provider's hosted page once, or stop at the handoff. */
-	follow: boolean;
+	follow: ClassicRedirectFollowMode;
 }
 
 interface ClassicCaseResult {
@@ -1607,7 +1611,15 @@ test.describe( 'WooPayments native redirect-method provider outcome fidelity', (
 
 	test(
 		'One Klarna checkout sends the provider method klarna for 10000 usd with this run order-received return URL and returns requires_action with exactly one HTTPS provider redirect, no charge, and no capture',
-		{ tag: FAMILY_TAGS },
+		{
+			annotation: [
+				{
+					type: 'woopayments-contract',
+					description: CONTRACT_KLARNA_HANDOFF,
+				},
+			],
+			tag: [ ...FAMILY_TAGS, KLARNA_HANDOFF_TAG ],
+		},
 		async ( { page, pilotRuntime } ) => {
 			await runProtectionOffClassicCase(
 				pilotRuntime,
@@ -1616,11 +1628,7 @@ test.describe( 'WooPayments native redirect-method provider outcome fidelity', (
 					method: KLARNA,
 					recordEvent: 'redirect-klarna-classic',
 					journal: 'redirect-klarna-handoff',
-					// The contract stops before hosted authorization, and the
-					// driver refuses every cross-origin navigation while it does
-					// so, which is what makes "stops before" a fact rather than
-					// an intention.
-					follow: false,
+					follow: 'handoff-only',
 				},
 				async ( result ) => {
 					expectRequestedRedirect( result.observation, KLARNA, {
@@ -1636,6 +1644,36 @@ test.describe( 'WooPayments native redirect-method provider outcome fidelity', (
 						'this case must not follow the handoff, so it must produce no settled payment'
 					).toBeUndefined();
 					expect( result.observation.landedUrl ).toBeUndefined();
+					const handoff =
+						result.observation.providerHandoff ??
+						( () => {
+							throw new Error(
+								'Klarna must record its provider handoff before the case stops.'
+							);
+						} )();
+					expect( handoff.orderId ).toBe(
+						result.observation.orderId
+					);
+					expect( handoff.intentId ).toBe(
+						result.observation.request.id
+					);
+					expect( handoff.frameIdentity ).toBe( 'main-frame' );
+					expect( handoff.navigationCount ).toBe( 1 );
+					expect( handoff.popupCount ).toBe( 0 );
+					expect( handoff.destinationUrl ).toBe(
+						new URL(
+							result.observation.request.providerRedirectUrl
+						).href
+					);
+					expect( new URL( handoff.destinationUrl ).protocol ).toBe(
+						'https:'
+					);
+					expect( new URL( handoff.destinationUrl ).origin ).not.toBe(
+						result.storeOrigin
+					);
+					expect( new URL( handoff.sourceUrl ).origin ).toBe(
+						result.storeOrigin
+					);
 					await expectSingleRunOrder(
 						pilotRuntime,
 						result.baselineOrderId,

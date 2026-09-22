@@ -4,9 +4,11 @@ import {
 	expect,
 	type APIRequestContext,
 	type APIResponse,
+	type Frame,
 	type Page,
 	type Request,
 	type Response,
+	type Route,
 } from '@playwright/test';
 
 import type {
@@ -1239,6 +1241,343 @@ export interface RedirectHandoffObservation {
 	paid?: PaymentEvidence;
 	/** The fraud-prevention token the submission carried, if any. */
 	submittedFraudPreventionToken: SubmittedFraudPreventionToken;
+	/** Present only when the provider handoff, rather than authorization, ran. */
+	providerHandoff?: ProviderHandoffObservation;
+}
+
+/** The only frame that can prove the shopper left the original checkout page. */
+export type ProviderHandoffFrameIdentity = 'main-frame' | 'subframe';
+
+/** The one provider navigation a handoff-only redirect is allowed to make. */
+export interface ProviderHandoffObservation {
+	orderId: number;
+	intentId: string;
+	sourceUrl: string;
+	destinationUrl: string;
+	frameIdentity: ProviderHandoffFrameIdentity;
+	navigationCount: number;
+	popupCount: number;
+}
+
+interface ProviderHandoffCandidate extends ProviderHandoffObservation {
+	storeOrigin: string;
+	expectedDestinationUrl: string;
+}
+
+interface ProviderHandoffRequestCandidate {
+	expectedDestinationUrl: string;
+	requestUrl: string;
+	redirectedFromUrls: string[];
+}
+
+export type ProviderHandoffRequestKind = 'initial' | 'redirect-hop';
+
+export type ClassicRedirectFollowMode = boolean | 'handoff-only';
+
+function normalizeProviderHandoffUrl(
+	value: string,
+	description: string
+): URL {
+	try {
+		return new URL( value );
+	} catch {
+		fail( `${ description } is not an absolute URL.` );
+	}
+}
+
+/**
+ * Classifies one main-frame provider request without counting HTTP redirects
+ * as new shopper navigations.
+ */
+export function readProviderHandoffRequestKind(
+	candidate: ProviderHandoffRequestCandidate
+): ProviderHandoffRequestKind {
+	const expected = normalizeProviderHandoffUrl(
+		candidate.expectedDestinationUrl,
+		'the expected provider redirect'
+	);
+	const request = normalizeProviderHandoffUrl(
+		candidate.requestUrl,
+		'the provider request URL'
+	);
+	const redirectedFrom = candidate.redirectedFromUrls.map( ( url ) =>
+		normalizeProviderHandoffUrl( url, 'a provider redirect-chain URL' )
+	);
+
+	if (
+		expected.protocol !== 'https:' ||
+		request.protocol !== 'https:' ||
+		redirectedFrom.some( ( url ) => url.protocol !== 'https:' )
+	) {
+		fail( 'handoff-only requires an HTTPS provider redirect.' );
+	}
+	if ( redirectedFrom.length === 0 ) {
+		if ( request.href !== expected.href ) {
+			fail(
+				'handoff-only must navigate to the exact provider redirect.'
+			);
+		}
+		return 'initial';
+	}
+	if ( redirectedFrom[ 0 ].href !== expected.href ) {
+		fail(
+			'handoff-only redirect chains must start at the exact provider redirect.'
+		);
+	}
+	return 'redirect-hop';
+}
+
+function readRedirectedFromUrls( request: Request ): string[] {
+	const urls: string[] = [];
+	let redirectedFrom = request.redirectedFrom();
+	while ( redirectedFrom ) {
+		urls.unshift( redirectedFrom.url() );
+		redirectedFrom = redirectedFrom.redirectedFrom();
+	}
+	return urls;
+}
+
+/**
+ * Validates the observation retained by a handoff-only checkout.
+ *
+ * The browser listener supplies the facts; keeping the policy pure makes the
+ * exact URL and frame boundary independently testable without a provider run.
+ */
+export function readProviderHandoffObservation(
+	candidate: ProviderHandoffCandidate
+): ProviderHandoffObservation {
+	const store = normalizeProviderHandoffUrl(
+		candidate.storeOrigin,
+		'the store origin'
+	);
+	const expected = normalizeProviderHandoffUrl(
+		candidate.expectedDestinationUrl,
+		'the expected provider redirect'
+	);
+	const source = normalizeProviderHandoffUrl(
+		candidate.sourceUrl,
+		'the handoff source URL'
+	);
+	const destination = normalizeProviderHandoffUrl(
+		candidate.destinationUrl,
+		'the handoff destination URL'
+	);
+
+	if ( expected.protocol !== 'https:' || destination.protocol !== 'https:' ) {
+		fail( 'handoff-only requires an HTTPS provider redirect.' );
+	}
+	if ( source.origin !== store.origin ) {
+		fail( 'handoff-only must start from the store origin.' );
+	}
+	if ( destination.origin === store.origin ) {
+		fail( 'handoff-only requires an off-store provider redirect.' );
+	}
+	if ( destination.href !== expected.href ) {
+		fail( 'handoff-only must navigate to the exact provider redirect.' );
+	}
+	if ( candidate.frameIdentity !== 'main-frame' ) {
+		fail( 'handoff-only requires the original main frame.' );
+	}
+	if ( candidate.navigationCount !== 1 ) {
+		fail( 'handoff-only permits exactly one provider navigation.' );
+	}
+	if ( candidate.popupCount !== 0 ) {
+		fail( 'handoff-only rejects popup provider handoffs.' );
+	}
+
+	return {
+		orderId: candidate.orderId,
+		intentId: candidate.intentId,
+		sourceUrl: source.href,
+		destinationUrl: destination.href,
+		frameIdentity: candidate.frameIdentity,
+		navigationCount: candidate.navigationCount,
+		popupCount: candidate.popupCount,
+	};
+}
+
+interface ProviderHandoffGate {
+	observe: ( details: {
+		orderId: number;
+		intentId: string;
+		expectedDestinationUrl: string;
+	} ) => Promise< ProviderHandoffObservation >;
+	dispose: () => Promise< void >;
+}
+
+/**
+ * Holds provider navigation until the run-owned intent supplies its exact URL,
+ * then permits and observes that one original-page handoff.
+ */
+export async function createProviderHandoffGate(
+	page: Page,
+	baseURL: string
+): Promise< ProviderHandoffGate > {
+	const storeOrigin = new URL( baseURL ).origin;
+	let expectedDestinationUrl: string | undefined;
+	let sourceUrl = '';
+	let destinationUrl = '';
+	let latestProviderRequestUrl = '';
+	let navigationCount = 0;
+	let popupCount = 0;
+	let closed = false;
+	let releaseExpected!: () => void;
+	const expectedReady = new Promise< void >( ( resolve ) => {
+		releaseExpected = resolve;
+	} );
+	let resolveArrival!: () => void;
+	let rejectArrival!: ( error: Error ) => void;
+	const arrival = new Promise< void >( ( resolve, reject ) => {
+		resolveArrival = resolve;
+		rejectArrival = reject;
+	} );
+	void arrival.catch( () => undefined );
+
+	const onPopup = () => {
+		popupCount += 1;
+	};
+	const onFrameNavigated = ( frame: Frame ) => {
+		if (
+			frame !== page.mainFrame() ||
+			! expectedDestinationUrl ||
+			! latestProviderRequestUrl
+		) {
+			return;
+		}
+		if (
+			normalizeProviderHandoffUrl(
+				frame.url(),
+				'the observed handoff URL'
+			).href ===
+			normalizeProviderHandoffUrl(
+				latestProviderRequestUrl,
+				'the latest provider request URL'
+			).href
+		) {
+			resolveArrival();
+		}
+	};
+	const matcher = ( url: URL ) => url.origin !== storeOrigin;
+	const onRoute = async ( route: Route ) => {
+		const request = route.request();
+		if (
+			! request.isNavigationRequest() ||
+			request.frame() !== page.mainFrame()
+		) {
+			await route.continue();
+			return;
+		}
+
+		if ( ! expectedDestinationUrl && ! closed ) {
+			await expectedReady;
+		}
+		if ( closed || ! expectedDestinationUrl ) {
+			await route.abort();
+			return;
+		}
+
+		let requestKind: ProviderHandoffRequestKind;
+		try {
+			requestKind = readProviderHandoffRequestKind( {
+				expectedDestinationUrl,
+				requestUrl: request.url(),
+				redirectedFromUrls: readRedirectedFromUrls( request ),
+			} );
+		} catch ( error ) {
+			rejectArrival(
+				error instanceof Error ? error : new Error( String( error ) )
+			);
+			await route.abort();
+			return;
+		}
+		if ( requestKind === 'redirect-hop' ) {
+			latestProviderRequestUrl = request.url();
+			await route.continue();
+			return;
+		}
+
+		sourceUrl = page.url();
+		destinationUrl = request.url();
+		latestProviderRequestUrl = request.url();
+		navigationCount += 1;
+		try {
+			readProviderHandoffObservation( {
+				orderId: 0,
+				intentId: 'pending',
+				storeOrigin,
+				expectedDestinationUrl,
+				sourceUrl,
+				destinationUrl: request.url(),
+				frameIdentity: 'main-frame',
+				navigationCount,
+				popupCount,
+			} );
+		} catch ( error ) {
+			rejectArrival(
+				error instanceof Error ? error : new Error( String( error ) )
+			);
+			await route.abort();
+			return;
+		}
+		await route.continue();
+	};
+
+	page.on( 'popup', onPopup );
+	page.on( 'framenavigated', onFrameNavigated );
+	await page.route( matcher, onRoute );
+
+	return {
+		async observe( details ) {
+			expectedDestinationUrl = details.expectedDestinationUrl;
+			releaseExpected();
+			try {
+				await Promise.race( [
+					arrival,
+					page.waitForURL(
+						( url ) =>
+							normalizeProviderHandoffUrl(
+								url.href,
+								'the observed handoff URL'
+							).href ===
+							normalizeProviderHandoffUrl(
+								details.expectedDestinationUrl,
+								'the expected provider redirect'
+							).href,
+						{ timeout: HOSTED_PAGE_TIMEOUT_MS }
+					),
+				] );
+			} catch ( error ) {
+				throw quarantine(
+					'the provider handoff did not reach the exact expected URL in the original page.',
+					error
+				);
+			}
+
+			try {
+				return readProviderHandoffObservation( {
+					...details,
+					storeOrigin,
+					sourceUrl,
+					destinationUrl,
+					frameIdentity: 'main-frame',
+					navigationCount,
+					popupCount,
+				} );
+			} catch ( error ) {
+				throw quarantine(
+					'the provider handoff violated its single-navigation policy.',
+					error
+				);
+			}
+		},
+		async dispose() {
+			closed = true;
+			releaseExpected();
+			page.off( 'popup', onPopup );
+			page.off( 'framenavigated', onFrameNavigated );
+			await page.unroute( matcher, onRoute );
+		},
+	};
 }
 
 /**
@@ -1324,8 +1663,8 @@ export interface ClassicRedirectCheckoutOptions {
 	checkout: ClassicCheckoutTarget;
 	/** The provider-write journal description for the submission interval. */
 	journal: string;
-	/** Follow the provider's hosted page once, or stop at the handoff. */
-	follow: boolean;
+	/** Follow once, stop before navigation, or observe only the provider handoff. */
+	follow: ClassicRedirectFollowMode;
 	/** Appended to the product and checkout URLs, as the shopper currency. */
 	currencyQuery?: string;
 	/** Fail when the provider's account of the request cannot be read. */
@@ -1381,95 +1720,140 @@ export async function driveClassicRedirectCheckout(
 	const baselineOrderId = await readHighestOrderId( session );
 	let activationCount = 0;
 
-	const submit = () =>
-		session.withProviderSubmissionJournal( options.journal, async () => {
-			const observed = await observeCheckoutExchange(
-				page,
-				session.baseURL,
-				( request ) =>
-					isClassicCheckoutRequest( request, session.baseURL ),
+	const submit = async () => {
+		const handoffGate =
+			options.follow === 'handoff-only'
+				? await createProviderHandoffGate( page, session.baseURL )
+				: undefined;
+		try {
+			return await session.withProviderSubmissionJournal(
+				options.journal,
 				async () => {
-					activationCount += 1;
-					if ( activationCount !== 1 ) {
-						throw quarantine(
-							'checkout must activate Place order exactly once.'
-						);
-					}
-					await session.performWrite( () =>
-						page
-							.getByRole( 'button', {
-								name: 'Place order',
-								exact: true,
-							} )
-							.click()
-					);
-				},
-				async ( exchange ) => {
-					const success = {
-						orderId: await readSubmittedOrder(
-							session,
-							exchange,
-							baselineOrderId
-						),
-						redirectUrl: optionalRedirect( exchange.body.redirect ),
-					};
-					// Attribute the order before judging anything about it.
-					// Whatever the store did, this run caused it, and the run ID
-					// is how a later reader tells this order from someone else's.
-					await session.setOrderRunId( success.orderId, runId );
+					const observed = await observeCheckoutExchange(
+						page,
+						session.baseURL,
+						( request ) =>
+							isClassicCheckoutRequest(
+								request,
+								session.baseURL
+							),
+						async () => {
+							activationCount += 1;
+							if ( activationCount !== 1 ) {
+								throw quarantine(
+									'checkout must activate Place order exactly once.'
+								);
+							}
+							await session.performWrite( () =>
+								page
+									.getByRole( 'button', {
+										name: 'Place order',
+										exact: true,
+									} )
+									.click()
+							);
+						},
+						async ( exchange ) => {
+							const success = {
+								orderId: await readSubmittedOrder(
+									session,
+									exchange,
+									baselineOrderId
+								),
+								redirectUrl: optionalRedirect(
+									exchange.body.redirect
+								),
+							};
+							// Attribute the order before judging anything about it.
+							// Whatever the store did, this run caused it, and the run ID
+							// is how a later reader tells this order from someone else's.
+							await session.setOrderRunId(
+								success.orderId,
+								runId
+							);
 
-					const intentId = await readOrderIntentId(
-						session,
-						success.orderId
-					);
-					const request = await readRedirectIntentRequest(
-						session,
-						intentId,
-						options.requireRequestEvidence === true
+							const intentId = await readOrderIntentId(
+								session,
+								success.orderId
+							);
+							const request = await readRedirectIntentRequest(
+								session,
+								intentId,
+								options.requireRequestEvidence === true
+							);
+
+							if ( options.follow === false ) {
+								return {
+									success,
+									request,
+									landedUrl: undefined,
+									providerHandoff: undefined,
+								};
+							}
+							if ( options.follow === 'handoff-only' ) {
+								return {
+									success,
+									request,
+									landedUrl: undefined,
+									providerHandoff: await handoffGate?.observe(
+										{
+											orderId: success.orderId,
+											intentId,
+											expectedDestinationUrl:
+												request.providerRedirectUrl,
+										}
+									),
+								};
+							}
+
+							return {
+								success,
+								request,
+								landedUrl: await authorizeHostedRedirectOnce(
+									session,
+									page
+								),
+								providerHandoff: undefined,
+							};
+						}
 					);
 
-					if ( ! options.follow ) {
-						return { success, request, landedUrl: undefined };
-					}
+					const { success, request, landedUrl, providerHandoff } =
+						observed.result;
 
 					return {
-						success,
+						orderId: success.orderId,
+						storeRedirectUrl: success.redirectUrl,
 						request,
-						landedUrl: await authorizeHostedRedirectOnce(
-							session,
-							page
-						),
+						checkoutRequestCount: observed.exchange.requestCount,
+						checkoutResponseCount: observed.exchange.responseCount,
+						checkoutResponseLog: observed.exchange.responseLog,
+						handoffElapsedMs: observed.exchange.elapsedMs,
+						landedUrl,
+						paid:
+							options.follow === true
+								? await getPaymentEvidence(
+										session.adminApi,
+										success.orderId
+								  )
+								: undefined,
+						providerHandoff,
+						submittedFraudPreventionToken:
+							readSubmittedFraudPreventionToken(
+								observed.exchange.fields
+							),
 					};
 				}
 			);
+		} finally {
+			await handoffGate?.dispose();
+		}
+	};
 
-			const { success, request, landedUrl } = observed.result;
-
-			return {
-				orderId: success.orderId,
-				storeRedirectUrl: success.redirectUrl,
-				request,
-				checkoutRequestCount: observed.exchange.requestCount,
-				checkoutResponseCount: observed.exchange.responseCount,
-				checkoutResponseLog: observed.exchange.responseLog,
-				handoffElapsedMs: observed.exchange.elapsedMs,
-				landedUrl,
-				paid: options.follow
-					? await getPaymentEvidence(
-							session.adminApi,
-							success.orderId
-					  )
-					: undefined,
-				submittedFraudPreventionToken:
-					readSubmittedFraudPreventionToken(
-						observed.exchange.fields
-					),
-			};
-		} );
-
-	return options.follow
-		? submit()
-		: withoutProviderNavigation( page, session.baseURL, submit );
+	if ( options.follow === true || options.follow === 'handoff-only' ) {
+		return submit();
+	}
+	return withoutProviderNavigation( page, session.baseURL, submit );
 }
 
 /**
