@@ -3,6 +3,15 @@ import { expect, type Page } from '@playwright/test';
 import type { PaymentEvidence } from '../record-evidence';
 import type { ProviderWriteSession } from '../../../fixtures/woopayments-native';
 
+interface ExactMerchantTransactionAmount {
+	formattedAmount: string;
+	currency: string;
+}
+
+function escapeRegularExpression( value: string ): string {
+	return value.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+}
+
 export async function openExactMerchantTransaction(
 	session: ProviderWriteSession,
 	page: Page,
@@ -90,4 +99,33 @@ export async function expectExactMerchantTransaction(
 			{ exact: true }
 		)
 	).toBeVisible();
+}
+
+export async function expectExactMerchantTransactionAmount(
+	page: Page,
+	expected: ExactMerchantTransactionAmount
+): Promise< void > {
+	const summary = page.locator(
+		'section[aria-labelledby="woocommerce-woopayments-payment-summary-heading"]'
+	);
+	await expect( summary ).toHaveCount( 1 );
+
+	const amount = summary.locator(
+		'.woocommerce-woopayments-money-movement__summary-amount'
+	);
+	await expect( amount ).toHaveCount( 1 );
+	await expect( amount ).toBeVisible();
+	await expect( amount ).toHaveText(
+		new RegExp(
+			`^${ escapeRegularExpression(
+				expected.formattedAmount
+			) }\\s*${ escapeRegularExpression( expected.currency ) }$`
+		)
+	);
+
+	const currency = amount.locator(
+		'.woocommerce-woopayments-money-movement__summary-currency'
+	);
+	await expect( currency ).toHaveCount( 1 );
+	await expect( currency ).toHaveText( expected.currency );
 }

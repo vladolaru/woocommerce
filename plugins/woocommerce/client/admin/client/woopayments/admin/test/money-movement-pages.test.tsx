@@ -2813,19 +2813,19 @@ describe( 'WooPayments money movement pages', () => {
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_fx',
 			status: 'succeeded',
-			amount: 5000,
+			amount: 1234,
 			currency: 'eur',
 			charge: {
 				id: 'ch_fx',
 				payment_intent: 'pi_fx',
 				type: 'charge',
-				amount: 5000,
+				amount: 1234,
 				currency: 'eur',
 				balance_transaction: {
 					id: 'txn_fx',
-					amount: 5532,
-					fee: 180,
-					net: 5352,
+					amount: 1424,
+					fee: 87,
+					net: 1337,
 					currency: 'usd',
 				},
 			},
@@ -2849,16 +2849,16 @@ describe( 'WooPayments money movement pages', () => {
 		const summary = screen
 			.getByRole( 'heading', { name: 'Summary' } )
 			.closest( 'section' ) as HTMLElement;
-		expect( within( summary ).getByText( '€50.00' ) ).toBeInTheDocument();
+		expect( within( summary ).getByText( '€12.34' ) ).toBeInTheDocument();
 		expect( within( summary ).getByText( 'EUR' ) ).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Converted amount: $55.32 USD' )
+			within( summary ).getByText( 'Converted amount: $14.24 USD' )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Fees: -$1.80 USD' )
+			within( summary ).getByText( 'Fees: -$0.87 USD' )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Net: $53.52 USD' )
+			within( summary ).getByText( 'Net: $13.37 USD' )
 		).toBeInTheDocument();
 	} );
 

@@ -724,6 +724,45 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox Payment detail intent route preserves shopper and settlement money independently.
+	 */
+	public function test_payment_detail_intent_route_preserves_shopper_and_settlement_money(): void {
+		$this->create_order_with_charge( 'ch_fx', 'pi_fx' );
+
+		$this->api_client->response = array(
+			'id'       => 'pi_fx',
+			'amount'   => 1234,
+			'currency' => 'eur',
+			'charge'   => array(
+				'id'                  => 'ch_fx',
+				'amount'              => 1234,
+				'currency'            => 'eur',
+				'balance_transaction' => array(
+					'id'       => 'txn_fx',
+					'amount'   => 1424,
+					'fee'      => 87,
+					'net'      => 1337,
+					'currency' => 'usd',
+				),
+			),
+		);
+		$this->create_payment_details_controller( true )->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/payment_intents/pi_fx' ) );
+		$data     = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 1234, $data['amount'] );
+		$this->assertSame( 'eur', $data['currency'] );
+		$this->assertSame( 1234, $data['charge']['amount'] );
+		$this->assertSame( 'eur', $data['charge']['currency'] );
+		$this->assertSame( 1424, $data['charge']['balance_transaction']['amount'] );
+		$this->assertSame( 87, $data['charge']['balance_transaction']['fee'] );
+		$this->assertSame( 1337, $data['charge']['balance_transaction']['net'] );
+		$this->assertSame( 'usd', $data['charge']['balance_transaction']['currency'] );
+	}
+
+	/**
 	 * @testdox Payment detail create-intent route requires manage_woocommerce.
 	 */
 	public function test_payment_detail_create_intent_route_requires_manage_woocommerce(): void {

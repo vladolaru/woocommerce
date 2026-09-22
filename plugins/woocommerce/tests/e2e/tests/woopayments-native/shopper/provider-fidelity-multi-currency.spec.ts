@@ -21,6 +21,11 @@ import {
 	readProviderCustomerId,
 	readProviderCustomerPaymentMethodIds,
 } from '../../../utils/woopayments-native/drivers/classic-card-authentication';
+import {
+	expectExactMerchantTransaction,
+	expectExactMerchantTransactionAmount,
+	openExactMerchantTransaction,
+} from '../../../utils/woopayments-native/drivers/merchant-transactions';
 import { readProviderCardEvidence } from '../../../utils/woopayments-native/provider-card-evidence';
 import { waitForPaymentState } from '../../../utils/woopayments-native/provider-evidence';
 import {
@@ -87,10 +92,10 @@ import {
  * native Blocks checkout with the `4242` basic card, so no shopper account
  * currency preference (`wcpay_currency` user meta) is ever written and no
  * reusable payment method is created. This family deliberately excludes
- * settings and onboarding, switcher and UI formatting, payment-method
- * visibility and eligibility, transaction-page navigation and link
- * compatibility, historical migration and cutover, and refunds - the last of
- * which the sibling `refund-settlement` family owns. The My Account
+ * settings and onboarding, switcher and UI formatting outside M2's exact
+ * transaction summary, payment-method visibility and eligibility, historical
+ * migration and cutover, and refunds - the last of which the sibling
+ * `refund-settlement` family owns. The My Account
  * order-history rendering row is deliberately not claimed: the partition marks
  * it not-dischargeable, so `M3` proves order-received and merchant order
  * administration only.
@@ -98,6 +103,7 @@ import {
 
 /** Grep tag that selects this family as a unit. */
 const FAMILY_TAG = '@fidelity:multi-currency-settlement';
+const TRANSACTION_DETAILS_TAG = '@fidelity:mc-transaction-details';
 const FAMILY_TAGS = [
 	tags.WOOPAYMENTS_NATIVE,
 	tags.WOOPAYMENTS_PROVIDER,
@@ -128,6 +134,8 @@ const CONTRACT_M2_EUR =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:51::Multi-currency checkout › Checkout with multiple currencies › checkout with EUR';
 const CONTRACT_M2_TRANSACTION =
 	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:88::Admin Multi-Currency Orders › transaction page shows converted merchant currency';
+const CONTRACT_M2_TRANSACTION_DETAILS =
+	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:70::Admin Multi-Currency Orders › transaction page shows shopper currency';
 const CONTRACT_M3_ADMIN =
 	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:54::Admin Multi-Currency Orders › order should display in shopper currency';
 const CONTRACT_M3_RECEIPT =
@@ -1473,8 +1481,12 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 					type: 'woopayments-contract',
 					description: CONTRACT_M2_TRANSACTION,
 				},
+				{
+					type: 'woopayments-contract',
+					description: CONTRACT_M2_TRANSACTION_DETAILS,
+				},
 			],
-			tag: FAMILY_TAGS,
+			tag: [ ...FAMILY_TAGS, TRANSACTION_DETAILS_TAG ],
 		},
 		async ( { adminApi, page, pilotRuntime, runId } ) => {
 			requireCapabilities( pilotRuntime, M2_CAPABILITIES );
@@ -1510,6 +1522,10 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 								runId
 							);
 							const receipt = await readReceiptSummary( page );
+							const receiptUrl = page.url();
+							const shopperSession = await page
+								.context()
+								.storageState();
 							expect(
 								receipt.orderNumber,
 								'the receipt must name the exact order'
@@ -1727,16 +1743,29 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 								await readShopperCartItemCount( page )
 							).toBe( 0 );
 
+							await openExactMerchantTransaction(
+								pilotRuntime,
+								page,
+								graph.payment
+							);
+							await expectExactMerchantTransaction(
+								pilotRuntime,
+								page,
+								graph.payment
+							);
+							await expectExactMerchantTransactionAmount( page, {
+								formattedAmount: '€12.34',
+								currency: 'EUR',
+							} );
+
 							// Handed to M3: the exact graph, the exact receipt
 							// rows, the exact receipt URL and the exact shopper
 							// session that bought it.
 							eurPurchase = {
 								graph,
 								receipt,
-								receiptUrl: page.url(),
-								shopperSession: await page
-									.context()
-									.storageState(),
+								receiptUrl,
+								shopperSession,
 							};
 						}
 					);
