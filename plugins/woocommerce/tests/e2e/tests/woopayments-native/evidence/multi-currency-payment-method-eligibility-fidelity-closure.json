@@ -1,0 +1,83 @@
+{
+  "schema_version": 2,
+  "slice_id": "multi-currency-payment-method-eligibility-fidelity-closure",
+  "wc_base_commit": "8857cd1a8a890b5a55d4586097fa23d20cfc5503",
+  "verified_at_commit": "fadb31253aa6422ef0796f7b4586a1135ad5de27",
+  "reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+  "source_test_paths": [
+    "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-payment-method-eligibility.spec.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/payment-method-eligibility.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/payment-method-eligibility.test.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/redirect-methods.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/redirect-methods.test.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/pilot-runtime.test.ts",
+    "plugins/woocommerce/tests/php/src/Internal/Payments/NativeWooPaymentsGatewayTest.php"
+  ],
+  "source_test_sha256": "148ed53189f088e9f62fb4f40eeea1835fd8555cc6ed09089369feb899d65aae",
+  "contract_ids": [
+    "default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:122::Multi-currency checkout › Available payment methods › should display EUR payment methods when switching to EUR and default is USD",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:162::Multi-currency checkout › Available payment methods › should display USD payment methods when switching to USD and default is EUR"
+  ],
+  "targets": [
+    {
+      "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-payment-method-eligibility.spec.ts",
+      "contract": "the multi-currency-payment-method-eligibility provider-fidelity family"
+    }
+  ],
+  "implementation_commits": [
+    "fadb31253aa6422ef0796f7b4586a1135ad5de27"
+  ],
+  "execution_fixture": {
+    "site": "local WooCommerce provider fixture",
+    "account_id": "redacted:existing-shared-test-account",
+    "runtime_owner": "native",
+    "migration_state": "WooPayments client plugin inactive; native runtime owner; provider test mode; local Transact listener forwarding throughout"
+  },
+  "verification": [
+    {
+      "command": "WCPAY_RUNTIME=native provider-family runner for @fidelity:payment-method-eligibility with one worker and zero retries",
+      "exit_code": 1,
+      "raw_result_sha256": "89d29c543472d9dfb5b462ca8d24a3f009d308815c44753496753fd23d0f7055",
+      "summary": "Row 94 completed its one allowed financial attempt before a post-payment evidence-model assertion failed. Reconciliation proved order 4531 processing for EUR 10.99 through Bancontact, one succeeded 1099 eur PaymentIntent, one succeeded captured charge, one durable payment method, no second charge, and no platform error-severity record in the payment window. The failure was confined to reading the durable payment-method ID as a method type and comparing uppercase order currency to lowercase provider currency; focused unit RED/GREEN corrected both without replaying the payment. Store restoration was exact and the lock directory ended with zero quarantine receipts and zero unresolved provider-write attempts. Row 95 did not run in this invocation."
+    },
+    {
+      "command": "WCPAY_RUNTIME=native isolated row-95 provider execution with one worker and zero retries",
+      "exit_code": 1,
+      "raw_result_sha256": "269cb95cd0b16210d02b6ad2e88455e95a984dfd039202a22833784ba8ce594c",
+      "summary": "Row 95 completed its one allowed financial attempt before restoration failed. Reconciliation proved order 4533 processing for USD 10.99 through Card, one succeeded 1099 usd PaymentIntent whose only method type was card, one succeeded captured charge, one durable payment method ending 4242, no second charge, and no platform error-severity record in the payment window. The failure was confined to attempting to POST the recorded automatic/null/null/null settings projection through a route that requires numeric rounding and charm values. The exact snapshot was restored through the supported enabled-currency remove/re-add lifecycle, cold REST reads proved configured USD default, multi-currency enabled, Card and Klarna enabled methods, USD and EUR enabled currencies, and exact nullable USD settings, and the immutable quarantine receipts were archived only after that proof. Focused unit RED/GREEN now exercises the same EUR-default, USD-foreign restoration shape. No payment was replayed."
+    },
+    {
+      "command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/drivers/redirect-methods.test.ts tests/e2e/utils/woopayments-native/drivers/payment-method-eligibility.test.ts --reporter=dot",
+      "exit_code": 0,
+      "summary": "Passed 33/33 focused driver tests after the provider evidence and nullable-restoration corrections."
+    },
+    {
+      "command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/drivers/classic-card-checkout.test.ts tests/e2e/utils/woopayments-native/drivers/redirect-methods.test.ts tests/e2e/utils/woopayments-native/drivers/payment-method-eligibility.test.ts tests/e2e/utils/woopayments-native/pilot-runtime.test.ts --reporter=dot",
+      "exit_code": 0,
+      "summary": "Passed 134/134 after the existing-cart path's one-item Store API precondition and highest-order baseline were added to the lock-loss fixtures, preserving the expected fail-closed ownership assertions."
+    }
+  ],
+  "reviews": [],
+  "closures": [
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:122::Multi-currency checkout › Available payment methods › should display EUR payment methods when switching to EUR and default is USD",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-payment-method-eligibility.spec.ts",
+        "contract": "A same-session switch from USD to EUR adds Bancontact while retaining Card and one selected Bancontact checkout settles exactly 1099 eur"
+      },
+      "fidelity_claim": "multi-currency-payment-method-eligibility",
+      "fidelity_case": "USD to EUR"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:162::Multi-currency checkout › Available payment methods › should display USD payment methods when switching to USD and default is EUR",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-payment-method-eligibility.spec.ts",
+        "contract": "A same-session switch from EUR to USD removes Bancontact while retaining Card and one selected Card checkout settles exactly 1099 usd"
+      },
+      "fidelity_claim": "multi-currency-payment-method-eligibility",
+      "fidelity_case": "EUR to USD"
+    }
+  ],
+  "known_gaps": [],
+  "deferral": null
+}
