@@ -363,15 +363,19 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * Enqueue Core-owned WooPay frontend assets on supported shopper surfaces.
 	 */
 	public function enqueue_frontend_assets(): void {
-		if ( ! $this->is_supported_frontend_surface() ) {
+		$supported_frontend_surface = $this->is_supported_frontend_surface();
+		$direct_checkout_surface    = $this->is_supported_direct_checkout_surface();
+		if ( ! $supported_frontend_surface && ! $direct_checkout_surface ) {
 			return;
 		}
 
-		$context = $this->get_current_button_context();
-		$config  = $this->session_service->get_woopay_frontend_config( $context );
+		$context                 = $this->get_current_button_context();
+		$config                  = $this->session_service->get_woopay_frontend_config( $context );
+		$direct_checkout_enabled = $direct_checkout_surface && ! empty( $config['isWooPayDirectCheckoutEnabled'] );
 		if (
 			empty( $config['shouldShowWooPayButton'] ) &&
-			! $this->session_service->should_load_woopay_save_user_assets( $context )
+			! $this->session_service->should_load_woopay_save_user_assets( $context ) &&
+			! $direct_checkout_enabled
 		) {
 			return;
 		}
@@ -834,11 +838,34 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether the current request supports WooPay direct checkout.
+	 *
+	 * @return bool
+	 */
+	private function is_supported_direct_checkout_surface(): bool {
+		if ( $this->current_surface_has_block( 'woocommerce/checkout' ) ) {
+			return false;
+		}
+
+		return ( function_exists( 'is_cart' ) && is_cart() ) || $this->current_surface_has_block( 'woocommerce/cart' );
+	}
+
+	/**
 	 * Tell whether the current request renders a Blocks cart or checkout page.
 	 *
 	 * @return bool
 	 */
 	private function is_block_cart_or_checkout_surface(): bool {
+		return $this->current_surface_has_block( 'woocommerce/cart' ) || $this->current_surface_has_block( 'woocommerce/checkout' );
+	}
+
+	/**
+	 * Tell whether the current request contains a given block.
+	 *
+	 * @param string $block_name Block name.
+	 * @return bool
+	 */
+	private function current_surface_has_block( string $block_name ): bool {
 		$post_id = function_exists( 'get_queried_object_id' ) ? get_queried_object_id() : 0;
 		$post    = $post_id ? get_post( $post_id ) : null;
 
@@ -854,7 +881,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return false;
 		}
 
-		return has_block( 'woocommerce/cart', $post ) || has_block( 'woocommerce/checkout', $post );
+		return has_block( $block_name, $post );
 	}
 
 	/**

@@ -203,11 +203,73 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should enqueue direct checkout assets on a classic cart without rendering an express button.
+	 */
+	public function test_enqueue_frontend_assets_for_direct_checkout_on_classic_cart(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		add_filter( 'woocommerce_is_cart', '__return_true' );
+
+		$this->sut->enqueue_frontend_assets();
+		ob_start();
+		$this->sut->display_express_checkout_buttons();
+		$express_button = (string) ob_get_clean();
+
+		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$localized_data = wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
+		$this->assertIsString( $localized_data );
+		$this->assertStringContainsString( '"isWooPayDirectCheckoutEnabled":"1"', $localized_data );
+		$this->assertStringContainsString( '"woopaySessionNonce":"woopay-session-nonce"', $localized_data );
+		$this->assertStringContainsString( '"wcAjaxUrl":', $localized_data );
+		$this->assertSame( '', $express_button );
+	}
+
+	/**
+	 * @testdox Should enqueue direct checkout assets on a Cart Block without rendering an express button.
+	 */
+	public function test_enqueue_frontend_assets_for_direct_checkout_on_cart_block(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		$page_id                                      = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->',
+			)
+		);
+
+		global $post;
+		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		setup_postdata( $post );
+		add_filter( 'woocommerce_is_cart', '__return_true' );
+
+		$this->sut->enqueue_frontend_assets();
+		ob_start();
+		$this->sut->display_express_checkout_buttons();
+		$express_button = (string) ob_get_clean();
+
+		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertSame( '', $express_button );
+	}
+
+	/**
 	 * @testdox Should not enqueue classic WooPay assets on checkout block pages.
 	 */
 	public function test_enqueue_frontend_assets_skips_checkout_block_pages(): void {
-		$this->sut = $this->create_controller( true, true );
-		$page_id   = self::factory()->post->create(
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		$page_id                                      = self::factory()->post->create(
 			array(
 				'post_type'    => 'page',
 				'post_status'  => 'publish',
@@ -219,6 +281,22 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		setup_postdata( $post );
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertFalse( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should not enqueue direct checkout assets on unrelated pages.
+	 */
+	public function test_enqueue_frontend_assets_skips_unrelated_pages_for_direct_checkout(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$this->sut                                    = $this->create_controller( true, true, $service );
 
 		$this->sut->enqueue_frontend_assets();
 

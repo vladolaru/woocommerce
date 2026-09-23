@@ -917,6 +917,23 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should merge direct checkout eligibility from the WooPay session service.
+	 */
+	public function test_get_payment_fields_js_config_merges_direct_checkout_eligibility(): void {
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( true, true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$config = $bridge->get_payment_fields_js_config();
+
+		$this->assertTrue( $config['isWooPayDirectCheckoutEnabled'] );
+	}
+
+	/**
 	 * @testdox Platform-account Stripe should not be forced outside the checkout page.
 	 */
 	public function test_platform_card_checkout_requires_a_checkout_page(): void {
@@ -1503,10 +1520,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a WooPay session service mock for checkout bridge tests.
 	 *
-	 * @param bool $enabled Whether WooPay is enabled.
+	 * @param bool $enabled                 Whether WooPay is enabled.
+	 * @param bool $direct_checkout_enabled Whether WooPay direct checkout is enabled.
 	 * @return WooPaymentsWooPaySessionService|\PHPUnit\Framework\MockObject\MockObject
 	 */
-	private function create_woopay_session_service_for_bridge( bool $enabled ) {
+	private function create_woopay_session_service_for_bridge( bool $enabled, bool $direct_checkout_enabled = false ) {
 		$service = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_woopay_enabled', 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
@@ -1519,7 +1537,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				'isWoopayExpressCheckoutEnabled'    => $enabled,
 				'isWoopayFirstPartyAuthEnabled'     => $enabled,
 				'isWooPayEmailInputEnabled'         => $enabled,
-				'isWooPayDirectCheckoutEnabled'     => false,
+				'isWooPayDirectCheckoutEnabled'     => $direct_checkout_enabled,
 				'isWooPayGlobalThemeSupportEnabled' => false,
 				'forceNetworkSavedCards'            => false,
 				'platformTrackerNonce'              => 'platform-tracks-nonce',

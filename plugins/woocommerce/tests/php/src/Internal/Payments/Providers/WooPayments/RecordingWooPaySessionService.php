@@ -33,6 +33,13 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	public bool $should_load_woopay_save_user_assets = true;
 
 	/**
+	 * Whether WooPay direct checkout is enabled.
+	 *
+	 * @var bool
+	 */
+	public bool $direct_checkout_enabled = false;
+
+	/**
 	 * Last session email.
 	 *
 	 * @var string
@@ -115,10 +122,12 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	 */
 	public function get_woopay_frontend_config( string $context = 'checkout' ): array {
 		return array(
-			'isWooPayEnabled'        => $this->woopay_enabled,
-			'shouldShowWooPayButton' => $this->should_show_woopay_button,
-			'forceNetworkSavedCards' => true,
-			'woopayButton'           => array(
+			'isWooPayEnabled'               => $this->woopay_enabled,
+			'shouldShowWooPayButton'        => $this->should_show_woopay_button,
+			'isWooPayDirectCheckoutEnabled' => $this->direct_checkout_enabled,
+			'forceNetworkSavedCards'        => true,
+			'woopaySessionNonce'            => 'woopay-session-nonce',
+			'woopayButton'                  => array(
 				'type'    => 'default',
 				'theme'   => 'dark',
 				'height'  => '48',
