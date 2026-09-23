@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 import type { WooPaymentsAdminNotice } from '@woocommerce/data';
-import type { RefObject } from 'react';
+import type { MouseEvent, RefObject } from 'react';
 
 /**
  * Internal dependencies
@@ -113,7 +113,7 @@ export const WooPaymentsAdminNotices = ( {
 						variant="primary"
 						href={ notice.primary.href }
 						aria-disabled={ pendingAction !== null }
-						onClick={ ( event ) => {
+						onClick={ ( event: MouseEvent ) => {
 							if ( pendingAction !== null ) {
 								event.preventDefault();
 							}
