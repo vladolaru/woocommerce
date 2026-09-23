@@ -302,28 +302,35 @@
 		attachWooPayConnectListener();
 
 		return new Promise( function ( resolve ) {
+			var timeoutId;
+			var settled = false;
+
+			wooPayConnectCallbacks[ callbackName ] = function ( value ) {
+				if ( settled ) {
+					return;
+				}
+
+				settled = true;
+				if ( timeoutId ) {
+					window.clearTimeout( timeoutId );
+				}
+				resolve( value );
+			};
+
+			if ( timeout ) {
+				timeoutId = window.setTimeout( function () {
+					resolveWooPayConnectCallback( callbackName, fallback );
+				}, wooPayConnectTimeout );
+			}
+
 			getWooPayConnectPostMessage()
 				.then( function ( postMessage ) {
-					var timeoutId;
-
-					wooPayConnectCallbacks[ callbackName ] = function ( value ) {
-						if ( timeoutId ) {
-							window.clearTimeout( timeoutId );
-						}
-
-						resolve( value );
-					};
-
-					if ( timeout ) {
-						timeoutId = window.setTimeout( function () {
-							resolveWooPayConnectCallback( callbackName, fallback );
-						}, wooPayConnectTimeout );
+					if ( wooPayConnectCallbacks[ callbackName ] ) {
+						postMessage( message );
 					}
-
-					postMessage( message );
 				} )
 				.catch( function () {
-					resolve( fallback );
+					resolveWooPayConnectCallback( callbackName, fallback );
 				} );
 		} );
 	}
@@ -721,7 +728,7 @@
 		} );
 	}
 
-	function attachDirectCheckoutListeners( loggedIn ) {
+	function attachDirectCheckoutListeners() {
 		var selector =
 			'.wc-proceed-to-checkout .checkout-button,' +
 			'.wp-block-woocommerce-proceed-to-checkout-block,' +
@@ -729,34 +736,46 @@
 			'a.wc-block-mini-cart__footer-checkout,' +
 			'.widget_shopping_cart a.button.checkout';
 
-		document.querySelectorAll( selector ).forEach( function ( element ) {
-			if ( element.wooPayDirectCheckoutAttached ) {
+		if ( document.body.wooPayDirectCheckoutAttached ) {
+			return;
+		}
+		document.body.wooPayDirectCheckoutAttached = true;
+
+		document.body.wooPayDirectCheckoutHandler = function ( event ) {
+			var element =
+				event.target && event.target.closest
+					? event.target.closest( selector )
+					: null;
+			var originalHref;
+
+			if ( ! element ) {
 				return;
 			}
-			element.wooPayDirectCheckoutAttached = true;
 
-			element.addEventListener( 'click', function ( event ) {
-				var originalHref = getDirectCheckoutHref( element );
+			originalHref = getDirectCheckoutHref( element );
+			if ( ! originalHref ) {
+				return;
+			}
 
-				if ( ! originalHref ) {
-					return;
-				}
+			event.preventDefault();
+			if ( element.wooPayDirectCheckoutActive ) {
+				return;
+			}
+			element.wooPayDirectCheckoutActive = true;
+			setDirectCheckoutLoading( element, true );
 
-				event.preventDefault();
-				if ( element.wooPayDirectCheckoutActive ) {
-					return;
-				}
-				element.wooPayDirectCheckoutActive = true;
-				setDirectCheckoutLoading( element, true );
-
-				runDirectCheckout( loggedIn )
-					.then( navigate )
-					.catch( function () {
-						setDirectCheckoutLoading( element, false );
-						navigate( originalHref );
-					} );
-			} );
-		} );
+			runDirectCheckout( directCheckoutLoggedIn )
+				.then( navigate )
+				.catch( function () {
+					element.wooPayDirectCheckoutActive = false;
+					setDirectCheckoutLoading( element, false );
+					navigate( originalHref );
+				} );
+		};
+		document.body.addEventListener(
+			'click',
+			document.body.wooPayDirectCheckoutHandler
+		);
 	}
 
 	function initializeDirectCheckout() {
@@ -771,7 +790,7 @@
 			true
 		).then( function ( loggedIn ) {
 			directCheckoutLoggedIn = loggedIn;
-			attachDirectCheckoutListeners( loggedIn );
+			attachDirectCheckoutListeners();
 		} );
 	}
 
@@ -1220,7 +1239,7 @@
 	} );
 	$( document.body ).on( 'updated_cart_totals', function () {
 		if ( config.isWooPayDirectCheckoutEnabled ) {
-			attachDirectCheckoutListeners( directCheckoutLoggedIn );
+			attachDirectCheckoutListeners();
 		}
 	} );
 

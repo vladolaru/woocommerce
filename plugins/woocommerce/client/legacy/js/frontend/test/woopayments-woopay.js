@@ -70,6 +70,14 @@ describe( 'WooPayments WooPay checkout', () => {
 	beforeEach( () => {
 		jest.resetModules();
 		bodyEventHandlers = {};
+		if ( document.body.wooPayDirectCheckoutHandler ) {
+			document.body.removeEventListener(
+				'click',
+				document.body.wooPayDirectCheckoutHandler
+			);
+		}
+		delete document.body.wooPayDirectCheckoutHandler;
+		delete document.body.wooPayDirectCheckoutAttached;
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input id="billing_email" value="shopper@example.com" />' +
@@ -953,6 +961,138 @@ describe( 'WooPayments WooPay checkout', () => {
 			} );
 			document.body.firstElementChild.dispatchEvent( event );
 			expect( event.defaultPrevented ).toBe( false );
+		} );
+
+		test( 'intercepts a legacy mini-cart link inserted after initialization without touching other controls', async () => {
+			// Oracle: WooPayments 11.1.0 direct-checkout/index.js:71-136 observes mini-cart controls injected after load.
+			configureDirectCheckout(
+				'<a class="ordinary-link" href="#ordinary">Keep browsing</a>' +
+					'<button class="checkout-submit" type="button">Place order</button>'
+			);
+			const postMessage = installConnect();
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+			await initializeDirectCheckout( false );
+
+			const ordinaryClick = new window.MouseEvent( 'click', {
+				bubbles: true,
+				cancelable: true,
+			} );
+			const submitClick = new window.MouseEvent( 'click', {
+				bubbles: true,
+				cancelable: true,
+			} );
+			document.querySelector( '.ordinary-link' ).dispatchEvent( ordinaryClick );
+			document.querySelector( '.checkout-submit' ).dispatchEvent( submitClick );
+
+			document.body.insertAdjacentHTML(
+				'beforeend',
+				'<div class="widget_shopping_cart"><a class="button checkout" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			document.querySelector( '.widget_shopping_cart .checkout' ).click();
+			await flushPromises();
+			emitConnectMessage( 'get_is_woopay_reachable_success', false );
+			await flushPromises();
+
+			expect( ordinaryClick.defaultPrevented ).toBe( false );
+			expect( submitClick.defaultPrevented ).toBe( false );
+			expect( postMessage ).toHaveBeenCalledTimes( 3 );
+			expect( postMessage ).toHaveBeenLastCalledWith(
+				{ action: 'isWooPayReachable' },
+				'https://pay.woo.test'
+			);
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://store.test/checkout/'
+			);
+		} );
+
+		test( 'uses resolved logged-in state when cart updates while login is pending', async () => {
+			// Oracle: WooPayments 11.1.0 direct-checkout/index.js:26-51 resolves login before choosing the click branch.
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			const postMessage = installConnect();
+			global.jQuery.post = jest.fn( () => ( {
+				done: jest.fn( ( callback ) => {
+					callback( storeSession );
+					return { fail: jest.fn() };
+				} ),
+			} ) );
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+
+			document
+				.getElementById( 'woopay-connect-iframe' )
+				.dispatchEvent( new window.Event( 'load' ) );
+			await flushPromises();
+			bodyEventHandlers.updated_cart_totals();
+			emitConnectMessage( 'get_is_user_logged_in_success', true );
+			await flushPromises();
+
+			document.querySelector( '.checkout-button' ).click();
+			await flushPromises();
+			emitConnectMessage( 'get_encrypted_data_success', encryptedIdentity );
+			await flushPromises();
+			emitConnectMessage( 'set_redirect_session_data_success', {
+				redirect_url:
+					'https://pay.woo.test/woopay/?platform_checkout_key=race-key',
+			} );
+			await flushPromises();
+
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'getEncryptedData' },
+				'https://pay.woo.test'
+			);
+			expect( postMessage ).not.toHaveBeenCalledWith(
+				{ action: 'isWooPayReachable' },
+				expect.anything()
+			);
+			expect( global.jQuery.post ).toHaveBeenCalledWith(
+				'/?wc-ajax=wcpay_get_woopay_session',
+				expect.objectContaining( {
+					encrypted_data: encryptedIdentity,
+				} )
+			);
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/woopay/?platform_checkout_key=race-key'
+			);
+		} );
+
+		test( 'falls back when a replacement Connect iframe never loads and ignores its late load', async () => {
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			const postMessage = installConnect();
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+			await initializeDirectCheckout( true );
+
+			document.getElementById( 'woopay-connect-iframe' ).remove();
+			jest.useFakeTimers();
+			const link = document.querySelector( '.checkout-button' );
+			link.click();
+			await Promise.resolve();
+			const replacementIframe = document.getElementById(
+				'woopay-connect-iframe'
+			);
+			const callsBeforeLateLoad = postMessage.mock.calls.length;
+			jest.advanceTimersByTime( 5000 );
+			await flushMicrotasks();
+
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://store.test/checkout/'
+			);
+			expect( link.hasAttribute( 'aria-disabled' ) ).toBe( false );
+
+			replacementIframe.dispatchEvent( new window.Event( 'load' ) );
+			await flushMicrotasks();
+			expect( postMessage ).toHaveBeenCalledTimes( callsBeforeLateLoad );
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
 		} );
 	} );
 } );
