@@ -12,18 +12,19 @@ import type { WooPaymentsAdminNotice } from '@woocommerce/data';
 import { WooPaymentsAdminNotices } from '..';
 
 const mockCreateErrorNotice = jest.fn();
+const mockInvalidatePaymentProviders = jest.fn();
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
+jest.mock( '@woocommerce/data', () => ( { paymentSettingsStore: {} } ) );
 jest.mock( '@wordpress/data', () => ( {
 	...jest.requireActual( '@wordpress/data' ),
 	dispatch: jest.fn( () => ( { createErrorNotice: mockCreateErrorNotice } ) ),
+	useDispatch: jest.fn( () => ( {
+		invalidateResolutionForStoreSelector: mockInvalidatePaymentProviders,
+	} ) ),
 } ) );
-jest.mock( '../../buttons/reactivate-live-payments-button', () => ( {
-	ReactivateLivePaymentsButton: ( {
-		buttonText,
-	}: {
-		buttonText: string;
-	} ) => <button type="button">{ buttonText }</button>,
+jest.mock( '~/settings-payments/utils', () => ( {
+	recordPaymentsEvent: jest.fn(),
 } ) );
 
 const notice: WooPaymentsAdminNotice = {
@@ -126,6 +127,9 @@ describe( 'WooPaymentsAdminNotices', () => {
 			finishSnooze( { success: true } );
 		} );
 		await waitFor( () => expect( onDismiss ).toHaveBeenCalledTimes( 1 ) );
+		expect( mockInvalidatePaymentProviders ).toHaveBeenCalledWith(
+			'getPaymentProviders'
+		);
 		expect( focusTarget ).toHaveFocus();
 	} );
 

@@ -40,6 +40,10 @@ interface ReactivateLivePaymentsButtonProps {
 	 * Prevents activation while another notice action is pending.
 	 */
 	disabled?: boolean;
+	/**
+	 * Renders a button when navigation is not the control's primary action.
+	 */
+	asButton?: boolean;
 }
 
 /**
@@ -51,6 +55,7 @@ export const ReactivateLivePaymentsButton = ( {
 	onSuccess,
 	onUpdatingChange,
 	disabled = false,
+	asButton = false,
 }: ReactivateLivePaymentsButtonProps ) => {
 	const [ isUpdating, setIsUpdating ] = useState( false );
 	const { createSuccessNotice, createErrorNotice } =
@@ -142,7 +147,7 @@ export const ReactivateLivePaymentsButton = ( {
 			disabled={ isUpdating || disabled }
 			aria-disabled={ isUpdating || disabled }
 			onClick={ disableTestModePayments }
-			href={ settingsHref }
+			href={ asButton ? undefined : settingsHref }
 		>
 			{ buttonText }
 		</Button>

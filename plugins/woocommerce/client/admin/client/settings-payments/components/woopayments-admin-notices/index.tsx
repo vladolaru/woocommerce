@@ -2,10 +2,11 @@
  * External dependencies
  */
 import { Button, Notice } from '@wordpress/components';
-import { dispatch } from '@wordpress/data';
+import { dispatch, useDispatch } from '@wordpress/data';
 import { useEffect, useRef, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
+import { paymentSettingsStore } from '@woocommerce/data';
 import type { WooPaymentsAdminNotice } from '@woocommerce/data';
 import type { MouseEvent, RefObject } from 'react';
 
@@ -34,6 +35,8 @@ export const WooPaymentsAdminNotices = ( {
 	const shownKey = `${ notice.id }:${ notice.stage ?? '' }`;
 	const shownRef = useRef< string | null >( null );
 	const { createErrorNotice } = dispatch( 'core/notices' );
+	const { invalidateResolutionForStoreSelector } =
+		useDispatch( paymentSettingsStore );
 
 	useEffect( () => {
 		if ( shownRef.current === shownKey ) {
@@ -80,6 +83,7 @@ export const WooPaymentsAdminNotices = ( {
 				method: 'POST',
 				data: notice.stage ? { stage: notice.stage } : undefined,
 			} );
+			void invalidateResolutionForStoreSelector( 'getPaymentProviders' );
 			finish();
 		} catch {
 			createErrorNotice(
@@ -101,6 +105,7 @@ export const WooPaymentsAdminNotices = ( {
 					<ReactivateLivePaymentsButton
 						buttonText={ notice.primary.label }
 						settingsHref={ notice.primary.href ?? '' }
+						asButton
 						onSuccess={ finish }
 						onUpdatingChange={ ( updating ) =>
 							setPendingAction( updating ? 'primary' : null )

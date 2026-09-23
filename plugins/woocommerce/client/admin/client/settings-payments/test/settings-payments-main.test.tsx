@@ -2,11 +2,19 @@
  * External dependencies
  */
 import { recordEvent } from '@woocommerce/tracks';
-import { act, render, fireEvent, screen } from '@testing-library/react';
+import {
+	act,
+	render,
+	fireEvent,
+	screen,
+	waitFor,
+} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter as Router } from 'react-router-dom';
 import { dispatch } from '@wordpress/data';
 import { paymentSettingsStore } from '@woocommerce/data';
 import type { PaymentsProvider } from '@woocommerce/data';
+import apiFetch from '@wordpress/api-fetch';
 
 /**
  * Internal dependencies
@@ -62,6 +70,7 @@ const noticeProvider = {
 
 describe( 'SettingsPaymentsMain', () => {
 	afterEach( () => {
+		( apiFetch as jest.Mock ).mockReset().mockResolvedValue( {} );
 		act( () => {
 			dispatch( paymentSettingsStore ).getPaymentProvidersSuccess(
 				[],
@@ -70,6 +79,73 @@ describe( 'SettingsPaymentsMain', () => {
 				[]
 			);
 		} );
+	} );
+
+	it( 'does not replay a dismissed notice from cached providers after remount', async () => {
+		act( () => {
+			dispatch( paymentSettingsStore ).getPaymentProvidersSuccess(
+				[ noticeProvider ],
+				[],
+				[],
+				[]
+			);
+		} );
+		let finishDismiss: ( value: { success: boolean } ) => void = () => {};
+		( apiFetch as jest.Mock ).mockImplementation( ( request ) => {
+			if ( request.url === '/dismiss' ) {
+				return new Promise( ( resolve ) => {
+					finishDismiss = resolve;
+				} );
+			}
+			if ( request.path?.includes( '/settings/payments/providers' ) ) {
+				return Promise.resolve( {
+					providers: [
+						{ ...noticeProvider, _admin_notice: undefined },
+					],
+					offline_payment_methods: [],
+					suggestions: [],
+					suggestion_categories: [],
+				} );
+			}
+			return Promise.resolve( { success: true } );
+		} );
+		const firstRender = render(
+			<Router>
+				<SettingsPaymentsMain />
+			</Router>
+		);
+
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Dismiss WooPayments notice',
+			} )
+		);
+		await act( async () => {
+			finishDismiss( { success: true } );
+		} );
+		await waitFor( () =>
+			expect(
+				screen.queryByText( noticeMessage )
+			).not.toBeInTheDocument()
+		);
+		await waitFor( () =>
+			expect( apiFetch ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: expect.stringContaining(
+						'/settings/payments/providers'
+					),
+				} )
+			)
+		);
+
+		firstRender.unmount();
+		render(
+			<Router>
+				<SettingsPaymentsMain />
+			</Router>
+		);
+
+		expect( screen.queryByText( noticeMessage ) ).not.toBeInTheDocument();
 	} );
 
 	it( 'shows a WooPayments admin notice before payment gateways', () => {
