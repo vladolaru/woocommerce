@@ -110,6 +110,20 @@ class TestableWooPaySessionService extends WooPaymentsWooPaySessionService {
 class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Original direct-checkout feature option.
+	 *
+	 * @var mixed
+	 */
+	private $original_direct_checkout_option;
+
+	/**
+	 * Original WooPay blog identity filters.
+	 *
+	 * @var array<string,object|null>
+	 */
+	private array $original_blog_identity_filters = array();
+
+	/**
 	 * Original WooCommerce session object.
 	 *
 	 * @var object|null
@@ -121,7 +135,11 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->original_session = WC()->session;
+		$this->original_session                = WC()->session;
+		$this->original_direct_checkout_option = get_option( '_wcpay_feature_woopay_direct_checkout', null );
+		foreach ( array( 'woocommerce_woopayments_woopay_blog_id', 'woocommerce_woopayments_woopay_blog_token' ) as $filter_name ) {
+			$this->original_blog_identity_filters[ $filter_name ] = isset( $GLOBALS['wp_filter'][ $filter_name ] ) ? clone $GLOBALS['wp_filter'][ $filter_name ] : null;
+		}
 		$this->reset_frontend_surface_state();
 		add_filter(
 			'woocommerce_available_payment_gateways',
@@ -160,6 +178,11 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		WC()->session = $this->original_session;
+		if ( null === $this->original_direct_checkout_option ) {
+			delete_option( '_wcpay_feature_woopay_direct_checkout' );
+		} else {
+			update_option( '_wcpay_feature_woopay_direct_checkout', $this->original_direct_checkout_option );
+		}
 		wc_empty_cart();
 		delete_option( 'wcpay_woopay_checkout_appearance' );
 		delete_option( 'wcpay_styles_cache_version' );
@@ -177,8 +200,13 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 				)
 			);
 		}
-		remove_all_filters( 'woocommerce_woopayments_woopay_blog_id' );
-		remove_all_filters( 'woocommerce_woopayments_woopay_blog_token' );
+		foreach ( $this->original_blog_identity_filters as $filter_name => $hook ) {
+			if ( null === $hook ) {
+				unset( $GLOBALS['wp_filter'][ $filter_name ] );
+			} else {
+				$GLOBALS['wp_filter'][ $filter_name ] = $hook; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the exact pre-test hook snapshot.
+			}
+		}
 		remove_all_filters( 'pre_http_request' );
 		remove_all_filters( 'rest_pre_dispatch' );
 		remove_all_filters( 'woocommerce_store_api_disable_nonce_check' );
@@ -997,6 +1025,115 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertNotSame( false, base64_decode( $result['data']['iv'], true ) );
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Verifies WooPay encrypted payload encoding.
 		$this->assertNotSame( false, base64_decode( $result['data']['hash'], true ) );
+	}
+
+	/**
+	 * @testdox Should expose direct checkout only when the feature, account, gateway, and WooPay are enabled.
+	 * @dataProvider direct_checkout_eligibility_provider
+	 *
+	 * @param string|null $feature_option Feature option value, or null when absent.
+	 * @param bool        $account_eligible Whether the account is direct-checkout eligible.
+	 * @param bool        $gateway_enabled Whether the base gateway is enabled.
+	 * @param bool        $woopay_enabled Whether WooPay is enabled.
+	 * @param bool        $expected Expected direct-checkout config value.
+	 */
+	public function test_frontend_config_reports_direct_checkout_eligibility( ?string $feature_option, bool $account_eligible, bool $gateway_enabled, bool $woopay_enabled, bool $expected ): void {
+		if ( null === $feature_option ) {
+			delete_option( '_wcpay_feature_woopay_direct_checkout' );
+		} else {
+			update_option( '_wcpay_feature_woopay_direct_checkout', $feature_option );
+		}
+
+		if ( ! $gateway_enabled ) {
+			add_filter(
+				'woocommerce_available_payment_gateways',
+				static function ( array $gateways ): array {
+					unset( $gateways['woocommerce_payments'] );
+
+					return $gateways;
+				},
+				20
+			);
+		}
+
+		$sut = $this->create_service(
+			array( 'platform_checkout' => $woopay_enabled ? 'yes' : 'no' ),
+			array( 'platform_direct_checkout_eligible' => $account_eligible )
+		);
+
+		$this->assertSame( $expected, $sut->get_woopay_frontend_config( 'cart' )['isWooPayDirectCheckoutEnabled'] );
+	}
+
+	/**
+	 * Provide direct-checkout eligibility combinations from WooPayments Client 11.1.0.
+	 *
+	 * @return array<string,array{string|null,bool,bool,bool,bool}>
+	 */
+	public function direct_checkout_eligibility_provider(): array {
+		return array(
+			'eligible with absent option' => array( null, true, true, true, true ),
+			'explicitly disabled option'  => array( '0', true, true, true, false ),
+			'ineligible account'          => array( '1', false, true, true, false ),
+			'disabled gateway'            => array( '1', true, false, true, false ),
+			'disabled WooPay'             => array( '1', true, true, false, false ),
+		);
+	}
+
+	/**
+	 * @testdox Should prefer a sanitized email from a valid encrypted identity envelope.
+	 */
+	public function test_encrypted_session_data_uses_valid_encrypted_identity_email(): void {
+		WC()->customer->set_billing_email( 'fallback@example.com' );
+		$request = array(
+			'encrypted_data' => $this->create_encrypted_identity_envelope( '{"user_email":"shopper+direct@example.com"}' ),
+		);
+
+		$session = $this->decrypt_store_session( $this->create_service()->get_encrypted_session_data( $request ) );
+
+		$this->assertSame( 'shopper+direct@example.com', $session['email'] );
+	}
+
+	/**
+	 * @testdox Should ignore an invalid encrypted identity envelope and retain the customer email fallback.
+	 * @dataProvider invalid_encrypted_identity_provider
+	 *
+	 * @param string $failure Invalid envelope failure to create.
+	 */
+	public function test_encrypted_session_data_ignores_invalid_encrypted_identity( string $failure ): void {
+		WC()->customer->set_billing_email( 'fallback@example.com' );
+		$json     = 'invalid-json' === $failure ? '{' : sprintf( '{"user_email":"%s"}', 'invalid-email' === $failure ? 'not an email' : 'secret@example.com' );
+		$envelope = $this->create_encrypted_identity_envelope( $json );
+
+		if ( 'invalid-hmac' === $failure ) {
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Builds a malformed WooPay identity fixture.
+			$envelope['hash'] = base64_encode( 'invalid-hmac' );
+		} elseif ( 'invalid-base64' === $failure ) {
+			$envelope['data'] = '%%%not-base64%%%';
+		} elseif ( 'malformed-fields' === $failure ) {
+			unset( $envelope['iv'] );
+		}
+
+		$session = $this->decrypt_store_session(
+			$this->create_service()->get_encrypted_session_data( array( 'encrypted_data' => $envelope ) )
+		);
+
+		$this->assertSame( 'fallback@example.com', $session['email'] );
+		$this->assertStringNotContainsString( 'secret@example.com', wp_json_encode( $session ) );
+	}
+
+	/**
+	 * Provide invalid encrypted identity failures.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function invalid_encrypted_identity_provider(): array {
+		return array(
+			'invalid HMAC'     => array( 'invalid-hmac' ),
+			'invalid base64'   => array( 'invalid-base64' ),
+			'malformed fields' => array( 'malformed-fields' ),
+			'invalid JSON'     => array( 'invalid-json' ),
+			'invalid email'    => array( 'invalid-email' ),
+		);
 	}
 
 	/**
@@ -2194,6 +2331,61 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$type = $reflection->getProperty( 'rest_authentication_type' );
 		$type->setAccessible( true );
 		$type->setValue( $instance, null );
+	}
+
+	/**
+	 * Create an encrypted identity envelope using the WooPayments Client 11.1.0 contract.
+	 *
+	 * @param string $json Identity JSON.
+	 * @return array<string,string>
+	 */
+	private function create_encrypted_identity_envelope( string $json ): array {
+		$blog_token = 'blog-token';
+		$iv         = str_repeat( 'i', 16 );
+		$data       = openssl_encrypt( $json, 'aes-256-cbc', $blog_token, OPENSSL_RAW_DATA, $iv );
+		if ( false === $data ) {
+			throw new \RuntimeException( 'Could not encrypt the WooPay identity fixture.' );
+		}
+
+		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
+		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => $blog_token );
+
+		return array(
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes the WooPay identity fixture contract.
+			'data' => base64_encode( $data ),
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes the WooPay identity fixture contract.
+			'iv'   => base64_encode( $iv ),
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes the WooPay identity fixture contract.
+			'hash' => base64_encode( hash_hmac( 'sha256', $iv . $data, $blog_token ) ),
+		);
+	}
+
+	/**
+	 * Decrypt the store session returned by the service.
+	 *
+	 * @param array<string,mixed> $encrypted_session Encrypted store session.
+	 * @return array<string,mixed>
+	 */
+	private function decrypt_store_session( array $encrypted_session ): array {
+		$this->assertSame( '12345', $encrypted_session['blog_id'] );
+		$this->assertIsArray( $encrypted_session['data'] );
+
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the encrypted store-session fixture.
+		$data = base64_decode( $encrypted_session['data']['session'], true );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the encrypted store-session fixture.
+		$iv = base64_decode( $encrypted_session['data']['iv'], true );
+		if ( false === $data || false === $iv ) {
+			throw new \RuntimeException( 'Could not decode the encrypted store-session fixture.' );
+		}
+
+		$json = openssl_decrypt( $data, 'aes-256-cbc', 'blog-token', OPENSSL_RAW_DATA, $iv );
+		if ( false === $json ) {
+			throw new \RuntimeException( 'Could not decrypt the store-session fixture.' );
+		}
+		$session = json_decode( $json, true );
+		$this->assertIsArray( $session );
+
+		return $session;
 	}
 
 	/**

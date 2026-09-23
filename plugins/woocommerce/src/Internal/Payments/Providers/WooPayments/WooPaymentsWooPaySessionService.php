@@ -419,17 +419,22 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * Resolve the WooPay session email through the plugin's fallback chain.
 	 *
-	 * Mirrors WooPay_Session::get_user_email() minus the request-parameter reads (native's
-	 * entry points pass the parameter explicitly) and the encrypted_data branch (its only
-	 * producer, WooPay Direct Checkout, is not ported): supplied email, then the WooCommerce
-	 * customer's billing/account email, then the logged-in user's email.
+	 * Mirrors WooPay_Session::get_user_email() minus the request-parameter reads because native
+	 * entry points pass them explicitly: supplied email, verified encrypted identity, the
+	 * WooCommerce customer's billing/account email, then the logged-in user's email.
 	 *
-	 * @param string|null $email Email supplied with the request, if any.
+	 * @param string|null              $email          Email supplied with the request, if any.
+	 * @param array<string,mixed>|null $encrypted_data Encrypted WooPay identity envelope, if any.
 	 * @return string
 	 */
-	private function resolve_session_email( ?string $email ): string {
+	private function resolve_session_email( ?string $email, ?array $encrypted_data = null ): string {
 		if ( null !== $email && '' !== $email ) {
 			return $email;
+		}
+
+		$identity_email = $this->get_verified_identity_email( $encrypted_data );
+		if ( '' !== $identity_email ) {
+			return $identity_email;
 		}
 
 		$customer = WC()->customer;
@@ -451,6 +456,75 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Get the sanitized email from a verified WooPay identity envelope.
+	 *
+	 * @param array<string,mixed>|null $encrypted_data Encrypted WooPay identity envelope.
+	 * @return string
+	 */
+	private function get_verified_identity_email( ?array $encrypted_data ): string {
+		$identity = $this->decrypt_identity_data( $encrypted_data );
+		if ( ! is_string( $identity['user_email'] ?? null ) ) {
+			return '';
+		}
+
+		$email = sanitize_email( $identity['user_email'] );
+
+		return is_email( $email ) ? $email : '';
+	}
+
+	/**
+	 * Verify and decrypt a WooPay identity envelope.
+	 *
+	 * @param array<string,mixed>|null $encrypted_data Encrypted WooPay identity envelope.
+	 * @return array<string,mixed>
+	 */
+	private function decrypt_identity_data( ?array $encrypted_data ): array {
+		if ( null === $encrypted_data ) {
+			return array();
+		}
+
+		$field_names = array_keys( $encrypted_data );
+		sort( $field_names );
+		if ( array( 'data', 'hash', 'iv' ) !== $field_names ) {
+			return array();
+		}
+
+		if ( ! is_string( $encrypted_data['data'] ) || ! is_string( $encrypted_data['iv'] ) || ! is_string( $encrypted_data['hash'] ) ) {
+			return array();
+		}
+
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the WooPay identity envelope.
+		$data = base64_decode( $encrypted_data['data'], true );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the WooPay identity envelope.
+		$iv = base64_decode( $encrypted_data['iv'], true );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the WooPay identity envelope.
+		$hash = base64_decode( $encrypted_data['hash'], true );
+		if ( false === $data || false === $iv || false === $hash || '' === $data ) {
+			return array();
+		}
+
+		$iv_length  = openssl_cipher_iv_length( 'aes-256-cbc' );
+		$blog_token = $this->get_store_blog_token();
+		if ( false === $iv_length || strlen( $iv ) !== $iv_length || '' === $blog_token ) {
+			return array();
+		}
+
+		$computed_hash = hash_hmac( 'sha256', $iv . $data, $blog_token );
+		if ( ! hash_equals( $computed_hash, $hash ) ) {
+			return array();
+		}
+
+		$decrypted_data = openssl_decrypt( $data, 'aes-256-cbc', $blog_token, OPENSSL_RAW_DATA, $iv );
+		if ( false === $decrypted_data ) {
+			return array();
+		}
+
+		$identity = json_decode( $decrypted_data, true );
+
+		return is_array( $identity ) ? $identity : array();
 	}
 
 	/**
@@ -674,9 +748,13 @@ class WooPaymentsWooPaySessionService {
 	 * @return array<string,mixed>
 	 */
 	public function get_encrypted_session_data( array $request ): array {
+		$email          = $this->get_request_string( $request, 'email' );
+		$encrypted_data = isset( $request['encrypted_data'] ) && is_array( $request['encrypted_data'] ) ? $request['encrypted_data'] : null;
+		$email          = $this->resolve_session_email( $email, $encrypted_data );
+
 		return $this->encrypt_and_sign_data(
 			$this->get_init_session_request(
-				$this->get_request_string( $request, 'email' ),
+				$email,
 				$this->get_request_string( $request, 'user_session' ),
 				null,
 				$this->get_request_int( $request, 'order_id' ),
@@ -958,9 +1036,7 @@ class WooPaymentsWooPaySessionService {
 			'isWoopayExpressCheckoutEnabled'    => $woopay_express_available,
 			'isWoopayFirstPartyAuthEnabled'     => $woopay_first_party_auth_available,
 			'isWooPayEmailInputEnabled'         => $this->is_woopay_email_input_enabled(),
-			// The direct-checkout front end is not ported yet; advertising it without a JS
-			// consumer breaks WooPay's expectations. Flip this when the flow lands.
-			'isWooPayDirectCheckoutEnabled'     => false,
+			'isWooPayDirectCheckoutEnabled'     => $this->is_woopay_direct_checkout_enabled(),
 			'isWooPayGlobalThemeSupportEnabled' => $is_global_theme_enabled,
 			'forceNetworkSavedCards'            => $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page( $context ),
 			'ajaxUrl'                           => admin_url( 'admin-ajax.php' ),
@@ -1379,6 +1455,20 @@ class WooPaymentsWooPaySessionService {
 		$available_gateways = WC()->payment_gateways()->get_available_payment_gateways();
 
 		return isset( $available_gateways['woocommerce_payments'] );
+	}
+
+	/**
+	 * Tell whether WooPay direct checkout is enabled for this store.
+	 *
+	 * @return bool
+	 */
+	private function is_woopay_direct_checkout_enabled(): bool {
+		$account_data = $this->get_account_service()->get_cached_account_data();
+
+		return ! empty( $account_data['platform_direct_checkout_eligible'] )
+			&& '1' === get_option( '_wcpay_feature_woopay_direct_checkout', '1' )
+			&& $this->is_woopay_gateway_available()
+			&& $this->is_woopay_enabled();
 	}
 
 	/**
