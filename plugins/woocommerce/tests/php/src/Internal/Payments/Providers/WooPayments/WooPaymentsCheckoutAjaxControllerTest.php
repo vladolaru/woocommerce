@@ -871,8 +871,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
 		$this->assertSame( 'visa', $order->get_meta( '_card_brand', true ) );
 		$this->assertStringContainsString( '"last4":"4242"', (string) $order->get_meta( '_wcpay_payment_method_details', true ) );
-		$this->assert_order_has_note_containing( $order, 'A payment of' );
-		$this->assert_order_has_note_containing( $order, 'was <strong>successfully charged</strong> using WooPayments' );
+		$this->assert_order_has_note_containing( $order, 'A test payment of' );
+		$this->assert_order_has_note_containing( $order, 'was processed using WooPayments in <strong>test mode</strong>' );
+		$this->assert_order_has_note_containing( $order, 'No real funds were collected' );
+		$this->assert_order_has_no_note_containing( $order, 'was <strong>successfully charged</strong> using WooPayments' );
 		$this->assert_order_has_note_containing( $order, 'pi_native' );
 		$this->assert_order_has_note_containing( $order, 'page=wc-admin' );
 		$this->assert_order_has_note_containing( $order, 'id=pi_native' );
