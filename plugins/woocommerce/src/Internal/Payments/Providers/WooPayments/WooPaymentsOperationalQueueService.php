@@ -313,14 +313,36 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			return;
 		}
 
-		$payment_method = $order->get_payment_method();
-		$mode           = $order->get_meta( '_wcpay_mode', true );
-		$is_test_order  = OrderPaymentStore::GATEWAY_ID === $payment_method && 'test' === $mode;
-		if ( ! $is_test_order && false !== get_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT ) ) {
-			delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
+		$has_cached_one_and_done_eligibility = false !== get_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
+		$has_live_sale                       = (bool) get_option( self::HAS_LIVE_SALE_OPTION );
+		if ( ! $has_cached_one_and_done_eligibility && $has_live_sale ) {
+			return;
 		}
 
-		if ( get_option( self::HAS_LIVE_SALE_OPTION ) || OrderPaymentStore::GATEWAY_ID !== $payment_method || ! is_string( $mode ) || ! in_array( $mode, array( 'production', 'prod', 'live' ), true ) ) {
+		$payment_method = $order->get_payment_method();
+		$mode           = null;
+		$mode_loaded    = false;
+		if ( $has_cached_one_and_done_eligibility ) {
+			if ( OrderPaymentStore::GATEWAY_ID !== $payment_method ) {
+				delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
+			} else {
+				$mode        = $order->get_meta( '_wcpay_mode', true );
+				$mode_loaded = true;
+				if ( 'test' !== $mode ) {
+					delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
+				}
+			}
+		}
+
+		if ( $has_live_sale || OrderPaymentStore::GATEWAY_ID !== $payment_method ) {
+			return;
+		}
+
+		if ( ! $mode_loaded ) {
+			$mode = $order->get_meta( '_wcpay_mode', true );
+		}
+
+		if ( ! is_string( $mode ) || ! in_array( $mode, array( 'production', 'prod', 'live' ), true ) ) {
 			return;
 		}
 

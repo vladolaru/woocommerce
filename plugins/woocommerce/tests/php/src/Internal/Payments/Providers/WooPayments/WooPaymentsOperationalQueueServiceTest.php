@@ -184,6 +184,36 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A paid transition skips order mode metadata when no eligibility cache remains after a live sale.
+	 */
+	public function test_paid_order_status_transition_without_eligibility_cache_skips_mode_meta(): void {
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$order   = $this->createMock( WC_Order::class );
+		$order->expects( $this->never() )->method( 'get_meta' );
+		update_option( 'wcpay_has_live_sale', '1', false );
+		delete_transient( 'wcpay_one_and_done_eligible' );
+
+		$service->handle_woocommerce_order_status_changed( 123, OrderStatus::PENDING, OrderStatus::PROCESSING, $order );
+
+		$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
+	}
+
+	/**
+	 * @testdox An alternate-gateway paid transition invalidates cached eligibility without reading order mode metadata.
+	 */
+	public function test_alternate_gateway_order_status_transition_invalidates_cache_without_mode_meta(): void {
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$order   = $this->createMock( WC_Order::class );
+		$order->expects( $this->once() )->method( 'get_payment_method' )->willReturn( 'cod' );
+		$order->expects( $this->never() )->method( 'get_meta' );
+		set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
+
+		$service->handle_woocommerce_order_status_changed( 123, OrderStatus::PENDING, OrderStatus::COMPLETED, $order );
+
+		$this->assertFalse( get_transient( 'wcpay_one_and_done_eligible' ) );
+	}
+
+	/**
 	 * @testdox A test WooPayments transition leaves cached one-and-done eligibility unchanged.
 	 */
 	public function test_test_order_status_transition_preserves_one_and_done_cache(): void {
