@@ -2286,6 +2286,70 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep distinct plugin-less suggestions while deduplicating suggestions that share a plugin slug.
+	 */
+	public function test_get_extension_suggestions_only_deduplicates_suggestions_with_plugin_slugs(): void {
+		$location         = 'US';
+		$base_suggestions = array(
+			array(
+				'id'          => 'pluginless-preferred',
+				'_priority'   => 1,
+				'_type'       => ExtensionSuggestions::TYPE_PSP,
+				'title'       => 'Plugin-less preferred suggestion',
+				'description' => 'Preferred native provider.',
+				'links'       => array(),
+				'tags'        => array( ExtensionSuggestions::TAG_PREFERRED ),
+			),
+			array(
+				'id'          => 'pluginless-other',
+				'_priority'   => 2,
+				'_type'       => ExtensionSuggestions::TYPE_PSP,
+				'title'       => 'Plugin-less other suggestion',
+				'description' => 'Another native provider.',
+				'links'       => array(),
+				'tags'        => array(),
+			),
+			array(
+				'id'          => 'plugin-first',
+				'_priority'   => 3,
+				'_type'       => ExtensionSuggestions::TYPE_PSP,
+				'title'       => 'First plugin suggestion',
+				'description' => 'First plugin provider.',
+				'plugin'      => array(
+					'_type' => ExtensionSuggestions::PLUGIN_TYPE_WPORG,
+					'slug'  => 'shared-plugin',
+				),
+				'links'       => array(),
+				'tags'        => array(),
+			),
+			array(
+				'id'          => 'plugin-duplicate',
+				'_priority'   => 4,
+				'_type'       => ExtensionSuggestions::TYPE_PSP,
+				'title'       => 'Duplicate plugin suggestion',
+				'description' => 'Duplicate plugin provider.',
+				'plugin'      => array(
+					'_type' => ExtensionSuggestions::PLUGIN_TYPE_WPORG,
+					'slug'  => 'shared-plugin',
+				),
+				'links'       => array(),
+				'tags'        => array(),
+			),
+		);
+
+		$this->mock_extension_suggestions
+			->expects( $this->once() )
+			->method( 'get_country_extensions' )
+			->with( $location )
+			->willReturn( $base_suggestions );
+
+		$suggestions = $this->sut->get_extension_suggestions( $location );
+
+		$this->assertSame( array( 'pluginless-preferred' ), array_column( $suggestions['preferred'], 'id' ) );
+		$this->assertSame( array( 'pluginless-other', 'plugin-first' ), array_column( $suggestions['other'], 'id' ) );
+	}
+
+	/**
 	 * Test getting the payment extension suggestions throws exception.
 	 */
 	public function test_get_extension_suggestions_throws() {

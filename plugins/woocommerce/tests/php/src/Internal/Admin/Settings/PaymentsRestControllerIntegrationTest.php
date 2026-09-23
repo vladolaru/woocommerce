@@ -485,6 +485,31 @@ class PaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Merged feature development should expose WooPayments plugin install metadata through the providers endpoint.
+	 */
+	public function test_get_payment_providers_preserves_woopayments_plugin_metadata_for_merged_feature_development(): void {
+		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+		$filter_callback = fn( $caps ) => array(
+			'manage_woocommerce' => true,
+			'install_plugins'    => true,
+		);
+		add_filter( 'user_has_cap', $filter_callback );
+		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+
+		try {
+			$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/providers' );
+			$request->set_param( 'location', 'US' );
+			$response = $this->server->dispatch( $request );
+
+			$this->assertSame( 200, $response->get_status() );
+			$this->assertSame( 'woocommerce-payments', $response->get_data()['providers'][0]['plugin']['slug'] );
+		} finally {
+			Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
+			remove_filter( 'user_has_cap', $filter_callback );
+		}
+	}
+
+	/**
 	 * Test getting payment providers with an enabled payment gateway.
 	 *
 	 * This means suggestions are returned.
@@ -699,8 +724,7 @@ class PaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'links', $suggestion, 'Provider (suggestion) `links` entry is missing' );
 		$this->assertCount( 5, $suggestion['links'] );
 		$this->assertArrayHasKey( 'plugin', $suggestion, 'Provider (suggestion) `plugin` entry is missing' );
-		$this->assertArrayHasKey( 'slug', $suggestion['plugin'], 'Provider (suggestion) `plugin[slug]` entry is missing' );
-		$this->assertSame( 'woocommerce-payments', $suggestion['plugin']['slug'] );
+		$this->assertArrayNotHasKey( 'slug', $suggestion['plugin'], 'Core-native WooPayments should not expose plugin install metadata' );
 		$this->assertArrayHasKey( 'status', $suggestion['plugin'], 'Provider (suggestion) `plugin[status]` entry is missing' );
 		$this->assertSame( PaymentsProviders::EXTENSION_NOT_INSTALLED, $suggestion['plugin']['status'] );
 		$this->assertArrayHasKey( 'tags', $suggestion, 'Provider (suggestion) `tags` entry is missing' );
@@ -715,7 +739,7 @@ class PaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 				'title'             => 'Save X% on processing fees.',
 				'description'       => 'Use the native payments solution built and supported by Woo.',
 				'short_description' => 'Save X% on processing fees.',
-				'cta_label'         => 'Save X%',
+				'cta_label'         => 'Get started',
 				'tc_url'            => 'https://woocommerce.com/terms-conditions',
 				'badge'             => 'Save X% on processing fees',
 				'_dismissals'       => array(),

@@ -868,15 +868,17 @@ class PaymentsProviders {
 			// But first, make sure there isn't already an extension added to the other list with the same plugin slug.
 			// This can happen if the same extension is suggested as both a PSP and an APM.
 			// The first entry that we encounter is the one that we keep.
-			$extension_slug   = $extension['plugin']['slug'];
-			$extension_exists = array_filter(
-				$other,
-				function ( $suggestion ) use ( $extension_slug ) {
-					return $suggestion['plugin']['slug'] === $extension_slug;
+			$extension_slug = $extension['plugin']['slug'] ?? '';
+			if ( ! empty( $extension_slug ) ) {
+				$extension_exists = array_filter(
+					$other,
+					function ( $suggestion ) use ( $extension_slug ) {
+						return isset( $suggestion['plugin']['slug'] ) && $suggestion['plugin']['slug'] === $extension_slug;
+					}
+				);
+				if ( ! empty( $extension_exists ) ) {
+					continue;
 				}
-			);
-			if ( ! empty( $extension_exists ) ) {
-				continue;
 			}
 
 			$other[] = $extension;
@@ -887,8 +889,10 @@ class PaymentsProviders {
 			array_filter(
 				$other,
 				function ( $suggestion ) use ( $preferred_psp, $preferred_apm ) {
-					return ( empty( $preferred_psp ) || $suggestion['plugin']['slug'] !== $preferred_psp['plugin']['slug'] ) &&
-							( empty( $preferred_apm ) || $suggestion['plugin']['slug'] !== $preferred_apm['plugin']['slug'] );
+					$suggestion_slug = $suggestion['plugin']['slug'] ?? '';
+
+					return ( empty( $preferred_psp['plugin']['slug'] ) || $suggestion_slug !== $preferred_psp['plugin']['slug'] ) &&
+							( empty( $preferred_apm['plugin']['slug'] ) || $suggestion_slug !== $preferred_apm['plugin']['slug'] );
 				}
 			)
 		);
