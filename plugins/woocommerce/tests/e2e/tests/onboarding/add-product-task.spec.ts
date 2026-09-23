@@ -97,12 +97,31 @@ test.describe( 'Add Product Task', () => {
 		const idsToDelete = [ ...createdProductIds ];
 		// Every teardown call runs before anything is asserted: a failed delete must not stop
 		// the task list from being unhidden, or the rest of this serial project inherits it.
-		const deleteResponse = idsToDelete.length
-			? await restApi.post( `${ WC_API_PATH }/products/batch`, {
-					delete: idsToDelete,
-			  } )
-			: null;
-		const taskListShown = await show_task_list( restApi, 'setup' );
+		const [ deleteResult, taskListResult ] = await Promise.allSettled( [
+			idsToDelete.length
+				? restApi.post( `${ WC_API_PATH }/products/batch`, {
+						delete: idsToDelete,
+				  } )
+				: Promise.resolve( null ),
+			show_task_list( restApi, 'setup' ),
+		] );
+		if (
+			deleteResult.status === 'rejected' &&
+			taskListResult.status === 'rejected'
+		) {
+			throw new AggregateError(
+				[ deleteResult.reason, taskListResult.reason ],
+				'Product deletion and task-list restoration both failed.'
+			);
+		}
+		if ( deleteResult.status === 'rejected' ) {
+			throw deleteResult.reason;
+		}
+		if ( taskListResult.status === 'rejected' ) {
+			throw taskListResult.reason;
+		}
+		const deleteResponse = deleteResult.value;
+		const taskListShown = taskListResult.value;
 
 		// On a passing run the test deletes its own product, so there is nothing left here
 		// and no response to check. Asserting 200 unconditionally would pass whether a
