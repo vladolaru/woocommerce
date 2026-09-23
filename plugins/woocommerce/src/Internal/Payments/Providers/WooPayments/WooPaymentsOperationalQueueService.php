@@ -299,6 +299,8 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	/**
 	 * Record a qualifying live WooPayments sale when an order reaches a paid status.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @internal
 	 *
 	 * @param mixed $order_id   Order ID supplied by the hook.

@@ -99,6 +99,8 @@ class WooPaymentsAdminNoticeService {
 	/**
 	 * Set the clock used for notice markers.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param callable|null $clock Optional test clock.
 	 */
 	public function __construct( ?callable $clock = null ) {
@@ -107,6 +109,8 @@ class WooPaymentsAdminNoticeService {
 
 	/**
 	 * Initialize the notice service.
+	 *
+	 * @since 11.2.0
 	 *
 	 * @internal
 	 *
