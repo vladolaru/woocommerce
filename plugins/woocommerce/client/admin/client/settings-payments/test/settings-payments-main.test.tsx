@@ -13,7 +13,11 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter as Router } from 'react-router-dom';
 import { dispatch, select } from '@wordpress/data';
 import { paymentSettingsStore } from '@woocommerce/data';
-import type { PaymentsProvider } from '@woocommerce/data';
+import type {
+	OfflinePaymentMethodProvider,
+	PaymentsProvider,
+	SuggestedPaymentsExtension,
+} from '@woocommerce/data';
 import apiFetch from '@wordpress/api-fetch';
 
 /**
@@ -252,6 +256,32 @@ describe( 'SettingsPaymentsMain', () => {
 				<SettingsPaymentsMain />
 			</Router>
 		);
+		expect( screen.queryByText( noticeMessage ) ).not.toBeInTheDocument();
+	} );
+
+	it( 'ignores notices attached to suggestions and offline methods', () => {
+		const suggestion = {
+			...noticeProvider,
+			_type: 'suggestion',
+		} as unknown as SuggestedPaymentsExtension;
+		const offlineMethod = {
+			...noticeProvider,
+			_type: 'offline_pm',
+		} as unknown as OfflinePaymentMethodProvider;
+		act( () => {
+			dispatch( paymentSettingsStore ).getPaymentProvidersSuccess(
+				[],
+				[ offlineMethod ],
+				[ suggestion ],
+				[]
+			);
+		} );
+		render(
+			<Router>
+				<SettingsPaymentsMain />
+			</Router>
+		);
+
 		expect( screen.queryByText( noticeMessage ) ).not.toBeInTheDocument();
 	} );
 

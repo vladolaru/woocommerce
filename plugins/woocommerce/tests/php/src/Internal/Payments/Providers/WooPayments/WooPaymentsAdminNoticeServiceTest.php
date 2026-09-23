@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Order;
 use WC_Unit_Test_Case;
 use WP_Error;
@@ -23,6 +24,17 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_container_resolves_notice_service(): void {
 		$this->assertInstanceOf( WooPaymentsAdminNoticeService::class, wc_get_container()->get( WooPaymentsAdminNoticeService::class ) );
+	}
+
+	/**
+	 * @testdox The notice service should stay out of every native bootstrap root.
+	 */
+	public function test_notice_service_is_absent_from_native_bootstrap_roots(): void {
+		foreach ( WooPaymentsProvider::get_bootstrap_root_matrix() as $state => $request_groups ) {
+			foreach ( $request_groups as $request => $roots ) {
+				$this->assertNotContains( WooPaymentsAdminNoticeService::class, $roots, $state . ' ' . $request . ' requests must not bootstrap the notice service.' );
+			}
+		}
 	}
 
 	/**
@@ -73,6 +85,45 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'test', $queries[0]['meta_value'] );
 			$this->assertSame( $notice, $sut->get_notice_for_current_user() );
 			$this->assertCount( 1, $queries, 'The one-hour site transient should prevent another existence query.' );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_option( 'wcpay_test_mode_enabled_date' );
+			delete_transient( 'wcpay_test_to_live_eligible' );
+		}
+	}
+
+	/**
+	 * @testdox Test-to-live eligibility should keep one bounded ID query with a large irrelevant order fixture.
+	 */
+	public function test_test_to_live_query_stays_bounded_with_many_irrelevant_orders(): void {
+		$now = 1700000000;
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		delete_transient( 'wcpay_test_to_live_eligible' );
+		update_option( 'wcpay_test_mode_enabled_date', $now - 7 * DAY_IN_SECONDS, false );
+		for ( $index = 0; $index < 10; ++$index ) {
+			$this->create_paid_order( 'cod', '', $now - DAY_IN_SECONDS );
+		}
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'test', $now - DAY_IN_SECONDS );
+
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_working_account' )->willReturn( true );
+		$account->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
+		$sut->init( $account );
+		$queries      = array();
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			$queries[] = $args;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$this->assertNotNull( $sut->get_notice_for_current_user() );
+			$this->assertCount( 1, $queries, 'Irrelevant order volume must not increase the test-to-live query count.' );
+			$this->assertSame( 1, $queries[0]['limit'] );
+			$this->assertSame( 'none', $queries[0]['orderby'] );
+			$this->assertSame( 'ids', $queries[0]['return'] );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
 			delete_option( 'wcpay_test_mode_enabled_date' );
@@ -139,6 +190,38 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			Notes::delete_notes_with_name( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) );
 			delete_option( 'wcpay_test_mode_enabled_date' );
 			delete_transient( 'wcpay_test_to_live_eligible' );
+		}
+	}
+
+	/**
+	 * @testdox A handled test-to-live notice should still remove only its obsolete inbox notes.
+	 */
+	public function test_handled_test_to_live_notice_cleans_only_legacy_inbox_notes(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user_id );
+		update_user_meta( $user_id, 'wcpay_test_to_live_notice_dismissed', 1700000000 );
+		foreach ( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) as $name ) {
+			$note = new Note();
+			$note->set_name( $name );
+			$note->set_title( 'Existing note' );
+			$note->set_content( 'Existing note content' );
+			$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
+			$note->save();
+		}
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_working_account' )->willReturn( true );
+		$account->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
+		$sut->init( $account );
+
+		try {
+			$this->assertNull( $sut->get_notice_for_current_user() );
+			$data_store = Notes::load_data_store();
+			$this->assertEmpty( $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ) );
+			$this->assertCount( 1, $data_store->get_notes_with_name( 'unrelated-note' ) );
+		} finally {
+			Notes::delete_notes_with_name( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) );
 		}
 	}
 
@@ -1015,6 +1098,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_kyc_completion_date', $main_kyc_date, false );
 		delete_option( 'wcpay_has_live_sale' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
 		$order = \WC_Helper_Order::create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
@@ -1042,6 +1126,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			\WC_Install::create_tables();
 			add_filter( 'woocommerce_order_query_args', $record_query );
 			update_option( 'wcpay_kyc_completion_date', $now - 7 * DAY_IN_SECONDS, false );
+			set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
 
 			$this->assertFalse( get_option( 'wcpay_has_live_sale' ), 'The main-blog live-sale marker must not leak to the secondary blog.' );
 			$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ), 'The main-blog transient must not leak to the secondary blog.' );
@@ -1071,6 +1156,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			delete_option( 'wcpay_kyc_completion_date' );
 			delete_option( 'wcpay_has_live_sale' );
 			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
 			wpmu_delete_blog( $secondary_blog_id, true );
 		}
 	}
