@@ -140,6 +140,25 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The subscriptions lookup double accepts an order object.
+	 */
+	public function test_wcs_subscriptions_for_order_double_accepts_order_object(): void {
+		$this->ensure_wcs_subscriptions_for_order_double();
+		$order         = $this->create_woopayments_order();
+		$parent        = $this->create_woopayments_order();
+		$renewal       = $this->create_woopayments_order();
+		$relationships = array(
+			'parent'  => array( $parent->get_id() ),
+			'renewal' => array( $renewal->get_id() ),
+		);
+
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => $relationships );
+		$related = wcs_get_subscriptions_for_order( $order, array( 'order_type' => array( 'parent', 'renewal' ) ) );
+
+		$this->assertSame( array( $parent->get_id(), $renewal->get_id() ), array_map( static fn( WC_Order $subscription ): int => $subscription->get_id(), $related ) );
+	}
+
+	/**
 	 * @testdox Should create a card token from WooPayments payment method details.
 	 */
 	public function test_creates_card_token_from_payment_method_details(): void {
@@ -1827,7 +1846,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		}
 
 		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order lookup contract.
-		eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["wcpay_test_order_subscription_relationships"][ absint( $order_id ) ] ?? array(); $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
+		eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_id = is_object( $order_id ) && method_exists( $order_id, "get_id" ) ? $order_id->get_id() : absint( $order_id ); $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["wcpay_test_order_subscription_relationships"][ $order_id ] ?? array(); $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
 	}
 
 	/**
