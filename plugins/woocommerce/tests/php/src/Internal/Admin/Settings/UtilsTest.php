@@ -1869,7 +1869,11 @@ class UtilsTest extends WC_Unit_Test_Case {
 		$manager->method( 'is_connected' )->willReturn( true );
 		$manager->method( 'get_authorization_url' )->willReturn( 'https://example.test/authorize' );
 
-		$property                                  = new \ReflectionProperty( JetpackConnection::class, 'manager' );
+		$property = new \ReflectionProperty( JetpackConnection::class, 'manager' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$property->setAccessible( true );
+		}
+
 		$this->previous_jetpack_connection_manager = $property->getValue();
 		$property->setValue( null, $manager );
 	}
@@ -1879,6 +1883,10 @@ class UtilsTest extends WC_Unit_Test_Case {
 	 */
 	private function restore_jetpack_connection_manager(): void {
 		$property = new \ReflectionProperty( JetpackConnection::class, 'manager' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$property->setAccessible( true );
+		}
+
 		$property->setValue( null, $this->previous_jetpack_connection_manager );
 	}
 
