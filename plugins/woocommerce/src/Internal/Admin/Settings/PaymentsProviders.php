@@ -1458,8 +1458,8 @@ class PaymentsProviders {
 		$suggestion_plugin_slug = $this->get_suggestion_plugin_slug_for_gateway( $payment_gateway, $normalized_plugin_slug );
 
 		// If we have a matching suggestion, hoist details from there.
-		// The suggestions only know about the normalized (aka official) plugin slug.
-		$suggestion = $this->get_extension_suggestion_by_plugin_slug( $suggestion_plugin_slug, $country_code );
+		// Native WooPayments is matched by ID because its localized suggestion intentionally omits plugin metadata.
+		$suggestion = $this->get_extension_suggestion_for_gateway( $payment_gateway, $suggestion_plugin_slug, $country_code );
 		if ( ! is_null( $suggestion ) ) {
 			// The title, description, icon, and image from the suggestion take precedence over the ones from the gateway.
 			// This is temporary until we update the partner extensions.
@@ -1605,6 +1605,27 @@ class PaymentsProviders {
 		}
 
 		return $normalized_plugin_slug;
+	}
+
+	/**
+	 * Get the localized extension suggestion that corresponds to a gateway.
+	 *
+	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
+	 * @param string             $plugin_slug     The normalized suggestion plugin slug.
+	 * @param string             $country_code    The country code for which to get the suggestion.
+	 * @return array|null
+	 */
+	private function get_extension_suggestion_for_gateway( WC_Payment_Gateway $payment_gateway, string $plugin_slug, string $country_code ): ?array {
+		if ( WooPaymentsService::GATEWAY_ID === $payment_gateway->id && ! empty( $country_code ) ) {
+			$suggestions = $this->extension_suggestions->get_country_extensions( strtoupper( $country_code ), Payments::SUGGESTIONS_CONTEXT );
+			foreach ( $suggestions as $suggestion ) {
+				if ( ExtensionSuggestions::WOOPAYMENTS === ( $suggestion['id'] ?? null ) ) {
+					return $suggestion;
+				}
+			}
+		}
+
+		return $this->get_extension_suggestion_by_plugin_slug( $plugin_slug, $country_code );
 	}
 
 	/**
