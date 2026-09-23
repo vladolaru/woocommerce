@@ -156,6 +156,13 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private const POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT = 'wcpay_post_kyc_activation_eligible';
 
 	/**
+	 * Preserved one-and-done eligibility transient.
+	 *
+	 * @var string
+	 */
+	private const ONE_AND_DONE_ELIGIBLE_TRANSIENT = 'wcpay_one_and_done_eligible';
+
+	/**
 	 * Post-KYC activation email stages in days after KYC completion.
 	 *
 	 * @var int[]
@@ -302,16 +309,18 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	public function handle_woocommerce_order_status_changed( $order_id, $old_status, $new_status, $order ): void {
 		unset( $order_id, $old_status );
 
-		if ( get_option( self::HAS_LIVE_SALE_OPTION ) ) {
+		if ( ! $order instanceof WC_Order || ! in_array( $new_status, array( OrderStatus::PROCESSING, OrderStatus::COMPLETED ), true ) ) {
 			return;
 		}
 
-		if ( ! $order instanceof WC_Order || ! in_array( $new_status, array( OrderStatus::PROCESSING, OrderStatus::COMPLETED ), true ) || OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method() ) {
-			return;
+		$payment_method = $order->get_payment_method();
+		$mode           = $order->get_meta( '_wcpay_mode', true );
+		$is_test_order  = OrderPaymentStore::GATEWAY_ID === $payment_method && 'test' === $mode;
+		if ( ! $is_test_order && false !== get_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT ) ) {
+			delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
 		}
 
-		$mode = $order->get_meta( '_wcpay_mode', true );
-		if ( ! is_string( $mode ) || ! in_array( $mode, array( 'production', 'prod', 'live' ), true ) ) {
+		if ( get_option( self::HAS_LIVE_SALE_OPTION ) || OrderPaymentStore::GATEWAY_ID !== $payment_method || ! is_string( $mode ) || ! in_array( $mode, array( 'production', 'prod', 'live' ), true ) ) {
 			return;
 		}
 

@@ -338,11 +338,18 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		if ( 'post_kyc_activation' === $notice_id ) {
 			set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
 		}
+		if ( 'one_and_done' === $notice_id ) {
+			set_transient( 'wcpay_one_and_done_eligible', '1', HOUR_IN_SECONDS );
+		}
 
 		$this->assertTrue( $sut->record_action( $notice_id, $action, $stage ) );
 		if ( 'post_kyc_activation' === $notice_id ) {
 			$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
 			set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
+		}
+		if ( 'one_and_done' === $notice_id ) {
+			$this->assertFalse( get_transient( 'wcpay_one_and_done_eligible' ) );
+			set_transient( 'wcpay_one_and_done_eligible', '1', HOUR_IN_SECONDS );
 		}
 		$first_marker = get_user_meta( $user_id, $meta_key, true );
 		$this->assertNotEmpty( $first_marker );
@@ -353,6 +360,10 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		if ( 'post_kyc_activation' === $notice_id ) {
 			$this->assertSame( '1', get_transient( 'wcpay_post_kyc_activation_eligible' ), 'An idempotent replay should not invalidate eligibility again.' );
 			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		}
+		if ( 'one_and_done' === $notice_id ) {
+			$this->assertSame( '1', get_transient( 'wcpay_one_and_done_eligible' ), 'An idempotent replay should not invalidate eligibility again.' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
 		}
 	}
 
@@ -373,7 +384,245 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			'post-KYC 30 shown'   => array( 'post_kyc_activation', 'shown', 30, 'wcpay_post_kyc_activation_30_shown' ),
 			'post-KYC 30 dismiss' => array( 'post_kyc_activation', 'dismiss', 30, 'wcpay_post_kyc_activation_30_dismissed' ),
 			'first sale shown'    => array( 'one_and_done', 'shown', null, 'wcpay_one_and_done_notice_shown' ),
+			'first sale dismiss'  => array( 'one_and_done', 'dismiss', null, 'wcpay_one_and_done_notice_dismissed_at' ),
 			'first sale snooze'   => array( 'one_and_done', 'snooze', null, 'wcpay_one_and_done_notice_snoozed_at' ),
+		);
+	}
+
+	/**
+	 * @testdox An expired snooze can start a new window without letting request replays extend it.
+	 * @dataProvider provide_snoozable_notices
+	 *
+	 * @param string $notice_id Notice identifier.
+	 * @param string $meta_key  Preserved snooze marker key.
+	 */
+	public function test_expired_snooze_starts_one_fresh_window( string $notice_id, string $meta_key ): void {
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$now = 1700000000;
+		update_user_meta( $user_id, $meta_key, $now - 7 * DAY_IN_SECONDS );
+		$sut = new WooPaymentsAdminNoticeService(
+			static function () use ( &$now ): int {
+				return $now;
+			}
+		);
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+
+		$this->assertTrue( $sut->record_action( $notice_id, 'snooze' ) );
+		$this->assertSame( $now, (int) get_user_meta( $user_id, $meta_key, true ) );
+		$now += DAY_IN_SECONDS;
+		$this->assertTrue( $sut->record_action( $notice_id, 'snooze' ) );
+		$this->assertSame( 1700000000, (int) get_user_meta( $user_id, $meta_key, true ), 'An immediate replay must not extend the fresh snooze.' );
+		$this->assertCount( 1, get_user_meta( $user_id, $meta_key, false ) );
+	}
+
+	/**
+	 * Snoozable notices and their preserved keys.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public static function provide_snoozable_notices(): array {
+		return array(
+			'test-to-live' => array( 'test_to_live', 'wcpay_test_to_live_notice_snoozed' ),
+			'one-and-done' => array( 'one_and_done', 'wcpay_one_and_done_notice_snoozed_at' ),
+		);
+	}
+
+	/**
+	 * @testdox One-and-done requires exactly one seven-day-old live WooPayments order.
+	 * @dataProvider provide_one_and_done_order_cohorts
+	 *
+	 * @param array<int,array{string,string,int}> $orders          Payment method, mode, and age in days.
+	 * @param bool                                $expected_notice Whether the notice should appear.
+	 * @param string                              $expected_cache  Expected cached eligibility.
+	 */
+	public function test_one_and_done_order_cohort( array $orders, bool $expected_notice, string $expected_cache ): void {
+		$now = 1700000000;
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		delete_option( 'wcpay_has_live_sale' );
+		delete_option( 'wcpay_one_and_done_permanently_ineligible' );
+		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		delete_transient( 'wcpay_one_and_done_eligible' );
+		foreach ( $orders as $order_data ) {
+			list( $payment_method, $mode, $age_days ) = $order_data;
+			$this->create_paid_order( $payment_method, $mode, $now - $age_days * DAY_IN_SECONDS );
+		}
+		$sut          = $this->create_live_notice_service( $now );
+		$queries      = array();
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			$queries[] = $args;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$notice = $sut->get_notice_for_current_user();
+			$this->assertSame( $expected_notice, null !== $notice );
+			$this->assertSame( $expected_cache, get_transient( 'wcpay_one_and_done_eligible' ) );
+			$this->assertNotEmpty( $queries );
+			$this->assertSame( OrderPaymentStore::GATEWAY_ID, $queries[0]['payment_method'] );
+			$this->assertSame( 2, $queries[0]['limit'] );
+			$this->assertSame( 'none', $queries[0]['orderby'] );
+			$this->assertSame( 'ids', $queries[0]['return'] );
+			$this->assertSame( array( 'wc-completed', 'wc-processing' ), $queries[0]['status'] );
+			$this->assertSame( '_wcpay_mode', $queries[0]['meta_key'] );
+			$this->assertSame( 'production', $queries[0]['meta_value'] );
+			if ( $expected_notice ) {
+				$this->assertIsArray( $notice );
+				$this->assertSame( 'one_and_done', $notice['id'] );
+				$this->assertSame( "Your store made its first sale. Now bring more shoppers in with Woo's marketing tools.", $notice['message'] );
+				$this->assertSame( 'navigate_and_dismiss', $notice['primary']['kind'] );
+				$this->assertSame( 'Promote my store', $notice['primary']['label'] );
+				$this->assertSame( admin_url( 'admin.php?page=wc-admin&path=/marketing' ), $notice['primary']['href'] );
+				$this->assertSame( 'Maybe later', $notice['secondary']['label'] );
+				$this->assertSame( rest_url( 'wc-admin/settings/payments/woopayments/admin-notices/one_and_done/shown' ), $notice['_links']['shown']['href'] );
+				$this->assertSame( rest_url( 'wc-admin/settings/payments/woopayments/admin-notices/one_and_done/dismiss' ), $notice['_links']['dismiss']['href'] );
+				$this->assertSame( rest_url( 'wc-admin/settings/payments/woopayments/admin-notices/one_and_done/snooze' ), $notice['_links']['snooze']['href'] );
+				$this->assertCount( 2, $queries, 'One-and-done should use only the bounded WooPayments and alternate-gateway queries.' );
+				$this->assertSame( 1, $queries[1]['limit'] );
+				$this->assertSame( 'none', $queries[1]['orderby'] );
+				$this->assertSame( 'ids', $queries[1]['return'] );
+			}
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_option( 'wcpay_has_live_sale' );
+			delete_option( 'wcpay_one_and_done_permanently_ineligible' );
+			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
+		}
+	}
+
+	/**
+	 * One-and-done order cohorts.
+	 *
+	 * @return array<string,array{array<int,array{string,string,int}>,bool,string}>
+	 */
+	public static function provide_one_and_done_order_cohorts(): array {
+		return array(
+			'zero orders'               => array( array(), false, '0' ),
+			'one order before boundary' => array( array( array( OrderPaymentStore::GATEWAY_ID, 'production', 6 ) ), false, '0' ),
+			'one order at boundary'     => array( array( array( OrderPaymentStore::GATEWAY_ID, 'production', 7 ) ), true, '1' ),
+			'test order at boundary'    => array( array( array( OrderPaymentStore::GATEWAY_ID, 'test', 7 ) ), false, '0' ),
+		);
+	}
+
+	/**
+	 * @testdox A second live WooPayments order permanently suppresses one-and-done without future scans.
+	 */
+	public function test_one_and_done_two_live_orders_set_permanent_ineligibility(): void {
+		$now = 1700000000;
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - 8 * DAY_IN_SECONDS );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - DAY_IN_SECONDS );
+		$sut          = $this->create_live_notice_service( $now );
+		$queries      = 0;
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			++$queries;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertSame( '1', get_option( 'wcpay_one_and_done_permanently_ineligible' ) );
+			$this->assertSame( 1, $queries );
+			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertSame( 1, $queries, 'Permanent ineligibility should suppress all future scans.' );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_option( 'wcpay_one_and_done_permanently_ineligible' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
+		}
+	}
+
+	/**
+	 * @testdox Only orders from currently registered alternate gateways permanently disqualify one-and-done.
+	 * @dataProvider provide_alternate_gateway_cases
+	 *
+	 * @param string $gateway_id       Historical order gateway ID.
+	 * @param bool   $expected_notice  Whether the notice should appear.
+	 * @param bool   $expected_permanent Whether permanent ineligibility should be stored.
+	 */
+	public function test_one_and_done_registered_gateway_limitation( string $gateway_id, bool $expected_notice, bool $expected_permanent ): void {
+		$now = 1700000000;
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - 7 * DAY_IN_SECONDS );
+		$this->create_paid_order( $gateway_id, '', $now - DAY_IN_SECONDS );
+		$sut          = $this->create_live_notice_service( $now );
+		$queries      = array();
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			$queries[] = $args;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$this->assertSame( $expected_notice, null !== $sut->get_notice_for_current_user() );
+			$this->assertSame( $expected_permanent, (bool) get_option( 'wcpay_one_and_done_permanently_ineligible' ) );
+			$this->assertCount( 2, $queries );
+			$this->assertIsArray( $queries[1]['payment_method'] );
+			$this->assertNotContains( OrderPaymentStore::GATEWAY_ID, $queries[1]['payment_method'] );
+			$this->assertNotContains( 'removed_gateway', $queries[1]['payment_method'], 'Unregistered historical gateways must not broaden the query.' );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_option( 'wcpay_one_and_done_permanently_ineligible' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
+		}
+	}
+
+	/**
+	 * Registered and unregistered alternate gateway cases.
+	 *
+	 * @return array<string,array{string,bool,bool}>
+	 */
+	public static function provide_alternate_gateway_cases(): array {
+		return array(
+			'registered cash on delivery' => array( 'cod', false, true ),
+			'unregistered old gateway'    => array( 'removed_gateway', true, false ),
+		);
+	}
+
+	/**
+	 * @testdox One-and-done dismissal and snooze guards run before order queries at exact boundaries.
+	 * @dataProvider provide_one_and_done_user_guards
+	 *
+	 * @param string $meta_key      Preserved marker key.
+	 * @param int    $marker_offset Marker age in seconds.
+	 * @param bool   $expected      Whether the notice should appear.
+	 */
+	public function test_one_and_done_user_guards( string $meta_key, int $marker_offset, bool $expected ): void {
+		$now     = 1700000000;
+		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user_id );
+		update_user_meta( $user_id, $meta_key, $now - $marker_offset );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - 7 * DAY_IN_SECONDS );
+		$sut          = $this->create_live_notice_service( $now );
+		$queries      = 0;
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			++$queries;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$this->assertSame( $expected, null !== $sut->get_notice_for_current_user() );
+			$this->assertSame( $expected ? 2 : 0, $queries );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_transient( 'wcpay_one_and_done_eligible' );
+		}
+	}
+
+	/**
+	 * Preserved one-and-done user markers.
+	 *
+	 * @return array<string,array{string,int,bool}>
+	 */
+	public static function provide_one_and_done_user_guards(): array {
+		return array(
+			'dismissal is terminal'        => array( 'wcpay_one_and_done_notice_dismissed_at', 30 * DAY_IN_SECONDS, false ),
+			'snoozed six days ago'         => array( 'wcpay_one_and_done_notice_snoozed_at', 6 * DAY_IN_SECONDS, false ),
+			'snooze expires at seven days' => array( 'wcpay_one_and_done_notice_snoozed_at', 7 * DAY_IN_SECONDS, true ),
 		);
 	}
 
@@ -393,6 +642,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_kyc_completion_date', $now - $age_days * DAY_IN_SECONDS, false );
 		delete_option( 'wcpay_has_live_sale' );
 		set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
+		set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
 		foreach ( $dismissed_stages as $stage ) {
 			update_user_meta( $user_id, sprintf( 'wcpay_post_kyc_activation_%d_dismissed', $stage ), $now );
 		}
@@ -435,6 +685,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			delete_option( 'wcpay_kyc_completion_date' );
 			delete_option( 'wcpay_has_live_sale' );
 			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
 		}
 	}
 
@@ -482,6 +733,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			update_option( 'wcpay_has_live_sale', '1', false );
 		}
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
 		$account = $this->createMock( WooPaymentsAccountService::class );
 		$account->method( 'has_working_account' )->willReturn( $working );
 		$account->method( 'can_process_payments' )->willReturn( $can_process );
@@ -506,6 +758,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			delete_option( 'wcpay_kyc_completion_date' );
 			delete_option( 'wcpay_has_live_sale' );
 			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
 		}
 	}
 
@@ -539,6 +792,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_kyc_completion_date', $now - 30 * DAY_IN_SECONDS, false );
 		delete_option( 'wcpay_has_live_sale' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
 		foreach ( array( 7, 14, 30 ) as $stage ) {
 			update_user_meta( $user_id, sprintf( 'wcpay_post_kyc_activation_%d_dismissed', $stage ), $now );
 		}
@@ -566,6 +820,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			delete_option( 'wcpay_kyc_completion_date' );
 			delete_option( 'wcpay_has_live_sale' );
 			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
 		}
 	}
 
@@ -578,6 +833,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_kyc_completion_date', $now - 7 * DAY_IN_SECONDS, false );
 		delete_option( 'wcpay_has_live_sale' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
 		$order = \WC_Helper_Order::create_order();
 		$order->set_payment_method( 'woocommerce_payments' );
 		$order->set_status( 'completed' );
@@ -616,6 +872,78 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			delete_option( 'wcpay_kyc_completion_date' );
 			delete_option( 'wcpay_has_live_sale' );
 			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
+		}
+	}
+
+	/**
+	 * @testdox Cold live-mode selection reuses bounded scans when post-KYC and one-and-done overlap.
+	 */
+	public function test_live_mode_notice_selection_uses_at_most_two_cold_cache_queries(): void {
+		$now = 1700000000;
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		update_option( 'wcpay_kyc_completion_date', $now - 7 * DAY_IN_SECONDS, false );
+		delete_option( 'wcpay_has_live_sale' );
+		delete_option( 'wcpay_one_and_done_permanently_ineligible' );
+		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		delete_transient( 'wcpay_one_and_done_eligible' );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - 7 * DAY_IN_SECONDS );
+		$sut          = $this->create_live_notice_service( $now );
+		$queries      = array();
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			$queries[] = $args;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$notice = $sut->get_notice_for_current_user();
+			$this->assertIsArray( $notice );
+			$this->assertSame( 'one_and_done', $notice['id'] );
+			$this->assertCount( 2, $queries, 'Cold selection should perform only the limit-two WooPayments query and limit-one alternate-gateway query.' );
+			$this->assertSame( 2, $queries[0]['limit'] );
+			$this->assertSame( 1, $queries[1]['limit'] );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_option( 'wcpay_kyc_completion_date' );
+			delete_option( 'wcpay_has_live_sale' );
+			delete_option( 'wcpay_one_and_done_permanently_ineligible' );
+			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
+		}
+	}
+
+	/**
+	 * @testdox Shared cold-cache selection still recognizes historical live-mode values for post-KYC.
+	 */
+	public function test_shared_cold_cache_selection_preserves_historical_live_modes(): void {
+		$now = 1700000000;
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		update_option( 'wcpay_kyc_completion_date', $now - 7 * DAY_IN_SECONDS, false );
+		delete_option( 'wcpay_has_live_sale' );
+		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		delete_transient( 'wcpay_one_and_done_eligible' );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'live', $now - 7 * DAY_IN_SECONDS );
+		$sut          = $this->create_live_notice_service( $now );
+		$queries      = array();
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			$queries[] = $args;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$this->assertNull( $sut->get_notice_for_current_user(), 'A historical live sale must still suppress post-KYC.' );
+			$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
+			$this->assertCount( 2, $queries );
+			$this->assertSame( 2, $queries[0]['limit'] );
+			$this->assertSame( array( 'prod', 'live' ), $queries[1]['meta_value'] );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_option( 'wcpay_kyc_completion_date' );
+			delete_option( 'wcpay_has_live_sale' );
+			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
 		}
 	}
 
@@ -647,7 +975,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertNotNull( $sut->get_notice_for_current_user() );
 			$this->assertNotNull( $sut->get_notice_for_current_user() );
-			$this->assertSame( 1, $queries );
+			$this->assertSame( 2, $queries, 'Cold combined selection should check current production mode and bounded historical aliases once.' );
 			$this->assertSame( '1', get_transient( 'wcpay_post_kyc_activation_eligible' ) );
 			$this->assertFalse( get_option( 'wcpay_has_live_sale' ) );
 			$this->assertGreaterThan( time(), (int) get_option( '_transient_timeout_wcpay_post_kyc_activation_eligible' ) );
@@ -745,5 +1073,103 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			delete_transient( 'wcpay_post_kyc_activation_eligible' );
 			wpmu_delete_blog( $secondary_blog_id, true );
 		}
+	}
+
+	/**
+	 * @testdox One-and-done queries, transients, options, and request-local order IDs stay on the current blog.
+	 * @group multisite
+	 */
+	public function test_one_and_done_state_and_queries_are_isolated_by_blog(): void {
+		$this->skipWithoutMultisite();
+
+		$now               = 1700000000;
+		$main_blog_id      = get_current_blog_id();
+		$secondary_blog_id = self::factory()->blog->create( array( 'path' => '/one-and-done-notice/' ) );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		update_option( 'wcpay_kyc_completion_date', $now - 7 * DAY_IN_SECONDS, false );
+		delete_option( 'wcpay_has_live_sale' );
+		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		delete_transient( 'wcpay_one_and_done_eligible' );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - 7 * DAY_IN_SECONDS );
+		$sut              = $this->create_live_notice_service( $now );
+		$queried_blog_ids = array();
+		$record_query     = static function ( array $args ) use ( &$queried_blog_ids ): array {
+			$queried_blog_ids[] = get_current_blog_id();
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$notice = $sut->get_notice_for_current_user();
+			$this->assertIsArray( $notice );
+			$this->assertSame( 'one_and_done', $notice['id'] );
+			set_transient( 'wcpay_one_and_done_eligible', 'main-blog-cache', HOUR_IN_SECONDS );
+
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			switch_to_blog( $secondary_blog_id );
+			\WC_Install::create_tables();
+			add_filter( 'woocommerce_order_query_args', $record_query );
+			$this->assertFalse( get_transient( 'wcpay_one_and_done_eligible' ), 'The main-blog transient must not leak to the secondary blog.' );
+			$this->assertFalse( get_option( 'wcpay_one_and_done_permanently_ineligible' ), 'The main-blog option must not leak to the secondary blog.' );
+			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertSame( '0', get_transient( 'wcpay_one_and_done_eligible' ) );
+
+			restore_current_blog();
+			$this->assertSame( $main_blog_id, get_current_blog_id() );
+			$this->assertSame( 'main-blog-cache', get_transient( 'wcpay_one_and_done_eligible' ) );
+			$this->assertSame( array( $main_blog_id, $main_blog_id, $secondary_blog_id ), $queried_blog_ids );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			while ( ms_is_switched() ) {
+				restore_current_blog();
+			}
+			delete_option( 'wcpay_kyc_completion_date' );
+			delete_option( 'wcpay_has_live_sale' );
+			delete_option( 'wcpay_one_and_done_permanently_ineligible' );
+			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+			delete_transient( 'wcpay_one_and_done_eligible' );
+			wpmu_delete_blog( $secondary_blog_id, true );
+		}
+	}
+
+	/**
+	 * Create a service with an eligible live account.
+	 *
+	 * @param int $now Current timestamp.
+	 * @return WooPaymentsAdminNoticeService
+	 */
+	private function create_live_notice_service( int $now ): WooPaymentsAdminNoticeService {
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_working_account' )->willReturn( true );
+		$account->method( 'can_process_payments' )->willReturn( true );
+		$account->method( 'has_live_account' )->willReturn( true );
+		$account->method( 'has_test_account' )->willReturn( false );
+		$account->method( 'is_test_mode_enabled' )->willReturn( false );
+		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
+		$sut->init( $account );
+
+		return $sut;
+	}
+
+	/**
+	 * Create a paid order for notice eligibility tests.
+	 *
+	 * @param string $payment_method Payment gateway ID.
+	 * @param string $mode           WooPayments mode.
+	 * @param int    $created_at     Creation timestamp.
+	 * @return WC_Order
+	 */
+	private function create_paid_order( string $payment_method, string $mode, int $created_at ): WC_Order {
+		$order = \WC_Helper_Order::create_order();
+		$order->set_payment_method( $payment_method );
+		$order->set_status( OrderStatus::COMPLETED );
+		$order->set_date_created( $created_at );
+		if ( '' !== $mode ) {
+			$order->update_meta_data( '_wcpay_mode', $mode );
+		}
+		$order->save();
+
+		return $order;
 	}
 }

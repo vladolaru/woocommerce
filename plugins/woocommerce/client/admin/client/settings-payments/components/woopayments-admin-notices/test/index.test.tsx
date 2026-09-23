@@ -64,6 +64,23 @@ const postKycNotice = (
 	},
 } );
 
+const oneAndDoneNotice: WooPaymentsAdminNotice = {
+	id: 'one_and_done',
+	message:
+		"Your store made its first sale. Now bring more shoppers in with Woo's marketing tools.",
+	primary: {
+		kind: 'navigate_and_dismiss',
+		label: 'Promote my store',
+		href: '/wp-admin/admin.php?page=wc-admin&path=/marketing',
+	},
+	secondary: { kind: 'snooze', label: 'Maybe later' },
+	_links: {
+		shown: { href: '/admin-notices/one_and_done/shown' },
+		dismiss: { href: '/admin-notices/one_and_done/dismiss' },
+		snooze: { href: '/admin-notices/one_and_done/snooze' },
+	},
+};
+
 describe( 'WooPaymentsAdminNotices', () => {
 	let focusTarget = document.createElement( 'div' );
 
@@ -376,5 +393,109 @@ describe( 'WooPaymentsAdminNotices', () => {
 		expect( onDismiss ).not.toHaveBeenCalled();
 		expect( screen.getByText( currentNotice.message ) ).toBeInTheDocument();
 		expect( promote ).toHaveFocus();
+	} );
+
+	it( 'shows the exact one-and-done copy and semantic controls', async () => {
+		render(
+			<WooPaymentsAdminNotices
+				notice={ oneAndDoneNotice }
+				focusTargetRef={ { current: focusTarget } }
+				onDismiss={ jest.fn() }
+			/>
+		);
+
+		expect(
+			screen.getByText( oneAndDoneNotice.message )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Promote my store' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Maybe later' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Dismiss WooPayments notice' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'link', { name: 'Promote my store' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'records one-and-done dismissal before keyboard promotion navigation without double submission', async () => {
+		let finishDismiss: ( value: { success: boolean } ) => void = () => {};
+		( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
+			if ( url === oneAndDoneNotice._links.dismiss.href ) {
+				return new Promise( ( resolve ) => {
+					finishDismiss = resolve;
+				} );
+			}
+			return Promise.resolve( { success: true } );
+		} );
+		render(
+			<WooPaymentsAdminNotices
+				notice={ oneAndDoneNotice }
+				focusTargetRef={ { current: focusTarget } }
+				onDismiss={ jest.fn() }
+			/>
+		);
+
+		const promote = screen.getByRole( 'button', {
+			name: 'Promote my store',
+		} );
+		await userEvent.tab();
+		expect( promote ).toHaveFocus();
+		await userEvent.keyboard( '{Enter}{Enter}' );
+
+		expect( apiFetch ).toHaveBeenCalledTimes( 2 );
+		expect( apiFetch ).toHaveBeenLastCalledWith( {
+			url: oneAndDoneNotice._links.dismiss.href,
+			method: 'POST',
+		} );
+		expect( mockAssign ).not.toHaveBeenCalled();
+
+		await act( async () => finishDismiss( { success: true } ) );
+		await waitFor( () =>
+			expect( mockAssign ).toHaveBeenCalledWith(
+				oneAndDoneNotice.primary.href
+			)
+		);
+	} );
+
+	it( 'keeps one-and-done visible and focused when promotion dismissal fails', async () => {
+		let rejectRequest: ( error: Error ) => void = () => {};
+		( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
+			return url === oneAndDoneNotice._links.dismiss.href
+				? new Promise( ( _resolve, reject ) => {
+						rejectRequest = reject;
+				  } )
+				: Promise.resolve( { success: true } );
+		} );
+		const onDismiss = jest.fn();
+		render(
+			<WooPaymentsAdminNotices
+				notice={ oneAndDoneNotice }
+				focusTargetRef={ { current: focusTarget } }
+				onDismiss={ onDismiss }
+			/>
+		);
+
+		const promote = screen.getByRole( 'button', {
+			name: 'Promote my store',
+		} );
+		await userEvent.click( promote );
+		await act( async () => rejectRequest( new Error( 'Request failed' ) ) );
+
+		await waitFor( () =>
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'We could not update this notice. Please try again.',
+				{ type: 'snackbar', explicitDismiss: true }
+			)
+		);
+		expect(
+			screen.getByText( oneAndDoneNotice.message )
+		).toBeInTheDocument();
+		expect( promote ).toHaveFocus();
+		expect( onDismiss ).not.toHaveBeenCalled();
+		expect( mockAssign ).not.toHaveBeenCalled();
 	} );
 } );

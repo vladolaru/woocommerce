@@ -59,6 +59,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_test_mode_enabled_date' );
 		delete_transient( 'wcpay_test_to_live_eligible' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		delete_transient( 'wcpay_one_and_done_eligible' );
 		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
 		$this->delete_notes_with_name( 'wc-payments-notes-test-to-live' );
 		$this->delete_instant_deposit_note();
@@ -142,6 +143,62 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
 		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
+	}
+
+	/**
+	 * @testdox Relevant paid transitions invalidate either cached one-and-done result after the live-sale marker exists.
+	 * @dataProvider provide_one_and_done_cache_invalidations
+	 *
+	 * @param string $payment_method Payment gateway ID.
+	 * @param string $mode           WooPayments order mode.
+	 * @param string $cached_value   Cached one-and-done eligibility.
+	 */
+	public function test_paid_order_status_transition_invalidates_one_and_done_cache( string $payment_method, string $mode, string $cached_value ): void {
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$order   = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( $payment_method );
+		if ( '' !== $mode ) {
+			$order->update_meta_data( '_wcpay_mode', $mode );
+		}
+		$order->save();
+		update_option( 'wcpay_has_live_sale', '1', false );
+		set_transient( 'wcpay_one_and_done_eligible', $cached_value, HOUR_IN_SECONDS );
+
+		$service->handle_woocommerce_order_status_changed( $order->get_id(), OrderStatus::PENDING, OrderStatus::PROCESSING, $order );
+
+		$this->assertFalse( get_transient( 'wcpay_one_and_done_eligible' ) );
+		$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
+	}
+
+	/**
+	 * Relevant transitions and both cached results.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public static function provide_one_and_done_cache_invalidations(): array {
+		return array(
+			'second live WooPayments order with positive cache' => array( OrderPaymentStore::GATEWAY_ID, 'production', '1' ),
+			'alternate gateway order with negative cache' => array( 'cod', '', '0' ),
+		);
+	}
+
+	/**
+	 * @testdox A test WooPayments transition leaves cached one-and-done eligibility unchanged.
+	 */
+	public function test_test_order_status_transition_preserves_one_and_done_cache(): void {
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$order   = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->update_meta_data( '_wcpay_mode', 'test' );
+		$order->save();
+		update_option( 'wcpay_has_live_sale', '1', false );
+		set_transient( 'wcpay_one_and_done_eligible', '1', HOUR_IN_SECONDS );
+
+		$service->handle_woocommerce_order_status_changed( $order->get_id(), OrderStatus::PENDING, OrderStatus::PROCESSING, $order );
+
+		$this->assertSame( '1', get_transient( 'wcpay_one_and_done_eligible' ) );
 	}
 
 	/**
