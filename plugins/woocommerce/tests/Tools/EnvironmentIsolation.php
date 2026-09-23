@@ -76,6 +76,15 @@ final class EnvironmentIsolation {
 	);
 
 	/**
+	 * Options seeded by the test installation that must appear absent unless a test opts in.
+	 *
+	 * @var string[]
+	 */
+	private const CLEARED_OPTIONS = array(
+		'woocommerce_native_payments_enabled',
+	);
+
+	/**
 	 * Apply the baseline.
 	 *
 	 * Runs on `muplugins_loaded` after WooCommerce is loaded, so the Jetpack
@@ -94,6 +103,10 @@ final class EnvironmentIsolation {
 		foreach ( self::CLEARED_HOOKS as $hook ) {
 			remove_all_filters( $hook );
 		}
+
+		foreach ( self::CLEARED_OPTIONS as $option ) {
+			delete_option( $option );
+		}
 	}
 
 	/**
@@ -102,13 +115,14 @@ final class EnvironmentIsolation {
 	 * Exposed so a guard test can assert the baseline actually held, rather
 	 * than trusting that it was applied.
 	 *
-	 * @return array{pinned_constants:array<string,mixed>,cleared_constants:string[],cleared_hooks:string[]}
+	 * @return array{pinned_constants:array<string,mixed>,cleared_constants:string[],cleared_hooks:string[],cleared_options:string[]}
 	 */
 	public static function get_expected_baseline(): array {
 		return array(
 			'pinned_constants'  => self::PINNED_CONSTANTS,
 			'cleared_constants' => self::CLEARED_CONSTANTS,
 			'cleared_hooks'     => self::CLEARED_HOOKS,
+			'cleared_options'   => self::CLEARED_OPTIONS,
 		);
 	}
 }

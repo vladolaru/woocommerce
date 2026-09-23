@@ -61,6 +61,18 @@ class EnvironmentIsolationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should start with no options seeded by the test installation.
+	 */
+	public function test_test_installation_options_are_absent(): void {
+		foreach ( EnvironmentIsolation::get_expected_baseline()['cleared_options'] as $option ) {
+			$this->assertFalse(
+				get_option( $option, false ),
+				"The option {$option} must be absent unless a test opts in."
+			);
+		}
+	}
+
+	/**
 	 * @testdox Should leave native payments unowned unless a test asks for it.
 	 */
 	public function test_native_payments_is_unowned_by_default(): void {
