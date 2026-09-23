@@ -5,9 +5,12 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
+use WC_Order;
 use WC_Unit_Test_Case;
 use WP_Error;
 
@@ -654,6 +657,93 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			delete_option( 'wcpay_kyc_completion_date' );
 			delete_option( 'wcpay_has_live_sale' );
 			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		}
+	}
+
+	/**
+	 * @testdox Post-KYC site state, order eligibility, and URLs stay blog-local while user actions remain network-global.
+	 * @group multisite
+	 */
+	public function test_post_kyc_state_is_isolated_by_blog_while_user_action_is_global(): void {
+		$this->skipWithoutMultisite();
+
+		$now               = 1700000000;
+		$main_blog_id      = get_current_blog_id();
+		$secondary_blog_id = self::factory()->blog->create( array( 'path' => '/post-kyc-notice/' ) );
+		$user_id           = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user_id );
+
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_working_account' )->willReturn( true );
+		$account->method( 'can_process_payments' )->willReturn( true );
+		$account->method( 'has_live_account' )->willReturn( true );
+		$account->method( 'has_test_account' )->willReturn( false );
+		$account->method( 'is_test_mode_enabled' )->willReturn( false );
+		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
+		$sut->init( $account );
+
+		$main_kyc_date = $now - 14 * DAY_IN_SECONDS;
+		update_option( 'wcpay_kyc_completion_date', $main_kyc_date, false );
+		delete_option( 'wcpay_has_live_sale' );
+		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		$order = \WC_Helper_Order::create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_status( OrderStatus::COMPLETED );
+		$order->update_meta_data( '_wcpay_mode', 'live' );
+		$order->save();
+		delete_option( 'wcpay_has_live_sale' );
+
+		$queried_blog_ids = array();
+		$record_query     = static function ( array $args ) use ( &$queried_blog_ids ): array {
+			$queried_blog_ids[] = get_current_blog_id();
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$this->assertNull( $sut->get_notice_for_current_user(), 'The main-blog live order should suppress its notice.' );
+			$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
+			set_transient( 'wcpay_post_kyc_activation_eligible', 'main-blog-cache', HOUR_IN_SECONDS );
+			$main_admin_url = admin_url( 'admin.php?page=wc-admin&path=/marketing' );
+			$main_rest_url  = rest_url( 'wc-admin/settings/payments/woopayments/admin-notices/post_kyc_activation/shown' );
+
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			switch_to_blog( $secondary_blog_id );
+			\WC_Install::create_tables();
+			add_filter( 'woocommerce_order_query_args', $record_query );
+			update_option( 'wcpay_kyc_completion_date', $now - 7 * DAY_IN_SECONDS, false );
+
+			$this->assertFalse( get_option( 'wcpay_has_live_sale' ), 'The main-blog live-sale marker must not leak to the secondary blog.' );
+			$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ), 'The main-blog transient must not leak to the secondary blog.' );
+			$notice = $sut->get_notice_for_current_user();
+			$this->assertIsArray( $notice, 'A main-blog order must not suppress the secondary-blog notice.' );
+			$this->assertSame( 7, $notice['stage'] );
+			$this->assertSame( admin_url( 'admin.php?page=wc-admin&path=/marketing' ), $notice['primary']['href'] );
+			$this->assertSame( rest_url( 'wc-admin/settings/payments/woopayments/admin-notices/post_kyc_activation/shown' ), $notice['_links']['shown']['href'] );
+			$this->assertNotSame( $main_admin_url, $notice['primary']['href'], 'The promotion URL should use the current blog.' );
+			$this->assertNotSame( $main_rest_url, $notice['_links']['shown']['href'], 'The action URL should use the current blog.' );
+			$this->assertSame( '1', get_transient( 'wcpay_post_kyc_activation_eligible' ) );
+			$this->assertTrue( $sut->record_action( 'post_kyc_activation', 'dismiss', 7 ) );
+			$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ), 'Dismissal should clear only the current-blog transient.' );
+
+			restore_current_blog();
+			$this->assertSame( $main_blog_id, get_current_blog_id() );
+			$this->assertSame( $main_kyc_date, get_option( 'wcpay_kyc_completion_date' ) );
+			$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
+			$this->assertSame( 'main-blog-cache', get_transient( 'wcpay_post_kyc_activation_eligible' ) );
+			$this->assertNotEmpty( get_user_meta( $user_id, 'wcpay_post_kyc_activation_7_dismissed', true ), 'The network user should retain the dismissal across blog switches.' );
+			$this->assertSame( array( $main_blog_id, $secondary_blog_id ), $queried_blog_ids, 'Each eligibility query should run in its current blog context.' );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			while ( ms_is_switched() ) {
+				restore_current_blog();
+			}
+			delete_option( 'wcpay_kyc_completion_date' );
+			delete_option( 'wcpay_has_live_sale' );
+			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+			wpmu_delete_blog( $secondary_blog_id, true );
 		}
 	}
 }

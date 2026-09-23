@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use ActionScheduler_Store;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
@@ -141,6 +142,50 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
 		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
+	}
+
+	/**
+	 * @testdox Ineligible order-status transitions leave the live-sale marker and post-KYC eligibility unchanged.
+	 * @dataProvider provide_ineligible_order_status_transitions
+	 *
+	 * @param string $payment_method Payment method stored on the order.
+	 * @param string $mode           WooPayments mode stored on the order.
+	 * @param string $new_status     Target order status supplied by the hook.
+	 * @param bool   $valid_order    Whether the hook receives a WC_Order.
+	 */
+	public function test_ineligible_order_status_transitions_preserve_post_kyc_eligibility( string $payment_method, string $mode, string $new_status, bool $valid_order ): void {
+		$service  = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$order    = new \stdClass();
+		$order_id = 123;
+		if ( $valid_order ) {
+			$order = wc_create_order();
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$order->set_payment_method( $payment_method );
+			$order->update_meta_data( '_wcpay_mode', $mode );
+			$order->save();
+			$order_id = $order->get_id();
+		}
+		delete_option( 'wcpay_has_live_sale' );
+		set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
+
+		$service->handle_woocommerce_order_status_changed( $order_id, OrderStatus::PENDING, $new_status, $order );
+
+		$this->assertFalse( get_option( 'wcpay_has_live_sale' ), 'An ineligible transition must not record a live sale.' );
+		$this->assertSame( '1', get_transient( 'wcpay_post_kyc_activation_eligible' ), 'An ineligible transition must not invalidate cached eligibility.' );
+	}
+
+	/**
+	 * Ineligible order-status hook inputs.
+	 *
+	 * @return array<string,array{string,string,string,bool}>
+	 */
+	public static function provide_ineligible_order_status_transitions(): array {
+		return array(
+			'test-mode WooPayments order' => array( OrderPaymentStore::GATEWAY_ID, 'test', OrderStatus::PROCESSING, true ),
+			'wrong payment gateway'       => array( 'cod', 'live', OrderStatus::PROCESSING, true ),
+			'unpaid order status'         => array( OrderPaymentStore::GATEWAY_ID, 'live', OrderStatus::PENDING, true ),
+			'invalid order object'        => array( OrderPaymentStore::GATEWAY_ID, 'live', OrderStatus::PROCESSING, false ),
+		);
 	}
 
 	/**
