@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStoreMeta;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Unit_Test_Case;
 
 /**
@@ -124,6 +125,10 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	 * @testdox Should detect persisted order metadata in HPOS storage.
 	 */
 	public function test_has_foreign_currency_orders_detects_real_hpos_metadata(): void {
+		if ( ! OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$this->markTestSkipped( 'The real HPOS metadata test requires HPOS to be enabled.' );
+		}
+
 		$order = wc_create_order();
 		wc_get_container()->get( OrdersTableDataStoreMeta::class )->add_meta(
 			$order,
