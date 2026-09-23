@@ -254,11 +254,29 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$features = wc_get_container()->get( FeaturesController::class );
 
 		$this->assertNotNull( $features->get_feature_definition( MultiCurrencyFeatureController::FEATURE_ID ), 'The existing FeaturesController extension point must reach the feature controller.' );
-		$_GET = array(
+		$_GET                   = array(
 			'multi_currency' => '0',
 			'_feature_nonce' => wp_create_nonce( 'change_feature_enable' ),
 		);
-		$features->change_feature_enable_from_query_params();
+		$previous_request_uri   = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Restore the exact test server value without using it as input.
+		$_SERVER['REQUEST_URI'] = '/wp-admin/admin.php?page=wc-settings&multi_currency=0';
+		$redirect_url           = null;
+		$intercept_redirect     = static function ( string $location ) use ( &$redirect_url ): string {
+			$redirect_url = $location;
+			return '';
+		};
+		add_filter( 'wp_redirect', $intercept_redirect );
+		try {
+			$features->change_feature_enable_from_query_params();
+		} finally {
+			remove_filter( 'wp_redirect', $intercept_redirect );
+			if ( null === $previous_request_uri ) {
+				unset( $_SERVER['REQUEST_URI'] );
+			} else {
+				$_SERVER['REQUEST_URI'] = $previous_request_uri;
+			}
+		}
+		$this->assertSame( '/wp-admin/admin.php?page=wc-settings', $redirect_url );
 
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 		$this->assertSame( array( 'EUR' ), get_option( 'wcpay_multi_currency_enabled_currencies' ) );

@@ -796,7 +796,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 			$this->assertArrayHasKey( 'messages', $gateway_details['onboarding'] );
 			$this->assertArrayHasKey( 'not_supported', $gateway_details['onboarding']['messages'] );
-			$this->assertEquals( 'WooPayments is not supported in the selected business location.', $gateway_details['onboarding']['messages']['not_supported'] );
+			$this->assertEquals( 'WooPayments is not available in your country.', $gateway_details['onboarding']['messages']['not_supported'] );
 		} finally {
 			// Clean up.
 			Constants::clear_constants();
