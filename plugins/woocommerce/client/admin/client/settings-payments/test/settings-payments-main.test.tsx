@@ -11,7 +11,7 @@ import {
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter as Router } from 'react-router-dom';
-import { dispatch } from '@wordpress/data';
+import { dispatch, select } from '@wordpress/data';
 import { paymentSettingsStore } from '@woocommerce/data';
 import type { PaymentsProvider } from '@woocommerce/data';
 import apiFetch from '@wordpress/api-fetch';
@@ -91,6 +91,18 @@ describe( 'SettingsPaymentsMain', () => {
 			);
 		} );
 		let finishDismiss: ( value: { success: boolean } ) => void = () => {};
+		let finishProviders: ( value: {
+			providers: PaymentsProvider[];
+			offline_payment_methods: never[];
+			suggestions: never[];
+			suggestion_categories: never[];
+		} ) => void = () => {};
+		const refreshedResponse = {
+			providers: [ { ...noticeProvider, _admin_notice: undefined } ],
+			offline_payment_methods: [],
+			suggestions: [],
+			suggestion_categories: [],
+		};
 		( apiFetch as jest.Mock ).mockImplementation( ( request ) => {
 			if ( request.url === '/dismiss' ) {
 				return new Promise( ( resolve ) => {
@@ -98,13 +110,8 @@ describe( 'SettingsPaymentsMain', () => {
 				} );
 			}
 			if ( request.path?.includes( '/settings/payments/providers' ) ) {
-				return Promise.resolve( {
-					providers: [
-						{ ...noticeProvider, _admin_notice: undefined },
-					],
-					offline_payment_methods: [],
-					suggestions: [],
-					suggestion_categories: [],
+				return new Promise( ( resolve ) => {
+					finishProviders = resolve;
 				} );
 			}
 			return Promise.resolve( { success: true } );
@@ -137,6 +144,18 @@ describe( 'SettingsPaymentsMain', () => {
 				} )
 			)
 		);
+		expect( select( paymentSettingsStore ).isFetching() ).toBe( true );
+
+		await act( async () => {
+			finishProviders( refreshedResponse );
+		} );
+		await waitFor( () => {
+			const paymentSettings = select( paymentSettingsStore );
+			expect( paymentSettings.isFetching() ).toBe( false );
+			expect(
+				paymentSettings.getPaymentProviders()[ 0 ]._admin_notice
+			).toBeUndefined();
+		} );
 
 		firstRender.unmount();
 		render(
