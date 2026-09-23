@@ -734,14 +734,19 @@ class WooPaymentsOrderEffectApplier {
 		$networks      = isset( $card_details['networks'] ) && is_array( $card_details['networks'] ) ? $card_details['networks'] : array();
 		$available     = isset( $networks['available'] ) && is_array( $networks['available'] ) ? $networks['available'] : array();
 		$card_network  = $card_details['display_brand'] ?? $card_details['network'] ?? $networks['preferred'] ?? $available[0] ?? 'card';
-		$funding       = isset( $card_details['funding'], $funding_types[ (string) $card_details['funding'] ] )
+		$card_network  = is_string( $card_network ) ? $card_network : '';
+		if ( '' === $card_network ) {
+			return __( 'Credit / Debit Cards', 'woocommerce' );
+		}
+
+		$funding = isset( $card_details['funding'], $funding_types[ (string) $card_details['funding'] ] )
 			? $funding_types[ (string) $card_details['funding'] ]
 			: $funding_types['unknown'];
 
 		return sprintf(
 			/* translators: %1$s: card brand, %2$s: card funding type. */
 			__( '%1$s %2$s card', 'woocommerce' ),
-			ucwords( str_replace( '_', ' ', (string) $card_network ) ),
+			ucwords( str_replace( '_', ' ', $card_network ) ),
 			$funding
 		);
 	}

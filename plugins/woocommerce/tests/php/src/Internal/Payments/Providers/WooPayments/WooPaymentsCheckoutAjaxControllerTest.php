@@ -1661,14 +1661,16 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Order-status callbacks keep excluded charge card shapes on the established post-lifecycle display path.
+	 * Card-network precedence follows the pinned WooPayments 11.1.0 CardDefinition; HTTP 200 for a malformed display brand is the N-104 correctness decision.
 	 *
 	 * @dataProvider excluded_charge_card_shapes
 	 *
 	 * @param array<string,mixed>|null $charge                  PaymentIntent charge data, if present.
 	 * @param string                   $expected_observed_title Expected title at the lifecycle boundary.
 	 * @param int                      $expected_status_code    Expected response status code.
+	 * @param string|null              $expected_final_title    Expected final title when the selected brand is unusable.
 	 */
-	public function test_update_order_status_keeps_excluded_charge_card_shapes_on_post_lifecycle_display_path( ?array $charge, string $expected_observed_title, int $expected_status_code ): void {
+	public function test_update_order_status_keeps_excluded_charge_card_shapes_on_post_lifecycle_display_path( ?array $charge, string $expected_observed_title, int $expected_status_code, ?string $expected_final_title = null ): void {
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 
@@ -1782,6 +1784,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected_observed_title, $observed_title );
 		if ( 200 === $expected_status_code ) {
 			$this->assertNotSame( 'WooPayments', $order->get_payment_method_title() );
+		}
+		if ( null !== $expected_final_title ) {
+			$this->assertSame( $expected_final_title, $order->get_payment_method_title() );
 		}
 	}
 
@@ -1936,6 +1941,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				),
 				'WooPayments',
 				200,
+				'Credit / Debit Cards',
 			),
 			'malformed display brand shadows network' => array(
 				array(
@@ -1953,8 +1959,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 					),
 				),
 				'WooPayments',
-				// PHP 7.4 emits a notice for an array-to-string cast; PHP 8 turns it into a warning that the callback catches as an error.
-				PHP_VERSION_ID < 80000 ? 200 : 500,
+				200,
+				'Credit / Debit Cards',
 			),
 			'non-array available network'             => array(
 				array(
