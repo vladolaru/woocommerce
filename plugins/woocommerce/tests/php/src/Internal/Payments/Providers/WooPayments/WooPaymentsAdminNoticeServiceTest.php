@@ -43,7 +43,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'has_live_account' )->willReturn( true );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
 		$sut->init( $account );
-		$queries = array();
+		$queries      = array();
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			$queries[] = $args;
 			return $args;
@@ -160,7 +160,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_dev_mode_enabled' )->willReturn( $dev_mode );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
 		$sut->init( $account );
-		$queries = 0;
+		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			++$queries;
 			return $args;
@@ -184,11 +184,11 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	 */
 	public static function provide_test_to_live_cheap_guards(): array {
 		return array(
-			'anonymous'            => array( false, true, true, false, 7 ),
-			'no working account'   => array( true, false, true, false, 7 ),
-			'live mode'            => array( true, true, false, false, 7 ),
-			'development mode'     => array( true, true, true, true, 7 ),
-			'before seven days'    => array( true, true, true, false, 6 ),
+			'anonymous'          => array( false, true, true, false, 7 ),
+			'no working account' => array( true, false, true, false, 7 ),
+			'live mode'          => array( true, true, false, false, 7 ),
+			'development mode'   => array( true, true, true, true, 7 ),
+			'before seven days'  => array( true, true, true, false, 6 ),
 		);
 	}
 
@@ -247,7 +247,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
 		$sut->init( $account );
-		$queries = 0;
+		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			++$queries;
 			return $args;
@@ -272,10 +272,10 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	 */
 	public static function provide_test_to_live_user_markers(): array {
 		return array(
-			'dismissed'               => array( 'wcpay_test_to_live_notice_dismissed', 30 * DAY_IN_SECONDS, false ),
-			'snoozed six days ago'    => array( 'wcpay_test_to_live_notice_snoozed', 6 * DAY_IN_SECONDS, false ),
-			'snoozed seven days ago'  => array( 'wcpay_test_to_live_notice_snoozed', 7 * DAY_IN_SECONDS, true ),
-			'shown seven days ago'    => array( 'wcpay_test_to_live_notice_shown', 7 * DAY_IN_SECONDS, true ),
+			'dismissed'              => array( 'wcpay_test_to_live_notice_dismissed', 30 * DAY_IN_SECONDS, false ),
+			'snoozed six days ago'   => array( 'wcpay_test_to_live_notice_snoozed', 6 * DAY_IN_SECONDS, false ),
+			'snoozed seven days ago' => array( 'wcpay_test_to_live_notice_snoozed', 7 * DAY_IN_SECONDS, true ),
+			'shown seven days ago'   => array( 'wcpay_test_to_live_notice_shown', 7 * DAY_IN_SECONDS, true ),
 		);
 	}
 

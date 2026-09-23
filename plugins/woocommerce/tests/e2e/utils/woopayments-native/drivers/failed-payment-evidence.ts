@@ -169,9 +169,9 @@ function paymentMethodId(
 			'Failed payment evidence PaymentMethod mismatch between provider intent and order metadata.'
 		);
 	}
-	return providerPaymentMethodId ?? requireString(
-		orderPaymentMethodId,
-		'order PaymentMethod ID'
+	return (
+		providerPaymentMethodId ??
+		requireString( orderPaymentMethodId, 'order PaymentMethod ID' )
 	);
 }
 
@@ -457,13 +457,11 @@ export async function readFailedPaymentEvidence(
 		const note = ( value as { note?: unknown } ).note;
 		return (
 			typeof note === 'string' &&
-			(
-				( note.includes( '<strong>failed</strong> using WooPayments' ) &&
-					( intentIdMeta === '' || note.includes( intentIdMeta ) ) ) ||
+			( ( note.includes( '<strong>failed</strong> using WooPayments' ) &&
+				( intentIdMeta === '' || note.includes( intentIdMeta ) ) ) ||
 				/<strong>failed<\/strong> to complete with the following message:\s*<code>[\s\S]*?\S[\s\S]*?<\/code>/.test(
 					note
-				)
-			)
+				) )
 		);
 	} ).length;
 	const base = {

@@ -192,7 +192,9 @@ test( 'failed evidence recognizes the WooPayments 11.1.0 legacy failed-payment n
 		},
 	};
 
-	await expect( readFailedPaymentEvidence( session as never, 71 ) ).resolves.toMatchObject( {
+	await expect(
+		readFailedPaymentEvidence( session as never, 71 )
+	).resolves.toMatchObject( {
 		failureNoteCount: 1,
 	} );
 } );
@@ -238,7 +240,9 @@ test( 'failed evidence rejects a legacy-like note without its structured failure
 		},
 	};
 
-	await expect( readFailedPaymentEvidence( session as never, 71 ) ).resolves.toMatchObject( {
+	await expect(
+		readFailedPaymentEvidence( session as never, 71 )
+	).resolves.toMatchObject( {
 		failureNoteCount: 0,
 	} );
 } );
@@ -254,7 +258,10 @@ test( 'failed evidence falls back to the observed order PaymentMethod when the p
 				currency: 'USD',
 				meta_data: [
 					{ key: '_intent_id', value: 'pi_failed' },
-					{ key: '_intention_status', value: 'requires_payment_method' },
+					{
+						key: '_intention_status',
+						value: 'requires_payment_method',
+					},
 					{ key: '_payment_method_id', value: 'pm_order_observed' },
 				],
 			},
@@ -281,7 +288,9 @@ test( 'failed evidence falls back to the observed order PaymentMethod when the p
 		},
 	};
 
-	await expect( readFailedPaymentEvidence( session as never, 71 ) ).resolves.toMatchObject( {
+	await expect(
+		readFailedPaymentEvidence( session as never, 71 )
+	).resolves.toMatchObject( {
 		paymentMethodId: 'pm_order_observed',
 	} );
 } );
@@ -323,7 +332,9 @@ test( 'failed evidence rejects disagreement between provider and observed order 
 		},
 	};
 
-	await expect( readFailedPaymentEvidence( session as never, 71 ) ).rejects.toThrow(
+	await expect(
+		readFailedPaymentEvidence( session as never, 71 )
+	).rejects.toThrow(
 		'PaymentMethod mismatch between provider intent and order metadata'
 	);
 } );

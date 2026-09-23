@@ -183,7 +183,9 @@ function makeSession(
 		requireApprovedProviderFixture( capability: string ) {
 			events.push( `capability:${ capability }` );
 		},
-		async assertCurrentRuntimeReady( runtime: ProviderWriteSession[ 'runtime' ] ) {
+		async assertCurrentRuntimeReady(
+			runtime: ProviderWriteSession[ 'runtime' ]
+		) {
 			events.push( `runtime-ready:${ runtime }` );
 			await options.assertCurrentRuntimeReady?.();
 		},
@@ -343,8 +345,12 @@ function initialNativeOptionRuntimeState(): NativeOptionRuntimeState {
 	};
 }
 
-function readNativeOptionRuntimeState( path: string ): NativeOptionRuntimeState {
-	return JSON.parse( readFileSync( path, 'utf8' ) ) as NativeOptionRuntimeState;
+function readNativeOptionRuntimeState(
+	path: string
+): NativeOptionRuntimeState {
+	return JSON.parse(
+		readFileSync( path, 'utf8' )
+	) as NativeOptionRuntimeState;
 }
 
 function nativeOptionRuntimePhp( statePath: string ): string {
@@ -423,13 +429,20 @@ function wp_delete_post( $id ) {
 `;
 }
 
-function nativeOptionRuntimeRunner( statePath: string ): NativeStoreWpCliRunner {
+function nativeOptionRuntimeRunner(
+	statePath: string
+): NativeStoreWpCliRunner {
 	return new NativeStoreWpCliRunner( {
 		storeDirectory: '/controlled/native-store',
 		execFile: async ( _command, args ) =>
 			execFileSync(
 				'php',
-				[ '-r', `${ nativeOptionRuntimePhp( statePath ) }\n${ args.at( -1 ) }` ],
+				[
+					'-r',
+					`${ nativeOptionRuntimePhp( statePath ) }\n${ args.at(
+						-1
+					) }`,
+				],
 				{ encoding: 'utf8' }
 			),
 	} );
@@ -704,15 +717,12 @@ test( 'allows transition card protection only after native ownership is rechecke
 	expect( clientRunner.requests ).toEqual( [] );
 
 	const pluginOwnedEvents: string[] = [];
-	const { session: pluginOwnedTransition } = makeSession(
-		pluginOwnedEvents,
-		{
-			runtime: 'transition',
-			assertCurrentRuntimeReady: () => {
-				throw new Error( 'post-cutover native ownership is not proved' );
-			},
-		}
-	);
+	const { session: pluginOwnedTransition } = makeSession( pluginOwnedEvents, {
+		runtime: 'transition',
+		assertCurrentRuntimeReady: () => {
+			throw new Error( 'post-cutover native ownership is not proved' );
+		},
+	} );
 	const pluginOwnedRunner = new FakeRunner();
 	await expect(
 		withCapturedCardTestingProtectionState(
@@ -1402,7 +1412,9 @@ test( 'defaults card-testing protection capture to enabled token evidence', asyn
 		RUN_ID,
 		async ( scope ) => {
 			await scope.registerFreshContext( context as never );
-			evidence = await scope.captureGuestSessionProtection( context as never );
+			evidence = await scope.captureGuestSessionProtection(
+				context as never
+			);
 		},
 		{ runner }
 	);
@@ -1419,10 +1431,10 @@ test( 'captures a fresh authenticated order-pay session only for its expected cu
 	const runner = new FakeRunner( ( request ) =>
 		request.operation === 'read-authenticated-session'
 			? envelope( {
-				cookieValid: true,
-				sessionExists: true,
-				token: { length: 16, sha256: TOKEN_DIGEST },
-			} )
+					cookieValid: true,
+					sessionExists: true,
+					token: { length: 16, sha256: TOKEN_DIGEST },
+			  } )
 			: defaultResult( request )
 	);
 	const { context } = fakeContext( [], [ AUTHENTICATED_COOKIE_VALUE ] );
@@ -1441,8 +1453,15 @@ test( 'captures a fresh authenticated order-pay session only for its expected cu
 		{ runner }
 	);
 
-	expect( evidence ).toMatchObject( { eligible: true, accountEnabled: true } );
-	expect( runner.requests.find( ( request ) => request.operation === 'read-authenticated-session' )?.input.customerId ).toBe( AUTHENTICATED_CUSTOMER_ID );
+	expect( evidence ).toMatchObject( {
+		eligible: true,
+		accountEnabled: true,
+	} );
+	expect(
+		runner.requests.find(
+			( request ) => request.operation === 'read-authenticated-session'
+		)?.input.customerId
+	).toBe( AUTHENTICATED_CUSTOMER_ID );
 } );
 
 test( 'rejects an authenticated order-pay session for a different customer', async () => {
@@ -1455,16 +1474,24 @@ test( 'rejects an authenticated order-pay session for a different customer', asy
 		RUN_ID,
 		async ( scope ) => {
 			await scope.registerFreshContext( context as never );
-			return scope.captureAuthenticatedSessionProtection( context as never, 74 );
+			return scope.captureAuthenticatedSessionProtection(
+				context as never,
+				74
+			);
 		},
 		{ runner }
 	).catch( ( failure: unknown ) => failure );
 	expect( error ).toMatchObject( {
 		primaryError: expect.objectContaining( {
-			message: 'WooCommerce authenticated session evidence is missing or malformed.',
+			message:
+				'WooCommerce authenticated session evidence is missing or malformed.',
 		} ),
 	} );
-	expect( runner.requests.some( ( request ) => request.operation === 'read-authenticated-session' ) ).toBe( false );
+	expect(
+		runner.requests.some(
+			( request ) => request.operation === 'read-authenticated-session'
+		)
+	).toBe( false );
 } );
 
 test( 'accepts only complete public card-testing protection evidence branches', () => {
@@ -1505,39 +1532,98 @@ test( 'accepts only complete public card-testing protection evidence branches', 
 } );
 
 for ( const [ name, rendered, submitted ] of [
-	[ 'rendered digest mismatch', { tokenSha256: 'b'.repeat( 64 ) }, { tokenSha256: TOKEN_DIGEST } ],
-	[ 'submitted digest mismatch', { tokenSha256: TOKEN_DIGEST }, { tokenSha256: 'b'.repeat( 64 ) } ],
-	[ 'disabled rendered presence', { tokenSha256: TOKEN_DIGEST }, { field: 'absent' } ],
-	[ 'disabled submitted presence', { field: 'empty' }, { tokenSha256: TOKEN_DIGEST } ],
+	[
+		'rendered digest mismatch',
+		{ tokenSha256: 'b'.repeat( 64 ) },
+		{ tokenSha256: TOKEN_DIGEST },
+	],
+	[
+		'submitted digest mismatch',
+		{ tokenSha256: TOKEN_DIGEST },
+		{ tokenSha256: 'b'.repeat( 64 ) },
+	],
+	[
+		'disabled rendered presence',
+		{ tokenSha256: TOKEN_DIGEST },
+		{ field: 'absent' },
+	],
+	[
+		'disabled submitted presence',
+		{ field: 'empty' },
+		{ tokenSha256: TOKEN_DIGEST },
+	],
 ] as const ) {
 	test( `rejects ${ name }`, () => {
-		const disabled = { eligible: false, token: null, accountEnabled: false } as const;
-		const enabled = { eligible: true, token: { length: 16, sha256: TOKEN_DIGEST }, accountEnabled: true } as const;
-		expect( () => composeCardTestingProtectionEvidence(
-			name.startsWith( 'disabled' ) ? disabled : enabled,
-			rendered,
-			submitted
-		) ).toThrow();
+		const disabled = {
+			eligible: false,
+			token: null,
+			accountEnabled: false,
+		} as const;
+		const enabled = {
+			eligible: true,
+			token: { length: 16, sha256: TOKEN_DIGEST },
+			accountEnabled: true,
+		} as const;
+		expect( () =>
+			composeCardTestingProtectionEvidence(
+				name.startsWith( 'disabled' ) ? disabled : enabled,
+				rendered,
+				submitted
+			)
+		).toThrow();
 	} );
 }
 
 test( 'rejects malformed session and wire observations instead of normalizing them', () => {
-	const disabled = { eligible: false, token: null, accountEnabled: false } as const;
-	const enabled = { eligible: true, token: { length: 16, sha256: TOKEN_DIGEST }, accountEnabled: true } as const;
+	const disabled = {
+		eligible: false,
+		token: null,
+		accountEnabled: false,
+	} as const;
+	const enabled = {
+		eligible: true,
+		token: { length: 16, sha256: TOKEN_DIGEST },
+		accountEnabled: true,
+	} as const;
 	for ( const [ session, rendered, submitted ] of [
-		[ { eligible: false, token: null, accountEnabled: true }, { field: 'absent' }, { field: 'empty' } ],
-		[ { eligible: true, token: { length: 16, sha256: TOKEN_DIGEST }, accountEnabled: true, rawToken: 'secret' }, { tokenSha256: TOKEN_DIGEST }, { tokenSha256: TOKEN_DIGEST } ],
+		[
+			{ eligible: false, token: null, accountEnabled: true },
+			{ field: 'absent' },
+			{ field: 'empty' },
+		],
+		[
+			{
+				eligible: true,
+				token: { length: 16, sha256: TOKEN_DIGEST },
+				accountEnabled: true,
+				rawToken: 'secret',
+			},
+			{ tokenSha256: TOKEN_DIGEST },
+			{ tokenSha256: TOKEN_DIGEST },
+		],
 		[ disabled, { field: 'invalid', raw: true }, { field: 'empty' } ],
 		[ disabled, { field: 'absent' }, { field: 'invalid', raw: true } ],
-		[ enabled, { tokenSha256: TOKEN_DIGEST, raw: true }, { tokenSha256: TOKEN_DIGEST } ],
+		[
+			enabled,
+			{ tokenSha256: TOKEN_DIGEST, raw: true },
+			{ tokenSha256: TOKEN_DIGEST },
+		],
 	] ) {
-		expect( () => composeCardTestingProtectionEvidence(
-			session as never,
-			rendered as never,
-			submitted as never
-		) ).toThrow();
+		expect( () =>
+			composeCardTestingProtectionEvidence(
+				session as never,
+				rendered as never,
+				submitted as never
+			)
+		).toThrow();
 	}
-	expect( composeCardTestingProtectionEvidence( disabled, { field: 'empty' }, { field: 'absent' } ) ).toEqual( {
+	expect(
+		composeCardTestingProtectionEvidence(
+			disabled,
+			{ field: 'empty' },
+			{ field: 'absent' }
+		)
+	).toEqual( {
 		eligible: false,
 		token: null,
 		accountEnabled: false,
@@ -1548,7 +1634,9 @@ test( 'rejects malformed session and wire observations instead of normalizing th
 
 test( 'executes native PHP mutations and restores exact controlled option rows for each target', async () => {
 	for ( const targetProtection of [ false, true ] as const ) {
-		const workspace = mkdtempSync( join( tmpdir(), 'ctp-native-options-' ) );
+		const workspace = mkdtempSync(
+			join( tmpdir(), 'ctp-native-options-' )
+		);
 		const statePath = join( workspace, 'state.json' );
 		const initialState = initialNativeOptionRuntimeState();
 		writeFileSync( statePath, JSON.stringify( initialState ) );
@@ -1561,13 +1649,20 @@ test( 'executes native PHP mutations and restores exact controlled option rows f
 			const captured = ( await runner.run( {
 				operation: 'capture-state',
 				input: { baseURL: BASE_URL, marker, slug: 'classic-checkout' },
-			} ) ) as { payload: { accountOption: ControlledOptionRow; forceOption: ControlledOptionRow; effectiveProtection: boolean } };
+			} ) ) as {
+				payload: {
+					accountOption: ControlledOptionRow;
+					forceOption: ControlledOptionRow;
+					effectiveProtection: boolean;
+				};
+			};
 			const snapshot = {
 				accountOption: captured.payload.accountOption,
 				forceOption: captured.payload.forceOption,
 				classicCheckoutSlug: 'classic-checkout',
 				runMarker: marker,
-				originalEffectiveProtection: captured.payload.effectiveProtection,
+				originalEffectiveProtection:
+					captured.payload.effectiveProtection,
 			};
 			const mutated = ( await runner.run( {
 				operation: 'mutate-state',
@@ -1580,8 +1675,10 @@ test( 'executes native PHP mutations and restores exact controlled option rows f
 					title,
 				},
 			} ) ) as { payload: { pageId: number } };
-			const stateAfterMutation = readNativeOptionRuntimeState( statePath );
-			const mutatedAccount = stateAfterMutation.options.wcpay_account_data;
+			const stateAfterMutation =
+				readNativeOptionRuntimeState( statePath );
+			const mutatedAccount =
+				stateAfterMutation.options.wcpay_account_data;
 
 			expect( mutatedAccount ).not.toEqual(
 				initialState.options.wcpay_account_data
@@ -1640,7 +1737,9 @@ test( 'executes native PHP mutations and restores exact controlled option rows f
 						title,
 					},
 				} )
-			).resolves.toEqual( envelope( { restored: true, pageAbsent: true } ) );
+			).resolves.toEqual(
+				envelope( { restored: true, pageAbsent: true } )
+			);
 			expect( readNativeOptionRuntimeState( statePath ).options ).toEqual(
 				initialState.options
 			);

@@ -309,7 +309,9 @@ function parseGuestCustomerId( cookieValue: string ): string {
 function parseAuthenticatedCustomerId( cookieValue: string ): number {
 	const customerId = Number( cookieValue.split( '|' )[ 0 ] );
 	if ( ! Number.isSafeInteger( customerId ) || customerId <= 0 ) {
-		invalid( 'WooCommerce authenticated session has an invalid customer ID.' );
+		invalid(
+			'WooCommerce authenticated session has an invalid customer ID.'
+		);
 	}
 	return customerId;
 }
@@ -478,7 +480,11 @@ function assertTokenDigest( value: unknown ): CardTestingTokenDigest {
 export function validateCardTestingProtectionEvidence(
 	value: unknown
 ): CardTestingProtectionEvidence {
-	if ( typeof value !== 'object' || value === null || Array.isArray( value ) ) {
+	if (
+		typeof value !== 'object' ||
+		value === null ||
+		Array.isArray( value )
+	) {
 		invalid( 'Card-testing protection evidence requires one object.' );
 	}
 	const evidence = value as Record< string, unknown >;
@@ -497,10 +503,13 @@ export function validateCardTestingProtectionEvidence(
 				) ||
 			evidence.token !== null ||
 			evidence.accountEnabled !== false ||
-			( evidence.renderedField !== 'absent' && evidence.renderedField !== 'empty' ) ||
+			( evidence.renderedField !== 'absent' &&
+				evidence.renderedField !== 'empty' ) ||
 			evidence.submittedTokenSha256 !== null
 		) {
-			invalid( 'Card-testing protection evidence requires exact public fields for disabled protection.' );
+			invalid(
+				'Card-testing protection evidence requires exact public fields for disabled protection.'
+			);
 		}
 		return {
 			eligible: false,
@@ -524,7 +533,9 @@ export function validateCardTestingProtectionEvidence(
 		evidence.eligible !== true ||
 		evidence.accountEnabled !== true
 	) {
-		invalid( 'Card-testing protection evidence requires exact public fields for enabled protection.' );
+		invalid(
+			'Card-testing protection evidence requires exact public fields for enabled protection.'
+		);
 	}
 	const token = assertTokenDigest( evidence.token );
 	if (
@@ -535,7 +546,9 @@ export function validateCardTestingProtectionEvidence(
 		token.sha256 !== evidence.renderedTokenSha256 ||
 		token.sha256 !== evidence.submittedTokenSha256
 	) {
-		invalid( 'Card-testing protection evidence requires exact token digest equality.' );
+		invalid(
+			'Card-testing protection evidence requires exact token digest equality.'
+		);
 	}
 	return {
 		eligible: true,
@@ -552,35 +565,60 @@ export function composeCardTestingProtectionEvidence(
 	submitted: CardTestingProtectionSubmittedObservation
 ): CardTestingProtectionEvidence {
 	if ( ! isPlainObject( session ) ) {
-		invalid( 'Card-testing protection session evidence requires one exact object.' );
+		invalid(
+			'Card-testing protection session evidence requires one exact object.'
+		);
 	}
 	if ( session.eligible === false ) {
-		if ( ! exactKeys( session, [ 'eligible', 'token', 'accountEnabled' ] ) || session.token !== null || session.accountEnabled !== false ) {
-			invalid( 'Card-testing protection disabled session evidence is malformed.' );
+		if (
+			! exactKeys( session, [ 'eligible', 'token', 'accountEnabled' ] ) ||
+			session.token !== null ||
+			session.accountEnabled !== false
+		) {
+			invalid(
+				'Card-testing protection disabled session evidence is malformed.'
+			);
 		}
 	} else if (
 		session.eligible !== true ||
 		! exactKeys( session, [ 'eligible', 'token', 'accountEnabled' ] ) ||
 		session.accountEnabled !== true
 	) {
-		invalid( 'Card-testing protection enabled session evidence is malformed.' );
+		invalid(
+			'Card-testing protection enabled session evidence is malformed.'
+		);
 	} else {
 		assertTokenDigest( session.token );
 	}
 	const validateWire = (
-		value: CardTestingProtectionRenderedObservation | CardTestingProtectionSubmittedObservation
+		value:
+			| CardTestingProtectionRenderedObservation
+			| CardTestingProtectionSubmittedObservation
 	): CardTestingProtectionRenderedObservation => {
 		if ( ! isPlainObject( value ) ) {
-			invalid( 'Card-testing protection wire observation requires one exact object.' );
+			invalid(
+				'Card-testing protection wire observation requires one exact object.'
+			);
 		}
 		if ( 'field' in value ) {
-			if ( ! exactKeys( value, [ 'field' ] ) || ( value.field !== 'absent' && value.field !== 'empty' ) ) {
-				invalid( 'Card-testing protection disabled wire observation is malformed.' );
+			if (
+				! exactKeys( value, [ 'field' ] ) ||
+				( value.field !== 'absent' && value.field !== 'empty' )
+			) {
+				invalid(
+					'Card-testing protection disabled wire observation is malformed.'
+				);
 			}
 			return { field: value.field };
 		}
-		if ( ! exactKeys( value, [ 'tokenSha256' ] ) || typeof value.tokenSha256 !== 'string' || ! SHA256_PATTERN.test( value.tokenSha256 ) ) {
-			invalid( 'Card-testing protection enabled wire observation is malformed.' );
+		if (
+			! exactKeys( value, [ 'tokenSha256' ] ) ||
+			typeof value.tokenSha256 !== 'string' ||
+			! SHA256_PATTERN.test( value.tokenSha256 )
+		) {
+			invalid(
+				'Card-testing protection enabled wire observation is malformed.'
+			);
 		}
 		return { tokenSha256: value.tokenSha256 };
 	};
@@ -588,7 +626,9 @@ export function composeCardTestingProtectionEvidence(
 	submitted = validateWire( submitted );
 	if ( session.eligible === false ) {
 		if ( 'tokenSha256' in rendered || 'tokenSha256' in submitted ) {
-			invalid( 'Disabled card-testing protection requires absent or empty rendered and submitted fields.' );
+			invalid(
+				'Disabled card-testing protection requires absent or empty rendered and submitted fields.'
+			);
 		}
 		return validateCardTestingProtectionEvidence( {
 			eligible: false,
@@ -599,7 +639,9 @@ export function composeCardTestingProtectionEvidence(
 		} );
 	}
 	if ( ! ( 'tokenSha256' in rendered ) || ! ( 'tokenSha256' in submitted ) ) {
-		invalid( 'Enabled card-testing protection requires rendered and submitted token observations.' );
+		invalid(
+			'Enabled card-testing protection requires rendered and submitted token observations.'
+		);
 	}
 	return validateCardTestingProtectionEvidence( {
 		eligible: true,
@@ -1156,13 +1198,12 @@ export async function withCapturedCardTestingProtectionState< Result >(
 										'WooCommerce guest session evidence is missing or malformed.',
 										'uncertain-provider-write',
 										error
-									  );
+								  );
 						}
 					},
 					captureGuestSessionToken: async ( source ) => {
-						const evidence = await scope.captureGuestSessionProtection(
-							source
-						);
+						const evidence =
+							await scope.captureGuestSessionProtection( source );
 						if ( evidence.eligible === false ) {
 							scopeViolated = true;
 							throw quarantine(
@@ -1198,18 +1239,27 @@ export async function withCapturedCardTestingProtectionState< Result >(
 							);
 						}
 						try {
-							const cookies = await context.cookies( [ session.baseURL ] );
+							const cookies = await context.cookies( [
+								session.baseURL,
+							] );
 							const sessionCookies = cookies.filter( ( cookie ) =>
 								cookie.name.startsWith( SESSION_COOKIE_PREFIX )
 							);
 							if ( sessionCookies.length !== 1 ) {
-								invalid( 'Expected exactly one WooCommerce authenticated session cookie.' );
+								invalid(
+									'Expected exactly one WooCommerce authenticated session cookie.'
+								);
 							}
 							const cookie = sessionCookies[ 0 ];
-							const cookieValue = decodeCookieValue( cookie.value );
-							const customerId = parseAuthenticatedCustomerId( cookieValue );
+							const cookieValue = decodeCookieValue(
+								cookie.value
+							);
+							const customerId =
+								parseAuthenticatedCustomerId( cookieValue );
 							if ( customerId !== expectedCustomerId ) {
-								invalid( 'Authenticated session customer ID did not match the order customer.' );
+								invalid(
+									'Authenticated session customer ID did not match the order customer.'
+								);
 							}
 							trackedSession = {
 								customerId: String( customerId ),
@@ -1232,16 +1282,31 @@ export async function withCapturedCardTestingProtectionState< Result >(
 							trackedSession.verified = true;
 							tokenEvidenceCaptured = true;
 							if ( targetProtection ) {
-								return { eligible: true, token: assertTokenDigest( token ), accountEnabled: true };
+								return {
+									eligible: true,
+									token: assertTokenDigest( token ),
+									accountEnabled: true,
+								};
 							}
 							if ( token !== null ) {
-								invalid( 'WooCommerce disabled card-testing protection produced a usable session token.' );
+								invalid(
+									'WooCommerce disabled card-testing protection produced a usable session token.'
+								);
 							}
-							return { eligible: false, token: null, accountEnabled: false };
+							return {
+								eligible: false,
+								token: null,
+								accountEnabled: false,
+							};
 						} catch ( error ) {
-							throw error instanceof ResourceQuarantineRequiredError
+							throw error instanceof
+								ResourceQuarantineRequiredError
 								? error
-								: quarantine( 'WooCommerce authenticated session evidence is missing or malformed.', 'uncertain-provider-write', error );
+								: quarantine(
+										'WooCommerce authenticated session evidence is missing or malformed.',
+										'uncertain-provider-write',
+										error
+								  );
 						}
 					},
 				};

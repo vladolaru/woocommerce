@@ -181,14 +181,23 @@ export interface HistoricalPayForOrderBrowserEvidence {
 }
 
 export interface HistoricalPayForOrderRunnerReceipt {
-	graph: Pick< HistoricalPayForOrderEvidence[ 'cardinality' ], 'orderIds' | 'intentIds' | 'paidIntentIds' | 'orphanIntentIds' >;
+	graph: Pick<
+		HistoricalPayForOrderEvidence[ 'cardinality' ],
+		'orderIds' | 'intentIds' | 'paidIntentIds' | 'orphanIntentIds'
+	>;
 	listener: {
 		quiescent: boolean;
 		sideEffects: readonly string[];
 	};
 	journals: HistoricalPayForOrderEvidence[ 'journals' ];
-	order: Pick< HistoricalPayForOrderEvidence[ 'order' ], 'paymentMethod' | 'productLines' >;
-	nativeSuccess: Pick< HistoricalPayForOrderEvidence[ 'nativeSuccess' ], 'intentStatus' | 'cardLast4' >;
+	order: Pick<
+		HistoricalPayForOrderEvidence[ 'order' ],
+		'paymentMethod' | 'productLines'
+	>;
+	nativeSuccess: Pick<
+		HistoricalPayForOrderEvidence[ 'nativeSuccess' ],
+		'intentStatus' | 'cardLast4'
+	>;
 	stock: {
 		before: number;
 		after: number;
@@ -220,17 +229,23 @@ export function composeHistoricalPayForOrderEvidence(
 		! Number.isSafeInteger( receipt.emails.before ) ||
 		! Number.isSafeInteger( receipt.emails.after )
 	) {
-		fail( 'Task 4 receipt requires observed stock, note, and email counts.' );
+		fail(
+			'Task 4 receipt requires observed stock, note, and email counts.'
+		);
 	}
 	if ( receipt.stock.before !== 1 || receipt.stock.after !== 0 ) {
-		fail( 'Task 4 receipt requires the observed managed-stock transition from 1 to 0.' );
+		fail(
+			'Task 4 receipt requires the observed managed-stock transition from 1 to 0.'
+		);
 	}
 	if (
 		receipt.stock.before !== fixture.baseline.stockQuantity ||
 		receipt.notes.before !== fixture.baseline.noteCount ||
 		receipt.emails.before !== fixture.baseline.emailCount
 	) {
-		fail( 'Task 4 receipt does not match the immutable observed baseline.' );
+		fail(
+			'Task 4 receipt does not match the immutable observed baseline.'
+		);
 	}
 	return validateHistoricalPayForOrderRecovery( fixture, {
 		fixtureChecksumSha256: browser.fixtureChecksumSha256,
@@ -253,9 +268,16 @@ export function composeHistoricalPayForOrderEvidence(
 			paymentMethodId: browser.nativeSuccess.paymentMethodId,
 			intentStatus: receipt.nativeSuccess.intentStatus,
 			cardLast4: receipt.nativeSuccess.cardLast4,
-			charges: [ { id: browser.nativeSuccess.chargeId, status: browser.nativeSuccess.chargeStatus, captured: browser.nativeSuccess.chargeCaptured } ],
+			charges: [
+				{
+					id: browser.nativeSuccess.chargeId,
+					status: browser.nativeSuccess.chargeStatus,
+					captured: browser.nativeSuccess.chargeCaptured,
+				},
+			],
 			occurrenceCount: browser.nativeSuccess.occurrenceCount,
-			captureOccurrenceCount: browser.nativeSuccess.captureOccurrenceCount,
+			captureOccurrenceCount:
+				browser.nativeSuccess.captureOccurrenceCount,
 		},
 		cardinality: {
 			...receipt.graph,
@@ -275,7 +297,9 @@ export function composeHistoricalPayForOrderEvidence(
 
 export function validateHistoricalOrderPayTotal( total: string ): void {
 	if ( total !== '$10.01' ) {
-		fail( 'Historical pay-for-order requires the exact Total: $10.01 cell.' );
+		fail(
+			'Historical pay-for-order requires the exact Total: $10.01 cell.'
+		);
 	}
 }
 
@@ -293,9 +317,13 @@ export function validateHistoricalOrderPayRoute(
 		actual.searchParams.getAll( 'key' ).length !== 1 ||
 		actual.searchParams.get( 'key' ) !== expected.orderKey ||
 		actual.searchParams.getAll( 'pay_for_order' ).length !== 1 ||
-		! [ 'true', '1' ].includes( actual.searchParams.get( 'pay_for_order' ) ?? '' )
+		! [ 'true', '1' ].includes(
+			actual.searchParams.get( 'pay_for_order' ) ?? ''
+		)
 	) {
-		throw new Error( 'Historical pay-for-order requires the exact rendered order-pay route.' );
+		throw new Error(
+			'Historical pay-for-order requires the exact rendered order-pay route.'
+		);
 	}
 }
 
@@ -331,9 +359,9 @@ function validateRecordedClientDecline(
 	fixture: HistoricalPayForOrderFixture,
 	decline: FailedPaymentEvidence
 ): void {
-	const expectedTotal = `${ Math.floor( fixture.order.totalMinor / 100 ) }.${ String(
-		fixture.order.totalMinor % 100
-	).padStart( 2, '0' ) }`;
+	const expectedTotal = `${ Math.floor(
+		fixture.order.totalMinor / 100
+	) }.${ String( fixture.order.totalMinor % 100 ).padStart( 2, '0' ) }`;
 	if ( decline.orderStatus !== fixture.order.status ) {
 		fail( 'requires the immutable failed-order status.' );
 	}
@@ -378,7 +406,9 @@ function sameValues( left: unknown, right: unknown ): boolean {
 	return JSON.stringify( left ) === JSON.stringify( right );
 }
 
-function validateImmutableFixture( fixture: HistoricalPayForOrderFixture ): void {
+function validateImmutableFixture(
+	fixture: HistoricalPayForOrderFixture
+): void {
 	if (
 		fixture.schemaVersion !== 1 ||
 		fixture.source.pluginVersion !== IMMUTABLE_PLUGIN_VERSION ||
@@ -460,7 +490,9 @@ function validateProtection(
 			protection.token.length !== 16 ||
 			! SHA256_PATTERN.test( protection.token.sha256 ) )
 	) {
-		fail( 'requires one 16-character card-testing protection token digest when enabled.' );
+		fail(
+			'requires one 16-character card-testing protection token digest when enabled.'
+		);
 	}
 }
 
@@ -482,7 +514,9 @@ function validateRecoveredOrder(
 		order.noteCount !== fixture.order.noteCount + 1 ||
 		order.emailCount !== fixture.order.emailCount + 1
 	) {
-		fail( 'requires the same failed order key, customer, currency, total, and line after recovery.' );
+		fail(
+			'requires the same failed order key, customer, currency, total, and line after recovery.'
+		);
 	}
 }
 
@@ -501,7 +535,9 @@ function validateNativeSuccess(
 		nativeSuccess.intentId === clientDecline.intentId ||
 		nativeSuccess.paymentMethodId === clientDecline.paymentMethodId
 	) {
-		fail( 'requires distinct decline and success intent and PaymentMethod identities.' );
+		fail(
+			'requires distinct decline and success intent and PaymentMethod identities.'
+		);
 	}
 	if (
 		nativeSuccess.charges.length !== 1 ||
@@ -515,7 +551,9 @@ function validateNativeSuccess(
 		nativeSuccess.intentId === clientDecline.intentId ||
 		nativeSuccess.paymentMethodId === clientDecline.paymentMethodId
 	) {
-		fail( 'requires distinct decline and success intent and PaymentMethod identities.' );
+		fail(
+			'requires distinct decline and success intent and PaymentMethod identities.'
+		);
 	}
 }
 
@@ -553,7 +591,9 @@ function validateCardinalities(
 		evidence.cardinality.customerEmailDelta !== 1 ||
 		evidence.cardinality.listenerSideEffectCount !== 1
 	) {
-		fail( 'requires each stock, note, email, and listener side-effect delta exactly once.' );
+		fail(
+			'requires each stock, note, email, and listener side-effect delta exactly once.'
+		);
 	}
 	if (
 		! evidence.listener.quiescent ||
@@ -566,7 +606,9 @@ function validateCardinalities(
 	if (
 		evidence.journals.length !== 2 ||
 		! sameValues(
-			evidence.journals.map( ( journal ) => journal.submission ).toSorted(),
+			evidence.journals
+				.map( ( journal ) => journal.submission )
+				.toSorted(),
 			[ 'client-decline', 'native-pay-for-order' ]
 		) ||
 		evidence.journals.some( ( journal ) => ! journal.resolved )
@@ -581,7 +623,10 @@ function validateCleanup(
 ): void {
 	const expected = {
 		orderIds: [ fixture.order.id ],
-		intentIds: [ fixture.clientDecline.intentId, evidence.nativeSuccess.intentId ],
+		intentIds: [
+			fixture.clientDecline.intentId,
+			evidence.nativeSuccess.intentId,
+		],
 		paymentMethodIds: [
 			fixture.clientDecline.paymentMethodId,
 			evidence.nativeSuccess.paymentMethodId,
@@ -616,7 +661,9 @@ export function validateHistoricalPayForOrderRecovery(
 ): HistoricalPayForOrderEvidence {
 	evidence = {
 		...evidence,
-		protection: validateCardTestingProtectionEvidence( evidence.protection ),
+		protection: validateCardTestingProtectionEvidence(
+			evidence.protection
+		),
 	};
 	validateImmutableFixture( fixture );
 	if ( evidence.fixtureChecksumSha256 !== fixture.checksumSha256 ) {
@@ -689,12 +736,16 @@ export async function collectHistoricalPayForOrderRecovery(
 			evidence.order.currency !== fixture.order.currency ||
 			evidence.order.totalMinor !== fixture.order.totalMinor ||
 			! [ 'processing', 'completed' ].includes( evidence.order.status ) ||
-			evidence.nativeSuccess.intentId === fixture.clientDecline.intentId ||
-			evidence.nativeSuccess.paymentMethodId === fixture.clientDecline.paymentMethodId ||
+			evidence.nativeSuccess.intentId ===
+				fixture.clientDecline.intentId ||
+			evidence.nativeSuccess.paymentMethodId ===
+				fixture.clientDecline.paymentMethodId ||
 			evidence.nativeSuccess.occurrenceCount !== 1 ||
 			evidence.nativeSuccess.captureOccurrenceCount !== 1
 		) {
-			fail( 'requires observed browser recovery identity and provider occurrence evidence.' );
+			fail(
+				'requires observed browser recovery identity and provider occurrence evidence.'
+			);
 		}
 		return evidence;
 	} );

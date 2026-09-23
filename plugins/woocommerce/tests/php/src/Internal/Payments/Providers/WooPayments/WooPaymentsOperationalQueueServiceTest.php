@@ -528,7 +528,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			true
 		);
 		$service          = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $eligible_account );
-		$note = new \Automattic\WooCommerce\Admin\Notes\Note();
+		$note             = new \Automattic\WooCommerce\Admin\Notes\Note();
 		$note->set_name( 'wc-payments-notes-test-to-live' );
 		$note->set_title( 'Previous inbox nudge' );
 		$note->set_content( 'Previous inbox nudge' );
