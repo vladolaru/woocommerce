@@ -498,7 +498,19 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should add the test-to-live inbox note after seven days of test mode with a test sale, and remove it when the store goes live.
+	 * @testdox Test-to-live inbox sync should be unhooked while the test-mode clock stays active.
+	 */
+	public function test_test_to_live_inbox_sync_is_unhooked(): void {
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$service->register();
+
+		$this->assertFalse( has_action( 'woocommerce_payments_account_refreshed', array( $service, 'maybe_sync_test_to_live_inbox_note' ) ) );
+		$this->assertFalse( has_action( 'wcpay_store_setup_sync', array( $service, 'maybe_sync_test_to_live_inbox_note' ) ) );
+		$this->assertNotFalse( has_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $service, 'maybe_handle_test_mode_toggle' ) ) );
+	}
+
+	/**
+	 * @testdox The deprecated test-to-live inbox method should only remove old notes.
 	 */
 	public function test_test_to_live_inbox_note_follows_eligibility(): void {
 		update_option( 'wcpay_test_mode_enabled_date', time() - 8 * DAY_IN_SECONDS, false );
@@ -516,51 +528,16 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			true
 		);
 		$service          = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $eligible_account );
+		$note = new \Automattic\WooCommerce\Admin\Notes\Note();
+		$note->set_name( 'wc-payments-notes-test-to-live' );
+		$note->set_title( 'Previous inbox nudge' );
+		$note->set_content( 'Previous inbox nudge' );
+		$note->set_type( \Automattic\WooCommerce\Admin\Notes\Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
+		$note->save();
+		$this->assertNotEmpty( $this->get_note_ids_with_name( 'wc-payments-notes-test-to-live' ) );
 
 		$service->maybe_sync_test_to_live_inbox_note();
-
-		$this->assertNotEmpty( $this->get_note_ids_with_name( 'wc-payments-notes-test-to-live' ), 'Seven days in test mode with a test sale must surface the go-live nudge.' );
-
-		$live_account = $this->create_account_service(
-			array(
-				'account_id'       => 'acct_native_test',
-				'payments_enabled' => true,
-			),
-			false
-		);
-		$live_service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $live_account );
-
-		$live_service->maybe_sync_test_to_live_inbox_note();
-
-		$this->assertEmpty( $this->get_note_ids_with_name( 'wc-payments-notes-test-to-live' ), 'Going live must clear the go-live nudge.' );
-	}
-
-	/**
-	 * @testdox Should not add the test-to-live inbox note before the seven-day threshold.
-	 */
-	public function test_test_to_live_inbox_note_respects_days_threshold(): void {
-		update_option( 'wcpay_test_mode_enabled_date', time() - 2 * DAY_IN_SECONDS, false );
-		$order = \WC_Helper_Order::create_order();
-		$order->set_payment_method( 'woocommerce_payments' );
-		$order->set_status( 'completed' );
-		$order->update_meta_data( '_wcpay_mode', 'test' );
-		$order->save();
-
-		$service = $this->create_service(
-			new StaticNativeRuntimeArbiter( true ),
-			new RecordingActionSchedulerService(),
-			null,
-			$this->create_account_service(
-				array(
-					'account_id'       => 'acct_native_test',
-					'payments_enabled' => true,
-				),
-				true
-			)
-		);
-
 		$service->maybe_sync_test_to_live_inbox_note();
-
 		$this->assertEmpty( $this->get_note_ids_with_name( 'wc-payments-notes-test-to-live' ) );
 	}
 

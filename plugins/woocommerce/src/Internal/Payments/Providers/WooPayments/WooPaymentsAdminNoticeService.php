@@ -7,6 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Admin\Notes\Notes;
+use Automattic\WooCommerce\Enums\OrderInternalStatus;
+use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use WP_Error;
 
 /**
@@ -16,6 +20,16 @@ use WP_Error;
  * @internal
  */
 class WooPaymentsAdminNoticeService {
+	/**
+	 * Existing site-scoped test-to-live eligibility cache.
+	 */
+	private const TEST_TO_LIVE_ELIGIBLE_TRANSIENT = 'wcpay_test_to_live_eligible';
+
+	/**
+	 * Duplicate inbox note previously produced for the same journey.
+	 */
+	private const TEST_TO_LIVE_NOTE_NAME = 'wc-payments-notes-test-to-live';
+
 	/**
 	 * Supported actions for each settings notice.
 	 */
@@ -86,8 +100,72 @@ class WooPaymentsAdminNoticeService {
 		if ( 0 === get_current_user_id() || ! $this->account_service->has_working_account() ) {
 			return null;
 		}
+		$user_id = get_current_user_id();
+		if ( metadata_exists( 'user', $user_id, self::USER_META_KEYS['test_to_live']['shown'] ) || metadata_exists( 'user', $user_id, self::USER_META_KEYS['test_to_live']['dismiss'] ) || metadata_exists( 'user', $user_id, self::USER_META_KEYS['test_to_live']['snooze'] ) ) {
+			Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
+		}
 
-		return null;
+		if ( ! $this->account_service->is_test_mode_enabled() || $this->account_service->is_dev_mode_enabled() ) {
+			return null;
+		}
+
+		$now          = (int) call_user_func( $this->clock );
+		$enabled_date = (int) get_option( 'wcpay_test_mode_enabled_date', 0 );
+		if ( 0 === $enabled_date || $now < $enabled_date + 7 * DAY_IN_SECONDS ) {
+			return null;
+		}
+
+		if ( get_user_meta( $user_id, self::USER_META_KEYS['test_to_live']['dismiss'], true ) ) {
+			return null;
+		}
+		$snoozed_at = (int) get_user_meta( $user_id, self::USER_META_KEYS['test_to_live']['snooze'], true );
+		if ( 0 < $snoozed_at && $now < $snoozed_at + 7 * DAY_IN_SECONDS ) {
+			return null;
+		}
+
+		if ( false === get_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT ) ) {
+			$orders = wc_get_orders(
+				array(
+					'payment_method' => OrderPaymentStore::GATEWAY_ID,
+					'limit'          => 1,
+					'orderby'        => 'none',
+					'return'         => 'ids',
+					'status'         => array( OrderInternalStatus::COMPLETED, OrderInternalStatus::PROCESSING ),
+					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+					'meta_key'       => '_wcpay_mode',
+					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+					'meta_value'     => 'test',
+				)
+			);
+			if ( empty( $orders ) ) {
+				return null;
+			}
+			set_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT, '1', HOUR_IN_SECONDS );
+		}
+
+		$can_go_live = $this->account_service->has_live_account();
+		$primary_url = $can_go_live ? Utils::wc_payments_settings_url( '/woopayments/settings' ) : Utils::wc_payments_settings_url( '/woopayments/onboarding' );
+		$action_base = 'wc-admin/settings/payments/woopayments/admin-notices/test_to_live/';
+		Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
+
+		return array(
+			'id'        => 'test_to_live',
+			'message'   => __( "You're ready to take real payments. Switch from test mode to start charging customers.", 'woocommerce' ),
+			'primary'   => array(
+				'kind'  => $can_go_live ? 'disable_test_mode' : 'onboard',
+				'label' => __( 'Turn on live payments', 'woocommerce' ),
+				'href'  => $primary_url,
+			),
+			'secondary' => array(
+				'kind'  => 'snooze',
+				'label' => __( 'Maybe later', 'woocommerce' ),
+			),
+			'_links'    => array(
+				'shown'   => array( 'href' => rest_url( $action_base . 'shown' ) ),
+				'dismiss' => array( 'href' => rest_url( $action_base . 'dismiss' ) ),
+				'snooze'  => array( 'href' => rest_url( $action_base . 'snooze' ) ),
+			),
+		);
 	}
 
 	/**
@@ -120,6 +198,10 @@ class WooPaymentsAdminNoticeService {
 		}
 		if ( ! add_user_meta( $user_id, $meta_key, (int) call_user_func( $this->clock ), true ) ) {
 			return new WP_Error( 'woocommerce_woopayments_notice_action_failed', __( 'Could not update the notice.', 'woocommerce' ) );
+		}
+		if ( 'test_to_live' === $notice_id ) {
+			delete_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT );
+			Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
 		}
 
 		return true;

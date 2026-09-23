@@ -8,6 +8,7 @@ import {
 	paymentSettingsStore,
 	PaymentsProvider,
 	PaymentsEntity,
+	PaymentsProviderType,
 } from '@woocommerce/data';
 import {
 	dispatch,
@@ -28,6 +29,7 @@ import './settings-payments-body.scss';
 import { createNoticesFromResponse } from '~/lib/notices';
 import { OtherPaymentGateways } from '~/settings-payments/components/other-payment-gateways';
 import { PaymentGateways } from '~/settings-payments/components/payment-gateways';
+import { WooPaymentsAdminNotices } from '~/settings-payments/components/woopayments-admin-notices';
 import { IncentiveBanner } from '~/settings-payments/components/incentive-banner';
 import { IncentiveModal } from '~/settings-payments/components/incentive-modal';
 import {
@@ -49,7 +51,10 @@ import {
 import { WooPaymentsPostSandboxAccountSetupModal } from '~/settings-payments/components/modals';
 import WooPaymentsModal from '~/woopayments/onboarding';
 import { getAdminSetting } from '~/utils/admin-settings';
-import { wooPaymentsOnboardingSessionEntrySettings } from '~/settings-payments/constants';
+import {
+	wooPaymentsOnboardingSessionEntrySettings,
+	wooPaymentsProviderId,
+} from '~/settings-payments/constants';
 
 /**
  * A component that renders the main settings page for managing payment gateways in WooCommerce.
@@ -60,6 +65,10 @@ export const SettingsPaymentsMain = () => {
 	const [ installingPlugin, setInstallingPlugin ] = useState< string | null >(
 		null
 	);
+	const [ hiddenNoticeKey, setHiddenNoticeKey ] = useState< string | null >(
+		null
+	);
+	const containerRef = useRef< HTMLDivElement >( null );
 	// State to hold the sorted providers in case of changing the order, otherwise it will be null
 	const [ sortedProviders, setSortedProviders ] = useState<
 		PaymentsProvider[] | null
@@ -212,6 +221,17 @@ export const SettingsPaymentsMain = () => {
 	const incentiveProvider = providers.find(
 		( provider: PaymentsProvider ) => '_incentive' in provider
 	);
+	const noticeProvider = providers.find(
+		( provider: PaymentsProvider ) =>
+			provider.id === wooPaymentsProviderId &&
+			provider._type === PaymentsProviderType.Gateway
+	);
+	const adminNotice = ! isFetching
+		? noticeProvider?._admin_notice
+		: undefined;
+	const noticeKey = adminNotice
+		? `${ adminNotice.id }:${ adminNotice.stage ?? '' }`
+		: null;
 	const incentive = incentiveProvider ? incentiveProvider._incentive : null;
 
 	// Determine what type of incentive surface to display.
@@ -566,7 +586,18 @@ export const SettingsPaymentsMain = () => {
 					setUpPlugin={ setUpPlugin }
 				/>
 			) }
-			<div className="settings-payments-main__container">
+			<div
+				className="settings-payments-main__container"
+				ref={ containerRef }
+				tabIndex={ -1 }
+			>
+				{ adminNotice && noticeKey !== hiddenNoticeKey && (
+					<WooPaymentsAdminNotices
+						notice={ adminNotice }
+						focusTargetRef={ containerRef }
+						onDismiss={ () => setHiddenNoticeKey( noticeKey ) }
+					/>
+				) }
 				<PaymentGateways
 					providers={ sortedProviders || providers }
 					installedPluginSlugs={ installedPluginSlugs }

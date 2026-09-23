@@ -148,13 +148,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private const TEST_TO_LIVE_NOTE_NAME = 'wc-payments-notes-test-to-live';
 
 	/**
-	 * Days a live-connected store must sit in test mode before the go-live nudge.
-	 *
-	 * @var int
-	 */
-	private const TEST_TO_LIVE_DAYS_THRESHOLD = 7;
-
-	/**
 	 * Preserved post-KYC activation eligibility transient.
 	 *
 	 * @var string
@@ -292,8 +285,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		add_action( 'updated_option', array( $this, 'handle_site_language_update' ), 10, 3 );
 		add_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $this, 'maybe_add_missing_currencies' ) );
 		add_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $this, 'maybe_handle_test_mode_toggle' ), 10, 2 );
-		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'maybe_sync_test_to_live_inbox_note' ) );
-		add_action( self::STORE_SETUP_SYNC_ACTION, array( $this, 'maybe_sync_test_to_live_inbox_note' ) );
 	}
 
 	/**
@@ -325,118 +316,12 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Keep the test-to-live inbox note aligned with the plugin's go-live nudge eligibility.
+	 * Remove the obsolete test-to-live inbox note for older callers.
 	 *
-	 * The plugin renders this as a settings-page admin notice; the native surface is a WC Admin inbox note, added when a live-connected store has sat in test mode for a week with at least one test sale, and removed once eligibility clears.
+	 * @deprecated 11.2.0 The test-to-live journey is now a Payments settings notice.
 	 */
 	public function maybe_sync_test_to_live_inbox_note(): void {
-		if ( $this->is_eligible_for_test_to_live_note() ) {
-			$this->add_test_to_live_note();
-			return;
-		}
-
-		$this->delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
-	}
-
-	/**
-	 * Compute the plugin's test-to-live nudge eligibility predicate.
-	 *
-	 * @return bool
-	 */
-	private function is_eligible_for_test_to_live_note(): bool {
-		if ( ! $this->account_service->has_working_account() ) {
-			return false;
-		}
-
-		if ( ! $this->account_service->is_test_mode_enabled() || $this->account_service->is_dev_mode_enabled() ) {
-			return false;
-		}
-
-		$enabled_date = (int) get_option( self::TEST_MODE_ENABLED_DATE_OPTION, 0 );
-		if ( ! $enabled_date || time() < $enabled_date + self::TEST_TO_LIVE_DAYS_THRESHOLD * DAY_IN_SECONDS ) {
-			return false;
-		}
-
-		// Existence-only check: orderby none keeps the LIMIT from forcing a filesort over every matching order on large stores, like the plugin's query.
-		$orders = wc_get_orders(
-			array(
-				'payment_method' => OrderPaymentStore::GATEWAY_ID,
-				'limit'          => 1,
-				'orderby'        => 'none',
-				'return'         => 'ids',
-				'status'         => array( 'wc-completed', 'wc-processing' ),
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-				'meta_key'       => '_wcpay_mode',
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-				'meta_value'     => 'test',
-			)
-		);
-
-		return ! empty( $orders );
-	}
-
-	/**
-	 * Add the test-to-live go-live nudge inbox note.
-	 */
-	private function add_test_to_live_note(): void {
-		/**
-		 * Notes data store.
-		 *
-		 * @var NotesDataStore $data_store
-		 */
-		$data_store = Notes::load_data_store();
-		if ( ! empty( $data_store->get_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME ) ) ) {
-			return;
-		}
-
-		$note = new Note();
-		$note->set_title(
-			sprintf(
-				/* translators: %s: WooPayments. */
-				__( 'Ready to accept real payments with %s?', 'woocommerce' ),
-				'WooPayments'
-			)
-		);
-		$note->set_content(
-			sprintf(
-				/* translators: %s: WooPayments. */
-				__( 'Your store has been using %s in test mode for a while. Test payments are not real payments — switch to live mode in your payment settings when you are ready to start selling.', 'woocommerce' ),
-				'WooPayments'
-			)
-		);
-		$note->set_content_data( (object) array() );
-		$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
-		$note->set_name( self::TEST_TO_LIVE_NOTE_NAME );
-		$note->set_source( 'woocommerce-payments' );
-		$note->add_action(
-			self::TEST_TO_LIVE_NOTE_NAME,
-			__( 'Go to payment settings', 'woocommerce' ),
-			admin_url( 'admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments' ),
-			'unactioned',
-			true
-		);
-		$note->save();
-	}
-
-	/**
-	 * Delete all inbox notes stored under a name.
-	 *
-	 * @param string $name Note name.
-	 */
-	private function delete_notes_with_name( string $name ): void {
-		/**
-		 * Notes data store.
-		 *
-		 * @var NotesDataStore $data_store
-		 */
-		$data_store = Notes::load_data_store();
-
-		foreach ( $data_store->get_notes_with_name( $name ) as $note_id ) {
-			$note = Notes::get_note( (int) $note_id );
-			if ( $note instanceof Note ) {
-				$note->delete();
-			}
-		}
+		Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
 	}
 
 	/**
