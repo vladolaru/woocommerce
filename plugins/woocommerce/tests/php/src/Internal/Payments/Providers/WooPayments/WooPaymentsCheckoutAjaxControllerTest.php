@@ -1953,7 +1953,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 					),
 				),
 				'WooPayments',
-				500,
+				// PHP 7.4 emits a notice for an array-to-string cast; PHP 8 turns it into a warning that the callback catches as an error.
+				PHP_VERSION_ID < 80000 ? 200 : 500,
 			),
 			'non-array available network'             => array(
 				array(
