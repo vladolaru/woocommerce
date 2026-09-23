@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Notes;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -285,6 +286,37 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		add_action( 'updated_option', array( $this, 'handle_site_language_update' ), 10, 3 );
 		add_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $this, 'maybe_add_missing_currencies' ) );
 		add_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $this, 'maybe_handle_test_mode_toggle' ), 10, 2 );
+		add_action( 'woocommerce_order_status_changed', array( $this, 'handle_woocommerce_order_status_changed' ), 10, 4 );
+	}
+
+	/**
+	 * Record a qualifying live WooPayments sale when an order reaches a paid status.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $order_id   Order ID supplied by the hook.
+	 * @param mixed $old_status Previous order status supplied by the hook.
+	 * @param mixed $new_status New order status supplied by the hook.
+	 * @param mixed $order      Order supplied by the hook.
+	 */
+	public function handle_woocommerce_order_status_changed( $order_id, $old_status, $new_status, $order ): void {
+		unset( $order_id, $old_status );
+
+		if ( get_option( self::HAS_LIVE_SALE_OPTION ) ) {
+			return;
+		}
+
+		if ( ! $order instanceof WC_Order || ! in_array( $new_status, array( OrderStatus::PROCESSING, OrderStatus::COMPLETED ), true ) || OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method() ) {
+			return;
+		}
+
+		$mode = $order->get_meta( '_wcpay_mode', true );
+		if ( ! is_string( $mode ) || ! in_array( $mode, array( 'production', 'prod', 'live' ), true ) ) {
+			return;
+		}
+
+		update_option( self::HAS_LIVE_SALE_OPTION, '1', true );
+		delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
 	}
 
 	/**

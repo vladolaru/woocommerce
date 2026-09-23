@@ -13,6 +13,8 @@ import { WooPaymentsAdminNotices } from '..';
 
 const mockCreateErrorNotice = jest.fn();
 const mockInvalidatePaymentProviders = jest.fn();
+const mockAssign = jest.fn();
+const originalLocation = window.location;
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 jest.mock( '@woocommerce/data', () => ( { paymentSettingsStore: {} } ) );
@@ -44,8 +46,40 @@ const notice: WooPaymentsAdminNotice = {
 	},
 };
 
+const postKycNotice = (
+	stage: 7 | 14 | 30,
+	message: string
+): WooPaymentsAdminNotice => ( {
+	id: 'post_kyc_activation',
+	stage,
+	message,
+	primary: {
+		kind: 'navigate_and_dismiss',
+		label: 'Promote my store',
+		href: '/wp-admin/admin.php?page=wc-admin&path=/marketing',
+	},
+	_links: {
+		shown: { href: '/admin-notices/post_kyc_activation/shown' },
+		dismiss: { href: '/admin-notices/post_kyc_activation/dismiss' },
+	},
+} );
+
 describe( 'WooPaymentsAdminNotices', () => {
 	let focusTarget = document.createElement( 'div' );
+
+	beforeAll( () => {
+		Object.defineProperty( window, 'location', {
+			configurable: true,
+			value: { ...originalLocation, assign: mockAssign },
+		} );
+	} );
+
+	afterAll( () => {
+		Object.defineProperty( window, 'location', {
+			configurable: true,
+			value: originalLocation,
+		} );
+	} );
 
 	beforeEach( () => {
 		focusTarget = document.createElement( 'div' );
@@ -168,5 +202,167 @@ describe( 'WooPaymentsAdminNotices', () => {
 		await waitFor( () =>
 			expect( dismiss ).not.toHaveAttribute( 'aria-disabled', 'true' )
 		);
+	} );
+
+	it.each( [
+		[ 7, 'Your store is open. Now bring in your first customer.' ],
+		[ 14, 'Two weeks on, still no first sale?' ],
+		[ 30, "A month in. Let's get your first sale." ],
+	] as const )(
+		'shows the exact day %d post-KYC notice with a native promotion link',
+		async ( stage, message ) => {
+			const currentNotice = postKycNotice( stage, message );
+			render(
+				<WooPaymentsAdminNotices
+					notice={ currentNotice }
+					focusTargetRef={ { current: focusTarget } }
+					onDismiss={ jest.fn() }
+				/>
+			);
+
+			expect( screen.getByText( message ) ).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'link', { name: 'Promote my store' } )
+			).toHaveAttribute( 'href', currentNotice.primary.href );
+			expect(
+				screen.queryByRole( 'button', { name: 'Maybe later' } )
+			).not.toBeInTheDocument();
+			await waitFor( () =>
+				expect( apiFetch ).toHaveBeenCalledWith( {
+					url: currentNotice._links.shown.href,
+					method: 'POST',
+					data: { stage },
+				} )
+			);
+		}
+	);
+
+	it( 'records terminal dismissal before keyboard link activation navigates', async () => {
+		const currentNotice = postKycNotice(
+			7,
+			'Your store is open. Now bring in your first customer.'
+		);
+		let finishDismiss: ( value: { success: boolean } ) => void = () => {};
+		( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
+			if ( url === currentNotice._links.dismiss.href ) {
+				return new Promise( ( resolve ) => {
+					finishDismiss = resolve;
+				} );
+			}
+			return Promise.resolve( { success: true } );
+		} );
+		render(
+			<WooPaymentsAdminNotices
+				notice={ currentNotice }
+				focusTargetRef={ { current: focusTarget } }
+				onDismiss={ jest.fn() }
+			/>
+		);
+
+		const promote = screen.getByRole( 'link', {
+			name: 'Promote my store',
+		} );
+		await userEvent.tab();
+		expect( promote ).toHaveFocus();
+		await userEvent.keyboard( '{Enter}' );
+
+		expect( apiFetch ).toHaveBeenCalledWith( {
+			url: currentNotice._links.dismiss.href,
+			method: 'POST',
+			data: { stage: 7 },
+		} );
+		expect( mockAssign ).not.toHaveBeenCalled();
+
+		await act( async () => {
+			finishDismiss( { success: true } );
+		} );
+		await waitFor( () =>
+			expect( mockAssign ).toHaveBeenCalledWith(
+				currentNotice.primary.href
+			)
+		);
+	} );
+
+	it( 'ordinary keyboard dismissal writes only the current post-KYC stage', async () => {
+		const currentNotice = postKycNotice(
+			14,
+			'Two weeks on, still no first sale?'
+		);
+		const onDismiss = jest.fn();
+		render(
+			<WooPaymentsAdminNotices
+				notice={ currentNotice }
+				focusTargetRef={ { current: focusTarget } }
+				onDismiss={ onDismiss }
+			/>
+		);
+		await waitFor( () =>
+			expect( apiFetch ).toHaveBeenCalledWith( {
+				url: currentNotice._links.shown.href,
+				method: 'POST',
+				data: { stage: 14 },
+			} )
+		);
+		( apiFetch as jest.Mock ).mockClear();
+
+		const dismiss = screen.getByRole( 'button', {
+			name: 'Dismiss WooPayments notice',
+		} );
+		await userEvent.tab();
+		await userEvent.tab();
+		expect( dismiss ).toHaveFocus();
+		await userEvent.keyboard( ' ' );
+
+		await waitFor( () => expect( onDismiss ).toHaveBeenCalledTimes( 1 ) );
+		expect( apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( apiFetch ).toHaveBeenCalledWith( {
+			url: currentNotice._links.dismiss.href,
+			method: 'POST',
+			data: { stage: 14 },
+		} );
+		expect( mockAssign ).not.toHaveBeenCalled();
+		expect( focusTarget ).toHaveFocus();
+	} );
+
+	it( 'keeps a failed promotion dismissal visible and prevents navigation', async () => {
+		const currentNotice = postKycNotice(
+			30,
+			"A month in. Let's get your first sale."
+		);
+		let rejectRequest: ( error: Error ) => void = () => {};
+		( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
+			return url === currentNotice._links.dismiss.href
+				? new Promise( ( _resolve, reject ) => {
+						rejectRequest = reject;
+				  } )
+				: Promise.resolve( { success: true } );
+		} );
+		const onDismiss = jest.fn();
+		render(
+			<WooPaymentsAdminNotices
+				notice={ currentNotice }
+				focusTargetRef={ { current: focusTarget } }
+				onDismiss={ onDismiss }
+			/>
+		);
+
+		const promote = screen.getByRole( 'link', {
+			name: 'Promote my store',
+		} );
+		await userEvent.tab();
+		expect( promote ).toHaveFocus();
+		await userEvent.keyboard( '{Enter}' );
+		await act( async () => rejectRequest( new Error( 'Request failed' ) ) );
+
+		await waitFor( () =>
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'We could not update this notice. Please try again.',
+				{ type: 'snackbar', explicitDismiss: true }
+			)
+		);
+		expect( mockAssign ).not.toHaveBeenCalled();
+		expect( onDismiss ).not.toHaveBeenCalled();
+		expect( screen.getByText( currentNotice.message ) ).toBeInTheDocument();
+		expect( promote ).toHaveFocus();
 	} );
 } );

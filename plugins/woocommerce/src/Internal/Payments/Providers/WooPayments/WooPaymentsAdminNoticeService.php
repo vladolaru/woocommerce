@@ -26,6 +26,16 @@ class WooPaymentsAdminNoticeService {
 	private const TEST_TO_LIVE_ELIGIBLE_TRANSIENT = 'wcpay_test_to_live_eligible';
 
 	/**
+	 * Existing site-scoped post-KYC activation eligibility cache.
+	 */
+	private const POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT = 'wcpay_post_kyc_activation_eligible';
+
+	/**
+	 * Supported post-KYC activation stages.
+	 */
+	private const POST_KYC_ACTIVATION_STAGES = array( 7, 14, 30 );
+
+	/**
 	 * Duplicate inbox note previously produced for the same journey.
 	 */
 	private const TEST_TO_LIVE_NOTE_NAME = 'wc-payments-notes-test-to-live';
@@ -105,7 +115,10 @@ class WooPaymentsAdminNoticeService {
 			Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
 		}
 
-		if ( ! $this->account_service->is_test_mode_enabled() || $this->account_service->is_dev_mode_enabled() ) {
+		if ( ! $this->account_service->is_test_mode_enabled() ) {
+			return $this->get_post_kyc_notice( $user_id );
+		}
+		if ( $this->account_service->is_dev_mode_enabled() ) {
 			return null;
 		}
 
@@ -169,6 +182,82 @@ class WooPaymentsAdminNoticeService {
 	}
 
 	/**
+	 * Get the oldest due post-KYC activation stage for the current user.
+	 *
+	 * @param int $user_id Current user ID.
+	 * @return array|null
+	 */
+	private function get_post_kyc_notice( int $user_id ): ?array {
+		if ( ! $this->account_service->can_process_payments() || ! $this->account_service->has_live_account() || $this->account_service->has_test_account() || $this->account_service->is_dev_mode_enabled() || get_option( 'wcpay_has_live_sale' ) ) {
+			return null;
+		}
+
+		$now      = (int) call_user_func( $this->clock );
+		$kyc_date = (int) get_option( 'wcpay_kyc_completion_date', 0 );
+		if ( 0 === $kyc_date || $now < $kyc_date + 7 * DAY_IN_SECONDS || $now >= $kyc_date + 60 * DAY_IN_SECONDS ) {
+			return null;
+		}
+
+		$messages         = array(
+			7  => __( 'Your store is open. Now bring in your first customer.', 'woocommerce' ),
+			14 => __( 'Two weeks on, still no first sale?', 'woocommerce' ),
+			30 => __( "A month in. Let's get your first sale.", 'woocommerce' ),
+		);
+		$selected_stage   = null;
+		$selected_message = null;
+		foreach ( $messages as $stage => $message ) {
+			if ( $now < $kyc_date + $stage * DAY_IN_SECONDS || get_user_meta( $user_id, sprintf( 'wcpay_post_kyc_activation_%d_dismissed', $stage ), true ) ) {
+				continue;
+			}
+			$selected_stage   = $stage;
+			$selected_message = $message;
+			break;
+		}
+		if ( null === $selected_stage || null === $selected_message ) {
+			return null;
+		}
+
+		if ( false === get_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT ) ) {
+			$orders = wc_get_orders(
+				array(
+					'payment_method' => OrderPaymentStore::GATEWAY_ID,
+					'limit'          => 1,
+					'orderby'        => 'none',
+					'return'         => 'ids',
+					'status'         => array( OrderInternalStatus::COMPLETED, OrderInternalStatus::PROCESSING ),
+					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+					'meta_key'       => '_wcpay_mode',
+					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+					'meta_value'     => array( 'production', 'prod', 'live' ),
+					'meta_compare'   => 'IN',
+				)
+			);
+			if ( ! empty( $orders ) ) {
+				update_option( 'wcpay_has_live_sale', '1', true );
+				delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
+				return null;
+			}
+			set_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT, '1', HOUR_IN_SECONDS );
+		}
+
+		$action_base = 'wc-admin/settings/payments/woopayments/admin-notices/post_kyc_activation/';
+		return array(
+			'id'      => 'post_kyc_activation',
+			'stage'   => $selected_stage,
+			'message' => $selected_message,
+			'primary' => array(
+				'kind'  => 'navigate_and_dismiss',
+				'label' => __( 'Promote my store', 'woocommerce' ),
+				'href'  => admin_url( 'admin.php?page=wc-admin&path=/marketing' ),
+			),
+			'_links'  => array(
+				'shown'   => array( 'href' => rest_url( $action_base . 'shown' ) ),
+				'dismiss' => array( 'href' => rest_url( $action_base . 'dismiss' ) ),
+			),
+		);
+	}
+
+	/**
 	 * Record a current-user notice action.
 	 *
 	 * @since 11.2.0
@@ -180,7 +269,7 @@ class WooPaymentsAdminNoticeService {
 	 */
 	public function record_action( string $notice_id, string $action, ?int $stage = null ) {
 		$valid_stage = 'post_kyc_activation' === $notice_id
-			? in_array( $stage, array( 7, 14, 30 ), true )
+			? in_array( $stage, self::POST_KYC_ACTIVATION_STAGES, true )
 			: null === $stage;
 		if ( ! isset( self::ACTIONS[ $notice_id ] ) || ! in_array( $action, self::ACTIONS[ $notice_id ], true ) || ! $valid_stage ) {
 			return new WP_Error( 'woocommerce_woopayments_invalid_notice_action', __( 'Invalid notice action.', 'woocommerce' ) );
@@ -198,6 +287,9 @@ class WooPaymentsAdminNoticeService {
 		}
 		if ( ! add_user_meta( $user_id, $meta_key, (int) call_user_func( $this->clock ), true ) ) {
 			return new WP_Error( 'woocommerce_woopayments_notice_action_failed', __( 'Could not update the notice.', 'woocommerce' ) );
+		}
+		if ( 'post_kyc_activation' === $notice_id ) {
+			delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
 		}
 		if ( 'test_to_live' === $notice_id ) {
 			delete_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT );

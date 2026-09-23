@@ -332,14 +332,25 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		if ( 'post_kyc_activation' === $notice_id ) {
+			set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
+		}
 
 		$this->assertTrue( $sut->record_action( $notice_id, $action, $stage ) );
+		if ( 'post_kyc_activation' === $notice_id ) {
+			$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
+			set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
+		}
 		$first_marker = get_user_meta( $user_id, $meta_key, true );
 		$this->assertNotEmpty( $first_marker );
 		$now = 2000;
 		$this->assertTrue( $sut->record_action( $notice_id, $action, $stage ) );
 		$this->assertSame( $first_marker, get_user_meta( $user_id, $meta_key, true ) );
 		$this->assertCount( 1, get_user_meta( $user_id, $meta_key, false ) );
+		if ( 'post_kyc_activation' === $notice_id ) {
+			$this->assertSame( '1', get_transient( 'wcpay_post_kyc_activation_eligible' ), 'An idempotent replay should not invalidate eligibility again.' );
+			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		}
 	}
 
 	/**
@@ -349,13 +360,300 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	 */
 	public static function valid_actions(): array {
 		return array(
-			'test shown'        => array( 'test_to_live', 'shown', null, 'wcpay_test_to_live_notice_shown' ),
-			'test dismiss'      => array( 'test_to_live', 'dismiss', null, 'wcpay_test_to_live_notice_dismissed' ),
-			'test snooze'       => array( 'test_to_live', 'snooze', null, 'wcpay_test_to_live_notice_snoozed' ),
-			'post-KYC shown'    => array( 'post_kyc_activation', 'shown', 7, 'wcpay_post_kyc_activation_7_shown' ),
-			'post-KYC dismiss'  => array( 'post_kyc_activation', 'dismiss', 14, 'wcpay_post_kyc_activation_14_dismissed' ),
-			'first sale shown'  => array( 'one_and_done', 'shown', null, 'wcpay_one_and_done_notice_shown' ),
-			'first sale snooze' => array( 'one_and_done', 'snooze', null, 'wcpay_one_and_done_notice_snoozed_at' ),
+			'test shown'          => array( 'test_to_live', 'shown', null, 'wcpay_test_to_live_notice_shown' ),
+			'test dismiss'        => array( 'test_to_live', 'dismiss', null, 'wcpay_test_to_live_notice_dismissed' ),
+			'test snooze'         => array( 'test_to_live', 'snooze', null, 'wcpay_test_to_live_notice_snoozed' ),
+			'post-KYC 7 shown'    => array( 'post_kyc_activation', 'shown', 7, 'wcpay_post_kyc_activation_7_shown' ),
+			'post-KYC 7 dismiss'  => array( 'post_kyc_activation', 'dismiss', 7, 'wcpay_post_kyc_activation_7_dismissed' ),
+			'post-KYC 14 shown'   => array( 'post_kyc_activation', 'shown', 14, 'wcpay_post_kyc_activation_14_shown' ),
+			'post-KYC 14 dismiss' => array( 'post_kyc_activation', 'dismiss', 14, 'wcpay_post_kyc_activation_14_dismissed' ),
+			'post-KYC 30 shown'   => array( 'post_kyc_activation', 'shown', 30, 'wcpay_post_kyc_activation_30_shown' ),
+			'post-KYC 30 dismiss' => array( 'post_kyc_activation', 'dismiss', 30, 'wcpay_post_kyc_activation_30_dismissed' ),
+			'first sale shown'    => array( 'one_and_done', 'shown', null, 'wcpay_one_and_done_notice_shown' ),
+			'first sale snooze'   => array( 'one_and_done', 'snooze', null, 'wcpay_one_and_done_notice_snoozed_at' ),
 		);
+	}
+
+	/**
+	 * @testdox Post-KYC notices advance only after the current stage is dismissed and end at day 60.
+	 * @dataProvider provide_post_kyc_stages
+	 *
+	 * @param int      $age_days         Days since KYC completion.
+	 * @param int[]    $dismissed_stages Already dismissed stages.
+	 * @param int|null $expected_stage   Stage to show, if any.
+	 * @param string   $expected_message Exact notice message.
+	 */
+	public function test_post_kyc_stage_selection( int $age_days, array $dismissed_stages, ?int $expected_stage, string $expected_message ): void {
+		$now     = 1700000000;
+		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user_id );
+		update_option( 'wcpay_kyc_completion_date', $now - $age_days * DAY_IN_SECONDS, false );
+		delete_option( 'wcpay_has_live_sale' );
+		set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
+		foreach ( $dismissed_stages as $stage ) {
+			update_user_meta( $user_id, sprintf( 'wcpay_post_kyc_activation_%d_dismissed', $stage ), $now );
+		}
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_working_account' )->willReturn( true );
+		$account->method( 'can_process_payments' )->willReturn( true );
+		$account->method( 'has_live_account' )->willReturn( true );
+		$account->method( 'has_test_account' )->willReturn( false );
+		$account->method( 'is_test_mode_enabled' )->willReturn( false );
+		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
+		$sut->init( $account );
+		$queries      = 0;
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			++$queries;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$notice = $sut->get_notice_for_current_user();
+			if ( null === $expected_stage ) {
+				$this->assertNull( $notice );
+				$this->assertSame( 0, $queries, 'The one-hour site transient should prevent another existence query.' );
+				return;
+			}
+			$this->assertIsArray( $notice );
+			$this->assertSame( 'post_kyc_activation', $notice['id'] );
+			$this->assertSame( $expected_stage, $notice['stage'] );
+			$this->assertSame( $expected_message, $notice['message'] );
+			$this->assertSame( 'navigate_and_dismiss', $notice['primary']['kind'] );
+			$this->assertSame( 'Promote my store', $notice['primary']['label'] );
+			$this->assertSame( admin_url( 'admin.php?page=wc-admin&path=/marketing' ), $notice['primary']['href'] );
+			$this->assertArrayNotHasKey( 'secondary', $notice );
+			$this->assertSame( rest_url( 'wc-admin/settings/payments/woopayments/admin-notices/post_kyc_activation/shown' ), $notice['_links']['shown']['href'] );
+			$this->assertSame( rest_url( 'wc-admin/settings/payments/woopayments/admin-notices/post_kyc_activation/dismiss' ), $notice['_links']['dismiss']['href'] );
+			$this->assertSame( 0, $queries, 'The one-hour site transient should prevent another existence query.' );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_option( 'wcpay_kyc_completion_date' );
+			delete_option( 'wcpay_has_live_sale' );
+			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		}
+	}
+
+	/**
+	 * Stage boundaries and exact approved copy.
+	 *
+	 * @return array<string,array{int,int[],int|null,string}>
+	 */
+	public static function provide_post_kyc_stages(): array {
+		return array(
+			'before day seven'           => array( 6, array(), null, '' ),
+			'day seven'                  => array( 7, array(), 7, 'Your store is open. Now bring in your first customer.' ),
+			'day fourteen oldest due'    => array( 14, array(), 7, 'Your store is open. Now bring in your first customer.' ),
+			'day fourteen next stage'    => array( 14, array( 7 ), 14, 'Two weeks on, still no first sale?' ),
+			'day thirty oldest due'      => array( 30, array(), 7, 'Your store is open. Now bring in your first customer.' ),
+			'day thirty second stage'    => array( 30, array( 7 ), 14, 'Two weeks on, still no first sale?' ),
+			'day thirty next stage'      => array( 30, array( 7, 14 ), 30, "A month in. Let's get your first sale." ),
+			'day fifty-nine final stage' => array( 59, array( 7, 14 ), 30, "A month in. Let's get your first sale." ),
+			'day sixty ends journey'     => array( 60, array(), null, '' ),
+		);
+	}
+
+	/**
+	 * @testdox Post-KYC cheap guards skip the live-order query.
+	 * @dataProvider provide_post_kyc_cheap_guards
+	 *
+	 * @param bool $working      Whether the account is connected and enabled.
+	 * @param bool $can_process  Whether the account can process payments.
+	 * @param bool $live_account Whether the account is live.
+	 * @param bool $test_account Whether the account is a test account.
+	 * @param bool $test_mode    Whether test mode is enabled.
+	 * @param bool $dev_mode    Whether development mode is enabled.
+	 * @param bool $live_sale   Whether a live sale is already recorded.
+	 * @param int  $kyc_age     Days since KYC completion.
+	 */
+	public function test_post_kyc_cheap_guards_skip_order_query( bool $working, bool $can_process, bool $live_account, bool $test_account, bool $test_mode, bool $dev_mode, bool $live_sale, int $kyc_age ): void {
+		$now = 1700000000;
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		if ( 0 <= $kyc_age ) {
+			update_option( 'wcpay_kyc_completion_date', $now - $kyc_age * DAY_IN_SECONDS, false );
+		} else {
+			delete_option( 'wcpay_kyc_completion_date' );
+		}
+		if ( $live_sale ) {
+			update_option( 'wcpay_has_live_sale', '1', false );
+		}
+		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_working_account' )->willReturn( $working );
+		$account->method( 'can_process_payments' )->willReturn( $can_process );
+		$account->method( 'has_live_account' )->willReturn( $live_account );
+		$account->method( 'has_test_account' )->willReturn( $test_account );
+		$account->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
+		$account->method( 'is_dev_mode_enabled' )->willReturn( $dev_mode );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
+		$sut->init( $account );
+		$queries      = 0;
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			++$queries;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertSame( 0, $queries );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_option( 'wcpay_kyc_completion_date' );
+			delete_option( 'wcpay_has_live_sale' );
+			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		}
+	}
+
+	/**
+	 * Predicates that make a post-KYC notice ineligible before querying orders.
+	 *
+	 * @return array<string,array{bool,bool,bool,bool,bool,bool,bool,int}>
+	 */
+	public static function provide_post_kyc_cheap_guards(): array {
+		return array(
+			'disconnected account'  => array( false, true, true, false, false, false, false, 7 ),
+			'invalid account'       => array( true, false, true, false, false, false, false, 7 ),
+			'non-live account'      => array( true, true, false, false, false, false, false, 7 ),
+			'test account'          => array( true, true, true, true, false, false, false, 7 ),
+			'test mode enabled'     => array( true, true, true, false, true, false, false, 7 ),
+			'development mode'      => array( true, true, true, false, false, true, false, 7 ),
+			'known live sale'       => array( true, true, true, false, false, false, true, 7 ),
+			'missing KYC date'      => array( true, true, true, false, false, false, false, -1 ),
+			'before first stage'    => array( true, true, true, false, false, false, false, 6 ),
+			'after journey expires' => array( true, true, true, false, false, false, false, 60 ),
+		);
+	}
+
+	/**
+	 * @testdox Dismissing every due post-KYC stage skips the live-order query.
+	 */
+	public function test_post_kyc_all_due_stages_dismissed_skip_order_query(): void {
+		$now     = 1700000000;
+		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user_id );
+		update_option( 'wcpay_kyc_completion_date', $now - 30 * DAY_IN_SECONDS, false );
+		delete_option( 'wcpay_has_live_sale' );
+		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		foreach ( array( 7, 14, 30 ) as $stage ) {
+			update_user_meta( $user_id, sprintf( 'wcpay_post_kyc_activation_%d_dismissed', $stage ), $now );
+		}
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_working_account' )->willReturn( true );
+		$account->method( 'can_process_payments' )->willReturn( true );
+		$account->method( 'has_live_account' )->willReturn( true );
+		$account->method( 'has_test_account' )->willReturn( false );
+		$account->method( 'is_test_mode_enabled' )->willReturn( false );
+		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
+		$sut->init( $account );
+		$queries      = 0;
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			++$queries;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertSame( 0, $queries );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_option( 'wcpay_kyc_completion_date' );
+			delete_option( 'wcpay_has_live_sale' );
+			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		}
+	}
+
+	/**
+	 * @testdox A bounded live-order query suppresses post-KYC notices and persists the existing site marker.
+	 */
+	public function test_post_kyc_live_sale_query_is_bounded_and_suppresses_notice(): void {
+		$now = 1700000000;
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		update_option( 'wcpay_kyc_completion_date', $now - 7 * DAY_IN_SECONDS, false );
+		delete_option( 'wcpay_has_live_sale' );
+		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		$order = \WC_Helper_Order::create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_status( 'completed' );
+		$order->update_meta_data( '_wcpay_mode', 'live' );
+		$order->save();
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_working_account' )->willReturn( true );
+		$account->method( 'can_process_payments' )->willReturn( true );
+		$account->method( 'has_live_account' )->willReturn( true );
+		$account->method( 'has_test_account' )->willReturn( false );
+		$account->method( 'is_test_mode_enabled' )->willReturn( false );
+		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
+		$sut->init( $account );
+		$queries      = array();
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			$queries[] = $args;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
+			$this->assertCount( 1, $queries );
+			$this->assertSame( 'woocommerce_payments', $queries[0]['payment_method'] );
+			$this->assertSame( 1, $queries[0]['limit'] );
+			$this->assertSame( 'none', $queries[0]['orderby'] );
+			$this->assertSame( 'ids', $queries[0]['return'] );
+			$this->assertSame( array( 'wc-completed', 'wc-processing' ), $queries[0]['status'] );
+			$this->assertSame( '_wcpay_mode', $queries[0]['meta_key'] );
+			$this->assertSame( array( 'production', 'prod', 'live' ), $queries[0]['meta_value'] );
+			$this->assertSame( 'IN', $queries[0]['meta_compare'] );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_option( 'wcpay_kyc_completion_date' );
+			delete_option( 'wcpay_has_live_sale' );
+			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		}
+	}
+
+	/**
+	 * @testdox A positive post-KYC eligibility query is cached for one hour without writing the live-sale marker.
+	 */
+	public function test_post_kyc_positive_eligibility_is_cached(): void {
+		$now = 1700000000;
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		update_option( 'wcpay_kyc_completion_date', $now - 7 * DAY_IN_SECONDS, false );
+		delete_option( 'wcpay_has_live_sale' );
+		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_working_account' )->willReturn( true );
+		$account->method( 'can_process_payments' )->willReturn( true );
+		$account->method( 'has_live_account' )->willReturn( true );
+		$account->method( 'has_test_account' )->willReturn( false );
+		$account->method( 'is_test_mode_enabled' )->willReturn( false );
+		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
+		$sut->init( $account );
+		$queries      = 0;
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			++$queries;
+			return $args;
+		};
+		add_filter( 'woocommerce_order_query_args', $record_query );
+
+		try {
+			$this->assertNotNull( $sut->get_notice_for_current_user() );
+			$this->assertNotNull( $sut->get_notice_for_current_user() );
+			$this->assertSame( 1, $queries );
+			$this->assertSame( '1', get_transient( 'wcpay_post_kyc_activation_eligible' ) );
+			$this->assertFalse( get_option( 'wcpay_has_live_sale' ) );
+			$this->assertGreaterThan( time(), (int) get_option( '_transient_timeout_wcpay_post_kyc_activation_eligible' ) );
+			$this->assertLessThanOrEqual( time() + HOUR_IN_SECONDS, (int) get_option( '_transient_timeout_wcpay_post_kyc_activation_eligible' ) );
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
+			delete_option( 'wcpay_kyc_completion_date' );
+			delete_option( 'wcpay_has_live_sale' );
+			delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		}
 	}
 }

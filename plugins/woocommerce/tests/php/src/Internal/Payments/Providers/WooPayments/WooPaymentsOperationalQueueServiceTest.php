@@ -10,8 +10,10 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProvider
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
@@ -70,6 +72,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->reset_mailer_emails();
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
 			as_unschedule_all_actions( WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION, null, WooPaymentsActionSchedulerService::GROUP_ID );
+			as_unschedule_all_actions( 'wcpay_post_kyc_activation_email_send', null, WooPaymentsActionSchedulerService::GROUP_ID );
 		}
 		unset( $_GET['wcpay_referrer'], $_GET['wcpay_referrer_stage'], $_GET['_wpnonce'] );
 		remove_all_filters( 'wp_redirect' );
@@ -99,6 +102,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'admin_init', array( $service, 'handle_wcpay_post_kyc_activation_email_cta' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_order_status_changed', array( $service, 'handle_woocommerce_order_status_changed' ) ) );
 	}
 
 	/**
@@ -117,6 +121,26 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'wcpay_post_kyc_activation_email_send', array( $service, 'handle_wcpay_post_kyc_activation_email_send' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_order_status_changed', array( $service, 'handle_woocommerce_order_status_changed' ) ) );
+	}
+
+	/**
+	 * @testdox A live WooPayments paid-status transition records the sale and invalidates cached post-KYC eligibility.
+	 */
+	public function test_live_woopayments_order_status_transition_invalidates_post_kyc_eligibility(): void {
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$service->register();
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->update_meta_data( '_wcpay_mode', 'live' );
+		$order->save();
+		set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
+
+		do_action( 'woocommerce_order_status_changed', $order->get_id(), 'pending', 'processing', $order );
+
+		$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
+		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
 	}
 
 	/**
@@ -793,6 +817,33 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Dismissing a post-KYC notice leaves email eligibility, sent stages, and scheduled delivery unchanged.
+	 */
+	public function test_post_kyc_notice_dismissal_does_not_change_email_delivery(): void {
+		$user_id      = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		$scheduled_at = time() + DAY_IN_SECONDS;
+		wp_set_current_user( $user_id );
+		set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
+		as_schedule_single_action(
+			$scheduled_at,
+			'wcpay_post_kyc_activation_email_send',
+			array( 7 ),
+			WooPaymentsActionSchedulerService::GROUP_ID,
+			true
+		);
+		$scheduled_before = as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( 7 ), WooPaymentsActionSchedulerService::GROUP_ID );
+		$notice_service   = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
+		$notice_service->init( $this->createMock( WooPaymentsAccountService::class ) );
+
+		$this->assertTrue( $notice_service->record_action( 'post_kyc_activation', 'dismiss', 7 ) );
+
+		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
+		$this->assertFalse( get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
+		$this->assertSame( $scheduled_before, as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( 7 ), WooPaymentsActionSchedulerService::GROUP_ID ) );
+		$this->assertSame( $scheduled_at, $scheduled_before );
+	}
+
+	/**
 	 * @testdox Post-KYC completion does not re-schedule activation emails when the scheduled marker already exists.
 	 */
 	public function test_post_kyc_completion_does_not_reschedule_when_marker_already_exists(): void {
@@ -1278,6 +1329,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		remove_action( 'updated_option', array( $service, 'handle_site_language_update' ) );
 		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $service, 'maybe_add_missing_currencies' ) );
 		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $service, 'maybe_handle_test_mode_toggle' ) );
+		remove_action( 'woocommerce_order_status_changed', array( $service, 'handle_woocommerce_order_status_changed' ) );
 		remove_action( 'woocommerce_payments_account_refreshed', array( $service, 'maybe_sync_test_to_live_inbox_note' ) );
 		remove_action( 'wcpay_store_setup_sync', array( $service, 'maybe_sync_test_to_live_inbox_note' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) );

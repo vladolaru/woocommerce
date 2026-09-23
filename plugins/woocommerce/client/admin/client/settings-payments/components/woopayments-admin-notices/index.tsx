@@ -68,7 +68,10 @@ export const WooPaymentsAdminNotices = ( {
 		onDismiss();
 	};
 
-	const postAction = async ( action: 'dismiss' | 'snooze' ) => {
+	const postAction = async (
+		action: 'dismiss' | 'snooze',
+		onSuccess: () => void = finish
+	) => {
 		if ( pendingAction ) {
 			return;
 		}
@@ -84,7 +87,7 @@ export const WooPaymentsAdminNotices = ( {
 				data: notice.stage ? { stage: notice.stage } : undefined,
 			} );
 			void invalidateResolutionForStoreSelector( 'getPaymentProviders' );
-			finish();
+			onSuccess();
 		} catch {
 			createErrorNotice(
 				__(
@@ -122,6 +125,26 @@ export const WooPaymentsAdminNotices = ( {
 							if ( pendingAction !== null ) {
 								event.preventDefault();
 							}
+						} }
+					>
+						{ notice.primary.label }
+					</Button>
+				) }
+				{ notice.primary.kind === 'navigate_and_dismiss' && (
+					<Button
+						variant="primary"
+						href={ notice.primary.href }
+						aria-disabled={ pendingAction !== null }
+						onClick={ ( event: MouseEvent ) => {
+							event.preventDefault();
+							const navigationHref = notice.primary.href;
+							if ( ! navigationHref ) {
+								return;
+							}
+							void postAction( 'dismiss', () => {
+								finish();
+								window.location.assign( navigationHref );
+							} );
 						} }
 					>
 						{ notice.primary.label }
