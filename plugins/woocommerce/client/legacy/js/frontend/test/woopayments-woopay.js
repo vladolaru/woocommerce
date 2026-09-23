@@ -10,6 +10,12 @@ describe( 'WooPayments WooPay checkout', () => {
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 	}
 
+	async function flushMicrotasks() {
+		for ( let index = 0; index < 10; index++ ) {
+			await Promise.resolve();
+		}
+	}
+
 	function getTrackingEvents() {
 		return window.fetch.mock.calls
 			.filter(
@@ -629,5 +635,324 @@ describe( 'WooPayments WooPay checkout', () => {
 				},
 			] )
 		);
+	} );
+
+	describe( 'direct checkout', () => {
+		const encryptedIdentity = {
+			data: 'encrypted-identity',
+			iv: 'identity-iv',
+			hash: 'identity-hash',
+		};
+		const storeSession = {
+			blog_id: '12345',
+			data: {
+				session: 'store-session',
+				iv: 'store-iv',
+				hash: 'store-hash',
+			},
+		};
+
+		function configureDirectCheckout( markup ) {
+			document.body.innerHTML = markup;
+			Object.assign( window.wcpay_core_woopay_config, {
+				isWooPayDirectCheckoutEnabled: true,
+				shouldShowWooPayButton: false,
+				forceNetworkSavedCards: false,
+				woopayHost: 'https://pay.woo.test',
+				woopayMinimumSessionData: storeSession,
+			} );
+		}
+
+		function installConnect() {
+			const postMessage = jest.fn();
+			Object.defineProperty(
+				window.HTMLIFrameElement.prototype,
+				'contentWindow',
+				{
+					configurable: true,
+					get: () => ( { postMessage } ),
+				}
+			);
+
+			return postMessage;
+		}
+
+		function emitConnectMessage( action, value, origin = 'https://pay.woo.test' ) {
+			window.dispatchEvent(
+				new window.MessageEvent( 'message', {
+					origin,
+					data: { action, value },
+				} )
+			);
+		}
+
+		async function initializeDirectCheckout( loggedIn ) {
+			document
+				.getElementById( 'woopay-connect-iframe' )
+				.dispatchEvent( new window.Event( 'load' ) );
+			await flushPromises();
+			emitConnectMessage( 'get_is_user_logged_in_success', loggedIn );
+			await flushPromises();
+		}
+
+		afterEach( () => {
+			delete window.HTMLIFrameElement.prototype.contentWindow;
+		} );
+
+		test( 'logged-in cart handoff sends encrypted identity and store session without payment dispatch', async () => {
+			// Oracle: WooPayments 11.1.0 direct-checkout/woopay-direct-checkout.js:20,98-108,138-172,433-441.
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			const postMessage = installConnect();
+			global.jQuery.post = jest.fn( () => ( {
+				done: jest.fn( ( callback ) => {
+					callback( storeSession );
+					return { fail: jest.fn() };
+				} ),
+			} ) );
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+
+			await initializeDirectCheckout( true );
+			document.querySelector( '.checkout-button' ).click();
+			await flushPromises();
+			emitConnectMessage( 'get_encrypted_data_success', encryptedIdentity );
+			await flushPromises();
+
+			expect( global.jQuery.post ).toHaveBeenCalledWith(
+				'/?wc-ajax=wcpay_get_woopay_session',
+				{
+					_ajax_nonce: 'session-nonce',
+					encrypted_data: encryptedIdentity,
+				}
+			);
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'setRedirectSessionData', value: storeSession },
+				'https://pay.woo.test'
+			);
+
+			emitConnectMessage( 'set_redirect_session_data_success', {
+				redirect_url:
+					'https://pay.woo.test/woopay/?platform_checkout_key=checkout-key',
+			} );
+			await flushPromises();
+
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/woopay/?platform_checkout_key=checkout-key'
+			);
+			expect(
+				global.jQuery.post.mock.calls.some(
+					( [ url ] ) => url === '/?wc-ajax=wcpay_init_woopay'
+				)
+			).toBe( false );
+		} );
+
+		test.each( [
+			[
+				'classic cart',
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>',
+			],
+			[
+				'Cart Block',
+				'<div class="wp-block-woocommerce-proceed-to-checkout-block"><a href="https://store.test/checkout/">Checkout</a></div>',
+			],
+			[
+				'iAPI mini-cart',
+				'<a class="wp-block-woocommerce-mini-cart-checkout-button-block" href="https://store.test/checkout/">Checkout</a>',
+			],
+			[
+				'legacy mini-cart',
+				'<div class="widget_shopping_cart"><a class="button checkout" href="https://store.test/checkout/">Checkout</a></div>',
+			],
+		] )( 'intercepts the %s selector once after cart updates', async ( name, markup ) => {
+			// Oracle: WooPayments 11.1.0 direct-checkout/woopay-direct-checkout.js:19-29 and direct-checkout/index.js:255-283.
+			configureDirectCheckout( markup );
+			installConnect();
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+			await initializeDirectCheckout( false );
+			bodyEventHandlers.updated_cart_totals();
+			bodyEventHandlers.updated_cart_totals();
+
+			document.querySelector( 'a' ).click();
+			await flushPromises();
+			emitConnectMessage( 'get_is_woopay_reachable_success', false );
+			await flushPromises();
+
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://store.test/checkout/'
+			);
+		} );
+
+		test( 'not-logged-in flow probes reachability before using the minimum session', async () => {
+			// Oracle: WooPayments 11.1.0 session-connect.js:168-177 and direct-checkout/woopay-direct-checkout.js:200-228,398-412.
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			const postMessage = installConnect();
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+			await initializeDirectCheckout( false );
+
+			document.querySelector( 'a' ).click();
+			await flushPromises();
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'isWooPayReachable' },
+				'https://pay.woo.test'
+			);
+			emitConnectMessage( 'get_is_woopay_reachable_success', true );
+			await flushPromises();
+
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/woopay/?checkout_redirect=1' +
+					'&blog_id=12345&session=store-session' +
+					'&iv=store-iv&hash=store-hash'
+			);
+			expect( postMessage ).not.toHaveBeenCalledWith(
+				{ action: 'getEncryptedData' },
+				expect.anything()
+			);
+		} );
+
+		test.each( [
+			[ 'malformed encrypted identity', 'identity' ],
+			[ 'failed store AJAX', 'ajax' ],
+			[ 'malformed store session', 'session' ],
+			[ 'redirect on another origin', 'origin' ],
+			[ 'redirect without a platform checkout key', 'key' ],
+		] )( 'falls back once for %s', async ( name, failure ) => {
+			// Oracle: WooPayments 11.1.0 direct-checkout/woopay-direct-checkout.js:148-172,184-191,369-423,433-441,474-487.
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			installConnect();
+			const request = {
+				done: jest.fn( ( callback ) => {
+					if ( failure !== 'ajax' ) {
+						callback( failure === 'session' ? { blog_id: '12345' } : storeSession );
+					}
+					return request;
+				} ),
+				fail: jest.fn( ( callback ) => {
+					if ( failure === 'ajax' ) {
+						callback();
+					}
+					return request;
+				} ),
+			};
+			global.jQuery.post = jest.fn( () => request );
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+			await initializeDirectCheckout( true );
+
+			const link = document.querySelector( 'a' );
+			link.click();
+			await flushPromises();
+			emitConnectMessage(
+				'get_encrypted_data_success',
+				failure === 'identity' ? { data: 'only-data' } : encryptedIdentity
+			);
+			await flushPromises();
+
+			if ( [ 'origin', 'key' ].includes( failure ) ) {
+				emitConnectMessage( 'set_redirect_session_data_success', {
+					redirect_url:
+						failure === 'origin'
+							? 'https://attacker.test/?platform_checkout_key=key'
+							: 'https://pay.woo.test/woopay/',
+				} );
+				await flushPromises();
+			}
+
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://store.test/checkout/'
+			);
+			expect( link.hasAttribute( 'aria-disabled' ) ).toBe( false );
+		} );
+
+		test.each( [
+			[ 'unreachable Connect', true ],
+			[ 'Connect timeout', false ],
+		] )( 'falls back once when %s', async ( name, responds ) => {
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			installConnect();
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+			await initializeDirectCheckout( false );
+			jest.useFakeTimers();
+			document.querySelector( 'a' ).click();
+			await Promise.resolve();
+			if ( responds ) {
+				emitConnectMessage( 'get_is_woopay_reachable_success', false );
+			} else {
+				jest.advanceTimersByTime( 5000 );
+			}
+			await flushMicrotasks();
+
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://store.test/checkout/'
+			);
+		} );
+
+		test( 'ignores untrusted encrypted identity messages and never logs encrypted data', async () => {
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			installConnect();
+			const consoleSpy = jest.spyOn( console, 'warn' ).mockImplementation();
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+			await initializeDirectCheckout( true );
+			jest.useFakeTimers();
+			document.querySelector( 'a' ).click();
+			await Promise.resolve();
+			emitConnectMessage(
+				'get_encrypted_data_success',
+				encryptedIdentity,
+				'https://attacker.test'
+			);
+			jest.advanceTimersByTime( 5000 );
+			await flushMicrotasks();
+
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://store.test/checkout/'
+			);
+			expect( consoleSpy ).not.toHaveBeenCalled();
+			consoleSpy.mockRestore();
+		} );
+
+		test.each( [
+			[ 'disabled direct flag', '<a href="#checkout">Checkout</a>' ],
+			[ 'missing checkout href', '<div class="wp-block-woocommerce-proceed-to-checkout-block">Checkout</div>' ],
+		] )( 'preserves browser behavior for %s', async ( name, markup ) => {
+			configureDirectCheckout( markup );
+			if ( name === 'disabled direct flag' ) {
+				window.wcpay_core_woopay_config.isWooPayDirectCheckoutEnabled = false;
+			}
+			installConnect();
+			require( '../woopayments-woopay' );
+			if ( name === 'missing checkout href' ) {
+				await initializeDirectCheckout( false );
+			}
+			const event = new window.MouseEvent( 'click', {
+				bubbles: true,
+				cancelable: true,
+			} );
+			document.body.firstElementChild.dispatchEvent( event );
+			expect( event.defaultPrevented ).toBe( false );
+		} );
 	} );
 } );

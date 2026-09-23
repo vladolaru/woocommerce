@@ -18,6 +18,7 @@
 	var currentPreferredCard = null;
 	var preferredCardCacheKey = 'woopay_preferred_card';
 	var wooPayConnectTimeout = 5000;
+	var directCheckoutLoggedIn = false;
 	var brandAliases = {
 		american_express: 'amex',
 		diners_club: 'diners',
@@ -208,6 +209,33 @@
 						'getPreferredPaymentMethod',
 						data.value || null
 					);
+					break;
+				case 'get_is_user_logged_in_success':
+					resolveWooPayConnectCallback(
+						'getIsUserLoggedIn',
+						!! data.value
+					);
+					break;
+				case 'get_is_woopay_reachable_success':
+					resolveWooPayConnectCallback(
+						'getIsWooPayReachable',
+						!! data.value
+					);
+					break;
+				case 'get_encrypted_data_success':
+					resolveWooPayConnectCallback(
+						'getEncryptedData',
+						data.value || null
+					);
+					break;
+				case 'set_redirect_session_data_success':
+					resolveWooPayConnectCallback(
+						'setRedirectSessionData',
+						data.value || null
+					);
+					break;
+				case 'set_redirect_session_data_error':
+					resolveWooPayConnectCallback( 'setRedirectSessionData', null );
 					break;
 			}
 		} );
@@ -562,6 +590,189 @@
 		} );
 
 		return config.woopayHost + '/woopay/?' + params.toString();
+	}
+
+	function isValidEncryptedIdentity( encryptedData ) {
+		return (
+			encryptedData &&
+			typeof encryptedData.data === 'string' &&
+			encryptedData.data.length > 0 &&
+			typeof encryptedData.iv === 'string' &&
+			encryptedData.iv.length > 0 &&
+			typeof encryptedData.hash === 'string' &&
+			encryptedData.hash.length > 0
+		);
+	}
+
+	function isValidWooPayRedirectUrl( redirectUrl ) {
+		var parsedUrl;
+
+		try {
+			parsedUrl = new window.URL( redirectUrl );
+			return (
+				parsedUrl.origin === getWooPayConnectOrigin() &&
+				!! parsedUrl.searchParams.get( 'platform_checkout_key' )
+			);
+		} catch ( error ) {
+			if ( error ) {
+				return false;
+			}
+			return false;
+		}
+	}
+
+	function requestWooPaySession( encryptedData ) {
+		return new Promise( function ( resolve, reject ) {
+			var request = postWooPayAjax( 'get_woopay_session', {
+				_ajax_nonce: config.woopaySessionNonce || '',
+				encrypted_data: encryptedData,
+			} );
+
+			if ( ! request || ! request.done ) {
+				reject();
+				return;
+			}
+
+			request.done( resolve );
+			if ( request.fail ) {
+				request.fail( reject );
+			}
+		} );
+	}
+
+	function getDirectCheckoutHref( element ) {
+		if ( element.tagName && element.tagName.toLowerCase() === 'a' ) {
+			return element.href;
+		}
+
+		var link = element.querySelector( 'a[href]' );
+		return link ? link.href : '';
+	}
+
+	function setDirectCheckoutLoading( element, loading ) {
+		if ( loading ) {
+			element.setAttribute( 'aria-disabled', 'true' );
+			element.classList.add( 'is-woopay-direct-checkout-loading' );
+			return;
+		}
+
+		element.removeAttribute( 'aria-disabled' );
+		element.classList.remove( 'is-woopay-direct-checkout-loading' );
+	}
+
+	function runDirectCheckout( loggedIn ) {
+		if ( loggedIn ) {
+			return sendWooPayConnectMessage(
+				{ action: 'getEncryptedData' },
+				'getEncryptedData',
+				null,
+				true
+			)
+				.then( function ( encryptedData ) {
+					if ( ! isValidEncryptedIdentity( encryptedData ) ) {
+						return Promise.reject();
+					}
+
+					return requestWooPaySession( encryptedData );
+				} )
+				.then( function ( sessionData ) {
+					if ( ! isValidWooPayMinimumSessionData( sessionData ) ) {
+						return Promise.reject();
+					}
+
+					return sendWooPayConnectMessage(
+						{
+							action: 'setRedirectSessionData',
+							value: sessionData,
+						},
+						'setRedirectSessionData',
+						null,
+						true
+					);
+				} )
+				.then( function ( redirectData ) {
+					if (
+						! redirectData ||
+						! isValidWooPayRedirectUrl( redirectData.redirect_url )
+					) {
+						return Promise.reject();
+					}
+
+					return redirectData.redirect_url;
+				} );
+		}
+
+		return sendWooPayConnectMessage(
+			{ action: 'isWooPayReachable' },
+			'getIsWooPayReachable',
+			false,
+			true
+		).then( function ( reachable ) {
+			var redirectUrl;
+
+			if ( ! reachable ) {
+				return Promise.reject();
+			}
+
+			redirectUrl = getWooPayMinimumSessionRedirectUrl(
+				config.woopayMinimumSessionData
+			);
+			return redirectUrl ? redirectUrl : Promise.reject();
+		} );
+	}
+
+	function attachDirectCheckoutListeners( loggedIn ) {
+		var selector =
+			'.wc-proceed-to-checkout .checkout-button,' +
+			'.wp-block-woocommerce-proceed-to-checkout-block,' +
+			'a.wp-block-woocommerce-mini-cart-checkout-button-block,' +
+			'a.wc-block-mini-cart__footer-checkout,' +
+			'.widget_shopping_cart a.button.checkout';
+
+		document.querySelectorAll( selector ).forEach( function ( element ) {
+			if ( element.wooPayDirectCheckoutAttached ) {
+				return;
+			}
+			element.wooPayDirectCheckoutAttached = true;
+
+			element.addEventListener( 'click', function ( event ) {
+				var originalHref = getDirectCheckoutHref( element );
+
+				if ( ! originalHref ) {
+					return;
+				}
+
+				event.preventDefault();
+				if ( element.wooPayDirectCheckoutActive ) {
+					return;
+				}
+				element.wooPayDirectCheckoutActive = true;
+				setDirectCheckoutLoading( element, true );
+
+				runDirectCheckout( loggedIn )
+					.then( navigate )
+					.catch( function () {
+						setDirectCheckoutLoading( element, false );
+						navigate( originalHref );
+					} );
+			} );
+		} );
+	}
+
+	function initializeDirectCheckout() {
+		if ( ! config.isWooPayDirectCheckoutEnabled ) {
+			return;
+		}
+
+		sendWooPayConnectMessage(
+			{ action: 'getIsUserLoggedIn' },
+			'getIsUserLoggedIn',
+			false,
+			true
+		).then( function ( loggedIn ) {
+			directCheckoutLoggedIn = loggedIn;
+			attachDirectCheckoutListeners( loggedIn );
+		} );
 	}
 
 	function redirectToWooPayMinimumSession() {
@@ -1007,12 +1218,18 @@
 		renderWooPayExpressButton();
 		renderWooPaySaveUserFields();
 	} );
+	$( document.body ).on( 'updated_cart_totals', function () {
+		if ( config.isWooPayDirectCheckoutEnabled ) {
+			attachDirectCheckoutListeners( directCheckoutLoggedIn );
+		}
+	} );
 
-		$( function () {
-			renderWooPayExpressButton();
-			renderWooPaySaveUserFields();
-			fetchPreferredCardFromWooPay();
-		} );
+	$( function () {
+		renderWooPayExpressButton();
+		renderWooPaySaveUserFields();
+		fetchPreferredCardFromWooPay();
+		initializeDirectCheckout();
+	} );
 
 	if ( typeof module !== 'undefined' && module.exports ) {
 		module.exports.__test__ = {
