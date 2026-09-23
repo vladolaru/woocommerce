@@ -32,9 +32,9 @@ The plugin parses the platform's "You cannot combine currencies on a single cust
 
 For platform errors with an empty `error.type` (for example `wcpay_blocked_by_fraud_rule`, top-level platform codes) the plugin shows the raw platform message to the shopper; native's `WooPaymentsErrorMessages` redacts everything that is not a `card_error` to the generic message. Kept deliberately — native's redaction is the safer behavior — but it is a known bytes divergence from the plugin. Revisit only if shopper-copy parity for these paths becomes a requirement.
 
-### WooPay direct-checkout front end not ported (S7, D3; email-input ported in S7b)
+### WooPay direct-checkout production canary (S7, D3; deterministic handoff ported)
 
-The email-input/OTP flow is ported (classic `woopayments-checkout.js`, blocks `woopay/email-input-iframe.js`) and `isWooPayEmailInputEnabled` follows the plugin's `wcpay_is_woopay_email_input_enabled` filter. The checkout config still publishes `isWooPayDirectCheckoutEnabled` as `false` because the direct-checkout front end has no native JS consumer (no `encryptedData` producer); the `encrypted_data` branch of the session email fallback chain belongs with that port, its only producer. If it lands, flip the flag in `WooPaymentsWooPaySessionService::get_woopay_frontend_config()`.
+The native WooPay service now computes direct eligibility, verifies the encrypted identity envelope, and loads the existing frontend asset for recognized cart and mini-cart checkout links. PHPUnit and Jest prove local eligibility, Connect message and redirect validation, and fallback to the original checkout URL. The local WooPayments Dev Tools environment forces the direct feature option off, so no browser or production WooPay authentication result is claimed. Phase 7 must prove a connected eligible shopper's real SMS OTP, cart and session handoff, paid order, redirect, and reusable payment and address state before this obligation closes.
 
 
 ### wcpay_woopay_is_signed_with_blog_token stays strengthen-only (S7, finding 12 — deliberate divergence)
