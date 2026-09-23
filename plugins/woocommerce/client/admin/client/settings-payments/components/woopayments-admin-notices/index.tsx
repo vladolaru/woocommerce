@@ -133,10 +133,8 @@ export const WooPaymentsAdminNotices = ( {
 				{ notice.primary.kind === 'navigate_and_dismiss' && (
 					<Button
 						variant="primary"
-						href={ notice.primary.href }
 						aria-disabled={ pendingAction !== null }
-						onClick={ ( event: MouseEvent ) => {
-							event.preventDefault();
+						onClick={ () => {
 							const navigationHref = notice.primary.href;
 							if ( ! navigationHref ) {
 								return;

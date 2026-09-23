@@ -209,7 +209,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		[ 14, 'Two weeks on, still no first sale?' ],
 		[ 30, "A month in. Let's get your first sale." ],
 	] as const )(
-		'shows the exact day %d post-KYC notice with a native promotion link',
+		'shows the exact day %d post-KYC notice with a transactional promotion button',
 		async ( stage, message ) => {
 			const currentNotice = postKycNotice( stage, message );
 			render(
@@ -221,9 +221,13 @@ describe( 'WooPaymentsAdminNotices', () => {
 			);
 
 			expect( screen.getByText( message ) ).toBeInTheDocument();
+			const promote = screen.getByRole( 'button', {
+				name: 'Promote my store',
+			} );
+			expect( promote ).not.toHaveAttribute( 'href' );
 			expect(
-				screen.getByRole( 'link', { name: 'Promote my store' } )
-			).toHaveAttribute( 'href', currentNotice.primary.href );
+				screen.queryByRole( 'link', { name: 'Promote my store' } )
+			).not.toBeInTheDocument();
 			expect(
 				screen.queryByRole( 'button', { name: 'Maybe later' } )
 			).not.toBeInTheDocument();
@@ -237,51 +241,59 @@ describe( 'WooPaymentsAdminNotices', () => {
 		}
 	);
 
-	it( 'records terminal dismissal before keyboard link activation navigates', async () => {
-		const currentNotice = postKycNotice(
-			7,
-			'Your store is open. Now bring in your first customer.'
-		);
-		let finishDismiss: ( value: { success: boolean } ) => void = () => {};
-		( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
-			if ( url === currentNotice._links.dismiss.href ) {
-				return new Promise( ( resolve ) => {
-					finishDismiss = resolve;
-				} );
-			}
-			return Promise.resolve( { success: true } );
-		} );
-		render(
-			<WooPaymentsAdminNotices
-				notice={ currentNotice }
-				focusTargetRef={ { current: focusTarget } }
-				onDismiss={ jest.fn() }
-			/>
-		);
+	it.each( [
+		[ 'Enter', '{Enter}' ],
+		[ 'Space', ' ' ],
+	] )(
+		'records terminal dismissal before %s button activation navigates',
+		async ( _keyName, key ) => {
+			const currentNotice = postKycNotice(
+				7,
+				'Your store is open. Now bring in your first customer.'
+			);
+			let finishDismiss: ( value: {
+				success: boolean;
+			} ) => void = () => {};
+			( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
+				if ( url === currentNotice._links.dismiss.href ) {
+					return new Promise( ( resolve ) => {
+						finishDismiss = resolve;
+					} );
+				}
+				return Promise.resolve( { success: true } );
+			} );
+			render(
+				<WooPaymentsAdminNotices
+					notice={ currentNotice }
+					focusTargetRef={ { current: focusTarget } }
+					onDismiss={ jest.fn() }
+				/>
+			);
 
-		const promote = screen.getByRole( 'link', {
-			name: 'Promote my store',
-		} );
-		await userEvent.tab();
-		expect( promote ).toHaveFocus();
-		await userEvent.keyboard( '{Enter}' );
+			const promote = screen.getByRole( 'button', {
+				name: 'Promote my store',
+			} );
+			await userEvent.tab();
+			expect( promote ).toHaveFocus();
+			await userEvent.keyboard( key );
 
-		expect( apiFetch ).toHaveBeenCalledWith( {
-			url: currentNotice._links.dismiss.href,
-			method: 'POST',
-			data: { stage: 7 },
-		} );
-		expect( mockAssign ).not.toHaveBeenCalled();
+			expect( apiFetch ).toHaveBeenCalledWith( {
+				url: currentNotice._links.dismiss.href,
+				method: 'POST',
+				data: { stage: 7 },
+			} );
+			expect( mockAssign ).not.toHaveBeenCalled();
 
-		await act( async () => {
-			finishDismiss( { success: true } );
-		} );
-		await waitFor( () =>
-			expect( mockAssign ).toHaveBeenCalledWith(
-				currentNotice.primary.href
-			)
-		);
-	} );
+			await act( async () => {
+				finishDismiss( { success: true } );
+			} );
+			await waitFor( () =>
+				expect( mockAssign ).toHaveBeenCalledWith(
+					currentNotice.primary.href
+				)
+			);
+		}
+	);
 
 	it( 'ordinary keyboard dismissal writes only the current post-KYC stage', async () => {
 		const currentNotice = postKycNotice(
@@ -346,7 +358,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 			/>
 		);
 
-		const promote = screen.getByRole( 'link', {
+		const promote = screen.getByRole( 'button', {
 			name: 'Promote my store',
 		} );
 		await userEvent.tab();
