@@ -224,6 +224,27 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private ?string $branded_method_title = null;
 
 	/**
+	 * Blog whose site-derived gateway state is currently cached.
+	 *
+	 * @var int
+	 */
+	private int $settings_blog_id = 0;
+
+	/**
+	 * Capabilities this gateway added for the cached blog.
+	 *
+	 * @var string[]
+	 */
+	private array $site_supports = array();
+
+	/**
+	 * Capabilities removed from the public support list outside this gateway.
+	 *
+	 * @var string[]
+	 */
+	private array $externally_removed_supports = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
@@ -244,7 +265,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$this->init_settings();
+		$this->settings_blog_id = get_current_blog_id();
+		$base_supports          = $this->supports;
 		$this->init_supported_features();
+		$this->site_supports = array_values( array_diff( $this->supports, $base_supports ) );
 
 		if ( $this->payment_method_supports( self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT ) ) {
 			$this->has_custom_place_order_button = true;
@@ -269,11 +293,55 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Get a gateway setting for the current blog.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $key         Setting key.
+	 * @param mixed  $empty_value Value returned for an empty setting.
+	 * @return mixed
+	 */
+	public function get_option( $key, $empty_value = null ) {
+		$this->ensure_current_blog_context();
+
+		return parent::get_option( $key, $empty_value );
+	}
+
+	/**
+	 * Return the current user's saved tokens for the current blog.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return WC_Payment_Token[]
+	 */
+	public function get_tokens() {
+		$this->ensure_current_blog_context();
+
+		return parent::get_tokens();
+	}
+
+	/**
+	 * Check support using the current blog's gateway capabilities.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $feature Gateway feature.
+	 * @return bool
+	 */
+	public function supports( $feature ) {
+		$this->ensure_current_blog_context();
+
+		return parent::supports( $feature );
+	}
+
+	/**
 	 * Return the gateway's checkout title.
 	 *
 	 * @return string
 	 */
 	public function get_title() {
+		$this->ensure_current_blog_context();
+
 		if ( null === $this->branded_title ) {
 			$this->branded_title = $this->get_translated_payment_method_title();
 			$this->title         = $this->branded_title;
@@ -288,6 +356,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string
 	 */
 	public function get_method_title() {
+		$this->ensure_current_blog_context();
+
 		if ( null === $this->branded_method_title ) {
 			$this->branded_method_title = $this->get_translated_method_title();
 			$this->method_title         = $this->branded_method_title;
@@ -386,6 +456,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public function is_available(): bool {
+		$this->ensure_current_blog_context();
+
 		if ( ! parent::is_available() || ! $this->payment_method_definition->should_publish_gateway() ) {
 			return false;
 		}
@@ -551,6 +623,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return array<string,string>
 	 */
 	public function add_payment_method() {
+		$this->ensure_current_blog_context();
+
 		try {
 			$setup_intent_id = $this->sanitize_post_string( 'wcpay-setup-intent' );
 
@@ -1439,6 +1513,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return array<string,string>
 	 */
 	public function process_payment( $order_id ) {
+		$this->ensure_current_blog_context();
+
 		$order = wc_get_order( $order_id );
 		if ( ! $order instanceof WC_Order ) {
 			return array(
@@ -1807,6 +1883,40 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// (its country branding happens on init / at title-render time).
 		// handle_init() re-sets the title with the country-branded form.
 		return sprintf( 'WooPayments (%s)', $this->payment_method_definition->get_title() );
+	}
+
+	/**
+	 * Refresh site-derived gateway state after a multisite blog switch.
+	 */
+	private function ensure_current_blog_context(): void {
+		$current_blog_id = get_current_blog_id();
+		if ( $this->settings_blog_id === $current_blog_id ) {
+			return;
+		}
+
+		$this->settings_blog_id     = $current_blog_id;
+		$this->tokens               = array();
+		$this->branded_title        = null;
+		$this->branded_method_title = null;
+		$this->title                = $this->payment_method_definition->get_title();
+		$this->method_title         = $this->get_untranslated_method_title();
+		$this->init_settings();
+		$this->externally_removed_supports = array_values(
+			array_unique(
+				array_merge(
+					array_diff( $this->externally_removed_supports, $this->supports ),
+					array_diff( $this->site_supports, $this->supports )
+				)
+			)
+		);
+		$this->supports                    = array_values( array_diff( $this->supports, $this->site_supports ) );
+		$saved_cards_enabled               = 'card' === $this->get_payment_method_id()
+			? 'yes' === $this->get_option( 'saved_cards' )
+			: $this->is_saved_cards_enabled();
+		$base_supports                     = $this->supports;
+		$this->init_supported_features( $saved_cards_enabled );
+		$this->site_supports = array_values( array_diff( $this->supports, $base_supports ) );
+		$this->supports      = array_values( array_diff( $this->supports, $this->externally_removed_supports ) );
 	}
 
 	/**
@@ -2307,9 +2417,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Initialize the WooPayments support list.
 	 *
+	 * @param bool|null $saved_cards_enabled Current-blog saved-card setting when already loaded.
 	 * @return void
 	 */
-	private function init_supported_features(): void {
+	private function init_supported_features( ?bool $saved_cards_enabled = null ): void {
 		if ( $this->is_subscriptions_enabled() ) {
 			$this->supports = array_merge(
 				$this->supports,
@@ -2331,7 +2442,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		if ( $this->is_saved_cards_enabled() && $this->payment_method_supports( self::PAYMENT_METHOD_CAPABILITY_TOKENIZATION ) ) {
+		if ( ( $saved_cards_enabled ?? $this->is_saved_cards_enabled() ) && $this->payment_method_supports( self::PAYMENT_METHOD_CAPABILITY_TOKENIZATION ) ) {
 			$this->supports[] = PaymentGatewayFeature::TOKENIZATION;
 			$this->supports[] = PaymentGatewayFeature::ADD_PAYMENT_METHOD;
 		}

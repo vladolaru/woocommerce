@@ -97,6 +97,48 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reload settings once when the cached blog context is stale.
+	 */
+	public function test_site_derived_state_reloads_once_when_the_cached_blog_context_is_stale(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'     => 'yes',
+				'saved_cards' => 'yes',
+			)
+		);
+		$gateway = new NativeWooPaymentsGateway();
+		$this->assertSame( 'yes', $gateway->get_option( 'saved_cards' ) );
+
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'     => 'no',
+				'saved_cards' => 'no',
+			)
+		);
+		$blog_id = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'settings_blog_id' );
+		$blog_id->setAccessible( true );
+		$blog_id->setValue( $gateway, get_current_blog_id() + 1 );
+
+		$settings_reads = 0;
+		$count_read     = static function ( $value ) use ( &$settings_reads ) {
+			++$settings_reads;
+			return $value;
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $count_read );
+
+		try {
+			$this->assertSame( 'no', $gateway->get_option( 'saved_cards' ) );
+			$this->assertSame( 'no', $gateway->get_option( 'saved_cards' ) );
+			$this->assertSame( 'no', $gateway->enabled );
+			$this->assertSame( 1, $settings_reads );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $count_read );
+		}
+	}
+
+	/**
 	 * @testdox Checkout provider data should carry the WooPay save-user opt-in and fire the save action.
 	 */
 	public function test_checkout_provider_data_carries_woopay_save_user_opt_in(): void {
