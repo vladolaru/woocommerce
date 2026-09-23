@@ -41,6 +41,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions as ExtensionSuggestions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
@@ -546,7 +547,10 @@ class PaymentsProviders {
 
 				return $service;
 			},
-			$container->get( WooPaymentsOnboardingAdapter::class )
+			$container->get( WooPaymentsOnboardingAdapter::class ),
+			function () use ( $container ): WooPaymentsAdminNoticeService {
+				return $container->get( WooPaymentsAdminNoticeService::class );
+			}
 		);
 
 		return $provider;

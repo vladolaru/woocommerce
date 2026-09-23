@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -170,6 +171,129 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( $summary, $response->get_data() );
+	}
+
+	/**
+	 * @testdox Should let a manager record a settings notice action through the native route.
+	 */
+	public function test_record_admin_notice_action_by_manager(): void {
+		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
+		$notice_service->expects( $this->once() )
+			->method( 'record_action' )
+			->with( 'test_to_live', 'shown', null )
+			->willReturn( true );
+		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->register_routes( true );
+
+		$request  = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'success' => true ), $response->get_data() );
+	}
+
+	/**
+	 * @testdox Should not register notice actions without the notice service.
+	 */
+	public function test_admin_notice_route_is_dormant_without_service(): void {
+		$this->assertSame( 404, $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' ) )->get_status() );
+	}
+
+	/**
+	 * @testdox The connected merchant controller should expose the notice route when resolved by the container.
+	 */
+	public function test_container_resolved_merchant_controller_registers_notice_route(): void {
+		$controller = wc_get_container()->get( WooPaymentsMerchantRestController::class );
+		$controller->register_routes( true );
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' ) );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'success' => true ), $response->get_data() );
+	}
+
+	/**
+	 * @testdox Should reject an anonymous settings notice action before reaching the service.
+	 */
+	public function test_record_admin_notice_action_rejects_anonymous_user(): void {
+		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
+		$notice_service->expects( $this->never() )->method( 'record_action' );
+		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->register_routes( true );
+		wp_set_current_user( 0 );
+
+		$request  = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 401, $response->get_status() );
+	}
+
+	/**
+	 * @testdox Should reject a notice action from a logged-in user without store management permission.
+	 */
+	public function test_record_admin_notice_action_rejects_non_manager(): void {
+		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
+		$notice_service->expects( $this->never() )->method( 'record_action' );
+		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->register_routes( true );
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'subscriber' ) ) );
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' ) );
+		$this->assertSame( 403, $response->get_status() );
+	}
+
+	/**
+	 * @testdox Should reject unknown notice paths and non-integer stages before the notice service runs.
+	 */
+	public function test_record_admin_notice_action_rejects_invalid_request(): void {
+		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
+		$notice_service->expects( $this->never() )->method( 'record_action' );
+		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->register_routes( true );
+
+		$this->assertSame( 404, $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/unknown/shown' ) )->get_status() );
+		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/post_kyc_activation/shown' );
+		$request->set_param( 'stage', '7' );
+		$this->assertSame( 400, $this->server->dispatch( $request )->get_status() );
+	}
+
+	/**
+	 * @testdox Should preserve one marker when a notice action is repeated through REST.
+	 * @dataProvider notice_action_markers
+	 *
+	 * @param string $action   Notice action.
+	 * @param string $meta_key Preserved user-meta key.
+	 */
+	public function test_record_admin_notice_action_replays_are_idempotent( string $action, string $meta_key ): void {
+		$now            = 1000;
+		$notice_service = new WooPaymentsAdminNoticeService(
+			static function () use ( &$now ): int {
+				return $now;
+			}
+		);
+		$notice_service->init( $this->mock_account_service );
+		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->register_routes( true );
+
+		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/' . $action );
+		$this->assertSame( 200, $this->server->dispatch( $request )->get_status() );
+		$first_marker = get_user_meta( $this->store_admin_id, $meta_key, true );
+		$now          = 2000;
+		$this->assertSame( 200, $this->server->dispatch( $request )->get_status() );
+		$this->assertSame( $first_marker, get_user_meta( $this->store_admin_id, $meta_key, true ) );
+		$this->assertCount( 1, get_user_meta( $this->store_admin_id, $meta_key, false ) );
+	}
+
+	/**
+	 * Preserved user-meta markers for replayed test-to-live actions.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public static function notice_action_markers(): array {
+		return array(
+			'shown'   => array( 'shown', 'wcpay_test_to_live_notice_shown' ),
+			'dismiss' => array( 'dismiss', 'wcpay_test_to_live_notice_dismissed' ),
+			'snooze'  => array( 'snooze', 'wcpay_test_to_live_notice_snoozed' ),
+		);
 	}
 
 	/**

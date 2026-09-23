@@ -51,6 +51,33 @@ export type PaymentsProviderIncentive = {
 	};
 };
 
+export type WooPaymentsAdminNoticeId =
+	| 'test_to_live'
+	| 'post_kyc_activation'
+	| 'one_and_done';
+
+export type WooPaymentsAdminNoticeAction = 'shown' | 'dismiss' | 'snooze';
+
+export type WooPaymentsAdminNotice = {
+	id: WooPaymentsAdminNoticeId;
+	stage?: 7 | 14 | 30;
+	message: string;
+	primary: {
+		kind: 'disable_test_mode' | 'onboard' | 'navigate_and_dismiss';
+		label: string;
+		href?: string;
+	};
+	secondary?: {
+		kind: 'snooze';
+		label: string;
+	};
+	_links: {
+		shown: LinkData;
+		dismiss: LinkData;
+		snooze?: LinkData;
+	};
+};
+
 interface PaymentsProviderIncentiveDismissal {
 	timestamp: number; // timestamp in seconds
 	context: string;
@@ -128,6 +155,7 @@ export type PaymentsProvider = PaymentsEntity & {
 	};
 	tags?: string[];
 	_incentive?: PaymentsProviderIncentive;
+	_admin_notice?: WooPaymentsAdminNotice;
 };
 
 // Represents a payment gateway in the main providers list.

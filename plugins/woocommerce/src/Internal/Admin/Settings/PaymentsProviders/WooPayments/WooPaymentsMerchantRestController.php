@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPa
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Exception;
@@ -94,6 +95,13 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	private ?WooPaymentsAccountService $account_service = null;
 
 	/**
+	 * Current-user settings notice state service.
+	 *
+	 * @var WooPaymentsAdminNoticeService|null
+	 */
+	private ?WooPaymentsAdminNoticeService $admin_notice_service = null;
+
+	/**
 	 * Native payments runtime arbiter.
 	 *
 	 * @var NativePaymentsRuntimeArbiter|null
@@ -117,6 +125,19 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	public function register_routes( bool $override = false ): void {
 		if ( $this->should_register_native_settings_routes() ) {
 			$this->register_native_settings_routes( $override );
+		}
+
+		if ( null !== $this->admin_notice_service ) {
+			register_rest_route(
+				$this->route_namespace,
+				'/' . $this->rest_base . '/admin-notices/(?P<notice_id>test_to_live|post_kyc_activation|one_and_done)/(?P<action>shown|dismiss|snooze)',
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => fn( $request ) => $this->run( $request, 'record_admin_notice_action' ),
+					'permission_callback' => fn( $request ) => $this->check_admin_notice_permissions( $request ),
+				),
+				$override
+			);
 		}
 
 		register_rest_route(
@@ -156,16 +177,18 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @param WooPaymentsPmPromotionsService|null $pm_promotions_service Optional native WooPayments PM promotions service.
 	 * @param WooPaymentsOverviewService|null     $overview_service      Optional native WooPayments Overview projection service.
 	 * @param WooPaymentsAccountService|null      $account_service       Optional native WooPayments account service.
+	 * @param WooPaymentsAdminNoticeService|null  $admin_notice_service  Optional current-user settings notice service.
 	 *
 	 * @internal
 	 */
-	final public function init( WooPaymentsService $woopayments, ?WooPaymentsSettingsService $settings_service = null, ?NativePaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null ): void {
+	final public function init( WooPaymentsService $woopayments, ?WooPaymentsSettingsService $settings_service = null, ?NativePaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsAdminNoticeService $admin_notice_service = null ): void {
 		$this->woopayments           = $woopayments;
 		$this->settings_service      = $settings_service;
 		$this->runtime_arbiter       = $runtime_arbiter;
 		$this->pm_promotions_service = $pm_promotions_service;
 		$this->overview_service      = $overview_service;
 		$this->account_service       = $account_service;
+		$this->admin_notice_service  = $admin_notice_service;
 	}
 
 	/**
@@ -885,6 +908,38 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
+	 * Record a current-user settings notice action.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WP_REST_Request $request The request object.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_Error|WP_REST_Response
+	 */
+	protected function record_admin_notice_action( WP_REST_Request $request ) {
+		if ( null === $this->admin_notice_service ) {
+			return new WP_Error( 'woocommerce_woopayments_notice_unavailable', __( 'The notice is unavailable.', 'woocommerce' ), array( 'status' => WP_Http::SERVICE_UNAVAILABLE ) );
+		}
+
+		$stage = $request->get_param( 'stage' );
+		if ( null !== $stage && ! is_int( $stage ) ) {
+			return new WP_Error( 'woocommerce_woopayments_invalid_notice_action', __( 'Invalid notice action.', 'woocommerce' ), array( 'status' => WP_Http::BAD_REQUEST ) );
+		}
+
+		$result = $this->admin_notice_service->record_action(
+			sanitize_key( (string) $request->get_param( 'notice_id' ) ),
+			sanitize_key( (string) $request->get_param( 'action' ) ),
+			$stage
+		);
+		if ( is_wp_error( $result ) ) {
+			$result->add_data( array( 'status' => WP_Http::BAD_REQUEST ) );
+			return $result;
+		}
+
+		return rest_ensure_response( array( 'success' => $result ) );
+	}
+
+	/**
 	 * Activate a native WooPayments payment method promotion.
 	 *
 	 * @param WP_REST_Request $request The request object.
@@ -1146,6 +1201,23 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 		}
 
 		return $this->overview_service;
+	}
+
+	/**
+	 * Require an authenticated store manager for notice state changes.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WP_REST_Request $request The request object.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return bool|WP_Error
+	 */
+	private function check_admin_notice_permissions( WP_REST_Request $request ) {
+		if ( ! is_user_logged_in() ) {
+			return new WP_Error( 'rest_forbidden', __( 'Sorry, you are not allowed to do that.', 'woocommerce' ), array( 'status' => WP_Http::UNAUTHORIZED ) );
+		}
+
+		return $this->check_permissions( $request );
 	}
 
 	/**

@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
@@ -101,6 +102,78 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 				return $service;
 			}
+		);
+	}
+
+	/**
+	 * @testdox Should append only an eligible WooPayments notice to provider details.
+	 */
+	public function test_get_details_adds_only_the_optional_admin_notice(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$gateway = new FakePaymentGateway(
+			'woocommerce_payments',
+			array(
+				'enabled'           => true,
+				'account_connected' => true,
+			)
+		);
+		$notice  = array(
+			'id'      => 'test_to_live',
+			'message' => 'Ready for live payments.',
+			'primary' => array(
+				'kind'  => 'disable_test_mode',
+				'label' => 'Turn on live payments',
+			),
+			'_links'  => array(),
+		);
+		$service = $this->createMock( WooPaymentsAdminNoticeService::class );
+		$service->expects( $this->exactly( 2 ) )->method( 'get_notice_for_current_user' )->willReturnOnConsecutiveCalls( null, $notice );
+		$this->set_notice_service_resolver( static fn() => $service );
+
+		$before = $this->sut->get_details( $gateway );
+		$this->assertTrue( $before['state']['enabled'], 'The fixture must be an enabled gateway.' );
+		$this->assertTrue( $before['state']['account_connected'], 'The fixture must be connected.' );
+		$this->assertArrayNotHasKey( '_admin_notice', $before );
+		$after = $this->sut->get_details( $gateway );
+		$this->assertSame( $notice, $after['_admin_notice'] ?? null );
+		unset( $after['_admin_notice'] );
+		$this->assertSame( $before, $after );
+	}
+
+	/**
+	 * @testdox Should leave a disconnected WooPayments provider without a notice or service resolution.
+	 */
+	public function test_get_details_does_not_resolve_admin_notice_for_disconnected_account(): void {
+		$gateway = new FakePaymentGateway(
+			'woocommerce_payments',
+			array(
+				'enabled'           => true,
+				'account_connected' => false,
+			)
+		);
+		$this->set_notice_service_resolver(
+			static function (): void {
+				throw new \RuntimeException( 'Notice service must remain dormant.' );
+			}
+		);
+
+		$this->assertArrayNotHasKey( '_admin_notice', $this->sut->get_details( $gateway ) );
+	}
+
+	/**
+	 * Set a test notice resolver through the optional collaborator slot.
+	 *
+	 * @param callable $notice_resolver The test resolver.
+	 */
+	private function set_notice_service_resolver( callable $notice_resolver ): void {
+		$legacy_runtime = new WooPaymentsLegacyRuntime();
+		$legacy_runtime->init( $this->mockable_proxy );
+		$this->sut->set_admin_runtime_collaborators(
+			$legacy_runtime,
+			fn(): WooPaymentsRestController => $this->mock_rest_controller,
+			fn(): WooPaymentsService => wc_get_container()->get( WooPaymentsService::class ),
+			null,
+			$notice_resolver
 		);
 	}
 
@@ -723,7 +796,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 			$this->assertArrayHasKey( 'messages', $gateway_details['onboarding'] );
 			$this->assertArrayHasKey( 'not_supported', $gateway_details['onboarding']['messages'] );
-			$this->assertEquals( 'WooPayments is not available in your country.', $gateway_details['onboarding']['messages']['not_supported'] );
+			$this->assertEquals( 'WooPayments is not supported in the selected business location.', $gateway_details['onboarding']['messages']['not_supported'] );
 		} finally {
 			// Clean up.
 			Constants::clear_constants();
@@ -1322,6 +1395,20 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		 */
 		$container = wc_get_container();
 		$container->replace( WooPaymentsRestController::class, $this->mock_rest_controller );
+		$service = $this->createMock( WooPaymentsService::class );
+		$service->method( 'get_onboarding_details' )
+			->willReturnCallback(
+				fn() => array(
+					'state' => array( 'test_mode' => $this->sut->is_in_test_mode_onboarding( $fake_gateway ) ),
+				)
+			);
+		$legacy_runtime = new WooPaymentsLegacyRuntime();
+		$legacy_runtime->init( $this->mockable_proxy );
+		$this->sut->set_admin_runtime_collaborators(
+			$legacy_runtime,
+			fn(): WooPaymentsRestController => $this->mock_rest_controller,
+			static fn(): WooPaymentsService => $service
+		);
 
 		try {
 			$gateway_details = $this->sut->get_details( $fake_gateway, 0, 'US' );
