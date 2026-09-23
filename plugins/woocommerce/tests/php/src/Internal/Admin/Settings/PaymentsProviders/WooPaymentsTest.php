@@ -5,6 +5,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 
 use Automattic\Jetpack\Connection\Manager as WPCOM_Connection_Manager;
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Admin\Notes\Note;
+use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Admin\PluginsHelper;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
@@ -13,6 +15,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -141,9 +144,18 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave a disconnected WooPayments provider without a notice or service resolution.
+	 * @testdox Should clean the obsolete inbox note for a disconnected provider without attaching a settings notice.
 	 */
-	public function test_get_details_does_not_resolve_admin_notice_for_disconnected_account(): void {
+	public function test_get_details_cleans_legacy_note_for_disconnected_account(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		foreach ( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) as $name ) {
+			$note = new Note();
+			$note->set_name( $name );
+			$note->set_title( 'Existing note' );
+			$note->set_content( 'Existing note content' );
+			$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
+			$note->save();
+		}
 		$gateway = new FakePaymentGateway(
 			'woocommerce_payments',
 			array(
@@ -151,13 +163,20 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 				'account_connected' => false,
 			)
 		);
-		$this->set_notice_service_resolver(
-			static function (): void {
-				throw new \RuntimeException( 'Notice service must remain dormant.' );
-			}
-		);
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_working_account' )->willReturn( false );
+		$service = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
+		$service->init( $account );
+		$this->set_notice_service_resolver( static fn() => $service );
 
-		$this->assertArrayNotHasKey( '_admin_notice', $this->sut->get_details( $gateway ) );
+		try {
+			$this->assertArrayNotHasKey( '_admin_notice', $this->sut->get_details( $gateway ) );
+			$data_store = Notes::load_data_store();
+			$this->assertEmpty( $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ) );
+			$this->assertCount( 1, $data_store->get_notes_with_name( 'unrelated-note' ) );
+		} finally {
+			Notes::delete_notes_with_name( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) );
+		}
 	}
 
 	/**

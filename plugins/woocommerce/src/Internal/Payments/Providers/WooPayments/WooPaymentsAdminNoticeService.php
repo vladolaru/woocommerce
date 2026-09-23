@@ -129,12 +129,13 @@ class WooPaymentsAdminNoticeService {
 	 */
 	public function get_notice_for_current_user(): ?array {
 		$this->one_and_done_live_order_ids = null;
-		if ( 0 === get_current_user_id() || ! $this->account_service->has_working_account() ) {
+		$user_id                           = get_current_user_id();
+		if ( 0 === $user_id ) {
 			return null;
 		}
-		$user_id = get_current_user_id();
-		if ( metadata_exists( 'user', $user_id, self::USER_META_KEYS['test_to_live']['shown'] ) || metadata_exists( 'user', $user_id, self::USER_META_KEYS['test_to_live']['dismiss'] ) || metadata_exists( 'user', $user_id, self::USER_META_KEYS['test_to_live']['snooze'] ) ) {
-			Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
+		Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
+		if ( ! $this->account_service->has_working_account() ) {
+			return null;
 		}
 
 		if ( ! $this->account_service->is_test_mode_enabled() ) {
@@ -182,7 +183,6 @@ class WooPaymentsAdminNoticeService {
 		$can_go_live = $this->account_service->has_live_account();
 		$primary_url = $can_go_live ? Utils::wc_payments_settings_url( '/woopayments/settings' ) : Utils::wc_payments_settings_url( '/woopayments/onboarding' );
 		$action_base = 'wc-admin/settings/payments/woopayments/admin-notices/test_to_live/';
-		Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
 
 		return array(
 			'id'        => 'test_to_live',
@@ -472,6 +472,10 @@ class WooPaymentsAdminNoticeService {
 			$stored = update_user_meta( $user_id, $meta_key, $now );
 		} else {
 			$stored = add_user_meta( $user_id, $meta_key, $now, true );
+		}
+		if ( ! $stored ) {
+			$existing_marker = (int) get_user_meta( $user_id, $meta_key, true );
+			$stored          = metadata_exists( 'user', $user_id, $meta_key ) && ( 'snooze' !== $action || $now < $existing_marker + 7 * DAY_IN_SECONDS );
 		}
 		if ( ! $stored ) {
 			return new WP_Error( 'woocommerce_woopayments_notice_action_failed', __( 'Could not update the notice.', 'woocommerce' ) );

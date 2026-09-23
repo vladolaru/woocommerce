@@ -473,6 +473,103 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A concurrent first write should succeed when the requested marker was persisted by the other request.
+	 * @dataProvider concurrent_first_write_actions
+	 *
+	 * @param string   $notice_id Notice identifier.
+	 * @param string   $action    Requested action.
+	 * @param int|null $stage     Optional post-KYC stage.
+	 * @param string   $meta_key  Preserved client state key.
+	 */
+	public function test_concurrent_first_write_succeeds_when_marker_was_persisted( string $notice_id, string $action, ?int $stage, string $meta_key ): void {
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$now = 1700000000;
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$simulate_race = null;
+		$simulate_race = static function ( $check, int $object_id, string $key, $value ) use ( &$simulate_race, $user_id, $meta_key ) {
+			if ( $user_id !== $object_id || $meta_key !== $key ) {
+				return $check;
+			}
+			remove_filter( 'add_user_metadata', $simulate_race, 10 );
+			update_user_meta( $user_id, $meta_key, $value );
+			return false;
+		};
+		add_filter( 'add_user_metadata', $simulate_race, 10, 4 );
+
+		$this->assertTrue( $sut->record_action( $notice_id, $action, $stage ) );
+		$this->assertSame( $now, (int) get_user_meta( $user_id, $meta_key, true ) );
+		$this->assertCount( 1, get_user_meta( $user_id, $meta_key, false ) );
+	}
+
+	/**
+	 * Concurrent first-write actions and their preserved keys.
+	 *
+	 * @return array<string,array{string,string,int|null,string}>
+	 */
+	public static function concurrent_first_write_actions(): array {
+		return array(
+			'test-to-live snooze'  => array( 'test_to_live', 'snooze', null, 'wcpay_test_to_live_notice_snoozed' ),
+			'post-KYC shown'       => array( 'post_kyc_activation', 'shown', 7, 'wcpay_post_kyc_activation_7_shown' ),
+			'one-and-done dismiss' => array( 'one_and_done', 'dismiss', null, 'wcpay_one_and_done_notice_dismissed_at' ),
+		);
+	}
+
+	/**
+	 * @testdox A failed first write without a persisted marker should remain an error.
+	 */
+	public function test_failed_first_write_without_marker_returns_error(): void {
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$fail_write = static function ( $check, int $object_id, string $key ) use ( $user_id ) {
+			return $user_id === $object_id && 'wcpay_test_to_live_notice_shown' === $key ? false : $check;
+		};
+		add_filter( 'add_user_metadata', $fail_write, 10, 3 );
+
+		$result = $sut->record_action( 'test_to_live', 'shown' );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'woocommerce_woopayments_notice_action_failed', $result->get_error_code() );
+		$this->assertFalse( metadata_exists( 'user', $user_id, 'wcpay_test_to_live_notice_shown' ) );
+	}
+
+	/**
+	 * @testdox A concurrent snooze refresh should accept the fresh marker without extending it on replay.
+	 */
+	public function test_concurrent_snooze_refresh_accepts_fresh_marker_without_extending_replay(): void {
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$now      = 1700000000;
+		$meta_key = 'wcpay_one_and_done_notice_snoozed_at';
+		update_user_meta( $user_id, $meta_key, $now - 7 * DAY_IN_SECONDS );
+		$sut = new WooPaymentsAdminNoticeService(
+			static function () use ( &$now ): int {
+				return $now;
+			}
+		);
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$simulate_race = null;
+		$simulate_race = static function ( $check, int $object_id, string $key, $value ) use ( &$simulate_race, $user_id, $meta_key ) {
+			if ( $user_id !== $object_id || $meta_key !== $key ) {
+				return $check;
+			}
+			remove_filter( 'update_user_metadata', $simulate_race, 10 );
+			update_user_meta( $user_id, $meta_key, $value );
+			return false;
+		};
+		add_filter( 'update_user_metadata', $simulate_race, 10, 4 );
+
+		$this->assertTrue( $sut->record_action( 'one_and_done', 'snooze' ) );
+		$this->assertSame( $now, (int) get_user_meta( $user_id, $meta_key, true ) );
+		$now += DAY_IN_SECONDS;
+		$this->assertTrue( $sut->record_action( 'one_and_done', 'snooze' ) );
+		$this->assertSame( 1700000000, (int) get_user_meta( $user_id, $meta_key, true ), 'An immediate replay must not extend the other request\'s fresh snooze.' );
+	}
+
+	/**
 	 * @testdox An expired snooze can start a new window without letting request replays extend it.
 	 * @dataProvider provide_snoozable_notices
 	 *

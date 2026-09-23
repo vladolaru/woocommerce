@@ -232,11 +232,11 @@ class WooPayments extends PaymentGateway {
 			}
 		}
 
-		if ( null !== $this->admin_notice_service_resolver && ! empty( $details['state']['enabled'] ) && ! empty( $details['state']['account_connected'] ) && 0 < get_current_user_id() ) {
+		if ( null !== $this->admin_notice_service_resolver && 0 < get_current_user_id() ) {
 			$notice_service = call_user_func( $this->admin_notice_service_resolver );
 			if ( $notice_service instanceof WooPaymentsAdminNoticeService ) {
 				$notice = $notice_service->get_notice_for_current_user();
-				if ( null !== $notice ) {
+				if ( ! empty( $details['state']['enabled'] ) && ! empty( $details['state']['account_connected'] ) && null !== $notice ) {
 					$details['_admin_notice'] = $notice;
 				}
 			}
