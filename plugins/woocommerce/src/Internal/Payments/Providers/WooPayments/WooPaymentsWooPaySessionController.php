@@ -51,6 +51,13 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	private bool $has_rendered_express_checkout_buttons = false;
 
 	/**
+	 * Whether WooPay frontend assets have already been localized and enqueued.
+	 *
+	 * @var bool
+	 */
+	private bool $has_enqueued_frontend_assets = false;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -363,6 +370,10 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * Enqueue Core-owned WooPay frontend assets on supported shopper surfaces.
 	 */
 	public function enqueue_frontend_assets(): void {
+		if ( $this->has_enqueued_frontend_assets ) {
+			return;
+		}
+
 		$supported_frontend_surface = $this->is_supported_frontend_surface();
 		$direct_checkout_surface    = $this->is_supported_direct_checkout_surface();
 		if ( ! $supported_frontend_surface && ! $direct_checkout_surface ) {
@@ -384,6 +395,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		wp_localize_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'wcpay_core_woopay_config', $this->get_classic_woopay_config( $config ) );
 		wp_enqueue_style( self::CLASSIC_WOOPAY_STYLE_HANDLE );
 		wp_enqueue_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE );
+		$this->has_enqueued_frontend_assets = true;
 	}
 
 	/**
@@ -770,6 +782,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	private function get_frontend_hooks(): array {
 		return array(
 			'wp_enqueue_scripts'                           => array( $this, 'enqueue_frontend_assets' ),
+			'wp_footer'                                    => array( $this, 'enqueue_frontend_assets' ),
 			'woocommerce_checkout_before_customer_details' => array( $this, 'display_express_checkout_buttons' ),
 			'woocommerce_proceed_to_checkout'              => array( $this, 'display_express_checkout_buttons' ),
 			'woocommerce_after_add_to_cart_form'           => array( $this, 'display_express_checkout_buttons' ),
@@ -843,11 +856,14 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_supported_direct_checkout_surface(): bool {
-		if ( $this->current_surface_has_block( 'woocommerce/checkout' ) ) {
+		if ( ( function_exists( 'is_checkout' ) && is_checkout() ) || $this->current_surface_has_block( 'woocommerce/checkout' ) ) {
 			return false;
 		}
 
-		return ( function_exists( 'is_cart' ) && is_cart() ) || $this->current_surface_has_block( 'woocommerce/cart' );
+		return ( function_exists( 'is_cart' ) && is_cart() ) ||
+			$this->current_surface_has_block( 'woocommerce/cart' ) ||
+			0 < did_action( 'woocommerce_blocks_cart_enqueue_data' ) ||
+			wp_script_is( 'wc-cart-fragments', 'enqueued' );
 	}
 
 	/**

@@ -117,6 +117,8 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		foreach ( $this->get_expected_frontend_hooks() as $hook => $method ) {
 			$this->assertNotFalse( has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered." );
 		}
+		$this->assertSame( 10, has_action( 'wp_footer', array( $this->sut, 'enqueue_frontend_assets' ) ) );
+		$this->assertSame( 20, has_action( 'wp_footer', 'wp_print_footer_scripts' ) );
 		$this->assertNotFalse( has_filter( 'wcpay_metadata_from_order', array( $this->sut, 'maybe_add_woopay_user_metadata' ) ) );
 	}
 
@@ -258,6 +260,74 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$this->assertSame( '', $express_button );
+	}
+
+	/**
+	 * @testdox Should enqueue direct checkout assets for a block mini-cart on an ordinary page at footer time.
+	 */
+	public function test_enqueue_frontend_assets_for_direct_checkout_block_mini_cart(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut->register();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'woocommerce_blocks_cart_enqueue_data' );
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		ob_start();
+		print_late_styles();
+		$late_styles = (string) ob_get_clean();
+		$this->assertStringContainsString( 'woopayments-woopay.css', $late_styles );
+	}
+
+	/**
+	 * @testdox Should enqueue direct checkout assets for a legacy mini-cart on an ordinary page at footer time.
+	 */
+	public function test_enqueue_frontend_assets_for_direct_checkout_legacy_mini_cart(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut->register();
+		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
+			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
+		}
+		wp_enqueue_script( 'wc-cart-fragments' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should not enqueue direct checkout assets for mini-carts on checkout pages.
+	 */
+	public function test_enqueue_frontend_assets_skips_mini_carts_on_checkout_pages(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut->register();
+		$this->set_checkout_shortcode_page();
+		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
+			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
+		}
+		wp_enqueue_script( 'wc-cart-fragments' );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'woocommerce_blocks_cart_enqueue_data' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertFalse( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
 	}
 
 	/**
@@ -1148,6 +1218,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	private function get_expected_frontend_hooks(): array {
 		return array(
 			'wp_enqueue_scripts'                           => 'enqueue_frontend_assets',
+			'wp_footer'                                    => 'enqueue_frontend_assets',
 			'woocommerce_checkout_before_customer_details' => 'display_express_checkout_buttons',
 			'woocommerce_proceed_to_checkout'              => 'display_express_checkout_buttons',
 			'woocommerce_after_add_to_cart_form'           => 'display_express_checkout_buttons',
@@ -1213,6 +1284,8 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		delete_option( 'woocommerce_cart_page_id' );
 		$this->reset_cart_checkout_page_cache();
 		unset( $GLOBALS['post'], $GLOBALS['product'] );
+		unset( $GLOBALS['wp_actions']['woocommerce_blocks_cart_enqueue_data'] );
+		wp_dequeue_script( 'wc-cart-fragments' );
 		wp_reset_postdata();
 		$this->go_to( home_url( '/' ) );
 	}
