@@ -28,7 +28,6 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	private const BLOG_ID                                 = 777;
 	private const REQUIRED_ROUTES                         = array(
 		'GET accounts',
-		'GET authorizations/summary',
 		'GET deposits/overview-all',
 		'GET deposits',
 		'GET disputes',
