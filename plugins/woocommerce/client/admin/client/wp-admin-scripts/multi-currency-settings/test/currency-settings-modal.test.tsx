@@ -62,6 +62,22 @@ const euroCurrency = {
 	last_updated: 1710000000,
 };
 
+const swissFrancCurrency = {
+	...euroCurrency,
+	id: 'chf',
+	code: 'CHF',
+	name: 'Swiss franc',
+	symbol: 'CHF',
+};
+
+const poundSterlingCurrency = {
+	...euroCurrency,
+	id: 'gbp',
+	code: 'GBP',
+	name: 'British pound sterling',
+	symbol: '£',
+};
+
 const automaticSettingsResponse = {
 	exchange_rate_type: 'automatic',
 	manual_rate: null,
@@ -92,6 +108,15 @@ const renderModal = ( props = {} ) => {
 	);
 
 	return { onClose, onSaved };
+};
+
+const createDeferredPromise = < T, >() => {
+	let resolve!: ( value: T ) => void;
+	const promise = new Promise< T >( ( resolvePromise ) => {
+		resolve = resolvePromise;
+	} );
+
+	return { promise, resolve };
 };
 
 describe( 'CurrencySettingsModal', () => {
@@ -356,6 +381,143 @@ describe( 'CurrencySettingsModal', () => {
 		);
 		expect( onSaved ).toHaveBeenCalledWith( 'EUR', 0.95 );
 		expect( onClose ).toHaveBeenCalled();
+	} );
+
+	// Source: WooPayments client 11.1.0, tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:122.
+	it( 'serializes the pinned CHF manual charm settings once and closes after success', async () => {
+		const saveResponse = {
+			exchange_rate_type: 'manual',
+			manual_rate: 1,
+			price_rounding: 0,
+			price_charm: -0.01,
+		};
+		const { promise: savePromise, resolve: resolveSave } =
+			createDeferredPromise< typeof saveResponse >();
+		mockApiFetch
+			.mockResolvedValueOnce( automaticSettingsResponse )
+			.mockReturnValueOnce( savePromise );
+		const { onClose, onSaved } = renderModal( {
+			currency: swissFrancCurrency,
+		} );
+
+		await userEvent.click(
+			await screen.findByRole( 'radio', { name: 'Manual' } )
+		);
+		fireEvent.change( screen.getByLabelText( 'Manual rate' ), {
+			target: { value: '1' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Price rounding' ), {
+			target: { value: '0' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Charm pricing' ), {
+			target: { value: '-0.01' },
+		} );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		);
+
+		await waitFor( () => {
+			expect( mockApiFetch ).toHaveBeenLastCalledWith( {
+				path: '/wc/v3/payments/multi-currency/currencies/CHF',
+				method: 'POST',
+				data: {
+					exchange_rate_type: 'manual',
+					manual_rate: 1,
+					price_rounding: 0,
+					price_charm: -0.01,
+				},
+			} );
+		} );
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 2 );
+		await act( async () => {
+			resolveSave( saveResponse );
+			await savePromise;
+		} );
+		expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+			'Currency settings saved.'
+		);
+		expect( onSaved ).toHaveBeenCalledWith( 'CHF', 1 );
+		expect( onClose ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	// Source: WooPayments client 11.1.0, tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:159.
+	it( 'serializes the pinned CHF manual rounding settings once and closes after success', async () => {
+		const saveResponse = {
+			exchange_rate_type: 'manual',
+			manual_rate: 1.2,
+			price_rounding: 0.5,
+			price_charm: 0,
+		};
+		const { promise: savePromise, resolve: resolveSave } =
+			createDeferredPromise< typeof saveResponse >();
+		mockApiFetch
+			.mockResolvedValueOnce( automaticSettingsResponse )
+			.mockReturnValueOnce( savePromise );
+		const { onClose, onSaved } = renderModal( {
+			currency: swissFrancCurrency,
+		} );
+
+		await userEvent.click(
+			await screen.findByRole( 'radio', { name: 'Manual' } )
+		);
+		fireEvent.change( screen.getByLabelText( 'Manual rate' ), {
+			target: { value: '1.2' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Price rounding' ), {
+			target: { value: '0.50' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Charm pricing' ), {
+			target: { value: '0.00' },
+		} );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		);
+
+		await waitFor( () => {
+			expect( mockApiFetch ).toHaveBeenLastCalledWith( {
+				path: '/wc/v3/payments/multi-currency/currencies/CHF',
+				method: 'POST',
+				data: {
+					exchange_rate_type: 'manual',
+					manual_rate: 1.2,
+					price_rounding: 0.5,
+					price_charm: 0,
+				},
+			} );
+		} );
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 2 );
+		await act( async () => {
+			resolveSave( saveResponse );
+			await savePromise;
+		} );
+		expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+			'Currency settings saved.'
+		);
+		expect( onSaved ).toHaveBeenCalledWith( 'CHF', 1.2 );
+		expect( onClose ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	// Source: WooPayments client 11.1.0, tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:207.
+	it( 'renders the decimal option set for GBP', async () => {
+		mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+		renderModal( { currency: poundSterlingCurrency } );
+
+		const roundingSelect = await screen.findByLabelText( 'Price rounding' );
+		const charmSelect = screen.getByLabelText( 'Charm pricing' );
+		expect( roundingSelect ).toHaveValue( '1.00' );
+		expect(
+			roundingSelect.querySelector( 'option[value="0.50"]' )
+		).toBeInTheDocument();
+		expect(
+			roundingSelect.querySelector( 'option[value="500"]' )
+		).not.toBeInTheDocument();
+		expect(
+			charmSelect.querySelector( 'option[value="-0.01"]' )
+		).toBeInTheDocument();
+		expect(
+			charmSelect.querySelector( 'option[value="-1"]' )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'shows an error notice when saving currency settings fails', async () => {

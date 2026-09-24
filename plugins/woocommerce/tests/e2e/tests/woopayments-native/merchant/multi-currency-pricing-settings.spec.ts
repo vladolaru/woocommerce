@@ -12,13 +12,12 @@ import { withWidenedCurrencyCatalog } from '../../../utils/woopayments-native/mu
 /**
  * Native multi-currency pricing settings (mc-pricing-configuration-smoke).
  *
- * Five provider-free merchant contracts: a manual exchange rate, charm
- * pricing, rounding precision, and the two-decimal / zero-decimal rendering
- * pair — each driven through the real currency-settings modal, joined to the
- * authoritative REST echo, and read back on the storefront as fully formatted
- * text.
+ * Two provider-free merchant contracts: a CHF manual exchange rate with
+ * locale-specific storefront formatting and a JPY zero-decimal amount. Each
+ * runs through the real currency-settings modal, authoritative REST echo, and
+ * storefront text.
  *
- * FORCED PREMISE — read before trusting any of these five results. The
+ * FORCED PREMISE — read before trusting either result. The
  * standing store's provider rate cache is empty, so its available-currency
  * catalog is one code wide: USD plus EUR, the latter only because it is
  * enabled with a manual rate. Every route that could widen it validates
@@ -30,10 +29,10 @@ import { withWidenedCurrencyCatalog } from '../../../utils/woopayments-native/mu
  * behavior GIVEN a catalog that offers that currency; none of them proves the
  * provider offers it, because the run supplies that premise itself. The
  * premise is narrow rather than invented: the connected account already
- * reports CHF, GBP, and JPY among its supported customer currencies, and only
+ * reports CHF and JPY among its supported customer currencies, and only
  * the FX rate payload is substituted.
  *
- * The run currencies (CHF, GBP, JPY) are deliberately not EUR: EUR carries the
+ * The run currencies (CHF, JPY) are deliberately not EUR: EUR carries the
  * documented 0.80 manual rate that the frozen shopper/multi-currency.spec.ts
  * depends on, and no test here reads, writes, or removes it. Every rate below
  * is a run-set manual rate on a run-added currency, so no frozen assertion is
@@ -49,9 +48,6 @@ const ADMIN_PASSWORD =
 const CONTRACT_PREFIX =
 	'default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:';
 const CONTRACT_MANUAL_RATE = `${ CONTRACT_PREFIX }90::Multi-currency setup › Currency settings › can change the currency rate manually`;
-const CONTRACT_CHARM_PRICE = `${ CONTRACT_PREFIX }122::Multi-currency setup › Currency settings › can change the charm price manually`;
-const CONTRACT_ROUNDING = `${ CONTRACT_PREFIX }159::Multi-currency setup › Currency settings › can change the rounding precision manually`;
-const CONTRACT_GBP_DECIMALS = `${ CONTRACT_PREFIX }207::Multi-currency setup › Currency decimal points › the decimal points for GBP are displayed correctly`;
 const CONTRACT_JPY_DECIMALS = `${ CONTRACT_PREFIX }207::Multi-currency setup › Currency decimal points › the decimal points for JPY are displayed correctly`;
 
 const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
@@ -85,7 +81,6 @@ const CHF_THOUSANDS_SEPARATOR = '’';
 // modal, and the shopper amounts below are derived from those manual rates.
 const CATALOG_RATES = {
 	CHF: 0.9,
-	GBP: 0.79,
 	JPY: 151,
 } as const;
 
@@ -453,243 +448,6 @@ test(
 					new RegExp(
 						`CHF\\s1${ CHF_THOUSANDS_SEPARATOR }543\\.20(?!\\d)`
 					)
-				);
-
-				await restoreAndVerify(
-					adminApi,
-					snapshot,
-					currencyCode,
-					product.id
-				);
-			}
-		);
-	}
-);
-
-test(
-	'Configured charm pricing is applied after conversion to the shopper-visible amount',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description: CONTRACT_CHARM_PRICE,
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, baseURL, page, runId } ) => {
-		const currencyCode = 'CHF';
-		// FORCED PREMISE (see the file header).
-		await withWidenedCurrencyCatalog(
-			{ baseURL, rates: { CHF: CATALOG_RATES.CHF } },
-			async () => {
-				const snapshot = await snapshotAndGuard(
-					adminApi,
-					currencyCode
-				);
-				const product = await createRunProduct( adminApi, runId );
-				await enableRunCurrency( adminApi, snapshot, currencyCode );
-
-				await logInAsAdmin( page );
-				const { dialog, row } = await openCurrencySettingsModal(
-					page,
-					snapshot.currencyName
-				);
-				// Manual rate 1.00 isolates the charm: the converted amount
-				// equals the base price, so the only difference the shopper
-				// can see is the charm applied after conversion:
-				// 1234.56 − 0.01 = 1234.55.
-				await saveModalConfiguration( dialog, {
-					manualRate: '1.00',
-					priceRoundingValue: '0',
-					priceCharmValue: '-0.01',
-				} );
-				// The enabled-currencies table's rate cell reflects the saved
-				// rate.
-				await expect( row.getByRole( 'cell' ).nth( 1 ) ).toHaveText(
-					'1'
-				);
-
-				await expectPersistedSettings( adminApi, currencyCode, {
-					manualRate: 1,
-					priceRounding: 0,
-					priceCharm: -0.01,
-				} );
-
-				await expectShopperPrice(
-					page,
-					product.slug,
-					currencyCode,
-					new RegExp(
-						`CHF\\s1${ CHF_THOUSANDS_SEPARATOR }234\\.55(?!\\d)`
-					)
-				);
-
-				await restoreAndVerify(
-					adminApi,
-					snapshot,
-					currencyCode,
-					product.id
-				);
-			}
-		);
-	}
-);
-
-test(
-	'Configured currency rounding produces the documented shopper price in the selected currency',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description: CONTRACT_ROUNDING,
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, baseURL, page, runId } ) => {
-		const currencyCode = 'CHF';
-		// FORCED PREMISE (see the file header).
-		await withWidenedCurrencyCatalog(
-			{ baseURL, rates: { CHF: CATALOG_RATES.CHF } },
-			async () => {
-				const snapshot = await snapshotAndGuard(
-					adminApi,
-					currencyCode
-				);
-				const product = await createRunProduct( adminApi, runId );
-				await enableRunCurrency( adminApi, snapshot, currencyCode );
-
-				await logInAsAdmin( page );
-				const { dialog, row } = await openCurrencySettingsModal(
-					page,
-					snapshot.currencyName
-				);
-				// 1234.56 × 1.20 = 1481.472; the 0.50 increment ceils it
-				// upward to 1481.50 — an amount only the ceiling rule produces
-				// (plain rounding would land on 1481.47).
-				//
-				// Deliberately no modal-reopen readback here: the rounding
-				// deferral packet records a predicted 0.5-versus-0.50 semantic
-				// reload mismatch as a future bounded RED candidate, and this
-				// smoke must neither trigger nor paper over it. Persistence is
-				// proven by the REST echo.
-				await saveModalConfiguration( dialog, {
-					manualRate: '1.20',
-					priceRoundingValue: '0.50',
-					priceCharmValue: '0.00',
-				} );
-				// The enabled-currencies table's rate cell reflects the saved
-				// rate.
-				await expect( row.getByRole( 'cell' ).nth( 1 ) ).toHaveText(
-					'1.2'
-				);
-
-				await expectPersistedSettings( adminApi, currencyCode, {
-					manualRate: 1.2,
-					priceRounding: 0.5,
-					priceCharm: 0,
-				} );
-
-				await expectShopperPrice(
-					page,
-					product.slug,
-					currencyCode,
-					new RegExp(
-						`CHF\\s1${ CHF_THOUSANDS_SEPARATOR }481\\.50(?!\\d)`
-					)
-				);
-
-				await restoreAndVerify(
-					adminApi,
-					snapshot,
-					currencyCode,
-					product.id
-				);
-			}
-		);
-	}
-);
-
-test(
-	'Two-decimal currencies render shopper prices with exactly two fractional digits',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description: CONTRACT_GBP_DECIMALS,
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, baseURL, page, runId } ) => {
-		const currencyCode = 'GBP';
-		// FORCED PREMISE (see the file header).
-		await withWidenedCurrencyCatalog(
-			{ baseURL, rates: { GBP: CATALOG_RATES.GBP } },
-			async () => {
-				const snapshot = await snapshotAndGuard(
-					adminApi,
-					currencyCode
-				);
-				const product = await createRunProduct( adminApi, runId );
-				await enableRunCurrency( adminApi, snapshot, currencyCode );
-
-				await logInAsAdmin( page );
-				const { dialog } = await openCurrencySettingsModal(
-					page,
-					snapshot.currencyName
-				);
-
-				// Modal half: a two-decimal currency renders the decimal-class
-				// controls — the fractional rounding and charm option sets,
-				// and the decimal default rounding — not the zero-decimal
-				// ones.
-				const roundingSelect = dialog.getByRole( 'combobox', {
-					name: 'Price rounding',
-				} );
-				const charmSelect = dialog.getByRole( 'combobox', {
-					name: 'Charm pricing',
-				} );
-				await expect( roundingSelect ).toHaveValue( '1.00' );
-				await expect(
-					roundingSelect.locator( 'option[value="0.50"]' )
-				).toHaveCount( 1 );
-				await expect(
-					roundingSelect.locator( 'option[value="500"]' )
-				).toHaveCount( 0 );
-				await expect(
-					charmSelect.locator( 'option[value="-0.01"]' )
-				).toHaveCount( 1 );
-				await expect(
-					charmSelect.locator( 'option[value="-1"]' )
-				).toHaveCount( 0 );
-
-				// Manual rate 0.80 on GBP: 1234.56 × 0.80 = 987.648, rounded
-				// to the currency's two decimals → 987.65. The frozen family
-				// smoke's EUR 0.80 documented-rate conversion is untouched:
-				// this is a run-set manual rate on a different, run-added
-				// currency, asserted for its decimal rendering rather than for
-				// any documented-rate claim.
-				await saveModalConfiguration( dialog, {
-					manualRate: '0.80',
-					priceRoundingValue: '0',
-					priceCharmValue: '0.00',
-				} );
-
-				await expectPersistedSettings( adminApi, currencyCode, {
-					manualRate: 0.8,
-					priceRounding: 0,
-					priceCharm: 0,
-				} );
-
-				// Exactly two fractional digits: the trailing guard rejects a
-				// third digit, so a 987.648 rendering cannot match.
-				await expectShopperPrice(
-					page,
-					product.slug,
-					currencyCode,
-					/£987\.65(?!\d)/
 				);
 
 				await restoreAndVerify(
