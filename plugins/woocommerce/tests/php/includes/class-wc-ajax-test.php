@@ -1700,6 +1700,8 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 	 * @testdox Invalid refund inputs are rejected before local or gateway mutation.
 	 * @dataProvider invalid_refund_line_item_data
 	 *
+	 * Source: WooPayments client 11.1.0 invalid-refund scenarios; its recorded dialog assertion is compromised because the generator stops at its first yield.
+	 *
 	 * @param array<string,int|float|string> $quantities     Quantities keyed by symbolic line name.
 	 * @param array<string,int|float|string> $line_totals    Net totals keyed by symbolic line name.
 	 * @param string                         $refund_amount  Aggregate refund amount.
@@ -1728,6 +1730,14 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 			$fixture                                      = $this->create_refundable_order( $gateway );
 			$order                                        = $fixture['order'];
 			$products                                     = $fixture['products'];
+			$original_order_status                        = $order->get_status();
+			$original_order_total                         = $order->get_total();
+			$original_line_totals                         = array_map(
+				static function ( WC_Order_Item_Product $item ): string {
+					return $item->get_total();
+				},
+				$order->get_items( 'line_item' )
+			);
 
 			add_action( 'woocommerce_create_refund', $create_refund_callback, 10, 0 );
 			add_action( 'woocommerce_refund_created', $refund_created_callback, 10, 0 );
@@ -1743,6 +1753,18 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 
 			$stored_order = wc_get_order( $order->get_id() );
 			$this->assertInstanceOf( WC_Order::class, $stored_order, 'The order should still exist after rejection.' );
+			$this->assertSame( $original_order_status, $stored_order->get_status(), 'The order status should remain unchanged.' );
+			$this->assertSame( $original_order_total, $stored_order->get_total(), 'The order total should remain unchanged.' );
+			$this->assertSame(
+				$original_line_totals,
+				array_map(
+					static function ( WC_Order_Item_Product $item ): string {
+						return $item->get_total();
+					},
+					$stored_order->get_items( 'line_item' )
+				),
+				'Each line-item total should remain unchanged.'
+			);
 			$this->assertCount( 0, $stored_order->get_refunds(), 'Invalid refund input should not create a local refund.' );
 			$this->assertSame( 0.0, (float) $stored_order->get_total_refunded(), 'The refunded total should remain unchanged.' );
 			$this->assertSame( 20.0, (float) $stored_order->get_remaining_refund_amount(), 'The full order amount should remain refundable.' );

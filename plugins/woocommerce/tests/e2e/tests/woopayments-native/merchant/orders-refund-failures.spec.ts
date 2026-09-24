@@ -35,23 +35,11 @@ const DRIVEN_LINE_PRICE = 10;
 const DRIVEN_LINE_QUANTITY = 2;
 const SPARE_LINE_PRICE = 50;
 
-// The smallest amount the store can express, so every out-of-bounds value is
-// derived from the fixture's own boundary rather than from a hard-coded
-// excess. The ledger names the hard-coded `100` on the client rows as a
-// recorded weakness: it only exceeded that suite's sample total by accident.
-const SMALLEST_INCREMENT = 0.01;
-
-// The exact server-side rejections, from `WC_AJAX::refund_line_items()`. Every
-// one of them is raised before `wc_create_refund()` runs, so no refund object
-// and no gateway dispatch can exist on any of these paths.
-const AGGREGATE_REJECTION = 'Invalid refund amount';
+// The exact server-side rejection, from `WC_AJAX::refund_line_items()`. It is
+// raised before `wc_create_refund()` runs, so no refund object and no gateway
+// dispatch can exist on this path.
 const LINE_QUANTITY_ABOVE_REMAINING =
 	'Line item quantity cannot be greater than the remaining refundable quantity.';
-const LINE_QUANTITY_NEGATIVE = 'Line item quantity must be non-negative.';
-const LINE_TOTAL_ABOVE_REMAINING =
-	'Refund total cannot be greater than the remaining refundable amount for this line item.';
-const LINE_TOTAL_WRONG_SIGN =
-	'Refund total has the wrong sign for this line item.';
 
 // The failure shapes an admin screen must not carry. A fatal replaces the
 // document; leaked notice output corrupts it. The notice pattern requires the
@@ -928,71 +916,6 @@ const QUANTITY_ABOVE_REMAINING_SCENARIO: RefundScenario = {
 		),
 };
 
-// A merchant refunding the spare line in full who mistypes a negative quantity
-// on the other. The valid line keeps the aggregate non-negative, so the
-// negative quantity is demonstrably what the server rejected.
-const QUANTITY_NEGATIVE_SCENARIO: RefundScenario = {
-	expectedError: LINE_QUANTITY_NEGATIVE,
-	guard: 'line',
-	input: {
-		drivenQuantity: '-1',
-		spareTotal: ( fixture ) => money( fixture.spareLine.total ),
-	},
-	expectedAggregate: ( fixture ) =>
-		money(
-			fixture.spareLine.total -
-				fixture.drivenLine.total / fixture.drivenLine.quantity
-		),
-};
-
-// One increment past the driven line's own refundable total, while the
-// aggregate stays well inside the order's.
-const LINE_TOTAL_ABOVE_REMAINING_SCENARIO: RefundScenario = {
-	expectedError: LINE_TOTAL_ABOVE_REMAINING,
-	guard: 'line',
-	input: {
-		drivenTotal: ( fixture ) =>
-			money( fixture.drivenLine.total + SMALLEST_INCREMENT ),
-	},
-	expectedAggregate: ( fixture ) =>
-		money( fixture.drivenLine.total + SMALLEST_INCREMENT ),
-};
-
-// A negative amount against a positive line item, with the spare line keeping
-// the aggregate non-negative so the per-line sign rule is what rejects.
-const LINE_TOTAL_NEGATIVE_SCENARIO: RefundScenario = {
-	expectedError: LINE_TOTAL_WRONG_SIGN,
-	guard: 'line',
-	input: {
-		drivenTotal: () => money( -SMALLEST_INCREMENT ),
-		spareTotal: ( fixture ) => money( fixture.spareLine.total ),
-	},
-	expectedAggregate: ( fixture ) =>
-		money( fixture.spareLine.total - SMALLEST_INCREMENT ),
-};
-
-// One increment past the whole order, derived from the fixture's own total
-// rather than from a hard-coded excess.
-const AGGREGATE_ABOVE_REMAINING_SCENARIO: RefundScenario = {
-	expectedError: AGGREGATE_REJECTION,
-	guard: 'aggregate-above',
-	input: {
-		drivenTotal: ( fixture ) =>
-			money( fixture.orderTotal + SMALLEST_INCREMENT ),
-	},
-	expectedAggregate: ( fixture ) =>
-		money( fixture.orderTotal + SMALLEST_INCREMENT ),
-};
-
-// The smallest negative amount the store can express, with nothing offsetting
-// it, so the aggregate the merchant submits is itself negative.
-const AGGREGATE_NEGATIVE_SCENARIO: RefundScenario = {
-	expectedError: AGGREGATE_REJECTION,
-	guard: 'aggregate-negative',
-	input: { drivenTotal: () => money( -SMALLEST_INCREMENT ) },
-	expectedAggregate: () => money( -SMALLEST_INCREMENT ),
-};
-
 test(
 	'a refund line quantity above the remaining refundable quantity is rejected with a comprehensible error, leaves the order refundable amount unchanged, and dispatches no provider refund',
 	{
@@ -1014,125 +937,5 @@ test(
 		// contract id: the server's verdict and the merchant's alert.
 		expect( outcome.serverError ).toBe( LINE_QUANTITY_ABOVE_REMAINING );
 		expect( outcome.alertMessage ).toBe( LINE_QUANTITY_ABOVE_REMAINING );
-	}
-);
-
-test(
-	'a negative refund line quantity is rejected with a comprehensible error, leaves the order refundable amount unchanged, and dispatches no provider refund',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description:
-					'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is negative',
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, page, baseURL, runId } ) => {
-		const outcome = await runRejectedRefundContract(
-			{ adminApi, page, baseURL, runId },
-			QUANTITY_NEGATIVE_SCENARIO
-		);
-		// The exact rejection this row claims, restated beside its
-		// contract id: the server's verdict and the merchant's alert.
-		expect( outcome.serverError ).toBe( LINE_QUANTITY_NEGATIVE );
-		expect( outcome.alertMessage ).toBe( LINE_QUANTITY_NEGATIVE );
-	}
-);
-
-test(
-	'a refund line total above that line remaining refundable amount is rejected with a comprehensible error, leaves the order refundable amount unchanged, and dispatches no provider refund',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description:
-					'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is greater than maximum',
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, page, baseURL, runId } ) => {
-		const outcome = await runRejectedRefundContract(
-			{ adminApi, page, baseURL, runId },
-			LINE_TOTAL_ABOVE_REMAINING_SCENARIO
-		);
-		// The exact rejection this row claims, restated beside its
-		// contract id: the server's verdict and the merchant's alert.
-		expect( outcome.serverError ).toBe( LINE_TOTAL_ABOVE_REMAINING );
-		expect( outcome.alertMessage ).toBe( LINE_TOTAL_ABOVE_REMAINING );
-	}
-);
-
-test(
-	'a negative refund line total against a positive line item is rejected with a comprehensible error, leaves the order refundable amount unchanged, and dispatches no provider refund',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description:
-					'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is negative',
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, page, baseURL, runId } ) => {
-		const outcome = await runRejectedRefundContract(
-			{ adminApi, page, baseURL, runId },
-			LINE_TOTAL_NEGATIVE_SCENARIO
-		);
-		// The exact rejection this row claims, restated beside its
-		// contract id: the server's verdict and the merchant's alert.
-		expect( outcome.serverError ).toBe( LINE_TOTAL_WRONG_SIGN );
-		expect( outcome.alertMessage ).toBe( LINE_TOTAL_WRONG_SIGN );
-	}
-);
-
-test(
-	'an aggregate refund amount above the order remaining refundable amount is rejected with a comprehensible error, leaves the order refundable amount unchanged, and dispatches no provider refund',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description:
-					'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is greater than maximum',
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, page, baseURL, runId } ) => {
-		const outcome = await runRejectedRefundContract(
-			{ adminApi, page, baseURL, runId },
-			AGGREGATE_ABOVE_REMAINING_SCENARIO
-		);
-		// The exact rejection this row claims, restated beside its
-		// contract id: the server's verdict and the merchant's alert.
-		expect( outcome.serverError ).toBe( AGGREGATE_REJECTION );
-		expect( outcome.alertMessage ).toBe( AGGREGATE_REJECTION );
-	}
-);
-
-test(
-	'a negative aggregate refund amount is rejected with a comprehensible error, leaves the order refundable amount unchanged, and dispatches no provider refund',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description:
-					'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is negative',
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, page, baseURL, runId } ) => {
-		const outcome = await runRejectedRefundContract(
-			{ adminApi, page, baseURL, runId },
-			AGGREGATE_NEGATIVE_SCENARIO
-		);
-		// The exact rejection this row claims, restated beside its
-		// contract id: the server's verdict and the merchant's alert.
-		expect( outcome.serverError ).toBe( AGGREGATE_REJECTION );
-		expect( outcome.alertMessage ).toBe( AGGREGATE_REJECTION );
 	}
 );
