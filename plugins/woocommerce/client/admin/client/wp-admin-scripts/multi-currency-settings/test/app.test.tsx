@@ -2,6 +2,7 @@
  * External dependencies
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { speak } from '@wordpress/a11y';
 import apiFetch from '@wordpress/api-fetch';
 
@@ -401,30 +402,50 @@ describe( 'MultiCurrencySettingsApp', () => {
 	} );
 
 	it( 'refuses to update when no currency is selected and explains why', async () => {
+		// WooPayments 11.1.0 proves the original onboarding rule in
+		// multi-currency-on-boarding.spec.ts:59, including the empty-selection
+		// refusal that this native management modal retains.
 		render( <MultiCurrencySettingsApp /> );
 
-		fireEvent.click(
+		await userEvent.click(
 			await screen.findByRole( 'button', {
 				name: 'Add/remove currencies',
 			} )
 		);
-		fireEvent.click( screen.getByRole( 'checkbox', { name: 'Euro EUR' } ) );
+		const euroCheckbox = screen.getByRole( 'checkbox', {
+			name: 'Euro EUR',
+		} );
+		await userEvent.click( euroCheckbox );
 
 		const updateButton = screen.getByRole( 'button', {
 			name: 'Update selected',
 		} );
 		expect( updateButton ).toHaveAttribute( 'aria-disabled', 'true' );
+		expect( updateButton ).not.toHaveAttribute( 'disabled' );
 		expect( updateButton ).toHaveAccessibleDescription(
 			/Select at least one currency/
 		);
+		expect(
+			screen.getByText(
+				/Select at least one currency to update your enabled currencies/
+			)
+		).toBeVisible();
 		// Focus stays on the checkbox the merchant just cleared, so nothing
 		// carries the button's description to them: the refusal is announced.
+		expect( euroCheckbox ).toHaveFocus();
 		expect( speak ).toHaveBeenCalledWith(
 			expect.stringMatching( /Select at least one currency/ ),
 			'polite'
 		);
 
-		fireEvent.click( updateButton );
+		const cancelButton = screen.getByRole( 'button', { name: 'Cancel' } );
+		cancelButton.focus();
+		expect( cancelButton ).toHaveFocus();
+		await userEvent.tab();
+		expect( updateButton ).toHaveFocus();
+
+		await userEvent.keyboard( '{Enter}' );
+		await userEvent.keyboard( ' ' );
 
 		// Only the initial currencies read; the empty selection never
 		// reaches the update route that would drop every enabled currency.
@@ -432,6 +453,45 @@ describe( 'MultiCurrencySettingsApp', () => {
 		expect(
 			screen.getByRole( 'heading', { name: 'Add enabled currencies' } )
 		).toBeInTheDocument();
+	} );
+
+	it( 'keeps enabled currencies selected in the search-filtered management list', async () => {
+		// DECISIONS.md (2026-08-08) defines this search-filtered management list
+		// as the native equivalent of WooPayments onboarding rather than a wizard
+		// replica, so its selection and filtering behavior belongs in this suite.
+		render( <MultiCurrencySettingsApp /> );
+
+		await userEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Add/remove currencies',
+			} )
+		);
+
+		const euroCheckbox = screen.getByRole( 'checkbox', {
+			name: 'Euro EUR',
+		} );
+		expect( euroCheckbox ).toBeChecked();
+		expect(
+			screen.getAllByRole( 'checkbox', { name: 'Euro EUR' } )
+		).toHaveLength( 1 );
+
+		const searchInput = screen.getByRole( 'searchbox', {
+			name: 'Search currencies',
+		} );
+		await userEvent.type( searchInput, 'Euro' );
+		expect(
+			screen.getAllByRole( 'checkbox', { name: 'Euro EUR' } )
+		).toHaveLength( 1 );
+		expect( screen.getAllByRole( 'checkbox' ) ).toHaveLength( 1 );
+		expect( euroCheckbox ).toBeChecked();
+
+		await userEvent.clear( searchInput );
+		await userEvent.type( searchInput, 'zzzznotacurrency' );
+		expect( screen.queryAllByRole( 'checkbox' ) ).toHaveLength( 0 );
+
+		await userEvent.clear( searchInput );
+		expect( screen.getAllByRole( 'checkbox' ) ).toHaveLength( 2 );
+		expect( euroCheckbox ).toBeChecked();
 	} );
 
 	it( 'makes the update action available again once a currency is selected', async () => {
