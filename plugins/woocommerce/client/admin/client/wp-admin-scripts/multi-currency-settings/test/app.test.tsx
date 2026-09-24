@@ -101,6 +101,18 @@ const currenciesResponse: StoreCurrenciesResponse = {
 			rounding: '0',
 			last_updated: 1710000000,
 		},
+		GBP: {
+			id: 'gbp',
+			code: 'GBP',
+			name: 'British pound',
+			rate: 0.79,
+			symbol: '£',
+			symbol_position: 'left',
+			is_zero_decimal: false,
+			charm: 0,
+			rounding: '0',
+			last_updated: 1710000000,
+		},
 	},
 	enabled: {},
 	default: {} as StoreCurrenciesResponse[ 'default' ],
@@ -119,6 +131,22 @@ const updatedResponse: StoreCurrenciesResponse = {
 	...currenciesResponse,
 	enabled: {
 		USD: currenciesResponse.available.USD,
+		CAD: currenciesResponse.available.CAD,
+	},
+};
+
+const removedCurrencyResponse: StoreCurrenciesResponse = {
+	...currenciesResponse,
+	enabled: {
+		USD: currenciesResponse.available.USD,
+	},
+};
+
+const addedCurrencyResponse: StoreCurrenciesResponse = {
+	...currenciesResponse,
+	enabled: {
+		USD: currenciesResponse.available.USD,
+		EUR: currenciesResponse.available.EUR,
 		CAD: currenciesResponse.available.CAD,
 	},
 };
@@ -155,7 +183,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 	} );
 
 	it( 'removes a non-default enabled currency', async () => {
-		mockApiFetch.mockResolvedValueOnce( updatedResponse );
+		mockApiFetch.mockResolvedValueOnce( removedCurrencyResponse );
 
 		render( <MultiCurrencySettingsApp /> );
 
@@ -165,6 +193,9 @@ describe( 'MultiCurrencySettingsApp', () => {
 		removeButton.focus();
 		fireEvent.click( removeButton );
 
+		// WooPayments 11.1.0 multi-currency-setup.spec.ts:57 ("can remove a
+		// currency") defines the enabled-set result. DECISIONS.md (2026-08-08)
+		// places that capability in this native search-filtered management UI.
 		await waitFor( () => {
 			expect( mockApiFetch ).toHaveBeenLastCalledWith( {
 				path: '/wc/v3/payments/multi-currency/update-enabled-currencies',
@@ -172,6 +203,27 @@ describe( 'MultiCurrencySettingsApp', () => {
 				data: { enabled: [ 'USD' ] },
 			} );
 		} );
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 2 );
+		// The same pinned outcome is rendered locally: Euro and CAD are gone,
+		// only USD remains enabled, and the default remains protected.
+		await waitFor( () =>
+			expect(
+				screen.queryByRole( 'button', {
+					name: 'Remove Euro as an enabled currency',
+				} )
+			).not.toBeInTheDocument()
+		);
+		expect( screen.getByText( 'United States (US) dollar' ) ).toBeVisible();
+		expect(
+			screen.queryByText( 'Canadian dollar' )
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', {
+				name: 'Remove United States (US) dollar as an enabled currency',
+			} )
+		).not.toBeInTheDocument();
+		// The pinned client reports a successful enabled-set update; the native
+		// equivalent keeps that acknowledgement as a success notice.
 		expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
 			'Enabled currencies updated.'
 		);
@@ -330,8 +382,8 @@ describe( 'MultiCurrencySettingsApp', () => {
 		} );
 	} );
 
-	it( 'updates selected currencies from the modal', async () => {
-		mockApiFetch.mockResolvedValueOnce( updatedResponse );
+	it( 'adds a selected currency and renders the updated enabled set', async () => {
+		mockApiFetch.mockResolvedValueOnce( addedCurrencyResponse );
 
 		render( <MultiCurrencySettingsApp /> );
 
@@ -348,18 +400,81 @@ describe( 'MultiCurrencySettingsApp', () => {
 		fireEvent.click(
 			screen.getByRole( 'checkbox', { name: 'Canadian dollar CAD' } )
 		);
-		fireEvent.click( screen.getByRole( 'checkbox', { name: 'Euro EUR' } ) );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Update selected' } )
 		);
 
+		// WooPayments 11.1.0 multi-currency-setup.spec.ts:53 ("can add a new
+		// currency") defines the enabled-set result. DECISIONS.md (2026-08-08)
+		// identifies this settings modal as the native equivalent of that flow.
 		await waitFor( () => {
 			expect( mockApiFetch ).toHaveBeenLastCalledWith( {
 				path: '/wc/v3/payments/multi-currency/update-enabled-currencies',
 				method: 'POST',
-				data: { enabled: [ 'USD', 'CAD' ] },
+				data: { enabled: [ 'USD', 'EUR', 'CAD' ] },
 			} );
 		} );
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 2 );
+		// The selected currency is added without dropping Euro from the rendered
+		// enabled set, while the default remains non-removable.
+		expect(
+			await screen.findByRole( 'button', {
+				name: 'Remove Canadian dollar as an enabled currency',
+			} )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', {
+				name: 'Remove Euro as an enabled currency',
+			} )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', {
+				name: 'Remove United States (US) dollar as an enabled currency',
+			} )
+		).not.toBeInTheDocument();
+		// The pinned client reports a successful enabled-set update; the native
+		// equivalent keeps that acknowledgement as a success notice.
+		expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+			'Enabled currencies updated.'
+		);
+		expect(
+			screen.queryByRole( 'heading', { name: 'Add enabled currencies' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'holds multiple independent selections without writing when cancelled', async () => {
+		render( <MultiCurrencySettingsApp /> );
+
+		await userEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Add/remove currencies',
+			} )
+		);
+
+		const canadianDollarCheckbox = screen.getByRole( 'checkbox', {
+			name: 'Canadian dollar CAD',
+		} );
+		const britishPoundCheckbox = screen.getByRole( 'checkbox', {
+			name: 'British pound GBP',
+		} );
+		await userEvent.click( canadianDollarCheckbox );
+		await userEvent.click( britishPoundCheckbox );
+
+		// WooPayments 11.1.0 multi-currency-on-boarding.spec.ts:86 ("should
+		// allow multiple currencies to be selected") defines independent,
+		// simultaneous selection. DECISIONS.md (2026-08-08) maps that capability
+		// to this native search-filtered management modal.
+		expect( canadianDollarCheckbox ).toBeChecked();
+		expect( britishPoundCheckbox ).toBeChecked();
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Cancel', exact: true } )
+		);
+
+		// The decision retains a management UI rather than a wizard: abandoning
+		// transient selections must not issue the enabled-currencies POST.
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
 		expect(
 			screen.queryByRole( 'heading', { name: 'Add enabled currencies' } )
 		).not.toBeInTheDocument();
@@ -490,7 +605,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 		expect( screen.queryAllByRole( 'checkbox' ) ).toHaveLength( 0 );
 
 		await userEvent.clear( searchInput );
-		expect( screen.getAllByRole( 'checkbox' ) ).toHaveLength( 2 );
+		expect( screen.getAllByRole( 'checkbox' ) ).toHaveLength( 3 );
 		expect( euroCheckbox ).toBeChecked();
 	} );
 

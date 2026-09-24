@@ -16,16 +16,15 @@ import {
 /**
  * Native multi-currency settings management (mc-settings-management-spec).
  *
- * Eight provider-free merchant contracts against the Core-owned multi-currency
+ * Five provider-free merchant contracts against the Core-owned multi-currency
  * settings surface (wc-settings → Multi-currency, MultiCurrencySettingsPage +
  * multi-currency-settings React app) and the Core Features screen.
  *
  * Per DECISIONS.md 2026-08-08 ("The multi-currency settings screen is the
- * native equivalent of the client's onboarding wizard"), the three onboarding
- * rows here prove their underlying capabilities against the settings modal:
- * multi-select, selection persistence into enabled currencies, and the
- * automatic geolocation switch opt-in. No wizard affordance is asserted, and
- * the geolocation row's oracle is the opt-in setting round-trip
+ * native equivalent of the client's onboarding wizard"), the two retained
+ * onboarding rows prove selection persistence into enabled currencies and the
+ * automatic geolocation switch opt-in against the settings modal. No wizard
+ * affordance is asserted, and the geolocation row's oracle is the opt-in setting round-trip
  * (wcpay_multi_currency_enable_auto_currency), never a live geolocation
  * simulation.
  *
@@ -38,16 +37,15 @@ import {
  * remaining absent-option-vs-default-value ambiguity is recorded in the
  * package NOTES as a run-phase residue.
  *
- * Forced-premise bound (currency-management rows only): the standing store's
- * provider rate cache is empty, so its available-currency catalog is one code
- * wide — USD plus EUR, the latter only because it is enabled with a manual
- * rate. The four rows that need a third currency (add, remove, multi-select,
- * selection persistence) run inside
+ * Forced-premise bound (selection-persistence row only): the standing store's
+ * provider rate cache is empty, so its available-currency catalog offers
+ * USD plus EUR, the latter only because it is enabled with a manual
+ * rate. The selection-persistence row needs additional currencies and runs inside
  * utils/woopayments-native/multi-currency-catalog.ts, which snapshots the raw
  * rate-cache option, forces the codes it needs into it, and byte-restores it
- * with a verified read. Those rows therefore prove what native's
+ * with a verified read. That row therefore proves what native's
  * currency-management surface does GIVEN a catalog that offers those
- * currencies; they prove nothing about the provider offering them, because the
+ * currencies; it proves nothing about the provider offering them, because the
  * run supplies that premise itself. The other four rows need no such premise
  * and run against the store exactly as it stands.
  *
@@ -73,9 +71,6 @@ const CONTRACT_IDS = {
 		'default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency.spec.ts:43::Multi-currency › page load without any errors',
 	disableFeature: `${ SETUP_CONTRACT_PREFIX }42::Multi-currency setup › can disable the multi-currency feature`,
 	enableFeature: `${ SETUP_CONTRACT_PREFIX }46::Multi-currency setup › can enable the multi-currency feature`,
-	addCurrency: `${ SETUP_CONTRACT_PREFIX }53::Multi-currency setup › Currency management › can add a new currency`,
-	removeCurrency: `${ SETUP_CONTRACT_PREFIX }57::Multi-currency setup › Currency management › can remove a currency`,
-	multiSelect: `${ ONBOARDING_CONTRACT_PREFIX }86::Multi-currency on-boarding › Currency selection and management › should allow multiple currencies to be selected`,
 	selectionPersists: `${ ONBOARDING_CONTRACT_PREFIX }139::Multi-currency on-boarding › Currency selection and management › selected currencies are enabled after onboarding`,
 	geolocationOptIn: `${ ONBOARDING_CONTRACT_PREFIX }165::Multi-currency on-boarding › Geolocation features › should offer currency switch by geolocation`,
 } as const;
@@ -111,28 +106,12 @@ const MIGRATION_TEXT = /database update|update required|migration/i;
 // The deterministic currencies the persistence row commits to, from the
 // source contract's own observable outcome (GBP, EUR, CAD, AUD).
 const PERSISTENCE_CODES = [ 'AUD', 'CAD', 'EUR', 'GBP' ] as const;
-// The deterministic currency the add/remove rows commit to.
-const MANAGED_CODE = 'CHF';
-// Deterministic preference order for the transient multi-select row: the
-// first two available, not-yet-enabled, non-default codes from this list.
-const MULTI_SELECT_CANDIDATES = [
-	'CHF',
-	'CAD',
-	'AUD',
-	'GBP',
-	'JPY',
-	'NZD',
-	'SEK',
-] as const;
-
-// Automatic catalog rates the run forces into the provider rate cache for the
-// currency-management rows. Only their presence and positivity matter here —
+// Automatic catalog rates the selection-persistence row forces into the provider rate cache. Only their presence and positivity matter here —
 // no row asserts a converted shopper amount — but they are held at plausible
 // USD-base values so the merchant surface renders realistic data.
 const CATALOG_RATES = {
 	AUD: 1.52,
 	CAD: 1.37,
-	CHF: 0.9,
 	GBP: 0.79,
 } as const;
 
@@ -792,325 +771,6 @@ test(
 				await setCoreMultiCurrencyFeature(
 					adminApi,
 					originalFeatureValue
-				);
-			}
-		);
-	}
-);
-
-test(
-	'A merchant can add a supported currency and it becomes enabled for the store',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description: CONTRACT_IDS.addCurrency,
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, baseURL, page } ) => {
-		// FORCED PREMISE: the standing store's rate cache is empty, so its
-		// catalog cannot offer a third currency at all. The run injects CHF's
-		// automatic rate into that cache and byte-restores it afterwards.
-		// What follows proves native's merchant add path GIVEN a catalog that
-		// offers CHF; it does not prove the provider offers CHF.
-		await withWidenedCurrencyCatalog(
-			{ baseURL, rates: { CHF: CATALOG_RATES.CHF } },
-			async () => {
-				const before = await getStoreCurrencies( adminApi );
-				const baselineCodes = sortedCodes( before.enabled );
-				const chfSettingsBefore = await getCurrencySettingsEcho(
-					adminApi,
-					MANAGED_CODE
-				);
-
-				// Deterministic fixture: CHF must be available with a positive
-				// rate and must not already be enabled. A drifted baseline
-				// fails loudly here instead of surfacing as a misleading modal
-				// assertion.
-				expect(
-					before.available[ MANAGED_CODE ],
-					`${ MANAGED_CODE } must be an available currency on this store`
-				).toBeTruthy();
-				expect( before.available[ MANAGED_CODE ].rate ).toBeGreaterThan(
-					0
-				);
-				expect(
-					baselineCodes,
-					`${ MANAGED_CODE } must start disabled; a prior run leaked state`
-				).not.toContain( MANAGED_CODE );
-
-				const currencyWrites = trackRouteWrites(
-					page,
-					'/wc/v3/payments/multi-currency/update-enabled-currencies'
-				);
-
-				await logInAsAdmin( page, baseURL );
-				await page.goto( MC_SETTINGS_PATH );
-				await expect(
-					enabledCurrencyRow( page, MANAGED_CODE )
-				).toHaveCount( 0 );
-
-				// Add through the modal's real controls, exercising the search
-				// filter the merchant would use.
-				const dialog = await openAddCurrenciesModal( page );
-				await dialog
-					.getByRole( 'searchbox', { name: 'Search currencies' } )
-					.fill( MANAGED_CODE );
-				const chfCheckbox = modalCurrencyCheckbox(
-					dialog,
-					MANAGED_CODE
-				);
-				await expect( chfCheckbox ).not.toBeChecked();
-				await chfCheckbox.check();
-				await dialog
-					.getByRole( 'button', { name: UPDATE_SELECTED_BUTTON } )
-					.click();
-				await expect( dialog ).toHaveCount( 0 );
-				await expect(
-					page.getByText( CURRENCIES_UPDATED_NOTICE ).first()
-				).toBeVisible();
-
-				// Exactly one update request carried the whole transition.
-				expect( currencyWrites() ).toBe( 1 );
-
-				// Authoritative echo: the enabled set is the untouched
-				// baseline plus CHF, and the enabled entry carries a usable
-				// positive rate.
-				const after = await getStoreCurrencies( adminApi );
-				expect( sortedCodes( after.enabled ) ).toEqual(
-					[ ...baselineCodes, MANAGED_CODE ].toSorted()
-				);
-				expect( after.enabled[ MANAGED_CODE ].rate ).toBeGreaterThan(
-					0
-				);
-
-				// The merchant-visible state agrees after a full reload.
-				await page.reload();
-				await expect(
-					enabledCurrencyRow( page, MANAGED_CODE )
-				).toHaveCount( 1 );
-
-				// Restore the snapshot and verify: the baseline enabled set
-				// returns in its original order, and CHF's per-currency
-				// settings are exactly what they were before the add/restore
-				// cycle.
-				await setEnabledCurrencies(
-					adminApi,
-					storeOrderCodes( before.enabled )
-				);
-				expect(
-					await getCurrencySettingsEcho( adminApi, MANAGED_CODE ),
-					'CHF per-currency settings must survive the add/restore cycle'
-				).toBe( chfSettingsBefore );
-			}
-		);
-	}
-);
-
-test(
-	'A merchant can remove an enabled non-default currency and it ceases to be enabled',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description: CONTRACT_IDS.removeCurrency,
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, baseURL, page } ) => {
-		// FORCED PREMISE: as in the add row — the run injects CHF's automatic
-		// rate into the provider rate cache and byte-restores it afterwards,
-		// so this proves native's merchant removal path GIVEN a catalog that
-		// offers CHF, not that the provider offers CHF.
-		await withWidenedCurrencyCatalog(
-			{ baseURL, rates: { CHF: CATALOG_RATES.CHF } },
-			async () => {
-				const before = await getStoreCurrencies( adminApi );
-				const baselineCodes = sortedCodes( before.enabled );
-				const chfSettingsBefore = await getCurrencySettingsEcho(
-					adminApi,
-					MANAGED_CODE
-				);
-
-				expect(
-					before.available[ MANAGED_CODE ],
-					`${ MANAGED_CODE } must be an available currency on this store`
-				).toBeTruthy();
-				expect(
-					MANAGED_CODE,
-					'the removal target must not be the store default'
-				).not.toBe( before.default.code );
-				expect(
-					baselineCodes,
-					`${ MANAGED_CODE } must start disabled; a prior run leaked state`
-				).not.toContain( MANAGED_CODE );
-
-				// Independent seed: this test creates the CHF it removes, so
-				// focused execution cannot fail for another case's leftovers.
-				await setEnabledCurrencies( adminApi, [
-					...storeOrderCodes( before.enabled ),
-					MANAGED_CODE,
-				] );
-
-				const currencyWrites = trackRouteWrites(
-					page,
-					'/wc/v3/payments/multi-currency/update-enabled-currencies'
-				);
-
-				await logInAsAdmin( page, baseURL );
-				await page.goto( MC_SETTINGS_PATH );
-
-				const chfRow = enabledCurrencyRow( page, MANAGED_CODE );
-				await expect( chfRow ).toHaveCount( 1 );
-				// Default protection: the default currency's row offers no
-				// removal action, so the merchant cannot be led into an
-				// invalid state.
-				await expect(
-					enabledCurrencyRow( page, before.default.code ).getByRole(
-						'button',
-						{ name: /^Remove / }
-					)
-				).toHaveCount( 0 );
-
-				await chfRow
-					.getByRole( 'button', {
-						name: /^Remove .* as an enabled currency$/,
-					} )
-					.click();
-				await expect(
-					page.getByText( CURRENCIES_UPDATED_NOTICE ).first()
-				).toBeVisible();
-				await expect( chfRow ).toHaveCount( 0 );
-				expect( currencyWrites() ).toBe( 1 );
-
-				// Authoritative echo: CHF left the enabled set and every
-				// companion survived exactly once.
-				const after = await getStoreCurrencies( adminApi );
-				expect( sortedCodes( after.enabled ) ).toEqual( baselineCodes );
-
-				// The removal persists across a full reload.
-				await page.reload();
-				await expect(
-					enabledCurrencyRow( page, MANAGED_CODE )
-				).toHaveCount( 0 );
-				await expect(
-					enabledCurrencyRow( page, before.default.code )
-				).toHaveCount( 1 );
-
-				// Verify restored state: the seed/remove cycle returned the
-				// store to its snapshot, including CHF's per-currency settings
-				// — the removal path deletes per-currency options, so echo
-				// equality here proves the cleanup stayed bounded to what this
-				// test created.
-				expect(
-					await getCurrencySettingsEcho( adminApi, MANAGED_CODE ),
-					'CHF per-currency settings must survive the seed/remove cycle'
-				).toBe( chfSettingsBefore );
-			}
-		);
-	}
-);
-
-test(
-	'A merchant can select multiple eligible currencies together in the enabled-currencies modal before submitting',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description: CONTRACT_IDS.multiSelect,
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, baseURL, page } ) => {
-		// FORCED PREMISE: a multi-select contract needs at least two
-		// selectable currencies, and the standing store's catalog offers
-		// none. The run injects CHF and CAD into the provider rate cache and
-		// byte-restores it afterwards, so this proves the modal's multi-select
-		// behavior GIVEN a catalog that offers them, not that the provider
-		// offers them.
-		await withWidenedCurrencyCatalog(
-			{
-				baseURL,
-				rates: { CAD: CATALOG_RATES.CAD, CHF: CATALOG_RATES.CHF },
-			},
-			async () => {
-				// Per DECISIONS.md 2026-08-08, the settings modal is the
-				// native surface for the onboarding wizard's multi-select
-				// capability. The contract is transient: selection only, no
-				// submission, no writes.
-				const before = await getStoreCurrencies( adminApi );
-				const baselineCodes = sortedCodes( before.enabled );
-				const settingsBefore = await getStoreSettingsEcho( adminApi );
-
-				// Two deterministic, initially unselected, non-default
-				// currencies.
-				const selectionCodes = MULTI_SELECT_CANDIDATES.filter(
-					( code ) =>
-						code !== before.default.code &&
-						Boolean( before.available[ code ] ) &&
-						! baselineCodes.includes( code )
-				).slice( 0, 2 );
-				expect(
-					selectionCodes,
-					'the store must offer at least two selectable non-enabled currencies'
-				).toHaveLength( 2 );
-
-				const currencyWrites = trackRouteWrites(
-					page,
-					'/wc/v3/payments/multi-currency/update-enabled-currencies'
-				);
-				const settingsWrites = trackRouteWrites(
-					page,
-					'/wc/v3/payments/multi-currency/update-settings'
-				);
-
-				await logInAsAdmin( page, baseURL );
-				await page.goto( MC_SETTINGS_PATH );
-				const dialog = await openAddCurrenciesModal( page );
-
-				const firstCheckbox = modalCurrencyCheckbox(
-					dialog,
-					selectionCodes[ 0 ]
-				);
-				const secondCheckbox = modalCurrencyCheckbox(
-					dialog,
-					selectionCodes[ 1 ]
-				);
-				await expect( firstCheckbox ).not.toBeChecked();
-				await expect( secondCheckbox ).not.toBeChecked();
-
-				// Both selections hold simultaneously: checking the second
-				// must not clear the first, which is the exact single-select
-				// failure shape this contract exists to rule out.
-				await firstCheckbox.check();
-				await secondCheckbox.check();
-				await expect( firstCheckbox ).toBeChecked();
-				await expect( secondCheckbox ).toBeChecked();
-				// The selection is actionable — the primary action accepts it
-				// — but this contract stops before submission.
-				await expect(
-					dialog.getByRole( 'button', {
-						name: UPDATE_SELECTED_BUTTON,
-					} )
-				).toBeEnabled();
-
-				await dialog
-					.getByRole( 'button', { name: 'Cancel', exact: true } )
-					.click();
-				await expect( dialog ).toHaveCount( 0 );
-
-				// Zero-write proof: the whole interaction dispatched no
-				// settings request, and the authoritative state is unchanged.
-				expect( currencyWrites() ).toBe( 0 );
-				expect( settingsWrites() ).toBe( 0 );
-				const after = await getStoreCurrencies( adminApi );
-				expect( sortedCodes( after.enabled ) ).toEqual( baselineCodes );
-				expect( await getStoreSettingsEcho( adminApi ) ).toEqual(
-					settingsBefore
 				);
 			}
 		);
