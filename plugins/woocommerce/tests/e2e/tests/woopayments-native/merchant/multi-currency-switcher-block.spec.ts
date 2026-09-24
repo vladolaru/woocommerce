@@ -16,7 +16,7 @@ import { admin } from '../../../test-data/data';
 /**
  * Native multi-currency switcher block (mc-switcher-block-spec).
  *
- * Four provider-free contracts against the Core-owned currency switcher block
+ * Three provider-free contracts against the Core-owned currency switcher block
  * (`woocommerce-payments/multi-currency-switcher`), registered server-side by
  * MultiCurrencySwitcherBlockController and rendered by
  * MultiCurrencySwitcherProjectionService:

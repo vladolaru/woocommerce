@@ -100,15 +100,22 @@ class MultiCurrencySwitcherProjectionServiceTest extends WC_Unit_Test_Case {
 	 * @see WooPayments 11.1.0 tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:52
 	 */
 	public function test_projects_exact_enabled_choices_and_preserves_default_option(): void {
-		$usd     = $this->create_currency( 'USD', true );
-		$eur     = $this->create_currency( 'EUR', false );
-		$gbp     = $this->create_currency( 'GBP', false );
-		$enabled = array(
+		$usd       = $this->create_currency( 'USD', true );
+		$eur       = $this->create_currency( 'EUR', false );
+		$gbp       = $this->create_currency( 'GBP', false );
+		$cad       = $this->create_currency( 'CAD', false );
+		$available = array(
+			'USD' => $usd,
+			'EUR' => $eur,
+			'GBP' => $gbp,
+			'CAD' => $cad,
+		);
+		$enabled   = array(
 			'USD' => $usd,
 			'EUR' => $eur,
 			'GBP' => $gbp,
 		);
-		$sut     = $this->create_service( new MultiCurrencyState( $enabled, $enabled, $usd, $gbp ) );
+		$sut       = $this->create_service( new MultiCurrencyState( $available, $enabled, $usd, $gbp ) );
 
 		$markup = $sut->get_block_markup();
 		preg_match_all( '/<option value="([^"]+)"(?: selected)?>/', $markup, $matches );
