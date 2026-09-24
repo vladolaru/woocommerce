@@ -64,6 +64,37 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Store API single-payment metadata keeps the WooPayments 11.1 order-derived request shape.
+	 */
+	public function test_store_api_single_payment_metadata_matches_11_1_order_shape(): void {
+		$order = wc_create_order();
+		$order->set_billing_first_name( 'Wire' );
+		$order->set_billing_last_name( 'Probe' );
+		$order->set_billing_email( 'wire-probe@example.com' );
+		$order->set_created_via( 'store-api' );
+		$order->save();
+
+		$metadata                 = WooPaymentsIntentRequestBuilder::metadata_from_order( $order );
+		$metadata['payment_type'] = (string) $metadata['payment_type'];
+
+		$this->assertSame(
+			array(
+				'customer_name'        => 'Wire Probe',
+				'customer_email'       => 'wire-probe@example.com',
+				'site_url'             => esc_url( get_site_url() ),
+				'order_id'             => $order->get_id(),
+				'order_number'         => $order->get_order_number(),
+				'order_key'            => $order->get_order_key(),
+				'payment_type'         => 'single',
+				'checkout_type'        => 'store-api',
+				'client_version'       => WooPaymentsClientVersion::VERSION,
+				'subscription_payment' => 'no',
+			),
+			$metadata
+		);
+	}
+
+	/**
 	 * @testdox Redirect and mandate runtime values match the WooPayments 11.1 request shape.
 	 */
 	public function test_redirect_and_mandate_runtime_values_match_11_1_request_shape(): void {
