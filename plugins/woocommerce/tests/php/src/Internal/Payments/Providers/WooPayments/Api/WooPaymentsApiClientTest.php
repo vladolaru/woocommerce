@@ -107,6 +107,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should build the site-scoped WPCOM endpoint and lift idempotency_key into the request headers.
+	 *
+	 * Pinned WooPayments 11.1.0: Refund_Charge::get_api() and ::DEFAULT_PARAMS.
 	 */
 	public function test_request_lifts_idempotency_key_and_preserves_filtered_params(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -160,6 +162,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should send null amount and provider reason defaults for a full free-text refund.
+	 *
+	 * Pinned WooPayments 11.1.0: Refund_Charge::DEFAULT_PARAMS and Request::get_params().
 	 */
 	public function test_refund_charge_sends_null_defaults_for_full_free_text_refund(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -195,6 +199,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should truncate the merchant refund reason to the platform's 500-character metadata limit.
+	 *
+	 * Pinned WooPayments 11.1.0: Refund_Charge::set_full_reason().
 	 */
 	public function test_refund_charge_truncates_merchant_reason_to_metadata_limit(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -219,6 +225,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should send the full capture body and a transport idempotency key.
+	 *
+	 * Pinned WooPayments 11.1.0: Capture_Intention::get_api() and ::set_metadata().
 	 */
 	public function test_capture_intention_sends_amount_metadata_and_level3(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -283,6 +291,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should keep explicitly empty capture metadata and default Level 3 on the wire.
+	 *
+	 * Pinned WooPayments 11.1.0: Capture_Intention::DEFAULT_PARAMS and ::set_metadata().
 	 */
 	public function test_capture_intention_sends_explicit_empty_metadata_and_default_level3(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -310,6 +320,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should send only the transport mode when canceling an intention.
+	 *
+	 * Pinned WooPayments 11.1.0: Cancel_Intention::get_api() and ::get_method().
 	 */
 	public function test_cancel_intention_sends_only_transport_mode(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -1400,6 +1412,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should create and confirm native WooPayments PaymentIntents with one payment credential and lifted idempotency.
+	 *
+	 * Pinned WooPayments 11.1.0: Create_And_Confirm_Intention::DEFAULT_PARAMS and ::get_api().
 	 */
 	public function test_create_and_confirm_payment_intention_lifts_idempotency_and_preserves_request_shape(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -1462,6 +1476,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should create and confirm native WooPayments SetupIntents through the setup_intents endpoint.
+	 *
+	 * Pinned WooPayments 11.1.0: Create_And_Confirm_Setup_Intention::DEFAULT_PARAMS and ::get_api().
 	 */
 	public function test_create_and_confirm_setup_intention_posts_to_setup_intents_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -1537,6 +1553,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should create unconfirmed native WooPayments SetupIntents with the server-compatible confirm flag.
+	 *
+	 * Pinned WooPayments 11.1.0: Create_Setup_Intention::DEFAULT_PARAMS and ::get_api().
 	 */
 	public function test_create_setup_intention_serializes_confirm_as_false_string(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
