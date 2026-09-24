@@ -206,6 +206,11 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Should enqueue direct checkout assets on a classic cart without rendering an express button.
+	 *
+	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_for_direct_checkout_on_classic_cart(): void {
 		$service                                      = new RecordingWooPaySessionService();
@@ -232,6 +237,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Should enqueue direct checkout assets on a Cart Block without rendering an express button.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_for_direct_checkout_on_cart_block(): void {
 		$service                                      = new RecordingWooPaySessionService();
@@ -264,6 +272,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Should enqueue direct checkout assets for a block mini-cart on an ordinary page at footer time.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_for_direct_checkout_block_mini_cart(): void {
 		$service                                      = new RecordingWooPaySessionService();
@@ -287,6 +298,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Should enqueue direct checkout assets for a legacy mini-cart on an ordinary page at footer time.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_for_direct_checkout_legacy_mini_cart(): void {
 		$service                                      = new RecordingWooPaySessionService();
@@ -360,6 +374,11 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not enqueue direct checkout assets on unrelated pages.
+	 *
+	 * A prior checkout test must not make this unrelated page appear to be checkout.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_skips_unrelated_pages_for_direct_checkout(): void {
 		$service                                      = new RecordingWooPaySessionService();
@@ -431,12 +450,13 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Should leave the core billing email alone away from the checkout page.
+	 *
+	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_filter_woocommerce_form_field_woopay_email_keeps_core_field_off_checkout(): void {
-		if ( defined( 'WOOCOMMERCE_CHECKOUT' ) ) {
-			$this->markTestSkipped( 'Another test in this process defined WOOCOMMERCE_CHECKOUT; is_checkout() cannot be false here.' );
-		}
-
 		$this->sut = $this->create_controller( true, true );
 		$field     = '<p class="form-row"><input type="email" name="billing_email" /></p>';
 
