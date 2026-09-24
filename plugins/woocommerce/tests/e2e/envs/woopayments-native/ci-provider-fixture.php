@@ -29,11 +29,9 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	private const REQUIRED_ROUTES                         = array(
 		'GET accounts',
 		'GET transactions',
-		'GET transactions/summary',
 		'GET authorizations/summary',
 		'GET deposits/overview-all',
 		'GET deposits',
-		'GET deposits/summary',
 		'GET disputes',
 		'POST accounts',
 	);
