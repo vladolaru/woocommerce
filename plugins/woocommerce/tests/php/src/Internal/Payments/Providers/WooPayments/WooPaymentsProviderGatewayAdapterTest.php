@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsErrorMessages;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
@@ -67,7 +68,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
 		update_option( 'woocommerce_currency', $this->original_currency );
-		unset( $GLOBALS['wcpay_test_renewal_order_ids'] );
+		unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_subscription_ids'] );
 		parent::tearDown();
 	}
 
@@ -2558,6 +2559,180 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Matches WooPayments 11.1.0 WCPay\Internal\Service\OrderService::get_payment_metadata(), WC_Payments_Subscriptions_Utilities::is_payment_recurring(), and WC_Payment_Gateway_WCPay::process_payment_for_order(). Store API initial and renewal classifications were observed in read-only pinned-client runtime captures; classic initial is source-derived because no paired reference order exists.
+	 *
+	 * @testdox Saved subscription orders compose the pinned recurring request shape through the native adapter.
+	 *
+	 * @dataProvider subscription_checkout_composition_provider
+	 *
+	 * @param string $created_via                  Saved order creation source.
+	 * @param bool   $is_renewal                   Whether the order is a scheduled renewal.
+	 * @param string $expected_payment_type        Expected pinned payment type.
+	 * @param string $expected_subscription_payment Expected pinned subscription payment classification.
+	 */
+	public function test_subscription_checkout_composition_matches_11_1_request_shape( string $created_via, bool $is_renewal, string $expected_payment_type, string $expected_subscription_payment ): void {
+		$this->ensure_wcs_order_subscription_detector_double();
+		$this->ensure_wcs_order_renewal_detector_double();
+
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order   = $this->create_woopayments_order( '12.34' );
+		$order->set_customer_id( $user_id );
+		$order->set_currency( 'USD' );
+		$order->set_billing_first_name( 'Subscription' );
+		$order->set_billing_last_name( 'Buyer' );
+		$order->set_billing_email( 'subscription-buyer@example.com' );
+		$order->set_created_via( $created_via );
+		$order->save();
+
+		$GLOBALS['wcpay_test_subscription_ids']  = $is_renewal ? array() : array( $order->get_id() );
+		$GLOBALS['wcpay_test_renewal_order_ids'] = $is_renewal ? array( $order->get_id() ) : array();
+
+		$payment_data     = array( 'save_payment_method' => false );
+		$provider_data    = array( 'fingerprint' => 'subscription_fixture_fingerprint' );
+		$payment_method   = 'pm_subscription_composition';
+		$token_service    = null;
+		$expected_request = array(
+			'amount'               => 1234,
+			'capture_method'       => 'automatic',
+			'currency'             => 'usd',
+			'customer'             => 'cus_subscription_composition',
+			'description'          => sprintf( 'Online Payment for Order #%s for %s', $order->get_order_number(), str_replace( array( 'https://', 'http://' ), '', get_site_url() ) ),
+			'payment_method_types' => array( 'card' ),
+			'payment_method'       => 'pm_subscription_composition',
+			'setup_future_usage'   => 'off_session',
+		);
+
+		if ( $is_renewal ) {
+			$saved_token = $this->create_card_token( $user_id, $payment_method );
+			$order->add_payment_token( $saved_token );
+			$order->save();
+			$payment_data   = array(
+				'payment_token'       => (string) $saved_token->get_id(),
+				'save_payment_method' => false,
+			);
+			$provider_data  = array(
+				'scheduled_subscription_payment' => true,
+				'fingerprint'                    => 'subscription_fixture_fingerprint',
+			);
+			$payment_method = '';
+			$token_service  = $this->create_single_order_resolution_token_service( $saved_token, $order, 'pm_subscription_composition', 'card' );
+
+			unset( $expected_request['setup_future_usage'] );
+			$expected_request['off_session']                = true;
+			$expected_request['payment_method_update_data'] = array(
+				'billing_details' => array(
+					'email' => 'subscription-buyer@example.com',
+					'name'  => 'Subscription Buyer',
+				),
+			);
+		}
+
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/** @var array<string,mixed> */
+			public array $last_request_data = array();
+
+			/** @var string */
+			public string $last_idempotency_key = '';
+
+			/**
+			 * Tell whether native transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Record the composed PaymentIntent request.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				$this->last_request_data    = $request_data;
+				$this->last_idempotency_key = $idempotency_key;
+
+				return array(
+					'id'             => 'pi_subscription_composition',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_subscription_composition',
+					'payment_method' => 'pm_subscription_composition',
+					'currency'       => 'usd',
+					'charges'        => array(
+						'total_count' => 0,
+						'data'        => array(),
+					),
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_subscription_composition' );
+
+		$geolocate_filter = static fn() => 'US';
+		add_filter( 'woocommerce_geolocate_ip', $geolocate_filter );
+		try {
+			$outcome = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, $token_service )->charge(
+				PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, $payment_method, $payment_data, $provider_data ),
+				'key_subscription_composition'
+			);
+		} finally {
+			remove_filter( 'woocommerce_geolocate_ip', $geolocate_filter );
+		}
+
+		$request          = $api_client->last_request_data;
+		$request_metadata = $request['metadata'];
+		unset( $request['metadata'] );
+		$expected_metadata = array(
+			'customer_name'                         => 'Subscription Buyer',
+			'customer_email'                        => 'subscription-buyer@example.com',
+			'site_url'                              => esc_url( get_site_url() ),
+			'order_id'                              => $order->get_id(),
+			'order_number'                          => $order->get_order_number(),
+			'order_key'                             => $order->get_order_key(),
+			'payment_type'                          => WooPaymentsPaymentType::recurring(),
+			'checkout_type'                         => $created_via,
+			'client_version'                        => WooPaymentsClientVersion::VERSION,
+			'subscription_payment'                  => $expected_subscription_payment,
+			'payment_context'                       => 'regular_subscription',
+			'fraud_prevention_data_shopper_ip_hash' => hash( 'sha512', \WC_Geolocation::get_ip_address() ),
+			'fraud_prevention_data_shopper_ua_hash' => 'subscription_fixture_fingerprint',
+			'fraud_prevention_data_ip_country'      => 'US',
+			'fraud_prevention_data_cart_contents'   => 0,
+			'fraud_prevention_data_available'       => true,
+		);
+
+		$this->assertSame( 'key_subscription_composition', $api_client->last_idempotency_key );
+		$this->assertSame( $expected_request, $request );
+		$this->assertSame( $expected_payment_type, (string) $request_metadata['payment_type'] );
+		$this->assertSame( $expected_metadata, $request_metadata );
+		$this->assertArrayNotHasKey( 'mandate', $api_client->last_request_data );
+		$this->assertArrayNotHasKey( 'mandate_data', $api_client->last_request_data );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertTrue( $outcome->get_effect_plan()->should_apply_token_effects() );
+		$this->assertTrue( $outcome->get_effect_plan()->is_recurring(), 'Initial subscription requests must plan recurring token persistence even when the shopper did not opt in separately.' );
+	}
+
+	/**
+	 * Provide saved subscription order scenarios from the pinned source/runtime evidence.
+	 *
+	 * @return array<string,array{string,bool,string,string}>
+	 */
+	public function subscription_checkout_composition_provider(): array {
+		return array(
+			'observed Store API initial'     => array( 'store-api', false, 'recurring', 'initial' ),
+			'source-derived classic initial' => array( 'checkout', false, 'recurring', 'initial' ),
+			'observed scheduled renewal'     => array( 'subscription', true, 'recurring', 'renewal' ),
+		);
+	}
+
+	/**
 	 * @testdox Scheduled subscription charges should use merchant-initiated recurring request shape.
 	 */
 	public function test_scheduled_subscription_charge_uses_merchant_initiated_recurring_request_shape(): void {
@@ -4755,6 +4930,18 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal-order detector.
 		eval( 'namespace { function wcs_order_contains_renewal( $order ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_renewal_order_ids"] ?? array(), true ); } }' );
+	}
+
+	/**
+	 * Ensure a minimal WooCommerce Subscriptions order detector exists.
+	 */
+	private function ensure_wcs_order_subscription_detector_double(): void {
+		if ( function_exists( 'wcs_order_contains_subscription' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order detector.
+		eval( 'namespace { function wcs_order_contains_subscription( $order, $order_type = array() ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
 	}
 
 	/**
