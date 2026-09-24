@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderInternalStatus;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
@@ -16,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
+use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use RuntimeException;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -284,6 +287,98 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( PaymentContext::class, $last_cancel_context );
 		$this->assertSame( $order->get_id(), $last_cancel_context->get_order_id() );
+	}
+
+	/**
+	 * @testdox Saving Cancelled for a captured order persists one status change without provider action.
+	 */
+	public function test_order_data_save_cancels_captured_order_without_provider_action(): void {
+		require_once WC_ABSPATH . 'includes/admin/wc-meta-box-functions.php';
+		require_once WC_ABSPATH . 'includes/admin/meta-boxes/class-wc-meta-box-order-data.php';
+
+		$order              = $this->create_authorized_order( OrderPaymentStore::GATEWAY_ID, 'succeeded', OrderStatus::PROCESSING );
+		$recording_provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_authorized' ) );
+		$provider           = new class( $recording_provider ) extends WooPaymentsProvider {
+			/** @var RecordingProvider */
+			private RecordingProvider $recorder;
+
+			/**
+			 * @param RecordingProvider $recorder Recording provider.
+			 */
+			public function __construct( RecordingProvider $recorder ) {
+				$this->recorder = $recorder;
+			}
+
+			/**
+			 * @param PaymentContext $context         Payment context.
+			 * @param string         $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function cancel( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				return $this->recorder->cancel( $context, $idempotency_key );
+			}
+
+			/**
+			 * @param PaymentContext $context         Payment context.
+			 * @param string         $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				return $this->recorder->refund( $context, $idempotency_key );
+			}
+
+			/**
+			 * @param PaymentContext $context   Payment context.
+			 * @param PaymentOutcome $outcome   Provider outcome.
+			 * @param string         $operation Operation.
+			 * @return PaymentOutcome
+			 */
+			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+				return $outcome;
+			}
+
+			/**
+			 * @param PaymentContext $context   Payment context.
+			 * @param PaymentOutcome $outcome   Provider outcome.
+			 * @param string         $operation Operation.
+			 */
+			public function apply_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): void {
+			}
+		};
+		$this->sut          = $this->create_controller( true, wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$this->sut->register();
+		$status_hook_count = did_action( 'woocommerce_order_status_cancelled' );
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Simulates the nonce-verified order meta box save.
+		$original_post = $_POST;
+
+		$_POST = array(
+			'order_status'    => OrderInternalStatus::CANCELLED,
+			'_payment_method' => $order->get_payment_method(),
+			'customer_user'   => 0,
+		);
+
+		try {
+			\WC_Meta_Box_Order_Data::save( $order->get_id() );
+		} finally {
+			$_POST = $original_post;
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+
+		$stored_order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $stored_order );
+		$this->assertSame( OrderStatus::CANCELLED, $stored_order->get_status() );
+		$this->assertSame( $status_hook_count + 1, did_action( 'woocommerce_order_status_cancelled' ) );
+		$this->assertSame( 0, $recording_provider->cancel_calls );
+		$this->assertSame( 0, $recording_provider->refund_calls );
+		$this->assertCount( 0, $stored_order->get_refunds() );
+		$this->assertSame( 0.0, (float) $stored_order->get_total_refunded() );
+		$status_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static function ( $note ): bool {
+				return str_contains( (string) $note->content, 'Order status changed from Processing to Cancelled.' );
+			}
+		);
+		$this->assertCount( 1, $status_notes );
 	}
 
 	/**

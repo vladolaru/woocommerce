@@ -125,6 +125,37 @@ describe( 'RefundConfirmationModal', () => {
 		await waitFor( () => expect( reload ).toHaveBeenCalled() );
 	} );
 
+	it( 'dispatches only one refund while the first request is pending', async () => {
+		let finishRefund:
+			| ( ( response: { success: boolean } ) => void )
+			| undefined;
+		mockApiFetch.mockImplementation(
+			() =>
+				new Promise( ( resolve ) => {
+					finishRefund = resolve;
+				} )
+		);
+		renderModal();
+
+		const refundButton = screen.getByRole( 'button', {
+			name: 'Refund $42.50',
+		} );
+		await userEvent.click( refundButton );
+		await waitFor( () =>
+			expect( mockApiFetch ).toHaveBeenCalledTimes( 1 )
+		);
+		expect( refundButton ).toHaveAttribute( 'aria-disabled', 'true' );
+
+		await userEvent.click( refundButton );
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+
+		if ( ! finishRefund ) {
+			throw new Error( 'Refund request did not start.' );
+		}
+		finishRefund( { success: true } );
+		await waitFor( () => expect( reload ).toHaveBeenCalledTimes( 1 ) );
+	} );
+
 	it( 'surfaces the server error and restores the dropdown when the refund fails', async () => {
 		mockApiFetch.mockResolvedValue( {
 			success: false,
@@ -142,10 +173,9 @@ describe( 'RefundConfirmationModal', () => {
 			)
 		);
 		expect( onClose ).toHaveBeenCalled();
-		expect(
-			( document.getElementById( 'order_status' ) as HTMLSelectElement )
-				.value
-		).toBe( 'wc-processing' );
+		expect( document.getElementById( 'order_status' ) ).toHaveValue(
+			'wc-processing'
+		);
 		expect( reload ).not.toHaveBeenCalled();
 	} );
 
@@ -178,6 +208,18 @@ describe( 'RefundConfirmationModal', () => {
 			( document.getElementById( 'order_status' ) as HTMLSelectElement )
 				.value
 		).toBe( 'wc-processing' );
+	} );
+
+	it( 'restores the dropdown and refunds nothing when dismissed with Escape', async () => {
+		const { onClose } = renderModal();
+
+		await userEvent.keyboard( '{Escape}' );
+
+		expect( mockApiFetch ).not.toHaveBeenCalled();
+		await waitFor( () => expect( onClose ).toHaveBeenCalledTimes( 1 ) );
+		expect( document.getElementById( 'order_status' ) ).toHaveValue(
+			'wc-processing'
+		);
 	} );
 
 	it( 'refuses to post without the order screen AJAX context', async () => {

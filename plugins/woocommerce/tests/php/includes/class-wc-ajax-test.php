@@ -10,7 +10,12 @@ declare( strict_types = 1 );
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Orders\CouponsController;
 use Automattic\WooCommerce\Internal\Orders\TaxesController;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 
 /**
  * Class WC_AJAX_Test file.
@@ -3084,6 +3089,102 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 				);
 
 				return true;
+			}
+		};
+	}
+
+	/**
+	 * @testdox A full API refund dispatches once through the payment service and persists a fully refunded order.
+	 */
+	public function test_full_refund_ajax_dispatches_once_and_persists_order_state(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves the test request.
+		$original_post             = $_POST;
+		$original_user_id          = get_current_user_id();
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+		$provider                  = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_test_refund' ) );
+		$gateway                   = $this->create_service_backed_refund_gateway( $provider );
+		$order                     = null;
+		$products                  = array();
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request(
+				$order,
+				$fixture['item_ids'],
+				array(
+					'first'  => 1,
+					'second' => 1,
+				),
+				array(
+					'first'  => 5,
+					'second' => 15,
+				),
+				'20'
+			);
+
+			$this->assertTrue( $response['success'], 'The full API refund should succeed.' );
+			$this->assertSame( 1, $provider->refund_calls, 'One provider refund should be dispatched.' );
+			$stored_order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $stored_order );
+			$this->assertSame( OrderStatus::REFUNDED, $stored_order->get_status(), 'The order should be fully refunded.' );
+			$this->assertSame( 20.0, (float) $stored_order->get_total_refunded(), 'The persisted refunded total should equal the order total.' );
+			$refunds = $stored_order->get_refunds();
+			$this->assertCount( 1, $refunds, 'One local refund should be persisted.' );
+			$this->assertSame( 20.0, (float) $refunds[0]->get_amount(), 'The local refund should preserve the full amount.' );
+		} finally {
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * Adapt the real payment processing service to WooCommerce's refund gateway boundary.
+	 *
+	 * @param RecordingProvider $provider Recording provider.
+	 * @return WC_Payment_Gateway
+	 */
+	private function create_service_backed_refund_gateway( RecordingProvider $provider ): WC_Payment_Gateway {
+		return new class( $provider ) extends WC_Payment_Gateway {
+			/**
+			 * Recording provider.
+			 *
+			 * @var RecordingProvider
+			 */
+			private RecordingProvider $provider;
+
+			/**
+			 * @param RecordingProvider $provider Recording provider.
+			 */
+			public function __construct( RecordingProvider $provider ) {
+				$this->provider = $provider;
+				$this->id       = OrderPaymentStore::GATEWAY_ID;
+				$this->supports = array( 'refunds' );
+			}
+
+			/**
+			 * @param int        $order_id Order ID.
+			 * @param float|null $amount   Refund amount.
+			 * @param string     $reason   Refund reason.
+			 * @return bool|WP_Error
+			 */
+			public function process_refund( $order_id, $amount = null, $reason = '' ) {
+				$order = wc_get_order( $order_id );
+				if ( ! $order instanceof WC_Order ) {
+					return false;
+				}
+
+				return wc_get_container()->get( PaymentProcessingService::class )->process_refund(
+					PaymentContext::for_refund( $order, $this->id, (float) $amount, (string) $reason ),
+					$this->provider
+				);
 			}
 		};
 	}

@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 /**
@@ -94,9 +94,20 @@ describe( 'CancelConfirmationModal', () => {
 		expect( submit ).not.toHaveBeenCalled();
 		expect( requestSubmit ).not.toHaveBeenCalled();
 		expect( onClose ).toHaveBeenCalled();
-		expect(
-			( document.getElementById( 'order_status' ) as HTMLSelectElement )
-				.value
-		).toBe( 'wc-processing' );
+		expect( document.getElementById( 'order_status' ) ).toHaveValue(
+			'wc-processing'
+		);
+	} );
+
+	it( 'restores the dropdown and submits nothing when dismissed with Escape', async () => {
+		const { onClose } = renderModal();
+
+		await userEvent.keyboard( '{Escape}' );
+
+		expect( requestSubmit ).not.toHaveBeenCalled();
+		await waitFor( () => expect( onClose ).toHaveBeenCalledTimes( 1 ) );
+		expect( document.getElementById( 'order_status' ) ).toHaveValue(
+			'wc-processing'
+		);
 	} );
 } );
