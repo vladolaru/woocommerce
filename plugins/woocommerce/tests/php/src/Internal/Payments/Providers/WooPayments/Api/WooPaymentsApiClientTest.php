@@ -142,10 +142,55 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$body = json_decode( (string) $http_client->last_body, true );
 		$this->assertIsArray( $body );
-		$this->assertArrayNotHasKey( 'idempotency_key', $body );
-		$this->assertSame( 'ch_test', $body['charge'] );
-		$this->assertArrayHasKey( 'metadata', $body );
-		$this->assertSame( 'yes', $body['metadata']['filtered'] );
+		$this->assertSame(
+			array(
+				'test_mode' => false,
+				'charge'    => 'ch_test',
+				'metadata'  => array(
+					'refund_source'          => 'native_transport',
+					'merchant_refund_reason' => 'requested_by_customer',
+					'filtered'               => 'yes',
+				),
+				'amount'    => 250,
+				'reason'    => 'requested_by_customer',
+			),
+			$body
+		);
+	}
+
+	/**
+	 * @testdox Should send null amount and provider reason defaults for a full free-text refund.
+	 */
+	public function test_refund_charge_sends_null_defaults_for_full_free_text_refund(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'id' => 're_full' ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+		$result = $sut->refund_charge( 'ch_test', null, 'Customer requested a full refund', 'merchant_dashboard', 'idem_full_refund' );
+
+		$this->assertSame( 're_full', $result['id'] );
+		$this->assertSame( '/sites/123/wcpay/refunds', $http_client->last_path );
+		$this->assertSame( 'POST', $http_client->last_method );
+		$this->assertSame( 'idem_full_refund', $http_client->last_headers['Idempotency-Key'] );
+		$this->assertSame(
+			array(
+				'test_mode' => false,
+				'charge'    => 'ch_test',
+				'metadata'  => array(
+					'refund_source'          => 'merchant_dashboard',
+					'merchant_refund_reason' => 'Customer requested a full refund',
+				),
+				'amount'    => null,
+				'reason'    => null,
+			),
+			json_decode( (string) $http_client->last_body, true )
+		);
 	}
 
 	/**
@@ -168,8 +213,128 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$body = json_decode( (string) $http_client->last_body, true );
 		$this->assertIsArray( $body );
-		$this->assertArrayNotHasKey( 'reason', $body, 'A free-text reason is not one of the provider reason enums.' );
+		$this->assertNull( $body['reason'], 'A free-text reason is not one of the provider reason enums.' );
 		$this->assertSame( str_repeat( 'r', 500 ), $body['metadata']['merchant_refund_reason'], 'The platform rejects metadata values over 500 characters; the tail must be dropped, not the refund.' );
+	}
+
+	/**
+	 * @testdox Should send the full capture body and a transport idempotency key.
+	 */
+	public function test_capture_intention_sends_amount_metadata_and_level3(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'id'     => 'pi_test',
+					'status' => 'succeeded',
+				)
+			),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		$result = $sut->capture_intention(
+			'pi_test',
+			975,
+			array( 'order_id' => '123' ),
+			array(
+				'merchant_reference' => 'order_123',
+				'line_items'         => array(
+					array(
+						'product_code'    => 'sku_123',
+						'quantity'        => 1,
+						'unit_cost'       => 975,
+						'tax_amount'      => 0,
+						'discount_amount' => 0,
+					),
+				),
+			)
+		);
+
+		$this->assertSame( 'pi_test', $result['id'] );
+		$this->assertSame( '/sites/123/wcpay/intentions/pi_test/capture', $http_client->last_path );
+		$this->assertSame( 'POST', $http_client->last_method );
+		$this->assertNotEmpty( $http_client->last_headers['Idempotency-Key'] ?? '' );
+		$this->assertSame(
+			array(
+				'test_mode'         => false,
+				'amount_to_capture' => 975,
+				'metadata'          => array( 'order_id' => '123' ),
+				'level3'            => array(
+					'merchant_reference' => 'order_123',
+					'line_items'         => array(
+						array(
+							'product_code'    => 'sku_123',
+							'quantity'        => 1,
+							'unit_cost'       => 975,
+							'tax_amount'      => 0,
+							'discount_amount' => 0,
+						),
+					),
+				),
+			),
+			json_decode( (string) $http_client->last_body, true )
+		);
+	}
+
+	/**
+	 * @testdox Should keep explicitly empty capture metadata and default Level 3 on the wire.
+	 */
+	public function test_capture_intention_sends_explicit_empty_metadata_and_default_level3(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'id' => 'pi_test' ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->capture_intention( 'pi_test', 975, array(), array() );
+
+		$this->assertSame(
+			array(
+				'test_mode'         => false,
+				'amount_to_capture' => 975,
+				'metadata'          => array(),
+				'level3'            => array(),
+			),
+			json_decode( (string) $http_client->last_body, true )
+		);
+	}
+
+	/**
+	 * @testdox Should send only the transport mode when canceling an intention.
+	 */
+	public function test_cancel_intention_sends_only_transport_mode(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'id'     => 'pi_test',
+					'status' => 'canceled',
+				)
+			),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		$result = $sut->cancel_intention( 'pi_test' );
+
+		$this->assertSame( 'pi_test', $result['id'] );
+		$this->assertSame( '/sites/123/wcpay/intentions/pi_test/cancel', $http_client->last_path );
+		$this->assertSame( 'POST', $http_client->last_method );
+		$this->assertNotEmpty( $http_client->last_headers['Idempotency-Key'] ?? '' );
+		$this->assertSame( array( 'test_mode' => false ), json_decode( (string) $http_client->last_body, true ) );
 	}
 
 	/**
@@ -1279,9 +1444,20 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$body = json_decode( (string) $http_client->last_body, true );
 		$this->assertIsArray( $body );
-		$this->assertSame( 'pm_test', $body['payment_method'] );
-		$this->assertSame( array( 'card' ), $body['payment_method_types'] );
-		$this->assertArrayNotHasKey( 'idempotency_key', $body );
+		$this->assertSame(
+			array(
+				'test_mode'            => false,
+				'amount'               => 1000,
+				'currency'             => 'usd',
+				'customer'             => 'cus_test',
+				'metadata'             => array( 'order_id' => '123' ),
+				'payment_method'       => 'pm_test',
+				'payment_method_types' => array( 'card' ),
+				'confirm'              => 'true',
+				'capture_method'       => 'automatic',
+			),
+			$body
+		);
 	}
 
 	/**
@@ -1325,8 +1501,17 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$body = json_decode( (string) $http_client->last_body, true );
 		$this->assertIsArray( $body );
-		$this->assertSame( 'pm_test', $body['payment_method'] );
-		$this->assertSame( array( 'sepa_debit' ), $body['payment_method_types'] );
+		$this->assertSame(
+			array(
+				'test_mode'            => false,
+				'customer'             => 'cus_test',
+				'metadata'             => array( 'order_id' => '123' ),
+				'payment_method'       => 'pm_test',
+				'payment_method_types' => array( 'sepa_debit' ),
+				'confirm'              => 'true',
+			),
+			$body
+		);
 	}
 
 	/**
@@ -1390,7 +1575,16 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$body = json_decode( (string) $http_client->last_body, true );
 		$this->assertIsArray( $body );
-		$this->assertSame( array( 'card' ), $body['payment_method_types'] );
+		$this->assertSame(
+			array(
+				'test_mode'            => false,
+				'customer'             => 'cus_test',
+				'metadata'             => array( 'order_id' => '123' ),
+				'payment_method_types' => array( 'card' ),
+				'confirm'              => 'false',
+			),
+			$body
+		);
 	}
 
 	/**

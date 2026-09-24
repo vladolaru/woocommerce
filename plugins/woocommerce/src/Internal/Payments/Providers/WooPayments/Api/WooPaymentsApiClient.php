@@ -324,6 +324,8 @@ class WooPaymentsApiClient {
 			'metadata'        => array(
 				'refund_source' => $source,
 			),
+			'amount'          => null,
+			'reason'          => null,
 		);
 
 		if ( null !== $amount ) {
