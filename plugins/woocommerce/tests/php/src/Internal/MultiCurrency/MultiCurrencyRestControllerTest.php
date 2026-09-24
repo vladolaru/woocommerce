@@ -306,6 +306,43 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should persist and return every currency from the onboarding selection with the store default preserved.
+	 */
+	public function test_update_enabled_currencies_persists_complete_onboarding_selection(): void {
+		foreach (
+			array(
+				'EUR' => '0.91',
+				'GBP' => '0.78',
+				'CAD' => '1.37',
+				'AUD' => '1.52',
+			) as $currency_code => $rate
+		) {
+			$currency_id = strtolower( $currency_code );
+			update_option( 'wcpay_multi_currency_exchange_rate_' . $currency_id, 'manual' );
+			update_option( 'wcpay_multi_currency_manual_rate_' . $currency_id, $rate );
+		}
+
+		$builder = $this->create_real_state_builder();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $builder );
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/update-enabled-currencies' );
+		// WooPayments 11.1.0 multi-currency-on-boarding.spec.ts:139 supplies the GBP/EUR/CAD/AUD selection; DECISIONS.md (2026-08-08) maps it to native settings persistence.
+		$request->set_param( 'enabled', array( 'USD', 'GBP', 'EUR', 'CAD', 'AUD' ) );
+
+		$response = $sut->update_enabled_currencies( $request );
+		$data     = $response->get_data();
+		$expected = array( 'AUD', 'CAD', 'EUR', 'GBP', 'USD' );
+		$stored   = get_option( 'wcpay_multi_currency_enabled_currencies' );
+		$returned = array_keys( $data['enabled'] );
+
+		sort( $stored );
+		sort( $returned );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( $expected, $stored, 'The authoritative option should contain the submitted selection and the default currency.' );
+		$this->assertSame( $expected, $returned, 'The REST response should acknowledge the complete persisted enabled set.' );
+	}
+
+	/**
 	 * @testdox Should reject invalid enabled currency.
 	 */
 	public function test_rejects_invalid_enabled_currency(): void {
@@ -852,6 +889,8 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 			'USD' => 1.0,
 			'EUR' => 0.91,
 			'GBP' => 0.78,
+			'CAD' => 1.37,
+			'AUD' => 1.52,
 		)[ $currency_code ];
 	}
 }

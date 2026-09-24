@@ -113,6 +113,18 @@ const currenciesResponse: StoreCurrenciesResponse = {
 			rounding: '0',
 			last_updated: 1710000000,
 		},
+		AUD: {
+			id: 'aud',
+			code: 'AUD',
+			name: 'Australian dollar',
+			rate: 1.52,
+			symbol: '$',
+			symbol_position: 'left',
+			is_zero_decimal: false,
+			charm: 0,
+			rounding: '0',
+			last_updated: 1710000000,
+		},
 	},
 	enabled: {},
 	default: {} as StoreCurrenciesResponse[ 'default' ],
@@ -148,6 +160,17 @@ const addedCurrencyResponse: StoreCurrenciesResponse = {
 		USD: currenciesResponse.available.USD,
 		EUR: currenciesResponse.available.EUR,
 		CAD: currenciesResponse.available.CAD,
+	},
+};
+
+const submittedSelectionResponse: StoreCurrenciesResponse = {
+	...currenciesResponse,
+	enabled: {
+		USD: currenciesResponse.available.USD,
+		GBP: currenciesResponse.available.GBP,
+		EUR: currenciesResponse.available.EUR,
+		CAD: currenciesResponse.available.CAD,
+		AUD: currenciesResponse.available.AUD,
 	},
 };
 
@@ -415,8 +438,6 @@ describe( 'MultiCurrencySettingsApp', () => {
 			} );
 		} );
 		expect( mockApiFetch ).toHaveBeenCalledTimes( 2 );
-		// The selected currency is added without dropping Euro from the rendered
-		// enabled set, while the default remains non-removable.
 		expect(
 			await screen.findByRole( 'button', {
 				name: 'Remove Canadian dollar as an enabled currency',
@@ -427,6 +448,74 @@ describe( 'MultiCurrencySettingsApp', () => {
 				name: 'Remove Euro as an enabled currency',
 			} )
 		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', {
+				name: 'Remove United States (US) dollar as an enabled currency',
+			} )
+		).not.toBeInTheDocument();
+		expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+			'Enabled currencies updated.'
+		);
+		expect(
+			screen.queryByRole( 'heading', { name: 'Add enabled currencies' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'persists every submitted currency and renders the acknowledged enabled set', async () => {
+		mockApiFetch.mockResolvedValueOnce( submittedSelectionResponse );
+
+		render( <MultiCurrencySettingsApp /> );
+
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Add/remove currencies',
+			} )
+		);
+
+		expect(
+			screen.getByRole( 'heading', { name: 'Add enabled currencies' } )
+		).toBeInTheDocument();
+
+		for ( const name of [
+			'British pound GBP',
+			'Canadian dollar CAD',
+			'Australian dollar AUD',
+		] ) {
+			fireEvent.click( screen.getByRole( 'checkbox', { name } ) );
+		}
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Update selected' } )
+		);
+
+		// WooPayments 11.1.0 multi-currency-on-boarding.spec.ts:139 defines
+		// GBP/EUR/CAD/AUD as the submitted selection. DECISIONS.md (2026-08-08)
+		// places the native equivalent in this settings modal.
+		await waitFor( () => {
+			expect( mockApiFetch ).toHaveBeenLastCalledWith( {
+				path: '/wc/v3/payments/multi-currency/update-enabled-currencies',
+				method: 'POST',
+				data: { enabled: expect.any( Array ) },
+			} );
+		} );
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 2 );
+		const { enabled } = mockApiFetch.mock.calls[ 1 ][ 0 ].data as {
+			enabled: string[];
+		};
+		expect( enabled ).toHaveLength( 5 );
+		expect( new Set( enabled ).size ).toBe( 5 );
+		expect( new Set( enabled ) ).toEqual(
+			new Set( [ 'USD', 'GBP', 'EUR', 'CAD', 'AUD' ] )
+		);
+		for ( const name of [
+			'Remove British pound as an enabled currency',
+			'Remove Euro as an enabled currency',
+			'Remove Canadian dollar as an enabled currency',
+			'Remove Australian dollar as an enabled currency',
+		] ) {
+			expect(
+				await screen.findByRole( 'button', { name } )
+			).toBeInTheDocument();
+		}
 		expect(
 			screen.queryByRole( 'button', {
 				name: 'Remove United States (US) dollar as an enabled currency',
@@ -605,7 +694,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 		expect( screen.queryAllByRole( 'checkbox' ) ).toHaveLength( 0 );
 
 		await userEvent.clear( searchInput );
-		expect( screen.getAllByRole( 'checkbox' ) ).toHaveLength( 3 );
+		expect( screen.getAllByRole( 'checkbox' ) ).toHaveLength( 4 );
 		expect( euroCheckbox ).toBeChecked();
 	} );
 

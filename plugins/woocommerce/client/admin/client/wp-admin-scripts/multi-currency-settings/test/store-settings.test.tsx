@@ -133,6 +133,69 @@ describe( 'StoreLevelSettings', () => {
 		} );
 	} );
 
+	it( 'persists automatic geolocation opt-in with companion settings preserved', async () => {
+		const disabledResponse = {
+			...storeSettingsResponse,
+			wcpay_multi_currency_enable_auto_currency: false,
+		};
+		const save = createDeferred< typeof storeSettingsResponse >();
+		mockApiFetch
+			.mockResolvedValueOnce( disabledResponse )
+			.mockReturnValueOnce( save.promise );
+
+		render( <StoreLevelSettings /> );
+
+		const optIn = await screen.findByRole( 'checkbox', {
+			name: /Automatically switch customers to their local currency/i,
+		} );
+		const saveButton = screen.getByRole( 'button', {
+			name: 'Save changes',
+		} );
+		// WooPayments 11.1.0 multi-currency-on-boarding.spec.ts:165 supplies
+		// the opt-in capability. DECISIONS.md (2026-08-08) places its native
+		// equivalent in these persisted store settings.
+		expect( optIn ).not.toBeChecked();
+		expect( saveButton ).toHaveAttribute( 'aria-disabled', 'true' );
+
+		await click( optIn );
+
+		expect( optIn ).toBeChecked();
+		expect( saveButton ).not.toHaveAttribute( 'aria-disabled', 'true' );
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+
+		await click( saveButton );
+
+		await waitFor( () => {
+			expect( mockApiFetch ).toHaveBeenLastCalledWith( {
+				path: '/wc/v3/payments/multi-currency/update-settings',
+				method: 'POST',
+				data: {
+					wcpay_multi_currency_enable_auto_currency: 'yes',
+					wcpay_multi_currency_enable_storefront_switcher: 'no',
+					wcpay_multi_currency_rendering_mode: 'speed',
+					wcpay_multi_currency_cache_recommendation_dismissed: 'no',
+				},
+			} );
+		} );
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 2 );
+
+		await act( async () => {
+			save.resolve( {
+				...disabledResponse,
+				wcpay_multi_currency_enable_auto_currency: true,
+			} );
+			await save.promise;
+		} );
+
+		expect( optIn ).toBeChecked();
+		expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+			'Store settings saved.'
+		);
+		await waitFor( () => {
+			expect( saveButton ).toHaveAttribute( 'aria-disabled', 'true' );
+		} );
+	} );
+
 	it( 'hides conditional settings when the store does not support them', async () => {
 		mockApiFetch.mockResolvedValueOnce( {
 			...storeSettingsResponse,
