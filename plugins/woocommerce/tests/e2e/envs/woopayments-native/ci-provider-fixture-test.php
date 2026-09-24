@@ -1044,6 +1044,7 @@ assert_true( array( 'fetched' ) === $audit['physical_account_cache']['ignored_fi
 assert_true( false === $audit['clean'], 'recorded fail-closed test probes must keep the audit non-clean' );
 
 $summary_paths     = array(
+	'/wpcom/v2/sites/777/wcpay/transactions',
 	'/wpcom/v2/sites/777/wcpay/transactions/summary',
 	'/wpcom/v2/sites/777/wcpay/deposits/summary',
 );
@@ -1055,7 +1056,7 @@ $readonly_requests = array_values(
 );
 update_option( 'e2e_woopayments_native_request_log', $readonly_requests );
 $readonly_audit = $fixture->audit();
-assert_true( true === $readonly_audit['coverage'], 'audit coverage must pass without summary routes moved to controller tests' );
+assert_true( true === $readonly_audit['coverage'], 'audit coverage must pass without transaction routes moved to controller tests' );
 update_option( 'e2e_woopayments_native_request_log', $requests );
 
 $fresh_activation_cache          = array(
