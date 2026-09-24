@@ -263,7 +263,7 @@ class WooPaymentsIntentRequestBuilder {
 		$payment_type         = 'recurring' === $payment_type ? WooPaymentsPaymentType::recurring() : WooPaymentsPaymentType::single();
 		$subscription_payment = in_array( $subscription_payment, array( 'initial', 'renewal' ), true ) ? $subscription_payment : 'no';
 		$metadata             = array(
-			'customer_name'        => trim( sanitize_text_field( $order->get_billing_first_name() ) . ' ' . sanitize_text_field( $order->get_billing_last_name() ) ),
+			'customer_name'        => sanitize_text_field( $order->get_billing_first_name() ) . ' ' . sanitize_text_field( $order->get_billing_last_name() ),
 			'customer_email'       => sanitize_email( $order->get_billing_email() ),
 			'site_url'             => esc_url( get_site_url() ),
 			'order_id'             => $order->get_id(),

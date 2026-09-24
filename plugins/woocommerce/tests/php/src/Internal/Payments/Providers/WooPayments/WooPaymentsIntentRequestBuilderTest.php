@@ -64,6 +64,41 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Matches WCPay\Internal\Service\OrderService::get_payment_metadata() in WooPayments 11.1.0.
+	 *
+	 * @testdox Intent metadata preserves WooPayments 11.1 customer-name delimiter spaces for incomplete billing names.
+	 *
+	 * @dataProvider incomplete_billing_names_provider
+	 *
+	 * @param string $first_name First billing name.
+	 * @param string $last_name Last billing name.
+	 * @param string $expected_customer_name Expected WooPayments 11.1 metadata value.
+	 */
+	public function test_metadata_preserves_woopayments_customer_name_delimiter_spaces_for_incomplete_billing_names( string $first_name, string $last_name, string $expected_customer_name ): void {
+		$order = wc_create_order();
+		$order->set_billing_first_name( $first_name );
+		$order->set_billing_last_name( $last_name );
+		$order->save();
+
+		$metadata = WooPaymentsIntentRequestBuilder::metadata_from_order( $order );
+
+		$this->assertSame( $expected_customer_name, $metadata['customer_name'] );
+	}
+
+	/**
+	 * Provide incomplete billing names and the literal WooPayments 11.1 metadata values.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function incomplete_billing_names_provider(): array {
+		return array(
+			'first name only'  => array( 'Ada', '', 'Ada ' ),
+			'last name only'   => array( '', 'Lovelace', ' Lovelace' ),
+			'both names empty' => array( '', '', ' ' ),
+		);
+	}
+
+	/**
 	 * @testdox Store API single-payment metadata keeps the WooPayments 11.1 order-derived request shape.
 	 */
 	public function test_store_api_single_payment_metadata_matches_11_1_order_shape(): void {
