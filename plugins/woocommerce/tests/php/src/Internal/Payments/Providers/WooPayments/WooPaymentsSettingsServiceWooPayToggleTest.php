@@ -116,4 +116,48 @@ class WooPaymentsSettingsServiceWooPayToggleTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $settings );
 		$this->assertTrue( $settings['is_woopay_enabled'], 'A fresh settings read after the enable save should report WooPay enabled.' );
 	}
+
+	/**
+	 * @testdox Disabling and re-enabling WooPay preserves manual capture and other gateway settings.
+	 */
+	public function test_woopay_round_trip_preserves_other_gateway_settings(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'platform_checkout' => 'yes',
+				'manual_capture'    => 'no',
+				'test_mode'         => 'yes',
+			)
+		);
+
+		$disabled = $this->sut->update_settings(
+			array(
+				'is_woopay_enabled'         => false,
+				'is_manual_capture_enabled' => true,
+			)
+		);
+
+		$stored_after_disable = get_option( 'woocommerce_woocommerce_payments_settings' );
+
+		$this->assertIsArray( $disabled );
+		$this->assertFalse( $disabled['is_woopay_enabled'] );
+		$this->assertTrue( $disabled['is_manual_capture_enabled'] );
+		$this->assertSame( 'no', $stored_after_disable['platform_checkout'] );
+		$this->assertSame( 'yes', $stored_after_disable['manual_capture'] );
+		$this->assertSame( 'yes', $stored_after_disable['test_mode'] );
+
+		$enabled = $this->sut->update_settings( array( 'is_woopay_enabled' => true ) );
+
+		$stored_after_enable = get_option( 'woocommerce_woocommerce_payments_settings' );
+
+		$fresh = $this->sut->get_settings();
+
+		$this->assertIsArray( $enabled );
+		$this->assertTrue( $enabled['is_woopay_enabled'] );
+		$this->assertTrue( $fresh['is_woopay_enabled'] );
+		$this->assertTrue( $fresh['is_manual_capture_enabled'] );
+		$this->assertSame( 'yes', $stored_after_enable['platform_checkout'] );
+		$this->assertSame( 'yes', $stored_after_enable['manual_capture'] );
+		$this->assertSame( 'yes', $stored_after_enable['test_mode'] );
+	}
 }

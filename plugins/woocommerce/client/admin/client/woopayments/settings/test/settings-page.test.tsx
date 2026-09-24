@@ -2122,6 +2122,12 @@ describe( 'WooPaymentsSettingsPage', () => {
 			screen.getByRole( 'checkbox', { name: /Klarna/ } )
 		).toBeDisabled();
 		expect(
+			screen.getByRole( 'checkbox', { name: /Affirm/ } )
+		).toHaveAccessibleDescription( /Unavailable with manual capture/ );
+		expect(
+			screen.getByRole( 'checkbox', { name: /Klarna/ } )
+		).toHaveAccessibleDescription( /Unavailable with manual capture/ );
+		expect(
 			screen.getAllByText( 'Unavailable with manual capture' )
 		).toHaveLength( 2 );
 		expect(
@@ -2868,6 +2874,29 @@ describe( 'WooPaymentsSettingsPage', () => {
 			screen.queryByRole( 'dialog', { name: 'Enable manual capture' } )
 		).not.toBeInTheDocument();
 		expect( setManualCapture ).toHaveBeenCalledWith( false );
+	} );
+
+	it( 'cancels manual capture without changing the toggle or saving settings', async () => {
+		const setManualCapture = jest.fn();
+		mockUseManualCapture.mockReturnValue( [ false, setManualCapture ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const toggle = screen.getByRole( 'checkbox', {
+			name: 'Issue an authorization on checkout and capture later',
+		} );
+		await userEvent.click( toggle );
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Enable manual capture',
+		} );
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+
+		expect( dialog ).not.toBeInTheDocument();
+		expect( toggle ).not.toBeChecked();
+		expect( setManualCapture ).not.toHaveBeenCalled();
+		expect( mockSaveSettings ).not.toHaveBeenCalled();
 	} );
 
 	it( 'renders the test-account switch-to-live notice and modal', async () => {
@@ -3862,6 +3891,41 @@ describe( 'WooPaymentsSettingsPage', () => {
 			'src',
 			'https://woocommerce.survey.fm/woopay-disabled-merchants-feedback-triggered'
 		);
+	} );
+
+	it( 'does not open disable feedback after a successful WooPay enable save', async () => {
+		let isWooPayEnabled = false;
+		const setWooPayEnabled = jest.fn( ( value: boolean ) => {
+			isWooPayEnabled = value;
+		} );
+		mockUseGetSettings.mockImplementation( () => ( {
+			account_country: 'US',
+			is_woopay_enabled: isWooPayEnabled,
+			woopay_last_disable_date: '',
+			available_payment_method_ids: [ 'card', 'link' ],
+		} ) );
+		mockUseWooPayEnabledSettings.mockImplementation( () => [
+			isWooPayEnabled,
+			setWooPayEnabled,
+		] );
+		mockSaveSettings.mockResolvedValue( true );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'WooPay' } )
+		);
+		rerender( <WooPaymentsSettingsPage /> );
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+		} );
+
+		expect( mockSaveSettings ).toHaveBeenCalledTimes( 1 );
+		expect(
+			screen.queryByRole( 'dialog', { name: 'WooPay feedback' } )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'records payment request setting changes after a successful save', async () => {

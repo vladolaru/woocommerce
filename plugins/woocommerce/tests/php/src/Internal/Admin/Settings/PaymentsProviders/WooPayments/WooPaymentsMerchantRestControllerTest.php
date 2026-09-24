@@ -470,6 +470,28 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The settings route forwards manual-capture and WooPay choices without changing their booleans.
+	 */
+	public function test_update_native_settings_forwards_manual_capture_and_woopay_choices(): void {
+		$settings = array(
+			'is_manual_capture_enabled' => true,
+			'is_woopay_enabled'         => false,
+		);
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->with( $settings )
+			->willReturn( $settings );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params( $settings );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $settings, $response->get_data() );
+	}
+
+	/**
 	 * @testdox Should round-trip the fraud settings error sentinel through the native settings POST route.
 	 */
 	public function test_update_native_settings_accepts_fraud_error_sentinel(): void {
