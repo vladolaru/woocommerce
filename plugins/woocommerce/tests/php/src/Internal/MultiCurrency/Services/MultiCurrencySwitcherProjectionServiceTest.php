@@ -96,6 +96,31 @@ class MultiCurrencySwitcherProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should project the exact enabled choices and preserve the default option.
+	 * @see WooPayments 11.1.0 tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:52
+	 */
+	public function test_projects_exact_enabled_choices_and_preserves_default_option(): void {
+		$usd     = $this->create_currency( 'USD', true );
+		$eur     = $this->create_currency( 'EUR', false );
+		$gbp     = $this->create_currency( 'GBP', false );
+		$enabled = array(
+			'USD' => $usd,
+			'EUR' => $eur,
+			'GBP' => $gbp,
+		);
+		$sut     = $this->create_service( new MultiCurrencyState( $enabled, $enabled, $usd, $gbp ) );
+
+		$markup = $sut->get_block_markup();
+		preg_match_all( '/<option value="([^"]+)"(?: selected)?>/', $markup, $matches );
+
+		$this->assertCount( 3, $matches[1] );
+		$this->assertEqualsCanonicalizing( array( 'USD', 'EUR', 'GBP' ), $matches[1] );
+		$this->assertStringContainsString( '<option value="USD">', $markup );
+		$this->assertSame( 1, substr_count( $markup, ' selected>' ) );
+		$this->assertStringContainsString( '<option value="GBP" selected>', $markup );
+	}
+
+	/**
 	 * @testdox Should return empty markup when switching is disabled.
 	 */
 	public function test_returns_empty_markup_when_switching_is_disabled(): void {

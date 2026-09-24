@@ -21,7 +21,6 @@ import { admin } from '../../../test-data/data';
  * MultiCurrencySwitcherBlockController and rendered by
  * MultiCurrencySwitcherProjectionService:
  *
- * - the merchant sees the enabled currencies while editing the block;
  * - the merchant can configure the block's presentation choices and they
  *   persist;
  * - persisted presentation choices reach the shopper-visible control;
@@ -59,7 +58,6 @@ const WIDGET_CONTRACT_PREFIX =
 	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:';
 
 const CONTRACT_IDS = {
-	adminCurrencies: `${ WIDGET_CONTRACT_PREFIX }52::Multi-currency widget setup › displays enabled currencies correctly in the admin`,
 	updateProperties: `${ WIDGET_CONTRACT_PREFIX }79::Multi-currency widget setup › can update widget properties`,
 	frontendProperties: `${ WIDGET_CONTRACT_PREFIX }204::Multi-currency widget setup › widget settings are applied in the frontend`,
 	publishInContent:
@@ -602,70 +600,6 @@ async function openBlockInspector( page: Page ): Promise< void > {
 		await expect( inspectorControl ).toBeVisible( { timeout: 3_000 } );
 	} ).toPass();
 }
-
-test(
-	'A merchant editing the currency switcher sees the store default and every enabled currency as a choice',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description: CONTRACT_IDS.adminCurrencies,
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, baseURL, page, runId } ) => {
-		const storeBase = requireBaseUrl( baseURL );
-		const { enabledCodes, defaultCode } =
-			await readEnabledCurrencies( adminApi );
-
-		const post = await createRunPost(
-			adminApi,
-			runId,
-			[ switcherBlockMarkup() ],
-			'admin'
-		);
-
-		const pageErrors = trackPageErrors( page, storeBase );
-		await logInAsAdmin( page );
-		const canvas = await openPostEditor( page, post.id );
-
-		// The block is the native switcher, not an "unsupported block"
-		// placeholder: an editor without the registered block type would fail
-		// here rather than pass on empty markup.
-		const block = editorSwitcherBlock( canvas );
-		await expect( block ).toHaveCount( 1 );
-
-		// The editor renders the block through ServerSideRender inside
-		// `<Disabled>`, which makes the preview non-interactive; the select is
-		// therefore addressed structurally within the block rather than by
-		// role, but its identity (`name="currency"`) is the projection
-		// service's own contract.
-		const preview = block.locator( 'select[name="currency"]' );
-		await expect( preview ).toBeVisible();
-
-		// Exactly the enabled set, no more and no less: the count pins
-		// "no extras" and the per-code check pins "none missing".
-		await expect( preview.locator( 'option' ) ).toHaveCount(
-			enabledCodes.length
-		);
-		for ( const code of enabledCodes ) {
-			await expect(
-				preview.locator( `option[value="${ code }"]` ),
-				`the merchant must see ${ code } as a switcher choice`
-			).toHaveCount( 1 );
-		}
-		// The store default is one of those choices, which is the half the
-		// contract names explicitly.
-		await expect(
-			preview.locator( `option[value="${ defaultCode }"]` )
-		).toHaveCount( 1 );
-
-		expect( pageErrors() ).toEqual( [] );
-
-		await deleteRunPost( adminApi, post.id );
-	}
-);
 
 test(
 	'A merchant can change the currency switcher presentation choices and the saved block keeps them',
