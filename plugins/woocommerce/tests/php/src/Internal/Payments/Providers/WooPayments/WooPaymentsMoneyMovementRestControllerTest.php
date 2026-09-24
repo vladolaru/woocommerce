@@ -1223,6 +1223,42 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox Transactions list and summary expose the same provider-owned row and totals to the admin client.
+	 */
+	public function test_transactions_list_and_summary_preserve_rows_and_totals(): void {
+		$this->create_transactions_controller( true )->register_routes();
+		$this->api_client->response = array(
+			'data'        => array(
+				array(
+					'id'       => 'txn_first',
+					'amount'   => 2500,
+					'net'      => 2397,
+					'currency' => 'usd',
+				),
+			),
+			'total_count' => 1,
+		);
+
+		$list = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' ) );
+
+		$this->assertSame( 200, $list->get_status() );
+		$this->assertSame( $this->api_client->response, $list->get_data() );
+		$this->assertSame( 'get_transactions', $this->api_client->last_call['method'] );
+
+		$this->api_client->response = array(
+			'count'    => 1,
+			'total'    => 2500,
+			'currency' => 'usd',
+		);
+
+		$summary = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/summary' ) );
+
+		$this->assertSame( 200, $summary->get_status() );
+		$this->assertSame( $this->api_client->response, $summary->get_data() );
+		$this->assertSame( 'get_transactions_summary', $this->api_client->last_call['method'] );
+	}
+
+	/**
 	 * @testdox Transactions summary and export use the preserved list filter normalization.
 	 */
 	public function test_transactions_summary_and_export_normalize_reference_filters(): void {

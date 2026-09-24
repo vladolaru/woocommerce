@@ -106,6 +106,12 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 						'currency' => 'usd',
 					),
 				),
+				'pending'   => array(
+					array(
+						'amount'   => 250,
+						'currency' => 'usd',
+					),
+				),
 			),
 			'account' => array(
 				'default_currency' => 'usd',
@@ -268,6 +274,48 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 			),
 			$this->api_client->last_deposits_summary_query
 		);
+	}
+
+	/**
+	 * @testdox A paid-status query reaches both payout routes without reintroducing excluded rows or totals.
+	 */
+	public function test_paid_status_query_preserves_scoped_payout_rows_and_totals(): void {
+		$this->sut->register_routes();
+
+		$this->api_client->deposits_response         = array(
+			'data'        => array(
+				array(
+					'id'       => 'po_paid',
+					'status'   => 'paid',
+					'amount'   => 2500,
+					'currency' => 'usd',
+				),
+			),
+			'total_count' => 1,
+		);
+		$this->api_client->deposits_summary_response = array(
+			'count'    => 1,
+			'total'    => 2500,
+			'currency' => 'usd',
+		);
+
+		$list_request = new WP_REST_Request( 'GET', '/wc/v3/payments/deposits' );
+		$list_request->set_query_params( array( 'status_is' => 'paid' ) );
+		$list = $this->server->dispatch( $list_request );
+
+		$this->assertSame( 200, $list->get_status() );
+		$this->assertSame( 'paid', $this->api_client->last_deposits_query['status_is'] );
+		$this->assertSame( $this->api_client->deposits_response, $list->get_data() );
+		$this->assertCount( 1, $list->get_data()['data'] );
+		$this->assertSame( 'po_paid', $list->get_data()['data'][0]['id'] );
+
+		$summary_request = new WP_REST_Request( 'GET', '/wc/v3/payments/deposits/summary' );
+		$summary_request->set_query_params( array( 'status_is' => 'paid' ) );
+		$summary = $this->server->dispatch( $summary_request );
+
+		$this->assertSame( 200, $summary->get_status() );
+		$this->assertSame( array( 'status_is' => 'paid' ), $this->api_client->last_deposits_summary_query );
+		$this->assertSame( $this->api_client->deposits_summary_response, $summary->get_data() );
 	}
 
 	/**

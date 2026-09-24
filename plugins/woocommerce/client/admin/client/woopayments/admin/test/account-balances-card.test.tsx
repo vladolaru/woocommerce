@@ -122,7 +122,15 @@ describe( 'AccountBalancesCard', () => {
 
 		expect( screen.getByText( 'Available funds' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'Total balance' ) ).toBeInTheDocument();
-		expect( screen.getByText( '$12.50' ) ).toBeInTheDocument();
+		expect( screen.getByLabelText( 'Available funds' ) ).toHaveTextContent(
+			'$10.00'
+		);
+		expect( screen.getByLabelText( 'Total balance' ) ).toHaveTextContent(
+			'$12.50'
+		);
+		expect(
+			screen.queryByRole( 'combobox', { name: 'Balance currency' } )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'lets merchants switch the balance currency', async () => {

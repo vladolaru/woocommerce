@@ -1619,6 +1619,7 @@ describe( 'WooPayments money movement pages', () => {
 				name: 'View transaction details for Charge transaction txn_loan',
 			} )
 		).toBeInTheDocument();
+		expect( screen.getByText( '42 transactions' ) ).toBeInTheDocument();
 		expect( mockGetTransactions ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				page: 2,
