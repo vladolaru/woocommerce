@@ -51,6 +51,8 @@ Per the N-109 lowest-honest-layer audit, `B1p`, `B1c`, `B1f` and `B1pf` are reti
 - `B1c` (coupon add/remove): retired outright. The coupon/total arithmetic is WooCommerce core cart logic with no payments-side owner. The Payment Element's setup/payment mode is decided from the page-load cart total on both runtimes — client `client/checkout/blocks/payment-elements.js:45` (`getUPEConfig('cartTotal')`) and native `WooPaymentsCheckoutBridge.php:470`/`index.js:514-516` — so neither runtime switches mode later regardless of a subsequent coupon change; this is not a native-specific gap.
 - `B1pf` (FSE protection-on twin): both halves above apply; no new case needed beyond them.
 
+T.3 Task 1 (2026-09-26): the classic basic-card card-testing smoke (`B1p`) is deferred to T.4 (rewrite on shared helpers) because the restored case fails in the frozen `card-testing-protection` driver's capture-state operation.
+
 ### Fixed run contract
 
 | Contract item | Fixed value |
@@ -109,6 +111,10 @@ Per the T.1 provider-family audit, the five `D-SI-*` My Account SetupIntent disp
 - The refused-cooldown-before-any-SetupIntent-exists half of the My Account add path, which this family's rows never claimed: `WooPaymentsCheckoutAjaxControllerTest::test_create_setup_intent_refuses_inside_add_payment_method_rate_limit_without_provider_call` (see `saved-token-lifecycle`'s own batch 3 note).
 - Three of Runner S's five items have no PHPUnit owner and are sanctioned drops, not silent gaps: S3 (the provider customer exists with no attached methods and no local tokens, stable for 10 seconds) is provider-only — no fake or lower-layer double can observe the real provider's attachment state; S4 (the case creates no order) is WC core's own SetupIntent-creates-no-order behavior, not a native claim; S5 (`#wcpay-core-payment-errors` rendered with `role=alert`) is shopper-facing DOM rendering, already covered below the browser by the existing Jest cases at `plugins/woocommerce/client/legacy/js/frontend/test/woopayments-checkout.js:3091` and `:3042`.
 - After this batch, no live SetupIntent decline remains anywhere in this family: the only provider-backed decline still driven live is the checkout-side smoke at `shopper/provider-fidelity-card-recovery.spec.ts:136` (Runner P/B, not Runner S).
+
+### T.3 Task 1 restoration (2026-09-26) — the Classic decline-then-retry case returns to the browser
+
+N-122(3) rule 3 treats the Classic generic-decline-then-retry case's move below the browser (T.1 batch 2) as a classic-surface gap: client contract row 113's Classic surface ("Retry after failure without page refresh") had no native browser owner, since the PHPUnit rows the batch-2 note names prove the failed-decline envelope and the retry-not-blocked mechanism separately, not the same-document Classic round trip itself. T.3 Task 1 restores the case byte-identical from `ee9e87f401^` (D4) as `provider-fidelity-card-recovery.spec.ts`'s second, serial case, asserting only that the observation's surface is `'classic'` over the unchanged `runClassicDeclineRecovery()`/`withClassicCheckoutPage()` drivers. This restoration is kept pending T.4's rewrite of the retained specs onto shared e2e helpers (N-121); the nine other `D-PI-*` dispatches and the five `D-SI-*` My Account cases remain retired, since no rule-3 classic-surface gap applies to them.
 
 ### Fixed run contract
 
