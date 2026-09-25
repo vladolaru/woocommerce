@@ -9,21 +9,14 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRemoteNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Admin\Notes\Note;
-use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
 use InvalidArgumentException;
@@ -36,6 +29,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsEventIngestor class.
  */
 class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
+
+	use WooPaymentsEventHandlerTestTrait;
 
 	/**
 	 * The System Under Test.
@@ -3005,285 +3000,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox account.updated refreshes account data and clears preserved payment method caches.
-	 */
-	public function test_account_updated_refreshes_account_data_and_clears_payment_method_caches(): void {
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'refresh_account_data_strict' ) )
-			->getMock();
-		$account_service->expects( $this->once() )
-			->method( 'refresh_account_data_strict' )
-			->willReturn( array( 'account_id' => 'acct_123' ) );
-
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'clear_all_cached_payment_methods' ) )
-			->getMock();
-		$token_service->expects( $this->once() )
-			->method( 'clear_all_cached_payment_methods' );
-
-		$sut = $this->create_ingestor_with_account_services( $account_service, $token_service );
-
-		$sut->process( $this->create_account_event( 'account.updated' ) );
-	}
-
-	/**
-	 * @testdox account.deleted resets account state, refreshes account data, and clears preserved payment method caches.
-	 */
-	public function test_account_deleted_cleans_state_refreshes_account_data_and_clears_payment_method_caches(): void {
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'cleanup_after_account_reset', 'refresh_account_data_strict', 'get_preserved_account_id', 'get_pending_account_deletion_id', 'mark_account_deletion_pending', 'clear_pending_account_deletion' ) )
-			->getMock();
-		$account_service->expects( $this->once() )
-			->method( 'get_pending_account_deletion_id' )
-			->willReturn( '' );
-		$account_service->expects( $this->once() )
-			->method( 'get_preserved_account_id' )
-			->willReturn( 'acct_123' );
-		$account_service->expects( $this->once() )
-			->method( 'mark_account_deletion_pending' )
-			->with( 'acct_123' );
-		$account_service->expects( $this->once() )
-			->method( 'cleanup_after_account_reset' );
-		$account_service->expects( $this->once() )
-			->method( 'refresh_account_data_strict' )
-			->willReturn( array() );
-		$account_service->expects( $this->once() )
-			->method( 'clear_pending_account_deletion' );
-
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'clear_all_cached_payment_methods' ) )
-			->getMock();
-		$token_service->expects( $this->once() )
-			->method( 'clear_all_cached_payment_methods' );
-
-		$sut = $this->create_ingestor_with_account_services( $account_service, $token_service );
-
-		$sut->process( $this->create_account_event( 'account.deleted' ) );
-	}
-
-	/**
-	 * @testdox account.deleted ignores stale account deletion events for a different connected account.
-	 */
-	public function test_account_deleted_ignores_stale_delete_for_different_account(): void {
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'cleanup_after_account_reset', 'refresh_account_data_strict', 'get_preserved_account_id', 'get_pending_account_deletion_id', 'mark_account_deletion_pending', 'clear_pending_account_deletion' ) )
-			->getMock();
-		$account_service->expects( $this->once() )
-			->method( 'get_pending_account_deletion_id' )
-			->willReturn( '' );
-		$account_service->expects( $this->once() )
-			->method( 'get_preserved_account_id' )
-			->willReturn( 'acct_current' );
-		$account_service->expects( $this->never() )
-			->method( 'mark_account_deletion_pending' );
-		$account_service->expects( $this->never() )
-			->method( 'cleanup_after_account_reset' );
-		$account_service->expects( $this->never() )
-			->method( 'refresh_account_data_strict' );
-		$account_service->expects( $this->never() )
-			->method( 'clear_pending_account_deletion' );
-
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'clear_all_cached_payment_methods' ) )
-			->getMock();
-		$token_service->expects( $this->never() )
-			->method( 'clear_all_cached_payment_methods' );
-
-		$sut = $this->create_ingestor_with_account_services( $account_service, $token_service );
-
-		$sut->process( $this->create_account_event( 'account.deleted', 'acct_deleted' ) );
-	}
-
-	/**
-	 * @testdox account.deleted continues pending cleanup retries after the local account cache was cleared.
-	 */
-	public function test_account_deleted_continues_pending_cleanup_retry(): void {
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'cleanup_after_account_reset', 'refresh_account_data_strict', 'get_preserved_account_id', 'get_pending_account_deletion_id', 'mark_account_deletion_pending', 'clear_pending_account_deletion' ) )
-			->getMock();
-			$account_service->expects( $this->once() )
-				->method( 'get_pending_account_deletion_id' )
-				->willReturn( 'acct_123' );
-			$account_service->expects( $this->once() )
-				->method( 'get_preserved_account_id' )
-				->willReturn( '' );
-			$account_service->expects( $this->once() )
-				->method( 'mark_account_deletion_pending' )
-				->with( 'acct_123' );
-		$account_service->expects( $this->once() )
-			->method( 'cleanup_after_account_reset' );
-		$account_service->expects( $this->once() )
-			->method( 'refresh_account_data_strict' )
-			->willReturn( array() );
-		$account_service->expects( $this->once() )
-			->method( 'clear_pending_account_deletion' );
-
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'clear_all_cached_payment_methods' ) )
-			->getMock();
-		$token_service->expects( $this->once() )
-			->method( 'clear_all_cached_payment_methods' );
-
-		$sut = $this->create_ingestor_with_account_services( $account_service, $token_service );
-
-		$sut->process( $this->create_account_event( 'account.deleted' ) );
-	}
-
-	/**
-	 * @testdox account.deleted ignores stale pending markers when a different account is connected.
-	 */
-	public function test_account_deleted_ignores_stale_pending_marker_for_different_account(): void {
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'cleanup_after_account_reset', 'refresh_account_data_strict', 'get_preserved_account_id', 'get_pending_account_deletion_id', 'mark_account_deletion_pending', 'clear_pending_account_deletion' ) )
-			->getMock();
-		$account_service->expects( $this->once() )
-			->method( 'get_pending_account_deletion_id' )
-			->willReturn( 'acct_deleted' );
-		$account_service->expects( $this->once() )
-			->method( 'get_preserved_account_id' )
-			->willReturn( 'acct_current' );
-		$account_service->expects( $this->never() )
-			->method( 'mark_account_deletion_pending' );
-		$account_service->expects( $this->never() )
-			->method( 'cleanup_after_account_reset' );
-		$account_service->expects( $this->never() )
-			->method( 'refresh_account_data_strict' );
-		$account_service->expects( $this->never() )
-			->method( 'clear_pending_account_deletion' );
-
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'clear_all_cached_payment_methods' ) )
-			->getMock();
-		$token_service->expects( $this->never() )
-			->method( 'clear_all_cached_payment_methods' );
-
-		$sut = $this->create_ingestor_with_account_services( $account_service, $token_service );
-
-		$sut->process( $this->create_account_event( 'account.deleted', 'acct_deleted' ) );
-	}
-
-	/**
-	 * @testdox account.deleted keeps the pending marker when strict refresh fails after cleanup.
-	 */
-	public function test_account_deleted_keeps_pending_marker_when_refresh_fails(): void {
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'cleanup_after_account_reset', 'refresh_account_data_strict', 'get_preserved_account_id', 'get_pending_account_deletion_id', 'mark_account_deletion_pending', 'clear_pending_account_deletion' ) )
-			->getMock();
-		$account_service->expects( $this->once() )
-			->method( 'get_pending_account_deletion_id' )
-			->willReturn( '' );
-		$account_service->expects( $this->once() )
-			->method( 'get_preserved_account_id' )
-			->willReturn( 'acct_123' );
-		$account_service->expects( $this->once() )
-			->method( 'mark_account_deletion_pending' )
-			->with( 'acct_123' );
-		$account_service->expects( $this->once() )
-			->method( 'cleanup_after_account_reset' );
-		$account_service->expects( $this->once() )
-			->method( 'refresh_account_data_strict' )
-			->willThrowException( new RuntimeException( 'Temporary refresh failure.' ) );
-		$account_service->expects( $this->never() )
-			->method( 'clear_pending_account_deletion' );
-
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'clear_all_cached_payment_methods' ) )
-			->getMock();
-		$token_service->expects( $this->never() )
-			->method( 'clear_all_cached_payment_methods' );
-
-		$sut = $this->create_ingestor_with_account_services( $account_service, $token_service );
-
-		$this->expectException( RuntimeException::class );
-
-		$sut->process( $this->create_account_event( 'account.deleted' ) );
-	}
-
-	/**
-	 * @testdox account.deleted fails closed when the event account ID is missing.
-	 */
-	public function test_account_deleted_fails_closed_for_missing_account_id(): void {
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->getMock();
-		$token_service   = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->getMock();
-		$sut             = $this->create_ingestor_with_account_services( $account_service, $token_service );
-		$event           = $this->create_account_event( 'account.deleted' );
-		unset( $event['data']['object']['id'] );
-
-		$this->expectException( InvalidArgumentException::class );
-
-		$sut->process( $event );
-	}
-
-	/**
-	 * @testdox wcpay.notification creates a remote note without requiring a data.object payload.
-	 */
-	public function test_wcpay_notification_creates_remote_note_without_event_object(): void {
-		$note_slug = 'h30-ingestor-' . wp_generate_uuid4();
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-
-		$this->sut->process(
-			array(
-				'id'       => 'evt_note',
-				'type'     => 'wcpay.notification',
-				'livemode' => false,
-				'data'     => array(
-					'name'    => $note_slug,
-					'title'   => 'Remote note',
-					'content' => 'Remote note content.',
-					'actions' => array(
-						'settings' => array(
-							'label' => 'Open settings',
-							'url'   => 'wcpay_settings',
-						),
-					),
-				),
-			)
-		);
-
-		$note = Notes::get_note_by_name( WooPaymentsRemoteNoteService::NOTE_NAME_PREFIX . $note_slug );
-
-		$this->assertInstanceOf( Note::class, $note );
-		$this->assertSame( 'Remote note', $note->get_title() );
-		$this->assertSame( 'Remote note content.', $note->get_content() );
-	}
-
-	/**
-	 * @testdox wcpay.notification fails closed for invalid remote note payloads.
-	 */
-	public function test_wcpay_notification_fails_closed_for_invalid_note_payload(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-
-		$this->expectException( InvalidArgumentException::class );
-
-		$this->sut->process(
-			array(
-				'id'       => 'evt_note_invalid',
-				'type'     => 'wcpay.notification',
-				'livemode' => false,
-				'data'     => array(
-					'title' => 'Missing content',
-				),
-			)
-		);
-	}
-
-	/**
 	 * @testdox charge.refunded creates a full local refund with WooPayments metadata.
 	 */
 	public function test_charge_refunded_creates_full_local_refund_with_wcpay_metadata(): void {
@@ -4248,63 +3964,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create an ingestor with mocked account event collaborators.
-	 *
-	 * @param WooPaymentsAccountService $account_service Account service mock.
-	 * @param WooPaymentsTokenService   $token_service   Token service mock.
-	 * @return WooPaymentsEventIngestor
-	 */
-	private function create_ingestor_with_account_services( WooPaymentsAccountService $account_service, WooPaymentsTokenService $token_service ): WooPaymentsEventIngestor {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-
-		$runtime = new WooPaymentsLegacyRuntime();
-		$runtime->init( new LegacyRuntimeProxy( true ) );
-
-		$account_event_handler = new WooPaymentsAccountEventHandler();
-		$account_event_handler->init( $account_service, $token_service );
-
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
-			$runtime,
-			new class() extends WooPaymentsApiClient {},
-			$this->create_dispute_event_handler( $runtime, new class() extends WooPaymentsApiClient {} ),
-			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
-			$account_event_handler,
-			$this->create_notification_event_handler()
-		);
-
-		return $sut;
-	}
-
-	/**
-	 * Build a dispute event handler wired to the supplied runtime and API client.
-	 *
-	 * @param WooPaymentsLegacyRuntime $runtime    WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient     $api_client Native WooPayments API client.
-	 * @return WooPaymentsDisputeEventHandler
-	 */
-	private function create_dispute_event_handler( WooPaymentsLegacyRuntime $runtime, WooPaymentsApiClient $api_client ): WooPaymentsDisputeEventHandler {
-		$handler = new WooPaymentsDisputeEventHandler();
-		$handler->init( $runtime, $api_client, wc_get_container()->get( WooPaymentsDisputeCacheService::class ) );
-
-		return $handler;
-	}
-
-	/**
-	 * Build a notification event handler backed by a real remote note service.
-	 *
-	 * @return WooPaymentsNotificationEventHandler
-	 */
-	private function create_notification_event_handler(): WooPaymentsNotificationEventHandler {
-		$handler = new WooPaymentsNotificationEventHandler();
-		$handler->init( new WooPaymentsRemoteNoteService() );
-
-		return $handler;
-	}
-
-	/**
 	 * Build a notification event handler that records each processed event.
 	 *
 	 * @param bool $should_throw Whether the handler should throw on process.
@@ -4700,26 +4359,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertCount( 2, $handler->processed_events );
 		$this->assertSame( 1, get_transient( 'wcpay_processed_event_' . md5( 'evt_early_warning_retry' ) ) );
-	}
-
-	/**
-	 * Create an account lifecycle event.
-	 *
-	 * @param string $type       Event type.
-	 * @param string $account_id Account ID.
-	 * @return array<string,mixed>
-	 */
-	private function create_account_event( string $type, string $account_id = 'acct_123' ): array {
-		return array(
-			'id'       => 'evt_account',
-			'type'     => $type,
-			'livemode' => false,
-			'data'     => array(
-				'object' => array(
-					'id' => $account_id,
-				),
-			),
-		);
 	}
 
 	/**
