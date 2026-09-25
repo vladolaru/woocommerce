@@ -125,11 +125,6 @@ export interface UsdToEurEligibilityObservation
 	readonly transition: typeof USD_TO_EUR;
 }
 
-export interface EurToUsdEligibilityObservation
-	extends Omit< PaymentMethodEligibilityObservation, 'providerGraph' > {
-	readonly transition: typeof EUR_TO_USD;
-}
-
 export interface PaymentMethodEligibilityBrowserOptions {
 	readonly currencyLabel: Locator;
 	readonly checkoutPath?: string;
@@ -590,16 +585,6 @@ export async function observeUsdToEurPaymentMethodEligibility(
 	return {
 		transition: USD_TO_EUR,
 		...( await observeTransition( page, USD_TO_EUR, options ) ),
-	};
-}
-
-export async function observeEurToUsdPaymentMethodEligibility(
-	page: Page,
-	options: PaymentMethodEligibilityBrowserOptions
-): Promise< EurToUsdEligibilityObservation > {
-	return {
-		transition: EUR_TO_USD,
-		...( await observeTransition( page, EUR_TO_USD, options ) ),
 	};
 }
 

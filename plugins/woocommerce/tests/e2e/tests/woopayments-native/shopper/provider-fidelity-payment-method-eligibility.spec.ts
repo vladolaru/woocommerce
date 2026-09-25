@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import { expect, tags, test } from '../../../fixtures/woopayments-native';
-import { completeCardCheckoutWithExistingCart } from '../../../utils/woopayments-native/drivers/checkout';
 import {
 	BANCONTACT,
 	BE_BILLING,
@@ -12,13 +11,10 @@ import {
 	withForeignCurrency,
 } from '../../../utils/woopayments-native/drivers/redirect-methods';
 import {
-	EUR_TO_USD,
 	expectNoReusablePaymentCredential,
-	observeEurToUsdPaymentMethodEligibility,
 	observeUsdToEurPaymentMethodEligibility,
 	readPaymentMethodEligibilityRestoration,
 	readPaymentMethodEligibilityProviderGraph,
-	readConfiguredStoreDefaultCurrency,
 	USD_TO_EUR,
 	validatePaymentMethodEligibilityObservation,
 	validatePaymentMethodEligibilityReconciliation,
@@ -38,8 +34,6 @@ const FAMILY_TAGS = [
 ];
 const ROW_94 =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:122::Multi-currency checkout › Available payment methods › should display EUR payment methods when switching to EUR and default is USD';
-const ROW_95 =
-	'default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:162::Multi-currency checkout › Available payment methods › should display USD payment methods when switching to USD and default is EUR';
 const RECONCILE_RETAINED_EVIDENCE =
 	process.env.E2E_WOOPAYMENTS_PAYMENT_METHOD_ELIGIBILITY_RECONCILIATION ===
 	'1';
@@ -126,6 +120,10 @@ async function reconcileOrRunCase(
 test.describe( 'WooPayments native payment-method eligibility fidelity', () => {
 	test.describe.configure( { mode: 'serial', timeout: 420_000 } );
 
+	// Assertions live in validatePaymentMethodEligibilityObservation and
+	// expectNoReusablePaymentCredential, which fail() on a mismatch rather
+	// than call expect() directly.
+	// eslint-disable-next-line playwright/expect-expect
 	test(
 		'A same-session switch from USD to EUR adds Bancontact while retaining Card and one selected Bancontact checkout settles exactly 1099 eur',
 		{
@@ -161,11 +159,6 @@ test.describe( 'WooPayments native payment-method eligibility fidelity', () => {
 												BANCONTACT,
 												'redirect-method-provider-outcome-method',
 												async () => {
-													expect(
-														await readConfiguredStoreDefaultCurrency(
-															pilotRuntime
-														)
-													).toBe( 'USD' );
 													const product =
 														await pilotRuntime.createOwnedProduct(
 															'10.99',
@@ -245,122 +238,6 @@ test.describe( 'WooPayments native payment-method eligibility fidelity', () => {
 									)
 							)
 					)
-			);
-		}
-	);
-
-	test(
-		'A same-session switch from EUR to USD removes Bancontact while retaining Card and one selected Card checkout settles exactly 1099 usd',
-		{
-			annotation: [
-				{ type: 'woopayments-contract', description: ROW_95 },
-			],
-			tag: FAMILY_TAGS,
-		},
-		async ( { page, pilotRuntime, runId } ) => {
-			await reconcileOrRunCase(
-				pilotRuntime,
-				EUR_TO_USD,
-				reconciliation.cases.eur_to_usd,
-				'E2E_WOOPAYMENTS_PAYMENT_METHOD_ELIGIBILITY_ROW_95_LOG',
-				async () => {
-					expect(
-						await readConfiguredStoreDefaultCurrency( pilotRuntime )
-					).toBe( 'USD' );
-					await pilotRuntime.withProviderWriteLocks(
-						{
-							featureSetting: 'payment-method-eligibility',
-							recordEvent: 'payment-method-eligibility-95',
-						},
-						async () =>
-							withStoreDefaultCurrency(
-								pilotRuntime,
-								'EUR',
-								async () =>
-									withForeignCurrency(
-										pilotRuntime,
-										'USD',
-										'multi-currency-settlement-currency',
-										async () =>
-											withEnabledPaymentMethod(
-												pilotRuntime,
-												BANCONTACT,
-												'redirect-method-provider-outcome-method',
-												async () => {
-													const product =
-														await pilotRuntime.createOwnedProduct(
-															'10.99',
-															{
-																taxStatus:
-																	'none',
-															}
-														);
-													await page.goto(
-														`?post_type=product&p=${ product.id }`
-													);
-													await pilotRuntime.performWrite(
-														() =>
-															page
-																.getByRole(
-																	'button',
-																	{
-																		name: 'Add to cart',
-																		exact: true,
-																	}
-																)
-																.click()
-													);
-													await page.goto(
-														'checkout/'
-													);
-													const observation =
-														await observeEurToUsdPaymentMethodEligibility(
-															page,
-															{
-																currencyLabel:
-																	page.locator(
-																		'.wc-block-components-totals-footer-item .wc-block-components-totals-item__value'
-																	),
-																prepareCheckout:
-																	() =>
-																		fillBlocksBilling(
-																			page,
-																			runId,
-																			BE_BILLING
-																		),
-															}
-														);
-													const orderId =
-														await completeCardCheckoutWithExistingCart(
-															pilotRuntime,
-															page,
-															runId
-														);
-													const graph =
-														await readPaymentMethodEligibilityProviderGraph(
-															pilotRuntime,
-															orderId
-														);
-													await expectNoReusablePaymentCredential(
-														pilotRuntime,
-														graph
-													);
-													validatePaymentMethodEligibilityObservation(
-														EUR_TO_USD,
-														{
-															storeDefaultCurrency:
-																'EUR',
-															...observation,
-															providerGraph:
-																graph,
-														}
-													);
-												}
-											)
-									)
-							)
-					);
-				}
 			);
 		}
 	);

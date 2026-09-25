@@ -4066,6 +4066,81 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Zero-total checkout requiring SetupIntent customer action returns the `si` confirmation redirect, not `pi`.
+	 *
+	 * Free-trial subscription signup and other zero-total checkouts create a native SetupIntent
+	 * (`setup_intent_via_native_transport`), not a PaymentIntent. When that SetupIntent comes back
+	 * `requires_action` (a 3DS challenge on the saved card), the frontend confirmation hash must read
+	 * `#wcpay-confirm-si:...`, matching client 11.1.0's own `$payment_needed ? 'pi' : 'si'` branch
+	 * (`gw:2111`, `class-wc-payment-gateway-wcpay.php`): a SetupIntent has no payment to confirm, so the
+	 * frontend must call `stripe.confirmSetup()`, not `confirmPayment()`. Only the codec unit test
+	 * (`WooPaymentsIntentCodecTest::test_confirmation_redirect_uses_explicit_nonce`) and the effect-plan
+	 * test (`WooPaymentsOrderEffectApplierTest::test_setup_intent_effects_persist_provider_references`)
+	 * covered pieces of this before; neither goes through the adapter's own intent-type wiring.
+	 */
+	public function test_zero_total_setup_intent_requiring_action_returns_si_confirmation_redirect(): void {
+		$user_id          = $this->factory()->user->create();
+		$order            = $this->create_woopayments_order( '0.00' );
+		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$saved_token      = $this->create_card_token( $user_id, 'pm_zero_action' );
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a setup intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $request_data, $idempotency_key );
+
+				return array(
+					'id'            => 'seti_zero_action',
+					'status'        => 'requires_action',
+					'client_secret' => 'seti_zero_action_secret',
+					'customer'      => 'cus_zero_action',
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$order->set_customer_id( $user_id );
+		$order->add_payment_token( $saved_token );
+		$order->save();
+		$token_service = $this->create_single_resolution_token_service( $saved_token, $user_id, 'pm_zero_action' );
+
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_zero_action' );
+
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
+		$outcome = $sut->charge(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'',
+				array( 'payment_token' => (string) $saved_token->get_id() )
+			),
+			'key_setup_action'
+		);
+		$order   = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
+		$this->assertStringStartsWith( '#wcpay-confirm-si:' . $order->get_id() . ':seti_zero_action_secret:', $outcome->get_redirect_url() );
+		$this->assertStringNotContainsString( '#wcpay-confirm-pi:', $outcome->get_redirect_url() );
+	}
+
+	/**
 	 * @testdox Zero-total card checkout should flag platform-created payment methods for WCPay.
 	 */
 	public function test_zero_total_charge_flags_platform_created_payment_methods_for_wcpay(): void {

@@ -111,6 +111,47 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should append exactly the given currency to the admin order Total row, never substituting the store default.
+	 *
+	 * WooCommerce core populates `wc_price_args['currency']` for the admin order Total row from the
+	 * order's own currency, not from Multi-Currency's selected-currency machinery (a shopper-facing,
+	 * front-end concept with no admin-order-total equivalent) -- `get_explicit_price_args()` never
+	 * reads a "selected currency" at all; it only ever sees whatever currency the caller already
+	 * resolved. This proves it appends exactly that currency (EUR) and never substitutes the store
+	 * default (`get_woocommerce_currency()`, USD here) for it.
+	 * `test_temporarily_adds_explicit_wc_price_args_for_admin_order_totals` above only exercises the
+	 * case where the given currency and the store default happen to coincide (both USD), so it cannot
+	 * catch a regression that silently swapped in the store default for a currency-converted order.
+	 */
+	public function test_admin_order_total_never_substitutes_the_store_default_for_the_given_currency(): void {
+		$original_currency = get_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_currency', 'USD' );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+
+		try {
+			$sut->register_formatted_woocommerce_price_filter();
+
+			$args = $sut->get_explicit_price_args(
+				array(
+					'price_format' => '%1$s%2$s',
+					'currency'     => 'EUR',
+				)
+			);
+		} finally {
+			$sut->unregister_formatted_woocommerce_price_filter();
+			update_option( 'woocommerce_currency', $original_currency );
+		}
+
+		$this->assertSame(
+			array(
+				'price_format' => '%1$s%2$s&nbsp;EUR',
+				'currency'     => 'EUR',
+			),
+			$args
+		);
+	}
+
+	/**
 	 * @testdox Should let the public filter disable every configured explicit-price projection.
 	 */
 	public function test_public_filter_disables_configured_cart_order_and_admin_explicit_price_projections(): void {

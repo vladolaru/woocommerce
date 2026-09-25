@@ -929,6 +929,14 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 				'id'             => 'seti_effects',
 				'status'         => 'requires_action',
 				'payment_method' => 'pm_effects',
+				// PaymentIntent-shaped decoy: a SetupIntent response never carries a real charge,
+				// but this proves the setup path doesn't accidentally read one if it were present
+				// (e.g. a regression that treats the SetupIntent result like a PaymentIntent's).
+				'charges'        => array(
+					'data' => array(
+						array( 'id' => 'ch_setup_intent_decoy' ),
+					),
+				),
 			),
 			false,
 			array(
@@ -947,6 +955,10 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_effects', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_effects', $order->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
+		// A SetupIntent has no charge: the `requires_action`/no-error branch the client takes here,
+		// `mark_payment_started()` (client `os:1695-1706`), never touches `_charge_id`. The decoy
+		// charge above proves the setup path doesn't backfill `_charge_id` from it either.
+		$this->assertSame( '', $order->get_meta( '_charge_id', true ) );
 	}
 
 	/**
@@ -1236,6 +1248,84 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( '1.33127', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_multi_currency_stripe_exchange_rate'] );
 		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
 		$this->assertContains( $result->get_data()[ PaymentOutcome::DATA_NOTE ], $result->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
+	}
+
+	/**
+	 * @testdox Synchronous PaymentIntent effects persist settlement exchange-rate meta for a currency-converted order from the create-and-confirm response alone.
+	 *
+	 * REC-3 (`Fixtures/rec-3-eur-charge.json`) recorded local WPCOM's response to a 12.34 EUR card
+	 * charge on a USD account: `charges.data[0].balance_transaction` arrives as an **expanded object**
+	 * with `exchange_rate` 1.13905 on the synchronous create-and-confirm call itself, not only on a
+	 * later `GET charge`. Client 11.1.0 only reads the settlement rate after checkout via a separate
+	 * `GET charges/{id}` (`gw:2776-2804`); this proves native's synchronous read of the same field
+	 * from the create-and-confirm response (no extra request) lands the identical order meta (F4).
+	 *
+	 * The recorded charge carries no `fee_breakdown_v1` (that field is only on the separate GET), so
+	 * `_wcpay_transaction_fee`/`_wcpay_net` fall back to `application_fee_amount` (75), which Stripe
+	 * returns in the **charge's own currency** (EUR minor units → 0.75), not `balance_transaction.fee`
+	 * (85 USD, the settlement currency). This assertion is therefore in EUR, not USD. This is
+	 * checkout-time parity, not a native-only reading: the client's own checkout path
+	 * (`gw:2206` → `attach_transaction_fee_to_order()`, `os:1741-1781`) falls back to the same
+	 * `application_fee_amount` for a charge shaped like this one. The client's own fee/net meta can
+	 * still end up overwritten later by a webhook-driven capture path (`os:1681`) that receives a
+	 * charge carrying `fee_breakdown_v1` (85 usd, from the recorded `GET charge`); native does not
+	 * revisit this meta after checkout in this batch's scope, which is a variant of finding F6
+	 * (timing), not asserted here.
+	 */
+	public function test_payment_intent_effects_persist_settlement_meta_for_converted_order(): void {
+		$original_currency = get_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_currency', 'USD' );
+		$order = $this->create_woopayments_order( '12.34' );
+		$order->set_currency( 'EUR' );
+		$order->save();
+
+		$intent = $this->load_recorded_eur_charge_entry( 'eur_charge_create_and_confirm' );
+
+		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, (string) $intent['id'] );
+		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false );
+
+		try {
+			// The real order data service is required here: `create_applier()`'s default fully
+			// mocks `WooPaymentsOrderDataService`, which stubs `get_settlement_exchange_rate_order_meta()`
+			// back to an empty array regardless of input, defeating the point of this test.
+			$enriched = $this->create_applier( null, wc_get_container()->get( WooPaymentsOrderDataService::class ) )->enrich_outcome_for_lifecycle(
+				PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_rec3' ),
+				$outcome,
+				$plan
+			);
+		} finally {
+			update_option( 'woocommerce_currency', $original_currency );
+		}
+
+		$meta = $enriched->get_data()[ PaymentOutcome::DATA_META ];
+		$this->assertSame( '1.13905', $meta['_wcpay_multi_currency_stripe_exchange_rate'], 'REC-3 exchange rate must survive from the synchronous response alone.' );
+		$this->assertSame( 'EUR', $meta['_wcpay_intent_currency'], 'The intent currency comes from the recorded intent, uppercased as client 11.1.0 stores it (payment-intention.php:93, os:1361/1414), not from the USD store setting.' );
+		$this->assertSame( 'ch_3UJWs2BzWlxcwgpP1y9vRrWr', $meta['_charge_id'] );
+		$this->assertSame( 'txn_3UJWs2BzWlxcwgpP1MLoqLbF', $meta['_wcpay_payment_transaction_id'], 'The balance_transaction id must resolve even though it arrives as an expanded object, not a bare id.' );
+		$this->assertSame( '0.75', $meta['_wcpay_transaction_fee'], 'Falls back to application_fee_amount (75) in the charge currency (EUR) because REC-3 carries no fee_breakdown_v1.' );
+		$this->assertSame( '11.59', $meta['_wcpay_net'], '12.34 EUR charge amount minus the 0.75 EUR application fee.' );
+	}
+
+	/**
+	 * Load one recorded REC-3 entry's response body by pair key.
+	 *
+	 * @param string $pair REC-3 fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_eur_charge_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-3-eur-charge.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry['response']['body'];
+			}
+		}
+
+		$this->fail( "REC-3 fixture has no entry for pair '$pair'." );
 	}
 
 	/**

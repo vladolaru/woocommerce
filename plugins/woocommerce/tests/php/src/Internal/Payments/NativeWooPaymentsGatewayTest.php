@@ -1184,6 +1184,52 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should leave a card subscription on automatic renewal because card is a reusable native method.
+	 *
+	 * Mirrors client 11.1.0 `tr:1399-1401` (`maybe_force_subscription_to_manual`): a reusable gateway
+	 * (card, Amazon Pay) returns before touching `requires_manual_renewal` or the original-method meta.
+	 * `test_maybe_force_subscription_to_manual_preserves_non_reusable_method` above only covers the
+	 * non-reusable (split gateway) branch; this covers the reusable early-return branch the client
+	 * takes for `WC_Payment_Gateway_WCPay::GATEWAY_ID` itself.
+	 */
+	public function test_maybe_force_subscription_to_manual_leaves_card_subscription_automatic(): void {
+		$subscription = new class() extends WC_Order {
+			/**
+			 * Whether manual renewal is required.
+			 *
+			 * @var bool
+			 */
+			private bool $requires_manual_renewal = false;
+
+			/**
+			 * Set whether manual renewal is required.
+			 *
+			 * @param bool $requires_manual_renewal Whether manual renewal is required.
+			 */
+			public function set_requires_manual_renewal( $requires_manual_renewal ): void {
+				$this->requires_manual_renewal = (bool) $requires_manual_renewal;
+			}
+
+			/**
+			 * Tell whether manual renewal is required.
+			 *
+			 * @return bool
+			 */
+			public function is_manual(): bool {
+				return $this->requires_manual_renewal;
+			}
+		};
+		$subscription->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$subscription->save();
+
+		( new NativeWooPaymentsGateway() )->maybe_force_subscription_to_manual( $subscription );
+
+		$this->assertFalse( $subscription->is_manual() );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertSame( '', $subscription->get_meta( '_wcpay_original_payment_method_id', true ) );
+	}
+
+	/**
 	 * @testdox Should attach base subscription renewal handlers once across gateway instances.
 	 */
 	public function test_subscription_handler_registration_is_idempotent_across_gateway_instances(): void {
