@@ -16,7 +16,7 @@ const providerPilotOrder = [
 	'merchant-transaction-navigation',
 	'merchant-manual-capture',
 ];
-const transitionPilotOrder = [ 'saved-method-cutover' ];
+const transitionPilotOrder = [];
 // A closed ledger row whose targets include a test module under this tree
 // must be proven by a collected Playwright annotation; rows whose targets are
 // only PHP/JS unit tests are closed at that lower layer directly.

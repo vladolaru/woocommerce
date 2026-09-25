@@ -14,7 +14,7 @@ readonly PLUGIN_ROOT="$(
 readonly WRAPPER="${E2E_TRANSITION_WRAPPER:-$SCRIPT_DIR/provision-transition-store.sh}"
 readonly REAL_PROVISIONER="${E2E_TRANSITION_STORE_PROVISIONER:-$SCRIPT_DIR/provision-transition-store-real.sh}"
 readonly RUN_ID="${E2E_TRANSITION_RUN_ID:?E2E_TRANSITION_RUN_ID is required}"
-readonly SCENARIO="${E2E_TRANSITION_SCENARIO:-saved-method}"
+readonly SCENARIO="${E2E_TRANSITION_SCENARIO:-historical-tokens}"
 CTP_CAMPAIGN_ID=''
 CTP_FALSE_DESTRUCTION_BOUNDARY=''
 
@@ -81,20 +81,6 @@ SPEC=''
 GREP=''
 CAPABILITIES=()
 case "$SCENARIO" in
-	saved-method)
-		SPEC='tests/woopayments-native/pilots/saved-method-cutover.spec.ts'
-		CAPABILITIES=(
-			'saved-method-cutover'
-			'plugin-owned-saved-card'
-			'saved-card-default'
-			'soft-cutover'
-			'saved-card-state'
-			'saved-card-cleanup'
-			'saved-card-classic'
-			'saved-card-blocks'
-			'product/payment'
-		)
-		;;
 	historical-tokens)
 		SPEC='tests/woopayments-native/transitions/historical-tokens.spec.ts'
 		CAPABILITIES=(

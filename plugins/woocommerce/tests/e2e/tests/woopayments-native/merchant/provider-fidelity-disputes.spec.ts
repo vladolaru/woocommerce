@@ -687,10 +687,10 @@ async function withUnchangedStoreConfiguration(
  * Fill the checkout as a fresh guest.
  *
  * The card checkout driver has an equivalent, but it is private; kept in step
- * with it by hand, exactly as `shopper/card-authentication.spec.ts` and
- * `shopper/provider-fidelity-card-declines.spec.ts` already do. Returns whether
- * the store served the Blocks surface, because the card fields and the
- * submission differ between the two and this family claims neither surface.
+ * with it by hand, exactly as `shopper/card-authentication.spec.ts` already
+ * does. Returns whether the store served the Blocks surface, because the card
+ * fields and the submission differ between the two and this family claims
+ * neither surface.
  */
 async function fillGuestCheckoutDetails(
 	page: Page,

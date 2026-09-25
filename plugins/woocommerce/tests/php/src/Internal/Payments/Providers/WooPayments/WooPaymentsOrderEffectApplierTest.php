@@ -612,7 +612,10 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Existing saved-token effects attach the selected token to the order.
+	 * @testdox Existing saved-token effects attach the selected token to the order without creating a new one.
+	 *
+	 * The client only saves a new token when the shopper submitted one (`class-wc-payment-gateway-wcpay.php:1454-1457`,
+	 * 11.1.0); paying with an already-saved token must leave the customer's token count unchanged.
 	 */
 	public function test_saved_token_effects_attach_selected_token(): void {
 		$user_id = $this->factory()->user->create();
@@ -652,6 +655,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_saved', $result->get_provider_payment_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertCount( 1, \WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ), 'Paying with a saved token must not create an additional token.' );
 	}
 
 	/**

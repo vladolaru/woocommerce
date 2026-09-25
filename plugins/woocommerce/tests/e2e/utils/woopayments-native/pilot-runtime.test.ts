@@ -42,7 +42,6 @@ import {
 	deleteExactSavedCards,
 	getSavedCardState,
 	makeSavedCardDefault,
-	payWithExactSavedCard,
 } from './drivers/saved-cards';
 import { softCutOverEphemeralStore } from './drivers/store-transition';
 import {
@@ -631,88 +630,6 @@ function createBlocksSubmissionPage( options: {
 		dispatchedClicks: () => dispatchedClicks,
 		listenerCount: () => listeners.size,
 		click,
-	};
-}
-
-function savedCheckoutContractPage(
-	expectedSelector: string,
-	options: { confirmationError?: Error } = {}
-): {
-	page: Page;
-	selected: () => boolean;
-	submissions: () => number;
-	visited: () => string[];
-	waitedForConfirmation: () => boolean;
-} {
-	let selected = false;
-	let currentUrl = 'http://native.test/checkout/';
-	let submissions = 0;
-	const visited: string[] = [];
-	let waitedForConfirmation = false;
-	const page = {
-		goto: async ( url: string ) => {
-			visited.push( url );
-		},
-		getByRole: (
-			role: string,
-			locatorOptions?: { exact?: boolean; name?: string | RegExp }
-		) => {
-			const name = String( locatorOptions?.name ?? '' );
-			if ( role === 'button' && /add to cart/i.test( name ) ) {
-				expect( locatorOptions ).toEqual( {
-					name: 'Add to cart',
-					exact: true,
-				} );
-				return visibleLocator();
-			}
-			if ( role === 'button' && /place order/i.test( name ) ) {
-				return visibleLocator( {
-					click: async () => {
-						submissions++;
-					},
-				} );
-			}
-			throw new Error( `Unexpected role locator: ${ role } ${ name }` );
-		},
-		getByText: ( text: string ) => {
-			expect( text ).toBe( 'Your order has been received' );
-			return visibleLocator();
-		},
-		locator: ( selector: string ) => {
-			expect( selector ).toBe( expectedSelector );
-			return visibleLocator( {
-				check: async () => {
-					selected = true;
-				},
-				getAttribute: async ( name ) =>
-					name === 'value' ? '73' : null,
-			} );
-		},
-		url: () => currentUrl,
-		on: () => {},
-		off: () => {},
-		waitForFunction: async () => true,
-		waitForURL: async ( matcher: RegExp ) => {
-			if ( options.confirmationError ) {
-				throw options.confirmationError;
-			}
-			expect(
-				matcher.test(
-					'http://native.test/checkout/order-received/42/?key=wc_order_key'
-				)
-			).toBe( true );
-			waitedForConfirmation = true;
-			currentUrl =
-				'http://native.test/checkout/order-received/42/?key=wc_order_key';
-		},
-	} as unknown as Page;
-
-	return {
-		page,
-		selected: () => selected,
-		submissions: () => submissions,
-		visited: () => visited,
-		waitedForConfirmation: () => waitedForConfirmation,
 	};
 }
 
@@ -1831,55 +1748,6 @@ test( 'quarantines saved-card resources while an exact provider payment method r
 	}
 } );
 
-const checkoutContracts = [
-	{
-		checkout: 'classic',
-		selector:
-			'input.woocommerce-SavedPaymentMethods-tokenInput[name="wc-woocommerce_payments-payment-token"][value="73"]',
-	},
-	{
-		checkout: 'blocks',
-		selector:
-			'input.wc-block-components-radio-control__input[name="radio-control-wc-payment-method-saved-tokens"][value="73"]',
-	},
-] as const;
-
-for ( const contract of checkoutContracts ) {
-	test( `selects the exact local token in ${ contract.checkout } checkout markup`, async () => {
-		const directory = await lockDirectory();
-		const calls: RequestCall[] = [];
-		const pilotRuntime = runtime( directory, calls );
-		const fixture = savedCheckoutContractPage( contract.selector );
-
-		try {
-			const orderId = await pilotRuntime.withProviderWriteLocks(
-				{ recordEvent: `saved-card-${ contract.checkout }-dom` },
-				async () =>
-					payWithExactSavedCard(
-						pilotRuntime,
-						fixture.page,
-						{
-							tokenId: 73,
-							paymentMethodId: 'pm_provider_only',
-						},
-						contract.checkout,
-						'run-pilot-runtime'
-					)
-			);
-			expect( orderId ).toBe( 42 );
-			expect( fixture.selected() ).toBe( true );
-			expect( fixture.visited() ).toContain(
-				contract.checkout === 'classic'
-					? 'classic-checkout/'
-					: 'checkout/'
-			);
-			expect( fixture.waitedForConfirmation() ).toBe( true );
-		} finally {
-			await rm( directory, { recursive: true, force: true } );
-		}
-	} );
-}
-
 test( 'refuses to retry when a dispatched checkout request crosses the observation boundary', async () => {
 	const mock = createBlocksSubmissionPage( {
 		requestDelayByDispatch: [ 150 ],
@@ -2150,35 +2018,6 @@ test( 'preserves displaced-owner quarantine when a later lock acquisition fails'
 	}
 } );
 
-test( 'removes the provider write attempt after successful submission and confirmation', async () => {
-	const directory = await lockDirectory();
-	const calls: RequestCall[] = [];
-	const pilotRuntime = runtime( directory, calls );
-	const fixture = savedCheckoutContractPage(
-		checkoutContracts[ 0 ].selector
-	);
-
-	try {
-		await pilotRuntime.withProviderWriteLocks(
-			{ recordEvent: 'successful-journaled-checkout' },
-			async () =>
-				payWithExactSavedCard(
-					pilotRuntime,
-					fixture.page,
-					{ tokenId: 73, paymentMethodId: 'pm_provider_only' },
-					'classic',
-					'run-pilot-runtime'
-				)
-		);
-
-		expect(
-			await readdir( join( directory, 'provider-write-attempts' ) )
-		).toEqual( [] );
-	} finally {
-		await rm( directory, { recursive: true, force: true } );
-	}
-} );
-
 test( 'removes the provider write attempt after three proven not-dispatched outcomes', async () => {
 	const directory = await lockDirectory();
 	const calls: RequestCall[] = [];
@@ -2206,57 +2045,6 @@ test( 'removes the provider write attempt after three proven not-dispatched outc
 		expect(
 			await readdir( join( directory, 'provider-write-attempts' ) )
 		).toEqual( [] );
-	} finally {
-		await rm( directory, { recursive: true, force: true } );
-	}
-} );
-
-test( 'keeps a dispatched unconfirmed attempt and quarantines it in the current lock scope', async () => {
-	const directory = await lockDirectory();
-	const calls: RequestCall[] = [];
-	const annotated: ResourceQuarantineReceipt[] = [];
-	const pilotRuntime = runtime( directory, calls, {
-		onResourceQuarantined: ( receipt ) => annotated.push( receipt ),
-	} );
-	const fixture = savedCheckoutContractPage(
-		checkoutContracts[ 0 ].selector,
-		{ confirmationError: new Error( 'Order confirmation timed out.' ) }
-	);
-
-	try {
-		await expect(
-			pilotRuntime.withProviderWriteLocks(
-				{ recordEvent: 'uncertain-journaled-checkout' },
-				async () =>
-					payWithExactSavedCard(
-						pilotRuntime,
-						fixture.page,
-						{
-							tokenId: 73,
-							paymentMethodId: 'pm_provider_only',
-						},
-						'classic',
-						'run-pilot-runtime'
-					)
-			)
-		).rejects.toThrow( /confirmation timed out/i );
-
-		expect(
-			await findUnresolvedProviderWriteAttempts(
-				directory,
-				[
-					'acct_native/account:provider-writes',
-					'acct_native/native-store/store:native-store',
-				],
-				'a-later-run'
-			)
-		).toHaveLength( 1 );
-		expect( annotated ).toHaveLength( 3 );
-		expect(
-			annotated.every(
-				( receipt ) => receipt.reasonCode === 'uncertain-provider-write'
-			)
-		).toBe( true );
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}
@@ -2895,19 +2683,6 @@ test( 'routes every provider-writing pilot through a lock-owning wrapper', async
 			],
 		},
 		{
-			file: 'pilots/saved-method-cutover.spec.ts',
-			wrapper: 'pilotRuntime.withProviderWriteLocks',
-			providerActions: [
-				'pilotRuntime.requireApprovedProviderFixture',
-				'pilotRuntime.requireEphemeralTransitionAllocation',
-				'createPluginOwnedSavedCard',
-				'makeSavedCardDefault',
-				'softCutOverEphemeralStore',
-				'payWithExactSavedCard',
-				'deleteExactSavedCards',
-			],
-		},
-		{
 			file: 'pilots/merchant-transaction-navigation.spec.ts',
 			wrapper: 'pilotRuntime.withProviderWriteLocks',
 			providerActions: [
@@ -3225,26 +3000,6 @@ test( 'blocks cutover after lock loss during admin preparation', async () => {
 			},
 			async ( pilotRuntime, page ) => {
 				await softCutOverEphemeralStore( pilotRuntime, page );
-			}
-		)
-	).resolves.toBeUndefined();
-} );
-
-test( 'blocks a saved-card checkout after lock loss during preparation', async () => {
-	await expect(
-		expectMutationBlockedAfterPreparation(
-			{
-				loseOn: { action: 'check', name: 'value="73"' },
-				mutation: { role: 'button', name: 'place order' },
-			},
-			async ( pilotRuntime, page ) => {
-				await payWithExactSavedCard(
-					pilotRuntime,
-					page,
-					{ tokenId: 73, paymentMethodId: 'pm_saved_card' },
-					'classic',
-					'run-pilot-runtime'
-				);
 			}
 		)
 	).resolves.toBeUndefined();

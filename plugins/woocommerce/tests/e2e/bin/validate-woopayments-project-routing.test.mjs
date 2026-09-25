@@ -84,7 +84,7 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 				'merchant-transaction-navigation',
 				'merchant-manual-capture',
 			],
-			transitionCollectsExactly: [ 'saved-method-cutover' ],
+			transitionCollectsExactly: [],
 			everyReadonlyRetryCount: 0,
 			everyProviderRetryCount: 0,
 			everyTransitionRetryCount: 0,

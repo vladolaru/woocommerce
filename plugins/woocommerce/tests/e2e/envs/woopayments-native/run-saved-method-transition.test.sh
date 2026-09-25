@@ -114,7 +114,7 @@ printf '{}\n' > "$TEST_ROOT/seed.json"
 run_orchestrator
 
 grep -Fq -- '--project=woopayments-native-transition' "$TEST_ROOT/commands.log"
-grep -Fq -- 'tests/woopayments-native/pilots/saved-method-cutover.spec.ts' "$TEST_ROOT/commands.log"
+grep -Fq -- 'tests/woopayments-native/transitions/historical-tokens.spec.ts' "$TEST_ROOT/commands.log"
 grep -Fq -- '--workers=1' "$TEST_ROOT/commands.log"
 grep -Fq 'WCPAY_RUNTIME=transition' "$TEST_ROOT/commands.log"
 grep -Fq 'E2E_WOOPAYMENTS_WPCOM_BLOG_ID=77' "$TEST_ROOT/commands.log"
@@ -123,25 +123,23 @@ grep -Fq 'E2E_WOOPAYMENTS_ACCOUNT_ALIAS=reference-client' "$TEST_ROOT/commands.l
 grep -Fq 'E2E_TRANSITION_SEED_PROFILE=10.5.0 ' "$TEST_ROOT/commands.log"
 assert_exact_capabilities \
 	"$TEST_ROOT/commands.log" \
-	'saved-method-cutover' \
+	'historical-tokens' \
 	'plugin-owned-saved-card' \
 	'saved-card-default' \
 	'soft-cutover' \
 	'saved-card-state' \
 	'saved-card-cleanup' \
 	'saved-card-classic' \
-	'saved-card-blocks' \
 	'product/payment'
 if assert_exact_capabilities \
 	"$TEST_ROOT/commands.log" \
 	'plugin-owned-saved-card' \
-	'saved-method-cutover' \
+	'historical-tokens' \
 	'saved-card-default' \
 	'soft-cutover' \
 	'saved-card-state' \
 	'saved-card-cleanup' \
 	'saved-card-classic' \
-	'saved-card-blocks' \
 	'product/payment' 2>/dev/null; then
 	echo 'The exact capability helper accepted a reordered approval.' >&2
 	exit 1

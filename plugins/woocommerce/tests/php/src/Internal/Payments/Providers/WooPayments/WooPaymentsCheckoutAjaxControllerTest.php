@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Order;
 use WC_Payment_Token;
@@ -2598,24 +2599,185 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Setup-intent card declines should return localized shopper-safe messages.
+	 * @testdox Setup-intent card declines return the localized shopper message, create the customer before the transport call, and leave no payment method saved.
+	 *
+	 * The response body and HTTP status are the real decline envelope local WPCOM returned for each Stripe
+	 * test card, recorded in `Fixtures/rec-2-setup-intent-declines.json` (REC-2). All five recorded errors
+	 * are `card_error` and carry a `setup_intent` object (never `payment_intent`); the client's decline-code
+	 * lookup at `class-wc-payments-utils.php:801-817`, catalog `:852-866` (11.1.0) does not read either
+	 * intent object, only `code` and `decline_code`. The HTTP status this endpoint returns is deliberately
+	 * not asserted: native always answers 502 regardless of the platform's status
+	 * (`WooPaymentsCheckoutAjaxController.php:387-396`), while the client passes the platform's own code
+	 * through and maps 402 to 400 (`utils:878-891`); that divergence is finding F1 and stays unpinned.
+	 *
+	 * @dataProvider recorded_setup_intent_decline_data
+	 *
+	 * @param string $pair             REC-2 fixture pair key.
+	 * @param string $expected_message Expected localized shopper-facing message.
 	 */
-	public function test_create_setup_intent_localizes_card_decline_api_errors(): void {
-		$technical_message = 'Provider debug: decline trace 12345.';
-		$response          = $this->get_create_setup_intent_api_error_response(
-			new WooPaymentsApiException(
-				$technical_message,
-				'card_declined',
-				402,
-				'card_error',
-				'generic_decline'
+	public function test_create_setup_intent_localizes_card_decline_api_errors( string $pair, string $expected_message ): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$recorded = $this->load_recorded_setup_intent_decline_entry( $pair );
+		// The recorded platform text equals the English catalog, so replace it to prove the catalog, not the platform, supplies the message.
+		$recorded['error']['message'] = 'Platform decline text that must not reach the shopper.';
+		$http_client                  = new FakeWooPaymentsHttpClient();
+		$http_client->response        = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( array( 'error' => $recorded['error'] ) ),
+		);
+		$account_service              = $this->create_account_service( false );
+		$api_client                   = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_user' )
+			->with( $user_id )
+			->willReturnCallback(
+				function () use ( $http_client ) {
+					$this->assertSame( 0, $http_client->request_count, 'The customer must be created before the SetupIntent request is sent.' );
+
+					return 'cus_rec2';
+				}
+			);
+
+		$sut      = $this->create_controller( $api_client, $customer_service, null, $account_service );
+		$response = $sut->get_create_setup_intent_response(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => 'pm_declined',
 			)
 		);
 
 		$this->assertFalse( $response['success'] );
-		$this->assertSame( 502, $response['status_code'] );
-		$this->assertSame( 'Error: Your card was declined.', $response['data']['error']['message'] );
-		$this->assertStringNotContainsString( $technical_message, wp_json_encode( $response ) );
+		$this->assertSame( $expected_message, $response['data']['error']['message'] );
+		$this->assertSame( 1, $http_client->request_count );
+		global $wpdb;
+		// Count rows directly: the token data store only returns gateways registered in this request, and the test runtime registers none.
+		$this->assertSame(
+			'0',
+			$wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->prefix}woocommerce_payment_tokens WHERE user_id = %d", $user_id ) ),
+			"$pair must leave no saved payment method row for the shopper."
+		);
+	}
+
+	/**
+	 * REC-2 recorded SetupIntent decline entries, one row per Stripe test card pair.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function recorded_setup_intent_decline_data(): array {
+		return array(
+			'generic_decline (card_declined)'    => array( 'generic_decline', 'Error: Your card was declined.' ),
+			'incorrect_cvc'                      => array( 'incorrect_cvc', "Error: Your card's security code is incorrect." ),
+			'expired_card'                       => array( 'expired_card', 'Error: Your card has expired.' ),
+			'insufficient_funds (card_declined)' => array( 'insufficient_funds', 'Error: Your card has insufficient funds.' ),
+			'processing_error'                   => array( 'processing_error', 'Error: An error occurred while processing your card. Try again in a little bit.' ),
+		);
+	}
+
+	/**
+	 * Load one recorded REC-2 SetupIntent decline entry's HTTP status and `error` object by pair key.
+	 *
+	 * @param string $pair REC-2 fixture pair key.
+	 * @return array{http_status:int,error:array<string,mixed>}
+	 */
+	private function load_recorded_setup_intent_decline_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-2-setup-intent-declines.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array(
+					'http_status' => (int) $entry['response']['http_status'],
+					'error'       => $entry['response']['body']['error'],
+				);
+			}
+		}
+
+		$this->fail( "REC-2 fixture has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * @testdox Setup-intent callback refuses a request inside the add-payment-method cooldown without ever calling the provider.
+	 *
+	 * The cooldown key (`add_payment_method_<user_id>`) is the same one WooCommerce's core My Account
+	 * add-payment-method form checks (`includes/class-wc-form-handler.php:608-628`); the AJAX SetupIntent
+	 * path must refuse before creating anything server-side, matching the plugin's check-before-create
+	 * ordering and message at `gw:4589-4593` (11.1.0). The HTTP status is not asserted: native returns 429
+	 * (`WooPaymentsCheckoutAjaxController.php:356-357`) while the client throws an `Add_Payment_Method_Exception`
+	 * that the same 402-to-400, default-400 mapping resolves to 400 (`utils:878-891`); finding F1, unpinned.
+	 */
+	public function test_create_setup_intent_refuses_inside_add_payment_method_rate_limit_without_provider_call(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		\WC_Rate_Limiter::set_rate_limit( 'add_payment_method_' . $user_id, 20 );
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * SetupIntent creation requests this fake received.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $created_setup_intents = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->created_setup_intents[] = $request_data;
+
+				return array(
+					'id'     => 'seti_should_not_exist',
+					'status' => 'succeeded',
+				);
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->expects( $this->never() )->method( 'get_or_create_customer_id_for_user' );
+
+		$sut      = $this->create_controller( $api_client, $customer_service );
+		$response = $sut->get_create_setup_intent_response(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => 'pm_card',
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame(
+			'You cannot add a new payment method so soon after the previous one. Please try again later.',
+			$response['data']['error']['message']
+		);
+		$this->assertSame( array(), $api_client->created_setup_intents, 'A rate-limited request must never create a SetupIntent.' );
 	}
 
 	/**
