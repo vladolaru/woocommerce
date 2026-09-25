@@ -81,6 +81,9 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			'different cart hash with processing session order' => array( 'session-hash', 'processing', 'current-hash' ),
 			'same cart hash with pending session order'   => array( 'same-hash', 'pending', 'same-hash' ),
 			'same cart hash with cancelled session order' => array( 'same-hash', 'cancelled', 'same-hash' ),
+			// A failed session order is not a paid status, so a same-cart retry must not
+			// be redirected to it; the retry proceeds to charge normally.
+			'same cart hash with failed session order'    => array( 'same-hash', 'failed', 'same-hash' ),
 		);
 	}
 
@@ -325,9 +328,12 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 */
 	public function invalid_attached_intent_data(): array {
 		return array(
-			'requires action for current order' => array( 'requires_action', true ),
-			'requires action for another order' => array( 'requires_action', false ),
-			'succeeded for another order'       => array( 'succeeded', false ),
+			'requires action for current order'         => array( 'requires_action', true ),
+			'requires action for another order'         => array( 'requires_action', false ),
+			'succeeded for another order'               => array( 'succeeded', false ),
+			// Client `class-duplicate-payment-prevention-service.php:105-107`, `:175` (11.1.0):
+			// a declined intent attached to the current order must not block a retry.
+			'requires payment method for current order' => array( 'requires_payment_method', true ),
 		);
 	}
 

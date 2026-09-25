@@ -275,20 +275,6 @@ function validateAttempt(
 	}
 }
 
-export function validateGenericDeclineFailedAttempt(
-	attempt: CardRecoveryAttemptObservation
-): CardRecoveryAttemptObservation {
-	validateAttempt( attempt, FAILED_STATUS, 'failed attempt' );
-	validateFailedGraph(
-		attempt,
-		1001,
-		'card_declined',
-		'generic_decline',
-		'failed attempt exact 1001 usd generic-decline graph'
-	);
-	return attempt;
-}
-
 function validateFailedGraph(
 	attempt: CardRecoveryAttemptObservation,
 	expectedAmount: number,
@@ -1632,5 +1618,255 @@ export async function runBlocksDeclineRecovery(
 			page,
 			product,
 		} )
+	);
+}
+
+/**
+ * Everything the trimmed family smoke (audit §3) asserts: the real decline's
+ * own HTTP status and message, shown and announced; one provider read of the
+ * failed intent; and the retry paying the same draft order.
+ */
+export interface BlocksDeclineRecoverySmokeObservation {
+	firstAttemptStatus: number;
+	firstAttemptMessage: string;
+	shopperFeedback: CardRecoveryShopperFeedback;
+	failedAttempt: CardRecoveryAttemptObservation;
+	successfulRetry: CardRecoveryAttemptObservation;
+	draftOrderId: number;
+	paidOrderIds: number[];
+}
+
+/**
+ * Submit the smoke's one real Blocks decline and capture the Store API's own
+ * HTTP status and message. `submitBlocksAttempt()` above discards both, so
+ * this reimplements only the dispatch/read half rather than changing it; the
+ * shared function keeps driving every surface `card-recovery.test.ts` covers.
+ */
+async function submitBlocksDeclineSmokeAttempt(
+	session: ProviderWriteSession,
+	page: Page
+): Promise< { status: number; message: string } > {
+	let clickAttempted = false;
+	const checkoutResponse = page.waitForResponse(
+		( response ) => isStoreCheckoutRequest( response.request() ),
+		{ timeout: RESPONSE_TIMEOUT_MS }
+	);
+	try {
+		await submitBlocksCheckout( page, async ( button ) => {
+			clickAttempted = true;
+			await session.performWrite( () => button.click() );
+			return 'dispatched';
+		} );
+		const response = await checkoutResponse;
+		const body = ( await response.json() ) as { message?: unknown };
+		return {
+			status: response.status(),
+			message:
+				typeof body.message === 'string'
+					? body.message
+					: String( body.message ),
+		};
+	} catch ( error ) {
+		void checkoutResponse.catch( () => undefined );
+		if ( error instanceof ResourceQuarantineRequiredError ) {
+			throw error;
+		}
+		throwProviderAttemptFailure(
+			error,
+			{ clickAttempted, checkoutRequestCount: 0 },
+			'Blocks decline smoke first attempt'
+		);
+	}
+}
+
+/**
+ * Validate exactly the trimmed family smoke's audit §3 oracle: the real
+ * decline's HTTP status and message, shown and announced once; one provider
+ * read of the failed intent (`requires_payment_method`, `card_declined` +
+ * `generic_decline`, 1001 usd); and the retry paying the same draft order
+ * with exactly one captured charge and one paid order. Deliberately omits
+ * timeline ordering, cart-line identity, control focus, and frame markers —
+ * `validateBlocksDeclineRecovery()` above still carries those for
+ * `card-recovery.test.ts`.
+ */
+export function validateBlocksDeclineRecoverySmoke(
+	observation: BlocksDeclineRecoverySmokeObservation
+): BlocksDeclineRecoverySmokeObservation {
+	if ( observation.firstAttemptStatus !== 400 ) {
+		fail( 'smoke requires the first attempt to answer HTTP 400.' );
+	}
+	if ( observation.firstAttemptMessage !== GENERIC_DECLINE_MESSAGE ) {
+		fail(
+			`smoke requires the first attempt message '${ GENERIC_DECLINE_MESSAGE }'.`
+		);
+	}
+	if (
+		! sameValues( observation.shopperFeedback.visible, [
+			GENERIC_DECLINE_MESSAGE,
+		] ) ||
+		! sameValues( observation.shopperFeedback.announced, [
+			GENERIC_DECLINE_MESSAGE,
+		] )
+	) {
+		fail( 'smoke requires the decline shown and announced exactly once.' );
+	}
+	validateAttempt(
+		observation.failedAttempt,
+		FAILED_STATUS,
+		'smoke failed attempt'
+	);
+	validateFailedGraph(
+		observation.failedAttempt,
+		1001,
+		'card_declined',
+		'generic_decline',
+		'smoke failed attempt exact 1001 usd generic-decline graph'
+	);
+	validateAttempt(
+		observation.successfulRetry,
+		SUCCEEDED_STATUS,
+		'smoke successful retry'
+	);
+	if ( observation.successfulRetry.orderId !== observation.draftOrderId ) {
+		fail( 'smoke requires the retry to pay the same draft order.' );
+	}
+	const captured =
+		observation.failedAttempt.capturedChargeCount +
+		observation.successfulRetry.capturedChargeCount;
+	if ( captured !== 1 ) {
+		fail(
+			'smoke requires exactly one captured charge across both attempts.'
+		);
+	}
+	if (
+		! sameValues( observation.paidOrderIds, [ observation.draftOrderId ] )
+	) {
+		fail( 'smoke requires exactly one paid order, the draft order.' );
+	}
+	return observation;
+}
+
+/**
+ * Drive and validate the retained `card-decline-vocabulary` family smoke
+ * (T.1 batch 2, audit §3): one real Blocks decline and a same-document retry
+ * paying the same draft order, trimmed to the minimal oracle above. Separate
+ * from `runBlocksDeclineRecovery()`/`validateBlocksDeclineRecovery()`, which
+ * `card-recovery.test.ts` still exercises against the fuller graph.
+ */
+export async function runBlocksDeclineRecoverySmoke(
+	session: ProviderWriteSession,
+	page: Page,
+	product: OwnedProduct
+): Promise< BlocksDeclineRecoverySmokeObservation > {
+	await session.assertCanWrite();
+	for ( const capability of [
+		'product/payment',
+		'card-decline-checkout',
+		'basic-card',
+		'basic-card-entry',
+	] ) {
+		session.requireApprovedProviderFixture( capability );
+	}
+	const baseline = await readHighestOrderId( session );
+	const timeline: RecoveryTimelineEvent[] = [];
+	await setupBlocksCheckout(
+		{ session, page, product },
+		GENERIC_DECLINE_CARD
+	);
+	const document = await documentMarker( page );
+
+	return runFailedCheckoutAttemptBeforeContinuation(
+		session,
+		'card-recovery-blocks-decline-smoke',
+		'Blocks decline smoke first attempt',
+		() =>
+			countStoreCheckoutRequestsUntil( page, async () => {
+				const first = await submitBlocksDeclineSmokeAttempt(
+					session,
+					page
+				);
+				const failedDelta = await readOrderIdStatusDelta(
+					session,
+					baseline
+				);
+				const orderId = oneNewOrder(
+					failedDelta.newOrderIds,
+					'Blocks decline smoke first attempt'
+				);
+				await session.setOrderRunId( orderId, session.runId );
+				const evidence = await convergeFailedPayment(
+					session,
+					orderId
+				);
+				return { first, orderId, evidence };
+			} ),
+		async ( firstAttempt ) => {
+			const draftOrderId = firstAttempt.result.orderId;
+			const feedback = await blocksFeedback(
+				page,
+				GENERIC_DECLINE_MESSAGE
+			);
+
+			await fillBlocksCard( session, page, BASIC_CARD );
+			const retryAttempt = await runJournaledCheckoutAttempt(
+				session,
+				page,
+				'card-recovery-blocks-retry-smoke',
+				'Blocks decline smoke retry',
+				async () => {
+					const submission = await submitBlocksAttempt(
+						session,
+						page,
+						timeline,
+						'retry-request',
+						'Blocks decline smoke retry',
+						true
+					);
+					if ( submission.orderId === undefined ) {
+						quarantine(
+							'Blocks decline smoke retry reached no receipt order.'
+						);
+					}
+					await session.setOrderRunId(
+						submission.orderId,
+						session.runId
+					);
+					const evidence = await waitForSuccessfulEvidence(
+						session,
+						submission.orderId
+					);
+					const reuse = await readPaymentReuseEvidence(
+						session,
+						submission.orderId,
+						evidence.intentId
+					);
+					const orders = await readOrderIdStatusDelta(
+						session,
+						baseline
+					);
+					return { submission, evidence, reuse, orders };
+				}
+			);
+
+			return validateBlocksDeclineRecoverySmoke( {
+				firstAttemptStatus: firstAttempt.result.first.status,
+				firstAttemptMessage: firstAttempt.result.first.message,
+				shopperFeedback: feedback,
+				failedAttempt: failedAttempt(
+					firstAttempt.result.evidence,
+					draftOrderId,
+					document,
+					firstAttempt.checkoutRequestCount
+				),
+				successfulRetry: successfulAttempt(
+					retryAttempt.result.evidence,
+					retryAttempt.result.reuse,
+					document,
+					retryAttempt.checkoutRequestCount
+				),
+				draftOrderId,
+				paidOrderIds: retryAttempt.result.orders.paidOrderIds,
+			} );
+		}
 	);
 }

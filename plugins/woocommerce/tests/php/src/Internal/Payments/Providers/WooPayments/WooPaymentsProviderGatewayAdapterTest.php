@@ -3714,6 +3714,109 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native charge decline envelopes recorded from the local platform (REC-1) map each card code to its outcome.
+	 *
+	 * The response status and body are the real decline envelope local WPCOM returned for each Stripe test
+	 * card, recorded in `Fixtures/rec-1-intention-declines.json` (REC-1). Every field the client reads
+	 * at `class-wc-payments-api-client.php:2853-2872` (11.1.0) exists at the path it reads there, including
+	 * a `decline_code` equal to `code` for three of the five pairs and a full `payment_intent` in
+	 * `requires_payment_method` status. All five recorded errors are `card_error`, so all five must mark the
+	 * fraud meta box `allow` (`gw:1372`). The merchant note carries the platform's `seller_message` only when
+	 * the top-level code is `card_declined` (client `api:2910-2914`); the other three codes carry none.
+	 *
+	 * @dataProvider recorded_decline_envelope_data
+	 *
+	 * @param string $pair                          REC-1 fixture pair key.
+	 * @param string $expected_error_code            Expected provider error code.
+	 * @param string $expected_message               Expected wrapped transport error message.
+	 * @param string $expected_shopper               Expected shopper-facing message.
+	 * @param string $expected_intent_id             Expected declined PaymentIntent ID.
+	 * @param string $expected_seller_message        Expected `seller_message` fragment in the merchant note, or '' when the code carries none.
+	 */
+	public function test_native_charge_decline_envelope_maps_each_card_code( string $pair, string $expected_error_code, string $expected_message, string $expected_shopper, string $expected_intent_id, string $expected_seller_message ): void {
+		$order                 = $this->create_woopayments_order( '10.00' );
+		$gateway               = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$account_service       = $this->create_account_service( false );
+		$recorded              = $this->load_recorded_decline_entry( $pair );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( array( 'error' => $recorded['error'] ) ),
+		);
+
+		$api_client = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_rec1' );
+
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_rec1' ), 'key_rec1' );
+		$data    = $outcome->get_data();
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( $expected_error_code, $data[ PaymentOutcome::DATA_ERROR_CODE ] );
+		$this->assertSame( $expected_message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame( $expected_shopper, $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( $expected_intent_id, $outcome->get_provider_payment_id(), 'The declined PaymentIntent id must survive onto the failed outcome.' );
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertSame( 'allow', ( $data[ PaymentOutcome::DATA_META ] ?? array() )['_wcpay_fraud_meta_box_type'] ?? null, "$pair is a card_error decline, so the fraud meta box must show allow." );
+		if ( '' !== $expected_seller_message ) {
+			$this->assertStringContainsString( $expected_seller_message, $data[ PaymentOutcome::DATA_NOTE ] ?? '', "$pair's merchant note must carry the platform's seller_message." );
+		} else {
+			$recorded_seller_message = esc_html( rtrim( (string) ( $recorded['error']['payment_intent']['charges']['data'][0]['outcome']['seller_message'] ?? '' ), '.' ) );
+			$this->assertNotSame( '', $recorded_seller_message, "The $pair recording must carry a seller_message for this check to mean anything." );
+			$this->assertStringNotContainsString( $recorded_seller_message, $data[ PaymentOutcome::DATA_NOTE ] ?? '', "$pair is not card_declined, so the merchant note must not carry the platform's seller_message." );
+		}
+	}
+
+	/**
+	 * REC-1 recorded decline envelopes, one row per Stripe test card pair.
+	 *
+	 * @return array<string,array{string,string,string,string,string,string}>
+	 */
+	public function recorded_decline_envelope_data(): array {
+		return array(
+			'generic_decline (card_declined)'    => array( 'generic_decline', 'card_declined', 'Error: Your card was declined.', 'Error: Your card was declined.', 'pi_3UJTiNBzWlxcwgpP0GauBpTM', 'The bank did not return any further details with this decline' ),
+			'expired_card'                       => array( 'expired_card', 'expired_card', 'Error: Your card has expired.', 'Error: Your card has expired.', 'pi_3UJTirBzWlxcwgpP1t1J6e0x', '' ),
+			'insufficient_funds (card_declined)' => array( 'insufficient_funds', 'card_declined', 'Error: Your card has insufficient funds.', 'Error: Your card has insufficient funds.', 'pi_3UJTivBzWlxcwgpP1bPJniIM', 'The bank returned the decline code `insufficient_funds`' ),
+			'incorrect_cvc'                      => array( 'incorrect_cvc', 'incorrect_cvc', "Error: Your card's security code is incorrect.", "Error: Your card's security code is incorrect.", 'pi_3UJTizBzWlxcwgpP1uk4AvqD', '' ),
+			'processing_error'                   => array( 'processing_error', 'processing_error', 'Error: An error occurred while processing your card. Try again in a little bit.', 'Error: An error occurred while processing your card. Try again in a little bit.', 'pi_3UJTj2BzWlxcwgpP1ildtn5J', '' ),
+		);
+	}
+
+	/**
+	 * Load one recorded REC-1 decline entry's HTTP status and `error` object by pair key.
+	 *
+	 * @param string $pair REC-1 fixture pair key.
+	 * @return array{http_status:int,error:array<string,mixed>}
+	 */
+	private function load_recorded_decline_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-1-intention-declines.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array(
+					'http_status' => (int) $entry['response']['http_status'],
+					'error'       => $entry['response']['body']['error'],
+				);
+			}
+		}
+
+		$this->fail( "REC-1 fixture has no entry for pair '$pair'." );
+	}
+
+	/**
 	 * @testdox Native charge returns a referenced plan before settlement enrichment runs.
 	 */
 	public function test_native_charge_returns_referenced_plan_before_settlement_enrichment(): void {

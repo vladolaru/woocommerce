@@ -7,9 +7,11 @@ import {
 	runBlocksProcessingErrorRecovery,
 	runClassicDeclineRecovery,
 	validateBlocksDeclineRecovery,
+	validateBlocksDeclineRecoverySmoke,
 	validateBlocksProcessingErrorRecovery,
 	validateClassicDeclineRecovery,
 	type BlocksDeclineRecoveryObservation,
+	type BlocksDeclineRecoverySmokeObservation,
 	type BlocksProcessingErrorRecoveryObservation,
 	type CardRecoveryDependencies,
 	type ClassicDeclineRecoveryObservation,
@@ -1303,4 +1305,94 @@ test( 'cart-line evidence derives variation identity from the Store API variatio
 			quantity: 2,
 		},
 	] );
+} );
+
+function blocksDeclineSmokeObservation(): BlocksDeclineRecoverySmokeObservation {
+	return {
+		firstAttemptStatus: 400,
+		firstAttemptMessage: 'Error: Your card was declined.',
+		shopperFeedback: {
+			visible: [ 'Error: Your card was declined.' ],
+			announced: [ 'Error: Your card was declined.' ],
+		},
+		failedAttempt: { ...FAILED_ATTEMPT },
+		successfulRetry: {
+			...SUCCESSFUL_ATTEMPT,
+			orderId: 71,
+			orderStatus: 'completed',
+		},
+		draftOrderId: 71,
+		paidOrderIds: [ 71 ],
+	};
+}
+
+test( 'the family smoke accepts its exact minimal graph', () => {
+	const observation = blocksDeclineSmokeObservation();
+
+	expect( validateBlocksDeclineRecoverySmoke( observation ) ).toEqual(
+		observation
+	);
+} );
+
+test( 'the family smoke rejects a first attempt that did not answer HTTP 400', () => {
+	const observation = blocksDeclineSmokeObservation();
+	observation.firstAttemptStatus = 200;
+
+	expect( () => validateBlocksDeclineRecoverySmoke( observation ) ).toThrow(
+		/HTTP 400/
+	);
+} );
+
+test( 'the family smoke rejects a first attempt whose message is not the generic-decline sentence', () => {
+	const observation = blocksDeclineSmokeObservation();
+	observation.firstAttemptMessage = 'Error: Something else went wrong.';
+
+	expect( () => validateBlocksDeclineRecoverySmoke( observation ) ).toThrow(
+		/first attempt message/
+	);
+} );
+
+test( 'the family smoke rejects a decline that was not shown and announced exactly once', () => {
+	const observation = blocksDeclineSmokeObservation();
+	observation.shopperFeedback.announced = [];
+
+	expect( () => validateBlocksDeclineRecoverySmoke( observation ) ).toThrow(
+		/shown and announced/
+	);
+} );
+
+test( 'the family smoke rejects a failed-attempt graph departing from the exact card_declined/generic_decline 1001 usd read', () => {
+	const observation = blocksDeclineSmokeObservation();
+	observation.failedAttempt.declineCode = 'insufficient_funds';
+
+	expect( () => validateBlocksDeclineRecoverySmoke( observation ) ).toThrow(
+		/exact failed payment graph/
+	);
+} );
+
+test( 'the family smoke rejects a retry that does not pay the same draft order', () => {
+	const observation = blocksDeclineSmokeObservation();
+	observation.successfulRetry.orderId = 72;
+
+	expect( () => validateBlocksDeclineRecoverySmoke( observation ) ).toThrow(
+		/same draft order/
+	);
+} );
+
+test( 'the family smoke rejects anything other than exactly one captured charge across both attempts', () => {
+	const observation = blocksDeclineSmokeObservation();
+	observation.successfulRetry.capturedChargeCount = 0;
+
+	expect( () => validateBlocksDeclineRecoverySmoke( observation ) ).toThrow(
+		/exactly one captured charge/
+	);
+} );
+
+test( 'the family smoke rejects anything other than exactly one paid order matching the draft order', () => {
+	const observation = blocksDeclineSmokeObservation();
+	observation.paidOrderIds = [ 71, 72 ];
+
+	expect( () => validateBlocksDeclineRecoverySmoke( observation ) ).toThrow(
+		/exactly one paid order/
+	);
 } );

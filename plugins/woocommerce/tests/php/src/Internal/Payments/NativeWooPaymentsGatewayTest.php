@@ -2902,8 +2902,16 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not bump the failed-transaction limiter for non-card-decline failures.
+	 *
+	 * Client `class-wc-payment-gateway-wcpay.php:4891-4893` (11.1.0) bumps only for
+	 * `card_declined`, `incorrect_number` and `incorrect_cvc`; `expired_card` is not
+	 * in that list, so an expired-card decline must not count toward the limiter.
+	 *
+	 * @dataProvider failed_transaction_unlimited_error_codes
+	 *
+	 * @param string $error_code Provider error code.
 	 */
-	public function test_process_payment_does_not_bump_failed_transaction_rate_limiter_for_other_errors(): void {
+	public function test_process_payment_does_not_bump_failed_transaction_rate_limiter_for_other_errors( string $error_code ): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$session = $this->create_session();
@@ -2915,8 +2923,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'',
 			'',
 			array(
-				PaymentOutcome::DATA_ERROR_CODE    => 'processing_error',
-				PaymentOutcome::DATA_ERROR_MESSAGE => 'Temporary provider error.',
+				PaymentOutcome::DATA_ERROR_CODE    => $error_code,
+				PaymentOutcome::DATA_ERROR_MESSAGE => 'Declined.',
 			)
 		);
 
@@ -2937,6 +2945,18 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'failure', $result['result'] );
 		$this->assertSame( array(), $session->get( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array() ) );
+	}
+
+	/**
+	 * Provider error codes that must not bump the failed-transaction rate limiter.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function failed_transaction_unlimited_error_codes(): array {
+		return array(
+			'processing error' => array( 'processing_error' ),
+			'expired card'     => array( 'expired_card' ),
+		);
 	}
 
 	/**

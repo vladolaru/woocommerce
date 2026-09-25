@@ -1,128 +1,78 @@
 /*
- * Fourteen of this family's tests are one shared body driven by a different
+ * Five of this family's tests are one shared body driven by a different
  * fixture, so each test's assertions live in the runner it calls rather than
- * inline. Name those runners for the assertion rule; without this every test
+ * inline. Name that runner for the assertion rule; without this every test
  * here reads as assertionless.
  */
-/* eslint playwright/expect-expect: [ "warn", { "assertFunctionNames": [ "expect", "runClassicDeclineCase", "runBlocksDeclineCase", "runSetupIntentDeclineCase" ] } ] */
+/* eslint playwright/expect-expect: [ "warn", { "assertFunctionNames": [ "expect", "runSetupIntentDeclineCase" ] } ] */
 import type { APIResponse, Page, Request } from '@playwright/test';
 
 import {
 	expect,
-	getBlocksCardFrameSelector,
 	ProviderSubmissionNotStartedError,
 	ResourceQuarantineRequiredError,
-	submitBlocksCheckout,
 	tags,
 	test,
 	waitForWordPressLoginReady,
-	type OwnedProduct,
 	type ProviderWriteSession,
 } from '../../../fixtures/woopayments-native';
 import {
-	CLASSIC_CHECKOUT_PATH,
-	PlaywrightClassicCardCheckoutBrowser,
-	normalizeClassicRejectedRequest,
-	type ClassicCheckoutRecoveryState,
-	type ClassicCheckoutRejectionNotice,
-	type ClassicRejectedRequestEvidence,
-} from '../../../utils/woopayments-native/drivers/classic-card-checkout';
-import {
 	CARD_EXPIRY_FIELD_NAME,
 	enterProviderCardEntry,
-	enterProviderCardTriple,
 } from '../../../utils/woopayments-native/drivers/card-entry';
-import { withClassicCheckoutPage } from '../../../utils/woopayments-native/drivers/classic-checkout-page';
 import { readHighestOrderId } from '../../../utils/woopayments-native/drivers/classic-card-authentication';
-import {
-	convergeFailedPayment,
-	readOrderIdStatusDelta,
-	type FailedPaymentEvidence,
-} from '../../../utils/woopayments-native/drivers/failed-payment-evidence';
-import { decodeEscapedHtml } from '../../../utils/woopayments-native/store-api-text';
+import { readOrderIdStatusDelta } from '../../../utils/woopayments-native/drivers/failed-payment-evidence';
 import type { ProviderTestCard } from '../../../utils/woopayments-native/test-cards';
 
 /**
- * The `card-decline-vocabulary` fidelity family.
+ * The `card-decline-vocabulary` fidelity family: the My Account SetupIntent
+ * half (`D-SI-*`).
  *
  * `FIDELITY-CLAIMS.md` states the claim these tests exist to make falsifiable:
  * the provider's real decline vocabulary for five fixture cards is the code set
- * native's error mapping is keyed on, each card returns its fixed top-level
- * error and decline-code pair, and native answers with the matching semantic
- * error, exactly one unpaid order, and no success-side object anywhere.
+ * native's error mapping is keyed on, and native answers a declined
+ * `create_and_confirm_setup_intention` with the matching semantic error while
+ * leaving the shopper's provider customer, attached methods and local tokens
+ * exactly as they were.
  *
- * Two things shape every test below.
+ * The checkout half of this family (`D-PI-*`, Classic and Blocks) moved to
+ * PHPUnit in T.1 batch 2: request/decline-envelope mapping is
+ * `WooPaymentsProviderGatewayAdapterTest::test_native_charge_decline_envelope_maps_each_card_code`
+ * (fed by the recorded `Fixtures/rec-1-intention-declines.json`, REC-1), the
+ * shopper message catalog is `WooPaymentsErrorMessagesTest`, and order
+ * persistence (status, note, fraud meta) is `PaymentProcessingServiceTest`. One
+ * provider-backed checkout smoke for this family lives in
+ * `shopper/provider-fidelity-card-recovery.spec.ts:136`. Nothing here proves
+ * the checkout path; do not read this file for that claim.
  *
  * **The provider record is the assertion; the rendered sentence is the
  * corroboration.** Every client-suite row this family replaces asserted a
  * message and nothing else, which is why their recorded residual risks all say
  * some version of "a wrong internal mapping producing a similar sentence would
- * escape". The `D-PI-*` cases therefore read the exact PaymentIntent — terminal
- * status, `last_payment_error.code`, `last_payment_error.decline_code`, amount
- * and currency — and only then check what the shopper was told.
- *
- * **Classic and Blocks are two native code paths, not two skins.** The ledger
- * splits these rows across `shopper-checkout-failures.spec.ts` (classic
- * shortcode) and `shopper-wc-blocks-checkout-failures.spec.ts` (Blocks), and
- * neither surface's row may be proven by the other's test. `FIDELITY-CLAIMS.md`
- * pins one surface per `D-PI-*` case; where the ledger has rows on both
- * surfaces for the same case, the case runs once per surface and each run
- * carries only its own surface's row.
- *
- * Correlating a failed payment to its provider intent. Native does not persist
- * the intent identity synchronously on a decline:
- * `WooPaymentsApiClient::throw_api_error()` drops the `payment_intent` from the
- * provider's error body, and `WooPaymentsIntentCodec::failed_transport_outcome()`
- * builds the failed outcome with an empty provider payment ID, so
- * `WooPaymentsOutcomeMetadataMapper` writes no `_intent_id`. The identity
- * arrives with the ingested `payment_intent.payment_failed` event, which is what
- * the convergence budget below waits for. A run against a store whose provider
- * event listener is not delivering will fail here — correctly, because without
- * the intent there is no provider-fidelity claim to make.
- *
- * Limiter isolation. Core bumps the failed-transaction limiter for top-level
- * `card_declined`, `incorrect_number` and `incorrect_cvc`, and refuses the next
- * submission once five bumps accumulate in one WooCommerce session. Six of the
- * nine `D-PI-*` runs in this file bump. Every checkout case therefore runs as a
- * guest in Playwright's own fresh browser context, so each owns an empty
- * session registry by construction and cannot be turned away by a sibling's
- * declines. The mapping itself — which codes bump and which do not — is not
- * claimed here; it is fixed by `NativeWooPaymentsGatewayTest`, and no read path
- * for the session registry exists in this harness.
+ * escape". `WooPaymentsErrorMessages::get_shopper_message()` keys the sentence
+ * on the provider's own `error.type`/`error.code`/`error.decline_code`, and the
+ * catalog is injective over this family's five codes, so the sentence is a
+ * witness for the code — the provider-side attachment/token state below is the
+ * direct observation. See `DeclineFixture`'s docblock below for the
+ * observed-vs-assumed correction to the decline codes themselves.
  */
 
-const CHECKOUT_FAILURES_PREFIX =
-	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:';
-const BLOCKS_FAILURES_PREFIX =
-	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:';
 const ADD_METHOD_PREFIX =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-payment-methods-add-fail.spec.ts:71::Payment Methods › when attempting to add a ';
 const ADD_METHOD_SUFFIX = ' card › it should not add the card';
 
-/** Capabilities every case in this family needs. */
-const BASE_CAPABILITIES = [ 'product/payment', 'card-decline-checkout' ];
-/** The classic cases additionally provision a shortcode checkout page. */
-const CLASSIC_CAPABILITIES = [ ...BASE_CAPABILITIES, 'classic-checkout-page' ];
 /** The My Account cases drive SetupIntents instead of checkouts. */
 const SETUP_INTENT_CAPABILITIES = [
 	'card-decline-setup-intent',
 	'card-decline-customer-state',
 ];
 
-const CURRENCY = 'USD';
-const PROVIDER_CURRENCY = 'usd';
-const TERMINAL_INTENT_STATUS = 'requires_payment_method';
-/** Statuses an order the store made but never took money for may hold. */
-const UNPAID_ORDER_STATUSES = [ 'pending', 'failed' ];
 /** The empty-attachment interval the negative SetupIntent cases require. */
 const ATTACHMENT_QUIET_MS = 10_000;
-const NOTICE_TIMEOUT_MS = 30_000;
 const CHECKOUT_RESPONSE_TIMEOUT_MS = 60_000;
 
-/** Native's Classic and My Account shopper-facing error region. */
+/** Native's My Account shopper-facing error region. */
 const NATIVE_PAYMENT_ERROR_REGION = '#wcpay-core-payment-errors';
-/** WordPress's shared assertive announcement region, used by the Blocks notice. */
-const ASSERTIVE_ANNOUNCEMENT_REGION = '#a11y-speak-assertive';
 
 interface DeclineFixture {
 	/** The `FIDELITY-CLAIMS.md` case this fixture drives. */
@@ -190,79 +140,6 @@ const PROCESSING_ERROR: DeclineFixture = {
 	declineCode: 'processing_error',
 	message:
 		'Error: An error occurred while processing your card. Try again in a little bit.',
-};
-
-interface CheckoutCase {
-	readonly contractId: string;
-	readonly fixture: DeclineFixture;
-	/** The case's fixed order total, from `FIDELITY-CLAIMS.md`. */
-	readonly price: string;
-	readonly amountMinor: number;
-}
-
-/**
- * The classic shortcode half of the `D-PI-*` matrix: the five ledger rows whose
- * source is `shopper-checkout-failures.spec.ts`.
- */
-const CLASSIC_GENERIC: CheckoutCase = {
-	contractId: `${ CHECKOUT_FAILURES_PREFIX }47::Shopper › Checkout › Failures with various cards › should throw an error that the card was simply declined`,
-	fixture: GENERIC_DECLINE,
-	price: '10.01',
-	amountMinor: 1001,
-};
-const CLASSIC_EXPIRED: CheckoutCase = {
-	contractId: `${ CHECKOUT_FAILURES_PREFIX }79::Shopper › Checkout › Failures with various cards › should throw an error that the card expiration date is in the past`,
-	fixture: EXPIRED_CARD,
-	price: '10.02',
-	amountMinor: 1002,
-};
-const CLASSIC_INSUFFICIENT: CheckoutCase = {
-	contractId: `${ CHECKOUT_FAILURES_PREFIX }111::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to insufficient funds`,
-	fixture: INSUFFICIENT_FUNDS,
-	price: '10.03',
-	amountMinor: 1003,
-};
-const CLASSIC_CVC: CheckoutCase = {
-	contractId: `${ CHECKOUT_FAILURES_PREFIX }131::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to incorrect CVC number`,
-	fixture: INCORRECT_CVC,
-	price: '10.04',
-	amountMinor: 1004,
-};
-const CLASSIC_PROCESSING: CheckoutCase = {
-	contractId: `${ CHECKOUT_FAILURES_PREFIX }143::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to processing error`,
-	fixture: PROCESSING_ERROR,
-	price: '10.05',
-	amountMinor: 1005,
-};
-
-/**
- * The Blocks half. Four ledger rows, one per code pair; the processing-error
- * Blocks row is `not-dischargeable` in `fidelity-partition.tsv` and is
- * deliberately absent rather than folded into the classic case.
- */
-const BLOCKS_GENERIC: CheckoutCase = {
-	contractId: `${ BLOCKS_FAILURES_PREFIX }90::WooCommerce Blocks › Checkout failures › Should show error – Your card was declined.`,
-	fixture: GENERIC_DECLINE,
-	price: '10.01',
-	amountMinor: 1001,
-};
-const BLOCKS_EXPIRED: CheckoutCase = {
-	contractId: `${ BLOCKS_FAILURES_PREFIX }90::WooCommerce Blocks › Checkout failures › Should show error – Your card has expired.`,
-	fixture: EXPIRED_CARD,
-	price: '10.02',
-	amountMinor: 1002,
-};
-const BLOCKS_INSUFFICIENT: CheckoutCase = {
-	contractId: `${ BLOCKS_FAILURES_PREFIX }90::WooCommerce Blocks › Checkout failures › Should show error – Your card has insufficient funds.`,
-	fixture: INSUFFICIENT_FUNDS,
-	price: '10.03',
-	amountMinor: 1003,
-};
-const BLOCKS_CVC: CheckoutCase = {
-	contractId: `${ BLOCKS_FAILURES_PREFIX }90::WooCommerce Blocks › Checkout failures › Should show error – Your card's security code is incorrect.`,
-	fixture: INCORRECT_CVC,
-	price: '10.04',
-	amountMinor: 1004,
 };
 
 interface SetupIntentCase {
@@ -355,64 +232,6 @@ function requireObject(
 	return value as Record< string, unknown >;
 }
 
-/**
- * Whether a request is the Store API checkout POST, in either permalink shape.
- */
-function isStoreCheckoutRequest( request: Request ): boolean {
-	if ( request.method() !== 'POST' ) {
-		return false;
-	}
-	try {
-		const url = new URL( request.url() );
-		const restRoute = url.searchParams.get( 'rest_route' ) ?? '';
-		return (
-			url.pathname.replace( /\/+$/, '' ) ===
-				'/wp-json/wc/store/v1/checkout' ||
-			restRoute.replace( /\/+$/, '' ) === '/wc/store/v1/checkout'
-		);
-	} catch {
-		return false;
-	}
-}
-
-/**
- * Whether a Store API checkout body asked to save the card.
- *
- * Native's Blocks integration always sends
- * `wc-woocommerce_payments-new-payment-method` in `payment_data`, with the
- * value `false` when nothing is being saved, so key presence proves nothing and
- * an earlier `postData.includes(...)` check read every submission as a save.
- * The value is what matters, and an unrecognized encoding fails loudly rather
- * than defaulting to "not saving".
- */
-function readBlocksSaveFlag( postData: string ): boolean {
-	const body = JSON.parse( postData ) as {
-		payment_data?: Array< { key?: unknown; value?: unknown } >;
-	};
-	if ( ! Array.isArray( body.payment_data ) ) {
-		throw new Error(
-			'The Store API checkout body carried no payment_data collection.'
-		);
-	}
-	const entry = body.payment_data.find(
-		( item ) => item.key === 'wc-woocommerce_payments-new-payment-method'
-	);
-	if ( entry === undefined ) {
-		return false;
-	}
-	if ( entry.value === false || entry.value === 'false' ) {
-		return false;
-	}
-	if ( entry.value === true || entry.value === 'true' ) {
-		return true;
-	}
-	throw new Error(
-		`The Store API save-payment-method flag carried an unrecognized value: ${ JSON.stringify(
-			entry.value
-		) }`
-	);
-}
-
 /** Whether a request is the native add-payment-method SetupIntent AJAX call. */
 function isCreateSetupIntentRequest( request: Request ): boolean {
 	return (
@@ -474,322 +293,6 @@ function expectProviderDerivedDecline(
 		observed,
 		`${ label }: the store must answer with the provider decline for this fixture`
 	).toContain( expectedMessage );
-}
-
-/**
- * The whole provider-side and local-side oracle for one declined checkout.
- */
-function expectDeclinedPaymentGraph(
-	evidence: FailedPaymentEvidence,
-	checkoutCase: CheckoutCase
-): void {
-	const { fixture } = checkoutCase;
-
-	// The provider record first. This is the half every row this family
-	// replaces was blind to.
-	expect(
-		evidence.intentStatus,
-		'the declined intent must end awaiting a new payment method'
-	).toBe( TERMINAL_INTENT_STATUS );
-	expect(
-		evidence.errorCode,
-		`${ fixture.card.number } must return top-level ${ fixture.errorCode }`
-	).toBe( fixture.errorCode );
-	// Exact pair, not "some decline code": the oracle is as strong as the one
-	// the claim originally stated, just true. A card that starts returning a
-	// different decline code must fail here rather than pass a loosened check.
-	expect(
-		evidence.declineCode,
-		`${ fixture.card.number } must return decline code ${ fixture.declineCode }`
-	).toBe( fixture.declineCode );
-	expect( evidence.intentAmount ).toBe( checkoutCase.amountMinor );
-	expect( evidence.intentCurrency ).toBe( PROVIDER_CURRENCY );
-
-	// The no-success graph.
-	expect(
-		evidence.chargeStatuses.filter( ( status ) => status === 'succeeded' ),
-		'a declined intent must carry no succeeded charge'
-	).toEqual( [] );
-	expect(
-		evidence.capturedCharges,
-		'a declined intent must carry no captured charge'
-	).toBe( 0 );
-	expect( [ 0, null ] ).toContain( evidence.amountReceived );
-	expect(
-		evidence.chargeIdMeta,
-		'a declined order must carry no charge identity'
-	).toBe( '' );
-	expect( UNPAID_ORDER_STATUSES ).toContain( evidence.orderStatus );
-	expect( evidence.orderTotal ).toBe( checkoutCase.price );
-	expect( evidence.orderCurrency ).toBe( CURRENCY );
-	expect(
-		evidence.failureNoteCount,
-		'one submission must leave at most one local failure effect'
-	).toBeLessThanOrEqual( 1 );
-	// Corroboration only, never a substitute for the provider read above.
-	// `WooPaymentsOutcomeMetadataMapper::get_default_intention_status()` writes
-	// this synchronously for *any* failed outcome, including one where native
-	// never reached the provider at all, so it says what native concluded rather
-	// than what the provider returned. Observed present on every real run.
-	if ( evidence.intentionStatusMeta !== '' ) {
-		expect( evidence.intentionStatusMeta ).toBe( TERMINAL_INTENT_STATUS );
-	}
-}
-
-interface ClassicRejection {
-	request: ClassicRejectedRequestEvidence;
-	status: number;
-	result: unknown;
-	messages: string;
-	notice: ClassicCheckoutRejectionNotice;
-	recovery: ClassicCheckoutRecoveryState;
-	requestCount: number;
-	responseCount: number;
-}
-
-/**
- * Drive one guest classic-shortcode checkout with a declining card.
- *
- * Composed from the Classic checkout driver's own primitives rather than from
- * `submitClassicCardAuthentication`, which requires the customer-action
- * confirmation hash a decline never produces, and from
- * `submitClassicTokenlessCheckout`, which removes the session token this case
- * must carry.
- */
-async function submitClassicDecline(
-	session: ProviderWriteSession,
-	page: Page,
-	product: OwnedProduct,
-	pageId: number,
-	fixture: DeclineFixture
-): Promise< ClassicRejection > {
-	const browser = new PlaywrightClassicCardCheckoutBrowser(
-		page,
-		session.baseURL,
-		pageId
-	);
-
-	await browser.preflightClassicPage( CLASSIC_CHECKOUT_PATH, pageId );
-	let addActivations = 0;
-	await browser.addProductOnce( product.id, async ( write ) => {
-		addActivations += 1;
-		expect(
-			addActivations,
-			'Add to cart must be activated exactly once'
-		).toBe( 1 );
-		return session.performWrite( write );
-	} );
-	await browser.openClassicCheckout( CLASSIC_CHECKOUT_PATH );
-	await browser.fillBillingDetails( session.runId );
-	await browser.selectWooPaymentsCard();
-	await browser.fillTestCard( fixture.card );
-	await browser.prepareSubmission();
-
-	return session.withProviderSubmissionJournal(
-		`card-decline-classic-${ fixture.familyCase }`,
-		async () => {
-			let activations = 0;
-			const observation = await browser.observeSubmissionInterval(
-				async ( activate ) => {
-					activations += 1;
-					if ( activations !== 1 ) {
-						throw new ResourceQuarantineRequiredError(
-							'A classic decline must activate Place order exactly once.',
-							'uncertain-provider-write'
-						);
-					}
-					await session.performWrite( activate );
-				},
-				async () => {
-					const shown =
-						await browser.waitForCheckoutRejectionNotice(
-							NOTICE_TIMEOUT_MS
-						);
-					if ( ! shown ) {
-						throw new ResourceQuarantineRequiredError(
-							'A declining classic submission produced no rejection notice, so its outcome is unknown.',
-							'uncertain-provider-write'
-						);
-					}
-					return {
-						notice: await browser.readCheckoutRejectionNotice(),
-						recovery: await browser.readCheckoutRecoveryState(),
-					};
-				}
-			);
-
-			if (
-				observation.dispatch.requests.length !== 1 ||
-				observation.dispatch.responses.length !== 1
-			) {
-				throw new ResourceQuarantineRequiredError(
-					`A classic decline observed ${ observation.dispatch.requests.length } checkout request(s) and ${ observation.dispatch.responses.length } response(s); exactly one of each is required.`,
-					'uncertain-provider-write'
-				);
-			}
-			const rawRequest = observation.dispatch.requests[ 0 ];
-			const rawResponse = observation.dispatch.responses[ 0 ];
-			const body = requireObject( rawResponse.body, 'checkout response' );
-
-			return {
-				request: normalizeClassicRejectedRequest( {
-					method: () => rawRequest.method,
-					url: () => rawRequest.url,
-					postData: () => rawRequest.body,
-				} ),
-				status: rawResponse.status,
-				result: body.result,
-				messages:
-					typeof body.messages === 'string' ? body.messages : '',
-				notice: observation.result.notice,
-				recovery: observation.result.recovery,
-				requestCount: observation.dispatch.requests.length,
-				responseCount: observation.dispatch.responses.length,
-			};
-		}
-	);
-}
-
-/**
- * Fill the Blocks checkout as a guest.
- *
- * The card checkout driver has an equivalent, but it is private; kept in step
- * with it by hand, as `shopper/card-authentication.spec.ts` already does.
- */
-async function fillBlocksCheckoutDetails(
-	page: Page,
-	runId: string
-): Promise< void > {
-	const shipping = page.getByRole( 'group', { name: 'Shipping address' } );
-	const billing = page.getByRole( 'group', { name: 'Billing address' } );
-	const address = ( await shipping.isVisible() ) ? shipping : billing;
-
-	await page
-		.getByRole( 'textbox', { name: 'Email address' } )
-		.fill( `woopayments-${ runId }@example.com` );
-	await address
-		.getByRole( 'combobox', { name: 'Country/Region' } )
-		.selectOption( 'US' );
-	await address.getByRole( 'textbox', { name: 'First name' } ).fill( 'E2E' );
-	await address
-		.getByRole( 'textbox', { name: 'Last name' } )
-		.fill( 'WooPayments' );
-	await address
-		.getByRole( 'textbox', { name: 'Address', exact: true } )
-		.fill( '123 Test Street' );
-	await address
-		.getByRole( 'textbox', { name: 'City', exact: true } )
-		.fill( 'San Francisco' );
-	await address
-		.getByRole( 'combobox', { name: 'State', exact: true } )
-		.selectOption( 'CA' );
-	await address.getByRole( 'textbox', { name: 'ZIP Code' } ).fill( '94107' );
-	await address
-		.getByRole( 'textbox', { name: 'Phone (optional)' } )
-		.fill( '5555550100' );
-	await page
-		.getByRole( 'group', { name: 'Payment options' } )
-		.getByRole( 'radio', { name: /Card/i } )
-		.first()
-		.check();
-}
-
-interface BlocksRejection {
-	status: number;
-	code: unknown;
-	message: unknown;
-	requestCount: number;
-	savePaymentMethodRequested: boolean;
-}
-
-/** Drive one guest Blocks checkout with a declining card. */
-async function submitBlocksDecline(
-	session: ProviderWriteSession,
-	page: Page,
-	product: OwnedProduct,
-	fixture: DeclineFixture
-): Promise< BlocksRejection > {
-	let requestCount = 0;
-	const countCheckoutRequest = ( request: Request ): void => {
-		if ( isStoreCheckoutRequest( request ) ) {
-			requestCount += 1;
-		}
-	};
-	page.on( 'request', countCheckoutRequest );
-
-	try {
-		await page.goto( `?post_type=product&p=${ product.id }` );
-		await session.performWrite( () =>
-			page
-				.getByRole( 'button', { name: 'Add to cart', exact: true } )
-				.click()
-		);
-		await page.goto( 'checkout/' );
-		await fillBlocksCheckoutDetails( page, session.runId );
-
-		const frame = page.frameLocator(
-			getBlocksCardFrameSelector( session.runtime )
-		);
-		await enterProviderCardTriple( frame, fixture.card, 'Blocks checkout' );
-		await page.getByRole( 'button', { name: /place order/i } ).focus();
-
-		return await session.withProviderSubmissionJournal(
-			`card-decline-blocks-${ fixture.familyCase }`,
-			async () => {
-				// Registered before the click: the response carries the store's
-				// own verdict, and reading it after the fact would race the
-				// notice the page renders from it.
-				const checkoutResponse = page.waitForResponse(
-					( response ) =>
-						isStoreCheckoutRequest( response.request() ),
-					{ timeout: CHECKOUT_RESPONSE_TIMEOUT_MS }
-				);
-				await submitBlocksCheckout( page, async ( button ) => {
-					await session.performWrite( () => button.click() );
-					return 'dispatched';
-				} );
-
-				let response;
-				try {
-					response = await checkoutResponse;
-				} catch ( error ) {
-					// Same distinction as the SetupIntent helper: a submission
-					// the browser never sent reached no provider, so it closes
-					// the journal rather than quarantining the account.
-					if ( requestCount === 0 ) {
-						throw new ProviderSubmissionNotStartedError(
-							'The Blocks submission never dispatched a checkout request, so nothing reached the provider.',
-							{ cause: error }
-						);
-					}
-					throw new ResourceQuarantineRequiredError(
-						`A declining Blocks submission dispatched ${ requestCount } checkout request(s) and saw no response, so its outcome is unknown.`,
-						'uncertain-provider-write',
-						error
-					);
-				}
-				const body = requireObject(
-					await response.json(),
-					'Store API checkout response'
-				);
-
-				return {
-					status: response.status(),
-					code: body.code,
-					message:
-						typeof body.message === 'string'
-							? decodeEscapedHtml( body.message )
-							: body.message,
-					requestCount,
-					savePaymentMethodRequested: readBlocksSaveFlag(
-						response.request().postData() ?? ''
-					),
-				};
-			}
-		);
-	} finally {
-		page.off( 'request', countCheckoutRequest );
-	}
 }
 
 interface RunOwnedShopper {
@@ -1198,203 +701,6 @@ async function submitDecliningPaymentMethod(
 	}
 }
 
-/**
- * Run one classic-shortcode `D-PI-*` case end to end.
- *
- * The whole case is a runner rather than an inline body because nine of the
- * fourteen tests in this file differ only in their card, amount, code pair and
- * the ledger row they carry; sharing the body keeps those nine provably
- * identical in everything but their fixture.
- */
-async function runClassicDeclineCase(
-	session: ProviderWriteSession,
-	page: Page,
-	checkoutCase: CheckoutCase
-): Promise< void > {
-	requireCapabilities( session, CLASSIC_CAPABILITIES );
-	await session.assertCurrentRuntimeReady( 'native' );
-
-	await session.withProviderWriteLocks(
-		{
-			recordEvent: `card-decline-classic-${ checkoutCase.fixture.familyCase }`,
-		},
-		async () => {
-			await withClassicCheckoutPage(
-				session,
-				session.runId,
-				async ( scope ) => {
-					const baselineOrderId = await readHighestOrderId( session );
-					const product = await session.createOwnedProduct(
-						checkoutCase.price
-					);
-
-					const rejection = await submitClassicDecline(
-						session,
-						page,
-						product,
-						scope.classicCheckout.pageId,
-						checkoutCase.fixture
-					);
-
-					// One gesture, one exchange, one gateway, nothing saved.
-					expect( rejection.requestCount ).toBe( 1 );
-					expect( rejection.responseCount ).toBe( 1 );
-					expect( rejection.request.gateway ).toBe(
-						'woocommerce_payments'
-					);
-					expect( rejection.request.savePaymentMethod ).toBe( false );
-					expect( rejection.result ).toBe( 'failure' );
-
-					// Asserted here, before any convergence budget is spent: the
-					// store came back with the provider's decline for this
-					// fixture, not with one of native's own refusals. A run that
-					// never reached the provider fails in seconds, and with a
-					// diagnosis, instead of after 45 seconds of polling for an
-					// intent that was never created.
-					expect(
-						rejection.notice.alertCount,
-						'a rejected classic submission must render exactly one alert'
-					).toBe( 1 );
-					expectProviderDerivedDecline(
-						rejection.notice.messages,
-						checkoutCase.fixture.message,
-						checkoutCase.fixture.familyCase
-					);
-					expect( rejection.notice.messages ).toEqual( [
-						checkoutCase.fixture.message,
-					] );
-					expect( rejection.messages ).toContain(
-						checkoutCase.fixture.message
-					);
-
-					const delta = await readOrderIdStatusDelta(
-						session,
-						baselineOrderId
-					);
-					expect(
-						delta.newOrderIds,
-						'one declined submission must leave exactly one order'
-					).toHaveLength( 1 );
-					expect(
-						delta.paidOrderIds,
-						'a declined submission must pay for nothing'
-					).toEqual( [] );
-
-					const orderId = delta.newOrderIds[ 0 ];
-					await session.setOrderRunId( orderId, session.runId );
-
-					const evidence = await convergeFailedPayment(
-						session,
-						orderId
-					);
-					expectDeclinedPaymentGraph( evidence, checkoutCase );
-
-					// And the shopper can still act on the same page.
-					expect( rejection.recovery.onClassicCheckout ).toBe( true );
-					expect(
-						rejection.recovery.placeOrderEnabled,
-						'a declined shopper must be able to try another method'
-					).toBe( true );
-				}
-			);
-		}
-	);
-}
-
-/** Run one Blocks `D-PI-*` case end to end. */
-async function runBlocksDeclineCase(
-	session: ProviderWriteSession,
-	page: Page,
-	checkoutCase: CheckoutCase
-): Promise< void > {
-	requireCapabilities( session, BASE_CAPABILITIES );
-	await session.assertCurrentRuntimeReady( 'native' );
-
-	await session.withProviderWriteLocks(
-		{
-			recordEvent: `card-decline-blocks-${ checkoutCase.fixture.familyCase }`,
-		},
-		async () => {
-			const baselineOrderId = await readHighestOrderId( session );
-			const product = await session.createOwnedProduct(
-				checkoutCase.price
-			);
-
-			const rejection = await submitBlocksDecline(
-				session,
-				page,
-				product,
-				checkoutCase.fixture
-			);
-
-			expect(
-				rejection.requestCount,
-				'one Place order activation must ask the Store API exactly once'
-			).toBe( 1 );
-			expect( rejection.status ).toBe( 400 );
-			// Core wraps this twice and the outer wrapper wins. A declined
-			// gateway result reaches `StoreApi\Legacy::process_legacy_payment()`,
-			// which turns the queued notice into a `RouteException` coded
-			// `woocommerce_rest_payment_error`; that exception then propagates
-			// into `CheckoutTrait::process_payment()`'s `catch ( \Exception )`,
-			// which re-wraps it as `woocommerce_rest_checkout_process_payment_error`
-			// while preserving the message. Both are core's own coding of the
-			// same event, so the code is asserted as a set and the message —
-			// which survives the re-wrap intact — carries the discrimination.
-			expect( [
-				'woocommerce_rest_payment_error',
-				'woocommerce_rest_checkout_process_payment_error',
-			] ).toContain( rejection.code );
-			expect(
-				rejection.savePaymentMethodRequested,
-				'a purchase that saves nothing must not ask to save'
-			).toBe( false );
-
-			// Before any convergence budget is spent: the Store API came back
-			// with the provider's decline for this fixture, not with one of
-			// native's own refusals. Card-testing protection produces the same
-			// `woocommerce_rest_payment_error` code, so the code alone does not
-			// distinguish a declined payment from a submission never sent.
-			expectProviderDerivedDecline(
-				[ String( rejection.message ) ],
-				checkoutCase.fixture.message,
-				checkoutCase.fixture.familyCase
-			);
-			expect( rejection.message ).toBe( checkoutCase.fixture.message );
-
-			const delta = await readOrderIdStatusDelta(
-				session,
-				baselineOrderId
-			);
-			expect(
-				delta.newOrderIds,
-				'one declined submission must leave exactly one order'
-			).toHaveLength( 1 );
-			expect(
-				delta.paidOrderIds,
-				'a declined submission must pay for nothing'
-			).toEqual( [] );
-
-			const orderId = delta.newOrderIds[ 0 ];
-			await session.setOrderRunId( orderId, session.runId );
-
-			const evidence = await convergeFailedPayment( session, orderId );
-			expectDeclinedPaymentGraph( evidence, checkoutCase );
-
-			// Corroboration: Blocks both showed and announced the sentence.
-			// WordPress announces through a shared off-screen region rather than
-			// an alert role on the notice, so losing the announcement fails here
-			// rather than passing because the text is on screen somewhere.
-			await expect(
-				page.getByText( checkoutCase.fixture.message ).first()
-			).toBeVisible();
-			await expect(
-				page.locator( ASSERTIVE_ANNOUNCEMENT_REGION )
-			).toHaveText( checkoutCase.fixture.message );
-		}
-	);
-}
-
 /** Run one My Account `D-SI-*` case end to end. */
 async function runSetupIntentDeclineCase(
 	session: ProviderWriteSession,
@@ -1542,176 +848,14 @@ const PROVIDER_TAGS = [
 test.describe( 'WooPayments native card decline vocabulary', () => {
 	// Independent, not serial. Overlap is already impossible — the provider
 	// project runs one worker and every case holds the account and store locks
-	// for its whole interval — and `withClassicCheckoutPage()` creates, verifies
-	// and removes the shared `classic-checkout` slug per case, so the classic
-	// cases do not depend on each other either. Serial mode was tried and
-	// removed: each case owns its own product, order and provider objects, so a
-	// failure in one says nothing about the next, and skipping the remaining
-	// thirteen hid which parts of the family actually work. A run that leaves
-	// the store genuinely unclear quarantines instead, which is the mechanism
-	// that is supposed to stop a suite mid-flight.
+	// for its whole interval — and each case creates and removes its own
+	// run-owned shopper, so the five cases do not depend on each other either.
+	// Serial mode was tried and removed: each case owns its own shopper and
+	// provider customer, so a failure in one says nothing about the next, and
+	// skipping the remaining cases hid which parts of the family actually work.
+	// A run that leaves the store genuinely unclear quarantines instead, which
+	// is the mechanism that is supposed to stop a suite mid-flight.
 	test.describe.configure( { timeout: 300_000 } );
-
-	test(
-		'A classic-checkout submission with the generic-decline card leaves one PaymentIntent for 1001 usd in requires_payment_method with error card_declined and decline code generic_decline, one unpaid run-owned order, and no charge, capture, paid order, or token',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: CLASSIC_GENERIC.contractId,
-				},
-			],
-			tag: PROVIDER_TAGS,
-		},
-		async ( { page, pilotRuntime } ) => {
-			await runClassicDeclineCase( pilotRuntime, page, CLASSIC_GENERIC );
-		}
-	);
-
-	test(
-		'A classic-checkout submission with the expired card leaves one PaymentIntent for 1002 usd in requires_payment_method with error expired_card and decline code expired_card, one unpaid run-owned order, and no charge, capture, paid order, or token',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: CLASSIC_EXPIRED.contractId,
-				},
-				{
-					type: 'woopayments-contract',
-					description:
-						'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:121::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to expired card',
-				},
-			],
-			tag: PROVIDER_TAGS,
-		},
-		async ( { page, pilotRuntime } ) => {
-			await runClassicDeclineCase( pilotRuntime, page, CLASSIC_EXPIRED );
-		}
-	);
-
-	test(
-		'A classic-checkout submission with the insufficient-funds card leaves one PaymentIntent for 1003 usd in requires_payment_method with error card_declined and decline code insufficient_funds, one unpaid run-owned order, and no charge, capture, paid order, or token',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: CLASSIC_INSUFFICIENT.contractId,
-				},
-			],
-			tag: PROVIDER_TAGS,
-		},
-		async ( { page, pilotRuntime } ) => {
-			await runClassicDeclineCase(
-				pilotRuntime,
-				page,
-				CLASSIC_INSUFFICIENT
-			);
-		}
-	);
-
-	test(
-		'A classic-checkout submission with the incorrect-CVC card leaves one PaymentIntent for 1004 usd in requires_payment_method with error incorrect_cvc and decline code incorrect_cvc, one unpaid run-owned order, and no charge, capture, paid order, or token',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: CLASSIC_CVC.contractId,
-				},
-			],
-			tag: PROVIDER_TAGS,
-		},
-		async ( { page, pilotRuntime } ) => {
-			await runClassicDeclineCase( pilotRuntime, page, CLASSIC_CVC );
-		}
-	);
-
-	test(
-		'A classic-checkout submission with the processing-error card leaves one PaymentIntent for 1005 usd in requires_payment_method with error processing_error and decline code processing_error, one unpaid run-owned order, and no charge, capture, paid order, or token',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: CLASSIC_PROCESSING.contractId,
-				},
-			],
-			tag: PROVIDER_TAGS,
-		},
-		async ( { page, pilotRuntime } ) => {
-			await runClassicDeclineCase(
-				pilotRuntime,
-				page,
-				CLASSIC_PROCESSING
-			);
-		}
-	);
-
-	test(
-		'A Blocks-checkout submission with the generic-decline card leaves one PaymentIntent for 1001 usd in requires_payment_method with error card_declined and decline code generic_decline, one unpaid run-owned order, and no charge, capture, paid order, or token',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: BLOCKS_GENERIC.contractId,
-				},
-			],
-			tag: PROVIDER_TAGS,
-		},
-		async ( { page, pilotRuntime } ) => {
-			await runBlocksDeclineCase( pilotRuntime, page, BLOCKS_GENERIC );
-		}
-	);
-
-	test(
-		'A Blocks-checkout submission with the expired card leaves one PaymentIntent for 1002 usd in requires_payment_method with error expired_card and decline code expired_card, one unpaid run-owned order, and no charge, capture, paid order, or token',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: BLOCKS_EXPIRED.contractId,
-				},
-			],
-			tag: PROVIDER_TAGS,
-		},
-		async ( { page, pilotRuntime } ) => {
-			await runBlocksDeclineCase( pilotRuntime, page, BLOCKS_EXPIRED );
-		}
-	);
-
-	test(
-		'A Blocks-checkout submission with the insufficient-funds card leaves one PaymentIntent for 1003 usd in requires_payment_method with error card_declined and decline code insufficient_funds, one unpaid run-owned order, and no charge, capture, paid order, or token',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: BLOCKS_INSUFFICIENT.contractId,
-				},
-			],
-			tag: PROVIDER_TAGS,
-		},
-		async ( { page, pilotRuntime } ) => {
-			await runBlocksDeclineCase(
-				pilotRuntime,
-				page,
-				BLOCKS_INSUFFICIENT
-			);
-		}
-	);
-
-	test(
-		'A Blocks-checkout submission with the incorrect-CVC card leaves one PaymentIntent for 1004 usd in requires_payment_method with error incorrect_cvc and decline code incorrect_cvc, one unpaid run-owned order, and no charge, capture, paid order, or token',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: BLOCKS_CVC.contractId,
-				},
-			],
-			tag: PROVIDER_TAGS,
-		},
-		async ( { page, pilotRuntime } ) => {
-			await runBlocksDeclineCase( pilotRuntime, page, BLOCKS_CVC );
-		}
-	);
 
 	test(
 		'Adding the generic-decline card through My Account fails its SetupIntent with the generic-decline mapping and leaves the provider customer, its attached methods, and the local token set exactly as they were',

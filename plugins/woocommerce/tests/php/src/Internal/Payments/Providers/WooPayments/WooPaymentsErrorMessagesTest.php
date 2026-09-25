@@ -103,6 +103,48 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Each REC-1 card decline code pair maps to its exact client shopper message, present or mirrored.
+	 *
+	 * REC-1 (`Fixtures/rec-1-intention-declines.json`) recorded that the platform's `decline_code`
+	 * is present even when it equals `code` (`expired_card`, `incorrect_cvc`, `processing_error`), so
+	 * the mapping must not assume it is only present for `card_declined`. Client citations
+	 * `class-wc-payments-utils.php:806-817` (decline code first, then error code) and `:852-866`
+	 * (11.1.0 catalog).
+	 *
+	 * @dataProvider recorded_decline_code_pair_data
+	 *
+	 * @param string $error_code   Provider error code.
+	 * @param string $decline_code Provider decline code.
+	 * @param string $expected     Expected shopper-facing message.
+	 */
+	public function test_get_shopper_message_maps_provider_decline_vocabulary( string $error_code, string $decline_code, string $expected ): void {
+		$this->assertSame(
+			$expected,
+			WooPaymentsErrorMessages::get_shopper_message( 'card_error', $error_code, $decline_code )
+		);
+	}
+
+	/**
+	 * REC-1 card decline pairs, each asserted with its mirrored decline code and with none.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function recorded_decline_code_pair_data(): array {
+		return array(
+			'generic_decline, decline code present'    => array( 'card_declined', 'generic_decline', 'Error: Your card was declined.' ),
+			'generic_decline, decline code absent'     => array( 'card_declined', '', 'Error: Your card was declined.' ),
+			'expired_card, decline code mirrored'      => array( 'expired_card', 'expired_card', 'Error: Your card has expired.' ),
+			'expired_card, decline code absent'        => array( 'expired_card', '', 'Error: Your card has expired.' ),
+			'insufficient_funds, decline code present' => array( 'card_declined', 'insufficient_funds', 'Error: Your card has insufficient funds.' ),
+			'insufficient_funds, decline code absent'  => array( 'card_declined', '', 'Error: Your card was declined.' ),
+			'incorrect_cvc, decline code mirrored'     => array( 'incorrect_cvc', 'incorrect_cvc', "Error: Your card's security code is incorrect." ),
+			'incorrect_cvc, decline code absent'       => array( 'incorrect_cvc', '', "Error: Your card's security code is incorrect." ),
+			'processing_error, decline code mirrored'  => array( 'processing_error', 'processing_error', 'Error: An error occurred while processing your card. Try again in a little bit.' ),
+			'processing_error, decline code absent'    => array( 'processing_error', '', 'Error: An error occurred while processing your card. Try again in a little bit.' ),
+		);
+	}
+
+	/**
 	 * @testdox Incorrect postal codes use the oracle's dedicated message.
 	 */
 	public function test_get_shopper_message_uses_incorrect_zip_message(): void {

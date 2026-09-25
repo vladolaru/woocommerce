@@ -272,6 +272,68 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A WooPayments card decline fails the order with its intent id, exactly one note, and the allow fraud meta.
+	 *
+	 * Outcome shape matches the recorded REC-1 `generic_decline` envelope (`Fixtures/rec-1-intention-declines.json`)
+	 * as `WooPaymentsProviderGatewayAdapterTest::test_native_charge_decline_envelope_maps_each_card_code` proves
+	 * the real adapter produces it. Client 11.1.0 citations: order `failed` (`class-wc-payment-gateway-wcpay.php:1324-1328`),
+	 * intent id kept on the failed order (`:1331-1333`), exactly one failed-payment note (`:1359-1361`, `:1400`),
+	 * fraud meta box `allow` for a `card_error` decline (`:1372`). A plain checkout decline is not the card-testing
+	 * or rate-limiter refusal path (F2); native matches the client here.
+	 */
+	public function test_woopayments_card_decline_fails_order_with_intent_note_and_allow_meta(): void {
+		$order           = $this->create_woopayments_order( '10.01' );
+		$note_service    = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$note_candidates = $note_service->format_checkout_payment_failed_note_candidates(
+			$order,
+			'Error: Your card was declined.',
+			'The bank did not return any further details with this decline.',
+			'card_error',
+			'card_declined'
+		);
+		$provider        = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_FAILED,
+				'pi_3UJTiNBzWlxcwgpP0GauBpTM',
+				'',
+				'',
+				'',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE       => 'card_declined',
+					PaymentOutcome::DATA_ERROR_MESSAGE    => 'Error: Your card was declined.',
+					PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => 'Error: Your card was declined.',
+					PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+					PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
+					PaymentOutcome::DATA_META             => array( '_wcpay_fraud_meta_box_type' => 'allow' ),
+				)
+			)
+		);
+
+		$result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_rec1' ), $provider );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failure', $result['result'] );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'pi_3UJTiNBzWlxcwgpP0GauBpTM', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', (string) $order->get_meta( '_charge_id', true ), 'A declined charge has no charge id.' );
+		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+
+		$notes                = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$failed_payment_notes = array_values(
+			array_filter(
+				$notes,
+				static fn( $note ): bool => str_contains( $note->content, '<strong>failed</strong> to complete with the following message:' )
+			)
+		);
+		$this->assertCount( 1, $failed_payment_notes, 'The order must carry exactly one failed-payment note (WooCommerce core\'s own status-transition note is separate).' );
+		$this->assertFalse(
+			$this->store->is_order_payment_locked( $order, $this->persistence_profile, $provider->last_idempotency_key ),
+			'A failed attempt must release the order payment lock.'
+		);
+	}
+
+	/**
 	 * @testdox A preserve-status failed outcome for an already-paid order is skipped by the late-failure guard.
 	 */
 	public function test_preserve_status_failed_outcome_does_not_overwrite_paid_order(): void {
