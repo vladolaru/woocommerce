@@ -10,7 +10,6 @@ import { startStrictStripeAdapterBrowserOracle } from '../../../utils/woopayment
 
 const CONTRACT_IDS = [
 	'performance::chromium::tests/e2e/specs/performance/payment-methods.spec.ts:42::Checkout page performance › Stripe › measures averaged page load metrics',
-	'performance::chromium::tests/e2e/specs/performance/payment-methods.spec.ts:71::Checkout page performance › WooPay › measures averaged page load metrics',
 ];
 
 const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
@@ -28,49 +27,6 @@ async function readJson< Result >(
 		);
 	}
 	return ( await response.json() ) as Result;
-}
-
-function requireBoolean( value: unknown, description: string ): boolean {
-	if ( typeof value !== 'boolean' ) {
-		throw new Error( `${ description } was not a boolean.` );
-	}
-	return value;
-}
-
-async function enableWooPayIfNeeded(
-	adminApi: APIRequestContext,
-	alreadyEnabled: boolean
-): Promise< void > {
-	if ( alreadyEnabled ) {
-		return;
-	}
-	await readJson(
-		await adminApi.post( PAYMENTS_SETTINGS_API, {
-			data: { is_woopay_enabled: true },
-		} ),
-		'WooPay enablement'
-	);
-}
-
-async function restoreWooPaySetting(
-	adminApi: APIRequestContext,
-	originalValue: boolean
-): Promise< void > {
-	if ( ! originalValue ) {
-		await readJson(
-			await adminApi.post( PAYMENTS_SETTINGS_API, {
-				data: { is_woopay_enabled: false },
-			} ),
-			'WooPay setting restoration'
-		);
-	}
-	const restored = await readJson< Record< string, unknown > >(
-		await adminApi.get( PAYMENTS_SETTINGS_API ),
-		'WooPay restored-state readback'
-	);
-	if ( restored.is_woopay_enabled !== originalValue ) {
-		throw new Error( 'WooPay setting was not restored.' );
-	}
 }
 
 function collectCleanupError( errors: Error[], error: unknown ): void {
@@ -155,7 +111,7 @@ async function assertCardReady( page: Page ): Promise< void > {
 }
 
 test(
-	'a populated native Blocks checkout keeps Card ready and exposes an accessible WooPay express action when the persisted merchant setting is enabled',
+	'a populated native Blocks checkout keeps Card ready and mounts the provider payment element',
 	{
 		annotation: CONTRACT_IDS.map( ( description ) => ( {
 			type: 'woopayments-contract',
@@ -173,10 +129,6 @@ test(
 			'Payments settings read'
 		);
 		expect( settings.is_wcpay_enabled ).toBe( true );
-		const originalWooPayEnabled = requireBoolean(
-			settings.is_woopay_enabled,
-			'is_woopay_enabled'
-		);
 		const product = await createProduct( adminApi, runId );
 		const cleanupErrors: Error[] = [];
 
@@ -188,35 +140,9 @@ test(
 			await stripeOracle?.assertPaymentMounted(
 				'#wcpay-core-blocks-payment-element'
 			);
-
-			await enableWooPayIfNeeded( adminApi, originalWooPayEnabled );
-			const enabledSettings = await readJson< Record< string, unknown > >(
-				await adminApi.get( PAYMENTS_SETTINGS_API ),
-				'WooPay enabled-state readback'
-			);
-			expect( enabledSettings.is_woopay_enabled ).toBe( true );
-
-			await page.reload();
-			await assertCardReady( page );
-			await stripeOracle?.assertPaymentMounted(
-				'#wcpay-core-blocks-payment-element'
-			);
-			const wooPayAction = page.locator( '.woopay-express-button' );
-			await expect( wooPayAction ).toHaveCount( 1 );
-			await expect( wooPayAction ).toBeVisible();
-			await expect( wooPayAction ).toBeEnabled();
-			await expect( wooPayAction ).toHaveAttribute(
-				'aria-label',
-				/WooPay/i
-			);
 		} finally {
 			try {
 				await emptyCart( page );
-			} catch ( error ) {
-				collectCleanupError( cleanupErrors, error );
-			}
-			try {
-				await restoreWooPaySetting( adminApi, originalWooPayEnabled );
 			} catch ( error ) {
 				collectCleanupError( cleanupErrors, error );
 			}

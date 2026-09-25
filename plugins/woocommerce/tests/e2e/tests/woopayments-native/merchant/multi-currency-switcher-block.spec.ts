@@ -34,14 +34,16 @@ import { admin } from '../../../test-data/data';
  * `/wc/v3/payments/multi-currency/currencies` and asserts against exactly
  * that set. The tests never add, remove, or reconfigure a currency — the
  * standing store's USD default plus its EUR manual-rate currency (which the
- * frozen `shopper/multi-currency.spec.ts` depends on) are read, never
- * written. A store without at least one additional enabled currency fails the
- * precondition guard loudly rather than passing vacuously.
+ * readonly fixture seeds; the PHPUnit/Jest price-conversion owners below prove
+ * the same conversion mechanism against their own isolated fixtures, not this
+ * seeded value) are read, never written. A store without at least one
+ * additional enabled currency fails the precondition guard loudly rather than
+ * passing vacuously.
  *
  * Run-owned state is limited to posts this spec creates and force-deletes.
  *
- * Deliberately NOT claimed here (they belong to the frozen
- * `shopper/multi-currency.spec.ts`): that switching converts prices on the
+ * Deliberately NOT claimed here (they belong to MultiCurrencyFrontendPricesControllerTest
+ * and MultiCurrencyPriceCalculatorTest): that switching converts prices on the
  * product, cart, and checkout surfaces. Row :61's own packet also puts
  * currency selection and repricing outside its scope, so the publish row
  * proves the published control renders and offers the enabled set, not that
@@ -917,8 +919,8 @@ test(
 		// rendered markup: it takes focus, and committing a selection is
 		// honoured — which is what this row's residual risk asks for
 		// ("validate switch behavior, not visibility alone"). Price
-		// conversion is deliberately not claimed here; the frozen
-		// shopper/multi-currency.spec.ts owns that assertion.
+		// conversion is deliberately not claimed here; MultiCurrencyFrontendPricesControllerTest
+		// and MultiCurrencyPriceCalculatorTest own that assertion.
 		await switcher.focus();
 		await expect( switcher ).toBeFocused();
 		await switcher.selectOption( additionalCode );

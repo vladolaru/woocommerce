@@ -33,10 +33,14 @@ import { withWidenedCurrencyCatalog } from '../../../utils/woopayments-native/mu
  * the FX rate payload is substituted.
  *
  * The run currencies (CHF, JPY) are deliberately not EUR: EUR carries the
- * documented 0.80 manual rate that the frozen shopper/multi-currency.spec.ts
- * depends on, and no test here reads, writes, or removes it. Every rate below
- * is a run-set manual rate on a run-added currency, so no frozen assertion is
- * duplicated or disturbed.
+ * readonly fixture's seeded 0.8 manual rate (`envs/woopayments-native/seed-readonly.sh`),
+ * which the retained `switcher:830` smoke reads directly from the live store.
+ * The PHPUnit/Jest EUR-conversion owners (MultiCurrencyFrontendPricesControllerTest,
+ * MultiCurrencyPriceCalculatorTest, MultiCurrencyLocalizationServiceTest) prove the
+ * same conversion mechanism against their own isolated fixtures and never read this
+ * option. No test here reads, writes, or removes it either. Every rate below is a
+ * run-set manual rate on a run-added currency, so no fixture value is duplicated or
+ * disturbed.
  */
 
 // The same environment-first resolution the harness fixtures use.
@@ -60,10 +64,12 @@ const SETTINGS_PAGE_PATH =
 // each storefront assertion is a full formatted-text match instead of the
 // original suite's locale-blind parseFloat.
 //
-// The frozen shopper family smoke (shopper/multi-currency.spec.ts) already
-// proves the documented-rate EUR 0.80 conversion; every rate set here is a
-// different, run-set manual rate on a run-added currency, so no frozen
-// assertion is duplicated.
+// MultiCurrencyFrontendPricesControllerTest and MultiCurrencyPriceCalculatorTest
+// already prove the same rate-and-charm conversion mechanism against their own
+// isolated fixtures (neither reads the readonly fixture's seeded EUR rate; only
+// the retained switcher:830 smoke does); every rate set here is a different,
+// run-set manual rate on a run-added currency, so no fixture value is
+// duplicated.
 const PRODUCT_PRICE = '1234.56';
 const USD_PRICE_TEXT = /\$1,234\.56(?!\d)/;
 

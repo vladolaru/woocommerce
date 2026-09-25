@@ -11,7 +11,6 @@ import {
 	tags,
 	test,
 } from '../../../fixtures/woopayments-native';
-import { startStrictStripeAdapterBrowserOracle } from '../../../utils/woopayments-native/stripe-adapter-browser';
 
 // Three of the six contracts below name the classic checkout and My Account
 // card mounts. By the owner-accepted family downscope, this smoke exercises
@@ -261,48 +260,6 @@ async function expectFieldRecovered(
 		)
 		.toBe( '' );
 }
-
-test(
-	'Core mounts the local card element without dispatching checkout',
-	{
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, page } ) => {
-		const stripeOracle =
-			process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true'
-				? startStrictStripeAdapterBrowserOracle( page )
-				: null;
-		const productId = await ensureSmokeProduct( adminApi );
-		const paymentsSettings = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings read'
-		);
-		expect( paymentsSettings.is_wcpay_enabled ).toBe( true );
-
-		const ordersBefore = await countSmokeProductOrders(
-			adminApi,
-			productId
-		);
-		const submissions = trackCheckoutSubmissions( page );
-
-		await page.goto( `?add-to-cart=${ productId }` );
-		await page.goto( 'checkout/' );
-		const frameSelector = getBlocksCardFrameSelector( cardFrameRuntime() );
-		const cardFrame = page.locator( frameSelector ).first();
-		await expect( cardFrame ).toBeVisible();
-		await expect( cardFrame ).not.toHaveAttribute( 'aria-hidden', 'true' );
-		await expect( cardFrame ).toHaveAttribute( 'title', /\S/ );
-
-		await stripeOracle?.assertPaymentMounted(
-			'#wcpay-core-blocks-payment-element'
-		);
-
-		expect( submissions() ).toBe( 0 );
-		expect( await countSmokeProductOrders( adminApi, productId ) ).toBe(
-			ordersBefore
-		);
-	}
-);
 
 test.describe( 'Connected provider card validation', () => {
 	test.skip( providerProfileUnavailable, PROVIDER_UNAVAILABLE_REASON );

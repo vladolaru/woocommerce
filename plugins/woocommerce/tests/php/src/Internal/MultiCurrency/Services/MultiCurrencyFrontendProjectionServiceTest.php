@@ -233,6 +233,25 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report the active theme's display name for the store settings screen.
+	 *
+	 * Client 11.1.0 reads the same active-theme display name for the multi-currency store
+	 * settings screen (MultiCurrency.php:1360).
+	 */
+	public function test_store_settings_report_active_theme_display_name(): void {
+		$original_theme = get_stylesheet();
+		switch_theme( 'twentytwentyfour' );
+
+		try {
+			$sut = $this->create_service( $this->create_state( 'GBP' ) );
+
+			$this->assertSame( 'Twenty Twenty-Four', $sut->get_settings()['site_theme'] );
+		} finally {
+			switch_theme( $original_theme );
+		}
+	}
+
+	/**
 	 * @testdox Should project store currency decimals for shipping calculations.
 	 */
 	public function test_projects_store_currency_decimals_for_shipping_calculations(): void {

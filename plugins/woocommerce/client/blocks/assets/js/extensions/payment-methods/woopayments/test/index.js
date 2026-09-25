@@ -1092,6 +1092,51 @@ describe( 'wc-payment-method-woopayments', () => {
 		);
 	} );
 
+	// Client 11.1.0 mounts the same Stripe PaymentElement declaratively into
+	// `.wcpay-payment-element` inside its `.wcpay-payment-element-wrapper`
+	// (client/checkout/blocks/payment-processor.js:271-291); native does the
+	// same job imperatively via `elements.create('payment').mount(...)`.
+	it( 'mounts the card PaymentElement into the core Blocks container', async () => {
+		const mount = jest.fn();
+		const create = jest.fn( () => ( { mount } ) );
+		const elements = jest.fn( () => ( { create } ) );
+		window.Stripe = jest.fn( () => ( {
+			elements,
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+		} ) );
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		const { container } = render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		await waitFor( () => {
+			expect( mount ).toHaveBeenCalled();
+		} );
+
+		const paymentElementContainer = container.querySelector(
+			'#wcpay-core-blocks-payment-element'
+		);
+		expect( paymentElementContainer ).not.toBeNull();
+		expect( mount ).toHaveBeenCalledWith( paymentElementContainer );
+	} );
+
 	it( 'initializes the card PaymentElement without a connected Stripe account when network saved cards are forced', async () => {
 		const elements = jest.fn( () => ( {
 			create: jest.fn( () => ( {

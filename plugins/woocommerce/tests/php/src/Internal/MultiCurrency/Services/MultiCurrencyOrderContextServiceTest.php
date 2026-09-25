@@ -31,6 +31,28 @@ class MultiCurrencyOrderContextServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should use order currency on the My Account orders list.
+	 *
+	 * Client 11.1.0 checks the same 'orders' query var alongside order-pay, order-received, and
+	 * view-order before honoring an order's own currency (FrontendCurrencies.php:461-472).
+	 */
+	public function test_uses_order_currency_on_my_account_orders_list(): void {
+		$sut = $this->create_service(
+			array( 'WC_Order->get_formatted_order_total' )
+		);
+
+		$this->with_query_vars(
+			array(
+				'pagename' => 'my-account',
+				'orders'   => 1,
+			),
+			function () use ( $sut ): void {
+				$this->assertTrue( $sut->should_use_order_currency() );
+			}
+		);
+	}
+
+	/**
 	 * @testdox Should not use order currency outside supported WooCommerce pages.
 	 */
 	public function test_does_not_use_order_currency_outside_supported_pages(): void {

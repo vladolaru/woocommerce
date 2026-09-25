@@ -62,6 +62,27 @@ class MultiCurrencyLocalizationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should format EUR with a comma decimal separator and a right-spaced symbol from the bundled default locale entry.
+	 *
+	 * Client 11.1.0 bundles the same CLDR-derived default for EUR (no locale-specific override):
+	 * decimal_sep ',', currency_pos 'right_space' (i18n/currency-info.php:78-84, :362), which is
+	 * "8,00 €".
+	 */
+	public function test_eur_format_uses_comma_decimal_and_right_space_symbol(): void {
+		switch_to_locale( 'en_US' );
+
+		try {
+			$service = new MultiCurrencyLocalizationService();
+			$format  = $service->get_currency_format( 'EUR' );
+		} finally {
+			restore_previous_locale();
+		}
+
+		$this->assertSame( ',', $format['decimal_sep'] );
+		$this->assertSame( 'right_space', $format['currency_pos'] );
+	}
+
+	/**
 	 * @testdox Should return locale data for known countries.
 	 */
 	public function test_returns_country_locale_data(): void {

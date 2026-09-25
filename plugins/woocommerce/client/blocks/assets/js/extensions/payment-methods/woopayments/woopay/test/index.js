@@ -83,6 +83,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		Object.assign( getMockPaymentMethodSettings(), {
 			isWoopayFirstPartyAuthEnabled: false,
 			isWooPayGlobalThemeSupportEnabled: false,
+			shouldShowWooPayButton: true,
 			stylesCacheVersion: undefined,
 			woopayAppearance: {
 				theme: 'stripe',
@@ -169,6 +170,17 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				family: 'Inter',
 			},
 		] );
+	} );
+
+	// Client 11.1.0 gates the identical registration call the same way:
+	// `if ( getUPEConfig( 'isWooPayEnabled' ) ) { … if ( getUPEConfig( 'shouldShowWooPayButton' ) ) { registerExpressPaymentMethod(...) } }`
+	// (client/checkout/blocks/index.js:123-134).
+	it( 'does not register the WooPay express method when shouldShowWooPayButton is false', () => {
+		getMockPaymentMethodSettings().shouldShowWooPayButton = false;
+
+		registerWooPay();
+
+		expect( registerExpressPaymentMethod ).not.toHaveBeenCalled();
 	} );
 
 	it( 'enriches the first express payload while another gateway is selected', async () => {

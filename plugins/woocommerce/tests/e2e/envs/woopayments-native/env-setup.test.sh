@@ -329,7 +329,7 @@ fi
 run_setup 'native' 'provider-free' \
 	E2E_FAKE_ACCOUNT_ERROR=1 \
 	E2E_FAKE_LIST_TAGS='woopayments-native' \
-	-- --project=woopayments-native-readonly tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts
+	-- --project=woopayments-native-readonly tests/e2e/tests/woopayments-native/performance/checkout-readiness.spec.ts
 grep -q 'WooPayments provider-free readiness proved for native' \
 	"$TEST_ROOT/provider-free-stdout"
 if grep -Fq 'wcpay callback probe' "$TEST_ROOT/provider-free-commands.log"; then
@@ -341,7 +341,7 @@ expect_readiness_failure 'native' 'provider-free-disabled' \
 	'A disabled native runtime must fail readiness even provider-free.' \
 	E2E_FAKE_NATIVE_DISABLED=1 \
 	E2E_FAKE_LIST_TAGS='woopayments-native' \
-	-- --project=woopayments-native-readonly tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts
+	-- --project=woopayments-native-readonly tests/e2e/tests/woopayments-native/performance/checkout-readiness.spec.ts
 assert_stderr_contains 'provider-free-disabled' \
 	'runtime_owner=native and native_enabled=true'
 

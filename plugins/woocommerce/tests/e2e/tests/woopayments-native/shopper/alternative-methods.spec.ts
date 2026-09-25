@@ -5,40 +5,11 @@ import { expect, tags, test } from '../../../fixtures/woopayments-native';
 const CONTRACT_ID =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/klarna-checkout-purchase.spec.ts:42::Klarna Checkout › shows the message in the product page';
 
-const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
 const PRODUCTS_API = '/wp-json/wc/v3/products';
-const STORE_CURRENCY_API =
-	'/wp-json/wc/v3/settings/general/woocommerce_currency';
-const STORE_COUNTRY_API =
-	'/wp-json/wc/v3/settings/general/woocommerce_default_country';
-
-const KLARNA = 'klarna';
-const KLARNA_CAPABILITY = 'klarna_payments';
 
 const PRODUCT_PRICE = '100.00';
-const PRODUCT_PRICE_TEXT = '$100.00';
-const PRODUCT_AMOUNT_MINOR = 10000;
 
 const MESSAGING_FRAME_SELECTOR = '#payment-method-message iframe';
-const ADAPTER_CALLS_GLOBAL = '__wooPaymentsStripeMessagingCalls';
-
-function expectedAdapterCalls(): unknown {
-	return process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true'
-		? [
-				{
-					type: 'paymentMethodMessaging',
-					locale: 'en',
-					countryCode: 'US',
-					elementsOptions: {},
-					paymentMethodTypes: [ KLARNA ],
-					currency: 'USD',
-					amount: PRODUCT_AMOUNT_MINOR,
-					mount: '#payment-method-message',
-					lifecycle: [ 'mount', 'ready-listener' ],
-				},
-		  ]
-		: undefined;
-}
 
 async function readJson< Result >(
 	response: APIResponse,
@@ -52,41 +23,11 @@ async function readJson< Result >(
 	return ( await response.json() ) as Result;
 }
 
-async function readSetting(
-	adminApi: APIRequestContext,
-	url: string,
-	description: string
-): Promise< string > {
-	const setting = await readJson< { value?: unknown } >(
-		await adminApi.get( url ),
-		description
-	);
-	if ( typeof setting.value !== 'string' || setting.value === '' ) {
-		throw new Error( `${ description } exposed no string value.` );
-	}
-	return setting.value;
-}
-
 function requireBaseUrl( baseURL: string | undefined ): string {
 	if ( ! baseURL ) {
 		throw new Error( 'BASE_URL is required for this spec.' );
 	}
 	return baseURL;
-}
-
-function readEnabledPaymentMethodIds(
-	settings: Record< string, unknown >
-): string[] {
-	const enabled = settings.enabled_payment_method_ids;
-	if (
-		! Array.isArray( enabled ) ||
-		enabled.some( ( id ) => typeof id !== 'string' )
-	) {
-		throw new Error(
-			'WooPayments settings exposed no enabled payment-method list.'
-		);
-	}
-	return [ ...( enabled as string[] ) ];
 }
 
 async function createRunProduct(
@@ -145,7 +86,7 @@ async function deleteRunProduct(
 }
 
 test(
-	'Klarna Checkout › shows the message in the product page',
+	'Klarna Checkout › shows provider-hosted messaging in the product page @woopayments-provider',
 	{
 		annotation: [
 			{
@@ -153,102 +94,6 @@ test(
 				description: CONTRACT_ID,
 			},
 		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, page, runId, baseURL } ) => {
-		const storeBaseUrl = requireBaseUrl( baseURL );
-		const settings = await readJson< Record< string, unknown > >(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'WooPayments settings read'
-		);
-		expect( settings.is_wcpay_enabled ).toBe( true );
-		expect( settings.account_country ).toBe( 'US' );
-		expect( settings.available_payment_method_ids ).toContain( KLARNA );
-		const enabledPaymentMethodIds = readEnabledPaymentMethodIds( settings );
-		expect( enabledPaymentMethodIds ).toContain( KLARNA );
-
-		const statuses = settings.payment_method_statuses as
-			| Record< string, { status?: unknown } >
-			| undefined;
-		expect( statuses?.[ KLARNA_CAPABILITY ]?.status ).toBe( 'active' );
-		expect(
-			await readSetting(
-				adminApi,
-				STORE_CURRENCY_API,
-				'Store currency read'
-			)
-		).toBe( 'USD' );
-		expect(
-			await readSetting(
-				adminApi,
-				STORE_COUNTRY_API,
-				'Store country read'
-			)
-		).toMatch( /^US(?::|$)/ );
-
-		const product = await createRunProduct( adminApi, runId );
-
-		try {
-			await page.context().clearCookies();
-			const productUrl = new URL( product.permalink );
-			const storeOrigin = new URL( storeBaseUrl ).origin;
-			await page.goto(
-				`${ storeOrigin }${ productUrl.pathname }${ productUrl.search }`
-			);
-
-			const main = page.getByRole( 'main' );
-			await expect(
-				main.getByRole( 'heading', {
-					name: product.name,
-					exact: true,
-				} )
-			).toBeVisible();
-			await expect(
-				main.getByText( PRODUCT_PRICE_TEXT, { exact: true } ).first()
-			).toBeVisible();
-			const messagingConfig = await page.evaluate( () =>
-				Reflect.get( window, 'wcpayStripeSiteMessaging' )
-			);
-			expect( messagingConfig ).toMatchObject( {
-				productId: 'base_product',
-				productVariations: {
-					base_product: {
-						amount: PRODUCT_AMOUNT_MINOR,
-						currency: 'USD',
-					},
-				},
-				currencyCode: 'USD',
-				paymentMethods: expect.arrayContaining( [ KLARNA ] ),
-				// wp_localize_script serializes a PHP true as the string "1" in
-				// both the WooPayments client and the native Core runtime.
-				shouldShowPMME: '1',
-			} );
-
-			const hostedFrame = page.locator( MESSAGING_FRAME_SELECTOR );
-			await expect( hostedFrame ).toHaveCount( 1 );
-			await expect( hostedFrame ).toBeVisible();
-			await expect( hostedFrame ).toHaveAttribute( 'title', /\S/ );
-			const adapterCalls = await page.evaluate(
-				( key ) => Reflect.get( window, key ),
-				ADAPTER_CALLS_GLOBAL
-			);
-			expect( adapterCalls ).toEqual( expectedAdapterCalls() );
-
-			await expect(
-				main.getByRole( 'button', {
-					name: 'Add to cart',
-					exact: true,
-				} )
-			).toBeEnabled();
-		} finally {
-			await deleteRunProduct( adminApi, product.id );
-		}
-	}
-);
-
-test(
-	'Klarna Checkout › shows provider-hosted messaging in the product page @woopayments-provider',
-	{
 		tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_PROVIDER ],
 	},
 	async ( { adminApi, page, runId, baseURL } ) => {

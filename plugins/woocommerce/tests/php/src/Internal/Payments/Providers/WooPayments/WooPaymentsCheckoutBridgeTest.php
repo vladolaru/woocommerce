@@ -1002,6 +1002,32 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should offer the card save option in the config once saved cards are enabled.
+	 *
+	 * Client 11.1.0 shows the save option once a payment method is reusable, saved cards are
+	 * enabled for the gateway, and the cart carries no subscription item
+	 * (class-wc-payments-checkout.php:579, :604-619).
+	 */
+	public function test_get_payment_fields_js_config_shows_card_save_option_when_saved_cards_enabled(): void {
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge(
+			true,
+			array( 'country' => 'RO' ),
+			array( 'saved_cards' => 'yes' )
+		);
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$config = $bridge->get_payment_fields_js_config();
+
+		$this->assertTrue( $config['isSavedCardsEnabled'] );
+		$this->assertTrue( $config['paymentMethodsConfig']['card']['showSaveOption'] );
+	}
+
+	/**
 	 * @testdox Should expose Cartes Bancaires card branding for France merchants.
 	 */
 	public function test_get_payment_fields_js_config_includes_cartes_bancaires_for_france_merchants(): void {
@@ -1142,6 +1168,28 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $data['PRE_CHECK_SAVE_MY_INFO'] );
 		$this->assertSame( array( 'products' ), $data['supports'] );
 		$this->assertSame( array( 'products' ), $data['paymentMethodsConfig']['card']['supports'] );
+	}
+
+	/**
+	 * @testdox Should expose the WooPay express-method gate flags in Blocks payment method data.
+	 *
+	 * The Blocks bundle only registers WooPay's express payment method once
+	 * `isWooPayEnabled` and `shouldShowWooPayButton` both come back true (client
+	 * client/checkout/blocks/index.js:123-134).
+	 */
+	public function test_get_blocks_payment_method_data_exposes_woopay_express_gate_flags(): void {
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge( true );
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$data = $bridge->get_blocks_payment_method_data();
+
+		$this->assertTrue( $data['isWooPayEnabled'] );
+		$this->assertTrue( $data['shouldShowWooPayButton'] );
 	}
 
 	/**

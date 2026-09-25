@@ -167,8 +167,8 @@ function sameIdentity(
  * Reads and activates themes through WordPress itself.
  *
  * The read is the REST themes route, which is the same source
- * `shopper/theme-compatibility.spec.ts` treats as authoritative for "which
- * theme is active". The write is the Themes screen's own activation link,
+ * `shopper/site-editor-card-authentication.spec.ts` treats as authoritative
+ * for "which theme is active". The write is the Themes screen's own activation link,
  * because WordPress exposes no REST route that switches a theme; this is the
  * mechanism `@wordpress/e2e-test-utils-playwright` uses for the same reason,
  * and the nonce is taken from the screen rather than minted, so an

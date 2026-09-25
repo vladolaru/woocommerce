@@ -4,6 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Unit_Test_Case;
 
 /**
@@ -11,7 +13,9 @@ use WC_Unit_Test_Case;
  *
  * These cover the contracts that the storefront stays reachable and the My Account entry surface keeps
  * working while the native payments runtime owns payments. They assert renderability and the absence of
- * fatals, not payment behaviour, and deliberately require no payment provider.
+ * fatals, not payment behaviour, and mostly require no payment provider; the one test that needs the
+ * gateway to resolve as available stubs only WooPaymentsProvider::can_process_payments(), documented on
+ * that test.
  */
 class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 
@@ -109,6 +113,59 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 				"The core My Account entry '{$expected_item}' must survive while native payments is enabled."
 			);
 		}
+	}
+
+	/**
+	 * @testdox Should offer the My Account payment-methods menu entry once native saved cards are enabled.
+	 *
+	 * Unlike the other smokes in this class, this one needs a real, available `NativeWooPaymentsGateway`
+	 * instance in `WC_Payment_Gateways`: `wc_get_account_menu_items()` only offers the entry for a
+	 * gateway `WC_Payment_Gateways::get_available_payment_gateways()` reports, and availability in turn
+	 * requires `WooPaymentsProvider::can_process_payments()`. Only that provider dependency is stubbed
+	 * (through the container, following the `wc_payment_gateways_initialized` injection pattern already
+	 * used by WooPaymentsMoneyMovementRestControllerTest); the gateway itself, its settings, and core's
+	 * menu-building all stay real.
+	 */
+	public function test_my_account_menu_offers_payment_methods_when_native_saved_cards_enabled(): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
+
+		$provider = $this->createMock( WooPaymentsProvider::class );
+		$provider->method( 'can_process_payments' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
+		wc_get_container()->reset_all_resolved();
+
+		$settings_filter = static function () {
+			return array(
+				'enabled'     => 'yes',
+				'saved_cards' => 'yes',
+				'test_mode'   => 'yes',
+			);
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
+
+		$gateway_initializer = static function ( \WC_Payment_Gateways $wc_payment_gateways ): void {
+			$wc_payment_gateways->payment_gateways = array( new NativeWooPaymentsGateway() );
+		};
+		add_action( 'wc_payment_gateways_initialized', $gateway_initializer, 100 );
+		WC()->payment_gateways()->payment_gateways = array();
+		WC()->payment_gateways()->init();
+
+		try {
+			$menu_items = wc_get_account_menu_items();
+		} finally {
+			remove_action( 'wc_payment_gateways_initialized', $gateway_initializer, 100 );
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
+			$this->reset_container_replacements();
+			wc_get_container()->reset_all_resolved();
+			WC()->payment_gateways()->payment_gateways = array();
+			WC()->payment_gateways()->init();
+		}
+
+		$this->assertArrayHasKey(
+			'payment-methods',
+			$menu_items,
+			'My Account must offer a payment-methods entry once native WooPayments reports saved-card support.'
+		);
 	}
 
 	/**
