@@ -89,16 +89,10 @@ export async function expectExactMerchantTransaction(
 	await expect(
 		page.getByText( evidence.currency, { exact: true } )
 	).toBeVisible();
-	await expect(
-		page.getByText(
-			evidence.providerStatus === 'requires_capture'
-				? 'Authorized'
-				: evidence.providerStatus
-						.replace( /_/g, ' ' )
-						.replace( /\b\w/g, ( value ) => value.toUpperCase() ),
-			{ exact: true }
-		)
-	).toBeVisible();
+	// F-TX (N-085): native renders "Authorized"/title-cased provider status labels here
+	// where client 11.1.0 renders "Payment authorized"/"Paid"
+	// (payment-status-chip/mappings.ts:45-51); asserting native's current label would pin
+	// the divergence, so that assertion is left for Task T.7 Step 5.
 }
 
 export async function expectExactMerchantTransactionAmount(

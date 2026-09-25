@@ -78,6 +78,26 @@ class MultiCurrencyLocalizationServiceCurrencyDecimalsTest extends WC_Unit_Test_
 	}
 
 	/**
+	 * @testdox Should report the CHF format from the bundled locale data.
+	 *
+	 * N-085: the expectation is this repository's own bundled i18n/currency-info.php CHF
+	 * 'default' entry (thousand_sep the apostrophe, decimal_sep the dot, currency_pos
+	 * left_space) and i18n/locale-info.php's CH num_decimals — the same file WooPayments
+	 * 11.1.0's own WC_Payments_Localization_Service::load_locale_data() reads from
+	 * WC()->plugin_path() . '/i18n/locale-info.php'. The multi-currency pricing settings
+	 * smoke depends on the CHF modal rendering this typographic thousands separator, not
+	 * a plain comma.
+	 */
+	public function test_reports_chf_format_from_bundled_locale_data(): void {
+		$format = $this->sut->get_currency_format( 'CHF' );
+
+		$this->assertSame( 'left_space', $format['currency_pos'], 'CHF should position the symbol with a space' );
+		$this->assertSame( "'", $format['thousand_sep'], 'CHF should use the apostrophe as its thousands separator' );
+		$this->assertSame( '.', $format['decimal_sep'], 'CHF should use a dot as its decimal separator' );
+		$this->assertSame( 2, $format['num_decimals'], 'CHF should format with 2 decimals' );
+	}
+
+	/**
 	 * Delete the localization cache transients.
 	 */
 	private function delete_locale_transients(): void {

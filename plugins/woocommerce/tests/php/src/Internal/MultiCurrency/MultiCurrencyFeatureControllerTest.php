@@ -248,6 +248,11 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'no' );
 		update_option( 'wcpay_multi_currency_rendering_mode', 'preview' );
 		update_option( 'wcpay_multi_currency_setup_completed', 'yes' );
+		$payments_settings_snapshot = array(
+			'enabled'   => 'yes',
+			'test_mode' => 'no',
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', $payments_settings_snapshot );
 		$order = wc_create_order();
 		$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.9' );
 		$order->save();
@@ -294,6 +299,17 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'preview', get_option( 'wcpay_multi_currency_rendering_mode' ) );
 		$this->assertSame( 'yes', get_option( 'wcpay_multi_currency_setup_completed' ) );
 		$this->assertSame( '0.9', $order->get_meta( '_wcpay_multi_currency_order_exchange_rate', true ) );
+		// N-085: client 11.1.0 class-wc-rest-payments-settings-controller.php's
+		// update_is_multi_currency_enabled() (:889-896) flips only the
+		// `_wcpay_feature_customer_multi_currency` option on disable; nothing in the
+		// client's disable path touches the WooPayments gateway settings option. The
+		// core confirmation handler is a generic mechanism shared by every feature, so
+		// this snapshot proves it stays scoped to `option_key` for Multi-Currency too.
+		$this->assertSame(
+			$payments_settings_snapshot,
+			get_option( 'woocommerce_woocommerce_payments_settings' ),
+			'Confirming the Multi-Currency disable must not touch the WooPayments settings option.'
+		);
 	}
 
 	/**

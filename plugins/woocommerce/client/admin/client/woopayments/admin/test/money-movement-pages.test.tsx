@@ -4398,9 +4398,9 @@ describe( 'WooPayments money movement pages', () => {
 		const summary = screen
 			.getByRole( 'heading', { name: 'Summary' } )
 			.closest( 'section' ) as HTMLElement;
-		expect(
-			within( summary ).getByText( 'Authorized' )
-		).toBeInTheDocument();
+		// F-TX (N-085): native renders "Authorized" here where client 11.1.0 renders
+		// "Payment authorized" (payment-status-chip/mappings.ts:45-51); asserting native's
+		// current label would pin the divergence, so that assertion is left for Task T.7 Step 5.
 		expect(
 			within( summary ).queryByText( 'Succeeded' )
 		).not.toBeInTheDocument();

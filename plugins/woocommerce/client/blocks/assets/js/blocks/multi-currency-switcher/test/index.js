@@ -147,5 +147,13 @@ describe( 'Multi-currency switcher block', () => {
 			} )
 		);
 		expect( setAttributes ).toHaveBeenCalledWith( { symbol: false } );
+
+		// N-085: client 11.1.0 CurrencySwitcherBlock.php:211 renders "0px solid"
+		// only when the block attribute `border` is false; this is the editor half
+		// of that contract (switcher:728 proves the storefront-rendered half).
+		await user.click(
+			screen.getByRole( 'checkbox', { name: 'Show border' } )
+		);
+		expect( setAttributes ).toHaveBeenCalledWith( { border: false } );
 	} );
 } );

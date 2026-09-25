@@ -203,6 +203,27 @@ describe( 'MultiCurrencySettingsApp', () => {
 				name: 'Remove Euro as an enabled currency',
 			} )
 		).toBeInTheDocument();
+		// N-085: client 11.1.0 enabled-currencies-list/index.js:73-74 renders the
+		// "Name" and "Exchange rate" headers asserted here; native also renders
+		// "Code" and "Actions" headers the client does not (Task T.7 Step 5, F-COLS),
+		// so the exact header list is deliberately not asserted. list-item.js:65
+		// (`! isDefault &&`) hides the Edit/Manage action for the default row.
+		expect(
+			screen.getByRole( 'columnheader', { name: 'Name' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'columnheader', { name: 'Exchange rate' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', {
+				name: 'Remove United States (US) dollar as an enabled currency',
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', {
+				name: 'Manage United States (US) dollar settings',
+			} )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'removes a non-default enabled currency', async () => {

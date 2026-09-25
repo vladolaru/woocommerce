@@ -592,10 +592,12 @@ test.describe( 'WooPayments native card authentication', () => {
 					expect( dispatch.responseStatus ).toBe( 200 );
 					expect( dispatch.checkoutRequestCount ).toBe( 1 );
 					expect( dispatch.checkoutResponseCount ).toBe( 1 );
-					expect(
-						dispatch.orderStatusUpdates,
-						'a provider decline after authentication must not ask native to complete the order'
-					).toEqual( [] );
+					// F-3DS-1 (N-085): client 11.1.0 builds one `update_order_status` request
+					// carrying the intent id and marks the order failed after a post-authentication
+					// decline (api:258-281, os:418-422); native returns early and never calls
+					// `update_order_status` (client/blocks/.../woopayments/index.js:413-423), so
+					// asserting `orderStatusUpdates` is empty here would pin that divergence.
+					// Left for Task T.7 Step 5.
 
 					const intent = await readFailedAuthenticationIntent(
 						pilotRuntime,

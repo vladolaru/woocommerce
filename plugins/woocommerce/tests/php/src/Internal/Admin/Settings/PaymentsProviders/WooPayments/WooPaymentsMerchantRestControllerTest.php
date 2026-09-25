@@ -435,6 +435,31 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should deny an editor without payment-gateway management capability on the legacy-compatible native WooPayments settings GET route.
+	 *
+	 * N-085: client 11.1.0 class-wc-payments-rest-controller.php:63-64 requires
+	 * `manage_woocommerce`, which the stock Editor role lacks, so the client denies this
+	 * request too. `check_permissions()` (WooPaymentsMerchantRestController.php:1239) delegates
+	 * to `wc_rest_check_manager_permissions( 'payment_gateways', 'read' )` and denies with the
+	 * authorization-required status. The exact error code differs from the client (native's
+	 * `woocommerce_rest_cannot_view` vs. the client's `check_permission()` returning a plain
+	 * `false`, which core's REST server turns into its own generic `rest_forbidden`); that
+	 * difference is not asserted here and is left as a T.7 finding.
+	 */
+	public function test_get_native_settings_denies_editor_without_payment_gateway_capability(): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'editor' ) ) );
+
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'get_settings' );
+
+		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/settings' );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
+	}
+
+	/**
 	 * @testdox Should persist the native WooPayments settings contract through the legacy-compatible POST route.
 	 */
 	public function test_update_native_settings_contract_by_manager(): void {

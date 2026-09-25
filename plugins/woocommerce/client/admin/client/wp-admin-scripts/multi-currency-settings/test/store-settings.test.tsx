@@ -87,6 +87,14 @@ describe( 'StoreLevelSettings', () => {
 				name: 'Optimized for speed (default)',
 			} )
 		).toBeChecked();
+		// N-085: client 11.1.0 store-settings/index.js:231
+		// (`disabled={ isSaving || ! isDirty }`) keeps the Save control disabled
+		// until something is dirty; loading the settings must not itself POST any
+		// change.
+		expect(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		).toHaveAttribute( 'aria-disabled', 'true' );
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
 	} );
 
 	it( 'saves store settings with preserved REST option keys', async () => {

@@ -2439,7 +2439,9 @@ test( 'asserts the real payment details heading and exact evidence fields', asyn
 		expect( requested ).toContain( 'text:pi_exact:true' );
 		expect( requested ).toContain( 'text:ch_exact:true' );
 		expect( requested ).toContain( 'text:USD:true' );
-		expect( requested ).toContain( 'text:Authorized:true' );
+		// F-TX (N-085): the driver no longer requests native's status label
+		// literal ("Authorized"); see drivers/merchant-transactions.ts and
+		// Task T.7 Step 5.
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}

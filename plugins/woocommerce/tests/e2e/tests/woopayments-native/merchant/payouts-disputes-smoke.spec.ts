@@ -270,7 +270,7 @@ test.describe( 'WooCommerce Subscriptions extension compatibility', () => {
 	);
 
 	test(
-		'payments admin surfaces load for an authorized merchant without denial, fatal, or failed data fetches',
+		'WooCommerce Subscriptions settings tab renders with native WooPayments active',
 		{
 			annotation: [
 				{

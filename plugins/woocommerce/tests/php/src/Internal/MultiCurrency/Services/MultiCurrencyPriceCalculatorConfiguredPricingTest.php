@@ -70,6 +70,11 @@ class MultiCurrencyPriceCalculatorConfiguredPricingTest extends WC_Unit_Test_Cas
 			'charm applies to the unrounded converted price' => array( 'CHF', 1.0, '0', -0.01, 1234.55 ),
 			'ceiling rounding without charm'              => array( 'CHF', 1.20, '0.50', 0.0, 1481.50 ),
 			'zero-decimal currency rounds to whole units' => array( 'JPY', 150.1, '0', 0.0, 185307.0 ),
+			// N-085: client 11.1.0 MultiCurrency.php:1676/:1695-1699 applies a merchant-configured
+			// non-zero rounding step by ceiling, not rounding, the converted price; a zero-decimal
+			// currency with a "round up to the next 1" step must ceil 185307.456 to 185308, which a
+			// round-to-nearest implementation would report as 185307 (the fractional part is < 0.5).
+			'zero-decimal currency ceils to the next rounding step' => array( 'JPY', 150.1, '1', 0.0, 185308.0 ),
 		);
 	}
 

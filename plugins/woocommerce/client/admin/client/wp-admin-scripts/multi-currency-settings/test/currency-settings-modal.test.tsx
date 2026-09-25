@@ -78,6 +78,15 @@ const poundSterlingCurrency = {
 	symbol: '£',
 };
 
+const yenCurrency = {
+	...euroCurrency,
+	id: 'jpy',
+	code: 'JPY',
+	name: 'Japanese yen',
+	symbol: '¥',
+	is_zero_decimal: true,
+};
+
 const automaticSettingsResponse = {
 	exchange_rate_type: 'automatic',
 	manual_rate: null,
@@ -517,6 +526,32 @@ describe( 'CurrencySettingsModal', () => {
 		).toBeInTheDocument();
 		expect(
 			charmSelect.querySelector( 'option[value="-1"]' )
+		).not.toBeInTheDocument();
+	} );
+
+	// N-085: client 11.1.0 single-currency/constants.js:16-40 defines a distinct
+	// zero-decimal rounding/charm option vocabulary ('1'..'1000' recommended '100';
+	// '0.00'..'-100'), and index.js:85-95 selects it from `currency.is_zero_decimal`.
+	// mc-pricing:464 depends on JPY rendering this option set, not the decimal one.
+	it( 'renders the zero-decimal option set for JPY', async () => {
+		mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+		renderModal( { currency: yenCurrency } );
+
+		const roundingSelect = await screen.findByLabelText( 'Price rounding' );
+		const charmSelect = screen.getByLabelText( 'Charm pricing' );
+		expect( roundingSelect ).toHaveValue( '100' );
+		expect(
+			roundingSelect.querySelector( 'option[value="10"]' )
+		).toBeInTheDocument();
+		expect(
+			roundingSelect.querySelector( 'option[value="0.50"]' )
+		).not.toBeInTheDocument();
+		expect(
+			charmSelect.querySelector( 'option[value="-1"]' )
+		).toBeInTheDocument();
+		expect(
+			charmSelect.querySelector( 'option[value="-0.01"]' )
 		).not.toBeInTheDocument();
 	} );
 
