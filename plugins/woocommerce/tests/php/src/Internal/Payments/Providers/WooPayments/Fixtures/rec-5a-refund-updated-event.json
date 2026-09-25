@@ -1,0 +1,177 @@
+{
+	"_meta": {
+		"recording": "REC-5a R-c",
+		"captured_via": "Local WPCOM async job rows (wpj_jobs, type wcpay Remote_Site_Client::handle_async_webhook_send) read-only while queued, before the worker ran them. The job data body is the exact array Remote_Site_Client::send_webhook() wp_json_encode()s and POSTs to the store at ?rest_route=/wc/v3/payments/webhook (built by Event::get_body_for_forwarding(true)). Each job ran and did not land in wpj_job_failures. Events arrived at WPCOM through the running Stripe CLI listener (wpcom/v2/wcpay/webhook/dev)",
+		"sanitized": "nothing to redact (no secrets, emails, receipt URLs or signatures in the bodies); the job envelope (autoenv server vars, job options) is omitted; bodies are otherwise verbatim",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at fc8c8ee510, WooPayments plugin inactive, test mode)",
+		"notes": "data/rec-5a-refunds.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "afterpay_clearpay_refund_updated_succeeded",
+			"primary": true,
+			"queued_at": "2026-09-25T13:54:44+00:00",
+			"wpcom_job_id": 140677,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"store_observation": "processed: native processed-event marker wcpay_processed_event_md5(event id) set; order 4237 unchanged (no Woo refund exists for pyr_, no note)",
+			"body": {
+				"id": "evt_1UJZaJBzWlxcwgpP6gGz5BOj",
+				"type": "charge.refund.updated",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "pyr_1UJZaGBzWlxcwgpPIeG7xqIJ",
+						"object": "refund",
+						"amount": 10000,
+						"balance_transaction": "txn_1UJZaHBzWlxcwgpPs7TShSNm",
+						"charge": "py_3UDz8PBzWlxcwgpP1m07cdHy",
+						"created": 1790344480,
+						"currency": "usd",
+						"customer": null,
+						"customer_account": null,
+						"destination_details": {
+							"afterpay_clearpay": [],
+							"type": "afterpay_clearpay"
+						},
+						"metadata": {
+							"refund_source": "woocommerce_native",
+							"merchant_refund_reason": "requested_by_customer"
+						},
+						"payment_intent": "pi_3UDz8PBzWlxcwgpP18mLD3pm",
+						"payment_method": null,
+						"reason": "requested_by_customer",
+						"receipt_number": null,
+						"source_transfer_reversal": null,
+						"status": "succeeded",
+						"transfer_reversal": null
+					}
+				}
+			}
+		},
+		{
+			"pair": "usd_card_refund_updated_succeeded",
+			"primary": false,
+			"queued_at": "2026-09-25T13:53:37+00:00",
+			"wpcom_job_id": 140674,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"store_observation": "processing threw: native-payments-webhook log \"Could not find WooPayments order via charge ID\" (charge has no order); no marker",
+			"body": {
+				"id": "evt_3UJZZBBzWlxcwgpP0AdmCN8f",
+				"type": "charge.refund.updated",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "re_3UJZZBBzWlxcwgpP0MauAsJ6",
+						"object": "refund",
+						"amount": 1099,
+						"balance_transaction": "txn_3UJZZBBzWlxcwgpP09CfvLt0",
+						"charge": "ch_3UJZZBBzWlxcwgpP0BZvfjOj",
+						"created": 1790344415,
+						"currency": "usd",
+						"customer": "cus_UsIeTbmGHPc9jY",
+						"customer_account": null,
+						"destination_details": {
+							"card": {
+								"reference": "8884226196159867",
+								"reference_status": "available",
+								"reference_type": "acquirer_reference_number",
+								"type": "refund"
+							},
+							"type": "card"
+						},
+						"metadata": {
+							"refund_source": "woocommerce_native",
+							"merchant_refund_reason": "REC-5a free-text reason: customer returned the item unopened"
+						},
+						"payment_intent": "pi_3UJZZBBzWlxcwgpP0CDlkka0",
+						"payment_method": "pm_1UJZZABzWlxcwgpPuUVcCdB1",
+						"payment_method_details": {
+							"card": {
+								"acquirer_reference_number": "8884226196159867",
+								"acquirer_reference_number_status": "available"
+							},
+							"type": "card"
+						},
+						"reason": null,
+						"receipt_number": null,
+						"source_transfer_reversal": null,
+						"status": "succeeded",
+						"transfer_reversal": null
+					}
+				}
+			}
+		},
+		{
+			"pair": "eur_card_refund_updated_succeeded",
+			"primary": false,
+			"queued_at": "2026-09-25T13:54:01+00:00",
+			"wpcom_job_id": 140675,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"store_observation": "processing threw: same log line for ch_3UJWs2BzWlxcwgpP1y9vRrWr (charge has no order); no marker",
+			"body": {
+				"id": "evt_3UJWs2BzWlxcwgpP1yeFu7Q9",
+				"type": "charge.refund.updated",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "re_3UJWs2BzWlxcwgpP1MZ11w9h",
+						"object": "refund",
+						"amount": 1234,
+						"balance_transaction": "txn_3UJWs2BzWlxcwgpP1FuXruQg",
+						"charge": "ch_3UJWs2BzWlxcwgpP1y9vRrWr",
+						"created": 1790344439,
+						"currency": "eur",
+						"customer": "cus_UsIeTbmGHPc9jY",
+						"customer_account": null,
+						"destination_details": {
+							"card": {
+								"reference": "7028278089905733",
+								"reference_status": "available",
+								"reference_type": "acquirer_reference_number",
+								"type": "refund"
+							},
+							"type": "card"
+						},
+						"metadata": {
+							"refund_source": "woocommerce_native",
+							"merchant_refund_reason": "requested_by_customer"
+						},
+						"payment_intent": "pi_3UJWs2BzWlxcwgpP10KzkjsT",
+						"payment_method": "pm_1UJWs2BzWlxcwgpPrrobU4Cv",
+						"payment_method_details": {
+							"card": {
+								"acquirer_reference_number": "7028278089905733",
+								"acquirer_reference_number_status": "available"
+							},
+							"type": "card"
+						},
+						"reason": "requested_by_customer",
+						"receipt_number": null,
+						"source_transfer_reversal": null,
+						"status": "succeeded",
+						"transfer_reversal": null
+					}
+				}
+			}
+		}
+	]
+}

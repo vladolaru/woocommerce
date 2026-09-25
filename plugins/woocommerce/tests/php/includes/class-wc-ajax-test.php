@@ -2915,6 +2915,154 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 	}
 
 	/**
+	 * @testdox An amount-only refund allocated to two of three order items by item ID leaves the order processing with the exact remaining refundable amount.
+	 *
+	 * R2 (`data/t1-provider-family-audit.md` §2.7, §4 Batch 5; no recording
+	 * used, the fixture prices are hand-built to match the audited case): a
+	 * three-line USD 10.99 order whose first two lines (USD 1.11, 2.22) are
+	 * refunded by their exact order-item ID
+	 * while the third (USD 7.66) stays untouched, mirroring
+	 * `provider-fidelity-refunds.spec.ts` R2. The lines are addressed by ID,
+	 * never by position, because a positional refund can bind the wrong line.
+	 * `create_service_backed_refund_gateway` and `RecordingProvider` isolate
+	 * only the provider transport, so `WC_AJAX::refund_line_items()`, the real
+	 * per-line allocation logic, and `PaymentProcessingService::process_refund()`
+	 * all run for real.
+	 */
+	public function test_refund_line_items_allocates_amount_only_refund_to_two_of_three_lines_by_item_id(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves the test request.
+		$original_post             = $_POST;
+		$original_user_id          = get_current_user_id();
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+		$provider                  = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_r2' ) );
+		$gateway                   = $this->create_service_backed_refund_gateway( $provider );
+		$order                     = null;
+		$products                  = array();
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_three_line_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request(
+				$order,
+				$fixture['item_ids'],
+				array(),
+				array(
+					'first'  => '1.11',
+					'second' => '2.22',
+					'third'  => 0,
+				),
+				'3.33'
+			);
+
+			$this->assertTrue( $response['success'], 'The two-line amount-only refund should succeed.' );
+			$this->assertSame( 1, $provider->refund_calls, 'One provider refund should be dispatched.' );
+
+			$stored_order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $stored_order );
+			$this->assertSame( OrderStatus::PROCESSING, $stored_order->get_status(), 'The order should stay processing after a partial refund.' );
+			$this->assertSame( 3.33, (float) $stored_order->get_total_refunded(), 'The stored refunded total should equal the two allocated lines.' );
+			$this->assertSame( 7.66, (float) $stored_order->get_remaining_refund_amount(), 'The untouched third line must remain refundable.' );
+
+			$refunds = $stored_order->get_refunds();
+			$this->assertCount( 1, $refunds, 'One local refund should be persisted.' );
+			$refund_lines = $refunds[0]->get_items( 'line_item' );
+			$this->assertCount( 2, $refund_lines, 'Exactly the two intended lines should be allocated.' );
+
+			$totals_by_item_id = array();
+			foreach ( $refund_lines as $refund_line ) {
+				$totals_by_item_id[ (int) $refund_line->get_meta( '_refunded_item_id' ) ] = (float) $refund_line->get_total();
+				$this->assertSame( 0.0, (float) $refund_line->get_quantity(), 'The amount-only refund should not consume quantity.' );
+			}
+			$this->assertSame(
+				array(
+					$fixture['item_ids']['first']  => -1.11,
+					$fixture['item_ids']['second'] => -2.22,
+				),
+				$totals_by_item_id,
+				'The refund must allocate across exactly the two intended order items, by ID.'
+			);
+			$this->assertSame( 0, $stored_order->get_qty_refunded_for_item( $fixture['item_ids']['third'] ), 'The untouched line must keep its quantity.' );
+			$this->assertSame( 0.0, $stored_order->get_total_refunded_for_item( $fixture['item_ids']['third'] ), 'The untouched line must not be allocated any refund.' );
+		} finally {
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * @testdox A quantity refund allocated to two of three order items by item ID leaves the untouched line's quantity intact.
+	 *
+	 * R2's quantity-refund sibling (client `merchant-orders-partial-refund.spec.ts:72-75`, `:161-163`):
+	 * the same three-line order, refunding one unit each of the first two lines by their exact
+	 * order-item ID (rather than amount-only) restocks quantity on exactly those two lines and leaves
+	 * the third untouched. `WC_Order::get_qty_refunded_for_item()` sums refund-line quantities, which
+	 * WooCommerce stores as negative, so a one-unit refund reads `-1`.
+	 */
+	public function test_refund_line_items_allocates_quantity_refund_to_two_of_three_lines_by_item_id(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves the test request.
+		$original_post             = $_POST;
+		$original_user_id          = get_current_user_id();
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+		$provider                  = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_r2_qty' ) );
+		$gateway                   = $this->create_service_backed_refund_gateway( $provider );
+		$order                     = null;
+		$products                  = array();
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_three_line_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request(
+				$order,
+				$fixture['item_ids'],
+				array(
+					'first'  => 1,
+					'second' => 1,
+				),
+				array(
+					'first'  => '1.11',
+					'second' => '2.22',
+					'third'  => 0,
+				),
+				'3.33'
+			);
+
+			$this->assertTrue( $response['success'], 'The two-line quantity refund should succeed.' );
+			$this->assertSame( 1, $provider->refund_calls, 'One provider refund should be dispatched.' );
+
+			$stored_order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $stored_order );
+			$this->assertSame( -1, $stored_order->get_qty_refunded_for_item( $fixture['item_ids']['first'] ), 'The first line must show one unit refunded.' );
+			$this->assertSame( -1, $stored_order->get_qty_refunded_for_item( $fixture['item_ids']['second'] ), 'The second line must show one unit refunded.' );
+			$this->assertSame( 0, $stored_order->get_qty_refunded_for_item( $fixture['item_ids']['third'] ), 'The untouched third line must keep its quantity.' );
+
+			$refunds = $stored_order->get_refunds();
+			$this->assertCount( 1, $refunds, 'One local refund should be persisted.' );
+			$refund_lines = $refunds[0]->get_items( 'line_item' );
+			$this->assertCount( 2, $refund_lines, 'Exactly the two intended lines should be allocated.' );
+			foreach ( $refund_lines as $refund_line ) {
+				$this->assertSame( -1, (int) $refund_line->get_quantity(), 'Each refund line must represent exactly one refunded unit.' );
+			}
+		} finally {
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
 	 * The ?wc-ajax=get_variation endpoint renders the matched variation's description through
 	 * wc_format_content(), which fires the woocommerce_short_description filter. Eager block registration is
 	 * skipped on AJAX requests, so Bootstrap registers WooCommerce block types on demand there — otherwise a
@@ -3045,6 +3193,69 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 			'item_ids' => array(
 				'first'  => $first_item_id,
 				'second' => $second_item_id,
+			),
+		);
+	}
+
+	/**
+	 * Create a three-line refundable order priced USD 1.11 / 2.22 / 7.66, matching R2's fixture
+	 * (`data/t1-provider-family-audit.md` §2.7).
+	 *
+	 * @param WC_Payment_Gateway $gateway Payment gateway assigned to the order.
+	 * @return array{order:WC_Order,products:array{WC_Product,WC_Product,WC_Product},item_ids:array{first:int,second:int,third:int}}
+	 */
+	private function create_three_line_refundable_order( WC_Payment_Gateway $gateway ): array {
+		$first_product  = WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'R2 line one dollar eleven product',
+				'regular_price' => '1.11',
+				'price'         => '1.11',
+				'tax_status'    => 'none',
+			)
+		);
+		$second_product = WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'R2 line two dollar twenty-two product',
+				'regular_price' => '2.22',
+				'price'         => '2.22',
+				'tax_status'    => 'none',
+			)
+		);
+		$third_product  = WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'R2 line seven dollar sixty-six product',
+				'regular_price' => '7.66',
+				'price'         => '7.66',
+				'tax_status'    => 'none',
+			)
+		);
+
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order, 'The refundable order should be created.' );
+		$order->set_currency( 'USD' );
+		$order->save();
+
+		$first_item_id  = $order->add_product( $first_product, 1 );
+		$second_item_id = $order->add_product( $second_product, 1 );
+		$third_item_id  = $order->add_product( $third_product, 1 );
+		$order->calculate_totals();
+		// A checkout-created order lands `processing`, matching the R2 fixture's
+		// precondition that an amount-only partial refund must leave it there.
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->set_payment_method( $gateway->id );
+		$order->save();
+		$this->assertEquals( 10.99, $order->get_total(), 'R2 requires an exact USD 10.99 order total.' );
+
+		return array(
+			'order'    => $order,
+			'products' => array( $first_product, $second_product, $third_product ),
+			'item_ids' => array(
+				'first'  => $first_item_id,
+				'second' => $second_item_id,
+				'third'  => $third_item_id,
 			),
 		);
 	}
@@ -3193,7 +3404,7 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 	 * Submit a refund request through the authenticated classic AJAX boundary.
 	 *
 	 * @param WC_Order                       $order         Order to refund.
-	 * @param array{first:int,second:int}    $item_ids      Actual order-item IDs keyed by symbolic line name.
+	 * @param array<string,int>              $item_ids      Actual order-item IDs keyed by symbolic line name.
 	 * @param array<string,int|float|string> $quantities    Quantities keyed by symbolic line name.
 	 * @param array<string,int|float|string> $line_totals   Net totals keyed by symbolic line name.
 	 * @param string                         $refund_amount Aggregate refund amount.

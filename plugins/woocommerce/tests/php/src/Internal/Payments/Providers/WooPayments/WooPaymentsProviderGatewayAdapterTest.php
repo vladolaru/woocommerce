@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -18,8 +19,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -32,6 +36,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use WC_Order;
+use WC_Order_Refund;
 use WC_Payment_Token;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
@@ -4452,6 +4457,287 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( 'order_meta', $outcome->get_data() );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertNull( $gateway->refund_amount );
+	}
+
+	/**
+	 * @testdox A native refund over a fake transport persists the provider refund identity, status, and exactly one note.
+	 *
+	 * End to end through the production wiring: this test calls the real
+	 * {@see PaymentProcessingService::process_refund} directly (no gateway
+	 * boundary in between), which calls the real {@see WooPaymentsProvider},
+	 * this adapter, the real {@see WooPaymentsApiClient}, and the real
+	 * {@see WooPaymentsOrderEffectApplier} against a FAKEHTTP transport queued
+	 * with the exact refund response REC-5a R-a recorded from local WPCOM
+	 * (`Fixtures/rec-5a-refunds.json`). The request body sent over that
+	 * transport is compared to the recorded request. The recording settles F9:
+	 * the platform's refund `balance_transaction` is a bare string id, not the
+	 * expanded object some native sync fixtures use, and
+	 * {@see \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects::balance_transaction_id()}
+	 * already accepts either shape.
+	 *
+	 * @dataProvider recorded_refund_envelope_data
+	 *
+	 * @param string      $pair                  REC-5a R-a fixture pair key.
+	 * @param string      $currency              Order currency.
+	 * @param string      $amount                Refund amount, matching the recorded charge total.
+	 * @param int         $amount_minor          Refund amount in minor units, as sent on the wire.
+	 * @param string      $charge_id             Recorded source charge ID.
+	 * @param string      $refund_id             Recorded provider refund ID.
+	 * @param string      $reason                Merchant-supplied refund reason.
+	 * @param string|null $expected_wire_reason  Expected `reason` field on the wire: the enum value, or `null` for free text.
+	 */
+	public function test_native_refund_over_fake_transport_persists_refund_identity_status_and_one_note( string $pair, string $currency, string $amount, int $amount_minor, string $charge_id, string $refund_id, string $reason, ?string $expected_wire_reason ): void {
+		$order = $this->create_woopayments_order( $amount );
+		$order->set_currency( $currency );
+		$order->update_meta_data( '_charge_id', $charge_id );
+		$order->save();
+
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => (float) $amount,
+				'reason'         => $reason,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+
+		$recorded              = $this->load_recorded_refund_entry( $pair );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => $recorded['content_type'] ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( true );
+		$provider              = $this->create_refund_provider_over_fake_transport( $http_client, $account_service );
+
+		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
+			PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, (float) $amount, $reason ),
+			$provider
+		);
+
+		$order  = wc_get_order( $order->get_id() );
+		$refund = wc_get_order( $refund->get_id() );
+
+		$this->assertTrue( $result );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$this->assertSame( $refund_id, $refund->get_meta( '_wcpay_refund_id', true ), "The Woo refund must store the exact $pair provider refund id." );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( 1, $http_client->request_count );
+		// F9: the recorded refund's `balance_transaction` is a bare string id, not the
+		// expanded object some native sync fixtures use.
+		$this->assertSame( (string) $recorded['body']['balance_transaction'], $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
+
+		$sent = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $sent, 'The request body sent over the fake transport must be valid JSON.' );
+		$this->assertSame( $charge_id, $sent['charge'] ?? null, "The $pair request must target the exact recorded source charge." );
+		$this->assertSame( $amount_minor, $sent['amount'] ?? null, "The $pair request must send the exact recorded minor-unit amount." );
+		$this->assertArrayHasKey( 'reason', $sent );
+		$this->assertSame( $expected_wire_reason, $sent['reason'], "The $pair request's enumerated reason must match the recording." );
+		$this->assertSame( $reason, $sent['metadata']['merchant_refund_reason'] ?? null, "The $pair request must carry the merchant reason as metadata." );
+
+		$notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => str_contains( $note->content, $refund_id )
+			)
+		);
+		$this->assertCount( 1, $notes, "Exactly one note should reference the $pair refund." );
+	}
+
+	/**
+	 * REC-5a R-a recorded refund envelopes, one row per currency (USD, EUR).
+	 *
+	 * @return array<string,array{string,string,string,int,string,string,string,string|null}>
+	 */
+	public function recorded_refund_envelope_data(): array {
+		return array(
+			'usd card, free-text reason' => array(
+				'usd_card_full_refund_free_text_reason',
+				'USD',
+				'10.99',
+				1099,
+				'ch_3UJZZBBzWlxcwgpP0BZvfjOj',
+				're_3UJZZBBzWlxcwgpP0MauAsJ6',
+				'REC-5a free-text reason: customer returned the item unopened',
+				null,
+			),
+			'eur card'                   => array(
+				'eur_card_full_refund',
+				'EUR',
+				'12.34',
+				1234,
+				'ch_3UJWs2BzWlxcwgpP1y9vRrWr',
+				're_3UJWs2BzWlxcwgpP1MZ11w9h',
+				'requested_by_customer',
+				'requested_by_customer',
+			),
+		);
+	}
+
+	/**
+	 * Load one recorded REC-5a R-a refund entry's HTTP status and response body by pair key.
+	 *
+	 * @param string $pair REC-5a R-a fixture pair key.
+	 * @return array{http_status:int,content_type:string,body:array<string,mixed>}
+	 */
+	private function load_recorded_refund_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-5a-refunds.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array(
+					'http_status'  => (int) $entry['response']['http_status'],
+					'content_type' => (string) $entry['response']['content_type'],
+					'body'         => $entry['response']['body'],
+				);
+			}
+		}
+
+		$this->fail( "REC-5a R-a fixture has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * Build a real WooPayments provider whose only isolated seam is the raw HTTP transport.
+	 *
+	 * The production provider, adapter, API client and order-effect applier all
+	 * remain in use, following the pattern
+	 * `PaymentProcessingServiceTest::review_payment_intent_provider` established.
+	 *
+	 * @param FakeWooPaymentsHttpClient $http_client     Fake raw transport queued with a recorded response.
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @return WooPaymentsProvider
+	 */
+	private function create_refund_provider_over_fake_transport( FakeWooPaymentsHttpClient $http_client, WooPaymentsAccountService $account_service ): WooPaymentsProvider {
+		$api_client = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+
+		$adapter = $this->create_adapter( null, $api_client, null, null, $account_service );
+
+		$provider = new WooPaymentsProvider();
+		$provider->init(
+			$adapter,
+			$api_client,
+			$account_service,
+			null,
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+		);
+
+		return $provider;
+	}
+
+	/**
+	 * @testdox A pending redirect-method refund over a fake transport becomes successful on a `charge.refund.updated` succeeded webhook.
+	 *
+	 * K4 (`data/t1-provider-family-audit.md` risk K4, §4 Batch 5): the real-event
+	 * proof that a pending redirect-method refund becomes successful, deleted
+	 * from the browser suite with R4-R7. The first leg runs end to end through
+	 * the same production wiring as
+	 * {@see self::test_native_refund_over_fake_transport_persists_refund_identity_status_and_one_note},
+	 * fed the recorded Afterpay refund response REC-5a R-a returns while
+	 * `pending` (`Fixtures/rec-5a-refunds.json`, pair
+	 * `afterpay_clearpay_full_refund_pending`); the second leg processes the
+	 * exact `charge.refund.updated` succeeded body REC-5a R-c recorded for
+	 * that same refund (`Fixtures/rec-5a-refund-updated-event.json`, pair
+	 * `afterpay_clearpay_refund_updated_succeeded`) through the real
+	 * {@see WooPaymentsRefundEventHandler}. Client parity: the pending and
+	 * succeeded legs render distinct note text (`os:2633-2638`) and the
+	 * webhook leg's own note-once identity is distinct from the pending
+	 * leg's (`wh:355-359`), so the claim is two notes total, not one.
+	 */
+	public function test_native_refund_over_fake_transport_stays_pending_until_webhook_confirms_succeeded(): void {
+		$charge_id = 'py_3UDz8PBzWlxcwgpP1m07cdHy';
+		$refund_id = 'pyr_1UJZaGBzWlxcwgpPIeG7xqIJ';
+		$reason    = 'requested_by_customer';
+		$order     = $this->create_woopayments_order( '100.00' );
+		$order->update_meta_data( '_charge_id', $charge_id );
+		$order->save();
+
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 100.00,
+				'reason'         => $reason,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+
+		$recorded              = $this->load_recorded_refund_entry( 'afterpay_clearpay_full_refund_pending' );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => $recorded['content_type'] ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( true );
+		$provider              = $this->create_refund_provider_over_fake_transport( $http_client, $account_service );
+
+		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
+			PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 100.00, $reason ),
+			$provider
+		);
+		$this->assertTrue( $result );
+
+		$order  = wc_get_order( $order->get_id() );
+		$refund = wc_get_order( $refund->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$this->assertSame( $refund_id, $refund->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 'pending', $order->get_meta( '_wcpay_refund_status', true ), 'The synchronous leg must leave the redirect-method refund pending.' );
+		$this->assertCount( 1, $this->notes_referencing( $order->get_id(), $refund_id ), 'The pending leg must journal exactly one note.' );
+
+		$recorded_event = $this->load_recorded_refund_updated_event( 'afterpay_clearpay_refund_updated_succeeded' );
+		wc_get_container()->get( WooPaymentsRefundEventHandler::class )->process( 'charge.refund.updated', $recorded_event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ), 'The charge.refund.updated succeeded webhook must confirm the refund.' );
+		$this->assertCount( 2, $this->notes_referencing( $order->get_id(), $refund_id ), 'The pending note and the webhook-confirmed note must both be journaled.' );
+	}
+
+	/**
+	 * Order notes referencing a given refund id.
+	 *
+	 * @param int    $order_id  Order ID.
+	 * @param string $refund_id Provider refund ID.
+	 * @return array<int,object>
+	 */
+	private function notes_referencing( int $order_id, string $refund_id ): array {
+		return array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order_id ) ),
+				static fn( $note ): bool => str_contains( $note->content, $refund_id )
+			)
+		);
+	}
+
+	/**
+	 * Load a REC-5a R-c recorded `charge.refund.updated` event object by pair key.
+	 *
+	 * @param string $pair REC-5a R-c fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_refund_updated_event( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-5a-refund-updated-event.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry['body']['data']['object'];
+			}
+		}
+
+		$this->fail( "REC-5a R-c fixture has no entry for pair '$pair'." );
 	}
 
 	/**

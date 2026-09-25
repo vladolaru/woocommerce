@@ -1,6 +1,8 @@
 /**
  * External dependencies
  */
+import fs from 'fs';
+import path from 'path';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
@@ -6333,6 +6335,152 @@ describe( 'WooPayments money movement pages', () => {
 			screen.getAllByText( expectedEventDate ).length
 		).toBeGreaterThan( 0 );
 		expect( mockGetTimeline ).toHaveBeenCalledWith( 'pi_test' );
+	} );
+
+	/**
+	 * Load one REC-5a R-b recorded `GET .../wcpay/timeline/{intent}` response body
+	 * by pair key, unchanged (including `transaction_details`, `fee_rates`, and
+	 * `fee_breakdown_v1`), ready to hand straight to `mockGetTimeline`.
+	 */
+	function loadRec5aTimelineEntry( pair: string ) {
+		const fixture = JSON.parse(
+			fs.readFileSync(
+				path.resolve(
+					__dirname,
+					'../../../../../../tests/php/src/Internal/Payments/Providers/WooPayments/Fixtures/rec-5a-timelines.json'
+				),
+				'utf8'
+			)
+		);
+		const entry = fixture.entries.find(
+			( candidate: { pair: string } ) => candidate.pair === pair
+		);
+		if ( ! entry ) {
+			throw new Error(
+				`REC-5a R-b fixture has no entry for pair '${ pair }'.`
+			);
+		}
+		return entry.response.body;
+	}
+
+	/**
+	 * REC-5a R-b (`data/rec-5a-refunds.md`, `data/t1-provider-family-audit.md`
+	 * §4 Batch 5): the exact, unmodified timeline body the platform returned
+	 * for a USD 10.99 refund with a free-text merchant reason. Only the
+	 * lines that match client 11.1.0's own rendering (`map-events.js`) are
+	 * asserted: the refunded/charged/authorized main lines, the reason line,
+	 * and the Paid/Authorized/Started status lines.
+	 *
+	 * F3 left out; Task T.7 (the client's own "Payment status changed to
+	 * Refunded." status-change item, `map-events.js:938-974`, has no native
+	 * equivalent and is not asserted here in either direction).
+	 *
+	 * Fee and ARN are also left out; Task T.7: the client does not render a
+	 * bare `Fee: <amount>` line -- it composes a fee string from
+	 * `fee_breakdown_v1`/`fee_rates` via `composeFeeString()`
+	 * (`map-events.js:901-914`, `:354-430`) -- and labels the ARN line
+	 * "Acquirer Reference Number (ARN) %s", not "ARN: %s" (`map-events.js:489-493`).
+	 */
+	it( 'renders the recorded USD full-refund timeline, including the free-text reason', async () => {
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_3UJZZBBzWlxcwgpP0CDlkka0',
+			charge: {
+				id: 'ch_3UJZZBBzWlxcwgpP0BZvfjOj',
+				balance_transaction: { id: 'txn_3UJZZBBzWlxcwgpP070cVw1A' },
+				type: 'charge',
+				amount: 1099,
+				currency: 'usd',
+				created: 1790344413,
+			},
+		} );
+		mockGetTimeline.mockResolvedValue(
+			loadRec5aTimelineEntry( 'usd_full_refund_free_text_reason' )
+		);
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_3UJZZBBzWlxcwgpP0CDlkka0&transaction_id=txn_3UJZZBBzWlxcwgpP070cVw1A',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByText(
+				'A payment of $10.99 was successfully refunded.'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'Reason: REC-5a free-text reason: customer returned the item unopened'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Payment status changed to Paid.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'A payment of $10.99 was successfully charged.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Payment status changed to Authorized.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'A payment of $10.99 was successfully authorized.'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Payment status changed to Started.' )
+		).toBeInTheDocument();
+	} );
+
+	/**
+	 * REC-5a R-b, the EUR row. The refund renders in the charge's own
+	 * currency, and the recorded enum reason ("requested_by_customer") is
+	 * readable through `formatLabel()`, contradicting the deleted
+	 * `R1v`/`R3v` cases' premise that free-text reasons alone made the
+	 * reason unreadable there. F3, Fee, and ARN left out; Task T.7, as in
+	 * the USD case above.
+	 */
+	it( 'renders the recorded EUR full-refund timeline in the charge’s own currency', async () => {
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_3UJWs2BzWlxcwgpP10KzkjsT',
+			charge: {
+				id: 'ch_3UJWs2BzWlxcwgpP1y9vRrWr',
+				balance_transaction: { id: 'txn_3UJWs2BzWlxcwgpP1MLoqLbF' },
+				type: 'charge',
+				amount: 1234,
+				currency: 'eur',
+				created: 1790334050,
+			},
+		} );
+		mockGetTimeline.mockResolvedValue(
+			loadRec5aTimelineEntry( 'eur_full_refund' )
+		);
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_3UJWs2BzWlxcwgpP10KzkjsT&transaction_id=txn_3UJWs2BzWlxcwgpP1MLoqLbF',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByText(
+				'A payment of €12.34 was successfully refunded.'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Reason: Requested by customer' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'A payment of €12.34 was successfully charged.' )
+		).toBeInTheDocument();
 	} );
 
 	it( 'qualifies only known multi-dispute timeline events', () => {

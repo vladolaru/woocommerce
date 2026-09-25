@@ -1889,52 +1889,6 @@ export async function driveClassicRedirectCheckout(
 	return withoutProviderNavigation( page, session.baseURL, submit );
 }
 
-/**
- * Drive one redirect-method purchase end to end on the classic checkout and
- * hand back the proven payment identity.
- *
- * Kept for callers that only need a settled redirect source charge. The
- * provider's account of the request is still read on the way through — a
- * redirect intent that carries no readable `next_action` is not a failure for
- * this caller — so both families share one drive rather than two.
- */
-export async function completeRedirectCheckout(
-	session: ProviderWriteSession,
-	page: Page,
-	product: OwnedProduct,
-	runId: string,
-	method: RedirectMethod,
-	currencyQuery: string,
-	checkout: ClassicCheckoutTarget,
-	journal: string
-): Promise< PaymentEvidence > {
-	const observation = await driveClassicRedirectCheckout( session, page, {
-		method,
-		product,
-		runId,
-		checkout,
-		journal,
-		follow: true,
-		currencyQuery,
-		requireRequestEvidence: false,
-	} );
-
-	const paid = observation.paid;
-	if ( ! paid ) {
-		throw quarantine( 'followed checkout produced no payment evidence.' );
-	}
-
-	expect( paid.amountMinor ).toBe( method.amountMinor );
-	expect( paid.currency ).toBe( method.currency );
-	expect( paid.providerStatus ).toBe( 'succeeded' );
-	expect( paid.chargeStatus ).toBe( 'succeeded' );
-	expect( paid.chargeCaptured ).toBe( true );
-	expect( paid.occurrenceCount ).toBe( 1 );
-	expect( [ 'processing', 'completed' ] ).toContain( paid.orderStatus );
-
-	return paid;
-}
-
 /* -------------------------------------------------------------------------
  * Blocks redirect checkout
  * ---------------------------------------------------------------------- */

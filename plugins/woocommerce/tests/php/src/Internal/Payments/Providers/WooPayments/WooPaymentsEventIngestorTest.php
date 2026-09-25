@@ -3803,21 +3803,28 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox charge.refund.updated writes success metadata only for matched refunds.
+	 *
+	 * Fed by REC-5a R-c (`Fixtures/rec-5a-refund-updated-event.json`, pair
+	 * `afterpay_clearpay_refund_updated_succeeded`), the primary redirect-method
+	 * `charge.refund.updated` event local WPCOM forwarded for this recording
+	 * (`data/rec-5a-refunds.md`, `data/t1-provider-family-audit.md` §4 Batch 5).
+	 * The recording settles F9: the refund's `balance_transaction` is a bare
+	 * string id, not the expanded object some native sync fixtures use.
 	 */
 	public function test_charge_refund_updated_succeeded_updates_matched_refund(): void {
-		$order  = $this->create_refundable_woopayments_order( '10.00' );
-		$refund = $this->create_local_refund( $order, 4.00, 'Existing refund' );
-		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
+		// The recorded envelope carries the platform's own `livemode: false`; match it, or
+		// WooPaymentsEventIngestor::is_webhook_mode_mismatch() silently skips the event.
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$envelope        = $this->load_recorded_refund_updated_event( 'afterpay_clearpay_refund_updated_succeeded' );
+		$recorded_refund = $envelope['data']['object'];
+		$order           = $this->create_refundable_woopayments_order( '100.00' );
+		$order->update_meta_data( '_charge_id', (string) $recorded_refund['charge'] );
+		$order->save();
+		$refund = $this->create_local_refund( $order, 100.00, 'Existing refund' );
+		$refund->update_meta_data( '_wcpay_refund_id', (string) $recorded_refund['id'] );
 		$refund->save_meta_data();
 
-		$this->sut->process(
-			$this->create_refund_updated_event(
-				array(
-					'status'              => 'succeeded',
-					'balance_transaction' => 'txn_updated',
-				)
-			)
-		);
+		$this->sut->process( $envelope );
 
 		$order  = wc_get_order( $order->get_id() );
 		$refund = wc_get_order( $refund->get_id() );
@@ -3825,8 +3832,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertSame( 'txn_updated', $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
-		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'was successfully processed using WooPayments', 're_123' ) );
+		$this->assertSame( (string) $recorded_refund['balance_transaction'], $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
+		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'was successfully processed using WooPayments', (string) $recorded_refund['id'] ) );
 	}
 
 	/**
@@ -5058,6 +5065,29 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				'object' => $object,
 			),
 		);
+	}
+
+	/**
+	 * Load a REC-5a R-c recorded `charge.refund.updated` event envelope (the exact body
+	 * local WPCOM forwarded) by pair key, ready to pass straight to `WooPaymentsEventIngestor::process()`.
+	 *
+	 * @param string $pair REC-5a R-c fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_refund_updated_event( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-5a-refund-updated-event.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry['body'];
+			}
+		}
+
+		$this->fail( "REC-5a R-c fixture has no entry for pair '$pair'." );
 	}
 
 	/**

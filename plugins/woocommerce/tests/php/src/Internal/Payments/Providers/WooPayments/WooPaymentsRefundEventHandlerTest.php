@@ -268,6 +268,141 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A successful synchronous refund followed by a `charge.refund.updated` succeeded webhook keeps one note.
+	 *
+	 * `:102` (`test_successful_synchronous_refund_followed_by_webhook_converges`)
+	 * proves this convergence for `charge.refunded`, the full-charge event;
+	 * this proves it for `charge.refund.updated`, the bare-refund event, which
+	 * that test does not exercise (client `os:1937`, `wh:355-359`). Recorded
+	 * webhook body: REC-5a R-c (`Fixtures/rec-5a-refund-updated-event.json`,
+	 * pair `afterpay_clearpay_refund_updated_succeeded`), the primary
+	 * redirect-method refund-updated event local WPCOM forwarded for this
+	 * recording (`data/rec-5a-refunds.md`).
+	 */
+	public function test_successful_synchronous_refund_followed_by_refund_updated_webhook_keeps_one_note(): void {
+		$refund_object = $this->load_recorded_refund_updated_event( 'afterpay_clearpay_refund_updated_succeeded' );
+		$charge_id     = (string) $refund_object['charge'];
+		$refund_id     = (string) $refund_object['id'];
+		$amount        = ( (int) $refund_object['amount'] ) / 100;
+		$amount_string = sprintf( '%.2f', $amount );
+		$reason        = (string) $refund_object['reason'];
+
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_currency( strtoupper( (string) $refund_object['currency'] ) );
+		$order->set_total( $amount_string );
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_charge_id', $charge_id );
+		$order->save();
+
+		$refund = wc_create_refund(
+			array(
+				'amount'   => $amount_string,
+				'reason'   => $reason,
+				'order_id' => $order->get_id(),
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+
+		$provider_result    = array(
+			'id'                  => $refund_id,
+			'status'              => 'succeeded',
+			'balance_transaction' => $refund_object['balance_transaction'],
+		);
+		$effect_applier     = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
+		$provider           = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $refund_id ), $effect_applier, $provider_result ) extends RecordingProvider implements ProviderOperationEffectApplier {
+			/**
+			 * WooPayments effect applier.
+			 *
+			 * @var WooPaymentsOrderEffectApplier
+			 */
+			private WooPaymentsOrderEffectApplier $effect_applier;
+
+			/**
+			 * Provider refund result.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $provider_result;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param PaymentOutcome                $outcome         Provider outcome.
+			 * @param WooPaymentsOrderEffectApplier $effect_applier WooPayments effect applier.
+			 * @param array<string,mixed>           $provider_result Provider refund result.
+			 */
+			public function __construct( PaymentOutcome $outcome, WooPaymentsOrderEffectApplier $effect_applier, array $provider_result ) {
+				parent::__construct( $outcome );
+				$this->effect_applier  = $effect_applier;
+				$this->provider_result = $provider_result;
+			}
+
+			/**
+			 * Apply the real WooPayments refund effects.
+			 *
+			 * @param PaymentContext $context   Payment context.
+			 * @param PaymentOutcome $outcome   Provider outcome.
+			 * @param string         $operation Operation name.
+			 * @return PaymentOutcome
+			 */
+			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+				unset( $operation );
+
+				return $this->effect_applier->apply( $context, $outcome, WooPaymentsOrderEffectPlan::for_refund( $this->provider_result ) );
+			}
+		};
+		$processing_service = wc_get_container()->get( PaymentProcessingService::class );
+
+		$this->assertTrue( $processing_service->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, $amount, $reason ), $provider ) );
+
+		$synchronous_notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => str_contains( $note->content, $refund_id )
+			)
+		);
+		$this->assertCount( 1, $synchronous_notes, 'The synchronous refund leg must journal exactly one note.' );
+
+		$this->sut->process( 'charge.refund.updated', $refund_object );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+
+		$refund_notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => str_contains( $note->content, $refund_id )
+			)
+		);
+		$this->assertCount( 1, $refund_notes, 'The refund.updated webhook must not add a second note once the synchronous leg already recorded one.' );
+	}
+
+	/**
+	 * Load a REC-5a R-c recorded `charge.refund.updated` event object by pair key.
+	 *
+	 * @param string $pair REC-5a R-c fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_refund_updated_event( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-5a-refund-updated-event.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry['body']['data']['object'];
+			}
+		}
+
+		$this->fail( "REC-5a R-c fixture has no entry for pair '$pair'." );
+	}
+
+	/**
 	 * Create a refundable WooPayments order.
 	 *
 	 * @return WC_Order
