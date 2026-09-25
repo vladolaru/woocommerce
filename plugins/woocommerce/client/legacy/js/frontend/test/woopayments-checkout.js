@@ -2519,6 +2519,68 @@ describe( 'WooPayments checkout', () => {
 		).toBe( 'fraud-token-123' );
 	} );
 
+	test( 'adds the fraud-prevention token before submitting a redirect split-gateway classic checkout', () => {
+		// A redirect method such as Affirm collects nothing on this page and
+		// mounts no Stripe Elements container of its own (see 'does not mount
+		// a redirect gateway into another gateway payment element container'
+		// above), so `createPaymentMethodAndSubmit` takes its `!stripe ||
+		// !elements` branch and appends the hidden fraud-prevention field
+		// synchronously, the same as every other WooPayments gateway.
+		//
+		// Oracle: WooPayments 11.1.0 client `checkout/classic/payment-processing.js:486` calls
+		// `appendFraudPreventionTokenInputToForm( $form )` unconditionally inside `processPayment()`,
+		// which every gateway/method shares, and `checkout/classic/upe-utils.js:203-208`
+		// (`appendFraudPreventionTokenInputToForm`) is the client's own hidden-field append, the
+		// direct parity counterpart of native's `ensureHiddenField()` call in `appendPaymentFields()`.
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<ul class="payment_methods">' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
+			'<input id="payment_method_woocommerce_payments" type="radio" name="payment_method" value="woocommerce_payments" />' +
+			'<div class="payment_box payment_method_woocommerce_payments">' +
+			'<div id="wcpay-core-payment-element" data-gateway-marker="card"></div>' +
+			'</div>' +
+			'</li>' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_affirm">' +
+			'<input id="payment_method_woocommerce_payments_affirm" type="radio" ' +
+			'name="payment_method" value="woocommerce_payments_affirm" checked />' +
+			'<div class="payment_box payment_method_woocommerce_payments_affirm"></div>' +
+			'</li>' +
+			'</ul>' +
+			'<button id="place_order" type="button">Place order</button>' +
+			'</form>';
+		window.wcpay_core_checkout_config = Object.assign(
+			{},
+			window.wcpay_core_checkout_config,
+			{
+				gatewayId: 'woocommerce_payments',
+				paymentMethodTypes: [ 'card' ],
+			}
+		);
+		window.wcpay_core_checkout_config_woocommerce_payments_affirm =
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_affirm',
+				paymentMethodTypes: [ 'affirm' ],
+				fraudPreventionToken: 'fraud-token-123',
+				paymentMethodsConfig: {
+					affirm: {
+						isReusable: false,
+					},
+				},
+			} );
+
+		require( '../woopayments-checkout' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_affirm()
+		).toBe( true );
+
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-fraud-prevention-token' ]
+				.value
+		).toBe( 'fraud-token-123' );
+	} );
+
 	test( 'submits classic checkout without creating a payment method when a saved token is selected', async () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +

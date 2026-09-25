@@ -21,10 +21,7 @@ import {
 	readHighestOrderId,
 	readOrderDeltaAfter,
 } from './classic-card-authentication';
-import {
-	PlaywrightClassicCardCheckoutBrowser,
-	type PublicTokenDigest,
-} from './classic-card-checkout';
+import { type PublicTokenDigest } from './classic-card-checkout';
 import type { ClassicCheckoutTarget } from './classic-checkout-page';
 
 /**
@@ -60,7 +57,6 @@ const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
 const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
 const STORE_CART_API = '/wp-json/wc/store/v1/cart';
 const CLASSIC_CHECKOUT_FORM = 'form.checkout.woocommerce-checkout';
-const CLASSIC_NOTICE_GROUP = `${ CLASSIC_CHECKOUT_FORM } .woocommerce-NoticeGroup-checkout`;
 const BLOCKS_CHECKOUT_PATH = '/wp-json/wc/store/v1/checkout';
 const ORDER_RECEIVED_PATH = /\/order-received\/([1-9]\d*)\/?$/;
 
@@ -75,7 +71,6 @@ const CHECKOUT_EXCHANGE_TIMEOUT_MS = 90_000;
 const HOSTED_PAGE_TIMEOUT_MS = 90_000;
 const RECEIPT_TIMEOUT_MS = 90_000;
 const ORDER_INTENT_TIMEOUT_MS = 60_000;
-const REJECTION_NOTICE_TIMEOUT_MS = 30_000;
 const POLL_INTERVAL_MS = 500;
 
 export interface BillingAddress {
@@ -2148,15 +2143,6 @@ async function driveBlocksRedirectCheckoutInternal(
 	} );
 }
 
-/** Drive the legacy new-cart redirect checkout path. */
-export async function driveBlocksRedirectCheckout(
-	session: ProviderWriteSession,
-	page: Page,
-	options: BlocksRedirectCheckoutOptions
-): Promise< RedirectHandoffObservation > {
-	return driveBlocksRedirectCheckoutInternal( session, page, options, false );
-}
-
 /** Drive a redirect checkout from the current one-item cart without adding to it. */
 export async function driveBlocksRedirectCheckoutWithExistingCart(
 	session: ProviderWriteSession,
@@ -2164,165 +2150,6 @@ export async function driveBlocksRedirectCheckoutWithExistingCart(
 	options: BlocksRedirectExistingCartOptions
 ): Promise< RedirectHandoffObservation > {
 	return driveBlocksRedirectCheckoutInternal( session, page, options, true );
-}
-
-/* -------------------------------------------------------------------------
- * Tokenless classic submission, for the protection-on twins
- * ---------------------------------------------------------------------- */
-
-export interface TokenlessRedirectRejection {
-	status: number;
-	result: unknown;
-	messages: string;
-	alertCount: number;
-	noticeMessages: string[];
-	checkoutRequestCount: number;
-	checkoutResponseCount: number;
-	/** Every observed checkout response as `HTTP <status> @<ms>`, in arrival order. */
-	checkoutResponseLog: string;
-	fraudPreventionToken: SubmittedFraudPreventionToken;
-	url: string;
-}
-
-function readRejectionMessages( body: Record< string, unknown > ): string {
-	return typeof body.messages === 'string' ? body.messages : '';
-}
-
-/**
- * Submits one redirect-method checkout with no session token and reports how
- * native turned it away.
- *
- * The token is removed from every place the classic script reads it and the
- * effective value is re-read before anything is clicked: a submission that
- * still carried a valid token would settle a real payment rather than prove an
- * enforcement boundary, so it must not be dispatched at all.
- */
-export async function submitTokenlessRedirectCheckout(
-	session: ProviderWriteSession,
-	page: Page,
-	options: {
-		method: RedirectMethod;
-		product: OwnedProduct;
-		runId: string;
-		checkout: ClassicCheckoutTarget;
-		journal: string;
-		currencyQuery?: string;
-	}
-): Promise< TokenlessRedirectRejection > {
-	const { method, product, runId, checkout } = options;
-	await session.assertCanWrite();
-	// The token helpers belong to the classic card driver, which reads and
-	// clears the token through the same fallback chain the classic script uses.
-	// Redirect methods submit that field from the same script, so reproducing
-	// the chain here would only invite it to drift.
-	const tokenReader = new PlaywrightClassicCardCheckoutBrowser(
-		page,
-		session.baseURL,
-		checkout.pageId
-	);
-
-	const currencySuffix = options.currencyQuery
-		? `?currency=${ encodeURIComponent( options.currencyQuery ) }`
-		: '';
-	await page.goto(
-		`?post_type=product&p=${ product.id }${
-			options.currencyQuery
-				? `&currency=${ encodeURIComponent( options.currencyQuery ) }`
-				: ''
-		}`
-	);
-	await session.performWrite( () =>
-		page.getByRole( 'button', { name: 'Add to cart', exact: true } ).click()
-	);
-	await page.goto( `${ checkout.path }${ currencySuffix }` );
-	await expect( page.locator( CLASSIC_CHECKOUT_FORM ) ).toBeVisible();
-	await fillClassicBilling( page, runId, method.billing );
-	await selectClassicRedirectGateway( page, method );
-
-	await tokenReader.clearFraudPreventionToken();
-	if (
-		( await tokenReader.captureEffectiveFraudPreventionTokenDigest() )
-			.present
-	) {
-		// Nothing has been dispatched, so no provider resource is at stake.
-		fail(
-			'tokenless submission was not dispatched because the page still exposes a fraud-prevention token.'
-		);
-	}
-
-	let activationCount = 0;
-
-	return session.withProviderSubmissionJournal( options.journal, async () => {
-		const observed = await observeCheckoutExchange(
-			page,
-			session.baseURL,
-			( request ) => isClassicCheckoutRequest( request, session.baseURL ),
-			async () => {
-				activationCount += 1;
-				if ( activationCount !== 1 ) {
-					throw quarantine(
-						'tokenless submission must activate Place order exactly once.'
-					);
-				}
-				await session.performWrite( () =>
-					page
-						.getByRole( 'button', {
-							name: 'Place order',
-							exact: true,
-						} )
-						.click()
-				);
-			},
-			async () => {
-				const alert = page.locator(
-					`${ CLASSIC_NOTICE_GROUP } [role="alert"]`
-				);
-				try {
-					await alert.waitFor( {
-						state: 'visible',
-						timeout: REJECTION_NOTICE_TIMEOUT_MS,
-					} );
-				} catch ( error ) {
-					throw quarantine(
-						'tokenless submission saw no rejection notice, so whether the submission was refused is unknown.',
-						error
-					);
-				}
-
-				// Core prints checkout errors through one of two templates:
-				// `notices/error.php` is a `<ul role="alert">` of messages and
-				// `block-notices/error.php` — what block themes get — is a
-				// banner carrying a single message as its own content.
-				const items = alert.first().getByRole( 'listitem' );
-				const messages =
-					( await items.count() ) > 0
-						? await items.allInnerTexts()
-						: [ await alert.first().innerText() ];
-
-				return {
-					alertCount: await alert.count(),
-					noticeMessages: messages.map( ( message ) =>
-						message.replace( /\s+/g, ' ' ).trim()
-					),
-				};
-			}
-		);
-
-		return {
-			status: observed.exchange.status,
-			result: observed.exchange.body.result,
-			messages: readRejectionMessages( observed.exchange.body ),
-			alertCount: observed.result.alertCount,
-			noticeMessages: observed.result.noticeMessages,
-			checkoutRequestCount: observed.exchange.requestCount,
-			checkoutResponseCount: observed.exchange.responseCount,
-			checkoutResponseLog: observed.exchange.responseLog,
-			fraudPreventionToken: readSubmittedFraudPreventionToken(
-				observed.exchange.fields
-			),
-			url: page.url(),
-		};
-	} );
 }
 
 /* -------------------------------------------------------------------------

@@ -2526,17 +2526,38 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject checkout requests with invalid fraud-prevention tokens before creating a payment context.
+	 * @testdox Should reject checkout requests with invalid or absent fraud-prevention tokens before creating a payment context, on the card gateway and every split redirect gateway.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1219-1227` reads one shared
+	 * `Fraud_Prevention_Service::get_instance()` regardless of which gateway ID is processing.
+	 * `:1221` reads `null` when the POST field is absent (`isset($_POST[...]) ? ... : null`), and
+	 * `fraud-prevention/class-fraud-prevention-service.php:172-174` refuses a non-string token
+	 * outright; `:168-177` (`verify_token`) otherwise refuses a token that does not hash equal to the
+	 * session's. Order status after the refusal is intentionally not asserted: the client marks the
+	 * order `failed` here (F2), a documented parity gap left open for Task T.7.
+	 *
+	 * @dataProvider fraud_prevention_token_gateway_provider
+	 *
+	 * @param string|null $payment_method_id Split payment method ID, or null for the card gateway.
+	 * @param bool        $token_posted      Whether a (tampered) token is posted at all, or the field is absent.
 	 */
-	public function test_process_payment_rejects_invalid_fraud_prevention_token_when_enabled(): void {
+	public function test_process_payment_rejects_invalid_fraud_prevention_token_when_enabled( ?string $payment_method_id, bool $token_posted ): void {
 		wc_clear_notices();
-		$order   = $this->create_order();
-		$service = new RecordingPaymentProcessingService();
-		$session = $this->create_session();
+		$order      = $this->create_order();
+		$service    = new RecordingPaymentProcessingService();
+		$session    = $this->create_session();
+		$definition = null === $payment_method_id ? null : ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
+		if ( null !== $payment_method_id ) {
+			$this->assertNotNull( $definition );
+		}
 		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
-		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
+		if ( $token_posted ) {
+			$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
+		} else {
+			unset( $_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] );
+		}
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new NativeWooPaymentsGateway( $definition );
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -2564,6 +2585,114 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			"We're not able to process this payment. Please refresh the page and try again.",
 			wc_get_notices( 'error' )[0]['notice'] ?? ''
+		);
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( '', $reloaded->get_meta( '_intent_id', true ) );
+	}
+
+	/**
+	 * Gateways, crossed with a tampered vs. absent token, the refusal must cover.
+	 *
+	 * @return array<string,array{0:string|null,1:bool}>
+	 */
+	public function fraud_prevention_token_gateway_provider(): array {
+		return array(
+			'card, tampered token'              => array( null, true ),
+			'card, absent token'                => array( null, false ),
+			'Affirm, tampered token'            => array( 'affirm', true ),
+			'Affirm, absent token'              => array( 'affirm', false ),
+			'Cash App Afterpay, tampered token' => array( 'afterpay_clearpay', true ),
+			'Cash App Afterpay, absent token'   => array( 'afterpay_clearpay', false ),
+			'Bancontact, tampered token'        => array( 'bancontact', true ),
+			'Bancontact, absent token'          => array( 'bancontact', false ),
+		);
+	}
+
+	/**
+	 * @testdox Should admit a checkout request whose fraud-prevention token matches the session.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1219-1227` and
+	 * `fraud-prevention/class-fraud-prevention-service.php:168-177`: a token that hashes equal to the
+	 * session's is admitted without regenerating it.
+	 */
+	public function test_process_payment_admits_matching_fraud_prevention_token_when_enabled(): void {
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, '0123456789abcdef' );
+		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = '0123456789abcdef';
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( true, $session )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
+		$this->assertSame( '0123456789abcdef', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
+	}
+
+	/**
+	 * @testdox Should admit a matching fraud-prevention token on split redirect gateways.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1219-1227`: `process_payment`
+	 * reads one shared `Fraud_Prevention_Service::get_instance()`, not a per-gateway one, so a matching
+	 * token admits the checkout identically whichever split gateway ID is processing.
+	 *
+	 * @dataProvider split_redirect_gateway_provider
+	 *
+	 * @param string $payment_method_id Split payment method ID.
+	 */
+	public function test_process_payment_admits_valid_fraud_token_on_split_redirect_gateways( string $payment_method_id ): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
+		$this->assertNotNull( $definition );
+
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, '0123456789abcdef' );
+		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = '0123456789abcdef';
+
+		$gateway = new NativeWooPaymentsGateway( $definition );
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( true, $session )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID_PREFIX . $payment_method_id, $service->last_checkout_context->get_gateway_id() );
+	}
+
+	/**
+	 * Split redirect gateways the matching fraud-prevention token must be admitted on.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function split_redirect_gateway_provider(): array {
+		return array(
+			'Affirm'            => array( 'affirm' ),
+			'Cash App Afterpay' => array( 'afterpay_clearpay' ),
+			'Bancontact'        => array( 'bancontact' ),
 		);
 	}
 

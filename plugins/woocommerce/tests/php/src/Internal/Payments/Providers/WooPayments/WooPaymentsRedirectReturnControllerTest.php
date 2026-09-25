@@ -323,6 +323,58 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A redirect-method return confirms the same intent, transitions the order to processing, and saves no token.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2321-2407` (redirect return
+	 * confirmation reads the fetched charge back onto the order), `class-wc-payments-order-service.php:403-409`
+	 * (the succeeded status transitions to `mark_payment_completed`, moving the order to
+	 * `processing`), and `:1351` (`attach_intent_info_to_order`, which persists `_intent_id` and
+	 * `_charge_id` from the fetched intent and its latest charge). No `save_payment_method` was
+	 * requested, so no token is created.
+	 *
+	 * @dataProvider redirect_method_return_provider
+	 *
+	 * @param string $method    Split gateway payment method ID.
+	 * @param string $charge_id Provider charge ID fixture (Bancontact settles under a `py_` prefix).
+	 */
+	public function test_handle_wp_confirms_redirect_method_return( string $method, string $charge_id ): void {
+		$order = $this->create_order( '50.00', 0, true );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . $method );
+		$order->save();
+
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->redirect_method_payment_intent( $order, 'pi_redirect', $method, $charge_id );
+		$confirmation_owner         = $this->create_confirmation_owner( $api_client );
+		$this->sut                  = $this->create_controller( true, $confirmation_owner, $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_redirect', false );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'processing', $reloaded->get_status() );
+		$this->assertSame( 1, $api_client->payment_intent_reads );
+		$this->assertSame( 'pi_redirect', $api_client->last_payment_intent_id );
+		$this->assertSame( 'pi_redirect', $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( $charge_id, $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertCount( 0, $reloaded->get_payment_tokens() );
+	}
+
+	/**
+	 * Redirect-method return fixtures.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function redirect_method_return_provider(): array {
+		return array(
+			'Alipay'            => array( 'alipay', 'ch_redirect' ),
+			'Affirm'            => array( 'affirm', 'ch_redirect' ),
+			'Cash App Afterpay' => array( 'afterpay_clearpay', 'ch_redirect' ),
+			'Bancontact'        => array( 'bancontact', 'py_redirect' ),
+		);
+	}
+
+	/**
 	 * @testdox An invalid redirect nonce is a no-op and does not terminate the request.
 	 */
 	public function test_handle_wp_ignores_invalid_nonce_without_dying(): void {
@@ -1162,6 +1214,39 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 								'funding' => 'credit',
 								'last4'   => '4242',
 							),
+						),
+					),
+				),
+			),
+		);
+	}
+
+	/**
+	 * Build a successful redirect-method PaymentIntent response.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Intent ID.
+	 * @param string   $method    Split gateway payment method ID.
+	 * @param string   $charge_id Provider charge ID.
+	 * @return array<string,mixed>
+	 */
+	private function redirect_method_payment_intent( WC_Order $order, string $intent_id, string $method, string $charge_id ): array {
+		return array(
+			'id'             => $intent_id,
+			'status'         => 'succeeded',
+			'currency'       => strtolower( (string) $order->get_currency() ),
+			'amount'         => 5000,
+			'customer'       => 'cus_return',
+			'payment_method' => 'pm_' . $method,
+			'metadata'       => array( 'order_id' => $order->get_id() ),
+			'charges'        => array(
+				'total_count' => 1,
+				'data'        => array(
+					array(
+						'id'                     => $charge_id,
+						'payment_method'         => 'pm_' . $method,
+						'payment_method_details' => array(
+							'type' => $method,
 						),
 					),
 				),

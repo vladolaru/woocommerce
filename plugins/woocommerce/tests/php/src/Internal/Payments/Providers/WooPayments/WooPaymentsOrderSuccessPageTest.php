@@ -221,6 +221,31 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should render the registry-backed LPM title for an Alipay order on the order-received page.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payments-order-success-page.php:333-369`
+	 * (`show_lpm_payment_method_name`): the LPM wrapper class and logo carry the method's own ID.
+	 */
+	public function test_filters_alipay_lpm_payment_method_title_on_order_received_page(): void {
+		$page  = $this->create_page( true );
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'alipay' );
+		$order->save();
+		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
+
+		try {
+			$title = $page->filter_payment_method_title( 'Alipay', $order );
+		} finally {
+			remove_filter( 'woocommerce_is_order_received_page', '__return_true' );
+		}
+
+		$this->assertStringContainsString( 'wc-payment-lpm-logo--alipay', $title );
+		$this->assertStringContainsString( '/assets/images/payment-methods/alipay-logo.svg', $title );
+		$this->assertStringContainsString( 'alt="Alipay"', $title );
+	}
+
+	/**
 	 * @testdox Should render express-wallet titles without applying LPM logo filters.
 	 */
 	public function test_filters_express_payment_method_title_without_lpm_logo_filters(): void {

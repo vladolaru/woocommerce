@@ -108,6 +108,49 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A method-named handle-redirect next action falls through to the prebuilt confirmation hash.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2093-2114`. The plugin's redirect
+	 * branch reads only `redirect_to_url`; every other next-action type, including a method's own
+	 * `alipay_handle_redirect`, falls into the same `else` that builds the `#wcpay-confirm-pi:` hash for
+	 * the provider's own script to complete client-side. This intent carries a real `next_action` body
+	 * (unlike the wechat_pay case above, which has none) to prove the codec does not start reading
+	 * `alipay_handle_redirect` as a raw redirect once a payload for it exists.
+	 */
+	public function test_outcome_from_intention_maps_method_handle_redirect_to_confirmation_hash(): void {
+		$intent = array(
+			'id'             => 'pi_alipay',
+			'status'         => 'requires_action',
+			'client_secret'  => 'secret_alipay',
+			'payment_method' => 'pm_alipay',
+			'next_action'    => array(
+				'type'                   => 'alipay_handle_redirect',
+				'alipay_handle_redirect' => array(
+					'native_url' => 'https://pm-redirects.stripe.com/authorize/acct_test/pa_alipay',
+				),
+			),
+		);
+
+		$raw_redirect_url = WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent );
+		$this->assertSame( '', $raw_redirect_url );
+		$this->assertTrue( WooPaymentsIntentCodec::requires_confirmation_redirect( $intent, esc_url_raw( $raw_redirect_url ) ) );
+
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			WooPaymentsIntentMappingContext::for_native(
+				42,
+				'https://example.test/order-received/42',
+				'pm_request',
+				'cus_fallback',
+				'#wcpay-confirm-pi:42:secret_alipay:explicit_nonce'
+			)
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
+		$this->assertSame( '#wcpay-confirm-pi:42:secret_alipay:explicit_nonce', $outcome->get_redirect_url() );
+	}
+
+	/**
 	 * @testdox Redirect next actions map to provider redirect outcomes.
 	 */
 	public function test_outcome_from_intention_maps_provider_redirect(): void {

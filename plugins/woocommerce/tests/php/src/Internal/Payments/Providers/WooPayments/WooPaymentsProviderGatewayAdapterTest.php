@@ -2049,11 +2049,24 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should send an order return URL for split redirect gateway methods.
+	 * @testdox Charge should send the exact method, amount, currency and order return URL for split redirect gateway methods.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1781-1782` (amount/currency),
+	 * `:1819` and `:1835` (`payment_method_types`, via `get_payment_method_types()` and
+	 * `set_payment_methods()`), `:2561-2575` (`get_payment_methods_from_gateway_id`, the split-gateway
+	 * derivation `get_payment_method_types()` calls), and `:1852-1866` (`upe_needs_redirection()` sets
+	 * `return_url` for any single non-card method).
+	 *
+	 * @dataProvider split_redirect_method_provider
+	 *
+	 * @param string $method   Split gateway payment method ID.
+	 * @param string $total    Order total.
+	 * @param int    $minor    Expected minor-unit amount.
+	 * @param string $currency Order currency.
 	 */
-	public function test_charge_sends_return_url_for_split_redirect_gateway_methods(): void {
-		$order = $this->create_woopayments_order( '50.00' );
-		$order->set_currency( 'EUR' );
+	public function test_charge_sends_split_redirect_method_request( string $method, string $total, int $minor, string $currency ): void {
+		$order = $this->create_woopayments_order( $total );
+		$order->set_currency( $currency );
 		$order->save();
 
 		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
@@ -2086,12 +2099,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				$this->last_request_data = $request_data;
 
 				return array(
-					'id'             => 'pi_ideal',
+					'id'             => 'pi_redirect',
 					'status'         => 'requires_action',
-					'client_secret'  => 'secret_ideal',
+					'client_secret'  => 'secret_redirect',
 					'customer'       => 'cus_native',
-					'payment_method' => 'pm_ideal',
-					'currency'       => 'eur',
+					'payment_method' => 'pm_redirect',
+					'currency'       => strtolower( (string) $request_data['currency'] ),
 					'next_action'    => array(
 						'type'            => 'redirect_to_url',
 						'redirect_to_url' => array(
@@ -2117,13 +2130,15 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$sut->charge(
 			PaymentContext::for_checkout(
 				$order,
-				OrderPaymentStore::GATEWAY_ID_PREFIX . 'ideal',
-				'pm_ideal'
+				OrderPaymentStore::GATEWAY_ID_PREFIX . $method,
+				'pm_' . $method
 			),
 			'key_charge'
 		);
 
-		$this->assertSame( array( 'ideal' ), $api_client->last_request_data['payment_method_types'] );
+		$this->assertSame( array( $method ), $api_client->last_request_data['payment_method_types'] );
+		$this->assertSame( $minor, $api_client->last_request_data['amount'] );
+		$this->assertSame( strtolower( $currency ), $api_client->last_request_data['currency'] );
 		$this->assertArrayHasKey( 'return_url', $api_client->last_request_data );
 		$this->assertStringStartsWith( $order->get_checkout_order_received_url(), $api_client->last_request_data['return_url'] );
 
@@ -2132,6 +2147,123 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $query_args['wc_payment_method'] ?? '' );
 		$this->assertSame( 1, wp_verify_nonce( $query_args['_wpnonce'] ?? '', 'wcpay_process_redirect_order_nonce' ) );
+
+		if ( 'klarna' === $method ) {
+			// Client 11.1.0 os:417-426: a requires_action intent for a non-offline method with no
+			// error calls mark_payment_started(), leaving the order at its pending status.
+			$reloaded = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $reloaded );
+			$this->assertSame( 'pending', $reloaded->get_status() );
+			$this->assertSame( '', $reloaded->get_meta( '_charge_id', true ) );
+		}
+	}
+
+	/**
+	 * Split redirect method request fixtures.
+	 *
+	 * @return array<string,array{0:string,1:string,2:int,3:string}>
+	 */
+	public function split_redirect_method_provider(): array {
+		return array(
+			'iDEAL EUR'                 => array( 'ideal', '50.00', 5000, 'EUR' ),
+			'Alipay USD'                => array( 'alipay', '12.00', 1200, 'USD' ),
+			'Affirm USD'                => array( 'affirm', '100.00', 10000, 'USD' ),
+			'Cash App Afterpay USD'     => array( 'afterpay_clearpay', '100.00', 10000, 'USD' ),
+			'Bancontact EUR'            => array( 'bancontact', '12.34', 1234, 'EUR' ),
+			'Klarna USD, never returns' => array( 'klarna', '100.00', 10000, 'USD' ),
+		);
+	}
+
+	/**
+	 * @testdox A single card checkout without save matches the 11.1.0 request shape.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1781-1782` (amount/currency),
+	 * `:1821-1831` (capture_method, customer, payment_method), and `:1870-1874` (`setup_future_usage`
+	 * is set only when the shopper requested saving, never for a plain single-use charge).
+	 */
+	public function test_single_card_checkout_without_save_matches_11_1_request_shape(): void {
+		$order            = $this->create_woopayments_order( '10.99' );
+		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Last request data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $last_request_data = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->last_request_data = $request_data;
+
+				return array(
+					'id'             => 'pi_basic_card',
+					'status'         => 'succeeded',
+					'client_secret'  => 'secret_basic_card',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+					'currency'       => 'usd',
+					'charges'        => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                     => 'ch_basic_card',
+								'payment_method'         => 'pm_native',
+								'payment_method_details' => array(
+									'type' => 'card',
+									'card' => array(
+										'brand'   => 'visa',
+										'funding' => 'credit',
+										'last4'   => '4242',
+									),
+								),
+							),
+						),
+					),
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_native' );
+
+		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut->charge(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'pm_card'
+			),
+			'key_charge'
+		);
+
+		$this->assertSame( 1099, $api_client->last_request_data['amount'] );
+		$this->assertSame( 'usd', $api_client->last_request_data['currency'] );
+		$this->assertSame( 'automatic', $api_client->last_request_data['capture_method'] );
+		$this->assertSame( array( 'card' ), $api_client->last_request_data['payment_method_types'] );
+		$this->assertSame( 'cus_native', $api_client->last_request_data['customer'] );
+		$this->assertSame( 'pm_card', $api_client->last_request_data['payment_method'] );
+		$this->assertArrayNotHasKey( 'setup_future_usage', $api_client->last_request_data );
 	}
 
 	/**
