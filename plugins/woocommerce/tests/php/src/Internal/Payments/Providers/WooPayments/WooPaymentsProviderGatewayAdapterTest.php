@@ -2049,13 +2049,17 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should send the exact method, amount, currency and order return URL for split redirect gateway methods.
+	 * @testdox Charge should send the exact method, amount, currency, capture mode and order return URL for split redirect gateway methods, and return a provider-redirect outcome.
 	 *
 	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1781-1782` (amount/currency),
 	 * `:1819` and `:1835` (`payment_method_types`, via `get_payment_method_types()` and
-	 * `set_payment_methods()`), `:2561-2575` (`get_payment_methods_from_gateway_id`, the split-gateway
-	 * derivation `get_payment_method_types()` calls), and `:1852-1866` (`upe_needs_redirection()` sets
-	 * `return_url` for any single non-card method).
+	 * `set_payment_methods()`), `:1821-1831` (`capture_method`), `:2561-2575`
+	 * (`get_payment_methods_from_gateway_id`, the split-gateway derivation `get_payment_method_types()`
+	 * calls), `:1852-1866` (`upe_needs_redirection()` sets `return_url` for any single non-card
+	 * method), and `:2094-2097`: a `redirect_to_url` next action on a confirmed intent responds with
+	 * `result: success` and `redirect` set to that URL directly, which is the outcome
+	 * `STATUS_REQUIRES_REDIRECT` mirrors. The order's `pending` status and empty `_charge_id` for this
+	 * shape are owned by `PaymentProcessingServiceTest::test_process_checkout_returns_redirect_without_completing_order`.
 	 *
 	 * @dataProvider split_redirect_method_provider
 	 *
@@ -2126,8 +2130,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
-		$sut->charge(
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$outcome = $sut->charge(
 			PaymentContext::for_checkout(
 				$order,
 				OrderPaymentStore::GATEWAY_ID_PREFIX . $method,
@@ -2139,6 +2143,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $method ), $api_client->last_request_data['payment_method_types'] );
 		$this->assertSame( $minor, $api_client->last_request_data['amount'] );
 		$this->assertSame( strtolower( $currency ), $api_client->last_request_data['currency'] );
+		$this->assertSame( 'automatic', $api_client->last_request_data['capture_method'] );
 		$this->assertArrayHasKey( 'return_url', $api_client->last_request_data );
 		$this->assertStringStartsWith( $order->get_checkout_order_received_url(), $api_client->last_request_data['return_url'] );
 
@@ -2148,14 +2153,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $query_args['wc_payment_method'] ?? '' );
 		$this->assertSame( 1, wp_verify_nonce( $query_args['_wpnonce'] ?? '', 'wcpay_process_redirect_order_nonce' ) );
 
-		if ( 'klarna' === $method ) {
-			// Client 11.1.0 os:417-426: a requires_action intent for a non-offline method with no
-			// error calls mark_payment_started(), leaving the order at its pending status.
-			$reloaded = wc_get_order( $order->get_id() );
-			$this->assertInstanceOf( WC_Order::class, $reloaded );
-			$this->assertSame( 'pending', $reloaded->get_status() );
-			$this->assertSame( '', $reloaded->get_meta( '_charge_id', true ) );
-		}
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status(), "$method's requires_action intent with a redirect_to_url next action must map to a direct provider redirect." );
+		$this->assertSame( 'https://pm-redirects.stripe.com/authorize/acct_test/pa_nonce', $outcome->get_redirect_url() );
 	}
 
 	/**
@@ -2178,8 +2177,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @testdox A single card checkout without save matches the 11.1.0 request shape.
 	 *
 	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1781-1782` (amount/currency),
-	 * `:1821-1831` (capture_method, customer, payment_method), and `:1870-1874` (`setup_future_usage`
-	 * is set only when the shopper requested saving, never for a plain single-use charge).
+	 * `:1821-1831` (capture_method, customer, payment_method), `:1870-1874` (`setup_future_usage`
+	 * is set only when the shopper requested saving, never for a plain single-use charge), and
+	 * `:2578-2585` (`payment_method_types` is `['card']` alone with Link disabled, the fixture's default;
+	 * it becomes `['card','link']` only when Link is enabled).
 	 */
 	public function test_single_card_checkout_without_save_matches_11_1_request_shape(): void {
 		$order            = $this->create_woopayments_order( '10.99' );
@@ -3723,21 +3724,45 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * `requires_payment_method` status. All five recorded errors are `card_error`, so all five must mark the
 	 * fraud meta box `allow` (`gw:1372`). The merchant note carries the platform's `seller_message` only when
 	 * the top-level code is `card_declined` (client `api:2910-2914`); the other three codes carry none.
+	 * Every recorded decline is a real PaymentIntent dispatch failure with an unambiguous transport error,
+	 * so `WooPaymentsProviderGatewayAdapter::finalize_charge_idempotency_key()` must classify it as
+	 * definitive and retire the charge idempotency key (`_wcpay_definitive_charge_failure`), giving a
+	 * shopper retry a fresh key rather than replaying the declined one. This is native-only idempotency
+	 * bookkeeping with no client 11.1.0 parity claim: the plugin has no equivalent per-charge
+	 * idempotency-key retirement step. `:627` (`test_native_charge_retires_key_after_definitive_outcome`)
+	 * proves the retirement mechanics with a synthetic failure; this asserts the classification itself
+	 * against a real recorded envelope.
+	 *
+	 * The `, raw message replaced with a sentinel` rows swap the recorded `error.message` for a value that
+	 * is never in the shopper-message catalog. `WooPaymentsErrorMessages::get_shopper_message()` (utils
+	 * `get_filtered_error_message` at 11.1.0) selects the shopper string from `decline_code`/`error_code`
+	 * alone and never reads the raw platform message for a `card_error`, so the shopper message must stay
+	 * the exact catalog string while the wrapped transport message reflects the sentinel. This catches a
+	 * bug that returns the raw exception message as the shopper message, which every unmutated row above
+	 * would miss because the recorded message already equals the catalog text.
 	 *
 	 * @dataProvider recorded_decline_envelope_data
 	 *
 	 * @param string $pair                          REC-1 fixture pair key.
 	 * @param string $expected_error_code            Expected provider error code.
-	 * @param string $expected_message               Expected wrapped transport error message.
+	 * @param string $expected_message               Expected wrapped transport error message; recomputed from the sentinel when `$mutate_raw_message` is true.
 	 * @param string $expected_shopper               Expected shopper-facing message.
 	 * @param string $expected_intent_id             Expected declined PaymentIntent ID.
 	 * @param string $expected_seller_message        Expected `seller_message` fragment in the merchant note, or '' when the code carries none.
+	 * @param bool   $mutate_raw_message             When true, replace the recorded `error.message` with a sentinel absent from any shopper-message catalog entry.
 	 */
-	public function test_native_charge_decline_envelope_maps_each_card_code( string $pair, string $expected_error_code, string $expected_message, string $expected_shopper, string $expected_intent_id, string $expected_seller_message ): void {
-		$order                 = $this->create_woopayments_order( '10.00' );
-		$gateway               = new RecordingLegacyGateway( array( 'result' => 'success' ) );
-		$account_service       = $this->create_account_service( false );
-		$recorded              = $this->load_recorded_decline_entry( $pair );
+	public function test_native_charge_decline_envelope_maps_each_card_code( string $pair, string $expected_error_code, string $expected_message, string $expected_shopper, string $expected_intent_id, string $expected_seller_message, bool $mutate_raw_message = false ): void {
+		$order           = $this->create_woopayments_order( '10.00' );
+		$gateway         = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$account_service = $this->create_account_service( false );
+		$recorded        = $this->load_recorded_decline_entry( $pair );
+
+		if ( $mutate_raw_message ) {
+			$sentinel                     = 'sentinel raw transport diagnostic, never a shopper-facing catalog string';
+			$recorded['error']['message'] = $sentinel;
+			$expected_message             = 'Error: ' . $sentinel;
+		}
+
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
@@ -3767,6 +3792,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected_intent_id, $outcome->get_provider_payment_id(), 'The declined PaymentIntent id must survive onto the failed outcome.' );
 		$this->assertSame( 1, $http_client->request_count );
 		$this->assertSame( 'allow', ( $data[ PaymentOutcome::DATA_META ] ?? array() )['_wcpay_fraud_meta_box_type'] ?? null, "$pair is a card_error decline, so the fraud meta box must show allow." );
+		$this->assertTrue( $data['_wcpay_definitive_charge_failure'] ?? false, "$pair's real decline must be classified as definitive so a retry gets a fresh idempotency key." );
 		if ( '' !== $expected_seller_message ) {
 			$this->assertStringContainsString( $expected_seller_message, $data[ PaymentOutcome::DATA_NOTE ] ?? '', "$pair's merchant note must carry the platform's seller_message." );
 		} else {
@@ -3777,18 +3803,27 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * REC-1 recorded decline envelopes, one row per Stripe test card pair.
+	 * REC-1 recorded decline envelopes, one row per Stripe test card pair, plus a
+	 * raw-message-mutated sibling row per pair (see `$mutate_raw_message` on the test method).
 	 *
-	 * @return array<string,array{string,string,string,string,string,string}>
+	 * @return array<string,array{string,string,string,string,string,string,bool}>
 	 */
 	public function recorded_decline_envelope_data(): array {
-		return array(
+		$base = array(
 			'generic_decline (card_declined)'    => array( 'generic_decline', 'card_declined', 'Error: Your card was declined.', 'Error: Your card was declined.', 'pi_3UJTiNBzWlxcwgpP0GauBpTM', 'The bank did not return any further details with this decline' ),
 			'expired_card'                       => array( 'expired_card', 'expired_card', 'Error: Your card has expired.', 'Error: Your card has expired.', 'pi_3UJTirBzWlxcwgpP1t1J6e0x', '' ),
 			'insufficient_funds (card_declined)' => array( 'insufficient_funds', 'card_declined', 'Error: Your card has insufficient funds.', 'Error: Your card has insufficient funds.', 'pi_3UJTivBzWlxcwgpP1bPJniIM', 'The bank returned the decline code `insufficient_funds`' ),
 			'incorrect_cvc'                      => array( 'incorrect_cvc', 'incorrect_cvc', "Error: Your card's security code is incorrect.", "Error: Your card's security code is incorrect.", 'pi_3UJTizBzWlxcwgpP1uk4AvqD', '' ),
 			'processing_error'                   => array( 'processing_error', 'processing_error', 'Error: An error occurred while processing your card. Try again in a little bit.', 'Error: An error occurred while processing your card. Try again in a little bit.', 'pi_3UJTj2BzWlxcwgpP1ildtn5J', '' ),
 		);
+
+		$data = array();
+		foreach ( $base as $key => $row ) {
+			$data[ $key ] = $row;
+			$data[ $key . ', raw message replaced with a sentinel' ] = array_merge( $row, array( true ) );
+		}
+
+		return $data;
 	}
 
 	/**

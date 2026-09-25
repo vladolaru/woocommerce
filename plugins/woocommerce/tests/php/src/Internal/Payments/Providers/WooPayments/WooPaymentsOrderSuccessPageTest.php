@@ -202,47 +202,57 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render the registry-backed LPM title on the order-received page.
+	 * @testdox Should render the registry-backed LPM title and alt text on the order-received page, not the incoming title.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payments-order-success-page.php:333-369`
+	 * (`show_lpm_payment_method_name`): the LPM wrapper class, logo, and alt text all carry the
+	 * method's own registry title, not whatever title WooCommerce core passed in. Each row passes an
+	 * incoming title that never matches the registry's own title, so a rendered `alt` equal to the
+	 * registry title proves the lookup happened rather than an echo of the input.
+	 *
+	 * @dataProvider lpm_payment_method_title_provider
+	 *
+	 * @param string      $method_id          Split gateway payment method ID.
+	 * @param string      $icon_fragment      Expected light icon path fragment.
+	 * @param string|null $dark_icon_fragment Expected dark icon path fragment, or null when the method has none.
+	 * @param string      $expected_alt       Expected `alt` attribute (the registry's own title).
 	 */
-	public function test_filters_lpm_payment_method_title_on_order_received_page(): void {
-		$page  = $this->create_page( true );
-		$order = $this->create_multibanco_order();
+	public function test_filters_lpm_payment_method_title_on_order_received_page( string $method_id, string $icon_fragment, ?string $dark_icon_fragment, string $expected_alt ): void {
+		$page = $this->create_page( true );
+		if ( 'multibanco' === $method_id ) {
+			$order = $this->create_multibanco_order();
+		} else {
+			$order = wc_create_order();
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . $method_id );
+			$order->save();
+		}
 		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
 
 		try {
-			$title = $page->filter_payment_method_title( 'Multibanco', $order );
+			$title = $page->filter_payment_method_title( 'Not the registry title', $order );
 		} finally {
 			remove_filter( 'woocommerce_is_order_received_page', '__return_true' );
 		}
 
-		$this->assertStringContainsString( 'wc-payment-lpm-logo--multibanco', $title );
-		$this->assertStringContainsString( '/assets/images/payment-methods/multibanco-logo.svg', $title );
-		$this->assertStringContainsString( '/assets/images/payment-methods/multibanco-logo-dark.svg', $title );
+		$this->assertStringContainsString( "wc-payment-lpm-logo--$method_id", $title );
+		$this->assertStringContainsString( $icon_fragment, $title );
+		$this->assertStringContainsString( 'alt="' . $expected_alt . '"', $title, 'The alt text must come from the payment method registry, not the incoming title.' );
+		if ( null !== $dark_icon_fragment ) {
+			$this->assertStringContainsString( $dark_icon_fragment, $title );
+		}
 	}
 
 	/**
-	 * @testdox Should render the registry-backed LPM title for an Alipay order on the order-received page.
+	 * LPM payment-method title fixtures.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payments-order-success-page.php:333-369`
-	 * (`show_lpm_payment_method_name`): the LPM wrapper class and logo carry the method's own ID.
+	 * @return array<string,array{0:string,1:string,2:?string,3:string}>
 	 */
-	public function test_filters_alipay_lpm_payment_method_title_on_order_received_page(): void {
-		$page  = $this->create_page( true );
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'alipay' );
-		$order->save();
-		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
-
-		try {
-			$title = $page->filter_payment_method_title( 'Alipay', $order );
-		} finally {
-			remove_filter( 'woocommerce_is_order_received_page', '__return_true' );
-		}
-
-		$this->assertStringContainsString( 'wc-payment-lpm-logo--alipay', $title );
-		$this->assertStringContainsString( '/assets/images/payment-methods/alipay-logo.svg', $title );
-		$this->assertStringContainsString( 'alt="Alipay"', $title );
+	public function lpm_payment_method_title_provider(): array {
+		return array(
+			'Multibanco' => array( 'multibanco', '/assets/images/payment-methods/multibanco-logo.svg', '/assets/images/payment-methods/multibanco-logo-dark.svg', 'Multibanco' ),
+			'Alipay'     => array( 'alipay', '/assets/images/payment-methods/alipay-logo.svg', null, 'Alipay' ),
+		);
 	}
 
 	/**

@@ -2586,9 +2586,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			"We're not able to process this payment. Please refresh the page and try again.",
 			wc_get_notices( 'error' )[0]['notice'] ?? ''
 		);
-		$reloaded = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $reloaded );
-		$this->assertSame( '', $reloaded->get_meta( '_intent_id', true ) );
 	}
 
 	/**

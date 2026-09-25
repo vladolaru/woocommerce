@@ -120,6 +120,117 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should redirect a completed native checkout to the order's own order-received URL.
+	 *
+	 * `format_checkout_result()` (`PaymentProcessingService.php`, the `STATUS_COMPLETED` branch around
+	 * line 1120) falls back to `$order->get_checkout_order_received_url()` whenever the outcome carries
+	 * no explicit redirect. This is the URL the shopper's browser is sent to next; the following test
+	 * proves what happens once it actually loads that URL.
+	 */
+	public function test_process_checkout_completed_redirects_to_order_received_url(): void {
+		$order    = $this->create_woopayments_order( '10.00' );
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_cart_redirect', '', 'pm_cart_redirect', 'cus_cart_redirect' ) );
+
+		$result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_cart_redirect' ), $provider );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( $order->get_checkout_order_received_url(), $result['redirect'] );
+	}
+
+	/**
+	 * @testdox Should let core's cart-clearing hook empty a matching cart once the shopper's browser loads a completed checkout's redirect URL.
+	 *
+	 * Oracle: WooPayments client 11.1.0 `class-wc-payment-gateway-wcpay.php:2229-2231` empties the cart
+	 * itself inside `process_payment()`, before returning its success result. Native does not: its
+	 * redirect (proved above) only points at the order-received URL, and the cart is cleared later, once
+	 * the shopper's browser actually loads that URL and core's `wc_clear_cart_after_payment()`
+	 * (`includes/wc-cart-functions.php:175-231`, hooked on `template_redirect`) reads its `order-received`
+	 * query var and matching `key`. `WooPaymentsTokenizedCartSessionController` is registered as it would
+	 * be in production to prove native adds no filter that blocks this for a standard (non-tokenized)
+	 * checkout — only a tokenized-product order-received request gets that filter (see that class's own
+	 * test coverage).
+	 */
+	public function test_process_checkout_completed_redirect_url_clears_the_cart_on_next_load(): void {
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->empty_cart();
+		WC()->cart->add_to_cart( $product->get_id(), 1 );
+
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_cart_hash( WC()->cart->get_cart_hash() );
+		$order->save();
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_cart_clear', '', 'pm_cart_clear', 'cus_cart_clear' ) );
+
+		$result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_cart_clear' ), $provider );
+
+		$arbiter = $this->getMockBuilder( \Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$tokenized_cart_controller = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController();
+		$tokenized_cart_controller->init( $arbiter );
+		$tokenized_cart_controller->register();
+
+		// Parse the `order-received` id and `key` from the redirect URL itself (not `get_order_key()`),
+		// exactly as WordPress's query parser would when the shopper's browser requests it.
+		$query_args = array();
+		parse_str( (string) wp_parse_url( $result['redirect'], PHP_URL_QUERY ), $query_args );
+
+		$GLOBALS['wp']->query_vars['order-received'] = (int) ( $query_args['order-received'] ?? 0 );
+		$_GET['key']                                 = $query_args['key'] ?? '';
+
+		// wc_template_redirect() and redirect_canonical() both call header()/exit for concerns
+		// unrelated to cart clearing (404 guarding, canonical URL matching) that a synthetic
+		// request outside a real front-end page load cannot satisfy; only wc_clear_cart_after_payment()
+		// is under test here.
+		remove_action( 'template_redirect', 'redirect_canonical' );
+		remove_action( 'template_redirect', 'wc_template_redirect' );
+		try {
+			do_action( 'template_redirect' );
+		} finally {
+			unset( $GLOBALS['wp']->query_vars['order-received'], $_GET['key'] );
+		}
+
+		$this->assertTrue( WC()->cart->is_empty(), "The shopper's matching cart must be empty once their browser loads the completed order's redirect URL." );
+	}
+
+	/**
+	 * @testdox Should let core's cart-clearing hook empty the cart through the order-awaiting-payment session branch once the order is paid.
+	 *
+	 * Oracle: `includes/wc-cart-functions.php:198-207` (`wc_clear_cart_after_payment()`), the branch the
+	 * Store API's checkout flow relies on instead of the order-received query var branch: it reads
+	 * `WC()->session->order_awaiting_payment`, set by `WC_Checkout::process_checkout()`
+	 * (`includes/class-wc-checkout.php:1163`) when the order is created, and clears the cart only once
+	 * that order's status is no longer `pending`, `failed`, or `cancelled`.
+	 */
+	public function test_order_awaiting_payment_session_branch_clears_the_cart_once_the_order_is_paid(): void {
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->empty_cart();
+		WC()->cart->add_to_cart( $product->get_id(), 1 );
+		unset( $GLOBALS['wp']->query_vars['order-received'] );
+
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_cart_hash( WC()->cart->get_cart_hash() );
+		$order->set_status( 'processing' );
+		$order->save();
+
+		WC()->session->set( 'order_awaiting_payment', $order->get_id() );
+
+		// See the note on the previous test: only wc_clear_cart_after_payment() is under test here.
+		remove_action( 'template_redirect', 'redirect_canonical' );
+		remove_action( 'template_redirect', 'wc_template_redirect' );
+		try {
+			do_action( 'template_redirect' );
+		} finally {
+			WC()->session->set( 'order_awaiting_payment', 0 );
+		}
+
+		$this->assertTrue( WC()->cart->is_empty(), "A paid order tracked via the session's order_awaiting_payment must clear the shopper's matching cart." );
+	}
+
+	/**
 	 * @testdox A failed checkout attempt can be followed by a fresh successful attempt.
 	 */
 	public function test_failed_checkout_attempt_can_be_followed_by_a_fresh_successful_attempt(): void {
@@ -492,6 +603,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should return a redirect result without completing the order for redirect outcomes.
+	 *
+	 * Oracle: WooPayments client 11.1.0 `class-wc-payments-order-service.php:417-426`: a
+	 * `requires_action` intent for a non-offline method with no error calls `mark_payment_started()`,
+	 * which leaves the order at its pending status and writes no charge id.
 	 */
 	public function test_process_checkout_returns_redirect_without_completing_order(): void {
 		$order    = $this->create_woopayments_order( '15.00' );
@@ -520,6 +635,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pending', $order->get_status() );
 		$this->assertSame( 'pi_redirect', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( '', $order->get_meta( '_charge_id', true ) );
 	}
 
 	/**

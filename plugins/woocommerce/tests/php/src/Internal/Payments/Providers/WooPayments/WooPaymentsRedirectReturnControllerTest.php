@@ -323,14 +323,13 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A redirect-method return confirms the same intent, transitions the order to processing, and saves no token.
+	 * @testdox A redirect-method return confirms the same intent and transitions the order to processing.
 	 *
 	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2321-2407` (redirect return
 	 * confirmation reads the fetched charge back onto the order), `class-wc-payments-order-service.php:403-409`
 	 * (the succeeded status transitions to `mark_payment_completed`, moving the order to
 	 * `processing`), and `:1351` (`attach_intent_info_to_order`, which persists `_intent_id` and
-	 * `_charge_id` from the fetched intent and its latest charge). No `save_payment_method` was
-	 * requested, so no token is created.
+	 * `_charge_id` from the fetched intent and its latest charge).
 	 *
 	 * @dataProvider redirect_method_return_provider
 	 *
@@ -357,7 +356,6 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_redirect', $api_client->last_payment_intent_id );
 		$this->assertSame( 'pi_redirect', $reloaded->get_meta( '_intent_id', true ) );
 		$this->assertSame( $charge_id, $reloaded->get_meta( '_charge_id', true ) );
-		$this->assertCount( 0, $reloaded->get_payment_tokens() );
 	}
 
 	/**

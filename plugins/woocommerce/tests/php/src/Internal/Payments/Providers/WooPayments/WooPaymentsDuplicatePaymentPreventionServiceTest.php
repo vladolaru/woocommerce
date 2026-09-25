@@ -81,7 +81,8 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			'different cart hash with processing session order' => array( 'session-hash', 'processing', 'current-hash' ),
 			'same cart hash with pending session order'   => array( 'same-hash', 'pending', 'same-hash' ),
 			'same cart hash with cancelled session order' => array( 'same-hash', 'cancelled', 'same-hash' ),
-			// A failed session order is not a paid status, so a same-cart retry must not
+			// Client `class-duplicate-payment-prevention-service.php:175` (11.1.0):
+			// a failed session order is not a paid status, so a same-cart retry must not
 			// be redirected to it; the retry proceeds to charge normally.
 			'same cart hash with failed session order'    => array( 'same-hash', 'failed', 'same-hash' ),
 		);
@@ -291,11 +292,12 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 *
 	 * @dataProvider invalid_attached_intent_data
 	 *
-	 * @param string $intent_status       Provider intent status.
+	 * @param string $intent_status        Provider intent status.
 	 * @param bool   $use_current_order_id Whether intent metadata owns the current order.
+	 * @param string $order_status         Order status to start the current order at.
 	 */
-	public function test_check_payment_intent_attached_to_order_succeeded_rejects_invalid_status_or_order_ownership( string $intent_status, bool $use_current_order_id ): void {
-		$order = $this->create_order( 'hash', 'pending' );
+	public function test_check_payment_intent_attached_to_order_succeeded_rejects_invalid_status_or_order_ownership( string $intent_status, bool $use_current_order_id, string $order_status = 'pending' ): void {
+		$order = $this->create_order( 'hash', $order_status );
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
 		$order->save();
 		$intent                         = $this->create_intent_response( $order, $intent_status, 1200 );
@@ -318,22 +320,23 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$this->assertNull( $result );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( '', $order->get_transaction_id() );
-		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( $order_status, $order->get_status() );
 	}
 
 	/**
 	 * Invalid attached intent status and ownership fixtures from the extension contract.
 	 *
-	 * @return array<string,array{0:string,1:bool}>
+	 * @return array<string,array{0:string,1:bool,2?:string}>
 	 */
 	public function invalid_attached_intent_data(): array {
 		return array(
 			'requires action for current order'         => array( 'requires_action', true ),
 			'requires action for another order'         => array( 'requires_action', false ),
 			'succeeded for another order'               => array( 'succeeded', false ),
-			// Client `class-duplicate-payment-prevention-service.php:105-107`, `:175` (11.1.0):
-			// a declined intent attached to the current order must not block a retry.
-			'requires payment method for current order' => array( 'requires_payment_method', true ),
+			// Client `class-duplicate-payment-prevention-service.php:105-107` (11.1.0): a declined
+			// intent attached to the current order must not block a retry. Modeled on a `failed`
+			// order, the real status a checkout carries after a decline.
+			'requires payment method for current order' => array( 'requires_payment_method', true, 'failed' ),
 		);
 	}
 
