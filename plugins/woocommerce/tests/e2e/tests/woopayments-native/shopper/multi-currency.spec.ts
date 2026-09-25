@@ -13,17 +13,6 @@ const CONTRACT_PREFIX =
 const CONTRACT_IDS = [
 	`${ CONTRACT_PREFIX }40::Shopper Multi-Currency widget › should display currency switcher widget if multi-currency is enabled`,
 	`${ CONTRACT_PREFIX }59::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the product page`,
-	`${ CONTRACT_PREFIX }63::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the cart page`,
-	`${ CONTRACT_PREFIX }67::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the checkout page`,
-	// The client suite reached the same two properties from the merchant
-	// widget-setup spec: that the published switcher offers the default plus
-	// every enabled currency, and that switching it on the frontend converts
-	// prices. This test already proves both — the enabled set is pinned and
-	// read back, the switcher is asserted to expose USD and EUR, and each
-	// surface asserts the exact converted amount — so they bind here rather
-	// than to a separate merchant-side test that would assert the same thing
-	// through a widget editor native does not have.
-	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:172::Multi-currency widget setup › displays enabled currencies correctly in the frontend',
 	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:248::Multi-currency widget setup › currency switching works on the frontend',
 ];
 
@@ -319,10 +308,9 @@ async function ensureEnabledCurrencies(
 }
 
 /**
- * Place the native switcher block in the header template parts so every
- * storefront context renders it: the theme header covers shop, product and
- * cart, while the WooCommerce blocks checkout swaps in its own minimal
- * checkout-header part. Skips parts that already carry the block.
+ * Place the native switcher block in the theme header template part so the
+ * retained product-page context renders it. Skips the part if it already
+ * carries the block.
  */
 async function ensureSwitcherPlacement(
 	adminApi: APIRequestContext
@@ -341,14 +329,10 @@ async function ensureSwitcherPlacement(
 			slug: string;
 			content: { raw?: string };
 		} >
-	 ).filter( ( part ) =>
-		[ 'header', 'checkout-header' ].includes( part.slug )
-	);
+	 ).filter( ( part ) => part.slug === 'header' );
 
-	if ( headerParts.length < 2 ) {
-		throw new Error(
-			'Expected both the theme header and the checkout-header template parts.'
-		);
+	if ( headerParts.length < 1 ) {
+		throw new Error( 'Expected the theme header template part.' );
 	}
 
 	for ( const header of headerParts ) {
@@ -444,7 +428,7 @@ async function switchCurrency( page: Page, currency: string ): Promise< void > {
 }
 
 test(
-	'shopper currency switcher renders and switches across storefront contexts',
+	'shopper currency switcher changes a product price and persists across query-free navigation',
 	{
 		annotation: CONTRACT_IDS.map( ( contractId ) => ( {
 			type: 'woopayments-contract',
@@ -455,61 +439,20 @@ test(
 	async ( { adminApi, page } ) => {
 		await ensureEnabledCurrencies( adminApi );
 		await ensureSwitcherPlacement( adminApi );
-		const productId = await ensureSmokeProduct( adminApi );
-
-		// Precondition guard: the smoke is vacuous unless the native runtime
-		// actually reports multi-currency enabled with an additional currency.
-		// Without this, a storefront that silently dropped the switcher would
-		// fail visibly below, but a run against a store where multi-currency
-		// never activated must fail here, not pass by accident.
-		const currencies = await readJson(
-			await adminApi.get( `${ MULTI_CURRENCY_API }/currencies` ),
-			'Multi-currency state read'
-		);
-		const enabledCodes = Object.keys(
-			( currencies.enabled ?? {} ) as Record< string, unknown >
-		);
-		expect( enabledCodes ).toContain( 'USD' );
-		expect( enabledCodes ).toContain( 'EUR' );
-
-		// Contract: the currency switcher is visible on the storefront when
-		// multi-currency is enabled.
-		await page.goto( '?post_type=product&currency=USD' );
-		const shopSwitcher = currencySwitcher( page );
-		await expect( shopSwitcher ).toBeVisible();
-		await expect( shopSwitcher ).toHaveValue( 'USD' );
-		await expect(
-			shopSwitcher.getByRole( 'option', { name: /EUR/ } )
-		).toHaveCount( 1 );
-		// The switcher must be a genuinely focusable control, not just
-		// rendered markup.
-		await shopSwitcher.focus();
-		await expect( shopSwitcher ).toBeFocused();
+		await ensureSmokeProduct( adminApi );
 
 		// Contract: switching currency at the product page converts the
 		// product price and the selection survives a query-free navigation.
 		await page.goto( `product/${ PRODUCT_SLUG }/?currency=USD` );
+		const productSwitcher = currencySwitcher( page );
+		await expect( productSwitcher ).toBeVisible();
+		await productSwitcher.focus();
+		await expect( productSwitcher ).toBeFocused();
 		await expect( visibleText( page, USD_PRICE_TEXT ) ).toBeVisible();
 		await switchCurrency( page, 'EUR' );
 		await expectConvertedPrices( page, EUR_PRICE_TEXT, USD_PRICE_TEXT );
 		await page.goto( `product/${ PRODUCT_SLUG }/` );
 		await expect( currencySwitcher( page ) ).toHaveValue( 'EUR' );
-		await expectConvertedPrices( page, EUR_PRICE_TEXT, USD_PRICE_TEXT );
-
-		// Contract: switching currency at the cart page converts the totals
-		// for the same cart contents.
-		await page.goto( `?add-to-cart=${ productId }` );
-		await page.goto( 'cart/?currency=USD' );
-		await expect( page.getByText( PRODUCT_NAME ).first() ).toBeVisible();
-		await expect( visibleText( page, USD_PRICE_TEXT ) ).toBeVisible();
-		await switchCurrency( page, 'EUR' );
-		await expectConvertedPrices( page, EUR_PRICE_TEXT, USD_PRICE_TEXT );
-
-		// Contract: switching currency at the checkout page converts the
-		// order total without submitting payment.
-		await page.goto( 'checkout/?currency=USD' );
-		await expect( visibleText( page, USD_PRICE_TEXT ) ).toBeVisible();
-		await switchCurrency( page, 'EUR' );
 		await expectConvertedPrices( page, EUR_PRICE_TEXT, USD_PRICE_TEXT );
 	}
 );

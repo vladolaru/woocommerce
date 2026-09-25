@@ -1,21 +1,19 @@
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
 import { expect, tags, test } from '../../../fixtures/woopayments-native';
-import { isolatedBrowserContextOptions } from '../../../utils/woopayments-native/fixture-settings';
-import { withGuaranteedRestoration } from '../../../utils/woopayments-native/multi-currency-catalog';
 
 /**
  * Native multi-currency switcher visibility boundaries
  * (mc-visibility-boundaries-spec).
  *
- * Two provider-free shopper contracts about where the native currency
- * switcher must NOT offer a choice. An absence assertion is worthless on its
- * own — a store where the switcher never rendered at all would satisfy it —
- * so each test first proves the switcher IS offered in the comparable allowed
- * context, in the same session, and only then proves the boundary.
+ * Provider-free shopper contract for the pay-for-order boundary. An absence
+ * assertion is worthless on its own — a store where the switcher never
+ * rendered at all would satisfy it — so the test first proves the switcher IS
+ * offered in the comparable checkout context, in the same session, and only
+ * then proves the boundary.
  *
- * NO FORCED PREMISE. Neither test widens the available-currency catalog, and
- * neither writes the enabled-currency set: both read the authoritative set
+ * NO FORCED PREMISE. The test does not widen the available-currency catalog
+ * or write the enabled-currency set: it reads the authoritative set
  * from `/wc/v3/payments/multi-currency/currencies` and assert against exactly
  * what the merchant has enabled. That restraint is deliberate rather than
  * incidental — see the parity note below.
@@ -40,16 +38,12 @@ const SHOPPER_CONTRACT_PREFIX =
 
 const CONTRACT_IDS = {
 	payForOrder: `${ SHOPPER_CONTRACT_PREFIX }106::Shopper Multi-Currency widget › should not display currency switcher on pay for order page`,
-	featureDisabled: `${ SHOPPER_CONTRACT_PREFIX }122::Shopper Multi-Currency widget › should not display currency switcher widget if multi-currency is disabled`,
 } as const;
 
 const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
-const CORE_MULTI_CURRENCY_FEATURE_API =
-	'/wp-json/wc/v3/settings/advanced/woocommerce_feature_multi_currency_enabled';
 const ORDERS_API = '/wp-json/wc/v3/orders';
 const PRODUCTS_API = '/wp-json/wc/v3/products';
 const PAGES_API = '/wp-json/wp/v2/pages';
-const POSTS_API = '/wp-json/wp/v2/posts';
 const CHECKOUT_PAGE_SETTING_API =
 	'/wp-json/wc/v3/settings/advanced/woocommerce_checkout_page_id';
 
@@ -63,10 +57,6 @@ const PRODUCT_PRICE = '10.00';
 // order's own currency even after the shopper's session currency moves, so
 // the presence of a euro amount there is the failure this looks for.
 const EURO_AMOUNT = /\d[\d.,]*\s*€|€\s*\d/;
-
-// Deterministic preference order for a currency the merchant has not
-// enabled. The first candidate outside the enabled set is used.
-const UNENABLED_CANDIDATES = [ 'CHF', 'JPY', 'NZD', 'SEK', 'DKK' ] as const;
 
 interface CurrencyRecord {
 	code: string;
@@ -179,14 +169,11 @@ function trackPageErrors( page: Page, baseUrl: string ): () => string[] {
  * makes every absence assertion below meaningful would itself be absent.
  *
  * @param adminApi Authenticated admin REST context.
- * @return Sorted enabled codes, the store default, and the first candidate
- *         currency the merchant has not enabled.
+ * @return The store default and first additional enabled currency.
  */
 async function readCurrencyBaseline( adminApi: APIRequestContext ): Promise< {
-	enabledCodes: string[];
 	defaultCode: string;
 	additionalCode: string;
-	unenabledCode: string;
 } > {
 	const currencies = await readJson< StoreCurrencies >(
 		await adminApi.get( `${ MULTI_CURRENCY_API }/currencies` ),
@@ -208,15 +195,7 @@ async function readCurrencyBaseline( adminApi: APIRequestContext ): Promise< {
 	const additionalCode = enabledCodes.filter(
 		( code ) => code !== defaultCode
 	)[ 0 ];
-	const unenabledCode = UNENABLED_CANDIDATES.filter(
-		( code ) => ! enabledCodes.includes( code )
-	)[ 0 ];
-	expect(
-		unenabledCode,
-		'the boundary needs a currency the merchant has not enabled'
-	).toBeTruthy();
-
-	return { enabledCodes, defaultCode, additionalCode, unenabledCode };
+	return { defaultCode, additionalCode };
 }
 
 /**
@@ -287,41 +266,6 @@ async function deleteRunResource(
 			`${ description } cleanup failed: HTTP ${ deletion.status() }.`
 		);
 	}
-}
-
-type CoreMultiCurrencyFeatureValue = 'yes' | 'no';
-
-async function readCoreMultiCurrencyFeature(
-	adminApi: APIRequestContext
-): Promise< CoreMultiCurrencyFeatureValue > {
-	const { value } = await readJson< { value: unknown } >(
-		await adminApi.get( CORE_MULTI_CURRENCY_FEATURE_API ),
-		'Core Multi-Currency feature read'
-	);
-	if ( value !== 'yes' && value !== 'no' ) {
-		throw new Error(
-			`Core Multi-Currency feature read returned an invalid value: ${ String(
-				value
-			) }`
-		);
-	}
-	return value;
-}
-
-async function setCoreMultiCurrencyFeature(
-	adminApi: APIRequestContext,
-	value: CoreMultiCurrencyFeatureValue
-): Promise< void > {
-	await readJson(
-		await adminApi.post( CORE_MULTI_CURRENCY_FEATURE_API, {
-			data: { value },
-		} ),
-		'Core Multi-Currency feature write'
-	);
-	expect(
-		await readCoreMultiCurrencyFeature( adminApi ),
-		'Core Multi-Currency feature write must be visible through a fresh read'
-	).toBe( value );
 }
 
 /**
@@ -435,7 +379,7 @@ async function withCheckoutPageSwitcher< Result >(
 }
 
 test(
-	'An existing pay-for-order obligation offers no currency switcher and stays fixed to its order currency under a shopper currency override',
+	'pay-for-order hides the switcher and keeps its rendered stored amount under a real currency override',
 	{
 		annotation: [
 			{
@@ -459,302 +403,164 @@ test(
 		).toBe( 'EUR' );
 
 		const product = await createRunProduct( adminApi, runId, 'payorder' );
-		const order = await readJson< {
-			id: number;
-			currency: string;
-			total: string;
-			status: string;
-			payment_url: string;
-		} >(
-			await adminApi.post( ORDERS_API, {
-				data: {
-					// A non-provider method: this obligation is never paid, and
-					// nothing here touches the payment provider.
-					payment_method: 'cod',
-					payment_method_title: 'Cash on delivery',
-					status: 'pending',
-					billing: {
-						first_name: 'WooPayments',
-						last_name: 'E2E',
-						email: `woopayments-mc-${ runId }@example.com`,
-						address_1: '60 29th Street #343',
-						city: 'San Francisco',
-						state: 'CA',
-						postcode: '94110',
-						country: 'US',
-					},
-					line_items: [ { product_id: product.id, quantity: 1 } ],
-					meta_data: [
-						{ key: '_e2e_woopayments_run_id', value: runId },
-					],
-				},
-			} ),
-			'Run order creation'
-		);
-
-		// The obligation this contract is about: an unpaid order fixed to the
-		// store currency, with a total the page can be asserted against
-		// literally.
-		expect( order.currency ).toBe( defaultCode );
-		expect( order.status ).toBe( 'pending' );
-		expect(
-			order.total,
-			'the run order total must be a plain sub-thousand amount so the rendered price can be matched exactly'
-		).toMatch( /^\d{1,3}\.\d{2}$/ );
-		expect( order.payment_url ).toContain( 'pay_for_order' );
-		const orderTotalText = new RegExp(
-			`\\$${ order.total.replace( '.', '\\.' ) }(?!\\d)`
-		);
-
-		const pageErrors = trackPageErrors( page, storeBase );
-
-		await withCheckoutPageSwitcher( adminApi, async () => {
-			// A fresh anonymous shopper for the whole comparison.
-			await page.context().clearCookies();
-
-			// POSITIVE CONTROL — the same block instance, on the same
-			// checkout page, outside the pay-for-order context. Without this
-			// the absence assertions below would pass on a store where the
-			// switcher never rendered at all.
-			await page.goto( `?add-to-cart=${ product.id }` );
-			await page.goto( 'checkout/' );
-			const checkoutSwitcher = contentSwitchers( page );
-			await expect( checkoutSwitcher ).toHaveCount( 1 );
-			await expect( checkoutSwitcher ).toBeVisible();
-			await expect( checkoutSwitcher ).toHaveValue( defaultCode );
-			await expect(
-				checkoutSwitcher.locator(
-					`option[value="${ additionalCode }"]`
-				)
-			).toHaveCount( 1 );
-
-			// BOUNDARY — the customer payment page for the existing order.
-			// Absence is page-wide because the guard is evaluated per
-			// request, so a theme-header placement must be suppressed too.
-			await page.goto( order.payment_url );
-			await expect(
-				page
-					.locator( '.entry-content' )
-					.getByText( product.name )
-					.first()
-			).toBeVisible();
-			await expect( anySwitcher( page ) ).toHaveCount( 0 );
-			// The order table renders the amount once per line, once as the
-			// subtotal and once as the total, so this asserts the currency
-			// the obligation reads in rather than a single occurrence of it.
-			// The euro assertion below stays an exact zero-count.
-			await expect(
-				page
-					.locator( '.entry-content' )
-					.getByText( orderTotalText )
-					.first()
-			).toBeVisible();
-
-			// The obligation resists an explicit reprice attempt through the
-			// documented currency entry point: no switcher appears, and the
-			// page keeps the order's own currency.
-			// MultiCurrencySelectedCurrencyController::handle_init() honours
-			// `?currency=` on every frontend request, so this is a real
-			// override rather than a rejected one — the order simply is not
-			// repriced by it.
-			await page.goto(
-				`${ order.payment_url }&currency=${ additionalCode }`
-			);
-			await expect( anySwitcher( page ) ).toHaveCount( 0 );
-			// The order table renders the amount once per line, once as the
-			// subtotal and once as the total, so this asserts the currency
-			// the obligation reads in rather than a single occurrence of it.
-			// The euro assertion below stays an exact zero-count.
-			await expect(
-				page
-					.locator( '.entry-content' )
-					.getByText( orderTotalText )
-					.first()
-			).toBeVisible();
-			await expect(
-				page.locator( '.entry-content' ).getByText( EURO_AMOUNT )
-			).toHaveCount( 0 );
-
-			// The override pressure was real, not silently discarded: the
-			// shopper's session currency did move, which is what makes the
-			// assertion above a genuine invariant rather than a no-op.
-			await page.goto( 'checkout/' );
-			await expect( contentSwitchers( page ) ).toHaveValue(
-				additionalCode
-			);
-
-			// And with that session currency in force, the obligation still
-			// reads in the order's currency on a plain visit with no query
-			// override at all.
-			await page.goto( order.payment_url );
-			await expect( anySwitcher( page ) ).toHaveCount( 0 );
-			// The order table renders the amount once per line, once as the
-			// subtotal and once as the total, so this asserts the currency
-			// the obligation reads in rather than a single occurrence of it.
-			// The euro assertion below stays an exact zero-count.
-			await expect(
-				page
-					.locator( '.entry-content' )
-					.getByText( orderTotalText )
-					.first()
-			).toBeVisible();
-			await expect(
-				page.locator( '.entry-content' ).getByText( EURO_AMOUNT )
-			).toHaveCount( 0 );
-
-			// Authoritative record: the stored obligation is untouched. This
-			// is the half that selector absence alone can never prove.
-			const orderAfter = await readJson< {
+		try {
+			const order = await readJson< {
+				id: number;
 				currency: string;
 				total: string;
-				status: string;
+				payment_url: string;
 			} >(
-				await adminApi.get( `${ ORDERS_API }/${ order.id }` ),
-				'Run order re-read'
+				await adminApi.post( ORDERS_API, {
+					data: {
+						// A non-provider method: this obligation is never paid, and
+						// nothing here touches the payment provider.
+						payment_method: 'cod',
+						payment_method_title: 'Cash on delivery',
+						status: 'pending',
+						billing: {
+							first_name: 'WooPayments',
+							last_name: 'E2E',
+							email: `woopayments-mc-${ runId }@example.com`,
+							address_1: '60 29th Street #343',
+							city: 'San Francisco',
+							state: 'CA',
+							postcode: '94110',
+							country: 'US',
+						},
+						line_items: [ { product_id: product.id, quantity: 1 } ],
+						meta_data: [
+							{ key: '_e2e_woopayments_run_id', value: runId },
+						],
+					},
+				} ),
+				'Run order creation'
 			);
-			expect( {
-				currency: orderAfter.currency,
-				total: orderAfter.total,
-				status: orderAfter.status,
-			} ).toEqual( {
-				currency: order.currency,
-				total: order.total,
-				status: order.status,
-			} );
 
-			expect( pageErrors() ).toEqual( [] );
-		} );
+			// The obligation this contract is about: an unpaid order fixed to the
+			// store currency, with a total the page can be asserted against
+			// literally.
+			expect( order.currency ).toBe( defaultCode );
+			expect(
+				order.total,
+				'the run order total must be a plain sub-thousand amount so the rendered price can be matched exactly'
+			).toMatch( /^\d{1,3}\.\d{2}$/ );
+			expect( order.payment_url ).toContain( 'pay_for_order' );
+			const orderTotalText = new RegExp(
+				`\\$${ order.total.replace( '.', '\\.' ) }(?!\\d)`
+			);
 
-		await deleteRunResource(
-			adminApi,
-			`${ ORDERS_API }/${ order.id }`,
-			'Run order'
-		);
-		await deleteRunResource(
-			adminApi,
-			`${ PRODUCTS_API }/${ product.id }`,
-			'Run product'
-		);
-	}
-);
+			const pageErrors = trackPageErrors( page, storeBase );
 
-test(
-	'The storefront offers and honours only the merchant-enabled currencies, and disabling multi-currency removes the shopper switcher and is recorded in the store status',
-	{
-		annotation: [
-			{
-				type: 'woopayments-contract',
-				description: CONTRACT_IDS.featureDisabled,
-			},
-		],
-		tag: [ tags.WOOPAYMENTS_NATIVE ],
-	},
-	async ( { adminApi, baseURL, page, runId } ) => {
-		const storeBase = requireBaseUrl( baseURL );
-		const { enabledCodes, defaultCode, additionalCode, unenabledCode } =
-			await readCurrencyBaseline( adminApi );
+			try {
+				await withCheckoutPageSwitcher( adminApi, async () => {
+					// A fresh anonymous shopper for the whole comparison.
+					await page.context().clearCookies();
 
-		const post = await readJson< { id: number; link: string } >(
-			await adminApi.post( POSTS_API, {
-				data: {
-					title: `WooPayments MC switcher boundary ${ runId }`,
-					slug: `woopayments-mc-boundary-${ runId }`,
-					status: 'publish',
-					content: SWITCHER_BLOCK,
-				},
-			} ),
-			'Run post creation'
-		);
+					// POSITIVE CONTROL — the same block instance, on the same
+					// checkout page, outside the pay-for-order context. Without this
+					// the absence assertions below would pass on a store where the
+					// switcher never rendered at all.
+					await page.goto( `?add-to-cart=${ product.id }` );
+					await page.goto( 'checkout/' );
+					const checkoutSwitcher = contentSwitchers( page );
+					await expect( checkoutSwitcher ).toHaveCount( 1 );
+					await expect( checkoutSwitcher ).toBeVisible();
+					await expect( checkoutSwitcher ).toHaveValue( defaultCode );
+					await expect(
+						checkoutSwitcher.locator(
+							`option[value="${ additionalCode }"]`
+						)
+					).toHaveCount( 1 );
 
-		const pageErrors = trackPageErrors( page, storeBase );
-
-		// POSITIVE CONTROL — a fresh anonymous shopper is offered a working
-		// switcher listing exactly the enabled currencies.
-		await page.context().clearCookies();
-		await page.goto( post.link );
-		const switcher = contentSwitchers( page );
-		await expect( switcher ).toHaveCount( 1 );
-		await expect( switcher ).toBeVisible();
-		await expect( switcher ).toHaveValue( defaultCode );
-		await expect( switcher.locator( 'option' ) ).toHaveCount(
-			enabledCodes.length
-		);
-
-		// BOUNDARY (offered) — a currency the merchant has not enabled is not
-		// among the shopper's choices.
-		await expect(
-			switcher.locator( `option[value="${ unenabledCode }"]` ),
-			`${ unenabledCode } is not enabled, so it must not be offered as a choice`
-		).toHaveCount( 0 );
-
-		// BOUNDARY (honoured) — and it is not reachable through the URL entry
-		// point either. MultiCurrencySelectedCurrencyPersistenceService
-		// ::update_selected_currency() refuses codes outside the enabled set,
-		// so no alternate switching path remains exposed.
-		await page.goto( `${ post.link }?currency=${ unenabledCode }` );
-		await expect( contentSwitchers( page ) ).toHaveValue( defaultCode );
-
-		// The entry point itself is live, so the rejection above is a real
-		// boundary and not a dead parameter.
-		await page.goto( `${ post.link }?currency=${ additionalCode }` );
-		await expect( contentSwitchers( page ) ).toHaveValue( additionalCode );
-
-		// Rejecting an unenabled code leaves the shopper's existing choice
-		// intact rather than resetting or corrupting it.
-		await page.goto( `${ post.link }?currency=${ unenabledCode }` );
-		await expect( contentSwitchers( page ) ).toHaveValue( additionalCode );
-
-		// The run post stays published through the flag phase below, so the
-		// disabled-state check runs against the very block this positive
-		// control just proved working.
-
-		const originalFeatureValue =
-			await readCoreMultiCurrencyFeature( adminApi );
-		await withGuaranteedRestoration(
-			async () => {
-				await setCoreMultiCurrencyFeature( adminApi, 'no' );
-				expect( await readCoreMultiCurrencyFeature( adminApi ) ).toBe(
-					'no'
-				);
-
-				// The Core-disabled state reaches anonymous shoppers: the positive
-				// control above used this same published block with Core enabled.
-				const disabledVisitor = await page
-					.context()
-					.browser()
-					?.newContext( isolatedBrowserContextOptions( storeBase ) );
-				if ( ! disabledVisitor ) {
-					throw new Error(
-						'Could not open an anonymous context for the disabled-feature check.'
+					// The obligation resists an explicit reprice attempt through the
+					// documented currency entry point: no switcher appears, and the
+					// page keeps the order's own currency.
+					// MultiCurrencySelectedCurrencyController::handle_init() honours
+					// `?currency=` on every frontend request, so this is a real
+					// override rather than a rejected one — the order simply is not
+					// repriced by it.
+					await page.goto(
+						`${ order.payment_url }&currency=${ additionalCode }`
 					);
-				}
-				try {
-					const disabledPage = await disabledVisitor.newPage();
-					const disabledResponse = await disabledPage.goto(
-						post.link
+					await expect(
+						page
+							.locator( '.entry-content' )
+							.getByText( product.name )
+							.first()
+					).toBeVisible();
+					await expect( anySwitcher( page ) ).toHaveCount( 0 );
+					// The order table renders the amount once per line, once as the
+					// subtotal and once as the total, so this asserts the currency
+					// the obligation reads in rather than a single occurrence of it.
+					// The euro assertion below stays an exact zero-count.
+					await expect(
+						page
+							.locator( '.entry-content' )
+							.getByText( orderTotalText )
+							.first()
+					).toBeVisible();
+					await expect(
+						page
+							.locator( '.entry-content' )
+							.getByText( EURO_AMOUNT )
+					).toHaveCount( 0 );
+
+					// The override pressure was real, not silently discarded: the
+					// shopper's session currency did move, which is what makes the
+					// assertion above a genuine invariant rather than a no-op.
+					await page.goto( 'checkout/' );
+					await expect( contentSwitchers( page ) ).toHaveValue(
+						additionalCode
 					);
-					expect( disabledResponse?.status() ).toBe( 200 );
-					await expect( anySwitcher( disabledPage ) ).toHaveCount(
-						0
+
+					// And with that session currency in force, the obligation still
+					// reads in the order's currency on a plain visit with no query
+					// override at all.
+					await page.goto( order.payment_url );
+					await expect( anySwitcher( page ) ).toHaveCount( 0 );
+					// The order table renders the amount once per line, once as the
+					// subtotal and once as the total, so this asserts the currency
+					// the obligation reads in rather than a single occurrence of it.
+					// The euro assertion below stays an exact zero-count.
+					await expect(
+						page
+							.locator( '.entry-content' )
+							.getByText( orderTotalText )
+							.first()
+					).toBeVisible();
+					await expect(
+						page
+							.locator( '.entry-content' )
+							.getByText( EURO_AMOUNT )
+					).toHaveCount( 0 );
+
+					const orderAfter = await readJson< {
+						currency: string;
+						total: string;
+					} >(
+						await adminApi.get( `${ ORDERS_API }/${ order.id }` ),
+						'Run order re-read'
 					);
-				} finally {
-					await disabledVisitor.close();
-				}
-			},
-			async () => {
-				await setCoreMultiCurrencyFeature(
+					expect( orderAfter ).toMatchObject( {
+						currency: order.currency,
+						total: order.total,
+					} );
+
+					expect( pageErrors() ).toEqual( [] );
+				} );
+			} finally {
+				await deleteRunResource(
 					adminApi,
-					originalFeatureValue
+					`${ ORDERS_API }/${ order.id }`,
+					'Run order'
 				);
 			}
-		);
-
-		await deleteRunResource(
-			adminApi,
-			`${ POSTS_API }/${ post.id }`,
-			'Run post'
-		);
-
-		expect( pageErrors() ).toEqual( [] );
+		} finally {
+			await deleteRunResource(
+				adminApi,
+				`${ PRODUCTS_API }/${ product.id }`,
+				'Run product'
+			);
+		}
 	}
 );

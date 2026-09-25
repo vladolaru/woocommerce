@@ -4,10 +4,12 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherBlockController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 use WP_Block_Type_Registry;
 
@@ -42,6 +44,9 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 		wp_deregister_script( self::LEGACY_EDITOR_SCRIPT_HANDLE );
 
 		unset( $_GET['currency'], $_GET['orderby'] );
+		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 
 		parent::tear_down();
 	}
@@ -55,6 +60,29 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
+	}
+
+	/**
+	 * @testdox Should register the init hook only when the Core feature is enabled.
+	 */
+	public function test_registers_init_hook_only_when_core_feature_is_enabled(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		$arbiter = wc_get_container()->get( MultiCurrencyRuntimeArbiter::class );
+
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$enabled_sut = $this->create_controller_with_arbiter( $arbiter );
+		$enabled_sut->register();
+
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_CORE, $arbiter->get_runtime_owner(), 'An enabled Core feature must own multi-currency in native payments mode.' );
+		$this->assertSame( 10, has_action( 'init', array( $enabled_sut, 'handle_init' ) ), 'An enabled Core runtime must register the block renderer.' );
+
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		$disabled_sut = $this->create_controller_with_arbiter( $arbiter );
+		$disabled_sut->register();
+
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_NONE, $arbiter->get_runtime_owner(), 'The persisted disabled feature must leave native multi-currency unowned.' );
+		$this->assertFalse( has_action( 'init', array( $disabled_sut, 'handle_init' ) ), 'A disabled Core runtime must not register the block renderer.' );
 	}
 
 	/**
@@ -265,9 +293,25 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 		?MultiCurrencySwitcherProjectionService $projection = null,
 		bool $switching_disabled = false
 	): MultiCurrencySwitcherBlockController {
+		return $this->create_controller_with_arbiter( $this->create_arbiter( $owner ), $projection, $switching_disabled );
+	}
+
+	/**
+	 * Create a switcher block controller with an explicit runtime arbiter.
+	 *
+	 * @param MultiCurrencyRuntimeArbiter                 $arbiter            Runtime owner arbiter.
+	 * @param MultiCurrencySwitcherProjectionService|null $projection         Projection service.
+	 * @param bool                                        $switching_disabled Whether switching is disabled.
+	 * @return MultiCurrencySwitcherBlockController
+	 */
+	private function create_controller_with_arbiter(
+		MultiCurrencyRuntimeArbiter $arbiter,
+		?MultiCurrencySwitcherProjectionService $projection = null,
+		bool $switching_disabled = false
+	): MultiCurrencySwitcherBlockController {
 		$controller = new MultiCurrencySwitcherBlockController();
 		$controller->init(
-			$this->create_arbiter( $owner ),
+			$arbiter,
 			$this->create_compatibility_controller( $switching_disabled ),
 			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
 		);

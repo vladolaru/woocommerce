@@ -95,6 +95,20 @@ class MultiCurrencySelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_C
 	}
 
 	/**
+	 * @testdox Should preserve selected EUR when unenabled CAD is requested.
+	 */
+	public function test_preserves_selected_eur_when_unenabled_cad_is_requested(): void {
+		$session      = $this->create_session();
+		WC()->session = $session;
+		$sut          = new MultiCurrencySelectedCurrencyPersistenceService( $this->create_state_builder_from_state( $this->create_storefront_state() ) );
+
+		$this->assertTrue( $sut->update_selected_currency( 'EUR' ), 'Enabled EUR should be selected through the URL entry point.' );
+		$this->assertSame( 'EUR', WC()->session->get( 'wcpay_currency' ) );
+		$this->assertFalse( $sut->update_selected_currency( 'CAD' ), 'Merely available CAD must not replace the selected currency.' );
+		$this->assertSame( 'EUR', WC()->session->get( 'wcpay_currency' ), 'Rejecting CAD should preserve the current EUR choice.' );
+	}
+
+	/**
 	 * @testdox Should detect stored logged-in user currency.
 	 */
 	public function test_detects_stored_logged_in_user_currency(): void {
@@ -246,7 +260,17 @@ class MultiCurrencySelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_C
 	 * @return MultiCurrencyStateBuilder&object{reset_calls: int}
 	 */
 	private function create_state_builder( string $selected_code ): MultiCurrencyStateBuilder {
-		return new class( $this->create_state( $selected_code ) ) extends MultiCurrencyStateBuilder {
+		return $this->create_state_builder_from_state( $this->create_state( $selected_code ) );
+	}
+
+	/**
+	 * Create a state builder test double for a fixed state.
+	 *
+	 * @param MultiCurrencyState $state Multi-currency state.
+	 * @return MultiCurrencyStateBuilder&object{reset_calls: int}
+	 */
+	private function create_state_builder_from_state( MultiCurrencyState $state ): MultiCurrencyStateBuilder {
+		return new class( $state ) extends MultiCurrencyStateBuilder {
 			/**
 			 * Reset call count.
 			 *
@@ -286,6 +310,31 @@ class MultiCurrencySelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_C
 				++$this->reset_calls;
 			}
 		};
+	}
+
+	/**
+	 * Create the USD/EUR storefront state with CAD available but not enabled.
+	 *
+	 * @return MultiCurrencyState
+	 */
+	private function create_storefront_state(): MultiCurrencyState {
+		$usd = $this->create_currency( 'USD', true );
+		$eur = $this->create_currency( 'EUR', false );
+		$cad = $this->create_currency( 'CAD', false );
+
+		return new MultiCurrencyState(
+			array(
+				'USD' => $usd,
+				'EUR' => $eur,
+				'CAD' => $cad,
+			),
+			array(
+				'USD' => $usd,
+				'EUR' => $eur,
+			),
+			$usd,
+			$usd
+		);
 	}
 
 	/**

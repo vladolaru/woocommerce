@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
 use WC_Unit_Test_Case;
@@ -96,45 +97,44 @@ class MultiCurrencySwitcherProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should project the exact enabled choices and preserve the default option.
+	 * @testdox Should offer enabled USD and EUR while excluding merely available CAD.
 	 * @see WooPayments 11.1.0 tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:52
 	 */
-	public function test_projects_exact_enabled_choices_and_preserves_default_option(): void {
+	public function test_offers_enabled_usd_and_eur_while_excluding_available_cad(): void {
 		$usd       = $this->create_currency( 'USD', true );
 		$eur       = $this->create_currency( 'EUR', false );
-		$gbp       = $this->create_currency( 'GBP', false );
 		$cad       = $this->create_currency( 'CAD', false );
 		$available = array(
 			'USD' => $usd,
 			'EUR' => $eur,
-			'GBP' => $gbp,
 			'CAD' => $cad,
 		);
 		$enabled   = array(
 			'USD' => $usd,
 			'EUR' => $eur,
-			'GBP' => $gbp,
 		);
-		$sut       = $this->create_service( new MultiCurrencyState( $available, $enabled, $usd, $gbp ) );
+		$sut       = $this->create_service( new MultiCurrencyState( $available, $enabled, $usd, $eur ) );
 
 		$markup = $sut->get_block_markup();
 		preg_match_all( '/<option value="([^"]+)"(?: selected)?>/', $markup, $matches );
 
-		$this->assertCount( 3, $matches[1] );
-		$this->assertEqualsCanonicalizing( array( 'USD', 'EUR', 'GBP' ), $matches[1] );
+		$this->assertSame( array( 'USD', 'EUR' ), $matches[1] );
+		$this->assertStringNotContainsString( 'value="CAD"', $markup );
 		$this->assertStringContainsString( '<option value="USD">', $markup );
 		$this->assertSame( 1, substr_count( $markup, ' selected>' ) );
-		$this->assertStringContainsString( '<option value="GBP" selected>', $markup );
+		$this->assertStringContainsString( '<option value="EUR" selected>', $markup );
 	}
 
 	/**
-	 * @testdox Should return empty markup when switching is disabled.
+	 * @testdox Should suppress switcher markup for pay-for-order.
 	 */
-	public function test_returns_empty_markup_when_switching_is_disabled(): void {
-		$sut = $this->create_service( $this->create_state( 'GBP' ) );
+	public function test_suppresses_switcher_for_pay_for_order(): void {
+		$sut                = $this->create_service( $this->create_state( 'GBP' ) );
+		$switching_disabled = MultiCurrencyCompatibilityProjectionService::should_disable_currency_switching( array( 'pay_for_order' => '1' ) );
 
-		$this->assertSame( '', $sut->get_widget_markup( array(), array(), array(), true ) );
-		$this->assertSame( '', $sut->get_block_markup( array(), array(), true ) );
+		$this->assertTrue( $switching_disabled );
+		$this->assertSame( '', $sut->get_widget_markup( array(), array(), array(), $switching_disabled ) );
+		$this->assertSame( '', $sut->get_block_markup( array(), array(), $switching_disabled ) );
 	}
 
 	/**
