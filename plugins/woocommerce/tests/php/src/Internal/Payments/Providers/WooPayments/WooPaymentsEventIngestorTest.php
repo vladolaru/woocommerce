@@ -2570,6 +2570,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'completed', $order->get_status() );
 		$this->assertOrderHasNote( $order, 'Dispute has been closed with status won. See <a href="' . $this->get_expected_dispute_url( 'ch_123' ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details. (Dispute ID: du_123)' );
+		// Client os:632/os:692: only a `lost` status creates a local refund.
+		$this->assertCount( 0, $order->get_refunds(), 'A won dispute must never create a local refund.' );
 	}
 
 	/**
@@ -2634,6 +2636,61 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Dispute lost.', $refunds[0]->get_reason() );
 		$this->assertSame( '', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
 		$this->assertOrderHasNote( $order, 'Dispute has been closed with status lost. See <a href="' . $this->get_expected_dispute_url( 'ch_123' ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details. (Dispute ID: du_123)' );
+	}
+
+	/**
+	 * @testdox charge.dispute.closed lost for the full disputed amount refunds the order total with line items.
+	 *
+	 * Client `os:632-661`: when the disputed amount is not less than the order
+	 * total, the refund amount is `min(remaining, disputed)` and the order's line
+	 * items are kept intact; only a partial dispute clears them. REC-5b R-e
+	 * `accept_closed_lost` (`Fixtures/rec-5b-dispute-events.json`) is a real
+	 * full-amount lost dispute on a $50.00 charge, fed to the ingestor unchanged;
+	 * REC-5b R-d `accept_summary_after_close` (`Fixtures/rec-5b-disputes.json`) is
+	 * the matching recorded `get_dispute_summary()` response. Neither recorded
+	 * charge had a Woo order (R-e's own store observation), so the order here is a
+	 * fixture matched to the recorded charge ID, not the recording itself.
+	 */
+	public function test_dispute_closed_lost_for_full_disputed_amount_refunds_order_total_with_line_items(): void {
+		// The recorded event carries a real `livemode: false`; native's own
+		// ingestor drops it as a test/live mismatch unless test mode is on.
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+
+		$order   = $this->create_woopayments_order();
+		$product = \WC_Helper_Product::create_simple_product();
+		$product->set_regular_price( '50.00' );
+		$product->set_price( '50.00' );
+		$product->save();
+		$order->add_product(
+			$product,
+			1,
+			array(
+				'subtotal' => 50.00,
+				'total'    => 50.00,
+			)
+		);
+		$order->set_total( '50.00' );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_3UJbTlBzWlxcwgpP0vNaexjT' );
+		$order->save();
+
+		$sut = $this->create_ingestor(
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new LegacyProxy(),
+			new WooPaymentsLegacyRuntime(),
+			$this->create_dispute_summary_api_client( $this->load_recorded_dispute_summary( 'accept_summary_after_close' ) )
+		);
+
+		$sut->process( $this->load_recorded_dispute_closed_event( 'accept_closed_lost' ) );
+
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = $order instanceof WC_Order ? $order->get_refunds() : array();
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( '-50.00', $refunds[0]->get_total() );
+		$this->assertSame( 'Dispute lost.', $refunds[0]->get_reason() );
+		$this->assertCount( 1, $refunds[0]->get_items(), 'A full-amount dispute must refund the order line items, unlike a partial one.' );
 	}
 
 	/**
@@ -5088,6 +5145,51 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		}
 
 		$this->fail( "REC-5a R-c fixture has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * Load a REC-5b R-e recorded `charge.dispute.closed` event envelope (the exact body
+	 * local WPCOM forwarded) by pair key, ready to pass straight to `WooPaymentsEventIngestor::process()`.
+	 *
+	 * @param string $pair REC-5b R-e fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_dispute_closed_event( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-5b-dispute-events.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry['body'];
+			}
+		}
+
+		$this->fail( "REC-5b R-e fixture has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * Load a REC-5b R-d recorded `get_dispute_summary()` response by pair key.
+	 *
+	 * @param string $pair REC-5b R-d fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_dispute_summary( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-5b-disputes.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry['response']['body'];
+			}
+		}
+
+		$this->fail( "REC-5b R-d fixture has no entry for pair '$pair'." );
 	}
 
 	/**

@@ -861,6 +861,28 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		expect( mockSpeak ).toHaveBeenCalledWith( 'Evidence saved!', 'polite' );
 	} );
 
+	it( "rehydrates a saved draft's product type and description from dispute metadata", async () => {
+		mockGetDispute.mockResolvedValue(
+			makeDispute( {
+				metadata: {
+					__product_type: 'digital_product_or_service',
+				},
+				evidence: {
+					product_description: 'Downloaded software.',
+				},
+			} )
+		);
+
+		renderChallengePage();
+
+		expect(
+			await screen.findByRole( 'combobox', { name: 'Product type' } )
+		).toHaveValue( 'digital_product_or_service' );
+		expect(
+			screen.getByRole( 'textbox', { name: 'Product description' } )
+		).toHaveValue( 'Downloaded software.' );
+	} );
+
 	it( 'should clear stale shipping evidence when saving a non-shipping product type', async () => {
 		mockGetDispute.mockResolvedValue(
 			makeDispute( {

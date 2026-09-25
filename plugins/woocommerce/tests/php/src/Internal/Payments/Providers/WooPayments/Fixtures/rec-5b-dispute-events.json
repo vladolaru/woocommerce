@@ -1,0 +1,401 @@
+{
+	"_meta": {
+		"recording": "REC-5b R-e",
+		"captured_via": "Local WPCOM async job rows (wpj_jobs, Remote_Site_Client::handle_async_webhook_send) read-only while queued, before the worker ran them (same method as REC-5a R-c). The job data body is the exact array Remote_Site_Client::send_webhook() wp_json_encode()s and POSTs to the store at ?rest_route=/wc/v3/payments/webhook (Event::get_body_for_forwarding(true)). Every job ran; none reached wpj_job_failures. Events reached WPCOM through the running Stripe CLI listener",
+		"sanitized": "customer_email_address in data.object.evidence replaced with REDACTED; no secrets, signatures or receipt URLs in the bodies; job envelope (autoenv server vars, job options) omitted; bodies otherwise verbatim",
+		"store_observation": "The charges have no Woo order, so native threw on every dispute event: native-payments-webhook log \"Could not find WooPayments order via disputed charge ID: <charge>\" once per closed event, and no wcpay_processed_event_ marker was set. No order state, note or refund was exercised",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 7e5110cb73, WooPayments plugin inactive, test mode)",
+		"notes": "data/rec-5b-disputes.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "accept_closed_lost",
+			"primary": true,
+			"context": "du_1UJbToBzWlxcwgpP9bUeBTQY after close_dispute()",
+			"queued_at": "2026-09-25T15:57:04+00:00",
+			"wpcom_job_id": 140729,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_1UJbUhBzWlxcwgpPuK0Lu7zc",
+				"type": "charge.dispute.closed",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "du_1UJbToBzWlxcwgpP9bUeBTQY",
+						"object": "dispute",
+						"amount": 5000,
+						"balance_transaction": "txn_1UJbTpBzWlxcwgpPnRegfKzn",
+						"balance_transactions": [
+							{
+								"available_on": 1790640000,
+								"created": 1790351768,
+								"net": -6500,
+								"currency": "usd",
+								"source": "du_1UJbToBzWlxcwgpP9bUeBTQY",
+								"reporting_category": "dispute",
+								"fee_details": [
+									{
+										"application": null,
+										"amount": 1500,
+										"type": "stripe_fee",
+										"description": "Dispute fee",
+										"currency": "usd"
+									}
+								],
+								"amount": -5000,
+								"status": "pending",
+								"balance_type": "payments",
+								"object": "balance_transaction",
+								"id": "txn_1UJbTpBzWlxcwgpPnRegfKzn",
+								"exchange_rate": null,
+								"type": "adjustment",
+								"description": "Chargeback withdrawal for ch_3UJbTlBzWlxcwgpP0vNaexjT",
+								"fee": 1500
+							}
+						],
+						"charge": "ch_3UJbTlBzWlxcwgpP0vNaexjT",
+						"created": 1790351768,
+						"currency": "usd",
+						"enhanced_eligibility_types": [],
+						"evidence": {
+							"access_activity_log": null,
+							"billing_address": "Damrak 1\nAmsterdam, 1012 LG, NL",
+							"cancellation_policy": null,
+							"cancellation_policy_disclosure": null,
+							"cancellation_rebuttal": null,
+							"customer_communication": null,
+							"customer_email_address": "REDACTED",
+							"customer_name": "Lpm Checkout",
+							"customer_purchase_ip": null,
+							"customer_signature": null,
+							"duplicate_charge_documentation": null,
+							"duplicate_charge_explanation": null,
+							"duplicate_charge_id": null,
+							"enhanced_evidence": [],
+							"product_description": "REC-5b dispute recording (accept)",
+							"receipt": null,
+							"refund_policy": null,
+							"refund_policy_disclosure": null,
+							"refund_refusal_explanation": null,
+							"service_date": null,
+							"service_documentation": null,
+							"shipping_address": null,
+							"shipping_carrier": null,
+							"shipping_date": null,
+							"shipping_documentation": null,
+							"shipping_tracking_number": null,
+							"uncategorized_file": null,
+							"uncategorized_text": null
+						},
+						"evidence_details": {
+							"due_by": 1791071999,
+							"enhanced_eligibility": [],
+							"has_evidence": false,
+							"past_due": false,
+							"submission_count": 0
+						},
+						"is_charge_refundable": false,
+						"livemode": false,
+						"metadata": {
+							"__closed_by_merchant": "1"
+						},
+						"payment_intent": "pi_3UJbTlBzWlxcwgpP0FQ4MWQE",
+						"payment_method_details": {
+							"card": {
+								"brand": "visa",
+								"case_type": "chargeback",
+								"network": "visa",
+								"network_reason_code": "10.4"
+							},
+							"type": "card"
+						},
+						"reason": "fraudulent",
+						"status": "lost",
+						"issuer_evidence": [
+							{
+								"evidence_type": "chargeback",
+								"file_evidence": [],
+								"text_evidence": "The Issuer/Cardholder disputes this transaction as fraudulent. The authorization request did not include Card Identification Data and/or Address Verification. Provide proof of an approved Authorization containing full match on Address Verification and Card Identification Data. Also provide proof of delivery."
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"pair": "winning_evidence_closed_won",
+			"primary": true,
+			"context": "du_1UJbTtBzWlxcwgpPSQwkqPRE after winning_evidence submit",
+			"queued_at": "2026-09-25T15:57:23+00:00",
+			"wpcom_job_id": 140731,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_1UJbUzBzWlxcwgpPSvUv9gtB",
+				"type": "charge.dispute.closed",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "du_1UJbTtBzWlxcwgpPSQwkqPRE",
+						"object": "dispute",
+						"amount": 6000,
+						"balance_transaction": "txn_1UJbTuBzWlxcwgpPhXV43VP8",
+						"balance_transactions": [
+							{
+								"id": "txn_1UJbTuBzWlxcwgpPhXV43VP8",
+								"object": "balance_transaction",
+								"amount": -6000,
+								"available_on": 1790640000,
+								"balance_type": "payments",
+								"created": 1790351773,
+								"currency": "usd",
+								"description": "Chargeback withdrawal for ch_3UJbTrBzWlxcwgpP0g7nT6Vu",
+								"exchange_rate": null,
+								"fee": 1500,
+								"fee_details": [
+									{
+										"amount": 1500,
+										"application": null,
+										"currency": "usd",
+										"description": "Dispute fee",
+										"type": "stripe_fee"
+									}
+								],
+								"net": -7500,
+								"reporting_category": "dispute",
+								"source": "du_1UJbTtBzWlxcwgpPSQwkqPRE",
+								"status": "pending",
+								"type": "adjustment"
+							},
+							{
+								"id": "txn_1UJbUyBzWlxcwgpParQnb1z6",
+								"object": "balance_transaction",
+								"amount": 6000,
+								"available_on": 1790640000,
+								"balance_type": "payments",
+								"created": 1790351838,
+								"currency": "usd",
+								"description": "Chargeback reversal for ch_3UJbTrBzWlxcwgpP0g7nT6Vu",
+								"exchange_rate": null,
+								"fee": -1500,
+								"fee_details": [
+									{
+										"amount": -1500,
+										"application": null,
+										"currency": "usd",
+										"description": "Dispute fee refund",
+										"type": "stripe_fee"
+									}
+								],
+								"net": 7500,
+								"reporting_category": "dispute_reversal",
+								"source": "du_1UJbTtBzWlxcwgpPSQwkqPRE",
+								"status": "pending",
+								"type": "adjustment"
+							}
+						],
+						"charge": "ch_3UJbTrBzWlxcwgpP0g7nT6Vu",
+						"created": 1790351773,
+						"currency": "usd",
+						"enhanced_eligibility_types": [],
+						"evidence": {
+							"access_activity_log": null,
+							"billing_address": "Damrak 1\nAmsterdam, 1012 LG, NL",
+							"cancellation_policy": null,
+							"cancellation_policy_disclosure": null,
+							"cancellation_rebuttal": null,
+							"customer_communication": null,
+							"customer_email_address": "REDACTED",
+							"customer_name": "Lpm Checkout",
+							"customer_purchase_ip": null,
+							"customer_signature": null,
+							"duplicate_charge_documentation": null,
+							"duplicate_charge_explanation": null,
+							"duplicate_charge_id": null,
+							"enhanced_evidence": [],
+							"product_description": "REC-5b recording: one-off consulting session delivered online.",
+							"receipt": null,
+							"refund_policy": null,
+							"refund_policy_disclosure": null,
+							"refund_refusal_explanation": null,
+							"service_date": null,
+							"service_documentation": null,
+							"shipping_address": null,
+							"shipping_carrier": null,
+							"shipping_date": null,
+							"shipping_documentation": null,
+							"shipping_tracking_number": null,
+							"uncategorized_file": null,
+							"uncategorized_text": "winning_evidence"
+						},
+						"evidence_details": {
+							"due_by": 1791071999,
+							"enhanced_eligibility": [],
+							"has_evidence": true,
+							"past_due": false,
+							"submission_count": 1
+						},
+						"is_charge_refundable": true,
+						"livemode": false,
+						"metadata": {
+							"__product_type": "offline_service",
+							"__evidence_submitted_at": "1790351833"
+						},
+						"payment_intent": "pi_3UJbTrBzWlxcwgpP0UfrvQzE",
+						"payment_method_details": {
+							"card": {
+								"brand": "visa",
+								"case_type": "chargeback",
+								"network": "visa",
+								"network_reason_code": "10.4"
+							},
+							"type": "card"
+						},
+						"reason": "fraudulent",
+						"status": "won",
+						"issuer_evidence": [
+							{
+								"evidence_type": "chargeback",
+								"file_evidence": [],
+								"text_evidence": "The Issuer/Cardholder disputes this transaction as fraudulent. The authorization request did not include Card Identification Data and/or Address Verification. Provide proof of an approved Authorization containing full match on Address Verification and Card Identification Data. Also provide proof of delivery."
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"pair": "losing_evidence_closed_lost",
+			"primary": false,
+			"context": "du_1UJbTzBzWlxcwgpPteZQ2zpe after losing_evidence submit",
+			"queued_at": "2026-09-25T15:57:31+00:00",
+			"wpcom_job_id": 140732,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_1UJbV5BzWlxcwgpPWxZLizoe",
+				"type": "charge.dispute.closed",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "du_1UJbTzBzWlxcwgpPteZQ2zpe",
+						"object": "dispute",
+						"amount": 7000,
+						"balance_transaction": "txn_1UJbU0BzWlxcwgpPPbpYvbKf",
+						"balance_transactions": [
+							{
+								"id": "txn_1UJbU0BzWlxcwgpPPbpYvbKf",
+								"object": "balance_transaction",
+								"amount": -7000,
+								"available_on": 1790640000,
+								"balance_type": "payments",
+								"created": 1790351779,
+								"currency": "usd",
+								"description": "Chargeback withdrawal for ch_3UJbTwBzWlxcwgpP1NnhK5cZ",
+								"exchange_rate": null,
+								"fee": 1500,
+								"fee_details": [
+									{
+										"amount": 1500,
+										"application": null,
+										"currency": "usd",
+										"description": "Dispute fee",
+										"type": "stripe_fee"
+									}
+								],
+								"net": -8500,
+								"reporting_category": "dispute",
+								"source": "du_1UJbTzBzWlxcwgpPteZQ2zpe",
+								"status": "pending",
+								"type": "adjustment"
+							}
+						],
+						"charge": "ch_3UJbTwBzWlxcwgpP1NnhK5cZ",
+						"created": 1790351779,
+						"currency": "usd",
+						"enhanced_eligibility_types": [],
+						"evidence": {
+							"access_activity_log": null,
+							"billing_address": "Damrak 1\nAmsterdam, 1012 LG, NL",
+							"cancellation_policy": null,
+							"cancellation_policy_disclosure": null,
+							"cancellation_rebuttal": null,
+							"customer_communication": null,
+							"customer_email_address": "REDACTED",
+							"customer_name": "Lpm Checkout",
+							"customer_purchase_ip": null,
+							"customer_signature": null,
+							"duplicate_charge_documentation": null,
+							"duplicate_charge_explanation": null,
+							"duplicate_charge_id": null,
+							"enhanced_evidence": [],
+							"product_description": "REC-5b recording: one-off consulting session delivered online.",
+							"receipt": null,
+							"refund_policy": null,
+							"refund_policy_disclosure": null,
+							"refund_refusal_explanation": null,
+							"service_date": null,
+							"service_documentation": null,
+							"shipping_address": null,
+							"shipping_carrier": null,
+							"shipping_date": null,
+							"shipping_documentation": null,
+							"shipping_tracking_number": null,
+							"uncategorized_file": null,
+							"uncategorized_text": "losing_evidence"
+						},
+						"evidence_details": {
+							"due_by": 1791071999,
+							"enhanced_eligibility": [],
+							"has_evidence": true,
+							"past_due": false,
+							"submission_count": 1
+						},
+						"is_charge_refundable": false,
+						"livemode": false,
+						"metadata": {
+							"__product_type": "offline_service",
+							"__evidence_submitted_at": "1790351841"
+						},
+						"payment_intent": "pi_3UJbTwBzWlxcwgpP1Sha1w09",
+						"payment_method_details": {
+							"card": {
+								"brand": "visa",
+								"case_type": "chargeback",
+								"network": "visa",
+								"network_reason_code": "10.4"
+							},
+							"type": "card"
+						},
+						"reason": "fraudulent",
+						"status": "lost",
+						"issuer_evidence": [
+							{
+								"evidence_type": "chargeback",
+								"file_evidence": [],
+								"text_evidence": "The Issuer/Cardholder disputes this transaction as fraudulent. The authorization request did not include Card Identification Data and/or Address Verification. Provide proof of an approved Authorization containing full match on Address Verification and Card Identification Data. Also provide proof of delivery."
+							}
+						]
+					}
+				}
+			}
+		}
+	]
+}

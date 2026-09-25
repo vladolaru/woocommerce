@@ -3935,6 +3935,184 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Closing a dispute posts the recorded body: only `test_mode`, never an empty body.
+	 *
+	 * REC-5b R-d `accept_close` (`Fixtures/rec-5b-disputes.json`): the caller passes
+	 * no fields, but the wire body is not literally empty. {@see WooPaymentsApiClient::request()}
+	 * always merges in `test_mode`, so `close_dispute()` posts exactly `{"test_mode": true}`
+	 * (client `includes/admin/class-wc-rest-payments-disputes-controller.php:164-167`, `api:748-757`).
+	 */
+	public function test_close_dispute_posts_to_close_route_with_recorded_body(): void {
+		$recorded              = $this->load_recorded_dispute_entry( 'accept_close' );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => $recorded['content_type'] ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$sut                   = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( true ) );
+
+		$sut->close_dispute( 'du_1UJbToBzWlxcwgpP9bUeBTQY' );
+
+		$this->assertSame( '/sites/123/wcpay/disputes/du_1UJbToBzWlxcwgpP9bUeBTQY/close', $http_client->last_path );
+		$this->assertSame( 'POST', $http_client->last_method );
+
+		$sent = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $sent );
+		$this->assertCount( 1, $sent, 'The close-dispute wire body must carry only test_mode, never an empty body and never evidence fields.' );
+		$this->assertArrayHasKey( 'test_mode', $sent );
+		$this->assertTrue( $sent['test_mode'] );
+	}
+
+	/**
+	 * @testdox Updating a dispute reads it first, then posts evidence, submit and metadata over a second request.
+	 *
+	 * REC-5b R-d `win_update_pre_read`/`win_update_submit` (`Fixtures/rec-5b-disputes.json`):
+	 * `update_dispute()` makes two transport calls in order, a GET then a POST
+	 * (client `api:689-722`). With reason `fraudulent` (not `noncompliant`) the
+	 * Visa `enhanced_evidence` flag is never added, and `submit` travels as a JSON
+	 * boolean, not a string.
+	 */
+	public function test_update_dispute_reads_dispute_then_posts_evidence_submit_and_metadata(): void {
+		$pre_read               = $this->load_recorded_dispute_entry( 'win_update_pre_read' );
+		$submit                 = $this->load_recorded_dispute_entry( 'win_update_submit' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id   = 123;
+		$http_client->responses = array(
+			array(
+				'response' => array( 'code' => $pre_read['http_status'] ),
+				'headers'  => array( 'content-type' => $pre_read['content_type'] ),
+				'body'     => wp_json_encode( $pre_read['body'] ),
+			),
+			array(
+				'response' => array( 'code' => $submit['http_status'] ),
+				'headers'  => array( 'content-type' => $submit['content_type'] ),
+				'body'     => wp_json_encode( $submit['body'] ),
+			),
+		);
+		$sut                    = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( true ) );
+
+		$sut->update_dispute(
+			'du_1UJbTtBzWlxcwgpPSQwkqPRE',
+			array(
+				'product_description' => 'REC-5b recording: one-off consulting session delivered online.',
+				'uncategorized_text'  => 'winning_evidence',
+			),
+			true,
+			array( '__product_type' => 'offline_service' )
+		);
+
+		$this->assertSame( 2, $http_client->request_count, 'update_dispute() must make exactly two transport calls: a GET, then a POST.' );
+		$this->assertSame( 'GET', $http_client->requests[0]['method'] );
+		$this->assertStringStartsWith( '/sites/123/wcpay/disputes/du_1UJbTtBzWlxcwgpPSQwkqPRE?', $http_client->requests[0]['path'] );
+		$this->assertSame( 'POST', $http_client->requests[1]['method'] );
+		$this->assertSame( '/sites/123/wcpay/disputes/du_1UJbTtBzWlxcwgpPSQwkqPRE', $http_client->requests[1]['path'] );
+
+		$sent = json_decode( (string) $http_client->requests[1]['body'], true );
+		$this->assertIsArray( $sent );
+		$this->assertSame( array( 'test_mode', 'evidence', 'submit', 'metadata' ), array_keys( $sent ), 'The update-dispute wire body must carry only these four keys; a noncompliant enhanced_evidence flag must not appear for a fraudulent dispute.' );
+		$this->assertTrue( $sent['test_mode'] );
+		$this->assertSame( 'REC-5b recording: one-off consulting session delivered online.', $sent['evidence']['product_description'] );
+		$this->assertSame( 'winning_evidence', $sent['evidence']['uncategorized_text'] );
+		$this->assertArrayNotHasKey( 'enhanced_evidence', $sent['evidence'] );
+		$this->assertTrue( $sent['submit'] );
+		$this->assertSame( array( '__product_type' => 'offline_service' ), $sent['metadata'] );
+	}
+
+	/**
+	 * @testdox Updating a noncompliant dispute adds the Visa compliance enhanced-evidence flag the pre-read reason requires.
+	 *
+	 * REC-5b never recorded a `noncompliant` dispute (the test card used to record
+	 * R-d always produces `fraudulent`, per `data/rec-5b-disputes.md`). This test
+	 * takes the recorded `win_update_pre_read` GET response and overrides only its
+	 * `reason` field to `noncompliant` (labelled below), then feeds the recorded
+	 * `win_update_submit` POST response unchanged. Client `api:698-708`: when the
+	 * pre-read dispute's reason is `noncompliant`, `update_dispute()` merges
+	 * `evidence.enhanced_evidence.visa_compliance.fee_acknowledged = 'true'` into
+	 * the evidence it already carries, rather than replacing it.
+	 */
+	public function test_update_dispute_adds_visa_compliance_enhanced_evidence_for_noncompliant_reason(): void {
+		$pre_read = $this->load_recorded_dispute_entry( 'win_update_pre_read' );
+		$submit   = $this->load_recorded_dispute_entry( 'win_update_submit' );
+
+		// Override: REC-5b's pre-read body is fed back with its `reason` replaced by
+		// `noncompliant`; every other field is the recorded response, unchanged.
+		$noncompliant_pre_read_body           = $pre_read['body'];
+		$noncompliant_pre_read_body['reason'] = 'noncompliant';
+
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id   = 123;
+		$http_client->responses = array(
+			array(
+				'response' => array( 'code' => $pre_read['http_status'] ),
+				'headers'  => array( 'content-type' => $pre_read['content_type'] ),
+				'body'     => wp_json_encode( $noncompliant_pre_read_body ),
+			),
+			array(
+				'response' => array( 'code' => $submit['http_status'] ),
+				'headers'  => array( 'content-type' => $submit['content_type'] ),
+				'body'     => wp_json_encode( $submit['body'] ),
+			),
+		);
+		$sut                    = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( true ) );
+
+		$sut->update_dispute(
+			'du_1UJbTtBzWlxcwgpPSQwkqPRE',
+			array(
+				'product_description' => 'REC-5b recording: one-off consulting session delivered online.',
+				'uncategorized_text'  => 'winning_evidence',
+			),
+			true,
+			array( '__product_type' => 'offline_service' )
+		);
+
+		$sent = json_decode( (string) $http_client->requests[1]['body'], true );
+		$this->assertIsArray( $sent );
+		$this->assertSame(
+			array(
+				'visa_compliance' => array(
+					'fee_acknowledged' => 'true',
+				),
+			),
+			$sent['evidence']['enhanced_evidence'],
+			'A noncompliant pre-read reason must add exactly the Visa compliance flag client api:698-708 builds.'
+		);
+		// The rest of the evidence the caller passed must still be present, not replaced.
+		$this->assertSame( 'REC-5b recording: one-off consulting session delivered online.', $sent['evidence']['product_description'] );
+		$this->assertSame( 'winning_evidence', $sent['evidence']['uncategorized_text'] );
+	}
+
+	/**
+	 * Load one recorded REC-5b R-d dispute entry's HTTP status, content type and response body by pair key.
+	 *
+	 * @param string $pair REC-5b fixture pair key.
+	 * @return array{http_status:int,content_type:string,body:array<string,mixed>}
+	 */
+	private function load_recorded_dispute_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/../Fixtures/rec-5b-disputes.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array(
+					'http_status'  => (int) $entry['response']['http_status'],
+					'content_type' => (string) $entry['response']['content_type'],
+					'body'         => $entry['response']['body'],
+				);
+			}
+		}
+
+		$this->fail( "REC-5b fixture has no entry for pair '$pair'." );
+	}
+
+	/**
 	 * @testdox Should preserve the disputes export endpoint and body fields.
 	 */
 	public function test_get_disputes_export_uses_preserved_endpoint(): void {

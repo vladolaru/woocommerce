@@ -473,7 +473,11 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A replayed created webhook does not duplicate the open-dispute record.
+	 * @testdox A replayed created webhook does not duplicate the open-dispute record, note, or on-hold hold.
+	 *
+	 * Client `os:591-594`: `mark_payment_dispute_created()` dedupes on the note's
+	 * own identity, so a replay writes neither a second note nor a second
+	 * `on-hold` transition.
 	 */
 	public function test_replayed_created_webhook_does_not_duplicate_record(): void {
 		$order = $this->create_disputable_order();
@@ -490,6 +494,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( array( 'dp_e1' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ), 'A replayed created webhook must leave exactly one created note.' );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed created webhook must keep the order on-hold.' );
 	}
 
 	/**

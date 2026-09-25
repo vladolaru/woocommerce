@@ -25,58 +25,38 @@ import { DISPUTED_FRAUDULENT_CARD } from '../../../utils/woopayments-native/test
  * The `dispute-lifecycle` provider-fidelity family, as fixed in
  * `tests/woopayments-native/FIDELITY-CLAIMS.md`.
  *
- * The claim these tests exist to make falsifiable: three independent USD 50.00
- * disputes raised by the real provider retain their exact dispute, charge and
- * order identities through voluntary acceptance, winning evidence and losing
- * evidence; each traverses the status sequence listed for its case; native
- * applies exactly one side effect per provider event; and each dispute-created
- * order note links to the dispute details surface for those same identities.
+ * Trimmed to `DP-nav`, the family's one retained browser smoke (`data/t1-provider-family-audit.md`
+ * §3): a real provider-raised dispute keeps its exact dispute, charge and order
+ * identities from checkout through the `on-hold` transition and the
+ * dispute-created order note, and the note's link reaches the native dispute
+ * details surface through the legacy deep-link redirect. Voluntary acceptance,
+ * winning evidence and losing evidence (formerly `DP1`-`DP3`) moved to
+ * `WooPaymentsDisputeEventHandlerTest`, `WooPaymentsEventIngestorTest`,
+ * `WooPaymentsApiClientTest`, `WooPaymentsMoneyMovementRestControllerTest` and
+ * `dispute-challenge-page.test.tsx`, backed by REC-5b (`Fixtures/rec-5b-disputes.json`,
+ * `Fixtures/rec-5b-dispute-events.json`).
  *
- * Four things shape every case below.
+ * Two things shape the case below.
  *
  * **Nothing here creates a dispute locally.** The only lever is the provider's
  * disputed-card fixture, `4000000000000259`: a captured charge on it is
  * disputed by the provider, asynchronously, as `fraudulent`. The dispute record
  * itself is then readable through native's own uncached dispute route, but
- * every *native* effect — the `on-hold` transition, the created note, the
- * closed note, the local dispute refund — is written only by
- * `WooPaymentsDisputeEventHandler` when `WooPaymentsEventIngestor` ingests the
- * matching provider event. A store whose provider event listener is not
- * delivering `charge.dispute.*` will therefore fail at the convergence budgets
- * below rather than pass on a half-observed graph, and the failure text says
- * so. This suite does not synthesise provider events, and it never returns
- * early when an effect is missing.
+ * every *native* effect — the `on-hold` transition and the created note — is
+ * written only by `WooPaymentsDisputeEventHandler` when
+ * `WooPaymentsEventIngestor` ingests the matching provider event. A store whose
+ * provider event listener is not delivering `charge.dispute.*` will therefore
+ * fail at the convergence budget below rather than pass on a half-observed
+ * graph, and the failure text says so. This suite does not synthesise provider
+ * events, and it never returns early when an effect is missing.
  *
- * **Identity is the assertion.** Every client row this family replaces asserted
- * a rendered status label, which is why their recorded residual risks all say
- * some version of "a generic Lost label cannot be allowed to mask a wrong
- * record". Each case here pins the exact dispute ID, charge ID and order ID on
- * every read, and fails the moment one is replaced.
+ * **Identity is the assertion.** The client row this case replaces asserted a
+ * rendered status label; this case pins the exact dispute ID, charge ID and
+ * order ID on every read, and fails the moment one is replaced.
  *
- * **The adjudication cases drive native's own REST controllers, not the
- * dashboard.** The claim's fixed contract states requests and payloads — "send
- * one close request for the exact first dispute ID", "submit one
- * physical-product evidence payload containing the provider's exact
- * `winning_evidence` test value with `submit=true`" — and its exclusions drop
- * dashboard layout and copy, evidence durability beyond the asserted readback,
- * and draft save behaviour. The admin surfaces are already proven at the JS
- * layer by `dispute-challenge-page.test.tsx` and `money-movement-pages.test.tsx`;
- * what a provider run adds is the join from
- * `WooPaymentsDisputesRestController` to the real provider and back through the
- * ingested event. `DP-nav` is the browser case, because navigation is what it
- * is about.
- *
- * **The claim's exclusions are honoured literally.** No case asserts a later
- * lifecycle state, evidence durability beyond the readback each submission
- * asserts, payout consequences, dashboard layout or copy, or a final order
- * status — the last because payment and dispute event ordering races there, and
- * the claim says so. The one order status this suite does assert is the
- * `on-hold` transition at creation, which the claim's Shared creation row fixes.
- *
- * Cost note: one full pass creates three USD 50.00 card charges, three provider
- * disputes, one voluntary close, and two evidence submissions. Nothing is
- * retried: `--retries=0` is mandatory, no dispute action is repeated, and an
- * uncertain terminal state quarantines the graph rather than being re-driven.
+ * Cost note: one full pass creates one USD 50.00 card charge and one provider
+ * dispute. Nothing is retried: `--retries=0` is mandatory, and an uncertain
+ * terminal state quarantines the graph rather than being re-driven.
  */
 
 /** Grep tag that selects this family as a unit. */
@@ -95,76 +75,31 @@ const CAPABILITY_PRODUCT = 'product/payment';
 const CAPABILITY_DISPUTED_CARD = 'dispute-lifecycle-card';
 /** Loading the disputed order and following its notice to dispute details. */
 const CAPABILITY_NAVIGATION = 'dispute-lifecycle-navigation';
-/** The voluntary close request. */
-const CAPABILITY_ACCEPT = 'dispute-lifecycle-accept';
-/** The evidence submissions. */
-const CAPABILITY_EVIDENCE = 'dispute-lifecycle-evidence';
 
-const CONTRACT_DP1 =
-	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:103::Disputes › Respond to a dispute › Accept a dispute';
-const CONTRACT_DP2 =
-	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:158::Disputes › Respond to a dispute › Challenge a dispute with winning evidence';
-const CONTRACT_DP3 =
-	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:340::Disputes › Respond to a dispute › Challenge a dispute with losing evidence';
 const CONTRACT_DP_NAV =
 	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-view-details-via-order-notice.spec.ts:40::Disputes › View dispute details via disputed order notice › should navigate to dispute details when disputed order notice button clicked';
 
 const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
 const STORE_CURRENCY_API =
 	'/wp-json/wc/v3/settings/general/woocommerce_currency';
-const SYSTEM_STATUS_API = '/wp-json/wc/v3/system_status?_fields=environment';
 
-/** The claim's fixture: three independent USD 50.00 disputed charges. */
+/** The claim's fixture: one USD 50.00 disputed charge. */
 const PRICE = '50.00';
 const AMOUNT_MINOR = 5000;
 const CURRENCY = 'USD';
-const DISPUTE_COUNT = 3;
 
 /** What the provider raises for the disputed-card fixture. */
 const DISPUTE_REASON = 'fraudulent';
 const CREATED_STATUS = 'needs_response';
-const UNDER_REVIEW_STATUS = 'under_review';
-const WON_STATUS = 'won';
-const LOST_STATUS = 'lost';
-/** Every provider status this family treats as terminal. */
-const TERMINAL_STATUSES = [ WON_STATUS, LOST_STATUS, 'warning_closed' ];
-
-/**
- * The provider's magic test evidence. Native forwards the cover letter as
- * `evidence.uncategorized_text` (`buildEvidencePayload` in
- * `client/.../money-movement/dispute-evidence-fields.ts`), which is the field
- * the provider reads these values from.
- */
-const WINNING_EVIDENCE = 'winning_evidence';
-const LOSING_EVIDENCE = 'losing_evidence';
 /** Native carries the challenge's product type as dispute metadata. */
 const PRODUCT_TYPE_METADATA_KEY = '__product_type';
-const PHYSICAL_PRODUCT = 'physical_product';
-const PRODUCT_DESCRIPTION = 'WooPayments native provider-fidelity fixture';
 
 /** Convergence, as fixed by the claim. */
 const CREATION_INTERVAL_MS = 5_000;
 const CREATION_BUDGET_MS = 180_000;
-const ADJUDICATION_INTERVAL_MS = 5_000;
-const ADJUDICATION_BUDGET_MS = 600_000;
 /** The provider-backed admin surface `DP-nav` lands on fetches as it renders. */
 const DETAILS_BUDGET_MS = 60_000;
 const CHECKOUT_RECEIPT_TIMEOUT_MS = 60_000;
-
-/**
- * `DP-nav`'s explicit native-version expectation.
- *
- * The client row it replaces returned silently when the disputed-order notice
- * was absent, on the theory that WooCommerce might be older than the release
- * that introduced it. Native's dispute-created order note and its
- * `get_dispute_url` link ship with the native runtime itself
- * (`WooPaymentsDisputeEventHandler`, `@since 11.0.0`), and the legacy
- * `/payments/transactions/details` deep link it emits is redirected to the
- * native route by `WooPaymentsAdminNavigationController` from the same release.
- * The case states that expectation, asserts the store meets it, and then
- * requires the notice unconditionally.
- */
-const NATIVE_DISPUTE_NOTICE_SINCE = '11.0.0';
 
 function fail( message: string ): never {
 	throw new Error( `WooPayments dispute fidelity ${ message }` );
@@ -419,13 +354,6 @@ async function readChargeDisputeId(
  * Local order reads
  * ---------------------------------------------------------------------- */
 
-interface WooRefundRecord {
-	id: number;
-	amount: string;
-	reason: string;
-	providerRefundId: string;
-}
-
 async function readOrderStatus(
 	restApi: APIRequestContext,
 	orderId: number
@@ -465,47 +393,6 @@ async function readOrderNotes(
 	);
 }
 
-async function readWooRefunds(
-	restApi: APIRequestContext,
-	orderId: number
-): Promise< WooRefundRecord[] > {
-	const refunds = await readJson< unknown[] >(
-		await restApi.get(
-			`/wp-json/wc/v3/orders/${ orderId }/refunds?context=edit&per_page=100`
-		),
-		`Order ${ orderId } refunds read`
-	);
-
-	return refunds.map( ( item, index ) => {
-		const refund = item as {
-			id?: unknown;
-			amount?: unknown;
-			reason?: unknown;
-			meta_data?: unknown;
-		};
-		const metaData = Array.isArray( refund.meta_data )
-			? ( refund.meta_data as Array< {
-					key?: unknown;
-					value?: unknown;
-			  } > )
-			: [];
-		const providerRefundId = metaData.find(
-			( entry ) => entry.key === '_wcpay_refund_id'
-		)?.value;
-
-		return {
-			id: requiredNumber( refund.id, `refund ${ index + 1 } ID` ),
-			amount: requiredString(
-				refund.amount,
-				`refund ${ index + 1 } amount`
-			),
-			reason: typeof refund.reason === 'string' ? refund.reason : '',
-			providerRefundId:
-				typeof providerRefundId === 'string' ? providerRefundId : '',
-		};
-	} );
-}
-
 /* -------------------------------------------------------------------------
  * Native dispute side effects, read off the order's own notes
  * ---------------------------------------------------------------------- */
@@ -525,15 +412,6 @@ function createdDisputeNotes(
 	);
 }
 
-function closedDisputeNotes(
-	notes: readonly string[],
-	status: string
-): string[] {
-	return notes.filter( ( note ) =>
-		note.includes( `Dispute has been closed with status ${ status }.` )
-	);
-}
-
 /**
  * WooCommerce writes one note per status transition, so the order carries a
  * durable record of every status it passed through. A poll that samples the
@@ -544,42 +422,6 @@ function statusTransitionNotes( notes: readonly string[] ): string[] {
 	return notes.filter( ( note ) =>
 		note.includes( 'Order status changed from' )
 	);
-}
-
-/**
- * The "Payment dispute has been updated" notes on an order.
- *
- * There are never any, and that is a platform fact rather than a native one.
- * `WooPaymentsDisputeEventHandler` writes this note for any supported dispute
- * event that is not a funds movement — that is, for `charge.dispute.updated` —
- * but the platform's charge event handler forwards only
- * `charge.dispute.created`, `charge.dispute.closed`,
- * `charge.dispute.funds_withdrawn` and `charge.dispute.funds_reinstated` to the
- * merchant store. Its `charge.dispute.updated` branch tracks and caches the
- * event and returns without calling `forward_event()`, so the store never sees
- * one and neither runtime can write the note. See the 2026-08-20 correction in
- * `FIDELITY-CLAIMS.md`.
- */
-function updatedDisputeNotes( notes: readonly string[] ): string[] {
-	return notes.filter( ( note ) =>
-		note.includes( 'Payment dispute has been updated' )
-	);
-}
-
-/**
- * The update-effect tripwire.
- *
- * Asserting the absence keeps the case honest about what it proves today. It is
- * a tripwire rather than a silence: if the platform ever starts forwarding
- * `charge.dispute.updated`, this fails, and that failure is the signal to
- * restore the original requirement of exactly one update effect rather than to
- * weaken the case again.
- */
-function expectNoRelayedDisputeUpdate( notes: readonly string[] ): void {
-	expect(
-		updatedDisputeNotes( notes ),
-		'the platform does not forward charge.dispute.updated, so no update note can exist; if one does, the platform changed and this clause must be restored to requiring exactly one'
-	).toEqual( [] );
 }
 
 /**
@@ -992,247 +834,8 @@ function expectCreationContract(
 }
 
 /* -------------------------------------------------------------------------
- * Adjudication convergence
- * ---------------------------------------------------------------------- */
-
-interface AdjudicationOutcome {
-	terminal: ProviderDisputeRecord;
-	statuses: string[];
-	notes: string[];
-	refunds: WooRefundRecord[];
-}
-
-/**
- * Poll the exact dispute until it reaches its listed terminal status twice in a
- * row *and* native has applied exactly one closed effect for it, recording
- * every distinct status the dispute passed through on the way.
- *
- * Two identical reads, not one: a single read can catch a value
- * mid-propagation, and an adjudicated dispute never regresses. The identity
- * guard is on every read, so a replacement dispute or charge fails here rather
- * than being adjudicated in silence.
- */
-async function waitForAdjudication(
-	restApi: APIRequestContext,
-	paid: PaymentEvidence,
-	created: ProviderDisputeRecord,
-	terminalStatus: string,
-	options: { expectsLocalRefund: boolean }
-): Promise< AdjudicationOutcome > {
-	const deadline = Date.now() + ADJUDICATION_BUDGET_MS;
-	const statuses: string[] = [];
-	let previousSignature = '';
-	let lastSeen = 'no read yet';
-
-	for (;;) {
-		const dispute = await readDispute( restApi, created.id );
-		if ( dispute.chargeId !== created.chargeId ) {
-			fail(
-				`dispute ${ created.id } changed charge mid-lifecycle: expected ${ created.chargeId }, received ${ dispute.chargeId }.`
-			);
-		}
-		if ( dispute.orderId !== paid.orderId ) {
-			fail(
-				`dispute ${ created.id } changed order mid-lifecycle: expected ${ paid.orderId }, received ${ dispute.orderId }.`
-			);
-		}
-		if ( statuses.at( -1 ) !== dispute.status ) {
-			statuses.push( dispute.status );
-		}
-		if (
-			dispute.status !== terminalStatus &&
-			TERMINAL_STATUSES.includes( dispute.status )
-		) {
-			fail(
-				`dispute ${ created.id } reached terminal ${ dispute.status } instead of ${ terminalStatus }.`
-			);
-		}
-
-		const notes = await readOrderNotes( restApi, paid.orderId );
-		const refunds = await readWooRefunds( restApi, paid.orderId );
-		const closed = closedDisputeNotes( notes, terminalStatus );
-
-		if ( closed.length > 1 ) {
-			fail(
-				`order ${ paid.orderId } carries ${ closed.length } dispute-closed notes; one provider close event must produce exactly one.`
-			);
-		}
-		if ( refunds.length > 1 ) {
-			fail(
-				`order ${ paid.orderId } carries ${ refunds.length } refunds; a lost dispute must produce exactly one capped local refund.`
-			);
-		}
-		lastSeen = `${ dispute.status }, ${ closed.length } closed note(s), ${ refunds.length } refund(s)`;
-
-		if ( dispute.status === terminalStatus && closed.length === 1 ) {
-			const signature = `${ dispute.id }|${ dispute.status }|${ dispute.amountMinor }|${ dispute.currency }`;
-			const refundsSettled =
-				! options.expectsLocalRefund || refunds.length === 1;
-			if ( signature === previousSignature && refundsSettled ) {
-				return { terminal: dispute, statuses, notes, refunds };
-			}
-			previousSignature = signature;
-		}
-
-		const remaining = deadline - Date.now();
-		if ( remaining <= 0 ) {
-			fail(
-				`dispute ${ created.id } did not reach two stable ${ terminalStatus } reads with its native effects within ${ ADJUDICATION_BUDGET_MS }ms (last seen: ${ lastSeen }). Dispute closure reaches this store as a provider event; a run whose platform event listener is not forwarding charge.dispute.closed will always stop here.`
-			);
-		}
-		await delay( Math.min( ADJUDICATION_INTERVAL_MS, remaining ) );
-	}
-}
-
-/**
- * The dispute visited exactly the states its case lists, in order.
- *
- * The first observation is the submission response itself — a read of the same
- * dispute taken the moment the provider accepted the evidence — followed by
- * every distinct state the convergence poll saw. A skipped `under_review`, or a
- * detour through any state the case does not list, fails here.
- */
-function expectChallengeStatusSequence(
-	submittedStatus: string,
-	polledStatuses: readonly string[],
-	terminalStatus: string
-): void {
-	const observed = [ submittedStatus, ...polledStatuses ].filter(
-		( status, index, all ) => index === 0 || all[ index - 1 ] !== status
-	);
-	expect(
-		observed,
-		`a challenged dispute must pass through ${ UNDER_REVIEW_STATUS } on its way to ${ terminalStatus }, and visit nothing else`
-	).toEqual( [ UNDER_REVIEW_STATUS, terminalStatus ] );
-}
-
-/** The capped local refund a lost dispute leaves behind, and nothing else. */
-function expectCappedLocalDisputeRefund(
-	refunds: readonly WooRefundRecord[]
-): void {
-	expect(
-		refunds,
-		'a lost dispute must leave exactly one capped local refund'
-	).toHaveLength( 1 );
-	expect( refunds[ 0 ].amount ).toBe( PRICE );
-	expect( refunds[ 0 ].reason ).toBe( 'Dispute lost.' );
-	// Local only: the provider already took the money with the dispute, so a
-	// refund carrying a provider refund ID would mean it was returned twice.
-	expect(
-		refunds[ 0 ].providerRefundId,
-		'the dispute-lost refund is local; it must not carry a provider refund'
-	).toBe( '' );
-}
-
-/* -------------------------------------------------------------------------
- * The merchant's dispute actions, through native's own routes
- * ---------------------------------------------------------------------- */
-
-async function closeDisputeOnce(
-	session: ProviderWriteSession,
-	dispute: ProviderDisputeRecord
-): Promise< ProviderDisputeRecord > {
-	session.requireApprovedProviderFixture( CAPABILITY_ACCEPT );
-
-	return session.withProviderSubmissionJournal(
-		`dispute-lifecycle-close-${ dispute.id }`,
-		async () => {
-			const response = await session.performWrite( () =>
-				session.adminApi.post(
-					`/wp-json/wc/v3/payments/disputes/${ encodeURIComponent(
-						dispute.id
-					) }/close`
-				)
-			);
-			return toDisputeRecord(
-				await readJson< unknown >(
-					response,
-					`Dispute ${ dispute.id } close`
-				)
-			);
-		}
-	);
-}
-
-async function submitDisputeEvidenceOnce(
-	session: ProviderWriteSession,
-	dispute: ProviderDisputeRecord,
-	coverLetter: string
-): Promise< ProviderDisputeRecord > {
-	session.requireApprovedProviderFixture( CAPABILITY_EVIDENCE );
-
-	return session.withProviderSubmissionJournal(
-		`dispute-lifecycle-evidence-${ dispute.id }`,
-		async () => {
-			const response = await session.performWrite( () =>
-				session.adminApi.post(
-					`/wp-json/wc/v3/payments/disputes/${ encodeURIComponent(
-						dispute.id
-					) }`,
-					{
-						data: {
-							evidence: {
-								product_description: PRODUCT_DESCRIPTION,
-								uncategorized_text: coverLetter,
-							},
-							metadata: {
-								[ PRODUCT_TYPE_METADATA_KEY ]: PHYSICAL_PRODUCT,
-							},
-							submit: true,
-						},
-					}
-				)
-			);
-			return toDisputeRecord(
-				await readJson< unknown >(
-					response,
-					`Dispute ${ dispute.id } evidence submission`
-				)
-			);
-		}
-	);
-}
-
-/* -------------------------------------------------------------------------
  * `DP-nav`: the disputed order's notice, followed to dispute details
  * ---------------------------------------------------------------------- */
-
-function parseVersion( value: string ): number[] {
-	return value
-		.split( '-', 1 )[ 0 ]
-		.split( '.' )
-		.map( ( part ) => Number.parseInt( part, 10 ) || 0 );
-}
-
-function isAtLeastVersion( observed: string, required: string ): boolean {
-	const left = parseVersion( observed );
-	const right = parseVersion( required );
-	for (
-		let index = 0;
-		index < Math.max( left.length, right.length );
-		index++
-	) {
-		const difference = ( left[ index ] ?? 0 ) - ( right[ index ] ?? 0 );
-		if ( difference !== 0 ) {
-			return difference > 0;
-		}
-	}
-	return true;
-}
-
-async function readWooCommerceVersion(
-	restApi: APIRequestContext
-): Promise< string > {
-	const status = await readJson< { environment?: unknown } >(
-		await restApi.get( SYSTEM_STATUS_API ),
-		'System status read'
-	);
-	const environment = requiredObject(
-		status.environment,
-		'the system status environment'
-	);
-	return requiredString( environment.version, 'WooCommerce version' );
-}
 
 /**
  * Open the classic order edit screen. Stores keeping orders in the dedicated
@@ -1357,28 +960,6 @@ async function followDisputeNotice(
  * The cases
  * ---------------------------------------------------------------------- */
 
-/*
- * The claim's Shared creation row is a precondition of all four cases rather
- * than a case of its own, and `DP-nav` is the one that runs "after shared
- * creation" under the same 180-second budget. It therefore creates the three
- * disputes and hands them to the three adjudication cases, exactly as the
- * `refund-settlement` suite hands `R1`'s settled refund to `R1v`. If creation
- * records nothing, the later cases fail rather than inventing a dispute.
- */
-let createdGraphs: DisputedGraph[] | undefined;
-
-function requireCreatedGraph( index: number ): DisputedGraph {
-	const graph = createdGraphs?.[ index ];
-	if ( ! graph ) {
-		fail(
-			`case ${
-				index + 1
-			} adjudicates a dispute the shared creation never recorded; there is nothing to act on.`
-		);
-	}
-	return graph;
-}
-
 test.describe.serial( 'dispute-lifecycle', () => {
 	test(
 		'Each disputed order carries one dispute-created notice whose link reaches the dispute details surface for that exact dispute and order',
@@ -1392,10 +973,10 @@ test.describe.serial( 'dispute-lifecycle', () => {
 			tag: FAMILY_TAGS,
 		},
 		async ( { adminApi, page, pilotRuntime } ) => {
-			// Three checkouts, three 180-second creation convergences and three
-			// navigations, with headroom: the claim's budgets alone add up to
-			// most of a quarter of an hour before a single assertion is slow.
-			test.setTimeout( 1_200_000 );
+			// One checkout, one 180-second creation convergence and one
+			// navigation, with headroom: the claim's budgets alone add up to
+			// four minutes before a single assertion is slow.
+			test.setTimeout( 600_000 );
 			requireCapabilities( pilotRuntime, [
 				CAPABILITY_FAMILY,
 				CAPABILITY_PRODUCT,
@@ -1410,451 +991,45 @@ test.describe.serial( 'dispute-lifecycle', () => {
 					await withUnchangedStoreConfiguration(
 						adminApi,
 						async () => {
-							// The version this case runs against, stated rather
-							// than discovered: the client row it replaces
-							// returned silently when the notice was absent, and
-							// that silence is what this case exists to remove.
-							const version =
-								await readWooCommerceVersion( adminApi );
-							test.info().annotations.push( {
-								type: 'woopayments-native-version',
-								description: version,
-							} );
-							expect(
-								isAtLeastVersion(
-									version,
-									NATIVE_DISPUTE_NOTICE_SINCE
-								),
-								`the dispute-created notice and its native route redirect ship with WooCommerce ${ NATIVE_DISPUTE_NOTICE_SINCE }; this store reports ${ version }`
-							).toBe( true );
-
-							const graphs: DisputedGraph[] = [];
-							for (
-								let index = 0;
-								index < DISPUTE_COUNT;
-								index++
-							) {
-								const product =
-									await pilotRuntime.createOwnedProduct(
-										PRICE
-									);
-								const orderId =
-									await completeDisputedCardCheckout(
-										pilotRuntime,
-										page,
-										product,
-										index + 1
-									);
-								const paid = await getPaymentEvidence(
-									adminApi,
-									orderId
-								);
-								const dispute = await waitForCreatedDispute(
-									adminApi,
-									paid
-								);
-								expectCreationContract( paid, dispute );
-								graphs.push( { paid, dispute } );
-							}
-
-							// Three independent disputes, not one seen three
-							// times.
-							expect(
-								new Set(
-									graphs.map( ( graph ) => graph.dispute.id )
-								).size
-							).toBe( DISPUTE_COUNT );
-							expect(
-								new Set(
-									graphs.map(
-										( graph ) => graph.paid.orderId
-									)
-								).size
-							).toBe( DISPUTE_COUNT );
-							createdGraphs = graphs;
+							const product =
+								await pilotRuntime.createOwnedProduct( PRICE );
+							const orderId = await completeDisputedCardCheckout(
+								pilotRuntime,
+								page,
+								product,
+								1
+							);
+							const paid = await getPaymentEvidence(
+								adminApi,
+								orderId
+							);
+							const dispute = await waitForCreatedDispute(
+								adminApi,
+								paid
+							);
+							expectCreationContract( paid, dispute );
+							const graph: DisputedGraph = { paid, dispute };
 
 							await pilotRuntime.logInAsAdmin( page );
 							await page.waitForURL( '**/wp-admin/**' );
-							for ( const graph of graphs ) {
-								await followDisputeNotice( page, graph );
-							}
+							await followDisputeNotice( page, graph );
 
-							// Looking at a dispute changed nothing: each order
+							// Looking at the dispute changed nothing: the order
 							// still carries exactly one creation effect and no
 							// duplicate of any other.
-							for ( const graph of graphs ) {
-								const notes = await readOrderNotes(
-									adminApi,
-									graph.paid.orderId
-								);
-								expect(
-									createdDisputeNotes(
-										notes,
-										graph.paid.chargeId
-									)
-								).toHaveLength( 1 );
-								expectNoDuplicatedDisputeEffect( notes );
-							}
+							const notes = await readOrderNotes(
+								adminApi,
+								paid.orderId
+							);
+							expect(
+								createdDisputeNotes( notes, paid.chargeId )
+							).toHaveLength( 1 );
+							expectNoDuplicatedDisputeEffect( notes );
 
-							// The run's shopper sessions and their carts go with
-							// the cookies; the run-owned products are removed by
+							// The run's shopper session and its cart go with
+							// the cookies; the run-owned product is removed by
 							// the pilot runtime's own cleanup.
 							await page.context().clearCookies();
-						}
-					);
-				}
-			);
-		}
-	);
-
-	test(
-		'Accepting one dispute closes that exact dispute as lost with one closed effect and one capped local dispute refund, and submits no evidence',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: CONTRACT_DP1,
-				},
-			],
-			tag: FAMILY_TAGS,
-		},
-		async ( { adminApi, pilotRuntime } ) => {
-			test.setTimeout( 900_000 );
-			requireCapabilities( pilotRuntime, [
-				CAPABILITY_FAMILY,
-				CAPABILITY_ACCEPT,
-			] );
-			await pilotRuntime.assertCurrentRuntimeReady( 'native' );
-
-			const graph = requireCreatedGraph( 0 );
-
-			await pilotRuntime.withProviderWriteLocks(
-				{ recordEvent: 'dispute-lifecycle-dp1' },
-				async () => {
-					await withUnchangedStoreConfiguration(
-						adminApi,
-						async () => {
-							// Re-read cold: the case acts on the dispute as it
-							// stands now, not on what creation remembered.
-							const before = await readDispute(
-								adminApi,
-								graph.dispute.id
-							);
-							expect( before.chargeId ).toBe(
-								graph.paid.chargeId
-							);
-							expect( before.orderId ).toBe( graph.paid.orderId );
-							expect( before.status ).toBe( CREATED_STATUS );
-							// Deadline and amount correlation, alongside the
-							// exact IDs: this is the same dispute the shared
-							// creation recorded, not a second one raised on
-							// the same charge.
-							expect( before.dueBy ).toBe( graph.dispute.dueBy );
-							expect( before.amountMinor ).toBe( AMOUNT_MINOR );
-							expect( before.currency ).toBe( CURRENCY );
-
-							const closed = await closeDisputeOnce(
-								pilotRuntime,
-								before
-							);
-
-							// The close response is about the same record.
-							expect( closed.id ).toBe( before.id );
-							expect( closed.chargeId ).toBe( before.chargeId );
-							expect( closed.orderId ).toBe( graph.paid.orderId );
-							expect( closed.amountMinor ).toBe( AMOUNT_MINOR );
-							expect( closed.currency ).toBe( CURRENCY );
-							expect(
-								closed.status,
-								'accepting a dispute is a voluntary loss'
-							).toBe( LOST_STATUS );
-
-							const outcome = await waitForAdjudication(
-								adminApi,
-								graph.paid,
-								before,
-								LOST_STATUS,
-								{ expectsLocalRefund: true }
-							);
-
-							expect( outcome.terminal.id ).toBe( before.id );
-							expect( outcome.terminal.chargeId ).toBe(
-								before.chargeId
-							);
-							expect( outcome.terminal.orderId ).toBe(
-								graph.paid.orderId
-							);
-							expect( outcome.terminal.amountMinor ).toBe(
-								AMOUNT_MINOR
-							);
-							expect( outcome.terminal.currency ).toBe(
-								CURRENCY
-							);
-
-							// Accepted, not challenged: no evidence was ever
-							// submitted for this dispute, and the provider's own
-							// counter says so.
-							expect(
-								outcome.terminal.submissionCount,
-								'an accepted dispute must carry no evidence submission'
-							).toBe( 0 );
-							expect( outcome.terminal.hasEvidence ).toBe(
-								false
-							);
-							// The update-family note count is deliberately not
-							// asserted here. The claim fixes one closed effect
-							// and one capped refund for this case and says
-							// nothing about whether closing a dispute also emits
-							// an update event; the evidence-submission counter
-							// above is what proves no evidence was sent.
-
-							// One closed effect, one capped local refund, and no
-							// event applied twice.
-							expect(
-								closedDisputeNotes( outcome.notes, LOST_STATUS )
-							).toHaveLength( 1 );
-							expectCappedLocalDisputeRefund( outcome.refunds );
-							expectNoDuplicatedDisputeEffect( outcome.notes );
-						}
-					);
-				}
-			);
-		}
-	);
-
-	test(
-		'One winning-evidence submission carries the same dispute through under review to won with one closed-won effect and no relayed update effect',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: CONTRACT_DP2,
-				},
-			],
-			tag: FAMILY_TAGS,
-		},
-		async ( { adminApi, pilotRuntime } ) => {
-			test.setTimeout( 900_000 );
-			requireCapabilities( pilotRuntime, [
-				CAPABILITY_FAMILY,
-				CAPABILITY_EVIDENCE,
-			] );
-			await pilotRuntime.assertCurrentRuntimeReady( 'native' );
-
-			const graph = requireCreatedGraph( 1 );
-
-			await pilotRuntime.withProviderWriteLocks(
-				{ recordEvent: 'dispute-lifecycle-dp2' },
-				async () => {
-					await withUnchangedStoreConfiguration(
-						adminApi,
-						async () => {
-							const before = await readDispute(
-								adminApi,
-								graph.dispute.id
-							);
-							expect( before.chargeId ).toBe(
-								graph.paid.chargeId
-							);
-							expect( before.orderId ).toBe( graph.paid.orderId );
-							expect( before.status ).toBe( CREATED_STATUS );
-							// Deadline and amount correlation, alongside the
-							// exact IDs: this is the same dispute the shared
-							// creation recorded, not a second one raised on
-							// the same charge.
-							expect( before.dueBy ).toBe( graph.dispute.dueBy );
-							expect( before.amountMinor ).toBe( AMOUNT_MINOR );
-							expect( before.currency ).toBe( CURRENCY );
-
-							const submitted = await submitDisputeEvidenceOnce(
-								pilotRuntime,
-								before,
-								WINNING_EVIDENCE
-							);
-
-							expect( submitted.id ).toBe( before.id );
-							expect( submitted.chargeId ).toBe(
-								before.chargeId
-							);
-							expect( submitted.orderId ).toBe(
-								graph.paid.orderId
-							);
-							// The readback the claim asserts, and no more than
-							// it: the evidence this run sent is the evidence the
-							// provider holds, right now.
-							expect( submitted.coverLetter ).toBe(
-								WINNING_EVIDENCE
-							);
-							expect( submitted.productType ).toBe(
-								PHYSICAL_PRODUCT
-							);
-							expect( submitted.submissionCount ).toBe( 1 );
-							expect( submitted.hasEvidence ).toBe( true );
-							expect(
-								submitted.status,
-								'a submitted challenge is under review before it is decided'
-							).toBe( UNDER_REVIEW_STATUS );
-
-							const outcome = await waitForAdjudication(
-								adminApi,
-								graph.paid,
-								before,
-								WON_STATUS,
-								{ expectsLocalRefund: false }
-							);
-
-							expect( outcome.terminal.id ).toBe( before.id );
-							expect( outcome.terminal.chargeId ).toBe(
-								before.chargeId
-							);
-							expect( outcome.terminal.orderId ).toBe(
-								graph.paid.orderId
-							);
-							expect( outcome.terminal.amountMinor ).toBe(
-								AMOUNT_MINOR
-							);
-							expect( outcome.terminal.currency ).toBe(
-								CURRENCY
-							);
-							expect( outcome.terminal.submissionCount ).toBe(
-								1
-							);
-
-							// The intermediate state was traversed, not skipped.
-							expectChallengeStatusSequence(
-								submitted.status,
-								outcome.statuses,
-								WON_STATUS
-							);
-
-							// One closed-won effect, nothing applied twice, and
-							// no update effect — see the tripwire.
-							expectNoRelayedDisputeUpdate( outcome.notes );
-							expect(
-								closedDisputeNotes( outcome.notes, WON_STATUS )
-							).toHaveLength( 1 );
-							expectNoDuplicatedDisputeEffect( outcome.notes );
-
-							// A won dispute returns the money at the provider;
-							// nothing local is refunded.
-							expect(
-								outcome.refunds,
-								'a won dispute must create no local refund'
-							).toHaveLength( 0 );
-						}
-					);
-				}
-			);
-		}
-	);
-
-	test(
-		'One losing-evidence submission carries the same dispute through under review to lost with one capped local dispute refund and no relayed update effect',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: CONTRACT_DP3,
-				},
-			],
-			tag: FAMILY_TAGS,
-		},
-		async ( { adminApi, pilotRuntime } ) => {
-			test.setTimeout( 900_000 );
-			requireCapabilities( pilotRuntime, [
-				CAPABILITY_FAMILY,
-				CAPABILITY_EVIDENCE,
-			] );
-			await pilotRuntime.assertCurrentRuntimeReady( 'native' );
-
-			const graph = requireCreatedGraph( 2 );
-
-			await pilotRuntime.withProviderWriteLocks(
-				{ recordEvent: 'dispute-lifecycle-dp3' },
-				async () => {
-					await withUnchangedStoreConfiguration(
-						adminApi,
-						async () => {
-							const before = await readDispute(
-								adminApi,
-								graph.dispute.id
-							);
-							expect( before.chargeId ).toBe(
-								graph.paid.chargeId
-							);
-							expect( before.orderId ).toBe( graph.paid.orderId );
-							expect( before.status ).toBe( CREATED_STATUS );
-							// Deadline and amount correlation, alongside the
-							// exact IDs: this is the same dispute the shared
-							// creation recorded, not a second one raised on
-							// the same charge.
-							expect( before.dueBy ).toBe( graph.dispute.dueBy );
-							expect( before.amountMinor ).toBe( AMOUNT_MINOR );
-							expect( before.currency ).toBe( CURRENCY );
-
-							const submitted = await submitDisputeEvidenceOnce(
-								pilotRuntime,
-								before,
-								LOSING_EVIDENCE
-							);
-
-							expect( submitted.id ).toBe( before.id );
-							expect( submitted.chargeId ).toBe(
-								before.chargeId
-							);
-							expect( submitted.orderId ).toBe(
-								graph.paid.orderId
-							);
-							expect( submitted.coverLetter ).toBe(
-								LOSING_EVIDENCE
-							);
-							expect( submitted.productType ).toBe(
-								PHYSICAL_PRODUCT
-							);
-							expect( submitted.submissionCount ).toBe( 1 );
-							expect( submitted.hasEvidence ).toBe( true );
-							expect(
-								submitted.status,
-								'a submitted challenge is under review before it is decided'
-							).toBe( UNDER_REVIEW_STATUS );
-
-							const outcome = await waitForAdjudication(
-								adminApi,
-								graph.paid,
-								before,
-								LOST_STATUS,
-								{ expectsLocalRefund: true }
-							);
-
-							expect( outcome.terminal.id ).toBe( before.id );
-							expect( outcome.terminal.chargeId ).toBe(
-								before.chargeId
-							);
-							expect( outcome.terminal.orderId ).toBe(
-								graph.paid.orderId
-							);
-							expect( outcome.terminal.amountMinor ).toBe(
-								AMOUNT_MINOR
-							);
-							expect( outcome.terminal.currency ).toBe(
-								CURRENCY
-							);
-							expect( outcome.terminal.submissionCount ).toBe(
-								1
-							);
-
-							expectChallengeStatusSequence(
-								submitted.status,
-								outcome.statuses,
-								LOST_STATUS
-							);
-
-							expectNoRelayedDisputeUpdate( outcome.notes );
-							expect(
-								closedDisputeNotes( outcome.notes, LOST_STATUS )
-							).toHaveLength( 1 );
-							expectCappedLocalDisputeRefund( outcome.refunds );
-							expectNoDuplicatedDisputeEffect( outcome.notes );
 						}
 					);
 				}

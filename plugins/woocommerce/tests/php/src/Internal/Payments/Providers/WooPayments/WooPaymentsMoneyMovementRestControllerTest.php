@@ -1684,13 +1684,62 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( $order->get_id(), $data['order']['id'] );
 		$this->assertStringContainsString( '1 Main Street', $data['charge']['billing_details']['formatted_address'] );
 
-		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test/close' ) );
-		$data     = $response->get_data();
+		// A JSON request body carries `submit` as a real JSON boolean rather than the
+		// form-encoded string the request above used; `wc_string_to_bool()` must accept
+		// it unchanged, not just the string form (REC-5b R-d: the wire `submit` is a
+		// JSON boolean). `submit` is sent as `false` here, the opposite of the prior
+		// request's `true`: `last_call['submit']` would still read `true` from the
+		// previous dispatch if this request failed before reaching the API client, so
+		// a stale value cannot masquerade as a pass.
+		$calls_before_json_submit = count( $this->api_client->calls );
+		$json_request             = new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test' );
+		$json_request->set_header( 'Content-Type', 'application/json' );
+		$json_request->set_body(
+			wp_json_encode(
+				array(
+					'evidence' => array( 'customer_name' => 'Ada' ),
+					'submit'   => false,
+					'metadata' => array( 'order_id' => 123 ),
+				)
+			)
+		);
+		$json_response = $this->server->dispatch( $json_request );
+
+		$this->assertSame( 200, $json_response->get_status() );
+		$this->assertCount( $calls_before_json_submit + 1, $this->api_client->calls, 'The JSON-body update must call the API client exactly once.' );
+		$this->assertSame( false, $this->api_client->last_call['submit'], 'A JSON boolean submit value must reach the API client as a real boolean.' );
+
+		// Then JSON `true`, following the `false` above, so only a real boolean parse of `true` can pass.
+		$calls_before_json_true = count( $this->api_client->calls );
+		$json_true_request      = new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test' );
+		$json_true_request->set_header( 'Content-Type', 'application/json' );
+		$json_true_request->set_body(
+			wp_json_encode(
+				array(
+					'evidence' => array( 'customer_name' => 'Ada' ),
+					'submit'   => true,
+					'metadata' => array( 'order_id' => 123 ),
+				)
+			)
+		);
+		$json_true_response = $this->server->dispatch( $json_true_request );
+
+		$this->assertSame( 200, $json_true_response->get_status() );
+		$this->assertCount( $calls_before_json_true + 1, $this->api_client->calls, 'The JSON true update must call the API client exactly once.' );
+		$this->assertTrue( $this->api_client->last_call['submit'], 'A JSON boolean true must submit the evidence, not save a draft.' );
+
+		// Closing a dispute must call the API client exactly once: only close_dispute,
+		// never a preceding get_dispute or update_dispute.
+		$calls_before_close = count( $this->api_client->calls );
+		$response           = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test/close' ) );
+		$data               = $response->get_data();
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'close_dispute', $this->api_client->last_call['method'] );
 		$this->assertSame( 'dp_test', $this->api_client->last_call['dispute_id'] );
 		$this->assertSame( $order->get_id(), $data['order']['id'] );
+		$this->assertCount( $calls_before_close + 1, $this->api_client->calls, 'Closing a dispute must call the API client exactly once.' );
+		$this->assertSame( 'close_dispute', $this->api_client->calls[ $calls_before_close ]['method'] );
 	}
 
 	/**
