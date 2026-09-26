@@ -14,10 +14,21 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use RuntimeException;
 use WC_Order;
@@ -485,6 +496,107 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The capture-charge order action should send one capture request for the authorized total and mark the order processing.
+	 *
+	 * T.3 Task 3 (`plan-task-t3.md`): joins the request-shape half
+	 * ({@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapterTest::test_capture_sends_context_amount_to_native_transport})
+	 * and the on-hold half ({@see \Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLifecycleServiceTest::test_authorized_event_moves_order_on_hold})
+	 * by driving the real "Capture charge" order action through
+	 * {@see WooPaymentsOrderAdminActionsController}, {@see PaymentProcessingService::capture},
+	 * the real {@see WooPaymentsProvider}, {@see WooPaymentsProviderGatewayAdapter} and
+	 * {@see WooPaymentsApiClient} over a fake transport queued with REC-CAP's recorded
+	 * `capture_full_amount` response (`Fixtures/rec-t3-manual-capture.json`,
+	 * `data/rec-t3-api-recordings.md`): a 10.99 USD manual-capture authorization captured
+	 * for its full amount. Client parity: the capture note is the exact `was
+	 * <strong>successfully captured</strong> using WooPayments` wording plus the intent id
+	 * (`os:2226-2236`).
+	 *
+	 * The no-repeat-POST assertion below is NOT a client-parity claim. The client 11.1.0
+	 * only hides the "Capture charge" order action once the intention leaves
+	 * `requires_capture` (`gw:3938`); its own `capture_charge()` handler (`gw:562`
+	 * wires it to the hook, `gw:3964` is the handler body) carries no status guard of its
+	 * own and would re-issue the capture request to Stripe if invoked directly. Native's
+	 * eligibility guard sits inside the handler itself
+	 * ({@see WooPaymentsOrderAdminActionsController::is_authorized_woopayments_order()},
+	 * controller `:120`, `:198-207`), which is stricter than the client. This is a T.7
+	 * note (native-only hardening, not a parity gap): the client's note-once dedup
+	 * (`os:1663`) is what it relies on instead. Because the controller guard stops the
+	 * repeated order action before any capture code runs, it cannot exercise that dedup;
+	 * the actual client-parity claim is proven separately below by calling
+	 * {@see PaymentProcessingService::capture()} directly a second time (bypassing the
+	 * controller), which drives a genuine second capture through the same stack and
+	 * proves the note stays at one.
+	 */
+	public function test_capture_charge_action_captures_authorized_total_once_and_marks_processing(): void {
+		$order = $this->create_recorded_manual_capture_order();
+
+		$recorded_capture      = $this->load_recorded_manual_capture_entry( 'capture_full_amount' );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded_capture['http_status'] ),
+			'headers'  => array( 'content-type' => $recorded_capture['content_type'] ),
+			'body'     => wp_json_encode( $recorded_capture['body'] ),
+		);
+
+		$provider  = $this->create_native_provider_over_fake_transport( $http_client );
+		$this->sut = $this->create_controller( true, wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$this->sut->register();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
+		do_action( 'woocommerce_order_action_capture_charge', $order );
+
+		$this->assertCount( 1, $http_client->requests, 'The capture action must dispatch exactly one transport request.' );
+		$this->assertSame( 'POST', $http_client->requests[0]['method'] );
+		$this->assertStringContainsString( 'intentions/pi_3UJhOgBzWlxcwgpP0AOgQE2z/capture', $http_client->requests[0]['path'] );
+
+		$sent_body = json_decode( (string) $http_client->requests[0]['body'], true );
+		$this->assertIsArray( $sent_body, 'The request body sent over the fake transport must be valid JSON.' );
+		$this->assertSame( 1099, $sent_body['amount_to_capture'] ?? null, 'The capture request must send the recorded full-total minor-unit amount.' );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status(), 'The captured order must move to processing.' );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+
+		$capture_note_matches = static fn( $note ): bool =>
+			str_contains( $note->content, 'was <strong>successfully captured</strong> using WooPayments' )
+			&& str_contains( $note->content, 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' );
+
+		$capture_notes = array_values( array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), $capture_note_matches ) );
+		$this->assertCount( 1, $capture_notes, "Exactly one success note matching the client's `was <strong>successfully captured</strong> using WooPayments` wording (os:2226-2236) and the recorded intent id should reference the capture." );
+
+		// A second invocation on the now-settled order sends no second POST. This is a
+		// NATIVE-ONLY guard, not a client-parity claim (see the class docblock above):
+		// the client 11.1.0 handler has no status check of its own and would call Stripe
+		// again; only its order-actions list hides the action once the intention leaves
+		// `requires_capture` (gw:3938). The client-parity claim for a repeated invocation
+		// is instead its note-once dedup (os:1663), asserted below.
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
+		do_action( 'woocommerce_order_action_capture_charge', $order );
+		$this->assertCount( 1, $http_client->requests, 'A second capture invocation on an already-captured order must not repeat the POST (native-only guard, not client parity).' );
+
+		$capture_notes_after_repeat = array_values( array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), $capture_note_matches ) );
+		$this->assertCount( 1, $capture_notes_after_repeat, "The capture note stays exactly one after the second invocation, matching the client's note-once dedup (os:1663)." );
+
+		// The controller guard above stops the repeat before any capture code runs at
+		// all, so it cannot exercise WooPaymentsOrderNoteService::add_note_once()'s
+		// dedup. Call PaymentProcessingService::capture() directly, bypassing the
+		// controller, to drive a genuine second capture through the same real
+		// provider/adapter/API client stack (fed the same recorded response again),
+		// and prove the client's note-once dedup (os:1663) for real.
+		$second_outcome = wc_get_container()->get( PaymentProcessingService::class )->capture(
+			PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, (float) $order->get_total() ),
+			$provider
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $second_outcome->get_status(), 'The direct second capture call must still complete against the recorded response.' );
+		$this->assertCount( 2, $http_client->requests, 'A direct second capture call, bypassing the controller guard, must dispatch its own transport request.' );
+
+		$capture_notes_after_direct_repeat = array_values( array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), $capture_note_matches ) );
+		$this->assertCount( 1, $capture_notes_after_direct_repeat, "A genuine second capture must not duplicate the capture note, matching the client's note-once dedup (os:1663)." );
+	}
+
+	/**
 	 * Create the controller with explicit dependencies.
 	 *
 	 * @param bool                          $native_owner       Whether native owns the runtime.
@@ -648,5 +760,107 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$this->fail( "Missing order note containing: {$expected}" );
+	}
+
+	/**
+	 * Create a saved order matching REC-CAP's authorized state: on-hold, manual-capture
+	 * intent `requires_capture`, a physical line item so the captured order needs
+	 * processing (matching the client's post-capture status).
+	 *
+	 * @return WC_Order
+	 */
+	private function create_recorded_manual_capture_order(): WC_Order {
+		$order = wc_create_order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_currency( 'USD' );
+		$order->add_product( \WC_Helper_Product::create_simple_product(), 1 );
+		$order->set_total( '10.99' );
+		$order->set_status( 'on-hold' );
+		$order->set_transaction_id( 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' );
+		$order->update_meta_data( '_intent_id', 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Load one REC-CAP recorded entry's HTTP status, content type and response body by pair key.
+	 *
+	 * @param string $pair Fixture pair key (`authorize_manual_capture` or `capture_full_amount`).
+	 * @return array{http_status:int,content_type:string,body:array<string,mixed>}
+	 */
+	private function load_recorded_manual_capture_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$contents = file_get_contents( __DIR__ . '/Fixtures/rec-t3-manual-capture.json' );
+		$this->assertIsString( $contents );
+		$decoded = json_decode( $contents, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array(
+					'http_status'  => (int) $entry['response']['http_status'],
+					'content_type' => (string) $entry['response']['content_type'],
+					'body'         => $entry['response']['body'],
+				);
+			}
+		}
+
+		$this->fail( "REC-CAP fixture has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * Build a real WooPayments provider wired to the real gateway adapter and API client
+	 * over a fake transport, the pattern used by
+	 * {@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapterTest::create_provider_over_fake_transport()}.
+	 * The legacy gateway bridge is left unset because native transport (the fake client's
+	 * default `is_available()` true) always takes precedence for capture.
+	 *
+	 * @param FakeWooPaymentsHttpClient $http_client Fake transport queued with the recorded response(s).
+	 * @return WooPaymentsProvider
+	 */
+	private function create_native_provider_over_fake_transport( FakeWooPaymentsHttpClient $http_client ): WooPaymentsProvider {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'get_cached_account_data', 'get_account_default_currency', 'get_account_country' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'get_mode' )->willReturn( 'test' );
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static fn( string $key, $fallback = null ) => $fallback
+		);
+		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'country' => 'US' ) );
+		$account_service->method( 'get_account_default_currency' )->willReturn( 'usd' );
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+
+		$api_client = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+
+		$legacy_runtime = new WooPaymentsLegacyRuntime();
+		$legacy_runtime->init( new LegacyProxyWithGateway( null ) );
+
+		$adapter = new WooPaymentsProviderGatewayAdapter();
+		$adapter->init(
+			$legacy_runtime,
+			$api_client,
+			$this->createMock( WooPaymentsCustomerService::class ),
+			$this->createMock( WooPaymentsIntentRequestBuilder::class ),
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			$this->createMock( WooPaymentsSettingsService::class )
+		);
+
+		$provider = new WooPaymentsProvider();
+		$provider->init(
+			$adapter,
+			$api_client,
+			$account_service,
+			null,
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+		);
+
+		return $provider;
 	}
 }

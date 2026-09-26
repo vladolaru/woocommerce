@@ -800,6 +800,37 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( harness.calls ).toEqual( [ 'submit', 'createPaymentMethod' ] );
 	} );
 
+	it( 'returns the Stripe submit validation error without creating a payment method', async () => {
+		// T.3 Task 3 (`plan-task-t3.md`, carried from the revised T.1 Batch 9):
+		// `elements.submit()` validates the card fields inside the hosted Stripe
+		// element before any PaymentMethod is created. A validation error there
+		// (an incomplete field, for example) must surface as a Blocks payments
+		// notice and stop short of `createPaymentMethod`, matching
+		// `index.js:1015` (`if ( submitResult?.error )`). Client 11.1.0 oracle:
+		// `checkout/utils/validate-elements.js:8-12` throws `result.error.message`
+		// from `elements.submit()`, and `blocks/payment-processor.js:165-171`
+		// catches it into `{ type: 'error', message: e.message }` with no
+		// `messageContext` key — native's own `messageContext: 'payments'`
+		// addition (F-SUBMIT, T.7) is asserted separately below, not pinned as a
+		// client-cited value.
+		const harness = await setUpNewCardPayment();
+		harness.elementsInstance.submit.mockResolvedValueOnce( {
+			error: {
+				code: 'incomplete_cvc',
+				message: "Your card's security code is incomplete.",
+			},
+		} );
+
+		const result = await harness.setupCallbacks[ 0 ]();
+
+		expect( result ).toMatchObject( {
+			type: 'error',
+			message: "Your card's security code is incomplete.",
+		} );
+		expect( harness.elementsInstance.submit ).toHaveBeenCalledTimes( 1 );
+		expect( harness.createPaymentMethod ).not.toHaveBeenCalled();
+	} );
+
 	it( 'records failed tokenization with the error sentinel instead of aborting', async () => {
 		const harness = await setUpNewCardPayment();
 		harness.createPaymentMethod.mockResolvedValueOnce( {

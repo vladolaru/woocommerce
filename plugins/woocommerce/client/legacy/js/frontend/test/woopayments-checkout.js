@@ -2397,6 +2397,62 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	test( 'adds the fraud-prevention token before submitting the order-pay form', async () => {
+		// T.3 Task 3 (`plan-task-t3.md`, carried from the revised T.1 Batch 9):
+		// `appendPaymentFields()` calls `ensureHiddenField( form,
+		// 'wcpay-fraud-prevention-token', getFraudPreventionToken() )`
+		// (`woopayments-checkout.js:1470-1474`) on every gateway submission,
+		// including the pay-for-order form, which carries no billing fields and
+		// so is otherwise untested for the fraud-prevention field. Client 11.1.0
+		// oracle: `checkout/classic/payment-processing.js:486` calls
+		// `appendFraudPreventionTokenInputToForm( $form )` before its own
+		// `submitForm( $form )` at `:493` — the field is appended and then the
+		// form is submitted, never the other way round. Recording the field's
+		// value at the exact moment `trigger( 'submit' )` fires (rather than only
+		// checking its final value after the async flow settles) is what proves
+		// "before submitting", not just "eventually present".
+		window.wcpay_core_checkout_config.fraudPreventionToken =
+			'fraud-token-123';
+		document.body.innerHTML =
+			'<form id="order_review">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</form>';
+		window.wcpay_core_checkout_config.isOrderPay = true;
+
+		require( '../woopayments-checkout' );
+
+		let tokenValueAtSubmit;
+		global.jQuery.orderPayFormResult.trigger.mockImplementation(
+			( event ) => {
+				if ( event === 'submit' ) {
+					tokenValueAtSubmit = (
+						global.jQuery.orderPayFormFields[
+							'wcpay-fraud-prevention-token'
+						] || {}
+					).value;
+				}
+				return global.jQuery.orderPayFormResult;
+			}
+		);
+
+		expect(
+			orderPayFormEventHandlers.submit.call(
+				document.getElementById( 'order_review' )
+			)
+		).toBe( false );
+
+		await flushPromises();
+
+		expect(
+			global.jQuery.orderPayFormResult.trigger
+		).toHaveBeenCalledWith( 'submit' );
+		expect( tokenValueAtSubmit ).toBe( 'fraud-token-123' );
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-fraud-prevention-token' ]
+		).toBeUndefined();
+	} );
+
 	test( 'passes checkout billing details when creating a payment method', async () => {
 		document
 			.querySelector( 'form.checkout' )
