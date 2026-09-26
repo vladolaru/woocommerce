@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use WC_Unit_Test_Case;
@@ -194,6 +195,42 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array(), $missing, "Native must run a handler on every preserved Action Scheduler hook:\n" . implode( "\n", $missing ) );
+	}
+
+	/**
+	 * @testdox Native schedules the preserved Action Scheduler hooks under the plugin's own group, where verified.
+	 *
+	 * The fixture's own `group` column hardcodes `woocommerce-payments` for every
+	 * `action_scheduler_hook` entry (`extract-persisted-data.php`'s `bcinv_add_entry(...,
+	 * 'woocommerce-payments')` calls): an extractor simplification, not a per-site read, so it is
+	 * wrong for `wcpay_store_setup_sync` (below). This asserts against the plugin 11.1.0 source
+	 * directly instead:
+	 * - `wcpay_remediate_canceled_authorization_fees` / `..._dry_run` schedule under the literal
+	 *   `'woocommerce-payments'` (`class-wc-payments-remediate-canceled-auth-fees.php:570,592`),
+	 *   matching `WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID`.
+	 * - `wcpay_store_setup_sync` schedules under `WC_Payments_Action_Scheduler_Service::GROUP_ID`
+	 *   (`'woocommerce_payments'`, `class-wc-payments-action-scheduler-service.php:18,111`), matching
+	 *   `WooPaymentsActionSchedulerService::GROUP_ID`.
+	 *
+	 * `wcpay_post_kyc_activation_email_send` is not asserted here: the plugin schedules it under the
+	 * hardcoded literal `'woocommerce-payments'`
+	 * (`class-wc-payments-post-kyc-activation-email-service.php:113`), while native schedules it
+	 * through the same shared `WooPaymentsActionSchedulerService::GROUP_ID`
+	 * (`'woocommerce_payments'`) as `wcpay_store_setup_sync` — a pre-existing group mismatch this
+	 * review surfaced, not something this static assertion can encode without either claiming a
+	 * false pass or pinning the current mismatch as if it were correct.
+	 */
+	public function test_preserved_action_scheduler_hooks_use_the_plugin_group(): void {
+		$this->assertSame(
+			'woocommerce-payments',
+			WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID,
+			'wcpay_remediate_canceled_authorization_fees(_dry_run) must schedule under the plugin 11.1.0 Action Scheduler group.'
+		);
+		$this->assertSame(
+			'woocommerce_payments',
+			WooPaymentsActionSchedulerService::GROUP_ID,
+			'wcpay_store_setup_sync must schedule under the plugin 11.1.0 Action Scheduler group.'
+		);
 	}
 
 	/**

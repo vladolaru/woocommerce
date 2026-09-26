@@ -246,7 +246,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 				continue;
 			}
 
-			if ( $this->native_has_matching_site( $sites, $name, (int) $entry['arity'] ) ) {
+			if ( $this->native_all_sites_match_fixture( $sites, $name, (int) $entry['arity'], (string) $entry['kind'] ) ) {
 				continue;
 			}
 
@@ -360,9 +360,9 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	/**
 	 * Whether the scanned native fire sites include the given name at the given arity.
 	 *
-	 * @param array<string,array<int,array{arity:int,site:string}>> $sites Scanned fire sites.
-	 * @param string                                                $name  Hook name.
-	 * @param int                                                   $arity Expected arity.
+	 * @param array<string,array<int,array{arity:int,kind:string,site:string}>> $sites Scanned fire sites.
+	 * @param string                                                            $name  Hook name.
+	 * @param int                                                               $arity Expected arity.
 	 */
 	private function native_has_matching_site( array $sites, string $name, int $arity ): bool {
 		foreach ( $sites[ $name ] ?? array() as $site ) {
@@ -375,11 +375,42 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Whether the name resolves to at least one native fire site, and every one of them keeps the
+	 * fixture's arity and `apply_filters`/`do_action` kind.
+	 *
+	 * A single matching site is not enough: a name fired from two sites (for example the plain-text
+	 * and HTML IPP receipt email templates both firing
+	 * `woocommerce_payments_email_ipp_receipt_store_details`) must agree at every site, or a
+	 * wrong-arity secondary site would hide behind a correct one (mirrors
+	 * `test_probed_hook_secondary_sites_keep_the_fixture_arity`, which already does this for the
+	 * runtime-probed set).
+	 *
+	 * @param array<string,array<int,array{arity:int,kind:string,site:string}>> $sites Scanned fire sites.
+	 * @param string                                                            $name  Hook name.
+	 * @param int                                                               $arity Expected arity.
+	 * @param string                                                            $kind  Expected `filter` or `action`.
+	 */
+	private function native_all_sites_match_fixture( array $sites, string $name, int $arity, string $kind ): bool {
+		$found = $sites[ $name ] ?? array();
+		if ( array() === $found ) {
+			return false;
+		}
+
+		foreach ( $found as $site ) {
+			if ( $arity !== $site['arity'] || $kind !== $site['kind'] ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
 	 * Scan the native roots (plus the explicit extra files) for every `apply_filters`/`do_action`
 	 * call whose hook-name argument resolves to a literal, either directly or through a
 	 * `self::`/`static::`/`ClassName::CONST` reference or one of `HOOK_ARGUMENT_WRAPPERS`.
 	 *
-	 * @return array<string,array<int,array{arity:int,site:string}>>
+	 * @return array<string,array<int,array{arity:int,kind:string,site:string}>>
 	 */
 	private function native_hook_fire_sites(): array {
 		$plugin_path = WC()->plugin_path();
@@ -439,6 +470,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 					$arity            = count( $args ) - 1;
 					$sites[ $name ][] = array(
 						'arity' => $arity,
+						'kind'  => 'apply_filters' === $call_name ? 'filter' : 'action',
 						'site'  => $relative . ':' . $line,
 					);
 					continue;
@@ -462,6 +494,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 
 				$sites[ $name ][] = array(
 					'arity' => 1,
+					'kind'  => 'filter',
 					'site'  => $relative . ':' . $line,
 				);
 			}

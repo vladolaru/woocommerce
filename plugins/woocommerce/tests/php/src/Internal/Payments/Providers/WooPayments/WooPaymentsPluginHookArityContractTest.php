@@ -97,6 +97,20 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	);
 
 	/**
+	 * The `api`/`method` argument values `probe_api_transport()` drives, via
+	 * `WooPaymentsApiClient::get_disputes( array() )` (`self::DISPUTES_API = 'disputes'`, method
+	 * `'GET'`). `wcpay_api_request_params` fires as `apply_filters( 'wcpay_api_request_params',
+	 * $params, $api, $method )`, so a same-type swap of `$api` and `$method` (both strings) passes a
+	 * type check but fails this exact-value one.
+	 *
+	 * @var array{api:string,method:string}
+	 */
+	private const API_TRANSPORT_EXPECTED_ARGS = array(
+		'api'    => 'disputes',
+		'method' => 'GET',
+	);
+
+	/**
 	 * Loaded `plugin-11.1.0-hooks.json` fixture, keyed by hook name.
 	 *
 	 * @var array<string,array<string,mixed>>
@@ -363,6 +377,14 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 			foreach ( $entry['params'] as $index => $type_spec ) {
 				$this->assert_argument_type( $type_spec, $captured[ $index ], $hook, $index );
 			}
+		}
+
+		// `$api` and `$method` are both strings, so the type check above cannot see them swapped by
+		// position. `probe_api_transport()` drives a known request, so its exact argument values are
+		// asserted here instead.
+		if ( 'wcpay_api_request_params' === $hook ) {
+			$this->assertSame( self::API_TRANSPORT_EXPECTED_ARGS['api'], $captured[1], "{$hook} argument 1 (api) must be the request path the probe drove." );
+			$this->assertSame( self::API_TRANSPORT_EXPECTED_ARGS['method'], $captured[2], "{$hook} argument 2 (method) must be the HTTP method the probe drove." );
 		}
 	}
 

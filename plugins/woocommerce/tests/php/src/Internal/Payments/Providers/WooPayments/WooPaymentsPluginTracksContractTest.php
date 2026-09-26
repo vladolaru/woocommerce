@@ -646,9 +646,13 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 			return array( $this->native_js_unescape( $m[3] ), $this->native_js_unescape( $m[5] ) );
 		}
 
-		// `methodConfig.loadEvent` / `.clickEvent`: harvest every such literal in the same file.
-		if ( preg_match( '/\.(loadEvent|clickEvent)$/', $argument ) ) {
-			return $this->native_js_harvest_property_literals( $code, array( 'loadEvent', 'clickEvent' ) );
+		// `methodConfig.loadEvent` / `.clickEvent`: harvest only the property this call reads, so a
+		// call site that reads `.clickEvent` is not satisfied by a same-file `.loadEvent` literal
+		// alone (client 11.1.0's express-checkout wallet click events, e.g.
+		// `wcpay_applepay_button_click` / `wcpay_gpay_button_click`, are only ever read via
+		// `.clickEvent`).
+		if ( preg_match( '/\.(loadEvent|clickEvent)$/', $argument, $m ) ) {
+			return $this->native_js_harvest_property_literals( $code, array( $m[1] ) );
 		}
 
 		// A bare identifier resolved through a same-file `*_EVENTS` map.

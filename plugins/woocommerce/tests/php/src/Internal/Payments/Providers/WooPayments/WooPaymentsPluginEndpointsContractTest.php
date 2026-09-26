@@ -11,9 +11,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use WC_REST_Unit_Test_Case;
+use WP_REST_Request;
 
 /**
  * Pins the plugin 11.1.0 REST route and AJAX action surface (`plugin-11.1.0-endpoints.json`)
@@ -106,6 +108,14 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	 * @var array<string,mixed>
 	 */
 	private static array $fixture;
+
+	/**
+	 * A shop-manager user, created lazily the first time `native_serves()` needs to probe a
+	 * permission callback, and reused for the rest of the test.
+	 *
+	 * @var int|null
+	 */
+	private ?int $shop_manager_id = null;
 
 	/**
 	 * Load the plugin-11.1.0-endpoints.json fixture once for the class.
@@ -318,6 +328,10 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 
 			foreach ( $handlers as $handler ) {
 				if ( isset( $handler['methods'][ $method ] ) && $handler['methods'][ $method ] ) {
+					if ( ! $this->native_grants_shop_manager( $handler, $sample_path, $method ) ) {
+						continue;
+					}
+
 					return true;
 				}
 			}
@@ -327,12 +341,66 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Collapse every `(?P<name>…)` named group in a route to `{}`, so two routes that differ only
-	 * in their group's regex (an equivalent or widened pattern) compare equal.
+	 * Whether the matched handler's `permission_callback` grants a plain WordPress Shop Manager
+	 * (the plugin's own `WC_Payments_REST_Controller::check_permission()` requirement,
+	 * `class-wc-payments-rest-controller.php:63-64`: `current_user_can( 'manage_woocommerce' )`, which
+	 * none of the plugin's REST controller subclasses override).
+	 *
+	 * Two native controllers matched by this fixture do not grant plain `manage_woocommerce`, and
+	 * neither does the plugin route it corresponds to, so both keep their own restriction rather than
+	 * being forced to `true`:
+	 * - `WooPaymentsReportsRestController` restricts further (`is_reports_enabled()` and
+	 *   `has_account()`, `WooPaymentsReportsRestController.php:129`) — a business-state gate the
+	 *   plugin enforces instead at route-registration time
+	 *   (`WC_Payments_Features::is_reports_area_enabled()`,
+	 *   `class-wc-rest-payments-reports-balance-controller.php:27-29` and its siblings). A
+	 *   disconnected unit test account cannot satisfy that gate, and forcing it here would test the
+	 *   gate instead of the capability.
+	 * - `WooPaymentsWooPaySessionController` is not a `manage_woocommerce` route at all, in the
+	 *   plugin or natively: both require the WooPay-signed request instead
+	 *   (`class-wc-rest-woopay-session-controller.php:80-81`:
+	 *   `$this->is_request_from_woopay() && $this->has_valid_request_signature()`; the plugin
+	 *   controller extends `WP_REST_Controller` directly, not `WC_Payments_REST_Controller`).
+	 *
+	 * @param array<string,mixed> $handler     Registered native route handler.
+	 * @param string              $sample_path Concrete sample path for the matched route.
+	 * @param string              $method      HTTP method.
+	 */
+	private function native_grants_shop_manager( array $handler, string $sample_path, string $method ): bool {
+		$callback = $handler['permission_callback'] ?? null;
+		if ( ! is_callable( $callback ) ) {
+			return true;
+		}
+
+		if ( is_array( $callback ) && isset( $callback[0] ) && ( $callback[0] instanceof WooPaymentsReportsRestController || $callback[0] instanceof WooPaymentsWooPaySessionController ) ) {
+			return true;
+		}
+
+		if ( null === $this->shop_manager_id ) {
+			$this->shop_manager_id = self::factory()->user->create( array( 'role' => 'shop_manager' ) );
+		}
+
+		$previous_user = get_current_user_id();
+		wp_set_current_user( $this->shop_manager_id );
+
+		try {
+			$result = call_user_func( $callback, new WP_REST_Request( $method, $sample_path ) );
+		} finally {
+			wp_set_current_user( $previous_user );
+		}
+
+		return true === $result;
+	}
+
+	/**
+	 * Collapse every `(?P<name>…)` named group in a route to `{name}`, so two routes that differ
+	 * only in their group's regex (an equivalent or widened pattern) compare equal, while a route
+	 * that renames the parameter itself (a REST client's `set_param( 'name', … )` calls stop
+	 * matching) does not.
 	 *
 	 * @param string $route A REST route string, with or without its namespace.
 	 */
 	private function route_skeleton( string $route ): string {
-		return preg_replace( '/\(\?P<[a-zA-Z_][a-zA-Z0-9_]*>[^()]*\)/', '{}', $route );
+		return preg_replace( '/\(\?P<([a-zA-Z_][a-zA-Z0-9_]*)>[^()]*\)/', '{$1}', $route );
 	}
 }

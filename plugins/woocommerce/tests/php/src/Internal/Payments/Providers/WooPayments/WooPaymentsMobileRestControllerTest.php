@@ -1290,6 +1290,95 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Terminal capture rejects a capture request for an intent that does not match the order's already-stored intent.
+	 *
+	 * Client parity: `class-wc-rest-payments-orders-controller.php:187-193`
+	 * (`WC_Payments_Order_Service::INTENT_ID_META_KEY` on the order not matching the requested
+	 * `payment_intent_id` returns `wcpay_payment_uncapturable`, 409) before ever calling the API.
+	 */
+	public function test_capture_terminal_payment_rejects_a_different_stored_intent(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->update_meta_data( '_intent_id', 'pi_stored' );
+		$order->save();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_requested' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_payment_uncapturable', $response->get_error_code() );
+		$this->assertSame( 409, $response->get_error_data()['status'] );
+		$this->assertSame( array(), $this->api_client->last_capture_metadata, 'No capture must be attempted once the stored intent mismatch is found.' );
+	}
+
+	/**
+	 * @testdox capture_terminal_payment reaches the handler through the registered REST route with the client's payment_intent_id argument name.
+	 *
+	 * Dispatches through `WP_REST_Server` (not by calling the controller method directly), so the
+	 * route's `args` schema is exercised too: a `payment_intent_id` rename in that schema would fail
+	 * this request with 400 `rest_missing_callback_param` before the handler ever runs, the way the
+	 * reference client requires `payment_intent_id` for the same endpoint
+	 * (`class-wc-rest-payments-orders-controller.php:80-83`).
+	 */
+	public function test_capture_terminal_payment_dispatches_through_the_rest_server_with_payment_intent_id(): void {
+		$this->sut->register_routes();
+
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_terminal',
+						'payment_method'         => 'pm_terminal',
+						'payment_method_details' => array(
+							'type'         => 'card_present',
+							'card_present' => array(
+								'brand' => 'visa',
+								'last4' => '4242',
+							),
+						),
+					),
+				),
+			),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'             => 'ch_terminal',
+						'payment_method' => 'pm_terminal',
+					),
+				),
+			),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame(
+			array(
+				'status' => 'succeeded',
+				'id'     => 'pi_terminal',
+			),
+			$response->get_data()
+		);
+	}
+
+	/**
 	 * @testdox Terminal capture returns an error when the capture result does not succeed.
 	 */
 	public function test_capture_terminal_payment_returns_error_when_capture_result_is_not_succeeded(): void {
