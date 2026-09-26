@@ -1,12 +1,13 @@
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
-import {
-	expect,
-	tags,
-	test,
-	waitForWordPressLoginReady,
-} from '../../../fixtures/woopayments-native';
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { ADMIN_STATE_PATH } from '../../../playwright.config';
 import { customer } from '../../../test-data/data';
+import { random } from '../../../utils/helpers';
+import { logIn } from '../../../utils/login';
+
+test.use( { storageState: ADMIN_STATE_PATH } );
 
 const CONTRACT_PREFIX =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:';
@@ -21,8 +22,8 @@ const HISTORICAL_ORDER_CONTRACT_IDS = [
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:96::Shopper Multi-Currency widget › Should not affect prices › at My account › Orders',
 ];
 
-const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
-const TEMPLATE_PARTS_API = '/wp-json/wp/v2/template-parts';
+const MULTI_CURRENCY_API = 'wc/v3/payments/multi-currency';
+const TEMPLATE_PARTS_API = 'wp/v2/template-parts';
 const SWITCHER_BLOCK =
 	'<!-- wp:woocommerce-payments/multi-currency-switcher /-->';
 const SWITCHER_BLOCK_NAME = 'woocommerce-payments/multi-currency-switcher';
@@ -37,18 +38,6 @@ const PRODUCT_PRICE = '10.00';
 const EUR_MANUAL_RATE = 0.8;
 const USD_PRICE_TEXT = /\$10\.00/;
 const EUR_PRICE_TEXT = /8,00\s*€/;
-
-async function readJson< Result = Record< string, unknown > >(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Result > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Result;
-}
 
 interface HistoricalOrder {
 	id: number;
@@ -112,19 +101,12 @@ function historicalOrderSnapshot( order: HistoricalOrder ) {
 	};
 }
 
-async function standingCustomerId(
-	adminApi: APIRequestContext
-): Promise< number > {
-	const customers = await readJson<
-		Array< { id: number; email: string; username: string } >
-	>(
-		await adminApi.get(
-			`/wp-json/wc/v3/customers?role=all&search=${ encodeURIComponent(
-				customer.email
-			) }`
-		),
-		'Standing customer lookup'
-	);
+async function standingCustomerId( restApi: ApiClient ): Promise< number > {
+	const customers = (
+		await restApi.get<
+			Array< { id: number; email: string; username: string } >
+		>( 'wc/v3/customers', { role: 'all', search: customer.email } )
+	).data;
 	const match = customers.find(
 		( candidate ) =>
 			candidate.email === customer.email ||
@@ -138,38 +120,35 @@ async function standingCustomerId(
 }
 
 async function createHistoricalOrder(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	productId: number,
 	customerId: number,
 	runId: string,
 	expectation: HistoricalOrderExpectation
 ): Promise< HistoricalOrder > {
-	return readJson< HistoricalOrder >(
-		await adminApi.post( '/wp-json/wc/v3/orders', {
-			data: {
-				customer_id: customerId,
-				currency: expectation.currency,
-				status: 'completed',
-				payment_method: 'woocommerce_payments',
-				payment_method_title: 'Visa credit card',
-				transaction_id: `pi_e2e_historical_${ runId }_${ expectation.currency.toLowerCase() }`,
-				line_items: [
-					{
-						product_id: productId,
-						quantity: 1,
-						subtotal: expectation.total,
-						total: expectation.total,
-					},
-				],
-				meta_data: [ { key: '_e2e_woopayments_run_id', value: runId } ],
-			},
-		} ),
-		`${ expectation.currency } historical order creation`
-	);
+	return (
+		await restApi.post< HistoricalOrder >( 'wc/v3/orders', {
+			customer_id: customerId,
+			currency: expectation.currency,
+			status: 'completed',
+			payment_method: 'woocommerce_payments',
+			payment_method_title: 'Visa credit card',
+			transaction_id: `pi_e2e_historical_${ runId }_${ expectation.currency.toLowerCase() }`,
+			line_items: [
+				{
+					product_id: productId,
+					quantity: 1,
+					subtotal: expectation.total,
+					total: expectation.total,
+				},
+			],
+			meta_data: [ { key: '_e2e_woopayments_run_id', value: runId } ],
+		} )
+	).data;
 }
 
 async function seedHistoricalOrderMetadata(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	order: HistoricalOrder,
 	expectation: HistoricalOrderExpectation
 ): Promise< HistoricalOrder > {
@@ -182,44 +161,31 @@ async function seedHistoricalOrderMetadata(
 	// from today's request context. A second REST write replaces that
 	// scaffolding with the captured plugin-era values this historical fixture
 	// is specifically meant to preserve.
-	return readJson< HistoricalOrder >(
-		await adminApi.put( `/wp-json/wc/v3/orders/${ order.id }`, {
-			data: {
-				meta_data: Object.entries( expectation.meta ).map(
-					( [ key, value ] ) => ( { key, value } )
-				),
-			},
-		} ),
-		`${ expectation.currency } historical order metadata seed`
-	);
+	return (
+		await restApi.put< HistoricalOrder >( `wc/v3/orders/${ order.id }`, {
+			meta_data: Object.entries( expectation.meta ).map(
+				( [ key, value ] ) => ( { key, value } )
+			),
+		} )
+	).data;
 }
 
 async function deleteHistoricalOrder(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	orderId: number
 ): Promise< void > {
-	const deletion = await adminApi.delete(
-		`/wp-json/wc/v3/orders/${ orderId }`,
-		{ data: { force: true }, failOnStatusCode: false }
-	);
-	if ( ! deletion.ok() ) {
-		throw new Error(
-			`Historical order ${ orderId } cleanup failed: HTTP ${ deletion.status() } ${ await deletion.text() }`
-		);
-	}
+	await restApi.delete( `wc/v3/orders/${ orderId }`, { force: true } );
 }
 
 async function logInAsStandingCustomer( page: Page ): Promise< void > {
 	await page.context().clearCookies();
 	await page.goto( 'wp-login.php' );
-	await waitForWordPressLoginReady( page );
-	await page
-		.getByLabel( 'Username or Email Address' )
-		.fill( customer.username );
-	await page
-		.getByRole( 'textbox', { name: 'Password' } )
-		.fill( customer.password );
-	await page.getByRole( 'button', { name: 'Log In' } ).click();
+	await expect(
+		page.getByLabel( 'Username or Email Address' )
+	).toBeVisible();
+	// Not an admin: no Dashboard to land on, so the standard success assertion
+	// is skipped in favor of the my-account read below.
+	await logIn( page, customer.username, customer.password, false );
 	await page.goto( 'my-account/edit-account/' );
 	await expect(
 		page.getByRole( 'textbox', { name: /Email address/i } )
@@ -271,33 +237,23 @@ async function expectHistoricalOrdersRendered(
  * currency. The manual rate keeps the smoke independent of provider-fetched
  * exchange rates, which this standing store does not cache.
  */
-async function ensureEnabledCurrencies(
-	adminApi: APIRequestContext
-): Promise< void > {
-	await readJson(
-		await adminApi.post( `${ MULTI_CURRENCY_API }/currencies/EUR`, {
-			data: {
-				exchange_rate_type: 'manual',
-				manual_rate: EUR_MANUAL_RATE,
-				price_rounding: 0,
-				price_charm: 0,
-			},
-		} ),
-		'EUR manual-rate update'
-	);
+async function ensureEnabledCurrencies( restApi: ApiClient ): Promise< void > {
+	await restApi.post( `${ MULTI_CURRENCY_API }/currencies/EUR`, {
+		exchange_rate_type: 'manual',
+		manual_rate: EUR_MANUAL_RATE,
+		price_rounding: 0,
+		price_charm: 0,
+	} );
 	// The route answers HTTP 200 with the unchanged list when the payload is
 	// not a non-empty array, so a green response alone does not prove the
 	// request took effect; assert the returned state at the call site.
-	const updated = await readJson(
-		await adminApi.post(
+	const updated = (
+		await restApi.post< { enabled: Record< string, unknown > } >(
 			`${ MULTI_CURRENCY_API }/update-enabled-currencies`,
-			{ data: { enabled: [ 'USD', 'EUR' ] } }
-		),
-		'Enabled-currencies update'
-	);
-	const updatedCodes = Object.keys(
-		( updated.enabled ?? {} ) as Record< string, unknown >
-	).toSorted();
+			{ enabled: [ 'USD', 'EUR' ] }
+		)
+	).data;
+	const updatedCodes = Object.keys( updated.enabled ?? {} ).toSorted();
 	if ( updatedCodes.join( ',' ) !== 'EUR,USD' ) {
 		throw new Error(
 			`Enabled-currencies update did not take effect; store reports: ${ updatedCodes.join(
@@ -312,24 +268,12 @@ async function ensureEnabledCurrencies(
  * retained product-page context renders it. Skips the part if it already
  * carries the block.
  */
-async function ensureSwitcherPlacement(
-	adminApi: APIRequestContext
-): Promise< void > {
-	const response = await adminApi.get(
-		`${ TEMPLATE_PARTS_API }?context=edit`
-	);
-	if ( ! response.ok() ) {
-		throw new Error(
-			`Header template-part lookup failed: HTTP ${ response.status() }`
-		);
-	}
+async function ensureSwitcherPlacement( restApi: ApiClient ): Promise< void > {
 	const headerParts = (
-		( await response.json() ) as Array< {
-			id: string;
-			slug: string;
-			content: { raw?: string };
-		} >
-	 ).filter( ( part ) => part.slug === 'header' );
+		await restApi.get<
+			Array< { id: string; slug: string; content: { raw?: string } } >
+		>( TEMPLATE_PARTS_API, { context: 'edit' } )
+	).data.filter( ( part ) => part.slug === 'header' );
 
 	if ( headerParts.length < 1 ) {
 		throw new Error( 'Expected the theme header template part.' );
@@ -341,30 +285,19 @@ async function ensureSwitcherPlacement(
 			continue;
 		}
 
-		await readJson(
-			await adminApi.post( `${ TEMPLATE_PARTS_API }/${ header.id }`, {
-				data: { content: `${ SWITCHER_BLOCK }\n${ rawContent }` },
-			} ),
-			`Template-part update for ${ header.slug }`
-		);
+		await restApi.post( `${ TEMPLATE_PARTS_API }/${ header.id }`, {
+			content: `${ SWITCHER_BLOCK }\n${ rawContent }`,
+		} );
 	}
 }
 
-async function ensureSmokeProduct(
-	adminApi: APIRequestContext
-): Promise< number > {
-	const lookup = await adminApi.get(
-		`/wp-json/wc/v3/products?slug=${ PRODUCT_SLUG }&status=publish`
-	);
-	if ( ! lookup.ok() ) {
-		throw new Error(
-			`Smoke product lookup failed: HTTP ${ lookup.status() }`
-		);
-	}
-	const existing = ( await lookup.json() ) as Array< {
-		id: number;
-		regular_price: string;
-	} >;
+async function ensureSmokeProduct( restApi: ApiClient ): Promise< number > {
+	const existing = (
+		await restApi.get< Array< { id: number; regular_price: string } > >(
+			'wc/v3/products',
+			{ slug: PRODUCT_SLUG, status: 'publish' }
+		)
+	).data;
 	if ( existing.length > 0 ) {
 		// A price drift on the standing store would otherwise surface as a
 		// misleading conversion-assertion failure far from its cause.
@@ -376,20 +309,17 @@ async function ensureSmokeProduct(
 		return existing[ 0 ].id;
 	}
 
-	const created = await readJson(
-		await adminApi.post( '/wp-json/wc/v3/products', {
-			data: {
-				name: PRODUCT_NAME,
-				slug: PRODUCT_SLUG,
-				type: 'simple',
-				virtual: true,
-				regular_price: PRODUCT_PRICE,
-				status: 'publish',
-			},
-		} ),
-		'Smoke product creation'
-	);
-	return created.id as number;
+	const created = (
+		await restApi.post< { id: number } >( 'wc/v3/products', {
+			name: PRODUCT_NAME,
+			slug: PRODUCT_SLUG,
+			type: 'simple',
+			virtual: true,
+			regular_price: PRODUCT_PRICE,
+			status: 'publish',
+		} )
+	).data;
+	return created.id;
 }
 
 /**
@@ -436,10 +366,10 @@ test(
 		} ) ),
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page } ) => {
-		await ensureEnabledCurrencies( adminApi );
-		await ensureSwitcherPlacement( adminApi );
-		await ensureSmokeProduct( adminApi );
+	async ( { restApi, page } ) => {
+		await ensureEnabledCurrencies( restApi );
+		await ensureSwitcherPlacement( restApi );
+		await ensureSmokeProduct( restApi );
 
 		// Contract: switching currency at the product page converts the
 		// product price and the selection survives a query-free navigation.
@@ -466,17 +396,18 @@ test(
 		} ) ),
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page, runId } ) => {
-		await ensureEnabledCurrencies( adminApi );
-		await ensureSwitcherPlacement( adminApi );
-		const productId = await ensureSmokeProduct( adminApi );
-		const customerId = await standingCustomerId( adminApi );
+	async ( { restApi, page } ) => {
+		const runId = random();
+		await ensureEnabledCurrencies( restApi );
+		await ensureSwitcherPlacement( restApi );
+		const productId = await ensureSmokeProduct( restApi );
+		const customerId = await standingCustomerId( restApi );
 		const orders: HistoricalOrder[] = [];
 
 		try {
 			for ( const expectation of HISTORICAL_ORDER_EXPECTATIONS ) {
 				let order = await createHistoricalOrder(
-					adminApi,
+					restApi,
 					productId,
 					customerId,
 					runId,
@@ -484,7 +415,7 @@ test(
 				);
 				orders.push( order );
 				order = await seedHistoricalOrderMetadata(
-					adminApi,
+					restApi,
 					order,
 					expectation
 				);
@@ -512,10 +443,11 @@ test(
 			await expectHistoricalOrdersRendered( page, orders, 'EUR' );
 
 			for ( const order of orders ) {
-				const stored = await readJson< HistoricalOrder >(
-					await adminApi.get( `/wp-json/wc/v3/orders/${ order.id }` ),
-					`Historical order ${ order.id } re-read`
-				);
+				const stored = (
+					await restApi.get< HistoricalOrder >(
+						`wc/v3/orders/${ order.id }`
+					)
+				).data;
 				expect( historicalOrderSnapshot( stored ) ).toEqual(
 					historicalOrderSnapshot( order )
 				);
@@ -523,7 +455,7 @@ test(
 		} finally {
 			await Promise.all(
 				orders.map( ( order ) =>
-					deleteHistoricalOrder( adminApi, order.id )
+					deleteHistoricalOrder( restApi, order.id )
 				)
 			);
 		}

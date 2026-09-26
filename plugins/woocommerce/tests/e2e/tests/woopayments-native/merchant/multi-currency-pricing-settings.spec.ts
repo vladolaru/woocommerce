@@ -1,13 +1,11 @@
-import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
-import {
-	expect,
-	tags,
-	test,
-	waitForWordPressLoginReady,
-} from '../../../fixtures/woopayments-native';
-import { admin } from '../../../test-data/data';
-import { withWidenedCurrencyCatalog } from '../../../utils/woopayments-native/multi-currency-catalog';
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { ADMIN_STATE_PATH } from '../../../playwright.config';
+import { random } from '../../../utils/helpers';
+
+test.use( { storageState: ADMIN_STATE_PATH } );
 
 /**
  * Native multi-currency pricing settings (mc-pricing-configuration-smoke).
@@ -17,20 +15,10 @@ import { withWidenedCurrencyCatalog } from '../../../utils/woopayments-native/mu
  * runs through the real currency-settings modal, authoritative REST echo, and
  * storefront text.
  *
- * FORCED PREMISE — read before trusting either result. The
- * standing store's provider rate cache is empty, so its available-currency
- * catalog is one code wide: USD plus EUR, the latter only because it is
- * enabled with a manual rate. Every route that could widen it validates
- * against that catalog first, so none of these rows is reachable as the store
- * stands. Each test therefore runs inside
- * utils/woopayments-native/multi-currency-catalog.ts, which snapshots the raw
- * rate-cache option, forces its run currency into it, and byte-restores it
- * with a verified read afterwards. What each test proves is native's pricing
- * behavior GIVEN a catalog that offers that currency; none of them proves the
- * provider offers it, because the run supplies that premise itself. The
- * premise is narrow rather than invented: the connected account already
- * reports CHF and JPY among its supported customer currencies, and only
- * the FX rate payload is substituted.
+ * CHF and JPY are enabled through the ordinary `update-enabled-currencies`
+ * route: the connected account (the CI fixture and the standing test account)
+ * lists both as supported customer currencies, which is what WooPayments
+ * 11.1.0 also requires before it accepts them.
  *
  * The run currencies (CHF, JPY) are deliberately not EUR: EUR carries the
  * readonly fixture's seeded 0.8 manual rate (`envs/woopayments-native/seed-readonly.sh`),
@@ -43,18 +31,12 @@ import { withWidenedCurrencyCatalog } from '../../../utils/woopayments-native/mu
  * disturbed.
  */
 
-// The same environment-first resolution the harness fixtures use.
-const ADMIN_USERNAME =
-	process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME ?? admin.username;
-const ADMIN_PASSWORD =
-	process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD ?? admin.password;
-
 const CONTRACT_PREFIX =
 	'default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:';
 const CONTRACT_MANUAL_RATE = `${ CONTRACT_PREFIX }90::Multi-currency setup › Currency settings › can change the currency rate manually`;
 const CONTRACT_JPY_DECIMALS = `${ CONTRACT_PREFIX }207::Multi-currency setup › Currency decimal points › the decimal points for JPY are displayed correctly`;
 
-const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
+const MULTI_CURRENCY_API = 'wc/v3/payments/multi-currency';
 const SETTINGS_PAGE_PATH =
 	'/wp-admin/admin.php?page=wc-settings&tab=wcpay_multi_currency';
 
@@ -81,43 +63,11 @@ const USD_PRICE_TEXT = /\$1,234\.56(?!\d)/;
 // (CHF&nbsp;1&#8217;543.20).
 const CHF_THOUSANDS_SEPARATOR = '’';
 
-// Automatic catalog rates the run forces into the provider rate cache so its
-// run currency exists at all. No assertion depends on these values: every test
-// immediately switches its currency to a manual rate through the merchant
-// modal, and the shopper amounts below are derived from those manual rates.
-const CATALOG_RATES = {
-	CHF: 0.9,
-	JPY: 151,
-} as const;
-
 interface SingleCurrencySettings {
 	exchange_rate_type: string;
 	manual_rate: unknown;
 	price_rounding: unknown;
 	price_charm: unknown;
-}
-
-async function readJson(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Record< string, unknown > > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Record< string, unknown >;
-}
-
-async function logInAsAdmin( page: Page ): Promise< void > {
-	await page.goto( 'wp-login.php' );
-	await waitForWordPressLoginReady( page );
-	await page.getByLabel( 'Username or Email Address' ).fill( ADMIN_USERNAME );
-	await page
-		.getByRole( 'textbox', { name: 'Password' } )
-		.fill( ADMIN_PASSWORD );
-	await page.getByRole( 'button', { name: 'Log In' } ).click();
-	await page.waitForURL( '**/wp-admin/**' );
 }
 
 /**
@@ -148,41 +98,37 @@ interface MultiCurrencySnapshot {
  * than be silently normalized.
  */
 async function snapshotAndGuard(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	currencyCode: string
 ): Promise< MultiCurrencySnapshot > {
-	const state = await readJson(
-		await adminApi.get( `${ MULTI_CURRENCY_API }/currencies` ),
-		'Multi-currency state read'
-	);
-	const defaultCurrency = state.default as { code?: string };
+	const state = (
+		await restApi.get< {
+			default: { code?: string };
+			enabled: Record< string, unknown >;
+			available: Record< string, { name?: string } >;
+		} >( `${ MULTI_CURRENCY_API }/currencies` )
+	).data;
 	expect(
-		defaultCurrency.code,
+		state.default.code,
 		'The pricing rows assume a USD store default; every expected amount is derived from it.'
 	).toBe( 'USD' );
 
-	const enabledCodes = Object.keys(
-		( state.enabled ?? {} ) as Record< string, unknown >
-	);
+	const enabledCodes = Object.keys( state.enabled ?? {} );
 	expect(
 		enabledCodes,
 		`${ currencyCode } must start disabled: this suite owns it as a run-added currency and removes it at the end. An already-enabled ${ currencyCode } means prior-run leakage that needs manual attention, not silent normalization.`
 	).not.toContain( currencyCode );
 
-	const available = ( state.available ?? {} ) as Record<
-		string,
-		{ name?: string }
-	>;
+	const available = state.available ?? {};
 	expect( Object.keys( available ) ).toContain( currencyCode );
 	const currencyName = available[ currencyCode ].name ?? '';
 	expect( currencyName ).not.toBe( '' );
 
-	const virginSettings = ( await readJson(
-		await adminApi.get(
+	const virginSettings = (
+		await restApi.get< SingleCurrencySettings >(
 			`${ MULTI_CURRENCY_API }/currencies/${ currencyCode }`
-		),
-		`${ currencyCode } settings read`
-	) ) as unknown as SingleCurrencySettings;
+		)
+	).data;
 	expect(
 		virginSettings,
 		`${ currencyCode } per-currency options must start absent so the end-of-test removal restores them byte-for-byte.`
@@ -197,44 +143,38 @@ async function snapshotAndGuard(
 }
 
 async function createRunProduct(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	runId: string
 ): Promise< { id: number; slug: string } > {
 	const slug = `woopayments-mc-pricing-${ runId }`;
-	const created = await readJson(
-		await adminApi.post( '/wp-json/wc/v3/products', {
-			data: {
-				name: `WooPayments MC pricing ${ runId }`,
-				slug,
-				type: 'simple',
-				virtual: true,
-				regular_price: PRODUCT_PRICE,
-				status: 'publish',
-			},
-		} ),
-		'Run product creation'
-	);
-	return { id: created.id as number, slug };
+	const created = (
+		await restApi.post< { id: number } >( 'wc/v3/products', {
+			name: `WooPayments MC pricing ${ runId }`,
+			slug,
+			type: 'simple',
+			virtual: true,
+			regular_price: PRODUCT_PRICE,
+			status: 'publish',
+		} )
+	).data;
+	return { id: created.id, slug };
 }
 
 async function enableRunCurrency(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	snapshot: MultiCurrencySnapshot,
 	currencyCode: string
 ): Promise< void > {
 	// The route answers HTTP 200 with the unchanged list when the payload is
 	// not a non-empty array, so assert the returned state instead of trusting
 	// a green response.
-	const updated = await readJson(
-		await adminApi.post(
+	const updated = (
+		await restApi.post< { enabled: Record< string, unknown > } >(
 			`${ MULTI_CURRENCY_API }/update-enabled-currencies`,
-			{ data: { enabled: [ ...snapshot.enabledCodes, currencyCode ] } }
-		),
-		`${ currencyCode } enable`
-	);
-	expect(
-		Object.keys( ( updated.enabled ?? {} ) as Record< string, unknown > )
-	).toContain( currencyCode );
+			{ enabled: [ ...snapshot.enabledCodes, currencyCode ] }
+		)
+	).data;
+	expect( Object.keys( updated.enabled ?? {} ) ).toContain( currencyCode );
 }
 
 interface ModalConfiguration {
@@ -302,16 +242,15 @@ async function saveModalConfiguration(
  * their canonical string forms.
  */
 async function expectPersistedSettings(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	currencyCode: string,
 	expected: { manualRate: number; priceRounding: number; priceCharm: number }
 ): Promise< void > {
-	const echo = ( await readJson(
-		await adminApi.get(
+	const echo = (
+		await restApi.get< SingleCurrencySettings >(
 			`${ MULTI_CURRENCY_API }/currencies/${ currencyCode }`
-		),
-		`${ currencyCode } settings echo`
-	) ) as unknown as SingleCurrencySettings;
+		)
+	).data;
 	expect( echo.exchange_rate_type ).toBe( 'manual' );
 	expect( Number( echo.manual_rate ) ).toBe( expected.manualRate );
 	expect( Number( echo.price_rounding ) ).toBe( expected.priceRounding );
@@ -350,49 +289,61 @@ async function expectShopperPrice(
  * pre-test echo byte for byte.
  */
 async function restoreAndVerify(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	snapshot: MultiCurrencySnapshot,
 	currencyCode: string,
 	productId: number
 ): Promise< void > {
-	const restored = await readJson(
-		await adminApi.post(
+	const restored = (
+		await restApi.post< { enabled: Record< string, unknown > } >(
 			`${ MULTI_CURRENCY_API }/update-enabled-currencies`,
-			{ data: { enabled: snapshot.enabledCodes } }
-		),
-		'Enabled-currencies restore'
+			{ enabled: snapshot.enabledCodes }
+		)
+	).data;
+	expect( Object.keys( restored.enabled ?? {} ) ).toEqual(
+		snapshot.enabledCodes
 	);
-	expect(
-		Object.keys( ( restored.enabled ?? {} ) as Record< string, unknown > )
-	).toEqual( snapshot.enabledCodes );
 
 	// Cold re-read: the restore must hold on a fresh request, not only in the
 	// mutating call's own response.
-	const reread = await readJson(
-		await adminApi.get( `${ MULTI_CURRENCY_API }/currencies` ),
-		'Multi-currency state re-read'
+	const reread = (
+		await restApi.get< { enabled: Record< string, unknown > } >(
+			`${ MULTI_CURRENCY_API }/currencies`
+		)
+	).data;
+	expect( Object.keys( reread.enabled ?? {} ) ).toEqual(
+		snapshot.enabledCodes
 	);
-	expect(
-		Object.keys( ( reread.enabled ?? {} ) as Record< string, unknown > )
-	).toEqual( snapshot.enabledCodes );
 
-	const settingsAfter = ( await readJson(
-		await adminApi.get(
+	const settingsAfter = (
+		await restApi.get< SingleCurrencySettings >(
 			`${ MULTI_CURRENCY_API }/currencies/${ currencyCode }`
-		),
-		`${ currencyCode } settings after restore`
-	) ) as unknown as SingleCurrencySettings;
+		)
+	).data;
 	expect( settingsAfter ).toEqual( snapshot.virginSettings );
 
-	const deletion = await adminApi.delete(
-		`/wp-json/wc/v3/products/${ productId }`,
-		{ data: { force: true } }
-	);
-	if ( ! deletion.ok() ) {
-		throw new Error(
-			`Run product cleanup failed: HTTP ${ deletion.status() }.`
-		);
-	}
+	await restApi.delete( `wc/v3/products/${ productId }`, { force: true } );
+}
+
+/**
+ * Best-effort cleanup that always runs, so a case that fails before
+ * `restoreAndVerify` cannot leave CHF or JPY enabled for the next spec in the
+ * run. It asserts nothing and never masks the test's own error; after a
+ * successful restore it rewrites the same enabled set.
+ */
+async function removeRunState(
+	restApi: ApiClient,
+	snapshot: MultiCurrencySnapshot,
+	productId: number
+): Promise< void > {
+	await restApi
+		.post( `${ MULTI_CURRENCY_API }/update-enabled-currencies`, {
+			enabled: snapshot.enabledCodes,
+		} )
+		.catch( () => undefined );
+	await restApi
+		.delete( `wc/v3/products/${ productId }`, { force: true } )
+		.catch( () => undefined );
 }
 
 test(
@@ -406,64 +357,54 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, baseURL, page, runId } ) => {
+	async ( { restApi, page } ) => {
 		const currencyCode = 'CHF';
-		// FORCED PREMISE (see the file header): CHF only exists in this
-		// store's catalog because the run injects its automatic rate into the
-		// provider rate cache and byte-restores it afterwards.
-		await withWidenedCurrencyCatalog(
-			{ baseURL, rates: { CHF: CATALOG_RATES.CHF } },
-			async () => {
-				const snapshot = await snapshotAndGuard(
-					adminApi,
-					currencyCode
-				);
-				const product = await createRunProduct( adminApi, runId );
-				await enableRunCurrency( adminApi, snapshot, currencyCode );
+		const runId = random();
+		const snapshot = await snapshotAndGuard( restApi, currencyCode );
+		const product = await createRunProduct( restApi, runId );
+		await enableRunCurrency( restApi, snapshot, currencyCode );
+		try {
+			const { dialog, row } = await openCurrencySettingsModal(
+				page,
+				snapshot.currencyName
+			);
+			// Rate 1.25 with rounding and charm pinned off: the calculator's
+			// zero-rounding path rounds the raw conversion to the currency's two
+			// decimals, so 1234.56 × 1.25 = 1543.20 exactly.
+			await saveModalConfiguration( dialog, {
+				manualRate: '1.25',
+				priceRoundingValue: '0',
+				priceCharmValue: '0.00',
+			} );
+			// The enabled-currencies table reflects the saved manual rate.
+			await expect( row ).toContainText( '1.25' );
 
-				await logInAsAdmin( page );
-				const { dialog, row } = await openCurrencySettingsModal(
-					page,
-					snapshot.currencyName
-				);
-				// Rate 1.25 with rounding and charm pinned off: the
-				// calculator's zero-rounding path rounds the raw conversion to
-				// the currency's two decimals, so 1234.56 × 1.25 = 1543.20
-				// exactly.
-				await saveModalConfiguration( dialog, {
-					manualRate: '1.25',
-					priceRoundingValue: '0',
-					priceCharmValue: '0.00',
-				} );
-				// The enabled-currencies table reflects the saved manual rate.
-				await expect( row ).toContainText( '1.25' );
+			await expectPersistedSettings( restApi, currencyCode, {
+				manualRate: 1.25,
+				priceRounding: 0,
+				priceCharm: 0,
+			} );
 
-				await expectPersistedSettings( adminApi, currencyCode, {
-					manualRate: 1.25,
-					priceRounding: 0,
-					priceCharm: 0,
-				} );
+			// CHF pins its own formatting half: 'CHF' code as the symbol,
+			// left_space position, apostrophe thousands separator, two decimals.
+			await expectShopperPrice(
+				page,
+				product.slug,
+				currencyCode,
+				new RegExp(
+					`CHF\\s1${ CHF_THOUSANDS_SEPARATOR }543\\.20(?!\\d)`
+				)
+			);
 
-				// CHF pins its own formatting half: 'CHF' code as the symbol,
-				// left_space position, apostrophe thousands separator, two
-				// decimals.
-				await expectShopperPrice(
-					page,
-					product.slug,
-					currencyCode,
-					new RegExp(
-						`CHF\\s1${ CHF_THOUSANDS_SEPARATOR }543\\.20(?!\\d)`
-					)
-				);
-
-				await restoreAndVerify(
-					adminApi,
-					snapshot,
-					currencyCode,
-					product.id
-				);
-			}
-		);
+			await restoreAndVerify(
+				restApi,
+				snapshot,
+				currencyCode,
+				product.id
+			);
+		} finally {
+			await removeRunState( restApi, snapshot, product.id );
+		}
 	}
 );
 
@@ -478,85 +419,75 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, baseURL, page, runId } ) => {
+	async ( { restApi, page } ) => {
 		const currencyCode = 'JPY';
-		// FORCED PREMISE (see the file header). Without it this row is not
-		// merely weak but unreachable: a zero-decimal currency cannot be
-		// enabled on this store at all, so the zero-decimal rendering
-		// contract would have no settings- or storefront-layer expression.
-		await withWidenedCurrencyCatalog(
-			{ baseURL, rates: { JPY: CATALOG_RATES.JPY } },
-			async () => {
-				const snapshot = await snapshotAndGuard(
-					adminApi,
-					currencyCode
-				);
-				const product = await createRunProduct( adminApi, runId );
-				await enableRunCurrency( adminApi, snapshot, currencyCode );
+		const runId = random();
+		const snapshot = await snapshotAndGuard( restApi, currencyCode );
+		const product = await createRunProduct( restApi, runId );
+		await enableRunCurrency( restApi, snapshot, currencyCode );
+		try {
+			const { dialog } = await openCurrencySettingsModal(
+				page,
+				snapshot.currencyName
+			);
 
-				await logInAsAdmin( page );
-				const { dialog } = await openCurrencySettingsModal(
-					page,
-					snapshot.currencyName
-				);
+			// Modal half: a zero-decimal currency renders the whole-unit
+			// rounding and charm option sets and the zero-decimal default
+			// rounding — no fractional options anywhere.
+			const roundingSelect = dialog.getByRole( 'combobox', {
+				name: 'Price rounding',
+			} );
+			const charmSelect = dialog.getByRole( 'combobox', {
+				name: 'Charm pricing',
+			} );
+			await expect( roundingSelect ).toHaveValue( '100' );
+			await expect(
+				roundingSelect.locator( 'option[value="500"]' )
+			).toHaveCount( 1 );
+			await expect(
+				roundingSelect.locator( 'option[value="0.50"]' )
+			).toHaveCount( 0 );
+			await expect(
+				charmSelect.locator( 'option[value="-1"]' )
+			).toHaveCount( 1 );
+			await expect(
+				charmSelect.locator( 'option[value="-0.01"]' )
+			).toHaveCount( 0 );
 
-				// Modal half: a zero-decimal currency renders the whole-unit
-				// rounding and charm option sets and the zero-decimal default
-				// rounding — no fractional options anywhere.
-				const roundingSelect = dialog.getByRole( 'combobox', {
-					name: 'Price rounding',
-				} );
-				const charmSelect = dialog.getByRole( 'combobox', {
-					name: 'Charm pricing',
-				} );
-				await expect( roundingSelect ).toHaveValue( '100' );
-				await expect(
-					roundingSelect.locator( 'option[value="500"]' )
-				).toHaveCount( 1 );
-				await expect(
-					roundingSelect.locator( 'option[value="0.50"]' )
-				).toHaveCount( 0 );
-				await expect(
-					charmSelect.locator( 'option[value="-1"]' )
-				).toHaveCount( 1 );
-				await expect(
-					charmSelect.locator( 'option[value="-0.01"]' )
-				).toHaveCount( 0 );
+			// The zero-decimal modal offers no zero-rounding option — '1' is its
+			// smallest increment — so the modal-driven amount is
+			// ceil(1234.56 × 150.1) = ceil(185307.456) = 185308. The
+			// round-to-zero-decimals calculation leaf (185307) is pinned at the
+			// lower layer instead (MultiCurrencyPriceCalculator staged test).
+			await saveModalConfiguration( dialog, {
+				manualRate: '150.1',
+				priceRoundingValue: '1',
+				priceCharmValue: '0.00',
+			} );
 
-				// The zero-decimal modal offers no zero-rounding option — '1'
-				// is its smallest increment — so the modal-driven amount is
-				// ceil(1234.56 × 150.1) = ceil(185307.456) = 185308. The
-				// round-to-zero-decimals calculation leaf (185307) is pinned
-				// at the lower layer instead (MultiCurrencyPriceCalculator
-				// staged test).
-				await saveModalConfiguration( dialog, {
-					manualRate: '150.1',
-					priceRoundingValue: '1',
-					priceCharmValue: '0.00',
-				} );
+			await expectPersistedSettings( restApi, currencyCode, {
+				manualRate: 150.1,
+				priceRounding: 1,
+				priceCharm: 0,
+			} );
 
-				await expectPersistedSettings( adminApi, currencyCode, {
-					manualRate: 150.1,
-					priceRounding: 1,
-					priceCharm: 0,
-				} );
+			// No fractional digits: the trailing guard rejects both another
+			// digit and a decimal fraction after the yen amount.
+			await expectShopperPrice(
+				page,
+				product.slug,
+				currencyCode,
+				/¥185,308(?!\.?\d)/
+			);
 
-				// No fractional digits: the trailing guard rejects both
-				// another digit and a decimal fraction after the yen amount.
-				await expectShopperPrice(
-					page,
-					product.slug,
-					currencyCode,
-					/¥185,308(?!\.?\d)/
-				);
-
-				await restoreAndVerify(
-					adminApi,
-					snapshot,
-					currencyCode,
-					product.id
-				);
-			}
-		);
+			await restoreAndVerify(
+				restApi,
+				snapshot,
+				currencyCode,
+				product.id
+			);
+		} finally {
+			await removeRunState( restApi, snapshot, product.id );
+		}
 	}
 );

@@ -1,6 +1,11 @@
-import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
-import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { ADMIN_STATE_PATH } from '../../../playwright.config';
+import { random } from '../../../utils/helpers';
+
+test.use( { storageState: ADMIN_STATE_PATH } );
 
 /**
  * Native multi-currency switcher visibility boundaries
@@ -14,7 +19,7 @@ import { expect, tags, test } from '../../../fixtures/woopayments-native';
  *
  * NO FORCED PREMISE. The test does not widen the available-currency catalog
  * or write the enabled-currency set: it reads the authoritative set
- * from `/wc/v3/payments/multi-currency/currencies` and assert against exactly
+ * from `/wc/v3/payments/multi-currency/currencies` and asserts against exactly
  * what the merchant has enabled. That restraint is deliberate rather than
  * incidental — see the parity note below.
  *
@@ -44,12 +49,12 @@ const CONTRACT_IDS = {
 	checkoutSwitcherPositiveControl: `${ SHOPPER_CONTRACT_PREFIX }67::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the checkout page`,
 } as const;
 
-const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
-const ORDERS_API = '/wp-json/wc/v3/orders';
-const PRODUCTS_API = '/wp-json/wc/v3/products';
-const PAGES_API = '/wp-json/wp/v2/pages';
-const CHECKOUT_PAGE_SETTING_API =
-	'/wp-json/wc/v3/settings/advanced/woocommerce_checkout_page_id';
+const MULTI_CURRENCY_API = 'wc/v3/payments/multi-currency';
+const ORDERS_API = 'wc/v3/orders';
+const PRODUCTS_API = 'wc/v3/products';
+const PAGES_API = 'wp/v2/pages';
+const CHECKOUT_PAGE_SETTING_PATH =
+	'wc/v3/settings/advanced/woocommerce_checkout_page_id';
 
 const BLOCK_NAME = 'woocommerce-payments/multi-currency-switcher';
 const SWITCHER_BLOCK = `<!-- wp:${ BLOCK_NAME } /-->`;
@@ -84,18 +89,6 @@ function requireBaseUrl( baseURL: string | undefined ): string {
 
 function toMessage( error: unknown ): string {
 	return error instanceof Error ? error.message : String( error );
-}
-
-async function readJson< Result = Record< string, unknown > >(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Result > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Result;
 }
 
 // Assets belonging to plugins other than the one under test. The standing
@@ -172,17 +165,18 @@ function trackPageErrors( page: Page, baseUrl: string ): () => string[] {
  * enabled currency, so on a single-currency store the positive control that
  * makes every absence assertion below meaningful would itself be absent.
  *
- * @param adminApi Authenticated admin REST context.
+ * @param restApi Authenticated admin REST client.
  * @return The store default and first additional enabled currency.
  */
-async function readCurrencyBaseline( adminApi: APIRequestContext ): Promise< {
+async function readCurrencyBaseline( restApi: ApiClient ): Promise< {
 	defaultCode: string;
 	additionalCode: string;
 } > {
-	const currencies = await readJson< StoreCurrencies >(
-		await adminApi.get( `${ MULTI_CURRENCY_API }/currencies` ),
-		'Multi-currency state read'
-	);
+	const currencies = (
+		await restApi.get< StoreCurrencies >(
+			`${ MULTI_CURRENCY_API }/currencies`
+		)
+	).data;
 	const defaultCode = currencies.default.code;
 	expect(
 		defaultCode,
@@ -238,38 +232,29 @@ function anySwitcher( page: Page ): Locator {
 }
 
 async function createRunProduct(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	runId: string,
 	label: string
 ): Promise< { id: number; name: string } > {
 	const name = `WooPayments MC ${ label } ${ runId }`;
-	const created = await readJson< { id: number } >(
-		await adminApi.post( PRODUCTS_API, {
-			data: {
-				name,
-				slug: `woopayments-mc-${ label }-${ runId }`,
-				type: 'simple',
-				virtual: true,
-				regular_price: PRODUCT_PRICE,
-				status: 'publish',
-			},
-		} ),
-		'Run product creation'
-	);
+	const created = (
+		await restApi.post< { id: number } >( PRODUCTS_API, {
+			name,
+			slug: `woopayments-mc-${ label }-${ runId }`,
+			type: 'simple',
+			virtual: true,
+			regular_price: PRODUCT_PRICE,
+			status: 'publish',
+		} )
+	).data;
 	return { id: created.id, name };
 }
 
 async function deleteRunResource(
-	adminApi: APIRequestContext,
-	url: string,
-	description: string
+	restApi: ApiClient,
+	url: string
 ): Promise< void > {
-	const deletion = await adminApi.delete( url, { data: { force: true } } );
-	if ( ! deletion.ok() ) {
-		throw new Error(
-			`${ description } cleanup failed: HTTP ${ deletion.status() }.`
-		);
-	}
+	await restApi.delete( url, { force: true } );
 }
 
 /**
@@ -283,52 +268,52 @@ async function deleteRunResource(
  * restored unconditionally — including after a failed scenario — and the
  * restoration never masks the scenario's own error.
  *
- * @param adminApi Authenticated admin REST context.
+ * @param restApi  Authenticated admin REST client.
  * @param callback Scenario body, run with the switcher published on checkout.
  * @return The callback's result.
  */
 async function withCheckoutPageSwitcher< Result >(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	callback: () => Promise< Result >
 ): Promise< Result > {
-	const setting = await readJson< { value: unknown } >(
-		await adminApi.get( CHECKOUT_PAGE_SETTING_API ),
-		'Checkout page setting read'
-	);
+	const setting = (
+		await restApi.get< { value: unknown } >( CHECKOUT_PAGE_SETTING_PATH )
+	).data;
 	const checkoutPageId = Number( setting.value );
 	expect(
 		Number.isSafeInteger( checkoutPageId ) && checkoutPageId > 0,
 		'the store must have a configured checkout page for this boundary'
 	).toBe( true );
 
-	const before = await readJson< { content: { raw?: string } } >(
-		await adminApi.get( `${ PAGES_API }/${ checkoutPageId }?context=edit` ),
-		'Checkout page read'
-	);
+	const before = (
+		await restApi.get< { content: { raw?: string } } >(
+			`${ PAGES_API }/${ checkoutPageId }?context=edit`
+		)
+	).data;
 	const originalContent = before.content.raw ?? '';
 	expect(
 		originalContent.includes( BLOCK_NAME ),
 		'the checkout page must not already carry a switcher block; a previous run leaked scaffolding that needs manual attention rather than silent reuse'
 	).toBe( false );
 
-	const seeded = await readJson< { content: { raw?: string } } >(
-		await adminApi.post( `${ PAGES_API }/${ checkoutPageId }`, {
-			data: { content: `${ originalContent }\n\n${ SWITCHER_BLOCK }` },
-		} ),
-		'Checkout page switcher seed'
-	);
+	const seeded = (
+		await restApi.post< { content: { raw?: string } } >(
+			`${ PAGES_API }/${ checkoutPageId }`,
+			{ content: `${ originalContent }\n\n${ SWITCHER_BLOCK }` }
+		)
+	).data;
 	expect(
 		( seeded.content.raw ?? '' ).includes( BLOCK_NAME ),
 		'the seeded checkout page must carry the switcher block'
 	).toBe( true );
 
 	const restore = async (): Promise< void > => {
-		const restored = await readJson< { content: { raw?: string } } >(
-			await adminApi.post( `${ PAGES_API }/${ checkoutPageId }`, {
-				data: { content: originalContent },
-			} ),
-			'Checkout page restoration'
-		);
+		const restored = (
+			await restApi.post< { content: { raw?: string } } >(
+				`${ PAGES_API }/${ checkoutPageId }`,
+				{ content: originalContent }
+			)
+		).data;
 		expect(
 			restored.content.raw ?? '',
 			'the checkout page content must come back exactly as it was'
@@ -336,12 +321,11 @@ async function withCheckoutPageSwitcher< Result >(
 
 		// Cold re-read: the restore must hold on a fresh request, not only in
 		// the mutating call's own response.
-		const reread = await readJson< { content: { raw?: string } } >(
-			await adminApi.get(
+		const reread = (
+			await restApi.get< { content: { raw?: string } } >(
 				`${ PAGES_API }/${ checkoutPageId }?context=edit`
-			),
-			'Checkout page restoration re-read'
-		);
+			)
+		).data;
 		expect( reread.content.raw ?? '' ).toBe( originalContent );
 	};
 
@@ -397,10 +381,11 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, baseURL, page, runId } ) => {
+	async ( { restApi, baseURL, page } ) => {
 		const storeBase = requireBaseUrl( baseURL );
+		const runId = random();
 		const { defaultCode, additionalCode } =
-			await readCurrencyBaseline( adminApi );
+			await readCurrencyBaseline( restApi );
 		// The euro-absence assertions below are derived from the additional
 		// enabled currency being EUR. If the store's enabled set ever changes,
 		// that expectation must be re-derived rather than silently weakened,
@@ -410,39 +395,36 @@ test(
 			'this row asserts the absence of a euro-formatted amount, which assumes the additional enabled currency is EUR'
 		).toBe( 'EUR' );
 
-		const product = await createRunProduct( adminApi, runId, 'payorder' );
+		const product = await createRunProduct( restApi, runId, 'payorder' );
 		try {
-			const order = await readJson< {
-				id: number;
-				currency: string;
-				total: string;
-				payment_url: string;
-			} >(
-				await adminApi.post( ORDERS_API, {
-					data: {
-						// A non-provider method: this obligation is never paid, and
-						// nothing here touches the payment provider.
-						payment_method: 'cod',
-						payment_method_title: 'Cash on delivery',
-						status: 'pending',
-						billing: {
-							first_name: 'WooPayments',
-							last_name: 'E2E',
-							email: `woopayments-mc-${ runId }@example.com`,
-							address_1: '60 29th Street #343',
-							city: 'San Francisco',
-							state: 'CA',
-							postcode: '94110',
-							country: 'US',
-						},
-						line_items: [ { product_id: product.id, quantity: 1 } ],
-						meta_data: [
-							{ key: '_e2e_woopayments_run_id', value: runId },
-						],
+			const order = (
+				await restApi.post< {
+					id: number;
+					currency: string;
+					total: string;
+					payment_url: string;
+				} >( ORDERS_API, {
+					// A non-provider method: this obligation is never paid, and
+					// nothing here touches the payment provider.
+					payment_method: 'cod',
+					payment_method_title: 'Cash on delivery',
+					status: 'pending',
+					billing: {
+						first_name: 'WooPayments',
+						last_name: 'E2E',
+						email: `woopayments-mc-${ runId }@example.com`,
+						address_1: '60 29th Street #343',
+						city: 'San Francisco',
+						state: 'CA',
+						postcode: '94110',
+						country: 'US',
 					},
-				} ),
-				'Run order creation'
-			);
+					line_items: [ { product_id: product.id, quantity: 1 } ],
+					meta_data: [
+						{ key: '_e2e_woopayments_run_id', value: runId },
+					],
+				} )
+			).data;
 
 			// The obligation this contract is about: an unpaid order fixed to the
 			// store currency, with a total the page can be asserted against
@@ -460,7 +442,7 @@ test(
 			const pageErrors = trackPageErrors( page, storeBase );
 
 			try {
-				await withCheckoutPageSwitcher( adminApi, async () => {
+				await withCheckoutPageSwitcher( restApi, async () => {
 					// A fresh anonymous shopper for the whole comparison.
 					await page.context().clearCookies();
 
@@ -542,13 +524,12 @@ test(
 							.getByText( EURO_AMOUNT )
 					).toHaveCount( 0 );
 
-					const orderAfter = await readJson< {
-						currency: string;
-						total: string;
-					} >(
-						await adminApi.get( `${ ORDERS_API }/${ order.id }` ),
-						'Run order re-read'
-					);
+					const orderAfter = (
+						await restApi.get< {
+							currency: string;
+							total: string;
+						} >( `${ ORDERS_API }/${ order.id }` )
+					).data;
 					expect( orderAfter ).toMatchObject( {
 						currency: order.currency,
 						total: order.total,
@@ -558,16 +539,14 @@ test(
 				} );
 			} finally {
 				await deleteRunResource(
-					adminApi,
-					`${ ORDERS_API }/${ order.id }`,
-					'Run order'
+					restApi,
+					`${ ORDERS_API }/${ order.id }`
 				);
 			}
 		} finally {
 			await deleteRunResource(
-				adminApi,
-				`${ PRODUCTS_API }/${ product.id }`,
-				'Run product'
+				restApi,
+				`${ PRODUCTS_API }/${ product.id }`
 			);
 		}
 	}

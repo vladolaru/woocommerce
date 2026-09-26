@@ -1,17 +1,11 @@
-import type {
-	APIRequestContext,
-	FrameLocator,
-	Locator,
-	Page,
-} from '@playwright/test';
+import type { FrameLocator, Locator, Page } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
-import {
-	expect,
-	tags,
-	test,
-	waitForWordPressLoginReady,
-} from '../../../fixtures/woopayments-native';
-import { admin } from '../../../test-data/data';
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { ADMIN_STATE_PATH } from '../../../playwright.config';
+import { random } from '../../../utils/helpers';
+
+test.use( { storageState: ADMIN_STATE_PATH } );
 
 /**
  * Native multi-currency switcher block (mc-switcher-block-spec).
@@ -27,9 +21,8 @@ import { admin } from '../../../test-data/data';
  * - the merchant can publish the block in content and a visitor gets a
  *   working switcher there.
  *
- * NO FORCED PREMISE. Unlike the sibling multi-currency pricing and settings
- * specs, nothing here widens the store's available-currency catalog: every
- * contract is about the switcher *given* whatever the merchant has enabled,
+ * NO FORCED PREMISE. Nothing here widens the store's available-currency
+ * catalog: every contract is about the switcher *given* whatever the merchant has enabled,
  * so each test reads the authoritative enabled set through
  * `/wc/v3/payments/multi-currency/currencies` and asserts against exactly
  * that set. The tests never add, remove, or reconfigure a currency — the
@@ -50,12 +43,6 @@ import { admin } from '../../../test-data/data';
  * prices move.
  */
 
-// The same environment-first resolution the harness fixtures use.
-const ADMIN_USERNAME =
-	process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME ?? admin.username;
-const ADMIN_PASSWORD =
-	process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD ?? admin.password;
-
 const WIDGET_CONTRACT_PREFIX =
 	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:';
 
@@ -66,8 +53,8 @@ const CONTRACT_IDS = {
 		'default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency.spec.ts:61::Multi-currency › can add the currency switcher to a post/page and verify on frontend',
 } as const;
 
-const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
-const POSTS_API = '/wp-json/wp/v2/posts';
+const MULTI_CURRENCY_API = 'wc/v3/payments/multi-currency';
+const POSTS_API = 'wp/v2/posts';
 
 const BLOCK_NAME = 'woocommerce-payments/multi-currency-switcher';
 const BLOCK_TITLE = 'Currency switcher';
@@ -146,33 +133,6 @@ function requireBaseUrl( baseURL: string | undefined ): string {
 	return baseURL.replace( /\/+$/, '' );
 }
 
-async function readJson< Result = Record< string, unknown > >(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Result > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Result;
-}
-
-async function logInAsAdmin( page: Page ): Promise< void > {
-	// Clear first, matching the harness's own admin login: a stale session
-	// cookie would redirect wp-login.php to wp-admin and leave the form fill
-	// hunting a field that is not there.
-	await page.context().clearCookies();
-	await page.goto( 'wp-login.php' );
-	await waitForWordPressLoginReady( page );
-	await page.getByLabel( 'Username or Email Address' ).fill( ADMIN_USERNAME );
-	await page
-		.getByRole( 'textbox', { name: 'Password' } )
-		.fill( ADMIN_PASSWORD );
-	await page.getByRole( 'button', { name: 'Log In' } ).click();
-	await page.waitForURL( '**/wp-admin/**' );
-}
-
 // Assets belonging to plugins other than the one under test. The standing
 // store carries unrelated third-party plugins — an installed
 // woocommerce-subscriptions build 404s on its admin stylesheet on every admin
@@ -236,12 +196,13 @@ function trackPageErrors( page: Page, baseUrl: string ): () => string[] {
 }
 
 async function getStoreCurrencies(
-	adminApi: APIRequestContext
+	restApi: ApiClient
 ): Promise< StoreCurrencies > {
-	return readJson< StoreCurrencies >(
-		await adminApi.get( `${ MULTI_CURRENCY_API }/currencies` ),
-		'Multi-currency state read'
-	);
+	return (
+		await restApi.get< StoreCurrencies >(
+			`${ MULTI_CURRENCY_API }/currencies`
+		)
+	).data;
 }
 
 /**
@@ -257,14 +218,14 @@ async function getStoreCurrencies(
  * control. That must fail loudly here, before any post is created, rather
  * than surface as a confusing locator timeout.
  *
- * @param adminApi Authenticated admin REST context.
+ * @param restApi Authenticated admin REST client.
  * @return Sorted enabled codes and the store default code.
  */
-async function readEnabledCurrencies( adminApi: APIRequestContext ): Promise< {
+async function readEnabledCurrencies( restApi: ApiClient ): Promise< {
 	enabledCodes: string[];
 	defaultCode: string;
 } > {
-	const currencies = await getStoreCurrencies( adminApi );
+	const currencies = await getStoreCurrencies( restApi );
 	const defaultCode = currencies.default.code;
 	expect(
 		defaultCode,
@@ -298,40 +259,38 @@ interface RunPost {
 /**
  * Create a run-owned published post carrying the given block markup.
  *
- * @param adminApi Authenticated admin REST context.
- * @param runId    Playwright run identifier, used to keep the slug unique.
- * @param blocks   Serialized block markup for the post body.
- * @param label    Short label distinguishing this post in the admin list.
+ * @param restApi Authenticated admin REST client.
+ * @param runId   Run identifier, used to keep the slug unique.
+ * @param blocks  Serialized block markup for the post body.
+ * @param label   Short label distinguishing this post in the admin list.
  * @return The created post's ID and permalink.
  */
 async function createRunPost(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	runId: string,
 	blocks: string[],
 	label: string
 ): Promise< RunPost > {
-	const created = await readJson< { id: number; link: string } >(
-		await adminApi.post( POSTS_API, {
-			data: {
-				title: `WooPayments MC switcher ${ label } ${ runId }`,
-				slug: `woopayments-mc-switcher-${ label }-${ runId }`,
-				status: 'publish',
-				content: blocks.join( '\n\n' ),
-			},
-		} ),
-		'Run post creation'
-	);
+	const created = (
+		await restApi.post< { id: number; link: string } >( POSTS_API, {
+			title: `WooPayments MC switcher ${ label } ${ runId }`,
+			slug: `woopayments-mc-switcher-${ label }-${ runId }`,
+			status: 'publish',
+			content: blocks.join( '\n\n' ),
+		} )
+	).data;
 	return { id: created.id, link: created.link };
 }
 
 async function readPostContent(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	postId: number
 ): Promise< string > {
-	const post = await readJson< { content: { raw?: string } } >(
-		await adminApi.get( `${ POSTS_API }/${ postId }?context=edit` ),
-		'Run post content read'
-	);
+	const post = (
+		await restApi.get< { content: { raw?: string } } >(
+			`${ POSTS_API }/${ postId }?context=edit`
+		)
+	).data;
 	return post.content.raw ?? '';
 }
 
@@ -358,24 +317,23 @@ function parseSwitcherBlocks(
 }
 
 async function deleteRunPost(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	postId: number
 ): Promise< void > {
-	const deletion = await adminApi.delete( `${ POSTS_API }/${ postId }`, {
-		data: { force: true },
-	} );
-	if ( ! deletion.ok() ) {
-		throw new Error(
-			`Run post cleanup failed: HTTP ${ deletion.status() }.`
-		);
-	}
+	await restApi.delete( `${ POSTS_API }/${ postId }`, { force: true } );
 	// Verified restore: the run-owned content is gone, so a later run cannot
-	// inherit a stray switcher post.
-	const reread = await adminApi.get( `${ POSTS_API }/${ postId }` );
-	expect(
-		reread.status(),
-		'the force-deleted run post must no longer resolve'
-	).toBe( 404 );
+	// inherit a stray switcher post. The client throws on a non-2xx read, so
+	// the 404 is read off the rejected request rather than a response.
+	let status: number | undefined;
+	try {
+		await restApi.get( `${ POSTS_API }/${ postId }` );
+	} catch ( error ) {
+		status = ( error as { response?: { status?: number } } ).response
+			?.status;
+	}
+	expect( status, 'the force-deleted run post must no longer resolve' ).toBe(
+		404
+	);
 }
 
 /**
@@ -614,25 +572,25 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, baseURL, page, runId } ) => {
+	async ( { restApi, baseURL, page } ) => {
 		const storeBase = requireBaseUrl( baseURL );
-		await readEnabledCurrencies( adminApi );
+		const runId = random();
+		await readEnabledCurrencies( restApi );
 
 		// The block starts with no serialized attributes, so the editor shows
 		// the registered defaults and every change below is observably a
 		// change.
 		const post = await createRunPost(
-			adminApi,
+			restApi,
 			runId,
 			[ switcherBlockMarkup() ],
 			'properties'
 		);
 		expect(
-			parseSwitcherBlocks( await readPostContent( adminApi, post.id ) )
+			parseSwitcherBlocks( await readPostContent( restApi, post.id ) )
 		).toEqual( [ {} ] );
 
 		const pageErrors = trackPageErrors( page, storeBase );
-		await logInAsAdmin( page );
 		const canvas = await openPostEditor( page, post.id );
 		await selectSwitcherBlock( canvas );
 		await openBlockInspector( page );
@@ -693,7 +651,7 @@ test(
 			.poll(
 				async () =>
 					parseSwitcherBlocks(
-						await readPostContent( adminApi, post.id )
+						await readPostContent( restApi, post.id )
 					),
 				{
 					message:
@@ -723,7 +681,7 @@ test(
 
 		expect( pageErrors() ).toEqual( [] );
 
-		await deleteRunPost( adminApi, post.id );
+		await deleteRunPost( restApi, post.id );
 	}
 );
 
@@ -738,16 +696,17 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, baseURL, page, runId } ) => {
+	async ( { restApi, baseURL, page } ) => {
 		const storeBase = requireBaseUrl( baseURL );
-		await readEnabledCurrencies( adminApi );
+		const runId = random();
+		await readEnabledCurrencies( restApi );
 
 		// Two independently configured switchers on one page: every
 		// presentation attribute differs between them, so the shopper-visible
 		// difference is attributable to the saved settings rather than to a
 		// theme default that happened to match.
 		const post = await createRunPost(
-			adminApi,
+			restApi,
 			runId,
 			[
 				switcherBlockMarkup( BASELINE_PRESENTATION ),
@@ -824,7 +783,7 @@ test(
 
 		expect( pageErrors() ).toEqual( [] );
 
-		await deleteRunPost( adminApi, post.id );
+		await deleteRunPost( restApi, post.id );
 	}
 );
 
@@ -839,17 +798,17 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, baseURL, page, runId } ) => {
+	async ( { restApi, baseURL, page } ) => {
 		const storeBase = requireBaseUrl( baseURL );
+		const runId = random();
 		const { enabledCodes, defaultCode } =
-			await readEnabledCurrencies( adminApi );
+			await readEnabledCurrencies( restApi );
 		const additionalCode = enabledCodes.filter(
 			( code ) => code !== defaultCode
 		)[ 0 ];
 		const postTitle = `WooPayments MC switcher publish ${ runId }`;
 
 		const pageErrors = trackPageErrors( page, storeBase );
-		await logInAsAdmin( page );
 
 		// The merchant half of the contract: the block is discoverable by its
 		// own title in the inserter and can be placed in post content.
@@ -878,14 +837,13 @@ test(
 		// Authoritative saved representation: exactly one switcher block
 		// reached the published content, so a double insertion or a silently
 		// dropped block cannot pass.
-		const publishedPost = await readJson< {
-			link: string;
-			status: string;
-			content: { raw?: string };
-		} >(
-			await adminApi.get( `${ POSTS_API }/${ postId }?context=edit` ),
-			'Published post read'
-		);
+		const publishedPost = (
+			await restApi.get< {
+				link: string;
+				status: string;
+				content: { raw?: string };
+			} >( `${ POSTS_API }/${ postId }?context=edit` )
+		).data;
 		expect( publishedPost.status ).toBe( 'publish' );
 		expect(
 			parseSwitcherBlocks( publishedPost.content.raw ?? '' )
@@ -931,6 +889,6 @@ test(
 
 		expect( pageErrors() ).toEqual( [] );
 
-		await deleteRunPost( adminApi, postId );
+		await deleteRunPost( restApi, postId );
 	}
 );

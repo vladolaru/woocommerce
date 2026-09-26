@@ -1,14 +1,11 @@
-import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
-import {
-	expect,
-	tags,
-	test,
-	waitForWordPressLoginReady,
-} from '../../../fixtures/woopayments-native';
-import { admin } from '../../../test-data/data';
-import { openFixtureAdminSession } from '../../../utils/woopayments-native/fixture-settings';
-import { withGuaranteedRestoration } from '../../../utils/woopayments-native/multi-currency-catalog';
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { ADMIN_STATE_PATH } from '../../../playwright.config';
+import { updateIfNeeded, resetValue } from '../../../utils/settings';
+
+test.use( { storageState: ADMIN_STATE_PATH } );
 
 /**
  * Native multi-currency settings management (mc-settings-management-spec).
@@ -19,24 +16,13 @@ import { withGuaranteedRestoration } from '../../../utils/woopayments-native/mul
  *
  * Restoration discipline: every test snapshots the state it will touch via
  * the authoritative REST echoes before mutating, restores it through the same
- * routes afterwards, and verifies the restored echo equals the snapshot. The
- * snapshot surface is the REST projection, not raw option bytes — the
- * raw-byte journaling machinery lives in a closed frozen bundle
- * (drivers/card-testing-protection.ts) that this spec must not import; the
- * remaining absent-option-vs-default-value ambiguity is recorded in the
- * package NOTES as a run-phase residue.
+ * routes afterwards, and verifies the restored echo equals the snapshot.
  *
  * Feature-toggle bound: Core owns the native runtime feature through its
  * standard Features setting. The disable and enable rows use the Core REST
  * settings resource only for reversible setup and restoration, then exercise
  * the merchant transition through the user-visible Features form.
  */
-
-// The same environment-first resolution the harness fixtures use.
-const ADMIN_USERNAME =
-	process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME ?? admin.username;
-const ADMIN_PASSWORD =
-	process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD ?? admin.password;
 
 const SETUP_CONTRACT_PREFIX =
 	'default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:';
@@ -48,11 +34,11 @@ const CONTRACT_IDS = {
 	enableFeature: `${ SETUP_CONTRACT_PREFIX }46::Multi-currency setup › can enable the multi-currency feature`,
 } as const;
 
-const RUNTIME_STATUS_API = '/wp-json/wc-native-payments-e2e/v1/status';
-const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
-const CORE_MULTI_CURRENCY_FEATURE_API =
-	'/wp-json/wc/v3/settings/advanced/woocommerce_feature_multi_currency_enabled';
-const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
+const RUNTIME_STATUS_API = 'wc-native-payments-e2e/v1/status';
+const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
+const CORE_MULTI_CURRENCY_FEATURE_PATH =
+	'advanced/woocommerce_feature_multi_currency_enabled';
+const MULTI_CURRENCY_API = 'wc/v3/payments/multi-currency';
 const MC_SETTINGS_PATH =
 	'/wp-admin/admin.php?page=wc-settings&tab=wcpay_multi_currency';
 const FEATURES_SETTINGS_PATH =
@@ -99,93 +85,20 @@ function requireBaseUrl( baseURL: string | undefined ): string {
 	return baseURL.replace( /\/+$/, '' );
 }
 
-async function readJson< Result = Record< string, unknown > >(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Result > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Result;
-}
-
 async function readPaymentsSettingsCompanions(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	description: string
 ): Promise< PaymentsSettingsCompanions > {
-	const settings = await readJson(
-		await adminApi.get( PAYMENTS_SETTINGS_API ),
-		description
-	);
-	expect( settings.is_wcpay_enabled ).toBe( true );
+	const settings = (
+		await restApi.get< Record< string, unknown > >( PAYMENTS_SETTINGS_API )
+	).data;
+	expect( settings.is_wcpay_enabled, description ).toBe( true );
 	return {
 		enabled_payment_method_ids: settings.enabled_payment_method_ids,
 		is_manual_capture_enabled: settings.is_manual_capture_enabled,
 		is_debug_log_enabled: settings.is_debug_log_enabled,
 		is_payment_request_enabled: settings.is_payment_request_enabled,
 	};
-}
-
-async function logInAsAdmin(
-	page: Page,
-	baseURL: string | undefined
-): Promise< void > {
-	await openFixtureAdminSession( {
-		baseURL: requireBaseUrl( baseURL ),
-		fixtureEnabled: process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true',
-		page,
-		login: async () => {
-			// Connected profiles retain the harness's explicit fresh-login path.
-			await page.context().clearCookies();
-			await page.goto( 'wp-login.php' );
-			await waitForWordPressLoginReady( page );
-			await page
-				.getByLabel( 'Username or Email Address' )
-				.fill( ADMIN_USERNAME );
-			await page
-				.getByRole( 'textbox', { name: 'Password' } )
-				.fill( ADMIN_PASSWORD );
-			await page.getByRole( 'button', { name: 'Log In' } ).click();
-			await page.waitForURL( '**/wp-admin/**' );
-		},
-	} );
-}
-
-type CoreMultiCurrencyFeatureValue = 'yes' | 'no';
-
-async function readCoreMultiCurrencyFeature(
-	adminApi: APIRequestContext
-): Promise< CoreMultiCurrencyFeatureValue > {
-	const { value } = await readJson< { value: unknown } >(
-		await adminApi.get( CORE_MULTI_CURRENCY_FEATURE_API ),
-		'Core Multi-Currency feature read'
-	);
-	if ( value !== 'yes' && value !== 'no' ) {
-		throw new Error(
-			`Core Multi-Currency feature read returned an invalid value: ${ String(
-				value
-			) }`
-		);
-	}
-	return value;
-}
-
-async function setCoreMultiCurrencyFeature(
-	adminApi: APIRequestContext,
-	value: CoreMultiCurrencyFeatureValue
-): Promise< void > {
-	await readJson(
-		await adminApi.post( CORE_MULTI_CURRENCY_FEATURE_API, {
-			data: { value },
-		} ),
-		'Core Multi-Currency feature write'
-	);
-	expect(
-		await readCoreMultiCurrencyFeature( adminApi ),
-		'Core Multi-Currency feature write must be visible through a fresh read'
-	).toBe( value );
 }
 
 function multiCurrencyFeatureRow( page: Page ): Locator {
@@ -198,12 +111,13 @@ function multiCurrencyFeatureRow( page: Page ): Locator {
 }
 
 async function getStoreCurrencies(
-	adminApi: APIRequestContext
+	restApi: ApiClient
 ): Promise< StoreCurrencies > {
-	return readJson< StoreCurrencies >(
-		await adminApi.get( `${ MULTI_CURRENCY_API }/currencies` ),
-		'Multi-currency state read'
-	);
+	return (
+		await restApi.get< StoreCurrencies >(
+			`${ MULTI_CURRENCY_API }/currencies`
+		)
+	).data;
 }
 
 function sortedCodes( record: Record< string, unknown > ): string[] {
@@ -298,9 +212,9 @@ function trackFailedRestResponses(
 // woocommerce-subscriptions build 404s on its admin stylesheet on every admin
 // screen — and Chromium echoes each such network failure as a console error.
 // Those say nothing about the multi-currency surface. The exclusion is scoped
-// by owner and named here rather than being a blanket console filter: every
-// same-origin failure that is not another plugin's asset still counts, and
-// uncaught exceptions always count regardless of source.
+// by owner rather than being a blanket console filter: every same-origin failure
+// that is not another plugin's asset still counts, and uncaught exceptions
+// always count regardless of source.
 const THIRD_PARTY_PLUGIN_ASSET = /\/wp-content\/plugins\/(?!woocommerce\/)/;
 
 function isAmbientForeignResource( url: string, baseUrl: string ): boolean {
@@ -397,16 +311,15 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page, baseURL } ) => {
+	async ( { restApi, page, baseURL } ) => {
 		const storeBase = requireBaseUrl( baseURL );
 
 		// Precondition guard: the connected settings variant only renders for
 		// a connected account. A degraded store must fail here, not pass by
 		// rendering the onboarding CTA around missing data.
-		const runtimeStatus = await readJson(
-			await adminApi.get( RUNTIME_STATUS_API ),
-			'Runtime status read'
-		);
+		const runtimeStatus = (
+			await restApi.get< Record< string, unknown > >( RUNTIME_STATUS_API )
+		).data;
 		expect(
 			{
 				account_connected: runtimeStatus.account_connected,
@@ -416,7 +329,7 @@ test(
 		).toEqual( { account_connected: true, gateway_enabled: true } );
 
 		// The authoritative truth this load must join to.
-		const currencies = await getStoreCurrencies( adminApi );
+		const currencies = await getStoreCurrencies( restApi );
 		const enabledCodes = sortedCodes( currencies.enabled );
 		expect(
 			enabledCodes.length,
@@ -438,7 +351,6 @@ test(
 			'/wc/v3/payments/settings'
 		);
 
-		await logInAsAdmin( page, baseURL );
 		await page.goto( MC_SETTINGS_PATH );
 
 		// The surface is discoverable: its own tab is the active one.
@@ -508,51 +420,49 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page, baseURL } ) => {
-		const originalFeatureValue =
-			await readCoreMultiCurrencyFeature( adminApi );
+	async ( { restApi, page } ) => {
 		const paymentsSettingsBefore = await readPaymentsSettingsCompanions(
-			adminApi,
+			restApi,
 			'Payments settings read before Core feature disable'
 		);
 
-		await withGuaranteedRestoration(
-			async () => {
-				await setCoreMultiCurrencyFeature( adminApi, 'yes' );
-				await logInAsAdmin( page, baseURL );
-				await page.goto( FEATURES_SETTINGS_PATH );
-				const featureRow = multiCurrencyFeatureRow( page );
-				const disableRadio = featureRow.getByRole( 'radio', {
-					name: 'Disable',
-					exact: true,
-				} );
-				await expect( disableRadio ).toBeDisabled();
-				await expect(
-					featureRow.getByText( FEATURE_DISABLE_EXPLANATION )
-				).toBeVisible();
-				await featureRow
-					.getByRole( 'link', {
-						name: 'Disable Multi-Currency',
-						exact: true,
-					} )
-					.click();
-				expect( await readCoreMultiCurrencyFeature( adminApi ) ).toBe(
-					'no'
-				);
-				expect(
-					await readPaymentsSettingsCompanions(
-						adminApi,
-						'Payments settings read after Core feature disable'
-					)
-				).toEqual( paymentsSettingsBefore );
-			},
-			async () => {
-				await setCoreMultiCurrencyFeature(
-					adminApi,
-					originalFeatureValue
-				);
-			}
+		const featureState = await updateIfNeeded(
+			CORE_MULTI_CURRENCY_FEATURE_PATH,
+			'yes'
 		);
+		try {
+			await page.goto( FEATURES_SETTINGS_PATH );
+			const featureRow = multiCurrencyFeatureRow( page );
+			const disableRadio = featureRow.getByRole( 'radio', {
+				name: 'Disable',
+				exact: true,
+			} );
+			await expect( disableRadio ).toBeDisabled();
+			await expect(
+				featureRow.getByText( FEATURE_DISABLE_EXPLANATION )
+			).toBeVisible();
+			await featureRow
+				.getByRole( 'link', {
+					name: 'Disable Multi-Currency',
+					exact: true,
+				} )
+				.click();
+
+			const disabled = (
+				await restApi.get< { value: unknown } >(
+					`wc/v3/settings/${ CORE_MULTI_CURRENCY_FEATURE_PATH }`
+				)
+			).data;
+			expect( disabled.value ).toBe( 'no' );
+			expect(
+				await readPaymentsSettingsCompanions(
+					restApi,
+					'Payments settings read after Core feature disable'
+				)
+			).toEqual( paymentsSettingsBefore );
+		} finally {
+			await resetValue( CORE_MULTI_CURRENCY_FEATURE_PATH, featureState );
+		}
 	}
 );
 
@@ -567,37 +477,35 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page, baseURL } ) => {
-		const originalFeatureValue =
-			await readCoreMultiCurrencyFeature( adminApi );
-
-		await withGuaranteedRestoration(
-			async () => {
-				await setCoreMultiCurrencyFeature( adminApi, 'no' );
-				await logInAsAdmin( page, baseURL );
-				await page.goto( FEATURES_SETTINGS_PATH );
-				const featureRow = multiCurrencyFeatureRow( page );
-				const enableRadio = featureRow.getByRole( 'radio', {
-					name: 'Enable',
-					exact: true,
-				} );
-				await expect( enableRadio ).not.toBeChecked();
-				await enableRadio.check();
-				await page
-					.getByRole( 'button', { name: SAVE_CHANGES_BUTTON } )
-					.click();
-				expect( await readCoreMultiCurrencyFeature( adminApi ) ).toBe(
-					'yes'
-				);
-				await page.goto( MC_SETTINGS_PATH );
-				await expectMultiCurrencySurfaceLoaded( page );
-			},
-			async () => {
-				await setCoreMultiCurrencyFeature(
-					adminApi,
-					originalFeatureValue
-				);
-			}
+	async ( { restApi, page } ) => {
+		const featureState = await updateIfNeeded(
+			CORE_MULTI_CURRENCY_FEATURE_PATH,
+			'no'
 		);
+		try {
+			await page.goto( FEATURES_SETTINGS_PATH );
+			const featureRow = multiCurrencyFeatureRow( page );
+			const enableRadio = featureRow.getByRole( 'radio', {
+				name: 'Enable',
+				exact: true,
+			} );
+			await expect( enableRadio ).not.toBeChecked();
+			await enableRadio.check();
+			await page
+				.getByRole( 'button', { name: SAVE_CHANGES_BUTTON } )
+				.click();
+
+			const enabled = (
+				await restApi.get< { value: unknown } >(
+					`wc/v3/settings/${ CORE_MULTI_CURRENCY_FEATURE_PATH }`
+				)
+			).data;
+			expect( enabled.value ).toBe( 'yes' );
+
+			await page.goto( MC_SETTINGS_PATH );
+			await expectMultiCurrencySurfaceLoaded( page );
+		} finally {
+			await resetValue( CORE_MULTI_CURRENCY_FEATURE_PATH, featureState );
+		}
 	}
 );
