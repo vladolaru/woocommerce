@@ -3857,6 +3857,78 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A native card decline over a fake transport fails the order exactly once with the recorded intent identity.
+	 *
+	 * T.3 Task 2 (`plan-task-t3.md`): joins the two halves T.1 proved separately — the adapter's own
+	 * decline-envelope mapping ({@see self::test_native_charge_decline_envelope_maps_each_card_code})
+	 * and {@see \Automattic\WooCommerce\Tests\Internal\Payments\PaymentProcessingServiceTest::test_woopayments_card_decline_fails_order_with_intent_note_and_allow_meta}'s
+	 * hand-mirrored outcome — by running the recorded REC-1 decline envelope through the real
+	 * {@see PaymentProcessingService::process_checkout}, real {@see WooPaymentsProvider}, this adapter,
+	 * the real {@see WooPaymentsApiClient}, and the real {@see WooPaymentsOrderEffectApplier} against a
+	 * FAKEHTTP transport (`Fixtures/rec-1-intention-declines.json`).
+	 *
+	 * @dataProvider recorded_checkout_decline_envelope_data
+	 *
+	 * @param string $pair                REC-1 fixture pair key.
+	 * @param string $expected_intent_id  Recorded declined PaymentIntent ID.
+	 */
+	public function test_native_card_decline_over_fake_transport_fails_order_once_with_recorded_intent( string $pair, string $expected_intent_id ): void {
+		$order           = $this->create_woopayments_order( '10.00' );
+		$account_service = $this->create_account_service( false );
+		$recorded        = $this->load_recorded_decline_entry( $pair );
+
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( array( 'error' => $recorded['error'] ) ),
+		);
+		$customer_service      = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_rec1_checkout' );
+
+		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
+
+		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_rec1_checkout' ),
+			$provider
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( $expected_intent_id, $order->get_meta( '_intent_id', true ), "The $pair declined PaymentIntent id must survive onto the order." );
+		$this->assertSame( '', (string) $order->get_meta( '_charge_id', true ), "A declined $pair charge must leave no charge id." );
+		$this->assertSame( 1, $http_client->request_count, "The $pair checkout must dispatch exactly one intentions request." );
+
+		$failed_notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => str_contains( $note->content, '<strong>failed</strong> to complete with the following message:' )
+			)
+		);
+		$this->assertCount( 1, $failed_notes, "Exactly one failed-payment note should record the $pair decline." );
+	}
+
+	/**
+	 * REC-1 recorded decline pairs used by the checkout-over-fake-transport test, one card-error and one non-card-declined code.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function recorded_checkout_decline_envelope_data(): array {
+		return array(
+			'generic_decline (card_declined)' => array( 'generic_decline', 'pi_3UJTiNBzWlxcwgpP0GauBpTM' ),
+			'processing_error'                => array( 'processing_error', 'pi_3UJTj2BzWlxcwgpP1ildtn5J' ),
+		);
+	}
+
+	/**
 	 * @testdox Native charge returns a referenced plan before settlement enrichment runs.
 	 */
 	public function test_native_charge_returns_referenced_plan_before_settlement_enrichment(): void {
@@ -4510,7 +4582,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			'body'     => wp_json_encode( $recorded['body'] ),
 		);
 		$account_service       = $this->create_account_service( true );
-		$provider              = $this->create_refund_provider_over_fake_transport( $http_client, $account_service );
+		$provider              = $this->create_provider_over_fake_transport( $http_client, $account_service );
 
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
 			PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, (float) $amount, $reason ),
@@ -4604,21 +4676,355 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Load one recorded PaymentIntent entry's HTTP status, response body, and sent request body by
+	 * fixture file and pair key.
+	 *
+	 * Shared by the T.3 Task 2 checkout-over-fake-transport tests, which each read a different
+	 * `Fixtures/rec-t3-*.json` or `Fixtures/rec-3-eur-charge.json` recording.
+	 *
+	 * @param string $fixture Fixture file name under `Fixtures/`.
+	 * @param string $pair    Fixture pair key.
+	 * @return array{http_status:int,content_type:string,body:array<string,mixed>,request_body:array<string,mixed>}
+	 */
+	private function load_recorded_intent_entry( string $fixture, string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$contents = file_get_contents( __DIR__ . '/Fixtures/' . $fixture );
+		$this->assertIsString( $contents );
+		$decoded = json_decode( $contents, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array(
+					'http_status'  => (int) $entry['response']['http_status'],
+					'content_type' => (string) $entry['response']['content_type'],
+					'body'         => $entry['response']['body'],
+					'request_body' => $entry['request']['body'],
+				);
+			}
+		}
+
+		$this->fail( "Fixture '$fixture' has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * @testdox A native card checkout over a fake transport pays the order exactly once with the recorded intent identity.
+	 *
+	 * T.3 Task 2 (`plan-task-t3.md`): joins the request-shape half
+	 * ({@see self::test_single_card_checkout_without_save_matches_11_1_request_shape}) and the
+	 * order-completion half ({@see \Automattic\WooCommerce\Tests\Internal\Payments\PaymentProcessingServiceTest::test_process_checkout_completes_order_for_completed_outcome})
+	 * by running a real recorded PaymentIntent response through the full production stack:
+	 * {@see PaymentProcessingService::process_checkout} → the real {@see WooPaymentsProvider} → this
+	 * adapter → the real {@see WooPaymentsApiClient} → a FAKEHTTP transport queued with REC-BC
+	 * (`Fixtures/rec-t3-basic-card.json`, USD, no currency conversion) and REC-3
+	 * (`Fixtures/rec-3-eur-charge.json`, EUR charge on a USD account), which also joins the
+	 * multi-currency settlement-meta path end to end for a real converted checkout. The order carries
+	 * one physical product line item, matching the plan's smoke and REC-BC/REC-3's real (non-virtual)
+	 * checkouts, so `payment_complete()` needs processing and lands the order on `processing`
+	 * (`OrderPaymentLifecycleService::apply_status_transition()`), not the bare zero-item order's
+	 * `completed` that `test_process_checkout_completes_order_for_completed_outcome` exercises.
+	 *
+	 * @dataProvider recorded_card_checkout_envelope_data
+	 *
+	 * @param string      $fixture        Fixture file name under `Fixtures/`.
+	 * @param string      $pair           Fixture pair key.
+	 * @param string      $currency       Order currency.
+	 * @param string      $amount         Order total, matching the recorded charge amount.
+	 * @param int         $amount_minor   Recorded amount in minor units, as sent on the wire.
+	 * @param string      $customer_id    Recorded provider customer ID.
+	 * @param string      $intent_id      Recorded PaymentIntent ID.
+	 * @param string      $charge_id      Recorded charge ID.
+	 * @param string      $transaction_id Recorded balance-transaction ID.
+	 * @param string|null $exchange_rate  Expected `_wcpay_multi_currency_stripe_exchange_rate` meta, or `null` when no conversion applies.
+	 */
+	public function test_native_card_checkout_over_fake_transport_pays_order_once_with_recorded_intent( string $fixture, string $pair, string $currency, string $amount, int $amount_minor, string $customer_id, string $intent_id, string $charge_id, string $transaction_id, ?string $exchange_rate ): void {
+		$order = $this->create_woopayments_order( $amount );
+		$order->set_currency( $currency );
+		// A physical line item makes the order need processing, matching the recorded checkout's
+		// real product and the provider smoke's expected post-payment status.
+		$order->add_product( \WC_Helper_Product::create_simple_product(), 1 );
+		$order->set_total( $amount );
+		$order->save();
+
+		$recorded              = $this->load_recorded_intent_entry( $fixture, $pair );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => $recorded['content_type'] ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$customer_service      = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( $customer_id );
+
+		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
+
+		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card_visa' ),
+			$provider
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status(), "The $pair checkout must pay the physical-product order exactly once." );
+		$this->assertSame( 1, $http_client->request_count, "The $pair checkout must dispatch exactly one intentions request." );
+		$this->assertSame( 'POST', $http_client->last_method, "The $pair checkout must dispatch a POST." );
+		$this->assertStringEndsWith( 'intentions', $http_client->last_path, "The $pair checkout must target the intentions route." );
+		$this->assertSame( $intent_id, $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( $charge_id, $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( $transaction_id, $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		$this->assertSame( strtoupper( $currency ), $order->get_meta( '_wcpay_intent_currency', true ) );
+		if ( null !== $exchange_rate ) {
+			$this->assertSame( $exchange_rate, $order->get_meta( '_wcpay_multi_currency_stripe_exchange_rate', true ), "The $pair converted checkout must persist REC-3's settlement exchange rate." );
+		}
+
+		$sent = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $sent, 'The request body sent over the fake transport must be valid JSON.' );
+		$this->assertSame( $amount_minor, $sent['amount'] ?? null, "The $pair request must send the exact recorded minor-unit amount." );
+		$this->assertSame( strtolower( $currency ), $sent['currency'] ?? null );
+		$this->assertSame( $customer_id, $sent['customer'] ?? null );
+		$this->assertSame( $recorded['request_body']['payment_method'], $sent['payment_method'] ?? null, "The $pair request must send the recorded payment method." );
+		$this->assertSame( $recorded['request_body']['capture_method'], $sent['capture_method'] ?? null, "The $pair request must send the recorded capture method." );
+
+		$success_notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => str_contains( $note->content, 'successfully charged' )
+			)
+		);
+		$this->assertCount( 1, $success_notes, "Exactly one success note (the client's `successfully charged` mark-paid wording) should reference the $pair payment." );
+	}
+
+	/**
+	 * REC-BC (USD, no conversion) and REC-3 (EUR charge on a USD account) recorded checkout envelopes.
+	 *
+	 * @return array<string,array{string,string,string,string,int,string,string,string,string,string|null}>
+	 */
+	public function recorded_card_checkout_envelope_data(): array {
+		return array(
+			'usd basic card, no conversion'          => array(
+				'rec-t3-basic-card.json',
+				'basic_card_usd_create_and_confirm',
+				'USD',
+				'10.99',
+				1099,
+				'cus_UsIeTbmGHPc9jY',
+				'pi_3UJhO2BzWlxcwgpP1BndTguC',
+				'ch_3UJhO2BzWlxcwgpP1zmUXW90',
+				'txn_3UJhO2BzWlxcwgpP1qAkBhRS',
+				null,
+			),
+			'eur charge converted to usd settlement' => array(
+				'rec-3-eur-charge.json',
+				'eur_charge_create_and_confirm',
+				'EUR',
+				'12.34',
+				1234,
+				'cus_UsIeTbmGHPc9jY',
+				'pi_3UJWs2BzWlxcwgpP10KzkjsT',
+				'ch_3UJWs2BzWlxcwgpP1y9vRrWr',
+				'txn_3UJWs2BzWlxcwgpP1MLoqLbF',
+				'1.13905',
+			),
+		);
+	}
+
+	/**
+	 * @testdox A native card checkout with save over a fake transport creates exactly one token from the recorded payment method.
+	 *
+	 * T.3 Task 2 (`plan-task-t3.md`): the save path from a real recorded response to exactly one token
+	 * row, joining {@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplierTest::test_requested_token_effects_are_idempotent}'s
+	 * hand-built outcome with a real REC-SUB step-1 signup response
+	 * (`Fixtures/rec-t3-subscription.json`, pair `signup_initial_setup_future_usage`) run through the
+	 * full production stack, including the real {@see \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService}.
+	 */
+	public function test_native_card_checkout_with_save_over_fake_transport_creates_one_token_from_recorded_payment_method(): void {
+		$user_id = $this->factory()->user->create();
+		$order   = $this->create_woopayments_order( '10.99' );
+		$order->set_customer_id( $user_id );
+		$order->save();
+
+		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-subscription.json', 'signup_initial_setup_future_usage' );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => $recorded['content_type'] ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$customer_service      = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_UsIeTbmGHPc9jY' );
+		$token_service = $this->create_token_service(
+			array(
+				'pm_1UJhOFBzWlxcwgpPvcySvyc5' => array(
+					'id'   => 'pm_1UJhOFBzWlxcwgpPvcySvyc5',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 9,
+						'exp_year'  => 2027,
+					),
+				),
+			)
+		);
+
+		// The container's real WooPaymentsOrderEffectApplier singleton resolves its own token
+		// service independently of the one built above, so token creation is exercised through a
+		// locally built applier wired to this test's fake-details token service instead.
+		$order_effect_applier = new WooPaymentsOrderEffectApplier();
+		$order_effect_applier->init(
+			$token_service,
+			wc_get_container()->get( WooPaymentsOrderDataService::class ),
+			$account_service,
+			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service, $token_service, $order_effect_applier );
+
+		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card_visa', array( 'save_payment_method' => true ) ),
+			$provider
+		);
+
+		$order  = wc_get_order( $order->get_id() );
+		$tokens = \WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
+		$token  = reset( $tokens );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $http_client->request_count );
+
+		$sent = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $sent, 'The request body sent over the fake transport must be valid JSON.' );
+		$this->assertSame( 'off_session', $sent['setup_future_usage'] ?? null, 'A save request must ask for an off-session reusable PaymentMethod, matching REC-SUB.' );
+
+		$this->assertCount( 1, $tokens, 'Exactly one token must be created from the recorded payment method.' );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertSame( 'pm_1UJhOFBzWlxcwgpPvcySvyc5', $token->get_token(), "The saved token must be the exact payment method REC-SUB's signup response returned." );
+		$this->assertSame( 'visa', $token->get_card_type(), "The saved token's card brand must match REC-SUB's recorded payment method." );
+		$this->assertSame( '4242', $token->get_last4(), "The saved token's last4 must match REC-SUB's recorded payment method." );
+		$this->assertSame( '09', $token->get_expiry_month(), "The saved token's expiry month must match REC-SUB's recorded payment method, zero-padded as WC_Payment_Token_CC::set_expiry_month() normalizes it." );
+		$this->assertSame( '2027', $token->get_expiry_year(), "The saved token's expiry year must match REC-SUB's recorded payment method." );
+		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+	}
+
+	/**
+	 * @testdox A scheduled renewal charge over a fake transport pays the renewal order exactly once with the recorded off-session intent.
+	 *
+	 * T.3 Task 2 (`plan-task-t3.md`): joins
+	 * {@see self::test_scheduled_subscription_charge_uses_merchant_initiated_recurring_request_shape}'s
+	 * merchant-initiated request shape with a real off-session REC-SUB step-2 renewal response
+	 * (`Fixtures/rec-t3-subscription.json`, pair `renewal_off_session`), built the same way that test
+	 * builds its scheduled-renewal context, run through the full production stack against a FAKEHTTP
+	 * transport, and asserts the renewal order actually ends up paid (`completed`,
+	 * `OrderPaymentLifecycleService::apply_status_transition()`) with exactly one `successfully
+	 * charged` note — not just that the outcome is reported successful. REC-SUB step 2 sends no
+	 * `mandate` and no `payment_method_update_data` (`data/rec-t3-api-recordings.md`), so the wire
+	 * comparison covers money, customer, payment method, and `off_session`; `metadata` is native's own
+	 * order-derived payload (`WooPaymentsIntentRequestBuilder::metadata_from_order()`, filterable via
+	 * `wcpay_metadata_from_order`), not the recording's placeholder `metadata` (`{rec: 'REC-SUB', ...}`,
+	 * per the plan's documented recording-shape caveat), so it is not compared byte-for-byte here.
+	 */
+	public function test_scheduled_renewal_over_fake_transport_pays_renewal_order_with_recorded_intent(): void {
+		$user_id     = $this->factory()->user->create();
+		$order       = $this->create_woopayments_order( '10.99' );
+		$saved_token = $this->create_card_token( $user_id, 'pm_1UJhOFBzWlxcwgpPvcySvyc5' );
+		$order->set_customer_id( $user_id );
+		$order->add_payment_token( $saved_token );
+		$order->save();
+
+		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-subscription.json', 'renewal_off_session' );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => $recorded['content_type'] ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$customer_service      = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_UsIeTbmGHPc9jY' );
+
+		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
+
+		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'',
+				array(
+					'payment_token'       => (string) $saved_token->get_id(),
+					'save_payment_method' => false,
+				),
+				array( 'scheduled_subscription_payment' => true )
+			),
+			$provider
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertSame( 'pi_3UJhOUBzWlxcwgpP0FGWIQQW', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'ch_3UJhOUBzWlxcwgpP0xdwB1w8', $order->get_meta( '_charge_id', true ) );
+
+		$sent = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $sent, 'The request body sent over the fake transport must be valid JSON.' );
+		$this->assertSame( 'pm_1UJhOFBzWlxcwgpPvcySvyc5', $sent['payment_method'] ?? null, 'The renewal must resolve and charge the saved token, matching REC-SUB step 2.' );
+		$this->assertSame( 'cus_UsIeTbmGHPc9jY', $sent['customer'] ?? null );
+		$this->assertSame( 1099, $sent['amount'] ?? null );
+		$this->assertSame( 'usd', $sent['currency'] ?? null );
+		$this->assertTrue( $sent['off_session'] ?? null, 'A scheduled renewal must send off_session true, matching REC-SUB step 2.' );
+		$this->assertArrayNotHasKey( 'setup_future_usage', $sent, 'A scheduled renewal must not request a new setup_future_usage.' );
+		$this->assertSame( 'completed', $order->get_status(), 'A succeeded off-session renewal must pay the renewal order exactly once (payment_complete(), OrderPaymentLifecycleService::apply_status_transition()).' );
+
+		$success_notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => str_contains( $note->content, 'successfully charged' )
+			)
+		);
+		$this->assertCount( 1, $success_notes, "Exactly one success note (the client's `successfully charged` mark-paid wording) should reference the renewal payment." );
+	}
+
+	/**
 	 * Build a real WooPayments provider whose only isolated seam is the raw HTTP transport.
 	 *
 	 * The production provider, adapter, API client and order-effect applier all
 	 * remain in use, following the pattern
 	 * `PaymentProcessingServiceTest::review_payment_intent_provider` established.
 	 *
-	 * @param FakeWooPaymentsHttpClient $http_client     Fake raw transport queued with a recorded response.
-	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param FakeWooPaymentsHttpClient          $http_client           Fake raw transport queued with a recorded response.
+	 * @param WooPaymentsAccountService          $account_service       WooPayments account service.
+	 * @param WooPaymentsCustomerService|null    $customer_service      Customer service; a bare mock (no configured methods) when omitted, matching the refund path's needs.
+	 * @param WooPaymentsTokenService|null       $token_service         Token service; the default fake-details token service when omitted.
+	 * @param WooPaymentsOrderEffectApplier|null $order_effect_applier  Order effect applier; the container's real singleton when omitted. Pass a locally built one wired to `$token_service` when a test needs its own fake payment-method details for token creation, since the container's singleton resolves its own token service independently of this method's `$token_service` argument.
 	 * @return WooPaymentsProvider
 	 */
-	private function create_refund_provider_over_fake_transport( FakeWooPaymentsHttpClient $http_client, WooPaymentsAccountService $account_service ): WooPaymentsProvider {
+	private function create_provider_over_fake_transport( FakeWooPaymentsHttpClient $http_client, WooPaymentsAccountService $account_service, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null ): WooPaymentsProvider {
 		$api_client = new WooPaymentsApiClient();
 		$api_client->init( $http_client, $account_service );
 
-		$adapter = $this->create_adapter( null, $api_client, null, null, $account_service );
+		$adapter = $this->create_adapter( null, $api_client, $customer_service, $token_service, $account_service );
 
 		$provider = new WooPaymentsProvider();
 		$provider->init(
@@ -4626,7 +5032,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$api_client,
 			$account_service,
 			null,
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+			$order_effect_applier ?? wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 
 		return $provider;
@@ -4677,7 +5083,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			'body'     => wp_json_encode( $recorded['body'] ),
 		);
 		$account_service       = $this->create_account_service( true );
-		$provider              = $this->create_refund_provider_over_fake_transport( $http_client, $account_service );
+		$provider              = $this->create_provider_over_fake_transport( $http_client, $account_service );
 
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
 			PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 100.00, $reason ),

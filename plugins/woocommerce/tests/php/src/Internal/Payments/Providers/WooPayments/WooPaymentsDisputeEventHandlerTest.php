@@ -478,22 +478,27 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 * Client `os:591-594`: `mark_payment_dispute_created()` dedupes on the note's
 	 * own identity, so a replay writes neither a second note nor a second
 	 * `on-hold` transition.
+	 *
+	 * T.3 Task 2 (`plan-task-t3.md`): fed the REC-DC recorded dispute object
+	 * (`Fixtures/rec-t3-dispute-created-events.json`, pair `accept_case_created`) instead of the
+	 * hand-built `get_created_event_object()` fixture.
 	 */
 	public function test_replayed_created_webhook_does_not_duplicate_record(): void {
-		$order = $this->create_disputable_order();
+		$order   = $this->create_disputable_order();
+		$dispute = $this->load_recorded_dispute_object( 'accept_case_created' );
 
 		$this->invoke_private(
 			'process_dispute_created',
-			array( $order, $this->get_created_event_object( 'dp_e1', 'needs_response' ), 'ch_multi', 'txn_multi' )
+			array( $order, $dispute, 'ch_multi', 'txn_multi' )
 		);
 		$order = wc_get_order( $order->get_id() );
 		$this->invoke_private(
 			'process_dispute_created',
-			array( $order, $this->get_created_event_object( 'dp_e1', 'needs_response' ), 'ch_multi', 'txn_multi' )
+			array( $order, $dispute, 'ch_multi', 'txn_multi' )
 		);
 
 		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( array( 'dp_e1' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertSame( array( $dispute['id'] ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
 		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ), 'A replayed created webhook must leave exactly one created note.' );
 		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed created webhook must keep the order on-hold.' );
 	}
@@ -632,6 +637,28 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			'reason'           => 'fraudulent',
 			'evidence_details' => array( 'due_by' => 1893456000 ),
 		);
+	}
+
+	/**
+	 * Load one recorded REC-DC dispute object (the webhook's `data.object`) by fixture pair key.
+	 *
+	 * @param string $pair REC-DC fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_dispute_object( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-t3-dispute-created-events.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry['body']['data']['object'];
+			}
+		}
+
+		$this->fail( "REC-DC fixture has no entry for pair '$pair'." );
 	}
 
 	/**

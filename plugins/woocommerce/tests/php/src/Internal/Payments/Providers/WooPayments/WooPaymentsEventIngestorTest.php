@@ -2251,15 +2251,27 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox charge.dispute.created resolves the order by charge ID and places it on hold.
+	 *
+	 * T.3 Task 2 (`plan-task-t3.md`): fed the REC-DC `charge.dispute.created` webhook body
+	 * (`Fixtures/rec-t3-dispute-created-events.json`, pair `accept_case_created`) forwarded from local
+	 * WPCOM, instead of the hand-built `create_dispute_event()` envelope. The order's `_charge_id`
+	 * meta is set to REC-DC's own recorded charge id so the event resolves to this order exactly as
+	 * a real webhook would, and the live-mode filter is forced to match REC-DC's own `livemode: false`
+	 * (the recording was captured in Stripe test mode; `create_dispute_event()`'s fixtures omit
+	 * `livemode` entirely, which skips this check rather than agreeing with it). The amount (5000
+	 * minor units) coincides with the prior hand-built fixture, so the `$50.00` assertion is
+	 * unchanged; the due-by date is REC-DC's own recorded `evidence_details.due_by` (1791071999 UTC =
+	 * 2026-10-03).
 	 */
 	public function test_dispute_created_marks_order_on_hold(): void {
 		$order = $this->create_woopayments_order();
 		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->update_meta_data( '_charge_id', 'ch_3UJbTlBzWlxcwgpP0vNaexjT' );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_123' );
 		$order->save();
+		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
 
-		$this->sut->process( $this->create_dispute_event( 'charge.dispute.created', 'needs_response' ) );
+		$this->sut->process( $this->load_recorded_dispute_created_event( 'accept_case_created' ) );
 
 		$order = wc_get_order( $order->get_id() );
 
@@ -2271,13 +2283,71 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				'Payment has been disputed for',
 				'&#36;</span>50.00',
 				'with reason "Transaction unauthorized"',
-				'Response due by July 1, 2026',
+				'Response due by October 3, 2026',
 				'path=%2Fpayments%2Ftransactions%2Fdetails',
-				'id=ch_123',
+				'id=ch_3UJbTlBzWlxcwgpP0vNaexjT',
 				'transaction_id=txn_123',
 			)
 		);
 		$this->assertSame( '', $order->get_meta( '_dispute_id', true ) );
+	}
+
+	/**
+	 * @testdox A replayed charge.dispute.created delivered in a later request still runs the handler only once.
+	 *
+	 * Mutation-review finding M09 (`task-2-mutation-review.md`): the recorded replay test previously
+	 * covered only an in-request replay, where `wp_cache_add()`'s own claim blocks the second
+	 * `process()` call regardless of whether the durable `is_event_already_processed()` transient
+	 * check runs at all — so disabling that durable check left the class-level suite green. A real
+	 * webhook retry is a *later* request, where the in-request object-cache claim from the first
+	 * delivery is gone and only the durable transient stands between the handler and a second run.
+	 * This test evicts the claim key the same way a later request would (`wp_cache_delete()`, the
+	 * pattern this file's own `tearDown()` already uses for cleanup) between the two `process()`
+	 * calls, then counts `woocommerce_payments_after_webhook_delivery` — fired once per real
+	 * `dispatch()` call, independent of the dispute-note's own content-based dedupe — to prove the
+	 * handler itself ran exactly once, not just that the note happened to render identically twice.
+	 */
+	public function test_dispute_created_replay_in_a_later_request_runs_the_handler_once(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_charge_id', 'ch_3UJbTlBzWlxcwgpP0vNaexjT' );
+		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_123' );
+		$order->save();
+		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+
+		$event          = $this->load_recorded_dispute_created_event( 'accept_case_created' );
+		$delivery_count = 0;
+		$count_delivery = function () use ( &$delivery_count ): void {
+			++$delivery_count;
+		};
+		add_action( 'woocommerce_payments_after_webhook_delivery', $count_delivery );
+
+		$this->sut->process( $event );
+		// Evict the in-request claim, simulating a webhook retry arriving in a later request once
+		// the object-cache entry from the first delivery is gone.
+		wp_cache_delete( 'wcpay_claimed_event_' . md5( (string) $event['id'] ), 'woopayments_events' );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $delivery_count, 'A replay in a later request must still run the handler only once (the durable processed-event marker, not just the in-request claim).' );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed created webhook must keep the order on-hold, not toggle it again.' );
+		$this->assertCount(
+			1,
+			array_values(
+				array_filter(
+					wc_get_order_notes(
+						array(
+							'order_id' => $order->get_id(),
+							'type'     => 'any',
+						)
+					),
+					static fn( $note ): bool => str_contains( (string) $note->content, 'Payment has been disputed for' )
+				)
+			),
+			'A replayed created webhook must leave exactly one created-dispute note.'
+		);
 	}
 
 	/**
@@ -3821,7 +3891,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An event with the same ID is processed at most once within the marker TTL.
+	 * @testdox An event with the same ID is processed at most once within the marker TTL, including a replay after the in-request claim is gone.
+	 *
+	 * Mutation-review finding M09 (`task-2-mutation-review.md`): evicts the in-request claim cache
+	 * between the two `process()` calls, so this proves durable (cross-request) dedup via
+	 * `is_event_already_processed()`'s transient, not merely the in-request `wp_cache_add()` claim
+	 * that a same-request double-delivery would already block on its own.
 	 */
 	public function test_process_deduplicates_events_with_the_same_id(): void {
 		$handler = $this->create_recording_notification_handler();
@@ -3829,9 +3904,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$event   = $this->create_notification_event( 'evt_dedup', 'dedup-note-' . wp_generate_uuid4() );
 
 		$sut->process( $event );
+		wp_cache_delete( 'wcpay_claimed_event_' . md5( 'evt_dedup' ), 'woopayments_events' );
 		$sut->process( $event );
 
-		$this->assertCount( 1, $handler->processed_events, 'The same event ID must be handled only once.' );
+		$this->assertCount( 1, $handler->processed_events, 'The same event ID must be handled only once, even once the in-request claim is gone.' );
 	}
 
 	/**
@@ -4687,6 +4763,28 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				'object' => $object,
 			),
 		);
+	}
+
+	/**
+	 * Load one recorded REC-DC `charge.dispute.created` webhook body by fixture pair key.
+	 *
+	 * @param string $pair REC-DC fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_dispute_created_event( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-t3-dispute-created-events.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry['body'];
+			}
+		}
+
+		$this->fail( "REC-DC fixture has no entry for pair '$pair'." );
 	}
 
 	/**

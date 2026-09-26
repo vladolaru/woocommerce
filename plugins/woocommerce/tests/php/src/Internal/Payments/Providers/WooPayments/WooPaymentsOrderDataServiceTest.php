@@ -131,9 +131,102 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Fee-breakdown notes render from a captured timeline event.
+	 *
+	 * T.3 Task 2 (`plan-task-t3.md`): fed the recorded REC-5a R-b `captured` timeline events
+	 * (`Fixtures/rec-5a-timelines.json`, USD no-conversion and EUR-converted pairs) instead of a
+	 * hand-built event and an uncited expected note. Expected HTML is the client's own oracle:
+	 * `WC_Payments_Captured_Event_Note::generate_html_note_from_breakdown()`
+	 * (`includes/class-wc-payments-captured-event-note.php`, 11.1.0), called the same way production
+	 * calls it at `includes/class-wc-payments-order-service.php:869`
+	 * (`$details = ( new WC_Payments_Captured_Event_Note( $captured_event ) )->generate_html_note();`).
+	 *
+	 * For the EUR-converted row, native's FX line (this class) reads
+	 * `fee_breakdown_v1.sources.balance_transaction_exchange_rate` (1.13905) while the client's own
+	 * renderer recomputes the rate as `store_amount_captured / customer_amount_captured` from
+	 * `transaction_details` (1.13938) — a genuine, pre-existing client/native disagreement on that one
+	 * digit string, not a native defect this test can honestly assert against (F-FXRATE, T.7). Per
+	 * N-085 only the rate digits are left unasserted; the surrounding text both sides agree on
+	 * (`1.00 EUR → ` and ` USD: $14.06 USD`, the shared `to_amount`) is asserted, along with every
+	 * other line (fee, sub-rows, net payout), which matches the client's output exactly.
+	 *
+	 * @dataProvider recorded_captured_event_fee_note_data
+	 *
+	 * @param string      $pair               REC-5a R-b fixture pair key.
+	 * @param string|null $expected_note      Expected full note, or null when only fragments are asserted (EUR row).
+	 * @param string[]    $expected_fragments Expected note fragments to assert when `$expected_note` is null.
+	 * @param string|null $expected_pattern   Regular expression the note must match, when asserting a shape (e.g. the FX line carrying a rate) without pinning specific digits.
 	 */
-	public function test_get_fee_breakdown_note_from_timeline_event_renders_captured_event(): void {
-		$this->assertSame( $this->get_expected_fee_note(), $this->sut->get_fee_breakdown_note_from_timeline_event( $this->get_captured_timeline_event() ) );
+	public function test_get_fee_breakdown_note_from_timeline_event_renders_captured_event( string $pair, ?string $expected_note, array $expected_fragments, ?string $expected_pattern = null ): void {
+		$note = $this->sut->get_fee_breakdown_note_from_timeline_event( $this->load_recorded_captured_timeline_event( $pair ) );
+
+		if ( null !== $expected_note ) {
+			$this->assertSame( $expected_note, $note );
+		} else {
+			foreach ( $expected_fragments as $fragment ) {
+				$this->assertStringContainsString( $fragment, $note, "The $pair note must contain the client-verified fragment: $fragment" );
+			}
+		}
+		if ( null !== $expected_pattern ) {
+			$this->assertMatchesRegularExpression( $expected_pattern, $note, "The $pair note's FX line must carry a rate, even though the digits themselves are unasserted (F-FXRATE)." );
+		}
+	}
+
+	/**
+	 * REC-5a R-b recorded `captured` timeline events (USD no-conversion, EUR converted) and their
+	 * client-verified expected note content.
+	 *
+	 * @return array<string,array{string,string|null,string[],string|null}>
+	 */
+	public function recorded_captured_event_fee_note_data(): array {
+		return array(
+			'usd_full_refund_free_text_reason (no conversion)'        => array(
+				'usd_full_refund_free_text_reason',
+				'<strong>Fee details:</strong><div class="captured-event-details">' . PHP_EOL
+					. '<p>Fee (2.9% + $0.30): $0.62 USD</p>' . PHP_EOL
+					. '<p>Net payout: $10.37 USD</p>' . PHP_EOL
+					. '</div>',
+				array(),
+			),
+			'eur_full_refund (converted, FX-rate digits excluded, T.7 F-FXRATE)' => array(
+				'eur_full_refund',
+				null,
+				array(
+					'<p>1.00 EUR → ',
+					' USD: $14.06 USD</p>',
+					'<p>Fee (3.9% + $0.30): $0.85 USD</p>' . PHP_EOL,
+					'<p>&nbsp;&nbsp;&nbsp;&nbsp;Base fee: 2.9% + $0.30</p>' . PHP_EOL,
+					'<p>&nbsp;&nbsp;&nbsp;&nbsp;Currency conversion fee: 1%</p>' . PHP_EOL,
+					'<p>Net payout: $13.21 USD</p>' . PHP_EOL,
+				),
+				'/1\.00 EUR → \d+\.\d{5} USD: \$14\.06 USD/u',
+			),
+		);
+	}
+
+	/**
+	 * Load one recorded REC-5a R-b `captured` timeline event by fixture pair key.
+	 *
+	 * @param string $pair REC-5a R-b fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_captured_timeline_event( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-5a-timelines.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				foreach ( $entry['response']['body']['data'] as $event ) {
+					if ( is_array( $event ) && 'captured' === ( $event['type'] ?? null ) ) {
+						return $event;
+					}
+				}
+			}
+		}
+
+		$this->fail( "REC-5a R-b fixture has no captured event for pair '$pair'." );
 	}
 
 	/**
