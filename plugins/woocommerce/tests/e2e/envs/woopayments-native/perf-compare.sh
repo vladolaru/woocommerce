@@ -266,7 +266,7 @@ capture_page() {
 	local state="$1" page="$2" path="$3" suffix="$4" cookie="$5" sample_kind="$6"
 	local trace_state="${7:-}"
 	local headers="$TEMP_ROOT/$state-$page-$suffix.headers" body="$TEMP_ROOT/$state-$page-$suffix.body"
-	local result status final_url final_path expected_path queries memory hooks http actual_state tier owner bootstrap probe_header time_total
+	local result status final_url final_path expected_path queries memory hooks http actual_state tier owner bootstrap probe_header time_total gateway_first gateway_second
 	if [[ -n "$trace_state" ]]; then
 		result="$(PERF_COMPARE_SAMPLE_KIND="$sample_kind" curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -D "$headers" -o "$body" -w '%{http_code}\t%{url_effective}\t%{time_total}\n' -H "X-WooCommerce-Native-Payments-Perf-Trace: $trace_state" "$REQUEST_BASE$path")" || result=''
 	else
@@ -284,13 +284,14 @@ EOF
 	if [[ "$final_path" != "$expected_path" ]]; then echo "Invalid $suffix ($state/$page): final path $final_path, expected $expected_path." >&2; return 1; fi
 	probe_header="$(final_probe_header "$headers")"
 	if [[ "$probe_header" == 'error=attribution-artifacts' ]]; then echo "Invalid $suffix ($state/$page): probe could not write required attribution artifacts." >&2; return 1; fi
-	if [[ ! "$probe_header" =~ ^state=[a-z_]+\;tier=[a-z]+\;owner=(native|plugin)\;bootstrap_calls=[0-9]+\;queries=[0-9]+\;used_peak_bytes=[0-9]+\;hooks=[0-9]+\;files=[0-9]+\;http=[0-9]+$ ]]; then echo "Invalid $suffix ($state/$page): missing or malformed probe header." >&2; return 1; fi
+	if [[ ! "$probe_header" =~ ^state=[a-z_]+\;tier=[a-z]+\;owner=(native|plugin)\;bootstrap_calls=[0-9]+\;queries=[0-9]+\;used_peak_bytes=[0-9]+\;hooks=[0-9]+\;files=[0-9]+\;http=[0-9]+\;gateway_first_queries=[0-9]+\;gateway_second_queries=[0-9]+$ ]]; then echo "Invalid $suffix ($state/$page): missing or malformed probe header." >&2; return 1; fi
 	actual_state="$(probe_field "$probe_header" state)"; tier="$(probe_field "$probe_header" tier)"; owner="$(probe_field "$probe_header" owner)"; bootstrap="$(probe_field "$probe_header" bootstrap_calls)"
 	queries="$(probe_field "$probe_header" queries)"; memory="$(probe_field "$probe_header" used_peak_bytes)"; hooks="$(probe_field "$probe_header" hooks)"; http="$(probe_field "$probe_header" http)"
+	gateway_first="$(probe_field "$probe_header" gateway_first_queries)"; gateway_second="$(probe_field "$probe_header" gateway_second_queries)"
 	case "$state" in baseline_noop) expected_tier=noop; expected_owner=native ;; active_plugin) expected_tier=active; expected_owner=plugin ;; active_native) expected_tier=active; expected_owner=native ;; *) expected_tier="$state"; expected_owner=native ;; esac
 	if [[ "$actual_state" != "$state" || "$tier" != "$expected_tier" || "$owner" != "$expected_owner" || "$bootstrap" != '1' ]]; then echo "Invalid $suffix ($state/$page): observed state=$actual_state tier=$tier owner=$owner bootstrap_calls=$bootstrap." >&2; return 1; fi
 	if [[ "$http" != 0 ]]; then echo "Invalid $suffix ($state/$page): observed $http outbound HTTP requests." >&2; return 1; fi
-	printf '%s\t%s\t%s\t%s\n' "$queries" "$memory" "$hooks" "$time_total" > "$TEMP_ROOT/$state-$page-$suffix.metrics"
+	printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$queries" "$memory" "$hooks" "$time_total" "$gateway_first" "$gateway_second" > "$TEMP_ROOT/$state-$page-$suffix.metrics"
 }
 
 capture_attribution() {
@@ -356,6 +357,59 @@ write_rows() {
 	done
 }
 
+# Appends one 'gateway' row per state to $OUTPUT, using the checkout-page capture's gateway-init
+# counters. Column reuse (matching the existing 'checkout_median' timing row's convention):
+# queries = first-resolution query count, used_peak_bytes = second (warm) call query count.
+# Every native state is checked for a zero warm call; disabled/available/connected/active_native
+# are also checked against the first-resolution delta against their reference state (D11).
+write_gateway_rows() {
+	local state reference metrics gateway_first gateway_second reference_metrics reference_gateway_first qd verdict
+	local states=(baseline_noop disabled available connected active_native active_plugin)
+	for state in "${states[@]}"; do
+		if [[ "$MODE" == 'ci' && "$state" != 'baseline_noop' && "$state" != 'disabled' && "$state" != 'active_native' ]]; then continue; fi
+		metrics="$TEMP_ROOT/$state-checkout-capture.metrics"
+		if [[ ! -f "$metrics" ]]; then printf '%s\tgateway\tNA\tNA\tNA\tinvalid\tNA\tNA\tNA\tfail\n' "$state" >> "$OUTPUT"; GATE_FAILED=1; continue; fi
+		IFS=$'\t' read -r _ _ _ _ gateway_first gateway_second < "$metrics"
+
+		# active_plugin is the legacy reference plugin, not one of D11's native states: its warm-call
+		# cost is recorded for visibility and stays available below as active_native's qd reference,
+		# but a nonzero value here is the reference plugin's own cost, not a native regression, so it
+		# never fails the run.
+		if [[ "$state" == 'active_plugin' ]]; then
+			printf '%s\tgateway\t%s\t%s\tNA\t%s\t0\tNA\tNA\tinformational\n' "$state" "$gateway_first" "$gateway_second" "$state" >> "$OUTPUT"
+			continue
+		fi
+
+		if [[ "$MODE" == 'ci' && "$state" == 'active_native' ]]; then
+			# CI does not sample active_plugin, so the first-resolution delta stays not_evaluated; the
+			# warm-call-zero rule needs no reference state and still gates the run either way.
+			verdict=not_evaluated
+			if [[ "$gateway_second" != '0' ]]; then verdict=fail; GATE_FAILED=1; fi
+			printf '%s\tgateway\t%s\t%s\tNA\tnot_evaluated\tNA\tNA\tNA\t%s\n' "$state" "$gateway_first" "$gateway_second" "$verdict" >> "$OUTPUT"
+			continue
+		fi
+
+		if [[ "$state" == 'baseline_noop' ]]; then
+			reference="$state"; qd=0
+		else
+			if [[ "$state" == 'active_native' ]]; then reference='active_plugin'; else reference='baseline_noop'; fi
+			reference_metrics="$TEMP_ROOT/$reference-checkout-capture.metrics"
+			if [[ ! -f "$reference_metrics" ]]; then printf '%s\tgateway\t%s\t%s\tNA\t%s\tNA\tNA\tNA\tfail\n' "$state" "$gateway_first" "$gateway_second" "$reference" >> "$OUTPUT"; GATE_FAILED=1; continue; fi
+			IFS=$'\t' read -r _ _ _ _ reference_gateway_first _ < "$reference_metrics"
+			qd=$((gateway_first - reference_gateway_first))
+		fi
+		verdict=pass
+		if [[ "$gateway_second" != '0' ]]; then verdict=fail; fi
+		if [[ "$state" == 'active_native' ]]; then
+			if [[ $qd -gt 2 ]]; then verdict=fail; fi
+		elif [[ "$state" != 'baseline_noop' ]]; then
+			if [[ $qd -gt 1 ]]; then verdict=fail; fi
+		fi
+		if [[ "$verdict" == 'fail' ]]; then GATE_FAILED=1; fi
+		printf '%s\tgateway\t%s\t%s\tNA\t%s\t%s\tNA\tNA\t%s\n' "$state" "$gateway_first" "$gateway_second" "$reference" "$qd" "$verdict" >> "$OUTPUT"
+	done
+}
+
 timing_gate() {
 	local pair state first second cookie metrics elapsed result median_native median_plugin percentage verdict
 	local native_times="$TEMP_ROOT/native-times" plugin_times="$TEMP_ROOT/plugin-times"
@@ -369,7 +423,7 @@ timing_gate() {
 				invalid=1
 			else
 				metrics="$TEMP_ROOT/$state-checkout-timing-$pair.metrics"
-				IFS=$'\t' read -r _ _ _ elapsed < "$metrics"
+				IFS=$'\t' read -r _ _ _ elapsed _ _ < "$metrics"
 				if [[ "$state" == 'active_native' ]]; then printf '%s\n' "$elapsed" >> "$native_times"; else printf '%s\n' "$elapsed" >> "$plugin_times"; fi
 			fi
 			if [[ "$state" == active_plugin ]] && ! reset_database; then invalid=1; fi
@@ -419,6 +473,7 @@ main() {
 		SAMPLE_FAILED=1
 	fi
 	write_rows
+	write_gateway_rows
 	if [[ "$MODE" == local ]]; then
 		if [[ $SAMPLE_FAILED -ne 0 ]]; then
 			printf 'active_native\tcheckout_median\tNA\tNA\tNA\tactive_plugin\tNA\tNA\tNA\tNA,NA,NA,fail\n' >> "$OUTPUT"

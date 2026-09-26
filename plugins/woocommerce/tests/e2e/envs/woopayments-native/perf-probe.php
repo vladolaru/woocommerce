@@ -57,6 +57,20 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 	private $query_trace = array();
 
 	/**
+	 * Queries made by the first in-request gateway resolution, on the checkout page only.
+	 *
+	 * @var int
+	 */
+	private $gateway_first_queries = 0;
+
+	/**
+	 * Queries made by a second, immediately following gateway resolution, on the checkout page only.
+	 *
+	 * @var int
+	 */
+	private $gateway_second_queries = 0;
+
+	/**
 	 * Handle the runner's product and reference-plugin operations.
 	 *
 	 * Arguments are supplied by `wp eval-file` in its local `$args` variable.
@@ -269,7 +283,32 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 			add_filter( 'query', array( $this, 'handle_query' ), 9999 );
 		}
 		add_action( 'plugins_loaded', array( $this, 'make_reference_plugin_win' ), PHP_INT_MIN );
+		add_action( 'wp', array( $this, 'measure_gateway_resolution_queries' ), PHP_INT_MIN );
 		add_action( 'shutdown', array( $this, 'send_measurement_header' ), 0 );
+	}
+
+	/**
+	 * Measure the gateway-init query cost on the checkout page, before the page's own render resolves it.
+	 *
+	 * Runs on 'wp', ahead of template rendering, so the first call here is the first availability pass
+	 * after `wp` rather than a call already warmed by checkout's own rendering. The checkout page resolves
+	 * payment gateways during rendering regardless of this probe, so forcing it here does not add queries
+	 * to the request total the shared `queries` measurement counts; it only measures when they happen.
+	 *
+	 * @return void
+	 */
+	public function measure_gateway_resolution_queries(): void {
+		if ( ! function_exists( 'is_checkout' ) || ! is_checkout() || ! function_exists( 'WC' ) ) {
+			return;
+		}
+
+		$before = get_num_queries();
+		WC()->payment_gateways()->get_available_payment_gateways();
+		$this->gateway_first_queries = get_num_queries() - $before;
+
+		$before = get_num_queries();
+		WC()->payment_gateways()->get_available_payment_gateways();
+		$this->gateway_second_queries = get_num_queries() - $before;
 	}
 
 	/**
@@ -429,7 +468,7 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 			header( 'X-WooCommerce-Native-Payments-Probe: error=attribution-artifacts' );
 			return;
 		}
-		header( sprintf( 'X-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%d;queries=%d;used_peak_bytes=%d;hooks=%d;files=%d;http=%d', $state, $tiers[ $state ], $owner, $this->bootstrap_calls, get_num_queries(), memory_get_peak_usage( false ), count( $wp_filter ), count( get_included_files() ), $this->http_requests ) );
+		header( sprintf( 'X-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%d;queries=%d;used_peak_bytes=%d;hooks=%d;files=%d;http=%d;gateway_first_queries=%d;gateway_second_queries=%d', $state, $tiers[ $state ], $owner, $this->bootstrap_calls, get_num_queries(), memory_get_peak_usage( false ), count( $wp_filter ), count( get_included_files() ), $this->http_requests, $this->gateway_first_queries, $this->gateway_second_queries ) );
 	}
 
 	/**

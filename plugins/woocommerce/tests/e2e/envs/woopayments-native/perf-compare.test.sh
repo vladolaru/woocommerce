@@ -144,7 +144,7 @@ fake_pnpm() {
 }
 
 fake_curl() {
-	local root="${PERF_FAKE_ROOT:?}" headers='' body='' cookie='' trace_header='' url='' state kind status=200 final_url queries memory hooks files=250 owner tier time_total=.100000 bootstrap=1 http=0 target
+	local root="${PERF_FAKE_ROOT:?}" headers='' body='' cookie='' trace_header='' url='' state kind status=200 final_url queries memory hooks files=250 owner tier time_total=.100000 bootstrap=1 http=0 target gateway_first gateway_second
 	while (($#)); do
 		case "$1" in
 		-D) headers="$2"; shift 2 ;;
@@ -173,10 +173,10 @@ fake_curl() {
 
 	if [[ -n "$headers" && "$kind" != preflight ]]; then
 		case "$state" in
-		baseline_noop) tier=noop; owner=native; queries=100; memory=1000000; hooks=100 ;;
-		disabled|available|connected) tier="$state"; owner=native; queries=101; memory=1524288; hooks=105 ;;
-		active_native) tier=active; owner=native; queries=202; memory=5097152; hooks=163 ;;
-		active_plugin) tier=active; owner=plugin; queries=200; memory=3000000; hooks=160 ;;
+		baseline_noop) tier=noop; owner=native; queries=100; memory=1000000; hooks=100; gateway_first=2; gateway_second=0 ;;
+		disabled|available|connected) tier="$state"; owner=native; queries=101; memory=1524288; hooks=105; gateway_first=3; gateway_second=0 ;;
+		active_native) tier=active; owner=native; queries=202; memory=5097152; hooks=163; gateway_first=6; gateway_second=0 ;;
+		active_plugin) tier=active; owner=plugin; queries=200; memory=3000000; hooks=160; gateway_first=5; gateway_second=0 ;;
 		*) exit 71 ;;
 		esac
 		[[ "$state" == 'active_native' ]] && time_total=.105000
@@ -185,6 +185,10 @@ fake_curl() {
 		memory-fail) [[ "$state" != available ]] || memory=1524289 ;;
 		hook-fail) [[ "$state" != disabled ]] || hooks=106 ;;
 		timing-fail) [[ "$kind" != timing || "$state" != active_native ]] || time_total=.105001 ;;
+		gateway-warm-fail) [[ "$state" != active_native ]] || gateway_second=1 ;;
+		gateway-dormancy-fail) [[ "$state" != disabled ]] || gateway_first=4 ;;
+		gateway-native-fail) [[ "$state" != active_native ]] || gateway_first=8 ;;
+		gateway-native-boundary-pass) [[ "$state" != active_native ]] || gateway_first=7 ;;
 		missing-header) headers='' ;;
 		malformed-header) tier='???' ;;
 		invalid-files) files=unknown ;;
@@ -198,7 +202,7 @@ fake_curl() {
 			if [[ "${PERF_FAKE_CASE:-}" == 'attribution-artifact-failure' && "$kind" == attribution ]]; then
 				printf 'HTTP/1.1 %s OK\r\nX-WooCommerce-Native-Payments-Probe: error=attribution-artifacts\r\n\r\n' "$status" > "$headers"
 			else
-				printf 'HTTP/1.1 %s OK\r\nX-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%s;queries=%s;used_peak_bytes=%s;hooks=%s;files=%s;http=%s\r\n\r\n' "$status" "$state" "$tier" "$owner" "$bootstrap" "$queries" "$memory" "$hooks" "$files" "$http" > "$headers"
+				printf 'HTTP/1.1 %s OK\r\nX-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%s;queries=%s;used_peak_bytes=%s;hooks=%s;files=%s;http=%s;gateway_first_queries=%s;gateway_second_queries=%s\r\n\r\n' "$status" "$state" "$tier" "$owner" "$bootstrap" "$queries" "$memory" "$hooks" "$files" "$http" "$gateway_first" "$gateway_second" > "$headers"
 			fi
 		fi
 		printf 'SAMPLE\t%s\t%s\n' "$kind" "$state" >> "$root/events.log"
@@ -251,6 +255,7 @@ $expected = array(
 	"filter:woocommerce_native_payments_enabled",
 	"filter:pre_http_request",
 	"action:plugins_loaded",
+	"action:wp",
 	"action:shutdown",
 );
 exit( $registered === $expected ? 0 : 1 );
@@ -444,7 +449,7 @@ local_root="$TEST_ROOT/local-pass"; local_output="$local_root/output/result.tsv"
 expected_account='{"data":{"account_id":"acct_native_ci","country":"US","default_currency":"usd","payments_enabled":true,"payouts_enabled":true,"details_submitted":true,"is_live":false,"test_publishable_key":"pk_test_native_ci","live_publishable_key":"","statement_descriptor":"NATIVE CI","statement_descriptor_kanji":"","statement_descriptor_kana":"","business_profile":{"name":"Native CI store","url":"https://example.test","support_address":{"country":"US"},"support_email":"support@example.test","support_phone":"+10000000000"},"branding":{"logo":"","icon":"","primary_color":"#000000","secondary_color":"#ffffff"},"communications_email":"owner@example.test","store_currencies":{"default":"usd"},"customer_currencies":{"supported":["usd","eur","aud","cad","chf","gbp","jpy","nzd","sek"]},"account_details":{"account_status":{"text":"Enabled"},"payout_status":{"text":"Enabled"},"banner":null},"deposits":{"interval":"daily","weekly_anchor":"monday","monthly_anchor":1,"delay_days":2,"status":"enabled","restrictions":"","completed_waiting_period":true},"platform_checkout_eligible":true,"capabilities":{"card_payments":"active","klarna_payments":"active"},"supported_payment_methods":["card","klarna"],"fees":{"card":[],"klarna":[]}},"fetched":1788898000,"errored":false,"consecutive_errors":0}'
 [[ "$(grep -Fc $'ACCOUNT_DATA\t'"$expected_account" "$local_root/events.log")" == 23 ]] || fail 'Connected and active states did not use the complete seed-time account cache.'
 [[ "$(grep -c $'^SEED_TIME\t1788898000$' "$local_root/events.log")" == 1 ]] || fail 'The account cache timestamp was not captured exactly once at seed time.'
-[[ "$(wc -l < "$local_output" | tr -d ' ')" == 32 ]] || fail 'Local output is not the complete 30-row matrix plus timing row.'
+[[ "$(wc -l < "$local_output" | tr -d ' ')" == 38 ]] || fail 'Local output is not the complete 30-row matrix plus the six gateway rows plus timing row.'
 [[ "$(grep -c $'^CURL\tprimary-warmup\t' "$local_root/samples.log")" == 30 ]] || fail 'Local matrix did not warm all six states across five routes.'
 [[ "$(grep -c $'^CURL\tprimary-capture\t' "$local_root/samples.log")" == 30 ]] || fail 'Local matrix did not capture all six states across five routes.'
 if awk -F '\t' '$2 != "preflight" && $4 !~ /^http:\/\/canonical.native.test:8187\// { bad=1 } END { exit bad ? 0 : 1 }' "$local_root/samples.log"; then fail 'Shopper requests did not share the service home origin and cookie scope.'; fi
@@ -468,18 +473,31 @@ awk '/^SAMPLE\tprimary-capture\tactive_plugin$/{if(++primary == 5) pending=1; ne
 grep -Fq $'disabled\tfront\t101\t1524288\t105\tbaseline_noop\t1\t524288\t5\tpass' "$local_output" || fail 'The exact no-op ceiling did not pass.'
 grep -Fq $'active_native\tfront\t202\t5097152\t163\tactive_plugin\t2\t2097152\t3\tpass' "$local_output" || fail 'The exact native/plugin ceiling did not pass.'
 grep -Fq $'active_native\tcheckout_median\tNA\tNA\tNA\tactive_plugin\tNA\tNA\tNA\t105.000,100.000,5.000,pass' "$local_output" || fail 'The exact timing ceiling did not pass.'
+grep -Fq $'baseline_noop\tgateway\t2\t0\tNA\tbaseline_noop\t0\tNA\tNA\tpass' "$local_output" || fail 'The exact baseline_noop gateway warm-zero row did not pass.'
+grep -Fq $'disabled\tgateway\t3\t0\tNA\tbaseline_noop\t1\tNA\tNA\tpass' "$local_output" || fail 'The exact disabled gateway dormancy ceiling did not pass.'
+grep -Fq $'active_native\tgateway\t6\t0\tNA\tactive_plugin\t1\tNA\tNA\tpass' "$local_output" || fail 'The exact active_native gateway ceiling did not pass.'
+grep -Fq $'active_plugin\tgateway\t5\t0\tNA\tactive_plugin\t0\tNA\tNA\tinformational' "$local_output" || fail 'The exact active_plugin gateway row was not recorded as informational.'
 assert_cleaned "$local_root"
+
+run_case gateway-native-boundary-pass gateway-native-boundary-pass 0 local
+boundary_output="$TEST_ROOT/gateway-native-boundary-pass/output/result.tsv"
+[[ "$(wc -l < "$boundary_output" | tr -d ' ')" == 38 ]] || fail 'The active_native gateway boundary case did not emit a complete deterministic TSV.'
+grep -Fq $'active_native\tgateway\t7\t0\tNA\tactive_plugin\t2\tNA\tNA\tpass' "$boundary_output" || fail 'The active_native gateway tolerance did not pass at exactly qd=2.'
+assert_cleaned "$TEST_ROOT/gateway-native-boundary-pass"
 
 run_case attribution-artifact-failure attribution-artifact-failure 1 local
 grep -Fq 'could not write required attribution artifacts' "$TEST_ROOT/attribution-artifact-failure/stderr" || fail 'Local attribution accepted a probe artifact-write failure.'
 assert_cleaned "$TEST_ROOT/attribution-artifact-failure"
 
-for failure in query-fail memory-fail hook-fail timing-fail; do
+for failure in query-fail memory-fail hook-fail timing-fail gateway-warm-fail gateway-dormancy-fail gateway-native-fail; do
 	run_case "$failure" "$failure" 1 local
-	[[ "$(wc -l < "$TEST_ROOT/$failure/output/result.tsv" | tr -d ' ')" == 32 ]] || fail "$failure did not emit a complete deterministic TSV."
+	[[ "$(wc -l < "$TEST_ROOT/$failure/output/result.tsv" | tr -d ' ')" == 38 ]] || fail "$failure did not emit a complete deterministic TSV."
 	assert_cleaned "$TEST_ROOT/$failure"
 done
 grep -Fq $'active_native\tcheckout_median\tNA\tNA\tNA\tactive_plugin\tNA\tNA\tNA\t105.001,100.000,5.001,fail' "$TEST_ROOT/timing-fail/output/result.tsv" || fail 'The 5.001% timing boundary did not fail.'
+grep -Fq $'active_native\tgateway\t6\t1\tNA\tactive_plugin\t1\tNA\tNA\tfail' "$TEST_ROOT/gateway-warm-fail/output/result.tsv" || fail 'A nonzero warm gateway call did not fail.'
+grep -Fq $'disabled\tgateway\t4\t0\tNA\tbaseline_noop\t2\tNA\tNA\tfail' "$TEST_ROOT/gateway-dormancy-fail/output/result.tsv" || fail 'The disabled gateway dormancy tolerance did not fail at exactly qd=2.'
+grep -Fq $'active_native\tgateway\t8\t0\tNA\tactive_plugin\t3\tNA\tNA\tfail' "$TEST_ROOT/gateway-native-fail/output/result.tsv" || fail 'The active_native gateway tolerance did not fail at exactly qd=3.'
 
 for invalid in missing-header malformed-header invalid-files wrong-owner wrong-bootstrap outbound-http wrong-final-page http-failure; do
 	run_case "$invalid" "$invalid" 1 ci
@@ -490,12 +508,21 @@ grep -Fq 'observed 1 outbound HTTP requests' "$TEST_ROOT/outbound-http/stderr" |
 
 run_case ci-pass pass 0 ci
 ci_root="$TEST_ROOT/ci-pass"; ci_output="$ci_root/output/result.tsv"
-[[ "$(wc -l < "$ci_output" | tr -d ' ')" == 16 ]] || fail 'CI output is not the complete three-state subset.'
+[[ "$(wc -l < "$ci_output" | tr -d ' ')" == 19 ]] || fail 'CI output is not the complete three-state subset plus its three gateway rows.'
 [[ "$(awk -F '\t' 'NR > 1 { states[$1]=1 } END { for (state in states) print state }' "$ci_output" | sort | tr '\n' ' ')" == 'active_native baseline_noop disabled ' ]] || fail 'CI sampled the wrong states.'
+grep -Fq $'baseline_noop\tgateway\t2\t0\tNA\tbaseline_noop\t0\tNA\tNA\tpass' "$ci_output" || fail 'The exact CI baseline_noop gateway row did not pass.'
+grep -Fq $'disabled\tgateway\t3\t0\tNA\tbaseline_noop\t1\tNA\tNA\tpass' "$ci_output" || fail 'The exact CI disabled gateway row did not pass.'
+grep -Fq $'active_native\tgateway\t6\t0\tNA\tnot_evaluated\tNA\tNA\tNA\tnot_evaluated' "$ci_output" || fail 'CI did not keep active_native gateway not_evaluated.'
 [[ "$(grep -c $'^DB_EXPORT\t' "$ci_root/events.log")" == 1 && "$(grep -c $'^DB_IMPORT\t' "$ci_root/events.log")" == 4 ]] || fail 'CI did not use one export and four resets.'
 [[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$ci_root/events.log")" == 3 ]] || fail 'Every CI state preparation must disable Multi-Currency before native-tier measurement.'
 if grep -Eq '^REFERENCE_(INSTALL|ACTIVATE)' "$ci_root/events.log"; then fail 'CI touched the reference plugin.'; fi
 assert_cleaned "$ci_root"
+
+run_case gateway-warm-fail-ci gateway-warm-fail 1 ci
+gateway_warm_fail_ci_output="$TEST_ROOT/gateway-warm-fail-ci/output/result.tsv"
+[[ "$(wc -l < "$gateway_warm_fail_ci_output" | tr -d ' ')" == 19 ]] || fail 'CI gateway-warm-fail did not emit a complete deterministic TSV.'
+grep -Fq $'active_native\tgateway\t6\t1\tNA\tnot_evaluated\tNA\tNA\tNA\tfail' "$gateway_warm_fail_ci_output" || fail 'CI active_native gateway did not fail on a nonzero warm call with no reference state evaluated.'
+assert_cleaned "$TEST_ROOT/gateway-warm-fail-ci"
 
 for failure in export-failure import-failure reference-integrity reference-version reference-remove-failure; do
 	run_case "$failure" "$failure" 1 local
