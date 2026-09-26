@@ -56,12 +56,10 @@ tests/e2e/envs/woopayments-native/extensions-profile.sh \
 
 Use `--pin-set latest` for the latest side of the matrix. Private repositories use the operator's normal non-interactive Git credentials locally. `E2E_WOOPAYMENTS_EXTENSION_READ_TOKEN` is optional locally and, when present, is passed only as a GitHub request header rather than embedded in a clone URL.
 
-Run the reserved Playwright project explicitly after the profile is active:
+Run the reserved Playwright project explicitly after the profile is active. The probes run through the shared `wpCLI`/`wpEvalJson` helpers, which target `.wp-env.e2e.json`'s `cli` service unless `E2E_WP_ENV_CONFIG` names another config, so only the opt-in flag is needed:
 
 ```sh
 E2E_WOOPAYMENTS_EXTENSION_COMPAT=true \
-E2E_WOOPAYMENTS_EXTENSION_WP_ENV_CONFIG=.wp-env.e2e.json \
-E2E_WOOPAYMENTS_EXTENSION_WP_ENV_SERVICE=cli \
 pnpm exec playwright test \
 	--config=tests/e2e/envs/woopayments-native/playwright.config.ts \
 	--project=woopayments-native-extension-compat \

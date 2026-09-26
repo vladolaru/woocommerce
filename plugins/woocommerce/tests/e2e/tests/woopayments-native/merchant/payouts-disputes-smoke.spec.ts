@@ -265,6 +265,18 @@ test.describe( 'WooCommerce Subscriptions extension compatibility', () => {
 			expect( paymentsSettings.is_subscriptions_plugin_active ).toBe(
 				true
 			);
+
+			// This project writes no admin storage state, so log in here; the
+			// landing page is not asserted because a freshly activated extension
+			// may redirect once.
+			await page.context().clearCookies();
+			await page.goto( 'wp-login.php' );
+			await expect(
+				page.getByLabel( 'Username or Email Address' )
+			).toBeVisible();
+			await logIn( page, admin.username, admin.password, false );
+			await expect( page ).toHaveURL( /\/wp-admin\// );
+
 			await page.goto( SUBSCRIPTIONS_SETTINGS_PATH );
 			await expectSurfaceLoaded( page, 'Subscriptions' );
 			await expect(
