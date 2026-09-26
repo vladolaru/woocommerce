@@ -1,50 +1,23 @@
-import type {
-	APIRequestContext,
-	APIResponse,
-	BrowserContext,
-	Page,
-} from '@playwright/test';
+import type { Request, Response } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { random } from '../../../utils/helpers';
+import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
-	expect,
-	ResourceQuarantineRequiredError,
-	tags,
-	test,
-	type ProviderWriteSession,
-} from '../../../fixtures/woopayments-native';
-import {
-	readHighestOrderId,
-	readOrderDeltaAfter,
-} from '../../../utils/woopayments-native/drivers/classic-card-authentication';
-import { withClassicCheckoutPage } from '../../../utils/woopayments-native/drivers/classic-checkout-page';
-import {
-	ALIPAY,
-	driveClassicRedirectCheckout,
-	readReturnUrlFacts,
-	readShopperCartState,
-	setShopperSessionCurrency,
-	withEnabledPaymentMethod,
-	withForeignCurrency,
-	type RedirectHandoffObservation,
-	type ClassicRedirectFollowMode,
-	type RedirectIntentRequest,
-	type RedirectMethod,
-} from '../../../utils/woopayments-native/drivers/redirect-methods';
-import {
-	getPaymentEvidence,
-	type PaymentEvidence,
-} from '../../../utils/woopayments-native/record-evidence';
+	expectSettledCardPayment,
+	getPaymentIntent,
+	requireTestModeAccount,
+} from '../../../utils/woopayments';
 
 /**
- * The `redirect-method-provider-outcome` provider-fidelity family, as fixed in
- * `tests/woopayments-native/FIDELITY-CLAIMS.md`.
+ * The `redirect-method-provider-outcome` provider-fidelity family (T.4 Batch
+ * P3 rewrite).
  *
  * This family kept one browser smoke, `A1` (Alipay on the classic shortcode
- * checkout), which still asserts its own full request shape unchanged
- * (`expectRequestedRedirect`). Every other case the family used to
- * browser-test (affirm, afterpay_clearpay, bancontact, klarna, and the
- * protection-on twins) was deleted, and its assertions moved to PHPUnit and
- * Jest, cited at each case's `woopayments-contract` annotation: the exact
+ * checkout). Every other case the family used to browser-test (affirm,
+ * afterpay_clearpay, bancontact, klarna, and the protection-on twins) was
+ * deleted in T.1, and its assertions moved to PHPUnit and Jest: the exact
  * method/amount/currency/return-URL request shape now lives in
  * `WooPaymentsProviderGatewayAdapterTest::test_charge_sends_split_redirect_method_request`
  * (which also independently re-proves `A1`'s alipay shape at a lower layer),
@@ -62,814 +35,299 @@ import {
  * `WooPaymentsRedirectReturnController::handle_wp`.
  */
 
-/** Grep tag that selects this family as a unit. */
-const FAMILY_TAG = '@fidelity:redirect-method-provider-outcome';
 const FAMILY_TAGS = [
 	tags.WOOPAYMENTS_NATIVE,
 	tags.WOOPAYMENTS_PROVIDER,
-	FAMILY_TAG,
-];
-
-/** The journey capability every case in this family needs. */
-const CAPABILITY_FAMILY = 'redirect-method-provider-outcome';
-/** The capability for mutating the enabled-payment-method set. */
-const CAPABILITY_METHOD = 'redirect-method-provider-outcome-method';
-/** The capability for mutating the enabled-currency configuration. */
-const CAPABILITY_CURRENCY = 'redirect-method-provider-outcome-currency';
-const CAPABILITY_PRODUCT = 'product/payment';
-const CAPABILITY_CLASSIC_PAGE = 'classic-checkout-page';
-
-const CLASSIC_CAPABILITIES = [
-	CAPABILITY_FAMILY,
-	CAPABILITY_PRODUCT,
-	CAPABILITY_CLASSIC_PAGE,
-	CAPABILITY_METHOD,
-];
-const CLASSIC_CURRENCY_CAPABILITIES = [
-	...CLASSIC_CAPABILITIES,
-	CAPABILITY_CURRENCY,
+	'@fidelity:redirect-method-provider-outcome',
 ];
 
 const CONTRACT_A1 =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/alipay-checkout-purchase.spec.ts:60::Alipay Checkout › checkout on shortcode checkout page';
 
-const WOOPAYMENTS_GATEWAY = 'woocommerce_payments';
-const PAID_ORDER_STATUSES = [ 'processing', 'completed' ];
+const ALIPAY = {
+	id: 'alipay',
+	gatewayId: 'woocommerce_payments_alipay',
+	label: /alipay/i,
+	price: '12.00',
+	amountMinor: 1200,
+	currency: 'USD',
+};
 
-/** The claim's convergence rule for `A1`-`A4` and the twins: every 2 seconds. */
-const POLL_INTERVAL_MS = 2_000;
-const SETTLE_BUDGET_MS = 90_000;
+const PAYMENTS_SETTINGS_ROUTE = 'wc/v3/payments/settings';
+const PRODUCTS_ROUTE = 'wc/v3/products';
+const ORDERS_ROUTE = 'wc/v3/orders';
+const PAID_ORDER_STATUSES = [ 'processing', 'completed' ];
+const RECEIPT_TIMEOUT_MS = 90_000;
+const HOSTED_PAGE_TIMEOUT_MS = 90_000;
+const ORDER_INTENT_TIMEOUT_MS = 60_000;
+const POLL_INTERVAL_MS = 500;
 
 function delay( milliseconds: number ): Promise< void > {
 	return new Promise( ( resolve ) => setTimeout( resolve, milliseconds ) );
 }
 
-/**
- * Asserts the whole capability set before any provider interval opens, so an
- * incomplete approval costs nothing rather than a paid run.
- */
-function requireCapabilities(
-	session: ProviderWriteSession,
-	capabilities: readonly string[]
-): void {
-	for ( const capability of capabilities ) {
-		session.requireApprovedProviderFixture( capability );
+async function readEnabledPaymentMethodIds(
+	restApi: ApiClient
+): Promise< string[] > {
+	const settings = ( await restApi.get( PAYMENTS_SETTINGS_ROUTE ) ).data as {
+		enabled_payment_method_ids?: unknown;
+	};
+	if ( ! Array.isArray( settings.enabled_payment_method_ids ) ) {
+		throw new Error( 'Payments settings exposed no enabled-method list.' );
 	}
+	return settings.enabled_payment_method_ids as string[];
 }
 
-async function readJson< Result >(
-	response: APIResponse,
-	description: string
-): Promise< Result > {
-	if ( ! response.ok() ) {
+async function writeEnabledPaymentMethodIds(
+	restApi: ApiClient,
+	ids: string[]
+): Promise< void > {
+	await restApi.post( PAYMENTS_SETTINGS_ROUTE, {
+		enabled_payment_method_ids: ids,
+	} );
+	const echoed = await readEnabledPaymentMethodIds( restApi );
+	if ( echoed.toSorted().join( ',' ) !== ids.toSorted().join( ',' ) ) {
 		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
+			`enabled-payment-method write did not take effect; requested ${ ids.join(
+				', '
+			) } but the store reports ${ echoed.join( ', ' ) }.`
 		);
 	}
-	return ( await response.json() ) as Result;
 }
 
-async function readStoreDefaultCurrency(
-	restApi: APIRequestContext
-): Promise< string > {
-	const setting = await readJson< { value?: unknown } >(
-		await restApi.get(
-			'/wp-json/wc/v3/settings/general/woocommerce_currency'
-		),
-		'store currency setting read'
-	);
-	if ( typeof setting.value !== 'string' || ! setting.value.trim() ) {
-		throw new Error( 'The store exposed no configured default currency.' );
-	}
-	return setting.value.toUpperCase();
-}
-
-async function readCardTestingProtectionEligibility(
-	restApi: APIRequestContext
+async function readCardTestingProtectionEligible(
+	restApi: ApiClient
 ): Promise< unknown > {
-	const account = await readJson< {
-		card_testing_protection_eligible?: unknown;
-	} >(
-		await restApi.get( '/wp-json/wc/v3/payments/accounts' ),
-		'WooPayments account read'
-	);
-	return account.card_testing_protection_eligible;
+	return ( await restApi.get( 'wc/v3/payments/accounts' ) ).data
+		.card_testing_protection_eligible;
 }
 
-/**
- * The protection-off cases run against a store that is genuinely unprotected,
- * asserted rather than assumed.
- *
- * The residual risk two of these rows record is precisely "a leaked enabled CTP
- * state can make this nominal false case fail or misclassify behavior", so a
- * protection-off case that ran under protection would be the falsifier, not the
- * fixture.
- */
-async function expectProtectionOff(
-	session: ProviderWriteSession
-): Promise< void > {
-	expect(
-		await readCardTestingProtectionEligibility( session.adminApi ),
-		'this is a protection-off case and must not run against a protected store'
-	).toBe( false );
+async function createRunProduct( restApi: ApiClient ): Promise< number > {
+	const created = (
+		await restApi.post( PRODUCTS_ROUTE, {
+			name: `WooPayments alipay redirect ${ random() }`,
+			type: 'simple',
+			virtual: true,
+			regular_price: ALIPAY.price,
+			status: 'publish',
+		} )
+	).data as { id: number };
+	return created.id;
 }
 
-interface OrderFacts {
-	status: string;
-	orderKey: string;
-	total: string;
-	currency: string;
-	intentId: string;
-	chargeId: string;
+async function readHighestOrderId( restApi: ApiClient ): Promise< number > {
+	const orders = (
+		await restApi.get(
+			`${ ORDERS_ROUTE }?orderby=id&order=desc&per_page=1&status=any`
+		)
+	).data as Array< { id: number } >;
+	return orders[ 0 ]?.id ?? 0;
 }
 
-async function readOrderFacts(
-	restApi: APIRequestContext,
+async function readOrderKey(
+	restApi: ApiClient,
 	orderId: number
-): Promise< OrderFacts > {
-	const order = await readJson< Record< string, unknown > >(
-		await restApi.get( `/wp-json/wc/v3/orders/${ orderId }` ),
-		`WooCommerce order ${ orderId }`
-	);
-	const meta = Array.isArray( order.meta_data )
-		? ( order.meta_data as Array< { key?: unknown; value?: unknown } > )
-		: [];
-	const read = ( key: string ): string => {
-		const entry = meta.find( ( item ) => item.key === key );
-		return typeof entry?.value === 'string' ? entry.value : '';
-	};
-
-	return {
-		status: String( order.status ?? '' ),
-		orderKey: String( order.order_key ?? '' ),
-		total: String( order.total ?? '' ),
-		currency: String( order.currency ?? '' ).toUpperCase(),
-		intentId: read( '_intent_id' ),
-		chargeId: read( '_charge_id' ),
-	};
+): Promise< string > {
+	return (
+		( await restApi.get( `${ ORDERS_ROUTE }/${ orderId }` ) ).data as {
+			order_key: string;
+		}
+	 ).order_key;
 }
 
-/**
- * The claim's convergence rule: poll the exact intent and charge every two
- * seconds for at most ninety, and pass only after two consecutive reads return
- * the same terminal identities, amounts, currencies and statuses.
- */
-async function waitForSettledRedirect(
-	session: ProviderWriteSession,
-	orderId: number,
-	intentId: string
-): Promise< PaymentEvidence > {
-	const deadline = Date.now() + SETTLE_BUDGET_MS;
-	let previous: PaymentEvidence | undefined;
-	let lastError: unknown;
+async function readNewOrderIds(
+	restApi: ApiClient,
+	baselineOrderId: number
+): Promise< number[] > {
+	const orders = (
+		await restApi.get(
+			`${ ORDERS_ROUTE }?orderby=id&order=desc&per_page=20&status=any`
+		)
+	).data as Array< { id: number } >;
+	return orders
+		.filter( ( order ) => order.id > baselineOrderId )
+		.map( ( order ) => order.id )
+		.toSorted( ( a, b ) => a - b );
+}
 
+async function readOrderIntentId(
+	restApi: ApiClient,
+	orderId: number
+): Promise< string > {
+	const deadline = Date.now() + ORDER_INTENT_TIMEOUT_MS;
 	for (;;) {
-		let current: PaymentEvidence | undefined;
-		try {
-			current = await getPaymentEvidence( session.adminApi, orderId );
-		} catch ( error ) {
-			lastError = error;
-			current = undefined;
+		const order = ( await restApi.get( `${ ORDERS_ROUTE }/${ orderId }` ) )
+			.data as {
+			meta_data?: Array< { key?: unknown; value?: unknown } >;
+		};
+		const entry = ( order.meta_data ?? [] ).find(
+			( item ) => item.key === '_intent_id'
+		);
+		if ( typeof entry?.value === 'string' && entry.value.trim() ) {
+			return entry.value;
 		}
-
-		if ( current && current.providerStatus === 'succeeded' ) {
-			if ( current.intentId !== intentId ) {
-				throw new ResourceQuarantineRequiredError(
-					`Order ${ orderId } settled on intent ${ current.intentId }, not the intent ${ intentId } the handoff created.`,
-					'uncertain-provider-write'
-				);
-			}
-			if (
-				previous &&
-				JSON.stringify( previous ) === JSON.stringify( current )
-			) {
-				return current;
-			}
-			previous = current;
-		} else {
-			previous = undefined;
-		}
-
 		if ( Date.now() >= deadline ) {
-			throw new ResourceQuarantineRequiredError(
-				`Intent ${ intentId } for order ${ orderId } never produced two identical settled reads within ${ SETTLE_BUDGET_MS }ms.`,
-				'uncertain-provider-write',
-				lastError
+			throw new Error(
+				`Order ${ orderId } never carried the PaymentIntent native created for its redirect handoff.`
 			);
 		}
 		await delay( POLL_INTERVAL_MS );
 	}
 }
 
+interface RedirectIntentRequest {
+	paymentMethodTypes: string[];
+	amountMinor: number;
+	currency: string;
+	status: string;
+	nextActionType: string;
+	providerRedirectUrl: string;
+	returnUrl: string;
+	chargeCount: number;
+}
+
+function chargeCount( intent: Record< string, unknown > ): number {
+	const charges = intent.charges as { data?: unknown[] } | undefined;
+	return Array.isArray( charges?.data ) ? charges.data.length : 0;
+}
+
 /**
- * Asserts what the store handed the shopper to reach the provider with.
+ * Reads the intent's account of the redirect request. The provider does not
+ * use one next-action shape for every redirect method: `redirect_to_url` is
+ * the generic one, but a method it models explicitly gets its own key -
+ * Alipay produces `alipay_handle_redirect` - carrying the same `url` and
+ * `return_url` pair under it.
+ */
+function readRedirectIntentRequest(
+	intent: Record< string, unknown >
+): RedirectIntentRequest {
+	const nextAction =
+		( intent.next_action as Record< string, unknown > | undefined ) ?? {};
+	const redirectActionKey = Object.keys( nextAction ).find(
+		( key ) =>
+			( key === 'redirect_to_url' ||
+				key.endsWith( '_handle_redirect' ) ) &&
+			typeof nextAction[ key ] === 'object' &&
+			nextAction[ key ] !== null
+	);
+	const redirect = redirectActionKey
+		? ( nextAction[ redirectActionKey ] as Record< string, unknown > )
+		: {};
+	return {
+		paymentMethodTypes: Array.isArray( intent.payment_method_types )
+			? ( intent.payment_method_types as string[] )
+			: [],
+		amountMinor:
+			typeof intent.amount === 'number' ? intent.amount : Number.NaN,
+		currency:
+			typeof intent.currency === 'string'
+				? intent.currency.toLowerCase()
+				: '',
+		status: String( intent.status ?? '' ),
+		nextActionType:
+			typeof nextAction.type === 'string' ? nextAction.type : '',
+		providerRedirectUrl:
+			typeof redirect.url === 'string' ? redirect.url : '',
+		returnUrl:
+			typeof redirect.return_url === 'string' ? redirect.return_url : '',
+		chargeCount: chargeCount( intent ),
+	};
+}
+
+interface ReturnUrlFacts {
+	origin: string;
+	orderId: number;
+	orderKey: string;
+	paymentMethod: string;
+	noncePresent: boolean;
+}
+
+function readReturnUrlFacts( value: string ): ReturnUrlFacts {
+	const parsed = new URL( value );
+	const match = /\/order-received\/([1-9]\d*)\/?$/.exec( parsed.pathname );
+	if ( ! match ) {
+		throw new Error(
+			`return URL does not name an order-received page: ${ parsed.pathname }`
+		);
+	}
+	return {
+		origin: parsed.origin,
+		orderId: Number( match[ 1 ] ),
+		orderKey: parsed.searchParams.get( 'key' ) ?? '',
+		paymentMethod: parsed.searchParams.get( 'wc_payment_method' ) ?? '',
+		noncePresent: ( parsed.searchParams.get( '_wpnonce' ) ?? '' ) !== '',
+	};
+}
+
+function isClassicCheckoutRequest( request: Request, origin: string ): boolean {
+	if ( request.method() !== 'POST' ) {
+		return false;
+	}
+	try {
+		const url = new URL( request.url() );
+		return (
+			url.origin === origin &&
+			url.searchParams.getAll( 'wc-ajax' ).join( ',' ) === 'checkout'
+		);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Asserts the store's own answer to the checkout submission - the property
+ * DISPOSITION row 115 says only this browser case proves, because a hash
+ * answer never navigates the document, so the body stays readable here in a
+ * way it cannot once native's hosted-redirect handoff takes over the page.
  *
- * There are two shapes, and which one applies is decided by the provider, not by
- * this store. When the intent's next action is the generic `redirect_to_url`,
- * both runtimes answer Place order with the hosted URL itself and the browser
- * navigates to it — so the store's answer must *be* the redirect the intent
- * names, and that identity is asserted.
- *
- * When the provider models the method explicitly it emits its own next-action
- * key — Alipay gives `alipay_handle_redirect` — and neither runtime recognises
- * it. `WooPaymentsIntentCodec::raw_next_action_redirect_url()` returns `''` for
- * any type but `redirect_to_url`, so `requires_confirmation_redirect()` holds
- * and the adapter substitutes the `#wcpay-confirm-pi:` hash instead; the
- * WooPayments client plugin has the identical branch at
- * `class-wc-payment-gateway-wcpay.php:2093-2107`, with `*_handle_redirect`
- * falling into the same `else`. The provider's own script then performs the
- * handoff client-side. Native is at parity, so this case asserts the parity
- * rather than a server-side handoff neither runtime does.
- *
- * The hash branch carries a tripwire. It requires the answer to be the
- * confirmation hash for this exact order and *not* the hosted URL, so if either
- * runtime ever starts handing back the provider redirect for these methods this
- * case fails and says to restore the identity assertion above rather than
- * quietly keeping the weaker one. The hash also carries the intent's client
- * secret, which is a credential for this one payment: its segment count is
- * checked, its value never leaves this function.
+ * For a method the provider models explicitly (`alipay_handle_redirect`),
+ * neither runtime performs the handoff server-side: the store answers with
+ * its own `#wcpay-confirm-pi:<order>:<secret>:<nonce>` hash and the
+ * provider's own script performs the redirect. For the generic
+ * `redirect_to_url` action, the store answers with the hosted URL itself.
  */
 function expectStoreHandoff(
-	observation: RedirectHandoffObservation,
-	request: RedirectIntentRequest,
-	handed: URL,
-	hosted: URL,
-	expected: { storeOrigin: string }
+	redirectAnswer: string,
+	nextActionType: string,
+	orderId: number,
+	hostedUrl: string,
+	storeOrigin: string
 ): void {
-	if ( request.nextActionType === 'redirect_to_url' ) {
+	const handed = new URL( redirectAnswer, storeOrigin );
+	if ( nextActionType === 'redirect_to_url' ) {
+		const hosted = new URL( hostedUrl );
 		expect(
 			`${ handed.origin }${ handed.pathname }`,
 			'the store must hand the shopper the exact redirect the intent names'
 		).toBe( `${ hosted.origin }${ hosted.pathname }` );
 		return;
 	}
-
 	const segments = handed.hash.split( ':' );
 	expect(
 		segments[ 0 ],
-		`neither runtime reads ${ request.nextActionType } as a redirect, so the store must hand back the local confirmation hash and let the provider script do the handoff`
+		`neither runtime reads ${ nextActionType } as a redirect, so the store must hand back the local confirmation hash`
 	).toBe( '#wcpay-confirm-pi' );
 	expect(
 		Number( segments[ 1 ] ),
 		'the confirmation hash must name the order this submission created'
-	).toBe( observation.orderId );
+	).toBe( orderId );
 	expect(
 		segments.length,
 		'the confirmation hash must carry its order, client secret and nonce'
 	).toBeGreaterThanOrEqual( 4 );
 	expect(
 		`${ handed.origin }${ handed.pathname }`,
-		'the store answered with an off-store redirect for a method whose next action neither runtime reads: the parity scoping below is stale, so restore the exact-redirect assertion above'
-	).toBe( `${ expected.storeOrigin }/` );
-}
-
-/**
- * Asserts the return URL half of the request, which also has two shapes.
- *
- * Under the generic `redirect_to_url` next action the provider echoes the
- * merchant return URL native supplied, so it is read directly: this store's
- * origin, this order, this order key, the WooPayments gateway marker, and the
- * redirect-return nonce native signs it with. That is what makes this run's
- * handoff this run's, and the nonce's value never leaves `readReturnUrlFacts`.
- *
- * Under a `*_handle_redirect` next action the provider does not echo it. It
- * interposes its own return hop — an Alipay intent carries
- * `https://pm-redirects.stripe.com/return/<account>/<nonce>` — and the merchant
- * URL appears nowhere on the intent, not even as a top-level `return_url`
- * (the platform's PaymentIntent passthrough has no such field; its key set was
- * read on 2026-08-14 to be sure). So for these methods the request-side
- * assertion is what is actually observable — the hop is the provider's own,
- * over HTTPS, and off this store — and the run-identifying half is carried by
- * `expectReturnedToStore`, which asserts the *landed* URL's origin, order ID,
- * order key and gateway marker. That is the stronger evidence anyway: it proves
- * the shopper came back where native asked, rather than that a field said so.
- *
- * The tripwire is the off-store requirement. If the provider ever starts
- * echoing the merchant URL for these methods, this fails and says to restore
- * the direct read above rather than keep the weaker one.
- */
-function expectRequestedReturnUrl(
-	observation: RedirectHandoffObservation,
-	request: RedirectIntentRequest,
-	expected: { storeOrigin: string; orderKey: string }
-): void {
-	if ( request.nextActionType !== 'redirect_to_url' ) {
-		const hop = new URL( request.returnUrl );
-		expect(
-			hop.protocol,
-			'the provider return hop must be over HTTPS'
-		).toBe( 'https:' );
-		expect(
-			hop.origin,
-			`the provider echoed a return URL on this store for ${ request.nextActionType }: it no longer interposes its own hop, so restore the direct return-URL assertion`
-		).not.toBe( expected.storeOrigin );
-		return;
-	}
-
-	const returnUrl = readReturnUrlFacts( request.returnUrl );
-	expect(
-		returnUrl.origin,
-		'the provider must have been given a return URL on this store'
-	).toBe( expected.storeOrigin );
-	expect(
-		returnUrl.orderId,
-		'the return URL must name the order this submission created'
-	).toBe( observation.orderId );
-	expect( returnUrl.orderKey ).toBe( expected.orderKey );
-	expect( returnUrl.paymentMethod ).toBe( WOOPAYMENTS_GATEWAY );
-	expect(
-		returnUrl.noncePresent,
-		'the return URL must carry the redirect-return nonce native signs it with'
-	).toBe( true );
-}
-
-/**
- * The request half of the claim: the exact method, minor amount, currency and
- * run return URL the provider actually received, read from the intent while it
- * still awaits the redirect.
- */
-function expectRequestedRedirect(
-	observation: RedirectHandoffObservation,
-	method: RedirectMethod,
-	expected: { storeOrigin: string; orderKey: string }
-): void {
-	// Deliberately not asserted here: how many times the client submitted, and
-	// how many answers came back. Both are transport facts, and on the Blocks
-	// surface neither is stable -- though not for the reason this comment used
-	// to give.
-	//
-	// The client does not resubmit. In roughly a third of runs a second request
-	// reaches `/wc/store/v1/checkout` a few seconds after the order is placed,
-	// and it is `updateDraftOrder` from `data/checkout/push-changes.ts`: a
-	// `PUT ...?__experimental_calc_totals=true` that `@wordpress/api-fetch`'s
-	// `httpV1Middleware` tunnels as a POST carrying `X-HTTP-Method-Override`, so
-	// a counter keyed on method and path cannot tell a draft-order sync from a
-	// second order placement. Measured by wrapping `window.fetch` and recording
-	// a stack per checkout request: the two requests are 5.9 seconds apart, the
-	// first at checkout status `processing` and the second at `after_processing`
-	// with no error, the second's stack running through `updateDraftOrder`. It
-	// is intermittent because `push-changes` only pushes when the checkout data
-	// it watches actually changed. A submission whose answer arrives after the
-	// navigation is never observed at all.
-	//
-	// What the claim forbids is a second *transaction*, and that is already proven
-	// twice from the store, without a browser in the loop: `readSubmittedOrder`
-	// refuses to continue unless the submission produced exactly one new order,
-	// and `expectSingleRunOrder` re-reads the same delta after settlement and
-	// requires it to be this order. A resubmission that native absorbs -- one
-	// order, one intent, one charge -- is not a duplicate and must not fail here;
-	// a resubmission that creates a second order fails both of those checks.
-
-	const { request } = observation;
-	expect(
-		request.paymentMethodTypes,
-		`the provider must have been asked for exactly ${ method.id }`
-	).toEqual( [ method.id ] );
-	expect(
-		request.amountMinor,
-		`the provider must have been asked for ${ method.amountMinor } minor units`
-	).toBe( method.amountMinor );
-	expect( request.currency ).toBe( method.currency.toLowerCase() );
-	expect(
-		request.status,
-		'the intent must await the provider redirect at this point'
-	).toBe( 'requires_action' );
-	// The provider does not name every redirect action the same way. Methods it
-	// models explicitly get their own key — Alipay produces
-	// `alipay_handle_redirect` — carrying the same hosted URL and return URL as
-	// the generic `redirect_to_url`. Accepting the method's own name is
-	// *stricter* than accepting only the generic one: it requires the action to
-	// belong to the method this case drives, so an intent that somehow awaited a
-	// different method's redirect would fail here rather than pass.
-	expect(
-		request.nextActionType,
-		`the intent must await ${ method.id }'s own provider redirect`
-	).toMatch(
-		new RegExp( `^(redirect_to_url|${ method.id }_handle_redirect)$` )
-	);
-	expect(
-		request.chargeCount,
-		'no charge may exist before the shopper authorizes'
-	).toBe( 0 );
-
-	// Exactly one HTTPS provider redirect, off this store, and the one the
-	// store handed the shopper. The query string is native's sanitization
-	// boundary rather than this claim's subject, so the identity compared is
-	// the origin and path — which is what names the provider's own object.
-	const hosted = new URL( request.providerRedirectUrl );
-	expect( hosted.protocol, 'the provider handoff must be over HTTPS' ).toBe(
-		'https:'
-	);
-	expect(
-		hosted.origin,
-		'the handoff must leave this store for the provider'
-	).not.toBe( expected.storeOrigin );
-
-	// Asserted only for a case that stops at the handoff. A case that follows
-	// the redirect proves the same thing far more strongly a moment later:
-	// `expectReturnedToStore` requires the shopper to have landed back on this
-	// run's own order-received URL, which cannot happen unless the store handed
-	// over a working provider redirect. Comparing the answer field as well adds
-	// nothing there, and reading it costs a dependency on a response body that
-	// the navigation itself can destroy.
-	if ( observation.storeRedirectUrl !== undefined ) {
-		let handed: URL;
-		try {
-			handed = new URL(
-				observation.storeRedirectUrl,
-				expected.storeOrigin
-			);
-		} catch {
-			throw new Error(
-				`the store answered Place order with a redirect this case cannot resolve against ${
-					expected.storeOrigin
-				}: ${ JSON.stringify( observation.storeRedirectUrl ) }`
-			);
-		}
-		expectStoreHandoff( observation, request, handed, hosted, expected );
-	}
-
-	expectRequestedReturnUrl( observation, request, expected );
-}
-
-/**
- * The exact provider graph one followed redirect must leave: the same intent,
- * one captured charge, one capture, one paid order, and nothing else.
- */
-function expectSettledRedirectGraph(
-	paid: PaymentEvidence,
-	observation: RedirectHandoffObservation,
-	method: RedirectMethod,
-	runId: string
-): void {
-	expect(
-		paid.intentId,
-		'the settled intent must be the intent the handoff created'
-	).toBe( observation.request.id );
-	expect( paid.orderId ).toBe( observation.orderId );
-	expect( paid.runId ).toBe( runId );
-	expect( paid.amountMinor ).toBe( method.amountMinor );
-	expect( paid.currency ).toBe( method.currency );
-	expect( paid.providerStatus ).toBe( 'succeeded' );
-	expect( paid.chargeStatus ).toBe( 'succeeded' );
-	expect( paid.chargeCaptured ).toBe( true );
-	expect(
-		paid.occurrenceCount,
-		'one handoff must leave exactly one charge on the intent'
-	).toBe( 1 );
-	expect( paid.captureOccurrenceCount ).toBe( 1 );
-	expect( PAID_ORDER_STATUSES ).toContain( paid.orderStatus );
-}
-
-/**
- * The provider returned to this store, on this run's own order.
- */
-function expectReturnedToStore(
-	observation: RedirectHandoffObservation,
-	expected: { storeOrigin: string; orderKey: string }
-): void {
-	const landed = readReturnUrlFacts(
-		observation.landedUrl ??
-			( () => {
-				throw new Error(
-					'A followed redirect must record where it landed.'
-				);
-			} )()
-	);
-	expect( landed.origin ).toBe( expected.storeOrigin );
-	expect(
-		landed.orderId,
-		'the provider must return to this run own order'
-	).toBe( observation.orderId );
-	expect( landed.orderKey ).toBe( expected.orderKey );
-	expect( landed.paymentMethod ).toBe( WOOPAYMENTS_GATEWAY );
-}
-
-/**
- * One handoff created exactly one order, and no second transaction appeared
- * behind it.
- */
-async function expectSingleRunOrder(
-	session: ProviderWriteSession,
-	baselineOrderId: number,
-	orderId: number
-): Promise< void > {
-	const delta = await readOrderDeltaAfter( session, baselineOrderId );
-	expect(
-		delta.newOrderIds,
-		'one submission must create exactly one order'
-	).toEqual( [ orderId ] );
-}
-
-/**
- * Restores the shopper half of the store after a case.
- *
- * A guest shopper's cart and currency selection live entirely in the
- * WooCommerce session cookie, so dropping it is the restoration; the cold read
- * afterwards is what proves it happened rather than assuming it. The store-side
- * currency and enabled-method configuration is restored by the snapshot
- * wrappers inside the case, which run first.
- *
- * Stated rather than glossed: these journeys are driven as a guest, so no
- * WooCommerce customer record is put into a foreign currency in the first place.
- * The ledger rows record the client suite leaving *its* customer in EUR; what
- * this proves is the stronger nearby fact that the run's currency selection does
- * not outlive the run at all, on a fresh session read against the store's own
- * configured default.
- *
- * The verification runs on a context this function owns when the case's own has
- * gone. A protection-on twin registers the test's context with the card-testing
- * controller, and that controller closes the context it was given when its scope
- * ends (`card-testing-protection.ts`, `registeredContext.close()`). Clearing
- * cookies on it afterwards fails with `Target page, context or browser has been
- * closed`, which is what made `A2p`, `A3p` and `A4p` unable to pass at all
- * rather than unable to pass reliably. Two cleanup layers both owned the
- * context; the inner one is right to close it, because closing is a *stronger*
- * session reset than clearing cookies. What the outer layer must not lose is its
- * cold read, so when the page is gone it opens a throwaway context of its own to
- * take that read, and closes it again.
- */
-async function withRestoredShopperSession< Result >(
-	session: ProviderWriteSession,
-	page: Page,
-	callback: () => Promise< Result >
-): Promise< Result > {
-	const defaultCurrency = await readStoreDefaultCurrency( session.adminApi );
-	// Captured before the callback: once the context is closed the browser
-	// handle is the only way back to a usable page.
-	const browser = page.context().browser();
-
-	let scenarioError: unknown;
-	let result: Result | undefined;
-	try {
-		result = await callback();
-	} catch ( error ) {
-		scenarioError = error;
-	}
-
-	let restorationError: unknown;
-	let disposableContext: BrowserContext | undefined;
-	try {
-		let readPage = page;
-		if ( page.isClosed() ) {
-			if ( ! browser ) {
-				throw new Error(
-					'the case closed its browser context and no browser handle is available to take the cold read from'
-				);
-			}
-			disposableContext = await browser.newContext( {
-				baseURL: session.baseURL,
-			} );
-			readPage = await disposableContext.newPage();
-		} else {
-			await page.context().clearCookies();
-		}
-		await readPage.goto( 'shop/' );
-		const cart = await readShopperCartState( readPage );
-		if ( cart.itemsCount !== 0 ) {
-			restorationError = new ResourceQuarantineRequiredError(
-				`The run shopper cart was not emptied: a fresh session still holds ${ cart.itemsCount } item(s).`,
-				'restoration-failed'
-			);
-		} else if ( cart.currency !== defaultCurrency ) {
-			restorationError = new ResourceQuarantineRequiredError(
-				`A fresh shopper session quotes ${ cart.currency } rather than the store's configured ${ defaultCurrency }, so this run's currency selection outlived it.`,
-				'restoration-failed'
-			);
-		}
-	} catch ( error ) {
-		// The cause is passed for the chain and named in the message as well.
-		// A restoration failure aborts the family, so the one line a reader
-		// gets has to say what actually went wrong; `cause` alone is not always
-		// rendered by the reporter, and "restoring failed" on its own sends
-		// them to the trace for a string the run already had.
-		restorationError = new ResourceQuarantineRequiredError(
-			`Restoring the run shopper session failed: ${
-				error instanceof Error ? error.message : String( error )
-			}`,
-			'restoration-failed',
-			error
-		);
-	} finally {
-		// Only ever the context this function opened; the case's own is not
-		// this function's to close.
-		await disposableContext?.close();
-	}
-
-	if ( scenarioError !== undefined ) {
-		throw scenarioError;
-	}
-	if ( restorationError !== undefined ) {
-		throw restorationError;
-	}
-	return result as Result;
-}
-
-/**
- * Runs `callback` with the method enabled and, for a case denominated in a
- * currency the store does not default to, that currency enabled at a pinned
- * manual rate — both snapshotted and byte-restored with verified cold reads.
- */
-async function withRedirectMethodStoreState< Result >(
-	session: ProviderWriteSession,
-	method: RedirectMethod,
-	defaultCurrency: string,
-	callback: () => Promise< Result >
-): Promise< Result > {
-	const enable = () =>
-		withEnabledPaymentMethod(
-			session,
-			method,
-			CAPABILITY_METHOD,
-			callback
-		);
-
-	if ( method.currency === defaultCurrency ) {
-		return enable();
-	}
-	return withForeignCurrency(
-		session,
-		method.currency,
-		CAPABILITY_CURRENCY,
-		enable
-	);
-}
-
-interface ClassicCaseOptions {
-	method: RedirectMethod;
-	recordEvent: string;
-	journal: string;
-	/** Follow the provider's hosted page once, or stop at the handoff. */
-	follow: ClassicRedirectFollowMode;
-}
-
-interface ClassicCaseResult {
-	observation: RedirectHandoffObservation;
-	orderKey: string;
-	storeOrigin: string;
-	baselineOrderId: number;
-}
-
-/**
- * Drives one protection-off classic redirect case inside its own owned provider
- * interval, with the store state it needs snapshotted before and restored
- * afterwards.
- *
- * `assertCase` runs inside that same interval, holding the account and store
- * locks. Convergence and the "exactly one order" reading both scan store state
- * that only this run may be writing, so doing them after the locks were
- * released would be asserting about a store somebody else could already own.
- */
-async function runProtectionOffClassicCase< Result >(
-	session: ProviderWriteSession,
-	page: Page,
-	options: ClassicCaseOptions,
-	assertCase: ( result: ClassicCaseResult ) => Promise< Result >
-): Promise< Result > {
-	const { method } = options;
-	const defaultCurrency = await readStoreDefaultCurrency( session.adminApi );
-	requireCapabilities(
-		session,
-		method.currency === defaultCurrency
-			? CLASSIC_CAPABILITIES
-			: CLASSIC_CURRENCY_CAPABILITIES
-	);
-	await session.assertCurrentRuntimeReady( 'native' );
-
-	return withRestoredShopperSession( session, page, () =>
-		session.withProviderWriteLocks(
-			{
-				featureSetting: `payment-method-${ method.id }`,
-				recordEvent: options.recordEvent,
-			},
-			async () => {
-				await expectProtectionOff( session );
-
-				return withRedirectMethodStoreState(
-					session,
-					method,
-					defaultCurrency,
-					() =>
-						withClassicCheckoutPage(
-							session,
-							session.runId,
-							async ( scope ) => {
-								const currencyQuery =
-									method.currency === defaultCurrency
-										? undefined
-										: method.currency;
-								if ( currencyQuery ) {
-									// Proved before anything is bought: a
-									// storefront still quoting the store default
-									// would price this order in the wrong
-									// currency and the case would be about
-									// something else.
-									await setShopperSessionCurrency(
-										page,
-										currencyQuery
-									);
-								}
-
-								const baselineOrderId =
-									await readHighestOrderId( session );
-								const product =
-									await session.createOwnedProduct(
-										method.price
-									);
-								const observation =
-									await driveClassicRedirectCheckout(
-										session,
-										page,
-										{
-											method,
-											product,
-											runId: session.runId,
-											checkout: scope.classicCheckout,
-											journal: options.journal,
-											follow: options.follow,
-											currencyQuery,
-											requireRequestEvidence: true,
-										}
-									);
-
-								return assertCase( {
-									observation,
-									orderKey: (
-										await readOrderFacts(
-											session.adminApi,
-											observation.orderId
-										)
-									).orderKey,
-									storeOrigin: new URL( session.baseURL )
-										.origin,
-									baselineOrderId,
-								} );
-							}
-						)
-				);
-			}
-		)
-	);
-}
-
-/**
- * Asserts a followed protection-off case end to end and records the settled
- * shape its protection-on twin has to reproduce.
- */
-async function expectFollowedRedirectCase(
-	session: ProviderWriteSession,
-	method: RedirectMethod,
-	result: ClassicCaseResult
-): Promise< PaymentEvidence > {
-	const { observation, orderKey, storeOrigin, baselineOrderId } = result;
-	expectRequestedRedirect( observation, method, { storeOrigin, orderKey } );
-	expectReturnedToStore( observation, { storeOrigin, orderKey } );
-
-	const paid = await waitForSettledRedirect(
-		session,
-		observation.orderId,
-		observation.request.id
-	);
-	expectSettledRedirectGraph( paid, observation, method, session.runId );
-	await expectSingleRunOrder( session, baselineOrderId, observation.orderId );
-
-	return paid;
-}
-
-/** What a followed protection-off case hands its test to restate. */
-interface FollowedCaseOutcome {
-	result: ClassicCaseResult;
-	paid: PaymentEvidence;
-}
-
-/**
- * The whole of a followed protection-off case: drive it, assert it inside its
- * own locked interval, and hand back what the test restates.
- */
-async function runFollowedRedirectCase(
-	session: ProviderWriteSession,
-	page: Page,
-	options: ClassicCaseOptions & { follow: true }
-): Promise< FollowedCaseOutcome > {
-	return runProtectionOffClassicCase(
-		session,
-		page,
-		options,
-		async ( result ) => ( {
-			result,
-			paid: await expectFollowedRedirectCase(
-				session,
-				options.method,
-				result
-			),
-		} )
-	);
+		'the store answered with an off-store redirect for a method whose next action neither runtime reads'
+	).toBe( `${ storeOrigin }/` );
 }
 
 test.describe( 'WooPayments native redirect-method provider outcome fidelity', () => {
-	// Serial on purpose. The classic case provisions and removes the shared
-	// `classic-checkout` page.
-	test.describe.configure( { mode: 'serial', timeout: 600_000 } );
+	test.describe.configure( { timeout: 300_000 } );
+
+	test.beforeAll( async ( { restApi } ) => {
+		await requireTestModeAccount( restApi );
+		await createClassicCheckoutPage();
+	} );
 
 	test(
 		'One Alipay checkout sends the provider method alipay for 1200 usd with this run order-received return URL, and the single redirect settles that same PaymentIntent to succeeded with one captured charge',
@@ -879,27 +337,340 @@ test.describe( 'WooPayments native redirect-method provider outcome fidelity', (
 			],
 			tag: FAMILY_TAGS,
 		},
-		async ( { page, pilotRuntime } ) => {
-			const { paid } = await runFollowedRedirectCase(
-				pilotRuntime,
-				page,
-				{
-					method: ALIPAY,
-					recordEvent: 'redirect-alipay-classic',
-					journal: 'redirect-alipay-classic',
-					follow: true,
-				}
-			);
+		async ( { page, restApi, baseURL } ) => {
+			// This is a protection-off case, and residual risk in this family
+			// says a leaked protection-on state can misclassify it. Assert the
+			// real precondition rather than assume it.
+			expect(
+				await readCardTestingProtectionEligible( restApi ),
+				'this is a protection-off case and must not run against a protected store'
+			).toBe( false );
 
-			// `runFollowedRedirectCase` already asserted the full request shape
-			// (method, amount, currency, return URL) above via
-			// `expectRequestedRedirect`, unchanged. That same shape is now also
-			// proven independently at a lower layer:
-			// `WooPaymentsProviderGatewayAdapterTest::test_charge_sends_split_redirect_method_request`.
-			// What only this browser case proves is the client-side
-			// `alipay_handle_redirect` handoff into Stripe's hosted page and the
-			// real return through `WooPaymentsRedirectReturnController::handle_wp`.
-			expect( paid.chargeCaptured ).toBe( true );
+			const originalMethods =
+				await readEnabledPaymentMethodIds( restApi );
+			const alreadyEnabled = originalMethods.includes( ALIPAY.id );
+			if ( ! alreadyEnabled ) {
+				await writeEnabledPaymentMethodIds( restApi, [
+					...originalMethods,
+					ALIPAY.id,
+				] );
+			}
+
+			let productId: number | undefined;
+			let primaryError: unknown;
+			try {
+				const storeOrigin = new URL( baseURL! ).origin;
+				const baselineOrderId = await readHighestOrderId( restApi );
+				productId = await createRunProduct( restApi );
+				{
+					await page.goto( `?post_type=product&p=${ productId }` );
+					await page
+						.getByRole( 'button', {
+							name: 'Add to cart',
+							exact: true,
+						} )
+						.click();
+					await page.goto( 'classic-checkout/' );
+
+					const billing = page.locator(
+						'.woocommerce-billing-fields:has(#billing_first_name)'
+					);
+					await expect( billing ).toBeVisible();
+					await billing.getByLabel( /^First name/i ).fill( 'E2E' );
+					await billing
+						.getByLabel( /^Last name/i )
+						.fill( 'WooPayments' );
+					await billing
+						.locator( '#billing_country' )
+						.selectOption( 'US' );
+					await billing
+						.getByLabel( /^Street address/i )
+						.first()
+						.fill( '123 Test Street' );
+					await billing
+						.getByLabel( /^(?:Town \/ City|City)/i )
+						.fill( 'San Francisco' );
+					await billing
+						.locator( '#billing_state' )
+						.selectOption( 'CA' );
+					await billing
+						.getByLabel( /^(?:ZIP Code|Postcode)/i )
+						.fill( '94107' );
+					await billing.getByLabel( /^Phone/i ).fill( '5555550100' );
+					await page
+						.locator( '#billing_email' )
+						.fill( `woopayments-${ random() }@example.com` );
+
+					const methodRadio = page.locator(
+						`input[name="payment_method"][value="${ ALIPAY.gatewayId }"]`
+					);
+					await expect( methodRadio ).toHaveCount( 1 );
+					await methodRadio.check();
+					await expect(
+						page.locator(
+							`label[for="payment_method_${ ALIPAY.gatewayId }"]`
+						)
+					).toHaveText( ALIPAY.label );
+
+					let checkoutRequestCount = 0;
+					const checkoutResponses: Array<
+						Promise< { status: number; redirect: string } >
+					> = [];
+					const onRequest = ( request: Request ): void => {
+						if (
+							isClassicCheckoutRequest( request, storeOrigin )
+						) {
+							checkoutRequestCount += 1;
+						}
+					};
+					const onResponse = ( response: Response ): void => {
+						if (
+							! isClassicCheckoutRequest(
+								response.request(),
+								storeOrigin
+							)
+						) {
+							return;
+						}
+						// Read the body the moment the response arrives: a hash
+						// answer never navigates the document, but a
+						// `redirect_to_url` answer does, and a body read after
+						// that navigation can no longer be fetched.
+						checkoutResponses.push(
+							response
+								.json()
+								.then( ( body: { redirect?: unknown } ) => ( {
+									status: response.status(),
+									redirect:
+										typeof body.redirect === 'string'
+											? body.redirect
+											: '',
+								} ) )
+						);
+					};
+					page.on( 'request', onRequest );
+					page.on( 'response', onResponse );
+					try {
+						await page
+							.getByRole( 'button', { name: /place order/i } )
+							.click();
+						// The classic checkout hands the shopper straight to the
+						// provider's hosted test page; wait for its own control
+						// rather than a store-side URL, since the browser is
+						// about to leave this store.
+						await page
+							.getByText( 'Authorize Test Payment' )
+							.first()
+							.waitFor( {
+								state: 'visible',
+								timeout: HOSTED_PAGE_TIMEOUT_MS,
+							} );
+					} finally {
+						page.off( 'request', onRequest );
+						page.off( 'response', onResponse );
+					}
+					expect(
+						checkoutRequestCount,
+						'one Place order activation must ask the store exactly once'
+					).toBe( 1 );
+					const checkoutExchanges =
+						await Promise.all( checkoutResponses );
+					expect(
+						checkoutExchanges,
+						'one Place order activation must receive exactly one checkout response'
+					).toHaveLength( 1 );
+					const [ checkoutExchange ] = checkoutExchanges;
+					expect( checkoutExchange.status ).toBeGreaterThanOrEqual(
+						200
+					);
+					expect( checkoutExchange.status ).toBeLessThan( 300 );
+					expect(
+						checkoutExchange.redirect,
+						'the checkout response must carry a readable redirect answer'
+					).not.toBe( '' );
+
+					const newOrderIds = await readNewOrderIds(
+						restApi,
+						baselineOrderId
+					);
+					expect(
+						newOrderIds,
+						'one submission must create exactly one order'
+					).toHaveLength( 1 );
+					const [ orderId ] = newOrderIds;
+					const orderKey = await readOrderKey( restApi, orderId );
+
+					const intentId = await readOrderIntentId(
+						restApi,
+						orderId
+					);
+					// Read while the intent still awaits the redirect - the
+					// only window in which its next-action still names the
+					// request the provider received.
+					const intent = await getPaymentIntent( restApi, intentId );
+					const request = readRedirectIntentRequest( intent );
+
+					expect(
+						request.paymentMethodTypes,
+						'the provider must have been asked for exactly alipay'
+					).toEqual( [ ALIPAY.id ] );
+					expect( request.amountMinor ).toBe( ALIPAY.amountMinor );
+					expect( request.currency ).toBe( 'usd' );
+					expect(
+						request.status,
+						'the intent must await the provider redirect at this point'
+					).toBe( 'requires_action' );
+					expect(
+						request.nextActionType,
+						"the intent must await alipay's own provider redirect"
+					).toMatch( /^(redirect_to_url|alipay_handle_redirect)$/ );
+					expect(
+						request.chargeCount,
+						'no charge may exist before the shopper authorizes'
+					).toBe( 0 );
+
+					const hosted = new URL( request.providerRedirectUrl );
+					expect( hosted.protocol ).toBe( 'https:' );
+					expect(
+						hosted.origin,
+						'the handoff must leave this store for the provider'
+					).not.toBe( storeOrigin );
+
+					// The store's own answer to the submission: DISPOSITION row
+					// 115 says only this browser case proves this handoff.
+					expectStoreHandoff(
+						checkoutExchange.redirect,
+						request.nextActionType,
+						orderId,
+						request.providerRedirectUrl,
+						storeOrigin
+					);
+
+					// Neither runtime reads `alipay_handle_redirect` as a
+					// return-URL echo: the provider interposes its own hop
+					// rather than the merchant URL. Assert the hop is real,
+					// off-store and HTTPS; the run-identifying half is proven
+					// by the landed URL below.
+					if ( request.nextActionType !== 'redirect_to_url' ) {
+						const hop = new URL( request.returnUrl );
+						expect( hop.protocol ).toBe( 'https:' );
+						expect( hop.origin ).not.toBe( storeOrigin );
+					} else {
+						const returnUrl = readReturnUrlFacts(
+							request.returnUrl
+						);
+						expect( returnUrl.origin ).toBe( storeOrigin );
+						expect( returnUrl.orderId ).toBe( orderId );
+						expect( returnUrl.orderKey ).toBe( orderKey );
+						expect( returnUrl.paymentMethod ).toBe(
+							'woocommerce_payments'
+						);
+						expect( returnUrl.noncePresent ).toBe( true );
+					}
+
+					// The single provider interaction this run may make: click
+					// the hosted authorization once and come back to the store.
+					await page
+						.getByText( 'Authorize Test Payment' )
+						.first()
+						.click();
+					await page.waitForURL( /\/order-received\/[1-9]\d*/, {
+						timeout: RECEIPT_TIMEOUT_MS,
+					} );
+					await expect(
+						page.getByText(
+							/^(Your order has been received|Order received)$/i
+						)
+					).toBeVisible();
+
+					const landed = readReturnUrlFacts( page.url() );
+					expect( landed.origin ).toBe( storeOrigin );
+					expect(
+						landed.orderId,
+						'the provider must return to this run own order'
+					).toBe( orderId );
+					expect( landed.orderKey ).toBe( orderKey );
+					expect( landed.paymentMethod ).toBe(
+						'woocommerce_payments'
+					);
+
+					const payment = await expectSettledCardPayment(
+						restApi,
+						orderId,
+						{ amountMinor: ALIPAY.amountMinor, currency: 'USD' }
+					);
+					expect( payment.intentId ).toBe( intentId );
+					expect( PAID_ORDER_STATUSES ).toContain(
+						payment.orderStatus
+					);
+
+					expect(
+						await readNewOrderIds( restApi, baselineOrderId ),
+						'the settled redirect must not have created a second order'
+					).toEqual( [ orderId ] );
+				}
+			} catch ( error ) {
+				primaryError = error;
+			}
+
+			// Each cleanup step runs independently, in its own `try`, so a
+			// failure in one (the product delete, say) cannot mask another
+			// (the method-list restore) or the case's own error above.
+			const cleanupFailures: string[] = [];
+			if ( productId !== undefined ) {
+				try {
+					await restApi.delete(
+						`${ PRODUCTS_ROUTE }/${ productId }`,
+						{
+							force: true,
+						}
+					);
+				} catch ( error ) {
+					cleanupFailures.push(
+						`product delete: ${
+							error instanceof Error ? error.message : error
+						}`
+					);
+				}
+			}
+			try {
+				if ( ! alreadyEnabled ) {
+					await restApi.post( PAYMENTS_SETTINGS_ROUTE, {
+						enabled_payment_method_ids: originalMethods,
+					} );
+					const restored =
+						await readEnabledPaymentMethodIds( restApi );
+					// Order-sensitive, as the original driver restored it: a
+					// same-set-different-order result is not a byte-for-byte
+					// restore.
+					if (
+						restored.join( ',' ) !== originalMethods.join( ',' )
+					) {
+						throw new Error(
+							`enabled-payment-method list was not restored in its original order; expected ${ originalMethods.join(
+								', '
+							) } but the store reports ${ restored.join(
+								', '
+							) }.`
+						);
+					}
+				}
+			} catch ( error ) {
+				cleanupFailures.push(
+					`enabled-payment-method restore: ${
+						error instanceof Error ? error.message : error
+					}`
+				);
+			}
+
+			if ( primaryError !== undefined ) {
+				throw primaryError;
+			}
+			if ( cleanupFailures.length > 0 ) {
+				throw new Error(
+					`Cleanup failed for: ${ cleanupFailures.join( '; ' ) }`
+				);
+			}
 		}
 	);
 } );
