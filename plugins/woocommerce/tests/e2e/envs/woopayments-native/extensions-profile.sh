@@ -150,6 +150,52 @@ for index in "${!EXTENSION_KEYS[@]}"; do
 		cat "$WORK_ROOT/$key-npm.log" >&2
 		exit 1
 	fi
+	if [[ "$key" == 'paypal-payments' ]]; then
+		settings_module_package="$source_directory/modules/ppcp-settings/package.json"
+		root_webpack_config="$source_directory/webpack.config.js"
+		settings_asset_php="$source_directory/assets/ppcp-settings-js-index.asset.php"
+		npm_log="$WORK_ROOT/$key-npm.log"
+		if [[ -f "$root_webpack_config" ]]; then
+			# The current source layout builds every module's admin script from
+			# one root webpack config into the plugin's own top-level assets/
+			# directory (AssetGetter::get_asset_php_path()), so this pin needs
+			# that build to satisfy the settings module's unconditional
+			# `admin_enqueue_scripts` require(). Its one private, registry-gated
+			# devDependency (@inpsyde/playwright-utils) is e2e tooling this
+			# webpack build never touches, and this profile has no GitHub
+			# Packages credential for it, so it is dropped from the throwaway
+			# clone before installing.
+			if ! (
+				cd "$source_directory"
+				node -e "
+					const fs = require('fs');
+					const pkg = JSON.parse(fs.readFileSync('package.json'));
+					delete ( pkg.devDependencies || {} )['@inpsyde/playwright-utils'];
+					fs.writeFileSync('package.json', JSON.stringify(pkg, null, '\t') + '\n');
+				"
+				rm -f package-lock.json
+				npm install --no-audit --no-fund
+				npm run build
+			) > "$npm_log" 2>&1; then
+				cat "$npm_log" >&2
+				exit 1
+			fi
+		elif [[ -f "$settings_module_package" ]]; then
+			# Older pins build each module's own assets from a per-module
+			# package.json instead. This pin's settings module only loads
+			# behind the PCP_SETTINGS_ENABLED feature flag (unset for this
+			# smoke), so a failure here does not need to fail the profile; the
+			# asset-existence guard below still reports it.
+			(
+				cd "$(dirname "$settings_module_package")"
+				npm install --no-audit --no-fund
+				npm run build
+			) > "$npm_log" 2>&1 || true
+		fi
+		if [[ ! -f "$settings_asset_php" ]]; then
+			echo "PayPal Payments $version: $settings_asset_php was not produced. The 'WooCommerce Subscriptions settings tab renders with native WooPayments active' smoke case fatals on any pin whose settings module loads this asset unconditionally; see $npm_log for the build attempt." >&2
+		fi
+	fi
 
 	selected_versions+=( "$version" )
 	source_directories+=( "$source_directory" )

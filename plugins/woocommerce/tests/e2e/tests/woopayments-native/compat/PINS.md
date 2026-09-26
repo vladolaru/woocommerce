@@ -38,7 +38,14 @@ npm ci --no-audit --no-fund
 npm run build:webpack
 ```
 
-The matrix scenarios exercise server-side compatibility contracts for the other four extensions, and their checked-in runtime assets are sufficient. PayPal Payments `2.9.6` guards its competing card and wallet onboarding inside the extension's feature-gated new-settings graph, so compatibility probes set `PCP_SETTINGS_ENABLED=1` before WordPress bootstrap for both PayPal pins. Build logs remain quiet on success and are printed on failure.
+The matrix's WP-CLI compatibility probes exercise Bookings, Deposits, Subscriptions and PayPal Payments through PHP evaluation, and their checked-in runtime assets are sufficient for that. The extension-compat browser smoke in `merchant/payouts-disputes-smoke.spec.ts` is not: it loads the WooCommerce Subscriptions settings tab as an ordinary admin page, and PayPal Payments' settings module registers an `admin_enqueue_scripts` hook on every `woocommerce_page_wc-settings` load once that module is no longer behind a feature flag. Its handler `require`s the compiled `assets/ppcp-settings-js-index.asset.php` unconditionally, so that pin needs a real build:
+
+```sh
+npm install --no-audit --no-fund
+npm run build
+```
+
+PayPal Payments' one private, registry-gated devDependency (`@inpsyde/playwright-utils`) is e2e tooling this webpack build never touches; the profile drops it from the cloned source before installing, since it has no GitHub Packages credential for it. PayPal Payments `2.9.6` still guards its competing card and wallet onboarding, its settings module, and this asset behind the same feature-gated new-settings graph, so compatibility probes set `PCP_SETTINGS_ENABLED=1` before WordPress bootstrap for both PayPal pins, and the oldest pin's own build (a different, per-module layout) is attempted but not required to succeed. Build logs remain quiet on success and are printed on failure.
 
 ## Local profile
 

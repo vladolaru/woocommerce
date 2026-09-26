@@ -625,7 +625,7 @@ jobs:
 
       - name: 'Run ${{ matrix.pin-set }} extension compatibility matrix'
         working-directory: 'plugins/woocommerce'
-        run: pnpm exec playwright test --config=tests/e2e/envs/woopayments-native/playwright.config.ts --project=woopayments-native-extension-compat tests/e2e/tests/woopayments-native/compat
+        run: pnpm exec playwright test --config=tests/e2e/envs/woopayments-native/playwright.config.ts --project=woopayments-native-extension-compat tests/e2e/tests/woopayments-native/compat tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts
 
       - name: 'Upload extension compatibility results'
         if: ${{ always() }}

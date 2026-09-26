@@ -1,6 +1,57 @@
 import { expect, test } from '@playwright/test';
 
-import { wpEvalJson } from '../../../utils/cli';
+import { wpCLI, wpEvalJson } from '../../../utils/cli';
+
+// The native multi-currency facade this probe requires (`WCPay\MultiCurrency\MultiCurrency`)
+// only declares itself once the store has opted into WooCommerce's independent multi-currency
+// feature, which defaults to off. That is store configuration, not part of what this probe
+// asserts, so it is set up here and restored after, the way `checkout.spec.ts` handles its own
+// settings through `updateIfNeeded`/`resetValue`.
+const MULTI_CURRENCY_FEATURE_OPTION =
+	'woocommerce_feature_multi_currency_enabled';
+const MULTI_CURRENCY_FEATURE_ABSENT_MARKER =
+	'__woopayments_native_e2e_multi_currency_feature_absent__';
+
+let initialMultiCurrencyFeatureValue: string;
+
+test.beforeAll( async () => {
+	initialMultiCurrencyFeatureValue = (
+		await wpCLI( [
+			'wp',
+			'eval',
+			`echo get_option( '${ MULTI_CURRENCY_FEATURE_OPTION }', '${ MULTI_CURRENCY_FEATURE_ABSENT_MARKER }' );`,
+		] )
+	).stdout.trim();
+	await wpCLI( [
+		'wp',
+		'option',
+		'update',
+		MULTI_CURRENCY_FEATURE_OPTION,
+		'yes',
+	] );
+} );
+
+test.afterAll( async () => {
+	if (
+		initialMultiCurrencyFeatureValue ===
+		MULTI_CURRENCY_FEATURE_ABSENT_MARKER
+	) {
+		await wpCLI( [
+			'wp',
+			'option',
+			'delete',
+			MULTI_CURRENCY_FEATURE_OPTION,
+		] );
+	} else {
+		await wpCLI( [
+			'wp',
+			'option',
+			'update',
+			MULTI_CURRENCY_FEATURE_OPTION,
+			initialMultiCurrencyFeatureValue,
+		] );
+	}
+} );
 
 const COMMON_PROBE_PHP = String.raw`
 $wcpay_extension_profile = get_option( 'e2e_woopayments_extension_compat_profile', array() );

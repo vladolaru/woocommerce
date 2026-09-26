@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { admin } from '../../../test-data/data';
+import { wpCLI } from '../../../utils/cli';
 import { logIn } from '../../../utils/login';
 
 // The transactions list contract is deliberately absent: it is claimed and
@@ -20,6 +21,14 @@ const SUBSCRIPTIONS_CONTRACT_ID =
 const ADMIN_AUTH_CONTRACT_ID =
 	'default::setup::tests/e2e/specs/auth.setup.ts:41::authenticate as admin';
 
+// `wc/v3/payments/settings` only registers once `NativePaymentsState` reads back
+// `connected` or `active` (WooPaymentsAdminRestRouteRegistrar::get_controller_roots_for_state());
+// the extension-compat project never runs the readonly project's global setup that seeds this
+// for its own case, so this store-configuration precondition is set up and restored here,
+// scoped to this describe block only.
+const NATIVE_PAYMENTS_STATE_OPTION = 'woocommerce_native_payments_state';
+const NATIVE_PAYMENTS_STATE_ABSENT_MARKER =
+	'__woopayments_native_e2e_native_payments_state_absent__';
 const RUNTIME_STATUS_API = 'wc-native-payments-e2e/v1/status';
 const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
 const DISPUTES_API = 'wc/v3/payments/disputes';
@@ -241,6 +250,46 @@ test.describe( 'WooCommerce Subscriptions extension compatibility', () => {
 		process.env.E2E_WOOPAYMENTS_EXTENSION_COMPAT !== 'true',
 		'E2E_WOOPAYMENTS_EXTENSION_COMPAT is required with a real WooCommerce Subscriptions installation.'
 	);
+
+	let initialNativePaymentsState: string;
+
+	test.beforeAll( async () => {
+		initialNativePaymentsState = (
+			await wpCLI( [
+				'wp',
+				'eval',
+				`echo get_option( '${ NATIVE_PAYMENTS_STATE_OPTION }', '${ NATIVE_PAYMENTS_STATE_ABSENT_MARKER }' );`,
+			] )
+		).stdout.trim();
+		await wpCLI( [
+			'wp',
+			'option',
+			'update',
+			NATIVE_PAYMENTS_STATE_OPTION,
+			'connected',
+		] );
+	} );
+
+	test.afterAll( async () => {
+		if (
+			initialNativePaymentsState === NATIVE_PAYMENTS_STATE_ABSENT_MARKER
+		) {
+			await wpCLI( [
+				'wp',
+				'option',
+				'delete',
+				NATIVE_PAYMENTS_STATE_OPTION,
+			] );
+		} else {
+			await wpCLI( [
+				'wp',
+				'option',
+				'update',
+				NATIVE_PAYMENTS_STATE_OPTION,
+				initialNativePaymentsState,
+			] );
+		}
+	} );
 
 	test(
 		'WooCommerce Subscriptions settings tab renders with native WooPayments active',
