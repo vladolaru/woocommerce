@@ -546,9 +546,9 @@ jobs:
           echo 'd655a77f24f638a3a57edbfd192c6d9e1196970b23320d289a48fc443ca7ffb1  '"$reference_zip" | sha256sum --check
           mkdir -p "$reference_dir"
           unzip -q "$reference_zip" -d "$reference_dir"
-          bash tools/woopayments-merge/bundle-size-gate.sh capture --repo "$reference_dir/woocommerce-payments" --profile wcpay-plugin --out "$RUNNER_TEMP/wcpay-reference.json"
-          bash tools/woopayments-merge/bundle-size-gate.sh capture --repo "$GITHUB_WORKSPACE" --profile wc-core --out "$RUNNER_TEMP/wc-target.json"
-          bash tools/woopayments-merge/bundle-size-gate.sh compare --ref "$RUNNER_TEMP/wcpay-reference.json" --target "$RUNNER_TEMP/wc-target.json" --budget tools/woopayments-merge/a4aq-bundle-budget.json
+          bash plugins/woocommerce/tests/e2e/envs/woopayments-native/bundle-size-gate.sh capture --repo "$reference_dir/woocommerce-payments" --profile wcpay-plugin --out "$RUNNER_TEMP/wcpay-reference.json"
+          bash plugins/woocommerce/tests/e2e/envs/woopayments-native/bundle-size-gate.sh capture --repo "$GITHUB_WORKSPACE" --profile wc-core --out "$RUNNER_TEMP/wc-target.json"
+          bash plugins/woocommerce/tests/e2e/envs/woopayments-native/bundle-size-gate.sh compare --ref "$RUNNER_TEMP/wcpay-reference.json" --target "$RUNNER_TEMP/wc-target.json" --budget plugins/woocommerce/tests/e2e/envs/woopayments-native/a4aq-bundle-budget.json
 
       - name: 'Upload Playwright results and fixture audit'
         if: ${{ always() }}
