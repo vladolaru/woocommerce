@@ -83,6 +83,13 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 			providerCollectsExactly: [
 				'merchant-transaction-navigation',
 				'merchant-manual-capture',
+				// T.4 Batch P1: both `pilots/shopper-card-payment.spec.ts`
+				// cases are now defined directly in that file (the Blocks
+				// and Classic surfaces of client contract row 121), rather
+				// than proxied through `scenarios/card-payment.ts`, so each
+				// contributes its own entry here.
+				'shopper-card-payment',
+				'shopper-card-payment',
 			],
 			transitionCollectsExactly: [],
 			everyReadonlyRetryCount: 0,
@@ -482,6 +489,42 @@ test( 'provider-prefixed utility modules count as provider machinery', () => {
 						packageDirectory
 					),
 				/must carry @woopayments-provider/
+			);
+		}
+	);
+} );
+
+test( 'the shared provider helper counts as provider machinery', () => {
+	withSyntheticPackage(
+		{
+			[ `tests/e2e/tests/${ rogueSpecFile }` ]:
+				"import { fillCardDetails } from '../../../utils/woopayments';",
+		},
+		( packageDirectory ) => {
+			assert.throws(
+				() =>
+					validateMachineryTags(
+						[ collectedTest( [] ) ],
+						packageDirectory
+					),
+				/must carry @woopayments-provider/
+			);
+		}
+	);
+} );
+
+test( 'an unrelated module sharing the helper prefix is not caught (T.4 D4)', () => {
+	withSyntheticPackage(
+		{
+			[ `tests/e2e/tests/${ rogueSpecFile }` ]:
+				"import { readonlyCatalog } from '../../../utils/woopayments-native/readonly-catalog';",
+		},
+		( packageDirectory ) => {
+			assert.doesNotThrow( () =>
+				validateMachineryTags(
+					[ collectedTest( [] ) ],
+					packageDirectory
+				)
 			);
 		}
 	);

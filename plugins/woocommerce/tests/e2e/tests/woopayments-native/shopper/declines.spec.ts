@@ -1,16 +1,8 @@
-import type {
-	APIRequestContext,
-	FrameLocator,
-	Locator,
-	Page,
-} from '@playwright/test';
+import type { FrameLocator, Locator, Page } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
-import {
-	expect,
-	getBlocksCardFrameSelector,
-	tags,
-	test,
-} from '../../../fixtures/woopayments-native';
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { requireTestModeAccount } from '../../../utils/woopayments';
 
 // Three of the six contracts below name the classic checkout and My Account
 // card mounts. By the owner-accepted family downscope, this smoke exercises
@@ -29,7 +21,9 @@ const CONTRACT_IDS = [
 	`${ BLOCKS_FAILURES_PREFIX }90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s security code is incomplete.`,
 ];
 
-const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
+const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
+const BLOCKS_CARD_FRAME_SELECTOR =
+	'#wcpay-core-blocks-payment-element iframe[name^="__privateStripeFrame"]';
 
 // One run-stable virtual product owned by this smoke, established idempotently
 // on every run; nothing is deleted.
@@ -51,74 +45,34 @@ const PAST_EXPIRY = '0120';
 const FUTURE_EXPIRY = '1234';
 const INCOMPLETE_CVC = '1';
 const COMPLETE_CVC = '123';
-const PROVIDER_UNAVAILABLE_REASON =
-	'RULE 5: provider-owned card field validation and accessibility require the connected provider profile.';
-const providerProfileUnavailable =
-	! process.env.E2E_WOOPAYMENTS_PROVIDER_FIXTURE;
 
-async function readJson(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Record< string, unknown > > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Record< string, unknown >;
-}
-
-function cardFrameRuntime(): 'client' | 'native' {
-	const runtime = process.env.WCPAY_RUNTIME;
-	if ( runtime !== 'client' && runtime !== 'native' ) {
-		throw new Error(
-			'WCPAY_RUNTIME must be client or native for this smoke.'
-		);
-	}
-	return runtime;
-}
-
-async function ensureSmokeProduct(
-	adminApi: APIRequestContext
-): Promise< number > {
-	const lookup = await adminApi.get(
-		`/wp-json/wc/v3/products?slug=${ PRODUCT_SLUG }&status=any`
-	);
-	if ( ! lookup.ok() ) {
-		throw new Error(
-			`Smoke product lookup failed: HTTP ${ lookup.status() } ${ await lookup.text() }`
-		);
-	}
-	const existing = ( await lookup.json() ) as Array< {
-		id: number;
-		status: string;
-	} >;
-	if ( existing.length > 0 ) {
+async function ensureSmokeProduct( restApi: ApiClient ): Promise< number > {
+	const lookup = (
+		await restApi.get( `wc/v3/products?slug=${ PRODUCT_SLUG }&status=any` )
+	).data as Array< { id: number; status: string } >;
+	if ( lookup.length > 0 ) {
 		// A same-slug product in any other status would make a fresh create
 		// silently take a suffixed slug and orphan a product per run; fail at
 		// the drift instead.
-		if ( existing[ 0 ].status !== 'publish' ) {
+		if ( lookup[ 0 ].status !== 'publish' ) {
 			throw new Error(
-				`Smoke product slug is occupied by a ${ existing[ 0 ].status } product; expected publish.`
+				`Smoke product slug is occupied by a ${ lookup[ 0 ].status } product; expected publish.`
 			);
 		}
-		return existing[ 0 ].id;
+		return lookup[ 0 ].id;
 	}
 
-	const created = await readJson(
-		await adminApi.post( '/wp-json/wc/v3/products', {
-			data: {
-				name: PRODUCT_NAME,
-				slug: PRODUCT_SLUG,
-				type: 'simple',
-				virtual: true,
-				regular_price: PRODUCT_PRICE,
-				status: 'publish',
-			},
-		} ),
-		'Smoke product creation'
-	);
-	return created.id as number;
+	const created = (
+		await restApi.post( 'wc/v3/products', {
+			name: PRODUCT_NAME,
+			slug: PRODUCT_SLUG,
+			type: 'simple',
+			virtual: true,
+			regular_price: PRODUCT_PRICE,
+			status: 'publish',
+		} )
+	).data as { id: number };
+	return created.id;
 }
 
 /**
@@ -127,18 +81,13 @@ async function ensureSmokeProduct(
  * orders on the store concurrently.
  */
 async function countSmokeProductOrders(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	productId: number
 ): Promise< number > {
-	const response = await adminApi.get(
-		`/wp-json/wc/v3/orders?product=${ productId }&per_page=1`
+	const response = await restApi.get(
+		`wc/v3/orders?product=${ productId }&per_page=1`
 	);
-	if ( ! response.ok() ) {
-		throw new Error(
-			`Order count failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	const total = Number( response.headers()[ 'x-wp-total' ] );
+	const total = Number( response.headers[ 'x-wp-total' ] );
 	if ( ! Number.isSafeInteger( total ) || total < 0 ) {
 		throw new Error( 'Order count did not return a usable X-WP-Total.' );
 	}
@@ -262,52 +211,42 @@ async function expectFieldRecovered(
 }
 
 test.describe( 'Connected provider card validation', () => {
-	test.skip( providerProfileUnavailable, PROVIDER_UNAVAILABLE_REASON );
+	test.beforeAll( async ( { restApi } ) => {
+		await requireTestModeAccount( restApi );
+	} );
 
 	test(
 		'invalid card input yields accessible field-associated errors before any payment dispatch',
 		{
-			annotation: [
-				...CONTRACT_IDS.map( ( contractId ) => ( {
-					type: 'woopayments-contract',
-					description: contractId,
-				} ) ),
-				...( providerProfileUnavailable
-					? [
-							{
-								type: 'profile-unavailable',
-								description: PROVIDER_UNAVAILABLE_REASON,
-							},
-					  ]
-					: [] ),
-			],
+			annotation: CONTRACT_IDS.map( ( contractId ) => ( {
+				type: 'woopayments-contract',
+				description: contractId,
+			} ) ),
 			tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_PROVIDER ],
 		},
-		async ( { adminApi, page } ) => {
-			const productId = await ensureSmokeProduct( adminApi );
+		async ( { restApi, page } ) => {
+			const productId = await ensureSmokeProduct( restApi );
 
 			// Precondition guard: the accessible-rejection assertions below are
 			// vacuous unless the native runtime actually mounts the provider's
 			// validating payment element. A store whose gateway deactivated must
 			// fail here, loudly, not pass by never reaching a card field.
-			const paymentsSettings = await readJson(
-				await adminApi.get( PAYMENTS_SETTINGS_API ),
-				'Payments settings read'
-			);
+			const paymentsSettings = (
+				await restApi.get( PAYMENTS_SETTINGS_API )
+			).data as Record< string, unknown >;
 			expect( paymentsSettings.is_wcpay_enabled ).toBe( true );
 
 			const ordersBefore = await countSmokeProductOrders(
-				adminApi,
+				restApi,
 				productId
 			);
 			const submissions = trackCheckoutSubmissions( page );
 
 			await page.goto( `?add-to-cart=${ productId }` );
 			await page.goto( 'checkout/' );
-			const frameSelector = getBlocksCardFrameSelector(
-				cardFrameRuntime()
-			);
-			const cardFrame = page.locator( frameSelector ).first();
+			const cardFrame = page
+				.locator( BLOCKS_CARD_FRAME_SELECTOR )
+				.first();
 			await expect( cardFrame ).toBeVisible();
 			await expect( cardFrame ).not.toHaveAttribute(
 				'aria-hidden',
@@ -383,7 +322,7 @@ test.describe( 'Connected provider card validation', () => {
 			// dispatched a checkout submission, and no order exists for the
 			// run-owned product beyond what preceded the run.
 			expect( submissions() ).toBe( 0 );
-			expect( await countSmokeProductOrders( adminApi, productId ) ).toBe(
+			expect( await countSmokeProductOrders( restApi, productId ) ).toBe(
 				ordersBefore
 			);
 		}

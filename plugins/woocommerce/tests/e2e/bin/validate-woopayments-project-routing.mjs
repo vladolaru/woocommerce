@@ -15,6 +15,7 @@ const transitionProject = 'woopayments-native-transition';
 const providerPilotOrder = [
 	'merchant-transaction-navigation',
 	'merchant-manual-capture',
+	'shopper-card-payment',
 ];
 const transitionPilotOrder = [];
 // A closed ledger row whose targets include a test module under this tree
@@ -31,6 +32,7 @@ const providerInvolvementTags = [
 const providerMachineryPrefixes = [
 	'tests/e2e/utils/woopayments-native/drivers/',
 	'tests/e2e/utils/woopayments-native/provider-',
+	'tests/e2e/utils/woopayments',
 ];
 // Matches `import x from '...'`, `export … from '...'` and bare `import '...'`.
 // Deliberately permissive: over-matching costs a false positive that a human
@@ -207,7 +209,16 @@ export const reachesProviderMachinery = ( entryFile, packageDirectory ) => {
 
 			if (
 				providerMachineryPrefixes.some( ( prefix ) =>
-					relativePath.startsWith( prefix )
+					// A prefix ending in `/` or `-` groups a directory or a
+					// filename family (`provider-*.ts`) and matches by
+					// `startsWith`; a bare module path (no trailing
+					// separator) names one exact file - `woopayments.ts`
+					// resolves to `.../utils/woopayments` with no
+					// extension, and `startsWith` alone would also match
+					// the unrelated `utils/woopayments-native/` tree.
+					/[/-]$/.test( prefix )
+						? relativePath.startsWith( prefix )
+						: relativePath === prefix
 				)
 			) {
 				return true;

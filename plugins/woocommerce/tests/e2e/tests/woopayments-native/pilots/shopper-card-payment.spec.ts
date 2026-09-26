@@ -1,33 +1,662 @@
-import { completeCardCheckout } from '../../../utils/woopayments-native/drivers/checkout';
+import type { Page, Request } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
+import { fillBillingCheckoutBlocks } from '@woocommerce/e2e-utils-playwright';
+
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { random } from '../../../utils/helpers';
+import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
-	defineCardPaymentScenario,
-	registerCardPaymentScenario,
-	type CardPaymentRuntimeAdapter,
-} from '../scenarios/card-payment';
+	fillCardDetails,
+	getCharge,
+	getPaymentIntent,
+	requireTestModeAccount,
+	TEST_CARDS,
+} from '../../../utils/woopayments';
 
-const definition = defineCardPaymentScenario( {
-	contractId:
-		'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card',
-	title: 'Successful purchase › Carding protection false › using a basic card',
-	protection: false,
-	card: 'basic-card',
-	price: '10.99',
-	checkout: {
-		kind: 'blocks',
-		path: 'checkout/',
+/**
+ * Client contract row 121 (T.4 D9): "Successful purchase › Carding
+ * protection false › using a basic card". The client's own case at this
+ * source line runs the shortcode/classic checkout; the pilot originally
+ * proved only the Blocks surface (a documented surface caveat). This file
+ * now runs both, in the `checkout.spec.ts:32-35` two-row pattern: the Blocks
+ * instance keeps its title and DISPOSITION row, the Classic instance is new
+ * (T.4 addition, closing the caveat) and gets its own suffix and row.
+ *
+ * `scenarios/card-payment.ts`'s scenario-registration machinery folds into
+ * this file; the shared assertions below replace its generic evidence
+ * validator.
+ */
+
+const CONTRACT_ID =
+	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card';
+
+const FAMILY_TAGS = [
+	tags.WOOPAYMENTS_NATIVE,
+	tags.WOOPAYMENTS_PROVIDER,
+	tags.WOOPAYMENTS_PR,
+];
+
+const PRICE = '10.99';
+const AMOUNT_MINOR = 1099;
+const CURRENCY = 'USD';
+const PAID_ORDER_STATUSES = [ 'processing', 'completed' ];
+const SETTLEMENT_BUDGET_MS = 60_000;
+const POLL_INTERVAL_MS = 2_000;
+const RECEIPT_TIMEOUT_MS = 60_000;
+const PRODUCTS_ROUTE = 'wc/v3/products';
+const ORDERS_ROUTE = 'wc/v3/orders';
+
+interface SettledPayment {
+	orderId: number;
+	intentId: string;
+	chargeId: string;
+	paymentMethodId: string;
+	amountMinor: number;
+	currency: string;
+	orderStatus: string;
+	providerStatus: string;
+	chargeStatus: string;
+	chargeCaptured: boolean;
+	occurrenceCount: number;
+	captureOccurrenceCount: number;
+}
+
+async function createRunProduct(
+	restApi: ApiClient
+): Promise< { id: number } > {
+	return (
+		await restApi.post( PRODUCTS_ROUTE, {
+			name: `WooPayments card-payment ${ random() }`,
+			type: 'simple',
+			virtual: true,
+			regular_price: PRICE,
+			status: 'publish',
+		} )
+	).data as { id: number };
+}
+
+async function deleteProduct(
+	restApi: ApiClient,
+	productId: number
+): Promise< void > {
+	await restApi.delete( `${ PRODUCTS_ROUTE }/${ productId }`, {
+		force: true,
+	} );
+}
+
+async function readHighestOrderId( restApi: ApiClient ): Promise< number > {
+	const orders = (
+		await restApi.get(
+			`${ ORDERS_ROUTE }?orderby=id&order=desc&per_page=1&status=any`
+		)
+	).data as Array< { id: number } >;
+	return orders[ 0 ]?.id ?? 0;
+}
+
+async function readNewOrders(
+	restApi: ApiClient,
+	baselineOrderId: number
+): Promise< Array< { id: number; status: string } > > {
+	const orders = (
+		await restApi.get(
+			`${ ORDERS_ROUTE }?orderby=id&order=desc&per_page=20&status=any`
+		)
+	).data as Array< { id: number; status: string } >;
+	return orders.filter( ( order ) => order.id > baselineOrderId );
+}
+
+function orderMeta( order: Record< string, unknown >, key: string ): string {
+	const entries = Array.isArray( order.meta_data )
+		? ( order.meta_data as Array< { key?: unknown; value?: unknown } > )
+		: [];
+	const value = entries.find( ( entry ) => entry.key === key )?.value;
+	return typeof value === 'string' ? value : '';
+}
+
+function amountMinorFromTotal( total: string ): number {
+	const match = /^(\d+)\.(\d{2})$/.exec( total );
+	if ( ! match ) {
+		throw new Error(
+			`Card payment requires a two-decimal order total, received ${ total }.`
+		);
+	}
+	return Number( match[ 1 ] ) * 100 + Number( match[ 2 ] );
+}
+
+function intentPaymentMethodId( intent: Record< string, unknown > ): string {
+	const value = intent.payment_method;
+	if ( typeof value === 'string' ) {
+		return value;
+	}
+	if ( typeof value === 'object' && value !== null && 'id' in value ) {
+		return String( ( value as { id: unknown } ).id );
+	}
+	return '';
+}
+
+/** The exact one charge occurrence the intent's own collection must carry. */
+function requireSoleChargeId(
+	intent: Record< string, unknown >,
+	intentId: string,
+	expectedChargeId: string
+): void {
+	const chargesData = ( intent.charges as { data?: unknown[] } | undefined )
+		?.data;
+	if ( ! Array.isArray( chargesData ) ) {
+		throw new Error(
+			`Intent ${ intentId } carries no charges collection to count occurrences from.`
+		);
+	}
+	const chargeIds = chargesData.map( ( item ) =>
+		typeof item === 'object' && item !== null && 'id' in item
+			? String( ( item as { id: unknown } ).id )
+			: ''
+	);
+	if ( chargeIds.length !== 1 || chargeIds[ 0 ] !== expectedChargeId ) {
+		throw new Error(
+			`Intent ${ intentId } charge occurrence mismatch: expected exactly [${ expectedChargeId }], received [${ chargeIds.join(
+				', '
+			) }].`
+		);
+	}
+}
+
+/**
+ * Polls the exact order, PaymentIntent and charge until two consecutive
+ * reads two seconds apart return the same terminal identities, amounts and
+ * statuses. Once stable, proves the provider's own facts against the order
+ * (R1): intent and charge amount and currency equal the order's, the charge
+ * belongs to this exact intent, and both the intent's and the charge's
+ * payment method equal the one the order itself recorded.
+ */
+async function convergeSettledPayment(
+	restApi: ApiClient,
+	orderId: number
+): Promise< SettledPayment > {
+	const deadline = Date.now() + SETTLEMENT_BUDGET_MS;
+	let previous = '';
+
+	for (;;) {
+		const order = ( await restApi.get( `${ ORDERS_ROUTE }/${ orderId }` ) )
+			.data as Record< string, unknown >;
+		const intentId = orderMeta( order, '_intent_id' );
+		const chargeId = orderMeta( order, '_charge_id' );
+		const orderPaymentMethodId = orderMeta( order, '_payment_method_id' );
+
+		if ( intentId && chargeId ) {
+			const intent = await getPaymentIntent( restApi, intentId );
+			const charge = await getCharge( restApi, chargeId );
+
+			if (
+				intent.status === 'succeeded' &&
+				charge.status === 'succeeded'
+			) {
+				requireSoleChargeId( intent, intentId, chargeId );
+				const timeline = (
+					await restApi.get(
+						`wc/v3/payments/timeline/${ encodeURIComponent(
+							intentId
+						) }`
+					)
+				).data as { data?: Array< { type?: unknown } > };
+
+				const orderAmountMinor = amountMinorFromTotal(
+					String( order.total )
+				);
+				const orderCurrency = String( order.currency ).toUpperCase();
+				const current: SettledPayment = {
+					orderId,
+					intentId,
+					chargeId,
+					paymentMethodId: orderPaymentMethodId,
+					amountMinor: orderAmountMinor,
+					currency: orderCurrency,
+					orderStatus: String( order.status ),
+					providerStatus: String( intent.status ),
+					chargeStatus: String( charge.status ),
+					chargeCaptured: charge.captured === true,
+					occurrenceCount: 1,
+					captureOccurrenceCount: ( timeline.data ?? [] ).filter(
+						( event ) => event.type === 'captured'
+					).length,
+				};
+				const serialized = JSON.stringify( current );
+				if ( serialized === previous ) {
+					expect(
+						intent.amount,
+						'the intent amount must equal the order total'
+					).toBe( orderAmountMinor );
+					expect(
+						String( intent.currency ).toLowerCase(),
+						'the intent currency must equal the order currency'
+					).toBe( orderCurrency.toLowerCase() );
+					expect(
+						charge.amount,
+						'the charge amount must equal the order total'
+					).toBe( orderAmountMinor );
+					expect(
+						String( charge.currency ).toLowerCase(),
+						'the charge currency must equal the order currency'
+					).toBe( orderCurrency.toLowerCase() );
+					expect(
+						charge.payment_intent,
+						'the charge must belong to this exact intent'
+					).toBe( intentId );
+					expect(
+						intentPaymentMethodId( intent ),
+						"the intent's payment method must equal the order's recorded one"
+					).toBe( orderPaymentMethodId );
+					expect(
+						intentPaymentMethodId( charge ),
+						"the charge's payment method must equal the order's recorded one"
+					).toBe( orderPaymentMethodId );
+					return current;
+				}
+				previous = serialized;
+			}
+		}
+
+		if ( Date.now() >= deadline ) {
+			throw new Error(
+				`Order ${ orderId } never reached a stable settled provider payment within ${ SETTLEMENT_BUDGET_MS }ms.`
+			);
+		}
+		await new Promise( ( resolve ) =>
+			setTimeout( resolve, POLL_INTERVAL_MS )
+		);
+	}
+}
+
+function expectSettledGraph( payment: SettledPayment, orderId: number ): void {
+	expect( payment.orderId ).toBe( orderId );
+	expect( payment.intentId ).toMatch( /^pi_/ );
+	expect( payment.chargeId ).toMatch( /^ch_|^py_/ );
+	expect( payment.paymentMethodId ).toMatch( /^pm_/ );
+	expect( payment.amountMinor ).toBe( AMOUNT_MINOR );
+	expect( payment.currency ).toBe( CURRENCY );
+	expect( payment.providerStatus ).toBe( 'succeeded' );
+	expect( payment.chargeStatus ).toBe( 'succeeded' );
+	expect( payment.chargeCaptured ).toBe( true );
+	expect( payment.occurrenceCount ).toBe( 1 );
+	expect(
+		payment.captureOccurrenceCount,
+		'one submission must leave exactly one capture on the intent'
+	).toBe( 1 );
+	expect( PAID_ORDER_STATUSES ).toContain( payment.orderStatus );
+}
+
+/** Confirms the settled intent asked for nothing reusable and raised no challenge. */
+async function expectNoSaveNoChallenge(
+	restApi: ApiClient,
+	payment: SettledPayment
+): Promise< void > {
+	const intent = await getPaymentIntent( restApi, payment.intentId );
+	expect( intent.id ).toBe( payment.intentId );
+	expect( intent.next_action ?? null ).toBeNull();
+	expect( intent.setup_future_usage ?? null ).toBeNull();
+	const customerId = String( intent.customer ?? '' );
+	expect( customerId ).not.toBe( '' );
+	const attachedMethods = (
+		await restApi.get(
+			`wc/v3/payments/customers/${ encodeURIComponent(
+				customerId
+			) }/payment_methods`
+		)
+	).data;
+	expect( attachedMethods ).toEqual( [] );
+}
+
+async function expectOrderIsGuestPaidWithWooPayments(
+	restApi: ApiClient,
+	orderId: number
+): Promise< void > {
+	const order = ( await restApi.get( `${ ORDERS_ROUTE }/${ orderId }` ) )
+		.data as Record< string, unknown >;
+	expect( order.payment_method ).toBe( 'woocommerce_payments' );
+	expect( order.customer_id ).toBe( 0 );
+}
+
+/**
+ * Reads the order-received page's semantic order summary.
+ *
+ * Both surfaces render the same Order Confirmation block template on this
+ * store, so one reader covers Blocks and Classic; the status text still
+ * differs by surface, so both phrasings are accepted.
+ */
+async function readAccessibleSummary(
+	page: Page
+): Promise< { visible: boolean; text: string; paymentValue: string } > {
+	const statusVisible = await page
+		.getByText(
+			/^(Your order has been received|Order received|Thank you\. Your order has been received\.)$/i
+		)
+		.first()
+		.isVisible();
+	const summary = page
+		.getByRole( 'list' )
+		.filter( { hasText: /(?:Order number|Order #):/i } )
+		.filter( { hasText: /Total:/i } )
+		.filter( { hasText: /(?:Payment method|Payment):/i } )
+		.first();
+	const text = ( await summary.innerText() ).replace( /\s+/g, ' ' ).trim();
+	const paymentRow = summary
+		.getByRole( 'listitem' )
+		.filter( { hasText: /^\s*(?:Payment method|Payment):/i } )
+		.first();
+	// The rendered value is often only a masked number beside a brand icon
+	// (no "Visa"/"card" text at all), so the icon's own accessible name is
+	// part of what the summary actually conveys.
+	const imageAlts = await paymentRow
+		.locator( 'img[alt]' )
+		.evaluateAll( ( images ) =>
+			images.map( ( image ) => image.getAttribute( 'alt' ) ?? '' )
+		);
+	const paymentValue = [ await paymentRow.innerText(), ...imageAlts ]
+		.join( ' ' )
+		.replace( /\s+/g, ' ' )
+		.trim();
+	return { visible: statusVisible, text, paymentValue };
+}
+
+function expectAccessibleSummary(
+	summary: {
+		visible: boolean;
+		text: string;
+		paymentValue: string;
 	},
+	orderId: number
+): void {
+	expect( summary.visible ).toBe( true );
+	expect( summary.text ).toMatch(
+		new RegExp(
+			`(?:Order number:|Order #:)\\s*#?${ orderId }(?:\\D|$)`,
+			'i'
+		)
+	);
+	expect( summary.text ).toMatch(
+		/(?:US\$|\$)\s*10\.99\b|\b10\.99\s*USD\b/i
+	);
+	expect( summary.paymentValue ).toMatch( /\b(?:card|visa)\b/i );
+	expect( summary.paymentValue ).toMatch( /\b4242\b/ );
+}
+
+test.describe( 'Client contract row 121: basic-card purchase, protection off', () => {
+	test.describe.configure( { mode: 'serial', timeout: 420_000 } );
+
+	test.beforeAll( async ( { restApi } ) => {
+		await requireTestModeAccount( restApi );
+		await createClassicCheckoutPage();
+	} );
+
+	test(
+		// The client contract's `woopayments-contract` annotation moved to
+		// the classic instance below (D9): the client's own case at this
+		// source line is the shortcode/classic checkout, and the
+		// contract-map validator requires exactly one owning test per
+		// closed ledger contract. This Blocks instance stays a live browser
+		// case in its own right (DISPOSITION row 145) without citing that
+		// contract a second time.
+		'Successful purchase › Carding protection false › using a basic card',
+		{ tag: FAMILY_TAGS },
+		async ( { page, restApi } ) => {
+			const product = await createRunProduct( restApi );
+			try {
+				const baselineOrderId = await readHighestOrderId( restApi );
+				await page.goto( `?post_type=product&p=${ product.id }` );
+				await page
+					.getByRole( 'button', { name: 'Add to cart', exact: true } )
+					.click();
+				await page.goto( 'checkout/' );
+				await page
+					.getByRole( 'textbox', { name: 'Email address' } )
+					.fill( `woopayments-${ random() }@example.com` );
+				await fillBillingCheckoutBlocks( page, {
+					country: 'US',
+					firstName: 'E2E',
+					lastName: 'WooPayments',
+					address: '123 Test Street',
+					city: 'San Francisco',
+					state: 'CA',
+					zip: '94107',
+					phone: '5555550100',
+				} );
+				await page
+					.getByRole( 'group', { name: 'Payment options' } )
+					.getByRole( 'radio', { name: /Card/i } )
+					.check();
+				await fillCardDetails( page, TEST_CARDS.basic, 'blocks' );
+
+				let checkoutRequestCount = 0;
+				let checkoutResponseCount = 0;
+				let submittedGateway: unknown;
+				let saveRequested: unknown;
+				let tokenField: unknown;
+				const isCheckoutRequest = ( request: Request ): boolean => {
+					if ( request.method() !== 'POST' ) {
+						return false;
+					}
+					try {
+						const url = new URL( request.url() );
+						return (
+							url.pathname.replace( /\/+$/, '' ) ===
+							'/wp-json/wc/store/v1/checkout'
+						);
+					} catch {
+						return false;
+					}
+				};
+				const onRequest = ( request: Request ): void => {
+					if ( ! isCheckoutRequest( request ) ) {
+						return;
+					}
+					checkoutRequestCount += 1;
+					try {
+						const body = request.postDataJSON() as {
+							payment_method?: unknown;
+							payment_data?: Array< {
+								key?: unknown;
+								value?: unknown;
+							} >;
+						} | null;
+						submittedGateway = body?.payment_method;
+						const entries = body?.payment_data ?? [];
+						saveRequested = entries.find(
+							( entry ) =>
+								entry.key ===
+								'wc-woocommerce_payments-new-payment-method'
+						)?.value;
+						tokenField = entries.find(
+							( entry ) =>
+								entry.key === 'wcpay-fraud-prevention-token'
+						)?.value;
+					} catch {
+						// The count above is what the cardinality clause needs.
+					}
+				};
+				const onResponse = ( response: {
+					request: () => Request;
+				} ): void => {
+					if ( isCheckoutRequest( response.request() ) ) {
+						checkoutResponseCount += 1;
+					}
+				};
+				page.on( 'request', onRequest );
+				page.on( 'response', onResponse );
+				try {
+					await page
+						.getByRole( 'button', { name: /place order/i } )
+						.click();
+					await page.waitForURL( /\/order-received\/[1-9]\d*/, {
+						timeout: RECEIPT_TIMEOUT_MS,
+					} );
+				} finally {
+					page.off( 'request', onRequest );
+					page.off( 'response', onResponse );
+				}
+
+				expect(
+					checkoutRequestCount,
+					'one Place order activation must ask the Store API exactly once'
+				).toBe( 1 );
+				expect( checkoutResponseCount ).toBe( 1 );
+				expect( submittedGateway ).toBe( 'woocommerce_payments' );
+				expect( saveRequested ).toBe( false );
+				expect(
+					tokenField,
+					'protection off must carry a present, empty fraud-prevention token field'
+				).toBe( '' );
+
+				const orderId = Number(
+					/order-received\/(\d+)/.exec( page.url() )?.[ 1 ]
+				);
+				await expectOrderIsGuestPaidWithWooPayments( restApi, orderId );
+				const payment = await convergeSettledPayment(
+					restApi,
+					orderId
+				);
+				expectSettledGraph( payment, orderId );
+				await expectNoSaveNoChallenge( restApi, payment );
+				expectAccessibleSummary(
+					await readAccessibleSummary( page ),
+					orderId
+				);
+				const newOrders = await readNewOrders(
+					restApi,
+					baselineOrderId
+				);
+				expect(
+					newOrders.map( ( order ) => order.id ),
+					'one submission must create exactly one order'
+				).toEqual( [ orderId ] );
+			} finally {
+				await deleteProduct( restApi, product.id );
+			}
+		}
+	);
+
+	test(
+		'Successful purchase › Carding protection false › using a basic card (classic checkout)',
+		{
+			annotation: [
+				{ type: 'woopayments-contract', description: CONTRACT_ID },
+			],
+			tag: FAMILY_TAGS,
+		},
+		async ( { page, restApi } ) => {
+			const product = await createRunProduct( restApi );
+			try {
+				const baselineOrderId = await readHighestOrderId( restApi );
+				await page.goto( `?post_type=product&p=${ product.id }` );
+				await page
+					.getByRole( 'button', { name: 'Add to cart', exact: true } )
+					.click();
+				await page.goto( 'classic-checkout/' );
+				await page
+					.getByRole( 'textbox', { name: 'First name' } )
+					.fill( 'E2E' );
+				await page
+					.getByRole( 'textbox', { name: 'Last name' } )
+					.fill( 'WooPayments' );
+				await page
+					.getByRole( 'textbox', { name: 'Street address' } )
+					.fill( '123 Test Street' );
+				await page
+					.getByRole( 'textbox', { name: 'Town / City' } )
+					.fill( 'San Francisco' );
+				await page
+					.getByRole( 'textbox', { name: 'ZIP Code' } )
+					.fill( '94107' );
+				await page
+					.getByRole( 'textbox', { name: 'Phone' } )
+					.fill( '5555550100' );
+				await page
+					.getByRole( 'textbox', { name: 'Email address' } )
+					.fill( `woopayments-${ random() }@example.com` );
+				await page
+					.locator(
+						'input[name="payment_method"][value="woocommerce_payments"]'
+					)
+					.check();
+				await fillCardDetails( page, TEST_CARDS.basic, 'classic' );
+
+				let checkoutRequestCount = 0;
+				let submittedGateway: unknown;
+				let saveRequested: unknown;
+				let tokenField: unknown;
+				const onRequest = ( request: Request ): void => {
+					if ( request.method() !== 'POST' ) {
+						return;
+					}
+					const params = new URLSearchParams(
+						request.postData() ?? ''
+					);
+					if ( ! params.has( 'payment_method' ) ) {
+						return;
+					}
+					checkoutRequestCount += 1;
+					submittedGateway = params.get( 'payment_method' );
+					// The checkbox posts the string `"true"` when checked and
+					// is absent from the body entirely when it is not; `'1'`
+					// is never a value this field carries, so comparing
+					// against it could never fail.
+					saveRequested = params.has(
+						'wc-woocommerce_payments-new-payment-method'
+					)
+						? params.get(
+								'wc-woocommerce_payments-new-payment-method'
+						  ) === 'true'
+						: false;
+					tokenField =
+						params.get( 'wcpay-fraud-prevention-token' ) ?? '';
+				};
+				page.on( 'request', onRequest );
+				try {
+					await page
+						.getByRole( 'button', { name: /place order/i } )
+						.click();
+					await page.waitForURL( /\/order-received\/[1-9]\d*/, {
+						timeout: RECEIPT_TIMEOUT_MS,
+					} );
+				} finally {
+					page.off( 'request', onRequest );
+				}
+
+				expect(
+					checkoutRequestCount,
+					'one Place order activation must dispatch the classic checkout form exactly once'
+				).toBe( 1 );
+				expect( submittedGateway ).toBe( 'woocommerce_payments' );
+				expect( saveRequested ).toBe( false );
+				expect(
+					tokenField ?? '',
+					'protection off must not carry a fraud-prevention token'
+				).toBe( '' );
+
+				const orderId = Number(
+					/order-received\/(\d+)/.exec( page.url() )?.[ 1 ]
+				);
+				await expectOrderIsGuestPaidWithWooPayments( restApi, orderId );
+				const payment = await convergeSettledPayment(
+					restApi,
+					orderId
+				);
+				expectSettledGraph( payment, orderId );
+				await expectNoSaveNoChallenge( restApi, payment );
+				expectAccessibleSummary(
+					await readAccessibleSummary( page ),
+					orderId
+				);
+				const newOrders = await readNewOrders(
+					restApi,
+					baselineOrderId
+				);
+				expect(
+					newOrders.map( ( order ) => order.id ),
+					'one submission must create exactly one order'
+				).toEqual( [ orderId ] );
+			} finally {
+				await deleteProduct( restApi, product.id );
+			}
+		}
+	);
 } );
-
-const adapter: CardPaymentRuntimeAdapter = {
-	withState: ( session, _runId, callback ) =>
-		session.withProviderWriteLocks(
-			{ recordEvent: 'shopper-card-payment' },
-			() => callback( undefined )
-		),
-	completeCheckout: async ( session, page, product, runId ) => ( {
-		kind: 'blocks',
-		orderId: await completeCardCheckout( session, page, product, runId ),
-	} ),
-};
-
-registerCardPaymentScenario( definition, adapter );

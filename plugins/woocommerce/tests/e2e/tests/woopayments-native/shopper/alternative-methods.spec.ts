@@ -1,27 +1,17 @@
-import type { APIRequestContext, APIResponse } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
-import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { random } from '../../../utils/helpers';
+import { requireTestModeAccount } from '../../../utils/woopayments';
 
 const CONTRACT_ID =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/klarna-checkout-purchase.spec.ts:42::Klarna Checkout › shows the message in the product page';
 
-const PRODUCTS_API = '/wp-json/wc/v3/products';
+const PRODUCTS_API = 'wc/v3/products';
 
 const PRODUCT_PRICE = '100.00';
 
 const MESSAGING_FRAME_SELECTOR = '#payment-method-message iframe';
-
-async function readJson< Result >(
-	response: APIResponse,
-	description: string
-): Promise< Result > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Result;
-}
 
 function requireBaseUrl( baseURL: string | undefined ): string {
 	if ( ! baseURL ) {
@@ -31,33 +21,21 @@ function requireBaseUrl( baseURL: string | undefined ): string {
 }
 
 async function createRunProduct(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	runId: string
 ): Promise< { id: number; name: string; permalink: string } > {
 	const name = `WooPayments Klarna messaging ${ runId }`;
-	const product = await readJson< {
-		id?: unknown;
-		name?: unknown;
-		permalink?: unknown;
-	} >(
-		await adminApi.post( PRODUCTS_API, {
-			data: {
-				name,
-				type: 'simple',
-				status: 'publish',
-				virtual: true,
-				tax_status: 'none',
-				regular_price: PRODUCT_PRICE,
-				meta_data: [
-					{
-						key: '_e2e_woopayments_run_id',
-						value: runId,
-					},
-				],
-			},
-		} ),
-		'Klarna messaging product creation'
-	);
+	const product = (
+		await restApi.post( PRODUCTS_API, {
+			name,
+			type: 'simple',
+			status: 'publish',
+			virtual: true,
+			tax_status: 'none',
+			regular_price: PRODUCT_PRICE,
+			meta_data: [ { key: '_e2e_woopayments_run_id', value: runId } ],
+		} )
+	).data as { id?: unknown; name?: unknown; permalink?: unknown };
 
 	if (
 		typeof product.id !== 'number' ||
@@ -74,16 +52,17 @@ async function createRunProduct(
 }
 
 async function deleteRunProduct(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	productId: number
 ): Promise< void > {
-	await readJson(
-		await adminApi.delete( `${ PRODUCTS_API }/${ productId }`, {
-			data: { force: true },
-		} ),
-		'Klarna messaging product cleanup'
-	);
+	await restApi.delete( `${ PRODUCTS_API }/${ productId }`, {
+		force: true,
+	} );
 }
+
+test.beforeAll( async ( { restApi } ) => {
+	await requireTestModeAccount( restApi );
+} );
 
 test(
 	'Klarna Checkout › shows provider-hosted messaging in the product page @woopayments-provider',
@@ -96,8 +75,9 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_PROVIDER ],
 	},
-	async ( { adminApi, page, runId, baseURL } ) => {
-		const product = await createRunProduct( adminApi, runId );
+	async ( { restApi, page, baseURL } ) => {
+		const runId = random();
+		const product = await createRunProduct( restApi, runId );
 		try {
 			const productUrl = new URL( product.permalink );
 			const storeOrigin = new URL( requireBaseUrl( baseURL ) ).origin;
@@ -118,10 +98,10 @@ test(
 				.toMatch( /klarna/i );
 			const accessibleMessage = await messageBody.ariaSnapshot();
 			expect( accessibleMessage ).toMatch(
-				/pay|payment|later|installment|instalment|financ/i
+				/pay|payment|later|installment|instalment|financ|interest.free/i
 			);
 		} finally {
-			await deleteRunProduct( adminApi, product.id );
+			await deleteRunProduct( restApi, product.id );
 		}
 	}
 );
