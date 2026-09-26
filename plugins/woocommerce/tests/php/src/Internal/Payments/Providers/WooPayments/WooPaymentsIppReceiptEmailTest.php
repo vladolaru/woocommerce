@@ -170,6 +170,28 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Oracle normalization leaves a price alone when it starts with the order ID.
+	 */
+	public function test_oracle_normalization_handles_order_id_inside_price(): void {
+		$order = $this->getMockBuilder( WC_Order::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_date_created', 'get_id', 'get_items', 'get_view_order_url' ) )
+			->getMock();
+		$order->method( 'get_date_created' )->willReturn( null );
+		$order->method( 'get_id' )->willReturn( 10 );
+		$order->method( 'get_items' )->willReturn( array() );
+		$order->method( 'get_view_order_url' )->willReturn( 'https://example.test/order/10' );
+
+		$method = new \ReflectionMethod( $this, 'normalize_receipt_content' );
+		$method->setAccessible( true );
+
+		$this->assertSame(
+			'Total: $10.00; order #<ORDER_ID>; "orderNumber":"<ORDER_ID>"',
+			$method->invoke( $this, 'Total: $10.00; order #10; "orderNumber":"10"', $order, true )
+		);
+	}
+
+	/**
 	 * @testdox Oracle normalization leaves a postcode alone when it starts with the order ID.
 	 */
 	public function test_oracle_normalization_handles_order_id_inside_postcode(): void {
@@ -395,8 +417,9 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 
 		$content = preg_replace( '/\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?:AM|PM)\b/', '<RENDERED_AT>', $content );
 		$this->assertIsString( $content );
-		// Replace the ID only as a whole number, so an ID that also appears inside a postcode or price stays intact.
-		$content = preg_replace( '/(?<!\d)' . preg_quote( (string) $order->get_id(), '/' ) . '(?!\d)/', '<ORDER_ID>', $content );
+		// Replace the ID only where the receipt prints the order number, so an ID that also appears in a postcode or price stays intact.
+		$order_id = preg_quote( (string) $order->get_id(), '/' );
+		$content  = preg_replace( '/(#|"orderNumber":")' . $order_id . '(?!\d)/', '${1}<ORDER_ID>', $content );
 		$this->assertIsString( $content );
 
 		if ( ! $plain_text ) {
