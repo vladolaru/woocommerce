@@ -2616,54 +2616,35 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Charge should resolve saved WooCommerce token IDs before native transport.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-1's saved-PM
+	 * variant (`Fixtures/rec-t3-3ds-requires-action.json`, pair
+	 * `saved_payment_method_requires_action`): an on-session PaymentIntent for an already-attached
+	 * 3DS-required card, real from the local platform. The token-resolution guard this test exists
+	 * for moves to the sent request body (`pm_saved`, the resolved token, not a raw context
+	 * credential) rather than a hand-written response validator, following the fake-transport
+	 * pattern {@see self::test_native_charge_decline_envelope_maps_each_card_code} established.
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2070-2072` attaches an
+	 * already-saved token to the order (`add_token_to_order()`) unconditionally, before the
+	 * `$needs_frontend_confirmation` check for a `requires_action`/`requires_confirmation` status
+	 * at `:2081` — the saved-token attachment does not wait to see whether the intent needs a
+	 * challenge.
 	 */
 	public function test_charge_resolves_saved_payment_token_before_native_transport(): void {
-		$user_id          = $this->factory()->user->create();
-		$order            = $this->create_woopayments_order();
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
-		$saved_token      = $this->create_card_token( $user_id, 'pm_saved' );
-		$api_client       = new class() extends WooPaymentsApiClient {
-			/**
-			 * Last request data.
-			 *
-			 * @var array<string,mixed>
-			 */
-			public array $last_request_data = array();
-
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Create and confirm a payment intention.
-			 *
-			 * @param array<string,mixed> $request_data Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @return array<string,mixed>
-			 */
-			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				if ( 'pm_saved' !== $request_data['payment_method'] || 'key_charge' !== $idempotency_key ) {
-					throw new \RuntimeException( 'Saved token was not resolved before the native charge request.' );
-				}
-
-				return array(
-					'id'             => 'pi_saved',
-					'status'         => 'succeeded',
-					'customer'       => 'cus_native',
-					'payment_method' => 'pm_saved',
-					'currency'       => 'usd',
-					'charges'        => array(
-						'total_count' => 0,
-						'data'        => array(),
-					),
-				);
-			}
-		};
+		$user_id               = $this->factory()->user->create();
+		$order                 = $this->create_woopayments_order();
+		$gateway               = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$saved_token           = $this->create_card_token( $user_id, 'pm_saved' );
+		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-3ds-requires-action.json', 'saved_payment_method_requires_action' );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => $recorded['content_type'] ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -2678,7 +2659,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service, $account_service );
 		$outcome = $sut->charge(
 			PaymentContext::for_checkout(
 				$order,
@@ -2691,9 +2672,15 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 'pm_saved', $outcome->get_payment_method_id() );
-		$this->assertContains( $saved_token->get_id(), $order->get_payment_tokens(), 'Existing saved tokens should be linked to the paid order.' );
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status(), 'A 3DS-required saved card must surface as requires-customer-action, not a synthetic success.' );
+		$this->assertSame( $recorded['body']['payment_method'], $outcome->get_payment_method_id(), "The outcome's payment method must come from REC-3DS-1's recorded response." );
+		$this->assertContains( $saved_token->get_id(), $order->get_payment_tokens(), 'Existing saved tokens should be linked to the order regardless of outcome.' );
+
+		$sent = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $sent, 'The request body sent over the fake transport must be valid JSON.' );
+		$this->assertSame( 'pm_saved', $sent['payment_method'] ?? null, 'The resolved saved token, not a raw context credential, must reach native transport.' );
+		$this->assertSame( 'key_charge', $http_client->last_headers['Idempotency-Key'] ?? null );
+		$this->assertSame( 1, $http_client->request_count );
 	}
 
 	/**
@@ -3981,57 +3968,28 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Native charge decoding should plan card display effects without mutating the order.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-1's new-card
+	 * variant (`Fixtures/rec-t3-3ds-requires-action.json`, pair `new_card_requires_action`), real
+	 * from the local platform. A real `requires_action` PaymentIntent carries no charge yet
+	 * (`charges.total_count 0`): unlike the earlier hand-written stub, which put a charge on the
+	 * requires_action intent, this outcome carries no `charge_id` at all —
+	 * `WooPaymentsIntentCodec::outcome_from_intention()` only sets that key when `latest_charge()`
+	 * finds one (`WooPaymentsIntentCodec.php:47-49`).
 	 */
 	public function test_native_charge_returns_display_effect_plan_without_mutating_order(): void {
-		$order            = $this->create_woopayments_order();
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
-		$api_client       = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Create and confirm a payment intention.
-			 *
-			 * @param array<string,mixed> $request_data Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @return array<string,mixed>
-			 */
-			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				unset( $request_data, $idempotency_key );
-
-				return array(
-					'id'             => 'pi_action',
-					'status'         => 'requires_action',
-					'client_secret'  => 'secret_action',
-					'customer'       => 'cus_native',
-					'payment_method' => 'pm_native',
-					'currency'       => 'usd',
-					'charges'        => array(
-						'total_count' => 1,
-						'data'        => array(
-							array(
-								'id'                     => 'ch_native',
-								'payment_method_details' => array(
-									'type' => 'card',
-									'card' => array(
-										'brand'   => 'visa',
-										'funding' => 'credit',
-										'last4'   => '4242',
-										'network' => 'visa',
-									),
-								),
-							),
-						),
-					),
-				);
-			}
-		};
+		$order                 = $this->create_woopayments_order();
+		$gateway               = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-3ds-requires-action.json', 'new_card_requires_action' );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => $recorded['content_type'] ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -4041,17 +3999,17 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
 		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
-		$this->assertSame( 'ch_native', $outcome->get_data()['charge_id'] ?? null );
+		$this->assertArrayNotHasKey( 'charge_id', $outcome->get_data(), 'REC-3DS-1 has no charge yet on a requires_action intent.' );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
-		$this->assertStringStartsWith( '#wcpay-confirm-pi:' . $order->get_id() . ':secret_action:', $outcome->get_redirect_url() );
+		$this->assertStringStartsWith( '#wcpay-confirm-pi:' . $order->get_id() . ':' . $recorded['body']['client_secret'] . ':', $outcome->get_redirect_url() );
 		$this->assertSame( '', $order->get_meta( 'last4', true ) );
 		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
 		$this->assertSame( '', $order->get_meta( '_wcpay_payment_method_details', true ) );
@@ -4059,6 +4017,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, $outcome->get_effect_plan()->get_type() );
 		$this->assertSame( 0, $gateway->processed_order_id );
+		$this->assertSame( 1, $http_client->request_count );
 	}
 
 	/**
@@ -4154,40 +4113,27 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * (`WooPaymentsIntentCodecTest::test_confirmation_redirect_uses_explicit_nonce`) and the effect-plan
 	 * test (`WooPaymentsOrderEffectApplierTest::test_setup_intent_effects_persist_provider_references`)
 	 * covered pieces of this before; neither goes through the adapter's own intent-type wiring.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-4's recorded envelope
+	 * (`Fixtures/rec-t3-setup-intent-requires-action.json`, pair `setup_intent_requires_action`), the
+	 * same real My Account add-payment-method `requires_action` SetupIntent REC-2 recorded its
+	 * declines from.
 	 */
 	public function test_zero_total_setup_intent_requiring_action_returns_si_confirmation_redirect(): void {
-		$user_id          = $this->factory()->user->create();
-		$order            = $this->create_woopayments_order( '0.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
-		$saved_token      = $this->create_card_token( $user_id, 'pm_zero_action' );
-		$api_client       = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Create and confirm a setup intention.
-			 *
-			 * @param array<string,mixed> $request_data Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @return array<string,mixed>
-			 */
-			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
-				unset( $request_data, $idempotency_key );
-
-				return array(
-					'id'            => 'seti_zero_action',
-					'status'        => 'requires_action',
-					'client_secret' => 'seti_zero_action_secret',
-					'customer'      => 'cus_zero_action',
-				);
-			}
-		};
+		$user_id               = $this->factory()->user->create();
+		$order                 = $this->create_woopayments_order( '0.00' );
+		$gateway               = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$saved_token           = $this->create_card_token( $user_id, 'pm_zero_action' );
+		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-setup-intent-requires-action.json', 'setup_intent_requires_action' );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => $recorded['content_type'] ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -4197,9 +4143,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order->save();
 		$token_service = $this->create_single_resolution_token_service( $saved_token, $user_id, 'pm_zero_action' );
 
-		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_zero_action' );
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( (string) $recorded['body']['customer'] );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service, $account_service );
 		$outcome = $sut->charge(
 			PaymentContext::for_checkout(
 				$order,
@@ -4213,8 +4159,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
-		$this->assertStringStartsWith( '#wcpay-confirm-si:' . $order->get_id() . ':seti_zero_action_secret:', $outcome->get_redirect_url() );
+		$this->assertStringStartsWith( '#wcpay-confirm-si:' . $order->get_id() . ':' . $recorded['body']['client_secret'] . ':', $outcome->get_redirect_url() );
 		$this->assertStringNotContainsString( '#wcpay-confirm-pi:', $outcome->get_redirect_url() );
+		$this->assertSame( 1, $http_client->request_count );
 	}
 
 	/**

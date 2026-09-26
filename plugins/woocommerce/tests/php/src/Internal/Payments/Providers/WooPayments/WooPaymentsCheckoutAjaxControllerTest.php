@@ -92,101 +92,76 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Shared intent confirmation should apply the native payment lifecycle directly.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-2's real completed
+	 * challenge (`Fixtures/rec-t3-3ds-manual.json`, pair `classic_checkout_challenge_completed`):
+	 * a classic checkout that finished a hosted 3DS challenge, obtained via one API-only GET of the
+	 * resulting PaymentIntent through native transport after a real Playwright run.
 	 */
 	public function test_confirm_intent_for_order_applies_native_payment_lifecycle(): void {
-		$order = $this->create_woopayments_order( '50.00' );
+		$order = $this->create_woopayments_order( '10.99' );
 
-		$api_client = new class() extends WooPaymentsApiClient {
-			/**
-			 * Retrieve a PaymentIntent.
-			 *
-			 * @param string $intent_id PaymentIntent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_payment_intention( string $intent_id ): array {
-				return array(
-					'id'             => $intent_id,
-					'status'         => 'succeeded',
-					'currency'       => 'usd',
-					'amount'         => 5000,
-					'customer'       => 'cus_shared',
-					'payment_method' => 'pm_shared',
-					'charges'        => array(
-						'total_count' => 1,
-						'data'        => array(
-							array(
-								'id'             => 'ch_shared',
-								'payment_method' => 'pm_shared',
-							),
-						),
-					),
-				);
-			}
-		};
-		$sut        = $this->create_controller( $api_client );
+		$recorded              = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+		$sut = $this->create_controller( $api_client, null, null, $account_service );
 
-		$sut->confirm_intent_for_order( $order, 'pi_shared', false );
+		$sut->confirm_intent_for_order( $order, (string) $recorded['body']['id'], false );
 		$reloaded = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
-		$this->assertSame( 'pi_shared', $reloaded->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'pm_shared', $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( $recorded['body']['id'], $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( $recorded['body']['payment_method'], $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertStringContainsString( 'intentions/' . rawurlencode( (string) $recorded['body']['id'] ), $http_client->last_path );
 	}
 
 	/**
 	 * @testdox Order-status callback should complete a zero-total order from the native SetupIntent.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-5's succeeded
+	 * challenge (`Fixtures/rec-t3-3ds-manual.json`, pair `my_account_setup_intent_challenge_completed`):
+	 * a real My Account add-payment-method SetupIntent that succeeded after a hosted 3DS challenge.
 	 */
 	public function test_update_order_status_completes_zero_total_setup_intent(): void {
-		$order = $this->create_woopayments_order( '0.00' );
-		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$recorded = $this->load_recorded_manual_3ds_entry( 'my_account_setup_intent_challenge_completed' );
+		$order    = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', $recorded['body']['id'] );
 		$order->save();
 
-		$api_client = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Retrieve a SetupIntent.
-			 *
-			 * @param string $setup_intent_id SetupIntent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_setup_intention( string $setup_intent_id ): array {
-				if ( 'seti_native' !== $setup_intent_id ) {
-					throw new \RuntimeException( 'Unexpected setup intent ID.' );
-				}
-
-				return array(
-					'id'             => 'seti_native',
-					'status'         => 'succeeded',
-					'customer'       => 'cus_native',
-					'payment_method' => 'pm_native',
-				);
-			}
-		};
-		$sut        = $this->create_controller( $api_client );
-		$response   = $sut->get_update_order_status_response(
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+		$sut      = $this->create_controller( $api_client, null, null, $account_service );
+		$response = $sut->get_update_order_status_response(
 			array(
 				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
 				'order_id'    => $order->get_id(),
-				'intent_id'   => 'seti_native',
+				'intent_id'   => $recorded['body']['id'],
 			)
 		);
-		$order      = wc_get_order( $order->get_id() );
+		$order    = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertArrayHasKey( 'return_url', $response );
 		$this->assertSame( 200, $response['status_code'] );
 		$this->assertSame( 'completed', $order->get_status() );
-		$this->assertSame( 'seti_native', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'pm_native', $order->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( 'cus_native', $order->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( $recorded['body']['id'], $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( $recorded['body']['payment_method'], $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( $recorded['body']['customer'], $order->get_meta( '_stripe_customer_id', true ) );
 		$this->assert_order_has_no_note_containing( $order, 'A payment of' );
 		$this->assert_order_has_no_note_containing( $order, 'A test payment of' );
 	}
@@ -1485,81 +1460,128 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback should leave a post-authentication decline unpaid with the recorded intent identity.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`): a hosted 3DS challenge that fails, or that completes and is
+	 * then declined, both leave the PaymentIntent `requires_payment_method`. REC-3DS-3a
+	 * (`Fixtures/rec-t3-3ds-manual.json`, pair `blocks_challenge_failed`) has 0 charges
+	 * (`payment_intent_authentication_failure`); REC-3DS-3b (pair
+	 * `blocks_post_authentication_decline`) has one failed charge (`card_declined`/
+	 * `generic_decline`). The "order failed" status is F-3DS-1 (T.7 Step 5: native leaves the order
+	 * `pending`, the client marks it `failed`) and is left out of this test rather than pinned.
+	 * Likewise, the client's own `update_order_status` AJAX handler echoes nothing at all for a
+	 * non-authorized intent — it only `wp_json_encode`s and `wp_die()`s a `return_url` inside the
+	 * `if ( $intent->is_authorized() )` branch (`gw:4347-4367`) — so the 409-with-an-`error`-key
+	 * envelope is native's own shape, not a client-parity claim, and is left unasserted here (only
+	 * `return_url`'s absence is asserted, matching the client exactly).
+	 *
+	 * `_charge_id` matches the client's own mapping, not an assumption: the client's AJAX handler
+	 * fetches the intent, reads `$charge = $intent->get_charge()` and
+	 * `$charge_id = ! empty( $charge ) ? $charge->get_id() : null`, then calls
+	 * `attach_intent_info_to_order()` unconditionally (`gw:4220-4226`), which persists that same
+	 * `$charge_id` (`os:1362-1363`); for a `requires_payment_method` intent with an error, the same
+	 * `charge_id` flows into `mark_payment_failed()` (`os:418-422`). The client's own intent
+	 * deserializer resolves `get_charge()` as `end( $charges['data'] )` when `total_count > 0`
+	 * (`includes/wc-payment-api/class-wc-payments-api-client.php:2403`), the same rule
+	 * `WooPaymentsIntentCodec::latest_charge()` uses. REC-3DS-3a's 0 charges therefore keep
+	 * `_charge_id` empty, and REC-3DS-3b's one failed charge sets it to that failed charge's id.
+	 *
+	 * @dataProvider post_authentication_decline_data
+	 *
+	 * @param string $pair               Fixture pair key.
+	 * @param string $expected_charge_id Expected `_charge_id` meta: empty for 3a's chargeless intent, the recorded failed charge id for 3b's.
+	 */
+	public function test_update_order_status_fails_order_for_post_authentication_decline( string $pair, string $expected_charge_id ): void {
+		$recorded = $this->load_recorded_manual_3ds_entry( $pair );
+		$order    = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $recorded['body']['id'] );
+		$order->save();
+
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+		$sut      = $this->create_controller( $api_client, null, null, $account_service );
+		$response = $sut->get_update_order_status_response(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => $recorded['body']['id'],
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayNotHasKey( 'return_url', $response, "$pair must not confirm the checkout, matching the client's own is_authorized() gate on echoing return_url." );
+		$this->assertSame( $recorded['body']['id'], $order->get_meta( '_intent_id', true ), "$pair must keep the intent id it was confirming." );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $expected_charge_id, $order->get_meta( '_charge_id', true ), "$pair's charge identity must match the recorded intent's own charges list." );
+	}
+
+	/**
+	 * REC-3DS-3 post-authentication decline pairs, one with no attached charge and one with a
+	 * failed charge.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function post_authentication_decline_data(): array {
+		return array(
+			'REC-3DS-3a: hosted challenge failed, 0 charges'    => array( 'blocks_challenge_failed', '' ),
+			'REC-3DS-3b: post-auth decline, one failed charge' => array( 'blocks_post_authentication_decline', 'ch_3UJjIPBzWlxcwgpP0KWwmy3j' ),
+		);
+	}
+
+	/**
 	 * @testdox Order-status callback should save requested cards before completing the order.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-2's real completed
+	 * challenge (`Fixtures/rec-t3-3ds-manual.json`, pair `classic_checkout_challenge_completed`),
+	 * a guest classic checkout in the recording; this test gives its customer a WordPress user (per
+	 * the plan's recording notes) so the token-count assertions below stay meaningful.
 	 */
 	public function test_update_order_status_saves_requested_card_token_before_completing_order(): void {
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 
-		$order = $this->create_woopayments_order( '10.00' );
+		$order = $this->create_woopayments_order( '10.99' );
 		$order->set_customer_id( $user_id );
 		$order->set_payment_method_title( 'WooPayments' );
-		$order->update_meta_data( '_intent_id', 'pi_native' );
+
+		$recorded = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' );
+		$order->update_meta_data( '_intent_id', $recorded['body']['id'] );
 		$order->save();
 
-		$api_client    = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Retrieve a PaymentIntent.
-			 *
-			 * @param string $intent_id PaymentIntent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_payment_intention( string $intent_id ): array {
-				if ( 'pi_native' !== $intent_id ) {
-					throw new \RuntimeException( 'Unexpected payment intent ID.' );
-				}
-
-				return array(
-					'id'             => 'pi_native',
-					'status'         => 'succeeded',
-					'currency'       => 'usd',
-					'customer'       => 'cus_native',
-					'payment_method' => 'pm_native',
-					'charges'        => array(
-						'total_count' => 1,
-						'data'        => array(
-							array(
-								'id'                     => 'ch_native',
-								'payment_method'         => 'pm_native',
-								'payment_method_details' => array(
-									'type' => 'card',
-									'card' => array(
-										'brand'   => 'visa',
-										'funding' => 'credit',
-										'last4'   => '4242',
-										'network' => 'visa',
-									),
-								),
-							),
-						),
-					),
-				);
-			}
-		};
-		$token_service = $this->create_token_service(
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+		$recorded_payment_method_id = (string) $recorded['body']['payment_method'];
+		$recorded_charge            = $recorded['body']['charges']['data'][0];
+		$token_service              = $this->create_token_service(
 			array(
-				'pm_native' => array(
-					'id'   => 'pm_native',
+				$recorded_payment_method_id => array(
+					'id'   => $recorded_payment_method_id,
 					'type' => 'card',
 					'card' => array(
-						'brand'     => 'visa',
-						'last4'     => '4242',
-						'exp_month' => 12,
-						'exp_year'  => 2030,
+						'brand'     => $recorded_charge['payment_method_details']['card']['brand'],
+						'last4'     => $recorded_charge['payment_method_details']['card']['last4'],
+						'exp_month' => $recorded_charge['payment_method_details']['card']['exp_month'],
+						'exp_year'  => $recorded_charge['payment_method_details']['card']['exp_year'],
 					),
 				),
 			)
 		);
-		$sut           = $this->create_controller( $api_client, null, $token_service );
+		$sut                        = $this->create_controller( $api_client, null, $token_service, $account_service );
 
 		$status_at_token_attach          = '';
 		$payment_complete_observations   = array();
@@ -1599,7 +1621,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				array(
 					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
 					'order_id'                   => $order->get_id(),
-					'intent_id'                  => 'pi_native',
+					'intent_id'                  => $recorded['body']['id'],
 					'should_save_payment_method' => 'true',
 				)
 			);
@@ -1611,28 +1633,29 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order  = wc_get_order( $order->get_id() );
 		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
 		$token  = $tokens[0] ?? null;
+		$last4  = (string) $recorded_charge['payment_method_details']['card']['last4'];
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 200, $response['status_code'] );
 		$this->assertSame( 'completed', $order->get_status() );
 		$this->assertNotSame( 'completed', $status_at_token_attach, 'The token must be attached before the lifecycle service completes the order.' );
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
-		$this->assertSame( 'pm_native', $token->get_token() );
+		$this->assertSame( $recorded_payment_method_id, $token->get_token() );
 		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
 		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
 		$this->assertSame( 1, $payment_complete_observer_count );
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $payment_complete_observations['gateway'] );
 		$this->assertSame( 'Visa credit card', $payment_complete_observations['title'] );
-		$this->assertSame( '4242', $payment_complete_observations['last4'] );
+		$this->assertSame( $last4, $payment_complete_observations['last4'] );
 		$this->assertSame( 'visa', $payment_complete_observations['brand'] );
-		$this->assertStringContainsString( '"last4":"4242"', (string) $payment_complete_observations['details'] );
+		$this->assertStringContainsString( '"last4":"' . $last4 . '"', (string) $payment_complete_observations['details'] );
 		$this->assertSame( '', $payment_complete_observations['raw_details'] );
-		$this->assertSame( 'pm_native', $payment_complete_observations['payment_method'] );
+		$this->assertSame( $recorded_payment_method_id, $payment_complete_observations['payment_method'] );
 		$this->assertCount( 1, $payment_complete_observations['tokens'] );
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $payment_complete_observations['token'] );
-		$this->assertSame( 'pm_native', $payment_complete_observations['token']->get_token() );
+		$this->assertSame( $recorded_payment_method_id, $payment_complete_observations['token']->get_token() );
 		$this->assertSame( 'visa', $payment_complete_observations['token']->get_card_type() );
-		$this->assertSame( '4242', $payment_complete_observations['token']->get_last4() );
+		$this->assertSame( $last4, $payment_complete_observations['token']->get_last4() );
 
 		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
 		try {
@@ -1640,7 +1663,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				array(
 					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
 					'order_id'                   => $order->get_id(),
-					'intent_id'                  => 'pi_native',
+					'intent_id'                  => $recorded['body']['id'],
 					'should_save_payment_method' => 'true',
 				)
 			);
@@ -1656,7 +1679,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $payment_complete_observer_count );
 		$this->assertCount( 1, $tokens );
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $active_token );
-		$this->assertSame( 'pm_native', $active_token->get_token() );
+		$this->assertSame( $recorded_payment_method_id, $active_token->get_token() );
 		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
 	}
 
@@ -2527,43 +2550,81 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Setup-intent callback should return the native SetupIntent response envelope.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`): the `requires_action` row is REC-3DS-4's recorded envelope
+	 * (`Fixtures/rec-t3-setup-intent-requires-action.json`, pair `setup_intent_requires_action`): a
+	 * 3DS-required card add attempt through the same `get_create_setup_intent_response()` path REC-2
+	 * recorded its declines from. The controller only ever re-serializes `id`/`status`/`client_secret`
+	 * from whatever `create_and_confirm_setup_intention()` returns
+	 * (`WooPaymentsCheckoutAjaxController.php:376-381`), so the expected envelope here is derived
+	 * from that mapping applied to the recorded body, not from watching native run: the fixture's
+	 * own `native_observation` block is marked NOT an expectation source for exactly this reason.
+	 *
+	 * @dataProvider create_setup_intent_response_envelope_data
+	 *
+	 * @param string $payment_method_id     Payment method credential sent as `wcpay-payment-method`.
+	 * @param string $customer_id           Customer id the mocked customer service returns.
+	 * @param bool   $use_recorded_envelope Whether to feed REC-3DS-4's recorded envelope through a fake transport.
 	 */
-	public function test_create_setup_intent_returns_native_response_envelope(): void {
+	public function test_create_setup_intent_returns_native_response_envelope( string $payment_method_id, string $customer_id, bool $use_recorded_envelope ): void {
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
+		$http_client = null;
 
-		$api_client = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Create and confirm a SetupIntent.
-			 *
-			 * @param array<string,mixed> $request_data Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @return array<string,mixed>
-			 */
-			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
-				if ( 'cus_user' !== $request_data['customer']
-					|| 'pm_card' !== $request_data['payment_method']
-					|| array( 'card' ) !== $request_data['payment_method_types']
-					|| '' === $idempotency_key ) {
-					throw new \RuntimeException( 'Unexpected setup intent payload.' );
+		if ( $use_recorded_envelope ) {
+			$recorded              = $this->load_recorded_intent_entry( 'rec-t3-setup-intent-requires-action.json', 'setup_intent_requires_action' );
+			$http_client           = new FakeWooPaymentsHttpClient();
+			$http_client->response = array(
+				'response' => array( 'code' => $recorded['http_status'] ),
+				'headers'  => array( 'content-type' => $recorded['content_type'] ),
+				'body'     => wp_json_encode( $recorded['body'] ),
+			);
+			$api_client            = new WooPaymentsApiClient();
+			$api_client->init( $http_client, $this->create_account_service( false ) );
+			$expected_data = array(
+				'id'            => (string) $recorded['body']['id'],
+				'status'        => (string) $recorded['body']['status'],
+				'client_secret' => (string) $recorded['body']['client_secret'],
+			);
+		} else {
+			$api_client    = new class() extends WooPaymentsApiClient {
+				/**
+				 * Tell whether the transport is available.
+				 *
+				 * @return bool
+				 */
+				public function is_available(): bool {
+					return true;
 				}
 
-				return array(
-					'id'            => 'seti_user',
-					'status'        => 'succeeded',
-					'client_secret' => 'seti_user_secret_abc',
-				);
-			}
-		};
+				/**
+				 * Create and confirm a SetupIntent.
+				 *
+				 * @param array<string,mixed> $request_data Request data.
+				 * @param string              $idempotency_key Idempotency key.
+				 * @return array<string,mixed>
+				 */
+				public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+					if ( 'cus_user' !== $request_data['customer']
+						|| 'pm_card' !== $request_data['payment_method']
+						|| array( 'card' ) !== $request_data['payment_method_types']
+						|| '' === $idempotency_key ) {
+						throw new \RuntimeException( 'Unexpected setup intent payload.' );
+					}
+
+					return array(
+						'id'            => 'seti_user',
+						'status'        => 'succeeded',
+						'client_secret' => 'seti_user_secret_abc',
+					);
+				}
+			};
+			$expected_data = array(
+				'id'            => 'seti_user',
+				'status'        => 'succeeded',
+				'client_secret' => 'seti_user_secret_abc',
+			);
+		}
 
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
@@ -2572,29 +2633,43 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$customer_service->expects( $this->once() )
 			->method( 'get_or_create_customer_id_for_user' )
 			->with( $user_id )
-			->willReturn( 'cus_user' );
+			->willReturn( $customer_id );
 
 		$sut      = $this->create_controller( $api_client, $customer_service );
 		$response = $sut->get_create_setup_intent_response(
 			array(
 				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
-				'wcpay-payment-method' => 'pm_card',
+				'wcpay-payment-method' => $payment_method_id,
 			)
 		);
 
 		$this->assertTrue( $response['success'] );
 		$this->assertSame( 200, $response['status_code'] );
-		$this->assertSame(
-			array(
-				'id'            => 'seti_user',
-				'status'        => 'succeeded',
-				'client_secret' => 'seti_user_secret_abc',
-			),
-			$response['data']
-		);
+		$this->assertSame( $expected_data, $response['data'] );
 		$this->assertFalse(
 			\WC_Rate_Limiter::retried_too_soon( 'add_payment_method_' . $user_id ),
 			'The AJAX setup phase must leave the WooCommerce form-handler rate limit available.'
+		);
+
+		if ( null !== $http_client ) {
+			$this->assertSame( 1, $http_client->request_count );
+			$sent = json_decode( (string) $http_client->last_body, true );
+			$this->assertIsArray( $sent, 'The request body sent over the fake transport must be valid JSON.' );
+			$this->assertSame( $payment_method_id, $sent['payment_method'] ?? null, 'REC-3DS-4 request must send the 3DS-required test card as the payment method.' );
+			$this->assertSame( $customer_id, $sent['customer'] ?? null );
+		}
+	}
+
+	/**
+	 * `create_setup_intent` response-envelope scenarios: a hand-built succeeded stub, and REC-3DS-4's
+	 * recorded `requires_action` envelope.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public function create_setup_intent_response_envelope_data(): array {
+		return array(
+			'succeeded'                   => array( 'pm_card', 'cus_user', false ),
+			'requires_action (REC-3DS-4)' => array( 'pm_card_threeDSecure2Required', 'cus_UsIeTbmGHPc9jY', true ),
 		);
 	}
 
@@ -2705,6 +2780,63 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$this->fail( "REC-2 fixture has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * Load one recorded PaymentIntent/SetupIntent entry's HTTP status, response body, and sent
+	 * request body by fixture file and pair key.
+	 *
+	 * Shared by the T.3 Task 4 tests that feed a recorded envelope through the real
+	 * {@see WooPaymentsApiClient} over a {@see FakeWooPaymentsHttpClient}.
+	 *
+	 * @param string $fixture Fixture file name under `Fixtures/`.
+	 * @param string $pair    Fixture pair key.
+	 * @return array{http_status:int,content_type:string,body:array<string,mixed>}
+	 */
+	private function load_recorded_intent_entry( string $fixture, string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$contents = file_get_contents( __DIR__ . '/Fixtures/' . $fixture );
+		$this->assertIsString( $contents );
+		$decoded = json_decode( $contents, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array(
+					'http_status'  => (int) $entry['response']['http_status'],
+					'content_type' => (string) $entry['response']['content_type'],
+					'body'         => $entry['response']['body'],
+				);
+			}
+		}
+
+		$this->fail( "Fixture '$fixture' has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * Load one recorded REC-3DS-2/3/5 manual-run entry's response body by pair key.
+	 *
+	 * `Fixtures/rec-t3-3ds-manual.json` entries are keyed by `pair`, not `response.content_type`
+	 * (they were captured with a plain `get_payment_intention()`/`get_setup_intention()` GET, not
+	 * through the REC-1-style pair/http_status/content_type shape).
+	 *
+	 * @param string $pair Fixture pair key.
+	 * @return array{body:array<string,mixed>}
+	 */
+	private function load_recorded_manual_3ds_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$contents = file_get_contents( __DIR__ . '/Fixtures/rec-t3-3ds-manual.json' );
+		$this->assertIsString( $contents );
+		$decoded = json_decode( $contents, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array( 'body' => $entry['response']['body'] );
+			}
+		}
+
+		$this->fail( "REC-3DS manual fixture has no entry for pair '$pair'." );
 	}
 
 	/**

@@ -310,6 +310,36 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should print the classic checkout error region with an assertive live-region role.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`), the classic-error-region owner MISSING row: a screen reader
+	 * only announces a payment failure as soon as it appears when the region is an assertive live
+	 * region (`role="alert"`); a plain or absent live-region role can leave it unannounced while
+	 * focus stays on the payment fields. `render_payment_fields()` prints the region hidden up
+	 * front so the checkout script can fill and reveal it once a native confirmation callback
+	 * (`update_order_status`/`confirm_intent_for_order`) reports a failure
+	 * (`WooPaymentsCheckoutBridge.php:567`). Oracle: WooPayments 11.1.0
+	 * `client/checkout/utils/show-error-checkout.js:15` wraps a checkout error in
+	 * `<ul class="woocommerce-error" role="alert">`, the same `woocommerce-error` class and
+	 * `role="alert"` pairing native's region carries; the assertion below checks only that pairing,
+	 * not the surrounding `id`/`hidden` markup, which is native-only structure with no client
+	 * counterpart to cite.
+	 */
+	public function test_render_payment_fields_prints_assertive_payment_error_region(): void {
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge( true );
+		$sut             = new WooPaymentsCheckoutBridge();
+		$sut->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		ob_start();
+		$sut->render_payment_fields();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'woocommerce-error', $output );
+		$this->assertStringContainsString( 'role="alert"', $output );
+	}
+
+	/**
 	 * @testdox Should not relocalize base checkout config after ordinary card fields render.
 	 */
 	public function test_after_checkout_form_does_not_duplicate_rendered_card_config(): void {

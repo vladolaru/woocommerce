@@ -2015,6 +2015,34 @@ describe( 'WooPayments checkout', () => {
 		expectClassicCheckoutBlockedOnce();
 	} );
 
+	// T.3 Task 4 (plan-task-t3.md): a `#wcpay-confirm-si` hash with no trailing
+	// confirmation-token segment (REC-3DS-4/REC-3DS-5's shape, which never
+	// carries one) must go through handleNextAction rather than confirmSetup.
+	test( 'handles SetupIntent confirmation hashes without a confirmation token through next actions', async () => {
+		stripeMock.handleNextAction.mockResolvedValueOnce( {
+			setupIntent: { id: 'seti_native' },
+		} );
+		window.location.hash =
+			'#wcpay-confirm-si:123:seti_native_secret_abc:nonce';
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( stripeMock.confirmSetup ).not.toHaveBeenCalled();
+		expect( stripeMock.handleNextAction ).toHaveBeenCalledWith( {
+			clientSecret: 'seti_native_secret_abc',
+		} );
+		expect( global.jQuery.post ).toHaveBeenCalledWith(
+			'https://example.test/admin-ajax.php',
+			expect.objectContaining( {
+				action: 'update_order_status',
+				intent_id: 'seti_native',
+			} )
+		);
+		expect( window.location.hash ).toBe( '' );
+		expectClassicCheckoutBlockedOnce();
+	} );
+
 	test( 'marks confirmation callbacks as subscription payment-method changes on change-payment URLs', async () => {
 		window.history.pushState(
 			{},
@@ -3204,6 +3232,65 @@ describe( 'WooPayments checkout', () => {
 			global.jQuery.checkoutFormResult.unblock
 		).toHaveBeenCalledTimes( 1 );
 		expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
+	} );
+
+	// T.3 Task 4 (plan-task-t3.md): the success counterpart of "releases
+	// add-payment-method after a failed SetupIntent confirmation" above -
+	// REC-3DS-4/REC-3DS-5's requires_action SetupIntent must be confirmed with
+	// Stripe (some setup-confirmation call receiving the intent's client
+	// secret) before the wcpay-setup-intent field is filled and the form
+	// submits. Which Stripe SDK method the client itself calls for this My
+	// Account flow (confirmSetup vs the older confirmCardSetup) is F-3DS-3
+	// (T.7) and is not asserted as a parity fact; only native's own call and
+	// its ordering before submission are proven.
+	test( 'confirms a requires_action SetupIntent before submitting wcpay-setup-intent', async () => {
+		const addPaymentMethodForm = createAddPaymentMethodForm();
+		global.jQuery.post.mockReturnValueOnce( {
+			done: jest.fn( ( callback ) => {
+				callback( {
+					success: true,
+					data: {
+						id: 'seti_challenge',
+						status: 'requires_action',
+						client_secret: 'seti_challenge_secret_abc',
+					},
+				} );
+				return {
+					fail: jest.fn(),
+				};
+			} ),
+		} );
+		stripeMock.confirmSetup.mockResolvedValueOnce( {
+			setupIntent: {
+				id: 'seti_challenge',
+				status: 'succeeded',
+			},
+		} );
+
+		require( '../woopayments-checkout' );
+		addPaymentMethodForm.dispatchEvent(
+			new window.Event( 'submit', { bubbles: true, cancelable: true } )
+		);
+		await flushPromises();
+
+		expect( stripeMock.confirmSetup ).toHaveBeenCalledWith( {
+			clientSecret: 'seti_challenge_secret_abc',
+			redirect: 'if_required',
+		} );
+		const setupIntentField = addPaymentMethodForm.querySelector(
+			'input[name="wcpay-setup-intent"]'
+		);
+		expect( setupIntentField ).not.toBeNull();
+		expect( setupIntentField.value ).toBe( 'seti_challenge' );
+		expect( addPaymentMethodForm.submit ).toHaveBeenCalled();
+		// Ordering, not just occurrence: submit must not fire until after the
+		// setup confirmation was invoked (and, by the awaited promise chain
+		// above, resolved).
+		expect(
+			stripeMock.confirmSetup.mock.invocationCallOrder[ 0 ]
+		).toBeLessThan(
+			addPaymentMethodForm.submit.mock.invocationCallOrder[ 0 ]
+		);
 	} );
 
 	test( 'preserves a safe setup-intent error from an HTTP failure', async () => {

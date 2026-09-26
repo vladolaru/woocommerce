@@ -1999,6 +1999,81 @@ describe( 'wc-payment-method-woopayments', () => {
 		);
 	} );
 
+	// T.3 Task 4 (plan-task-t3.md): a failed next action carries the Stripe error
+	// (REC-3DS-3b's shopper-facing decline message) straight through to the
+	// Blocks payments notice. Whether update_order_status is (or should be)
+	// called on this error branch is F-3DS-1 (T.7): the client's own
+	// confirmation flow always dispatches update_order_status, success or
+	// failure (client/checkout/api/index.js:258-276), while native's
+	// handleConfirmationResponse() early-returns on result.error before
+	// reaching updateOrderStatusAfterConfirmation(); that divergence is left
+	// unasserted here.
+	it( 'returns the Stripe error in the payments notice context when a Blocks next action fails', async () => {
+		const handleNextAction = jest.fn().mockResolvedValue( {
+			error: {
+				message: 'Your card was declined.',
+			},
+		} );
+		window.fetch = jest.fn();
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => ( {
+				create: jest.fn( () => ( {
+					mount: jest.fn(),
+				} ) ),
+			} ) ),
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+			handleNextAction,
+		} ) );
+
+		const registration = registerWooPayments();
+		let checkoutSuccessResult;
+		const onCheckoutSuccess = jest.fn( ( callback ) => {
+			checkoutSuccessResult = callback( {
+				processingResponse: {
+					paymentDetails: {
+						redirect:
+							'#wcpay-confirm-pi:123:pi_123_secret_abc:nonce_123',
+					},
+				},
+			} );
+		} );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess,
+				},
+				emitResponse,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onCheckoutSuccess ).toHaveBeenCalled();
+		} );
+
+		await expect( checkoutSuccessResult ).resolves.toEqual( {
+			type: 'error',
+			message: 'Your card was declined.',
+			messageContext: 'payments',
+		} );
+		expect( handleNextAction ).toHaveBeenCalledWith( {
+			clientSecret: 'pi_123_secret_abc',
+		} );
+	} );
+
 	it( 'handles PaymentIntent next actions from Blocks saved-token redirects', async () => {
 		const handleNextAction = jest.fn().mockResolvedValue( {
 			paymentIntent: {

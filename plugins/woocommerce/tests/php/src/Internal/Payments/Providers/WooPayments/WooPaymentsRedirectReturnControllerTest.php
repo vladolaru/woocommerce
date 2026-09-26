@@ -331,21 +331,50 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * `processing`), and `:1351` (`attach_intent_info_to_order`, which persists `_intent_id` and
 	 * `_charge_id` from the fetched intent and its latest charge).
 	 *
+	 * The `Alipay (REC-RM)` row is T.3 Task 4's RECORD swap (`plan-task-t3.md`): the real recorded
+	 * PaymentIntent REC-RM's Alipay handle-redirect return produced
+	 * (`Fixtures/rec-t3-redirect-alipay.json`, pair `alipay_redirect_return_succeeded`), obtained
+	 * from one API-only GET of the intent a real Playwright run's hosted authorize left behind. That
+	 * recording's shopper is a guest, so this row gives the test order's customer a WordPress user
+	 * (the plan's recording notes) and adds the missing "no token for non-reusable methods on
+	 * return" assertion (client `gw:2321-2407`): Alipay is not a reusable payment method type, so
+	 * the redirect return must save no token for the customer. This test order's total is set to the
+	 * recording's own 12.00 USD (matching `amount: 1200`), and the recorded intent's single
+	 * `metadata.order_id` field is rewritten to this order's id: `order_matches_intent()` compares
+	 * the fetched intent's `metadata.order_id` against the order the return URL names, so a
+	 * recording captured against a different order needs that one substitution to pass the match;
+	 * no other recorded field is altered.
+	 *
 	 * @dataProvider redirect_method_return_provider
 	 *
-	 * @param string $method    Split gateway payment method ID.
-	 * @param string $charge_id Provider charge ID fixture (Bancontact settles under a `py_` prefix).
+	 * @param string $method       Split gateway payment method ID.
+	 * @param string $charge_id    Provider charge ID fixture (Bancontact settles under a `py_` prefix).
+	 * @param bool   $use_recorded Whether to feed REC-RM's recorded PaymentIntent instead of a hand-built one.
 	 */
-	public function test_handle_wp_confirms_redirect_method_return( string $method, string $charge_id ): void {
-		$order = $this->create_order( '50.00', 0, true );
+	public function test_handle_wp_confirms_redirect_method_return( string $method, string $charge_id, bool $use_recorded = false ): void {
+		$customer_id = $use_recorded ? self::factory()->user->create() : 0;
+		$order       = $this->create_order( $use_recorded ? '12.00' : '50.00', $customer_id, true );
 		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . $method );
 		$order->save();
 
+		$intent_id = 'pi_redirect';
+		if ( $use_recorded ) {
+			$recorded                         = $this->load_recorded_redirect_alipay_entry();
+			$recorded['metadata']['order_id'] = (string) $order->get_id();
+			$intent_id                        = (string) $recorded['id'];
+		}
+
 		$api_client                 = new RedirectReturnApiClientStub();
-		$api_client->payment_intent = $this->redirect_method_payment_intent( $order, 'pi_redirect', $method, $charge_id );
-		$confirmation_owner         = $this->create_confirmation_owner( $api_client );
-		$this->sut                  = $this->create_controller( true, $confirmation_owner, $api_client );
-		$this->set_payment_intent_return_request( $order, 'pi_redirect', false );
+		$api_client->payment_intent = $use_recorded ? $recorded : $this->redirect_method_payment_intent( $order, $intent_id, $method, $charge_id );
+		// The REC-RM row feeds the token service the real recorded payment-method details (type
+		// alipay) and requests a save, so "0 tokens" proves Alipay's non-reusable type is refused
+		// (client gw:2321-2407), not that no save was ever asked for.
+		$token_service      = $use_recorded
+			? $this->create_token_service( array( (string) $recorded['payment_method'] => $recorded['charges']['data'][0]['payment_method_details'] ) )
+			: null;
+		$confirmation_owner = $this->create_confirmation_owner( $api_client, $token_service );
+		$this->sut          = $this->create_controller( true, $confirmation_owner, $api_client );
+		$this->set_payment_intent_return_request( $order, $intent_id, $use_recorded );
 
 		$this->sut->handle_wp();
 		$reloaded = wc_get_order( $order->get_id() );
@@ -353,15 +382,26 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'processing', $reloaded->get_status() );
 		$this->assertSame( 1, $api_client->payment_intent_reads );
-		$this->assertSame( 'pi_redirect', $api_client->last_payment_intent_id );
-		$this->assertSame( 'pi_redirect', $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( $intent_id, $api_client->last_payment_intent_id );
+		$this->assertSame( $intent_id, $reloaded->get_meta( '_intent_id', true ) );
 		$this->assertSame( $charge_id, $reloaded->get_meta( '_charge_id', true ) );
+
+		if ( $use_recorded ) {
+			global $wpdb;
+			// Read the row count directly: the token data store only returns gateways
+			// registered in this request, and the test runtime registers none.
+			$this->assertSame(
+				'0',
+				$wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->prefix}woocommerce_payment_tokens WHERE user_id = %d", $customer_id ) ),
+				'REC-RM: a non-reusable redirect method (Alipay) must save no token, of any gateway, for the customer on return.'
+			);
+		}
 	}
 
 	/**
 	 * Redirect-method return fixtures.
 	 *
-	 * @return array<string,array{0:string,1:string}>
+	 * @return array<string,array{0:string,1:string,2?:bool}>
 	 */
 	public function redirect_method_return_provider(): array {
 		return array(
@@ -369,7 +409,29 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'Affirm'            => array( 'affirm', 'ch_redirect' ),
 			'Cash App Afterpay' => array( 'afterpay_clearpay', 'ch_redirect' ),
 			'Bancontact'        => array( 'bancontact', 'py_redirect' ),
+			'Alipay (REC-RM)'   => array( 'alipay', 'py_3UJjDMBzWlxcwgpP1P6NMtfy', true ),
 		);
+	}
+
+	/**
+	 * Load REC-RM's recorded Alipay redirect-return PaymentIntent body.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_redirect_alipay_entry(): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$contents = file_get_contents( __DIR__ . '/Fixtures/rec-t3-redirect-alipay.json' );
+		$this->assertIsString( $contents );
+		$decoded = json_decode( $contents, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === 'alipay_redirect_return_succeeded' ) {
+				return $entry['response']['body'];
+			}
+		}
+
+		$this->fail( "REC-RM fixture has no entry for pair 'alipay_redirect_return_succeeded'." );
 	}
 
 	/**

@@ -1900,11 +1900,16 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should save setup-intent payment methods from the account add-payment-method form.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The SetupIntent is now REC-3DS-5's real succeeded
+	 * challenge (`Fixtures/rec-t3-3ds-manual.json`, pair `my_account_setup_intent_challenge_completed`):
+	 * a My Account add-payment-method SetupIntent that succeeded after a hosted 3DS challenge.
 	 */
 	public function test_add_payment_method_saves_successful_setup_intent_token(): void {
 		$user_id = self::factory()->user->create();
 		wp_set_current_user( $user_id );
-		$_POST['wcpay-setup-intent'] = 'seti_native';
+		$recorded                    = $this->load_recorded_manual_3ds_entry( 'my_account_setup_intent_challenge_completed' );
+		$_POST['wcpay-setup-intent'] = $recorded['body']['id'];
 
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -1913,14 +1918,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$api_client
 			->expects( $this->once() )
 			->method( 'get_setup_intention' )
-			->with( 'seti_native' )
-			->willReturn(
-				array(
-					'id'             => 'seti_native',
-					'status'         => 'succeeded',
-					'payment_method' => 'pm_added',
-				)
-			);
+			->with( $recorded['body']['id'] )
+			->willReturn( $recorded['body'] );
 
 		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
 			->disableOriginalConstructor()
@@ -1929,8 +1928,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$token_service
 			->expects( $this->once() )
 			->method( 'get_or_create_token_for_user' )
-			->with( 'pm_added', $user_id )
-			->willReturn( $this->create_card_token( $user_id, 'pm_added' ) );
+			->with( $recorded['body']['payment_method'], $user_id )
+			->willReturn( $this->create_card_token( $user_id, (string) $recorded['body']['payment_method'] ) );
 
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service );
@@ -1939,6 +1938,78 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertSame( wc_get_endpoint_url( 'payment-methods' ), $result['redirect'] );
+	}
+
+	/**
+	 * @testdox Should refuse to save a payment method from a non-succeeded SetupIntent.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. REC-3DS-5 failed
+	 * (`Fixtures/rec-t3-3ds-manual.json`, pair `my_account_setup_intent_challenge_failed`): a My
+	 * Account add-payment-method SetupIntent left `requires_payment_method` after a failed 3DS
+	 * challenge. `add_payment_method()` returns its error before ever calling the token service
+	 * (`NativeWooPaymentsGateway.php:645-647`), so a hosted challenge failure must never attach a
+	 * payment method to the shopper's account. The notice text is asserted only as a stable prefix,
+	 * one notice, not the exact final wording: whether the client shows this same message (or any
+	 * message at all) for a failed My Account SetupIntent confirmation is F-3DS-3 (T.7, alongside
+	 * the client's `confirmSetup` vs `confirmCardSetup` uncertainty for this same flow) and is not
+	 * claimed here as a parity fact.
+	 */
+	public function test_add_payment_method_refuses_non_succeeded_setup_intent_without_saving_token(): void {
+		wc_clear_notices();
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$recorded                    = $this->load_recorded_manual_3ds_entry( 'my_account_setup_intent_challenge_failed' );
+		$_POST['wcpay-setup-intent'] = $recorded['body']['id'];
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_setup_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_setup_intention' )
+			->with( $recorded['body']['id'] )
+			->willReturn( $recorded['body'] );
+
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->expects( $this->never() )->method( 'get_or_create_token_for_user' );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service );
+
+		$result = $gateway->add_payment_method();
+
+		$this->assertSame( array( 'result' => 'error' ), $result );
+		$this->assertCount( 1, wc_get_notices( 'error' ) );
+		$this->assertStringStartsWith(
+			'Failed to add the provided payment method. Please try again later',
+			wc_get_notices( 'error' )[0]['notice'] ?? ''
+		);
+	}
+
+	/**
+	 * Load one recorded REC-3DS-2/3/5 manual-run entry's response body by pair key.
+	 *
+	 * @param string $pair Fixture pair key.
+	 * @return array{body:array<string,mixed>}
+	 */
+	private function load_recorded_manual_3ds_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$contents = file_get_contents( __DIR__ . '/Providers/WooPayments/Fixtures/rec-t3-3ds-manual.json' );
+		$this->assertIsString( $contents );
+		$decoded = json_decode( $contents, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array( 'body' => $entry['response']['body'] );
+			}
+		}
+
+		$this->fail( "REC-3DS manual fixture has no entry for pair '$pair'." );
 	}
 
 	/**
