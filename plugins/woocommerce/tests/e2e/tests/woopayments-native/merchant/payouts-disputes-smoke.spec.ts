@@ -24,6 +24,11 @@ const DISPUTES_CONTRACT_ID =
 	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-disputes.spec.ts:15::Merchant disputes › Load the disputes list page';
 const SUBSCRIPTIONS_CONTRACT_ID =
 	'default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-settings.spec.ts:13::WooCommerce › Settings › Subscriptions › Merchant should be able to load WooCommerce Subscriptions settings tab';
+// This smoke logs the admin in through wp-login.php itself rather than
+// reusing the setup project's storage state, so it also carries the client's
+// admin-authentication row.
+const ADMIN_AUTH_CONTRACT_ID =
+	'default::setup::tests/e2e/specs/auth.setup.ts:41::authenticate as admin';
 
 const RUNTIME_STATUS_API = '/wp-json/wc-native-payments-e2e/v1/status';
 const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
@@ -186,10 +191,12 @@ async function expectDataLoaded(
 test(
 	'payments admin surfaces load for an authorized merchant without denial, fatal, or failed data fetches',
 	{
-		annotation: [ DISPUTES_CONTRACT_ID ].map( ( contractId ) => ( {
-			type: 'woopayments-contract',
-			description: contractId,
-		} ) ),
+		annotation: [ DISPUTES_CONTRACT_ID, ADMIN_AUTH_CONTRACT_ID ].map(
+			( contractId ) => ( {
+				type: 'woopayments-contract',
+				description: contractId,
+			} )
+		),
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
 	async ( { adminApi, page, baseURL } ) => {

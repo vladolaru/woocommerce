@@ -39,6 +39,10 @@ const CONTRACT_BLOCKS_DECLINE_RECOVERY =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:123::WooCommerce Blocks › Checkout failures › should successfully complete order after retrying with a valid card without refreshing the page';
 const CONTRACT_CLASSIC_DECLINE_RECOVERY =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:205::Shopper › Checkout › Retry after failure without page refresh › should successfully complete order after retrying with a valid card without refreshing the page';
+// The Blocks case's first attempt answers with `Error: Your card was
+// declined.`, which is also the client's generic-decline message case.
+const CONTRACT_BLOCKS_CARD_DECLINED_MESSAGE =
+	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card was declined.';
 
 const FAMILY_TAGS = [
 	tags.WOOPAYMENTS_NATIVE,
@@ -124,6 +128,10 @@ test.describe( 'WooPayments native card decline recovery', () => {
 				{
 					type: 'woopayments-contract',
 					description: CONTRACT_BLOCKS_DECLINE_RECOVERY,
+				},
+				{
+					type: 'woopayments-contract',
+					description: CONTRACT_BLOCKS_CARD_DECLINED_MESSAGE,
 				},
 			],
 			tag: FAMILY_TAGS,

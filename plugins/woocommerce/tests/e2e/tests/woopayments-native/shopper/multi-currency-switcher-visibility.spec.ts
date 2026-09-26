@@ -38,6 +38,10 @@ const SHOPPER_CONTRACT_PREFIX =
 
 const CONTRACT_IDS = {
 	payForOrder: `${ SHOPPER_CONTRACT_PREFIX }106::Shopper Multi-Currency widget › should not display currency switcher on pay for order page`,
+	// The pay-for-order test's own positive control renders the switcher on
+	// checkout with EUR offered and reflects the EUR session currency, which
+	// is also the client's checkout-page switch case.
+	checkoutSwitcherPositiveControl: `${ SHOPPER_CONTRACT_PREFIX }67::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the checkout page`,
 } as const;
 
 const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
@@ -385,6 +389,10 @@ test(
 			{
 				type: 'woopayments-contract',
 				description: CONTRACT_IDS.payForOrder,
+			},
+			{
+				type: 'woopayments-contract',
+				description: CONTRACT_IDS.checkoutSwitcherPositiveControl,
 			},
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],

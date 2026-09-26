@@ -143,6 +143,7 @@
 		},
 		{
 			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:63::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the cart page",
+			"superseded_by": "T.8 2026-09-26: cart-page switcher has no native browser owner; deferred to T.4 R2",
 			"target": {
 				"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencyFrontendPricesControllerTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
 				"contract": "shopper currency switcher renders and switches across storefront contexts"

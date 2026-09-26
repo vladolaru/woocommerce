@@ -10,11 +10,17 @@ import { customer } from '../../../test-data/data';
 
 // The two retained release-smoke rows from the client suite's basic project.
 // Their chromium-project duplicates are already retired against these
-// canonical instances, so these are the only two rows this spec may claim.
+// canonical instances, so these are the only two client-suite rows this spec
+// may claim.
 const HOME_CONTRACT_ID =
 	'default::basic::tests/e2e/specs/basic.spec.ts:8::A basic set of tests to ensure WP, wp-admin and my-account load › Load the home page';
 const MY_ACCOUNT_CONTRACT_ID =
 	'default::basic::tests/e2e/specs/basic.spec.ts:29::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as customer › Load customer my account page';
+// The My Account case also logs the customer in through wp-login.php itself
+// rather than reusing the setup project's storage state, so it carries the
+// client's customer-authentication row too.
+const CUSTOMER_AUTH_CONTRACT_ID =
+	'default::setup::tests/e2e/specs/auth.setup.ts:99::authenticate as customer';
 
 const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
 // One simple, in-stock product is all the shop-content oracle needs, and
@@ -242,6 +248,10 @@ test(
 			{
 				type: 'woopayments-contract',
 				description: MY_ACCOUNT_CONTRACT_ID,
+			},
+			{
+				type: 'woopayments-contract',
+				description: CUSTOMER_AUTH_CONTRACT_ID,
 			},
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],

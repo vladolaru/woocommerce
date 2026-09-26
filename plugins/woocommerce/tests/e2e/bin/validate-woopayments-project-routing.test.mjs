@@ -309,6 +309,77 @@ test( 'contract annotation records must be unique per case_id', () => {
 	);
 } );
 
+test( 'errors from every stage are collected and reported together', () => {
+	const secondRow = {
+		...closedSpecRow,
+		case_id: 'synthetic-closed-contract-second',
+	};
+	const thirdRow = {
+		...closedSpecRow,
+		case_id: 'synthetic-closed-contract-third',
+	};
+	const thirdRowAnnotation = {
+		...validAnnotationRecord,
+		description: thirdRow.case_id,
+		title: 'an unrelated test title',
+	};
+	const fourthRow = {
+		...closedSpecRow,
+		case_id: 'synthetic-closed-contract-fourth',
+	};
+	const fourthRowAnnotation = {
+		...validAnnotationRecord,
+		description: fourthRow.case_id,
+		file: 'woopayments-native/pilots/unrelated.spec.ts',
+	};
+
+	assert.throws(
+		() =>
+			validateSyntheticBindings(
+				[ closedSpecRow, secondRow, thirdRow, fourthRow ],
+				[
+					{
+						...validAnnotationRecord,
+						description: 'unknown-contract',
+					},
+					thirdRowAnnotation,
+					fourthRowAnnotation,
+				]
+			),
+		( error ) => {
+			assert.match(
+				error.message,
+				/woopayments-contract annotation does not resolve to a ledger contract: unknown-contract/
+			);
+			assert.match(
+				error.message,
+				new RegExp(
+					`Closed ledger contract has no collected woopayments-contract annotation: ${ closedSpecRow.case_id }`
+				)
+			);
+			assert.match(
+				error.message,
+				new RegExp(
+					`Closed ledger contract has no collected woopayments-contract annotation: ${ secondRow.case_id }`
+				)
+			);
+			assert.match(
+				error.message,
+				new RegExp(
+					`Closed ledger contract annotation has the wrong test title: ${ thirdRow.case_id }`
+				)
+			);
+			assert.match(
+				error.message,
+				new RegExp(
+					`Closed ledger contract annotation has the wrong target file: ${ fourthRow.case_id }`
+				)
+			);
+			return true;
+		}
+	);
+} );
+
 test( 'orphan contract annotations are rejected', () => {
 	assert.throws(
 		() =>

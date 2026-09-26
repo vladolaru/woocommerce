@@ -276,12 +276,16 @@ export const validateContractAnnotationBindings = (
 ) => {
 	const ledgerCaseIds = new Set( ledgerRows.map( ( row ) => row.case_id ) );
 	const recordsByDescription = new Map();
+	// Collected across every stage below so one run reports every stale row
+	// instead of stopping at the first; the checks themselves are unchanged.
+	const errors = [];
 
 	for ( const record of annotationRecords ) {
 		if ( ! ledgerCaseIds.has( record.description ) ) {
-			throw new Error(
+			errors.push(
 				`woopayments-contract annotation does not resolve to a ledger contract: ${ record.description }`
 			);
+			continue;
 		}
 
 		const matchingRecords =
@@ -292,7 +296,7 @@ export const validateContractAnnotationBindings = (
 
 	for ( const [ description, records ] of recordsByDescription ) {
 		if ( records.length > 1 ) {
-			throw new Error(
+			errors.push(
 				`Duplicate woopayments-contract annotation records for ledger contract: ${ description }`
 			);
 		}
@@ -319,9 +323,10 @@ export const validateContractAnnotationBindings = (
 
 		const record = recordsByDescription.get( row.case_id )?.[ 0 ];
 		if ( ! record ) {
-			throw new Error(
+			errors.push(
 				`Closed ledger contract has no collected woopayments-contract annotation: ${ row.case_id }`
 			);
+			continue;
 		}
 		const isUnavailableExtensionProfile =
 			record.expectedStatus === 'skipped' &&
@@ -337,14 +342,16 @@ export const validateContractAnnotationBindings = (
 			! isUnavailableExtensionProfile &&
 			! isUnavailableProviderProfile
 		) {
-			throw new Error(
+			errors.push(
 				`Closed ledger contract annotation must expect to pass: ${ row.case_id }`
 			);
+			continue;
 		}
 		if ( record.title !== row.target_contract ) {
-			throw new Error(
+			errors.push(
 				`Closed ledger contract annotation has the wrong test title: ${ row.case_id }`
 			);
+			continue;
 		}
 
 		const annotationPath = canonicalAnnotationPath(
@@ -360,10 +367,14 @@ export const validateContractAnnotationBindings = (
 					) === annotationPath
 			)
 		) {
-			throw new Error(
+			errors.push(
 				`Closed ledger contract annotation has the wrong target file: ${ row.case_id }`
 			);
 		}
+	}
+
+	if ( errors.length > 0 ) {
+		throw new Error( errors.join( '\n' ) );
 	}
 };
 
