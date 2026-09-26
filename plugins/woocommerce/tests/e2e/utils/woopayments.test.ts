@@ -15,6 +15,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 import {
 	completeThreeDSChallenge,
+	expectSettledCardPayment,
 	fillCardDetails,
 	requireTestModeAccount,
 	TEST_CARDS,
@@ -147,4 +148,50 @@ test( 'requireTestModeAccount refuses a live account', async () => {
 	await expect( requireTestModeAccount( restApi ) ).rejects.toThrow(
 		/test mode/
 	);
+} );
+
+test( 'expectSettledCardPayment converges on one settled card payment graph', async () => {
+	const restApi = fakeApiClient( {
+		'wc/v3/orders/501': {
+			total: '10.99',
+			currency: 'USD',
+			status: 'processing',
+			meta_data: [
+				{ key: '_intent_id', value: 'pi_exact' },
+				{ key: '_charge_id', value: 'ch_exact' },
+				{ key: '_payment_method_id', value: 'pm_exact' },
+			],
+		},
+		'wc/v3/payments/payment_intents/pi_exact': {
+			status: 'succeeded',
+			amount: 1099,
+			currency: 'usd',
+			payment_method: 'pm_exact',
+			charges: { data: [ { id: 'ch_exact' } ] },
+		},
+		'wc/v3/payments/charges/ch_exact': {
+			status: 'succeeded',
+			captured: true,
+			amount: 1099,
+			currency: 'usd',
+			payment_intent: 'pi_exact',
+			payment_method: 'pm_exact',
+			payment_method_details: {
+				type: 'card',
+				card: { brand: 'visa', last4: '4242' },
+			},
+		},
+		'wc/v3/payments/timeline/pi_exact': { data: [ { type: 'captured' } ] },
+	} );
+
+	const settled = await expectSettledCardPayment( restApi, 501, {
+		amountMinor: 1099,
+		currency: 'USD',
+		card: { brand: 'visa', last4: '4242' },
+	} );
+
+	expect( settled.intentId ).toBe( 'pi_exact' );
+	expect( settled.chargeId ).toBe( 'ch_exact' );
+	expect( settled.occurrenceCount ).toBe( 1 );
+	expect( settled.captureOccurrenceCount ).toBe( 1 );
 } );

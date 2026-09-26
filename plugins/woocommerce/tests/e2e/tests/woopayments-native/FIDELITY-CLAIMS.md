@@ -328,7 +328,7 @@ The protection-on twins carry one boundary that must not be overstated. The targ
 
 | Contract item | Fixed value |
 | --- | --- |
-| Intended selector (superseded 2026-09-25, was: collects exactly the nine cases below) | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:refund-settlement"` now collects exactly one case, `R1` trimmed to audit §3, from `plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts`; `R1v`, `R2`-`R7` and `RP` moved below the browser in T.1 batch 5a (see the narrowing note below). |
+| Intended selector (rewritten on shared helpers in T.4 Batch P2; was the `test:e2e:with-env … --grep "@fidelity:refund-settlement"` form) | Run the provider command documented in `tests/e2e/utils/woopayments.ts` (`playwright test --config=tests/e2e/envs/woopayments-native/playwright.config.ts --project=woopayments-native-provider <spec>` with the variables listed there) on `plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts`; it collects exactly one case, `R1` trimmed to audit §3. `R1v`, `R2`-`R7` and `RP` moved below the browser in T.1 batch 5a (see the narrowing note below). |
 | `R1` card full | Source is one captured `4242` USD 10.99 charge; refund `1099 usd`; one provider refund becomes `succeeded`, the Woo refund stores its ID once, and order refunded total is USD 10.99. |
 | `R1v` transaction view (retired 2026-09-25) | Removed from the browser suite in T.1 batch 5a; see the narrowing note below. |
 | `R2` card partial (retired 2026-09-25) | Removed from the browser suite in T.1 batch 5a; see the narrowing note below. |
@@ -339,7 +339,7 @@ The protection-on twins carry one boundary that must not be overstated. The targ
 | `R6` Bancontact (retired 2026-09-25) | Removed from the browser suite in T.1 batch 5a; see the narrowing note below. |
 | `R7` Cash App Afterpay (retired 2026-09-25) | Removed from the browser suite in T.1 batch 5a; see the narrowing note below. |
 | `RP` deliberate same-key replay (retired 2026-09-25) | Removed from the browser suite in T.1 batch 5a and recorded as a platform observation, not a native claim; see the narrowing note below. |
-| Cleanup/restoration | Record and restore raw gateway, method, enabled-currency, store-currency, shopper/customer currency, customer attachment/default, local token/default, and cart snapshots byte-for-byte. Remove run products/carts/sessions. Retain immutable source charges/refunds and local financial history by run ID. Any changed original customer/configuration, second refund, or unowned delta fails and quarantines the graph. |
+| Cleanup/restoration | The case pays as a guest with a unique email, so no customer, saved method or currency is created or changed; it deletes its run product in `finally`. The paid order, its refund and the provider charge and refund stay in the store and on the test account as the record of the run. No lock, quarantine or run-ID retention is involved since T.4. |
 
 The rows above are kept as the falsifiable record of what the nine retired cases established when they last ran; they are no longer collected by the selector.
 
@@ -450,12 +450,12 @@ against production before it is treated as a live defect.
 
 | Contract item | Fixed value |
 | --- | --- |
-| Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:manual-authorization-capture"`, which collects exactly the one cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-manual-capture.spec.ts`. |
+| Intended selector (rewritten on shared helpers in T.4 Batch P2) | Run the provider command documented in `tests/e2e/utils/woopayments.ts` (`playwright test --config=tests/e2e/envs/woopayments-native/playwright.config.ts --project=woopayments-native-provider <spec>` with the variables listed there) on `plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-manual-capture.spec.ts`; it collects exactly the one case below. |
 | `C1` input | Snapshot raw capture mode, set manual capture, create one unique USD 10.99 product/cart, use card `4242424242424242`, and activate Place order once; then activate Capture once for the exact order. |
 | Authorization outcome | Exactly one `1099 usd` PaymentIntent is `requires_capture`, its one charge is uncaptured for `1099 usd`, the order is `on-hold`, and exactly one authorization event/note exists. |
 | Capture outcome | The same intent becomes `succeeded`; the same charge is captured for `1099 usd`; the order becomes `processing`; exactly one capture event/note exists; a final read proves no second capture. |
 | Convergence | Poll exact intent, charge, and order IDs every 2 seconds for at most 60 seconds after authorization and again after capture; require two identical reads at each terminal state. |
-| Cleanup/restoration | Restore raw capture mode and all gateway/currency/cart snapshots byte-for-byte; empty the cart and remove the run product/session. Retain the immutable order/authorization/capture graph by run ID. A second capture, changed setting, or unowned delta fails and quarantines the graph. |
+| Cleanup/restoration | The case records the gateway's `is_manual_capture_enabled` value (it must be a real boolean), enables manual capture and reads the setting back, and in `finally` restores the recorded value first and reads it back, then deletes the run product. A restore failure is reported without hiding the case's own failure. The captured order and its provider objects stay as the record of the run. |
 
 ### Core-side proof
 
@@ -481,14 +481,14 @@ Financial reconciliation covers capture only when an authorized fixture is actua
 
 | Contract item | Fixed value |
 | --- | --- |
-| Intended selector (superseded 2026-09-25, was: collects exactly the four cases below) | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:dispute-lifecycle"` now collects exactly one case, `DP-nav` trimmed to one dispute, from `plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-disputes.spec.ts`; `DP1`-`DP3` and `dispute-draft.spec.ts`'s draft case moved below the browser in T.1 batch 5b (see the narrowing note below). |
+| Intended selector (rewritten on shared helpers in T.4 Batch P2; was the `test:e2e:with-env … --grep "@fidelity:dispute-lifecycle"` form) | Run the provider command documented in `tests/e2e/utils/woopayments.ts` (`playwright test --config=tests/e2e/envs/woopayments-native/playwright.config.ts --project=woopayments-native-provider <spec>` with the variables listed there) on `plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-disputes.spec.ts`; it collects exactly one case, `DP-nav` trimmed to one dispute. `DP1`-`DP3` and `dispute-draft.spec.ts`'s draft case moved below the browser in T.1 batch 5b (see the narrowing note below). |
 | Shared creation (narrowed 2026-09-25) | One fresh shopper/product uses provider dispute test card `4000000000000259` for one captured `5000 usd` charge. It produces exactly one fraudulent dispute in `needs_response`, one created event, one `on-hold` order, and matching dispute ID, charge ID, order ID, amount, currency, reason, and due date. Previously three independent disputes shared this creation step; see the narrowing note below. |
 | `DP1` accept (retired 2026-09-25) | Removed from the browser suite in T.1 batch 5b; see the narrowing note below. |
 | `DP2` win (retired 2026-09-25) | Removed from the browser suite in T.1 batch 5b; see the narrowing note below. |
 | `DP3` lose (retired 2026-09-25) | Removed from the browser suite in T.1 batch 5b; see the narrowing note below. |
 | Dispute draft save (retired 2026-09-25) | `dispute-draft.spec.ts` removed from the repository in T.1 batch 5b; see the narrowing note below. |
 | `DP-nav` order-notice navigation | After shared creation, the merchant loads the disputed order and follows the dispute-created order-note link (`get_dispute_url`) to the dispute details surface, which must present the exact dispute ID and order ID. An absent notice or link fails the case loudly — no silent early return. The case records the explicit native-version expectation it runs against; its latency is bounded by the shared 180-second creation convergence. |
-| Cleanup/restoration | Restore raw gateway, currency, method, customer-default, and shopper-session snapshots byte-for-byte; remove run carts/products/sessions. Retain the immutable payment/dispute graph and redacted request/response/event journal by run ID. Any uncertain terminal state or unowned delta quarantines that graph. |
+| Cleanup/restoration | The case pays as a guest with a unique email and mutates no store configuration: it snapshots the configuration before the checkout and, in `finally`, deletes the run product and asserts the configuration is unchanged. The disputed order and its provider charge and dispute stay as the record of the run. No lock, quarantine or event journal is involved since T.4. |
 
 The retired rows above are kept as the falsifiable record of what those cases established when they last ran; they are no longer collected by the selector.
 

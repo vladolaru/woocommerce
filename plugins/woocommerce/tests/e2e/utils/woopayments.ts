@@ -3,8 +3,9 @@
  *
  * The one module a rewritten provider spec may import beyond the shared e2e
  * surfaces: entering a card into the Payment Element, answering a 3D Secure
- * challenge, refusing to run against a live account, and reading the store's
- * own mirror of the provider's PaymentIntent and Charge objects.
+ * challenge, refusing to run against a live account, reading the store's
+ * own mirror of the provider's PaymentIntent and Charge objects, and
+ * converging on one settled card payment's full graph.
  *
  * Provider command (D16, as actually run against `:8889`):
  * `WCPAY_RUNTIME=native BASE_URL=<store> WP_BASE_URL=<store>
@@ -32,7 +33,7 @@
  */
 
 import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
-import type { Locator, Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 export interface ProviderTestCard {
 	number: string;
@@ -249,6 +250,14 @@ export async function requireTestModeAccount(
 	}
 }
 
+/** The one internal fetch helper every store-mirror read in this module shares. */
+async function getJson(
+	restApi: ApiClient,
+	path: string
+): Promise< Record< string, unknown > > {
+	return ( await restApi.get( path ) ).data as Record< string, unknown >;
+}
+
 /**
  * Reads the store's own mirror of a provider PaymentIntent
  * (`WooPaymentsPaymentDetailsRestController.php:102-106`), so a case's
@@ -258,11 +267,10 @@ export async function getPaymentIntent(
 	restApi: ApiClient,
 	intentId: string
 ): Promise< Record< string, unknown > > {
-	return (
-		await restApi.get(
-			`wc/v3/payments/payment_intents/${ encodeURIComponent( intentId ) }`
-		)
-	).data as Record< string, unknown >;
+	return getJson(
+		restApi,
+		`wc/v3/payments/payment_intents/${ encodeURIComponent( intentId ) }`
+	);
 }
 
 /** Reads the store's own mirror of a provider Charge, the same way. */
@@ -270,9 +278,223 @@ export async function getCharge(
 	restApi: ApiClient,
 	chargeId: string
 ): Promise< Record< string, unknown > > {
-	return (
-		await restApi.get(
-			`wc/v3/payments/charges/${ encodeURIComponent( chargeId ) }`
-		)
-	).data as Record< string, unknown >;
+	return getJson(
+		restApi,
+		`wc/v3/payments/charges/${ encodeURIComponent( chargeId ) }`
+	);
+}
+
+const ORDERS_ROUTE = 'wc/v3/orders';
+const SETTLE_BUDGET_MS = 60_000;
+const POLL_INTERVAL_MS = 2_000;
+/** Reads a `meta_data` value off a raw order object, or `''` when absent. */
+function metaValue( order: Record< string, unknown >, key: string ): string {
+	const entries = Array.isArray( order.meta_data )
+		? ( order.meta_data as Array< { key?: unknown; value?: unknown } > )
+		: [];
+	return String(
+		entries.find( ( entry ) => entry.key === key )?.value ?? ''
+	);
+}
+
+/** A related provider object's ID, sent either expanded or as a bare string. */
+function idOf( value: unknown ): string {
+	if ( typeof value === 'string' ) {
+		return value;
+	}
+	return typeof value === 'object' && value !== null && 'id' in value
+		? String( ( value as { id: unknown } ).id )
+		: '';
+}
+
+function amountMinorFromTotal( total: string ): number {
+	const match = /^(\d+)\.(\d{2})$/.exec( total );
+	if ( ! match ) {
+		throw new Error(
+			`Expected a two-decimal amount, received ${ total }.`
+		);
+	}
+	return Number( match[ 1 ] ) * 100 + Number( match[ 2 ] );
+}
+
+/** Whether `error` is the provider's transient "another request holds this object" answer. */
+function isLockTimeout( error: unknown ): boolean {
+	const status =
+		typeof error === 'object' && error !== null && 'response' in error
+			? ( error as { response?: { status?: unknown } } ).response?.status
+			: undefined;
+	return status === 429;
+}
+
+function upper( value: unknown ): string {
+	return String( value ).toUpperCase();
+}
+
+interface ChargeCardDetails {
+	type?: unknown;
+	card?: { brand?: unknown; last4?: unknown };
+}
+
+export interface SettledCardPayment {
+	orderId: number;
+	intentId: string;
+	chargeId: string;
+	paymentMethodId: string;
+	amountMinor: number;
+	currency: string;
+	orderStatus: string;
+	providerStatus: string;
+	chargeStatus: string;
+	occurrenceCount: number;
+	captureOccurrenceCount: number;
+}
+
+/**
+ * Polls one order's recorded PaymentIntent and Charge (through `getJson`,
+ * the same fetch `getPaymentIntent`/`getCharge` use) until they reach a
+ * stable settled graph - two identical reads, since a single read can catch
+ * a value mid-propagation. Once stable, proves the provider's own facts
+ * against `expected`: order/intent/charge amount and currency, the intent's
+ * sole charge occurrence equal to the order's `_charge_id`, the charge
+ * belongs to that intent, intent/charge payment method equal a non-empty
+ * `_payment_method_id`, exactly one capture on the timeline, and
+ * (optionally) the charged card's brand and last 4. One grouped comparison
+ * makes the diff on a failure name the exact field that diverged, rather
+ * than a generic message. Tolerates the provider's 429 `lock_timeout` on any
+ * read (routine while a charge is being adjudicated) by continuing the poll
+ * until the budget.
+ */
+export async function expectSettledCardPayment(
+	restApi: ApiClient,
+	orderId: number,
+	expected: {
+		amountMinor: number;
+		currency: string;
+		card?: { brand: string; last4: string };
+	}
+): Promise< SettledCardPayment > {
+	const deadline = Date.now() + SETTLE_BUDGET_MS;
+	let previous = '';
+
+	for (;;) {
+		try {
+			const order = await getJson(
+				restApi,
+				`${ ORDERS_ROUTE }/${ orderId }`
+			);
+			const intentId = metaValue( order, '_intent_id' );
+			const chargeId = metaValue( order, '_charge_id' );
+			const paymentMethodId = metaValue( order, '_payment_method_id' );
+
+			if ( intentId && chargeId && paymentMethodId ) {
+				const intent = await getPaymentIntent( restApi, intentId );
+				const charge = await getCharge( restApi, chargeId );
+
+				if (
+					intent.status === 'succeeded' &&
+					charge.status === 'succeeded' &&
+					charge.captured === true
+				) {
+					const chargesData = (
+						intent.charges as { data?: unknown[] } | undefined
+					 )?.data;
+					const occurrenceCount = Array.isArray( chargesData )
+						? chargesData.length
+						: 0;
+					const soleChargeId =
+						occurrenceCount === 1 ? idOf( chargesData?.[ 0 ] ) : '';
+					const timeline = await getJson(
+						restApi,
+						`wc/v3/payments/timeline/${ encodeURIComponent(
+							intentId
+						) }`
+					);
+					if ( ! Array.isArray( timeline.data ) ) {
+						throw new Error(
+							`Intent ${ intentId } carries no timeline collection to count captures from.`
+						);
+					}
+					const captureOccurrenceCount = timeline.data.filter(
+						( event ) =>
+							( event as { type?: unknown } ).type === 'captured'
+					).length;
+
+					const signature = `${ intent.status }|${ charge.status }|${ occurrenceCount }|${ soleChargeId }|${ captureOccurrenceCount }`;
+					if ( signature === previous ) {
+						const cardDetails = expected.card
+							? ( charge.payment_method_details as
+									| ChargeCardDetails
+									| undefined )
+							: undefined;
+						expect( {
+							orderAmountMinor: amountMinorFromTotal(
+								String( order.total )
+							),
+							orderCurrency: upper( order.currency ),
+							occurrenceCount,
+							soleChargeId,
+							captureOccurrenceCount,
+							intentAmount: intent.amount,
+							intentCurrency: upper( intent.currency ),
+							intentPaymentMethodId: idOf(
+								intent.payment_method
+							),
+							chargeAmount: charge.amount,
+							chargeCurrency: upper( charge.currency ),
+							chargePaymentIntent: charge.payment_intent,
+							chargePaymentMethodId: idOf(
+								charge.payment_method
+							),
+							cardType: cardDetails?.type,
+							cardBrand: cardDetails?.card?.brand,
+							cardLast4: cardDetails?.card?.last4,
+						} ).toEqual( {
+							orderAmountMinor: expected.amountMinor,
+							orderCurrency: expected.currency,
+							occurrenceCount: 1,
+							soleChargeId: chargeId,
+							captureOccurrenceCount: 1,
+							intentAmount: expected.amountMinor,
+							intentCurrency: expected.currency,
+							intentPaymentMethodId: paymentMethodId,
+							chargeAmount: expected.amountMinor,
+							chargeCurrency: expected.currency,
+							chargePaymentIntent: intentId,
+							chargePaymentMethodId: paymentMethodId,
+							cardType: expected.card ? 'card' : undefined,
+							cardBrand: expected.card?.brand,
+							cardLast4: expected.card?.last4,
+						} );
+						return {
+							orderId,
+							intentId,
+							chargeId,
+							paymentMethodId,
+							amountMinor: expected.amountMinor,
+							currency: expected.currency,
+							orderStatus: String( order.status ),
+							providerStatus: String( intent.status ),
+							chargeStatus: String( charge.status ),
+							occurrenceCount,
+							captureOccurrenceCount,
+						};
+					}
+					previous = signature;
+				}
+			}
+		} catch ( error ) {
+			if ( ! isLockTimeout( error ) || Date.now() >= deadline ) {
+				throw error;
+			}
+		}
+
+		if ( Date.now() >= deadline ) {
+			throw new Error(
+				`Order ${ orderId } never reached a stable settled card payment within ${ SETTLE_BUDGET_MS }ms.`
+			);
+		}
+		await new Promise( ( resolve ) =>
+			setTimeout( resolve, POLL_INTERVAL_MS )
+		);
+	}
 }

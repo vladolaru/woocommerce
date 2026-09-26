@@ -1,405 +1,190 @@
-import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
+import { fillBillingCheckoutBlocks } from '@woocommerce/e2e-utils-playwright';
 
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { admin } from '../../../test-data/data';
+import { random } from '../../../utils/helpers';
+import { logIn } from '../../../utils/login';
 import {
-	expect,
-	tags,
-	test,
-	type ProviderWriteSession,
-} from '../../../fixtures/woopayments-native';
-import { completeCardCheckout } from '../../../utils/woopayments-native/drivers/checkout';
-import { readProviderCardEvidence } from '../../../utils/woopayments-native/provider-card-evidence';
-import { getChargeWithTransportRetry } from '../../../utils/woopayments-native/provider-evidence';
-import {
-	getPaymentEvidence,
-	type PaymentEvidence,
-} from '../../../utils/woopayments-native/record-evidence';
+	expectSettledCardPayment,
+	fillCardDetails,
+	getCharge,
+	requireTestModeAccount,
+	TEST_CARDS,
+} from '../../../utils/woopayments';
 
 /**
- * The `refund-settlement` provider-fidelity family, as fixed in
- * `tests/woopayments-native/FIDELITY-CLAIMS.md`.
+ * The `refund-settlement` provider-fidelity family (T.4 Batch P2 rewrite),
+ * as fixed in `FIDELITY-CLAIMS.md`.
  *
- * T.1 batch 5a (`data/t1-provider-family-audit.md` §3, §4 Batch 5) moved every
- * assertion below the browser to PHPUnit and Jest and trimmed this file to its
- * one retained smoke, `R1`: the real round trip from a card checkout to a
- * merchant refund to a settled provider refund whose identity WooCommerce
- * stores. `R1v`, the partial/multi-line/foreign-currency/redirect-method
- * cases (`R2`-`R7`), the same-key replay probe (`RP`), and the native
- * transaction-view observations moved to
- * `WooPaymentsProviderGatewayAdapterTest`, `WC_AJAX_Test`,
- * `WooPaymentsRefundEventHandlerTest`, `WooPaymentsEventIngestorTest` and
- * `money-movement-pages.test.tsx`.
+ * `R1`, the family's one retained browser smoke: the real round trip from a
+ * card checkout to a merchant refund to a settled provider refund whose
+ * identity WooCommerce stores. `R1v` and the partial/multi-line/foreign-
+ * currency/redirect-method/replay cases moved below the browser in T.1 batch
+ * 5a; see `data/t1-provider-family-audit.md` §3, §4 Batch 5.
  *
- * The refund itself always goes through core's own
- * `woocommerce_refund_line_items` admin-AJAX action with `api_refund` as the
- * *string* `'true'` — `WC_AJAX::refund_line_items()` compares strictly, and a
- * boolean silently downgrades to a local-only refund, which is exactly the
- * failure this family exists to detect.
+ * The refund itself goes through core's own `woocommerce_refund_line_items`
+ * admin-AJAX action with `api_refund` as the *string* `'true'` -
+ * `WC_AJAX::refund_line_items()` compares strictly, and a boolean silently
+ * downgrades to a local-only refund, which is exactly the failure this
+ * family exists to detect.
  */
-
-/** Grep tag that selects this family as a unit. */
-const FAMILY_TAG = '@fidelity:refund-settlement';
-const FAMILY_TAGS = [
-	tags.WOOPAYMENTS_NATIVE,
-	tags.WOOPAYMENTS_PROVIDER,
-	FAMILY_TAG,
-];
-
-/** The journey capability every case in this family needs. */
-const CAPABILITY_FAMILY = 'refund-settlement';
-/** The capability for the action that actually returns money. */
-const CAPABILITY_REFUND = 'refund-settlement-action';
 
 const CONTRACT_R1 =
 	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-full-refund.spec.ts:38::WooCommerce Payments - Full Refund › should process a full refund for an order';
 
-/**
- * The merchant-supplied refund reason.
- *
- * This is the exact value native's own transaction-details refund modal
- * offers, so it is a real merchant choice rather than a fixture convenience.
- */
+const FAMILY_TAGS = [
+	tags.WOOPAYMENTS_NATIVE,
+	tags.WOOPAYMENTS_PROVIDER,
+	'@fidelity:refund-settlement',
+];
+
+/** The merchant-supplied refund reason, the exact value native's own transaction-details refund modal offers. */
 const REFUND_REASON = 'requested_by_customer';
 
-// R1: one captured `4242` USD 10.99 charge, refunded in full.
-const R1_PRICE = '10.99';
-const R1_MINOR = 1099;
-
-/** Convergence, as fixed by the claim. */
+const PRICE = '10.99';
+const AMOUNT_MINOR = 1099;
+const CURRENCY = 'USD';
 const SETTLE_INTERVAL_MS = 3_000;
 const SETTLE_BUDGET_MS = 180_000;
+const RECEIPT_TIMEOUT_MS = 60_000;
 
-interface ProviderRefund {
-	id: string;
-	status: string;
-	amountMinor: number;
-	currency: string;
-	reason: string;
-	merchantReason: string;
-	balanceTransactionId: string;
+const PRODUCTS_ROUTE = 'wc/v3/products';
+const ORDERS_ROUTE = 'wc/v3/orders';
+
+interface PaidOrder {
+	productId: number;
+	orderId: number;
+	lineItemId: number;
+	intentId: string;
+	chargeId: string;
+}
+
+function orderMeta( order: Record< string, unknown >, key: string ): string {
+	const entries = Array.isArray( order.meta_data )
+		? ( order.meta_data as Array< { key?: unknown; value?: unknown } > )
+		: [];
+	return String(
+		entries.find( ( entry ) => entry.key === key )?.value ?? ''
+	);
+}
+
+async function createRunProduct( restApi: ApiClient ): Promise< number > {
+	return (
+		(
+			await restApi.post( PRODUCTS_ROUTE, {
+				name: `WooPayments refund fidelity ${ random() }`,
+				type: 'simple',
+				virtual: true,
+				regular_price: PRICE,
+				status: 'publish',
+			} )
+		).data as { id: number }
+	 ).id;
+}
+
+async function readHighestOrderId( restApi: ApiClient ): Promise< number > {
+	const orders = (
+		await restApi.get(
+			`${ ORDERS_ROUTE }?orderby=id&order=desc&per_page=1&status=any`
+		)
+	).data as Array< { id: number } >;
+	return orders[ 0 ]?.id ?? 0;
+}
+
+async function readNewOrders(
+	restApi: ApiClient,
+	baselineOrderId: number
+): Promise< Array< { id: number } > > {
+	const orders = (
+		await restApi.get(
+			`${ ORDERS_ROUTE }?orderby=id&order=desc&per_page=20&status=any`
+		)
+	).data as Array< { id: number } >;
+	return orders.filter( ( order ) => order.id > baselineOrderId );
 }
 
 /**
- * The refund-relevant half of the provider charge, read straight from the
- * platform charge route rather than from timeline events. The timeline is built
- * from provider events and can lag; `amount_refunded` and the expanded refund
- * collection are the charge's own current state, so "one refund settled" cannot
- * pass merely because an event has not arrived yet.
+ * Drive one guest Blocks checkout with the basic card, prove it is the one
+ * order this submission created, and converge on the settled provider graph
+ * (R1: order/intent/charge amount and currency, the linkage, the payment
+ * method, one charge occurrence, one capture, and the charged card). Hands
+ * back the identities `R1` acts on next: the order, its one line item, and
+ * the exact intent and charge the provider recorded.
  */
-interface ChargeRefundState {
-	chargeId: string;
-	captured: boolean;
-	status: string;
-	refunded: boolean;
-	amountRefundedMinor: number;
-	currency: string;
-	balanceTransactionId: string;
-	refunds: ProviderRefund[];
-}
-
-interface WooRefundLine {
-	orderItemId: number;
-	total: string;
-	quantity: number;
-}
-
-interface WooRefundRecord {
-	id: number;
-	amount: string;
-	reason: string;
-	providerRefundId: string;
-	lines: WooRefundLine[];
-}
-
-interface OrderRecord {
-	status: string;
-	total: string;
-	currency: string;
-	refundIds: number[];
-	refundStatusMeta: string;
-	lineItems: Array< { id: number; total: string; quantity: number } >;
-}
-
-function fail( message: string ): never {
-	throw new Error( `WooPayments refund fidelity ${ message }` );
-}
-
-function delay( milliseconds: number ): Promise< void > {
-	return new Promise( ( resolve ) => setTimeout( resolve, milliseconds ) );
-}
-
-async function readJson< Result >(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Result > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Result;
-}
-
-function requiredString( value: unknown, label: string ): string {
-	if ( typeof value !== 'string' || ! value.trim() ) {
-		fail( `evidence requires a ${ label }.` );
-	}
-	return value;
-}
-
-function optionalString( value: unknown ): string {
-	return typeof value === 'string' ? value : '';
-}
-
-function requiredNumber( value: unknown, label: string ): number {
-	if ( typeof value !== 'number' || ! Number.isFinite( value ) ) {
-		fail( `evidence requires a ${ label }.` );
-	}
-	return value;
-}
-
-function requiredBoolean( value: unknown, label: string ): boolean {
-	if ( typeof value !== 'boolean' ) {
-		fail( `evidence requires a ${ label }.` );
-	}
-	return value;
-}
-
-function relatedObjectId( value: unknown ): string {
-	if (
-		typeof value === 'object' &&
-		value !== null &&
-		! Array.isArray( value ) &&
-		'id' in value
-	) {
-		return optionalString( ( value as { id?: unknown } ).id );
-	}
-	return optionalString( value );
-}
-
-function metadataValue( value: unknown, key: string ): string {
-	if (
-		typeof value !== 'object' ||
-		value === null ||
-		Array.isArray( value )
-	) {
-		return '';
-	}
-	return optionalString( ( value as Record< string, unknown > )[ key ] );
-}
-
-function toProviderRefund( item: unknown, index: number ): ProviderRefund {
-	if ( typeof item !== 'object' || item === null || Array.isArray( item ) ) {
-		fail( `provider refund occurrence ${ index + 1 } is not an object.` );
-	}
-	const refund = item as Record< string, unknown >;
-	return {
-		id: requiredString( refund.id, 'provider refund ID' ),
-		status: requiredString( refund.status, 'provider refund status' ),
-		amountMinor: requiredNumber( refund.amount, 'provider refund amount' ),
-		currency: requiredString(
-			refund.currency,
-			'provider refund currency'
-		).toUpperCase(),
-		reason: optionalString( refund.reason ),
-		merchantReason: metadataValue(
-			refund.metadata,
-			'merchant_refund_reason'
-		),
-		balanceTransactionId: relatedObjectId( refund.balance_transaction ),
-	};
-}
-
-async function readChargeRefundState(
-	restApi: APIRequestContext,
-	chargeId: string
-): Promise< ChargeRefundState > {
-	const charge = await readJson< Record< string, unknown > >(
-		await getChargeWithTransportRetry( restApi, chargeId ),
-		`Provider charge ${ chargeId } read`
-	);
-	if ( charge.id !== chargeId ) {
-		fail(
-			`charge identity mismatch: expected ${ chargeId }, received ${ String(
-				charge.id
-			) }.`
-		);
-	}
-
-	// The platform expands `refunds.data`, so the collection is authoritative
-	// rather than a truncated summary. A charge with no refunds still carries
-	// the list object; anything else is an unknown shape and must fail loudly
-	// instead of being read as "no refunds".
-	const refundsValue = charge.refunds;
-	if (
-		typeof refundsValue !== 'object' ||
-		refundsValue === null ||
-		Array.isArray( refundsValue ) ||
-		! ( 'data' in refundsValue ) ||
-		! Array.isArray( refundsValue.data )
-	) {
-		fail( `charge ${ chargeId } carried no expanded refund collection.` );
-	}
-
-	return {
-		chargeId,
-		captured: requiredBoolean( charge.captured, 'charge captured flag' ),
-		status: requiredString( charge.status, 'charge status' ),
-		refunded: requiredBoolean( charge.refunded, 'charge refunded flag' ),
-		amountRefundedMinor: requiredNumber(
-			charge.amount_refunded,
-			'charge refunded amount'
-		),
-		currency: requiredString(
-			charge.currency,
-			'charge currency'
-		).toUpperCase(),
-		balanceTransactionId: relatedObjectId( charge.balance_transaction ),
-		refunds: refundsValue.data.map( toProviderRefund ),
-	};
-}
-
-async function readOrderRecord(
-	restApi: APIRequestContext,
-	orderId: number
-): Promise< OrderRecord > {
-	const order = await readJson< {
-		status?: unknown;
-		total?: unknown;
-		currency?: unknown;
-		refunds?: unknown;
-		meta_data?: unknown;
-		line_items?: unknown;
-	} >(
-		await restApi.get( `/wp-json/wc/v3/orders/${ orderId }` ),
-		`Order ${ orderId } read`
-	);
-	const refunds = Array.isArray( order.refunds ) ? order.refunds : [];
-	const metaData = Array.isArray( order.meta_data )
-		? ( order.meta_data as Array< { key?: unknown; value?: unknown } > )
-		: [];
-	const refundStatusMeta = metaData.find(
-		( entry ) => entry.key === '_wcpay_refund_status'
-	)?.value;
-	const lineItems = Array.isArray( order.line_items ) ? order.line_items : [];
-
-	return {
-		status: requiredString( order.status, 'order status' ),
-		total: requiredString( order.total, 'order total' ),
-		currency: requiredString(
-			order.currency,
-			'order currency'
-		).toUpperCase(),
-		refundIds: refunds.map( ( refund, index ) =>
-			requiredNumber(
-				( refund as { id?: unknown } ).id,
-				`refund ${ index + 1 } ID`
-			)
-		),
-		refundStatusMeta: optionalString( refundStatusMeta ),
-		lineItems: lineItems.map( ( line, index ) => {
-			const item = line as {
-				id?: unknown;
-				total?: unknown;
-				quantity?: unknown;
-			};
-			return {
-				id: requiredNumber( item.id, `line item ${ index + 1 } ID` ),
-				total: requiredString(
-					item.total,
-					`line item ${ index + 1 } total`
-				),
-				quantity: requiredNumber(
-					item.quantity,
-					`line item ${ index + 1 } quantity`
-				),
-			};
-		} ),
-	};
-}
-
-async function readWooRefundRecords(
-	restApi: APIRequestContext,
-	orderId: number
-): Promise< WooRefundRecord[] > {
-	const refunds = await readJson< unknown[] >(
-		await restApi.get(
-			`/wp-json/wc/v3/orders/${ orderId }/refunds?context=edit&per_page=100`
-		),
-		`Order ${ orderId } refunds read`
-	);
-
-	return refunds.map( ( item, index ) => {
-		const refund = item as {
-			id?: unknown;
-			amount?: unknown;
-			reason?: unknown;
-			meta_data?: unknown;
-			line_items?: unknown;
-		};
-		const metaData = Array.isArray( refund.meta_data )
-			? ( refund.meta_data as Array< {
-					key?: unknown;
-					value?: unknown;
-			  } > )
-			: [];
-		const providerRefundId = metaData.find(
-			( entry ) => entry.key === '_wcpay_refund_id'
-		)?.value;
-		const lines = Array.isArray( refund.line_items )
-			? refund.line_items
-			: [];
-
-		return {
-			id: requiredNumber(
-				refund.id,
-				`WooCommerce refund ${ index + 1 } ID`
-			),
-			amount: requiredString(
-				refund.amount,
-				`WooCommerce refund ${ index + 1 } amount`
-			),
-			reason: optionalString( refund.reason ),
-			providerRefundId: optionalString( providerRefundId ),
-			lines: lines.map( ( line, lineIndex ) => {
-				const refundLine = line as {
-					meta_data?: unknown;
-					total?: unknown;
-					quantity?: unknown;
-				};
-				const lineMeta = Array.isArray( refundLine.meta_data )
-					? ( refundLine.meta_data as Array< {
-							key?: unknown;
-							value?: unknown;
-					  } > )
-					: [];
-				// A refund line points at the parent order item it offsets
-				// through `_refunded_item_id`; that is the only durable line
-				// identity, and it is what the claim means by "by order-item
-				// ID".
-				const refundedItemId = lineMeta.find(
-					( entry ) => entry.key === '_refunded_item_id'
-				)?.value;
-				return {
-					orderItemId: Number( refundedItemId ),
-					total: requiredString(
-						refundLine.total,
-						`refund line ${ lineIndex + 1 } total`
-					),
-					quantity: requiredNumber(
-						refundLine.quantity,
-						`refund line ${ lineIndex + 1 } quantity`
-					),
-				};
-			} ),
-		};
+async function createPaidCardOrder(
+	page: Page,
+	restApi: ApiClient
+): Promise< PaidOrder > {
+	const productId = await createRunProduct( restApi );
+	const baselineOrderId = await readHighestOrderId( restApi );
+	await page.goto( `?post_type=product&p=${ productId }` );
+	await page
+		.getByRole( 'button', { name: 'Add to cart', exact: true } )
+		.click();
+	await page.goto( 'checkout/' );
+	await page
+		.getByRole( 'textbox', { name: 'Email address' } )
+		.fill( `woopayments-${ random() }@example.com` );
+	await fillBillingCheckoutBlocks( page, {
+		country: 'US',
+		firstName: 'E2E',
+		lastName: 'WooPayments',
+		address: '123 Test Street',
+		city: 'San Francisco',
+		state: 'CA',
+		zip: '94107',
+		phone: '5555550100',
 	} );
+	await page
+		.getByRole( 'group', { name: 'Payment options' } )
+		.getByRole( 'radio', { name: /Card/i } )
+		.check();
+	await fillCardDetails( page, TEST_CARDS.basic, 'blocks' );
+	await page.getByRole( 'button', { name: /place order/i } ).click();
+	await page.waitForURL( /\/order-received\/[1-9]\d*/, {
+		timeout: RECEIPT_TIMEOUT_MS,
+	} );
+	await expect(
+		page.getByText( /^(Your order has been received|Order received)$/i )
+	).toBeVisible();
+	const orderId = Number( /order-received\/(\d+)/.exec( page.url() )?.[ 1 ] );
+
+	expect(
+		( await readNewOrders( restApi, baselineOrderId ) ).map(
+			( order ) => order.id
+		),
+		'one checkout submission must create exactly one order'
+	).toEqual( [ orderId ] );
+
+	const settled = await expectSettledCardPayment( restApi, orderId, {
+		amountMinor: AMOUNT_MINOR,
+		currency: CURRENCY,
+		card: { brand: 'visa', last4: '4242' },
+	} );
+	expect(
+		settled.orderStatus,
+		'the order must be processing before it is refunded'
+	).toBe( 'processing' );
+
+	const order = ( await restApi.get( `${ ORDERS_ROUTE }/${ orderId }` ) )
+		.data as Record< string, unknown >;
+	const lineItems = order.line_items as Array< { id: number } >;
+	return {
+		productId,
+		orderId,
+		lineItemId: lineItems[ 0 ].id,
+		intentId: settled.intentId,
+		chargeId: settled.chargeId,
+	};
 }
 
 /**
  * Open the classic order edit screen. Stores keeping orders in the dedicated
- * tables edit them under `wc-orders`; stores still on the posts table edit them
- * through `post.php`. The order-items meta box is the screen's identity either
- * way.
+ * tables edit them under `wc-orders`; stores still on the posts table edit
+ * them through `post.php`. The order-items meta box is the screen's identity
+ * either way.
  */
 async function openOrderEditScreen(
 	page: Page,
@@ -415,10 +200,8 @@ async function openOrderEditScreen(
 	await expect( itemsBox ).toBeVisible();
 }
 
+/** The refund editor is a toggled data row inside the items meta box with no accessible name; addressed structurally. */
 function refundPanel( page: Page ): Locator {
-	// The refund editor is a toggled data row inside the items meta box; it
-	// exposes no landmark or accessible name, so it is addressed structurally
-	// and everything read out of it is addressed semantically.
 	return page.locator( '.wc-order-refund-items' );
 }
 
@@ -429,14 +212,10 @@ async function openRefundEditor( page: Page ): Promise< void > {
 }
 
 /**
- * Fill one of the refund editor's inputs.
- *
- * The per-line inputs carry no label and no accessible name — a real gap in the
- * classic screen's markup — but they do carry the `name` attribute the request
- * is built from, which addresses the exact line under test without depending on
- * row order. `change` is dispatched explicitly because the admin script
- * recomputes the aggregate refund amount on that event and Playwright's fill
- * does not guarantee one.
+ * Fill one of the refund editor's inputs, addressed by its `name` attribute
+ * since the per-line inputs carry no accessible name. `change` is dispatched
+ * explicitly because the admin script recomputes the aggregate refund amount
+ * on that event and `fill` does not guarantee one.
  */
 async function fillRefundInput(
 	page: Page,
@@ -450,48 +229,12 @@ async function fillRefundInput(
 }
 
 /**
- * Allocate a refund amount to one order item, addressed by its order-item ID.
- *
- * Amount-only, deliberately: `#refund_amount` is rendered `readonly` whenever
- * the store has taxes enabled, so typing the aggregate directly is not a
- * driveable merchant action on every store, while the per-line amount fields
- * always are. The admin script recomputes the aggregate from these fields on
- * `change`, which is why the event is dispatched explicitly.
+ * Dispatch exactly one gateway refund from the merchant's own order screen
+ * and prove the request was accepted and confirmed exactly once. The refund
+ * button's absence is itself a finding: core renders it only when the
+ * order's gateway supports refunds.
  */
-async function allocateRefundToLine(
-	page: Page,
-	orderItemId: number,
-	amount: string
-): Promise< void > {
-	await fillRefundInput(
-		page,
-		`refund_line_total[${ orderItemId }]`,
-		amount
-	);
-}
-
-interface DispatchedRefund {
-	status: number;
-}
-
-/**
- * Dispatch exactly one gateway refund from the merchant's own order screen and
- * prove what was sent.
- *
- * The gateway control is the semantic "Refund <amount> via <gateway>" button
- * core renders only when the order's gateway supports refunds; its absence is
- * therefore itself a finding, not a locator problem. Core confirms the action
- * with `window.confirm()` and reloads the screen on success, so the response
- * body is deliberately not read — the browser discards the body of a request
- * whose page is gone, and reading it races the very success it would confirm.
- * The outcome is proven below from the provider's refund record and
- * WooCommerce's stored refund instead.
- */
-async function dispatchGatewayRefund(
-	session: ProviderWriteSession,
-	page: Page,
-	journalDescription: string
-): Promise< DispatchedRefund > {
+async function dispatchGatewayRefund( page: Page ): Promise< void > {
 	const panel = refundPanel( page );
 	const gatewayButton = panel.getByRole( 'button', {
 		name: /^Refund .+ via .+$/,
@@ -512,332 +255,236 @@ async function dispatchGatewayRefund(
 		void dialog.accept();
 	};
 	page.on( 'dialog', onDialog );
-
 	try {
-		return await session.withProviderSubmissionJournal(
-			journalDescription,
-			async () => {
-				const refundResponse = page.waitForResponse(
-					( response ) =>
-						response.url().includes( 'admin-ajax.php' ) &&
-						response.request().method() === 'POST' &&
-						( response.request().postData() ?? '' ).includes(
-							'action=woocommerce_refund_line_items'
-						)
-				);
-				await session.performWrite( () => gatewayButton.click() );
-				const response = await refundResponse;
-
-				expect(
-					response.status(),
-					'the refund request must be accepted by the server'
-				).toBe( 200 );
-				expect(
-					confirmations,
-					'the merchant must have confirmed exactly one refund'
-				).toBe( 1 );
-
-				return {
-					status: response.status(),
-				};
-			}
+		const refundResponse = page.waitForResponse(
+			( response ) =>
+				response.url().includes( 'admin-ajax.php' ) &&
+				response.request().method() === 'POST' &&
+				( response.request().postData() ?? '' ).includes(
+					'action=woocommerce_refund_line_items'
+				)
 		);
+		await gatewayButton.click();
+		const response = await refundResponse;
+		expect(
+			response.status(),
+			'the refund request must be accepted by the server'
+		).toBe( 200 );
+		expect(
+			confirmations,
+			'the merchant must have confirmed exactly one refund'
+		).toBe( 1 );
 	} finally {
 		page.off( 'dialog', onDialog );
 	}
 }
 
 /**
- * Poll the exact provider refund on the exact source charge until it reaches
- * `succeeded` twice in a row, exactly as the claim's Convergence row fixes it.
- *
- * Two identical reads, not one: a single read can catch a value mid-propagation
- * and a settled refund never regresses, so stability is the cheap discriminator
- * between "settled" and "briefly reported settled".
+ * Whether `error` is the provider's transient "another request holds this
+ * object" answer (routine while the refund is being adjudicated).
+ */
+function isLockTimeout( error: unknown ): boolean {
+	const status =
+		typeof error === 'object' && error !== null && 'response' in error
+			? ( error as { response?: { status?: unknown } } ).response?.status
+			: undefined;
+	return status === 429;
+}
+
+/**
+ * Poll the exact provider charge until it carries exactly one succeeded
+ * refund, twice in a row - a single read can catch a value mid-propagation,
+ * and a settled refund never regresses. Tolerates 429 `lock_timeout` on the
+ * read by continuing the poll until the deadline.
  */
 async function waitForSettledRefund(
-	restApi: APIRequestContext,
-	chargeId: string,
-	budgetMs: number,
-	intervalMs: number
-): Promise< ProviderRefund > {
-	const deadline = Date.now() + budgetMs;
-	let previousSignature = '';
-	let lastSeen = 'no provider refund yet';
+	restApi: ApiClient,
+	chargeId: string
+): Promise< { id: string; amountMinor: number; currency: string } > {
+	const deadline = Date.now() + SETTLE_BUDGET_MS;
+	let previous = '';
 
 	for (;;) {
-		const charge = await readChargeRefundState( restApi, chargeId );
-		if ( charge.refunds.length > 1 ) {
-			fail(
-				`charge ${ chargeId } carries ${ charge.refunds.length } provider refunds; exactly one is required.`
-			);
-		}
-		const refund = charge.refunds[ 0 ];
-		// Described even when no refund has appeared. "No refund yet" alone
-		// cannot distinguish provider propagation lag from a refund that was
-		// never created, and this poll runs for minutes before failing -- so the
-		// charge's own refunded flag and refunded total are carried too, which
-		// move as soon as the provider has accepted anything at all.
-		lastSeen = refund
-			? `${ refund.id } ${ refund.status }`
-			: `no provider refund yet (charge refunds=${
-					charge.refunds.length
-			  }, refunded=${ String( charge.refunded ) }, amount refunded=${
-					charge.amountRefundedMinor
-			  } ${ charge.currency })`;
-		if ( refund ) {
-			if ( refund.status === 'succeeded' ) {
-				const signature = `${ refund.id }|${ refund.status }|${ refund.amountMinor }|${ refund.currency }`;
-				if ( signature === previousSignature ) {
-					return refund;
+		try {
+			const charge = await getCharge( restApi, chargeId );
+			const refunds = (
+				charge.refunds as { data?: unknown[] } | undefined
+			 )?.data;
+			if ( Array.isArray( refunds ) ) {
+				if ( refunds.length > 1 ) {
+					throw new Error(
+						`Charge ${ chargeId } carries ${ refunds.length } provider refunds; exactly one is required.`
+					);
 				}
-				previousSignature = signature;
-			} else if (
-				refund.status === 'failed' ||
-				refund.status === 'canceled'
-			) {
-				fail(
-					`provider refund ${ refund.id } reached terminal ${ refund.status } instead of succeeded.`
-				);
+				const refund = refunds[ 0 ] as
+					| {
+							id?: unknown;
+							status?: unknown;
+							amount?: unknown;
+							currency?: unknown;
+					  }
+					| undefined;
+				if ( refund?.status === 'succeeded' ) {
+					const serialized = JSON.stringify( {
+						id: refund.id,
+						amount: refund.amount,
+						currency: refund.currency,
+						captured: charge.captured,
+						status: charge.status,
+						amountRefunded: charge.amount_refunded,
+						refunded: charge.refunded,
+					} );
+					if ( serialized === previous ) {
+						expect( charge.captured ).toBe( true );
+						expect( charge.status ).toBe( 'succeeded' );
+						expect( charge.amount_refunded ).toBe( AMOUNT_MINOR );
+						expect( charge.refunded ).toBe( true );
+						return {
+							id: String( refund.id ),
+							amountMinor: Number( refund.amount ),
+							currency: String( refund.currency ).toUpperCase(),
+						};
+					}
+					previous = serialized;
+				}
+			}
+		} catch ( error ) {
+			if ( ! isLockTimeout( error ) || Date.now() >= deadline ) {
+				throw error;
 			}
 		}
 
-		const remaining = deadline - Date.now();
-		if ( remaining <= 0 ) {
-			fail(
-				`provider refund on charge ${ chargeId } did not reach two stable succeeded reads within ${ budgetMs }ms (last seen: ${ lastSeen }).`
+		if ( Date.now() >= deadline ) {
+			throw new Error(
+				`Provider refund on charge ${ chargeId } did not settle within ${ SETTLE_BUDGET_MS }ms.`
 			);
 		}
-		await delay( Math.min( intervalMs, remaining ) );
+		await new Promise( ( resolve ) =>
+			setTimeout( resolve, SETTLE_INTERVAL_MS )
+		);
 	}
 }
 
 /**
- * Poll WooCommerce's own record of the refund's provider status until it
- * reaches `successful`.
- *
- * The provider refund reaching `succeeded` and WooCommerce recording
- * `successful` are two different events, and for a redirect method they are not
- * simultaneous. Native writes `_wcpay_refund_status` from the refund response
- * it gets back synchronously; a card refund settles inside that call, while a
- * redirect-method refund comes back `pending` and only becomes successful when
- * the provider's refund event reaches
- * `WooPaymentsRefundEventHandler`. Reading the order once, straight after the
- * provider side converged, therefore samples a value that is still in flight.
- *
- * This is a convergence, not a relaxation: `pending` is never accepted as a
- * terminal answer. The budget is the case's own, so a method whose refund never
- * reports successful fails with its exact last-seen value rather than passing.
+ * Poll WooCommerce's own `_wcpay_refund_status` order meta until it reaches
+ * `successful`. A card refund settles inside the AJAX call, but the meta is
+ * written from that response and is worth confirming rather than assuming.
+ * Tolerates 429 `lock_timeout` on the read by continuing the poll.
  */
 async function waitForWooRefundStatus(
-	restApi: APIRequestContext,
-	orderId: number,
-	budgetMs: number,
-	intervalMs: number
+	restApi: ApiClient,
+	orderId: number
 ): Promise< void > {
-	const deadline = Date.now() + budgetMs;
+	const deadline = Date.now() + SETTLE_BUDGET_MS;
 	let lastSeen = '';
-
 	for (;;) {
-		const order = await readOrderRecord( restApi, orderId );
-		lastSeen = order.refundStatusMeta;
-		if ( lastSeen === 'successful' ) {
-			return;
-		}
-		if ( lastSeen === 'failed' ) {
-			fail(
-				`WooCommerce recorded refund status failed on order ${ orderId }.`
-			);
+		try {
+			const order = (
+				await restApi.get( `${ ORDERS_ROUTE }/${ orderId }` )
+			).data as Record< string, unknown >;
+			lastSeen = orderMeta( order, '_wcpay_refund_status' );
+			if ( lastSeen === 'successful' ) {
+				return;
+			}
+			if ( lastSeen === 'failed' ) {
+				throw new Error(
+					`WooCommerce recorded refund status failed on order ${ orderId }.`
+				);
+			}
+		} catch ( error ) {
+			if ( ! isLockTimeout( error ) || Date.now() >= deadline ) {
+				throw error;
+			}
 		}
 
-		const remaining = deadline - Date.now();
-		if ( remaining <= 0 ) {
-			fail(
-				`WooCommerce did not record refund status successful on order ${ orderId } within ${ budgetMs }ms (last seen: ${
+		if ( Date.now() >= deadline ) {
+			throw new Error(
+				`WooCommerce did not record refund status successful on order ${ orderId } within ${ SETTLE_BUDGET_MS }ms (last seen: ${
 					lastSeen || 'no status recorded'
-				} ).`
+				}).`
 			);
 		}
-		await delay( Math.min( intervalMs, remaining ) );
+		await new Promise( ( resolve ) =>
+			setTimeout( resolve, SETTLE_INTERVAL_MS )
+		);
 	}
 }
 
-/**
- * Assert the settled refund graph both sides agree on: one provider refund, one
- * WooCommerce refund, and the join between them.
- */
-async function expectSingleJoinedRefund(
-	restApi: APIRequestContext,
-	paid: PaymentEvidence,
-	expected: {
-		amountMinor: number;
-		currency: string;
-		amountText: string;
-		fullyRefunded: boolean;
-	},
-	settledRefund: ProviderRefund
-): Promise< WooRefundRecord > {
-	const charge = await readChargeRefundState( restApi, paid.chargeId );
-	expect(
-		charge.refunds,
-		'exactly one provider refund must exist on the source charge'
-	).toHaveLength( 1 );
-	expect( charge.refunds[ 0 ].id ).toBe( settledRefund.id );
-	expect( charge.refunds[ 0 ].status ).toBe( 'succeeded' );
-	expect( charge.refunds[ 0 ].amountMinor ).toBe( expected.amountMinor );
-	expect( charge.refunds[ 0 ].currency ).toBe( expected.currency );
-	expect( charge.amountRefundedMinor ).toBe( expected.amountMinor );
-	expect( charge.refunded ).toBe( expected.fullyRefunded );
-	// The charge was refunded, not reversed: it stays captured.
-	expect( charge.captured ).toBe( true );
-	expect( charge.status ).toBe( 'succeeded' );
+test.beforeAll( async ( { restApi } ) => {
+	await requireTestModeAccount( restApi );
+} );
 
-	const wooRefunds = await readWooRefundRecords( restApi, paid.orderId );
-	expect(
-		wooRefunds,
-		'exactly one WooCommerce refund must exist'
-	).toHaveLength( 1 );
-	expect( wooRefunds[ 0 ].amount ).toBe( expected.amountText );
-	// The join between the two records. Without it, "one Woo refund" and "one
-	// provider refund" could be about different money.
-	expect(
-		wooRefunds[ 0 ].providerRefundId,
-		'WooCommerce must store the exact provider refund ID once'
-	).toBe( settledRefund.id );
-
-	const order = await readOrderRecord( restApi, paid.orderId );
-	expect( order.refundIds ).toEqual( [ wooRefunds[ 0 ].id ] );
-	expect( order.refundStatusMeta ).toBe( 'successful' );
-	expect( order.currency ).toBe( expected.currency );
-
-	return wooRefunds[ 0 ];
-}
-
-/**
- * Drive one paid card order and hand back its proven payment identity, so this
- * family differs from a plain card purchase only in what happens afterwards.
- */
-async function createPaidCardOrder(
-	session: ProviderWriteSession,
-	page: Page,
-	runId: string,
-	adminApi: APIRequestContext,
-	expected: { amountMinor: number; currency: string; price: string }
-): Promise< PaymentEvidence > {
-	const product = await session.createOwnedProduct( expected.price );
-	const orderId = await completeCardCheckout( session, page, product, runId );
-	const paid = await getPaymentEvidence( adminApi, orderId );
-
-	// The fixture every assertion below is derived from. A store that priced,
-	// captured or settled this differently must fail here rather than silently
-	// move the contract.
-	expect( paid.amountMinor ).toBe( expected.amountMinor );
-	expect( paid.currency ).toBe( expected.currency );
-	expect( paid.orderStatus ).toBe( 'processing' );
-	expect( paid.providerStatus ).toBe( 'succeeded' );
-	expect( paid.chargeStatus ).toBe( 'succeeded' );
-	expect( paid.chargeCaptured ).toBe( true );
-	expect( paid.occurrenceCount ).toBe( 1 );
-	expect( paid.captureOccurrenceCount ).toBe( 1 );
-	await readProviderCardEvidence( adminApi, paid );
-
-	return paid;
-}
-
-/* -------------------------------------------------------------------------
- * Cases
- * ---------------------------------------------------------------------- */
-
-/**
- * `R1`: the retained refund-settlement smoke, trimmed to audit
- * `data/t1-provider-family-audit.md` §3. The real round trip from a card
- * checkout to a merchant refund to a settled provider refund whose identity
- * WooCommerce stores is the one assertion below the browser cannot make.
- * Everything else this case used to assert -- submitted form fields, request
- * count, note count, reason/metadata echo, the money-format precheck, and the
- * `R1v` transaction-view hand-off -- now lives in PHPUnit and Jest (T.1 batch
- * 5a) and is dropped here rather than proved twice.
- */
 test(
 	'A full card refund returns the exact paid amount as one succeeded provider refund whose identity WooCommerce stores once against the source charge',
 	{
 		annotation: [
-			{
-				type: 'woopayments-contract',
-				description: CONTRACT_R1,
-			},
+			{ type: 'woopayments-contract', description: CONTRACT_R1 },
 		],
 		tag: FAMILY_TAGS,
 	},
-	async ( { adminApi, page, pilotRuntime, runId } ) => {
+	async ( { page, restApi } ) => {
 		test.setTimeout( 420_000 );
-		pilotRuntime.requireApprovedProviderFixture( CAPABILITY_FAMILY );
-		pilotRuntime.requireApprovedProviderFixture( CAPABILITY_REFUND );
-		await pilotRuntime.assertCurrentRuntimeReady( 'native' );
 
-		await pilotRuntime.withProviderWriteLocks(
-			{ recordEvent: 'refund-settlement-r1' },
-			async () => {
-				const paid = await createPaidCardOrder(
-					pilotRuntime,
-					page,
-					runId,
-					adminApi,
-					{
-						amountMinor: R1_MINOR,
-						currency: 'USD',
-						price: R1_PRICE,
-					}
-				);
-				const orderBefore = await readOrderRecord(
-					adminApi,
-					paid.orderId
-				);
+		const paid = await createPaidCardOrder( page, restApi );
+		try {
+			await page.goto( 'wp-login.php' );
+			await logIn( page, admin.username, admin.password );
+			await openOrderEditScreen( page, paid.orderId );
+			await openRefundEditor( page );
+			await fillRefundInput(
+				page,
+				`refund_line_total[${ paid.lineItemId }]`,
+				PRICE
+			);
+			await fillRefundInput( page, 'refund_reason', REFUND_REASON );
+			await dispatchGatewayRefund( page );
 
-				await pilotRuntime.logInAsAdmin( page );
-				await page.waitForURL( '**/wp-admin/**' );
-				await openOrderEditScreen( page, paid.orderId );
-				await openRefundEditor( page );
-				await allocateRefundToLine(
-					page,
-					orderBefore.lineItems[ 0 ].id,
-					R1_PRICE
-				);
-				await fillRefundInput( page, 'refund_reason', REFUND_REASON );
+			const settledRefund = await waitForSettledRefund(
+				restApi,
+				paid.chargeId
+			);
+			await waitForWooRefundStatus( restApi, paid.orderId );
 
-				await dispatchGatewayRefund(
-					pilotRuntime,
-					page,
-					'refund-settlement-r1-full-refund'
-				);
+			// The join between the two sides: one WooCommerce refund, carrying
+			// the exact provider refund identity, against the source charge.
+			const wooRefunds = (
+				await restApi.get(
+					`${ ORDERS_ROUTE }/${ paid.orderId }/refunds?context=edit&per_page=100`
+				)
+			).data as Array< {
+				id: number;
+				amount: string;
+				meta_data?: Array< { key?: unknown; value?: unknown } >;
+			} >;
+			expect(
+				wooRefunds,
+				'exactly one WooCommerce refund must exist'
+			).toHaveLength( 1 );
+			expect( wooRefunds[ 0 ].amount ).toBe( PRICE );
+			const providerRefundId = wooRefunds[ 0 ].meta_data?.find(
+				( entry ) => entry.key === '_wcpay_refund_id'
+			)?.value;
+			expect(
+				providerRefundId,
+				'WooCommerce must store the exact provider refund ID once'
+			).toBe( settledRefund.id );
+			expect( settledRefund.amountMinor ).toBe( AMOUNT_MINOR );
+			expect( settledRefund.currency ).toBe( CURRENCY );
 
-				const providerRefund = await waitForSettledRefund(
-					adminApi,
-					paid.chargeId,
-					SETTLE_BUDGET_MS,
-					SETTLE_INTERVAL_MS
-				);
-				await waitForWooRefundStatus(
-					adminApi,
-					paid.orderId,
-					SETTLE_BUDGET_MS,
-					SETTLE_INTERVAL_MS
-				);
-				await expectSingleJoinedRefund(
-					adminApi,
-					paid,
-					{
-						amountMinor: R1_MINOR,
-						currency: 'USD',
-						amountText: R1_PRICE,
-						fullyRefunded: true,
-					},
-					providerRefund
-				);
-
-				const order = await readOrderRecord( adminApi, paid.orderId );
-				expect( order.status ).toBe( 'refunded' );
-			}
-		);
+			const order = (
+				await restApi.get( `${ ORDERS_ROUTE }/${ paid.orderId }` )
+			).data as Record< string, unknown >;
+			expect(
+				( order.refunds as Array< { id: number } > ).map(
+					( refund ) => refund.id
+				)
+			).toEqual( [ wooRefunds[ 0 ].id ] );
+			expect( String( order.currency ).toUpperCase() ).toBe( CURRENCY );
+			expect( order.status ).toBe( 'refunded' );
+		} finally {
+			await restApi.delete( `${ PRODUCTS_ROUTE }/${ paid.productId }`, {
+				force: true,
+			} );
+		}
 	}
 );

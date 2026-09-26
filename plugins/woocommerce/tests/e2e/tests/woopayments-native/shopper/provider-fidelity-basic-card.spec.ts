@@ -7,11 +7,12 @@ import { wpEvalJson } from '../../../utils/cli';
 import { random } from '../../../utils/helpers';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
+	expectSettledCardPayment,
 	fillCardDetails,
-	getCharge,
 	getPaymentIntent,
 	requireTestModeAccount,
 	TEST_CARDS,
+	type SettledCardPayment,
 } from '../../../utils/woopayments';
 
 /**
@@ -49,9 +50,8 @@ const PRICE = '10.99';
 const AMOUNT_MINOR = 1099;
 const CURRENCY = 'USD';
 const PAID_ORDER_STATUSES = [ 'processing', 'completed' ];
-const SETTLEMENT_BUDGET_MS = 60_000;
-const POLL_INTERVAL_MS = 2_000;
 const RECEIPT_TIMEOUT_MS = 60_000;
+const CARD = { brand: 'visa', last4: '4242' };
 
 const PRODUCTS_ROUTE = 'wc/v3/products';
 const ORDERS_ROUTE = 'wc/v3/orders';
@@ -59,21 +59,6 @@ const ORDERS_ROUTE = 'wc/v3/orders';
 /** Native's copy when card-testing protection turns a submission away. */
 const CARD_TESTING_REJECTION_TEXT =
 	"We're not able to process this payment. Please refresh the page and try again.";
-
-interface SettledPayment {
-	orderId: number;
-	intentId: string;
-	chargeId: string;
-	paymentMethodId: string;
-	amountMinor: number;
-	currency: string;
-	orderStatus: string;
-	providerStatus: string;
-	chargeStatus: string;
-	chargeCaptured: boolean;
-	occurrenceCount: number;
-	captureOccurrenceCount: number;
-}
 
 async function createRunProduct(
 	restApi: ApiClient
@@ -127,199 +112,20 @@ function orderMeta( order: Record< string, unknown >, key: string ): string {
 	return typeof value === 'string' ? value : '';
 }
 
-function amountMinorFromTotal( total: string ): number {
-	const match = /^(\d+)\.(\d{2})$/.exec( total );
-	if ( ! match ) {
-		throw new Error(
-			`Basic-card evidence requires a two-decimal order total, received ${ total }.`
-		);
-	}
-	return Number( match[ 1 ] ) * 100 + Number( match[ 2 ] );
-}
-
-function intentPaymentMethodId( intent: Record< string, unknown > ): string {
-	const value = intent.payment_method;
-	if ( typeof value === 'string' ) {
-		return value;
-	}
-	if ( typeof value === 'object' && value !== null && 'id' in value ) {
-		return String( ( value as { id: unknown } ).id );
-	}
-	return '';
-}
-
-/** The exact one charge occurrence the intent's own collection must carry. */
-function requireSoleChargeId(
-	intent: Record< string, unknown >,
-	intentId: string,
-	expectedChargeId: string
-): void {
-	const chargesData = ( intent.charges as { data?: unknown[] } | undefined )
-		?.data;
-	if ( ! Array.isArray( chargesData ) ) {
-		throw new Error(
-			`Intent ${ intentId } carries no charges collection to count occurrences from.`
-		);
-	}
-	const chargeIds = chargesData.map( ( item ) =>
-		typeof item === 'object' && item !== null && 'id' in item
-			? String( ( item as { id: unknown } ).id )
-			: ''
-	);
-	if ( chargeIds.length !== 1 || chargeIds[ 0 ] !== expectedChargeId ) {
-		throw new Error(
-			`Intent ${ intentId } charge occurrence mismatch: expected exactly [${ expectedChargeId }], received [${ chargeIds.join(
-				', '
-			) }].`
-		);
-	}
-}
-
 /**
- * Polls the exact order, PaymentIntent and charge until two consecutive
- * reads two seconds apart return the same terminal identities, amounts and
- * statuses - the claim's convergence rule. Once stable, proves the
- * provider's own facts against the order (R1): intent and charge amount and
- * currency equal the order's, the charge belongs to this exact intent, and
- * both the intent's and the charge's payment method equal the one the order
- * itself recorded.
+ * The claim's fixed format and reachability facts on top of what
+ * `expectSettledCardPayment` already proved (the amounts, currency, linkage,
+ * payment method and cardinality against the order's own recorded facts).
  */
-async function convergeSettledPayment(
-	restApi: ApiClient,
-	orderId: number
-): Promise< SettledPayment > {
-	const deadline = Date.now() + SETTLEMENT_BUDGET_MS;
-	let previous = '';
-
-	for (;;) {
-		const order = ( await restApi.get( `${ ORDERS_ROUTE }/${ orderId }` ) )
-			.data as Record< string, unknown >;
-		const intentId = orderMeta( order, '_intent_id' );
-		const chargeId = orderMeta( order, '_charge_id' );
-		const orderPaymentMethodId = orderMeta( order, '_payment_method_id' );
-
-		if ( intentId && chargeId ) {
-			const intent = await getPaymentIntent( restApi, intentId );
-			const charge = await getCharge( restApi, chargeId );
-
-			if (
-				intent.status === 'succeeded' &&
-				charge.status === 'succeeded'
-			) {
-				requireSoleChargeId( intent, intentId, chargeId );
-				const timeline = (
-					await restApi.get(
-						`wc/v3/payments/timeline/${ encodeURIComponent(
-							intentId
-						) }`
-					)
-				).data as { data?: Array< { type?: unknown } > };
-
-				const orderAmountMinor = amountMinorFromTotal(
-					String( order.total )
-				);
-				const orderCurrency = String( order.currency ).toUpperCase();
-				const current: SettledPayment = {
-					orderId,
-					intentId,
-					chargeId,
-					paymentMethodId: orderPaymentMethodId,
-					amountMinor: orderAmountMinor,
-					currency: orderCurrency,
-					orderStatus: String( order.status ),
-					providerStatus: String( intent.status ),
-					chargeStatus: String( charge.status ),
-					chargeCaptured: charge.captured === true,
-					occurrenceCount: 1,
-					captureOccurrenceCount: ( timeline.data ?? [] ).filter(
-						( event ) => event.type === 'captured'
-					).length,
-				};
-				const serialized = JSON.stringify( current );
-				if ( serialized === previous ) {
-					// R1: the provider's own recorded facts, not only the
-					// order's copy of them.
-					expect(
-						intent.amount,
-						'the intent amount must equal the order total'
-					).toBe( orderAmountMinor );
-					expect(
-						String( intent.currency ).toLowerCase(),
-						'the intent currency must equal the order currency'
-					).toBe( orderCurrency.toLowerCase() );
-					expect(
-						charge.amount,
-						'the charge amount must equal the order total'
-					).toBe( orderAmountMinor );
-					expect(
-						String( charge.currency ).toLowerCase(),
-						'the charge currency must equal the order currency'
-					).toBe( orderCurrency.toLowerCase() );
-					expect(
-						charge.payment_intent,
-						'the charge must belong to this exact intent'
-					).toBe( intentId );
-					expect(
-						intentPaymentMethodId( intent ),
-						"the intent's payment method must equal the order's recorded one"
-					).toBe( orderPaymentMethodId );
-					expect(
-						intentPaymentMethodId( charge ),
-						"the charge's payment method must equal the order's recorded one"
-					).toBe( orderPaymentMethodId );
-					return current;
-				}
-				previous = serialized;
-			}
-		}
-
-		if ( Date.now() >= deadline ) {
-			throw new Error(
-				`Order ${ orderId } never reached a stable settled provider payment within ${ SETTLEMENT_BUDGET_MS }ms.`
-			);
-		}
-		await new Promise( ( resolve ) =>
-			setTimeout( resolve, POLL_INTERVAL_MS )
-		);
-	}
-}
-
 function expectSingleSettledGraph(
-	payment: SettledPayment,
+	payment: SettledCardPayment,
 	orderId: number
 ): void {
 	expect( payment.orderId ).toBe( orderId );
 	expect( payment.intentId ).toMatch( /^pi_/ );
 	expect( payment.chargeId ).toMatch( /^ch_|^py_/ );
 	expect( payment.paymentMethodId ).toMatch( /^pm_/ );
-	expect( payment.amountMinor ).toBe( AMOUNT_MINOR );
-	expect( payment.currency ).toBe( CURRENCY );
-	expect( payment.providerStatus ).toBe( 'succeeded' );
-	expect( payment.chargeStatus ).toBe( 'succeeded' );
-	expect( payment.chargeCaptured ).toBe( true );
-	expect(
-		payment.occurrenceCount,
-		'one submission must leave exactly one charge on the intent'
-	).toBe( 1 );
-	expect(
-		payment.captureOccurrenceCount,
-		'one submission must leave exactly one capture on the intent'
-	).toBe( 1 );
 	expect( PAID_ORDER_STATUSES ).toContain( payment.orderStatus );
-}
-
-/** The card the provider actually charged, not the card the browser typed. */
-async function expectCardCharged(
-	restApi: ApiClient,
-	chargeId: string
-): Promise< void > {
-	const charge = await getCharge( restApi, chargeId );
-	const details = charge.payment_method_details as
-		| { type?: unknown; card?: { brand?: unknown; last4?: unknown } }
-		| undefined;
-	expect( details?.type ).toBe( 'card' );
-	expect( details?.card?.brand ).toBe( 'visa' );
-	expect( details?.card?.last4 ).toBe( '4242' );
 }
 
 function isStoreCheckoutRequest( request: Request ): boolean {
@@ -491,12 +297,16 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 				const orderId = Number(
 					/order-received\/(\d+)/.exec( page.url() )?.[ 1 ]
 				);
-				const payment = await convergeSettledPayment(
+				const payment = await expectSettledCardPayment(
 					restApi,
-					orderId
+					orderId,
+					{
+						amountMinor: AMOUNT_MINOR,
+						currency: CURRENCY,
+						card: CARD,
+					}
 				);
 				expectSingleSettledGraph( payment, orderId );
-				await expectCardCharged( restApi, payment.chargeId );
 
 				const newOrders = await readNewOrders(
 					restApi,
@@ -636,12 +446,16 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 					const admittedOrderId = Number(
 						/order-received\/(\d+)/.exec( page.url() )?.[ 1 ]
 					);
-					const payment = await convergeSettledPayment(
+					const payment = await expectSettledCardPayment(
 						restApi,
-						admittedOrderId
+						admittedOrderId,
+						{
+							amountMinor: AMOUNT_MINOR,
+							currency: CURRENCY,
+							card: CARD,
+						}
 					);
 					expectSingleSettledGraph( payment, admittedOrderId );
-					await expectCardCharged( restApi, payment.chargeId );
 
 					const intent = await getPaymentIntent(
 						restApi,
@@ -790,9 +604,14 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 						attachedMethodsAfterRefusal,
 						'a refused submission must attach nothing to the run provider customer'
 					).toEqual( [] );
-					const paymentAfterRefusal = await convergeSettledPayment(
+					const paymentAfterRefusal = await expectSettledCardPayment(
 						restApi,
-						admittedOrderId
+						admittedOrderId,
+						{
+							amountMinor: AMOUNT_MINOR,
+							currency: CURRENCY,
+							card: CARD,
+						}
 					);
 					expect(
 						paymentAfterRefusal,
