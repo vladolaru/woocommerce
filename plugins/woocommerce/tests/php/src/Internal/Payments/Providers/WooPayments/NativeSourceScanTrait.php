@@ -13,8 +13,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
  *
  * Each consuming test keeps its own matching rule (which call shapes count as a hit); this trait
  * only owns what every one of them needs: which files to scan, how to walk their tokens, literal
- * resolution, and a plain literal harvest. Constant (`self::`/`static::`/`ClassName::`) resolution
- * is not here yet; it lands with the hook-names test (Task 5), the first consumer that needs it.
+ * resolution, a plain literal harvest, and constant (`self::`/`static::`/`ClassName::`) resolution
+ * (the hook-names test, Task 5, is the first consumer that needs it).
  *
  * @since 11.2.0
  */
@@ -154,5 +154,227 @@ trait NativeSourceScanTrait {
 		}
 
 		return $literals;
+	}
+
+	/**
+	 * The index of the next non-trivia token at or after the given index.
+	 *
+	 * @param array<int,mixed> $tokens PHP tokens.
+	 * @param int              $from   Index to start looking from (inclusive).
+	 */
+	private function native_next_significant_token_index( array $tokens, int $from ): ?int {
+		for ( $i = $from, $count = count( $tokens ); $i < $count; $i++ ) {
+			$token = $tokens[ $i ];
+			if ( is_array( $token ) && in_array( $token[0], array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT ), true ) ) {
+				continue;
+			}
+
+			return $i;
+		}
+
+		return null;
+	}
+
+	/**
+	 * The previous non-trivia token at or before the given index.
+	 *
+	 * @param array<int,mixed> $tokens PHP tokens.
+	 * @param int              $from   Index to start looking from (exclusive).
+	 * @return mixed|null
+	 */
+	private function native_previous_significant_token( array $tokens, int $from ) {
+		for ( $i = $from - 1; $i >= 0; $i-- ) {
+			$token = $tokens[ $i ];
+			if ( is_array( $token ) && in_array( $token[0], array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT ), true ) ) {
+				continue;
+			}
+
+			return $token;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Read a possibly-qualified name (`Foo`, `Foo\Bar`, `\Foo\Bar`) starting at the given index, as
+	 * a run of `T_STRING`/`T_NS_SEPARATOR` (PHP 8 tokenizes it as one `T_NAME_QUALIFIED`/
+	 * `T_NAME_FULLY_QUALIFIED` token; both forms are handled).
+	 *
+	 * @param array<int,mixed> $tokens PHP tokens.
+	 * @param int              $from   Index to start reading from.
+	 * @return string
+	 */
+	private function native_read_qualified_name( array $tokens, int $from ): string {
+		$name = '';
+
+		for ( $i = $from, $count = count( $tokens ); $i < $count; $i++ ) {
+			$token = $tokens[ $i ];
+			if ( is_array( $token ) && in_array( $token[0], array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT ), true ) ) {
+				continue;
+			}
+
+			if ( is_array( $token ) && in_array( $token[0], array( T_STRING, T_NS_SEPARATOR ), true ) ) {
+				$name .= $token[1];
+				continue;
+			}
+
+			if ( is_array( $token ) && defined( 'T_NAME_QUALIFIED' ) && in_array( $token[0], array( T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED ), true ) ) {
+				$name .= $token[1];
+				continue;
+			}
+
+			break;
+		}
+
+		return ltrim( $name, '\\' );
+	}
+
+	/**
+	 * The fully-qualified class/interface/trait name a file's own top-level type declares, from its
+	 * `namespace` statement and its `class|interface|trait Name` declaration. This codebase follows
+	 * PSR-4 (one such declaration per file), so the file's own type is what `self::`/`static::`
+	 * resolve against anywhere in it.
+	 *
+	 * @param string $file Absolute file path.
+	 * @return string|null
+	 */
+	private function native_file_own_class( string $file ): ?string {
+		$tokens    = $this->native_tokenize( $file );
+		$namespace = '';
+		$class     = null;
+
+		for ( $i = 0, $count = count( $tokens ); $i < $count; $i++ ) {
+			$token = $tokens[ $i ];
+			if ( ! is_array( $token ) ) {
+				continue;
+			}
+
+			if ( T_NAMESPACE === $token[0] ) {
+				$namespace = $this->native_read_qualified_name( $tokens, $i + 1 );
+				continue;
+			}
+
+			if ( in_array( $token[0], array( T_CLASS, T_INTERFACE, T_TRAIT ), true ) ) {
+				$previous = $this->native_previous_significant_token( $tokens, $i );
+				if ( is_array( $previous ) && T_DOUBLE_COLON === $previous[0] ) {
+					// `Foo::class`, not a declaration.
+					continue;
+				}
+
+				$name_index = $this->native_next_significant_token_index( $tokens, $i + 1 );
+				$name_token = null !== $name_index ? $tokens[ $name_index ] : null;
+				if ( is_array( $name_token ) && T_STRING === $name_token[0] ) {
+					$class = $name_token[1];
+					break;
+				}
+			}
+		}
+
+		if ( null === $class ) {
+			return null;
+		}
+
+		return '' === $namespace ? $class : $namespace . '\\' . $class;
+	}
+
+	/**
+	 * The `use Foo\Bar\Baz;` / `use Foo\Bar\Baz as Alias;` import map of a file: short/alias name to
+	 * fully-qualified class name. Grouped (`use Foo\{Bar, Baz};`) and `use function`/`use const`
+	 * imports are not produced by this codebase's class references and are skipped.
+	 *
+	 * @param string $file Absolute file path.
+	 * @return array<string,string>
+	 */
+	private function native_file_use_imports( string $file ): array {
+		$tokens  = $this->native_tokenize( $file );
+		$imports = array();
+
+		for ( $i = 0, $count = count( $tokens ); $i < $count; $i++ ) {
+			$token = $tokens[ $i ];
+			if ( ! is_array( $token ) || T_USE !== $token[0] ) {
+				continue;
+			}
+
+			$next_index = $this->native_next_significant_token_index( $tokens, $i + 1 );
+			$next       = null !== $next_index ? $tokens[ $next_index ] : null;
+			if ( is_array( $next ) && in_array( $next[0], array( T_FUNCTION, T_CONST ), true ) ) {
+				continue;
+			}
+
+			$name_start = $i + 1;
+			$fqcn       = $this->native_read_qualified_name( $tokens, $name_start );
+			if ( '' === $fqcn || false !== strpos( $fqcn, '{' ) ) {
+				continue;
+			}
+
+			// Advance past the name we just read to look for an `as Alias` clause before the `;`.
+			$cursor = $name_start;
+			for ( $j = $name_start, $jcount = count( $tokens ); $j < $jcount; $j++ ) {
+				$candidate = $tokens[ $j ];
+				if ( is_array( $candidate ) && in_array( $candidate[0], array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT, T_STRING, T_NS_SEPARATOR ), true ) ) {
+					$cursor = $j;
+					continue;
+				}
+				if ( defined( 'T_NAME_QUALIFIED' ) && is_array( $candidate ) && in_array( $candidate[0], array( T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED ), true ) ) {
+					$cursor = $j;
+					continue;
+				}
+				break;
+			}
+
+			$after_index = $this->native_next_significant_token_index( $tokens, $cursor + 1 );
+			$after       = null !== $after_index ? $tokens[ $after_index ] : null;
+			$alias       = null;
+			if ( is_array( $after ) && T_AS === $after[0] ) {
+				$alias_index = $this->native_next_significant_token_index( $tokens, $cursor + 2 );
+				$alias_token = null !== $alias_index ? $tokens[ $alias_index ] : null;
+				if ( is_array( $alias_token ) && T_STRING === $alias_token[0] ) {
+					$alias = $alias_token[1];
+				}
+			}
+
+			$short                       = false !== strrpos( $fqcn, '\\' ) ? substr( $fqcn, strrpos( $fqcn, '\\' ) + 1 ) : $fqcn;
+			$imports[ $alias ?? $short ] = $fqcn;
+		}
+
+		return $imports;
+	}
+
+	/**
+	 * Resolve a `self::CONST`, `static::CONST`, or `ClassName::CONST` reference found in a native
+	 * source file to its runtime string value, via the class's own namespace/use-import context and
+	 * `ReflectionClassConstant`, which reads a constant's value regardless of its visibility (unlike
+	 * `constant()`/`defined()`, which only see a `public` one from outside the class) — needed here
+	 * because several of the constants this scanner resolves are declared `private`. The classes in
+	 * the scanned roots autoload under PHPUnit, so reflection sees the real declared value.
+	 *
+	 * @param string $file       Absolute file path the reference was found in.
+	 * @param string $class_ref  The token text before `::` (`self`, `static`, `parent`, or a class name).
+	 * @param string $const_name The constant name after `::`.
+	 * @return string|null
+	 */
+	private function native_resolve_constant_reference( string $file, string $class_ref, string $const_name ): ?string {
+		if ( in_array( $class_ref, array( 'self', 'static', 'parent' ), true ) ) {
+			$fqcn = $this->native_file_own_class( $file );
+		} else {
+			$imports = $this->native_file_use_imports( $file );
+			$fqcn    = $imports[ $class_ref ] ?? null;
+
+			if ( null === $fqcn ) {
+				$own_class = $this->native_file_own_class( $file );
+				$namespace = null !== $own_class && false !== strrpos( $own_class, '\\' )
+					? substr( $own_class, 0, strrpos( $own_class, '\\' ) )
+					: '';
+				$fqcn      = '' === $namespace ? $class_ref : $namespace . '\\' . $class_ref;
+			}
+		}
+
+		if ( null === $fqcn || ! class_exists( $fqcn ) || ! ( new \ReflectionClass( $fqcn ) )->hasConstant( $const_name ) ) {
+			return null;
+		}
+
+		$value = ( new \ReflectionClassConstant( $fqcn, $const_name ) )->getValue();
+
+		return is_string( $value ) ? $value : null;
 	}
 }
