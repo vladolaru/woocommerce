@@ -144,7 +144,7 @@ fake_pnpm() {
 }
 
 fake_curl() {
-	local root="${PERF_FAKE_ROOT:?}" headers='' body='' cookie='' trace_header='' url='' state kind status=200 final_url queries memory hooks files=250 owner tier time_total=.100000 bootstrap=1 http=0 target gateway_first gateway_second
+	local root="${PERF_FAKE_ROOT:?}" headers='' body='' cookie='' trace_header='' url='' state kind status=200 final_url queries memory hooks files=250 owner tier time_total=.100000 bootstrap=1 http=0 target gateway_first gateway_second repeat=''
 	while (($#)); do
 		case "$1" in
 		-D) headers="$2"; shift 2 ;;
@@ -158,6 +158,7 @@ fake_curl() {
 	done
 	state="$(< "$root/current-state")"
 	kind="${PERF_COMPARE_SAMPLE_KIND:-preflight}"
+	if [[ "$headers" =~ -r([0-9]+)\.headers$ ]]; then repeat="${BASH_REMATCH[1]}"; fi
 	if [[ "$kind" != preflight ]]; then
 		target="${url#http://canonical.native.test:8187}"
 		case "$target" in
@@ -189,6 +190,8 @@ fake_curl() {
 		gateway-dormancy-fail) [[ "$state" != disabled ]] || gateway_first=4 ;;
 		gateway-native-fail) [[ "$state" != active_native ]] || gateway_first=8 ;;
 		gateway-native-boundary-pass) [[ "$state" != active_native ]] || gateway_first=7 ;;
+		intermittent-query-recovers) [[ "$state" != disabled || "$kind" != primary-capture || "$repeat" != 1 ]] || queries=$((queries + 6)) ;;
+		persistent-query-regression) [[ "$state" != disabled || "$kind" != primary-capture ]] || queries=$((queries + 6)) ;;
 		missing-header) headers='' ;;
 		malformed-header) tier='???' ;;
 		invalid-files) files=unknown ;;
@@ -447,24 +450,24 @@ assert_cleaned() {
 run_case local-pass pass 0 local
 local_root="$TEST_ROOT/local-pass"; local_output="$local_root/output/result.tsv"
 expected_account='{"data":{"account_id":"acct_native_ci","country":"US","default_currency":"usd","payments_enabled":true,"payouts_enabled":true,"details_submitted":true,"is_live":false,"test_publishable_key":"pk_test_native_ci","live_publishable_key":"","statement_descriptor":"NATIVE CI","statement_descriptor_kanji":"","statement_descriptor_kana":"","business_profile":{"name":"Native CI store","url":"https://example.test","support_address":{"country":"US"},"support_email":"support@example.test","support_phone":"+10000000000"},"branding":{"logo":"","icon":"","primary_color":"#000000","secondary_color":"#ffffff"},"communications_email":"owner@example.test","store_currencies":{"default":"usd"},"customer_currencies":{"supported":["usd","eur","aud","cad","chf","gbp","jpy","nzd","sek"]},"account_details":{"account_status":{"text":"Enabled"},"payout_status":{"text":"Enabled"},"banner":null},"deposits":{"interval":"daily","weekly_anchor":"monday","monthly_anchor":1,"delay_days":2,"status":"enabled","restrictions":"","completed_waiting_period":true},"platform_checkout_eligible":true,"capabilities":{"card_payments":"active","klarna_payments":"active"},"supported_payment_methods":["card","klarna"],"fees":{"card":[],"klarna":[]}},"fetched":1788898000,"errored":false,"consecutive_errors":0}'
-[[ "$(grep -Fc $'ACCOUNT_DATA\t'"$expected_account" "$local_root/events.log")" == 23 ]] || fail 'Connected and active states did not use the complete seed-time account cache.'
+[[ "$(grep -Fc $'ACCOUNT_DATA\t'"$expected_account" "$local_root/events.log")" == 29 ]] || fail 'Connected and active states did not use the complete seed-time account cache.'
 [[ "$(grep -c $'^SEED_TIME\t1788898000$' "$local_root/events.log")" == 1 ]] || fail 'The account cache timestamp was not captured exactly once at seed time.'
 [[ "$(wc -l < "$local_output" | tr -d ' ')" == 38 ]] || fail 'Local output is not the complete 30-row matrix plus the six gateway rows plus timing row.'
-[[ "$(grep -c $'^CURL\tprimary-warmup\t' "$local_root/samples.log")" == 30 ]] || fail 'Local matrix did not warm all six states across five routes.'
-[[ "$(grep -c $'^CURL\tprimary-capture\t' "$local_root/samples.log")" == 30 ]] || fail 'Local matrix did not capture all six states across five routes.'
+[[ "$(grep -c $'^CURL\tprimary-warmup\t' "$local_root/samples.log")" == 90 ]] || fail 'Local matrix did not warm all six states across five routes for each of the three STATE_SAMPLES attempts.'
+[[ "$(grep -c $'^CURL\tprimary-capture\t' "$local_root/samples.log")" == 90 ]] || fail 'Local matrix did not capture all six states across five routes for each of the three STATE_SAMPLES attempts.'
 if awk -F '\t' '$2 != "preflight" && $4 !~ /^http:\/\/canonical.native.test:8187\// { bad=1 } END { exit bad ? 0 : 1 }' "$local_root/samples.log"; then fail 'Shopper requests did not share the service home origin and cookie scope.'; fi
 for target in '/' '/?post_type=product' '/?product=perf-product' '/?page_id=6' '/?page_id=7'; do
 	grep -Fq $'CURL\tprimary-capture\tbaseline_noop\thttp://canonical.native.test:8187'"$target"$'\t' "$local_root/samples.log" || fail "The canonical measured route was not used: $target"
 done
 [[ "$(grep -c $'^CURL\ttiming\t' "$local_root/samples.log")" == 18 ]] || fail 'Local timing did not run nine alternating pairs.'
-[[ "$(awk -F '\t' '$2 == "population" && $4 ~ /wc\/store\/v1\/cart/ { count++ } END { print count + 0 }' "$local_root/samples.log")" == 28 ]] || fail 'Every state/timing/attribution sample did not prove a populated Store API cart.'
+[[ "$(awk -F '\t' '$2 == "population" && $4 ~ /wc\/store\/v1\/cart/ { count++ } END { print count + 0 }' "$local_root/samples.log")" == 40 ]] || fail 'Every state/timing/attribution sample did not prove a populated Store API cart.'
 [[ "$(grep -c $'^CURL\tattribution\tbaseline_noop\t.*\tX-WooCommerce-Native-Payments-Perf-Trace: baseline_noop$' "$local_root/samples.log")" == 1 ]] || fail 'Local attribution did not trace baseline_noop exactly once.'
 [[ "$(grep -c $'^CURL\tattribution\tdisabled\t.*\tX-WooCommerce-Native-Payments-Perf-Trace: disabled$' "$local_root/samples.log")" == 1 ]] || fail 'Local attribution did not trace disabled exactly once.'
 [[ "$(grep -c $'^DB_EXPORT\t' "$local_root/events.log")" == 1 ]] || fail 'The disposable database was not exported exactly once.'
-[[ "$(grep -c $'^DB_IMPORT\t' "$local_root/events.log")" == 39 ]] || fail 'The disposable database reset count is wrong.'
-[[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$local_root/events.log")" == 28 ]] || fail 'Every local state preparation must disable Multi-Currency before native-tier measurement.'
-[[ "$(grep -c $'^CORE_MULTI_CURRENCY_FEATURE\t"no"$' "$local_root/events.log")" == 28 ]] || fail 'Every local state preparation must disable the independent Core Multi-Currency feature before native-tier measurement.'
-[[ "$(grep -c $'^REFERENCE_ACTIVATE$' "$local_root/events.log")" == 11 ]] || fail 'The isolated reference was not activated for its eleven samples.'
+[[ "$(grep -c $'^DB_IMPORT\t' "$local_root/events.log")" == 51 ]] || fail 'The disposable database reset count is wrong.'
+[[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$local_root/events.log")" == 40 ]] || fail 'Every local state preparation must disable Multi-Currency before native-tier measurement.'
+[[ "$(grep -c $'^CORE_MULTI_CURRENCY_FEATURE\t"no"$' "$local_root/events.log")" == 40 ]] || fail 'Every local state preparation must disable the independent Core Multi-Currency feature before native-tier measurement.'
+[[ "$(grep -c $'^REFERENCE_ACTIVATE$' "$local_root/events.log")" == 13 ]] || fail 'The isolated reference was not activated for its thirteen samples.'
 awk '/^DB_EXPORT/{seen=1} /^DB_IMPORT/ && !seen{exit 1}' "$local_root/events.log" || fail 'Database import preceded the one export.'
 [[ "$(awk '$1 == "SEED" || $1 == "STORE_OPEN" || $1 == "PRODUCT_READY" || $1 == "DB_EXPORT" { printf "%s ", $1 }' "$local_root/events.log" | head -c 40)" == 'SEED STORE_OPEN PRODUCT_READY DB_EXPORT ' ]] || fail 'The open store and product were not ready after seed and before the one database export.'
 awk '/^SEED$/{seed=NR} /^SEED_TIME\t/{seed_time=NR} /^DB_EXPORT\t/{exported=NR} END{exit seed < seed_time && seed_time < exported ? 0 : 1}' "$local_root/events.log" || fail 'The account timestamp was not captured after seed and before export.'
@@ -478,6 +481,21 @@ grep -Fq $'disabled\tgateway\t3\t0\tNA\tbaseline_noop\t1\tNA\tNA\tpass' "$local_
 grep -Fq $'active_native\tgateway\t6\t0\tNA\tactive_plugin\t1\tNA\tNA\tpass' "$local_output" || fail 'The exact active_native gateway ceiling did not pass.'
 grep -Fq $'active_plugin\tgateway\t5\t0\tNA\tactive_plugin\t0\tNA\tNA\tinformational' "$local_output" || fail 'The exact active_plugin gateway row was not recorded as informational.'
 assert_cleaned "$local_root"
+
+# T.12: a query count elevated on exactly one of the STATE_SAMPLES attempts (the intermittent
+# component observed in CI) must not fail the run; the minimum across attempts recovers the
+# clean value. A count elevated on every attempt (a genuine regression, not a flake) must still
+# fail, so the minimum-of-N does not mask a real dormancy violation.
+run_case intermittent-query-recovers intermittent-query-recovers 0 ci
+intermittent_output="$TEST_ROOT/intermittent-query-recovers/output/result.tsv"
+[[ "$(grep -c $'^CURL\tprimary-capture\t' "$TEST_ROOT/intermittent-query-recovers/samples.log")" == 45 ]] || fail 'CI did not attempt all three sampled states across five routes for each of the three STATE_SAMPLES attempts.'
+grep -Fq $'disabled\tfront\t101\t1524288\t105\tbaseline_noop\t1\t524288\t5\tpass' "$intermittent_output" || fail 'A query count elevated on only one of three attempts was not recovered by the minimum.'
+assert_cleaned "$TEST_ROOT/intermittent-query-recovers"
+
+run_case persistent-query-regression persistent-query-regression 1 ci
+persistent_output="$TEST_ROOT/persistent-query-regression/output/result.tsv"
+grep -Fq $'disabled\tfront\t107\t1524288\t105\tbaseline_noop\t7\t524288\t5\tfail' "$persistent_output" || fail 'A query count elevated on every attempt was wrongly recovered by the minimum.'
+assert_cleaned "$TEST_ROOT/persistent-query-regression"
 
 run_case gateway-native-boundary-pass gateway-native-boundary-pass 0 local
 boundary_output="$TEST_ROOT/gateway-native-boundary-pass/output/result.tsv"
@@ -513,8 +531,8 @@ ci_root="$TEST_ROOT/ci-pass"; ci_output="$ci_root/output/result.tsv"
 grep -Fq $'baseline_noop\tgateway\t2\t0\tNA\tbaseline_noop\t0\tNA\tNA\tpass' "$ci_output" || fail 'The exact CI baseline_noop gateway row did not pass.'
 grep -Fq $'disabled\tgateway\t3\t0\tNA\tbaseline_noop\t1\tNA\tNA\tpass' "$ci_output" || fail 'The exact CI disabled gateway row did not pass.'
 grep -Fq $'active_native\tgateway\t6\t0\tNA\tnot_evaluated\tNA\tNA\tNA\tnot_evaluated' "$ci_output" || fail 'CI did not keep active_native gateway not_evaluated.'
-[[ "$(grep -c $'^DB_EXPORT\t' "$ci_root/events.log")" == 1 && "$(grep -c $'^DB_IMPORT\t' "$ci_root/events.log")" == 4 ]] || fail 'CI did not use one export and four resets.'
-[[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$ci_root/events.log")" == 3 ]] || fail 'Every CI state preparation must disable Multi-Currency before native-tier measurement.'
+[[ "$(grep -c $'^DB_EXPORT\t' "$ci_root/events.log")" == 1 && "$(grep -c $'^DB_IMPORT\t' "$ci_root/events.log")" == 10 ]] || fail 'CI did not use one export and ten resets (three STATE_SAMPLES attempts per sampled state, plus the final cleanup restore).'
+[[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$ci_root/events.log")" == 9 ]] || fail 'Every CI state preparation attempt must disable Multi-Currency before native-tier measurement.'
 if grep -Eq '^REFERENCE_(INSTALL|ACTIVATE)' "$ci_root/events.log"; then fail 'CI touched the reference plugin.'; fi
 assert_cleaned "$ci_root"
 
