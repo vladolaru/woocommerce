@@ -143,40 +143,75 @@ function isStoreCheckoutRequest( request: Request ): boolean {
 }
 
 /**
+ * Whether the store's cached account data carries the
+ * `card_testing_protection_eligible` key at all, and its raw value when it
+ * does. Absence, an explicit `null`, and `false` are three different stored
+ * shapes, and only carrying all three lets a restore put back exactly what
+ * was there instead of collapsing "the key was never set" into "the key was
+ * set to null".
+ */
+interface CardTestingProtectionFlag {
+	existed: boolean;
+	value: unknown;
+}
+
+/** Reads the raw stored flag without changing it, for an exact post-restore comparison. */
+async function readCardTestingProtectionFlag(): Promise< CardTestingProtectionFlag > {
+	return wpEvalJson< CardTestingProtectionFlag >( `
+		$account = get_option( 'wcpay_account_data', array() );
+		if ( ! is_array( $account ) || ! is_array( $account['data'] ?? null ) ) {
+			throw new RuntimeException( 'wcpay_account_data has no cached data to read.' );
+		}
+		$existed = array_key_exists( 'card_testing_protection_eligible', $account['data'] );
+		return array(
+			'existed' => $existed,
+			'value' => $existed ? $account['data']['card_testing_protection_eligible'] : null,
+		);
+	` );
+}
+
+/**
  * Forces (or restores) the account's card-testing-protection eligibility by
  * writing the store's own cached mirror of the account flag directly,
  * through `wpEvalJson` against the run's own wp-env config
  * (`E2E_WP_ENV_CONFIG`, unrelated to the frozen `WP_ENV_HOME`-hardcoding
- * driver this replaces). Returns the prior value, for an exact restore.
+ * driver this replaces). Returns the prior key presence and value, for an
+ * exact restore.
  */
 async function setCardTestingProtectionEligible(
 	eligible: boolean
-): Promise< unknown > {
-	return wpEvalJson< unknown >( `
+): Promise< CardTestingProtectionFlag > {
+	return wpEvalJson< CardTestingProtectionFlag >( `
 		$account = get_option( 'wcpay_account_data', array() );
 		if ( ! is_array( $account ) || ! is_array( $account['data'] ?? null ) ) {
 			throw new RuntimeException( 'wcpay_account_data has no cached data to force.' );
 		}
-		$original = $account['data']['card_testing_protection_eligible'] ?? null;
+		$existed = array_key_exists( 'card_testing_protection_eligible', $account['data'] );
+		$original = $existed ? $account['data']['card_testing_protection_eligible'] : null;
 		$account['data']['card_testing_protection_eligible'] = ${
 			eligible ? 'true' : 'false'
 		};
 		update_option( 'wcpay_account_data', $account );
-		return $original;
+		return array( 'existed' => $existed, 'value' => $original );
 	` );
 }
 
+/** Restores the flag to exactly the shape `setCardTestingProtectionEligible` read: present or absent. */
 async function restoreCardTestingProtectionEligible(
-	original: unknown
+	original: CardTestingProtectionFlag
 ): Promise< void > {
 	await wpEvalJson< unknown >( `
 		$account = get_option( 'wcpay_account_data', array() );
 		if ( ! is_array( $account ) || ! is_array( $account['data'] ?? null ) ) {
 			throw new RuntimeException( 'wcpay_account_data has no cached data to restore.' );
 		}
-		$account['data']['card_testing_protection_eligible'] = json_decode( '${ JSON.stringify(
-			original ?? null
-		) }' );
+		if ( ${ original.existed ? 'true' : 'false' } ) {
+			$account['data']['card_testing_protection_eligible'] = json_decode( '${ JSON.stringify(
+				original.value ?? null
+			) }' );
+		} else {
+			unset( $account['data']['card_testing_protection_eligible'] );
+		}
 		update_option( 'wcpay_account_data', $account );
 		return true;
 	` );
@@ -338,8 +373,10 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 			tag: FAMILY_TAGS,
 		},
 		async ( { page, restApi } ) => {
-			const original = await setCardTestingProtectionEligible( true );
+			let original: CardTestingProtectionFlag | undefined;
+			let caseError: unknown;
 			try {
+				original = await setCardTestingProtectionEligible( true );
 				const baselineOrderId = await readHighestOrderId( restApi );
 				const product = await createRunProduct( restApi );
 				try {
@@ -634,8 +671,29 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 				} finally {
 					await deleteProduct( restApi, product.id );
 				}
+			} catch ( error ) {
+				caseError = error;
 			} finally {
-				await restoreCardTestingProtectionEligible( original );
+				if ( original !== undefined ) {
+					try {
+						await restoreCardTestingProtectionEligible( original );
+						expect( await readCardTestingProtectionFlag() ).toEqual(
+							original
+						);
+					} catch ( restoreError ) {
+						if ( caseError === undefined ) {
+							caseError = restoreError;
+						} else {
+							console.error(
+								'WooPayments card-testing-protection restore failed after the primary case failure:',
+								restoreError
+							);
+						}
+					}
+				}
+			}
+			if ( caseError !== undefined ) {
+				throw caseError;
 			}
 		}
 	);
