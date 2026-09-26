@@ -7,10 +7,55 @@ import {
 } from '@playwright/test';
 
 import { admin } from '../../test-data/data';
-import { ensureReadonlyCatalog } from '../../utils/woopayments-native/readonly-catalog';
+import { create, get } from '../../utils/api';
 import { ADMIN_STATE_PATH } from '../../playwright.config';
 
 const READONLY_PROJECT = 'woopayments-native-readonly';
+
+// The three products the readonly project's specs shop from. Seeded
+// idempotently by slug through the shared REST client, the same one every
+// ordinary WooCommerce e2e fixture uses, rather than a dedicated driver.
+const READONLY_CATALOG_PRODUCTS = [
+	{
+		name: 'WooPayments guest-save smoke',
+		slug: 'woopayments-guest-save-smoke',
+		regular_price: '10.00',
+	},
+	{
+		name: 'WooPayments declines smoke',
+		slug: 'woopayments-declines-smoke',
+		regular_price: '10.00',
+	},
+	{
+		name: 'WooPayments MC family smoke',
+		slug: 'woopayments-mc-family-smoke',
+		regular_price: '10.00',
+	},
+] as const;
+
+async function ensureReadonlyCatalogProduct(
+	product: ( typeof READONLY_CATALOG_PRODUCTS )[ number ]
+): Promise< void > {
+	const existing = await get.products( {
+		slug: product.slug,
+		status: 'any',
+	} );
+	if ( Array.isArray( existing ) && existing.length > 0 ) {
+		return;
+	}
+	await create.product( {
+		...product,
+		status: 'publish',
+		type: 'simple',
+		virtual: true,
+	} );
+}
+
+async function seedReadonlyCatalog(): Promise< void > {
+	for ( const product of READONLY_CATALOG_PRODUCTS ) {
+		await ensureReadonlyCatalogProduct( product );
+	}
+}
 
 export type ReadonlySetupRequestContext = Pick<
 	APIRequestContext,
@@ -153,6 +198,6 @@ export default async function readonlyGlobalSetup(
 			} );
 		},
 		newRequestContext: ( options ) => request.newContext( options ),
-		seedCatalog: ( api, nonce ) => ensureReadonlyCatalog( api, nonce ),
+		seedCatalog: () => seedReadonlyCatalog(),
 	} );
 }

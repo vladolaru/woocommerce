@@ -1,18 +1,8 @@
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import {
-	expect,
-	tags,
-	test,
-	waitForWordPressLoginReady,
-} from '../../../fixtures/woopayments-native';
+import { expect, tags, test } from '../../../fixtures/fixtures';
 import { admin } from '../../../test-data/data';
-
-// The same environment-first resolution the harness fixtures use.
-const ADMIN_USERNAME =
-	process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME ?? admin.username;
-const ADMIN_PASSWORD =
-	process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD ?? admin.password;
+import { logIn } from '../../../utils/login';
 
 // The transactions list contract is deliberately absent: it is claimed and
 // annotated by the ledger's own target for that row,
@@ -30,9 +20,9 @@ const SUBSCRIPTIONS_CONTRACT_ID =
 const ADMIN_AUTH_CONTRACT_ID =
 	'default::setup::tests/e2e/specs/auth.setup.ts:41::authenticate as admin';
 
-const RUNTIME_STATUS_API = '/wp-json/wc-native-payments-e2e/v1/status';
-const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
-const DISPUTES_API = '/wp-json/wc/v3/payments/disputes';
+const RUNTIME_STATUS_API = 'wc-native-payments-e2e/v1/status';
+const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
+const DISPUTES_API = 'wc/v3/payments/disputes';
 const TRANSACTIONS_PATH =
 	'/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Ftransactions';
 const DISPUTES_PATH =
@@ -59,18 +49,6 @@ function requireBaseUrl( baseURL: string | undefined ): string {
 		throw new Error( 'BASE_URL is required for this smoke.' );
 	}
 	return baseURL.replace( /\/+$/, '' );
-}
-
-async function readJson(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Record< string, unknown > > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Record< string, unknown >;
 }
 
 /**
@@ -199,17 +177,15 @@ test(
 		),
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page, baseURL } ) => {
+	async ( { restApi, page, baseURL } ) => {
 		const storeBase = requireBaseUrl( baseURL );
 
 		// Precondition guard: these are release page-load smokes for a
 		// connected, enabled store. A store whose account or gateway
 		// degraded must fail here rather than pass by loading an empty
 		// surface that happens to render its heading.
-		const runtimeStatus = await readJson(
-			await adminApi.get( RUNTIME_STATUS_API ),
-			'Runtime status read'
-		);
+		const runtimeStatus = ( await restApi.get( RUNTIME_STATUS_API ) )
+			.data as Record< string, unknown >;
 		expect(
 			{
 				account_connected: runtimeStatus.account_connected,
@@ -217,27 +193,19 @@ test(
 			},
 			'the store must report a connected account and an enabled gateway'
 		).toEqual( { account_connected: true, gateway_enabled: true } );
-		const paymentsSettings = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings read'
-		);
+		const paymentsSettings = ( await restApi.get( PAYMENTS_SETTINGS_API ) )
+			.data as Record< string, unknown >;
 		expect( paymentsSettings.is_wcpay_enabled ).toBe( true );
 		const restTracker = trackFailedRestResponses( page, storeBase );
 
-		// Clear first, matching the harness's own admin login: a stale
-		// session cookie would redirect wp-login.php to wp-admin and leave
-		// the form fill below hunting a field that is not there.
+		// Clear first: a stale session cookie would redirect wp-login.php to
+		// wp-admin and leave the form fill hunting a field that is not there.
 		await page.context().clearCookies();
 		await page.goto( 'wp-login.php' );
-		await waitForWordPressLoginReady( page );
-		await page
-			.getByLabel( 'Username or Email Address' )
-			.fill( ADMIN_USERNAME );
-		await page
-			.getByRole( 'textbox', { name: 'Password' } )
-			.fill( ADMIN_PASSWORD );
-		await page.getByRole( 'button', { name: 'Log In' } ).click();
-		await page.waitForURL( '**/wp-admin/**' );
+		await expect(
+			page.getByLabel( 'Username or Email Address' )
+		).toBeVisible();
+		await logIn( page, admin.username, admin.password );
 
 		// Loaded, but not claimed: the transactions surface belongs to the
 		// transaction-navigation pilot's contract. It is visited so the
@@ -256,10 +224,8 @@ test(
 		// means it alone cannot tell an empty list from a malformed payload
 		// that yields one. Asserting the route's own response shape closes
 		// that gap independently of how many disputes the store holds.
-		const disputesPayload = await readJson(
-			await adminApi.get( DISPUTES_API ),
-			'Disputes list read'
-		);
+		const disputesPayload = ( await restApi.get( DISPUTES_API ) )
+			.data as Record< string, unknown >;
 		expect( Array.isArray( disputesPayload.data ) ).toBe( true );
 
 		// No store REST request behind any visited surface failed. The
@@ -292,11 +258,10 @@ test.describe( 'WooCommerce Subscriptions extension compatibility', () => {
 			],
 			tag: [ tags.WOOPAYMENTS_NATIVE, '@woopayments-extension-compat' ],
 		},
-		async ( { adminApi, page } ) => {
-			const paymentsSettings = await readJson(
-				await adminApi.get( PAYMENTS_SETTINGS_API ),
-				'Payments settings read'
-			);
+		async ( { restApi, page } ) => {
+			const paymentsSettings = (
+				await restApi.get( PAYMENTS_SETTINGS_API )
+			).data as Record< string, unknown >;
 			expect( paymentsSettings.is_subscriptions_plugin_active ).toBe(
 				true
 			);

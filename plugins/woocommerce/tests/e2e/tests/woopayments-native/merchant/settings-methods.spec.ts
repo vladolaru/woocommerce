@@ -1,21 +1,12 @@
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
-import {
-	expect,
-	tags,
-	test,
-	waitForWordPressLoginReady,
-} from '../../../fixtures/woopayments-native';
-import { admin } from '../../../test-data/data';
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { ADMIN_STATE_PATH } from '../../../playwright.config';
 
-const ADMIN_USERNAME =
-	process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME ?? admin.username;
-const ADMIN_PASSWORD =
-	process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD ?? admin.password;
+test.use( { storageState: ADMIN_STATE_PATH } );
 
-const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
-const FIXTURE_AUDIT_API =
-	'/wp-json/wc-native-payments-e2e/v1/provider-fixture-audit';
+const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
+const FIXTURE_AUDIT_API = 'wc-native-payments-e2e/v1/provider-fixture-audit';
 const SETTINGS_PAGE_PATH =
 	'/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments';
 
@@ -44,20 +35,8 @@ function storeRestPath( url: string, storeBase: string ): string | null {
 	return pathname;
 }
 
-async function readJson(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Record< string, unknown > > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Record< string, unknown >;
-}
-
 async function proveSecretlessProviderSettingsRoundTrip(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	paymentSettings: Record< string, unknown >
 ): Promise< void > {
 	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE !== 'true' ) {
@@ -69,21 +48,16 @@ async function proveSecretlessProviderSettingsRoundTrip(
 	}
 	const changedName = 'Native CI REST provider proof';
 	try {
-		await readJson(
-			await adminApi.post( PAYMENTS_SETTINGS_API, {
-				data: { account_business_name: changedName },
-			} ),
-			'Fixture provider-backed settings update'
-		);
-		const reread = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Fixture provider-backed settings re-read'
-		);
+		await restApi.post( PAYMENTS_SETTINGS_API, {
+			account_business_name: changedName,
+		} );
+		const reread = ( await restApi.get( PAYMENTS_SETTINGS_API ) )
+			.data as Record< string, unknown >;
 		expect( reread.account_business_name ).toBe( changedName );
-		const audit = await readJson(
-			await adminApi.get( FIXTURE_AUDIT_API ),
-			'Fixture provider request audit'
-		);
+		const audit = ( await restApi.get( FIXTURE_AUDIT_API ) ).data as Record<
+			string,
+			unknown
+		>;
 		const requests = audit.requests;
 		expect( Array.isArray( requests ) ).toBe( true );
 		expect( requests ).toContainEqual( {
@@ -101,44 +75,25 @@ async function proveSecretlessProviderSettingsRoundTrip(
 			},
 		} );
 	} finally {
-		await readJson(
-			await adminApi.post( PAYMENTS_SETTINGS_API, {
-				data: { account_business_name: originalName },
-			} ),
-			'Fixture provider-backed settings restoration'
-		);
-		const restored = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Fixture provider-backed settings restored-state read'
-		);
+		await restApi.post( PAYMENTS_SETTINGS_API, {
+			account_business_name: originalName,
+		} );
+		const restored = ( await restApi.get( PAYMENTS_SETTINGS_API ) )
+			.data as Record< string, unknown >;
 		expect( restored.account_business_name ).toBe( originalName );
 	}
-}
-
-async function logInAsAdmin( page: Page ): Promise< void > {
-	await page.context().clearCookies();
-	await page.goto( 'wp-login.php' );
-	await waitForWordPressLoginReady( page );
-	await page.getByLabel( 'Username or Email Address' ).fill( ADMIN_USERNAME );
-	await page
-		.getByRole( 'textbox', { name: 'Password' } )
-		.fill( ADMIN_PASSWORD );
-	await page.getByRole( 'button', { name: 'Log In' } ).click();
-	await page.waitForURL( '**/wp-admin/**' );
 }
 
 test(
 	'An authorized merchant opens native WooPayments settings and sees a loaded surface without errors',
 	{ tag: [ tags.WOOPAYMENTS_NATIVE ] },
-	async ( { adminApi, page, baseURL } ) => {
+	async ( { restApi, page, baseURL } ) => {
 		const storeBase = requireBaseUrl( baseURL );
-		const paymentSettings = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings read'
-		);
+		const paymentSettings = ( await restApi.get( PAYMENTS_SETTINGS_API ) )
+			.data as Record< string, unknown >;
 		expect( paymentSettings.is_wcpay_enabled ).toBe( true );
 		await proveSecretlessProviderSettingsRoundTrip(
-			adminApi,
+			restApi,
 			paymentSettings
 		);
 
@@ -163,7 +118,6 @@ test(
 		} );
 		page.on( 'pageerror', ( error ) => failures.push( error.message ) );
 
-		await logInAsAdmin( page );
 		await page.goto( SETTINGS_PAGE_PATH );
 
 		await expect(

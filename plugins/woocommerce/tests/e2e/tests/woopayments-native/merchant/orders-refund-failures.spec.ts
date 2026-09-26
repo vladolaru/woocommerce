@@ -1,29 +1,22 @@
-import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
-import {
-	expect,
-	tags,
-	test,
-	waitForWordPressLoginReady,
-} from '../../../fixtures/woopayments-native';
-import { admin, customer } from '../../../test-data/data';
+import type { Locator, Page } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
-// The same environment-first resolution the harness fixtures use, so a store
-// with non-default admin credentials drives the browser half and the API half
-// with one identity.
-const ADMIN_USERNAME =
-	process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME ?? admin.username;
-const ADMIN_PASSWORD =
-	process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD ?? admin.password;
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { customer } from '../../../test-data/data';
+import { ADMIN_STATE_PATH } from '../../../playwright.config';
+
+test.use( { storageState: ADMIN_STATE_PATH } );
 
 // The suite's run-ownership stamp, the same key the pilot runtime writes on
 // products it creates and orders it claims.
 const RUN_META_KEY = '_e2e_woopayments_run_id';
 
 const DECIMAL_SEPARATOR_API =
-	'/wp-json/wc/v3/settings/general/woocommerce_price_decimal_sep';
+	'wc/v3/settings/general/woocommerce_price_decimal_sep';
 const NUM_DECIMALS_API =
-	'/wp-json/wc/v3/settings/general/woocommerce_price_num_decimals';
+	'wc/v3/settings/general/woocommerce_price_num_decimals';
 
 // The two run-owned lines every case is built on. The first line is the one
 // each case drives an invalid value into; the second exists so a per-line
@@ -95,18 +88,6 @@ function money( value: number ): string {
 	return value.toFixed( 2 );
 }
 
-async function readJson< Result = Record< string, unknown > >(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Result > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Result;
-}
-
 function requireBaseUrl( baseURL: string | undefined ): string {
 	if ( ! baseURL ) {
 		throw new Error( 'BASE_URL is required for this smoke.' );
@@ -122,20 +103,18 @@ function requireBaseUrl( baseURL: string | undefined ): string {
  * loudly, rather than submit a value that means something else.
  */
 async function assertMoneyFormatAssumptions(
-	adminApi: APIRequestContext
+	restApi: ApiClient
 ): Promise< void > {
-	const decimalSeparator = await readJson(
-		await adminApi.get( DECIMAL_SEPARATOR_API ),
-		'Price decimal separator read'
-	);
+	const decimalSeparator = (
+		await restApi.get< { value?: unknown } >( DECIMAL_SEPARATOR_API )
+	).data;
 	expect(
 		decimalSeparator.value,
 		'this spec types two-decimal amounts with a dot separator'
 	).toBe( '.' );
-	const numDecimals = await readJson(
-		await adminApi.get( NUM_DECIMALS_API ),
-		'Price decimals read'
-	);
+	const numDecimals = (
+		await restApi.get< { value?: unknown } >( NUM_DECIMALS_API )
+	).data;
 	expect(
 		String( numDecimals.value ),
 		'this spec derives its boundaries at two decimal places'
@@ -241,27 +220,24 @@ async function expectNoPhpErrors( page: Page ): Promise< void > {
 }
 
 async function createRunOwnedProduct(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	runId: string,
 	label: string,
 	price: number
 ): Promise< { id: number; name: string } > {
 	const name = `WooPayments refund validation ${ label } ${ runId }`;
-	const product = await readJson< { id?: unknown } >(
-		await adminApi.post( '/wp-json/wc/v3/products', {
-			data: {
-				name,
-				type: 'simple',
-				virtual: true,
-				regular_price: money( price ),
-				// No tax on the fixture, so the order total is exactly the sum
-				// of its line totals and every boundary below is exact.
-				tax_status: 'none',
-				meta_data: [ { key: RUN_META_KEY, value: runId } ],
-			},
-		} ),
-		`Run-owned ${ label } product creation`
-	);
+	const product = (
+		await restApi.post< { id?: unknown } >( 'wc/v3/products', {
+			name,
+			type: 'simple',
+			virtual: true,
+			regular_price: money( price ),
+			// No tax on the fixture, so the order total is exactly the sum
+			// of its line totals and every boundary below is exact.
+			tax_status: 'none',
+			meta_data: [ { key: RUN_META_KEY, value: runId } ],
+		} )
+	).data;
 	if ( typeof product.id !== 'number' ) {
 		throw new Error(
 			`Run-owned ${ label } product response did not contain a numeric ID.`
@@ -280,69 +256,66 @@ async function createRunOwnedProduct(
  * ledger records as amplifying any accidental leakage.
  */
 async function createRefundFixture(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	runId: string
 ): Promise< RefundFixture & { productIds: number[] } > {
 	const drivenProduct = await createRunOwnedProduct(
-		adminApi,
+		restApi,
 		runId,
 		'driven',
 		DRIVEN_LINE_PRICE
 	);
 	const spareProduct = await createRunOwnedProduct(
-		adminApi,
+		restApi,
 		runId,
 		'spare',
 		SPARE_LINE_PRICE
 	);
 
-	const order = await readJson< {
-		id?: unknown;
-		total?: unknown;
-		status?: unknown;
-		line_items?: Array< {
+	const order = (
+		await restApi.post< {
 			id?: unknown;
-			product_id?: unknown;
-			name?: unknown;
-			quantity?: unknown;
 			total?: unknown;
-		} >;
-	} >(
-		await adminApi.post( '/wp-json/wc/v3/orders', {
-			data: {
-				status: 'processing',
-				payment_method: 'cod',
-				payment_method_title: 'Cash on delivery',
-				// Mapped field by field rather than spread. The shared
-				// fixture is shaped for checkout form fills, so it carries
-				// `address` and `zip`, which the orders REST schema does not
-				// define. A stray `address` key is worse than ignored: the
-				// controller calls `set_billing_<key>` for whatever it is
-				// posted, so it reaches the bulk `set_billing_address()`
-				// setter with a string and fatals the request.
-				billing: {
-					first_name: customer.billing.us.first_name,
-					last_name: customer.billing.us.last_name,
-					address_1: customer.billing.us.address,
-					city: customer.billing.us.city,
-					state: customer.billing.us.state,
-					postcode: customer.billing.us.zip,
-					country: customer.billing.us.country,
-					phone: customer.billing.us.phone,
-					email: customer.email,
-				},
-				line_items: [
-					{
-						product_id: drivenProduct.id,
-						quantity: DRIVEN_LINE_QUANTITY,
-					},
-					{ product_id: spareProduct.id, quantity: 1 },
-				],
-				meta_data: [ { key: RUN_META_KEY, value: runId } ],
+			status?: unknown;
+			line_items?: Array< {
+				id?: unknown;
+				product_id?: unknown;
+				name?: unknown;
+				quantity?: unknown;
+				total?: unknown;
+			} >;
+		} >( 'wc/v3/orders', {
+			status: 'processing',
+			payment_method: 'cod',
+			payment_method_title: 'Cash on delivery',
+			// Mapped field by field rather than spread. The shared
+			// fixture is shaped for checkout form fills, so it carries
+			// `address` and `zip`, which the orders REST schema does not
+			// define. A stray `address` key is worse than ignored: the
+			// controller calls `set_billing_<key>` for whatever it is
+			// posted, so it reaches the bulk `set_billing_address()`
+			// setter with a string and fatals the request.
+			billing: {
+				first_name: customer.billing.us.first_name,
+				last_name: customer.billing.us.last_name,
+				address_1: customer.billing.us.address,
+				city: customer.billing.us.city,
+				state: customer.billing.us.state,
+				postcode: customer.billing.us.zip,
+				country: customer.billing.us.country,
+				phone: customer.billing.us.phone,
+				email: customer.email,
 			},
-		} ),
-		'Run-owned refundable order creation'
-	);
+			line_items: [
+				{
+					product_id: drivenProduct.id,
+					quantity: DRIVEN_LINE_QUANTITY,
+				},
+				{ product_id: spareProduct.id, quantity: 1 },
+			],
+			meta_data: [ { key: RUN_META_KEY, value: runId } ],
+		} )
+	).data;
 
 	if (
 		typeof order.id !== 'number' ||
@@ -405,35 +378,18 @@ async function createRefundFixture(
 }
 
 async function deleteRunOwnedResource(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	resourcePath: string,
 	resourceId: number,
 	description: string
 ): Promise< void > {
-	const response = await adminApi.delete(
-		`/wp-json/wc/v3/${ resourcePath }/${ resourceId }`,
-		{ data: { force: true }, failOnStatusCode: false }
-	);
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } cleanup failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
+	try {
+		await restApi.delete( `wc/v3/${ resourcePath }/${ resourceId }`, {
+			force: true,
+		} );
+	} catch ( error ) {
+		throw new Error( `${ description } cleanup failed.`, { cause: error } );
 	}
-}
-
-async function logInAsAdmin( page: Page ): Promise< void > {
-	// Clear first, matching the harness's own admin login: a stale session
-	// cookie redirects wp-login.php and leaves the form fill hunting a field
-	// that is not there.
-	await page.context().clearCookies();
-	await page.goto( 'wp-login.php' );
-	await waitForWordPressLoginReady( page );
-	await page.getByLabel( 'Username or Email Address' ).fill( ADMIN_USERNAME );
-	await page
-		.getByRole( 'textbox', { name: 'Password' } )
-		.fill( ADMIN_PASSWORD );
-	await page.getByRole( 'button', { name: 'Log In' } ).click();
-	await page.waitForURL( '**/wp-admin/**' );
 }
 
 /**
@@ -605,7 +561,7 @@ async function submitRejectedRefund(
 }
 
 interface RefundContractFixtures {
-	adminApi: APIRequestContext;
+	restApi: ApiClient;
 	page: Page;
 	baseURL: string | undefined;
 	runId: string;
@@ -624,13 +580,13 @@ interface RejectedRefundOutcome {
  * restate the exact message it claims, beside the contract it closes.
  */
 async function runRejectedRefundContract(
-	{ adminApi, page, baseURL, runId }: RefundContractFixtures,
+	{ restApi, page, baseURL, runId }: RefundContractFixtures,
 	scenario: RefundScenario
 ): Promise< RejectedRefundOutcome > {
 	const storeBase = requireBaseUrl( baseURL );
-	await assertMoneyFormatAssumptions( adminApi );
+	await assertMoneyFormatAssumptions( restApi );
 
-	const fixture = await createRefundFixture( adminApi, runId );
+	const fixture = await createRefundFixture( restApi, runId );
 	const { orderId, drivenLine, spareLine } = fixture;
 	const freshnessMarker = `E2E order screen marker ${ runId }`;
 	let primaryError: unknown;
@@ -641,7 +597,6 @@ async function runRejectedRefundContract(
 		const providerRequests = trackProviderClientRequests( page );
 		const dialogs = captureDialogs( page );
 
-		await logInAsAdmin( page );
 		await openOrderEditScreen( page, orderId );
 
 		// Nothing on this screen can reach the provider: the order is paid by
@@ -760,12 +715,10 @@ async function runRejectedRefundContract(
 		// non-vacuous: a page that had silently not re-rendered could not show
 		// this note, and this assertion would fail rather than let the
 		// absence assertions pass against a stale DOM.
-		await readJson(
-			await adminApi.post( `/wp-json/wc/v3/orders/${ orderId }/notes`, {
-				data: { note: freshnessMarker, customer_note: false },
-			} ),
-			'Freshness marker note creation'
-		);
+		await restApi.post( `wc/v3/orders/${ orderId }/notes`, {
+			note: freshnessMarker,
+			customer_note: false,
+		} );
 
 		await page.reload();
 		await expectNoPhpErrors( page );
@@ -809,20 +762,20 @@ async function runRejectedRefundContract(
 		).toBe( alreadyRefundedBefore );
 
 		// The authoritative record, independent of anything rendered.
-		const refunds = await readJson< unknown[] >(
-			await adminApi.get( `/wp-json/wc/v3/orders/${ orderId }/refunds` ),
-			'Order refunds read'
-		);
+		const refunds = (
+			await restApi.get< unknown[] >(
+				`wc/v3/orders/${ orderId }/refunds`
+			)
+		).data;
 		expect( refunds ).toEqual( [] );
-		const orderAfter = await readJson< {
-			total?: unknown;
-			status?: unknown;
-			refunds?: unknown;
-			line_items?: Array< { id?: unknown; total?: unknown } >;
-		} >(
-			await adminApi.get( `/wp-json/wc/v3/orders/${ orderId }` ),
-			'Order read after the rejected refund'
-		);
+		const orderAfter = (
+			await restApi.get< {
+				total?: unknown;
+				status?: unknown;
+				refunds?: unknown;
+				line_items?: Array< { id?: unknown; total?: unknown } >;
+			} >( `wc/v3/orders/${ orderId }` )
+		).data;
 		expect( Number( orderAfter.total ) ).toBeCloseTo(
 			fixture.orderTotal,
 			2
@@ -857,7 +810,7 @@ async function runRejectedRefundContract(
 		): Promise< void > => {
 			try {
 				await deleteRunOwnedResource(
-					adminApi,
+					restApi,
 					resourcePath,
 					resourceId,
 					description
@@ -928,9 +881,10 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page, baseURL, runId } ) => {
+	async ( { restApi, page, baseURL } ) => {
+		const runId = randomUUID();
 		const outcome = await runRejectedRefundContract(
-			{ adminApi, page, baseURL, runId },
+			{ restApi, page, baseURL, runId },
 			QUANTITY_ABOVE_REMAINING_SCENARIO
 		);
 		// The exact rejection this row claims, restated beside its

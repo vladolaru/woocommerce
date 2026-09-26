@@ -1,12 +1,10 @@
-import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
-import {
-	expect,
-	tags,
-	test,
-	waitForWordPressLoginReady,
-} from '../../../fixtures/woopayments-native';
-import { admin } from '../../../test-data/data';
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { ADMIN_STATE_PATH } from '../../../playwright.config';
+
+test.use( { storageState: ADMIN_STATE_PATH } );
 
 /**
  * Native WooPayments overview and transactions
@@ -20,12 +18,6 @@ import { admin } from '../../../test-data/data';
  * smokes cover installed navigation, settled loading, and page/REST errors.
  */
 
-// The same environment-first resolution the harness fixtures use.
-const ADMIN_USERNAME =
-	process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME ?? admin.username;
-const ADMIN_PASSWORD =
-	process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD ?? admin.password;
-
 const CONTRACT_IDS = {
 	overviewLoad:
 		'default::basic::tests/e2e/specs/basic.spec.ts:16::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as admin › Load Payments Overview',
@@ -33,8 +25,8 @@ const CONTRACT_IDS = {
 		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors',
 } as const;
 
-const RUNTIME_STATUS_API = '/wp-json/wc-native-payments-e2e/v1/status';
-const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
+const RUNTIME_STATUS_API = 'wc-native-payments-e2e/v1/status';
+const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
 const TRANSACTIONS_TEST_TITLE =
 	'An authorized merchant opens native transactions from Payments navigation and sees a loaded surface without errors';
 
@@ -52,33 +44,6 @@ function requireBaseUrl( baseURL: string | undefined ): string {
 		throw new Error( 'BASE_URL is required for this smoke.' );
 	}
 	return baseURL.replace( /\/+$/, '' );
-}
-
-async function readJson< Result = Record< string, unknown > >(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Result > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Result;
-}
-
-async function logInAsAdmin( page: Page ): Promise< void > {
-	// Clear first, matching the harness's own admin login: a stale session
-	// cookie would redirect wp-login.php to wp-admin and leave the form fill
-	// hunting a field that is not there.
-	await page.context().clearCookies();
-	await page.goto( 'wp-login.php' );
-	await waitForWordPressLoginReady( page );
-	await page.getByLabel( 'Username or Email Address' ).fill( ADMIN_USERNAME );
-	await page
-		.getByRole( 'textbox', { name: 'Password' } )
-		.fill( ADMIN_PASSWORD );
-	await page.getByRole( 'button', { name: 'Log In' } ).click();
-	await page.waitForURL( '**/wp-admin/**' );
 }
 
 /**
@@ -247,12 +212,10 @@ async function expectNoFailureShapes( page: Page ): Promise< void > {
  * rendering an onboarding shell that happens to carry the right heading.
  */
 async function expectConnectedNativeStore(
-	adminApi: APIRequestContext
+	restApi: ApiClient
 ): Promise< void > {
-	const runtimeStatus = await readJson(
-		await adminApi.get( RUNTIME_STATUS_API ),
-		'Runtime status read'
-	);
+	const runtimeStatus = ( await restApi.get( RUNTIME_STATUS_API ) )
+		.data as Record< string, unknown >;
 	expect(
 		{
 			account_connected: runtimeStatus.account_connected,
@@ -260,10 +223,8 @@ async function expectConnectedNativeStore(
 		},
 		'the store must report a connected account and an enabled gateway'
 	).toEqual( { account_connected: true, gateway_enabled: true } );
-	const paymentsSettings = await readJson(
-		await adminApi.get( PAYMENTS_SETTINGS_API ),
-		'Payments settings read'
-	);
+	const paymentsSettings = ( await restApi.get( PAYMENTS_SETTINGS_API ) )
+		.data as Record< string, unknown >;
 	expect( paymentsSettings.is_wcpay_enabled ).toBe( true );
 }
 
@@ -278,14 +239,12 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page, baseURL } ) => {
+	async ( { restApi, page, baseURL } ) => {
 		const storeBase = requireBaseUrl( baseURL );
-		await expectConnectedNativeStore( adminApi );
+		await expectConnectedNativeStore( restApi );
 
 		const restTracker = trackFailedRestResponses( page, storeBase );
 		const pageErrors = trackPageErrors( page, storeBase );
-
-		await logInAsAdmin( page );
 
 		// Route discovery, not a typed deep link: the store's Payments menu
 		// must offer the native WooPayments surfaces at all, and its top-level
@@ -351,13 +310,12 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page, baseURL } ) => {
+	async ( { restApi, page, baseURL } ) => {
 		const storeBase = requireBaseUrl( baseURL );
-		await expectConnectedNativeStore( adminApi );
+		await expectConnectedNativeStore( restApi );
 		const restTracker = trackFailedRestResponses( page, storeBase );
 		const pageErrors = trackPageErrors( page, storeBase );
 
-		await logInAsAdmin( page );
 		await page.goto( '/wp-admin/index.php' );
 		await followPaymentsMenuItem( page, 'Transactions' );
 
