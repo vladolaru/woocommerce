@@ -1,86 +1,44 @@
-import type { Page } from '@playwright/test';
+import type { Page, Request, Response } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { getFakeUser } from '../../../utils/data';
+import { admin } from '../../../test-data/data';
+import { random } from '../../../utils/helpers';
+import { logIn } from '../../../utils/login';
+import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
-	expect,
-	tags,
-	test,
-	type ProviderWriteSession,
-	type SavedCardIdentity,
-} from '../../../fixtures/woopayments-native';
-import {
-	readHighestOrderId,
-	readOrderDeltaAfter,
-	readProviderCustomerId,
-	submitClassicCardAuthentication,
-	type PreparedClassicCardCheckout,
-} from '../../../utils/woopayments-native/drivers/classic-card-authentication';
-import { PlaywrightClassicCardCheckoutBrowser } from '../../../utils/woopayments-native/drivers/classic-card-checkout';
-import {
-	withClassicCheckoutPage,
-	type ClassicCheckoutTarget,
-} from '../../../utils/woopayments-native/drivers/classic-checkout-page';
-import {
-	readShopperSessionCurrency,
-	setShopperSessionCurrency,
-} from '../../../utils/woopayments-native/drivers/redirect-methods';
-import {
-	deleteExactSavedCards,
-	findSavedCardProviderCustomerId,
-	getProviderPaymentMethodIds,
-	getSavedCardEvidence,
-	readSavedCardProviderCustomerId,
-	type SavedCardToken,
-} from '../../../utils/woopayments-native/drivers/saved-cards';
-import {
-	createSubscriptionProduct,
-	deleteSubscriptionProducts,
-	emptyShopperCart,
-	processMerchantRenewal,
-	readCustomerSubscriptionIds,
-	readOrderRecord,
-	readPendingRenewalActions,
-	readProviderSetupIntent,
-	readStoreBaseline,
-	readSubscriptionEvidence,
-	removeRunOrders,
-	removeRunSubscription,
-	SUBSCRIPTION_GATEWAY,
-	type StoreBaselineEvidence,
-	type SubscriptionEvidence,
-} from '../../../utils/woopayments-native/drivers/subscriptions';
-import { getProviderEvidence } from '../../../utils/woopayments-native/provider-evidence';
-import type { PaymentEvidence } from '../../../utils/woopayments-native/record-evidence';
-import { ResourceQuarantineRequiredError } from '../../../utils/woopayments-native/resource-locks';
-import { THREE_DS_OTP_CARD } from '../../../utils/woopayments-native/test-cards';
+	completeThreeDSChallenge,
+	expectSettledCardPayment,
+	fillCardDetails,
+	getPaymentIntent,
+	requireTestModeAccount,
+	TEST_CARDS,
+} from '../../../utils/woopayments';
 
 /**
- * Product-first counterpart to the current WooPayments client free-trial
- * journey. It keeps the client's shopper-visible product, cart and Classic
- * checkout contract, then joins the challenged SetupIntent to the exact token,
- * subscription, parent order and later merchant renewal at both the store and
- * provider layers.
+ * Product-first free-trial journey (T.4 Batch P4b rewrite): the client's
+ * shopper-visible product, cart and Classic checkout contract, joined to the
+ * challenged SetupIntent, the exact token, subscription and parent order, and
+ * a later merchant renewal, at both the store and provider layers.
  *
- * The client computes its expected renewal date when the module loads, across
- * local and UTC date constructors. This journey instead treats the store's
- * rendered cart date as authoritative and requires checkout to repeat the
- * exact value. The subscription record separately proves that its GMT trial
- * schedule is exactly 14 days, so a timezone or midnight boundary cannot make
- * a wrong duration pass.
+ * The client computes its expected renewal date at module load, across local
+ * and UTC date constructors. This journey instead treats the store's own
+ * rendered cart date as authoritative and requires checkout to repeat it
+ * exactly, and separately proves the subscription's GMT trial schedule is
+ * exactly 14 days, so a timezone or midnight boundary cannot make a wrong
+ * duration pass.
+ *
+ * D5 preflight note: the currency-session force/restore the old harness drove
+ * around this case (`wcpay_currency` residue) is a T.4 D5 gate-level
+ * preflight now, not spec code; the run assumes the store's own USD baseline
+ * and asserts it once instead of forcing it.
  */
 
 const CONTRACT =
 	'default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-free-trial.spec.ts:77::Shopper: Subscriptions - Purchase Free Trial › Shopper should be able to purchase a free trial';
 
-const CAPABILITIES = [
-	'subscription-lifecycle',
-	'subscription-lifecycle-product',
-	'subscription-lifecycle-signup',
-	'classic-checkout-page',
-	'subscription-lifecycle-cleanup',
-	'saved-card-cleanup',
-	'subscription-lifecycle-renewal',
-	'card-authentication',
-];
+const FAMILY_TAGS = [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_PROVIDER ];
 
 const RECURRING_PRICE = '9.99';
 const RECURRING_MINOR = 999;
@@ -92,382 +50,447 @@ const FREE_TRIAL_DISPLAY =
 	/14[\s-]?days?.*free trial|free trial.*14[\s-]?days?/i;
 const PAID_ORDER_STATUSES = [ 'processing', 'completed' ];
 
-interface RunBaseline {
-	store: StoreBaselineEvidence;
-	tokens: SavedCardToken[];
-	providerCustomerId: string | undefined;
-	providerAttachments: string[];
-	subscriptionIds: number[];
-	pendingRenewalActions: Awaited<
-		ReturnType< typeof readPendingRenewalActions >
-	>;
-	highestOrderId: number;
-	shopperCurrency: string;
+const CUSTOMERS_ROUTE = 'wc/v3/customers';
+const PRODUCTS_ROUTE = 'wc/v3/products';
+const ORDERS_ROUTE = 'wc/v3/orders';
+const SUBSCRIPTIONS_ROUTE = 'wc/v3/subscriptions';
+const SAVED_CARD_EVIDENCE_ROUTE =
+	'wc-native-payments-e2e/v1/saved-card-evidence';
+const SUBSCRIPTION_EVIDENCE_ROUTE =
+	'wc-native-payments-e2e/v1/subscription-evidence';
+const SUBSCRIPTION_GATEWAY = 'woocommerce_payments';
+const CONFIRMATION_HASH_PATTERN =
+	/^#wcpay-confirm-(pi|si):([^:]+):([^:]+):([^:]+)(?::(.+))?$/;
+
+interface SavedToken {
+	tokenId: number;
+	paymentMethodId: string;
 }
 
-interface RunScope {
-	baseline: RunBaseline;
-	classicCheckout: ClassicCheckoutTarget;
-	productIds: number[];
-}
-
-function requireCapabilities( session: ProviderWriteSession ): void {
-	for ( const capability of CAPABILITIES ) {
-		session.requireApprovedProviderFixture( capability );
-	}
-}
-
-function tokenIdentities(
-	tokens: readonly SavedCardToken[]
-): Array< [ number, string, boolean ] > {
-	return tokens
-		.map(
-			( token ) =>
-				[ token.tokenId, token.paymentMethodId, token.isDefault ] as [
-					number,
-					string,
-					boolean,
-				]
-		)
-		.toSorted( ( left, right ) => left[ 0 ] - right[ 0 ] );
-}
-
-function actionIdentities(
-	actions: RunBaseline[ 'pendingRenewalActions' ]
-): Array< [ number, string, string, number, number ] > {
-	return actions
-		.map(
-			( action ) =>
-				[
-					action.actionId,
-					action.hook,
-					action.status,
-					action.subscriptionId,
-					action.scheduledTimestamp,
-				] as [ number, string, string, number, number ]
-		)
-		.toSorted( ( left, right ) => left[ 0 ] - right[ 0 ] );
-}
-
-function newCards(
-	before: readonly SavedCardToken[],
-	after: readonly SavedCardToken[]
-): SavedCardIdentity[] {
-	return after
-		.filter(
-			( token ) =>
-				! before.some(
-					( existing ) => existing.tokenId === token.tokenId
-				)
-		)
-		.map( ( token ) => ( {
-			tokenId: token.tokenId,
-			paymentMethodId: token.paymentMethodId,
-		} ) );
-}
-
-async function readBaseline(
-	session: ProviderWriteSession,
-	shopperCurrency: string
-): Promise< RunBaseline > {
-	const cards = await getSavedCardEvidence( session );
-	const providerCustomerId = await findSavedCardProviderCustomerId( session );
+async function getSavedCardEvidence(
+	restApi: ApiClient,
+	customerUsername: string
+): Promise< { tokens: SavedToken[]; providerCustomerId: string } > {
+	const data = (
+		await restApi.get( SAVED_CARD_EVIDENCE_ROUTE, {
+			customer_username: customerUsername,
+		} )
+	).data as {
+		tokens?: Array< { token_id: number; payment_method_id: string } >;
+		provider_customer_id?: string;
+	};
 	return {
-		store: await readStoreBaseline( session ),
-		tokens: cards.tokens,
-		providerCustomerId,
-		providerAttachments: providerCustomerId
-			? await getProviderPaymentMethodIds( session, providerCustomerId )
-			: [],
-		subscriptionIds: await readCustomerSubscriptionIds( session ),
-		pendingRenewalActions: await readPendingRenewalActions( session ),
-		highestOrderId: await readHighestOrderId( session ),
-		shopperCurrency,
+		tokens: ( data.tokens ?? [] ).map( ( token ) => ( {
+			tokenId: token.token_id,
+			paymentMethodId: token.payment_method_id,
+		} ) ),
+		providerCustomerId: data.provider_customer_id ?? '',
 	};
 }
 
-async function releaseRun(
-	session: ProviderWriteSession,
-	page: Page,
-	scope: RunScope
-): Promise< void > {
-	const { baseline } = scope;
-	const subscriptionIds = (
-		await readCustomerSubscriptionIds( session )
-	).filter( ( id ) => ! baseline.subscriptionIds.includes( id ) );
-
-	for ( const subscriptionId of subscriptionIds.toReversed() ) {
-		await removeRunSubscription( session, subscriptionId );
-	}
-
-	const orders = await readOrderDeltaAfter(
-		session,
-		baseline.highestOrderId
-	);
-	await removeRunOrders( session, orders.newOrderIds.toReversed() );
-
-	const cards = await getSavedCardEvidence( session );
-	const createdCards = newCards( baseline.tokens, cards.tokens );
-	if ( createdCards.length > 0 ) {
-		const cleanupProviderCustomerId =
-			baseline.providerCustomerId ??
-			( await findSavedCardProviderCustomerId( session ) );
-		await deleteExactSavedCards(
-			session,
-			page,
-			createdCards,
-			cleanupProviderCustomerId
-		);
-	}
-
-	await deleteSubscriptionProducts( session, scope.productIds.toReversed() );
-	await emptyShopperCart( session, page );
-
-	expect(
-		await readStoreBaseline( session ),
-		'the free-trial journey must leave gateway, currency and subscription settings byte-identical'
-	).toEqual( baseline.store );
-	expect(
-		tokenIdentities( ( await getSavedCardEvidence( session ) ).tokens ),
-		'the free-trial journey must restore the exact local token baseline'
-	).toEqual( tokenIdentities( baseline.tokens ) );
-	expect(
-		await readCustomerSubscriptionIds( session ),
-		'the free-trial journey must leave the exact subscription baseline'
-	).toEqual( baseline.subscriptionIds );
-	expect(
-		actionIdentities( await readPendingRenewalActions( session ) ),
-		'the free-trial journey must restore the exact pending-renewal baseline'
-	).toEqual( actionIdentities( baseline.pendingRenewalActions ) );
-	expect(
-		( await readOrderDeltaAfter( session, baseline.highestOrderId ) )
-			.newOrderIds,
-		'the free-trial journey must remove every order it created'
-	).toEqual( [] );
-
-	const providerCustomerId =
-		baseline.providerCustomerId ??
-		( await findSavedCardProviderCustomerId( session ) );
-	if ( providerCustomerId ) {
-		expect(
-			(
-				await getProviderPaymentMethodIds( session, providerCustomerId )
-			).toSorted(),
-			'the free-trial journey must restore the exact provider attachment baseline'
-		).toEqual( baseline.providerAttachments.toSorted() );
-	}
+/** Reads the provider payment-method ids currently attached to a provider customer. */
+async function getProviderPaymentMethodIds(
+	restApi: ApiClient,
+	providerCustomerId: string
+): Promise< string[] > {
+	const methods = (
+		await restApi.get(
+			`wc/v3/payments/customers/${ encodeURIComponent(
+				providerCustomerId
+			) }/payment_methods`
+		)
+	).data as Array< { id: string } >;
+	return methods.map( ( method ) => method.id );
 }
 
-async function withFreeTrialRun(
-	session: ProviderWriteSession,
-	page: Page,
-	body: ( scope: RunScope ) => Promise< void >
-): Promise< void > {
-	await session.withProviderWriteLocks(
-		{ recordEvent: 'shopper-subscription-free-trial-3ds' },
-		async () => {
-			const shopperCurrency = await readShopperSessionCurrency( page );
-			const baseline = await readBaseline( session, shopperCurrency );
-			let primaryError: unknown;
+async function readCustomerSubscriptionIds(
+	restApi: ApiClient,
+	customerUsername: string
+): Promise< number[] > {
+	const payload = (
+		await restApi.get( SUBSCRIPTION_EVIDENCE_ROUTE, {
+			customer_username: customerUsername,
+		} )
+	).data as { customer_subscription_ids?: number[] };
+	return payload.customer_subscription_ids ?? [];
+}
 
-			try {
-				expect(
-					baseline.store.storeCurrency,
-					'the run-owned 9.99 product requires the standing USD store currency'
-				).toBe( CURRENCY );
-				await emptyShopperCart( session, page );
-				if (
-					( await readShopperSessionCurrency( page ) ) !== CURRENCY
-				) {
-					await setShopperSessionCurrency( page, CURRENCY );
-				}
+interface SubscriptionTokenEvidence {
+	tokenId: number;
+	exists: boolean;
+	paymentMethodId: string;
+	gatewayId: string;
+	userId: number;
+	isDefault: boolean;
+}
 
-				await withClassicCheckoutPage(
-					session,
-					session.runId,
-					async ( checkoutScope ) => {
-						const scope: RunScope = {
-							baseline,
-							classicCheckout: checkoutScope.classicCheckout,
-							productIds: [],
-						};
-						let scenarioError: unknown;
-						try {
-							await body( scope );
-						} catch ( error ) {
-							scenarioError = error;
-						}
+interface SubscriptionEvidence {
+	id: number;
+	status: string;
+	parentId: number;
+	currency: string;
+	total: string;
+	paymentMethod: string;
+	requiresManualRenewal: boolean;
+	paymentCount: number;
+	startGmt: string;
+	trialEndGmt: string;
+	trialEndDisplay: string;
+	nextPaymentGmt: string;
+	paymentTokenIds: number[];
+	activeTokenId: number;
+	paymentTokens: SubscriptionTokenEvidence[];
+	relatedOrders: { parent: number[]; renewal: number[] };
+}
 
-						try {
-							await releaseRun( session, page, scope );
-						} catch ( cleanupError ) {
-							throw new ResourceQuarantineRequiredError(
-								'The free-trial authentication journey could not prove cleanup, so recurring billing may still be armed.',
-								'cleanup-failed',
-								scenarioError === undefined
-									? cleanupError
-									: new AggregateError(
-											[ scenarioError, cleanupError ],
-											'The free-trial journey and its cleanup both failed.',
-											{ cause: cleanupError }
-									  )
-							);
-						}
+async function readSubscriptionEvidence(
+	restApi: ApiClient,
+	subscriptionId: number
+): Promise< SubscriptionEvidence > {
+	const payload = (
+		await restApi.get( SUBSCRIPTION_EVIDENCE_ROUTE, {
+			subscription_id: String( subscriptionId ),
+		} )
+	).data as { subscription?: Record< string, unknown > };
+	const record = payload.subscription ?? {};
+	const related =
+		( record.related_orders as Record< string, unknown > ) ?? {};
+	return {
+		id: Number( record.id ),
+		status: String( record.status ?? '' ),
+		parentId: Number( record.parent_id ?? 0 ),
+		currency: String( record.currency ?? '' ),
+		total: String( record.total ?? '' ),
+		paymentMethod: String( record.payment_method ?? '' ),
+		requiresManualRenewal: record.requires_manual_renewal === true,
+		paymentCount: Number( record.payment_count ?? 0 ),
+		startGmt: String( record.start_gmt ?? '' ),
+		trialEndGmt: String( record.trial_end_gmt ?? '' ),
+		trialEndDisplay: String( record.trial_end_display ?? '' ),
+		nextPaymentGmt: String( record.next_payment_gmt ?? '' ),
+		paymentTokenIds: ( ( record.payment_token_ids as number[] ) ?? [] ).map(
+			Number
+		),
+		activeTokenId: Number( record.active_token_id ?? 0 ),
+		paymentTokens: (
+			( record.payment_tokens as Array< Record< string, unknown > > ) ??
+			[]
+		).map( ( token ) => ( {
+			tokenId: Number( token.token_id ),
+			exists: token.exists === true,
+			paymentMethodId: String( token.payment_method_id ?? '' ),
+			gatewayId: String( token.gateway_id ?? '' ),
+			userId: Number( token.user_id ?? 0 ),
+			isDefault: token.is_default === true,
+		} ) ),
+		relatedOrders: {
+			parent: ( ( related.parent as number[] ) ?? [] ).map( Number ),
+			renewal: ( ( related.renewal as number[] ) ?? [] ).map( Number ),
+		},
+	};
+}
 
-						if ( scenarioError !== undefined ) {
-							throw scenarioError;
-						}
-					}
-				);
-			} catch ( error ) {
-				primaryError = error;
+interface SetupIntentEvidence {
+	id: string;
+	status: string;
+	usage: string;
+	paymentMethodId: string;
+	customerId: string;
+	nextActionType: string;
+}
+
+async function readProviderSetupIntent(
+	restApi: ApiClient,
+	setupIntentId: string
+): Promise< SetupIntentEvidence > {
+	const payload = (
+		await restApi.get( SUBSCRIPTION_EVIDENCE_ROUTE, {
+			setup_intent_id: setupIntentId,
+		} )
+	).data as { setup_intent?: Record< string, unknown > };
+	const intent = payload.setup_intent ?? {};
+	return {
+		id: String( intent.id ?? '' ),
+		status: String( intent.status ?? '' ),
+		usage: String( intent.usage ?? '' ),
+		paymentMethodId: String( intent.payment_method_id ?? '' ),
+		customerId: String( intent.customer_id ?? '' ),
+		nextActionType: String( intent.next_action_type ?? '' ),
+	};
+}
+
+/** Whether `error` is the provider's transient "another request holds this object" answer. */
+function isLockTimeout( error: unknown ): boolean {
+	const status =
+		typeof error === 'object' && error !== null && 'response' in error
+			? ( error as { response?: { status?: unknown } } ).response?.status
+			: undefined;
+	return status === 429;
+}
+
+async function pollProviderSetupIntent(
+	restApi: ApiClient,
+	setupIntentId: string,
+	expectedStatus: string,
+	timeoutMs = PHASE_TIMEOUT_MS
+): Promise< SetupIntentEvidence > {
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		try {
+			const intent = await readProviderSetupIntent(
+				restApi,
+				setupIntentId
+			);
+			if ( intent.status === expectedStatus || Date.now() >= deadline ) {
+				return intent;
 			}
-
-			try {
-				if (
-					( await readShopperSessionCurrency( page ) ) !==
-					baseline.shopperCurrency
-				) {
-					await setShopperSessionCurrency(
-						page,
-						baseline.shopperCurrency
-					);
-				}
-				expect(
-					await readShopperSessionCurrency( page ),
-					'the shopper session currency must be restored exactly'
-				).toBe( baseline.shopperCurrency );
-			} catch ( cleanupError ) {
-				throw new ResourceQuarantineRequiredError(
-					'The free-trial authentication journey could not restore the shopper session currency.',
-					'cleanup-failed',
-					primaryError === undefined
-						? cleanupError
-						: new AggregateError(
-								[ primaryError, cleanupError ],
-								'The free-trial journey and shopper-currency restoration both failed.',
-								{ cause: cleanupError }
-						  )
-				);
-			}
-
-			if ( primaryError !== undefined ) {
-				throw primaryError;
+		} catch ( error ) {
+			if ( ! isLockTimeout( error ) || Date.now() >= deadline ) {
+				throw error;
 			}
 		}
-	);
-}
-
-async function waitForSingleSubscription(
-	session: ProviderWriteSession,
-	baselineIds: readonly number[]
-): Promise< SubscriptionEvidence > {
-	await expect
-		.poll(
-			async () =>
-				( await readCustomerSubscriptionIds( session ) ).filter(
-					( id ) => ! baselineIds.includes( id )
-				).length,
-			{
-				message: 'one signup must create exactly one subscription',
-				timeout: PHASE_TIMEOUT_MS,
-			}
-		)
-		.toBe( 1 );
-
-	const ids = ( await readCustomerSubscriptionIds( session ) ).filter(
-		( id ) => ! baselineIds.includes( id )
-	);
-	await expect
-		.poll(
-			async () => {
-				const subscription = await readSubscriptionEvidence(
-					session,
-					ids[ 0 ]
-				);
-				return (
-					subscription.status === 'active' &&
-					subscription.activeTokenId > 0
-				);
-			},
-			{
-				message:
-					'the free-trial signup must converge on one active tokenized subscription',
-				timeout: PHASE_TIMEOUT_MS,
-			}
-		)
-		.toBe( true );
-
-	return readSubscriptionEvidence( session, ids[ 0 ] );
-}
-
-async function waitForRenewalPayment(
-	session: ProviderWriteSession,
-	orderId: number
-): Promise< Omit< PaymentEvidence, 'runId' | 'orderKey' > > {
-	let payment: Omit< PaymentEvidence, 'runId' | 'orderKey' > | undefined;
-	await expect
-		.poll(
-			async () => {
-				try {
-					const order = await readOrderRecord( session, orderId );
-					const intentId = order.meta._intent_id ?? '';
-					const chargeId = order.meta._charge_id ?? '';
-					const paymentMethodId = order.meta._payment_method_id ?? '';
-					const amountMinor = Math.round(
-						Number( order.total ) * 100
-					);
-					if (
-						! /^pi_/.test( intentId ) ||
-						! /^ch_/.test( chargeId ) ||
-						! /^pm_/.test( paymentMethodId ) ||
-						! Number.isSafeInteger( amountMinor )
-					) {
-						return '';
-					}
-
-					const provider = await getProviderEvidence(
-						session.adminApi,
-						{
-							intentId,
-							chargeId,
-							paymentMethodId,
-							amountMinor,
-							currency: order.currency,
-						}
-					);
-					payment = {
-						orderId,
-						intentId,
-						chargeId,
-						paymentMethodId,
-						amountMinor,
-						currency: order.currency,
-						orderStatus: order.status,
-						...provider,
-					};
-
-					return provider.providerStatus;
-				} catch {
-					return '';
-				}
-			},
-			{
-				message:
-					'the renewal order must expose its provider PaymentIntent',
-				timeout: PHASE_TIMEOUT_MS,
-			}
-		)
-		.toBe( 'succeeded' );
-
-	if ( ! payment ) {
-		throw new Error( 'The renewal payment did not converge.' );
+		await new Promise( ( resolve ) => setTimeout( resolve, 1_000 ) );
 	}
-	return payment;
+}
+
+async function readHighestOrderId( restApi: ApiClient ): Promise< number > {
+	const orders = (
+		await restApi.get(
+			`${ ORDERS_ROUTE }?orderby=id&order=desc&per_page=1&status=any`
+		)
+	).data as Array< { id: number } >;
+	return orders[ 0 ]?.id ?? 0;
+}
+
+async function readNewOrderIds(
+	restApi: ApiClient,
+	baselineOrderId: number
+): Promise< number[] > {
+	const orders = (
+		await restApi.get(
+			`${ ORDERS_ROUTE }?orderby=id&order=desc&per_page=20&status=any`
+		)
+	).data as Array< { id: number } >;
+	return orders
+		.filter( ( order ) => order.id > baselineOrderId )
+		.map( ( order ) => order.id );
+}
+
+function orderMeta( order: Record< string, unknown >, key: string ): string {
+	const entries = Array.isArray( order.meta_data )
+		? ( order.meta_data as Array< { key?: unknown; value?: unknown } > )
+		: [];
+	const value = entries.find( ( entry ) => entry.key === key )?.value;
+	return typeof value === 'string' ? value : '';
+}
+
+function isClassicCheckoutRequest( request: Request ): boolean {
+	if ( request.method() !== 'POST' ) {
+		return false;
+	}
+	try {
+		return (
+			new URL( request.url() ).searchParams.get( 'wc-ajax' ) ===
+			'checkout'
+		);
+	} catch {
+		return false;
+	}
+}
+
+function parseConfirmationHash(
+	redirect: string,
+	orderId: number
+): { intentType: 'pi' | 'si'; intentId: string } {
+	const match = redirect.match( CONFIRMATION_HASH_PATTERN );
+	if ( ! match ) {
+		throw new Error(
+			`Checkout response for order ${ orderId } carries no customer-action confirmation hash: ${ redirect }`
+		);
+	}
+	const [ , intentType, hashOrderId, clientSecret ] = match;
+	if ( Number( hashOrderId ) !== orderId ) {
+		throw new Error(
+			`Confirmation hash names order ${ hashOrderId }, not the dispatched order ${ orderId }.`
+		);
+	}
+	const intentId = clientSecret.split( '_secret_' )[ 0 ];
+	if ( ! intentId || intentId === clientSecret ) {
+		throw new Error(
+			'Confirmation hash carries no readable intent identity.'
+		);
+	}
+	return { intentType: intentType as 'pi' | 'si', intentId };
+}
+
+async function fillClassicBilling(
+	page: Page,
+	email: string
+): Promise< void > {
+	await page.getByRole( 'textbox', { name: 'First name' } ).fill( 'E2E' );
+	await page
+		.getByRole( 'textbox', { name: 'Last name' } )
+		.fill( 'WooPayments' );
+	await page
+		.getByRole( 'textbox', { name: 'Street address' } )
+		.fill( '123 Test Street' );
+	await page
+		.getByRole( 'textbox', { name: 'Town / City' } )
+		.fill( 'San Francisco' );
+	await page.getByRole( 'textbox', { name: 'ZIP Code' } ).fill( '94107' );
+	await page.getByRole( 'textbox', { name: 'Phone' } ).fill( '5555550100' );
+	await page.getByRole( 'textbox', { name: 'Email address' } ).fill( email );
+	await page
+		.locator(
+			`input[name="payment_method"][value="${ SUBSCRIPTION_GATEWAY }"]`
+		)
+		.check();
+}
+
+interface FreeTrialChallengeDispatch {
+	orderId: number;
+	intentType: 'pi' | 'si';
+	intentId: string;
+	/**
+	 * Detaches the request/response listeners and reports how many checkout
+	 * exchanges happened over the whole submission interval. Call once the
+	 * interval has closed - at the receipt - so a second submission fired
+	 * while the challenge is open is still counted (R1/R5 shape).
+	 */
+	stop: () => { requestCount: number; responseCount: number };
+}
+
+async function submitClassicChallengeCheckout(
+	page: Page
+): Promise< FreeTrialChallengeDispatch > {
+	let requestCount = 0;
+	let responseCount = 0;
+	let stopped = false;
+	const onRequest = ( request: Request ): void => {
+		if ( isClassicCheckoutRequest( request ) ) {
+			requestCount += 1;
+		}
+	};
+	const onResponse = ( response: Response ): void => {
+		if ( isClassicCheckoutRequest( response.request() ) ) {
+			responseCount += 1;
+		}
+	};
+	page.on( 'request', onRequest );
+	page.on( 'response', onResponse );
+	const stop = (): { requestCount: number; responseCount: number } => {
+		if ( ! stopped ) {
+			stopped = true;
+			page.off( 'request', onRequest );
+			page.off( 'response', onResponse );
+		}
+		return { requestCount, responseCount };
+	};
+
+	try {
+		const responsePromise = page.waitForResponse(
+			( candidate ) => isClassicCheckoutRequest( candidate.request() ),
+			{ timeout: 60_000 }
+		);
+		await page.getByRole( 'button', { name: /place order/i } ).click();
+		const response = await responsePromise;
+		const body = ( await response.json() ) as {
+			result?: unknown;
+			order_id?: unknown;
+			redirect?: unknown;
+		};
+		if ( body.result !== 'success' ) {
+			throw new Error(
+				`Classic checkout did not accept the free-trial submission: ${ JSON.stringify(
+					body
+				) }`
+			);
+		}
+		const orderId = Number( body.order_id );
+		const { intentType, intentId } = parseConfirmationHash(
+			String( body.redirect ?? '' ),
+			orderId
+		);
+		return { orderId, intentType, intentId, stop };
+	} catch ( error ) {
+		stop();
+		throw error;
+	}
+}
+
+/** Proves the receipt's `key` query param names the exact settled order. */
+async function expectReceiptOrderKey(
+	restApi: ApiClient,
+	page: Page,
+	orderId: number
+): Promise< void > {
+	const key = new URL( page.url() ).searchParams.get( 'key' );
+	expect( key, 'the receipt must carry an order key' ).toBeTruthy();
+	const order = ( await restApi.get( `${ ORDERS_ROUTE }/${ orderId }` ) )
+		.data as Record< string, unknown >;
+	expect( key ).toBe( order.order_key );
+}
+
+/**
+ * Runs the merchant's own "Process renewal" order action on one subscription,
+ * which dispatches `woocommerce_scheduled_subscription_payment` directly
+ * rather than through Action Scheduler - WooCommerce Subscriptions never
+ * schedules a past-dated action, so a real cron-driven renewal is not what
+ * this case drives.
+ */
+async function processMerchantRenewal(
+	page: Page,
+	subscriptionId: number
+): Promise< void > {
+	await page.goto( 'wp-login.php' );
+	await logIn( page, admin.username, admin.password );
+	await page.goto(
+		`wp-admin/admin.php?page=wc-orders--shop_subscription&action=edit&id=${ subscriptionId }`
+	);
+
+	const orderActionsBox = page.locator( '#woocommerce-order-actions' );
+	const actions = orderActionsBox.locator( 'select[name="wc_order_action"]' );
+	await expect( actions ).toHaveCount( 1 );
+	await expect(
+		actions.locator( 'option[value="wcs_process_renewal"]' )
+	).toHaveCount( 1 );
+	await actions.selectOption( 'wcs_process_renewal' );
+
+	const apply = orderActionsBox.getByRole( 'button', {
+		name: 'Update',
+		exact: true,
+	} );
+	await expect( apply ).toHaveCount( 1 );
+
+	// The click dispatches a synchronous `window.confirm()`, which blocks the
+	// page until it is answered. Awaiting the click before the dialog is
+	// consumed deadlocks: the click's own actionability wait never resolves
+	// while the dialog is up, and nothing dismisses the dialog until the
+	// click has returned. Racing them with `Promise.all` lets the dialog
+	// handler answer it while the click is still in flight. The handler
+	// answers the dialog *before* asserting anything about it: an `expect`
+	// that throws first would leave the dialog open until the 900s test
+	// timeout instead of failing promptly.
+	const confirmation = page
+		.waitForEvent( 'dialog', { timeout: 60_000 } )
+		.then( async ( dialog ) => {
+			const type = dialog.type();
+			const message = dialog.message();
+			await dialog.accept();
+			expect( type ).toBe( 'confirm' );
+			expect( message ).toMatch( /process a renewal/i );
+		} );
+	await Promise.all( [ apply.click(), confirmation ] );
+	await page.waitForLoadState( 'domcontentloaded' );
 }
 
 test.describe( 'WooPayments native product-first free-trial authentication', () => {
 	test.describe.configure( { mode: 'serial', timeout: 900_000 } );
+
+	test.beforeAll( async ( { restApi } ) => {
+		await requireTestModeAccount( restApi );
+		await createClassicCheckoutPage();
+	} );
 
 	test(
 		'a shopper sees a 14-day free trial on the product, cart, and classic checkout, sees the same timezone-safe first-renewal date and a zero initial total in cart and checkout, completes one required SetupIntent challenge, and one journaled USD 9.99 renewal succeeds on that exact reusable credential',
@@ -475,30 +498,90 @@ test.describe( 'WooPayments native product-first free-trial authentication', () 
 			annotation: [
 				{ type: 'woopayments-contract', description: CONTRACT },
 			],
-			tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_PROVIDER ],
+			tag: FAMILY_TAGS,
 		},
-		async ( { page, pilotRuntime } ) => {
-			requireCapabilities( pilotRuntime );
-			await pilotRuntime.assertCurrentRuntimeReady( 'native' );
+		async ( { page, restApi } ) => {
+			const storeCurrency = (
+				await restApi.get(
+					'wc/v3/settings/general/woocommerce_currency'
+				)
+			).data as { value?: unknown };
+			expect(
+				storeCurrency.value,
+				'the run-owned 9.99 product requires the standing USD store currency'
+			).toBe( CURRENCY );
 
-			await withFreeTrialRun( pilotRuntime, page, async ( scope ) => {
-				const product = await createSubscriptionProduct( pilotRuntime, {
-					slug: 'product-first-free-trial-3ds',
-					price: RECURRING_PRICE,
-					trialLength: TRIAL_DAYS,
-					trialPeriod: 'day',
-				} );
-				scope.productIds.push( product.id );
+			const customer = getFakeUser( 'customer' );
+			const createdCustomer = (
+				await restApi.post( CUSTOMERS_ROUTE, customer )
+			).data as { id: number };
 
-				const browser = new PlaywrightClassicCardCheckoutBrowser(
+			let productId: number | undefined;
+			let subscriptionId: number | undefined;
+			let parentOrderId: number | undefined;
+			let renewalOrderId: number | undefined;
+			let caseError: unknown;
+			const baselineSubscriptionIds = await readCustomerSubscriptionIds(
+				restApi,
+				customer.username
+			);
+
+			try {
+				await page.goto( 'wp-login.php' );
+				await logIn(
 					page,
-					pilotRuntime.baseURL,
-					scope.classicCheckout.pageId
+					customer.username,
+					customer.password,
+					false
 				);
-				await browser.preflightClassicPage(
-					scope.classicCheckout.path,
-					scope.classicCheckout.pageId
+				await page.goto( 'my-account/' );
+				await expect(
+					page.getByText(
+						new RegExp( `Hello ${ customer.first_name }` )
+					)
+				).toBeVisible();
+
+				const highestOrderId = await readHighestOrderId( restApi );
+				const before = await getSavedCardEvidence(
+					restApi,
+					customer.username
 				);
+				const knownTokenIds = new Set(
+					before.tokens.map( ( token ) => token.tokenId )
+				);
+
+				const product = (
+					await restApi.post( PRODUCTS_ROUTE, {
+						name: `WooPayments free-trial 3ds ${ random() }`,
+						type: 'subscription',
+						virtual: true,
+						regular_price: RECURRING_PRICE,
+						status: 'publish',
+						meta_data: [
+							{
+								key: '_subscription_price',
+								value: RECURRING_PRICE,
+							},
+							{ key: '_subscription_period', value: 'month' },
+							{
+								key: '_subscription_period_interval',
+								value: '1',
+							},
+							{ key: '_subscription_length', value: '0' },
+							{ key: '_subscription_sign_up_fee', value: '0' },
+							{
+								key: '_subscription_trial_length',
+								value: String( TRIAL_DAYS ),
+							},
+							{
+								key: '_subscription_trial_period',
+								value: 'day',
+							},
+						],
+					} )
+				).data as { id: number; name: string; type: string };
+				productId = product.id;
+				expect( product.type ).toBe( 'subscription' );
 
 				await page.goto( `?post_type=product&p=${ product.id }` );
 				await expect(
@@ -510,13 +593,12 @@ test.describe( 'WooPayments native product-first free-trial authentication', () 
 				await expect(
 					page.locator( '.product' ).getByText( FREE_TRIAL_DISPLAY )
 				).toBeVisible();
-
 				const addToCart = page.getByRole( 'button', {
 					name: 'Add to cart',
 					exact: true,
 				} );
 				await expect( addToCart ).toBeEnabled();
-				await pilotRuntime.performWrite( () => addToCart.click() );
+				await addToCart.click();
 
 				await page.goto( 'cart/' );
 				await expect(
@@ -536,103 +618,97 @@ test.describe( 'WooPayments native product-first free-trial authentication', () 
 					page.getByText( /Total due today\s*\$0\.00/ ).first()
 				).toBeVisible();
 
-				await browser.openClassicCheckout( scope.classicCheckout.path );
-				await browser.fillBillingDetails( pilotRuntime.runId );
+				await page.goto( 'classic-checkout/' );
+				await fillClassicBilling(
+					page,
+					`woopayments-${ random() }@example.com`
+				);
 				const orderReview = page.locator( '#order_review' );
 				await expect(
 					orderReview.getByText( FREE_TRIAL_DISPLAY )
 				).toBeVisible();
-				const checkoutRenewal = orderReview.locator(
-					'.first-payment-date'
-				);
-				await expect( checkoutRenewal ).toContainText(
-					cartRenewalDate
-				);
+				await expect(
+					orderReview.locator( '.first-payment-date' )
+				).toContainText( cartRenewalDate );
+				// The store renders the order-review total with a trailing
+				// currency code ("Total $0.00 USD"); allow that suffix but
+				// pin everything else, so a non-zero total (`$9.99`/`$10.00`)
+				// still fails.
 				await expect(
 					orderReview.getByRole( 'row', {
-						name: 'Total $0.00',
-						exact: true,
+						name: /^Total\s+\$0\.00(?:\s+USD)?$/,
 					} )
 				).toBeVisible();
 
-				await browser.selectWooPaymentsCard();
-				await browser.fillTestCard( THREE_DS_OTP_CARD );
-				await browser.prepareSubmission();
-				const prepared: PreparedClassicCardCheckout = {
-					browser,
-					runId: pilotRuntime.runId,
-					orderTotal: '0.00',
-					card: THREE_DS_OTP_CARD,
-					savePaymentMethod: false,
-				};
-				const authentication = await submitClassicCardAuthentication(
-					pilotRuntime,
-					prepared,
-					page,
-					{
-						response: 'complete',
-						journal: 'subscription-free-trial-setup-challenge',
-					}
-				);
+				await fillCardDetails( page, TEST_CARDS.threeDSOtp, 'classic' );
 
-				expect( authentication.checkoutRequestCount ).toBe( 1 );
-				expect( authentication.checkoutResponseCount ).toBe( 1 );
-				expect( authentication.dispatch.intentType ).toBe( 'si' );
-				expect( authentication.dispatch.intentId ).toMatch( /^seti_/ );
-				expect( authentication.pendingIntent.id ).toBe(
-					authentication.dispatch.intentId
+				const dispatch = await submitClassicChallengeCheckout( page );
+				expect( dispatch.intentType ).toBe( 'si' );
+				expect( dispatch.intentId ).toMatch( /^seti_/ );
+				parentOrderId = dispatch.orderId;
+
+				const pendingSetupIntent = await readProviderSetupIntent(
+					restApi,
+					dispatch.intentId
 				);
-				expect( authentication.pendingIntent.status ).toBe(
-					'requires_action'
-				);
-				expect( authentication.pendingIntent.nextActionType ).toBe(
+				expect( pendingSetupIntent.id ).toBe( dispatch.intentId );
+				expect( pendingSetupIntent.status ).toBe( 'requires_action' );
+				expect( pendingSetupIntent.nextActionType ).toBe(
 					'use_stripe_sdk'
 				);
-				expect( authentication.pendingIntent.chargeCount ).toBe( 0 );
-				expect( authentication.challenge ).toEqual( {
-					expectation: 'challenge',
-					authenticationSurfacePresented: true,
-					challengePresented: true,
-					response: 'complete',
-					challengeDismissed: true,
-				} );
-				expect( authentication.settled ).toBe( true );
-				expect( authentication.receipt?.orderId ).toBe(
-					authentication.dispatch.orderId
-				);
 
-				const parent = await readOrderRecord(
-					pilotRuntime,
-					authentication.dispatch.orderId
-				);
+				await completeThreeDSChallenge( page, 'complete' );
+				await page.waitForURL( /\/order-received\/[1-9]\d*/, {
+					timeout: 60_000,
+				} );
+				await expect(
+					page.getByRole( 'heading', { name: 'Order received' } )
+				).toBeVisible();
+				await expectReceiptOrderKey( restApi, page, dispatch.orderId );
+				const { requestCount, responseCount } = dispatch.stop();
+				expect(
+					requestCount,
+					'one Place order activation must ask the store exactly once through the whole interval, challenge included'
+				).toBe( 1 );
+				expect( responseCount ).toBe( 1 );
+
+				const parent = (
+					await restApi.get(
+						`${ ORDERS_ROUTE }/${ dispatch.orderId }`
+					)
+				).data as Record< string, unknown >;
 				expect( parent.total ).toBe( '0.00' );
 				expect( parent.currency ).toBe( CURRENCY );
-				expect( parent.paymentMethod ).toBe( SUBSCRIPTION_GATEWAY );
-				expect( parent.meta._intent_id ).toBe(
-					authentication.dispatch.intentId
+				expect( parent.payment_method ).toBe( SUBSCRIPTION_GATEWAY );
+				expect( orderMeta( parent, '_intent_id' ) ).toBe(
+					dispatch.intentId
 				);
-				expect( parent.meta._charge_id ).toBeUndefined();
-				expect( parent.lineItems ).toHaveLength( 1 );
-				expect( parent.lineItems[ 0 ].productId ).toBe( product.id );
-				expect( Number( parent.lineItems[ 0 ].total ) ).toBe( 0 );
+				expect( orderMeta( parent, '_charge_id' ) ).toBe( '' );
+				const parentLineItems = parent.line_items as Array< {
+					product_id: number;
+					total: string;
+				} >;
+				expect( parentLineItems ).toHaveLength( 1 );
+				expect( parentLineItems[ 0 ].product_id ).toBe( product.id );
+				expect( Number( parentLineItems[ 0 ].total ) ).toBe( 0 );
 
-				const orderDelta = await readOrderDeltaAfter(
-					pilotRuntime,
-					scope.baseline.highestOrderId
-				);
 				expect(
-					orderDelta.newOrderIds,
+					await readNewOrderIds( restApi, highestOrderId ),
 					'one challenged signup must create exactly one zero-total parent order'
-				).toEqual( [ authentication.dispatch.orderId ] );
+				).toEqual( [ dispatch.orderId ] );
 
 				await expect
 					.poll(
-						async () =>
-							newCards(
-								scope.baseline.tokens,
-								( await getSavedCardEvidence( pilotRuntime ) )
-									.tokens
-							).length,
+						async () => {
+							const after = await getSavedCardEvidence(
+								restApi,
+								customer.username
+							);
+							return after.tokens.filter(
+								( token ) =>
+									! knownTokenIds.has( token.tokenId )
+							).length;
+						},
 						{
 							message:
 								'the challenged SetupIntent must create exactly one Woo token',
@@ -640,24 +716,73 @@ test.describe( 'WooPayments native product-first free-trial authentication', () 
 						}
 					)
 					.toBe( 1 );
-				const tokensAfterSignup =
-					await getSavedCardEvidence( pilotRuntime );
-				const createdCards = newCards(
-					scope.baseline.tokens,
-					tokensAfterSignup.tokens
+				const tokensAfterSignup = await getSavedCardEvidence(
+					restApi,
+					customer.username
 				);
-				const createdCard = createdCards[ 0 ];
+				const createdCard = tokensAfterSignup.tokens.find(
+					( token ) => ! knownTokenIds.has( token.tokenId )
+				) as SavedToken;
 
-				const subscription = await waitForSingleSubscription(
-					pilotRuntime,
-					scope.baseline.subscriptionIds
+				await expect
+					.poll(
+						async () =>
+							(
+								await readCustomerSubscriptionIds(
+									restApi,
+									customer.username
+								)
+							).filter(
+								( id ) =>
+									! baselineSubscriptionIds.includes( id )
+							).length,
+						{
+							message:
+								'one signup must create exactly one subscription',
+							timeout: PHASE_TIMEOUT_MS,
+						}
+					)
+					.toBe( 1 );
+				subscriptionId = (
+					await readCustomerSubscriptionIds(
+						restApi,
+						customer.username
+					)
+				).find( ( id ) => ! baselineSubscriptionIds.includes( id ) );
+				if ( subscriptionId === undefined ) {
+					throw new Error(
+						'The free-trial signup subscription did not converge.'
+					);
+				}
+
+				await expect
+					.poll(
+						async () => {
+							const evidence = await readSubscriptionEvidence(
+								restApi,
+								subscriptionId as number
+							);
+							return (
+								evidence.status === 'active' &&
+								evidence.activeTokenId > 0
+							);
+						},
+						{
+							message:
+								'the free-trial signup must converge on one active tokenized subscription',
+							timeout: PHASE_TIMEOUT_MS,
+						}
+					)
+					.toBe( true );
+				const subscription = await readSubscriptionEvidence(
+					restApi,
+					subscriptionId
 				);
 				expect( subscription.parentId ).toBe( parent.id );
 				expect( subscription.relatedOrders.parent ).toEqual( [
 					parent.id,
 				] );
 				expect( subscription.relatedOrders.renewal ).toEqual( [] );
-				expect( subscription.status ).toBe( 'active' );
 				expect( subscription.currency ).toBe( CURRENCY );
 				expect( subscription.paymentMethod ).toBe(
 					SUBSCRIPTION_GATEWAY
@@ -678,7 +803,7 @@ test.describe( 'WooPayments native product-first free-trial authentication', () 
 					tokenId: createdCard.tokenId,
 					paymentMethodId: createdCard.paymentMethodId,
 					gatewayId: SUBSCRIPTION_GATEWAY,
-					userId: subscription.customerId,
+					userId: createdCustomer.id,
 					exists: true,
 				} );
 				expect( subscription.nextPaymentGmt ).toBe(
@@ -695,59 +820,43 @@ test.describe( 'WooPayments native product-first free-trial authentication', () 
 				expect( Number.isFinite( trialEndTime ) ).toBe( true );
 				expect( trialEndTime - startTime ).toBe( TRIAL_DAYS * DAY_MS );
 
-				const setupIntent = await readProviderSetupIntent(
-					pilotRuntime,
-					authentication.dispatch.intentId
+				const setupIntent = await pollProviderSetupIntent(
+					restApi,
+					dispatch.intentId,
+					'succeeded'
 				);
-				expect( setupIntent.id ).toBe(
-					authentication.dispatch.intentId
-				);
-				expect( setupIntent.status ).toBe( 'succeeded' );
-				expect( setupIntent.usage ).toBe( 'off_session' );
 				expect( setupIntent.paymentMethodId ).toBe(
 					createdCard.paymentMethodId
 				);
-				expect( authentication.dispatch.paymentMethodId ).toBe(
-					createdCard.paymentMethodId
-				);
-				expect( parent.meta._payment_method_id ).toBe(
+				expect( setupIntent.usage ).toBe( 'off_session' );
+				expect( orderMeta( parent, '_payment_method_id' ) ).toBe(
 					createdCard.paymentMethodId
 				);
 
-				const providerCustomerId =
-					await readSavedCardProviderCustomerId( pilotRuntime );
-				expect( setupIntent.customerId ).toBe( providerCustomerId );
-				expect( providerCustomerId ).toBe(
-					scope.baseline.providerCustomerId ?? providerCustomerId
-				);
-				const attachments = await getProviderPaymentMethodIds(
-					pilotRuntime,
-					providerCustomerId
+				const providerCustomerId = setupIntent.customerId;
+				const storeProviderCustomer = await getSavedCardEvidence(
+					restApi,
+					customer.username
 				);
 				expect(
-					attachments.filter(
-						( id ) => id === createdCard.paymentMethodId
-					)
-				).toHaveLength( 1 );
-				expect( attachments.toSorted() ).toEqual(
-					[
-						...scope.baseline.providerAttachments,
-						createdCard.paymentMethodId,
-					].toSorted()
-				);
+					storeProviderCustomer.providerCustomerId,
+					"the succeeded SetupIntent must name the shopper's own provider customer"
+				).toBe( providerCustomerId );
+				expect(
+					await getProviderPaymentMethodIds(
+						restApi,
+						providerCustomerId
+					),
+					'a fresh customer must attach exactly the one signup method, no more'
+				).toEqual( [ createdCard.paymentMethodId ] );
 
-				await processMerchantRenewal(
-					pilotRuntime,
-					page,
-					subscription.id,
-					'subscription-free-trial-merchant-renewal'
-				);
+				await processMerchantRenewal( page, subscriptionId );
 				await expect
 					.poll(
 						async () => {
 							const current = await readSubscriptionEvidence(
-								pilotRuntime,
-								subscription.id
+								restApi,
+								subscriptionId as number
 							);
 							return {
 								renewalOrders:
@@ -767,10 +876,10 @@ test.describe( 'WooPayments native product-first free-trial authentication', () 
 					} );
 
 				const renewed = await readSubscriptionEvidence(
-					pilotRuntime,
-					subscription.id
+					restApi,
+					subscriptionId
 				);
-				const renewalOrderId = renewed.relatedOrders.renewal[ 0 ];
+				renewalOrderId = renewed.relatedOrders.renewal[ 0 ];
 				expect( renewed.paymentCount ).toBe(
 					subscription.paymentCount + 1
 				);
@@ -778,70 +887,157 @@ test.describe( 'WooPayments native product-first free-trial authentication', () 
 					subscription.paymentTokenIds
 				);
 				expect(
-					await readCustomerSubscriptionIds( pilotRuntime )
-				).toEqual( [
-					...scope.baseline.subscriptionIds,
-					subscription.id,
-				] );
+					await readCustomerSubscriptionIds(
+						restApi,
+						customer.username
+					)
+				).toEqual( [ ...baselineSubscriptionIds, subscriptionId ] );
 				expect(
-					tokenIdentities(
-						( await getSavedCardEvidence( pilotRuntime ) ).tokens
-					),
+					( await getSavedCardEvidence( restApi, customer.username ) )
+						.tokens,
 					'the renewal must create no duplicate Woo token'
-				).toEqual( tokenIdentities( tokensAfterSignup.tokens ) );
+				).toEqual( tokensAfterSignup.tokens );
 
-				const finalOrders = await readOrderDeltaAfter(
-					pilotRuntime,
-					scope.baseline.highestOrderId
-				);
 				expect(
-					finalOrders.newOrderIds,
+					(
+						await readNewOrderIds( restApi, highestOrderId )
+					).toSorted( ( left, right ) => left - right ),
 					'the complete journey must create one parent and one renewal order only'
 				).toEqual(
-					[ parent.id, renewalOrderId ].toSorted(
+					[ parent.id as number, renewalOrderId ].toSorted(
 						( left, right ) => left - right
 					)
 				);
 
-				const renewal = await readOrderRecord(
-					pilotRuntime,
-					renewalOrderId
-				);
+				const renewal = (
+					await restApi.get( `${ ORDERS_ROUTE }/${ renewalOrderId }` )
+				).data as Record< string, unknown >;
 				expect( renewal.currency ).toBe( CURRENCY );
-				expect( renewal.paymentMethod ).toBe( SUBSCRIPTION_GATEWAY );
-				expect( renewal.meta._subscription_renewal ).toBe(
-					String( subscription.id )
+				expect( renewal.payment_method ).toBe( SUBSCRIPTION_GATEWAY );
+				expect( orderMeta( renewal, '_subscription_renewal' ) ).toBe(
+					String( subscriptionId )
 				);
 				expect( Math.round( Number( renewal.total ) * 100 ) ).toBe(
 					RECURRING_MINOR
 				);
-				expect( renewal.lineItems ).toHaveLength( 1 );
-				expect( renewal.lineItems[ 0 ].productId ).toBe( product.id );
+				const renewalLineItems = renewal.line_items as Array< {
+					product_id: number;
+				} >;
+				expect( renewalLineItems ).toHaveLength( 1 );
+				expect( renewalLineItems[ 0 ].product_id ).toBe( product.id );
 
-				const payment = await waitForRenewalPayment(
-					pilotRuntime,
-					renewalOrderId
+				const payment = await expectSettledCardPayment(
+					restApi,
+					renewalOrderId,
+					{ amountMinor: RECURRING_MINOR, currency: CURRENCY }
 				);
-				expect( payment.orderId ).toBe( renewalOrderId );
-				expect( payment.intentId ).toMatch( /^pi_/ );
-				expect( payment.amountMinor ).toBe( RECURRING_MINOR );
-				expect( payment.currency ).toBe( CURRENCY );
 				expect( payment.paymentMethodId ).toBe(
 					createdCard.paymentMethodId
 				);
-				expect( payment.providerStatus ).toBe( 'succeeded' );
-				expect( payment.chargeStatus ).toBe( 'succeeded' );
-				expect( payment.chargeCaptured ).toBe( true );
-				expect( payment.occurrenceCount ).toBe( 1 );
-				expect( payment.captureOccurrenceCount ).toBe( 1 );
 				expect( PAID_ORDER_STATUSES ).toContain( payment.orderStatus );
-				expect(
-					await readProviderCustomerId(
-						pilotRuntime,
-						payment.intentId
-					)
-				).toBe( providerCustomerId );
-			} );
+				const renewalIntent = await getPaymentIntent(
+					restApi,
+					payment.intentId
+				);
+				expect( String( renewalIntent.customer ?? '' ) ).toBe(
+					providerCustomerId
+				);
+			} catch ( error ) {
+				caseError = error;
+			} finally {
+				// Each step runs independently so one failure cannot mask
+				// another or the case's own error (P3 `provider-fidelity-subscriptions`
+				// pattern): a cleanup failure only replaces `caseError` when
+				// the case itself passed, and every step still runs even
+				// after an earlier one fails.
+				const noteCleanupFailure = ( error: unknown ): void => {
+					if ( caseError === undefined ) {
+						caseError = error;
+					} else {
+						console.error(
+							'WooPayments free-trial cleanup failed after the primary case failure:',
+							error
+						);
+					}
+				};
+
+				if ( subscriptionId !== undefined ) {
+					try {
+						await restApi.put(
+							`${ SUBSCRIPTIONS_ROUTE }/${ subscriptionId }`,
+							{ transition_status: 'cancelled' }
+						);
+					} catch ( error ) {
+						noteCleanupFailure( error );
+					}
+					try {
+						await restApi.delete(
+							`${ SUBSCRIPTIONS_ROUTE }/${ subscriptionId }`,
+							{ force: true }
+						);
+					} catch ( error ) {
+						noteCleanupFailure( error );
+					}
+				}
+				for ( const orderId of [ renewalOrderId, parentOrderId ] ) {
+					if ( orderId === undefined ) {
+						continue;
+					}
+					try {
+						await restApi.delete(
+							`${ ORDERS_ROUTE }/${ orderId }`,
+							{
+								force: true,
+							}
+						);
+					} catch ( error ) {
+						noteCleanupFailure( error );
+					}
+				}
+				if ( productId !== undefined ) {
+					try {
+						await restApi.delete(
+							`${ PRODUCTS_ROUTE }/${ productId }`,
+							{ force: true }
+						);
+					} catch ( error ) {
+						noteCleanupFailure( error );
+					}
+				}
+
+				// Cleanup is proved, not assumed: the cancelled/deleted
+				// subscription must actually be gone from the shopper's list.
+				// A failure here must not skip the customer delete below -
+				// that would leave a live shopper whose card is attached and
+				// whose subscription is armed.
+				try {
+					expect(
+						await readCustomerSubscriptionIds(
+							restApi,
+							customer.username
+						),
+						'the free-trial journey must leave no subscription on the run-owned shopper'
+					).toEqual( baselineSubscriptionIds );
+				} catch ( error ) {
+					noteCleanupFailure( error );
+				}
+
+				// Deleting the customer removes its saved tokens locally and
+				// detaches them at the provider (T.4 D5), so this leaves no
+				// live credential even when an earlier cleanup step failed.
+				// Always runs, whatever the checks above concluded.
+				try {
+					await restApi.delete(
+						`${ CUSTOMERS_ROUTE }/${ createdCustomer.id }`,
+						{ force: true }
+					);
+				} catch ( error ) {
+					noteCleanupFailure( error );
+				}
+			}
+			if ( caseError !== undefined ) {
+				throw caseError;
+			}
 		}
 	);
 } );
