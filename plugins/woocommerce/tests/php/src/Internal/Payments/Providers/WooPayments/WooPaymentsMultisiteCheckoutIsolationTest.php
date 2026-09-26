@@ -255,6 +255,109 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native should own and serve checkout on both a primary and a secondary site once each independently enables it.
+	 * @group multisite
+	 */
+	public function test_native_runtime_serves_both_sites_when_enabled_on_each(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$original_blog_id  = get_current_blog_id();
+		$secondary_blog_id = self::factory()->blog->create();
+		$runtime_arbiter   = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$account_service   = wc_get_container()->get( WooPaymentsAccountService::class );
+
+		$this->assertIsInt( $secondary_blog_id );
+
+		try {
+			update_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, 'yes' );
+			delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+			update_option( 'wcpay_account_data', $this->account_cache( 'primary', 'US' ) );
+			update_option( 'woocommerce_currency', 'USD' );
+			update_option(
+				'woocommerce_woocommerce_payments_settings',
+				array(
+					'enabled'     => 'yes',
+					'saved_cards' => 'yes',
+				)
+			);
+			$runtime_arbiter->invalidate();
+			add_filter( 'wcpay_test_mode', '__return_true' );
+
+			$gateway  = new NativeWooPaymentsGateway();
+			$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+				->disableOriginalConstructor()
+				->onlyMethods( array( 'can_process_payments' ) )
+				->getMock();
+			$provider->method( 'can_process_payments' )->willReturn( true );
+			$provider_property = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'provider' );
+			$provider_property->setAccessible( true );
+			$provider_property->setValue( $gateway, $provider );
+
+			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $runtime_arbiter->get_runtime_owner(), 'Native should own the primary site once enabled there and the plugin is inactive.' );
+			$this->assertTrue( $gateway->is_available(), 'The gateway should be available for checkout on the primary site.' );
+			$this->assertSame( 'acct_primary', $account_service->get_account_id() );
+
+			switch_to_blog( $secondary_blog_id );
+			$this->install_woocommerce_tables_for_current_site();
+			$runtime_arbiter->invalidate();
+
+			// Before the secondary site enables native, it must resolve its own decision, not the
+			// primary site's memoized one: this is what a memo keyed by something other than the
+			// blog ID would get wrong.
+			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The secondary site must not inherit the primary site\'s native ownership before it enables native itself.' );
+
+			update_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, 'yes' );
+			delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+			update_option( 'wcpay_account_data', $this->account_cache( 'secondary', 'GB' ) );
+			update_option( 'woocommerce_currency', 'GBP' );
+			update_option(
+				'woocommerce_woocommerce_payments_settings',
+				array(
+					'enabled'     => 'yes',
+					'saved_cards' => 'yes',
+				)
+			);
+			$runtime_arbiter->invalidate();
+
+			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $runtime_arbiter->get_runtime_owner(), 'Native should also own the secondary site once it enables native, independent of the primary site.' );
+			$this->assertTrue( $gateway->is_available(), 'The gateway should be available for checkout on the secondary site, resolving its own account.' );
+			$this->assertSame( 'acct_secondary', $account_service->get_account_id() );
+
+			// The kill switch is a per-site option, not a network one: flipping it on the
+			// secondary site alone must disable native there without reaching the primary site.
+			update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, true );
+			$runtime_arbiter->invalidate();
+			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The kill switch enabled on the secondary site alone must disable native there.' );
+			delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+			$runtime_arbiter->invalidate();
+
+			restore_current_blog();
+			$this->assertSame( $original_blog_id, get_current_blog_id() );
+			$runtime_arbiter->invalidate();
+
+			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $runtime_arbiter->get_runtime_owner(), 'Restoring the primary site should keep native ownership there.' );
+			$this->assertTrue( $gateway->is_available() );
+			$this->assertSame( 'acct_primary', $account_service->get_account_id() );
+		} finally {
+			remove_filter( 'wcpay_test_mode', '__return_true' );
+			while ( ms_is_switched() ) {
+				restore_current_blog();
+			}
+
+			delete_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+			delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+			delete_option( 'wcpay_account_data' );
+			delete_option( 'woocommerce_currency' );
+			$runtime_arbiter->invalidate();
+			wc_get_container()->reset_all_resolved();
+			wpmu_delete_blog( $secondary_blog_id, true );
+		}
+	}
+
+	/**
 	 * @testdox One gateway instance should refresh country branding after blog switches.
 	 * @group multisite
 	 */

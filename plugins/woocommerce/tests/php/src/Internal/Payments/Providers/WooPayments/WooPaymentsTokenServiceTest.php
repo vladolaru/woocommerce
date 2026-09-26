@@ -1609,6 +1609,58 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should sync the token to every subscription created from one parent order, not only the first.
+	 */
+	public function test_syncs_token_to_every_subscription_created_from_one_parent_order(): void {
+		$this->ensure_wcs_subscriptions_for_order_double();
+		$user_id = $this->factory()->user->create();
+		$token   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_multi' );
+		$parent  = $this->create_woopayments_order();
+		$monthly = $this->create_woopayments_order();
+		$yearly  = $this->create_woopayments_order();
+
+		// Related through the same parent order (for example via a later gateway switch), but
+		// not paid through WooPayments: the client's own token-repair comment in
+		// trait-wc-payment-gateway-wcpay-subscriptions.php warns against "silently re-pointing
+		// sibling subscriptions the customer has since moved to a different [gateway]", so this
+		// one must be left untouched.
+		$other_gateway = wc_create_order();
+		$other_gateway->set_payment_method( 'bacs' );
+		$other_gateway->save();
+
+		$relationships = array(
+			'parent' => array( $monthly->get_id(), $yearly->get_id(), $other_gateway->get_id() ),
+		);
+
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $parent->get_id() => $relationships );
+
+		$sut     = $this->create_service();
+		$related = $sut->get_related_subscriptions_for_order( $parent );
+		$this->assertCount( 3, $related, 'The subscriptions lookup double must return all three subscriptions created from the parent order, or the rest of this test is vacuous.' );
+		$this->assertSame(
+			3,
+			count( array_unique( array_map( static fn( WC_Order $subscription ): int => $subscription->get_id(), $related ) ) ),
+			'The lookup double must return three distinct subscriptions.'
+		);
+
+		$sut->sync_related_subscriptions_payment_token( $parent, $token, 'pm_multi', 'cus_multi' );
+
+		$monthly       = wc_get_order( $monthly->get_id() );
+		$yearly        = wc_get_order( $yearly->get_id() );
+		$other_gateway = wc_get_order( $other_gateway->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $monthly );
+		$this->assertInstanceOf( WC_Order::class, $yearly );
+		$this->assertInstanceOf( WC_Order::class, $other_gateway );
+		$monthly_active_token = $sut->get_active_token_for_order( $monthly );
+		$yearly_active_token  = $sut->get_active_token_for_order( $yearly );
+		$this->assertInstanceOf( \WC_Payment_Token::class, $monthly_active_token, 'The monthly subscription should carry the token as its active token.' );
+		$this->assertInstanceOf( \WC_Payment_Token::class, $yearly_active_token, 'The yearly subscription should carry the token as its active token.' );
+		$this->assertSame( $token->get_id(), $monthly_active_token->get_id() );
+		$this->assertSame( $token->get_id(), $yearly_active_token->get_id() );
+		$this->assertSame( array(), $other_gateway->get_payment_tokens(), 'A related subscription paid through another gateway must not receive the WooPayments token.' );
+	}
+
+	/**
 	 * @testdox Should clear preserved WooPayments payment method caches for all users.
 	 */
 	public function test_clear_all_cached_payment_methods_removes_preserved_cache_entries(): void {

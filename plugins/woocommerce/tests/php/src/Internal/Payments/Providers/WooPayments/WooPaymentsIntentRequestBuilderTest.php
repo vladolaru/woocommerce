@@ -657,6 +657,103 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Charge request amount is the order total after a shipping method switch, not a stale line total.
+	 */
+	public function test_charge_request_amount_is_the_order_total_after_a_shipping_method_switch(): void {
+		$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '10.00' ) );
+		$order   = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->add_product( $product, 1 );
+
+		$express_shipping = new \WC_Order_Item_Shipping();
+		$express_shipping->set_method_title( 'Express' );
+		$express_shipping->set_total( '40.00' );
+		$order->add_item( $express_shipping );
+		$order->calculate_totals( false );
+		$order->save();
+
+		$order->remove_item( $express_shipping->get_id() );
+
+		$standard_shipping = new \WC_Order_Item_Shipping();
+		$standard_shipping->set_method_title( 'Standard' );
+		$standard_shipping->set_total( '20.00' );
+		$order->add_item( $standard_shipping );
+		$order->calculate_totals( false );
+		$order->save();
+
+		$request = $this->build_charge_request_for_fingerprint( $order, array() );
+
+		$this->assertSame( 3000, $request['amount'], 'The charge amount must be the order total (product + the currently selected shipping method) at submit time.' );
+		$this->assertSame( 'usd', $request['currency'] );
+	}
+
+	/**
+	 * @testdox Charge request amount rounds the tax-inclusive, coupon-discounted order total to minor units, not a partial or truncated figure.
+	 */
+	public function test_charge_request_amount_reflects_tax_and_a_fixed_coupon_in_minor_units(): void {
+		$original_calc_taxes = get_option( 'woocommerce_calc_taxes' );
+		update_option( 'woocommerce_calc_taxes', 'yes' );
+
+		$tax_rate_id = \WC_Tax::_insert_tax_rate(
+			array(
+				'tax_rate_country'  => '',
+				'tax_rate_state'    => '',
+				'tax_rate'          => '10.0000',
+				'tax_rate_name'     => 'VAT',
+				'tax_rate_priority' => '1',
+				'tax_rate_order'    => '1',
+				'tax_rate_shipping' => '0',
+			)
+		);
+
+		$product = null;
+		$order   = null;
+
+		try {
+			$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '10.00' ) );
+			$order   = wc_create_order();
+			$order->set_currency( 'USD' );
+			$order->add_product( $product, 1 );
+			$order->save();
+
+			$coupon = \WC_Helper_Coupon::create_coupon(
+				'sc13_fixed_coupon',
+				array(
+					'discount_type' => 'fixed_cart',
+					'coupon_amount' => '3.00',
+				)
+			);
+			$this->assertTrue( true === $order->apply_coupon( $coupon ), 'The fixed-cart coupon must apply, or the rest of this test is vacuous.' );
+
+			$shipping = new \WC_Order_Item_Shipping();
+			$shipping->set_method_title( 'Standard' );
+			$shipping->set_total( '9.95' );
+			$order->add_item( $shipping );
+			$order->calculate_totals( true );
+			$order->save();
+
+			$request = $this->build_charge_request_for_fingerprint( $order, array() );
+
+			// By hand, not read back from the order or the builder: the 10.00 line discounted
+			// by the 3.00 fixed-cart coupon is a 7.00 line total; 10% tax on that discounted
+			// total is 0.70 (the tax rate excludes shipping); shipping itself is untaxed at
+			// 9.95. 7.00 + 0.70 + 9.95 = 17.65, and the WooPayments currency helper rounds
+			// (rather than truncates) 17.65 * 100 to 1765 cents.
+			$this->assertSame( 1765, $request['amount'] );
+			$this->assertSame( 'usd', $request['currency'] );
+		} finally {
+			\WC_Tax::_delete_tax_rate( $tax_rate_id );
+			update_option( 'woocommerce_calc_taxes', $original_calc_taxes );
+			if ( $order instanceof WC_Order ) {
+				$order->delete( true );
+			}
+			if ( $product instanceof \WC_Product ) {
+				$product->delete( true );
+			}
+		}
+	}
+
+	/**
 	 * Build a charge request with a payment-method save requested.
 	 *
 	 * @param string $gateway_id Gateway ID.
