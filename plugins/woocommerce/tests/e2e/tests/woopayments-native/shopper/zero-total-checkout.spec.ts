@@ -1,25 +1,30 @@
-import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
-import {
-	expect,
-	submitBlocksCheckout,
-	tags,
-	test,
-	waitForWordPressLoginReady,
-} from '../../../fixtures/woopayments-native';
+import type { Locator, Page, Request } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
+
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { logIn } from '../../../utils/login';
 import { customer } from '../../../test-data/data';
-import { isStripeTransactionHost } from '../../../utils/woopayments-native/stripe-transaction-host';
 
 const CONTRACT_ID =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-cart-coupon.spec.ts:53::Checkout with free coupon & after modifying cart on Checkout page › Checkout with a free coupon';
 
-const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
-const COUPONS_ENABLED_API =
-	'/wp-json/wc/v3/settings/general/woocommerce_enable_coupons';
+const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
+const COUPONS_ENABLED_API = 'wc/v3/settings/general/woocommerce_enable_coupons';
 // The suite's run-ownership stamp, the same key the pilot runtime writes on
 // products it creates and orders it claims.
 const RUN_META_KEY = '_e2e_woopayments_run_id';
 const PRODUCT_PRICE = '13.00';
+
+// The provider's transaction-dispatch host. A zero-total cart never mounts a
+// payment element at all, so unlike the readiness and saved-methods guards
+// this one keeps the whole host rather than narrowing to specific endpoints:
+// no legitimate Elements-session traffic exists to allow for. Stripe.js's
+// telemetry host (m.stripe.com) is excluded on purpose — it is reached from a
+// loaded-but-unused SDK, not from a transaction, matching the deleted
+// isStripeTransactionHost unit test's contract.
+const STRIPE_TRANSACTION_HOST_PATTERN = /^https:\/\/api\.stripe\.com\//;
 
 // The order metadata a provider-touched order carries in the native runtime.
 // Every charge path writes `_intent_id` from the outcome's provider payment
@@ -39,35 +44,20 @@ const PROVIDER_IDENTITY_META_KEYS = [
 	'_wcpay_intent_currency',
 ];
 
-async function readJson(
-	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
-	description: string
-): Promise< Record< string, unknown > > {
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
-	}
-	return ( await response.json() ) as Record< string, unknown >;
-}
-
 async function createRunOwnedProduct(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	runId: string
 ): Promise< { id: number; name: string } > {
 	const name = `WooPayments zero-total E2E ${ runId }`;
-	const product = await readJson(
-		await adminApi.post( '/wp-json/wc/v3/products', {
-			data: {
-				name,
-				type: 'simple',
-				virtual: true,
-				regular_price: PRODUCT_PRICE,
-				meta_data: [ { key: RUN_META_KEY, value: runId } ],
-			},
-		} ),
-		'Run-owned product creation'
-	);
+	const product = (
+		await restApi.post< { id?: unknown } >( 'wc/v3/products', {
+			name,
+			type: 'simple',
+			virtual: true,
+			regular_price: PRODUCT_PRICE,
+			meta_data: [ { key: RUN_META_KEY, value: runId } ],
+		} )
+	).data;
 	if ( typeof product.id !== 'number' ) {
 		throw new Error(
 			'Run-owned product response did not contain a numeric ID.'
@@ -77,24 +67,24 @@ async function createRunOwnedProduct(
 }
 
 async function createRunOwnedCoupon(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	runId: string,
 	productId: number
 ): Promise< { id: number; code: string } > {
 	// Restricted to the run-owned product, so a concurrent run or leftover
 	// cart content on the shared store can never be discounted by it.
-	const coupon = await readJson(
-		await adminApi.post( '/wp-json/wc/v3/coupons', {
-			data: {
+	const coupon = (
+		await restApi.post< { id?: unknown; code?: unknown } >(
+			'wc/v3/coupons',
+			{
 				code: runId,
 				discount_type: 'percent',
 				amount: '100',
 				product_ids: [ productId ],
 				meta_data: [ { key: RUN_META_KEY, value: runId } ],
-			},
-		} ),
-		'Run-owned coupon creation'
-	);
+			}
+		)
+	).data;
 	if ( typeof coupon.id !== 'number' || typeof coupon.code !== 'string' ) {
 		throw new Error(
 			'Run-owned coupon response did not contain a numeric ID and normalized code.'
@@ -104,35 +94,28 @@ async function createRunOwnedCoupon(
 }
 
 async function deleteRunOwnedResource(
-	adminApi: APIRequestContext,
+	restApi: ApiClient,
 	resourcePath: string,
 	resourceId: number,
 	description: string
 ): Promise< void > {
-	const response = await adminApi.delete(
-		`/wp-json/wc/v3/${ resourcePath }/${ resourceId }`,
-		{ data: { force: true }, failOnStatusCode: false }
-	);
-	if ( ! response.ok() ) {
-		throw new Error(
-			`${ description } cleanup failed: HTTP ${ response.status() } ${ await response.text() }`
-		);
+	try {
+		await restApi.delete( `wc/v3/${ resourcePath }/${ resourceId }`, {
+			force: true,
+		} );
+	} catch ( error ) {
+		throw new Error( `${ description } cleanup failed.`, { cause: error } );
 	}
 }
 
-// The same login the harness fixtures use, including the identity proof that
-// the session belongs to the seeded customer.
+// The same login the shared customer journeys use, including the identity
+// proof that the session belongs to the seeded customer.
 async function logInAsCustomer( page: Page ): Promise< void > {
 	await page.context().clearCookies();
 	await page.goto( 'wp-login.php' );
-	await waitForWordPressLoginReady( page );
-	await page
-		.getByLabel( 'Username or Email Address' )
-		.fill( customer.username );
-	await page
-		.getByRole( 'textbox', { name: 'Password' } )
-		.fill( customer.password );
-	await page.getByRole( 'button', { name: 'Log In' } ).click();
+	// Not an admin: no Dashboard to land on, so the standard success
+	// assertion is skipped in favor of the identity read below.
+	await logIn( page, customer.username, customer.password, false );
 	await page.goto( 'my-account/edit-account/' );
 	await expect(
 		page.getByRole( 'textbox', { name: /Email address/i } )
@@ -253,17 +236,20 @@ async function expectZeroTotal( blockScope: Locator ): Promise< void > {
  * provider SDK on every Blocks checkout before the cart total is known, so it
  * loads even here; fetching a script or emitting SDK telemetry creates no
  * PaymentIntent and is not what this contract forbids.
+ *
+ * A synchronous `request` listener, not `page.route`: it needs no await,
+ * intercepts nothing, and leaves the page's HTTP cache alone.
  */
 function trackProviderClientRequests( page: Page ): () => string[] {
 	const providerRequests: string[] = [];
 	page.on( 'request', ( request ) => {
 		try {
 			const { hostname } = new URL( request.url() );
-			if ( isStripeTransactionHost( hostname ) ) {
+			if ( STRIPE_TRANSACTION_HOST_PATTERN.test( request.url() ) ) {
 				providerRequests.push( `${ request.method() } ${ hostname }` );
 			}
 		} catch {
-			// Unparsable URLs cannot be provider requests.
+			// Unparsable URLs cannot be a provider transaction request.
 		}
 	} );
 	return () => [ ...providerRequests ];
@@ -279,6 +265,92 @@ function getOrderIdFromUrl( url: string ): number {
 	return Number( match[ 1 ] );
 }
 
+/**
+ * Click "Place order" and wait for a real dispatch signal — the Store API
+ * checkout request, a Core checkout/payment state change, or navigation away
+ * from checkout — before treating the click as sent. This is a local,
+ * call-site-scoped copy of the dispatch-wait race in
+ * drivers/checkout.ts's submitBlocksCheckout: this readonly spec is never
+ * provider-involved, so it carries no import from
+ * utils/woopayments-native/drivers (the routing validator treats that
+ * directory as provider machinery). The retry-on-not-dispatched loop the
+ * shared driver offers other callers is dropped: this journey's click always
+ * dispatches, so a single attempt is the whole contract.
+ */
+async function submitZeroTotalCheckout( page: Page ): Promise< void > {
+	const checkoutUrl = page.url();
+	const button = page.getByRole( 'button', { name: /place order/i } );
+	let resolveCheckoutRequest = () => {};
+	const checkoutRequestStarted = new Promise< void >( ( resolve ) => {
+		resolveCheckoutRequest = resolve;
+	} );
+	const countCheckoutRequest = ( request: Request ): void => {
+		if ( request.method() !== 'POST' ) {
+			return;
+		}
+		try {
+			if (
+				new URL( request.url() ).pathname.replace( /\/+$/, '' ) ===
+				'/wp-json/wc/store/v1/checkout'
+			) {
+				resolveCheckoutRequest();
+			}
+		} catch {
+			// Unparsable URLs cannot be the Store API checkout endpoint.
+		}
+	};
+	page.on( 'request', countCheckoutRequest );
+
+	try {
+		await button.click();
+		const checkoutStateOrNavigationStarted = page.waitForFunction(
+			( initialCheckoutUrl ) => {
+				if ( window.location.href !== initialCheckoutUrl ) {
+					return true;
+				}
+				type Selector = ( ...args: unknown[] ) => unknown;
+				type Store = Record< string, Selector >;
+				const wpData = (
+					window as Window & {
+						wp?: {
+							data?: {
+								select?: ( key: string ) => Store;
+							};
+						};
+					}
+				 ).wp?.data;
+				const checkout = wpData?.select?.( 'wc/store/checkout' );
+				const payment = wpData?.select?.( 'wc/store/payment' );
+				return (
+					checkout?.getCheckoutStatus?.() !== 'idle' ||
+					checkout?.hasError?.() === true ||
+					payment?.isPaymentIdle?.() === false ||
+					payment?.hasPaymentError?.() === true
+				);
+			},
+			checkoutUrl,
+			{ timeout: 10_000 }
+		);
+		try {
+			await Promise.race( [
+				checkoutRequestStarted,
+				checkoutStateOrNavigationStarted,
+			] );
+		} catch ( error ) {
+			if ( page.url() !== checkoutUrl ) {
+				return;
+			}
+			throw new Error(
+				`WooPayments Blocks checkout was clicked, but no checkout request, Core state, or navigation signal was observed: ${
+					error instanceof Error ? error.message : String( error )
+				}`
+			);
+		}
+	} finally {
+		page.off( 'request', countCheckoutRequest );
+	}
+}
+
 test(
 	'a 100% coupon checkout completes a zero-total order without dispatching any provider payment intent',
 	{
@@ -290,29 +362,31 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page, runId } ) => {
+	async ( { restApi, page } ) => {
+		const runId = `woopayments-${ randomUUID() }`;
+
 		// Precondition guards, before anything run-owned exists. The
 		// no-provider claim is only meaningful on a store whose provider
 		// gateway is actually enabled and would otherwise be in the path;
 		// and the coupon journey needs coupons on.
-		const paymentsSettings = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings read'
-		);
+		const paymentsSettings = (
+			await restApi.get< Record< string, unknown > >(
+				PAYMENTS_SETTINGS_API
+			)
+		).data;
 		expect( paymentsSettings.is_wcpay_enabled ).toBe( true );
-		const couponsEnabled = await readJson(
-			await adminApi.get( COUPONS_ENABLED_API ),
-			'Coupons setting read'
-		);
+		const couponsEnabled = (
+			await restApi.get< { value?: unknown } >( COUPONS_ENABLED_API )
+		).data;
 		expect( couponsEnabled.value ).toBe( 'yes' );
 
-		const product = await createRunOwnedProduct( adminApi, runId );
+		const product = await createRunOwnedProduct( restApi, runId );
 		let couponId: number | undefined;
 		let primaryError: unknown;
 		let cleanupFailure: Error | AggregateError | undefined;
 		try {
 			const coupon = await createRunOwnedCoupon(
-				adminApi,
+				restApi,
 				runId,
 				product.id
 			);
@@ -378,13 +452,10 @@ test(
 				page.locator( 'iframe[name^="__privateStripeFrame"]' )
 			).toHaveCount( 0 );
 
-			// Place the order through the suite's dispatch-proving submit;
-			// no provider journal wraps it, because nothing here may reach
-			// the provider — that is the contract.
-			await submitBlocksCheckout( page, async ( button ) => {
-				await button.click();
-				return 'dispatched';
-			} );
+			// Place the order through the dispatch-proving submit; no
+			// provider journal wraps it, because nothing here may reach the
+			// provider — that is the contract.
+			await submitZeroTotalCheckout( page );
 			await page.waitForURL( /\/order-received\/[1-9]\d*\/?(?:\?.*)?$/, {
 				timeout: 60_000,
 			} );
@@ -399,24 +470,15 @@ test(
 			// leaves it attributable, then read it back through the store's
 			// own API for the durable half of the contract.
 			const orderId = getOrderIdFromUrl( page.url() );
-			const stampResponse = await adminApi.put(
-				`/wp-json/wc/v3/orders/${ orderId }`,
-				{
-					data: {
-						meta_data: [ { key: RUN_META_KEY, value: runId } ],
-					},
-				}
-			);
-			if ( ! stampResponse.ok() ) {
-				throw new Error(
-					`Unable to attach the run ID to order ${ orderId }: HTTP ${ stampResponse.status() }.`
-				);
-			}
+			await restApi.put( `wc/v3/orders/${ orderId }`, {
+				meta_data: [ { key: RUN_META_KEY, value: runId } ],
+			} );
 
-			const order = await readJson(
-				await adminApi.get( `/wp-json/wc/v3/orders/${ orderId }` ),
-				'Zero-total order read'
-			);
+			const order = (
+				await restApi.get< Record< string, unknown > >(
+					`wc/v3/orders/${ orderId }`
+				)
+			).data;
 			// Completed, as an order state and not just a thank-you page: a
 			// zero-total order needs no payment and lands in a paid status.
 			expect( [ 'processing', 'completed' ] ).toContain( order.status );
@@ -451,7 +513,7 @@ test(
 			if ( couponId !== undefined ) {
 				try {
 					await deleteRunOwnedResource(
-						adminApi,
+						restApi,
 						'coupons',
 						couponId,
 						'Run-owned coupon'
@@ -466,7 +528,7 @@ test(
 			}
 			try {
 				await deleteRunOwnedResource(
-					adminApi,
+					restApi,
 					'products',
 					product.id,
 					'Run-owned product'

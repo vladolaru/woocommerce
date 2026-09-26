@@ -49,7 +49,6 @@ import { waitForWordPressLoginReady } from '../utils/woopayments-native/wp-login
 export { tags } from './fixtures';
 export { ResourceQuarantineRequiredError };
 export { ProviderSubmissionNotStartedError } from '../utils/woopayments-native/provider-write-journal';
-export { waitForWordPressLoginReady } from '../utils/woopayments-native/wp-login';
 export {
 	getBlocksCardFrameSelector,
 	submitBlocksCheckout,

@@ -1,12 +1,11 @@
 import type { APIRequestContext, Page } from '@playwright/test';
 
-import {
-	expect,
-	tags,
-	test,
-	waitForWordPressLoginReady,
-} from '../../../fixtures/woopayments-native';
+import { expect, tags, test } from '../../../fixtures/fixtures';
+import { ADMIN_STATE_PATH } from '../../../playwright.config';
+import { logIn } from '../../../utils/login';
 import { customer } from '../../../test-data/data';
+
+test.use( { storageState: ADMIN_STATE_PATH } );
 
 // The two retained release-smoke rows from the client suite's basic project.
 // Their chromium-project duplicates are already retired against these
@@ -22,7 +21,7 @@ const MY_ACCOUNT_CONTRACT_ID =
 const CUSTOMER_AUTH_CONTRACT_ID =
 	'default::setup::tests/e2e/specs/auth.setup.ts:99::authenticate as customer';
 
-const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
+const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
 // One simple, in-stock product is all the shop-content oracle needs, and
 // restricting the type keeps the add-to-cart control's accessible name
 // deterministic: simple products render the plain "Add to cart" button.
@@ -256,7 +255,7 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page, baseURL } ) => {
+	async ( { restApi, page, baseURL } ) => {
 		const storeBase = requireBaseUrl( baseURL );
 
 		// Precondition guard: WooCommerce only offers the Payment methods
@@ -264,28 +263,24 @@ test(
 		// supports saved methods is available. Without an enabled gateway the
 		// payment-methods half of this contract would be unreachable, so a
 		// degraded store must fail here rather than pass a thinner journey.
-		const paymentsSettings = ( await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings read'
-		) ) as Record< string, unknown >;
+		const paymentsSettings = (
+			await restApi.get< Record< string, unknown > >(
+				PAYMENTS_SETTINGS_API
+			)
+		).data;
 		expect( paymentsSettings.is_wcpay_enabled ).toBe( true );
 
 		const restTracker = trackFailedRestResponses( page, storeBase );
 
-		// The seeded shared test customer, logged in the same way the harness
-		// fixtures do it: clear first, because a stale session cookie
-		// redirects wp-login.php and leaves the form fill hunting a field
-		// that is not there.
+		// The seeded shared test customer, logged in through wp-login.php
+		// like the client's own customer-authentication row: clear first,
+		// because a stale session cookie redirects wp-login.php and leaves
+		// the form fill hunting a field that is not there.
 		await page.context().clearCookies();
 		await page.goto( 'wp-login.php' );
-		await waitForWordPressLoginReady( page );
-		await page
-			.getByLabel( 'Username or Email Address' )
-			.fill( customer.username );
-		await page
-			.getByRole( 'textbox', { name: 'Password' } )
-			.fill( customer.password );
-		await page.getByRole( 'button', { name: 'Log In' } ).click();
+		// Not an admin: no Dashboard to land on, so the standard success
+		// assertion is skipped in favor of the identity read below.
+		await logIn( page, customer.username, customer.password, false );
 
 		// Identity, not just a session: the account-details subpage reports
 		// the seeded customer's own email, so everything below is asserted
