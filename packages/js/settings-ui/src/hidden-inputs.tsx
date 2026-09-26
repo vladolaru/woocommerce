@@ -27,7 +27,7 @@ const isSupportedFieldName = ( name: string, isArray: boolean ) => {
 	// Accept a flat name or one bracketed segment. Array fields can also use a
 	// trailing []. Keep this in sync with
 	// SettingsUISchema::is_supported_form_post_name().
-	return /^[^\[\]]+(?:\[[^\[\]]+\])?$/.test( baseName );
+	return /^[^[\]]+(?:\[[^[\]]+\])?$/.test( baseName );
 };
 
 const toRepeatedInputs = ( name: string, values: string[] ): HiddenInput[] =>

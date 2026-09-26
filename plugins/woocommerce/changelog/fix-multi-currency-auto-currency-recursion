@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Fix unbounded recursion that made every request fatal when automatic multi-currency switching was enabled.

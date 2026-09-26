@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Default Multi-Currency to enabled in WooPayments settings when no preference has been saved.

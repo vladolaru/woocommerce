@@ -1,0 +1,41 @@
+{
+	"schema_version": 2,
+	"slice_id": "subscriptions-payment-methods-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "6c815633c40061249c15b2a04ae25b2abb68a0b3",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-manage-payments.spec.ts:67::Shopper › Subscriptions › Manage Payment Methods › should change a default payment method to a new one",
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-manage-payments.spec.ts:85::Shopper › Subscriptions › Manage Payment Methods › should set a payment method to an already saved card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/subscriptions/payment-methods.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact two-row grouping across observable, shared 4242-to-1111-to-explicitly-saved-4242 lifecycle, owner, serialized provider lane, and verification path; distinct token-source assertions remain row-scoped, native readiness is earliest, and lower layers cannot prove the full My Account, provider, association, or off-session contract."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The standing store lacks native ownership, account, and callback readiness, and there is no approved deterministic version-pinned WooCommerce Subscriptions provisioner for the run-owned 4242 to newly entered 1111 to explicitly selected saved 4242 lifecycle or its customer, subscription, and token relationships.",
+		"affected_scope": "Only the exact grouped shopper subscription payment-method-management contracts represented by these two rows: replacing the recurring method with newly entered 1111, then explicitly selecting saved 4242, with distinct row-scoped token-source assertions and shared durable association and off-session proof.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair shared native readiness, grant approval for the pinned Subscriptions fixture, or substitute lower-layer coverage for the exact My Account interaction, token source, subscription association, provider lifecycle, and off-session usability contract.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Provide an external native-ready standing store, an approved version-pinned WooCommerce Subscriptions provisioner with run-owned customer, subscription, and known token identifiers, and an exclusive listener window; then resolve the exact owner and target contract and run one shared sequential scenario once with one worker, zero retries, row-scoped token-source assertions, durable association and off-session verification, and bounded cleanup.",
+		"quarantine_status": "No resource was allocated or mutated, and no row-specific quarantine exists. The existing separately owned listener is a later independent evidence blocker, not the primary reference."
+	}
+}

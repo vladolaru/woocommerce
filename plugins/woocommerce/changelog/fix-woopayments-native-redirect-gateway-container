@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Fix the classic checkout silently doing nothing when a shopper selects a card and then switches to a redirect payment method such as Alipay or Affirm.

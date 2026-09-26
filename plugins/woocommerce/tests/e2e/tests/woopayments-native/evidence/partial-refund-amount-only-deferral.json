@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "partial-refund-amount-only-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "22566d9405ec8b092cf204e2cea5ac6329f8d51e",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-partial-refund.spec.ts:118::Order › Partial refund › Partially refund one product of two product order"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/refund.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved with no material findings after independently verifying the exact first line-118 boundary; the four-field-only transition preserving target, pending contract, and owner; predecessor/source/calibration binding; the O6/PI6/C6/BT6/L6A/L6B/LR6/R6 graph; exact quantity-zero USD 5.00/500-minor-unit line allocation, provider relationship/status/occurrence, C6 amount-refunded delta, unchanged partial-refund status, refunded-total/net arithmetic, and reason/audit reconciliation; BT6 provenance-only scope; accidental QIT extra-product exclusion; sibling multi-line separation; no native-defect, runtime-execution, or lower-layer-substitution claim; readiness, protected allocation, listener ownership, ordered locks, separate journals, zero-retry/no-replay, bounded reads, byte restoration, retention, cleanup, quarantine, and drift safeguards; and zero provider-resource use."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing exact-store, account, and callback native readiness fails first. The run also lacks a resolved row-safe target contract, implementation owner, and closure-bundle topology; approved deterministic two-product USD order, amount-only line-allocation, provider refund, terminal-state, and arithmetic semantics; protected provider allocation and one exclusively owned listener; exact account, store, setting, provider-write, and financial-record locks; separate durable checkout and refund journals; bounded provider, order, refund, and audit reads; byte-exact restoration of every touched global and shopper state; and approved retained-record, local/context cleanup, and quarantine handling.",
+		"affected_scope": "Only the first line-118 amount-only partial refund: one fresh run-owned USD order O6 with exact PI6/C6/BT6 and local product lines L6A/L6B has exactly one captured payment; an authenticated authorized merchant dispatches exactly one USD 5.00/500-minor-unit refund R6 with exact reason Partially refund one product of two product order, allocated only to L6A with refunded quantity zero; sole local refund LR6 has parent O6, total -5.00, provider mapping R6, and one line bound to L6A with quantity zero and total -5.00 while L6B remains unrefunded; R6 is terminal successful, related to C6/PI6/O6, and occurs once; C6 amount_refunded increases by 500 without full refund; O6 refunded total is 5.00, net payment equals the authoritative captured/order total minus 5.00, approved partial-refund order status remains unchanged, and semantic audit evidence carries exact amount and reason. BT6 is payment provenance only. It claims no sibling multi-line allocation, cumulative/full/multi-currency/failure/transaction-detail/restock/webhook behavior, positional/classic selector, plugin route/branding/copy, fixed markup, or unrelated multicurrency behavior.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, resolve target/bundle ownership, approve deterministic product/order/allocation/refund/terminal/arithmetic semantics, allocate the protected provider lane, establish exclusive listener ownership, or approve exact locks, journals, byte restoration, retained-record, cleanup, and quarantine controls. Native gateway/processing/effect/event tests and WooCommerce allocation validation cannot substitute for one exact product-line quantity-zero/amount-five allocation joined to the native provider refund and same-order arithmetic. Older provider evidence predates current fixes and is not row-specific. No current bounded native defect is known before prerequisites and exact-target RED. Replaying checkout or refund after dispatch to erase uncertainty is forbidden.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful exact-store/account/callback native readiness; resolve a row-safe target and owner; approve deterministic two-product USD prices/order, amount-only line-allocation, provider refund/terminal/arithmetic semantics, protected allocation, retained-record policy, and byte-exact restoration; obtain one exclusively owned listener; then run once with one worker and zero retries under ordered account/store/setting/provider-write/record locks, separate pre-dispatch checkout and refund journals, exact O6/PI6/C6/BT6/L6A/L6B/LR6/R6 identities, one occurrence, exact allocation/provider/order/net/reason reconciliation, no mutation replay, shrinking-deadline reads, safe local/context cleanup, and fail-closed quarantine. Keep the sibling row independent and explicitly reopen/re-close if the shared refund target later drifts.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease, lock, setting, shopper session, journal, browser, provider record, or quarantine, and consumed no provider capacity. Campaign inventory remains zero for active leases, transition workspaces, open provider/restoration journals, quarantine receipts/events, and stale recoveries. The existing separately owned listener remains present, unavailable, and untouched. Any uncertain checkout, refund, allocation, restoration, session cleanup, local cleanup, lock, listener, or attribution state must preserve journals, quarantine every affected resource, and must not be replayed."
+	}
+}

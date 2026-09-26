@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Log native WooPayments embedded account session failures instead of silently discarding them.

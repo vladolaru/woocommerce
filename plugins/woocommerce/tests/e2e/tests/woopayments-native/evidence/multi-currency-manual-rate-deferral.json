@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-manual-rate-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "497ee40cf263bc7e2c2997c7a2bdab9a95d72e31",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:90::Multi-currency setup › Currency settings › can change the currency rate manually"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA 12a91abea96e662383ff8aa9fca0197a6092094c4a237992575092720a407743 against ledger SHA 320883082ce18957ad019c3fab9c940f4f347f4f7218fb45e300f5333e4e46b0 with no findings. Exactly the line-90 manual-rate row changes only fields 37-40 to deferred/blocked-environment/blocked-environment:PILOT-NATIVE-READINESS/evidence, preserving its pending disposition, provisional target, pending contract, unresolved owner, frozen fields, and separate charm and rounding siblings. Core provides an honest semantic modal, authenticated complete four-field persistence, preserved options, state invalidation, manual-rate calculation, selected-currency persistence, and structured storefront projection, so no defect, gap, or authority conflict is claimed. The oracle starts with deterministic automatic CHF, absent manual rate, zero rounding/charm, and a unique USD 1234.56 product; performs one accessible no-replay POST with manual 1.25 and zero companions; joins response to cold raw, fresh GET, row, reload, controls, success, and focus; then uses a separate disposable shopper session to prove exact CHF 1543.20 minor units and pinned format. It binds complete wildcard, cache, transient, product, locale, user-meta, cookie/session, and browser snapshots to separate journals with direct byte restoration, one worker, zero retries, accessibility, drift guards, and fail-closed quarantine; and remains financial-provider-, external-provider-, and listener-free."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the authenticated currency-settings, cold persistence, and fresh-shopper joins can run; the provisional shared scenario is absent; and the exact target contract, owner, deterministic USD/CHF product, catalog, locale, cache, session, raw snapshot, and row-safe restoration topology remain pending. Core already exposes a semantic settings modal, validated one-write REST path, preserved manual-rate options, local calculation, selected-currency persistence, and formatted frontend prices, so no product-authority conflict, production defect, or known gap is established.",
+		"affected_scope": "Only one positive manual-rate transition: start with enabled CHF on automatic rate, raw manual-rate absent, rounding zero, charm zero, pinned CHF formatting, and a unique USD 1234.56 product; submit exactly one complete CHF settings POST with manual rate 1.25 and zero companions; join response, cold raw values, fresh GET, row and reloaded editor state; then in one new disposable session select CHF explicitly and prove exact 1543.20 minor-unit-normalized price with the pinned CHF code, symbol, separators, position, and product identity. Invalid-input policy, charm, nonzero rounding, taxes, checkout, orders, payments, and provider records remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native account/callback readiness, repair shared sites, invent the pending target/owner/topology, or safely seed deterministic catalog, product, locale, and session state without complete pre-write journals. A success notice, row text, component/service test, or localized parseFloat cannot substitute for one no-replay request, cold raw persistence, reloaded semantic controls, exact selected-currency session occurrence, structured currency identity, exact minor units, and byte-exact restoration. No provider writer or payment listener can unlock this local manual-rate contract.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve a row-safe target and implementation owner; provide an enabled-CHF USD-default fixture with a unique non-taxable USD 1234.56 product, deterministic automatic baseline, absent manual rate, zero rounding and charm, pinned CHF locale format, pre-warmed catalog/cache, ordered settings/product/locale/session ownership, complete wildcard and product/session snapshots, and separate setup, behavior, and restoration journals. Run one semantic settings save and one disposable shopper-session occurrence with one worker, zero retries, and no replay; join response, cold raw, fresh GET, reload, exact CHF 1543.20 formatting; restore every option, cache, product, locale, and session byte; obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, option, currency/rate/product fixture, locale, session, cache, lock, journal, provider object, listener, retention record, or quarantine was created or changed for this row. A future ambiguous or duplicate settings request, wrong identity, automatic-rate refresh, wildcard-name drift, unexpected enabled-set or global-settings write, provider/platform traffic, incorrect cold persistence, calculation or format mismatch, session leak, target drift, ownership loss, or incomplete restoration must preserve diagnostics and quarantine the exact store, settings/rate/cache graph, product fixture, locale projection, shopper session, browser artifacts, and journal. Do not retry, normalize, or use sibling helpers for cleanup; no financial or platform provider resource belongs to this contract."
+	}
+}

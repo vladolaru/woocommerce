@@ -1,0 +1,4 @@
+Significance: patch
+Type: add
+
+Add deprecated WooPayments facade symbols so Woo extensions recognize the core-native runtime.

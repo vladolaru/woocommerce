@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Port the WooPay email-input and one-time-code login flow to native WooPayments classic and block checkout, including the contact information section and the phone requirement when saving the shopper in WooPay.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Decouple native multi-currency rate-provider registry creation from direct WooPayments adapter construction.

@@ -372,6 +372,99 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Fresh installs should enable native payments through create_options.
+	 */
+	public function test_create_options_enables_native_payments_for_fresh_installs(): void {
+		$version        = false;
+		$supply_version = function () use ( &$version ) {
+			return $version;
+		};
+		delete_option( 'woocommerce_native_payments_enabled' );
+		add_filter( 'option_woocommerce_version', $supply_version );
+
+		try {
+			$this->invoke_create_options();
+
+			$this->assertSame( 'yes', get_option( 'woocommerce_native_payments_enabled' ) );
+			$this->assertArrayHasKey( 'woocommerce_native_payments_enabled', wp_load_alloptions() );
+		} finally {
+			remove_filter( 'option_woocommerce_version', $supply_version );
+			delete_option( 'woocommerce_native_payments_enabled' );
+		}
+	}
+
+	/**
+	 * @testdox Fresh installs explicitly excluded by the cached platform payload should not enable native payments.
+	 */
+	public function test_create_options_does_not_enable_native_payments_for_platform_ineligible_fresh_installs(): void {
+		$version        = false;
+		$supply_version = function () use ( &$version ) {
+			return $version;
+		};
+		delete_option( 'woocommerce_native_payments_enabled' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'native_payments' => array(
+						'eligible' => false,
+						'cohort'   => 'holdback',
+						'reason'   => 'manual_hold',
+					),
+				),
+			)
+		);
+		add_filter( 'option_woocommerce_version', $supply_version );
+
+		try {
+			$this->invoke_create_options();
+
+			$this->assertFalse( get_option( 'woocommerce_native_payments_enabled', false ) );
+		} finally {
+			remove_filter( 'option_woocommerce_version', $supply_version );
+			delete_option( 'wcpay_account_data' );
+			delete_option( 'woocommerce_native_payments_enabled' );
+		}
+	}
+
+	/**
+	 * @testdox Established installs should not receive the native payments default from create_options.
+	 */
+	public function test_create_options_does_not_enable_native_payments_for_established_installs(): void {
+		$version        = '10.8.0';
+		$shop_id        = 10;
+		$supply_version = function () use ( &$version ) {
+			return $version;
+		};
+		$supply_shop_id = function () use ( &$shop_id ) {
+			return $shop_id;
+		};
+		delete_option( 'woocommerce_native_payments_enabled' );
+		add_filter( 'option_woocommerce_version', $supply_version );
+		add_filter( 'woocommerce_get_shop_page_id', $supply_shop_id );
+
+		try {
+			$this->invoke_create_options();
+
+			$this->assertFalse( get_option( 'woocommerce_native_payments_enabled', false ) );
+		} finally {
+			remove_filter( 'option_woocommerce_version', $supply_version );
+			remove_filter( 'woocommerce_get_shop_page_id', $supply_shop_id );
+			delete_option( 'woocommerce_native_payments_enabled' );
+		}
+	}
+
+	/**
+	 * Invoke the install-only create_options seam.
+	 */
+	private function invoke_create_options(): void {
+		$create_options = function (): void {
+			static::create_options();
+		};
+		$create_options->call( new WC_Install() );
+	}
+
+	/**
 	 * Tests that database updates are scheduled automatically (or not) depending on whether auto-updates are enabled.
 	 *
 	 * @testWith [true]

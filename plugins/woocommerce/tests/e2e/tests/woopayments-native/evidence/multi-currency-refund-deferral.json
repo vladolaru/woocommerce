@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-refund-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "9f7b0834b895f1a32064366b3f1ccc694bed2d3c",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:114::Admin Multi-Currency Orders › can refund in correct currency"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved with no material findings after independently verifying the exact line-114 boundary; the four-field-only transition preserving target, pending contract, and owner; predecessor/source/calibration binding; fresh O4/PI4/C4/BT4/R4 identities with BT4 used only for payment provenance; exactly one captured EUR payment and exactly one entire-amount EUR refund with exact identity, amount, currency, charge/order relationship, terminal status, occurrence, reason, event, and order/audit reconciliation; justified strengthening beyond the frozen reflected-string oracle; strict separation from lines 54, 70, 88, and 181; no native-defect, runtime-execution, or lower-layer-substitution claim; protected allocation, listener, ordered locks, separate journals, no-replay, bounded-read, byte-restoration, retention, cleanup, and quarantine safeguards; PILOT readiness as first blocker; and zero provider-resource use."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing exact-store, account, and callback native readiness fails first. The run also lacks a resolved row-safe target contract, implementation owner, and closure-bundle topology; approved deterministic USD-store/EUR-shopper payment, order-conversion rate, full-refund, event, and terminal-state semantics; protected provider allocation and one exclusively owned listener; exact account, store, feature/currency/rate/setting, provider-write, and financial-record locks; separate durable checkout and refund journals; bounded provider, event, order, refund, and audit reads; option-existence plus byte-exact global and shopper-session restoration; and approved retained-record, local/context cleanup, and quarantine handling.",
+		"affected_scope": "Only line 114 original-currency full refund: one fresh run-owned product and isolated shopper create unique order O4, intent PI4, charge C4, and balance transaction BT4 with exactly one successful captured EUR payment; an authenticated authorized merchant dispatches exactly one full refund R4 for the complete dynamic refundable EUR amount with reason Multi-currency refund test; the exact local and provider refund identity, amount, EUR currency, relationship to C4/PI4/O4, and one occurrence reconcile through attributed event evidence; the provider refund reaches the approved successful terminal state; the same order reaches refunded; and semantic audit evidence communicates the exact amount and reason. It claims no line-54 order display, line-70 transaction gross, line-88 settlement conversion/fee/net, line-181 transaction timeline/status, pi_ order link, plugin route/helper, classic CSS/DOM structure, browser-dialog mechanics, exact button/note copy, or symbol-only oracle.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, resolve target/bundle ownership, approve deterministic payment/rate/refund/event/terminal semantics, allocate the protected provider lane, establish exclusive listener attribution, or approve the exact locks, journals, byte restoration, retained-record, cleanup, and quarantine protocol. Native transport, order-effect, note, and refund-event lower-layer tests cannot substitute for one real EUR payment followed by one exact provider-correlated full refund and converged order/audit state. No bounded native defect is known before prerequisites and exact-target RED. Replaying checkout or refund after dispatch to erase uncertainty is forbidden.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful exact-store/account/callback native readiness; resolve a row-safe target and owner; approve deterministic USD-store/EUR-shopper payment, order-conversion rate, refund/event/terminal semantics, protected allocation, retained-record policy, and byte-exact restoration; obtain one exclusively owned listener; then run once with one worker and zero retries under ordered account/store/feature/currency/rate/setting/provider-write/record locks, separate pre-dispatch checkout and refund journals, exact one-occurrence O4/PI4/C4/BT4/R4 identities, exact entire refundable amount/currency/reason/provider/event/order/audit reconciliation, no mutation replay, shrinking-deadline convergence, byte-exact restoration, safe local/context cleanup, and fail-closed quarantine. Use a row-specific target or explicitly reopen/re-close after shared-target drift.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease, lock, setting, shopper session, journal, browser, provider record, or quarantine, and consumed no provider capacity. Campaign inventory remains zero for active leases, transition workspaces, open provider/restoration journals, quarantine receipts/events, and stale recoveries. The existing separately owned listener remains present, unavailable, and untouched. Any uncertain checkout, refund, event, restoration, session cleanup, local cleanup, lock, listener, or attribution state must preserve journals, quarantine every affected resource, and must not be replayed."
+	}
+}

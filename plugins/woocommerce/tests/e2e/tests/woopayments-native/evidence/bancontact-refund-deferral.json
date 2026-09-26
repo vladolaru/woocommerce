@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "bancontact-refund-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "7fe68f4bd2a22f3045f72ded483aa665a7025275",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:131::Local payment method checkout with card testing › merchant can see and refund a Bancontact order"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/checkout.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review checkout evidence SHA 91e72c82875b6c8793fdc331df0d13aa4acb236539661b1c6c02d0f2fa829d41 and refund evidence SHA ee19ed5c5b00081e9c7dc351417bcd2e15d1c275ed6ebf02f7df0e0b1c1050e6 against mutated ledger SHA cd881f9401aa33ce707308e408ade24ca2c7bd74d3fc0a555b97308d0b91387a and committed baseline aa9789dc75aeee2b267dd05b706d8fbd89648a521836e89455affd3a701b4a77 at 7fe68f4bd2a22f3045f72ded483aa665a7025275, with no findings. Exactly three intended Bancontact rows change only fields 37-40. The refund row reuses only the immutable false-state checkout checkpoint and then binds one accessible full-refund activation to one exact local/provider refund and terminal order/intent/charge/method/event graph, with one writer, exclusive listener, zero retries/replay, journals, exact restoration, retention, quarantine and drift controls. Readiness remains first and no defect, known gap, implementation, verification or closure is claimed."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before the dependent Bancontact refund row may allocate the exact site/blog, BE test account, gateways, sole provider writer, or exclusively owned callback listener. Its checkout target contract and owner remain pending; the prerequisite false-protection checkout lacks an approved one-shot external-authorization driver and exact Bancontact method reader; and no authoritative provider refund reader currently joins refund identity, parent charge and intent, order, amount, currency, occurrence count, callback convergence, and terminal state. Core's locked instance-specific refund path and event convergence exist statically, so no current native product defect is established.",
+		"affected_scope": "One full EUR 65.00 merchant refund reuses only the completed false-protection Bancontact order after that order's immutable checkout checkpoint independently satisfies its checkout row. The prerequisite graph binds the BE account, EUR session, Bancontact method, one 6500 capture, order, intent, charge and payment-method identity. A separate fsynced refund journal precedes exactly one accessible full-refund activation with deterministic reason and all line quantities. Terminal proof joins exactly one WC_Order_Refund and one provider refund to the same charge, intent, order and Bancontact graph; proves amount 6500, currency eur, provider status succeeded, charge amount_refunded 6500, zero remaining refundable amount and zero net paid; proves the order and local refund store the same terminal refund identity/status; and proves duplicate callback delivery converges without another local refund, provider refund, financial mutation, or duplicate status note.",
+		"no_allowlisted_action_reason": "No allowlisted local action can establish readiness, assign the target/owner, allocate the BE/EUR Bancontact writer/listener interval, produce the closure-grade prerequisite checkout checkpoint, or add the missing exact provider refund reader. A local Refunded status, WooPayments note, payment-intent link, displayed amount, lower-layer refund test, or historical run cannot substitute for the refund/charge/intent/order/method and exact terminal/cardinality joins. The future campaign uses the existing false-state order rather than creating a third payment, one worker, zero retries, one provider writer, one full-refund activation, bounded read-only convergence, no replay, and immediate halt on any uncertain checkout or refund outcome.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy owner-approved readiness for the exact runtime, site/blog, BE account, gateways and callback route; approve the target and owner; allocate one provider writer and one exclusively owned listener; and provide the prerequisite false-protection checkout checkpoint plus exact Bancontact and provider-refund readers. After that checkpoint is immutable, durably journal one full refund against the same order, prove its exact terminal local/provider/event joins and one-occurrence cardinality, retain the order/intent/charge/payment-method/refund/event history, restore only reversible settings/account/cache/currency/user/session state from raw snapshots, quarantine ambiguity, and obtain fresh code, lower-layer, E2E-test, reliability, concurrency, accessibility, security, and provider-evidence reviews.",
+		"quarantine_status": "This readiness deferral opened no browser, allocated no account/store/writer/listener capacity, acquired no lock, created no checkout or refund journal, changed no state, created no order, payment, refund, or event, and created no quarantine; the separately owned listener remains untouched. A future prerequisite-checkpoint, identity, dispatch, amount, currency, terminal status, refund cardinality, callback, listener, lock, restoration, retention, publication, or drift mismatch must halt the campaign, preserve checkout and refund journals plus immutable financial history, and quarantine the exact account/store/settings/session/product/order/provider/refund/event graph without another payment or refund, provider deletion, manual completion, broad reset, hard-coded restoration, or listener takeover."
+	}
+}

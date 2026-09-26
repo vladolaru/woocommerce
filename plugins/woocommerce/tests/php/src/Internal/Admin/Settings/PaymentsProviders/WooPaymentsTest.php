@@ -5,12 +5,19 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 
 use Automattic\Jetpack\Connection\Manager as WPCOM_Connection_Manager;
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Admin\Notes\Note;
+use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Admin\PluginsHelper;
+use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\TestingContainer;
@@ -75,7 +82,118 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		// Finally, set up the mockable proxy.
 		$this->setup_legacy_proxy_mocks();
 
-		$this->sut = new WooPayments( $this->mockable_proxy );
+		$this->sut      = new WooPayments( $this->mockable_proxy );
+		$legacy_runtime = new WooPaymentsLegacyRuntime();
+		$legacy_runtime->init( $this->mockable_proxy );
+
+		$container = wc_get_container();
+		$this->sut->set_admin_runtime_collaborators(
+			$legacy_runtime,
+			static function () use ( $container ): WooPaymentsRestController {
+				$rest_controller = $container->get( WooPaymentsRestController::class );
+				if ( ! $rest_controller instanceof WooPaymentsRestController ) {
+					throw new \RuntimeException( 'WooPayments REST controller is not available.' );
+				}
+
+				return $rest_controller;
+			},
+			static function () use ( $container ): WooPaymentsService {
+				$service = $container->get( WooPaymentsService::class );
+				if ( ! $service instanceof WooPaymentsService ) {
+					throw new \RuntimeException( 'WooPayments service is not available.' );
+				}
+
+				return $service;
+			}
+		);
+	}
+
+	/**
+	 * @testdox Should append only an eligible WooPayments notice to provider details.
+	 */
+	public function test_get_details_adds_only_the_optional_admin_notice(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$gateway = new FakePaymentGateway(
+			'woocommerce_payments',
+			array(
+				'enabled'           => true,
+				'account_connected' => true,
+			)
+		);
+		$notice  = array(
+			'id'      => 'test_to_live',
+			'message' => 'Ready for live payments.',
+			'primary' => array(
+				'kind'  => 'disable_test_mode',
+				'label' => 'Turn on live payments',
+			),
+			'_links'  => array(),
+		);
+		$service = $this->createMock( WooPaymentsAdminNoticeService::class );
+		$service->expects( $this->exactly( 2 ) )->method( 'get_notice_for_current_user' )->willReturnOnConsecutiveCalls( null, $notice );
+		$this->set_notice_service_resolver( static fn() => $service );
+
+		$before = $this->sut->get_details( $gateway );
+		$this->assertTrue( $before['state']['enabled'], 'The fixture must be an enabled gateway.' );
+		$this->assertTrue( $before['state']['account_connected'], 'The fixture must be connected.' );
+		$this->assertArrayNotHasKey( '_admin_notice', $before );
+		$after = $this->sut->get_details( $gateway );
+		$this->assertSame( $notice, $after['_admin_notice'] ?? null );
+		unset( $after['_admin_notice'] );
+		$this->assertSame( $before, $after );
+	}
+
+	/**
+	 * @testdox Should clean the obsolete inbox note for a disconnected provider without attaching a settings notice.
+	 */
+	public function test_get_details_cleans_legacy_note_for_disconnected_account(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		foreach ( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) as $name ) {
+			$note = new Note();
+			$note->set_name( $name );
+			$note->set_title( 'Existing note' );
+			$note->set_content( 'Existing note content' );
+			$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
+			$note->save();
+		}
+		$gateway = new FakePaymentGateway(
+			'woocommerce_payments',
+			array(
+				'enabled'           => true,
+				'account_connected' => false,
+			)
+		);
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_working_account' )->willReturn( false );
+		$service = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
+		$service->init( $account );
+		$this->set_notice_service_resolver( static fn() => $service );
+
+		try {
+			$this->assertArrayNotHasKey( '_admin_notice', $this->sut->get_details( $gateway ) );
+			$data_store = Notes::load_data_store();
+			$this->assertEmpty( $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ) );
+			$this->assertCount( 1, $data_store->get_notes_with_name( 'unrelated-note' ) );
+		} finally {
+			Notes::delete_notes_with_name( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) );
+		}
+	}
+
+	/**
+	 * Set a test notice resolver through the optional collaborator slot.
+	 *
+	 * @param callable $notice_resolver The test resolver.
+	 */
+	private function set_notice_service_resolver( callable $notice_resolver ): void {
+		$legacy_runtime = new WooPaymentsLegacyRuntime();
+		$legacy_runtime->init( $this->mockable_proxy );
+		$this->sut->set_admin_runtime_collaborators(
+			$legacy_runtime,
+			fn(): WooPaymentsRestController => $this->mock_rest_controller,
+			fn(): WooPaymentsService => wc_get_container()->get( WooPaymentsService::class ),
+			null,
+			$notice_resolver
+		);
 	}
 
 	/**
@@ -93,6 +211,20 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$container->reset_all_resolved();
 
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should point WooPayments settings to the native routed settings page.
+	 */
+	public function test_get_settings_url_points_to_native_routed_settings_page(): void {
+		$fake_gateway = new FakePaymentGateway( 'woocommerce_payments' );
+
+		$url = $this->sut->get_settings_url( $fake_gateway );
+
+		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
+		$this->assertStringContainsString( 'path=/woopayments/settings', rawurldecode( $url ) );
+		$this->assertStringContainsString( 'from=' . Payments::FROM_PAYMENTS_SETTINGS, rawurldecode( $url ) );
+		$this->assertStringNotContainsString( 'section=', rawurldecode( $url ) );
 	}
 
 	/**
@@ -132,14 +264,16 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 						'priority' => 30,
 						'enabled'  => false,
 						'title'    => 'Title',
-						'category' => 'unknown', // This should be ignored and replaced with the default category (primary).
+						// This should be ignored and replaced with the default category (primary).
+						'category' => 'unknown',
 					),
 					array(
 						'id'          => 'card',
 						'order'       => 20,
 						'enabled'     => true,
 						'required'    => true,
-						'title'       => '<b>Credit/debit card (required)</b>', // All tags should be stripped.
+						// All tags should be stripped.
+						'title'       => '<b>Credit/debit card (required)</b>',
 						// Paragraphs and line breaks should be stripped.
 						'description' => '<p><strong>Accepts</strong> <b>all major</b></br><em>credit</em> and <a href="#" target="_blank">debit cards</a>.</p>',
 						'icon'        => 'https://example.com/card-icon.png',
@@ -261,7 +395,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			$this->assertFalse( $recommended_pms[0]['enabled'] );
 			$this->assertFalse( $recommended_pms[0]['required'] );
 			$this->assertSame( 'WooPay', $recommended_pms[0]['title'] );
-			$this->assertSame( '', $recommended_pms[0]['icon'] ); // Invalid URL removed.
+			$this->assertSame( '', $recommended_pms[0]['icon'] );
+			// Invalid URL removed.
 			$this->assertSame( PaymentGateway::PAYMENT_METHOD_CATEGORY_PRIMARY, $recommended_pms[0]['category'] );
 
 			// Check second payment method (card) - required, HTML tags stripped but content preserved.
@@ -278,7 +413,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'basic2', $recommended_pms[2]['id'] );
 			$this->assertSame( 2, $recommended_pms[2]['_order'] );
 			$this->assertFalse( $recommended_pms[2]['enabled'] );
-			$this->assertSame( PaymentGateway::PAYMENT_METHOD_CATEGORY_PRIMARY, $recommended_pms[2]['category'] ); // 'unknown' normalized to primary.
+			// 'unknown' normalized to primary.
+			$this->assertSame( PaymentGateway::PAYMENT_METHOD_CATEGORY_PRIMARY, $recommended_pms[2]['category'] );
 
 			// Check fourth payment method (basic) - no order, placed last, secondary category.
 			$this->assertSame( 'basic', $recommended_pms[3]['id'] );
@@ -290,6 +426,22 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			Constants::clear_constants();
 			$container->reset_replacement( WooPaymentsRestController::class );
 		}
+	}
+
+	/**
+	 * @testdox Should receive admin runtime access through explicit collaborators.
+	 */
+	public function test_admin_runtime_access_is_injected(): void {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for admin provider boundary regression coverage.
+		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Admin/Settings/PaymentsProviders/WooPayments.php' );
+
+		$this->assertStringNotContainsString( 'wc_get_container()->get', $source, 'WooPayments provider should receive admin service and REST access through explicit resolvers.' );
+		$this->assertStringNotContainsString( 'WC_Payments::mode', $source, 'WooPayments provider should read mode state through WooPaymentsLegacyRuntime.' );
+		$this->assertStringNotContainsString( 'WC_Payments_Account::get_connect_url', $source, 'WooPayments provider should read account URLs through WooPaymentsLegacyRuntime.' );
+		$this->assertStringNotContainsString( 'wcpay_get_container', $source, 'WooPayments provider should read account status through WooPaymentsLegacyRuntime.' );
+		$this->assertStringNotContainsString( 'WC_Payments_Utils::supported_countries', $source, 'WooPayments provider should read supported countries through WooPaymentsLegacyRuntime.' );
+		$this->assertStringNotContainsString( 'WC_Payments_Onboarding_Service::FROM_WCADMIN_PAYMENTS_SETTINGS', $source, 'WooPayments provider should read admin onboarding context through WooPaymentsLegacyRuntime.' );
+		$this->assertStringNotContainsString( 'WC_Payments_Onboarding_Service::SOURCE_WCADMIN_SETTINGS_PAGE', $source, 'WooPayments provider should read admin onboarding context through WooPaymentsLegacyRuntime.' );
 	}
 
 	/**
@@ -482,7 +634,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$fake_gateway = new FakePaymentGateway(
 			'woocommerce_payments',
 			array(
-				'onboarding_supported' => null, // Ensure gateway doesn't provide info.
+				// Ensure gateway doesn't provide info.
+				'onboarding_supported' => null,
 			)
 		);
 
@@ -680,7 +833,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 					'get_plugin_data' => function ( $plugin_file ) {
 						if ( 'woocommerce-payments/woocommerce-payments.php' === $plugin_file ) {
 							return array(
-								'Version' => '10.0.0', // Compatible version >= 9.3.0.
+								// Compatible version >= 9.3.0.
+								'Version' => '10.0.0',
 							);
 						}
 						return false;
@@ -730,7 +884,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 					'get_plugin_data' => function ( $plugin_file ) {
 						if ( 'woocommerce-payments/woocommerce-payments.php' === $plugin_file ) {
 							return array(
-								'Version' => '3.0.0', // Below minimum.
+								// Below minimum.
+								'Version' => '3.0.0',
 							);
 						}
 						return false;
@@ -778,6 +933,27 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'onboarding', $enhanced );
 		$this->assertArrayHasKey( 'type', $enhanced['onboarding'] );
 		$this->assertSame( PaymentGateway::ONBOARDING_TYPE_NATIVE_IN_CONTEXT, $enhanced['onboarding']['type'] );
+	}
+
+	/**
+	 * Test a core-native suggestion does not retain an extension-install incentive action.
+	 */
+	public function test_enhance_core_native_suggestion_uses_setup_incentive_copy(): void {
+		$extension_suggestion = array(
+			'id'         => '_wc_pes_woopayments',
+			'plugin'     => array(
+				'file'   => '',
+				'status' => PaymentsProviders::EXTENSION_NOT_INSTALLED,
+			),
+			'onboarding' => array(),
+			'_incentive' => array(
+				'cta_label' => 'Install and save 10%',
+			),
+		);
+
+		$enhanced = $this->sut->enhance_extension_suggestion( $extension_suggestion );
+
+		$this->assertSame( 'Get started', $enhanced['_incentive']['cta_label'] );
 	}
 
 	/**
@@ -1119,6 +1295,154 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should treat sandbox WooPayments accounts as test-mode onboarding accounts.
+	 */
+	public function test_is_in_test_mode_onboarding_when_sandbox_account_exists(): void {
+		$fake_gateway = new FakePaymentGateway( 'woocommerce_payments', array() );
+
+		$this->mock_woopayments_mode
+			->method( 'is_test_mode_onboarding' )
+			->willReturn( false );
+		$this->mock_woopayments_account_service
+			->method( 'get_account_status_data' )
+			->willReturn(
+				array(
+					'testDrive' => false,
+					'isLive'    => false,
+				)
+			);
+
+		$is_test_mode_onboarding = $this->sut->is_in_test_mode_onboarding( $fake_gateway );
+
+		$this->assertTrue( $is_test_mode_onboarding );
+	}
+
+	/**
+	 * @testdox Should use native onboarding adapter account state for test-mode onboarding.
+	 */
+	public function test_is_in_test_mode_onboarding_uses_native_onboarding_adapter_account_state(): void {
+		$fake_gateway = new FakePaymentGateway( 'woocommerce_payments', array() );
+		$adapter      = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'has_test_account', 'has_sandbox_account' ) )
+			->getMock();
+
+		$this->mock_woopayments_mode
+			->method( 'is_test_mode_onboarding' )
+			->willReturn( false );
+		$adapter
+			->expects( $this->once() )
+			->method( 'has_test_account' )
+			->with( $this->sut )
+			->willReturn( true );
+		$adapter
+			->expects( $this->never() )
+			->method( 'has_sandbox_account' );
+
+		$legacy_runtime = new WooPaymentsLegacyRuntime();
+		$legacy_runtime->init( $this->mockable_proxy );
+		$container = wc_get_container();
+		$this->sut->set_admin_runtime_collaborators(
+			$legacy_runtime,
+			static function () use ( $container ): WooPaymentsRestController {
+				$rest_controller = $container->get( WooPaymentsRestController::class );
+				if ( ! $rest_controller instanceof WooPaymentsRestController ) {
+					throw new \RuntimeException( 'WooPayments REST controller is not available.' );
+				}
+
+				return $rest_controller;
+			},
+			static function () use ( $container ): WooPaymentsService {
+				$service = $container->get( WooPaymentsService::class );
+				if ( ! $service instanceof WooPaymentsService ) {
+					throw new \RuntimeException( 'WooPayments service is not available.' );
+				}
+
+				return $service;
+			},
+			$adapter
+		);
+
+		$is_test_mode_onboarding = $this->sut->is_in_test_mode_onboarding( $fake_gateway );
+
+		$this->assertTrue( $is_test_mode_onboarding );
+	}
+
+	/**
+	 * @testdox Should include test-account onboarding state for sandbox WooPayments accounts.
+	 */
+	public function test_get_details_marks_sandbox_account_as_test_mode_onboarding(): void {
+		$fake_gateway = new FakePaymentGateway(
+			'woocommerce_payments',
+			array(
+				'enabled'           => true,
+				'account_connected' => true,
+				'needs_setup'       => false,
+				'plugin_slug'       => 'woocommerce',
+				'plugin_file'       => 'woocommerce/woocommerce.php',
+			)
+		);
+
+		$this->mock_woopayments_mode
+			->method( 'is_test' )
+			->willReturn( true );
+		$this->mock_woopayments_mode
+			->method( 'is_test_mode_onboarding' )
+			->willReturn( false );
+		$this->mock_woopayments_mode
+			->method( 'is_dev' )
+			->willReturn( false );
+		$this->mock_woopayments_account_service
+			->method( 'get_account_status_data' )
+			->willReturn(
+				array(
+					'status'           => 'complete',
+					'testDrive'        => false,
+					'isLive'           => false,
+					'paymentsEnabled'  => true,
+					'detailsSubmitted' => true,
+				)
+			);
+		$this->mock_wpcom_connection();
+
+		Constants::set_constant( 'WCPAY_VERSION_NUMBER', WooPaymentsService::EXTENSION_MINIMUM_VERSION );
+
+		/**
+		 * TestingContainer instance.
+		 *
+		 * @var TestingContainer $container
+		 */
+		$container = wc_get_container();
+		$container->replace( WooPaymentsRestController::class, $this->mock_rest_controller );
+		$service = $this->createMock( WooPaymentsService::class );
+		$service->method( 'get_onboarding_details' )
+			->willReturnCallback(
+				fn() => array(
+					'state' => array( 'test_mode' => $this->sut->is_in_test_mode_onboarding( $fake_gateway ) ),
+				)
+			);
+		$legacy_runtime = new WooPaymentsLegacyRuntime();
+		$legacy_runtime->init( $this->mockable_proxy );
+		$this->sut->set_admin_runtime_collaborators(
+			$legacy_runtime,
+			fn(): WooPaymentsRestController => $this->mock_rest_controller,
+			static fn(): WooPaymentsService => $service
+		);
+
+		try {
+			$gateway_details = $this->sut->get_details( $fake_gateway, 0, 'US' );
+
+			$this->assertTrue( $gateway_details['state']['test_mode'] );
+			$this->assertTrue( $gateway_details['onboarding']['state']['test_mode'] );
+			$this->assertFalse( $gateway_details['onboarding']['state']['test_drive_account'] );
+			$this->assertArrayHasKey( 'disable_test_account', $gateway_details['onboarding']['_links'] );
+		} finally {
+			Constants::clear_constants();
+			$container->reset_replacement( WooPaymentsRestController::class );
+		}
+	}
+
+	/**
 	 * Test is_in_test_mode_onboarding delegates to parent when WC_Payments unavailable.
 	 */
 	public function test_is_in_test_mode_onboarding_delegates_to_parent_when_woopayments_unavailable() {
@@ -1173,6 +1497,32 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		// Should NOT include test_drive params for connected accounts.
 		$this->assertStringNotContainsString( 'test_drive=true', $onboarding_url );
 		$this->assertStringNotContainsString( 'auto_start_test_drive_onboarding=true', $onboarding_url );
+	}
+
+	/**
+	 * Test get_onboarding_url uses WooPayments runtime admin onboarding context.
+	 */
+	public function test_get_onboarding_url_uses_runtime_admin_onboarding_context() {
+		Constants::set_constant( 'WC_Payments_Onboarding_Service::FROM_WCADMIN_PAYMENTS_SETTINGS', 'RUNTIME_FROM' );
+		Constants::set_constant( 'WC_Payments_Onboarding_Service::SOURCE_WCADMIN_SETTINGS_PAGE', 'runtime-source' );
+
+		$fake_gateway = new FakePaymentGateway(
+			'woocommerce_payments',
+			array(
+				'enabled'           => true,
+				'account_connected' => true,
+			)
+		);
+
+		try {
+			$onboarding_url = $this->sut->get_onboarding_url( $fake_gateway );
+
+			$this->assertStringContainsString( 'from=RUNTIME_FROM', $onboarding_url );
+			$this->assertStringContainsString( 'source=runtime-source', $onboarding_url );
+			$this->assertStringContainsString( 'redirect_to_settings_page=true', $onboarding_url );
+		} finally {
+			Constants::clear_constants();
+		}
 	}
 
 	/**

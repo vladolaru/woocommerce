@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Prevent localized WooPayments webhook delivery from adding a second order note for one provider refund.

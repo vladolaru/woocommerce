@@ -26,6 +26,13 @@ class OrderController {
 	private CheckoutFields $additional_fields_controller;
 
 	/**
+	 * Shipping methods scoped to an existing-order address-validation call.
+	 *
+	 * @var array|null
+	 */
+	private ?array $address_validation_shipping_methods = null;
+
+	/**
 	 * Constructor.
 	 */
 	public function __construct() {
@@ -168,7 +175,7 @@ class OrderController {
 
 		$this->validate_coupons( $order, true );
 		$this->validate_email( $order );
-		$this->validate_addresses( $order, $needs_shipping );
+		$this->validate_existing_order_addresses( $order, $needs_shipping );
 
 		// Perform custom validations.
 		$this->perform_custom_order_validation( $order );
@@ -183,7 +190,7 @@ class OrderController {
 	 * @param \WC_Order $order Order object.
 	 */
 	public function validate_existing_order_before_update( \WC_Order $order ): void {
-		$this->validate_addresses( $order, $order->needs_shipping() );
+		$this->validate_existing_order_addresses( $order, $order->needs_shipping() );
 	}
 
 	/**
@@ -365,22 +372,57 @@ class OrderController {
 	 * @param bool      $needs_shipping Whether the order needs shipping.
 	 */
 	protected function validate_addresses( \WC_Order $order, bool $needs_shipping ) {
+		$shipping_methods = $this->address_validation_shipping_methods;
+		if ( null === $shipping_methods ) {
+			$shipping_methods = ShippingUtil::get_selected_shipping_rates_from_packages( WC()->shipping()->get_packages() );
+		}
+
+		$this->validate_addresses_with_shipping_methods( $order, $needs_shipping, $shipping_methods );
+	}
+
+	/**
+	 * Validate existing-order addresses with persisted shipping-method authority.
+	 *
+	 * Preserves dynamic dispatch through validate_addresses() for subclasses.
+	 *
+	 * @param \WC_Order $order Order object.
+	 * @param bool      $needs_shipping Whether the order needs shipping.
+	 */
+	private function validate_existing_order_addresses( \WC_Order $order, bool $needs_shipping ): void {
+		$previous_shipping_methods                 = $this->address_validation_shipping_methods;
+		$this->address_validation_shipping_methods = $order->get_shipping_methods();
+
+		try {
+			$this->validate_addresses( $order, $needs_shipping );
+		} finally {
+			$this->address_validation_shipping_methods = $previous_shipping_methods;
+		}
+	}
+
+	/**
+	 * Validates customer address data against the authoritative shipping methods for the current flow.
+	 *
+	 * @throws RouteException Exception if invalid data is detected.
+	 * @param \WC_Order $order Order object.
+	 * @param bool      $needs_shipping Whether the order needs shipping.
+	 * @param array     $shipping_methods Shipping rates or persisted order shipping methods.
+	 */
+	private function validate_addresses_with_shipping_methods( \WC_Order $order, bool $needs_shipping, array $shipping_methods ): void {
 		$errors           = new \WP_Error();
 		$billing_country  = $order->get_billing_country();
 		$shipping_country = $order->get_shipping_country();
 
 		if ( $needs_shipping ) {
-			$local_pickup_method_ids                      = LocalPickupUtils::get_local_pickup_method_ids();
-			$selected_shipping_rates                      = ShippingUtil::get_selected_shipping_rates_from_packages( WC()->shipping()->get_packages() );
-			$selected_shipping_rates_are_all_local_pickup = ArrayUtil::array_all(
-				$selected_shipping_rates,
-				function ( $rate ) use ( $local_pickup_method_ids ) {
-					return in_array( $rate->get_method_id(), $local_pickup_method_ids, true );
+			$local_pickup_method_ids               = LocalPickupUtils::get_local_pickup_method_ids();
+			$shipping_methods_are_all_local_pickup = ! empty( $shipping_methods ) && ArrayUtil::array_all(
+				$shipping_methods,
+				function ( $shipping_method ) use ( $local_pickup_method_ids ) {
+					return in_array( $shipping_method->get_method_id(), $local_pickup_method_ids, true );
 				}
 			);
 
-			// If only local pickup is selected, we don't need to validate the shipping country.
-			if ( ! $selected_shipping_rates_are_all_local_pickup && ! $this->validate_allowed_country( $shipping_country, (array) wc()->countries->get_shipping_countries() ) ) {
+			// If the order uses only local pickup, we don't need to validate the shipping country.
+			if ( ! $shipping_methods_are_all_local_pickup && ! $this->validate_allowed_country( $shipping_country, (array) wc()->countries->get_shipping_countries() ) ) {
 				$countries             = WC()->countries->get_countries();
 				$shipping_country_name = $countries[ $shipping_country ] ?? $shipping_country;
 				throw new RouteException(

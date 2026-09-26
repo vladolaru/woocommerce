@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add native coverage proving a WooPayments-specific add-payment-method error cannot surface when the shopper selected a different gateway.

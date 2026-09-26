@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add the subscription-provider-lifecycle fidelity family suite, its native subscriptions driver, and the read-only subscription evidence route the E2E runtime plugin needs.

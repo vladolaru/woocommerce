@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Expose the optional WooPayments admin notice provider type.

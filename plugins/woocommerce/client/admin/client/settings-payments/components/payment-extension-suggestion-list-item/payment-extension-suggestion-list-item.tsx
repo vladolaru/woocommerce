@@ -17,6 +17,7 @@ import sanitizeHTML from '~/lib/sanitize-html';
 import { EllipsisMenuWrapper as EllipsisMenu } from '~/settings-payments/components/ellipsis-menu-content';
 import {
 	isWooPayments,
+	isCoreNativeWooPayments,
 	hasIncentive,
 	isWooPayEligible,
 	recordPaymentsProviderEvent,
@@ -78,10 +79,13 @@ export const PaymentExtensionSuggestionListItem = ( {
 	...props
 }: PaymentExtensionSuggestionListItemProps ) => {
 	const incentive = hasIncentive( suggestion ) ? suggestion._incentive : null;
+	const isCoreNative = isCoreNativeWooPayments( suggestion );
 
 	// Determine the CTA button label based on the extension state.
 	let ctaButtonLabel = __< string >( 'Install', 'woocommerce' );
-	if ( pluginInstalled ) {
+	if ( isCoreNative ) {
+		ctaButtonLabel = __( 'Set up', 'woocommerce' );
+	} else if ( pluginInstalled ) {
 		ctaButtonLabel = __( 'Enable', 'woocommerce' );
 	} else if ( installingPlugin === suggestion.id ) {
 		ctaButtonLabel = __( 'Installing', 'woocommerce' );

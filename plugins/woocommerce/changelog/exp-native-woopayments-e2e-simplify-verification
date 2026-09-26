@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Simplify the WooPayments native contract-ledger verification machinery to tests, inventory, and provider safety per the recorded 2026-08-10 decision: drop evidence-packet schema enforcement, byte-frozen closure bundles, hash-bound reviews, and transition ceremony, keeping the tamper-evident 181-row inventory, tracked-target closure checks, per-row annotation bindings, fidelity-claim citations, and all provider-safety machinery.

@@ -362,6 +362,12 @@ class WC_Install {
 		'11.2.0-2' => array(
 			'wc_update_11202_reset_refund_returning_customer_markers',
 		),
+		'11.2.0-3' => array(
+			'wc_update_11203_enable_native_payments',
+		),
+		'11.2.0-4' => array(
+			'wc_update_11204_seed_multi_currency_feature',
+		),
 	);
 
 	/**
@@ -1280,6 +1286,15 @@ class WC_Install {
 		add_option( 'woocommerce_demo_store', 'no', '', 'no' );
 
 		if ( self::is_new_install() ) {
+			$account_cache   = get_option( 'wcpay_account_data', array() );
+			$account_data    = is_array( $account_cache ) && is_array( $account_cache['data'] ?? null ) ? $account_cache['data'] : array();
+			$native_payments = $account_data['native_payments'] ?? null;
+			$native_eligible = ! is_array( $native_payments ) || false !== ( $native_payments['eligible'] ?? null );
+
+			if ( $native_eligible ) {
+				add_option( 'woocommerce_native_payments_enabled', 'yes', '', true );
+			}
+
 			// Define initial tax classes.
 			WC_Tax::create_tax_class( __( 'Reduced rate', 'woocommerce' ) );
 			WC_Tax::create_tax_class( __( 'Zero rate', 'woocommerce' ) );

@@ -1,0 +1,39 @@
+{
+	"schema_version": 2,
+	"slice_id": "048-053-refund-validation-specification",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "36783c9ef64e64a0fc4d839008ac19e57f703a8b",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/includes/class-wc-ajax.php",
+		"plugins/woocommerce/tests/php/includes/class-wc-ajax-test.php"
+	],
+	"source_test_sha256": "67f527b0b0af26b268715e675c8ef8793c0ff0c9bea7ada9c1737c3a73df59de",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is greater than maximum",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is negative",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is greater than maximum",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is negative",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is greater than maximum",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is negative"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/includes/class-wc-ajax-test.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/orders-refunds.spec.ts",
+			"contract": "merchant rejects out-of-bounds quantities, net line totals, and aggregate refund amounts before mutation"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "decision-critic-final-specification",
+			"verdict": "APPROVE",
+			"source_test_sha256": "67f527b0b0af26b268715e675c8ef8793c0ff0c9bea7ada9c1737c3a73df59de",
+			"summary": "Final independent specification review approved the six-row grouping, isolated request-boundary payloads, corrected target and annotation policy, prior-refund and quantity-zero regressions, explicit recording-gateway binding, provider-free manual browser smoke, cleanup, observable authenticated-AJAX compatibility boundary, and explicit exclusion of tax inputs."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": null
+}

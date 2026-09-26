@@ -19,6 +19,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { Header } from './components/header/header';
 import { BackButton } from './components/buttons/back-button';
 import { ListPlaceholder } from '~/settings-payments/components/list-placeholder';
+import { getSettingsPaymentsProviderRoutes } from '~/settings-payments/provider-routes';
 import './settings-payments-main.scss';
 
 /**
@@ -47,7 +48,7 @@ const SettingsPaymentsOfflineChunk = lazy(
 const SettingsPaymentsWooPaymentsChunk = lazy(
 	() =>
 		import(
-			/* webpackChunkName: "settings-payments-woocommerce-payments" */ './settings-payments-woopayments'
+			/* webpackChunkName: "settings-payments-woopayments" */ './settings-payments-woopayments'
 		)
 );
 
@@ -291,6 +292,8 @@ export const SettingsPaymentsChequeWrapper = () =>
  * Wraps the main payment settings and payment methods settings pages.
  */
 export const SettingsPaymentsMainWrapper = () => {
+	const providerRoutes = getSettingsPaymentsProviderRoutes();
+
 	return (
 		<>
 			<Header title={ __( 'Settings', 'woocommerce' ) } />
@@ -312,6 +315,13 @@ export const SettingsPaymentsMainWrapper = () => {
 						path="/offline/cheque"
 						element={ <SettingsPaymentsChequeWrapper /> }
 					/>
+					{ providerRoutes.map( ( route ) => (
+						<Route
+							key={ route.id }
+							path={ route.path }
+							element={ route.element }
+						/>
+					) ) }
 					<Route path="/*" element={ <SettingsPaymentsMain /> } />
 				</Routes>
 			</HistoryRouter>

@@ -1,0 +1,43 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-provider-decline-matrix-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "5ee93fd094e4fc4fac212dba56668dd4ebba7ffe",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:79::Shopper › Checkout › Failures with various cards › should throw an error that the card expiration date is in the past",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:111::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to insufficient funds",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:131::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to incorrect CVC number",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:143::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to processing error"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/decline.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review evidence SHA 543d07e33c8fca202570dcc1da1110222ec4f2b046af7fddb6214bdea3a44999 against mutated ledger SHA 07f414b64fc8d0a7e88a567d6266ad1cb360e35fcb9c90d1df5b6469834cd708 and committed baseline 72b896a3887c171d6e961dfbfa91aa4844ffb065b0c80d3f8a9ead5e6ddb4d39 at 5ee93fd094e4fc4fac212dba56668dd4ebba7ffe, with no findings. Exactly the intended decline-family rows change fields 37-40 while fields 1-36 and target tuples remain exact. The artifact binds four independent sessions and journals to exact expired-card, insufficient-funds, incorrect-CVC and processing-error mappings, one failed intent/event each, zero success effects and an unchanged active limiter. Readiness remains first; one writer and exclusive listener apply only where provider-backed, with zero retries/replay, complete journals, restoration, retention, halt, quarantine, accessibility and drift controls, and no unsupported product-defect, known-gap, implementation, verification or closure claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native account, store, gateway, and callback readiness fails before this four-row provider campaign may allocate its protected test-mode lane, sole writer, or one exclusively owned listener. The shared decline target contract and implementation owner remain pending, and no approved table-driven one-dispatch adapter, independent fixture graphs, durable row journals, exact local/provider/event readers, retention policy, restoration protocol, or quarantine owner exists. Existing deterministic native mappings and failed-rate-limiter coverage establish no native product defect; none may be claimed before prerequisites and an exact-target RED.",
+		"affected_scope": "Only lines 79, 111, 131, and 143, executed serially but independently. Every row owns a fresh shopper browser context, fresh Woo session, unique run-owned product/cart/order identity, and independent pre-dispatch and restoration journals. One explicit submission per row proves exactly one correlated failed order, one PaymentMethod, one PaymentIntent in requires_payment_method, and one payment_intent.payment_failed event captured and ingested once, with exact amount, currency, order metadata, and identity joins. Line 79 uses 4000000000000069, error.code=expired_card, absent/null decline_code, and announced alert Error: Your card has expired.; line 111 uses 4000000000009995, error.code=card_declined, decline_code=insufficient_funds, and announced alert Error: Your card has insufficient funds.; line 131 uses 4000000000000127, error.code=incorrect_cvc, absent/null decline_code, and announced alert Error: Your card's security code is incorrect.; line 143 uses 4000000000000119, error.code=processing_error, absent/null decline_code, and announced alert Error: An error occurred while processing your card. Try again in a little bit. Every exact alert excludes raw request IDs and unsafe diagnostics, checkout remains available for correction, and each row has zero successful intent, successful/capture event, charge, capture, balance transaction, saved token, receipt, duplicate local effect, or cross-row resource. Unrelated provider telemetry remains journaled but is outside the relevant business-event count.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair native readiness, approve the shared target and owner, allocate the provider lane, or take exclusive ownership of a listener. Banner-only or lower-layer mapper coverage cannot replace four exact order/intent/method/error/event joins and zero-success cardinalities. The future campaign has one protected provider writer, one worker, zero Playwright retries, exactly one explicit dispatch per independent session, and no harness/manual replay. The global WooPayments failed-transaction rate limiter must never be disabled, cleared, or otherwise normalized to make the matrix pass; fresh sessions avoid its five-failures-in-ten-minutes boundary. Any ambiguous row halts the campaign before later rows start.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native account/store/gateway/callback readiness; approve the shared target contract and implementation owner; allocate one protected test-mode provider writer and one exclusively owned listener for the full serial window; and provision four independent shopper/session/product/cart/order graphs. Before each sole row dispatch, acquire ordered writer/account/store/listener/record locks and durably journal run and row IDs, exact identities, listener ownership, expected amount/currency, card alias, idempotency key when knowable, and before-state. Run with one worker, zero retries, no replay, an unchanged active rate limiter, exact code/decline_code/message and accessible alert assertions, exact failed cardinalities, and bounded convergence; stop after ambiguity. Restore only each row's reversible local state and verify byte-exact gateway, account, mode, currency, limiter, session/cart, and listener configuration snapshots without broad reset; retain immutable redacted order/provider/event graphs and all telemetry; quarantine uncertainty; obtain fresh code, E2E-test, reliability, accessibility, and provider-evidence reviews. If the shared target or source/calibration bundle drifts, recompute provenance and explicitly reopen/review rather than extending this artifact silently.",
+		"quarantine_status": "This readiness deferral implemented and verified nothing, opened no browser, allocated no account/store/writer/listener capacity, acquired no lock, opened no journal, changed no environment or rate limiter, created no local/provider object, retained no run graph, and created no quarantine; the separately owned listener remains untouched. A future wrong identity, cross-row contamination, uncertain dispatch, missing or duplicate order/intent/method/event/effect, unexpected success/charge/capture/balance/token/receipt, listener or lock loss, convergence timeout, publication failure, drift, or byte-restoration mismatch must halt all later rows, preserve every row journal and immutable redacted financial history, and quarantine the exact affected account/store/session/product/order/provider/event graph without replay, provider deletion, broad cleanup, limiter mutation, or listener takeover."
+	}
+}

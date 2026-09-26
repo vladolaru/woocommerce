@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Use Blocks checkout billing data for native card payments when shipping is reused.

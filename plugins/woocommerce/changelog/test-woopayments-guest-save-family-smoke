@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add a provider-free WooPayments-native E2E smoke proving guest checkout offers no payment-credential persistence while card payment stays operable, and reopen its ledger contract under the family-smoke acceptance.

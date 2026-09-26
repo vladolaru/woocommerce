@@ -86,12 +86,6 @@ declare global {
 					activePlugins: string[];
 					installedPlugins: string[];
 				};
-				wcpayWelcomePageIncentive: {
-					id: string;
-					description: string;
-					cta_label: string;
-					tc_url: string;
-				};
 				currency?: {
 					symbol: string;
 				};

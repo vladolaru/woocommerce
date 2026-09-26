@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Resolve WordPress coding-standards violations in the native WooPayments subscriptions admin payment-method handler (escape thrown exception messages, document the thrown exception, fix alignment).

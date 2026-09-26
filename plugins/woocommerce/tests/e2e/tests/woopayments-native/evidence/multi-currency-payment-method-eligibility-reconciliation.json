@@ -1,0 +1,108 @@
+{
+	"schema_version": 1,
+	"mode": "read-only-existing-graph-reconciliation",
+	"cases": {
+		"usd_to_eur": {
+			"sourceResultSha256": "89d29c543472d9dfb5b462ca8d24a3f009d308815c44753496753fd23d0f7055",
+			"sourceFailure": "WooPayments payment-method eligibility provider graph must be exactly 1099 eur for bancontact.",
+			"orderId": 4531,
+			"expectedEvidence": {
+				"runId": "woopayments-19bacb0d-c7c1-4a50-ba08-00d5118a6491",
+				"intentId": "pi_3UIQcaBzWlxcwgpP157RcstE",
+				"chargeId": "py_3UIQcaBzWlxcwgpP1LpTg4yx",
+				"paymentMethodId": "pm_1UIQcVBzWlxcwgpPJfIyGaJh",
+				"orderStatus": "processing"
+			},
+			"observation": {
+				"storeDefaultCurrency": "USD",
+				"before": {
+					"currencyLabel": "USD",
+					"cart": { "currency": "USD", "itemsCount": 1 },
+					"controls": {
+						"card": {
+							"accessibleCount": 1,
+							"hiddenEnabledCount": 0
+						},
+						"bancontact": {
+							"accessibleCount": 0,
+							"hiddenEnabledCount": 0
+						}
+					},
+					"accessibleRadioCount": 1
+				},
+				"after": {
+					"currencyLabel": "EUR",
+					"cart": { "currency": "EUR", "itemsCount": 1 },
+					"controls": {
+						"card": {
+							"accessibleCount": 1,
+							"hiddenEnabledCount": 0
+						},
+						"bancontact": {
+							"accessibleCount": 1,
+							"hiddenEnabledCount": 0
+						}
+					},
+					"accessibleRadioCount": 2
+				}
+			}
+		},
+		"eur_to_usd": {
+			"sourceResultSha256": "269cb95cd0b16210d02b6ad2e88455e95a984dfd039202a22833784ba8ce594c",
+			"sourceFailure": "USD settings restore failed: HTTP 400",
+			"orderId": 4533,
+			"expectedEvidence": {
+				"runId": "woopayments-94784ec4-07e1-480a-973b-f4607189a992",
+				"intentId": "pi_3UIQqzBzWlxcwgpP1Hxtm1qG",
+				"chargeId": "ch_3UIQqzBzWlxcwgpP1yY1oC4y",
+				"paymentMethodId": "pm_1UIQqvBzWlxcwgpPP64reJqJ",
+				"orderStatus": "processing"
+			},
+			"observation": {
+				"storeDefaultCurrency": "EUR",
+				"before": {
+					"currencyLabel": "EUR",
+					"cart": { "currency": "EUR", "itemsCount": 1 },
+					"controls": {
+						"card": {
+							"accessibleCount": 1,
+							"hiddenEnabledCount": 0
+						},
+						"bancontact": {
+							"accessibleCount": 1,
+							"hiddenEnabledCount": 0
+						}
+					},
+					"accessibleRadioCount": 2
+				},
+				"after": {
+					"currencyLabel": "USD",
+					"cart": { "currency": "USD", "itemsCount": 1 },
+					"controls": {
+						"card": {
+							"accessibleCount": 1,
+							"hiddenEnabledCount": 0
+						},
+						"bancontact": {
+							"accessibleCount": 0,
+							"hiddenEnabledCount": 0
+						}
+					},
+					"accessibleRadioCount": 1
+				}
+			}
+		}
+	},
+	"restoration": {
+		"defaultCurrency": "USD",
+		"multiCurrencyEnabled": true,
+		"enabledPaymentMethodIds": [ "card", "klarna" ],
+		"enabledCurrencyCodes": [ "USD", "EUR" ],
+		"usdSettings": {
+			"exchange_rate_type": "automatic",
+			"manual_rate": null,
+			"price_rounding": null,
+			"price_charm": null
+		}
+	}
+}

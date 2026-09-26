@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Add native multi-currency async price renderer hook registration.

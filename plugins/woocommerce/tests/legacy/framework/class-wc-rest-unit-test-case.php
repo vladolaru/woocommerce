@@ -174,6 +174,13 @@ class WC_REST_Unit_Test_Case extends WC_Unit_Test_Case {
 	// phpcs:enable Generic.Files.OneObjectStructurePerFile.MultipleFound
 
 	/**
+	 * Remote URL used by product REST tests when exercising image upload behavior.
+	 *
+	 * @var string
+	 */
+	private const PRODUCT_IMAGE_FIXTURE_URL = 'http://cldup.com/Dr1Bczxq4q.png';
+
+	/**
 	 * @var WP_REST_Server
 	 */
 	protected $server;
@@ -183,6 +190,8 @@ class WC_REST_Unit_Test_Case extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		$this->http_responder = array( $this, 'mock_rest_api_http_responses' );
+
 		global $wp_rest_server;
 		$wp_rest_server = new WC_Lazy_REST_Server();
 		$this->server   = $wp_rest_server;
@@ -276,5 +285,28 @@ class WC_REST_Unit_Test_Case extends WC_Unit_Test_Case {
 	 */
 	public function do_rest_put_request( $url, $body_params = null, $query_params = null ) {
 		return $this->do_rest_request( $url, 'PUT', $body_params, $query_params );
+	}
+
+	/**
+	 * Mock HTTP responses shared by REST API unit tests.
+	 *
+	 * @param array  $request Request arguments.
+	 * @param string $url     URL of the request.
+	 * @return array|bool|WP_Error Mocked response, or false to let WordPress perform the request.
+	 */
+	protected function mock_rest_api_http_responses( $request, $url ) {
+		if ( self::PRODUCT_IMAGE_FIXTURE_URL === $url && ! empty( $request['filename'] ) ) {
+			self::file_copy( WC_Unit_Tests_Bootstrap::instance()->tests_dir . '/data/Dr1Bczxq4q.png', $request['filename'] );
+
+			return array(
+				'response' => array( 'code' => 200 ),
+			);
+		}
+
+		if ( ! empty( self::$host ) ) {
+			return $this->route_request( $request, $url );
+		}
+
+		return false;
 	}
 }

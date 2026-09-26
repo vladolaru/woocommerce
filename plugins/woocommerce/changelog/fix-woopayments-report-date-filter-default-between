@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Default the native WooPayments report Date filters to the Between operator so range presets are available when a filter is added.

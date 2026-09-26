@@ -76,6 +76,9 @@ const blocks = {
 		customDir: 'classic-template',
 	},
 	'classic-shortcode': {},
+	'multi-currency-switcher': {
+		skipStyling: true,
+	},
 	'page-content-wrapper': {},
 	'payment-method-icons': {},
 	'price-filter': {},
@@ -352,6 +355,14 @@ const entries = {
 		// Blocks
 		'product-image-gallery':
 			'./assets/js/atomic/blocks/product-elements/product-image-gallery/index.ts',
+		'wc-payment-method-woopayments':
+			'./assets/js/extensions/payment-methods/woopayments/style.scss',
+		'wc-payment-method-woopayments-woopay':
+			'./assets/js/extensions/payment-methods/woopayments/woopay/style.scss',
+		'wc-payment-method-woopayments-express-checkout':
+			'./assets/js/extensions/payment-methods/woopayments/express-checkout/style.scss',
+		'wc-woopayments-cart-block-payment-method-messaging':
+			'./assets/js/extensions/payment-methods/woopayments/cart-bnpl/style.scss',
 
 		...blockStylingEntries,
 	},
@@ -389,6 +400,12 @@ const entries = {
 			'./assets/js/extensions/payment-methods/cheque/index.js',
 		'wc-payment-method-paypal':
 			'./assets/js/extensions/payment-methods/paypal/index.js',
+		'wc-payment-method-woopayments':
+			'./assets/js/extensions/payment-methods/woopayments/index.js',
+		'wc-payment-method-woopayments-woopay':
+			'./assets/js/extensions/payment-methods/woopayments/woopay/index.js',
+		'wc-payment-method-woopayments-express-checkout':
+			'./assets/js/extensions/payment-methods/woopayments/express-checkout/index.js',
 		'wc-payment-method-bacs':
 			'./assets/js/extensions/payment-methods/bacs/index.js',
 		'wc-payment-method-cod':
@@ -399,6 +416,8 @@ const entries = {
 			'./assets/js/extensions/google-analytics/index.ts',
 		'wc-shipping-method-pickup-location':
 			'./assets/js/extensions/shipping-methods/pickup-location/index.js',
+		'wc-woopayments-cart-block-payment-method-messaging':
+			'./assets/js/extensions/payment-methods/woopayments/cart-bnpl/index.js',
 	},
 	cartAndCheckoutFrontend: {
 		...cartAndCheckoutFrontendEntries,

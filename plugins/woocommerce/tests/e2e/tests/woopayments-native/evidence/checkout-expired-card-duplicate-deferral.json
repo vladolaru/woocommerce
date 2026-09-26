@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-expired-card-duplicate-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "5ee93fd094e4fc4fac212dba56668dd4ebba7ffe",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:121::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to expired card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php;plugins/woocommerce/client/blocks/assets/js/extensions/payment-methods/woopayments/test/index.js;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh focused review approved corrected pre-review evidence SHA be6c7bc0df52c239044461682f7ccf5b4bc4c746eb63882590a5acdb0fb9a0f2 against mutated ledger SHA 07f414b64fc8d0a7e88a567d6266ad1cb360e35fcb9c90d1df5b6469834cd708 and committed baseline 72b896a3887c171d6e961dfbfa91aa4844ffb065b0c80d3f8a9ead5e6ddb4d39 at 5ee93fd094e4fc4fac212dba56668dd4ebba7ffe, with no findings. The line-121 contract ID, single semicolon-delimited target path and pending target contract exactly match the ledger while fields 1-36 remain baseline-identical. The artifact preserves deterministic lower-layer coverage plus at most the shared line-79 provider smoke, explicitly forbids a second line-121 dispatch or provider write, keeps native readiness first, and makes no implementation, verification, known-gap or closure claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails first, and the committed lower-layer-plus-one-smoke decision remains pending: human ownership has not approved how this row's lower-layer-plus-one-smaller-E2E-smoke disposition relates to line 79's shared-scenario provider proof. The exact three-target tuple, every target contract, and implementation owner remain pending. Existing deterministic expired_card mapping coverage establishes no native product defect; the frozen row duplicates line 79's card, provider outcome, and visible oracle, so no second provider mutation is authorized merely to obtain a duplicate sample.",
+		"affected_scope": "Only source line 121 and its exact pending target tuple. The deterministic lower-layer bundle retains the exact expired_card to Error: Your card has expired. mapping, safe localized meaning, and exclusion of raw request IDs or unsafe diagnostics. At most one approved provider-backed expired-card smoke may satisfy the live boundary for lines 79 and 121: it uses card 4000000000000069 and the exact line-79 graph once—one fresh shopper/session/product/cart/order, one explicit dispatch, one failed order, one PaymentMethod, one PaymentIntent in requires_payment_method with error.code=expired_card and absent/null decline_code, one payment_intent.payment_failed event ingested once, an announced exact alert, correction available on checkout, and zero success/charge/capture/balance/token/receipt/duplicate effects. This artifact does not approve that sharing relationship, accept a target contract, implement or verify coverage, or close either row.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair native readiness or make the required human target/topology and ownership decision. A second line-121 provider write is explicitly forbidden merely to duplicate line 79. Lower-layer tests alone cannot silently claim the live Payment Element boundary, while an independent duplicate smoke would add financial mutation without a distinct contract. If one shared provider smoke is approved, it must be line 79's exact one-write proof under one protected writer, one worker, zero retries, no replay, one exclusively owned listener, an independent pre-dispatch journal, active unchanged rate limiter, and halt on ambiguity; line 121 adds no dispatch.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness, then have a human owner explicitly approve the line-79/line-121 relationship and update the pending target contracts without changing this committed three-target tuple silently. Approve deterministic lower-layer assertions for the exact expired_card mapping, safe notice, and no-raw-diagnostic boundary, plus at most the already-required line-79 provider smoke. For any approved provider-backed smoke, acquire ordered writer/account/store/listener/record locks, use one exclusively owned listener, journal exact identities and before-state before its sole dispatch, run with one worker and zero retries/no replay, retain immutable redacted financial/event evidence, and quarantine ambiguity. Preserve and byte-verify gateway, account, mode, currency, limiter, session/cart, and listener configuration; restore only run-owned reversible local state, never disable the limiter or broadly reset/delete provider history; assert the announced accessible alert and correction path. Obtain fresh code, lower-layer-test, E2E-test, reliability, accessibility, and provider-evidence reviews. If any target, relationship, source, or calibration bundle drifts, recompute provenance and explicitly reopen/review both affected contracts.",
+		"quarantine_status": "This readiness deferral implemented and verified nothing, opened no browser, allocated no account/store/writer/listener capacity, acquired no lock, opened no journal, changed no environment or limiter, created no local/provider object, retained no run graph, and created no quarantine; the separately owned listener remains untouched. The lower-layer work creates no financial quarantine. Any uncertain approved shared smoke, wrong identity, duplicate line-121 dispatch, missing or duplicate order/intent/method/event/effect, unexpected success/charge/capture/balance/token/receipt, listener or lock loss, convergence timeout, publication failure, target-relationship drift, or byte-restoration mismatch must preserve journals and immutable redacted financial history and quarantine the exact line-79 account/store/session/product/order/provider/event graph without replay, provider deletion, broad cleanup, limiter mutation, or listener takeover."
+	}
+}

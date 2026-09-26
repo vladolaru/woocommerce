@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Remove orphaned WooPayments admin client residue left behind by deprecated onboarding surface removals.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Exempt retired WooPayments contracts from the project routing annotation requirement, since a retired contract was never migrated to a native spec.

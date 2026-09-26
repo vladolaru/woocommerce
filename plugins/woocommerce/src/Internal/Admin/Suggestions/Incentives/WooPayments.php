@@ -7,6 +7,7 @@ defined( 'ABSPATH' ) || exit;
 
 use Automattic\WooCommerce\Admin\WCAdminHelper;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use WC_Abstract_Order;
 
 /**
@@ -66,18 +67,26 @@ class WooPayments extends Incentive {
 	private ?array $incentives_memo = null;
 
 	/**
+	 * WooPayments legacy runtime.
+	 *
+	 * @var WooPaymentsLegacyRuntime|null
+	 */
+	private ?WooPaymentsLegacyRuntime $legacy_runtime;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param string $suggestion_id The suggestion ID.
+	 * @param string                        $suggestion_id   The suggestion ID.
+	 * @param WooPaymentsLegacyRuntime|null $legacy_runtime  WooPayments legacy runtime.
 	 */
-	public function __construct( string $suggestion_id ) {
+	public function __construct( string $suggestion_id, ?WooPaymentsLegacyRuntime $legacy_runtime = null ) {
 		parent::__construct( $suggestion_id );
 
-		$this->cache_transient_name              = self::PREFIX . $suggestion_id . '_cache';
-		$this->store_has_orders_transient_name   = self::PREFIX . $suggestion_id . '_store_has_orders';
-		$this->store_had_woopayments_option_name = self::PREFIX . $suggestion_id . '_store_had_woopayments';
-
+		$this->cache_transient_name                      = self::PREFIX . $suggestion_id . '_cache';
+		$this->store_has_orders_transient_name           = self::PREFIX . $suggestion_id . '_store_has_orders';
+		$this->store_had_woopayments_option_name         = self::PREFIX . $suggestion_id . '_store_had_woopayments';
 		$this->store_had_woopayments_version_option_name = $this->store_had_woopayments_option_name . '_version';
+		$this->legacy_runtime                            = $legacy_runtime;
 	}
 
 	/**
@@ -126,7 +135,7 @@ class WooPayments extends Incentive {
 	 * @return boolean Whether the extension plugin is active.
 	 */
 	protected function is_extension_active(): bool {
-		return class_exists( '\WC_Payments' );
+		return null !== $this->legacy_runtime && $this->legacy_runtime->is_loaded();
 	}
 
 	/**
@@ -336,27 +345,7 @@ class WooPayments extends Incentive {
 	 * @return boolean
 	 */
 	private function has_wcpay_account_data(): bool {
-		$account_data = get_option( 'wcpay_account_data', array() );
-		$account      = $account_data['data'] ?? array();
-
-		if ( empty( $account['account_id'] ) ) {
-			return false;
-		}
-
-		// A test-drive account is a trial of WooPayments, not real usage of it.
-		if ( ! empty( $account['is_test_drive'] ) ) {
-			return false;
-		}
-
-		// Sandbox accounts don't count either.
-		// Both flags are only acted upon when present: cached account data written by
-		// older WooPayments versions may not carry them, and we'd rather keep counting
-		// those stores as WooPayments users than reclassify them on missing data.
-		if ( isset( $account['is_live'] ) && ! $account['is_live'] ) {
-			return false;
-		}
-
-		return true;
+		return null !== $this->legacy_runtime && $this->legacy_runtime->has_live_cached_account_data();
 	}
 
 	/**

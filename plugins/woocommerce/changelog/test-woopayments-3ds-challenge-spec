@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add a browser 3D Secure challenge spec that proves the challenge decided the payment outcome.

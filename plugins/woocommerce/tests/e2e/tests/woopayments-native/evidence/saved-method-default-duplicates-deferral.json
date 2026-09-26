@@ -1,0 +1,55 @@
+{
+	"schema_version": 2,
+	"slice_id": "saved-method-default-duplicates-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "815f1ccc1c35ab5cd510b9f4b62f7071f0115631",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: 3ds › should be able to set the 3ds card as default payment method",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: 3ds2 › should be able to set the 3ds2 card as default payment method"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php;plugins/woocommerce/client/blocks/assets/js/data/payment/test/default-state.ts;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent re-review approved corrected pre-review hashes: cooldown 9cad69ebc583c5b5d7b84c9fcc43d59ede9267ab07ea1cedbc086f30552626b1; add-basic ae109789eab947e94d35d725aa76da995ef0d6c34138bd8e4ddce9f65c06e6d8; add-3DS 694919fd33574dc5c5b74aee95bd227ef04ef6b0729ecec8375748be9da9230a; add-3DS2 0ebf4055a0caac1e9913da96266fd2afc485aade97f1ae87a365a5a739d529c7; purchase-basic abe29720083682209c3709455d3510a8c36af26d7f49f6d540db9bc4c9049ec1; corrected purchase-3DS 536a68e949fdd1b203a8ba0a3a11af01cc3a5c075dcd41142ad6a791ef5c007e; corrected purchase-3DS2 d19bd1e17b57842b8d4846369e8071b145ecf87e9aa2be24e2cf31077eb3fce1; defaults f7a6444ad4ddac961d81a200716ab03ba6b343ec5a9d52bdb65c1d5c7e970ba6; corrected delete-basic d7a04d443a1ace2694f3d767fdcb8d7c9799ebb74645f6f2ccb2578f750ac2fb; delete-3DS 585f84473c6a31509f5f3adf7c928dd2fbeefc2c75c745dfe7cd7de7df90fb88; delete-3DS2 70f34f19d3f749da55a396d53865ff7c2731883fa663c5d732074b353f8e13fe; mutated ledger ea2e969b96b7222be5ac2949f8e45a63edd046ed1e1c330f457f8ab475c26048; baseline a15489faa5d5873cc0c0366f38a04680359d781a3cb8d0ead67ae22040c79a2c at 815f1ccc1c35ab5cd510b9f4b62f7071f0115631. The initial review omissions were corrected. Exactly rows 151-159 and 161-163 change only fields 37-40; row 160 and the protected closure bundle remain untouched. Eleven honest schema-v2 slices preserve eight readiness and four decision rows, exact identity/cardinality/challenge/amount/currency/default/detach/accessibility obligations, 3DS2 distinctness decisions, one writer/listener, zero retries/replay, journals, restoration, retention, quarantine and drift without unsupported defect, gap, execution, closure or retirement claims."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Human retirement authority is absent for two proven false-title duplicates: both source iterations add and default the same basic2 1111 card, while the parameter changes only the title and neither defaults the named authenticated card. The exact semicolon target, contract and owner remain pending; neighboring generic/default evidence cannot legally retire these rows.",
+		"affected_scope": "One decision record must explicitly approve retirement of both byte-equivalent source behaviors against viable generic default evidence, or redirect them to real authenticated-card default contracts. If retained, each needs an independent exact customer/token/provider-default graph and token-bound nonce action; no such runtime work is performed here. The already-deferred basic historical-default row remains unchanged and cannot supply authority.",
+		"no_allowlisted_action_reason": "No autonomous action can provide human authority, change accepted disposition or approve replacement ownership. Running the same 1111 action twice, inheriting notices or splitting the exact semicolon path is invalid. Perform no browser/provider/listener action until authority approves retirement or specifies genuine retained coverage.",
+		"reference": "ambiguous-decision:PILOT-RETIREMENT-AUTHORITY",
+		"unlock_decision": "Obtain explicit human approval that the two false-title 1111 repetitions are retired against accepted generic-default evidence, then follow the controller-approved row-scoped retirement sequence with a non-placeholder human-approved reference. If rejected, define independent authenticated-card default targets and satisfy readiness before execution.",
+		"quarantine_status": "No decision, customer, token, provider object, browser, listener, writer, journal, restoration or quarantine was created. This artifact performs no runtime action; any future retained run ambiguity must stop without replay and quarantine its exact token/default graph and held resources.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: 3ds › should be able to set the 3ds card as default payment method",
+				"unlock_decision": "Obtain explicit human approval that the two false-title 1111 repetitions are retired against accepted generic-default evidence, then follow the controller-approved row-scoped retirement sequence with a non-placeholder human-approved reference. If rejected, define independent authenticated-card default targets and satisfy readiness before execution.",
+				"satisfied_on": "2026-08-06",
+				"reference": "calibration-notes:2026-08-06:duplicate-contract-retirement"
+			},
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: 3ds2 › should be able to set the 3ds2 card as default payment method",
+				"unlock_decision": "Obtain explicit human approval that the two false-title 1111 repetitions are retired against accepted generic-default evidence, then follow the controller-approved row-scoped retirement sequence with a non-placeholder human-approved reference. If rejected, define independent authenticated-card default targets and satisfy readiness before execution.",
+				"satisfied_on": "2026-08-06",
+				"reference": "calibration-notes:2026-08-06:duplicate-contract-retirement"
+			}
+		]
+	}
+}

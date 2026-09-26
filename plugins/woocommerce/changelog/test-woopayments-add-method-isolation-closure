@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Close the My Account other-gateway isolation contract against its native lower-layer test.

@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-add-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "1f38a8a5ed513b4ee5885476df48330feb29e73f",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:53::Multi-currency setup › Currency management › can add a new currency"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA 2799e2837b524533fe2fc86105fec3c9fb66de63cb8cd6defd8a313ba61ee7c4 against ledger SHA 963b1b0481970b722376e8b2d4031e66e4cfba14d4511ef444303d20abe91f35 with no findings. Exactly the line-53 currency-add row changes only fields 37-40 to deferred/blocked-environment/blocked-environment:PILOT-NATIVE-READINESS/evidence while preserving the pending target, contract, owner, and adjacent line-57 row. Standing readiness is the earliest blocker; Core already provides an honest semantic management and authenticated persistence adapter, so no defect or known gap is claimed. The future oracle binds one usable initially-disabled CHF identity, exactly one no-replay complete-set update preserving every baseline code, raw persisted state plus fresh REST and one reloaded accessible row, explicit shopper/provider exclusion, and line-57 isolation. It also binds complete wildcard settings and account/catalog/cache snapshots, a pre-write occurrence/restoration journal, direct byte restoration without removal cleanup, one worker and zero retries, semantic accessibility, target/bundle drift controls, and exact-resource quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the authenticated native management and persistence join can run; the provisional shared scenario is absent; and the exact target contract, owner, deterministic CHF catalog fixture, full wildcard snapshot, occurrence controls, restoration mechanism, and row-safe topology remain pending. Core already exposes a semantic management dialog, one authenticated update route, authoritative persistence, refreshed state, and accessible enabled-currency table, so no product-authority conflict, production defect, or known gap is established.",
+		"affected_scope": "Only one additive merchant configuration transition: begin with a deterministic usable CHF catalog entry that is authoritatively disabled and with raw and projected enabled sets equal; select the unique semantic CHF checkbox; dispatch exactly one complete-set update preserving every baseline enabled code; then join raw enabled state, a fresh authenticated REST projection with positive CHF rate, and exactly one CHF row after full page reload. Shopper selection, converted prices, checkout, orders, payments, provider records, line 57 removal, and multi-currency onboarding remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native account/callback readiness, repair shared sites, invent the pending target/owner/topology, guarantee a live-refresh-free CHF catalog, or mutate a full enabled set without a complete pre-write journal. A success notice, component test, or lower-layer persistence test cannot substitute for the unique initially disabled identity, one request preserving the baseline union, raw/fresh-REST/reload join, and byte-exact restoration. No provider writer or listener can unlock this local merchant configuration contract.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve a row-safe target and implementation owner; provide a deterministic USD-default catalog where CHF is available once with positive rate, initially disabled, and every baseline enabled code remains available, under ordered account/store/currency-settings/catalog ownership with complete wildcard raw and cache snapshots plus a pre-write occurrence/restoration journal. Run one semantic complete-set update with one worker, zero retries, and no replay; join raw state, fresh REST, and reloaded UI; prove zero shopper and provider behavior; restore every option, cache, and provisioner byte; obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, option, currency/rate fixture, cache, lock, journal, provider object, listener, retention record, or quarantine was created or changed for this row. A future ambiguous or duplicate update, wrong store/account/CHF identity, raw/projected baseline mismatch, baseline-code loss, response mismatch, unexpected per-currency deletion, option/account/cache drift, live account or rate traffic, target drift, lost ownership, or incomplete restoration must preserve diagnostics and quarantine the exact store, currency-settings graph, account/catalog/rate-cache fixture, and journal. Do not retry, normalize, use line 57, or clean through the removal endpoint; no financial or platform provider resource belongs to this contract."
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Document the intentional wcpay_ hook parity in the native gateway and the runtime arbiter kill-switch filter at the native payments registration site.

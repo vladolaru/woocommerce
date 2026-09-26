@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "alipay-refund-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "951da873cf727059fe2ce2da278bd238e7785426",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/alipay-checkout-purchase.spec.ts:74::Alipay Checkout › merchant can see and refund an Alipay order"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/checkout.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA edbc15893c256d8436e0534177b1e5b9e5d8b4277913a434b2d2efc0a182cbee against ledger SHA 0e834e03aa70486c159a3dee4bbefd54193ae97970069e0710945a727084d028 with no findings. Exactly fields 37-40 change on the line-74 Alipay refund row and no sibling row changes. The packet binds an independent fresh Alipay payment prerequisite, a second refund journal, exactly one full USD refund with zero replay, bounded pending-to-succeeded proof, and exact provider refund-to-charge-to-intent-to-order plus sole local WC_Order_Refund identity, amount, currency, and status joins. Duplicate-event convergence, semantic merchant audit evidence, readiness, protected allocation, exclusive listener, locks, retention, settings restoration, quarantine, accessibility, and source/target/runtime drift controls are complete. Sibling-order reuse is forbidden and no native defect or known gap is invented."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before this row may allocate its own Alipay payment and refund resource graph, provider writer, listener, browser, or setting locks; the target contract and owner remain pending; and no approved Alipay-active protected allocation, terminal refund reader, or exact settings/restoration topology exists. Core's split gateway, charge-bound idempotent refund adapter, and refund-event convergence handler are credible foundations, so no current native defect, known gap, authority conflict, or frozen-to-rolling source staleness is established.",
+		"affected_scope": "One independent Alipay payment and full-refund lifecycle. First create and retain a fresh run-owned product, order, intent, charge, and Alipay payment method under a complete one-dispatch checkout journal; do not consume either checkout sibling's order. Reconcile the exact merchant order and provider graph, then open a distinct refund journal and dispatch one accessible full refund for all captured USD minor units and quantities with reason No longer wanted. Join exactly one provider refund ID to the original charge, terminal succeeded amount/currency, one local WC_Order_Refund with that identity and amount, fully refunded capture and zero remaining balance, persisted refunded order status, convergent event handling without duplicates, and semantic merchant audit evidence.",
+		"no_allowlisted_action_reason": "The run cannot establish native readiness, approve the target/owner, allocate the required unique Alipay-ready tuple and exclusive listener, or create irreversible payment/refund records without protected locks and durable lifecycle journals. A visible pi_ link, broad order note, local status, amount text, lower-layer refund tests, checkout sibling order, repeated dialog submission, or replay after pending/uncertain response cannot substitute for the independently proven payment prerequisite, second no-replay refund occurrence, exact provider/local identity and amount joins, bounded pending-to-succeeded reconciliation, retained financial history, and exact settings restoration.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness; approve the protected target contract and owner; provide a unique non-CI test-mode US/USD account/store alias with alipay_payments active, split gateway enabled, canonical settings snapshots, exact provider and local refund readers, and one exclusively owned listener. Acquire account, store, feature-setting, and record-event locks; run the independent payment then full refund once with one worker, zero retries, separate checkout/refund journals, no replay, shrinking-deadline reconciliation, exact retention/restoration/quarantine, and fresh code, E2E-test, reliability, accessibility, and provider-evidence reviews.",
+		"quarantine_status": "No browser context, account, store, allocation, product, cart, order, intent, charge, payment method, refund, setting, lock, journal, listener, provider object, retention record, or quarantine was created or changed for this row; the separately owned listener remains untouched. A future uncertain checkout, authorization, or refund dispatch; duplicate occurrence; cross-record identity; amount/currency mismatch; terminal-settlement or listener attribution gap; event-convergence duplicate; runtime or bundle drift after dispatch; lock loss; incomplete settings restoration; or unsafe cleanup must preserve diagnostics and all financial history and quarantine the exact account/store/settings/payment/refund graph and journals without replay."
+	}
+}

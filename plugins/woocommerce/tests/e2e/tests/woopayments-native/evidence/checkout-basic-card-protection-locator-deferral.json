@@ -1,0 +1,46 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-basic-card-protection-locator-deferral",
+	"wc_base_commit": "1dd979708088168e514a5d4c57e97ed0c6f03e3c",
+	"verified_at_commit": "1dd979708088168e514a5d4c57e97ed0c6f03e3c",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/shopper-card-protection.spec.ts",
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/card-testing-protection.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/classic-card-checkout.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-card-evidence.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-evidence.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/record-evidence.ts"
+	],
+	"source_test_sha256": "5ca2517777479bc05f19ca4e0de3780f3efc1ed950ac258b1f149f714b281c26",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection true › using a basic card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+			"contract": "Successful purchase › Carding protection true › using a basic card"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "5ca2517777479bc05f19ca4e0de3780f3efc1ed950ac258b1f149f714b281c26",
+			"summary": "Root review of the second authorized execution. The failure is an adapter locator defect, not a product defect and not an environment block; the store was cold-verified restored and the fix is committed but unproven. Deferral is the only honest outcome because the authorized two-execution budget is spent"
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"reference": "blocked-environment:PILOT-PROVIDER-EXECUTION-BUDGET",
+		"blocker": "The second authorized execution ran once and failed inside the Classic billing step: the adapter addressed the country and state fields by accessible name, Select2 enhances each into a second labelled control, and Playwright strict mode aborted before payment entry. The capability preflight that lost the previous budget passed 5/5 this time, so the approval was correct and the failure is a distinct, narrower defect. The two-execution budget is now spent and no replay is permitted",
+		"affected_scope": "The protected Classic checkout contract still has no live proof of authoritative protection-true state, of one exact 16-character token matching across configuration, Classic exposure and the submitted field, or of a correlated guest USD 10.99 order, payment method, intent, charge and capture. Provider-free tests continue to prove the controller, adapter and evidence validators, and the strict-false sibling closed in this slice against a current-byte run",
+		"no_allowlisted_action_reason": "A third execution would exceed the owner-authorized two. The locator defect is fixed and committed, but a fix without a run is not evidence, and no static, unit or partial-run artifact can substitute for the protected financial and token graph. No product defect is established",
+		"unlock_decision": "Authorize one further protected-card execution. The blocking defect is already corrected in the Classic adapter, and the capability preflight is in place, so that execution needs no new harness work. Before spending it, close the coverage gap this failure exposed: the unit suite stubs the entire billing step behind a recorded event, so no test exercises these locators outside a live run. A provider-free DOM-level test of the billing fill, against markup carrying the Select2 duplicate-label structure, would move this class of defect off the provider budget entirely",
+		"quarantine_status": "The run mutated protection state and restored it. Cold reads after the failure prove the raw force option absent, the run-owned Classic Checkout page absent, and the account eligibility flag back to strict false; no order or product was created and no charge exists. Four resource guards were quarantined with reason cleanup-failed when the thrown error interrupted release; those receipts are retained unmodified. The owned listener was stopped by exact identity and two scans found zero listeners. Public-safe run reference: redacted:provider-run-log:sha256:178aed26f856b785962b7d7da9cd8cf860d3904000f95cca1afd4ddd65b52244"
+	}
+}

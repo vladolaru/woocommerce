@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Route WooPayments onboarding context params through the native payments runtime.

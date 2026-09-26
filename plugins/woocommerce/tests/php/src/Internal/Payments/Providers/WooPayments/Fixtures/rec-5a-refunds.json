@@ -1,0 +1,883 @@
+{
+	"_meta": {
+		"recording": "REC-5a R-a",
+		"captured_via": "wcpay_api_request_response filter (raw transport response before native parsing), one request per entry, no retries",
+		"sanitized": "client_secret, receipt_url, email, customer_email, order_key and the shopper IP/UA hashes replaced with REDACTED where non-null (no request_log_url present); response bodies are JSON-decoded and otherwise verbatim",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at fc8c8ee510, WooPayments plugin inactive, test mode)",
+		"notes": "data/rec-5a-refunds.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "usd_card_full_refund_free_text_reason",
+			"test_card": "4242424242424242",
+			"setup": "fresh 10.99 USD card charge created the REC-3 way (create_and_confirm_payment_intention, pm_card_visa, no order): pi_3UJZZBBzWlxcwgpP0CDlkka0 / ch_3UJZZBBzWlxcwgpP0BZvfjOj, status succeeded",
+			"recorded_at": "2026-09-25T13:53:36+00:00",
+			"request": {
+				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native)",
+				"method": "POST",
+				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "fresh UUIDv4",
+				"body": {
+					"test_mode": true,
+					"charge": "ch_3UJZZBBzWlxcwgpP0BZvfjOj",
+					"amount": 1099,
+					"reason": null,
+					"metadata": {
+						"refund_source": "woocommerce_native",
+						"merchant_refund_reason": "REC-5a free-text reason: customer returned the item unopened"
+					}
+				}
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"id": "re_3UJZZBBzWlxcwgpP0MauAsJ6",
+					"object": "refund",
+					"amount": 1099,
+					"balance_transaction": "txn_3UJZZBBzWlxcwgpP09CfvLt0",
+					"charge": "ch_3UJZZBBzWlxcwgpP0BZvfjOj",
+					"created": 1790344415,
+					"currency": "usd",
+					"customer": "cus_UsIeTbmGHPc9jY",
+					"customer_account": null,
+					"destination_details": {
+						"card": {
+							"reference_status": "pending",
+							"reference_type": "acquirer_reference_number",
+							"type": "refund"
+						},
+						"type": "card"
+					},
+					"metadata": {
+						"merchant_refund_reason": "REC-5a free-text reason: customer returned the item unopened",
+						"refund_source": "woocommerce_native"
+					},
+					"payment_intent": {
+						"id": "pi_3UJZZBBzWlxcwgpP0CDlkka0",
+						"object": "payment_intent",
+						"allowed_payment_method_types": null,
+						"amount": 1099,
+						"amount_capturable": 0,
+						"amount_details": {
+							"tip": []
+						},
+						"amount_received": 1099,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee_amount": 62,
+						"automatic_payment_methods": null,
+						"canceled_at": null,
+						"cancellation_reason": null,
+						"capture_method": "automatic",
+						"charges": {
+							"object": "list",
+							"data": [
+								{
+									"id": "ch_3UJZZBBzWlxcwgpP0BZvfjOj",
+									"object": "charge",
+									"amount": 1099,
+									"amount_captured": 1099,
+									"amount_refunded": 1099,
+									"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+									"application_fee": "fee_1UJZZBBzWlxcwgpPa84cSk2r",
+									"application_fee_amount": 62,
+									"balance_transaction": "txn_3UJZZBBzWlxcwgpP070cVw1A",
+									"billing_details": {
+										"address": {
+											"city": null,
+											"country": null,
+											"line1": null,
+											"line2": null,
+											"postal_code": null,
+											"state": null
+										},
+										"email": null,
+										"name": null,
+										"phone": null,
+										"tax_id": null
+									},
+									"calculated_statement_descriptor": "WOOCOMMERCE",
+									"captured": true,
+									"created": 1790344413,
+									"currency": "usd",
+									"customer": "cus_UsIeTbmGHPc9jY",
+									"description": "REC-5a USD card refund recording",
+									"destination": null,
+									"dispute": null,
+									"disputed": false,
+									"failure_balance_transaction": null,
+									"failure_code": null,
+									"failure_message": null,
+									"fraud_details": [],
+									"invoice": null,
+									"livemode": false,
+									"metadata": {
+										"rec": "REC-5a"
+									},
+									"on_behalf_of": null,
+									"order": null,
+									"outcome": {
+										"advice_code": null,
+										"network_advice_code": null,
+										"network_decline_code": null,
+										"network_status": "approved_by_network",
+										"reason": null,
+										"risk_level": "normal",
+										"risk_score": 4,
+										"seller_message": "Payment complete.",
+										"type": "authorized"
+									},
+									"paid": true,
+									"payment_intent": "pi_3UJZZBBzWlxcwgpP0CDlkka0",
+									"payment_method": "pm_1UJZZABzWlxcwgpPuUVcCdB1",
+									"payment_method_details": {
+										"card": {
+											"amount_authorized": 1099,
+											"authorization_code": "334127",
+											"brand": "visa",
+											"checks": {
+												"address_line1_check": null,
+												"address_postal_code_check": null,
+												"cvc_check": "pass"
+											},
+											"country": "US",
+											"description": "Visa Classic",
+											"electronic_commerce_indicator": "07",
+											"exp_month": 9,
+											"exp_year": 2027,
+											"extended_authorization": {
+												"status": "disabled"
+											},
+											"fingerprint": "GPNBuIQZKl9E7Sku",
+											"funding": "credit",
+											"iin": "424242",
+											"incremental_authorization": {
+												"status": "unavailable"
+											},
+											"installments": null,
+											"issuer": "Stripe Payments UK Limited",
+											"last4": "4242",
+											"mandate": null,
+											"moto": null,
+											"multicapture": {
+												"status": "unavailable"
+											},
+											"network": "visa",
+											"network_token": {
+												"used": false
+											},
+											"network_transaction_id": "119727611598658",
+											"overcapture": {
+												"maximum_amount_capturable": 1099,
+												"status": "unavailable"
+											},
+											"regulated_status": "unregulated",
+											"three_d_secure": null,
+											"transaction_link_id": null,
+											"wallet": null
+										},
+										"type": "card"
+									},
+									"radar_options": [],
+									"receipt_email": null,
+									"receipt_number": null,
+									"receipt_url": "REDACTED",
+									"refunded": true,
+									"refunds": {
+										"object": "list",
+										"data": [
+											{
+												"id": "re_3UJZZBBzWlxcwgpP0MauAsJ6",
+												"object": "refund",
+												"amount": 1099,
+												"balance_transaction": "txn_3UJZZBBzWlxcwgpP09CfvLt0",
+												"charge": "ch_3UJZZBBzWlxcwgpP0BZvfjOj",
+												"created": 1790344415,
+												"currency": "usd",
+												"customer": "cus_UsIeTbmGHPc9jY",
+												"customer_account": null,
+												"destination_details": {
+													"card": {
+														"reference_status": "pending",
+														"reference_type": "acquirer_reference_number",
+														"type": "refund"
+													},
+													"type": "card"
+												},
+												"metadata": {
+													"merchant_refund_reason": "REC-5a free-text reason: customer returned the item unopened",
+													"refund_source": "woocommerce_native"
+												},
+												"payment_intent": "pi_3UJZZBBzWlxcwgpP0CDlkka0",
+												"payment_method": "pm_1UJZZABzWlxcwgpPuUVcCdB1",
+												"payment_method_details": {
+													"card": {
+														"acquirer_reference_number": null,
+														"acquirer_reference_number_status": "pending"
+													},
+													"type": "card"
+												},
+												"reason": null,
+												"receipt_number": null,
+												"source_transfer_reversal": null,
+												"status": "succeeded",
+												"transfer_reversal": null
+											}
+										],
+										"has_more": false,
+										"total_count": 1,
+										"url": "/v1/charges/ch_3UJZZBBzWlxcwgpP0BZvfjOj/refunds"
+									},
+									"review": null,
+									"shipping": null,
+									"source": null,
+									"source_transfer": null,
+									"statement_descriptor": null,
+									"statement_descriptor_suffix": null,
+									"status": "succeeded",
+									"transfer_data": null,
+									"transfer_group": null
+								}
+							],
+							"has_more": false,
+							"total_count": 1,
+							"url": "/v1/charges?payment_intent=pi_3UJZZBBzWlxcwgpP0CDlkka0"
+						},
+						"client_secret": "REDACTED",
+						"confirmation_method": "automatic",
+						"created": 1790344413,
+						"currency": "usd",
+						"customer": "cus_UsIeTbmGHPc9jY",
+						"customer_account": null,
+						"description": "REC-5a USD card refund recording",
+						"excluded_payment_method_types": null,
+						"invoice": null,
+						"last_payment_error": null,
+						"latest_charge": "ch_3UJZZBBzWlxcwgpP0BZvfjOj",
+						"level3": null,
+						"livemode": false,
+						"managed_payments": {
+							"enabled": false
+						},
+						"metadata": {
+							"rec": "REC-5a"
+						},
+						"next_action": null,
+						"on_behalf_of": null,
+						"payment_method": "pm_1UJZZABzWlxcwgpPuUVcCdB1",
+						"payment_method_configuration_details": null,
+						"payment_method_options": {
+							"card": {
+								"installments": null,
+								"mandate_options": null,
+								"network": null,
+								"request_three_d_secure": "automatic"
+							}
+						},
+						"payment_method_types": [
+							"card"
+						],
+						"payment_record": null,
+						"processing": null,
+						"receipt_email": null,
+						"review": null,
+						"setup_future_usage": null,
+						"shared_payment_granted_token": null,
+						"shipping": null,
+						"source": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "succeeded",
+						"transfer_data": null,
+						"transfer_group": null
+					},
+					"payment_method": "pm_1UJZZABzWlxcwgpPuUVcCdB1",
+					"payment_method_details": {
+						"card": {
+							"acquirer_reference_number": null,
+							"acquirer_reference_number_status": "pending"
+						},
+						"type": "card"
+					},
+					"reason": null,
+					"receipt_number": null,
+					"source_transfer_reversal": null,
+					"status": "succeeded",
+					"transfer_reversal": null
+				}
+			}
+		},
+		{
+			"pair": "eur_card_full_refund",
+			"test_card": "4242424242424242",
+			"setup": "REC-3 charge pi_3UJWs2BzWlxcwgpP10KzkjsT / ch_3UJWs2BzWlxcwgpP1y9vRrWr (12.34 EUR, settled 14.06 USD)",
+			"recorded_at": "2026-09-25T13:54:00+00:00",
+			"request": {
+				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native)",
+				"method": "POST",
+				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "fresh UUIDv4",
+				"body": {
+					"test_mode": true,
+					"charge": "ch_3UJWs2BzWlxcwgpP1y9vRrWr",
+					"amount": 1234,
+					"reason": "requested_by_customer",
+					"metadata": {
+						"refund_source": "woocommerce_native",
+						"merchant_refund_reason": "requested_by_customer"
+					}
+				}
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"id": "re_3UJWs2BzWlxcwgpP1MZ11w9h",
+					"object": "refund",
+					"amount": 1234,
+					"balance_transaction": "txn_3UJWs2BzWlxcwgpP1FuXruQg",
+					"charge": "ch_3UJWs2BzWlxcwgpP1y9vRrWr",
+					"created": 1790344439,
+					"currency": "eur",
+					"customer": "cus_UsIeTbmGHPc9jY",
+					"customer_account": null,
+					"destination_details": {
+						"card": {
+							"reference_status": "pending",
+							"reference_type": "acquirer_reference_number",
+							"type": "refund"
+						},
+						"type": "card"
+					},
+					"metadata": {
+						"merchant_refund_reason": "requested_by_customer",
+						"refund_source": "woocommerce_native"
+					},
+					"payment_intent": {
+						"id": "pi_3UJWs2BzWlxcwgpP10KzkjsT",
+						"object": "payment_intent",
+						"allowed_payment_method_types": null,
+						"amount": 1234,
+						"amount_capturable": 0,
+						"amount_details": {
+							"tip": []
+						},
+						"amount_received": 1234,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee_amount": 75,
+						"automatic_payment_methods": null,
+						"canceled_at": null,
+						"cancellation_reason": null,
+						"capture_method": "automatic",
+						"charges": {
+							"object": "list",
+							"data": [
+								{
+									"id": "ch_3UJWs2BzWlxcwgpP1y9vRrWr",
+									"object": "charge",
+									"amount": 1234,
+									"amount_captured": 1234,
+									"amount_refunded": 1234,
+									"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+									"application_fee": "fee_1UJWs3BzWlxcwgpPVh6xTPB2",
+									"application_fee_amount": 75,
+									"balance_transaction": "txn_3UJWs2BzWlxcwgpP1MLoqLbF",
+									"billing_details": {
+										"address": {
+											"city": null,
+											"country": null,
+											"line1": null,
+											"line2": null,
+											"postal_code": null,
+											"state": null
+										},
+										"email": null,
+										"name": null,
+										"phone": null,
+										"tax_id": null
+									},
+									"calculated_statement_descriptor": "WOOCOMMERCE",
+									"captured": true,
+									"created": 1790334050,
+									"currency": "eur",
+									"customer": "cus_UsIeTbmGHPc9jY",
+									"description": "REC-3 EUR charge recording",
+									"destination": null,
+									"dispute": null,
+									"disputed": false,
+									"failure_balance_transaction": null,
+									"failure_code": null,
+									"failure_message": null,
+									"fraud_details": [],
+									"invoice": null,
+									"livemode": false,
+									"metadata": {
+										"rec": "REC-3"
+									},
+									"on_behalf_of": null,
+									"order": null,
+									"outcome": {
+										"advice_code": null,
+										"network_advice_code": null,
+										"network_decline_code": null,
+										"network_status": "approved_by_network",
+										"reason": null,
+										"risk_level": "normal",
+										"risk_score": 34,
+										"seller_message": "Payment complete.",
+										"type": "authorized"
+									},
+									"paid": true,
+									"payment_intent": "pi_3UJWs2BzWlxcwgpP10KzkjsT",
+									"payment_method": "pm_1UJWs2BzWlxcwgpPrrobU4Cv",
+									"payment_method_details": {
+										"card": {
+											"amount_authorized": 1234,
+											"authorization_code": "751561",
+											"brand": "visa",
+											"checks": {
+												"address_line1_check": null,
+												"address_postal_code_check": null,
+												"cvc_check": "pass"
+											},
+											"country": "US",
+											"description": "Visa Classic",
+											"electronic_commerce_indicator": "07",
+											"exp_month": 9,
+											"exp_year": 2027,
+											"extended_authorization": {
+												"status": "disabled"
+											},
+											"fingerprint": "GPNBuIQZKl9E7Sku",
+											"funding": "credit",
+											"iin": "424242",
+											"incremental_authorization": {
+												"status": "unavailable"
+											},
+											"installments": null,
+											"issuer": "Stripe Payments UK Limited",
+											"last4": "4242",
+											"mandate": null,
+											"moto": null,
+											"multicapture": {
+												"status": "unavailable"
+											},
+											"network": "visa",
+											"network_token": {
+												"used": false
+											},
+											"network_transaction_id": "119727611598658",
+											"overcapture": {
+												"maximum_amount_capturable": 1234,
+												"status": "unavailable"
+											},
+											"regulated_status": "unregulated",
+											"three_d_secure": null,
+											"transaction_link_id": null,
+											"wallet": null
+										},
+										"type": "card"
+									},
+									"radar_options": [],
+									"receipt_email": null,
+									"receipt_number": null,
+									"receipt_url": "REDACTED",
+									"refunded": true,
+									"refunds": {
+										"object": "list",
+										"data": [
+											{
+												"id": "re_3UJWs2BzWlxcwgpP1MZ11w9h",
+												"object": "refund",
+												"amount": 1234,
+												"balance_transaction": "txn_3UJWs2BzWlxcwgpP1FuXruQg",
+												"charge": "ch_3UJWs2BzWlxcwgpP1y9vRrWr",
+												"created": 1790344439,
+												"currency": "eur",
+												"customer": "cus_UsIeTbmGHPc9jY",
+												"customer_account": null,
+												"destination_details": {
+													"card": {
+														"reference_status": "pending",
+														"reference_type": "acquirer_reference_number",
+														"type": "refund"
+													},
+													"type": "card"
+												},
+												"metadata": {
+													"merchant_refund_reason": "requested_by_customer",
+													"refund_source": "woocommerce_native"
+												},
+												"payment_intent": "pi_3UJWs2BzWlxcwgpP10KzkjsT",
+												"payment_method": "pm_1UJWs2BzWlxcwgpPrrobU4Cv",
+												"payment_method_details": {
+													"card": {
+														"acquirer_reference_number": null,
+														"acquirer_reference_number_status": "pending"
+													},
+													"type": "card"
+												},
+												"reason": "requested_by_customer",
+												"receipt_number": null,
+												"source_transfer_reversal": null,
+												"status": "succeeded",
+												"transfer_reversal": null
+											}
+										],
+										"has_more": false,
+										"total_count": 1,
+										"url": "/v1/charges/ch_3UJWs2BzWlxcwgpP1y9vRrWr/refunds"
+									},
+									"review": null,
+									"shipping": null,
+									"source": null,
+									"source_transfer": null,
+									"statement_descriptor": null,
+									"statement_descriptor_suffix": null,
+									"status": "succeeded",
+									"transfer_data": null,
+									"transfer_group": null
+								}
+							],
+							"has_more": false,
+							"total_count": 1,
+							"url": "/v1/charges?payment_intent=pi_3UJWs2BzWlxcwgpP10KzkjsT"
+						},
+						"client_secret": "REDACTED",
+						"confirmation_method": "automatic",
+						"created": 1790334050,
+						"currency": "eur",
+						"customer": "cus_UsIeTbmGHPc9jY",
+						"customer_account": null,
+						"description": "REC-3 EUR charge recording",
+						"excluded_payment_method_types": null,
+						"invoice": null,
+						"last_payment_error": null,
+						"latest_charge": "ch_3UJWs2BzWlxcwgpP1y9vRrWr",
+						"level3": null,
+						"livemode": false,
+						"managed_payments": {
+							"enabled": false
+						},
+						"metadata": {
+							"rec": "REC-3"
+						},
+						"next_action": null,
+						"on_behalf_of": null,
+						"payment_method": "pm_1UJWs2BzWlxcwgpPrrobU4Cv",
+						"payment_method_configuration_details": null,
+						"payment_method_options": {
+							"card": {
+								"installments": null,
+								"mandate_options": null,
+								"network": null,
+								"request_three_d_secure": "automatic"
+							}
+						},
+						"payment_method_types": [
+							"card"
+						],
+						"payment_record": null,
+						"processing": null,
+						"receipt_email": null,
+						"review": null,
+						"setup_future_usage": null,
+						"shared_payment_granted_token": null,
+						"shipping": null,
+						"source": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "succeeded",
+						"transfer_data": null,
+						"transfer_group": null
+					},
+					"payment_method": "pm_1UJWs2BzWlxcwgpPrrobU4Cv",
+					"payment_method_details": {
+						"card": {
+							"acquirer_reference_number": null,
+							"acquirer_reference_number_status": "pending"
+						},
+						"type": "card"
+					},
+					"reason": "requested_by_customer",
+					"receipt_number": null,
+					"source_transfer_reversal": null,
+					"status": "succeeded",
+					"transfer_reversal": null
+				}
+			}
+		},
+		{
+			"pair": "afterpay_clearpay_full_refund_pending",
+			"setup": "existing :8889 order 4237 (Afterpay, 100.00 USD, processing, from the 2026-09-10 provider run): pi_3UDz8PBzWlxcwgpP18mLD3pm / py_3UDz8PBzWlxcwgpP1m07cdHy. Refunded through the client directly because wc_create_refund() from WP-CLI failed before any request (the order gateway is not registered in that context); no Woo refund was created",
+			"recorded_at": "2026-09-25T13:54:41+00:00",
+			"request": {
+				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native)",
+				"method": "POST",
+				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "fresh UUIDv4",
+				"body": {
+					"test_mode": true,
+					"charge": "py_3UDz8PBzWlxcwgpP1m07cdHy",
+					"amount": 10000,
+					"reason": "requested_by_customer",
+					"metadata": {
+						"refund_source": "woocommerce_native",
+						"merchant_refund_reason": "requested_by_customer"
+					}
+				}
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"id": "pyr_1UJZaGBzWlxcwgpPIeG7xqIJ",
+					"object": "refund",
+					"amount": 10000,
+					"balance_transaction": "txn_1UJZaHBzWlxcwgpPs7TShSNm",
+					"charge": "py_3UDz8PBzWlxcwgpP1m07cdHy",
+					"created": 1790344480,
+					"currency": "usd",
+					"customer": null,
+					"customer_account": null,
+					"metadata": {
+						"merchant_refund_reason": "requested_by_customer",
+						"refund_source": "woocommerce_native"
+					},
+					"payment_intent": {
+						"id": "pi_3UDz8PBzWlxcwgpP18mLD3pm",
+						"object": "payment_intent",
+						"allowed_payment_method_types": null,
+						"amount": 10000,
+						"amount_capturable": 0,
+						"amount_details": {
+							"tip": []
+						},
+						"amount_received": 10000,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee_amount": 630,
+						"automatic_payment_methods": null,
+						"canceled_at": null,
+						"cancellation_reason": null,
+						"capture_method": "automatic",
+						"charges": {
+							"object": "list",
+							"data": [
+								{
+									"id": "py_3UDz8PBzWlxcwgpP1m07cdHy",
+									"object": "charge",
+									"amount": 10000,
+									"amount_captured": 10000,
+									"amount_refunded": 10000,
+									"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+									"application_fee": "fee_1UDz8WBzWlxcwgpP6ViP1OD8",
+									"application_fee_amount": 630,
+									"balance_transaction": "txn_3UDz8PBzWlxcwgpP1LscyQ8D",
+									"billing_details": {
+										"address": {
+											"city": "San Francisco",
+											"country": "US",
+											"line1": "123 Test Street",
+											"line2": "",
+											"postal_code": "94107",
+											"state": "CA"
+										},
+										"email": "REDACTED",
+										"name": "E2E WooPayments",
+										"phone": "5555550100",
+										"tax_id": null
+									},
+									"calculated_statement_descriptor": null,
+									"captured": true,
+									"created": 1789012736,
+									"currency": "usd",
+									"customer": "cus_VES2EKNaMgAAih",
+									"description": "Online Payment for Order #4237 for store8889.localhost:8889 blog_id 4",
+									"destination": null,
+									"dispute": null,
+									"disputed": false,
+									"failure_balance_transaction": null,
+									"failure_code": null,
+									"failure_message": null,
+									"fraud_details": [],
+									"invoice": null,
+									"livemode": false,
+									"metadata": {
+										"checkout_type": "checkout",
+										"client_version": "10.8.0",
+										"customer_email": "REDACTED",
+										"customer_name": "E2E WooPayments",
+										"fraud_outcome": "allow",
+										"fraud_prevention_data_available": "1",
+										"fraud_prevention_data_cart_contents": "1",
+										"fraud_prevention_data_ip_country": "RO",
+										"fraud_prevention_data_shopper_ip_hash": "REDACTED",
+										"fraud_prevention_data_shopper_ua_hash": "REDACTED",
+										"order_id": "4237",
+										"order_key": "REDACTED",
+										"order_number": "4237",
+										"payment_type": "single",
+										"site_url": "http://store8889.localhost:8889",
+										"subscription_payment": "no"
+									},
+									"on_behalf_of": null,
+									"order": null,
+									"outcome": {
+										"advice_code": null,
+										"network_advice_code": null,
+										"network_decline_code": null,
+										"network_status": "approved_by_network",
+										"reason": null,
+										"risk_level": "normal",
+										"seller_message": "Payment complete.",
+										"type": "authorized"
+									},
+									"paid": true,
+									"payment_intent": "pi_3UDz8PBzWlxcwgpP18mLD3pm",
+									"payment_method": "pm_1UDz8NBzWlxcwgpPBz6c1x9V",
+									"payment_method_details": {
+										"afterpay_clearpay": {
+											"order_id": "Iww4VcQx1g6PKQFsoZ1R",
+											"reference": null
+										},
+										"type": "afterpay_clearpay"
+									},
+									"radar_options": [],
+									"receipt_email": null,
+									"receipt_number": null,
+									"receipt_url": "REDACTED",
+									"refunded": true,
+									"refunds": {
+										"object": "list",
+										"data": [
+											{
+												"id": "pyr_1UJZaGBzWlxcwgpPIeG7xqIJ",
+												"object": "refund",
+												"amount": 10000,
+												"balance_transaction": "txn_1UJZaHBzWlxcwgpPs7TShSNm",
+												"charge": "py_3UDz8PBzWlxcwgpP1m07cdHy",
+												"created": 1790344480,
+												"currency": "usd",
+												"customer": null,
+												"customer_account": null,
+												"metadata": {
+													"merchant_refund_reason": "requested_by_customer",
+													"refund_source": "woocommerce_native"
+												},
+												"payment_intent": "pi_3UDz8PBzWlxcwgpP18mLD3pm",
+												"payment_method": null,
+												"pending_reason": "processing",
+												"reason": "requested_by_customer",
+												"receipt_number": null,
+												"source_transfer_reversal": null,
+												"status": "pending",
+												"transfer_reversal": null
+											}
+										],
+										"has_more": false,
+										"total_count": 1,
+										"url": "/v1/charges/py_3UDz8PBzWlxcwgpP1m07cdHy/refunds"
+									},
+									"review": null,
+									"shipping": null,
+									"source": null,
+									"source_transfer": null,
+									"statement_descriptor": null,
+									"statement_descriptor_suffix": null,
+									"status": "succeeded",
+									"transfer_data": null,
+									"transfer_group": null
+								}
+							],
+							"has_more": false,
+							"total_count": 1,
+							"url": "/v1/charges?payment_intent=pi_3UDz8PBzWlxcwgpP18mLD3pm"
+						},
+						"client_secret": "REDACTED",
+						"confirmation_method": "automatic",
+						"created": 1789012729,
+						"currency": "usd",
+						"customer": "cus_VES2EKNaMgAAih",
+						"customer_account": null,
+						"description": "Online Payment for Order #4237 for store8889.localhost:8889 blog_id 4",
+						"excluded_payment_method_types": null,
+						"invoice": null,
+						"last_payment_error": null,
+						"latest_charge": "py_3UDz8PBzWlxcwgpP1m07cdHy",
+						"level3": {
+							"customer_reference": "4237",
+							"line_items": [
+								{
+									"discount_amount": 0,
+									"product_code": "4236",
+									"product_description": "WooPayments native E2E woo",
+									"quantity": 1,
+									"tax_amount": 0,
+									"unit_cost": 10000
+								}
+							],
+							"merchant_reference": "4237",
+							"shipping_amount": 0,
+							"shipping_from_zip": "94107"
+						},
+						"livemode": false,
+						"managed_payments": {
+							"enabled": false
+						},
+						"metadata": {
+							"checkout_type": "checkout",
+							"client_version": "10.8.0",
+							"customer_email": "REDACTED",
+							"customer_name": "E2E WooPayments",
+							"fraud_outcome": "allow",
+							"fraud_prevention_data_available": "1",
+							"fraud_prevention_data_cart_contents": "1",
+							"fraud_prevention_data_ip_country": "RO",
+							"fraud_prevention_data_shopper_ip_hash": "REDACTED",
+							"fraud_prevention_data_shopper_ua_hash": "REDACTED",
+							"order_id": "4237",
+							"order_key": "REDACTED",
+							"order_number": "4237",
+							"payment_type": "single",
+							"site_url": "http://store8889.localhost:8889",
+							"subscription_payment": "no"
+						},
+						"next_action": null,
+						"on_behalf_of": null,
+						"payment_method": "pm_1UDz8NBzWlxcwgpPBz6c1x9V",
+						"payment_method_configuration_details": null,
+						"payment_method_options": {
+							"afterpay_clearpay": {
+								"reference": null
+							}
+						},
+						"payment_method_types": [
+							"afterpay_clearpay"
+						],
+						"payment_record": null,
+						"processing": null,
+						"receipt_email": null,
+						"review": null,
+						"setup_future_usage": null,
+						"shared_payment_granted_token": null,
+						"shipping": null,
+						"source": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "succeeded",
+						"transfer_data": null,
+						"transfer_group": null
+					},
+					"payment_method": null,
+					"pending_reason": "processing",
+					"reason": "requested_by_customer",
+					"receipt_number": null,
+					"source_transfer_reversal": null,
+					"status": "pending",
+					"transfer_reversal": null
+				}
+			}
+		}
+	]
+}

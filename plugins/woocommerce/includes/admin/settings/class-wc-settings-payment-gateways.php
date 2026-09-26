@@ -9,6 +9,7 @@ declare( strict_types = 1 );
 
 use Automattic\WooCommerce\Admin\Settings\SettingsSectionRegistry;
 use Automattic\WooCommerce\Internal\Admin\Loader;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -25,9 +26,24 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 
 	const MAIN_SECTION_NAME    = 'main';
 	const OFFLINE_SECTION_NAME = 'offline';
-	const COD_SECTION_NAME     = 'cod';  // Cash on delivery.
-	const BACS_SECTION_NAME    = 'bacs';  // Direct bank transfer.
-	const CHEQUE_SECTION_NAME  = 'cheque';  // Cheque payments.
+	/**
+	 * Cash on delivery section name.
+	 */
+	const COD_SECTION_NAME = 'cod';
+	/**
+	 * Direct bank transfer section name.
+	 */
+	const BACS_SECTION_NAME = 'bacs';
+	/**
+	 * Cheque payments section name.
+	 */
+	const CHEQUE_SECTION_NAME = 'cheque';
+	/**
+	 * The section name for the WooPayments settings.
+	 *
+	 * @since 11.0.0
+	 */
+	const WOOPAYMENTS_SECTION_NAME = 'woocommerce_payments';
 
 	/**
 	 * Setting page icon.
@@ -74,7 +90,9 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 	 * @return bool Whether the section should be rendered using React.
 	 */
 	public function should_render_react_section( $section ): bool {
-		return in_array( $this->standardize_section_name( $section ), $this->get_reactified_sections(), true );
+		$section = $this->standardize_section_name( $section );
+
+		return in_array( $section, $this->get_reactified_sections(), true ) && ! $this->should_preserve_classic_gateway_settings( $section );
 	}
 
 	/**
@@ -179,12 +197,17 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 			self::OFFLINE_SECTION_NAME,
 		);
 
+		$native_owns_payments_runtime = wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register();
+
 		// These sections are optional and can be modified by plugins or themes.
 		$optional_reactified_sections = array(
 			self::COD_SECTION_NAME,
 			self::BACS_SECTION_NAME,
 			self::CHEQUE_SECTION_NAME,
 		);
+		if ( $native_owns_payments_runtime ) {
+			$optional_reactified_sections[] = self::WOOPAYMENTS_SECTION_NAME;
+		}
 
 		/**
 		 * Modify the optional set of payments settings sections to be rendered using React.
@@ -205,6 +228,9 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 		} else {
 			// Enforce a list format and string-only values for section identifiers.
 			$optional_reactified_sections = array_values( array_filter( $optional_reactified_sections, 'is_string' ) );
+		}
+		if ( ! $native_owns_payments_runtime ) {
+			$optional_reactified_sections = array_values( array_diff( $optional_reactified_sections, array( self::WOOPAYMENTS_SECTION_NAME ) ) );
 		}
 
 		$this->reactified_sections_memo = array_unique( array_merge( $reactified_sections, $optional_reactified_sections ) );
@@ -246,6 +272,21 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 	}
 
 	/**
+	 * Tell whether a gateway section should keep the classic settings renderer.
+	 *
+	 * @param string $section The standardized section name.
+	 *
+	 * @return bool Whether to preserve the classic gateway settings renderer.
+	 */
+	private function should_preserve_classic_gateway_settings( string $section ): bool {
+		if ( self::WOOPAYMENTS_SECTION_NAME !== $section ) {
+			return false;
+		}
+
+		return false !== has_filter( 'woocommerce_settings_api_form_fields_' . self::WOOPAYMENTS_SECTION_NAME );
+	}
+
+	/**
 	 * Render the React section.
 	 *
 	 * @param string $section The section to render.
@@ -253,6 +294,14 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 	private function render_react_section( string $section ) {
 		global $hide_save_button;
 		$hide_save_button = true;
+		if ( self::WOOPAYMENTS_SECTION_NAME === $section ) {
+			/**
+			 * Fires WooPayments notices inside its React settings section.
+			 *
+			 * @since 11.0.0
+			 */
+			do_action( 'woocommerce_woocommerce_payments_admin_notices' );
+		}
 		echo '<div id="experimental_wc_settings_payments_' . esc_attr( $section ) . '"></div>';
 	}
 

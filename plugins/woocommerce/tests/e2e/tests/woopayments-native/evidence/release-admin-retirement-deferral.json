@@ -1,0 +1,48 @@
+{
+	"schema_version": 2,
+	"slice_id": "release-admin-retirement-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "7cf9b2000ec703b035c400d8e842ab7934811e4e",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/basic.spec.ts:16::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as admin › Load Payments Overview"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsRestControllerIntegrationTest.php;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsSettingsServiceTest.php;plugins/woocommerce/client/admin/client/woopayments/settings/test/settings-page.test.tsx",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact one-row ambiguous-decision deferral: retirement remains human-authority-gated and applies only to the duplicate Chromium instance, the retained counterpart is deferred rather than closed, pending decisions remain unchanged, and no lower-layer substitute can authorize retirement."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Retiring this duplicate requires explicit human disposition authority and a viable retained basic-project merchant administration smoke, which is currently deferred.",
+		"affected_scope": "The exact duplicate Chromium merchant Payments Overview release-smoke instance, not the retained administration contract.",
+		"no_allowlisted_action_reason": "The run cannot mint retirement approval or reinterpret lower-layer tests as the full-stack retained smoke.",
+		"reference": "ambiguous-decision:PILOT-RETIREMENT-AUTHORITY",
+		"unlock_decision": "Establish an approved viable retained admin smoke, then explicitly approve retirement of only this duplicate project instance.",
+		"quarantine_status": "No resource was allocated or mutated, and no row-specific quarantine exists.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/basic.spec.ts:16::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as admin › Load Payments Overview",
+				"unlock_decision": "Establish an approved viable retained admin smoke, then explicitly approve retirement of only this duplicate project instance.",
+				"satisfied_on": "2026-08-06",
+				"reference": "calibration-notes:2026-08-06:duplicate-contract-retirement"
+			}
+		]
+	}
+}

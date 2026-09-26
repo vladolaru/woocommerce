@@ -1,0 +1,356 @@
+{
+	"_meta": {
+		"recording": "REC-5a R-b",
+		"captured_via": "wcpay_api_request_response filter (raw transport response before native parsing), one request per entry, no retries",
+		"sanitized": "nothing to redact (no client_secret, receipt_url or request_log_url in timeline bodies); bodies JSON-decoded and otherwise verbatim",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at fc8c8ee510, WooPayments plugin inactive, test mode)",
+		"notes": "data/rec-5a-refunds.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "usd_full_refund_free_text_reason",
+			"recorded_at": "2026-09-25T13:55:37+00:00",
+			"context": "after R-a usd_card_full_refund_free_text_reason",
+			"request": {
+				"transport": "WooPaymentsApiClient::get_timeline",
+				"method": "GET",
+				"path": "/sites/4/wcpay/timeline/pi_3UJZZBBzWlxcwgpP0CDlkka0 (wpcom/v2 via Jetpack blog token)",
+				"query": {
+					"test_mode": true
+				}
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"data": [
+						{
+							"acquirer_reference_number_status": "available",
+							"acquirer_reference_number": "8884226196159867",
+							"type": "full_refund",
+							"amount_refunded": 1099,
+							"currency": "USD",
+							"deposit": null,
+							"reason": "REC-5a free-text reason: customer returned the item unopened",
+							"transaction_id": "txn_3UJZZBBzWlxcwgpP09CfvLt0",
+							"datetime": 1790344415,
+							"user_id": null,
+							"transaction_details": {
+								"customer_currency": "USD",
+								"customer_amount": 1099,
+								"customer_fee": 0,
+								"store_currency": "USD",
+								"store_amount": 1099,
+								"store_fee": 0
+							}
+						},
+						{
+							"type": "captured",
+							"amount": 1099,
+							"amount_captured": 1099,
+							"fee": 62,
+							"fee_rates": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"history": [
+									{
+										"type": "base",
+										"additional_type": "",
+										"fee_id": "base-us-card-fee",
+										"percentage_rate": 0.029,
+										"fixed_rate": 30,
+										"currency": "usd"
+									}
+								],
+								"tax": null,
+								"before_tax": null,
+								"fee_exchange_rate": null
+							},
+							"currency": "USD",
+							"datetime": 1790344413,
+							"deposit": null,
+							"transaction_id": "txn_3UJZZBBzWlxcwgpP070cVw1A",
+							"transaction_details": {
+								"customer_currency": "USD",
+								"customer_amount": 1099,
+								"customer_amount_captured": 1099,
+								"customer_fee": 62,
+								"store_currency": "USD",
+								"store_amount": 1099,
+								"store_amount_captured": 1099,
+								"store_fee": 62
+							},
+							"fee_breakdown_v1": {
+								"rows": [
+									{
+										"key": "base",
+										"kind": "fee",
+										"label": null,
+										"amount": 62,
+										"display_amount": -62,
+										"currency": "usd",
+										"rate": {
+											"percentage": 0.029,
+											"fixed": 30,
+											"fixed_currency": "usd",
+											"percentage_display": "2.9%"
+										},
+										"meta": {
+											"fee_id": "base-us-card-fee"
+										}
+									}
+								],
+								"totals": {
+									"fee": {
+										"key": null,
+										"amount": 62,
+										"display_amount": -62,
+										"currency": "usd",
+										"rate": {
+											"percentage": 0.029,
+											"fixed": 30,
+											"fixed_currency": "usd",
+											"percentage_display": "2.9%"
+										}
+									},
+									"tax": {
+										"amount": 0,
+										"display_amount": 0,
+										"currency": "usd"
+									},
+									"net": {
+										"amount": 1037,
+										"currency": "usd"
+									},
+									"capture_net": {
+										"amount": 1037,
+										"currency": "usd"
+									},
+									"gross": {
+										"amount": 1099,
+										"currency": "usd"
+									},
+									"fee_plus_tax": {
+										"amount": 62,
+										"currency": "usd"
+									}
+								},
+								"notes": [],
+								"sources": {
+									"balance_transaction_exchange_rate": 0,
+									"refunded_fee_amount_store": 0,
+									"effective_total_store": 62
+								}
+							}
+						},
+						{
+							"type": "authorized",
+							"datetime": 1790344413,
+							"amount": 1099,
+							"currency": "USD"
+						},
+						{
+							"type": "started",
+							"datetime": 1790344413,
+							"amount": 1099,
+							"currency": "USD"
+						}
+					]
+				}
+			}
+		},
+		{
+			"pair": "eur_full_refund",
+			"recorded_at": "2026-09-25T13:55:40+00:00",
+			"context": "after R-a eur_card_full_refund",
+			"request": {
+				"transport": "WooPaymentsApiClient::get_timeline",
+				"method": "GET",
+				"path": "/sites/4/wcpay/timeline/pi_3UJWs2BzWlxcwgpP10KzkjsT (wpcom/v2 via Jetpack blog token)",
+				"query": {
+					"test_mode": true
+				}
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"data": [
+						{
+							"acquirer_reference_number_status": "available",
+							"acquirer_reference_number": "7028278089905733",
+							"type": "full_refund",
+							"amount_refunded": 1234,
+							"currency": "EUR",
+							"deposit": null,
+							"reason": "requested_by_customer",
+							"transaction_id": "txn_3UJWs2BzWlxcwgpP1FuXruQg",
+							"datetime": 1790344439,
+							"user_id": null,
+							"transaction_details": {
+								"customer_currency": "EUR",
+								"customer_amount": 1234,
+								"customer_fee": 0,
+								"store_currency": "USD",
+								"store_amount": 1407,
+								"store_fee": 0
+							}
+						},
+						{
+							"type": "captured",
+							"amount": 1234,
+							"amount_captured": 1234,
+							"fee": 75,
+							"fee_rates": {
+								"percentage": 0.039,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"history": [
+									{
+										"type": "base",
+										"additional_type": "",
+										"fee_id": "base-us-card-fee",
+										"percentage_rate": 0.029,
+										"fixed_rate": 30,
+										"currency": "usd"
+									},
+									{
+										"type": "additional",
+										"additional_type": "fx",
+										"fee_id": "additional-us-card-fx-fee",
+										"percentage_rate": 0.01,
+										"fixed_rate": 0,
+										"currency": "usd"
+									}
+								],
+								"tax": null,
+								"before_tax": null,
+								"fee_exchange_rate": {
+									"from_currency": "EUR",
+									"to_currency": "USD",
+									"from_amount": 75,
+									"to_amount": 85,
+									"rate": 0.8779245862780388
+								}
+							},
+							"currency": "EUR",
+							"datetime": 1790334050,
+							"deposit": null,
+							"transaction_id": "txn_3UJWs2BzWlxcwgpP1MLoqLbF",
+							"transaction_details": {
+								"customer_currency": "EUR",
+								"customer_amount": 1234,
+								"customer_amount_captured": 1234,
+								"customer_fee": 75,
+								"store_currency": "USD",
+								"store_amount": 1406,
+								"store_amount_captured": 1406,
+								"store_fee": 85
+							},
+							"fee_breakdown_v1": {
+								"rows": [
+									{
+										"key": "base",
+										"kind": "fee",
+										"label": null,
+										"amount": 75,
+										"display_amount": -75,
+										"currency": "usd",
+										"rate": {
+											"percentage": 0.029,
+											"fixed": 30,
+											"fixed_currency": "usd",
+											"percentage_display": "2.9%"
+										},
+										"meta": {
+											"fee_id": "base-us-card-fee"
+										}
+									},
+									{
+										"key": "additional.fx",
+										"kind": "fee",
+										"label": null,
+										"amount": 0,
+										"display_amount": 0,
+										"currency": "usd",
+										"rate": {
+											"percentage": 0.01,
+											"fixed": 0,
+											"fixed_currency": "usd",
+											"percentage_display": "1%"
+										},
+										"meta": {
+											"fee_id": "additional-us-card-fx-fee"
+										}
+									}
+								],
+								"totals": {
+									"fee": {
+										"key": null,
+										"amount": 85,
+										"display_amount": -85,
+										"currency": "usd",
+										"rate": {
+											"percentage": 0.039,
+											"fixed": 30,
+											"fixed_currency": "usd",
+											"percentage_display": "3.9%"
+										}
+									},
+									"tax": {
+										"amount": 0,
+										"display_amount": 0,
+										"currency": "usd"
+									},
+									"net": {
+										"amount": 1321,
+										"currency": "usd"
+									},
+									"capture_net": {
+										"amount": 1321,
+										"currency": "usd"
+									},
+									"gross": {
+										"amount": 1406,
+										"currency": "usd"
+									},
+									"fee_plus_tax": {
+										"amount": 85,
+										"currency": "usd"
+									}
+								},
+								"notes": [],
+								"sources": {
+									"balance_transaction_exchange_rate": 1.13905,
+									"refunded_fee_amount_store": 0,
+									"effective_total_store": 85
+								},
+								"fx": {
+									"rate_display": "1 eur → 1.13905 usd",
+									"from_currency": "eur",
+									"to_currency": "usd",
+									"from_amount": 1234,
+									"to_amount": 1406
+								}
+							}
+						},
+						{
+							"type": "authorized",
+							"datetime": 1790334050,
+							"amount": 1234,
+							"currency": "EUR"
+						},
+						{
+							"type": "started",
+							"datetime": 1790334050,
+							"amount": 1234,
+							"currency": "EUR"
+						}
+					]
+				}
+			}
+		}
+	]
+}

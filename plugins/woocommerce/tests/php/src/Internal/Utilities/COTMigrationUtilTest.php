@@ -57,6 +57,7 @@ class COTMigrationUtilTest extends \WC_Unit_Test_Case {
 	 * Test test_get_post_or_object_meta function with both posts and order objects.
 	 */
 	public function test_get_post_or_object_meta() {
+		OrderHelper::toggle_cot_feature_and_usage( false );
 		$order = OrderHelper::create_order();
 		$post  = get_post( $order->get_id() );
 		update_post_meta( $order->get_id(), 'dummy_meta', 'dummy_value' );

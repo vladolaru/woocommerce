@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Omit dispute fee wording from lost dispute details when no effective fee was charged.

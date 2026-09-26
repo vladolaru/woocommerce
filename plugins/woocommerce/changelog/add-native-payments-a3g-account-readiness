@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add Core-owned WooPayments account readiness for native payments.

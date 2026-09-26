@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Stop the card-authentication driver treating an unreadable challenge as a frictionless payment.

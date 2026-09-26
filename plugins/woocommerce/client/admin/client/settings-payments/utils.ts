@@ -2,6 +2,7 @@
  * External dependencies
  */
 import {
+	PaymentsEntity,
 	PaymentsProvider,
 	PaymentsProviderIncentive,
 	RecommendedPaymentMethod,
@@ -110,6 +111,17 @@ export const isWooPayments = ( id: string ) => {
 };
 
 /**
+ * Checks whether WooPayments is provided by core without a standalone plugin.
+ */
+export const isCoreNativeWooPayments = ( provider: PaymentsEntity ) => {
+	return (
+		isWooPayments( provider.id ) &&
+		provider.onboarding?.type === 'native_in_context' &&
+		! provider.plugin?.slug
+	);
+};
+
+/**
  * Checks whether a provider is WooPayments and that it is eligible for WooPay.
  */
 export const isWooPayEligible = ( provider: PaymentsProvider ) => {
@@ -155,7 +167,10 @@ export const providersContainWooPaymentsNeedsSetup = (
 	providers: PaymentsProvider[]
 ): boolean => {
 	const wooPayments = providers.find( ( obj ) => isWooPayments( obj.id ) );
-	return wooPayments?.state?.needs_setup || false;
+	return (
+		wooPayments?.state?.needs_setup === true ||
+		( !! wooPayments && isCoreNativeWooPayments( wooPayments ) )
+	);
 };
 
 /**

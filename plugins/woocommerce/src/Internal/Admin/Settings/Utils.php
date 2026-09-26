@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Internal\Admin\Settings;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use WP_REST_Request;
 
@@ -339,12 +340,13 @@ class Utils {
 	 * Retrieves a URL to relative path inside WooCommerce admin Payments settings with
 	 * the provided query parameters.
 	 *
-	 * @param string|null $path  Relative path of the desired page.
-	 * @param array       $query Query parameters to append to the path.
+	 * @param string|null $path     Relative path of the desired page.
+	 * @param array       $query    Query parameters to append to the path.
+	 * @param string      $fragment URL fragment to append to the URL.
 	 *
 	 * @return string       Fully qualified URL pointing to the desired path.
 	 */
-	public static function wc_payments_settings_url( ?string $path = null, array $query = array() ): string {
+	public static function wc_payments_settings_url( ?string $path = null, array $query = array(), string $fragment = '' ): string {
 		$path = $path ? '&path=' . $path : '';
 
 		$query_string = '';
@@ -352,7 +354,34 @@ class Utils {
 			$query_string = '&' . http_build_query( $query );
 		}
 
-		return admin_url( 'admin.php?page=wc-settings&tab=checkout' . $path . $query_string );
+		$fragment = '' !== $fragment ? '#' . rawurlencode( $fragment ) : '';
+
+		return admin_url( 'admin.php?page=wc-settings&tab=checkout' . $path . $query_string . $fragment );
+	}
+
+	/**
+	 * Retrieves a legacy WooPayments WC Admin URL for persisted compatibility surfaces.
+	 *
+	 * These URLs intentionally preserve the historical WooPayments plugin path shape for
+	 * order notes and other durable merchant-facing records. Native admin code can redirect
+	 * the legacy path to the Core-owned Settings > Payments route when it is loaded.
+	 *
+	 * @param string $path  Legacy WooPayments WC Admin path.
+	 * @param array  $query Query parameters to append to the path.
+	 *
+	 * @return string Fully qualified legacy WC Admin URL.
+	 */
+	public static function wc_payments_legacy_admin_url( string $path, array $query = array() ): string {
+		return add_query_arg(
+			array_merge(
+				array(
+					'page' => 'wc-admin',
+					'path' => $path,
+				),
+				$query
+			),
+			admin_url( 'admin.php' )
+		);
 	}
 
 	/**
@@ -457,8 +486,8 @@ class Utils {
 				array(
 					// We use the new WooDNA value.
 					'from'         => 'woocommerce-onboarding',
-					// We inform Calypso that this is a WooPayments onboarding flow.
-					'plugin_name'  => 'woocommerce-payments',
+					// Native WooPayments onboarding belongs to WooCommerce core; retain the plugin identity for merged-feature development.
+					'plugin_name'  => Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ? 'woocommerce-payments' : 'woocommerce',
 					// Use the current user's WP admin color scheme.
 					'color_scheme' => $result['color_scheme'],
 				),

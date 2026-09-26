@@ -29,6 +29,13 @@ class WC_Admin_Tests_Admin_Helper extends WC_Unit_Test_Case {
 	private static $original_wc_permalinks;
 
 	/**
+	 * Store original theme for restoration.
+	 *
+	 * @var string
+	 */
+	private static $original_theme;
+
+	/**
 	 * Store product ID for cleanup.
 	 *
 	 * @var int
@@ -40,6 +47,8 @@ class WC_Admin_Tests_Admin_Helper extends WC_Unit_Test_Case {
 	 */
 	public static function setUpBeforeClass(): void {
 		parent::setUpBeforeClass();
+
+		self::$original_theme = get_stylesheet();
 
 		// Use a block theme so that product post type can be registered with has_archive = `shop`.
 		switch_theme( 'twentytwentyfour' );
@@ -69,6 +78,10 @@ class WC_Admin_Tests_Admin_Helper extends WC_Unit_Test_Case {
 		global $wp_rewrite;
 		$wp_rewrite->set_permalink_structure( self::$original_permalink_structure );
 		update_option( 'woocommerce_permalinks', self::$original_wc_permalinks );
+
+		if ( self::$original_theme && get_stylesheet() !== self::$original_theme ) {
+			switch_theme( self::$original_theme );
+		}
 
 		// Flush rewrite rules one final time.
 		$wp_rewrite->flush_rules();

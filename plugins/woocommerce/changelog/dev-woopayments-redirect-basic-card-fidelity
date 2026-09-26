@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add the redirect-method and basic-card fidelity family suites, a shared redirect driver, and a block-theme snapshot driver.

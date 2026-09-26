@@ -1,0 +1,47 @@
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+Your receipt for order: #<ORDER_ID>
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+Hi Ada,
+
+This is the receipt for your order #<ORDER_ID>:
+
+==========
+
+Reader Store
+
+==========
+
+123 Sample Street
+Suite 100
+San Francisco CA 94107 US
++1 555 0100 support@example.test
+<RENDERED_AT>
+
+----------------------------------------
+
+Order #<ORDER_ID> (<ORDER_DATE>)
+
+==========
+
+Oracle Reader Product × 1                        &#036;10.00
+
+==========
+
+Subtotal:                                         &#036;10.00
+Total:                                        &#036;10.00 USD
+
+----------------------------------------
+
+Payment Method:	eftpos - 0978
+Application Name:	Eftpos debit
+AID:	A00000038410
+Account Type:	Debit
+
+----------------------------------------
+
+Thanks for using <SITE_URL>!
+
+----------------------------------------
+
+woocommerce<br />123 Main St, San Francisco, CA 94107, United States (US)

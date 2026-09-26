@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Cache the multi-currency orders existence check to avoid a table scan on every analytics request.

@@ -1,0 +1,304 @@
+{
+	"_meta": {
+		"recording": "REC-3DS-1",
+		"customers": {
+			"user_1": "cus_UsIeTbmGHPc9jY (store user 1 test customer, wp__wcpay_customer_id_test)",
+			"user_9": "cus_UssvIolWfFBGh6 (store user 9 test customer; holds the saved 3220 card from an earlier browser save)"
+		},
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 29b78cbae6, WooPayments plugin inactive, test mode, store currency USD)",
+		"captured_via": "wcpay_api_request_response filter (raw transport response before native parsing) and wcpay_api_request_params at PHP_INT_MAX (the exact params request() sends); one transport attempt per entry (Idempotent-Replayed header empty on all), no retries",
+		"sanitized": "client_secret, receipt_url, request_log_url, emails, order_key and fraud_prevention_data_shopper_ip_hash / _ua_hash / _ip_country replaced with REDACTED where non-null; customer id in the request summary abstracted (response bodies keep test-mode ids); response bodies are JSON-decoded and otherwise verbatim (next_action.use_stripe_sdk keeps the public Visa directory-server certificate)",
+		"notes": "data/rec-t3-api-recordings.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "new_card_requires_action",
+			"test_card": "4000000000003220 (pm_card_threeDSecure2Required)",
+			"recorded_at": "2026-09-25T22:15:38+00:00",
+			"context": "10.99 USD, automatic capture; returns requires_action with next_action use_stripe_sdk and no charge",
+			"request": {
+				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"method": "POST",
+				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"amount": 1099,
+					"currency": "usd",
+					"customer": "cus_* (see _meta.customers)",
+					"description": "REC-3DS-1 requires_action recording",
+					"metadata": {
+						"rec": "REC-3DS-1"
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"payment_method": "pm_card_threeDSecure2Required",
+					"confirm": "true",
+					"capture_method": "automatic",
+					"idempotency_key": "7090d23c-508e-405d-8512-c7c7cb3dadf7"
+				},
+				"body_note": "the params request() JSON-encodes (wcpay_api_request_params at PHP_INT_MAX); idempotency_key is a body param; request() also sends an Idempotency-Key header"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "pi_3UJhP4BzWlxcwgpP0Zv6Fk44",
+					"object": "payment_intent",
+					"allowed_payment_method_types": null,
+					"amount": 1099,
+					"amount_capturable": 0,
+					"amount_details": {
+						"tip": []
+					},
+					"amount_received": 0,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_amount": 78,
+					"automatic_payment_methods": null,
+					"canceled_at": null,
+					"cancellation_reason": null,
+					"capture_method": "automatic",
+					"charges": {
+						"object": "list",
+						"data": [],
+						"has_more": false,
+						"total_count": 0,
+						"url": "/v1/charges?payment_intent=pi_3UJhP4BzWlxcwgpP0Zv6Fk44"
+					},
+					"client_secret": "REDACTED",
+					"confirmation_method": "automatic",
+					"created": 1790374538,
+					"currency": "usd",
+					"customer": "cus_UsIeTbmGHPc9jY",
+					"customer_account": null,
+					"description": "REC-3DS-1 requires_action recording",
+					"excluded_payment_method_types": null,
+					"invoice": null,
+					"last_payment_error": null,
+					"latest_charge": null,
+					"level3": null,
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"rec": "REC-3DS-1"
+					},
+					"next_action": {
+						"type": "use_stripe_sdk",
+						"use_stripe_sdk": {
+							"directory_server_encryption": {
+								"algorithm": "RSA",
+								"certificate": "-----BEGIN CERTIFICATE-----\nMIIGAzCCA+ugAwIBAgIQNyg9v/wemJMz4m18kdvt6zANBgkqhkiG9w0BAQsFADB2\nMQswCQYDVQQGEwJVUzENMAsGA1UECgwEVklTQTEvMC0GA1UECwwmVmlzYSBJbnRl\ncm5hdGlvbmFsIFNlcnZpY2UgQXNzb2NpYXRpb24xJzAlBgNVBAMMHlZpc2EgZUNv\nbW1lcmNlIElzc3VpbmcgQ0EgLSBHMjAeFw0yNDAyMjcyMjQ0MDNaFw0yNzAyMjYy\nMjQ0MDJaMIGhMRgwFgYDVQQHDA9IaWdobGFuZHMgUmFuY2gxETAPBgNVBAgMCENv\nbG9yYWRvMQswCQYDVQQGEwJVUzENMAsGA1UECgwEVklTQTEvMC0GA1UECwwmVmlz\nYSBJbnRlcm5hdGlvbmFsIFNlcnZpY2UgQXNzb2NpYXRpb24xJTAjBgNVBAMMHDNk\nczIucnNhLmVuY3J5cHRpb24udmlzYS5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IB\nDwAwggEKAoIBAQCSABLI5aAnf8Cypn/sKETE+U3e3YruYzUkqNpEMH0sPMpCAW1V\n33xiklm5R0S3ZFOEzzlmL22tRyjXaB6/WJUa66ajRz2DiY8+7x5CcMJNVlwqS6OG\nTlmvXGOxPXIVz6hxCsAb7mKS7cnpGpkjVD/Oe4u8ZmeUrcPWKdeH+e5BfeWp2Iel\nh89pU4tpJ84PlPTlLjZ3TLa2OutFLsMBExcr4ipWnEcbpkzvAPBRABBVZbkWTA9i\nVM9v5MXIJGzXDsQVJEOgxm/kyQXeO3JtNytYOaQ6sQi+z9gF32plP3hsrUQ2jJ3H\nCnZmOyrHl8tQWxhAIMZ/WHogpvEGufi14eyBAgMBAAGjggFfMIIBWzAMBgNVHRMB\nAf8EAjAAMB8GA1UdIwQYMBaAFL0nYyikrlS3yCO3wTVCF+nGeF+FMGcGCCsGAQUF\nBwEBBFswWTAwBggrBgEFBQcwAoYkaHR0cDovL2Vucm9sbC52aXNhY2EuY29tL2VD\nb21tRzIuY3J0MCUGCCsGAQUFBzABhhlodHRwOi8vb2NzcC52aXNhLmNvbS9vY3Nw\nMEYGA1UdIAQ/MD0wMQYIKwYBBQUHAgEwJTAjBggrBgEFBQcCARYXaHR0cDovL3d3\ndy52aXNhLmNvbS9wa2kwCAYGZ4EDAQEBMBMGA1UdJQQMMAoGCCsGAQUFBwMCMDUG\nA1UdHwQuMCwwKqAooCaGJGh0dHA6Ly9lbnJvbGwudmlzYWNhLmNvbS9lQ29tbUcy\nLmNybDAdBgNVHQ4EFgQU6gD/Z5m2gw4n676qt4jXOWr8ynowDgYDVR0PAQH/BAQD\nAgSwMA0GCSqGSIb3DQEBCwUAA4ICAQBumWXGS/uaaajte2gI3xCpsuewmihQKvKq\nOhaOc+wgdfwIkEAXdJIc33n2j/iaT5Lusi09ezZpBB80C6KQVr5Fs10SX0hlBCvT\n9MGYFwFtYUgi5OenqYsXc8BdmiE0bFiSXZ7XfxWuvYjis4LOubMr48yVyyEynWWb\nSGr7rTJztraOFjsykK16x946YXi/LswEP9RtDiOBNJ9cBVcOP+u8Q+dEzA5A63Ay\nA2Z/5m/pyCIWMSYGMtM0RANUp9gp7cEXaMpwKWfrW6ZanF60IoGlmRHilGU4rvm7\ntd4yJTfwxtkmh4w/IPiqI/OaXj5iG8hCo8a9FTnGahIcij8c1UWzQ3/A7o99AUwy\n1Xi9JnNiXYVM1bfQalK0DKsLqRiS6rzPfwMUxj2+ALnhcrnSdPnZgVxiQB7kvfi3\nHFXHoGhmMHHj8tlURqUQzpJcCz1QOy5c9SCc/M8Xu+eRsCnJrtvvDxriLWfDDM9M\n8/8JsiBP+DF6omCb6J4ryEulcVPnVAAZNlNtaUadPYnCJfB0p67jWkHa5NvQdZGW\naT1tvo9DqjI7zLf9Km0qqkK51gwYDnsy14pYvfeEwL9O9aepFa7x08bM3272xqNK\neGHXFK/zUVxYY5uxukcqYAdhAvx7f6d0J6Nr8jPxo6UNXKiFH9leGPPzx9oNugts\nz6qck4YdAQ==\n-----END CERTIFICATE-----\n",
+								"directory_server_id": "A000000003",
+								"root_certificate_authorities": [
+									"-----BEGIN CERTIFICATE-----\nMIIFqTCCA5GgAwIBAgIPUT6WAAAA20Qn7qzgvuFIMA0GCSqGSIb3DQEBCwUAMG8x\nCzAJBgNVBAYTAlVTMQ0wCwYDVQQKDARWSVNBMS8wLQYDVQQLDCZWaXNhIEludGVy\nbmF0aW9uYWwgU2VydmljZSBBc3NvY2lhdGlvbjEgMB4GA1UEAwwXVmlzYSBQdWJs\naWMgUlNBIFJvb3QgQ0EwHhcNMjEwMzE2MDAwMDAwWhcNNDEwMzE1MDAwMDAwWjBv\nMQswCQYDVQQGEwJVUzENMAsGA1UECgwEVklTQTEvMC0GA1UECwwmVmlzYSBJbnRl\ncm5hdGlvbmFsIFNlcnZpY2UgQXNzb2NpYXRpb24xIDAeBgNVBAMMF1Zpc2EgUHVi\nbGljIFJTQSBSb290IENBMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA\n2WEbXLS3gI6LOY93bP7Kz6EO9L1QXlr8l+fTkJWZldJ6QuwZ1cv4369tfjeJ8O5w\nSJiDcVw7eNdOP73LfAtwHlTnUnb0e9ILTTipc5bkNnAevocrJACsrpiQ8jBI9ttp\ncqKUeJgzW4Ie25ypirKroVD42b4E0iICK2cZ5QfD4BSzUnftp4Bqh8AfpGvG1lre\nCaD53qrsy5SUadY/NaeUGOkqdPvDSNoDIdrbExwnZaSFUmjQT1svKwMqGo2GFrgJ\n4cULEp4NNj5rga8YTTZ7Xo5MblHrLpSPOmJev30KWi/BcbvtCNYNWBTg7UMzP3cK\nMQ1pGLvG2PgvFTZSRvH3QzngJRgrDYYOJ6kj9ave+6yOOFqj80ZCuH0Nugt2mMS3\nc3+Nksaw+6H3cQPsE/Gv5zjfsKleRhEFtE1gyrdUg1DMgu8o/YhKM7FAqkXUn74z\nwoRFgx3Mi5OaGTQbg+NlwJgR4sVHXCV4s9b8PjneLhzWMn353SFARF9dnO7LDBqq\ntT6WltJu1z9x2Ze0UVNZvxKGcyCkLody29O8j9/MGZ8SOSUu4U6NHrebKuuf9Fht\nn6PqQ4ppkhy6sReXeV5NVGfVpDYY5ZAKEWqTYgMULWpQ2Py4BGpFzBe07jXkyulR\npoKvz14iXeA0oq16c94DrFYX0jmrWLeU4a/TCZQLFIsCAwEAAaNCMEAwHQYDVR0O\nBBYEFEtNpg77oBHorQvi8PMKAC+sixb7MA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0P\nAQH/BAQDAgEGMA0GCSqGSIb3DQEBCwUAA4ICAQC5BU9qQSZYPcgCp2x0Juq59kMm\nXuBly094DaEnPqvtCgwwAirkv8x8/QSOxiWWiu+nveyuR+j6Gz/fJaV4u+J5QEDy\ncfk605Mw3HIcJOeZvDgk1eyOmQwUP6Z/BdQTNJmZ92Z8dcG5yWCxLBrqPH7ro3Ss\njhYq9duIJU7jfizCJCN4W8tp0D2pWBe1/CYNswP4GMs5jQ5+ZQKN/L5JFdwVTu7X\nPt8b5zfgbmmQpVmUn0oFwm3OI++Z6gEpNmW5bd/2oUIZoG96Qff2fauVMAYiWQvN\nnL3y1gkRguTOSMVUCCiGfdvwu5ygowillvV2nHb7+YibQ9N5Z2spP0o9Zlfzoat2\n7WFpyK47TiUdu/4toarLKGZP+hbA/F4xlnM/8EfZkE1DeTTI0lhN3O8yEsHrtRl1\nOuQZ/IexHO8UGU6jvn4TWo10HYeXzrGckL7oIXfGTrjPzfY62T5HDW/BAEZS+9Tk\nijz25YM0fPPz7IdlEG+k4q4YwZ82j73Y9kDEM5423mrWorq/Bq7I5Y8v0LTY9GWH\nYrpElYf0WdOXAbsfwQiT6qnRio+p82VyqlY8Jt6VVA6CDy/iHKwcj1ELEnDQfVv9\nhedoxmnQ6xe/nK8czclu9hQJRv5Lh9gk9Q8DKK2nmgzZ8SSQ+lr3mSSeY8JOMRlE\n+RKdOQIChWthTJKh7w==\n-----END CERTIFICATE-----\n"
+								]
+							},
+							"directory_server_name": "visa",
+							"merchant": "acct_1TrY2nBzWlxcwgpP",
+							"one_click_authn": null,
+							"server_transaction_id": "07540423-8dfa-4642-a994-c3546934d734",
+							"three_d_secure_2_source": "payatt_3UJhP4BzWlxcwgpP0NrbNv4H",
+							"three_ds_frontend_optimizations": "eyJtZXRob2RfdGltZW91dCI6MTAsInNraXBfbWV0aG9kIjpmYWxzZSwic2FuZGJveF9tZXRob2QiOnRydWUsInNhbmRib3hfY2hhbGxlbmdlIjpmYWxzZSwicmVjb3JkX2ZpbmFsX2NyZXMiOnRydWUsImZ1bGxzY3JlZW5faG9zdGVkX2NoYWxsZW5nZSI6ZmFsc2UsInNob3dfbG9hZGluZ19iYXIiOnRydWUsInNob3dfY2hhbGxlbmdlX2ZyYW1lX2R1cmluZ19maW5nZXJwcmludGluZyI6dHJ1ZSwiZnVsbHNjcmVlbl9jaGFsbGVuZ2UiOmZhbHNlLCJ3YXJuX29uX2FiYW5kb24iOnRydWV9",
+							"three_ds_method_url": "",
+							"type": "stripe_3ds2_fingerprint"
+						}
+					},
+					"on_behalf_of": null,
+					"payment_method": "pm_1UJhP4BzWlxcwgpPxscshXBh",
+					"payment_method_configuration_details": null,
+					"payment_method_options": {
+						"card": {
+							"installments": null,
+							"mandate_options": null,
+							"network": null,
+							"request_three_d_secure": "automatic"
+						}
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"payment_record": null,
+					"processing": null,
+					"receipt_email": null,
+					"review": null,
+					"setup_future_usage": null,
+					"shared_payment_granted_token": null,
+					"shipping": null,
+					"source": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "requires_action",
+					"transfer_data": null,
+					"transfer_group": null,
+					"fee_history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "international",
+							"fee_id": "additional-us-intl-fee",
+							"percentage_rate": 0.015,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					]
+				}
+			}
+		},
+		{
+			"pair": "saved_payment_method_requires_action",
+			"test_card": "4000000000003220 saved as pm_1Tt7AGBzWlxcwgpPXw5RqQtT on user 9 customer",
+			"recorded_at": "2026-09-25T22:17:06+00:00",
+			"context": "saved-PM variant: on-session 10.99 USD with a payment method already attached to the customer; NOT on the REC-SUB customer (see notes: no 3DS-required card is attached there and the platform has no attach route)",
+			"request": {
+				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"method": "POST",
+				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"amount": 1099,
+					"currency": "usd",
+					"customer": "cus_* (see _meta.customers)",
+					"description": "REC-3DS-1 saved payment method requires_action recording",
+					"metadata": {
+						"rec": "REC-3DS-1",
+						"variant": "saved_pm"
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"payment_method": "pm_1Tt7AGBzWlxcwgpPXw5RqQtT",
+					"confirm": "true",
+					"capture_method": "automatic",
+					"idempotency_key": "905b2db6-0c4b-4a28-937a-6ffacf059738"
+				},
+				"body_note": "the params request() JSON-encodes (wcpay_api_request_params at PHP_INT_MAX); idempotency_key is a body param; request() also sends an Idempotency-Key header"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "pi_3UJhQTBzWlxcwgpP1c4Lec5Q",
+					"object": "payment_intent",
+					"allowed_payment_method_types": null,
+					"amount": 1099,
+					"amount_capturable": 0,
+					"amount_details": {
+						"tip": []
+					},
+					"amount_received": 0,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_amount": 78,
+					"automatic_payment_methods": null,
+					"canceled_at": null,
+					"cancellation_reason": null,
+					"capture_method": "automatic",
+					"charges": {
+						"object": "list",
+						"data": [],
+						"has_more": false,
+						"total_count": 0,
+						"url": "/v1/charges?payment_intent=pi_3UJhQTBzWlxcwgpP1c4Lec5Q"
+					},
+					"client_secret": "REDACTED",
+					"confirmation_method": "automatic",
+					"created": 1790374625,
+					"currency": "usd",
+					"customer": "cus_UssvIolWfFBGh6",
+					"customer_account": null,
+					"description": "REC-3DS-1 saved payment method requires_action recording",
+					"excluded_payment_method_types": null,
+					"invoice": null,
+					"last_payment_error": null,
+					"latest_charge": null,
+					"level3": null,
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"rec": "REC-3DS-1",
+						"variant": "saved_pm"
+					},
+					"next_action": {
+						"type": "use_stripe_sdk",
+						"use_stripe_sdk": {
+							"directory_server_encryption": {
+								"algorithm": "RSA",
+								"certificate": "-----BEGIN CERTIFICATE-----\nMIIGAzCCA+ugAwIBAgIQNyg9v/wemJMz4m18kdvt6zANBgkqhkiG9w0BAQsFADB2\nMQswCQYDVQQGEwJVUzENMAsGA1UECgwEVklTQTEvMC0GA1UECwwmVmlzYSBJbnRl\ncm5hdGlvbmFsIFNlcnZpY2UgQXNzb2NpYXRpb24xJzAlBgNVBAMMHlZpc2EgZUNv\nbW1lcmNlIElzc3VpbmcgQ0EgLSBHMjAeFw0yNDAyMjcyMjQ0MDNaFw0yNzAyMjYy\nMjQ0MDJaMIGhMRgwFgYDVQQHDA9IaWdobGFuZHMgUmFuY2gxETAPBgNVBAgMCENv\nbG9yYWRvMQswCQYDVQQGEwJVUzENMAsGA1UECgwEVklTQTEvMC0GA1UECwwmVmlz\nYSBJbnRlcm5hdGlvbmFsIFNlcnZpY2UgQXNzb2NpYXRpb24xJTAjBgNVBAMMHDNk\nczIucnNhLmVuY3J5cHRpb24udmlzYS5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IB\nDwAwggEKAoIBAQCSABLI5aAnf8Cypn/sKETE+U3e3YruYzUkqNpEMH0sPMpCAW1V\n33xiklm5R0S3ZFOEzzlmL22tRyjXaB6/WJUa66ajRz2DiY8+7x5CcMJNVlwqS6OG\nTlmvXGOxPXIVz6hxCsAb7mKS7cnpGpkjVD/Oe4u8ZmeUrcPWKdeH+e5BfeWp2Iel\nh89pU4tpJ84PlPTlLjZ3TLa2OutFLsMBExcr4ipWnEcbpkzvAPBRABBVZbkWTA9i\nVM9v5MXIJGzXDsQVJEOgxm/kyQXeO3JtNytYOaQ6sQi+z9gF32plP3hsrUQ2jJ3H\nCnZmOyrHl8tQWxhAIMZ/WHogpvEGufi14eyBAgMBAAGjggFfMIIBWzAMBgNVHRMB\nAf8EAjAAMB8GA1UdIwQYMBaAFL0nYyikrlS3yCO3wTVCF+nGeF+FMGcGCCsGAQUF\nBwEBBFswWTAwBggrBgEFBQcwAoYkaHR0cDovL2Vucm9sbC52aXNhY2EuY29tL2VD\nb21tRzIuY3J0MCUGCCsGAQUFBzABhhlodHRwOi8vb2NzcC52aXNhLmNvbS9vY3Nw\nMEYGA1UdIAQ/MD0wMQYIKwYBBQUHAgEwJTAjBggrBgEFBQcCARYXaHR0cDovL3d3\ndy52aXNhLmNvbS9wa2kwCAYGZ4EDAQEBMBMGA1UdJQQMMAoGCCsGAQUFBwMCMDUG\nA1UdHwQuMCwwKqAooCaGJGh0dHA6Ly9lbnJvbGwudmlzYWNhLmNvbS9lQ29tbUcy\nLmNybDAdBgNVHQ4EFgQU6gD/Z5m2gw4n676qt4jXOWr8ynowDgYDVR0PAQH/BAQD\nAgSwMA0GCSqGSIb3DQEBCwUAA4ICAQBumWXGS/uaaajte2gI3xCpsuewmihQKvKq\nOhaOc+wgdfwIkEAXdJIc33n2j/iaT5Lusi09ezZpBB80C6KQVr5Fs10SX0hlBCvT\n9MGYFwFtYUgi5OenqYsXc8BdmiE0bFiSXZ7XfxWuvYjis4LOubMr48yVyyEynWWb\nSGr7rTJztraOFjsykK16x946YXi/LswEP9RtDiOBNJ9cBVcOP+u8Q+dEzA5A63Ay\nA2Z/5m/pyCIWMSYGMtM0RANUp9gp7cEXaMpwKWfrW6ZanF60IoGlmRHilGU4rvm7\ntd4yJTfwxtkmh4w/IPiqI/OaXj5iG8hCo8a9FTnGahIcij8c1UWzQ3/A7o99AUwy\n1Xi9JnNiXYVM1bfQalK0DKsLqRiS6rzPfwMUxj2+ALnhcrnSdPnZgVxiQB7kvfi3\nHFXHoGhmMHHj8tlURqUQzpJcCz1QOy5c9SCc/M8Xu+eRsCnJrtvvDxriLWfDDM9M\n8/8JsiBP+DF6omCb6J4ryEulcVPnVAAZNlNtaUadPYnCJfB0p67jWkHa5NvQdZGW\naT1tvo9DqjI7zLf9Km0qqkK51gwYDnsy14pYvfeEwL9O9aepFa7x08bM3272xqNK\neGHXFK/zUVxYY5uxukcqYAdhAvx7f6d0J6Nr8jPxo6UNXKiFH9leGPPzx9oNugts\nz6qck4YdAQ==\n-----END CERTIFICATE-----\n",
+								"directory_server_id": "A000000003",
+								"root_certificate_authorities": [
+									"-----BEGIN CERTIFICATE-----\nMIIFqTCCA5GgAwIBAgIPUT6WAAAA20Qn7qzgvuFIMA0GCSqGSIb3DQEBCwUAMG8x\nCzAJBgNVBAYTAlVTMQ0wCwYDVQQKDARWSVNBMS8wLQYDVQQLDCZWaXNhIEludGVy\nbmF0aW9uYWwgU2VydmljZSBBc3NvY2lhdGlvbjEgMB4GA1UEAwwXVmlzYSBQdWJs\naWMgUlNBIFJvb3QgQ0EwHhcNMjEwMzE2MDAwMDAwWhcNNDEwMzE1MDAwMDAwWjBv\nMQswCQYDVQQGEwJVUzENMAsGA1UECgwEVklTQTEvMC0GA1UECwwmVmlzYSBJbnRl\ncm5hdGlvbmFsIFNlcnZpY2UgQXNzb2NpYXRpb24xIDAeBgNVBAMMF1Zpc2EgUHVi\nbGljIFJTQSBSb290IENBMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA\n2WEbXLS3gI6LOY93bP7Kz6EO9L1QXlr8l+fTkJWZldJ6QuwZ1cv4369tfjeJ8O5w\nSJiDcVw7eNdOP73LfAtwHlTnUnb0e9ILTTipc5bkNnAevocrJACsrpiQ8jBI9ttp\ncqKUeJgzW4Ie25ypirKroVD42b4E0iICK2cZ5QfD4BSzUnftp4Bqh8AfpGvG1lre\nCaD53qrsy5SUadY/NaeUGOkqdPvDSNoDIdrbExwnZaSFUmjQT1svKwMqGo2GFrgJ\n4cULEp4NNj5rga8YTTZ7Xo5MblHrLpSPOmJev30KWi/BcbvtCNYNWBTg7UMzP3cK\nMQ1pGLvG2PgvFTZSRvH3QzngJRgrDYYOJ6kj9ave+6yOOFqj80ZCuH0Nugt2mMS3\nc3+Nksaw+6H3cQPsE/Gv5zjfsKleRhEFtE1gyrdUg1DMgu8o/YhKM7FAqkXUn74z\nwoRFgx3Mi5OaGTQbg+NlwJgR4sVHXCV4s9b8PjneLhzWMn353SFARF9dnO7LDBqq\ntT6WltJu1z9x2Ze0UVNZvxKGcyCkLody29O8j9/MGZ8SOSUu4U6NHrebKuuf9Fht\nn6PqQ4ppkhy6sReXeV5NVGfVpDYY5ZAKEWqTYgMULWpQ2Py4BGpFzBe07jXkyulR\npoKvz14iXeA0oq16c94DrFYX0jmrWLeU4a/TCZQLFIsCAwEAAaNCMEAwHQYDVR0O\nBBYEFEtNpg77oBHorQvi8PMKAC+sixb7MA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0P\nAQH/BAQDAgEGMA0GCSqGSIb3DQEBCwUAA4ICAQC5BU9qQSZYPcgCp2x0Juq59kMm\nXuBly094DaEnPqvtCgwwAirkv8x8/QSOxiWWiu+nveyuR+j6Gz/fJaV4u+J5QEDy\ncfk605Mw3HIcJOeZvDgk1eyOmQwUP6Z/BdQTNJmZ92Z8dcG5yWCxLBrqPH7ro3Ss\njhYq9duIJU7jfizCJCN4W8tp0D2pWBe1/CYNswP4GMs5jQ5+ZQKN/L5JFdwVTu7X\nPt8b5zfgbmmQpVmUn0oFwm3OI++Z6gEpNmW5bd/2oUIZoG96Qff2fauVMAYiWQvN\nnL3y1gkRguTOSMVUCCiGfdvwu5ygowillvV2nHb7+YibQ9N5Z2spP0o9Zlfzoat2\n7WFpyK47TiUdu/4toarLKGZP+hbA/F4xlnM/8EfZkE1DeTTI0lhN3O8yEsHrtRl1\nOuQZ/IexHO8UGU6jvn4TWo10HYeXzrGckL7oIXfGTrjPzfY62T5HDW/BAEZS+9Tk\nijz25YM0fPPz7IdlEG+k4q4YwZ82j73Y9kDEM5423mrWorq/Bq7I5Y8v0LTY9GWH\nYrpElYf0WdOXAbsfwQiT6qnRio+p82VyqlY8Jt6VVA6CDy/iHKwcj1ELEnDQfVv9\nhedoxmnQ6xe/nK8czclu9hQJRv5Lh9gk9Q8DKK2nmgzZ8SSQ+lr3mSSeY8JOMRlE\n+RKdOQIChWthTJKh7w==\n-----END CERTIFICATE-----\n"
+								]
+							},
+							"directory_server_name": "visa",
+							"merchant": "acct_1TrY2nBzWlxcwgpP",
+							"one_click_authn": null,
+							"server_transaction_id": "80d5cad7-1323-4b8b-87b9-ac20d6376e68",
+							"three_d_secure_2_source": "payatt_3UJhQTBzWlxcwgpP1CsqbYx3",
+							"three_ds_frontend_optimizations": "eyJtZXRob2RfdGltZW91dCI6MTAsInNraXBfbWV0aG9kIjpmYWxzZSwic2FuZGJveF9tZXRob2QiOnRydWUsInNhbmRib3hfY2hhbGxlbmdlIjpmYWxzZSwicmVjb3JkX2ZpbmFsX2NyZXMiOnRydWUsImZ1bGxzY3JlZW5faG9zdGVkX2NoYWxsZW5nZSI6ZmFsc2UsInNob3dfbG9hZGluZ19iYXIiOnRydWUsInNob3dfY2hhbGxlbmdlX2ZyYW1lX2R1cmluZ19maW5nZXJwcmludGluZyI6dHJ1ZSwiZnVsbHNjcmVlbl9jaGFsbGVuZ2UiOmZhbHNlLCJ3YXJuX29uX2FiYW5kb24iOnRydWV9",
+							"three_ds_method_url": "",
+							"type": "stripe_3ds2_fingerprint"
+						}
+					},
+					"on_behalf_of": null,
+					"payment_method": "pm_1Tt7AGBzWlxcwgpPXw5RqQtT",
+					"payment_method_configuration_details": null,
+					"payment_method_options": {
+						"card": {
+							"installments": null,
+							"mandate_options": null,
+							"network": null,
+							"request_three_d_secure": "automatic"
+						}
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"payment_record": null,
+					"processing": null,
+					"receipt_email": null,
+					"review": null,
+					"setup_future_usage": null,
+					"shared_payment_granted_token": null,
+					"shipping": null,
+					"source": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "requires_action",
+					"transfer_data": null,
+					"transfer_group": null,
+					"fee_history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "international",
+							"fee_id": "additional-us-intl-fee",
+							"percentage_rate": 0.015,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					]
+				}
+			}
+		}
+	]
+}

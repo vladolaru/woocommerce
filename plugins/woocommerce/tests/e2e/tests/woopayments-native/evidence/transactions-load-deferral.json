@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "transactions-load-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "abec154f1b24962e6062d015e41fd17df2d78f9d",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/overview-transactions.spec.ts",
+			"contract": "Admin transactions › page should load without errors"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved this exact already-specified line-14 blocked-environment deferral and its fields-37-through-40-only transition, preserved accepted disposition, exact non-pending target/title, and autonomous owner, retained authorized semantic transactions page and same-account list/summary terminal readiness plus conditional pinned-active-Subscriptions identifier discoverability, prior pilot partial-navigation non-substitution, base-smoke non-financial scope, earliest native-readiness blocker and unlock, pinned Subscriptions prerequisites, apparent missing field not mislabeled as a known gap, listener boundary, predecessor and calibration bindings, and zero quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership, account, and callback readiness fails first. The run also lacks an implemented exact specified target, authenticated connected native merchant fixture, stable semantic page and request terminal-state locators, an approved version-pinned active WooCommerce Subscriptions fixture for reference and native comparison, and a deterministic subscription-linked transaction or approved column-presence-only compatibility oracle.",
+		"affected_scope": "Only the exact line-14 transactions release and compatibility smoke: an authenticated merchant with manage_woocommerce reaches the protected native Transactions surface; same-account default transactions list and summary requests succeed; an awaited semantic Transactions heading and Transactions loaded. or No transactions found. terminal state appear without protected-route, capability, runtime/migration, fetch-alert, or page-exception failure; and, when the approved pinned active WooCommerce Subscriptions fixture is present, Subscription number or an explicitly approved equivalent keeps subscription-linked transaction identifiers semantically discoverable. The base smoke claims no transaction amount, currency, fee, net, status, count, or provider identity.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, implement and execute the absent exact target, approve or supply the pinned Subscriptions fixture and compatibility oracle, or establish the assembled authenticated full-stack observation. The prior merchant-transaction-navigation pilot proves navigation to one exact provider-created transaction inside another journey but not this independent page-load or optional Subscriptions clause. Existing mocked page/data tests, REST permission/query tests, API-client mapping, and current semantic loading states prove pieces but cannot substitute. The apparent absence of a native Subscription-number field is not a known gap until prerequisites pass and the exact target yields an anchored RED.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide a fresh exact-store/account readiness artifact proving native ownership and enablement, authenticated route availability, and callback readiness; supply an approved version-pinned active WooCommerce Subscriptions fixture and deterministic subscription-linked transaction or approved column-presence-only oracle; implement the already-specified exact target; and run one read-only zero-retry comparison with one worker that proves page/API terminal readiness and conditional identifier discoverability. Prefer a pre-existing read-only fixture; if a later design creates a provider transaction, separately obtain mutation authority, exclusive listener attribution, locks, journal, restoration/cleanup, and quarantine controls.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, performed no browser or provider run, and created no quarantine. The existing separately owned listener is irrelevant to the preferred read-only unlock and remains untouched."
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add native WooPayments express checkout parity for Apple Pay and Google Pay.

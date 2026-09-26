@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add provider-backed E2E coverage for the order status-change confirmations and close their four contracts.

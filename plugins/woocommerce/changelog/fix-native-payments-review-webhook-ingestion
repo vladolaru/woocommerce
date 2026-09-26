@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Make native WooPayments webhook scheduling unique and ingestion idempotent, and inject event handlers via the DI container.

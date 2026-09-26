@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "widget-currency-switching-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "c02a1eb7209ba9a8e9131e403ac8eee6e92bbc18",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:248::Multi-currency widget setup › currency switching works on the frontend"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact line-248 blocked-environment deferral and four-field-only transition, strict separation from adjacent widget rows, exact known product, USD baseline, approved deterministic EUR rate and rounding oracle, one semantic switcher selection, exact EUR session state and repriced amount, frozen symbol-plus-text-change false-positive boundary, disposable wcpay_currency session cleanup, no payment/provider claim, byte-exact global option/theme/widget restoration, locks, journals, one worker, zero retries, bounded reads, lower-layer non-substitution, shared-target drift, predecessor and calibration binding, listener irrelevance, and zero current resource and quarantine effect."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership and readiness fails first. The run also lacks a resolved exact target contract, owner, and row-safe closure-bundle topology; an approved uniquely identified product, USD baseline, deterministic EUR rate and rounding/tax/display oracle, and published semantic switcher fixture; a disposable shopper session lifecycle and effective-currency oracle; byte-exact feature, currency, rate, theme, sidebar, widget, and block-placement snapshot/restoration; ordered locks and journals; bounded repricing reads; and approved cleanup and quarantine handling.",
+		"affected_scope": "Only line 248 storefront switching: with one exact known USD product, USD default, EUR enabled under an approved deterministic rate and rounding contract, and exactly one published semantic switcher, a fresh disposable shopper context records the exact USD amount, selects EUR once, proves the effective WooCommerce wcpay_currency session selection is EUR, and observes the same product at the exact expected EUR amount and symbol. The frozen euro-symbol plus any changed text remains a minimum but is insufficient alone. It claims no admin configuration, widget styling, checkout, order, payment, provider amount or currency, external record, plugin CSS, Storefront/sidebar placement, or implementation selector.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair readiness, settle the deterministic product/rate/rounding oracle, choose the row-safe target and owner, approve global publication mutation, or establish byte-exact restoration, disposable-session cleanup, locks, journals, and quarantine controls. Lower settings, rate, frontend-pricing, and block tests cannot substitute for the real published browser/session repricing boundary. The frozen arbitrary text-change oracle can false-pass, while guessing an exact rate or rounding rule would invent financial semantics. Destructive currency normalization and blanket switcher deletion are forbidden. No anchored native defect exists before prerequisites and exact-target RED.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful native readiness; resolve a row-safe target and owner; approve the exact product, USD baseline, deterministic EUR rate/rounding/display oracle, and published-switcher fixture; acquire ordered store, setting, theme, and widget-placement locks; snapshot option existence and byte-exact values; journal every write; run once with one worker and zero retries in a new disposable shopper context; prove one EUR selection, exact effective wcpay_currency state, and exact expected repricing; destroy/reset and verify the session, close the context, and restore every global byte. Quarantine uncertainty and prefer a row-specific target or explicit reopen/re-closure for later shared edits.",
+		"quarantine_status": "This deferral allocated and mutated nothing, opened no browser or shopper session, acquired no lock, opened no journal, consumed no provider capacity, and created no quarantine. It creates no order/payment/provider resource and needs no listener; the separately owned listener remains untouched and irrelevant. Any uncertain eventual configuration, rate, session, repricing, restore, cleanup, lock, or journal state must quarantine affected store/session resources and must not be replayed."
+	}
+}

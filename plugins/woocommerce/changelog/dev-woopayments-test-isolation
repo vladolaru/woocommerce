@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Make the WooPayments recommended-methods and WooPay alias-leak tests independent of local environment and test execution order.

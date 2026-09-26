@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Admin\Suggestions;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Onboarding\OnboardingProfile;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestionIncentives;
@@ -477,6 +478,32 @@ class PaymentsExtensionSuggestionsTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $extension );
 		$this->assertArrayHasKey( 'id', $extension );
 		$this->assertSame( 'woopayments', $extension['id'] );
+	}
+
+	/**
+	 * @testdox Core-native WooPayments suggestions should not provide WordPress.org install metadata.
+	 */
+	public function test_woopayments_extension_does_not_include_plugin_install_metadata_when_core_owns_it(): void {
+		$extension = $this->sut->get_by_id( PaymentsExtensionSuggestions::WOOPAYMENTS );
+
+		$this->assertNotNull( $extension );
+		$this->assertArrayNotHasKey( 'plugin', $extension );
+	}
+
+	/**
+	 * @testdox Merged feature development should retain WooPayments WordPress.org install metadata.
+	 */
+	public function test_woopayments_extension_preserves_plugin_install_metadata_for_merged_feature_development(): void {
+		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+
+		try {
+			$extension = $this->sut->get_by_id( PaymentsExtensionSuggestions::WOOPAYMENTS );
+
+			$this->assertNotNull( $extension );
+			$this->assertSame( 'woocommerce-payments', $extension['plugin']['slug'] );
+		} finally {
+			Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
+		}
 	}
 
 	/**

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add native refund-validation and authentication-session E2E coverage and close their eight contracts.

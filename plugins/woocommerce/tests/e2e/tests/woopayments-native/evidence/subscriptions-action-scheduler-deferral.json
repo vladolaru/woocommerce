@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "subscriptions-action-scheduler-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "c48d9a5a5da0b9644f6d27576fca73c3d4044088",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-renew-action-scheduler.spec.ts:64::Subscriptions › Renew a subscription via Action Scheduler › should renew a subscription with action scheduler"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/subscriptions/renewal.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact one-row blocked-environment deferral: standing native ownership, account, and callback readiness are the earliest blocker, the missing approved deterministic Subscriptions provisioner is additional, the unowned listener is later and independent, and lower-layer or programmatic renewal coverage cannot prove the exact retained contract."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The standing store lacks native ownership, account, and callback readiness, and there is no approved deterministic version-pinned WooCommerce Subscriptions fixture or provisioner with a run-owned exact subscription and Action Scheduler lifecycle.",
+		"affected_scope": "Only the exact merchant Action Scheduler subscription-renewal contract represented by this row.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair shared native readiness, mint fixture approval, or safely substitute lower-layer or programmatic renewal coverage for exact browser and provider proof.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Provide an external native-ready standing store, an approved version-pinned WooCommerce Subscriptions fixture or provisioner, run-owned exact subscription and action IDs, and an exclusive listener window; then author and run the exact target once with one worker and zero retries.",
+		"quarantine_status": "No resource was allocated or mutated, and no row-specific quarantine exists. The existing separately owned listener is a later independent evidence blocker, not the primary reference."
+	}
+}

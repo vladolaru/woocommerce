@@ -3,6 +3,9 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings;
 
+use Automattic\Jetpack\Connection\Manager;
+use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use WC_Unit_Test_Case;
 use WP_Locale;
@@ -77,8 +80,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider3' => 3,
 				),
 				array(
-					'provider1' => 2, // The sorting should not matter.
-					'provider2' => 3,
+					'provider1' => 2,
+					// The sorting should not matter.
+												'provider2' => 3,
 					'provider3' => 1,
 				),
 				array(
@@ -94,8 +98,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider3' => 3,
 				),
 				array(
-					'provider1' => 20, // The sorting should not matter.
-					'provider2' => 30,
+					'provider1' => 20,
+					// The sorting should not matter.
+												'provider2' => 30,
 					'provider3' => 10,
 				),
 				array(
@@ -111,8 +116,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider3' => 20,
 				),
 				array(
-					'provider1' => 20, // The sorting should not matter.
-					'provider2' => 30,
+					'provider1' => 20,
+					// The sorting should not matter.
+												'provider2' => 30,
 					'provider3' => 10,
 				),
 				array(
@@ -128,8 +134,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider3' => 5,
 				),
 				array(
-					'provider1' => 3, // The sorting should not matter.
-					'provider2' => 5,
+					'provider1' => 3,
+					// The sorting should not matter.
+												'provider2' => 5,
 					'provider3' => 1,
 				),
 				array(
@@ -273,8 +280,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				),
 				array(
 					'provider1',
-					'provider4', // The provider takes the place of the existing one.
-					'provider2',
+					'provider4',
+					// The provider takes the place of the existing one.
+												'provider2',
 					'provider3',
 				),
 			),
@@ -296,13 +304,15 @@ class UtilsTest extends WC_Unit_Test_Case {
 			),
 			'new map is a subset of the old map - existing order values #2' => array(
 				array(
-					'provider2' => 2, // The sorting should not matter.
-					'provider1' => 1,
+					'provider2' => 2,
+					// The sorting should not matter.
+													'provider1' => 1,
 					'provider3' => 3,
 				),
 				array(
-					'provider3' => 2, // The sorting should matter.
-					'provider2' => 1,
+					'provider3' => 2,
+					// The sorting should matter.
+												'provider2' => 1,
 				),
 				array(
 					'provider2',
@@ -328,13 +338,15 @@ class UtilsTest extends WC_Unit_Test_Case {
 			),
 			'new map is a subset of the old map - non-existing order values #2' => array(
 				array(
-					'provider1' => 1, // The sorting should not matter.
-					'provider3' => 3,
+					'provider1' => 1,
+					// The sorting should not matter.
+													'provider3' => 3,
 					'provider2' => 2,
 				),
 				array(
-					'provider2' => 20, // The sorting should not matter.
-					'provider1' => 10,
+					'provider2' => 20,
+					// The sorting should not matter.
+												'provider1' => 10,
 				),
 				array(
 					'provider3',
@@ -360,13 +372,15 @@ class UtilsTest extends WC_Unit_Test_Case {
 			),
 			'new map is a subset of the old map - both existing and non-existing order values #2' => array(
 				array(
-					'provider2' => 2, // The sorting should not matter.
-					'provider1' => 1,
+					'provider2' => 2,
+					// The sorting should not matter.
+													'provider1' => 1,
 					'provider3' => 3,
 				),
 				array(
-					'provider2' => 20, // The sorting should not matter.
-					'provider1' => 3,
+					'provider2' => 20,
+					// The sorting should not matter.
+												'provider1' => 3,
 				),
 				array(
 					'provider3',
@@ -435,8 +449,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider3' => 3,
 				),
 				array(
-					'provider5' => 30, // The sorting should not matter.
-					'provider4' => 20,
+					'provider5' => 30,
+					// The sorting should not matter.
+												'provider4' => 20,
 				),
 				array(
 					'provider1',
@@ -958,8 +973,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				'provider3',
 				1,
 				array(
-					'provider1' => 1, // Remains the same.
-					'provider2' => 2,
+					'provider1' => 1,
+					// Remains the same.
+												'provider2' => 2,
 				),
 			),
 			'id is already at the desired order'          => array(
@@ -970,8 +986,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				'provider1',
 				1,
 				array(
-					'provider1' => 1, // Remains the same.
-					'provider2' => 2,
+					'provider1' => 1,
+					// Remains the same.
+												'provider2' => 2,
 				),
 			),
 			'id is not at the desired order - does not bump after it #1' => array(
@@ -1172,8 +1189,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				1,
 				array(
 					'provider1' => 1,
-					'provider2' => 3, // These are not bumped because there was none at the desired order.
-					'provider3' => 5,
+					'provider2' => 3,
+					// These are not bumped because there was none at the desired order.
+												'provider3' => 5,
 				),
 			),
 			'id exists and is not at the desired order #2' => array(
@@ -1186,8 +1204,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				3,
 				array(
 					'provider1' => 3,
-					'provider2' => 4, // These are bumped.
-					'provider3' => 6,
+					'provider2' => 4,
+					// These are bumped.
+												'provider3' => 6,
 				),
 			),
 			'id exists and is not at the desired order #3' => array(
@@ -1201,7 +1220,8 @@ class UtilsTest extends WC_Unit_Test_Case {
 				array(
 					'provider1' => 2,
 					'provider2' => 4,
-					'provider3' => 5, // These are not bumped because there was none at the desired order.
+					'provider3' => 5,
+			// These are not bumped because there was none at the desired order.
 				),
 			),
 			'id exists and is not at the desired order #4' => array(
@@ -1216,8 +1236,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				array(
 					'provider1' => 2,
 					'provider2' => 4,
-					'provider3' => 5, // These are bumped.
-					'provider4' => 8,
+					'provider3' => 5,
+					// These are bumped.
+												'provider4' => 8,
 				),
 			),
 			'id exists and is not at the desired order #5' => array(
@@ -1233,7 +1254,8 @@ class UtilsTest extends WC_Unit_Test_Case {
 					'provider1' => 2,
 					'provider2' => 7,
 					'provider3' => 5,
-					'provider4' => 8, // This is bumped.
+					'provider4' => 8,
+			// This is bumped.
 				),
 			),
 			'id exists and is not at the desired order #6' => array(
@@ -1246,8 +1268,9 @@ class UtilsTest extends WC_Unit_Test_Case {
 				'provider3',
 				2,
 				array(
-					'provider1' => 3, // All are bumped.
-					'provider2' => 4,
+					'provider1' => 3,
+					// All are bumped.
+												'provider2' => 4,
 					'provider3' => 2,
 					'provider4' => 8,
 				),
@@ -1744,7 +1767,8 @@ class UtilsTest extends WC_Unit_Test_Case {
 		$wp_locale                  = new WP_Locale();
 		$wp_locale->word_count_type = 'characters_excluding_spaces';
 
-		$text = '尉ち雨　ケ　ッピみ　イカ援'; // Translation of: 'This is just a test! for truncating without cutting words.'.
+		$text = '尉ち雨　ケ　ッピみ　イカ援';
+		// Translation of: 'This is just a test! for truncating without cutting words.'.
 
 		// Act.
 		$truncated = Utils::truncate_with_words( $text, 8, '...' );
@@ -1763,5 +1787,120 @@ class UtilsTest extends WC_Unit_Test_Case {
 		// Cleanup.
 		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		$wp_locale = $tmp_local;
+	}
+
+	/**
+	 * @testdox Should append provider route fragments to native payments settings URLs.
+	 */
+	public function test_wc_payments_settings_url_appends_provider_route_fragment(): void {
+		$url = Utils::wc_payments_settings_url(
+			'/woopayments/settings',
+			array(
+				'from' => 'legacy-bookmark',
+			),
+			'advanced'
+		);
+
+		$this->assertSame(
+			admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings&from=legacy-bookmark#advanced' ),
+			$url
+		);
+	}
+
+	/**
+	 * @testdox Should build reference-shaped legacy WooPayments admin URLs for persisted records.
+	 */
+	public function test_wc_payments_legacy_admin_url_builds_reference_shaped_url(): void {
+		$url = Utils::wc_payments_legacy_admin_url(
+			'/payments/transactions/details',
+			array(
+				'id' => 'pi_123',
+			)
+		);
+
+		$this->assertStringContainsString( 'admin.php?page=wc-admin', $url );
+		$this->assertStringContainsString( 'path=/payments/transactions/details', $url );
+		$this->assertStringContainsString( 'id=pi_123', $url );
+	}
+
+	/**
+	 * @testdox Native WooPayments authorization should identify WooCommerce core.
+	 */
+	public function test_wpcom_connection_authorization_uses_the_core_identity_for_native_woopayments(): void {
+		$this->replace_jetpack_connection_manager();
+
+		try {
+			$this->assertSame( 'woocommerce', $this->get_authorization_plugin_name() );
+		} finally {
+			$this->restore_jetpack_connection_manager();
+		}
+	}
+
+	/**
+	 * @testdox Merged feature development should preserve the WooPayments plugin authorization identity.
+	 */
+	public function test_wpcom_connection_authorization_preserves_the_plugin_identity_for_merged_feature_development(): void {
+		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+		$this->replace_jetpack_connection_manager();
+
+		try {
+			$this->assertSame( 'woocommerce-payments', $this->get_authorization_plugin_name() );
+		} finally {
+			$this->restore_jetpack_connection_manager();
+			Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
+		}
+	}
+
+	/**
+	 * Previous Jetpack connection manager instance.
+	 *
+	 * @var Manager|null
+	 */
+	private $previous_jetpack_connection_manager;
+
+	/**
+	 * Use a connected Jetpack manager double so authorization URL tests have no network side effects.
+	 */
+	private function replace_jetpack_connection_manager(): void {
+		$manager = $this->getMockBuilder( Manager::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_connected', 'get_authorization_url' ) )
+			->getMock();
+		$manager->method( 'is_connected' )->willReturn( true );
+		$manager->method( 'get_authorization_url' )->willReturn( 'https://example.test/authorize' );
+
+		$property = new \ReflectionProperty( JetpackConnection::class, 'manager' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$property->setAccessible( true );
+		}
+
+		$this->previous_jetpack_connection_manager = $property->getValue();
+		$property->setValue( null, $manager );
+	}
+
+	/**
+	 * Restore the Jetpack manager used before the test.
+	 */
+	private function restore_jetpack_connection_manager(): void {
+		$property = new \ReflectionProperty( JetpackConnection::class, 'manager' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$property->setAccessible( true );
+		}
+
+		$property->setValue( null, $this->previous_jetpack_connection_manager );
+	}
+
+	/**
+	 * Get the identity used by the authorization URL.
+	 *
+	 * @return string
+	 */
+	private function get_authorization_plugin_name(): string {
+		$authorization = Utils::get_wpcom_connection_authorization( 'https://example.test/return' );
+		$query         = wp_parse_url( $authorization['url'], PHP_URL_QUERY );
+		$args          = array();
+		wp_parse_str( (string) $query, $args );
+
+		return $args['plugin_name'];
 	}
 }
