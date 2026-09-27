@@ -11,7 +11,9 @@ use ActionScheduler;
 use ActionScheduler_QueueRunner;
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
@@ -19,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Unit_Test_Case;
 
 /**
@@ -106,6 +109,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		if ( $this->state_store instanceof WooPaymentsCutoverStateStore ) {
 			$this->cleanup_state();
 		}
+		remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		delete_option( NativePaymentsState::OPTION_NAME );
+		delete_option( 'wcpay_account_data' );
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'active_plugins' );
+		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 
 		parent::tearDown();
 	}
@@ -345,6 +356,58 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertNotSame( '', $verification['request_origin_token'] );
 		$this->assertGreaterThan( $before, $verification['next_attempt_at'] );
 		$this->assertSame( $verification['action_id'], $this->require_scheduler()->get_scheduled_action_id( $verification['generation'], 2 ) );
+	}
+
+	/**
+	 * @testdox Finalization moves a plugin-era store to the active tier so the next shopper request registers the native gateway.
+	 *
+	 * Source: data/task-1.4-dormancy-design.md:84-96 (cutover completion is an authoritative state writer; account present plus enabled 'yes' derives active).
+	 */
+	public function test_finalization_activates_native_payments_for_the_next_request(): void {
+		$this->arrange_plugin_era_store();
+		$preflight = $this->create_plugin_deactivating_preflight();
+		$origin    = $this->create_state_writing_job( true, $preflight );
+
+		$this->assertTrue( $origin->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$origin->handle_reconcile( $pending['generation'], 1 );
+
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		$this->assertSame( 'verify_native_ownership', $verification['current_step'] );
+		$this->assertSame( NativePaymentsState::ACTIVE, get_option( NativePaymentsState::OPTION_NAME ), 'The deactivating request must leave the tier the next request bootstraps from.' );
+		$this->assert_next_front_request_registers_native_gateway();
+
+		$this->run_ownership_verification_in_a_fresh_request( $verification, $preflight );
+
+		$this->assertSame( NativePaymentsState::ACTIVE, get_option( NativePaymentsState::OPTION_NAME ) );
+		$this->assert_next_front_request_registers_native_gateway();
+	}
+
+	/**
+	 * @testdox Ownership verification rewrites the tier when the finalization write did not land.
+	 *
+	 * Source: data/task-1.4-dormancy-design.md:84-96 (a failed derived-state write is retried by a later writer; cutover completion is a writer).
+	 */
+	public function test_ownership_verification_repairs_the_tier_before_completion(): void {
+		$this->arrange_plugin_era_store();
+		$preflight = $this->create_plugin_deactivating_preflight();
+		$origin    = $this->create_state_writing_job( true, $preflight );
+		$this->assertTrue( $origin->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$origin->handle_reconcile( $pending['generation'], 1 );
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::AVAILABLE );
+
+		$this->run_ownership_verification_in_a_fresh_request( $verification, $preflight );
+
+		$this->assertSame( NativePaymentsState::ACTIVE, get_option( NativePaymentsState::OPTION_NAME ) );
+		$this->assert_next_front_request_registers_native_gateway();
 	}
 
 	/**
@@ -3671,6 +3734,124 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Arrange a store that upgraded WooCommerce with WooPayments active and a connected, enabled account.
+	 */
+	private function arrange_plugin_era_store(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => array(
+					'account_id' => 'acct_cutover_state',
+					'is_live'    => true,
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::AVAILABLE );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		$this->assertTrue( wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active() );
+	}
+
+	/**
+	 * Create all-clear preflight facts whose deactivation removes the plugin from the active list.
+	 *
+	 * Like production, it leaves the in-request runtime owner memo untouched.
+	 *
+	 * @return WooPaymentsCutoverPreflightService
+	 */
+	private function create_plugin_deactivating_preflight(): WooPaymentsCutoverPreflightService {
+		return new class() extends WooPaymentsCutoverPreflightService {
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Deactivate the plugin in the active-plugins option. */
+			public function deactivate_woopayments_plugin(): bool {
+				update_option( 'active_plugins', array() );
+				return true;
+			}
+
+			/** Report a site-local activation. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+		};
+	}
+
+	/**
+	 * Create a job that finalizes cleanly and writes state through the container's account service.
+	 *
+	 * @param bool                               $plugin_active Whether the job's arbiter reports plugin ownership.
+	 * @param WooPaymentsCutoverPreflightService $preflight     Controlled preflight facts.
+	 * @return WooPaymentsCutoverReconciliationJob
+	 */
+	private function create_state_writing_job( bool $plugin_active, WooPaymentsCutoverPreflightService $preflight ): WooPaymentsCutoverReconciliationJob {
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array( 'no_changes' ),
+				);
+			}
+		};
+
+		return $this->create_job( true, $preflight, null, $plugin_active, $normalization, true, wc_get_container()->get( WooPaymentsAccountService::class ) );
+	}
+
+	/**
+	 * Complete a scheduled ownership verification from a new request that no longer loads the plugin.
+	 *
+	 * @param array<string,mixed>                $verification Scheduled verification record.
+	 * @param WooPaymentsCutoverPreflightService $preflight    Controlled preflight facts.
+	 */
+	private function run_ownership_verification_in_a_fresh_request( array $verification, WooPaymentsCutoverPreflightService $preflight ): void {
+		$request_token = new \ReflectionProperty( WooPaymentsCutoverReconciliationJob::class, 'request_token' );
+		$request_token->setAccessible( true );
+		$request_token->setValue( null );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		$this->require_scheduler()->cancel( $verification['generation'], $verification['attempt'] + 1 );
+
+		$this->create_state_writing_job( false, $preflight )->handle_reconcile( $verification['generation'], $verification['attempt'] + 1 );
+
+		$done = $this->require_state_store()->get_record();
+		$this->assertIsArray( $done );
+		$this->assertSame( WooPaymentsCutoverState::DONE, $done['state'] );
+	}
+
+	/**
+	 * Assert that a new shopper request resolves the active tier and bootstraps the native gateway registry.
+	 */
+	private function assert_next_front_request_registers_native_gateway(): void {
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		$state = wc_get_container()->get( NativePaymentsState::class );
+		$state->invalidate();
+		$effective_state = $state->get_state();
+
+		$this->assertSame( NativePaymentsState::ACTIVE, $effective_state );
+		$this->assertContains( NativePaymentsGatewayRegistry::class, WooPaymentsProvider::get_bootstrap_root_matrix()[ $effective_state ]['front'] ?? array() );
+	}
+
+	/**
 	 * Create a job with a deterministic native-runtime answer.
 	 *
 	 * @param bool                                       $native_enabled     Whether native payments are enabled.
@@ -3679,9 +3860,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param bool                                       $plugin_active     Whether the plugin owns the runtime.
 	 * @param WooPaymentsCutoverNormalizationRunner|null $normalization_runner Controlled normalization runner.
 	 * @param bool                                       $native_eligible  Whether the platform account is native-eligible.
+	 * @param WooPaymentsAccountService|null             $account_service  Account service, when a test needs the real state writer.
 	 * @return WooPaymentsCutoverReconciliationJob
 	 */
-	private function create_job( bool $native_enabled, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $plugin_active = true, ?WooPaymentsCutoverNormalizationRunner $normalization_runner = null, bool $native_eligible = true ): WooPaymentsCutoverReconciliationJob {
+	private function create_job( bool $native_enabled, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $plugin_active = true, ?WooPaymentsCutoverNormalizationRunner $normalization_runner = null, bool $native_eligible = true, ?WooPaymentsAccountService $account_service = null ): WooPaymentsCutoverReconciliationJob {
 		$arbiter = new class( $native_enabled, $plugin_active ) extends NativePaymentsRuntimeArbiter {
 			/** @var bool */
 			private bool $native_enabled;
@@ -3723,7 +3905,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight_service, $normalization_runner, $this->create_native_eligibility_service( $native_eligible ) );
+		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight_service, $normalization_runner, $account_service ?? $this->create_native_eligibility_service( $native_eligible ) );
 		$this->jobs[] = $job;
 
 		return $job;

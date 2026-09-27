@@ -1144,6 +1144,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 
+		$this->account_service->synchronize_native_payments_state_from_options( false );
 		$this->schedule_ownership_verification( $claimed, $outcomes );
 	}
 
@@ -1359,6 +1360,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->defer( $claimed, array( 'native_ownership_unverified' ) );
 			return;
 		}
+		$this->account_service->synchronize_native_payments_state_from_options( false );
 
 		$now   = time();
 		$token = $this->state_store->acquire_lease( $now );

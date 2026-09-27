@@ -605,35 +605,64 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			$this->legacy_proxy->call_function( 'wp_cache_delete', self::ACCOUNT_OPTION, 'options' );
 		}
 
-		if ( $this->is_persisted_account_cache( $cache_contents ) ) {
-			$this->synchronize_native_payments_state( $cache_contents );
+		if (
+			$this->is_persisted_account_cache( $cache_contents ) &&
+			null !== $this->runtime_arbiter &&
+			true !== ( $cache_contents['errored'] ?? null ) &&
+			is_array( $cache_contents['data'] ?? null )
+		) {
+			$this->synchronize_native_payments_state( $cache_contents['data'], $this->runtime_arbiter->is_plugin_runtime_active() );
 		}
+	}
+
+	/**
+	 * Rewrite the durable native payments state from the persisted account cache and gateway settings.
+	 *
+	 * Reads raw options only, with no account refresh. The cutover job calls it once it has deactivated the plugin,
+	 * and the update repair calls it for stores that never wrote the state.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param bool $plugin_runtime_active Whether the standalone plugin owns the runtime; false once the caller has deactivated it.
+	 */
+	public function synchronize_native_payments_state_from_options( bool $plugin_runtime_active ): void {
+		if ( null === $this->native_payments_state || null === $this->runtime_arbiter ) {
+			return;
+		}
+
+		try {
+			$cache_contents = $this->legacy_proxy->call_function( 'get_option', self::ACCOUNT_OPTION );
+		} catch ( \Throwable $e ) {
+			return;
+		}
+
+		$this->synchronize_native_payments_state( is_array( $cache_contents ) ? ( $cache_contents['data'] ?? null ) : null, $plugin_runtime_active );
 	}
 
 	/**
 	 * Synchronize durable state without affecting the account source write.
 	 *
-	 * @param array<string,mixed> $cache_contents Persisted account cache contents.
+	 * Missing account data preserves the prior state unless native is disabled or the plugin owns the runtime.
+	 *
+	 * @param mixed $account_data          Last persisted account data.
+	 * @param bool  $plugin_runtime_active Whether the standalone plugin owns the runtime.
 	 */
-	private function synchronize_native_payments_state( array $cache_contents ): void {
-		if (
-			null === $this->native_payments_state ||
-			null === $this->runtime_arbiter ||
-			true === ( $cache_contents['errored'] ?? null ) ||
-			! is_array( $cache_contents['data'] ?? null )
-		) {
+	private function synchronize_native_payments_state( $account_data, bool $plugin_runtime_active ): void {
+		if ( null === $this->native_payments_state || null === $this->runtime_arbiter ) {
 			return;
 		}
 
-		$account_data = $cache_contents['data'];
-
-		if ( ! $this->runtime_arbiter->is_native_runtime_enabled() || ! $this->is_native_eligible_account_data( $account_data ) ) {
+		if ( ! $this->runtime_arbiter->is_native_runtime_enabled() || ( is_array( $account_data ) && ! $this->is_native_eligible_account_data( $account_data ) ) ) {
 			$this->native_payments_state->write_state( NativePaymentsState::DISABLED );
 			return;
 		}
 
-		if ( $this->runtime_arbiter->is_plugin_runtime_active() || array() === $account_data ) {
+		if ( $plugin_runtime_active || array() === $account_data ) {
 			$this->native_payments_state->write_state( NativePaymentsState::AVAILABLE );
+			return;
+		}
+
+		if ( ! is_array( $account_data ) ) {
 			return;
 		}
 
