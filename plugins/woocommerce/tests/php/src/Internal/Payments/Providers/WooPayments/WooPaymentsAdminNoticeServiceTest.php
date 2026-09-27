@@ -475,6 +475,128 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Notice actions send the client's attach-rate Tracks event once per state change: $notice_id $action.
+	 * @dataProvider tracks_actions
+	 *
+	 * @param string              $notice_id        Notice identifier.
+	 * @param string              $action           Requested action.
+	 * @param int|null            $stage            Optional post-KYC stage.
+	 * @param bool                $has_live_account Whether the account has a live account.
+	 * @param string              $event_name       Expected wire event name.
+	 * @param array<string,mixed> $properties       Expected notice properties.
+	 * @param int                 $expected_count   Pixels expected across two identical actions.
+	 */
+	public function test_notice_actions_record_client_tracks_events( string $notice_id, string $action, ?int $stage, bool $has_live_account, string $event_name, array $properties, int $expected_count ): void {
+		$account_service = $this->createMock( WooPaymentsAccountService::class );
+		$account_service->method( 'has_live_account' )->willReturn( $has_live_account );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => 1000 );
+		$sut->init( $account_service );
+
+		$pixels = $this->capture_notice_tracks_pixels(
+			function () use ( $sut, $notice_id, $action, $stage ): void {
+				$this->assertTrue( $sut->record_action( $notice_id, $action, $stage ) );
+				$this->assertTrue( $sut->record_action( $notice_id, $action, $stage ) );
+			}
+		);
+
+		$this->assertCount( $expected_count, $pixels );
+		foreach ( $pixels as $pixel ) {
+			$this->assertSame( $event_name, $pixel['_en'] );
+			foreach ( array( 'stage', 'destination', 'path' ) as $key ) {
+				$this->assertSame( $properties[ $key ] ?? null, $pixel[ $key ] ?? null, $key );
+			}
+		}
+	}
+
+	/**
+	 * @testdox A notice action that lost a concurrent first write records no Tracks event, since the other request recorded it.
+	 */
+	public function test_notice_action_that_lost_a_concurrent_first_write_records_no_tracks_event(): void {
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => 1000 );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+
+		$pixels = $this->capture_notice_tracks_pixels(
+			function () use ( $sut ): void {
+				$user_id       = get_current_user_id();
+				$simulate_race = null;
+				$simulate_race = static function ( $check, int $object_id, string $key, $value ) use ( &$simulate_race, $user_id ) {
+					if ( $user_id !== $object_id || 'wcpay_one_and_done_notice_dismissed_at' !== $key ) {
+						return $check;
+					}
+					remove_filter( 'add_user_metadata', $simulate_race, 10 );
+					update_user_meta( $user_id, $key, $value );
+					return false;
+				};
+				add_filter( 'add_user_metadata', $simulate_race, 10, 4 );
+				$this->assertTrue( $sut->record_action( 'one_and_done', 'dismiss' ) );
+			}
+		);
+
+		$this->assertSame( array(), $pixels );
+	}
+
+	/**
+	 * Run notice actions as a logged-in user that WC_Tracks will record for, and capture the WooPayments Tracks pixels.
+	 *
+	 * @param callable $act Actions to run.
+	 * @return array<int,array<string,mixed>> Captured pixel query arguments.
+	 */
+	private function capture_notice_tracks_pixels( callable $act ): array {
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		// WC_Tracks skips test-suite users by their cap key; use a site-like key so the pixel is built.
+		wp_get_current_user()->cap_key = 'wp_capabilities';
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		$pixels  = array();
+		$capture = static function ( $preempt, $parsed_args, $url ) use ( &$pixels ) {
+			unset( $preempt, $parsed_args );
+			parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $pixel );
+			if ( 0 === strpos( (string) ( $pixel['_en'] ?? '' ), 'wcadmin_wcpay_' ) ) {
+				$pixels[] = $pixel;
+			}
+			return array(
+				'headers'  => array(),
+				'body'     => '',
+				'response' => array( 'code' => 200 ),
+				'cookies'  => array(),
+			);
+		};
+		add_filter( 'pre_http_request', $capture, 10, 3 );
+
+		try {
+			$act();
+		} finally {
+			remove_filter( 'pre_http_request', $capture, 10 );
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+		}
+
+		return $pixels;
+	}
+
+	/**
+	 * Notice actions with the client 11.1.0 Tracks event and properties each one sends.
+	 *
+	 * @return array<string,array{string,string,int|null,bool,string,array<string,string>,int}>
+	 */
+	public static function tracks_actions(): array {
+		return array(
+			'test_to_live shown'          => array( 'test_to_live', 'shown', null, false, 'wcadmin_wcpay_test_to_live_notice_shown', array(), 1 ),
+			'test_to_live dismiss'        => array( 'test_to_live', 'dismiss', null, false, 'wcadmin_wcpay_test_to_live_notice_dismissed', array(), 1 ),
+			'test_to_live snooze'         => array( 'test_to_live', 'snooze', null, false, 'wcadmin_wcpay_test_to_live_notice_snoozed', array(), 1 ),
+			'test_to_live cta onboarding' => array( 'test_to_live', 'cta', null, false, 'wcadmin_wcpay_test_to_live_notice_cta_clicked', array( 'path' => 'onboarding' ), 2 ),
+			'test_to_live cta switch'     => array( 'test_to_live', 'cta', null, true, 'wcadmin_wcpay_test_to_live_notice_cta_clicked', array( 'path' => 'switch_mode' ), 2 ),
+			'one_and_done shown'          => array( 'one_and_done', 'shown', null, false, 'wcadmin_wcpay_one_and_done_notice_shown', array(), 1 ),
+			'one_and_done dismiss'        => array( 'one_and_done', 'dismiss', null, false, 'wcadmin_wcpay_one_and_done_notice_dismissed', array(), 1 ),
+			'one_and_done snooze'         => array( 'one_and_done', 'snooze', null, false, 'wcadmin_wcpay_one_and_done_notice_snoozed', array(), 1 ),
+			'one_and_done cta'            => array( 'one_and_done', 'cta', null, false, 'wcadmin_wcpay_one_and_done_notice_cta_clicked', array( 'destination' => 'marketing' ), 1 ),
+			'post_kyc_activation shown'   => array( 'post_kyc_activation', 'shown', 14, false, 'wcadmin_wcpay_post_kyc_activation_notice_shown', array( 'stage' => '14' ), 1 ),
+			'post_kyc_activation dismiss' => array( 'post_kyc_activation', 'dismiss', 7, false, 'wcadmin_wcpay_post_kyc_activation_notice_dismissed', array( 'stage' => '7' ), 1 ),
+			'post_kyc_activation cta'     => array( 'post_kyc_activation', 'cta', 30, false, 'wcadmin_wcpay_post_kyc_activation_notice_cta_clicked', array( 'stage' => '30' ), 1 ),
+		);
+	}
+
+	/**
 	 * @testdox The test-to-live CTA writes no dismissal marker, like the client's handle_cta().
 	 */
 	public function test_test_to_live_cta_keeps_user_state(): void {
