@@ -751,10 +751,12 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 			false
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		// WC_Install::create_options() seeds the disabled default before the update callbacks run.
+		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::DISABLED, true );
 		$arbiter->invalidate();
 		$state->invalidate();
 
-		$this->assertFalse( get_option( NativePaymentsState::OPTION_NAME ), 'An upgraded plugin store has never written the native state.' );
+		$this->assertSame( NativePaymentsState::DISABLED, get_option( NativePaymentsState::OPTION_NAME ), 'An upgraded plugin store only has the seeded default.' );
 		$this->assertSame( NativePaymentsState::DISABLED, $state->get_state() );
 		$this->assertArrayNotHasKey( NativePaymentsState::DISABLED, $matrix, 'The disabled tier loads no switch controller.' );
 

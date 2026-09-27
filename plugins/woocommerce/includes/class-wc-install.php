@@ -1288,6 +1288,10 @@ class WC_Install {
 		add_option( 'woocommerce_checkout_highlight_required_fields', 'yes', '', 'yes' );
 		add_option( 'woocommerce_demo_store', 'no', '', 'no' );
 
+		// Native payments reads these on every request; autoloaded defaults keep dormant stores from querying missing options.
+		add_option( 'woocommerce_native_payments_state', 'disabled', '', true );
+		add_option( 'woocommerce_native_payments_killswitch', '0', '', true );
+
 		if ( self::is_new_install() ) {
 			$account_cache   = get_option( 'wcpay_account_data', array() );
 			$account_data    = is_array( $account_cache ) && is_array( $account_cache['data'] ?? null ) ? $account_cache['data'] : array();

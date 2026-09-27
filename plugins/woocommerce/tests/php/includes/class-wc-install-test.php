@@ -455,6 +455,46 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox create_options seeds the native payments state and kill switch as autoloaded, so no request queries a missing option.
+	 */
+	public function test_create_options_seeds_autoloaded_native_payments_runtime_options(): void {
+		delete_option( 'woocommerce_native_payments_state' );
+		delete_option( 'woocommerce_native_payments_killswitch' );
+
+		try {
+			$this->invoke_create_options();
+
+			$alloptions = wp_load_alloptions( true );
+			$this->assertArrayHasKey( 'woocommerce_native_payments_state', $alloptions );
+			$this->assertSame( 'disabled', get_option( 'woocommerce_native_payments_state' ) );
+			$this->assertArrayHasKey( 'woocommerce_native_payments_killswitch', $alloptions );
+			$this->assertFalse( (bool) get_option( 'woocommerce_native_payments_killswitch' ), 'The seeded kill switch must stay off.' );
+			$this->assertTrue( update_option( 'woocommerce_native_payments_killswitch', false ), 'Tooling that writes false must still see a successful update.' );
+		} finally {
+			delete_option( 'woocommerce_native_payments_state' );
+			delete_option( 'woocommerce_native_payments_killswitch' );
+		}
+	}
+
+	/**
+	 * @testdox create_options keeps an existing native payments state and kill switch.
+	 */
+	public function test_create_options_keeps_existing_native_payments_runtime_options(): void {
+		update_option( 'woocommerce_native_payments_state', 'active', true );
+		update_option( 'woocommerce_native_payments_killswitch', '1', true );
+
+		try {
+			$this->invoke_create_options();
+
+			$this->assertSame( 'active', get_option( 'woocommerce_native_payments_state' ) );
+			$this->assertSame( '1', get_option( 'woocommerce_native_payments_killswitch' ) );
+		} finally {
+			delete_option( 'woocommerce_native_payments_state' );
+			delete_option( 'woocommerce_native_payments_killswitch' );
+		}
+	}
+
+	/**
 	 * Invoke the install-only create_options seam.
 	 */
 	private function invoke_create_options(): void {

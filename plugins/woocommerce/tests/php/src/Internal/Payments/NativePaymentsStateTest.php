@@ -96,6 +96,7 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 * @testdox Rewriting an existing tier repairs its option to autoload even when the value is unchanged.
 	 */
 	public function test_write_state_repairs_autoload_for_an_existing_same_value(): void {
+		delete_option( NativePaymentsState::OPTION_NAME );
 		add_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::ACTIVE, '', false );
 		$this->assertArrayNotHasKey( NativePaymentsState::OPTION_NAME, wp_load_alloptions( true ) );
 
