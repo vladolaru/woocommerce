@@ -546,7 +546,8 @@ describe( 'WooPayments WooPay checkout', () => {
 					full: '+15555550123',
 				},
 			} )
-		);		expect( getTrackingEvents() ).toContainEqual( {
+		);
+		expect( getTrackingEvents() ).toContainEqual( {
 			name: 'checkout_woopay_save_my_info_mobile_enter',
 			props: {},
 		} );
