@@ -3,6 +3,7 @@
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { addQueryArgs } from '@wordpress/url';
+import { recordEvent } from '@woocommerce/tracks';
 
 /**
  * Internal dependencies
@@ -259,6 +260,13 @@ const buildDisputeTask = (
 		return null;
 	}
 
+	// Client 11.1.0 `overview/task-list/tasks/dispute-task.tsx:52-56`.
+	const onClick = () =>
+		recordEvent( 'wcpay_overview_task_click', {
+			task: 'dispute-resolution-task',
+			active_dispute_count: urgentDisputes.length,
+		} );
+
 	if ( urgentDisputes.length === 1 ) {
 		const dispute = urgentDisputes[ 0 ];
 		const chargeId = getDisputeChargeId( dispute );
@@ -282,6 +290,7 @@ const buildDisputeTask = (
 					chargeId
 				) }`
 			),
+			onClick,
 			showActionButton: true,
 		};
 	}
@@ -342,6 +351,7 @@ const buildDisputeTask = (
 		href: getSettingsPaymentsProviderRouteUrl(
 			'/woopayments/disputes?filter=awaiting_response'
 		),
+		onClick,
 		showActionButton: true,
 	};
 };

@@ -3,11 +3,14 @@
  */
 import { lazy, Suspense, useEffect, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
+import apiFetch from '@wordpress/api-fetch';
+import { recordEvent } from '@woocommerce/tracks';
 
 /**
  * Internal dependencies
  */
 import { WooPaymentsAccountSettings } from '~/woopayments/settings/account-settings';
+import { getWooPaymentsSettingsBootstrap } from '~/woopayments/settings/bootstrap';
 import {
 	getWooPaymentsDepositsOverview,
 	getWooPaymentsOverviewDisputes,
@@ -82,6 +85,22 @@ export const WooPaymentsOverviewPage = () => {
 	);
 	const [ updateBusinessDetailsShell, setUpdateBusinessDetailsShell ] =
 		useState< WooPaymentsOverviewShell | null >( null );
+
+	// Client 11.1.0 `tos/request.ts:30-45`: record the KYC completion once, then clear the flag.
+	useEffect( () => {
+		const tracked = getWooPaymentsSettingsBootstrap()
+			.trackStripeConnected as { is_existing_stripe_account?: boolean };
+		if ( ! tracked || ! window.wcTracks?.isEnabled ) {
+			return;
+		}
+		recordEvent( 'wcpay_stripe_connected', {
+			is_existing_stripe_account: tracked.is_existing_stripe_account,
+		} );
+		void apiFetch( {
+			path: '/wc/v3/payments/tos/stripe_track_connected',
+			method: 'POST',
+		} );
+	}, [] );
 
 	const reloadOverviewAndPayouts = async ( currency: string ) => {
 		const deposit = await submitWooPaymentsInstantDeposit( currency );

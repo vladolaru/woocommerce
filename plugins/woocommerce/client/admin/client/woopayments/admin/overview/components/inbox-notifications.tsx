@@ -163,10 +163,19 @@ export const InboxNotifications = () => {
 		noteToDismissElementRef.current = noteElement ?? null;
 		setNoteToDismiss( note );
 	};
+	// Client 11.1.0 `overview/inbox-notifications/index.js:199-207`.
+	const recordDismissed = ( note: InboxNote, confirmed: boolean ) =>
+		recordEvent( 'wcpay_inbox_action_dismissed', {
+			note_name: note.name,
+			note_title: note.title,
+			note_name_dismiss_all: false,
+			note_name_dismiss_confirmation: confirmed,
+		} );
 	const dismissNote = async () => {
 		if ( ! noteToDismiss ) {
 			return;
 		}
+		recordDismissed( noteToDismiss, true );
 
 		const shouldPreserveEmptyStateAfterDismissal =
 			visibleNotes.length === 1;
@@ -336,7 +345,10 @@ export const InboxNotifications = () => {
 			</section>
 			{ noteToDismiss && (
 				<InboxDismissConfirmationModal
-					onClose={ () => setNoteToDismiss( null ) }
+					onClose={ () => {
+						recordDismissed( noteToDismiss, false );
+						setNoteToDismiss( null );
+					} }
 					onDismiss={ dismissNote }
 				/>
 			) }

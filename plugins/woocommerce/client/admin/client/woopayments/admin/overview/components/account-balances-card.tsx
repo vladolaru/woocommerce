@@ -5,6 +5,7 @@ import { Button, ExternalLink, Modal } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
+import { recordEvent } from '@woocommerce/tracks';
 
 /**
  * Internal dependencies
@@ -238,9 +239,17 @@ export const AccountBalancesCard = ( {
 						<select
 							id={ currencySelectId }
 							value={ currency }
-							onChange={ ( event ) =>
-								onCurrencyChange?.( event.target.value )
-							}
+							onChange={ ( event ) => {
+								onCurrencyChange?.( event.target.value );
+								// Client 11.1.0 `components/welcome/currency-select.tsx:99-103`.
+								recordEvent(
+									'wcpay_overview_currency_select_change',
+									{
+										selected_currency:
+											event.target.value.toLowerCase(),
+									}
+								);
+							} }
 						>
 							{ currencyOptions.map( ( currencyOption ) => (
 								<option

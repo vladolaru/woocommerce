@@ -13,6 +13,7 @@ import {
 } from '@wordpress/components';
 import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
+import { recordEvent } from '@woocommerce/tracks';
 import type { ChangeEvent } from 'react';
 
 /**
@@ -104,6 +105,12 @@ const WooPayLogoUpload = ( {
 		setIsUploading( true );
 		setError( null );
 		setUploadStatusMessage( '' );
+		// Client 11.1.0 `settings/express-checkout-settings/file-upload.tsx:73-102`.
+		const tracksProperties = { type: 'woopay-store-logo' };
+		recordEvent(
+			'wcpay_merchant_settings_file_upload_started',
+			tracksProperties
+		);
 
 		try {
 			const uploadedFile = ( await apiFetch( {
@@ -113,6 +120,10 @@ const WooPayLogoUpload = ( {
 			} ) ) as { id?: string };
 
 			setLogoId( uploadedFile.id || '' );
+			recordEvent(
+				'wcpay_merchant_settings_file_upload_success',
+				tracksProperties
+			);
 			setUploadedFileName( file.name );
 			setUploadStatusMessage(
 				sprintf(
@@ -131,6 +142,7 @@ const WooPayLogoUpload = ( {
 					? uploadError.message
 					: __( 'Error uploading logo.', 'woocommerce' );
 
+			recordEvent( 'wcpay_merchant_settings_upload_failed', { message } );
 			setError( message );
 			setLogoId( '' );
 			setUploadedFileName( '' );

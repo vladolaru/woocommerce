@@ -6,6 +6,7 @@ import apiFetch from '@wordpress/api-fetch';
 import { ExternalLink } from '@wordpress/components';
 import { useEffect, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
+import { recordEvent } from '@woocommerce/tracks';
 import { addQueryArgs } from '@wordpress/url';
 
 type ExternalAccount = {
@@ -119,7 +120,18 @@ export const PayoutBankAccount = () => {
 				) }
 			</span>{ ' ' }
 			{ state.accountLink && (
-				<ExternalLink href={ state.accountLink }>
+				<ExternalLink
+					href={ state.accountLink }
+					// Client 11.1.0 `settings/deposits/index.js:239-248`.
+					onClick={ () => {
+						recordEvent(
+							'wcpay_settings_deposits_manage_in_stripe_click'
+						);
+						recordEvent( 'wcpay_account_details_link_clicked', {
+							source: 'settings-deposits',
+						} );
+					} }
+				>
 					{ __( 'Manage in Stripe', 'woocommerce' ) }
 				</ExternalLink>
 			) }

@@ -170,6 +170,7 @@ export const OverviewTaskList = ( {
 										<a
 											className="button button-primary"
 											href={ task.href }
+											onClick={ task.onClick }
 										>
 											{ task.actionLabel }
 										</a>

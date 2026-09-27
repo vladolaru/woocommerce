@@ -549,6 +549,7 @@ class WooPaymentsSettingsService {
 	 */
 	public function update_settings( array $params ) {
 		$settings                = $this->get_gateway_settings();
+		$previous_settings       = $settings;
 		$was_woopay_enabled      = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
 		$payment_request_enabled = array_key_exists( 'is_payment_request_enabled', $params )
 			? $this->is_yes( $this->normalize_setting_value( $params['is_payment_request_enabled'], 'bool' ) )
@@ -644,6 +645,7 @@ class WooPaymentsSettingsService {
 			);
 		}
 		$settings = $projection['settings'];
+		$this->record_woopay_settings_events( $params, $previous_settings, $settings );
 		/**
 		 * Fires after native WooPayments settings are updated so operational mirrors can sync setup state.
 		 *
@@ -652,6 +654,40 @@ class WooPaymentsSettingsService {
 		do_action( WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION );
 
 		return $this->get_settings();
+	}
+
+	/**
+	 * Record the WooPay settings Tracks events of plugin 11.1.0 (`update_is_woopay_enabled()`,
+	 * `update_is_woopay_global_theme_support_enabled()`, `track_woopay_enabled_locations()`).
+	 *
+	 * @param array<string,mixed> $params   Request parameters.
+	 * @param array<string,mixed> $previous Settings before the update.
+	 * @param array<string,mixed> $settings Settings after the update.
+	 */
+	private function record_woopay_settings_events( array $params, array $previous, array $settings ): void {
+		$tracking    = wc_get_container()->get( WooPaymentsFrontendTrackingController::class );
+		$properties  = array( 'test_mode' => $this->account_service->is_test_mode_enabled() ? 1 : 0 );
+		$is_enabled  = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
+		$was_enabled = $this->is_yes( $previous['platform_checkout'] ?? 'no' );
+		if ( $is_enabled && ! $was_enabled ) {
+			$tracking->record_admin_event( 'woopay_enabled', $properties );
+		} elseif ( ! $is_enabled && $was_enabled ) {
+			$tracking->record_admin_event( 'woopay_disabled', $properties );
+		}
+		$theme_support     = $this->is_yes( $settings['is_woopay_global_theme_support_enabled'] ?? 'no' );
+		$had_theme_support = $this->is_yes( $previous['is_woopay_global_theme_support_enabled'] ?? 'no' );
+		if ( $theme_support && ! $had_theme_support ) {
+			$tracking->record_admin_event( 'woopay_global_theme_support_enabled', $properties );
+		} elseif ( ! $theme_support && $had_theme_support ) {
+			$tracking->record_admin_event( 'woopay_global_theme_support_disabled', $properties );
+		}
+		$locations = array();
+		foreach ( array( 'product', 'cart', 'checkout' ) as $location ) {
+			$locations[ $location . '_enabled' ] = in_array( 'woopay', $this->get_array_setting( $settings, 'express_checkout_' . $location . '_methods' ), true );
+		}
+		if ( $is_enabled && array() !== array_intersect_key( $params, array_flip( array( 'express_checkout_product_methods', 'express_checkout_cart_methods', 'express_checkout_checkout_methods' ) ) ) ) {
+			$tracking->record_admin_event( 'woopay_express_button_locations_updated', $locations );
+		}
 	}
 
 	/**

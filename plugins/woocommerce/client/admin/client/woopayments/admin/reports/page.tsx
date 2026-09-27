@@ -1159,13 +1159,41 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 					<Button
 						variant="secondary"
 						onClick={ () => {
-							downloadCSVFile(
-								getBalanceCsvFileName( summary ),
-								getBalanceCsv( rows, summary, reportCurrency )
+							const payload = { visible_row_count: rows.length };
+							// Client 11.1.0 `reports/balance/actions.tsx:131-147`.
+							recordEvent(
+								'wcpay_reports_balance_export_click',
+								payload
 							);
-							recordEvent( 'wcpay_reports_balance_export_click', {
-								visible_row_count: rows.length,
-							} );
+							try {
+								downloadCSVFile(
+									getBalanceCsvFileName( summary ),
+									getBalanceCsv(
+										rows,
+										summary,
+										reportCurrency
+									)
+								);
+								recordEvent(
+									'wcpay_reports_balance_export_success',
+									payload
+								);
+							} catch ( exportError ) {
+								recordEvent(
+									'wcpay_reports_balance_export_error',
+									{
+										...payload,
+										error_message:
+											exportError instanceof Error
+												? exportError.message.slice(
+														0,
+														200
+												  )
+												: 'unknown',
+									}
+								);
+								throw exportError;
+							}
 							setExportStatus(
 								__(
 									'Balance report export started.',
@@ -1504,6 +1532,25 @@ const FeesReport = ( { now }: { now: Date } ) => {
 				search_length: String( nextView.search || '' ).length,
 			} );
 		}
+		// Client 11.1.0 `reports/fees/use-fees-view.ts:51-71,127-145`.
+		( nextView.filters ?? [] ).forEach( ( filter: DataViewsFilter ) => {
+			const previous = view.filters?.find(
+				( item: DataViewsFilter ) => item.field === filter.field
+			);
+			if (
+				filter.field !== 'date' &&
+				JSON.stringify( previous?.value ) !==
+					JSON.stringify( filter.value )
+			) {
+				recordEvent( 'wcpay_reports_fees_filter_change', {
+					filter_field:
+						filter.field === 'payment_method'
+							? 'payment_method_type'
+							: filter.field,
+					had_previous_value: previous?.value !== undefined,
+				} );
+			}
+		} );
 
 		setView( nextView );
 	};
@@ -1514,6 +1561,14 @@ const FeesReport = ( { now }: { now: Date } ) => {
 		}
 
 		const dateFilter = getBalanceDateFilterForPreset( nextPreset, now );
+		const period = getBalancePeriodForDateFilter( dateFilter, now );
+		recordEvent( 'wcpay_reports_fees_date_filter_change', {
+			preset: nextPreset,
+			range_days: getRangeDays( period.date_start, period.date_end ),
+			is_initial_apply: ! view.filters?.some(
+				( filter: DataViewsFilter ) => filter.field === 'date'
+			),
+		} );
 
 		setView( ( previousView: View ) => ( {
 			...previousView,

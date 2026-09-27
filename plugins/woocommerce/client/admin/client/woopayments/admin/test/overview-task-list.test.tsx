@@ -3,13 +3,16 @@
  */
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { recordEvent } from '@woocommerce/tracks';
 
 /**
  * Internal dependencies
  */
 import { OverviewTaskList } from '../overview/components/overview-task-list';
+import { buildOverviewTasks } from '../overview/components/overview-tasks';
 import { saveOption } from '../../settings/data/actions';
 
+jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 jest.mock( '../../settings/data/actions', () => ( {
 	saveOption: jest.fn(),
 } ) );
@@ -98,6 +101,38 @@ describe( 'OverviewTaskList', () => {
 		).not.toBeInTheDocument();
 		expect( screen.queryByText( 'Deleted task' ) ).not.toBeInTheDocument();
 		expect( screen.queryByText( 'Snoozed task' ) ).not.toBeInTheDocument();
+	} );
+
+	it( 'records the client 11.1.0 dispute task click when the task link is followed', async () => {
+		// Expected properties: client `overview/task-list/tasks/dispute-task.tsx:52-56`.
+		const dispute = { dispute_id: 'dp_1', amount: 1000, currency: 'usd' };
+		const tasks = buildOverviewTasks( {
+			shell: {
+				account: { connected: true },
+				account_status: { requirements: { errors: [] } },
+			} as never,
+			disputes: [
+				{ ...dispute, evidence_due_by: NOW + DAY_IN_MS },
+				{ ...dispute, dispute_id: 'dp_2', evidence_due_by: NOW },
+			],
+			onOpenUpdateBusinessDetails: jest.fn(),
+			onActivatePayments: jest.fn(),
+		} ).filter( ( task ) => task.key.startsWith( 'dispute' ) );
+		render(
+			<OverviewTaskList
+				tasks={ tasks }
+				visibility={ createVisibility() }
+			/>
+		);
+
+		await userEvent.click(
+			screen.getByRole( 'link', { name: 'See disputes' } )
+		);
+
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_overview_task_click',
+			{ task: 'dispute-resolution-task', active_dispute_count: 2 }
+		);
 	} );
 
 	it( 'persists dismissed tasks and exposes an undo action', async () => {

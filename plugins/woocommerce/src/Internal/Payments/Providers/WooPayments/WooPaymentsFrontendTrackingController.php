@@ -205,9 +205,30 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @return bool|\WP_Error
 	 */
 	public function record_user_event( string $event_name, array $properties = array() ) {
-		if ( '_aliasUser' !== $event_name ) {
-			$event_name = self::USER_EVENT_PREFIX . '_' . $event_name;
-		}
+		return $this->record_prefixed_event( '_aliasUser' === $event_name ? $event_name : self::USER_EVENT_PREFIX . '_' . $event_name, $properties );
+	}
+
+	/**
+	 * Record a WooPayments admin event, like the plugin's `WooPay_Tracker::maybe_record_admin_event()` (11.1.0).
+	 *
+	 * @param string              $event_name Event name without the wcadmin_ prefix.
+	 * @param array<string,mixed> $properties Event properties.
+	 * @return bool|\WP_Error
+	 */
+	public function record_admin_event( string $event_name, array $properties = array() ) {
+		$properties['record_event_data'] = array( 'is_admin_event' => true );
+
+		return $this->record_prefixed_event( 'wcadmin_' . $event_name, $properties );
+	}
+
+	/**
+	 * Record an already-prefixed event through the WooPayments tracking pixel.
+	 *
+	 * @param string              $event_name Full event name.
+	 * @param array<string,mixed> $properties Event properties.
+	 * @return bool|\WP_Error
+	 */
+	private function record_prefixed_event( string $event_name, array $properties ) {
 
 		/**
 		 * Filters WooPayments Tracks event properties.

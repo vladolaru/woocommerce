@@ -1284,6 +1284,37 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should record the plugin 11.1.0 WooPay admin Tracks events when a save changes WooPay settings.
+	 *
+	 * Expected names and properties: plugin 11.1.0 `WC_Payment_Gateway_WCPay::update_is_woopay_enabled()`,
+	 * `update_is_woopay_global_theme_support_enabled()` and `WooPay_Tracker::woopay_locations_updated()`.
+	 */
+	public function test_update_settings_records_woopay_admin_tracks_events(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'platform_checkout' => 'no' ) );
+		$recorded = array();
+		$capture  = function ( $properties, $event_name ) use ( &$recorded ) {
+			$recorded[ $event_name ] = $properties;
+			return $properties;
+		};
+		add_filter( 'wcpay_tracks_event_properties', $capture, 10, 2 );
+
+		$this->sut->update_settings(
+			array(
+				'is_woopay_enabled'                      => true,
+				'is_woopay_global_theme_support_enabled' => true,
+				'express_checkout_product_methods'       => array(),
+				'express_checkout_cart_methods'          => array( 'woopay' ),
+			)
+		);
+		remove_filter( 'wcpay_tracks_event_properties', $capture, 10 );
+
+		$this->assertSame( array( 'wcadmin_woopay_enabled', 'wcadmin_woopay_global_theme_support_enabled', 'wcadmin_woopay_express_button_locations_updated' ), array_keys( $recorded ) );
+		$this->assertArrayHasKey( 'test_mode', $recorded['wcadmin_woopay_enabled'] );
+		$this->assertTrue( $recorded['wcadmin_woopay_express_button_locations_updated']['cart_enabled'] );
+		$this->assertFalse( $recorded['wcadmin_woopay_express_button_locations_updated']['product_enabled'] );
+	}
+
+	/**
 	 * @testdox Should keep the WooPay last disable date when WooPay is already off.
 	 */
 	public function test_update_settings_keeps_woopay_last_disable_date_when_woopay_was_already_off(): void {

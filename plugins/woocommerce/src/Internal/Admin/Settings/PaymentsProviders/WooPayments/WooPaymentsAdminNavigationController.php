@@ -267,6 +267,10 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['balanceReportIdentity'] = $this->get_balance_report_identity();
 
 		$settings['woopaymentsSettings']['adminRouteAvailability'] = $this->get_admin_route_availability();
+		// Plugin 11.1.0 `WC_Payments_Admin` localizes this for `maybeTrackStripeConnected()`.
+		$track_stripe_connected                                  = get_option( '_wcpay_onboarding_stripe_connected' );
+		$settings['woopaymentsSettings']['trackStripeConnected'] = $track_stripe_connected ? $track_stripe_connected : '';
+
 		$provider_settings = $settings['woopaymentsSettings'];
 
 		/**
