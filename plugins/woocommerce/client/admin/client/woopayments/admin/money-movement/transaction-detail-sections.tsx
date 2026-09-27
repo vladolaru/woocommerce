@@ -606,8 +606,11 @@ const getPaymentSummaryStatusLabel = (
 		return __( 'Payment blocked', 'woocommerce' );
 	}
 
+	// Client 11.1.0 utils/charge/index.ts:52-71, 146-151 and payment-status-chip/mappings.ts:57-64.
 	if ( transaction.status === 'failed' ) {
-		return formatLabel( transaction.status );
+		return transaction.outcome?.type === 'blocked'
+			? __( 'Payment blocked', 'woocommerce' )
+			: __( 'Payment failed', 'woocommerce' );
 	}
 
 	if ( getPrimaryDispute( transaction )?.status ) {

@@ -238,6 +238,7 @@ export interface WooPaymentsPaymentMethodDetails {
 
 export interface WooPaymentsPaymentOutcome {
 	risk_level?: string;
+	type?: string;
 	[ key: string ]: unknown;
 }
 

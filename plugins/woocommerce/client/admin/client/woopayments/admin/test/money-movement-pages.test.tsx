@@ -627,6 +627,30 @@ describe( 'WooPayments money movement pages', () => {
 			},
 			'Disputed: Response needed',
 		],
+		// Source: client 11.1.0 utils/charge/index.ts:52-71, 146-151 and payment-status-chip/mappings.ts:57-64;
+		// the issuer_declined outcome type is recorded in Fixtures/rec-1-intention-declines.json.
+		[
+			'failed',
+			{
+				status: 'failed',
+				amount: 5000,
+				captured: false,
+				currency: 'usd',
+				outcome: { type: 'issuer_declined' },
+			},
+			'Payment failed',
+		],
+		[
+			'failed and blocked by Radar',
+			{
+				status: 'failed',
+				amount: 5000,
+				captured: false,
+				currency: 'usd',
+				outcome: { type: 'blocked' },
+			},
+			'Payment blocked',
+		],
 	] )(
 		'derives the %s payment summary status with oracle precedence',
 		( _state, transaction, expectedStatus ) => {
