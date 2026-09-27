@@ -2178,7 +2178,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * Oracle: client 11.1.0 `class-wc-payment-gateway-wcpay.php:4437` "We're not able to add this payment
 	 * method. Please try again later", with no trailing period. Native uses that copy for a succeeded
-	 * intent without a payment method, a token that cannot be created, and an unexpected exception.
+	 * intent without a payment method, a token that cannot be created, and an unexpected non-API exception
+	 * (where the client shows the exception's own text; kept as proposed in data/t7-batch13.md).
 	 *
 	 * @dataProvider unsaveable_setup_intent_provider
 	 *
@@ -2225,6 +2226,57 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			"We're not able to add this payment method. Please try again later",
 			wc_get_notices( 'error' )[0]['notice'] ?? ''
+		);
+	}
+
+	/**
+	 * @testdox Should show the client's filtered message when the setup intent lookup fails with an API error: $_dataName.
+	 *
+	 * Oracle: client 11.1.0 `class-wc-payment-gateway-wcpay.php:4467-4468` passes every exception through
+	 * `WC_Payments_Utils::get_filtered_error_message()` (`class-wc-payments-utils.php:769-819`).
+	 *
+	 * @dataProvider add_payment_method_api_error_provider
+	 *
+	 * @param WooPaymentsApiException $exception Exception thrown by the setup intent lookup.
+	 * @param string                  $expected  Expected shopper notice.
+	 */
+	public function test_add_payment_method_filters_api_errors_like_the_client( WooPaymentsApiException $exception, string $expected ): void {
+		wc_clear_notices();
+		wp_set_current_user( self::factory()->user->create() );
+		$_POST['wcpay-setup-intent'] = 'seti_native';
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_setup_intention' ) )
+			->getMock();
+		$api_client->method( 'get_setup_intention' )->willThrowException( $exception );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client );
+
+		$this->assertSame( array( 'result' => 'error' ), $gateway->add_payment_method() );
+		$this->assertSame( $expected, wc_get_notices( 'error' )[0]['notice'] ?? '' );
+	}
+
+	/**
+	 * API errors and the client's filtered message for each (utils.php:773-774, :795-796).
+	 *
+	 * @return array<string,array{0:WooPaymentsApiException,1:string}>
+	 */
+	public function add_payment_method_api_error_provider(): array {
+		return array(
+			'typed non-card error'    => array(
+				new WooPaymentsApiException( 'No such setupintent', 'resource_missing', 404, 'invalid_request_error' ),
+				"We're not able to process this request. Please refresh the page and try again.",
+			),
+			'transport failure'       => array(
+				new WooPaymentsApiException( 'Http request failed. Reason: timeout', 'wcpay_http_request_failed', 500 ),
+				'There was an error while processing this request. If you continue to see this notice, please contact the admin.',
+			),
+			'typeless platform error' => array(
+				new WooPaymentsApiException( 'The platform could not read this setup intent.', 'wcpay_setup_intent_unreadable', 400 ),
+				'The platform could not read this setup intent.',
+			),
 		);
 	}
 

@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -683,6 +684,16 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				 * @param string $url Redirect URL.
 				 */
 				'redirect' => apply_filters( 'wcpay_get_add_payment_method_redirect_url', wc_get_endpoint_url( 'payment-methods' ) ),
+			);
+		} catch ( WooPaymentsApiException $exception ) {
+			wc_get_logger()->error(
+				'Error when adding native WooPayments payment method: ' . $exception->getMessage(),
+				array( 'source' => 'wcpay-add-payment-method' )
+			);
+
+			// Client 11.1.0 gw:4467-4468 filters API errors through get_filtered_error_message().
+			return $this->add_payment_method_error(
+				WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $exception->get_error_code(), $exception->get_decline_code(), $exception->getMessage() )
 			);
 		} catch ( Throwable $exception ) {
 			wc_get_logger()->error(
