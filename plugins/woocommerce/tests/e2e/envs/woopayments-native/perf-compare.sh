@@ -11,10 +11,9 @@ readonly PROBE_SOURCE='wp-content/plugins/woocommerce/tests/e2e/envs/woopayments
 readonly PROBE_TARGET='wp-content/mu-plugins/woopayments-native-perf-probe.php'
 readonly CLI_HELPER_MARKER='woocommerce-native-perf-helper'
 # Each state is prepared and captured this many independent times; the reported metric per
-# page is the minimum across the attempts. This absorbs the intermittent +/-6-query component
-# that background WordPress/WooCommerce housekeeping (never observed making an outbound HTTP
-# request, so never native-attributable) occasionally adds to a single product/cart/checkout
-# request, without loosening the dormancy ceilings themselves (T.12).
+# page is the minimum across the attempts. The CI swing this was added for (T.12) was a WP-Cron
+# run, spawned on shutdown once the snapshot's cron lock expired, draining pending Action
+# Scheduler work mid-sample; the probe now disables WP-Cron, so attempts agree (T.12b).
 readonly STATE_SAMPLES=3
 
 MODE='local'

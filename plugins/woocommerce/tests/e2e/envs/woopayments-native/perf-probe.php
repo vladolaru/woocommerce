@@ -265,6 +265,11 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 	 * @return void
 	 */
 	public function register(): void {
+		// A WP-Cron run spawned mid-sample drains the snapshot's pending Action Scheduler work, making every
+		// later request of that sample cheaper; keep each sample on the imported snapshot instead (T.12b).
+		if ( ! defined( 'DISABLE_WP_CRON' ) ) {
+			define( 'DISABLE_WP_CRON', true );
+		}
 		$this->control = get_option( 'woocommerce_native_payments_perf_probe_control', null );
 		ob_start();
 		if ( ! $this->is_valid_control() ) {

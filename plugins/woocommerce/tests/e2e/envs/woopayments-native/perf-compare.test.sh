@@ -264,6 +264,30 @@ $expected = array(
 exit( $registered === $expected ? 0 : 1 );
 ' "$PROBE" || fail 'The MU probe did not register its measurement hooks.'
 
+# T.12b: a WP-Cron run spawned mid-sample drains the snapshot's pending Action Scheduler work and makes the
+# rest of that one sample cheaper, so the probe must keep WP-Cron off for every request it measures, even
+# when the control option is not yet valid (the first WP-CLI calls after a database import).
+for control_state in baseline_noop invalid; do
+	php -r '
+define( "ABSPATH", __DIR__ );
+$control_state = $argv[2];
+function wp_unslash( $value ) {
+	return $value;
+}
+function sanitize_text_field( $value ) {
+	return $value;
+}
+function get_option() {
+	global $control_state;
+	return "invalid" === $control_state ? null : array( "state" => $control_state, "reference_plugin_slug" => "woocommerce-payments-reference/woocommerce-payments.php" );
+}
+function add_filter() {}
+function add_action() {}
+require $argv[1];
+exit( defined( "DISABLE_WP_CRON" ) && true === DISABLE_WP_CRON ? 0 : 1 );
+' "$PROBE" "$control_state" || fail "The MU probe did not disable WP-Cron for a $control_state control."
+done
+
 probe_attribution_dir="$TEST_ROOT/probe-attribution"
 mkdir -p "$probe_attribution_dir"
 php -r '
