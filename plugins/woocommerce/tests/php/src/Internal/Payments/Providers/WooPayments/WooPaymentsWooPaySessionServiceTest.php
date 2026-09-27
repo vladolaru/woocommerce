@@ -1245,6 +1245,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $config['woopayFontRules'] );
 		$this->assertSame( 'Securely save my information for 1-click checkout', $config['woopaySaveUserLabel'] );
 		$this->assertSame( 'Mobile phone number', $config['woopayPhoneLabel'] );
+		// Client 11.1.0 client/components/woopay/save-user/additional-information.js copy, rendered just before the agreement.
+		$this->assertSame( "Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay.", $config['woopayAdditionalInfoText'] );
 		// Client 11.1.0 client/components/woopay/save-user/agreement.js copy; the classic script builds the links.
 		$this->assertSame( "By continuing, you agree to WooPay's <termsOfService/> and <privacyPolicy/>.", $config['woopayAgreementText'] );
 		$this->assertSame( 'Terms of Service', $config['woopayTermsOfServiceLabel'] );

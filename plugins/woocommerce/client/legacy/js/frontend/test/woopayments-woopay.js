@@ -732,6 +732,58 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( agreement.hidden ).toBe( true );
 	} );
 
+	test( 'shows the WooPay additional-information line above the agreement under save my info', () => {
+		// Client 11.1.0 client/components/woopay/save-user/additional-information.js,
+		// rendered directly before the agreement (checkout-page-save-user.js:402-403).
+		window.wcpay_core_woopay_config.woopayAdditionalInfoText =
+			"Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay.";
+		window.wcpay_core_woopay_config.woopayAgreementText =
+			"By continuing, you agree to WooPay's <termsOfService/> and <privacyPolicy/>.";
+		window.wcpay_core_woopay_config.woopayTermsOfServiceLabel =
+			'Terms of Service';
+		window.wcpay_core_woopay_config.woopayPrivacyPolicyLabel =
+			'Privacy Policy';
+
+		require( '../woopayments-woopay' );
+
+		const additionalInfo = document.querySelector(
+			'#wcpay-woopay-save-user .additional-information'
+		);
+		expect( additionalInfo ).not.toBeNull();
+		expect( additionalInfo.textContent ).toBe(
+			"Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay."
+		);
+		expect( additionalInfo.hidden ).toBe( false );
+
+		const phoneField = document.querySelector(
+			'input[name="woopay_user_phone_field[full]"]'
+		);
+		const agreement = document.querySelector(
+			'#wcpay-woopay-save-user .tos'
+		);
+		// querySelectorAll returns matches in document order, so this also
+		// proves the additional-information line sits between the phone
+		// field and the agreement, matching the client's placement.
+		const container = document.getElementById( 'wcpay-woopay-save-user' );
+		const orderedNodes = container.querySelectorAll(
+			'input[name="woopay_user_phone_field[full]"], .additional-information, .tos'
+		);
+		expect( Array.from( orderedNodes ) ).toEqual( [
+			phoneField,
+			additionalInfo,
+			agreement,
+		] );
+
+		const saveCheckbox = document.querySelector(
+			'input[name="save_user_in_woopay"]'
+		);
+		saveCheckbox.checked = false;
+		saveCheckbox.dispatchEvent(
+			new window.Event( 'change', { bubbles: true, cancelable: true } )
+		);
+		expect( additionalInfo.hidden ).toBe( true );
+	} );
+
 	test( 'keeps a translated agreement string as text, never markup', () => {
 		window.wcpay_core_woopay_config.woopayAgreementText =
 			'<img src=x onerror=alert(1)> <termsOfService/> <privacyPolicy/>';

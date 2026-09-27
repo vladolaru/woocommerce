@@ -1511,6 +1511,15 @@
 		} );
 	}
 
+	// Client 11.1.0 client/components/woopay/save-user/additional-information.js.
+	function createWooPaySaveUserAdditionalInfo() {
+		var additionalInfo = document.createElement( 'div' );
+		additionalInfo.className = 'additional-information';
+		additionalInfo.textContent = config.woopayAdditionalInfoText || '';
+
+		return additionalInfo;
+	}
+
 	// Client 11.1.0 client/components/woopay/save-user/agreement.js.
 	function createWooPaySaveUserAgreement() {
 		var agreement = document.createElement( 'p' );
@@ -1561,6 +1570,7 @@
 		var phoneField;
 		var sourceField;
 		var viewportField;
+		var additionalInfo;
 		var agreement;
 
 		if (
@@ -1591,6 +1601,8 @@
 			'<input type="hidden" name="woopay_source_url" />' +
 			'<input type="hidden" name="woopay_viewport" />' +
 			'<input type="hidden" name="woopay_is_blocks" value="false" />';
+		additionalInfo = createWooPaySaveUserAdditionalInfo();
+		container.appendChild( additionalInfo );
 		agreement = createWooPaySaveUserAgreement();
 		container.appendChild( agreement );
 
@@ -1615,6 +1627,7 @@
 		);
 
 		checkbox.checked = !! config.PRE_CHECK_SAVE_MY_INFO;
+		additionalInfo.hidden = ! checkbox.checked;
 		agreement.hidden = ! checkbox.checked;
 		sourceField.value = window.location.href;
 		viewportField.value = getWooPayViewport();
@@ -1627,6 +1640,7 @@
 		}
 
 		checkbox.addEventListener( 'change', function () {
+			additionalInfo.hidden = ! checkbox.checked;
 			agreement.hidden = ! checkbox.checked;
 			recordUserEvent( 'checkout_save_my_info_click', {
 				status: checkbox.checked ? 'checked' : 'unchecked',

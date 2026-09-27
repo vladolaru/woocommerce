@@ -697,6 +697,75 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 	} );
 
+	it( 'shows the WooPay additional-information line above the agreement under save my info', async () => {
+		// Client 11.1.0 client/components/woopay/save-user/additional-information.js,
+		// rendered directly before the agreement (checkout-page-save-user.js:402-403).
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( { success: true } ),
+		} );
+		document.body.innerHTML = `
+			<div class="wc-block-checkout">
+				<div class="wp-block-woocommerce-checkout-payment-block"></div>
+			</div>
+		`;
+
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		const additionalInfo = await screen.findByText(
+			"Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay."
+		);
+		expect( additionalInfo ).toHaveClass( 'additional-information' );
+
+		const phoneInput = document.querySelector(
+			'input[name="woopay_user_phone_field[full]"]'
+		);
+		const agreement = document.querySelector( '.tos' );
+
+		// querySelectorAll returns matches in document order, so this also
+		// proves the additional-information line sits between the phone
+		// field and the agreement, matching the client's placement.
+		const orderedNodes = document.querySelectorAll(
+			'input[name="woopay_user_phone_field[full]"], .additional-information, .tos'
+		);
+		expect( Array.from( orderedNodes ) ).toEqual( [
+			phoneInput,
+			additionalInfo,
+			agreement,
+		] );
+
+		fireEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Save to WooPay' } )
+		);
+
+		await waitFor( () => {
+			expect(
+				screen.queryByText(
+					"Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay."
+				)
+			).not.toBeInTheDocument();
+		} );
+	} );
+
 	it( 'renders test card instructions while the account is in test mode', () => {
 		const registration = registerWooPayments();
 		const content = registration.content;

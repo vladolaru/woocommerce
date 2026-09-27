@@ -647,6 +647,16 @@ const persistWooPaySaveUser = async (
 	);
 };
 
+// Client 11.1.0 client/components/woopay/save-user/additional-information.js.
+const WooPaySaveUserAdditionalInfo = () => (
+	<div className="additional-information">
+		{ __(
+			"Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay.",
+			'woocommerce'
+		) }
+	</div>
+);
+
 // Client 11.1.0 client/components/woopay/save-user/agreement.js.
 const WooPaySaveUserAgreement = ( { paymentSettings } ) => (
 	<div className="tos">
@@ -821,6 +831,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 								)
 							}
 						/>
+						<WooPaySaveUserAdditionalInfo />
 						<WooPaySaveUserAgreement
 							paymentSettings={ paymentSettings }
 						/>
