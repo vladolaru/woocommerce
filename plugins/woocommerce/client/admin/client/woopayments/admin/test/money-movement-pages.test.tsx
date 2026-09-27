@@ -1064,10 +1064,16 @@ describe( 'WooPayments money movement pages', () => {
 
 	afterEach( () => {
 		// Hidden columns live in user meta only, never in browser storage.
-		storageSpies.forEach( ( spy ) => {
-			expect( spy ).not.toHaveBeenCalled();
-			spy.mockRestore();
-		} );
+		const storageCalls = storageSpies.reduce(
+			( total, spy ) => total + spy.mock.calls.length,
+			0
+		);
+		storageSpies.forEach( ( spy ) => spy.mockRestore() );
+		if ( storageCalls > 0 ) {
+			throw new Error(
+				`Hidden columns touched browser storage ${ storageCalls } time(s).`
+			);
+		}
 		mockHistoryNavigate = null;
 		anchorClickSpy.mockRestore();
 		jest.useRealTimers();
