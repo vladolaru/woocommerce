@@ -1855,10 +1855,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return string Header version, or an empty string when unreadable.
 	 */
 	protected function get_installed_plugin_version( string $plugin_file ): string {
+		$plugin_path = WP_PLUGIN_DIR . '/' . $plugin_file;
+		if ( ! is_readable( $plugin_path ) ) {
+			return '';
+		}
 		if ( ! function_exists( 'get_plugin_data' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
-		$plugin_data = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin_file, false, false );
+		$plugin_data = get_plugin_data( $plugin_path, false, false );
 
 		return is_string( $plugin_data['Version'] ?? null ) ? trim( $plugin_data['Version'] ) : '';
 	}

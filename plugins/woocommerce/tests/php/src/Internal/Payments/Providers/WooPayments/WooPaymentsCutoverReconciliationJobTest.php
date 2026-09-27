@@ -3292,6 +3292,114 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Provide installed plugin headers around the minimum cutover version.
+	 *
+	 * @return array<string,array{?string,string,int}>
+	 */
+	public function installed_plugin_version_provider(): array {
+		return array(
+			'the minimum supported version' => array( '10.5.0', '10.5.0', 0 ),
+			'one patch below the minimum'   => array( '10.4.9', '10.4.9', 1 ),
+			'a missing plugin file'         => array( null, '', 1 ),
+		);
+	}
+
+	/**
+	 * @testdox The installed plugin header decides whether a completed update logs a failed version install.
+	 *
+	 * @dataProvider installed_plugin_version_provider
+	 *
+	 * @param string|null $header_version   Version header written to the fixture plugin file, or null for no file.
+	 * @param string      $expected_version Expected version read from the installed file.
+	 * @param int         $expected_errors  Expected number of logged errors after the completed update.
+	 */
+	public function test_installed_plugin_header_decides_the_completed_update_log( ?string $header_version, string $expected_version, int $expected_errors ): void {
+		// A fixture directory no real plugin uses, so a mounted WooPayments install is never read or touched.
+		$plugin_file     = 'woopayments-cutover-version-fixture/woocommerce-payments.php';
+		$plugin_absolute = WP_PLUGIN_DIR . '/' . $plugin_file;
+		if ( null !== $header_version ) {
+			wp_mkdir_p( dirname( $plugin_absolute ) );
+			file_put_contents( $plugin_absolute, "<?php\n/**\n * Plugin Name: WooPayments Fixture\n * Version: {$header_version}\n */\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture written to the test install's own plugins directory.
+		}
+
+		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var array<int,array<string,mixed>> */
+			private array $errors = array();
+
+			/** No-op controlled update metadata refresh, so the real wordpress.org API is never called. */
+			protected function refresh_plugin_update_metadata(): void {
+			}
+
+			/**
+			 * Complete one controlled core plugin update without touching the fixture file.
+			 *
+			 * @param string $plugin_file Active plugin file.
+			 * @return array<string,mixed>
+			 */
+			protected function upgrade_woopayments_plugin_file( string $plugin_file ): array {
+				unset( $plugin_file ); // Avoid parameter not used PHPCS errors.
+				return array( 'destination_name' => 'woocommerce-payments' );
+			}
+
+			/**
+			 * Record logged errors without relying on the global logger.
+			 *
+			 * @param string              $message Error message.
+			 * @param array<string,mixed> $context Error context.
+			 */
+			protected function write_log_error( string $message, array $context ): void {
+				$this->errors[] = array(
+					'message' => $message,
+					'context' => $context,
+				);
+			}
+
+			/**
+			 * Read the installed header through the real seam.
+			 *
+			 * @param string $plugin_file Plugin file relative to the plugins directory.
+			 * @return string
+			 */
+			public function read_installed_plugin_version( string $plugin_file ): string {
+				return $this->get_installed_plugin_version( $plugin_file );
+			}
+
+			/** @return array<int,array<string,mixed>> */
+			public function get_errors(): array {
+				return $this->errors;
+			}
+		};
+
+		try {
+			$installed_version = $job->read_installed_plugin_version( $plugin_file );
+
+			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), $plugin_file );
+			$sut       = $this->create_job( true, $preflight, $job );
+			$sut->enqueue( 'merchant' );
+			$pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $pending );
+			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+
+			$sut->handle_reconcile( $pending['generation'], 1 );
+		} finally {
+			if ( null !== $header_version ) {
+				wp_delete_file( $plugin_absolute );
+				@rmdir( dirname( $plugin_absolute ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Best-effort cleanup of a directory this test created.
+			}
+		}
+
+		$this->assertSame( $expected_version, $installed_version );
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
+		$this->assertCount( $expected_errors, $job->get_errors() );
+		if ( $expected_errors > 0 ) {
+			$this->assertSame( 'WooPayments cutover plugin update completed without installing a supported version.', $job->get_errors()[0]['message'] );
+		}
+	}
+
+	/**
 	 * Provide the real-world request contexts a plugin-update attempt can run in.
 	 *
 	 * @return array<string,array{bool}>
