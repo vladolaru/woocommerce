@@ -140,6 +140,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		'wcpay_onboarding_flow_reset'                    => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
 		'wcpay_onboarding_test_account_disable'          => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
 		'wcpay_subscriptions_account_not_connected_save_product' => 'plan.md Decision 1 (Stripe Billing / WCPay Subscriptions excluded)',
+		'wcpay_post_kyc_activation_notice_snoozed'       => 'Client 11.1.0 never fires it: the post-KYC notice overrides supports_snooze() to false (includes/admin/attach-rate/class-wc-payments-post-kyc-activation-notice.php:214-215), so the base never hooks snooze_notice() (class-wc-payments-abstract-admin-notice.php:83); native matches with no snooze action (owner N-137 asked for client parity; R8 closed).',
 	);
 
 	/**
@@ -156,7 +157,6 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		'wcadmin_wcpay_overview_stripe_notifications_banner_update' => 'plan.md T.7 Step 6 (b): the Stripe embedded notifications banner does not exist on the native Overview; routed to R3 (plan-task-t7.md section 5).',
 		'wcadmin_wcpay_overview_test_mode_learn_more_clicked' => 'plan.md T.7 Step 6 (c): the Overview dev-mode test notice and its Learn more link do not exist natively; routed to R7 (proposed in data/t7-batch14.md).',
 		'wcpay_checkout_woopay_save_my_info_country_click' => 'plan.md T.7 Step 6 (a): the save-my-info country dropdown does not exist natively; routed to R2 (plan-task-t7.md section 5).',
-		'wcpay_post_kyc_activation_notice_snoozed'         => 'plan.md T.7 Step 6 (c): unreachable in client 11.1.0 (the post-KYC notice overrides supports_snooze() to false, class-wc-payments-post-kyc-activation-notice.php:213-215) and native has no snooze action either; routed to R8 (proposed in data/t7-batch14.md) to close as an allowed difference.',
 	);
 
 	/**
