@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
 
 /**
  * Currency value object for the native multi-currency runtime.
@@ -237,7 +238,7 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	/**
 	 * Specify data for JSON serialization.
 	 *
-	 * Name and symbol are entity-decoded, as client 11.1.0 Currency.php:269,272.
+	 * Name and symbol are entity-decoded and the flag is included, as client 11.1.0 Currency.php:269-272.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -251,6 +252,7 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 			'symbol_position' => $this->get_symbol_position(),
 			'is_zero_decimal' => $this->get_is_zero_decimal(),
 			'is_default'      => $this->get_is_default(),
+			'flag'            => MultiCurrencySwitcherProjectionService::get_flag_by_currency( $this->get_code() ),
 			'charm'           => $this->get_charm(),
 			'rounding'        => $this->get_rounding(),
 			'last_updated'    => $this->get_last_updated(),

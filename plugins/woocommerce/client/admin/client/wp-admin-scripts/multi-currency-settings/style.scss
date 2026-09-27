@@ -34,6 +34,11 @@
 		}
 	}
 
+	&__currency-flag {
+		display: inline-block;
+		min-width: 2em;
+	}
+
 	&__actions {
 		display: flex;
 		gap: 12px;

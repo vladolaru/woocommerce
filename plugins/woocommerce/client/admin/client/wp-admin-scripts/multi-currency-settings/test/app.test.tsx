@@ -90,6 +90,7 @@ const currenciesResponse: StoreCurrenciesResponse = {
 			symbol_position: 'left',
 			is_zero_decimal: false,
 			is_default: false,
+			flag: '🇪🇺',
 			charm: 0,
 			rounding: '0',
 			last_updated: 1710000000,
@@ -214,6 +215,20 @@ describe( 'MultiCurrencySettingsApp', () => {
 		expect( within( defaultRow ).queryAllByRole( 'button' ) ).toHaveLength(
 			0
 		);
+		// Client 11.1.0 list-item.js:47-55: the flag, or the code when the
+		// currency has none, before the name (decorative next to the name).
+		const euroHeader = screen.getByRole( 'rowheader', {
+			name: 'Euro (€ EUR)',
+		} );
+		expect( within( euroHeader ).getByText( '🇪🇺' ) ).toHaveAttribute(
+			'aria-hidden',
+			'true'
+		);
+		expect(
+			within( defaultRow ).getByText( 'USD', {
+				selector: '[aria-hidden]',
+			} )
+		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'button', {
 				name: 'Remove Euro as an enabled currency',

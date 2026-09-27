@@ -7,6 +7,7 @@ export interface MultiCurrencyCurrency {
 	symbol_position: string;
 	is_zero_decimal: boolean;
 	is_default: boolean;
+	flag?: string;
 	charm: number;
 	rounding: string;
 	last_updated: number | null;

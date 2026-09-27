@@ -64,7 +64,7 @@ class MultiCurrencyCurrencyTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should serialize the currency state.
 	 *
-	 * Source: client 11.1.0 includes/multi-currency/Currency.php:264-277 (decoded name and symbol).
+	 * Source: client 11.1.0 includes/multi-currency/Currency.php:264-277 (decoded name and symbol, flag from CountryFlags.php:251, :287-300).
 	 */
 	public function test_serializes_currency_state(): void {
 		$currency = new MultiCurrencyCurrency( $this->create_localization(), 'USD', 1.0, true, 123456 );
@@ -81,6 +81,8 @@ class MultiCurrencyCurrencyTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'left', $data['symbol_position'] );
 		$this->assertFalse( $data['is_zero_decimal'] );
 		$this->assertTrue( $data['is_default'] );
+		$this->assertSame( '🇺🇸', $data['flag'] );
+		$this->assertSame( '', ( new MultiCurrencyCurrency( $this->create_localization(), 'XOF', 1.0 ) )->jsonSerialize()['flag'] );
 		$this->assertSame( -0.01, $data['charm'] );
 		$this->assertSame( '1.00', $data['rounding'] );
 		$this->assertSame( 123456, $data['last_updated'] );

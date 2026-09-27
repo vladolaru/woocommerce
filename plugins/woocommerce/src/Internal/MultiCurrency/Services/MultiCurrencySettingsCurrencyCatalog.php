@@ -184,6 +184,7 @@ final class MultiCurrencySettingsCurrencyCatalog {
 			'symbol_position' => (string) $format['currency_pos'],
 			'is_zero_decimal' => 0 === (int) $format['num_decimals'],
 			'is_default'      => false,
+			'flag'            => MultiCurrencySwitcherProjectionService::get_flag_by_currency( $currency_code ),
 			'charm'           => 0.0,
 			'rounding'        => '0',
 			'last_updated'    => null,

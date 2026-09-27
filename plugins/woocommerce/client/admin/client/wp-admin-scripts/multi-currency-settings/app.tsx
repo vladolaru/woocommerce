@@ -421,6 +421,13 @@ export function MultiCurrencySettingsApp() {
 					{ enabledCurrencies.map( ( currency ) => (
 						<tr key={ currency.code }>
 							<th scope="row">
+								{ /* Client 11.1.0 list-item.js:47-55: the flag, or the code when there is none. */ }
+								<span
+									className="woocommerce-multi-currency-settings__currency-flag"
+									aria-hidden="true"
+								>
+									{ currency.flag || currency.code }
+								</span>{ ' ' }
 								{ currency.name }{ ' ' }
 								<span className="woocommerce-multi-currency-settings__currency-code">
 									({ formatSymbolAndCode( currency ) })

@@ -367,7 +367,7 @@ class MultiCurrencySwitcherProjectionService {
 	 * @param string $currency_code Currency code.
 	 * @return string
 	 */
-	private static function get_flag_by_currency( string $currency_code ): string {
+	public static function get_flag_by_currency( string $currency_code ): string {
 		$currency_code = strtoupper( $currency_code );
 		if ( isset( self::FLAGLESS_CURRENCIES[ $currency_code ] ) ) {
 			return '';
