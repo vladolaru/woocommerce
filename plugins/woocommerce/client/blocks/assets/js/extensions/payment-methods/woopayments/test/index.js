@@ -1999,22 +1999,28 @@ describe( 'wc-payment-method-woopayments', () => {
 		);
 	} );
 
-	// T.3 Task 4 (plan-task-t3.md): a failed next action carries the Stripe error
-	// (REC-3DS-3b's shopper-facing decline message) straight through to the
-	// Blocks payments notice. Whether update_order_status is (or should be)
-	// called on this error branch is F-3DS-1 (T.7): the client's own
-	// confirmation flow always dispatches update_order_status, success or
-	// failure (client/checkout/api/index.js:258-276), while native's
-	// handleConfirmationResponse() early-returns on result.error before
-	// reaching updateOrderStatusAfterConfirmation(); that divergence is left
-	// unasserted here.
+	// A failed next action carries the Stripe error (REC-3DS-3b's shopper-facing
+	// decline message) to the Blocks payments notice, and still posts
+	// update_order_status with the error's intent ID so the server can fail the
+	// order. The client fires that call without waiting for it and throws the
+	// Stripe error (client 11.1.0 client/checkout/api/index.js:244-281).
 	it( 'returns the Stripe error in the payments notice context when a Blocks next action fails', async () => {
 		const handleNextAction = jest.fn().mockResolvedValue( {
 			error: {
 				message: 'Your card was declined.',
+				payment_intent: {
+					id: 'pi_123',
+				},
 			},
 		} );
-		window.fetch = jest.fn();
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				error: {
+					message:
+						"We're not able to process this payment. Please try again later.",
+				},
+			} ),
+		} );
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create: jest.fn( () => ( {
@@ -2072,6 +2078,11 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( handleNextAction ).toHaveBeenCalledWith( {
 			clientSecret: 'pi_123_secret_abc',
 		} );
+		expect( window.fetch ).toHaveBeenCalledTimes( 1 );
+		const requestBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( requestBody.get( 'action' ) ).toBe( 'update_order_status' );
+		expect( requestBody.get( 'order_id' ) ).toBe( '123' );
+		expect( requestBody.get( 'intent_id' ) ).toBe( 'pi_123' );
 	} );
 
 	it( 'handles PaymentIntent next actions from Blocks saved-token redirects', async () => {

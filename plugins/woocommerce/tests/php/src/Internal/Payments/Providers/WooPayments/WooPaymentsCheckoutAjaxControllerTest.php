@@ -1460,16 +1460,16 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback should leave a post-authentication decline unpaid with the recorded intent identity.
+	 * @testdox Order-status callback should fail a post-authentication decline with the recorded intent identity.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): a hosted 3DS challenge that fails, or that completes and is
 	 * then declined, both leave the PaymentIntent `requires_payment_method`. REC-3DS-3a
 	 * (`Fixtures/rec-t3-3ds-manual.json`, pair `blocks_challenge_failed`) has 0 charges
 	 * (`payment_intent_authentication_failure`); REC-3DS-3b (pair
 	 * `blocks_post_authentication_decline`) has one failed charge (`card_declined`/
-	 * `generic_decline`). The "order failed" status is F-3DS-1 (T.7 Step 5: native leaves the order
-	 * `pending`, the client marks it `failed`) and is left out of this test rather than pinned.
-	 * Likewise, the client's own `update_order_status` AJAX handler echoes nothing at all for a
+	 * `generic_decline`). Both carry `last_payment_error`, so the order is `failed`, as the client's
+	 * `mark_payment_failed()` leaves it (`os:418-422`); the Blocks checkout posts this callback on a
+	 * failed next action (F-3DS-1). The client's own `update_order_status` AJAX handler echoes nothing at all for a
 	 * non-authorized intent — it only `wp_json_encode`s and `wp_die()`s a `return_url` inside the
 	 * `if ( $intent->is_authorized() )` branch (`gw:4347-4367`) — so the 409-with-an-`error`-key
 	 * envelope is native's own shape, not a client-parity claim, and is left unasserted here (only
@@ -1519,6 +1519,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertArrayNotHasKey( 'return_url', $response, "$pair must not confirm the checkout, matching the client's own is_authorized() gate on echoing return_url." );
 		$this->assertSame( $recorded['body']['id'], $order->get_meta( '_intent_id', true ), "$pair must keep the intent id it was confirming." );
+		$this->assertSame( 'failed', $order->get_status(), "$pair carries last_payment_error, so the order is failed." );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( $expected_charge_id, $order->get_meta( '_charge_id', true ), "$pair's charge identity must match the recorded intent's own charges list." );
 	}

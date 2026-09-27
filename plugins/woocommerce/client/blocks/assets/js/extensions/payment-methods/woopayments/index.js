@@ -410,7 +410,22 @@ const handleConfirmationResponse = async (
 		} );
 	}
 
+	const intentId =
+		result.paymentIntent?.id ||
+		result.setupIntent?.id ||
+		result.error?.payment_intent?.id ||
+		result.error?.setup_intent?.id ||
+		confirmation.intentId;
+
 	if ( result.error ) {
+		// Let the server record the failed confirmation without waiting for it; the shopper sees Stripe's error.
+		updateOrderStatusAfterConfirmation(
+			confirmation,
+			intentId,
+			shouldSavePaymentMethod,
+			paymentSettings
+		).catch( () => {} );
+
 		return getErrorResponse(
 			emitResponse,
 			result.error.message ||
@@ -420,13 +435,6 @@ const handleConfirmationResponse = async (
 				)
 		);
 	}
-
-	const intentId =
-		result.paymentIntent?.id ||
-		result.setupIntent?.id ||
-		result.error?.payment_intent?.id ||
-		result.error?.setup_intent?.id ||
-		confirmation.intentId;
 
 	const redirectUrl = await updateOrderStatusAfterConfirmation(
 		confirmation,

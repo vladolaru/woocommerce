@@ -690,12 +690,11 @@ test.describe( 'WooPayments native card authentication', () => {
 				expect( dispatch.responseStatus ).toBe( 200 );
 				expect( dispatch.checkoutRequestCount ).toBe( 1 );
 				expect( dispatch.checkoutResponseCount ).toBe( 1 );
-				// F-3DS-1 (N-085): client 11.1.0 builds one `update_order_status` request
-				// carrying the intent id and marks the order failed after a post-authentication
-				// decline (api:258-281, os:418-422); native returns early and never calls
-				// `update_order_status` (client/blocks/.../woopayments/index.js:413-423), so
-				// asserting `orderStatusUpdates` is empty here would pin that divergence.
-				// Left for Task T.7 Step 5.
+				// F-3DS-1: the `update_order_status` call after a failed next action
+				// (client 11.1.0 api:244-281) is owned by the Blocks Jest test
+				// "returns the Stripe error in the payments notice context when a Blocks
+				// next action fails" and the failed order status by
+				// WooPaymentsCheckoutAjaxControllerTest::test_update_order_status_fails_order_for_post_authentication_decline.
 
 				const intent = await pollFailedAuthenticationIntent(
 					restApi,
@@ -847,8 +846,8 @@ test.describe( 'WooPayments native card authentication', () => {
 			// `requires_payment_method` with the provider's own
 			// `payment_intent_authentication_failure` error, and the order it
 			// belongs to gets no charge id and no paid status. F-3DS-1 (the
-			// order's persisted status, and whether native calls
-			// `update_order_status` on this branch) stays out, as in CA-2.
+			// `update_order_status` call and the failed order status) is owned
+			// by the Jest and PHPUnit tests named in the declined-challenge case above.
 			const intent = await pollFailedAuthenticationIntent(
 				restApi,
 				dispatch.intentId
