@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	mkdtempSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -59,6 +65,27 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 		nestedDirectory,
 		'future-woopayments-routing.spec.ts'
 	);
+	const futureSpecTitle = 'future WooPayments nested routing sentinel';
+	// The disposition-coverage check requires every collected case to have a
+	// browser DISPOSITION.tsv row, so this synthetic spec needs one too;
+	// appended to the real ledger for the duration of the test and restored
+	// in the finally block, the same lifecycle this test already gives the
+	// synthetic spec file itself.
+	const dispositionLedgerPath = join(
+		wooPaymentsTestRoot,
+		'DISPOSITION.tsv'
+	);
+	const originalDispositionLedgerContent = readFileSync(
+		dispositionLedgerPath,
+		'utf8'
+	);
+	const futureSpecRow = [
+		relative( wooPaymentsTestRoot, futureSpec ),
+		futureSpecTitle,
+		'browser',
+		relative( wooPaymentsTestRoot, futureSpec ),
+		'Synthetic routing fixture row for the duration of this test.',
+	].join( '\t' );
 
 	mkdirSync( nestedDirectory, { recursive: true } );
 	writeFileSync(
@@ -67,12 +94,20 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 			"import { test } from '@playwright/test';",
 			'',
 			'test(',
-			"\t'future WooPayments nested routing sentinel',",
+			`\t'${ futureSpecTitle }',`,
 			"\t{ tag: '@woopayments-native' },",
 			'\t() => {}',
 			');',
 			'',
 		].join( '\n' ),
+		'utf8'
+	);
+	writeFileSync(
+		dispositionLedgerPath,
+		`${ originalDispositionLedgerContent.replace(
+			/\r?\n$/,
+			''
+		) }\n${ futureSpecRow }\n`,
 		'utf8'
 	);
 
@@ -99,6 +134,11 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 		} );
 	} finally {
 		rmSync( temporaryDirectory, { recursive: true, force: true } );
+		writeFileSync(
+			dispositionLedgerPath,
+			originalDispositionLedgerContent,
+			'utf8'
+		);
 	}
 } );
 
@@ -548,5 +588,156 @@ test( 'the shared fixtures barrel does not make every test provider-involved', (
 				)
 			);
 		}
+	);
+} );
+
+// ---------------------------------------------------------------------------
+// DISPOSITION.tsv parsing.
+// ---------------------------------------------------------------------------
+
+const validDispositionContent = [
+	[
+		'spec',
+		'test title',
+		'layer: browser|phpunit|js-unit|delete',
+		'target test class or file',
+		'why',
+	].join( '\t' ),
+	[
+		'shopper/synthetic.spec.ts',
+		'a synthetic case',
+		'browser',
+		'shopper/synthetic.spec.ts',
+		'fixture row',
+	].join( '\t' ),
+].join( '\n' );
+
+test( 'a well-formed DISPOSITION.tsv parses into rows', () => {
+	const rows = projectRouting.parseDispositionLedger(
+		validDispositionContent
+	);
+
+	assert.deepEqual( rows, [
+		{
+			spec: 'shopper/synthetic.spec.ts',
+			title: 'a synthetic case',
+			layer: 'browser',
+			targetPath: 'shopper/synthetic.spec.ts',
+			why: 'fixture row',
+		},
+	] );
+} );
+
+test( 'DISPOSITION.tsv with the wrong header schema is rejected', () => {
+	const wrongHeaderContent = validDispositionContent.replace(
+		'test title',
+		'title'
+	);
+
+	assert.throws(
+		() => projectRouting.parseDispositionLedger( wrongHeaderContent ),
+		/Invalid DISPOSITION\.tsv schema/
+	);
+} );
+
+test( 'a DISPOSITION.tsv row with the wrong column count is rejected', () => {
+	const malformedContent = `${ validDispositionContent }\nan-extra-column-row`;
+
+	assert.throws(
+		() => projectRouting.parseDispositionLedger( malformedContent ),
+		/DISPOSITION\.tsv row 3 has 1 columns; expected 5/
+	);
+} );
+
+// ---------------------------------------------------------------------------
+// Every collected `test(` must join to exactly one DISPOSITION.tsv row whose
+// layer is `browser`; a browser row inside the WooPayments test tree that
+// binds to no collected case is stale.
+// ---------------------------------------------------------------------------
+
+const dispositionSpec = 'shopper/synthetic-disposition.spec.ts';
+const dispositionTitle = 'a synthetic case proves the join';
+const dispositionCollectedTest = {
+	file: `woopayments-native/${ dispositionSpec }`,
+	title: dispositionTitle,
+};
+const dispositionBrowserRow = {
+	spec: dispositionSpec,
+	title: dispositionTitle,
+	layer: 'browser',
+	targetPath: `tests/e2e/tests/woopayments-native/${ dispositionSpec }`,
+	why: 'fixture row',
+};
+
+test( 'a collected case with exactly one browser DISPOSITION.tsv row passes', () => {
+	assert.doesNotThrow( () =>
+		projectRouting.validateDispositionCoverage(
+			[ dispositionCollectedTest ],
+			[ dispositionBrowserRow ]
+		)
+	);
+} );
+
+test( 'a collected case with no DISPOSITION.tsv row is rejected', () => {
+	assert.throws(
+		() =>
+			projectRouting.validateDispositionCoverage(
+				[ dispositionCollectedTest ],
+				[]
+			),
+		new RegExp(
+			`Collected WooPayments case has no DISPOSITION\\.tsv row: ${ dispositionSpec }::${ dispositionTitle }`
+		)
+	);
+} );
+
+test( 'a collected case with more than one DISPOSITION.tsv row is rejected', () => {
+	assert.throws(
+		() =>
+			projectRouting.validateDispositionCoverage(
+				[ dispositionCollectedTest ],
+				[ dispositionBrowserRow, { ...dispositionBrowserRow } ]
+			),
+		new RegExp(
+			`Collected WooPayments case has more than one DISPOSITION\\.tsv row: ${ dispositionSpec }::${ dispositionTitle }`
+		)
+	);
+} );
+
+test( 'a collected case disposed to a non-browser layer is rejected', () => {
+	assert.throws(
+		() =>
+			projectRouting.validateDispositionCoverage(
+				[ dispositionCollectedTest ],
+				[ { ...dispositionBrowserRow, layer: 'phpunit' } ]
+			),
+		new RegExp(
+			`Collected WooPayments case is disposed to the phpunit layer, not browser: ${ dispositionSpec }::${ dispositionTitle }`
+		)
+	);
+} );
+
+test( 'a browser DISPOSITION.tsv row inside the test tree with no collected case is stale', () => {
+	assert.throws(
+		() =>
+			projectRouting.validateDispositionCoverage(
+				[],
+				[ dispositionBrowserRow ]
+			),
+		new RegExp(
+			`DISPOSITION\\.tsv browser row matches no collected WooPayments case: ${ dispositionSpec }::${ dispositionTitle }`
+		)
+	);
+} );
+
+test( 'a browser DISPOSITION.tsv row pointing outside the test tree needs no collected case', () => {
+	const outsideRow = {
+		...dispositionBrowserRow,
+		spec: '../onboarding/nox-onboarding.spec.ts',
+		title: 'can start in-context onboarding from Payments settings',
+	};
+
+	assert.doesNotThrow( () =>
+		projectRouting.validateDispositionCoverage( [], [ outsideRow ] )
 	);
 } );

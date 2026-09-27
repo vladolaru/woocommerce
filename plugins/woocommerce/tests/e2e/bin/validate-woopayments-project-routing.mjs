@@ -34,6 +34,122 @@ const providerMachineryPrefixes = [ 'tests/e2e/utils/woopayments' ];
 // Deliberately permissive: over-matching costs a false positive that a human
 // resolves by adding a tag, while under-matching silently ungates a test.
 const importSourcePattern = /(?:\bfrom|\bimport)\s*['"]([^'"]+)['"]/g;
+// Collected spec `file` values from the woopayments-native config are relative
+// to the shared `tests/e2e/tests` directory, so every one of them starts with
+// this segment; stripping it is what turns a collected case's file into the
+// `spec` value DISPOSITION.tsv keys its rows by.
+const dispositionSpecPrefix = 'woopayments-native/';
+const dispositionLedgerFileName = 'DISPOSITION.tsv';
+const DISPOSITION_HEADERS = [
+	'spec',
+	'test title',
+	'layer: browser|phpunit|js-unit|delete',
+	'target test class or file',
+	'why',
+];
+
+export const parseDispositionLedger = ( content ) => {
+	const lines = content.replace( /\r?\n$/, '' ).split( /\r?\n/ );
+	const headers = lines.shift().split( '\t' );
+
+	if (
+		headers.length !== DISPOSITION_HEADERS.length ||
+		! headers.every(
+			( header, index ) => header === DISPOSITION_HEADERS[ index ]
+		)
+	) {
+		throw new Error(
+			`Invalid DISPOSITION.tsv schema; expected the exact ${ DISPOSITION_HEADERS.length } ordered columns`
+		);
+	}
+
+	return lines.map( ( line, index ) => {
+		const values = line.split( '\t' );
+
+		if ( values.length !== headers.length ) {
+			throw new Error(
+				`DISPOSITION.tsv row ${ index + 2 } has ${
+					values.length
+				} columns; expected ${ headers.length }`
+			);
+		}
+
+		const [ spec, title, layer, targetPath, why ] = values;
+
+		return { spec, title, layer, targetPath, why };
+	} );
+};
+
+/**
+ * Every `test(` collected from the woopayments-native config must be joined
+ * to exactly one DISPOSITION.tsv row, and that row's layer must be `browser`
+ * - a case running here without a disposition, or disposed anywhere but the
+ * browser layer, means the ledger and the suite have drifted apart. The join
+ * runs the other way too: a browser row inside this test tree that binds to
+ * no collected case is stale, because whatever it once named no longer runs.
+ * Browser rows naming a spec outside this tree (case in point: the shared
+ * `../onboarding/nox-onboarding.spec.ts`) are collected by a different
+ * config and are exempt from that half of the check.
+ */
+export const validateDispositionCoverage = ( tests, dispositionRows ) => {
+	const errors = [];
+	const rowsBySpecAndTitle = new Map();
+
+	for ( const row of dispositionRows ) {
+		const key = `${ row.spec }\u0000${ row.title }`;
+		const matches = rowsBySpecAndTitle.get( key ) ?? [];
+		matches.push( row );
+		rowsBySpecAndTitle.set( key, matches );
+	}
+
+	const collectedKeys = new Set();
+
+	for ( const collectedTest of tests ) {
+		if ( ! collectedTest.file.startsWith( dispositionSpecPrefix ) ) {
+			continue;
+		}
+
+		const spec = collectedTest.file.slice( dispositionSpecPrefix.length );
+		const key = `${ spec }\u0000${ collectedTest.title }`;
+		const caseLabel = `${ spec }::${ collectedTest.title }`;
+
+		collectedKeys.add( key );
+
+		const matches = rowsBySpecAndTitle.get( key ) ?? [];
+
+		if ( matches.length === 0 ) {
+			errors.push(
+				`Collected WooPayments case has no DISPOSITION.tsv row: ${ caseLabel }`
+			);
+		} else if ( matches.length > 1 ) {
+			errors.push(
+				`Collected WooPayments case has more than one DISPOSITION.tsv row: ${ caseLabel }`
+			);
+		} else if ( matches[ 0 ].layer !== 'browser' ) {
+			errors.push(
+				`Collected WooPayments case is disposed to the ${ matches[ 0 ].layer } layer, not browser: ${ caseLabel }`
+			);
+		}
+	}
+
+	for ( const row of dispositionRows ) {
+		if ( row.layer !== 'browser' || row.spec.startsWith( '../' ) ) {
+			continue;
+		}
+
+		const key = `${ row.spec }\u0000${ row.title }`;
+
+		if ( ! collectedKeys.has( key ) ) {
+			errors.push(
+				`DISPOSITION.tsv browser row matches no collected WooPayments case: ${ row.spec }::${ row.title }`
+			);
+		}
+	}
+
+	if ( errors.length > 0 ) {
+		throw new Error( errors.join( '\n' ) );
+	}
+};
 
 const listTests = ( configPath ) => {
 	let output;
@@ -432,6 +548,19 @@ export const validateWooPaymentsProjectRouting = () => {
 		packageRoot
 	);
 	validateProviderMachineryTags( wooPayments.tests, packageRoot );
+	validateDispositionCoverage(
+		wooPayments.tests,
+		parseDispositionLedger(
+			readFileSync(
+				resolve(
+					packageRoot,
+					wooPaymentsTestRoot,
+					dispositionLedgerFileName
+				),
+				'utf8'
+			)
+		)
+	);
 
 	return {
 		baseProjectsCollectWooPayments: base.tests.length > 0,
