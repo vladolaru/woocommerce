@@ -322,7 +322,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * `client/checkout/utils/show-error-checkout.js:15` wraps a checkout error in
 	 * `<ul class="woocommerce-error" role="alert">`, the same `woocommerce-error` class and
 	 * `role="alert"` pairing native's region carries; the assertion below checks only that pairing,
-	 * not the surrounding `id`/`hidden` markup, which is native-only structure with no client
+	 * not the surrounding `hidden` markup, which is native-only structure with no client
 	 * counterpart to cite.
 	 */
 	public function test_render_payment_fields_prints_assertive_payment_error_region(): void {
@@ -337,29 +337,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'woocommerce-error', $output );
 		$this->assertStringContainsString( 'role="alert"', $output );
-	}
-
-	/**
-	 * @testdox Should print the error box id once when several gateways render their fields.
-	 *
-	 * Source: P4b review M8 — a repeated id made the checkout script write every error into the first box.
-	 */
-	public function test_render_payment_fields_prints_error_box_id_once_across_gateways(): void {
-		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
-		$account_service = $this->create_account_service_for_bridge( true );
-		$sut             = new WooPaymentsCheckoutBridge();
-		$sut->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
-
-		ob_start();
-		$sut->render_payment_fields();
-		$first = (string) ob_get_clean();
-		ob_start();
-		$sut->render_payment_fields();
-		$second = (string) ob_get_clean();
-
-		$this->assertSame( 1, substr_count( $first, 'id="wcpay-core-payment-errors"' ) );
-		$this->assertSame( 0, substr_count( $second, 'id="wcpay-core-payment-errors"' ) );
-		$this->assertStringContainsString( 'class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden', $second );
 	}
 
 	/**

@@ -1596,7 +1596,7 @@ describe( 'WooPayments checkout', () => {
 			.querySelector( 'form.checkout' )
 			.insertAdjacentHTML(
 				'beforeend',
-				'<div id="wcpay-core-payment-errors" hidden></div>'
+				'<div class="wcpay-core-payment-errors" hidden></div>'
 			);
 		stripeMock.handleNextAction.mockResolvedValueOnce( {
 			error: {
@@ -1615,7 +1615,7 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		expect(
-			document.getElementById( 'wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.wcpay-core-payment-errors' ).textContent
 		).toBe(
 			'We are unable to authenticate your payment method. Please choose a different payment method and try again.'
 		);
@@ -1656,7 +1656,7 @@ describe( 'WooPayments checkout', () => {
 			'<li class="wc_payment_method payment_method_woocommerce_payments_klarna">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" />' +
 			'<div class="payment_box">' +
-			'<div id="wcpay-core-payment-errors" class="woocommerce-error wcpay-core-payment-errors" role="alert">' +
+			'<div class="woocommerce-error wcpay-core-payment-errors" role="alert">' +
 			'Stale Klarna error</div>' +
 			'</div>' +
 			'</li>' +
@@ -1737,7 +1737,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form id="order_review">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-errors" hidden></div>' +
+			'<div class="wcpay-core-payment-errors" hidden></div>' +
 			'</form>';
 		stripeMock.handleNextAction.mockResolvedValueOnce( {
 			error: {
@@ -2404,7 +2404,7 @@ describe( 'WooPayments checkout', () => {
 			.querySelector( 'form.checkout' )
 			.insertAdjacentHTML(
 				'beforeend',
-				'<div id="wcpay-core-payment-errors" hidden></div>'
+				'<div class="wcpay-core-payment-errors" hidden></div>'
 			);
 
 		require( '../woopayments-checkout' );
@@ -2422,7 +2422,7 @@ describe( 'WooPayments checkout', () => {
 		expect( submitElements ).not.toHaveBeenCalled();
 		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
 		expect(
-			document.getElementById( 'wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.wcpay-core-payment-errors' ).textContent
 		).toBe( 'The payment form could not be loaded.' );
 	} );
 
@@ -3105,7 +3105,7 @@ describe( 'WooPayments checkout', () => {
 		form.innerHTML =
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
 			'<div id="wcpay-core-payment-element"></div>' +
-			'<div id="wcpay-core-payment-errors" role="alert" hidden></div>' +
+			'<div class="wcpay-core-payment-errors" role="alert" hidden></div>' +
 			'<button type="submit">Add payment method</button>';
 		document.body.innerHTML = '';
 		document.body.appendChild( form );
@@ -3212,7 +3212,7 @@ describe( 'WooPayments checkout', () => {
 		addPaymentMethodForm.innerHTML =
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
 			'<div id="wcpay-core-payment-element"></div>' +
-			'<div id="wcpay-core-payment-errors" hidden></div>';
+			'<div class="wcpay-core-payment-errors" hidden></div>';
 		document.body.innerHTML = '';
 		document.body.appendChild( addPaymentMethodForm );
 		window.wcpay_core_checkout_config.cartTotal = '0';
@@ -3233,7 +3233,7 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		expect(
-			document.getElementById( 'wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.wcpay-core-payment-errors' ).textContent
 		).toBe( 'Your card number is incomplete.' );
 		expect( global.jQuery.post ).not.toHaveBeenCalled();
 		expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
@@ -3274,7 +3274,7 @@ describe( 'WooPayments checkout', () => {
 			'seti_failed_authentication_secret_abc'
 		);
 		expect(
-			document.getElementById( 'wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.wcpay-core-payment-errors' ).textContent
 		).toBe(
 			'We are unable to authenticate your payment method. Please choose a different payment method and try again.'
 		);
@@ -3367,8 +3367,8 @@ describe( 'WooPayments checkout', () => {
 		);
 		await flushPromises();
 
-		const errorElement = document.getElementById(
-			'wcpay-core-payment-errors'
+		const errorElement = document.querySelector(
+			'.wcpay-core-payment-errors'
 		);
 		expect( errorElement.textContent ).toBe(
 			'Error: Your card was declined.'
@@ -3450,7 +3450,7 @@ describe( 'WooPayments checkout', () => {
 			await flushPromises();
 
 			expect(
-				document.getElementById( 'wcpay-core-payment-errors' )
+				document.querySelector( '.wcpay-core-payment-errors' )
 					.textContent
 			).toBe( 'Unable to add payment method.' );
 			expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();

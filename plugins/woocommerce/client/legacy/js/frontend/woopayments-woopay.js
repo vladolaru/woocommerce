@@ -41,8 +41,7 @@
 	// Each WooPayments gateway renders its own box, so the error goes to the
 	// selected gateway's box and the others are cleared.
 	function setError( message ) {
-		var boxSelector =
-			'.wcpay-core-payment-errors, #wcpay-core-payment-errors';
+		var boxSelector = '.wcpay-core-payment-errors';
 		var boxes = Array.prototype.slice.call(
 			document.querySelectorAll( boxSelector )
 		);

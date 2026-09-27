@@ -488,7 +488,7 @@ describe( 'WooPayments WooPay checkout', () => {
 					'<button type="submit" class="single_add_to_cart_button disabled ' +
 					'wc-variation-selection-needed" name="add-to-cart" value="123">Add to cart</button>' +
 					'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
-					'<div id="wcpay-core-payment-errors" hidden></div>' +
+					'<div class="wcpay-core-payment-errors" hidden></div>' +
 					'</form>';
 			window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
 			window.wcpay_core_woopay_config.confirmationErrorMessage =
@@ -505,7 +505,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				expect.anything()
 			);
 			expect(
-				document.getElementById( 'wcpay-core-payment-errors' ).textContent
+				document.querySelector( '.wcpay-core-payment-errors' ).textContent
 			).toBe( 'Choose product options before using WooPay.' );
 		} );
 
@@ -620,7 +620,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			'<ul class="wc_payment_methods payment_methods methods">' +
 			'<li class="wc_payment_method payment_method_woocommerce_payments_klarna">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" />' +
-			'<div id="wcpay-core-payment-errors" class="wcpay-core-payment-errors">Stale Klarna error</div>' +
+			'<div class="wcpay-core-payment-errors">Stale Klarna error</div>' +
 			'</li>' +
 			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
@@ -658,7 +658,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			'<input type="hidden" name="product_id" value="257" />' +
 			'<input type="hidden" name="variation_id" value="" />' +
 			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
-			'<div id="wcpay-core-payment-errors" hidden></div>' +
+			'<div class="wcpay-core-payment-errors" hidden></div>' +
 			'</form>';
 		window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
 		window.wcpay_core_woopay_config.confirmationErrorMessage =
@@ -675,7 +675,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			expect.anything()
 		);
 		expect(
-			document.getElementById( 'wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.wcpay-core-payment-errors' ).textContent
 		).toBe( 'Choose product options before using WooPay.' );
 	} );
 

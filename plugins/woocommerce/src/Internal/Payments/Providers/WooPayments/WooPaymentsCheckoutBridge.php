@@ -267,13 +267,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	private bool $base_classic_config_localized = false;
 
 	/**
-	 * Whether a classic payment error box has printed its id on this page.
-	 *
-	 * @var bool
-	 */
-	private bool $payment_errors_id_rendered = false;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -571,9 +564,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		echo '<div id="wcpay-core-payment-element" class="wcpay-core-payment-element"></div>';
-		// Every WooPayments gateway prints a box; the id stays on the first only, for existing selectors.
-		echo '<div ' . ( $this->payment_errors_id_rendered ? '' : 'id="wcpay-core-payment-errors" ' ) . 'class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>';
-		$this->payment_errors_id_rendered = true;
+		echo '<div class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>';
 
 		if ( ! $this->should_expose_checkout_surface() ) {
 			echo '<p class="woocommerce-info wcpay-core-checkout-unavailable">';

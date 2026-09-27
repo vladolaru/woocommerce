@@ -875,15 +875,10 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 				// Blocks, nothing here routes through `wp.a11y.speak`, so
 				// asserting `#a11y-speak-assertive` instead would be
 				// asserting the wrong oracle.
-				// `:visible`-scoped: WooCommerce renders every enabled
-				// gateway's payment box on the page (hidden via CSS unless
-				// selected), and WooPayments prints this same static id
-				// inside each of its own gateway boxes (Card, Klarna, …), so
-				// the bare id can match more than one element whenever more
-				// than one WooPayments-family gateway is enabled - only one
-				// of them is ever visible.
+				// Every WooPayments gateway box (Card, Klarna, …) prints its
+				// own error box, so read the one inside the Card gateway.
 				const paymentError = page.locator(
-					'#wcpay-core-payment-errors:visible'
+					'.payment_method_woocommerce_payments .wcpay-core-payment-errors'
 				);
 				await expect( paymentError ).toBeVisible( {
 					timeout: 30_000,

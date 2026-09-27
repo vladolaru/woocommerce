@@ -59,10 +59,10 @@ const SAVED_CARD_EVIDENCE_ROUTE =
 const SUBSCRIPTION_EVIDENCE_ROUTE =
 	'wc-native-payments-e2e/v1/subscription-evidence';
 const ADD_FORM = '#add_payment_method';
-// `:visible`-scoped: WooCommerce can render more than one WooPayments-family
-// gateway box on a page (Card, Klarna, …), each printing this same static id
-// in its own fields template, and only one of them is ever visible.
-const ADD_ERROR = '#wcpay-core-payment-errors:visible';
+// Every WooPayments gateway box (Card, Klarna, …) prints its own error box,
+// so read the one inside the Card gateway.
+const ADD_ERROR =
+	'.payment_method_woocommerce_payments .wcpay-core-payment-errors';
 const ADD_SUCCESS_NOTICE = 'Payment method successfully added.';
 const CONFIRMATION_HASH_PATTERN =
 	/^#wcpay-confirm-(pi|si):([^:]+):([^:]+):([^:]+)(?::(.+))?$/;
