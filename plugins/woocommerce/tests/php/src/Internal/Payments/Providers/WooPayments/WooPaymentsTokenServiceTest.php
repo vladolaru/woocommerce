@@ -724,6 +724,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should add provider payment methods that have no local token during reconciliation.
 	 */
 	public function test_reconcile_adds_provider_payment_methods_missing_locally(): void {
+		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 
@@ -772,6 +773,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should delete local tokens whose payment method no longer exists at the provider, without detaching.
 	 */
 	public function test_reconcile_deletes_local_tokens_missing_at_provider_without_detach(): void {
+		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 		$stale_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_gone' );
@@ -812,6 +814,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should preserve and hide a disabled SEPA token from all-gateway listings.
 	 */
 	public function test_reconcile_preserves_and_hides_disabled_sepa_tokens_from_all_gateway_listings(): void {
+		$this->register_card_gateway_id();
 		$user_id    = $this->factory()->user->create();
 		$sepa_token = $this->create_sepa_token( $user_id, 'pm_disabled_sepa' );
 		$api_client = new class() extends WooPaymentsApiClient {
@@ -894,6 +897,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide disabled tokens from settings when reconciliation cannot reach the provider.
 	 */
 	public function test_reconcile_hides_disabled_tokens_when_reconciliation_skips_or_provider_fetch_fails(): void {
+		$this->register_card_gateway_id();
 		$user_id    = $this->factory()->user->create();
 		$sepa_token = $this->create_sepa_token( $user_id, 'pm_disabled_sepa' );
 
@@ -921,6 +925,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should restore a disabled SEPA token after re-enable without token or cache writes.
 	 */
 	public function test_reconcile_restores_disabled_sepa_token_after_reenable_without_writes(): void {
+		$this->register_card_gateway_id();
 		$user_id    = $this->factory()->user->create();
 		$sepa_token = $this->create_sepa_token( $user_id, 'pm_reenabled_sepa' );
 		$sepa_data  = array(
@@ -984,6 +989,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide disabled SEPA without changing cached provider data when another provider fetch fails.
 	 */
 	public function test_reconcile_hides_disabled_sepa_without_changing_cache_when_provider_fetch_fails(): void {
+		$this->register_card_gateway_id();
 		$user_id    = $this->factory()->user->create();
 		$sepa_token = $this->create_sepa_token( $user_id, 'pm_failed_cache_sepa' );
 		$sepa_data  = array(
@@ -1046,6 +1052,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should delete a local token only after an enabled provider response proves it detached.
 	 */
 	public function test_reconcile_deletes_tokens_absent_from_an_authoritative_enabled_response(): void {
+		$this->register_card_gateway_id();
 		$user_id    = $this->factory()->user->create();
 		$sepa_token = $this->create_sepa_token( $user_id, 'pm_detached_sepa' );
 		$api_client = new class() extends WooPaymentsApiClient {
@@ -1122,6 +1129,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Saving a new token should bust the cached provider list so reconciliation cannot delete it.
 	 */
 	public function test_reconcile_keeps_tokens_created_after_the_cache_was_warmed(): void {
+		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 
@@ -1158,6 +1166,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should cache fetched provider payment methods per customer and bust on customer change.
 	 */
 	public function test_reconcile_caches_fetched_payment_methods_per_customer(): void {
+		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 
@@ -1207,6 +1216,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Reconciliation should re-register the token filter after adding tokens.
 	 */
 	public function test_reconcile_reregisters_the_filter_after_adding_tokens(): void {
+		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 
@@ -1866,6 +1876,35 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $first->get_id() ), array_keys( $tokens ), 'Only the card the cached list names must remain.' );
 		$this->assertNull( WC_Payment_Tokens::get( $second->get_id() ), 'The card missing from the cached list is deleted, default or not.' );
 		$this->assertSame( array(), $customer_service->fetch_counts, 'A cache for the same customer is served without a provider call.' );
+	}
+
+	/**
+	 * @testdox A filtered read of all gateways should write no token rows while the card gateway is not registered.
+	 *
+	 * Source: client 11.1.0 class-wc-payments.php:581, :730 and :961 build the token filter and register the card
+	 * gateway together, so the plugin never syncs a read from which core hid the stored card rows.
+	 */
+	public function test_filtered_read_writes_nothing_when_the_card_gateway_is_not_registered(): void {
+		global $wpdb;
+
+		$user_id = $this->factory()->user->create();
+		$first   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_plugin_first' );
+		$second  = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_plugin_second' );
+		WC_Payment_Tokens::set_users_default( $user_id, $second->get_id() );
+		wp_set_current_user( $this->factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array( $this->card_payment_method( 'pm_plugin_first' ), $this->card_payment_method( 'pm_plugin_second' ) ) ) );
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+		$this->assertNotContains( OrderPaymentStore::GATEWAY_ID, WC()->payment_gateways()->get_payment_gateway_ids(), 'The fixture must leave the card gateway unregistered.' );
+
+		$tokens = WC_Payment_Tokens::get_customer_tokens( $user_id );
+
+		$this->assertSame( array(), $tokens, 'Core hides the unregistered gateway rows and the filter must not add any.' );
+		$this->assertSame(
+			array( (string) $first->get_id(), (string) $second->get_id() ),
+			$wpdb->get_col( $wpdb->prepare( "SELECT token_id FROM {$wpdb->prefix}woocommerce_payment_tokens WHERE user_id = %d ORDER BY token_id", $user_id ) ),
+			'The read must not persist new token rows for the provider cards.'
+		);
 	}
 
 	/**

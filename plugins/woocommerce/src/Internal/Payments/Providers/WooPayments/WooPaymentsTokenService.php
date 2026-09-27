@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPay
 use RuntimeException;
 use Throwable;
 use WC_Order;
+use WC_Payment_Gateways;
 use WC_Payment_Token;
 use WC_Payment_Token_CC;
 use WC_Payment_Tokens;
@@ -231,6 +232,12 @@ class WooPaymentsTokenService {
 	 */
 	public function handle_woocommerce_get_customer_payment_tokens( array $tokens, $user_id, string $gateway_id ): array {
 		if ( 0 >= absint( $user_id ) || ( '' !== $gateway_id && ! $this->is_native_woopayments_gateway_id( $gateway_id ) ) ) {
+			return $tokens;
+		}
+
+		// Core hides the rows of unregistered gateways from an all-gateways read (get_tokens() reads the same ids just
+		// before this filter), so syncing here would re-create every stored card as a new token.
+		if ( '' === $gateway_id && ! in_array( OrderPaymentStore::GATEWAY_ID, WC_Payment_Gateways::instance()->get_payment_gateway_ids(), true ) ) {
 			return $tokens;
 		}
 
