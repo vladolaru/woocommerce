@@ -251,6 +251,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		remove_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_project_pending_onboarding_payment_methods' ) );
 		delete_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
 		delete_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
+		delete_transient( 'woopayments_referral_code' );
+		remove_all_filters( 'woocommerce_tracks_event_properties' );
 
 		parent::tearDown();
 	}
@@ -760,6 +762,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
+		// Plugin 11.1.0 `WC_Payments_Onboarding_Service::init_embedded_kyc()` passes the stored referral code (line 380).
+		set_transient( 'woopayments_referral_code', 'partner-abc', DAY_IN_SECONDS );
 
 		$result = $this->sut->get_onboarding_kyc_session(
 			$location,
@@ -775,12 +779,71 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $result['isLive'] );
 		$this->assertTrue( $captured_call['live_account'] );
 		$this->assertSame( 'card_payments', array_key_first( $captured_call['account_data']['capabilities'] ) );
+		$this->assertSame( 'partner-abc', $captured_call['referral_code'] );
 		$cached = get_option( 'wcpay_account_data' );
 		$this->assertIsArray( $cached );
 		$this->assertSame( 'acct_native', $cached['data']['account_id'] );
 		$this->assertSame( 'pk_live_native', $cached['data']['live_publishable_key'] );
 		$this->assertTrue( $cached['data']['is_live'] );
 		$this->assertFalse( $cached['data']['details_submitted'] );
+	}
+
+	/**
+	 * @testdox A referral link stores the normalized code, records the referral event and continues to onboarding.
+	 *
+	 * Source: plugin 11.1.0 `WC_Payments_Account::maybe_redirect_onboarding_referral()` and
+	 * `WC_Payments_Onboarding_Service::normalize_and_store_referral_code()` (50 chars, lowercased, 30 days).
+	 */
+	public function test_handle_onboarding_referral_stores_code_records_event_and_continues_to_onboarding(): void {
+		$this->mock_woopayments_plugin_inactive();
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$recorded = array();
+		add_filter(
+			'woocommerce_tracks_event_properties',
+			function ( $properties, $event_name ) use ( &$recorded ) {
+				$recorded[ $event_name ] = $properties;
+				return $properties;
+			},
+			10,
+			2
+		);
+
+		$url = $this->sut->handle_onboarding_referral( str_repeat( 'Ab', 30 ) );
+
+		$this->assertSame( str_repeat( 'ab', 25 ), get_transient( 'woopayments_referral_code' ) );
+		$this->assertSame( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding&from=REFERRAL' ), $url );
+		$this->assertArrayHasKey( 'wcadmin_wcpay_account_referral', $recorded );
+		$this->assertSame( str_repeat( 'ab', 25 ), $recorded['wcadmin_wcpay_account_referral']['referral_code'] );
+	}
+
+	/**
+	 * @testdox A referral link skips storing the code when the account is valid, the code is empty, or the plugin owns the flow.
+	 *
+	 * Source: plugin 11.1.0 `WC_Payments_Account::maybe_redirect_onboarding_referral()` lines 897-911.
+	 */
+	public function test_handle_onboarding_referral_does_not_store_code_outside_native_onboarding(): void {
+		$this->assertSame( '', $this->sut->handle_onboarding_referral( 'partner-abc' ), 'The active plugin handles its own referral links.' );
+
+		$this->mock_woopayments_plugin_inactive();
+		$this->assertSame( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding' ), $this->sut->handle_onboarding_referral( '' ) );
+		$this->assertFalse( get_transient( 'woopayments_referral_code' ) );
+
+		$this->sut->init( $this->mock_providers, $this->mockable_proxy, $this->create_native_finalize_adapter(), $this->create_legacy_runtime(), $this->create_unavailable_api_client(), $this->create_native_account_service() );
+		$this->assertSame( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview' ), $this->sut->handle_onboarding_referral( 'partner-abc' ) );
+		$this->assertFalse( get_transient( 'woopayments_referral_code' ) );
+	}
+
+	/**
+	 * Mock the WooPayments plugin runtime as not loaded, so native owns onboarding.
+	 */
+	private function mock_woopayments_plugin_inactive(): void {
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					return ! $this->is_woopayments_class( $class_to_check ) && class_exists( (string) $class_to_check );
+				},
+			)
+		);
 	}
 
 	/**

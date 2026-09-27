@@ -108,6 +108,8 @@ class WooPaymentsService {
 
 	private const TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT = 'test_drive_account_settings_for_live_account';
 
+	private const REFERRAL_CODE_TRANSIENT = 'woopayments_referral_code';
+
 	/**
 	 * The TTL for the onboarding lock.
 	 * This is to prevent the onboarding from being locked indefinitely in case of uncaught errors.
@@ -125,6 +127,7 @@ class WooPaymentsService {
 	const FROM_NOX_IN_CONTEXT   = 'WCADMIN_NOX_IN_CONTEXT';
 	const FROM_KYC              = 'KYC';
 	const FROM_WPCOM            = 'WPCOM';
+	const FROM_REFERRAL         = 'REFERRAL';
 
 	const WPCOM_CONNECTION_RETURN_PARAM = 'wpcom_connection_return';
 
@@ -2159,6 +2162,42 @@ class WooPaymentsService {
 	}
 
 	/**
+	 * Store the referral code from a partner link and get the URL to continue to.
+	 *
+	 * Matches the plugin's `WC_Payments_Account::maybe_redirect_onboarding_referral()` (11.1.0); the active plugin keeps handling its own links.
+	 *
+	 * @param string $referral_code The sanitized referral code from the link.
+	 * @return string The URL to redirect to, or an empty string when the plugin handles the link.
+	 */
+	public function handle_onboarding_referral( string $referral_code ): string {
+		if ( $this->legacy_runtime->is_loaded() ) {
+			return '';
+		}
+
+		if ( $this->has_valid_account() ) {
+			return $this->get_overview_page_url();
+		}
+
+		$referral_code = trim( strtolower( substr( $referral_code, 0, 50 ) ) );
+		if ( empty( $referral_code ) ) {
+			return Utils::wc_payments_settings_url( self::ONBOARDING_PATH_BASE );
+		}
+
+		set_transient( self::REFERRAL_CODE_TRANSIENT, $referral_code, 30 * DAY_IN_SECONDS );
+		if ( function_exists( 'wc_admin_record_tracks_event' ) ) {
+			wc_admin_record_tracks_event(
+				'wcpay_account_referral',
+				array(
+					'referral_code' => $referral_code,
+					'referrer'      => wp_get_referer(),
+				)
+			);
+		}
+
+		return Utils::wc_payments_settings_url( self::ONBOARDING_PATH_BASE, array( 'from' => self::FROM_REFERRAL ) );
+	}
+
+	/**
 	 * Check if an onboarding action should be allowed to be processed.
 	 *
 	 * @return void
@@ -3151,12 +3190,14 @@ class WooPaymentsService {
 			}
 		}
 
-		$session = $this->get_native_api_client()->initialize_onboarding_embedded_kyc(
+		$referral_code = get_transient( self::REFERRAL_CODE_TRANSIENT );
+		$session       = $this->get_native_api_client()->initialize_onboarding_embedded_kyc(
 			'live' === $setup_mode,
 			$this->get_native_onboarding_site_data(),
 			$this->array_filter_recursive( $this->get_native_onboarding_user_data() ),
 			$this->array_filter_recursive( $this->get_native_onboarding_account_data( $setup_mode, $self_assessment_data, $capabilities ) ),
-			array()
+			array(),
+			empty( $referral_code ) ? null : (string) $referral_code
 		);
 
 		if ( $this->native_response_account_created( $session ) ) {

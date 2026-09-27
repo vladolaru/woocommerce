@@ -35,6 +35,7 @@ class WooPaymentsController {
 	 */
 	public function register() {
 		add_action( 'admin_init', array( $this, 'handle_returns_from_wpcom' ) );
+		add_action( 'admin_init', array( $this, 'handle_referral_link' ), 13 );
 	}
 
 	/**
@@ -48,6 +49,25 @@ class WooPaymentsController {
 	final public function init( Payments $payments, WooPaymentsService $woopayments ): void {
 		$this->payments    = $payments;
 		$this->woopayments = $woopayments;
+	}
+
+	/**
+	 * Store the referral code from a `woopayments-ref` partner link and continue to onboarding.
+	 *
+	 * @internal
+	 */
+	public function handle_referral_link(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Partner links carry no nonce; the capability check guards the redirect.
+		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! isset( $_GET['woopayments-ref'] ) ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$redirect_url = $this->woopayments->handle_onboarding_referral( sanitize_text_field( wp_unslash( $_GET['woopayments-ref'] ) ) );
+		if ( '' !== $redirect_url ) {
+			wp_safe_redirect( $redirect_url );
+			exit;
+		}
 	}
 
 	/**

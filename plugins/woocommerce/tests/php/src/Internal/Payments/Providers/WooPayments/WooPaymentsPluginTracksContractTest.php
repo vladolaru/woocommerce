@@ -185,7 +185,6 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		'wcadmin_woopay_express_button_locations_updated'  => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcadmin_woopay_global_theme_support_disabled'     => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcadmin_woopay_global_theme_support_enabled'      => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
-		'wcpay_account_referral'                           => 'plan.md T.7 Step 6 (b): merchant-visible feature gap, scheduled to port.',
 		'wcpay_capital_view_offer_redirect'                => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_cart_page_view'                             => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_checkout_woopay_save_my_info_country_click' => 'plan.md T.7 Step 6 (a): WooPay save-my-info consent copy/country dropdown, scheduled to port.',
