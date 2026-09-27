@@ -3859,7 +3859,7 @@ class WooPaymentsService {
 	 * @return void
 	 */
 	private function set_native_onboarding_test_mode( bool $test_mode ): void {
-		$this->proxy->call_function( 'update_option', 'wcpay_onboarding_test_mode', $test_mode ? 'yes' : 'no', false );
+		$this->proxy->call_function( 'update_option', 'wcpay_onboarding_test_mode', $test_mode ? 'yes' : 'no', true );
 	}
 
 	/**

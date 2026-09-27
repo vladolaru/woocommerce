@@ -13616,15 +13616,15 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not autoload the onboarding test-mode option when persisting it.
+	 * @testdox Should autoload the onboarding test-mode option when persisting it, since storefront renders read it.
 	 */
-	public function test_set_native_onboarding_test_mode_does_not_autoload_option(): void {
+	public function test_set_native_onboarding_test_mode_autoloads_option(): void {
 		delete_option( 'wcpay_onboarding_test_mode' );
 
 		$this->invoke_private_method( 'set_native_onboarding_test_mode', array( true ) );
 
 		$this->assertSame( 'yes', get_option( 'wcpay_onboarding_test_mode' ) );
-		$this->assertOptionNotAutoloaded( 'wcpay_onboarding_test_mode' );
+		$this->assertArrayHasKey( 'wcpay_onboarding_test_mode', wp_load_alloptions( true ), 'Client 11.1.0 autoloads it (onboarding service :1086).' );
 	}
 
 	/**

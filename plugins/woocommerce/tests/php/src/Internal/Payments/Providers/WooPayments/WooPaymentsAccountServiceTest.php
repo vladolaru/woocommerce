@@ -696,9 +696,9 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not autoload the onboarding test-mode option when enabling it on the dev-mode cache path.
+	 * @testdox Should autoload the onboarding test-mode option when enabling it on the dev-mode cache path, like the client.
 	 */
-	public function test_dev_mode_cache_path_does_not_autoload_onboarding_test_mode_option(): void {
+	public function test_dev_mode_cache_path_autoloads_onboarding_test_mode_option(): void {
 		// Arrange the dev-mode branch of is_valid_cached_account(): dev mode on, the
 		// option absent (so it would be re-created via add_option's autoload default),
 		// and a non-live cached account so the guarded write fires.
@@ -722,7 +722,8 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$sut->get_cached_account_data();
 
 		$this->assertSame( 'yes', get_option( 'wcpay_onboarding_test_mode' ) );
-		$this->assertOptionNotAutoloaded( 'wcpay_onboarding_test_mode' );
+		// Storefront renders read it through is_test_mode_enabled(); client 11.1.0 autoloads it (onboarding service :1086).
+		$this->assertOptionAutoloaded( 'wcpay_onboarding_test_mode' );
 	}
 
 	/**
@@ -1083,6 +1084,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'large', $settings['payment_request_button_size'], 'Unrelated gateway settings should be preserved.' );
 		$this->assertSame( array(), get_option( '_wcpay_onboarding_stripe_connected' ) );
 		$this->assertSame( 'no', get_option( 'wcpay_onboarding_test_mode' ) );
+		$this->assertOptionAutoloaded( 'wcpay_onboarding_test_mode' );
 		$this->assertFalse( get_option( 'wcpay_account_data' ) );
 		$this->assertFalse( get_option( 'wcpay_connection_success_modal_dismissed' ) );
 		$this->assertFalse( get_option( 'wcpay_onboarding_embedded_kyc_in_progress' ) );
@@ -1858,26 +1860,21 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Assert that a WordPress option is not flagged for autoload.
+	 * Assert that a WordPress option is flagged for autoload.
 	 *
 	 * Reads the raw autoload column to stay robust across WordPress versions:
-	 * pre-6.6 stores 'no' while 6.6+ stores 'off'/'auto-off' for non-autoloaded options.
+	 * pre-6.6 stores 'yes' while 6.6+ stores 'on' for explicitly autoloaded options.
 	 *
 	 * @param string $option_name The option name to inspect.
 	 * @return void
 	 */
-	private function assertOptionNotAutoloaded( string $option_name ): void {
+	private function assertOptionAutoloaded( string $option_name ): void {
 		global $wpdb;
 
 		$autoload = $wpdb->get_var(
 			$wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", $option_name )
 		);
 
-		$this->assertNotNull( $autoload, sprintf( 'Option %s was not persisted.', $option_name ) );
-		$this->assertNotContains(
-			$autoload,
-			array( 'yes', 'on', 'auto', 'auto-on' ),
-			sprintf( 'Option %s should not be autoloaded, got autoload value "%s".', $option_name, $autoload )
-		);
+		$this->assertContains( $autoload, array( 'yes', 'on' ), sprintf( 'Option %s should be autoloaded, got autoload value "%s".', $option_name, (string) $autoload ) );
 	}
 }
