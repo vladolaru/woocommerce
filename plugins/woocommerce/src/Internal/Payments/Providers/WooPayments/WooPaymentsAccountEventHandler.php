@@ -68,7 +68,9 @@ class WooPaymentsAccountEventHandler {
 
 		switch ( $event_type ) {
 			case 'account.updated':
-				$this->account_service->refresh_account_data_strict();
+				// Client 11.1.0 webhook-processing-service.php:205-208 ignores a refresh failure, clears the
+				// payment-method cache and acknowledges the webhook; C25 ports that behaviour here.
+				$this->account_service->refresh_account_data();
 				$this->token_service->clear_all_cached_payment_methods();
 				return;
 			case 'account.deleted':
@@ -78,6 +80,8 @@ class WooPaymentsAccountEventHandler {
 
 				$this->account_service->mark_account_deletion_pending( $event_account_id );
 				$this->account_service->cleanup_after_account_reset();
+				// Authorized divergence: C25 (account.deleted keeps 500 so the platform redelivers for the
+				// deletion-retry marker, 7496a33d5df).
 				$this->account_service->refresh_account_data_strict();
 				$this->token_service->clear_all_cached_payment_methods();
 				$this->account_service->clear_pending_account_deletion();

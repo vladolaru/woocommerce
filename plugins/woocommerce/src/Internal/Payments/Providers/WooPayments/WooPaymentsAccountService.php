@@ -300,8 +300,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Refetch WooPayments account data and fail when fresh data cannot be fetched.
 	 *
-	 * Normal account reads intentionally fall back to stale data on provider failures for storefront stability. Webhook
-	 * account events need a strict path so upstream retries happen instead of acknowledging stale account state.
+	 * Normal account reads intentionally fall back to stale data on provider failures for storefront stability. The
+	 * `account.deleted` webhook keeps this strict path so a failed refresh redelivers instead of acknowledging stale
+	 * account state, which its deletion-retry marker depends on (see {@see WooPaymentsAccountEventHandler::process()}).
+	 * `account.updated` uses the non-strict {@see self::refresh_account_data()} instead (C25).
 	 *
 	 * @since 11.0.0
 	 * @return array<string,mixed>
