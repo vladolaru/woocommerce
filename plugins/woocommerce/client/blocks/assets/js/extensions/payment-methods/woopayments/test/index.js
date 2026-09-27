@@ -810,9 +810,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		// `checkout/utils/validate-elements.js:8-12` throws `result.error.message`
 		// from `elements.submit()`, and `blocks/payment-processor.js:165-171`
 		// catches it into `{ type: 'error', message: e.message }` with no
-		// `messageContext` key — native's own `messageContext: 'payments'`
-		// addition (F-SUBMIT, T.7) is asserted separately below, not pinned as a
-		// client-cited value.
+		// `messageContext` key (F-SUBMIT, T.7), so the result is pinned exactly.
 		const harness = await setUpNewCardPayment();
 		harness.elementsInstance.submit.mockResolvedValueOnce( {
 			error: {
@@ -823,7 +821,7 @@ describe( 'wc-payment-method-woopayments', () => {
 
 		const result = await harness.setupCallbacks[ 0 ]();
 
-		expect( result ).toMatchObject( {
+		expect( result ).toEqual( {
 			type: 'error',
 			message: "Your card's security code is incomplete.",
 		} );

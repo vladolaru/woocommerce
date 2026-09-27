@@ -1027,14 +1027,15 @@ const WooPaymentsContent = ( {
 							'wcpay-payment-method-error-message'
 						] = submitResult.error.message || '';
 
-						return getErrorResponse(
-							emitResponseRef.current,
-							submitResult.error.message ||
+						return {
+							type: emitResponseRef.current.responseTypes.ERROR,
+							message:
+								submitResult.error.message ||
 								__(
 									'There was a problem validating your payment details.',
 									'woocommerce'
-								)
-						);
+								),
+						};
 					}
 				}
 
