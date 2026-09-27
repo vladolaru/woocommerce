@@ -395,6 +395,21 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Clears the plugin's WP-Cron WooPay compatibility event that its deactivation hook can leave behind.
+	 *
+	 * Source: client 11.1.0 includes/woopay/class-woopay-scheduler.php:63-68 schedules it daily; :51, :57-59 clear it.
+	 */
+	public function test_run_clears_the_legacy_woopay_compatibility_cron_event(): void {
+		$this->seed_legacy_options();
+		wp_schedule_event( time(), 'daily', 'validate_woopay_compatibility' );
+
+		$summary = $this->create_runner()->run();
+
+		$this->assertContains( 'legacy_woopay_compatibility_cron', $summary['changes'] );
+		$this->assertFalse( wp_next_scheduled( 'validate_woopay_compatibility' ) );
+	}
+
+	/**
 	 * @testdox Cutover removes deprecated method IDs and projects canonical split gateway availability.
 	 */
 	public function test_run_projects_split_gateway_settings_and_removes_deprecated_methods(): void {

@@ -258,6 +258,10 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			}
 		}
 
+		if ( $this->clear_legacy_woopay_compatibility_cron() ) {
+			$changes[] = 'legacy_woopay_compatibility_cron';
+		}
+
 		update_option( self::NORMALIZED_OPTION, self::NORMALIZATION_VERSION, true );
 
 		if ( empty( $changes ) ) {
@@ -270,6 +274,24 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			'ran'     => true,
 			'changes' => $changes,
 		);
+	}
+
+	/**
+	 * Clear the plugin's daily WP-Cron WooPay compatibility event.
+	 *
+	 * Client 11.1.0 woopay/class-woopay-scheduler.php:51, :57-59 clears it only from its own deactivation hook, which
+	 * misses other sites of a network activation; native runs the same check through Action Scheduler.
+	 *
+	 * @return bool Whether an event was cleared.
+	 */
+	private function clear_legacy_woopay_compatibility_cron(): bool {
+		if ( false === wp_next_scheduled( 'validate_woopay_compatibility' ) ) {
+			return false;
+		}
+
+		wp_clear_scheduled_hook( 'validate_woopay_compatibility' );
+
+		return true;
 	}
 
 	/**
