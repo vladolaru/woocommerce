@@ -696,6 +696,39 @@ Per the T.1 provider-family audit, the EUR-to-USD case (row 9, formerly the seco
 - `plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsIntentRequestBuilderTest.php::test_setup_future_usage_respects_payment_method_reusability`: no reusable method from a redirect credential.
 - The retained browser case remains necessary for same-session checkout re-rendering, accessible control visibility, shopper selection, and the real order/PaymentIntent/charge graph. Lower-layer availability tests cannot prove those surfaces or effects.
 
+## `woopay-hosted-express`
+
+Added by T.13 (owner decision 2026-09-27, inbox N-135). This family has no rows in `fidelity-partition.tsv` and is not in the programme partition above: client 11.1.0 has no browser test of hosted WooPay (only `merchant/woopay-setup.spec.ts` toggles the setting), so no client contract row discharges here. The oracle is the client's mechanics and the platform's own flow on local WPCOM.
+
+### Claim
+
+A shopper on the native store who clicks the WooPay express button gets the platform's OTP iframe, verifies a phone number with the SMS code, pays on the hosted WooPay checkout on `woopay.localhost`, and returns to exactly one native order that is paid, carries `is_woopay`, and settles as one captured provider payment. A subscription bought that way renews, when the merchant processes a renewal, on the card the WooPay parent order saved.
+
+### Falsified by
+
+The express button not opening the platform's `/otp/` iframe; the hosted checkout failing to load the store's cart or place the order; a returned order without `is_woopay`, unpaid, or without exactly one settled 1099 usd intent and captured charge; more than one new order; a renewal that fails, charges a payment method other than the subscription's saved token, or reuses the parent's PaymentIntent.
+
+### Fixed run contract
+
+| Contract item | Fixed value |
+| --- | --- |
+| Intended selector | The D16 provider command (docblock of `tests/e2e/utils/woopayments.ts`) on `shopper/woopay-express.spec.ts`, `--grep "@fidelity:woopay-hosted-express"`: three cases, `W1`, `W2`, `W3`. Local only: wpcom-local with hosted WooPay enabled (`wpcom-local woopay status`), the store wired through WCPay Dev Tools' local WPCOM WooPay option (which defines `PLATFORM_CHECKOUT_HOST`, read by client 11.1.0 `includes/woopay/class-woopay-utilities.php:266-267` and native `WooPaymentsWooPaySessionService.php:183-185`), and the Transact listener running. GitHub CI cannot run it; the Phase 7 canary is the production proof. |
+| Store setup | `beforeAll` reads `is_woopay_enabled` from `/wc/v3/payments/settings`, enables it, reads it back, and `afterAll` restores the value it read. `requireTestModeAccount` runs first. One fresh customer per run (D5); one run-owned USD 10.99 virtual product per case. |
+| Button to OTP | Clicking `.woopay-express-button` must show `iframe.woopay-otp-iframe` whose `src` starts `http://woopay.localhost:30001/otp/?` (client 11.1.0 `client/checkout/woopay/express-button/woopay-express-checkout-button.js:164-201` calls `expressCheckoutIframe`, `express-checkout-iframe.js:40-49` builds the iframe, `:203-205` sets `/otp/`). The shopper enters test phone `2015550123`; the code is the newest `wpcom-local woopay otp list` sink entry captured after the send. The wpcom-local dev code `000000` is not used (see E2 in the T.13 ledger). |
+| Hosted checkout and return | The platform posts `redirect_to_platform_checkout`; the store's `wcpay_init_woopay` answers with the hosted URL (client `includes/woopay/class-woopay-session.php:676-717`); the shopper enters test card `4242424242424242` in the platform's Payment Element, places the order, and lands on the store's `order-received` page. |
+| `W1`/`W2` required outcome | Exactly one new order; `payment_method` `woocommerce_payments`; order meta `is_woopay` truthy (client `includes/class-payment-information.php:284-287`); `expectSettledCardPayment` for `1099 usd`, Visa ending `4242`, order `processing` or `completed`. `W1` drives the Blocks checkout, `W2` the Classic shortcode page. `woopay_merchant_customer_id` (client `class-woopay-session.php:205-215`) is not asserted: it is written only for a store-guest order whose WooPay-verified email equals the billing email, and removed again ten minutes later; these cases use a signed-in customer. |
+| `W3` required outcome | A WooCommerce Subscriptions monthly product paid through the same flow on the Blocks checkout: `W1`'s parent outcome, one active subscription whose parent is that order and which holds exactly one saved token; then the merchant "Process renewal" order action produces exactly one renewal order, settled for `1099 usd` on the saved token's exact payment method (client `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:402-425` charges the renewal order's token as a merchant-initiated recurring payment), with its own PaymentIntent. |
+| O10 evidence (recorded, not asserted) | The case records the parent payment method, the saved token's payment method and the renewal's payment method as a `woopay-evidence` annotation: whether the platform clones the WooPay payment method onto the merchant account or reuses it is the platform's choice. Native's token meta (the client's `is_attached_to_subscription`, `gw:2075`) is not pinned. |
+| Cleanup | Run-owned orders, subscription (cancelled, then deleted), products and customer are deleted; the WooPay setting is restored. The WooPay platform account the run created stays on the local platform. |
+
+### Status (2026-09-27): blocked, not established
+
+All three cases are `test.fixme` with the cause in their `issue` annotation and DISPOSITION rows. Each ran once live on `:8889` against the overlay and failed at the "Button to OTP" row. Findings, in the order a shopper meets them (evidence in the session ledger `data/t13-woopay.md`):
+
+- **F1, native parity defect.** With first-party auth off (the default), the native express button on both surfaces (`client/blocks/assets/js/extensions/payment-methods/woopayments/woopay/index.js` `continueWooPay`, `client/legacy/js/frontend/woopayments-woopay.js` `continueWooPay`) never opens the OTP iframe. With no WooPay user session it navigates to the direct-checkout minimum-session URL (`/woopay/?checkout_redirect=1&…`), which client 11.1.0 uses only for direct checkout (`client/checkout/woopay/direct-checkout/woopay-direct-checkout.js:218`). The platform sends any shopper not already logged in to WooPay straight back to the merchant checkout (`woopay/production/src/WooPay.php:627-676`). No recorded decision covers this departure.
+- **E1, local environment against a recorded divergence.** Past F1 (driven by hand in an exploratory session only), OTP and native `init_woopay` succeed, but the hosted page cannot read the store's cart: the wpcom-local overlay rewrites WooPay's Store API calls to `_for=mock_jetpack_woopay`, which only the dev-tools grant-mode filter accepts, and native's `wcpay_woopay_is_signed_with_blog_token` is strengthen-only by recorded decision (S7, `data/t4-draft-issues.md` §7), so the store answers 401. The draft already names this cost.
+- **E2, local environment.** The overlay defines `__DEV_OTP_CODE__` as a PHP constant; WooPay reads `getenv( '__DEV_OTP_CODE__' )`, so `000000` is always rejected. Fresh sink codes verify.
+
 ## Excluded: `3ds-authentication`
 
 Exactly 12 rows are enumerated with treatment `excluded`. The corrected rationale is narrower than the decision's recorded premise: Core has substantial mocked/lower-layer customer-action proof in classic JS, Blocks JS, gateway, codec, processing, adapter, AJAX-controller, and error-message tests. What it does not have is a native provider/browser journey that invokes and proves a real challenge. A thin provider check therefore has no assembled authentication journey to join and cannot discharge these rows.
