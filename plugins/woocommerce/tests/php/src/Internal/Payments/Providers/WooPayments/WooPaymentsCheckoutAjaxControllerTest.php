@@ -1498,10 +1498,64 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Run the order-status callback against a fixed PaymentIntent response.
+	 * @testdox Order-status callback should leave a SetupIntent with a setup error pending ($status).
+	 *
+	 * Source: client 11.1.0. The AJAX `update_order_status` handler fetches a SetupIntent for a zero-total order
+	 * (`gw:4238-4242`) and calls `update_order_status_from_intent()` (`gw:4339-4345`). Its `get_intent_data()` sets
+	 * `error` only for PaymentIntents (`os:2963-2967`), so `last_setup_error` is never read and either status is
+	 * `mark_payment_started()` (`os:418-427`, `os:1695-1707`): the order stays pending. The redirect-return path
+	 * fails the same intent (see the redirect-return controller test). The client's started note (`os:2202-2218`)
+	 * is not asserted: native adds none for a SetupIntent (recorded divergence).
+	 *
+	 * @dataProvider setup_intent_with_setup_error_status_data
+	 *
+	 * @param string $status SetupIntent status.
+	 */
+	public function test_update_order_status_keeps_setup_intent_with_setup_error_pending( string $status ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', 'seti_setup_error' );
+		$order->save();
+
+		$response = $this->get_update_order_status_response_for_intent(
+			$order,
+			array(
+				'id'               => 'seti_setup_error',
+				'status'           => $status,
+				'customer'         => 'cus_native',
+				'payment_method'   => 'pm_native',
+				'last_setup_error' => array(
+					'type'    => 'invalid_request_error',
+					'code'    => 'setup_intent_authentication_failure',
+					'message' => 'We are unable to authenticate your payment method.',
+				),
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayNotHasKey( 'return_url', $response );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( $status, $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * SetupIntent statuses the client's order service maps by error.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function setup_intent_with_setup_error_status_data(): array {
+		return array(
+			'requires_payment_method' => array( 'requires_payment_method' ),
+			'requires_action'         => array( 'requires_action' ),
+		);
+	}
+
+	/**
+	 * Run the order-status callback against a fixed PaymentIntent or SetupIntent response.
 	 *
 	 * @param WC_Order            $order  Order being confirmed.
-	 * @param array<string,mixed> $intent PaymentIntent response.
+	 * @param array<string,mixed> $intent PaymentIntent or SetupIntent response.
 	 * @return array<string,mixed>
 	 */
 	private function get_update_order_status_response_for_intent( WC_Order $order, array $intent ): array {
@@ -1540,6 +1594,20 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			public function get_payment_intention( string $intent_id ): array {
 				if ( $this->intent['id'] !== $intent_id ) {
 					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return $this->intent;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				if ( $this->intent['id'] !== $setup_intent_id ) {
+					throw new \RuntimeException( 'Unexpected setup intent ID.' );
 				}
 
 				return $this->intent;

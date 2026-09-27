@@ -173,7 +173,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			$this->confirmation_owner->confirm_fetched_intent_for_order(
 				$fresh_order,
 				$intent,
-				'yes' === $this->get_query_string( 'save_payment_method' )
+				'yes' === $this->get_query_string( 'save_payment_method' ),
+				true // The plugin's redirect return fails on `last_setup_error`; its order-status callback does not.
 			);
 
 			if ( null !== WC()->cart ) {

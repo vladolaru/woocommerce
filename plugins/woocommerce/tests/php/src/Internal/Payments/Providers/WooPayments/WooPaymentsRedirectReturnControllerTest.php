@@ -828,6 +828,58 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Zero-total setup-intent returns fail the order when the SetupIntent carries a setup error ($status).
+	 *
+	 * Source: client 11.1.0 `process_redirect_payment()`. For a zero-total order it reads `get_last_setup_error()`
+	 * (`gw:2361-2374`) and throws `upe_payment_intent_error` (`gw:2376-2382`). The catch calls
+	 * `mark_payment_failed()` with the intent's status and an empty charge ID (`gw:2428-2446`), which fails the
+	 * order and stores the status (`os:463-478`, `os:2889-2895`). The AJAX path keeps the same intent pending.
+	 * The client's failed note (`os:2106-2130`) is not asserted: native adds none for a SetupIntent (recorded divergence).
+	 *
+	 * @dataProvider setup_error_status_provider
+	 *
+	 * @param string $status SetupIntent status.
+	 */
+	public function test_handle_wp_fails_zero_total_setup_intent_with_setup_error( string $status ): void {
+		$order                    = $this->create_order( '0.00' );
+		$api_client               = new RedirectReturnApiClientStub();
+		$api_client->setup_intent = array(
+			'id'               => 'seti_return_error',
+			'status'           => $status,
+			'customer'         => 'cus_setup',
+			'payment_method'   => 'pm_setup',
+			'last_setup_error' => array(
+				'type'    => 'invalid_request_error',
+				'code'    => 'setup_intent_authentication_failure',
+				'message' => 'We are unable to authenticate your payment method.',
+			),
+		);
+		$confirmation_owner       = $this->create_confirmation_owner( $api_client );
+		$this->sut                = $this->create_controller( true, $confirmation_owner, $api_client );
+		$this->set_setup_intent_return_request( $order, 'seti_return_error' );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'failed', $reloaded->get_status() );
+		$this->assertSame( 1, $api_client->setup_intent_reads );
+		$this->assertSame( $status, $reloaded->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * SetupIntent statuses the client's redirect return fails when a setup error is present.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function setup_error_status_provider(): array {
+		return array(
+			'requires_payment_method' => array( 'requires_payment_method' ),
+			'requires_action'         => array( 'requires_action' ),
+		);
+	}
+
+	/**
 	 * @testdox A zero-total recurring redirect return exposes card identity before status and payment-complete observers.
 	 */
 	public function test_handle_wp_redirects_zero_total_recurring_setup_intent_through_the_pre_lifecycle_identity_owner(): void {
