@@ -1717,6 +1717,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// failures for refunds that never reached the provider.
 		if ( is_wp_error( $result ) && 'native_payment_refund_locked' !== $result->get_error_code() ) {
 			$this->record_refund_failure( $order, $refund_amount, $result );
+		} elseif ( true === $result && ! $is_zero_refund ) {
+			wc_admin_record_tracks_event( 'wcpay_edit_order_refund_success' );
 		}
 
 		return $result;
@@ -1738,12 +1740,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$intent_currency = (string) $order->get_meta( '_wcpay_intent_currency', true );
 		$currency        = '' !== $intent_currency ? $intent_currency : (string) $order->get_currency();
 
+		// Plugin 11.1.0 sends the failure note as the reason, or the error message when it adds no generic note.
+		$tracks_reason = $error->get_error_message();
 		if ( 'insufficient_balance_for_refund' === $error->get_error_code() ) {
 			// The dedicated note carries the funding guidance; the generic failure
 			// line (and its log) is deliberately skipped, matching the extension.
 			$note = $note_service->format_insufficient_balance_refund_note( $order, $amount, $currency, $this->get_account_service()->get_account_country() );
 		} else {
-			$note = $note_service->format_refund_failure_note( $order, $amount, $currency, $error->get_error_message() );
+			$note          = $note_service->format_refund_failure_note( $order, $amount, $currency, $error->get_error_message() );
+			$tracks_reason = $note;
 
 			if ( function_exists( 'wc_get_logger' ) ) {
 				wc_get_logger()->error(
@@ -1759,6 +1764,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$order->add_order_note( $note );
 		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
 		$order->save();
+		wc_admin_record_tracks_event( 'wcpay_edit_order_refund_failure', array( 'reason' => $tracks_reason ) );
 	}
 
 	/**

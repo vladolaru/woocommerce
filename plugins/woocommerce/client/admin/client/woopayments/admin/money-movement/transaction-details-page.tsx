@@ -561,6 +561,18 @@ export const WooPaymentsTransactionDetailsPage = () => {
 	const refundModalOpenerRef = useRef< HTMLElement | null >( null );
 	const shouldFocusDetailsHeadingRef = useRef( false );
 
+	// Client 11.1.0 `payment-details/index.tsx:24-35`, fraud order-note and meta-box links.
+	const fraudLinkStatus = query.get( 'status_is' );
+	const fraudLinkType = query.get( 'type_is' );
+	useEffect( () => {
+		if ( fraudLinkStatus && fraudLinkType ) {
+			recordEvent( 'wcpay_fraud_protection_order_details_link_clicked', {
+				status: fraudLinkStatus,
+				type: fraudLinkType,
+			} );
+		}
+	}, [ fraudLinkStatus, fraudLinkType ] );
+
 	useEffect( () => {
 		routeKeyRef.current = routeKey;
 		setPendingAuthorizationAction( null );
@@ -895,6 +907,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		}
 
 		setIsRefundModalOpen( false );
+		recordEvent( 'payments_transactions_details_refund_modal_close', {
+			payment_intent_id: paymentIntentId,
+		} );
 		window.setTimeout( focusRefundModalOpener, 0 );
 	};
 
@@ -1029,6 +1044,23 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		if ( isAuthorizationActionPending ) {
 			return;
 		}
+
+		// Client 11.1.0 `payment-details/summary/index.tsx:685-743,909-925`.
+		const tracksProperties = { payment_intent_id: paymentIntentId };
+		if ( isFraudReview ) {
+			recordEvent(
+				action === 'capture'
+					? 'wcpay_fraud_protection_transaction_reviewed_merchant_approved'
+					: 'wcpay_fraud_protection_transaction_reviewed_merchant_blocked',
+				tracksProperties
+			);
+		}
+		recordEvent(
+			action === 'capture'
+				? 'payments_transactions_details_capture_charge_button_click'
+				: 'payments_transactions_details_cancel_charge_button_click',
+			tracksProperties
+		);
 
 		if ( ! paymentIntentId || ! orderId ) {
 			getNotices().createErrorNotice(

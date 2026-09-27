@@ -2,7 +2,8 @@
  * External dependencies
  */
 import apiFetch from '@wordpress/api-fetch';
-import { render, screen, waitFor } from '@testing-library/react';
+import { recordEvent } from '@woocommerce/tracks';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 /**
  * Internal dependencies
@@ -10,6 +11,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { WooPaymentsOrderDisputeNotice } from '../order-dispute-notice';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
+jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 
 const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
 
@@ -72,6 +74,52 @@ describe( 'WooPayments order dispute notice', () => {
 			path: '/wc/v3/payments/charges/ch_123',
 			method: 'GET',
 		} );
+	} );
+
+	it( 'records the client 11.1.0 notice view and action Tracks events', async () => {
+		// Expected properties: client `components/disputed-order-notice/index.js:357-364,422-427`.
+		mockApiFetch.mockResolvedValue( {
+			disputes: [
+				{
+					id: 'dp_later',
+					status: 'needs_response',
+					amount: 1000,
+					currency: 'usd',
+					evidence_details: { due_by: 1698672000 },
+				},
+				{
+					id: 'dp_earlier',
+					status: 'needs_response',
+					amount: 1550,
+					currency: 'usd',
+					evidence_details: { due_by: 1698500219 },
+				},
+			],
+		} );
+
+		render(
+			<WooPaymentsOrderDisputeNotice
+				chargeId="ch_123"
+				onDisableOrderRefund={ jest.fn() }
+			/>
+		);
+
+		fireEvent.click(
+			await screen.findByRole( 'link', { name: 'Respond now' } )
+		);
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_order_dispute_notice_view',
+			{
+				is_inquiry: false,
+				dispute_reason: 'multiple',
+				due_by_days: 8,
+				dispute_count: 2,
+			}
+		);
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_order_dispute_notice_action_click',
+			{ due_by_days: 8 }
+		);
 	} );
 
 	it( 'uses inquiry wording only when every actionable item is an inquiry', async () => {

@@ -627,6 +627,14 @@ export const WooPaymentsTransactionsPage = () => {
 			getAuthorizationPaymentIntentId( authorization );
 		const orderId = Number( getAuthorizationOrderId( authorization ) );
 
+		if ( action === 'capture' ) {
+			// Client 11.1.0 `transactions/uncaptured/index.tsx:193-198`.
+			recordEvent(
+				'payments_transactions_uncaptured_list_capture_charge_button_click',
+				{ payment_intent_id: paymentIntentId }
+			);
+		}
+
 		if (
 			! paymentIntentId ||
 			! Number.isFinite( orderId ) ||

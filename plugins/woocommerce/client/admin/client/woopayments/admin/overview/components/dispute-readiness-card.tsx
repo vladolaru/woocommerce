@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from '@wordpress/element';
 import { Button, Modal } from '@wordpress/components';
 import { __, sprintf } from '@wordpress/i18n';
+import { recordEvent } from '@woocommerce/tracks';
 
 /**
  * Internal dependencies
@@ -35,6 +36,31 @@ export const DisputeReadinessCard = ( {
 	const [ reviewSignal, setReviewSignal ] =
 		useState< WooPaymentsDisputeReadinessSignal | null >( null );
 	const headingRef = useRef< HTMLHeadingElement >( null );
+	const viewedRef = useRef( false );
+	const overview = payload?.overview;
+
+	// Client 11.1.0 `overview/dispute-readiness/index.tsx:67-129`.
+	useEffect( () => {
+		if ( ! overview || overview.isDismissed || viewedRef.current ) {
+			return;
+		}
+		recordEvent( 'wcpay_dispute_readiness_overview_viewed', {
+			score: overview.score,
+			total: overview.total,
+			complete_signal_ids: overview.completeSignalIds,
+			incomplete_signal_ids: overview.incompleteSignalIds,
+			is_dismissed: overview.isDismissed,
+		} );
+		viewedRef.current = true;
+	}, [ overview ] );
+
+	const recordCtaClick = ( signal: WooPaymentsDisputeReadinessSignal ) =>
+		recordEvent( 'wcpay_dispute_readiness_signal_cta_clicked', {
+			signal_id: signal.id,
+			surface: 'overview',
+			score: overview?.score,
+			total: overview?.total,
+		} );
 
 	useEffect( () => {
 		let isMounted = true;
@@ -64,6 +90,13 @@ export const DisputeReadinessCard = ( {
 	}, [ enabled ] );
 
 	const dismiss = async () => {
+		recordEvent( 'wcpay_dispute_readiness_card_dismissed', {
+			score: overview?.score,
+			total: overview?.total,
+			complete_signal_ids: overview?.completeSignalIds,
+			incomplete_signal_ids: overview?.incompleteSignalIds,
+			state: overview?.state,
+		} );
 		const nextPayload = await dismissWooPaymentsDisputeReadinessCard();
 		const ownerDocument = sectionRef.current?.ownerDocument;
 		const activeElement = ownerDocument?.activeElement;
@@ -84,6 +117,11 @@ export const DisputeReadinessCard = ( {
 	};
 
 	const confirmDescriptor = async () => {
+		recordEvent( 'wcpay_dispute_readiness_statement_descriptor_confirmed', {
+			surface: 'overview',
+			score: overview?.score,
+			total: overview?.total,
+		} );
 		const nextPayload =
 			await confirmWooPaymentsDisputeReadinessStatementDescriptor();
 		const activeElement = headingRef.current?.ownerDocument.activeElement;
@@ -156,9 +194,10 @@ export const DisputeReadinessCard = ( {
 									{ ! isComplete && hasReview && (
 										<Button
 											variant="secondary"
-											onClick={ () =>
-												setReviewSignal( signal )
-											}
+											onClick={ () => {
+												recordCtaClick( signal );
+												setReviewSignal( signal );
+											} }
 										>
 											{ signal.actionLabel ||
 												__( 'Review', 'woocommerce' ) }
@@ -170,6 +209,9 @@ export const DisputeReadinessCard = ( {
 											<Button
 												variant="secondary"
 												href={ signal.actionUrl }
+												onClick={ () =>
+													recordCtaClick( signal )
+												}
 											>
 												{ signal.actionLabel ||
 													__(

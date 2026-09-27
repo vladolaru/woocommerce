@@ -357,6 +357,8 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 
 		update_option( self::HAS_LIVE_SALE_OPTION, '1', true );
 		delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
+		// Plugin 11.1.0 `WC_Payments_Order_Service::maybe_record_first_live_sale()`.
+		\WC_Tracks::record_event( 'wcpay_first_live_sale' );
 	}
 
 	/**

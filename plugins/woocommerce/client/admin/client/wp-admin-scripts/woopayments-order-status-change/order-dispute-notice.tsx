@@ -9,6 +9,7 @@ import apiFetch from '@wordpress/api-fetch';
 import { Notice } from '@wordpress/components';
 import { useEffect, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
+import { recordEvent } from '@woocommerce/tracks';
 
 /**
  * Internal dependencies
@@ -76,9 +77,25 @@ const getDetailsUrl = ( chargeId: string ) =>
 		getTransactionDetailsRoute( { charge_id: chargeId } )
 	);
 
-const NoticeAction = ( { href, label }: { href: string; label: string } ) => (
+const NoticeAction = ( {
+	href,
+	label,
+	countdownDays,
+}: {
+	href: string;
+	label: string;
+	countdownDays: number;
+} ) => (
 	<p>
-		<a className="components-button is-secondary" href={ href }>
+		<a
+			className="components-button is-secondary"
+			href={ href }
+			onClick={ () =>
+				recordEvent( 'wcpay_order_dispute_notice_action_click', {
+					due_by_days: countdownDays,
+				} )
+			}
+		>
 			{ label }
 		</a>
 	</p>
@@ -116,6 +133,18 @@ const AwaitingResponseNotice = ( {
 			: __( 'Respond now', 'woocommerce' );
 	const formattedDueBy = formatDate( earliestDueBy );
 	const status = countdownDays < 3 ? 'error' : 'warning';
+	const isSingle = disputes.length === 1;
+
+	// Client 11.1.0 `components/disputed-order-notice/index.js:288-294,357-364`.
+	useEffect( () => {
+		recordEvent( 'wcpay_order_dispute_notice_view', {
+			is_inquiry: disputes.every( isDisputeInquiry ),
+			dispute_reason: isSingle ? disputes[ 0 ].reason : 'multiple',
+			due_by_days: countdownDays,
+			...( isSingle ? {} : { dispute_count: disputes.length } ),
+		} );
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- Record once per notice state, as the client does.
+	}, [ countdownDays, disputes.length ] );
 
 	if ( disputes.length === 1 ) {
 		const dispute = disputes[ 0 ];
@@ -154,7 +183,11 @@ const AwaitingResponseNotice = ( {
 						__( 'Please respond before %s.', 'woocommerce' ),
 						formattedDueBy
 					) }
-					<NoticeAction href={ detailsUrl } label={ actionLabel } />
+					<NoticeAction
+						href={ detailsUrl }
+						label={ actionLabel }
+						countdownDays={ countdownDays }
+					/>
 				</div>
 			</Notice>
 		);
@@ -195,7 +228,11 @@ const AwaitingResponseNotice = ( {
 					__( 'Please respond before %s.', 'woocommerce' ),
 					formattedDueBy
 				) }
-				<NoticeAction href={ detailsUrl } label={ actionLabel } />
+				<NoticeAction
+					href={ detailsUrl }
+					label={ actionLabel }
+					countdownDays={ countdownDays }
+				/>
 			</div>
 		</Notice>
 	);

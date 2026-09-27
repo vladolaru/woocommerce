@@ -514,6 +514,9 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				return new WP_Error( 'wcpay_payment_uncapturable', __( 'Payment cannot be captured for this order.', 'woocommerce' ), array( 'status' => 409 ) );
 			}
 
+			if ( 'succeeded' !== $status ) {
+				wc_admin_record_tracks_event( 'wcpay_merchant_captured_auth' );
+			}
 			try {
 				$result = 'succeeded' === $status
 					? $intent

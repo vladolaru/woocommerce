@@ -4,6 +4,7 @@
 import { Button } from '@wordpress/components';
 import { useEffect, useMemo, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
+import { recordEvent } from '@woocommerce/tracks';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 /**
@@ -137,6 +138,10 @@ export const WooPaymentsPayouts = () => {
 								item.id
 							) }`
 						) }
+						// Client 11.1.0 `deposits/list/index.tsx:116-121`.
+						onClick={ () =>
+							recordEvent( 'wcpay_deposits_row_click' )
+						}
 					>
 						{ formatPayoutDate( item ) }
 						<span className="screen-reader-text">

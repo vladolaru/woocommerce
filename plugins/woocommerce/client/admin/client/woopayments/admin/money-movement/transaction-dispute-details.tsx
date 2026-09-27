@@ -382,10 +382,13 @@ const DetailRow = ( { label, value }: { label: string; value: ReactNode } ) => {
 
 const DisputeDocumentationLink = ( {
 	isInquiryStatus,
+	onClick,
 }: {
 	isInquiryStatus: boolean;
+	onClick: () => void;
 } ) => (
 	<a
+		onClick={ onClick }
 		href={
 			isInquiryStatus
 				? PAYMENT_INQUIRIES_DOC_URL
@@ -416,6 +419,13 @@ const RespondToDisputeActions = ( {
 	const challengeLabel = isInquiryStatus
 		? __( 'Submit evidence', 'woocommerce' )
 		: __( 'Challenge dispute', 'woocommerce' );
+	// Client 11.1.0 `dispute-awaiting-response-details.tsx:251-256`.
+	const disputeTracksProperties = {
+		dispute_id: disputeId,
+		dispute_status: dispute.status,
+		dispute_reason: dispute.reason,
+		on_page: 'transaction_details',
+	};
 
 	return (
 		<>
@@ -465,12 +475,7 @@ const RespondToDisputeActions = ( {
 								? () => {
 										recordEvent(
 											'wcpay_dispute_inquiry_refund_modal_view',
-											{
-												dispute_id: disputeId,
-												dispute_status: dispute.status,
-												dispute_reason: dispute.reason,
-												on_page: 'transaction_details',
-											}
+											disputeTracksProperties
 										);
 										onIssueRefund();
 								  }
@@ -486,7 +491,17 @@ const RespondToDisputeActions = ( {
 						disabled={ isAccepting }
 						accessibleWhenDisabled
 						isBusy={ isAccepting }
-						onClick={ isAccepting ? undefined : onAccept }
+						onClick={
+							isAccepting
+								? undefined
+								: () => {
+										recordEvent(
+											'wcpay_dispute_accept_modal_view',
+											disputeTracksProperties
+										);
+										onAccept();
+								  }
+						}
 					>
 						{ __( 'Accept dispute', 'woocommerce' ) }
 					</Button>
@@ -503,7 +518,15 @@ const RespondToDisputeActions = ( {
 					) }
 				</p>
 			) }
-			<DisputeDocumentationLink isInquiryStatus={ isInquiryStatus } />
+			<DisputeDocumentationLink
+				isInquiryStatus={ isInquiryStatus }
+				onClick={ () =>
+					recordEvent(
+						'wcpay_dispute_help_link_clicked',
+						disputeTracksProperties
+					)
+				}
+			/>
 		</>
 	);
 };
@@ -633,6 +656,12 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 		);
 	};
 	const handleAcceptDispute = async () => {
+		recordEvent( 'wcpay_dispute_accept_click', {
+			dispute_id: disputeId,
+			dispute_status: currentDispute.status,
+			dispute_reason: currentDispute.reason,
+			on_page: 'transaction_details',
+		} );
 		shouldRestoreFocusAfterAcceptRef.current = true;
 		setIsAccepting( true );
 
