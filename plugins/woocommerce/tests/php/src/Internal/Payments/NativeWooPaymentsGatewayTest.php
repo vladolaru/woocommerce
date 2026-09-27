@@ -1948,11 +1948,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Account add-payment-method SetupIntent left `requires_payment_method` after a failed 3DS
 	 * challenge. `add_payment_method()` returns its error before ever calling the token service
 	 * (`NativeWooPaymentsGateway.php:645-647`), so a hosted challenge failure must never attach a
-	 * payment method to the shopper's account. The notice text is asserted only as a stable prefix,
-	 * one notice, not the exact final wording: whether the client shows this same message (or any
-	 * message at all) for a failed My Account SetupIntent confirmation is F-3DS-3 (T.7, alongside
-	 * the client's `confirmSetup` vs `confirmCardSetup` uncertainty for this same flow) and is not
-	 * claimed here as a parity fact.
+	 * payment method to the shopper's account. The notice is the client's exact copy, with no
+	 * trailing period (client 11.1.0 `gw:4446-4451`).
 	 */
 	public function test_add_payment_method_refuses_non_succeeded_setup_intent_without_saving_token(): void {
 		wc_clear_notices();
@@ -1984,7 +1981,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'result' => 'error' ), $result );
 		$this->assertCount( 1, wc_get_notices( 'error' ) );
-		$this->assertStringStartsWith(
+		$this->assertSame(
 			'Failed to add the provided payment method. Please try again later',
 			wc_get_notices( 'error' )[0]['notice'] ?? ''
 		);

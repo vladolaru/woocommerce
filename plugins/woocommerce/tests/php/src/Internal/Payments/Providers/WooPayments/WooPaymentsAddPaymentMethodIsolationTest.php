@@ -22,7 +22,7 @@ class WooPaymentsAddPaymentMethodIsolationTest extends WC_Unit_Test_Case {
 	/**
 	 * The WooPayments-specific message the native gateway emits when no setup intent was submitted.
 	 */
-	private const WOOPAYMENTS_ERROR = 'A WooPayments payment method was not provided.';
+	private const WOOPAYMENTS_ERROR = 'A WooPayments payment method was not provided';
 
 	/**
 	 * ID of the stand-in non-WooPayments gateway registered for these tests.

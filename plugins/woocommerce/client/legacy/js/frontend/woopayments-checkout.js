@@ -1506,7 +1506,7 @@
 			! setupIntent ||
 			! setupIntent.client_secret ||
 			! stripe ||
-			! stripe.confirmSetup
+			! stripe.confirmCardSetup
 		) {
 			return Promise.reject(
 				new Error( config.confirmationErrorMessage || '' )
@@ -1514,10 +1514,7 @@
 		}
 
 		return stripe
-			.confirmSetup( {
-				clientSecret: setupIntent.client_secret,
-				redirect: 'if_required',
-			} )
+			.confirmCardSetup( setupIntent.client_secret )
 			.then( function ( result ) {
 				if ( result.error ) {
 					return Promise.reject( result.error );

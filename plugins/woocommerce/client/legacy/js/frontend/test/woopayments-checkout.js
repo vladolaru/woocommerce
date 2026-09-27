@@ -514,6 +514,11 @@ describe( 'WooPayments checkout', () => {
 					setupIntent: { id: 'seti_native' },
 				} )
 			),
+			confirmCardSetup: jest.fn( () =>
+				Promise.resolve( {
+					setupIntent: { id: 'seti_native' },
+				} )
+			),
 			handleNextAction: jest.fn( () =>
 				Promise.resolve( {
 					paymentIntent: { id: 'pi_native' },
@@ -3202,7 +3207,7 @@ describe( 'WooPayments checkout', () => {
 				};
 			} ),
 		} );
-		stripeMock.confirmSetup.mockResolvedValueOnce( {
+		stripeMock.confirmCardSetup.mockResolvedValueOnce( {
 			error: {
 				message:
 					'We are unable to authenticate your payment method. Please choose a different payment method and try again.',
@@ -3215,10 +3220,10 @@ describe( 'WooPayments checkout', () => {
 		);
 		await flushPromises();
 
-		expect( stripeMock.confirmSetup ).toHaveBeenCalledWith( {
-			clientSecret: 'seti_failed_authentication_secret_abc',
-			redirect: 'if_required',
-		} );
+		// Client 11.1.0 client/checkout/api/index.js:329-333 confirms with confirmCardSetup( clientSecret ).
+		expect( stripeMock.confirmCardSetup ).toHaveBeenCalledWith(
+			'seti_failed_authentication_secret_abc'
+		);
 		expect(
 			document.getElementById( 'wcpay-core-payment-errors' ).textContent
 		).toBe(
@@ -3234,15 +3239,11 @@ describe( 'WooPayments checkout', () => {
 		expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
 	} );
 
-	// T.3 Task 4 (plan-task-t3.md): the success counterpart of "releases
-	// add-payment-method after a failed SetupIntent confirmation" above -
-	// REC-3DS-4/REC-3DS-5's requires_action SetupIntent must be confirmed with
-	// Stripe (some setup-confirmation call receiving the intent's client
-	// secret) before the wcpay-setup-intent field is filled and the form
-	// submits. Which Stripe SDK method the client itself calls for this My
-	// Account flow (confirmSetup vs the older confirmCardSetup) is F-3DS-3
-	// (T.7) and is not asserted as a parity fact; only native's own call and
-	// its ordering before submission are proven.
+	// The success counterpart of "releases add-payment-method after a failed
+	// SetupIntent confirmation" above: REC-3DS-4/REC-3DS-5's requires_action
+	// SetupIntent is confirmed with confirmCardSetup( clientSecret ), as the
+	// client does (client 11.1.0 client/checkout/api/index.js:329-333), before
+	// the wcpay-setup-intent field is filled and the form submits.
 	test( 'confirms a requires_action SetupIntent before submitting wcpay-setup-intent', async () => {
 		const addPaymentMethodForm = createAddPaymentMethodForm();
 		global.jQuery.post.mockReturnValueOnce( {
@@ -3260,7 +3261,7 @@ describe( 'WooPayments checkout', () => {
 				};
 			} ),
 		} );
-		stripeMock.confirmSetup.mockResolvedValueOnce( {
+		stripeMock.confirmCardSetup.mockResolvedValueOnce( {
 			setupIntent: {
 				id: 'seti_challenge',
 				status: 'succeeded',
@@ -3273,10 +3274,9 @@ describe( 'WooPayments checkout', () => {
 		);
 		await flushPromises();
 
-		expect( stripeMock.confirmSetup ).toHaveBeenCalledWith( {
-			clientSecret: 'seti_challenge_secret_abc',
-			redirect: 'if_required',
-		} );
+		expect( stripeMock.confirmCardSetup ).toHaveBeenCalledWith(
+			'seti_challenge_secret_abc'
+		);
 		const setupIntentField = addPaymentMethodForm.querySelector(
 			'input[name="wcpay-setup-intent"]'
 		);
@@ -3287,7 +3287,7 @@ describe( 'WooPayments checkout', () => {
 		// setup confirmation was invoked (and, by the awaited promise chain
 		// above, resolved).
 		expect(
-			stripeMock.confirmSetup.mock.invocationCallOrder[ 0 ]
+			stripeMock.confirmCardSetup.mock.invocationCallOrder[ 0 ]
 		).toBeLessThan(
 			addPaymentMethodForm.submit.mock.invocationCallOrder[ 0 ]
 		);

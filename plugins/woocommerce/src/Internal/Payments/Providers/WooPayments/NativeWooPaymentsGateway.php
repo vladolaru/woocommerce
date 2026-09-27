@@ -630,7 +630,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$setup_intent_id = $this->sanitize_post_string( 'wcpay-setup-intent' );
 
 			if ( '' === $setup_intent_id ) {
-				return $this->add_payment_method_error( __( 'A WooPayments payment method was not provided.', 'woocommerce' ) );
+				return $this->add_payment_method_error( __( 'A WooPayments payment method was not provided', 'woocommerce' ) );
 			}
 
 			$user_id = get_current_user_id();
@@ -646,7 +646,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$setup_intent = $this->get_api_client()->get_setup_intention( $setup_intent_id );
 			$status       = isset( $setup_intent['status'] ) ? (string) $setup_intent['status'] : '';
 			if ( 'succeeded' !== $status ) {
-				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later.', 'woocommerce' ) );
+				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later', 'woocommerce' ) );
 			}
 
 			// Reject SetupIntents owned by a different WooPayments customer to prevent attaching another
@@ -656,17 +656,17 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$intent_customer = $this->get_setup_intent_customer_id( $setup_intent );
 			$user_customer   = (string) $this->get_customer_service()->get_customer_id_by_user_id( $user_id );
 			if ( '' !== $intent_customer && '' !== $user_customer && $intent_customer !== $user_customer ) {
-				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later.', 'woocommerce' ) );
+				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later', 'woocommerce' ) );
 			}
 
 			$payment_method_id = $this->get_setup_intent_payment_method_id( $setup_intent );
 			if ( '' === $payment_method_id ) {
-				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ) );
+				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later", 'woocommerce' ) );
 			}
 
 			$token = $this->get_token_service()->get_or_create_token_for_user( $payment_method_id, $user_id );
 			if ( ! $token instanceof WC_Payment_Token ) {
-				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ) );
+				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later", 'woocommerce' ) );
 			}
 
 			return array(
@@ -690,7 +690,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				array( 'source' => 'wcpay-add-payment-method' )
 			);
 
-			return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ) );
+			return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later", 'woocommerce' ) );
 		}
 	}
 
