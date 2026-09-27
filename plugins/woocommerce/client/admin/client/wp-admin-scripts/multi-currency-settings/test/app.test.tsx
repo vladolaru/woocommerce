@@ -201,9 +201,19 @@ describe( 'MultiCurrencySettingsApp', () => {
 		expect(
 			screen.getByText( 'United States (US) dollar' )
 		).toBeInTheDocument();
+		// Client 11.1.0 list-item.js:61-63 labels the default row's rate; its
+		// actions cell stays empty (list-item.js:64-94, index.js:88-90).
+		const defaultRow = screen
+			.getByRole( 'rowheader', {
+				name: 'United States (US) dollar ($ USD)',
+			} )
+			.closest( 'tr' ) as HTMLElement;
 		expect(
-			screen.getAllByText( 'Default currency' ).length
-		).toBeGreaterThan( 0 );
+			within( defaultRow ).getAllByText( 'Default currency' )
+		).toHaveLength( 1 );
+		expect( within( defaultRow ).queryAllByRole( 'button' ) ).toHaveLength(
+			0
+		);
 		expect(
 			screen.getByRole( 'button', {
 				name: 'Remove Euro as an enabled currency',

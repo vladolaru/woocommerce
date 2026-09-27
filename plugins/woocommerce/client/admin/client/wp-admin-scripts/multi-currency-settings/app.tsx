@@ -428,14 +428,8 @@ export function MultiCurrencySettingsApp() {
 							</th>
 							<td>{ formatExchangeRate( currency ) }</td>
 							<td>
-								{ currency.is_default ? (
-									<span>
-										{ __(
-											'Default currency',
-											'woocommerce'
-										) }
-									</span>
-								) : (
+								{ /* Client 11.1.0 list-item.js:64-94 and index.js:88-90: no actions on the default row. */ }
+								{ ! currency.is_default && (
 									<>
 										<Button
 											variant="link"
