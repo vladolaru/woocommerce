@@ -1,0 +1,505 @@
+/**
+ * External dependencies
+ */
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { recordEvent } from '@woocommerce/tracks';
+import { downloadCSVFile } from '@woocommerce/csv-export';
+import { getQuery } from '@woocommerce/navigation';
+import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router-dom';
+
+/**
+ * Internal dependencies
+ */
+import { WooPaymentsTransactionsPage } from '../money-movement/transactions-page';
+import {
+	getWooPaymentsAuthorizations,
+	getWooPaymentsAuthorizationsSummary,
+	getWooPaymentsFraudOutcomeTransactionSearch,
+	getWooPaymentsFraudOutcomeTransactions,
+	getWooPaymentsFraudOutcomeTransactionsExport,
+	getWooPaymentsFraudOutcomeTransactionsSummary,
+	getWooPaymentsTransactions,
+	getWooPaymentsTransactionsSummary,
+} from '../money-movement/data';
+import { formatAmount, formatDateTime } from '../money-movement/utils';
+
+// Client 11.1.0 references: client/transactions/index.tsx:57-61,93-102 (tab),
+// client/transactions/blocked/index.tsx and blocked/columns.tsx (view),
+// client/transactions/fraud-protection/autocompleter.tsx (search),
+// client/data/transactions/resolvers.js:121-216 (requests).
+
+const mockHistoryPush = jest.fn();
+const mockCreateErrorNotice = jest.fn();
+const mockSearch = jest.fn();
+
+jest.mock( '@woocommerce/navigation', () => ( {
+	getHistory: () => ( { push: mockHistoryPush } ),
+	getQuery: jest.fn( () => ( {} ) ),
+} ) );
+
+jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
+
+jest.mock( '@woocommerce/csv-export', () => ( {
+	...jest.requireActual( '@woocommerce/csv-export' ),
+	downloadCSVFile: jest.fn(),
+} ) );
+
+jest.mock( '@woocommerce/components', () => ( {
+	Search: ( props: {
+		placeholder: string;
+		onChange: ( values: Array< { key: string; label: string } > ) => void;
+	} ) => {
+		mockSearch( props );
+
+		return (
+			<button
+				type="button"
+				onClick={ () =>
+					props.onChange( [
+						{ key: 'Ada Lovelace', label: 'Ada Lovelace' },
+						{ key: 'Order #1521', label: 'Order #1521' },
+					] )
+				}
+			>
+				{ `Mock search: ${ props.placeholder }` }
+			</button>
+		);
+	},
+} ) );
+
+jest.mock( '@wordpress/data', () => ( {
+	...jest.requireActual( '@wordpress/data' ),
+	dispatch: jest.fn( () => ( {
+		createErrorNotice: mockCreateErrorNotice,
+		createSuccessNotice: jest.fn(),
+	} ) ),
+} ) );
+
+jest.mock( '@wordpress/dataviews/wp', () => ( {
+	DataViews: ( {
+		data = [],
+		fields = [],
+		header,
+		view = {},
+	}: {
+		data?: Array< Record< string, unknown > >;
+		fields?: Array< {
+			id: string;
+			label?: ReactNode;
+			header?: ReactNode;
+			render?: ( props: {
+				item: Record< string, unknown >;
+			} ) => ReactNode;
+		} >;
+		header?: ReactNode;
+		view?: { fields?: string[] };
+	} ) => {
+		const visibleFields = fields.filter(
+			( field ) => ! view.fields || view.fields.includes( field.id )
+		);
+
+		return (
+			<div>
+				{ header }
+				<div role="row">
+					{ visibleFields.map( ( field ) => (
+						<div key={ field.id } role="columnheader">
+							{ field.header || field.label }
+						</div>
+					) ) }
+				</div>
+				{ data.map( ( item, index ) => (
+					<div role="row" key={ index }>
+						{ visibleFields.map( ( field ) => (
+							<div key={ field.id } role="cell">
+								{ field.render?.( { item } ) }
+							</div>
+						) ) }
+					</div>
+				) ) }
+			</div>
+		);
+	},
+} ) );
+
+jest.mock( '../../promotions/spotlight', () => ( {
+	SpotlightPromotion: () => null,
+} ) );
+
+jest.mock( '../money-movement/data', () => ( {
+	getWooPaymentsAuthorizations: jest.fn(),
+	getWooPaymentsAuthorizationsSummary: jest.fn(),
+	getWooPaymentsFraudOutcomeTransactionSearch: jest.fn(),
+	getWooPaymentsFraudOutcomeTransactions: jest.fn(),
+	getWooPaymentsFraudOutcomeTransactionsExport: jest.fn(),
+	getWooPaymentsFraudOutcomeTransactionsSummary: jest.fn(),
+	getWooPaymentsTransactions: jest.fn(),
+	getWooPaymentsTransactionsSummary: jest.fn(),
+	getWooPaymentsTransactionSearch: jest.fn(),
+} ) );
+
+const mocked = < T extends ( ...args: never[] ) => unknown >( fn: T ) =>
+	fn as unknown as jest.MockedFunction< T >;
+
+const mockRecordEvent = mocked( recordEvent );
+const mockDownloadCSVFile = mocked( downloadCSVFile );
+const mockGetQuery = mocked( getQuery );
+const mockGetFraudOutcomes = mocked( getWooPaymentsFraudOutcomeTransactions );
+const mockGetFraudOutcomesSummary = mocked(
+	getWooPaymentsFraudOutcomeTransactionsSummary
+);
+const mockGetFraudOutcomesExport = mocked(
+	getWooPaymentsFraudOutcomeTransactionsExport
+);
+const mockGetFraudOutcomeSearch = mocked(
+	getWooPaymentsFraudOutcomeTransactionSearch
+);
+
+// Rows as the native fraud-outcomes route returns them
+// (WooPaymentsMoneyMovementOrderService::build_fraud_outcome_transactions_order_info).
+const ADA = {
+	order_id: 1520,
+	payment_intent: { id: 'pi_blocked_ada', status: 'canceled' },
+	amount: 5000,
+	currency: 'usd',
+	customer_name: 'Ada Lovelace',
+	created: '2026-09-20T10:15:00Z',
+	status: 'block',
+	fraud_meta_box_type: 'block',
+};
+const GRACE = {
+	order_id: 1521,
+	payment_intent: { id: '', status: '' },
+	amount: 1250,
+	currency: 'usd',
+	customer_name: 'Grace Hopper',
+	created: '2026-09-21T08:05:00Z',
+	status: 'block',
+	fraud_meta_box_type: 'review_blocked',
+};
+const REVIEW_ROW = {
+	order_id: 1522,
+	payment_intent: { id: 'pi_review', status: 'requires_capture' },
+	amount: 700,
+	currency: 'usd',
+	customer_name: 'Katherine Johnson',
+	created: '2026-09-22T12:00:00Z',
+	status: 'review',
+	fraud_meta_box_type: 'review',
+};
+
+const renderAt = ( path: string ) =>
+	render(
+		<MemoryRouter initialEntries={ [ path ] }>
+			<WooPaymentsTransactionsPage />
+		</MemoryRouter>
+	);
+
+const getPageViewPaths = () =>
+	mockRecordEvent.mock.calls
+		.filter( ( [ name ] ) => name === 'page_view' )
+		.map( ( [ , properties ] ) => ( properties as { path: string } ).path );
+
+describe( 'WooPayments Blocked transactions tab', () => {
+	beforeEach( () => {
+		jest.clearAllMocks();
+		window.localStorage.clear();
+		window.wcSettings = {
+			...window.wcSettings,
+			adminUrl: 'http://example.com/wp-admin/',
+		};
+		mockGetQuery.mockReturnValue( {} );
+		mocked( getWooPaymentsTransactions ).mockResolvedValue( { data: [] } );
+		mocked( getWooPaymentsTransactionsSummary ).mockResolvedValue( {} );
+		mocked( getWooPaymentsAuthorizations ).mockResolvedValue( {
+			data: [],
+		} );
+		mocked( getWooPaymentsAuthorizationsSummary ).mockResolvedValue( {
+			count: 0,
+		} );
+		mockGetFraudOutcomes.mockResolvedValue( { data: [ ADA, GRACE ] } );
+		mockGetFraudOutcomesSummary.mockResolvedValue( {
+			count: 2,
+			total: 6250,
+			currencies: [ 'usd' ],
+		} );
+	} );
+
+	it( 'lists blocked fraud outcomes in the four client columns with its summary and page view', async () => {
+		renderAt( '/woopayments/transactions?view=blocked' );
+
+		const adaLink = await screen.findByRole( 'link', {
+			name: 'Ada Lovelace',
+		} );
+
+		expect(
+			screen
+				.getAllByRole( 'columnheader' )
+				.map( ( header ) => header.textContent )
+		).toEqual( [ 'Date / Time', 'Amount', 'Customer', 'Status' ] );
+
+		const [ , adaRow, graceRow ] = screen.getAllByRole( 'row' );
+		expect(
+			within( adaRow )
+				.getAllByRole( 'cell' )
+				.map( ( cell ) => cell.textContent )
+		).toEqual( [
+			formatDateTime( ADA.created ),
+			formatAmount( 5000, 'usd' ),
+			'Ada Lovelace',
+			'Payment blocked',
+		] );
+		expect(
+			within( graceRow )
+				.getAllByRole( 'cell' )
+				.map( ( cell ) => cell.textContent )
+		).toEqual( [
+			formatDateTime( GRACE.created ),
+			formatAmount( 1250, 'usd' ),
+			'Grace Hopper',
+			'Payment blocked',
+		] );
+
+		// Every cell but Status links to the details of payment_intent.id || order_id.
+		expect( within( adaRow ).getAllByRole( 'link' ) ).toHaveLength( 3 );
+		expect( adaLink ).toHaveAttribute(
+			'href',
+			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=pi_blocked_ada'
+		);
+		expect(
+			within( graceRow ).getByRole( 'link', { name: 'Grace Hopper' } )
+		).toHaveAttribute(
+			'href',
+			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=1521'
+		);
+
+		expect( screen.getByText( '2 transactions(s)' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( `${ formatAmount( 6250, 'usd' ) } blocked` )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Blocked transactions' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: 'Blocked' } )
+		).toHaveAttribute( 'aria-current', 'page' );
+
+		expect( mockGetFraudOutcomes ).toHaveBeenCalledWith( {
+			status: 'block',
+			page: 1,
+			pagesize: 25,
+			sort: 'date',
+			direction: 'desc',
+		} );
+		expect( mockGetFraudOutcomesSummary ).toHaveBeenCalledWith( {
+			status: 'block',
+		} );
+		expect( getWooPaymentsTransactions ).not.toHaveBeenCalled();
+		expect( getPageViewPaths() ).toEqual( [
+			'payments_transactions_blocked',
+		] );
+	} );
+
+	it( 'shows the total only for a single currency', async () => {
+		mockGetFraudOutcomesSummary.mockResolvedValue( {
+			count: 2,
+			total: 6250,
+			currencies: [ 'usd', 'eur' ],
+		} );
+
+		renderAt( '/woopayments/transactions?view=blocked' );
+
+		expect(
+			await screen.findByText( '2 transactions(s)' )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( `${ formatAmount( 6250, 'usd' ) } blocked` )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'treats the platform not-found error as an empty list without Export', async () => {
+		const notFound = { code: 'wcpay_fraud_outcome_not_found' };
+		mockGetFraudOutcomes.mockRejectedValue( notFound );
+		mockGetFraudOutcomesSummary.mockRejectedValue( notFound );
+
+		renderAt( '/woopayments/transactions?view=blocked' );
+
+		expect(
+			await screen.findByText( '0 transactions(s)' )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', { name: 'Export' } )
+		).not.toBeInTheDocument();
+		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
+	} );
+
+	it( 'reports other load failures with the client notices', async () => {
+		mockGetFraudOutcomes.mockRejectedValue( { code: 'wcpay_error' } );
+		mockGetFraudOutcomesSummary.mockRejectedValue( {
+			code: 'wcpay_error',
+		} );
+
+		renderAt( '/woopayments/transactions?view=blocked' );
+
+		await waitFor( () =>
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'Error retrieving transactions.'
+			)
+		);
+		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+			'Error retrieving on review transactions.'
+		);
+	} );
+
+	it( 'keeps the Blocked tab on the transactions and uncaptured views', async () => {
+		const { unmount } = renderAt( '/woopayments/transactions' );
+
+		const blockedTab = await screen.findByRole( 'link', {
+			name: 'Blocked',
+		} );
+		expect( blockedTab ).toHaveAttribute(
+			'href',
+			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&view=blocked'
+		);
+		expect( blockedTab ).not.toHaveAttribute( 'aria-current' );
+		expect( mockGetFraudOutcomes ).not.toHaveBeenCalled();
+		expect( getPageViewPaths() ).toEqual( [ 'payments_transactions' ] );
+		unmount();
+
+		renderAt( '/woopayments/transactions?view=uncaptured' );
+
+		expect(
+			await screen.findByRole( 'link', { name: 'Blocked' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'searches blocked transactions through the fraud-outcome autocompleter', async () => {
+		renderAt(
+			'/woopayments/transactions?view=blocked&search=Ada%20Lovelace&search=Order%20%231521'
+		);
+
+		await screen.findByRole( 'link', { name: 'Ada Lovelace' } );
+
+		expect( mockGetFraudOutcomes ).toHaveBeenCalledWith( {
+			status: 'block',
+			page: 1,
+			pagesize: 25,
+			sort: 'date',
+			direction: 'desc',
+			'search[]': [ 'Ada Lovelace', 'Order #1521' ],
+		} );
+
+		const searchProps = mockSearch.mock.calls[
+			mockSearch.mock.calls.length - 1
+		][ 0 ] as {
+			selected: Array< { key: string; label: string } >;
+			autocompleter: {
+				options: ( term: string ) => Promise< unknown[] >;
+			};
+		};
+		expect( searchProps ).toMatchObject( {
+			inlineTags: true,
+			showClearButton: true,
+			placeholder: 'Search by order number or customer name',
+			selected: [
+				{ key: 'Ada Lovelace', label: 'Ada Lovelace' },
+				{ key: 'Order #1521', label: 'Order #1521' },
+			],
+		} );
+
+		mockGetFraudOutcomeSearch.mockResolvedValue( [
+			{ key: 'customer-1520', label: 'Ada Lovelace' },
+			{ key: 'customer-1521', label: 'Grace Hopper' },
+		] );
+		await expect(
+			searchProps.autocompleter.options( 'ada' )
+		).resolves.toEqual( [
+			{ key: 'customer-1520', label: 'Ada Lovelace' },
+		] );
+		expect( mockGetFraudOutcomeSearch ).toHaveBeenCalledWith(
+			'block',
+			'ada'
+		);
+
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Mock search: Search by order number or customer name',
+			} )
+		);
+		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&paged=1&pagesize=25&search=Ada+Lovelace&search=Order+%231521&view=blocked'
+		);
+	} );
+
+	it( 'exports the client CSV from the download route and records the event', async () => {
+		mockGetQuery.mockReturnValue( {
+			page: 'wc-settings',
+			tab: 'checkout',
+			path: '/woopayments/transactions',
+			view: 'blocked',
+		} );
+		mockGetFraudOutcomesExport.mockResolvedValue( {
+			data: [ ADA, GRACE, REVIEW_ROW ],
+		} );
+
+		renderAt( '/woopayments/transactions?view=blocked' );
+
+		await userEvent.click(
+			await screen.findByRole( 'button', { name: 'Export' } )
+		);
+
+		await waitFor( () =>
+			expect( mockDownloadCSVFile ).toHaveBeenCalledTimes( 1 )
+		);
+		expect( mockGetFraudOutcomesExport ).toHaveBeenCalledWith( {
+			status: 'block',
+			additional_status: 'review',
+		} );
+
+		const [ fileName, csv ] = mockDownloadCSVFile.mock.calls[ 0 ];
+		expect( fileName ).toMatch(
+			/^blocked-transactions_\d{4}-\d{2}-\d{2}_tab-checkout_view-blocked\.csv$/
+		);
+		expect( csv ).toBe(
+			[
+				'"Date / Time",Amount,Customer,Status',
+				`"${ formatDateTime(
+					ADA.created
+				) }",5000,"Ada Lovelace",block`,
+				`"${ formatDateTime(
+					GRACE.created
+				) }",1250,"Grace Hopper",block`,
+				`"${ formatDateTime(
+					REVIEW_ROW.created
+				) }",700,"Katherine Johnson",review`,
+			].join( '\n' )
+		);
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_fraud_outcome_transactions_download',
+			{ exported_transactions: 2, total_transactions: 2 }
+		);
+	} );
+
+	it( 'shows the client error notice when the export fails', async () => {
+		mockGetFraudOutcomesExport.mockRejectedValue( new Error( 'boom' ) );
+
+		renderAt( '/woopayments/transactions?view=blocked' );
+
+		await userEvent.click(
+			await screen.findByRole( 'button', { name: 'Export' } )
+		);
+
+		await waitFor( () =>
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'There was a problem generating your export.'
+			)
+		);
+		expect( mockDownloadCSVFile ).not.toHaveBeenCalled();
+		expect( mockRecordEvent ).not.toHaveBeenCalledWith(
+			'wcpay_fraud_outcome_transactions_download',
+			expect.anything()
+		);
+	} );
+} );

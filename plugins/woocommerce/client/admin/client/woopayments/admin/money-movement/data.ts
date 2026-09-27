@@ -244,12 +244,14 @@ export const getWooPaymentsFraudOutcomeTransactionsSummary = (
 	} );
 
 export const getWooPaymentsFraudOutcomeTransactionSearch = (
+	status: string,
 	searchTerm: string
-): Promise< Array< { label: string } > > =>
-	apiFetch< Array< { label: string } > >( {
+): Promise< Array< { key: string; label: string } > > =>
+	apiFetch< Array< { key: string; label: string } > >( {
 		path: buildPathWithQuery(
 			`${ PAYMENTS_PATH }/transactions/fraud-outcomes/search`,
 			{
+				status,
 				search_term: searchTerm,
 			}
 		),

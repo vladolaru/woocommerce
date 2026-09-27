@@ -287,7 +287,8 @@ describe( 'WooPayments money movement data helpers', () => {
 		await getWooPaymentsFraudOutcomeTransactionsSummary( {
 			status: 'block',
 		} );
-		await getWooPaymentsFraudOutcomeTransactionSearch( 'Ada' );
+		await getWooPaymentsFraudOutcomeTransactionSearch( 'block', 'Ada' );
+		await getWooPaymentsFraudOutcomeTransactionSearch( 'block', '' );
 		await getWooPaymentsFraudOutcomeTransactionsExport( {
 			status: 'block',
 		} );
@@ -301,10 +302,14 @@ describe( 'WooPayments money movement data helpers', () => {
 			method: 'GET',
 		} );
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 3, {
-			path: '/wc/v3/payments/transactions/fraud-outcomes/search?search_term=Ada',
+			path: '/wc/v3/payments/transactions/fraud-outcomes/search?status=block&search_term=Ada',
 			method: 'GET',
 		} );
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 4, {
+			path: '/wc/v3/payments/transactions/fraud-outcomes/search?status=block',
+			method: 'GET',
+		} );
+		expect( mockApiFetch ).toHaveBeenNthCalledWith( 5, {
 			path: '/wc/v3/payments/transactions/fraud-outcomes/download?status=block',
 			method: 'GET',
 		} );

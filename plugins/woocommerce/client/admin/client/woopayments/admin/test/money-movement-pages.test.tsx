@@ -343,6 +343,11 @@ jest.mock(
 	{ virtual: true }
 );
 
+// Covered by blocked-transactions.test.tsx; its Search import needs the real navigation module.
+jest.mock( '../money-movement/blocked-transactions', () => ( {
+	WooPaymentsBlockedTransactions: () => null,
+} ) );
+
 jest.mock( '../../promotions/spotlight', () => ( {
 	SpotlightPromotion: () => <div>Spotlight promotion</div>,
 } ) );

@@ -44,6 +44,7 @@ import {
 } from './query';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { WooPaymentsTransactionSearch } from './transaction-search';
+import { WooPaymentsBlockedTransactions } from './blocked-transactions';
 import { runWooPaymentsExport } from './export';
 import {
 	formatAmount,
@@ -219,6 +220,8 @@ export const WooPaymentsTransactionsPage = () => {
 			params.get( 'view' ) === 'uncaptured'
 		);
 	}, [ location.search ] );
+	const isBlocked =
+		new URLSearchParams( location.search ).get( 'view' ) === 'blocked';
 	const resource: MoneyMovementResource = isUncaptured
 		? 'authorizations'
 		: 'transactions';
@@ -451,12 +454,16 @@ export const WooPaymentsTransactionsPage = () => {
 	}, [ canonicalViewKey ] );
 
 	useEffect( () => {
+		if ( isBlocked ) {
+			return;
+		}
+
 		recordEvent( 'page_view', {
 			path: isUncaptured
 				? 'payments_transactions_uncaptured'
 				: 'payments_transactions',
 		} );
-	}, [ isUncaptured ] );
+	}, [ isBlocked, isUncaptured ] );
 
 	const loadMoneyMovement = useCallback(
 		async ( {
@@ -538,6 +545,10 @@ export const WooPaymentsTransactionsPage = () => {
 	useEffect( () => {
 		let isMounted = true;
 
+		if ( isBlocked ) {
+			return;
+		}
+
 		void loadMoneyMovement( {
 			isCurrent: () => isMounted,
 		} );
@@ -545,7 +556,7 @@ export const WooPaymentsTransactionsPage = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [ loadMoneyMovement ] );
+	}, [ isBlocked, loadMoneyMovement ] );
 
 	useEffect( () => {
 		isMountedRef.current = true;
@@ -911,6 +922,9 @@ export const WooPaymentsTransactionsPage = () => {
 	const tabUncapturedUrl = getSettingsPaymentsProviderRouteUrl(
 		'/woopayments/transactions?view=uncaptured'
 	);
+	const tabBlockedUrl = getSettingsPaymentsProviderRouteUrl(
+		'/woopayments/transactions?view=blocked'
+	);
 	const uncapturedTabLabel = sprintf(
 		/* translators: %1$s: number of uncaptured authorizations, or an ellipsis while loading. */
 		__( 'Uncaptured (%1$s)', 'woocommerce' ),
@@ -928,6 +942,46 @@ export const WooPaymentsTransactionsPage = () => {
 				summaryCount
 		  );
 
+	// Client 11.1.0 `transactions/index.tsx:78-102`: the Blocked tab always shows.
+	const tabsNav = (
+		<nav
+			className="woocommerce-woopayments-money-movement__tabs"
+			aria-label={ __( 'Transaction views', 'woocommerce' ) }
+		>
+			<a
+				href={ tabTransactionsUrl }
+				aria-current={ isUncaptured || isBlocked ? undefined : 'page' }
+			>
+				{ __( 'Transactions', 'woocommerce' ) }
+			</a>
+			<a
+				href={ tabUncapturedUrl }
+				aria-current={ isUncaptured ? 'page' : undefined }
+			>
+				{ uncapturedTabLabel }
+			</a>
+			<a
+				href={ tabBlockedUrl }
+				aria-current={ isBlocked ? 'page' : undefined }
+			>
+				{ __( 'Blocked', 'woocommerce' ) }
+			</a>
+		</nav>
+	);
+
+	if ( isBlocked ) {
+		return (
+			<div className="woocommerce-woopayments-money-movement">
+				<SpotlightPromotion />
+				<section>
+					<h2>{ __( 'Blocked transactions', 'woocommerce' ) }</h2>
+					{ tabsNav }
+					<WooPaymentsBlockedTransactions />
+				</section>
+			</div>
+		);
+	}
+
 	return (
 		<div className="woocommerce-woopayments-money-movement">
 			<SpotlightPromotion />
@@ -937,23 +991,7 @@ export const WooPaymentsTransactionsPage = () => {
 						? __( 'Uncaptured transactions', 'woocommerce' )
 						: __( 'Transactions', 'woocommerce' ) }
 				</h2>
-				<nav
-					className="woocommerce-woopayments-money-movement__tabs"
-					aria-label={ __( 'Transaction views', 'woocommerce' ) }
-				>
-					<a
-						href={ tabTransactionsUrl }
-						aria-current={ isUncaptured ? undefined : 'page' }
-					>
-						{ __( 'Transactions', 'woocommerce' ) }
-					</a>
-					<a
-						href={ tabUncapturedUrl }
-						aria-current={ isUncaptured ? 'page' : undefined }
-					>
-						{ uncapturedTabLabel }
-					</a>
-				</nav>
+				{ tabsNav }
 				<LiveStatusMessage isError={ !! errorMessage }>
 					{ liveStatusMessage }
 				</LiveStatusMessage>
