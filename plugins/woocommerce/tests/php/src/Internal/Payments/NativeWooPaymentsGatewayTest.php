@@ -3901,6 +3901,71 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should refuse a refund amount outside the order total without a platform call: $_dataName.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2932-2938` returns
+	 * `invalid-amount` before any request when the amount is negative or above the order total.
+	 *
+	 * @dataProvider invalid_refund_amount_provider
+	 *
+	 * @param float $amount Refund amount.
+	 */
+	public function test_process_refund_refuses_invalid_amount( float $amount ): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_charge_id', 'ch_test' );
+		$order->save();
+		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$result = $gateway->process_refund( $order->get_id(), $amount, 'Adjustment' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'invalid-amount', $result->get_error_code() );
+		$this->assertSame( 'The refund amount is not valid.', $result->get_error_message() );
+		$this->assertNull( $service->last_refund_context, 'An invalid amount must never reach the platform refund call.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertCount( $note_count, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
+	}
+
+	/**
+	 * Refund amounts outside the 12.00 order total.
+	 *
+	 * @return array<string,array{0:float}>
+	 */
+	public function invalid_refund_amount_provider(): array {
+		return array(
+			'negative amount'          => array( -1.0 ),
+			'one cent above the total' => array( 12.01 ),
+		);
+	}
+
+	/**
+	 * @testdox Should accept a refund of exactly the order total.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2932` refuses only an amount
+	 * strictly above the order total, so a full refund still reaches the platform.
+	 */
+	public function test_process_refund_accepts_the_full_order_total(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_charge_id', 'ch_test' );
+		$order->save();
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$result = $gateway->process_refund( $order->get_id(), 12.0, 'Full refund' );
+
+		$this->assertTrue( $result );
+		$this->assertInstanceOf( PaymentContext::class, $service->last_refund_context );
+		$this->assertSame( 12.0, $service->last_refund_context->get_payment_data()['amount'] );
+	}
+
+	/**
 	 * @testdox Should fail refunds that do not have a WooPayments charge.
 	 */
 	public function test_process_refund_fails_without_charge_id(): void {

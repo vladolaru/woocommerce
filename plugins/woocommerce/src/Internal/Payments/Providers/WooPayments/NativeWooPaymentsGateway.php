@@ -1674,8 +1674,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		$refund_amount = null === $amount ? 0.0 : (float) $amount;
-		if ( '0.00' !== sprintf( '%0.2f', $refund_amount ) && ! $this->can_refund_order( $order ) ) {
+		$refund_amount  = null === $amount ? 0.0 : (float) $amount;
+		$is_zero_refund = '0.00' === sprintf( '%0.2f', $refund_amount );
+
+		if ( ! $is_zero_refund && ( $refund_amount < 0 || $refund_amount > (float) $order->get_total() ) ) {
+			return new WP_Error( 'invalid-amount', __( 'The refund amount is not valid.', 'woocommerce' ) );
+		}
+
+		if ( ! $is_zero_refund && ! $this->can_refund_order( $order ) ) {
 			return new WP_Error( 'native_payment_refund_missing_charge', __( 'This order does not have a WooPayments charge to refund.', 'woocommerce' ) );
 		}
 
