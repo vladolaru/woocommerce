@@ -732,6 +732,59 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should redirect every client 11.1.0 WC Admin route to a native route.
+	 *
+	 * Source: Fixtures/plugin-11.1.0-admin-routes.json (client/index.js:145-361, includes/admin/class-wc-payments-admin.php:230-611).
+	 *
+	 * @dataProvider provider_client_admin_routes
+	 *
+	 * @param string $legacy_path Client WC Admin route path.
+	 * @param string $plugin_site Client source of the route.
+	 */
+	public function test_redirects_every_client_admin_route_to_a_native_route( string $legacy_path, string $plugin_site ): void {
+		$sut = $this->create_controller( true );
+
+		$url = $sut->get_legacy_payment_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => rawurlencode( $legacy_path ),
+			)
+		);
+
+		$this->assertNotSame( '', $url, "Client route {$legacy_path} ({$plugin_site}) has no native redirect." );
+		$this->assertStringContainsString( 'path=/woopayments/', $url );
+		$this->assertStringNotContainsString( 'page=wc-admin', $url );
+	}
+
+	/**
+	 * Client 11.1.0 WC Admin routes, read from the pinned fixture.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_client_admin_routes(): array {
+		$path = dirname( __DIR__, 4 ) . '/Payments/Providers/WooPayments/Fixtures/plugin-11.1.0-admin-routes.json';
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
+		$fixture = json_decode( (string) file_get_contents( $path ), true );
+
+		$routes = array();
+		foreach ( $fixture['admin_routes'] as $route ) {
+			$routes[ $route['path'] ] = array( $route['path'], $route['plugin_site'] );
+		}
+
+		return $routes;
+	}
+
+	/**
+	 * @testdox Should pin all 20 client 11.1.0 WC Admin routes in the fixture.
+	 */
+	public function test_client_admin_route_fixture_holds_every_client_route(): void {
+		$routes = $this->provider_client_admin_routes();
+
+		$this->assertCount( 20, $routes );
+		$this->assertArrayNotHasKey( '/payments/accounts', $routes );
+	}
+
+	/**
 	 * @testdox Should map legacy WooPayments setup URLs to native onboarding routes.
 	 *
 	 * @dataProvider provider_legacy_setup_redirects
