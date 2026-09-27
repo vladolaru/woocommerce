@@ -1404,14 +1404,96 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback should reject non-authorized intent statuses after syncing the order.
+	 * @testdox Order-status callback should leave an error-free requires_payment_method intent pending with the started note.
+	 *
+	 * Source: client 11.1.0 `os:418-427`: `requires_payment_method` without an error is `mark_payment_started()`
+	 * (`os:1695-1707`, note `os:2202-2218`), which keeps the order pending. The 409 envelope is native's (C1).
 	 */
-	public function test_update_order_status_rejects_non_authorized_intent_status(): void {
+	public function test_update_order_status_keeps_error_free_requires_payment_method_intent_pending(): void {
 		$order = $this->create_woopayments_order( '10.00' );
 		$order->update_meta_data( '_intent_id', 'pi_requires_payment_method' );
 		$order->save();
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$response = $this->get_update_order_status_response_for_intent(
+			$order,
+			array(
+				'id'             => 'pi_requires_payment_method',
+				'status'         => 'requires_payment_method',
+				'currency'       => 'usd',
+				'customer'       => 'cus_native',
+				'payment_method' => 'pm_native',
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayHasKey( 'error', $response );
+		$this->assertArrayNotHasKey( 'return_url', $response );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+		$this->assert_order_has_note_containing( $order, 'was <strong>started</strong> using WooPayments (<code>pi_requires_payment_method</code>)' );
+	}
+
+	/**
+	 * @testdox Order-status callback should fail a requires_action intent that carries a payment error.
+	 *
+	 * Source: client 11.1.0 `os:418-422`: `requires_action` with an error is `mark_payment_failed()`.
+	 */
+	public function test_update_order_status_fails_requires_action_intent_with_payment_error(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->update_meta_data( '_intent_id', 'pi_requires_action_error' );
+		$order->save();
+
+		$response = $this->get_update_order_status_response_for_intent(
+			$order,
+			array(
+				'id'                 => 'pi_requires_action_error',
+				'status'             => 'requires_action',
+				'currency'           => 'usd',
+				'customer'           => 'cus_native',
+				'payment_method'     => 'pm_native',
+				'last_payment_error' => array(
+					'type'    => 'card_error',
+					'code'    => 'payment_intent_authentication_failure',
+					'message' => 'We are unable to authenticate your payment method.',
+				),
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayNotHasKey( 'return_url', $response );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * Run the order-status callback against a fixed PaymentIntent response.
+	 *
+	 * @param WC_Order            $order  Order being confirmed.
+	 * @param array<string,mixed> $intent PaymentIntent response.
+	 * @return array<string,mixed>
+	 */
+	private function get_update_order_status_response_for_intent( WC_Order $order, array $intent ): array {
+		$api_client = new class( $intent ) extends WooPaymentsApiClient {
+			/**
+			 * PaymentIntent response.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $intent;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $intent PaymentIntent response.
+			 */
+			public function __construct( array $intent ) {
+				$this->intent = $intent;
+			}
+
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -1428,35 +1510,21 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			 * @return array<string,mixed>
 			 */
 			public function get_payment_intention( string $intent_id ): array {
-				if ( 'pi_requires_payment_method' !== $intent_id ) {
+				if ( $this->intent['id'] !== $intent_id ) {
 					throw new \RuntimeException( 'Unexpected payment intent ID.' );
 				}
 
-				return array(
-					'id'             => 'pi_requires_payment_method',
-					'status'         => 'requires_payment_method',
-					'currency'       => 'usd',
-					'customer'       => 'cus_native',
-					'payment_method' => 'pm_native',
-				);
+				return $this->intent;
 			}
 		};
-		$sut        = $this->create_controller( $api_client );
-		$response   = $sut->get_update_order_status_response(
+
+		return $this->create_controller( $api_client )->get_update_order_status_response(
 			array(
 				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
 				'order_id'    => $order->get_id(),
-				'intent_id'   => 'pi_requires_payment_method',
+				'intent_id'   => (string) $intent['id'],
 			)
 		);
-		$order      = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertArrayHasKey( 'error', $response );
-		$this->assertArrayNotHasKey( 'return_url', $response );
-		$this->assertSame( 409, $response['status_code'] );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
 	}
 
 	/**

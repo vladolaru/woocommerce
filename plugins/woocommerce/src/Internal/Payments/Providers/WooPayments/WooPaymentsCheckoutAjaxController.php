@@ -449,6 +449,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		$intent_id             = isset( $intent['id'] ) ? (string) $intent['id'] : '';
 		$is_setup              = 0.0 >= (float) $order->get_total() || 0 === strpos( $intent_id, 'seti_' );
 		$provider_redirect_url = esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) );
+		$provider_status       = isset( $intent['status'] ) ? (string) $intent['status'] : '';
+		$intent                = $this->get_intent_for_status_mapping( $intent, $is_setup );
 		$outcome               = WooPaymentsIntentCodec::outcome_from_intention(
 			$intent,
 			WooPaymentsIntentMappingContext::for_native(
@@ -488,16 +490,42 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			? $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
 			: array();
 		$profile          = new WooPaymentsPersistenceProfile();
+		$meta             = $profile->get_outcome_meta( $outcome );
+		if ( ( $intent['status'] ?? '' ) !== $provider_status ) {
+			$meta['_intention_status'] = $provider_status;
+		}
 
 		return new PaymentLifecycleEvent(
 			$this->get_lifecycle_status( $outcome ),
 			'' === $outcome->get_provider_payment_id() ? null : $outcome->get_provider_payment_id(),
-			$profile->get_outcome_meta( $outcome ),
+			$meta,
 			array(),
 			$note,
 			$note_type,
 			$note_equivalents
 		);
+	}
+
+	/**
+	 * Map `requires_action` and `requires_payment_method` by whether the intent carries an error.
+	 *
+	 * The plugin's order service fails the order when either status has an error and marks the payment
+	 * started otherwise (`update_order_status_from_intent()`). The caller keeps the provider's real status
+	 * in `_intention_status`.
+	 *
+	 * @param array<string,mixed> $intent   Native intent response.
+	 * @param bool                $is_setup Whether the intent is a SetupIntent.
+	 * @return array<string,mixed>
+	 */
+	private function get_intent_for_status_mapping( array $intent, bool $is_setup ): array {
+		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
+		if ( ! in_array( $status, array( 'requires_action', 'requires_payment_method' ), true ) ) {
+			return $intent;
+		}
+
+		$intent['status'] = empty( $intent[ $is_setup ? 'last_setup_error' : 'last_payment_error' ] ) ? 'requires_action' : 'requires_payment_method';
+
+		return $intent;
 	}
 
 	/**
