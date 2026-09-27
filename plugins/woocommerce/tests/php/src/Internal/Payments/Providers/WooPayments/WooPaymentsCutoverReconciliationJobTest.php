@@ -2680,10 +2680,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider plugin_update_result_provider
 	 *
-	 * @param mixed $result Upgrade result.
-	 * @param bool  $throws Whether the core upgrader throws.
+	 * @param mixed  $result           Upgrade result.
+	 * @param bool   $throws           Whether the core upgrader throws.
+	 * @param string $expected_message Expected logged error message for this result.
 	 */
-	public function test_plugin_update_failures_defer_without_a_second_install( $result, bool $throws ): void {
+	public function test_plugin_update_failures_defer_without_a_second_install( $result, bool $throws, string $expected_message ): void {
 		$job       = new class( $result, $throws ) extends WooPaymentsCutoverReconciliationJob {
 			/** @var mixed */
 			private $upgrade_result;
@@ -2699,6 +2700,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 			/** @var bool[] */
 			private array $lock_observations = array();
+
+			/** @var array<int,array<string,mixed>> */
+			private array $errors = array();
 
 			/**
 			 * Initialize the controlled core updater result.
@@ -2731,6 +2735,19 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return $this->upgrade_result;
 			}
 
+			/**
+			 * Record the handled release failure without relying on the global logger.
+			 *
+			 * @param string              $message Error message.
+			 * @param array<string,mixed> $context Error context.
+			 */
+			protected function write_log_error( string $message, array $context ): void {
+				$this->errors[] = array(
+					'message' => $message,
+					'context' => $context,
+				);
+			}
+
 			/** @return int */
 			public function get_metadata_refresh_count(): int {
 				return $this->metadata_refreshes;
@@ -2744,6 +2761,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** @return bool[] */
 			public function get_lock_observations(): array {
 				return $this->lock_observations;
+			}
+
+			/** @return array<int,array<string,mixed>> */
+			public function get_errors(): array {
+				return $this->errors;
 			}
 		};
 		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), 'woocommerce-payments/woocommerce-payments.php' );
@@ -2763,6 +2785,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php' ), $job->get_upgraded_plugin_files() );
 		$this->assertSame( array( true ), $job->get_lock_observations() );
 		$this->assertFalse( get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false ) );
+
+		$this->assertCount( 1, $job->get_errors(), 'Every plugin update result must log exactly one outcome message.' );
+		$this->assertSame( $expected_message, $job->get_errors()[0]['message'] );
 	}
 
 	/**
@@ -2826,14 +2851,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/**
 			 * Complete one controlled core plugin update.
 			 *
+			 * Returns an array, the real shape `Plugin_Upgrader::bulk_upgrade()` reports for a completed
+			 * install; `update_woopayments_plugin()` only counts an array result as a completed upgrade.
+			 *
 			 * @param string $plugin_file Active plugin file.
-			 * @return bool
+			 * @return array<string,mixed>
 			 */
-			protected function upgrade_woopayments_plugin_file( string $plugin_file ): bool {
+			protected function upgrade_woopayments_plugin_file( string $plugin_file ): array {
 				$this->upgraded_plugin_files[] = $plugin_file;
 				$this->lock_observations[]     = false !== get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false );
 				( $this->mark_plugin_version_supported )();
-				return true;
+				return array( 'destination_name' => 'woocommerce-payments' );
 			}
 
 			/** @return int */
@@ -2873,6 +2901,154 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'normalization_failed' ), $second['deferred_codes'] );
 		$this->assertSame( 1, $job->get_metadata_refresh_count() );
 		$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php' ), $job->get_upgraded_plugin_files() );
+	}
+
+	/**
+	 * Provide the real-world request contexts a plugin-update attempt can run in.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function plugin_update_request_context_provider(): array {
+		return array(
+			'the async admin-ajax runner native dispatches (not WP-Cron)' => array( false ),
+			'a WP-Cron run, where core already protects the plugin'       => array( true ),
+		);
+	}
+
+	/**
+	 * @testdox A deferred version-blocked update must leave the plugin active and owning, because WordPress core's real upgrader silently deactivates an active plugin outside WP-Cron and nothing restores it.
+	 *
+	 * @dataProvider plugin_update_request_context_provider
+	 *
+	 * @param bool $doing_cron Whether to force the WP-Cron request-context signal WordPress core's upgrader checks.
+	 */
+	public function test_deferred_plugin_update_does_not_deactivate_the_still_owning_plugin( bool $doing_cron ): void {
+		if ( ! class_exists( '\ZipArchive' ) ) {
+			$this->markTestSkipped( 'ZipArchive is required to build the test package.' );
+		}
+
+		// This PHPUnit environment does not mount the real WooPayments plugin (only the browser/e2e
+		// environments do), so create a minimal fixture plugin under the test install's own plugins
+		// directory. Only remove what this test itself created, so a real mounted plugin is never touched.
+		$plugin_file       = 'woocommerce-payments/woocommerce-payments.php';
+		$plugin_absolute   = WP_PLUGIN_DIR . '/' . $plugin_file;
+		$fixture_directory = null;
+		if ( ! file_exists( $plugin_absolute ) ) {
+			$fixture_directory = dirname( $plugin_absolute );
+			wp_mkdir_p( $fixture_directory );
+			file_put_contents( $plugin_absolute, "<?php\n/**\n * Plugin Name: WooPayments Fixture\n * Version: 10.4.0\n */\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture written to the test install's own plugins directory.
+		}
+
+		update_option( 'active_plugins', array( $plugin_file ) );
+
+		// Build a tiny real package so WordPress core's real upgrader can run its real install flow up to
+		// (but never through) the copy step: the pre-install observer below always stops it there, so this
+		// works the same whether the plugin above is a fixture this test wrote or a real mounted install.
+		$package = wp_tempnam( 'woocommerce-payments-fixture.zip' );
+		// `unpack_package()` unzips into this working directory (`WP_Upgrader::unpack_package()`'s own name
+		// derivation) and only removes it once `install_package()` reaches its `clear_working` step, which
+		// the pre-install stop below never reaches; clean it up ourselves.
+		$upgrade_working_dir = trailingslashit( WP_CONTENT_DIR ) . 'upgrade/' . basename( basename( $package, '.tmp' ), '.zip' );
+		$zip                 = new \ZipArchive();
+		$zip->open( $package, \ZipArchive::OVERWRITE );
+		$zip->addFromString( $plugin_file, "<?php\n/**\n * Plugin Name: WooPayments Fixture\n * Version: 10.5.0\n */\n" );
+		$zip->close();
+
+		set_site_transient(
+			'update_plugins',
+			(object) array(
+				'response' => array(
+					$plugin_file => (object) array(
+						'package'     => $package,
+						'new_version' => '10.5.0',
+						'slug'        => 'woocommerce-payments',
+					),
+				),
+			)
+		);
+
+		$download = static function () use ( $package ) {
+			return $package;
+		};
+		add_filter( 'upgrader_pre_download', $download );
+
+		// Observe activation right at the point core's real upgrader would copy files in, one priority
+		// after core's own `deactivate_plugin_before_upgrade()` (added at priority 10 by `upgrade()`), then
+		// stop before any write happens, so nothing is ever copied into the plugin directory.
+		$active_at_pre_install = null;
+		$observe               = function () use ( $plugin_file, &$active_at_pre_install ) {
+			$active_at_pre_install = is_plugin_active( $plugin_file );
+			return new \WP_Error( 'test_stop_before_copy', 'Stop before the copy step so nothing is written to the plugin directory.' );
+		};
+		add_filter( 'upgrader_pre_install', $observe, 20 );
+
+		if ( $doing_cron ) {
+			add_filter( 'wp_doing_cron', '__return_true' );
+		}
+
+		$ob_level                  = ob_get_level();
+		$active_after_attempt      = null;
+		$owner_after_attempt       = null;
+		$maintenance_after_attempt = null;
+		try {
+			$job       = new class() extends WooPaymentsCutoverReconciliationJob {
+				/** No-op controlled update metadata refresh, so the real wordpress.org API is never called. */
+				protected function refresh_plugin_update_metadata(): void {
+				}
+			};
+			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), $plugin_file );
+			$sut       = $this->create_job( true, $preflight, $job );
+			$sut->enqueue( 'merchant' );
+			$pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $pending );
+			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+
+			$sut->handle_reconcile( $pending['generation'], 1 );
+
+			// Capture post-attempt state before the cleanup below resets `active_plugins`.
+			$active_after_attempt = is_plugin_active( $plugin_file );
+			$arbiter              = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+			$arbiter->invalidate();
+			$owner_after_attempt = $arbiter->get_runtime_owner();
+			$arbiter->invalidate();
+			// `bulk_upgrade()` turns maintenance mode on for the copy in every request context (unlike
+			// `upgrade()`, which only did so in WP-Cron) and always turns it back off after the loop; the
+			// pre-install stop above never reaches that point, so this must still be off on its own.
+			$maintenance_after_attempt = file_exists( ABSPATH . '.maintenance' );
+		} finally {
+			remove_filter( 'upgrader_pre_download', $download );
+			remove_filter( 'upgrader_pre_install', $observe, 20 );
+			if ( $doing_cron ) {
+				remove_filter( 'wp_doing_cron', '__return_true' );
+			}
+			wp_delete_file( $package );
+			update_option( 'active_plugins', array() );
+			if ( null !== $fixture_directory ) {
+				wp_delete_file( $plugin_absolute );
+				@rmdir( $fixture_directory ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Best-effort cleanup of a directory this test created.
+			}
+			// Safety net in case the upgrader above left maintenance mode on (see the capture above).
+			if ( file_exists( ABSPATH . '.maintenance' ) ) {
+				wp_delete_file( ABSPATH . '.maintenance' );
+			}
+			global $wp_filesystem;
+			if ( $wp_filesystem instanceof \WP_Filesystem_Base && $wp_filesystem->is_dir( $upgrade_working_dir ) ) {
+				$wp_filesystem->delete( $upgrade_working_dir, true );
+			}
+			while ( ob_get_level() > $ob_level ) {
+				ob_end_clean();
+			}
+		}
+
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
+
+		$this->assertTrue( $active_at_pre_install, 'The plugin must still be active at the pre-install point: a deferred update must keep the plugin owning payments until a later attempt finalizes.' );
+		$this->assertTrue( $active_after_attempt, 'A deferred version-blocked update must leave the plugin active; only finalize() may deactivate it.' );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, $owner_after_attempt, 'The plugin must still own the runtime while the version blocker defers the cutover.' );
+		$this->assertFalse( $maintenance_after_attempt, 'bulk_upgrade() must always turn maintenance mode back off, even though this attempt stops before install.' );
 	}
 
 	/**
@@ -2939,17 +3115,23 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide WordPress core updater failure modes and the supported-but-still-old case.
+	 * Provide WordPress core updater result shapes and the message each must log.
 	 *
-	 * @return array<string,array{mixed,bool}>
+	 * `true` is `bulk_upgrade()`'s "up to date" result (no update was offered), not a completed
+	 * install: only an array result (the real `install_package()` shape) counts as completed.
+	 *
+	 * @return array<string,array{mixed,bool,string}>
 	 */
 	public function plugin_update_result_provider(): array {
+		$did_not_complete = 'WooPayments cutover plugin update did not complete.';
+
 		return array(
-			'false result'                => array( false, false ),
-			'null result'                 => array( null, false ),
-			'WordPress error result'      => array( new \WP_Error( 'upgrade_failed' ), false ),
-			'still old successful result' => array( true, false ),
-			'thrown result'               => array( null, true ),
+			'false result'                   => array( false, false, $did_not_complete ),
+			'null result'                    => array( null, false, $did_not_complete ),
+			'WordPress error result'         => array( new \WP_Error( 'upgrade_failed' ), false, $did_not_complete ),
+			'up to date result'              => array( true, false, $did_not_complete ),
+			'completed but still old result' => array( array( 'destination_name' => 'woocommerce-payments' ), false, 'WooPayments cutover plugin update completed without installing a supported version.' ),
+			'thrown result'                  => array( null, true, 'WooPayments cutover plugin update failed.' ),
 		);
 	}
 

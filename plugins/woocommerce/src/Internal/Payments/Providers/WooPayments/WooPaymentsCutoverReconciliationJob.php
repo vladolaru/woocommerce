@@ -1757,15 +1757,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		try {
-			if ( ! function_exists( 'wp_update_plugins' ) ) {
-				require_once ABSPATH . 'wp-admin/includes/update.php';
-			}
-			if ( ! class_exists( '\Plugin_Upgrader' ) ) {
-				require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-			}
-			if ( ! class_exists( '\Automatic_Upgrader_Skin' ) ) {
-				require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader-skins.php';
-			}
+			// The same two files core's own background updater loads before upgrading
+			// (`wp_maybe_auto_update()`, `wp-includes/update.php`). `wp_update_plugins()` living in
+			// `wp-includes/update.php` made the old `function_exists( 'wp_update_plugins' )` guard always
+			// true, so a WP-Cron retry never loaded `file.php`/`plugin.php` and every such attempt threw.
+			require_once ABSPATH . 'wp-admin/includes/admin.php';
+			require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
 
 			$switched = $this->switch_to_plugin_update_lock_blog();
 			if ( null === $switched ) {
@@ -1783,7 +1780,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 				$this->refresh_plugin_update_metadata();
 				$result = $this->upgrade_woopayments_plugin_file( $plugin_file );
-				if ( false === $result || null === $result || is_wp_error( $result ) ) {
+				if ( ! is_array( $result ) ) {
 					$this->log_error( 'WooPayments cutover plugin update did not complete.', array( 'plugin_file' => $plugin_file ) );
 					return false;
 				}
@@ -1819,12 +1816,18 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Upgrade one resolved WooPayments plugin file with WordPress core.
 	 *
+	 * Uses `bulk_upgrade()`, core's own AJAX "Update now" path. Unlike `Plugin_Upgrader::upgrade()`, it
+	 * never deactivates the active plugin outside WP-Cron (it uses maintenance mode instead), so the
+	 * plugin keeps owning payments through a deferred update instead of being silently deactivated with
+	 * nothing to reactivate it.
+	 *
 	 * @param string $plugin_file Active WooPayments plugin file.
-	 * @return mixed WordPress upgrader result.
+	 * @return mixed WordPress upgrader result for this plugin file (an array on a completed install).
 	 */
 	protected function upgrade_woopayments_plugin_file( string $plugin_file ) {
 		$upgrader = new \Plugin_Upgrader( new \Automatic_Upgrader_Skin() );
-		return $upgrader->upgrade( $plugin_file );
+		$results  = $upgrader->bulk_upgrade( array( $plugin_file ) );
+		return is_array( $results ) ? ( $results[ $plugin_file ] ?? false ) : false;
 	}
 
 	/**
