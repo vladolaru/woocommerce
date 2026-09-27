@@ -1315,6 +1315,65 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should record plugin 11.1.0 per-method Tracks events when a save enables one method and disables another.
+	 *
+	 * Expected names and properties: plugin 11.1.0 `class-wc-rest-payments-settings-controller.php:740-760`.
+	 */
+	public function test_update_settings_records_payment_method_toggle_tracks_events(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) ) );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'   => 'acct_native_test',
+					'is_live'      => true,
+					'capabilities' => array(
+						'card_payments'   => 'active',
+						'link_payments'   => 'active',
+						'affirm_payments' => 'active',
+					),
+					'fees'         => array(
+						'card'   => array(),
+						'link'   => array(),
+						'affirm' => array(),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		$recorded = array();
+		$capture  = static function ( $preempt, $parsed_args, $url ) use ( &$recorded ) {
+			parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $pixel );
+			if ( 0 === strpos( (string) ( $pixel['_en'] ?? '' ), 'wcadmin_wcpay_payment_method_' ) ) {
+				$recorded[] = array( $pixel['_en'], $pixel['payment_method_id'], $pixel['capability_id'] );
+			}
+			return array(
+				'headers'  => array(),
+				'body'     => '',
+				'response' => array( 'code' => 200 ),
+				'cookies'  => array(),
+			);
+		};
+		add_filter( 'pre_http_request', $capture, 10, 3 );
+
+		$this->sut->update_settings( array( 'enabled_payment_method_ids' => array( 'card', 'affirm' ) ) );
+		remove_filter( 'pre_http_request', $capture, 10 );
+		remove_filter( 'wp_doing_ajax', '__return_true' );
+		delete_option( 'woocommerce_allow_tracking' );
+
+		$this->assertSame(
+			array(
+				array( 'wcadmin_wcpay_payment_method_disabled', 'link', 'link_payments' ),
+				array( 'wcadmin_wcpay_payment_method_enabled', 'affirm', 'affirm_payments' ),
+			),
+			$recorded
+		);
+	}
+
+	/**
 	 * @testdox Should keep the WooPay last disable date when WooPay is already off.
 	 */
 	public function test_update_settings_keeps_woopay_last_disable_date_when_woopay_was_already_off(): void {

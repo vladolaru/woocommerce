@@ -602,7 +602,16 @@ class WooPaymentsSettingsService {
 				$enabled_methods_update['requested'],
 				$enabled_methods_update['available']
 			);
+			// Client 11.1.0 records these before saving (class-wc-rest-payments-settings-controller.php:740-760).
+			$tracks_properties = static fn( string $payment_method_id ): array => array(
+				'payment_method_id' => $payment_method_id,
+				'capability_id'     => self::PAYMENT_METHOD_CAPABILITY_KEY_MAP[ $payment_method_id ] ?? null,
+			);
+			foreach ( array_diff( $previous_enabled_payment_method_ids, $enabled_payment_method_ids ) as $payment_method_id ) {
+				wc_admin_record_tracks_event( 'wcpay_payment_method_disabled', $tracks_properties( $payment_method_id ) );
+			}
 			foreach ( array_diff( $enabled_payment_method_ids, $previous_enabled_payment_method_ids ) as $payment_method_id ) {
+				wc_admin_record_tracks_event( 'wcpay_payment_method_enabled', $tracks_properties( $payment_method_id ) );
 				$this->get_pm_promotions_service()->maybe_activate_promotion_for_payment_method( $payment_method_id );
 			}
 			$settings['upe_enabled_payment_method_ids'] = $enabled_payment_method_ids;
