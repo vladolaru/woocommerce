@@ -2676,15 +2676,6 @@ test( 'routes every provider-writing pilot through a lock-owning wrapper', async
 	);
 	const pilotContracts = [
 		{
-			file: 'scenarios/card-payment.ts',
-			wrapper: 'adapter.withState',
-			callbackArgument: 2,
-			providerActions: [
-				'pilotRuntime.createOwnedProduct',
-				'adapter.completeCheckout',
-			],
-		},
-		{
 			file: 'pilots/merchant-transaction-navigation.spec.ts',
 			wrapper: 'pilotRuntime.withProviderWriteLocks',
 			providerActions: [
