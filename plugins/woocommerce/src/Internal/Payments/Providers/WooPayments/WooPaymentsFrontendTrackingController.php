@@ -261,6 +261,10 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	/**
 	 * Record a WooPayments admin event, like the plugin's `WooPay_Tracker::maybe_record_admin_event()` (11.1.0).
 	 *
+	 * The WooPay settings events (enabled, disabled, global theme support, express button locations) stay on this
+	 * recorder, not `WC_Tracks::record_event()`: they are WooPay events and keep the client's gate, including the
+	 * US-only store check (client `class-woopay-tracker.php:228-290`, since client PR #8161; WooPay is US-only).
+	 *
 	 * @param string              $event_name Event name without the wcadmin_ prefix.
 	 * @param array<string,mixed> $properties Event properties.
 	 * @return bool|\WP_Error
