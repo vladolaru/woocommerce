@@ -155,6 +155,18 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed transport request uses the client's connection copy instead of the transport diagnostic.
+	 *
+	 * Source: client 11.1.0 `class-wc-payments-utils.php:773-774` (`Connection_Exception` branch).
+	 */
+	public function test_get_shopper_message_uses_connection_copy_for_transport_failure(): void {
+		$this->assertSame(
+			'There was an error while processing this request. If you continue to see this notice, please contact the admin.',
+			WooPaymentsErrorMessages::get_shopper_message( '', 'wcpay_http_request_failed', '', 'Http request failed. Reason: cURL error 28: Operation timed out' )
+		);
+	}
+
+	/**
 	 * @testdox Grounded platform errors preserve their actionable shopper message.
 	 *
 	 * @dataProvider grounded_platform_error_data

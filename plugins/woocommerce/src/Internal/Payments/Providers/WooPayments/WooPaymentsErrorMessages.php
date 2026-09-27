@@ -27,6 +27,10 @@ class WooPaymentsErrorMessages {
 	 * @return string
 	 */
 	public static function get_shopper_message( string $error_type, string $error_code, string $decline_code = '', string $platform_message = '' ): string {
+		if ( 'wcpay_http_request_failed' === $error_code ) {
+			return __( 'There was an error while processing this request. If you continue to see this notice, please contact the admin.', 'woocommerce' );
+		}
+
 		// The plugin passes through typeless errors broadly. Native parity is deliberately limited to the observed card-testing error and the V15 invalid-request shape.
 		if ( '' !== $platform_message && ( ( '' === $error_type && 'wcpay_card_testing_prevention' === $error_code ) || ( 'invalid_request_error' === $error_type && 'invalid_request_error' === $error_code ) ) ) {
 			return $platform_message;

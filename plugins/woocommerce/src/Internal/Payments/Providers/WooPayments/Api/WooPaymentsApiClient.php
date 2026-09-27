@@ -28,13 +28,16 @@ class WooPaymentsApiClient {
 	/**
 	 * Tell whether a failed request has an ambiguous provider outcome.
 	 *
+	 * Transport failures keep the original `WP_Error` code in the `transport_error_code` error data.
+	 *
 	 * @param WooPaymentsApiException $exception Request failure.
 	 * @return bool
 	 *
 	 * @since 11.2.0
 	 */
 	public function is_ambiguous_request_failure( WooPaymentsApiException $exception ): bool {
-		if ( in_array( $exception->get_error_code(), array( 'http_request_failed', 'http_request_not_executed' ), true ) ) {
+		$transport_error_code = $exception->get_error_data()['transport_error_code'] ?? $exception->get_error_code();
+		if ( in_array( $transport_error_code, array( 'http_request_failed', 'http_request_not_executed' ), true ) ) {
 			return true;
 		}
 
@@ -2304,8 +2307,20 @@ class WooPaymentsApiClient {
 		}
 
 		if ( $response instanceof WP_Error ) {
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Provider error is transported as structured application data, not rendered HTML.
-			throw new WooPaymentsApiException( $response->get_error_message(), (string) $response->get_error_code() );
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException(
+				sprintf(
+					/* translators: %1$s: original error message. */
+					__( 'Http request failed. Reason: %1$s', 'woocommerce' ),
+					$response->get_error_message()
+				),
+				'wcpay_http_request_failed',
+				500,
+				'',
+				'',
+				array( 'transport_error_code' => (string) $response->get_error_code() )
+			);
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 
 		$response_code       = (int) wp_remote_retrieve_response_code( $response );

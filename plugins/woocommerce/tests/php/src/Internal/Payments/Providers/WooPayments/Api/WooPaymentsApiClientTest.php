@@ -502,7 +502,11 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			);
 			$this->fail( 'Expected the transient transport error to surface after retry exhaustion.' );
 		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertSame( 'http_request_failed', $exception->get_error_code() );
+			// Client 11.1.0 class-wc-payments-http.php:118-124 wraps every transport WP_Error in a Connection_Exception.
+			$this->assertSame( 'wcpay_http_request_failed', $exception->get_error_code() );
+			$this->assertSame( 500, $exception->get_http_code() );
+			$this->assertSame( 'Http request failed. Reason: Could not connect to WPCOM.', $exception->getMessage() );
+			$this->assertTrue( $sut->is_ambiguous_request_failure( $exception ), 'A transport failure keeps its ambiguous charge outcome.' );
 		}
 
 		$this->assertSame( 4, $http_client->request_count, 'The retry budget is three retries after the initial attempt.' );
@@ -537,7 +541,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			);
 			$this->fail( 'Expected the local transport readiness failure to surface.' );
 		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertSame( 'wcpay_wpcom_not_connected', $exception->get_error_code() );
+			$this->assertSame( 'wcpay_http_request_failed', $exception->get_error_code() );
+			$this->assertSame( 'Http request failed. Reason: Site is not connected to WordPress.com.', $exception->getMessage() );
+			$this->assertFalse( $sut->is_ambiguous_request_failure( $exception ), 'A local readiness failure never reached the platform.' );
 		}
 
 		$this->assertSame( 1, $http_client->request_count );
@@ -566,7 +572,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			$sut->get_payment_method( 'pm_test' );
 			$this->fail( 'Expected the native transport request to surface a WooPaymentsApiException.' );
 		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertSame( 'http_request_failed', $exception->get_error_code() );
+			$this->assertSame( 'wcpay_http_request_failed', $exception->get_error_code() );
 		}
 
 		$this->assertSame( 1, $http_client->request_count );
