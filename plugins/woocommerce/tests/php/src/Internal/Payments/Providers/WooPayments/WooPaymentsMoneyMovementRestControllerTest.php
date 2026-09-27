@@ -982,9 +982,9 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Fraud outcome enrichment truncates oversized platform responses and logs the degraded path.
+	 * @testdox Fraud outcome routes enrich every platform row, like client 11.1.0 List_Fraud_Outcome_Transactions::format_response().
 	 */
-	public function test_fraud_outcome_routes_cap_local_enrichment_rows(): void {
+	public function test_fraud_outcome_routes_enrich_every_platform_row(): void {
 		$order_service = new class() extends WooPaymentsMoneyMovementOrderService {
 			/**
 			 * Number of rows received by local formatting.
@@ -1019,16 +1019,16 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			'data' => array_fill( 0, 1001, array( 'order_id' => 1 ) ),
 		);
 
-		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/fraud-outcomes' );
-		$request->set_query_params( array( 'status' => 'allow' ) );
-		$response = $this->server->dispatch( $request );
+		foreach ( array( '', '/summary', '/search', '/download' ) as $suffix ) {
+			$order_service->row_count = 0;
+			$request                  = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/fraud-outcomes' . $suffix );
+			$request->set_query_params( array( 'status' => 'block' ) );
+			$response = $this->server->dispatch( $request );
 
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 1000, $order_service->row_count );
-		$this->assertSame( 'warning', $logger->entries[0]['level'] );
-		$this->assertSame( 'woopayments-fraud-outcomes', $logger->entries[0]['context']['source'] );
-		$this->assertSame( 1001, $logger->entries[0]['context']['rows'] );
-		$this->assertSame( 1000, $logger->entries[0]['context']['max_rows'] );
+			$this->assertSame( 200, $response->get_status(), 'fraud-outcomes' . $suffix );
+			$this->assertSame( 1001, $order_service->row_count, 'fraud-outcomes' . $suffix . ' must not drop platform rows' );
+		}
+		$this->assertSame( array(), $logger->entries );
 	}
 
 	/**

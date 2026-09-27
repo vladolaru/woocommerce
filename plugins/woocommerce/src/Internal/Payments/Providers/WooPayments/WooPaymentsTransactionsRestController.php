@@ -28,10 +28,6 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 
 	private const FRAUD_OUTCOME_MAX_PAGE_SIZE = 100;
 
-	private const FRAUD_OUTCOME_MAX_LOCAL_ROWS = 1000;
-
-	private const FRAUD_OUTCOME_LOG_SOURCE = 'woopayments-fraud-outcomes';
-
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -377,12 +373,14 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 	/**
 	 * Get formatted fraud outcome transactions.
 	 *
+	 * Every platform row is enriched, like client 11.1.0 `List_Fraud_Outcome_Transactions::format_response()`.
+	 *
 	 * @param array<string,mixed> $params Request params.
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function get_formatted_fraud_outcome_transactions( array $params ): array {
 		return $this->order_service->format_fraud_outcome_transactions(
-			$this->limit_fraud_outcome_response_rows( $this->api_client->get_fraud_outcomes( $params ) ),
+			$this->api_client->get_fraud_outcomes( $params ),
 			$params
 		);
 	}
@@ -432,40 +430,6 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 		}
 
 		return $params;
-	}
-
-	/**
-	 * Limit fraud outcome rows before local order enrichment.
-	 *
-	 * @param array<string|int,mixed> $response Platform response.
-	 * @return array<string|int,mixed>
-	 */
-	private function limit_fraud_outcome_response_rows( array $response ): array {
-		$is_wrapped = isset( $response['data'] ) && is_array( $response['data'] );
-		$rows       = $is_wrapped ? $response['data'] : $response;
-
-		if ( count( $rows ) <= self::FRAUD_OUTCOME_MAX_LOCAL_ROWS ) {
-			return $response;
-		}
-
-		wc_get_logger()->warning(
-			__( 'WooPayments fraud outcome response truncated before local order enrichment.', 'woocommerce' ),
-			array(
-				'source'   => self::FRAUD_OUTCOME_LOG_SOURCE,
-				'rows'     => count( $rows ),
-				'max_rows' => self::FRAUD_OUTCOME_MAX_LOCAL_ROWS,
-			)
-		);
-
-		$rows = array_slice( $rows, 0, self::FRAUD_OUTCOME_MAX_LOCAL_ROWS );
-
-		if ( $is_wrapped ) {
-			$response['data'] = $rows;
-
-			return $response;
-		}
-
-		return $rows;
 	}
 
 	/**
