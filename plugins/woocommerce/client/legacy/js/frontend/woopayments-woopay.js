@@ -1255,53 +1255,14 @@
 	}
 
 	function continueWooPay() {
-		var request;
-
-		if ( ! config.woopayUserSession ) {
-			expressCheckoutIframe( getTrackingSource(), '#billing_email' ).then(
-				function () {
-					isWooPayRequesting = false;
-				},
-				function () {
-					isWooPayRequesting = false;
-				}
-			);
-			return;
-		}
-
-		request = postWooPayAjax( 'init_woopay', {
-			_wpnonce: config.initWooPayNonce || '',
-			appearance: config.isWooPayGlobalThemeSupportEnabled
-				? config.woopayAppearance || null
-				: null,
-			font_rules: config.isWooPayGlobalThemeSupportEnabled
-				? config.woopayFontRules || []
-				: [],
-			email: getBillingEmail(),
-			user_session: config.woopayUserSession || '',
-			order_id: config.order_id || '',
-			key: config.key || '',
-			billing_email: config.billing_email || '',
-		} );
-
-		if ( ! request || ! request.done ) {
-			isWooPayRequesting = false;
-			return;
-		}
-
-		request.done( function ( response ) {
-			if ( response && response.result === 'success' && response.url ) {
-				navigate( response.url );
-			}
-			isWooPayRequesting = false;
-		} );
-
-		if ( request.fail ) {
-			request.fail( function () {
-				setError( config.confirmationErrorMessage || '' );
+		expressCheckoutIframe( getTrackingSource(), '#billing_email' ).then(
+			function () {
 				isWooPayRequesting = false;
-			} );
-		}
+			},
+			function () {
+				isWooPayRequesting = false;
+			}
+		);
 	}
 
 	function getWooPaySessionRequestData() {
@@ -1310,7 +1271,6 @@
 			appearance: config.woopayAppearance || null,
 			font_rules: config.woopayFontRules || [],
 			email: getBillingEmail(),
-			user_session: config.woopayUserSession || '',
 			order_id: config.order_id || '',
 			key: config.key || '',
 			billing_email: config.billing_email || '',

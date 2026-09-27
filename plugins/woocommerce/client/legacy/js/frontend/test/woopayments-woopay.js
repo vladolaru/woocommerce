@@ -108,7 +108,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				size: 'default',
 				context: 'checkout',
 			},
-			woopayUserSession: 'qwerty123',
+			woopayHost: 'https://pay.woo.test',
 			woopaySessionNonce: 'session-nonce',
 			woopayPhoneLabel: 'Mobile phone number',
 			woopaySaveUserLabel:
@@ -121,6 +121,13 @@ describe( 'WooPayments WooPay checkout', () => {
 	} );
 
 		afterEach( () => {
+			// Close any OTP iframe left open so its window listeners go away.
+			window.dispatchEvent(
+				new window.MessageEvent( 'message', {
+					origin: 'https://pay.woo.test',
+					data: { action: 'close_modal' },
+				} )
+			);
 			jest.useRealTimers();
 			delete global.jQuery;
 			delete global.$;
@@ -132,7 +139,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			document.body.innerHTML = '';
 		} );
 
-	test( 'renders a branded WooPay express button and initializes WooPay on click', async () => {
+	test( 'renders a branded WooPay express button and opens the OTP iframe on click', async () => {
 		require( '../woopayments-woopay' );
 
 		const button = document.querySelector( '#wcpay-woopay-button button' );
@@ -152,13 +159,13 @@ describe( 'WooPayments WooPay checkout', () => {
 		button.click();
 		await flushPromises();
 
-		expect( global.jQuery.post ).toHaveBeenCalledWith(
+		// Client 11.1.0 has no stored-session shortcut: with first-party auth
+		// off the click always opens the OTP iframe
+		// (woopay-express-checkout-button.js:164-201).
+		expect( document.querySelector( '.woopay-otp-iframe' ) ).not.toBeNull();
+		expect( global.jQuery.post ).not.toHaveBeenCalledWith(
 			'/?wc-ajax=wcpay_init_woopay',
-			expect.objectContaining( {
-				_wpnonce: 'init-nonce',
-				email: 'shopper@example.com',
-				user_session: 'qwerty123',
-			} )
+			expect.anything()
 		);
 	} );
 
@@ -219,15 +226,9 @@ describe( 'WooPayments WooPay checkout', () => {
 				'addon-message': 'Gift',
 			} )
 		);
-			expect( global.jQuery.post ).toHaveBeenNthCalledWith(
-				2,
-				'/?wc-ajax=wcpay_init_woopay',
-				expect.objectContaining( {
-				_wpnonce: 'init-nonce',
-				user_session: 'qwerty123',
-				} )
-			);
-		} );
+		expect( global.jQuery.post ).toHaveBeenCalledTimes( 1 );
+		expect( document.querySelector( '.woopay-otp-iframe' ) ).not.toBeNull();
+	} );
 
 	test( 'adds a classic variable product when its button has no value', async () => {
 		document.body.innerHTML =
@@ -258,14 +259,8 @@ describe( 'WooPayments WooPay checkout', () => {
 				quantity: '2',
 			} )
 		);
-		expect( global.jQuery.post ).toHaveBeenNthCalledWith(
-			2,
-			'/?wc-ajax=wcpay_init_woopay',
-			expect.objectContaining( {
-				_wpnonce: 'init-nonce',
-				user_session: 'qwerty123',
-			} )
-		);
+		expect( global.jQuery.post ).toHaveBeenCalledTimes( 1 );
+		expect( document.querySelector( '.woopay-otp-iframe' ) ).not.toBeNull();
 	} );
 
 		test( 'sends first-party WooPay session data through WooPay Connect before redirecting', async () => {
@@ -404,10 +399,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			await flushPromises();
 
 			expect(
-				global.jQuery.post.mock.calls.some(
-					( [ url ] ) => url === '/?wc-ajax=wcpay_init_woopay'
-				)
-			).toBe( true );
+				document.querySelector( '.woopay-otp-iframe' )
+			).not.toBeNull();
 
 			delete window.HTMLIFrameElement.prototype.contentWindow;
 		} );
@@ -630,6 +623,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			'</form>';
 		window.wcpay_core_woopay_config.confirmationErrorMessage =
 			'WooPay is unavailable right now.';
+		window.wcpay_core_woopay_config.isWoopayFirstPartyAuthEnabled = true;
 		global.jQuery.post.mockImplementation( () => ( {
 			done: jest.fn( () => ( {
 				fail: jest.fn(),
@@ -639,7 +633,7 @@ describe( 'WooPayments WooPay checkout', () => {
 
 		require( '../woopayments-woopay' );
 
-		document.querySelector( '#wcpay-woopay-button button' ).click();
+		document.querySelector( '#wcpay-woopay-button a' ).click();
 		await flushPromises();
 
 		const [ klarnaBox, cardBox ] = document.querySelectorAll(
@@ -1166,7 +1160,7 @@ describe( 'WooPayments WooPay checkout', () => {
 	// `/otp/` iframe (express-checkout-iframe.js:40-205) and, on the OTP
 	// result, posts init_woopay once with the platform user session
 	// (express-checkout-iframe.js:213-262, init-woopay.js:15-61).
-	describe( 'express OTP iframe without a WooPay user session', () => {
+	describe( 'express OTP iframe', () => {
 		const expectedOtpUrl =
 			'https://pay.woo.test/otp/?testMode=true&needsHeader=false&wcpayVersion=11.1.0' +
 			'&email=shopper%40example.com&is_blocks=false&is_express=true&express_context=checkout' +
@@ -1211,8 +1205,6 @@ describe( 'WooPayments WooPay checkout', () => {
 				}
 			);
 			Object.assign( window.wcpay_core_woopay_config, {
-				woopayUserSession: '',
-				woopayHost: 'https://pay.woo.test',
 				// wp_localize_script serves booleans as '1' and ''; the client
 				// sends its JSON boolean, so the query must read testMode=true.
 				testMode: '1',

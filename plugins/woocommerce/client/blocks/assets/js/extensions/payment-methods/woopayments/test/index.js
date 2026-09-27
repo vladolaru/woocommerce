@@ -72,7 +72,6 @@ jest.mock( '@woocommerce/settings', () => {
 				family: 'Inter',
 			},
 		],
-		woopayUserSession: 'qwerty123',
 		woopaySessionNonce: 'session-nonce',
 		woopayPhoneLabel: 'WooPay phone number',
 		woopaySaveUserLabel: 'Save to WooPay',

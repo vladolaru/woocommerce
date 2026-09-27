@@ -433,7 +433,6 @@ const getWooPaySessionData = async () => {
 	);
 	appendWooPayRequestValue( body, 'font_rules', settings.woopayFontRules );
 	body.append( 'email', getWooPayEmail() );
-	body.append( 'user_session', settings.woopayUserSession || '' );
 	body.append( 'order_id', settings.order_id || '' );
 	body.append( 'key', settings.key || '' );
 	body.append( 'billing_email', settings.billing_email || '' );
@@ -595,44 +594,8 @@ const WooPayExpressContent = () => {
 		} );
 	}, [ eventSource ] );
 
-	const continueWooPay = async () => {
-		if ( ! settings.woopayUserSession ) {
-			await expressCheckoutIframe(
-				settings,
-				eventSource,
-				'#email',
-				navigate
-			);
-			return;
-		}
-
-		const body = new window.URLSearchParams();
-		body.append( '_wpnonce', settings.initWooPayNonce || '' );
-		appendWooPayRequestValue(
-			body,
-			'appearance',
-			ensureBlocksWooPayAppearance(
-				settings.stylesCacheVersion,
-				document,
-				settings
-			)
-		);
-		appendWooPayRequestValue(
-			body,
-			'font_rules',
-			settings.woopayFontRules
-		);
-		body.append( 'email', getWooPayEmail() );
-		body.append( 'user_session', settings.woopayUserSession || '' );
-		body.append( 'order_id', settings.order_id || '' );
-		body.append( 'key', settings.key || '' );
-		body.append( 'billing_email', settings.billing_email || '' );
-
-		const response = await postWooPayAjax( 'init_woopay', body );
-		if ( response?.result === 'success' && response?.url ) {
-			navigate( response.url );
-		}
-	};
+	const continueWooPay = () =>
+		expressCheckoutIframe( settings, eventSource, '#email', navigate );
 
 	const continueWooPayFirstPartyAuth = async () => {
 		let sessionData;

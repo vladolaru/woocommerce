@@ -65,7 +65,6 @@ jest.mock( '@woocommerce/settings', () => {
 		woopayOtpIframeTitle: 'WooPay SMS code verification',
 		woopayExpressUnavailableMessage:
 			'WooPay is unavailable at this time. Sorry for the inconvenience.',
-		woopayUserSession: 'qwerty123',
 		woopaySessionNonce: 'session-nonce',
 		woopayPhoneLabel: 'WooPay phone number',
 		woopaySaveUserLabel: 'Save to WooPay',
@@ -87,6 +86,13 @@ let navigate;
 
 describe( 'wc-payment-method-woopayments-woopay', () => {
 	afterEach( () => {
+		// Close any OTP iframe left open so its window listeners go away.
+		window.dispatchEvent(
+			new window.MessageEvent( 'message', {
+				origin: 'https://pay.woo.test',
+				data: { action: 'close_modal' },
+			} )
+		);
 		jest.useRealTimers();
 		window.fetch = originalFetch;
 		window.localStorage.clear();
@@ -113,7 +119,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		__test__.setNavigate( navigate );
 	} );
 
-	it( 'registers a branded WooPay express button and initializes WooPay on click', async () => {
+	it( 'registers a branded WooPay express button and opens the OTP iframe on click', async () => {
 		document.body.innerHTML =
 			'<input id="email" value="shopper@example.com" />';
 		window.fetch = jest.fn().mockResolvedValue( {
@@ -151,36 +157,19 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 
 		fireEvent.click( button );
 
+		// Client 11.1.0 has no stored-session shortcut: with first-party auth
+		// off the click always opens the OTP iframe
+		// (woopay-express-checkout-button.js:164-201).
 		await waitFor( () => {
 			expect(
-				window.fetch.mock.calls.some(
-					( [ url ] ) => url === '/?wc-ajax=wcpay_init_woopay'
-				)
-			).toBe( true );
+				document.querySelector( '.woopay-otp-iframe' )
+			).not.toBeNull();
 		} );
-
-		const initRequest = window.fetch.mock.calls.find(
-			( [ url ] ) => url === '/?wc-ajax=wcpay_init_woopay'
-		);
-		expect( initRequest[ 1 ] ).toEqual(
-			expect.objectContaining( {
-				method: 'POST',
-			} )
-		);
-		const requestBody = initRequest[ 1 ].body;
-		expect( requestBody.get( '_wpnonce' ) ).toBe( 'init-nonce' );
-		expect( requestBody.get( 'email' ) ).toBe( 'shopper@example.com' );
-		expect( requestBody.get( 'user_session' ) ).toBe( 'qwerty123' );
-		expect( JSON.parse( requestBody.get( 'appearance' ) ) ).toEqual( {
-			theme: 'stripe',
-			labels: 'floating',
-		} );
-		expect( JSON.parse( requestBody.get( 'font_rules' ) ) ).toEqual( [
-			{
-				cssSrc: 'https://fonts.wp.com/font.css',
-				family: 'Inter',
-			},
-		] );
+		expect(
+			window.fetch.mock.calls.some(
+				( [ url ] ) => url === '/?wc-ajax=wcpay_init_woopay'
+			)
+		).toBe( false );
 	} );
 
 	// Client 11.1.0 gates the identical registration call the same way:
@@ -261,6 +250,22 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
 		render( createElement( expressRegistration.content.type ) );
 		fireEvent.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
+		await waitFor( () => {
+			expect(
+				document.querySelector( '.woopay-otp-iframe' )
+			).not.toBeNull();
+		} );
+		await act( async () => {
+			window.dispatchEvent(
+				new window.MessageEvent( 'message', {
+					origin: 'https://pay.woo.test',
+					data: {
+						action: 'redirect_to_woopay',
+						platformCheckoutUserSession: 'platform-session-1',
+					},
+				} )
+			);
+		} );
 
 		await waitFor( () => {
 			const initRequest = window.fetch.mock.calls.find(
@@ -517,10 +522,8 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 
 		await waitFor( () => {
 			expect(
-				window.fetch.mock.calls.some(
-					( [ url ] ) => url === '/?wc-ajax=wcpay_init_woopay'
-				)
-			).toBe( true );
+				document.querySelector( '.woopay-otp-iframe' )
+			).not.toBeNull();
 		} );
 
 		delete window.HTMLIFrameElement.prototype.contentWindow;
@@ -647,8 +650,11 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		window.fetch.mockClear();
 
 		fireEvent.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
-		await Promise.resolve();
+		await act( async () => {
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		} );
 
+		expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
 		expect(
 			window.fetch.mock.calls.some(
 				( [ url ] ) => url === '/?wc-ajax=wcpay_init_woopay'
@@ -657,15 +663,17 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 	} );
 
 	// Client 11.1.0 wraps the button in `#wcpay-woopay-button`, swaps its content
-	// for a spinner and adds `is-loading` while WooPay initializes, and sets
-	// `data-width-type` from the width measured on mount: wide above 140px
-	// (client/checkout/woopay/express-button/woopay-express-checkout-button.js:108-114,375-381,449-469).
+	// for a spinner and adds `is-loading` while the first-party session request
+	// runs, and sets `data-width-type` from the width measured on mount: wide
+	// above 140px
+	// (client/checkout/woopay/express-button/woopay-express-checkout-button.js:108-114,232-234,375-381,449-469).
 	it( 'renders the client WooPay button wrapper, loading state and width type', async () => {
-		let resolveInit;
+		let resolveSession;
+		getMockPaymentMethodSettings().isWoopayFirstPartyAuthEnabled = true;
 		window.fetch = jest.fn( ( url ) =>
-			url === '/?wc-ajax=wcpay_init_woopay'
+			url === '/?wc-ajax=wcpay_get_woopay_session'
 				? new Promise( ( resolve ) => {
-						resolveInit = resolve;
+						resolveSession = resolve;
 				  } )
 				: Promise.resolve( { json: () => Promise.resolve( {} ) } )
 		);
@@ -678,7 +686,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		);
 
 		const wrapper = container.firstChild;
-		const button = screen.getByRole( 'button', { name: 'WooPay' } );
+		const button = screen.getByRole( 'link', { name: 'WooPay' } );
 		expect( wrapper ).toHaveAttribute( 'id', 'wcpay-woopay-button' );
 		expect( wrapper ).toContainElement( button );
 		expect( button ).toHaveAttribute( 'data-width-type', 'narrow' );
@@ -695,7 +703,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		expect( button.querySelector( '.button-content' ) ).toBeNull();
 
 		await act( async () => {
-			resolveInit( { json: () => Promise.resolve( {} ) } );
+			resolveSession( { json: () => Promise.resolve( {} ) } );
 		} );
 
 		await waitFor( () => {
@@ -734,7 +742,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 	// which opens the platform `/otp/` iframe (express-checkout-iframe.js:40-205)
 	// and, on the OTP result, posts init_woopay once with the platform user
 	// session (express-checkout-iframe.js:213-262, init-woopay.js:15-61).
-	describe( 'express OTP iframe without a WooPay user session', () => {
+	describe( 'express OTP iframe', () => {
 		const expectedOtpUrl =
 			'https://pay.woo.test/otp/?testMode=true&needsHeader=false&wcpayVersion=11.1.0' +
 			'&email=shopper%40example.com&is_blocks=true&is_express=true&express_context=checkout' +
@@ -784,7 +792,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 					},
 				}
 			);
-			getMockPaymentMethodSettings().woopayUserSession = '';
 			window.wcSettings = { wcBlocksConfig: {} };
 			document.cookie = 'tk_ai=tk-anon-1; path=/';
 			document.body.innerHTML =
@@ -802,7 +809,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 					data: { action: 'close_modal' },
 				} )
 			);
-			getMockPaymentMethodSettings().woopayUserSession = 'qwerty123';
 			delete window.wcSettings;
 			document.cookie =
 				'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
