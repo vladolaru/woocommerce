@@ -6309,6 +6309,7 @@ describe( 'WooPayments money movement pages', () => {
 					amount: 1000,
 					currency: 'usd',
 					reason: 'requested_by_customer',
+					acquirer_reference_number_status: 'available',
 					acquirer_reference_number: 'arn_refund_123',
 				},
 				{
@@ -6344,14 +6345,18 @@ describe( 'WooPayments money movement pages', () => {
 			screen.getByText( 'A payment of $50.00 was successfully charged.' )
 		).toBeInTheDocument();
 		expect( screen.getByText( 'Fee: $1.80' ) ).toBeInTheDocument();
-		expect( screen.getByText( 'Net: $48.20' ) ).toBeInTheDocument();
+		// Source: client 11.1.0 map-events.js composeNetString ("Net payout: %s").
+		expect( screen.getByText( 'Net payout: $48.20' ) ).toBeInTheDocument();
 		expect(
 			screen.getByText( 'A payment of $10.00 was successfully refunded.' )
 		).toBeInTheDocument();
 		expect(
 			screen.getByText( 'Reason: Requested by customer' )
 		).toBeInTheDocument();
-		expect( screen.getByText( 'ARN: arn_refund_123' ) ).toBeInTheDocument();
+		// Source: client 11.1.0 map-events.js getRefundTrackingDetails.
+		expect(
+			screen.getByText( 'Acquirer Reference Number (ARN) arn_refund_123' )
+		).toBeInTheDocument();
 		expect(
 			screen.getByText( 'A dispute was opened for $15.00.' )
 		).toBeInTheDocument();
@@ -6395,18 +6400,12 @@ describe( 'WooPayments money movement pages', () => {
 	 * §4 Batch 5): the exact, unmodified timeline body the platform returned
 	 * for a USD 10.99 refund with a free-text merchant reason. Only the
 	 * lines that match client 11.1.0's own rendering (`map-events.js`) are
-	 * asserted: the refunded/charged/authorized main lines, the reason line,
+	 * asserted: the refund status change, payout and main items with the
+	 * ARN and reason lines (`map-events.js:937-974`, `:86-139`, `:485-496`),
 	 * and the Paid/Authorized/Started status lines.
 	 *
-	 * F3 left out; Task T.7 (the client's own "Payment status changed to
-	 * Refunded." status-change item, `map-events.js:938-974`, has no native
-	 * equivalent and is not asserted here in either direction).
-	 *
-	 * Fee and ARN are also left out; Task T.7: the client does not render a
-	 * bare `Fee: <amount>` line -- it composes a fee string from
-	 * `fee_breakdown_v1`/`fee_rates` via `composeFeeString()`
-	 * (`map-events.js:901-914`, `:354-430`) -- and labels the ARN line
-	 * "Acquirer Reference Number (ARN) %s", not "ARN: %s" (`map-events.js:489-493`).
+	 * The captured fee line is left out (R1): the client composes a fee
+	 * string from `fee_breakdown_v1`/`fee_rates` via `composeFeeString()`.
 	 */
 	it( 'renders the recorded USD full-refund timeline, including the free-text reason', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
@@ -6440,6 +6439,18 @@ describe( 'WooPayments money movement pages', () => {
 			)
 		).toBeInTheDocument();
 		expect(
+			screen.getByText( 'Payment status changed to Refunded.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( '$10.99 will be deducted from a future payout.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'Acquirer Reference Number (ARN) 8884226196159867'
+			)
+		).toBeInTheDocument();
+		expect( screen.queryByText( /→/ ) ).not.toBeInTheDocument();
+		expect(
 			screen.getByText(
 				'Reason: REC-5a free-text reason: customer returned the item unopened'
 			)
@@ -6468,8 +6479,9 @@ describe( 'WooPayments money movement pages', () => {
 	 * currency, and the recorded enum reason ("requested_by_customer") is
 	 * readable through `formatLabel()`, contradicting the deleted
 	 * `R1v`/`R3v` cases' premise that free-text reasons alone made the
-	 * reason unreadable there. F3, Fee, and ARN left out; Task T.7, as in
-	 * the USD case above.
+	 * reason unreadable there. The payout item and the FX line use the
+	 * recorded store amount (`map-events.js:943-949`, `:433-459`); the
+	 * exchange rate is 1407 / 1234 at the client's five-digit precision.
 	 */
 	it( 'renders the recorded EUR full-refund timeline in the charge’s own currency', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
@@ -6506,8 +6518,69 @@ describe( 'WooPayments money movement pages', () => {
 			screen.getByText( 'Reason: Requested by customer' )
 		).toBeInTheDocument();
 		expect(
+			screen.getByText( 'Payment status changed to Refunded.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( '$14.07 will be deducted from a future payout.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( '€1.00 → 1.14019 USD: $14.07' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'Acquirer Reference Number (ARN) 7028278089905733'
+			)
+		).toBeInTheDocument();
+		expect(
 			screen.getByText( 'A payment of €12.34 was successfully charged.' )
 		).toBeInTheDocument();
+	} );
+
+	/**
+	 * Variants of the recorded REC-5a USD refund event for the branches the
+	 * recording did not hit (client 11.1.0 `map-events.js`): a pending ARN is
+	 * hidden (`:485-496`), a paid-out partial refund links its payout
+	 * (`:86-118`), and a free-text reason shows as entered (`:463-483`).
+	 */
+	it( 'renders recorded refund variants for pending ARN, payout link and free-text reason', () => {
+		const [ recorded ] = loadRec5aTimelineEntry(
+			'usd_full_refund_free_text_reason'
+		).data.filter( ( event: { type: string } ) =>
+			event.type.endsWith( 'refund' )
+		);
+
+		render(
+			<WooPaymentsTransactionTimeline
+				events={ [
+					{
+						...recorded,
+						type: 'partial_refund',
+						acquirer_reference_number_status: 'pending',
+						reason: 'store_credit issued instead',
+						deposit: { id: 'po_rec5a', arrival_date: 1790344415 },
+					},
+				] }
+			/>
+		);
+
+		expect(
+			screen.getByText( 'Payment status changed to Partial refund.' )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( /Acquirer Reference Number/ )
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByText( 'Reason: store_credit issued instead' )
+		).toBeInTheDocument();
+		const payoutLink = screen.getByRole( 'link', {
+			name: /payout$/,
+		} );
+		expect( payoutLink.closest( 'span' ) ).toHaveTextContent(
+			/^\$10\.99 was deducted from your .+ payout\.$/
+		);
+		expect( payoutLink.getAttribute( 'href' ) ).toContain(
+			'path=%2Fwoopayments%2Fpayouts%2Fdetails&id=po_rec5a'
+		);
 	} );
 
 	it( 'qualifies only known multi-dispute timeline events', () => {

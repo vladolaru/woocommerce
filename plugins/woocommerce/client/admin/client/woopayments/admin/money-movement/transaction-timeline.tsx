@@ -13,6 +13,8 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import type { WooPaymentsTimelineEvent } from './types';
 import type { WooPaymentsDisputeOrder } from './dispute-utils';
 import { formatAmount, formatLabel } from './utils';
+import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
 
 type TimelineDisplayEvent = {
 	message: ReactNode;
@@ -154,25 +156,113 @@ const createBodyLine = ( label: string, value: string ) =>
 		  )
 		: null;
 
+const refundReasonLabels: Record< string, string > = {
+	duplicate: __( 'Duplicate', 'woocommerce' ),
+	fraudulent: __( 'Fraudulent', 'woocommerce' ),
+	requested_by_customer: __( 'Requested by customer', 'woocommerce' ),
+};
+
+// Mirrors the client's refund FX line (map-events.js composeFXString and formatFX).
+const getRefundFx = ( event: WooPaymentsTimelineEvent ) => {
+	const details = ( event.transaction_details || {} ) as Record<
+		string,
+		unknown
+	>;
+	const from = getString( details, 'customer_currency' );
+	const to = getString( details, 'store_currency' );
+	const fromAmount = getAmount( details, 'customer_amount' );
+	const toAmount = Math.abs( getAmount( details, 'store_amount' ) ?? NaN );
+
+	if ( ! from || ! to || from === to || ! fromAmount || ! toAmount ) {
+		return undefined;
+	}
+
+	const toMajor = getWooPaymentsAmountFromMinorUnits;
+	const rate =
+		toMajor( toAmount, to ) / toMajor( Math.abs( fromAmount ), from );
+	const unit = toMajor( 100, from ) === 1 ? 100 : 1;
+	const payout = formatAmount( toAmount, to );
+	const formattedRate = rate
+		.toFixed( rate < 1 ? 6 : 5 )
+		.replace( /\.?0+$/, '' );
+
+	return {
+		payout,
+		line: `${ formatAmount(
+			unit,
+			from
+		) } → ${ formattedRate } ${ to.toUpperCase() }: ${ payout }`,
+	};
+};
+
 const getRefundBody = ( event: WooPaymentsTimelineEvent ) => {
-	const body: ReactNode[] = [];
 	const reason = getString( event, 'reason' );
 	const arn = getString( event, 'acquirer_reference_number' );
 
-	if ( reason ) {
-		body.push(
-			createBodyLine(
-				__( 'Reason', 'woocommerce' ),
-				formatLabel( reason )
-			)
+	return [
+		getRefundFx( event )?.line,
+		arn && event.acquirer_reference_number_status === 'available'
+			? sprintf(
+					/* translators: %s: acquirer reference number. */
+					__( 'Acquirer Reference Number (ARN) %s', 'woocommerce' ),
+					arn
+			  )
+			: null,
+		reason
+			? createBodyLine(
+					__( 'Reason', 'woocommerce' ),
+					refundReasonLabels[ reason ] ?? reason
+			  )
+			: null,
+	].filter( Boolean );
+};
+
+const getRefundPayoutMessage = ( event: WooPaymentsTimelineEvent ) => {
+	const refunded = getAmount( event, 'amount_refunded', 'amount' );
+	const amount =
+		getRefundFx( event )?.payout ??
+		( refunded !== undefined &&
+			formatAmount( refunded, getCurrency( event ) ) );
+
+	if ( ! amount ) {
+		return null;
+	}
+
+	const deposit = ( event.deposit || {} ) as Record< string, unknown >;
+	const depositId = getString( deposit, 'id' );
+	const arrivalDate = getNumber( deposit, 'arrival_date' );
+
+	if ( ! depositId || ! arrivalDate ) {
+		return sprintf(
+			/* translators: %s: formatted amount. */
+			__( '%s will be deducted from a future payout.', 'woocommerce' ),
+			amount
 		);
 	}
 
-	if ( arn ) {
-		body.push( createBodyLine( __( 'ARN', 'woocommerce' ), arn ) );
-	}
-
-	return body.filter( Boolean );
+	return createInterpolateElement(
+		sprintf(
+			/* translators: 1: formatted amount, 2: payout arrival date. */
+			__(
+				'%1$s was deducted from your <a>%2$s payout</a>.',
+				'woocommerce'
+			),
+			amount,
+			formatTimelineDate( arrivalDate )
+		),
+		{
+			a: (
+				// eslint-disable-next-line jsx-a11y/anchor-has-content -- Content is interpolated.
+				<a
+					href={ getSettingsPaymentsProviderRouteUrl(
+						`/woopayments/payouts/details?id=${ encodeURIComponent(
+							depositId
+						) }`
+					) }
+				/>
+			),
+		}
+	);
 };
 
 const getCapturedBody = ( event: WooPaymentsTimelineEvent ) => {
@@ -203,7 +293,7 @@ const getCapturedBody = ( event: WooPaymentsTimelineEvent ) => {
 	if ( net !== undefined ) {
 		body.push(
 			createBodyLine(
-				__( 'Net', 'woocommerce' ),
+				__( 'Net payout', 'woocommerce' ),
 				formatAmount( net, currency )
 			)
 		);
@@ -339,8 +429,22 @@ const mapTimelineEvent = (
 				'amount_refunded',
 				'amount'
 			);
+			const payoutMessage = getRefundPayoutMessage( event );
 
 			return [
+				{
+					message: sprintf(
+						/* translators: %s: new payment status. */
+						__( 'Payment status changed to %s.', 'woocommerce' ),
+						type === 'full_refund'
+							? __( 'Refunded', 'woocommerce' )
+							: __( 'Partial refund', 'woocommerce' )
+					),
+					date,
+				},
+				...( payoutMessage
+					? [ { message: payoutMessage, date } ]
+					: [] ),
 				{
 					message:
 						message ||
