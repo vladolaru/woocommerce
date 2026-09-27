@@ -127,18 +127,18 @@ export const getDisputeBalanceAdjustments = (
 	);
 
 /**
- * Whether a finite, non-zero dispute fee remains deducted.
+ * The finite, non-zero dispute fee that remains deducted, if any.
  *
  * The server annotation is authoritative when supplied. The balance transaction
  * fallback keeps older responses working and suppresses fees that were reversed.
  */
-export const hasEffectiveDisputeFee = (
-	dispute: WooPaymentsDispute
-): boolean => {
+export const getEffectiveDisputeFee = ( dispute: WooPaymentsDispute ) => {
 	let feeAmount: unknown;
+	let currency: unknown;
 
 	if ( dispute.effective_fee !== undefined ) {
 		feeAmount = dispute.effective_fee?.amount;
+		currency = dispute.effective_fee?.currency;
 	} else {
 		const balanceTransactions = dispute.balance_transactions || [];
 		const hasReversal = balanceTransactions.some(
@@ -147,20 +147,25 @@ export const hasEffectiveDisputeFee = (
 		);
 
 		if ( hasReversal ) {
-			return false;
+			return undefined;
 		}
 
-		feeAmount = balanceTransactions.find(
+		const row = balanceTransactions.find(
 			( transaction ) => transaction.reporting_category === 'dispute'
-		)?.fee;
+		);
+		feeAmount = row?.fee;
+		currency = row?.currency;
 	}
 
-	return (
-		typeof feeAmount === 'number' &&
+	return typeof feeAmount === 'number' &&
 		Number.isFinite( feeAmount ) &&
 		feeAmount !== 0
-	);
+		? { amount: feeAmount, currency: String( currency || '' ) }
+		: undefined;
 };
+
+export const hasEffectiveDisputeFee = ( dispute: WooPaymentsDispute ) =>
+	!! getEffectiveDisputeFee( dispute );
 
 export const isDisputeInquiry = ( dispute: WooPaymentsDispute ) =>
 	typeof dispute.status === 'string' &&

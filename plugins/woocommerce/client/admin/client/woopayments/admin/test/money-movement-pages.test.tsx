@@ -5810,11 +5810,6 @@ describe( 'WooPayments money movement pages', () => {
 			'You won this dispute. The disputed amount and dispute fee have been returned to your account.',
 			{},
 		],
-		[
-			'lost',
-			'This dispute was lost. The disputed amount and dispute fee have been deducted from your account.',
-			{ effective_fee: { amount: 1500, currency: 'usd' } },
-		],
 	] )(
 		'renders %s dispute outcome guidance',
 		async ( status, message, disputeDetails ) => {
@@ -5913,16 +5908,134 @@ describe( 'WooPayments money movement pages', () => {
 				</MemoryRouter>
 			);
 
+			// Source: client 11.1.0 dispute-resolution-footer.tsx:240-249 and :316-327.
 			expect(
 				await screen.findByText(
-					'This dispute was lost. The disputed amount has been deducted from your account.'
+					/^This dispute was lost on - due to non-response\. The disputed amount has been returned to your customer\./
 				)
 			).toBeInTheDocument();
 			expect(
-				screen.queryByText(
-					'This dispute was lost. The disputed amount and dispute fee have been deducted from your account.'
-				)
+				screen.getByRole( 'link', {
+					name: 'Learn more about disputed amounts.',
+				} )
+			).toBeInTheDocument();
+			expect(
+				screen.queryByText( /fee has been deducted/ )
 			).not.toBeInTheDocument();
+		}
+	);
+
+	/**
+	 * Load one REC-5b R-d recorded `GET .../wcpay/disputes/{id}` response body by
+	 * pair key, unchanged, to render as the charge's dispute.
+	 */
+	function loadRec5bDispute( pair: string ) {
+		const fixture = JSON.parse(
+			fs.readFileSync(
+				path.resolve(
+					__dirname,
+					'../../../../../../tests/php/src/Internal/Payments/Providers/WooPayments/Fixtures/rec-5b-disputes.json'
+				),
+				'utf8'
+			)
+		);
+		return fixture.entries.find(
+			( candidate: { pair: string } ) => candidate.pair === pair
+		).response.body;
+	}
+
+	const renderRecordedDispute = ( dispute: Record< string, unknown > ) => {
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_test',
+			charge: {
+				id: 'ch_test',
+				balance_transaction: 'txn_test',
+				type: 'charge',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				payment_intent: 'pi_test',
+				payment_method_details: (
+					dispute.charge as { payment_method_details?: unknown }
+				 )?.payment_method_details,
+				dispute,
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_test&transaction_id=txn_test',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+	};
+
+	const formatRecordedDate = ( timestamp: string ) =>
+		new Date( Number( timestamp ) * 1000 ).toLocaleDateString( undefined, {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric',
+		} );
+
+	/**
+	 * Client 11.1.0 dispute notice claim (`disputes/strings.ts:158`,
+	 * `dispute-notice.tsx:34-39`) for the recorded REC-5b needs-response
+	 * fraudulent dispute, and the fallback for a reason without a claim.
+	 */
+	it.each( [
+		[
+			'fraudulent',
+			'The cardholder claims this is an unauthorized transaction.',
+		],
+		[ 'general', 'The cardholder claims this is an unauthorized charge.' ],
+	] )(
+		'shows the client claim sentence for a needs-response %s dispute',
+		async ( reason, claim ) => {
+			renderRecordedDispute( {
+				...loadRec5bDispute( 'accept_pre_read' ),
+				reason,
+			} );
+
+			expect( await screen.findByText( claim ) ).toBeInTheDocument();
+		}
+	);
+
+	/**
+	 * Client 11.1.0 lost footer (`dispute-resolution-footer.tsx:218-330`) for
+	 * the recorded REC-5b lost disputes: accepted by the merchant, and lost
+	 * after evidence with the card issuer as the bank name.
+	 */
+	it.each( [
+		[
+			'accept_read_after_close',
+			( closedAt: string ) =>
+				`You accepted this dispute on ${ closedAt }. The $15.00 fee has been deducted from your account, and the disputed amount has been returned to your customer. Learn more about dispute fees.`,
+		],
+		[
+			'lose_read_after_close',
+			( closedAt: string ) =>
+				`Unfortunately, you've lost this dispute. The customer's bank, Stripe Test (multi-country), reached this decision on ${ closedAt }. The $15.00 fee has been deducted from your account, and the disputed amount has been returned to your customer. Learn more about dispute fees.`,
+		],
+	] )(
+		'renders the client lost footer for the recorded %s dispute',
+		async ( pair, expected ) => {
+			const dispute = loadRec5bDispute( pair );
+			renderRecordedDispute( dispute );
+
+			const footer = (
+				await screen.findByRole( 'link', {
+					name: 'Learn more about dispute fees.',
+				} )
+			).parentElement as HTMLElement;
+			expect( footer ).toHaveTextContent(
+				expected(
+					formatRecordedDate( dispute.metadata.__dispute_closed_at )
+				)
+			);
 		}
 	);
 

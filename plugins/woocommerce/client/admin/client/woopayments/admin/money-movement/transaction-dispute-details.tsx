@@ -3,7 +3,12 @@
  */
 import { Button, Modal } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
-import { useEffect, useRef, useState } from '@wordpress/element';
+import {
+	createInterpolateElement,
+	useEffect,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
 import type { ReactNode } from 'react';
@@ -13,7 +18,7 @@ import type { ReactNode } from 'react';
  */
 import { closeWooPaymentsDispute } from './data';
 import { ACTIONABLE_DISPUTE_STATUSES } from './dispute-evidence-fields';
-import { hasEffectiveDisputeFee } from './dispute-utils';
+import { getEffectiveDisputeFee } from './dispute-utils';
 import type { WooPaymentsDispute, WooPaymentsTransaction } from './types';
 import {
 	formatAmount,
@@ -29,6 +34,43 @@ const RESPONDING_TO_DISPUTES_DOC_URL =
 	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#responding';
 const PAYMENT_INQUIRIES_DOC_URL =
 	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#inquiries';
+
+const DISPUTE_FEES_DOC_URL =
+	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#fees';
+const DISPUTED_AMOUNTS_DOC_URL =
+	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#amounts';
+
+// Client disputes/strings.ts reason claims, with dispute-notice.tsx's fallback.
+const DISPUTE_CLAIMS: Record< string, string > = {
+	credit_not_processed: __(
+		'The cardholder claims a credit was not processed.',
+		'woocommerce'
+	),
+	duplicate: __(
+		'The cardholder claims this is a duplicate transaction.',
+		'woocommerce'
+	),
+	fraudulent: __(
+		'The cardholder claims this is an unauthorized transaction.',
+		'woocommerce'
+	),
+	product_not_received: __(
+		'The cardholder claims they did not receive the product.',
+		'woocommerce'
+	),
+	product_unacceptable: __(
+		'The cardholder claims the product was unacceptable.',
+		'woocommerce'
+	),
+	subscription_canceled: __(
+		'The cardholder claims a subscription was canceled.',
+		'woocommerce'
+	),
+	noncompliant: __(
+		'Your customer’s bank claims this payment violates Visa’s rules.',
+		'woocommerce'
+	),
+};
 
 const getDisputeChallengeRoute = ( disputeId: string ) =>
 	`/woopayments/disputes/challenge?id=${ encodeURIComponent( disputeId ) }`;
@@ -75,16 +117,6 @@ const getResolvedStatusDescription = ( dispute: WooPaymentsDispute ) => {
 				'You won this dispute. The disputed amount and dispute fee have been returned to your account.',
 				'woocommerce'
 			);
-		case 'lost':
-			return hasEffectiveDisputeFee( dispute )
-				? __(
-						'This dispute was lost. The disputed amount and dispute fee have been deducted from your account.',
-						'woocommerce'
-				  )
-				: __(
-						'This dispute was lost. The disputed amount has been deducted from your account.',
-						'woocommerce'
-				  );
 		case 'warning_under_review':
 			return __(
 				"The customer's bank is reviewing the submitted inquiry evidence.",
@@ -95,6 +127,100 @@ const getResolvedStatusDescription = ( dispute: WooPaymentsDispute ) => {
 		default:
 			return '';
 	}
+};
+
+// Mirrors the client's DisputeLostFooter copy (dispute-resolution-footer.tsx).
+const LostDisputeDescription = ( {
+	dispute,
+	bankName,
+}: {
+	dispute: WooPaymentsDispute;
+	bankName?: string;
+} ) => {
+	const metadata = dispute.metadata || {};
+	const closedAt = metadata.__dispute_closed_at
+		? formatDate( Number( metadata.__dispute_closed_at ) )
+		: '-';
+	const fee = getEffectiveDisputeFee( dispute );
+	let prefix = sprintf(
+		/* translators: %1$s: date the dispute closed. */
+		__(
+			'This dispute was lost on %1$s due to non-response.',
+			'woocommerce'
+		),
+		closedAt
+	);
+
+	if ( metadata.__evidence_submitted_at ) {
+		if (
+			dispute.reason === 'noncompliant' ||
+			dispute.enhanced_eligibility_types?.includes( 'visa_compliance' )
+		) {
+			prefix = sprintf(
+				/* translators: %1$s: date the dispute closed. */
+				__(
+					"<strong>Unfortunately, you've lost this dispute. Visa reached this decision on %1$s.</strong>",
+					'woocommerce'
+				),
+				closedAt
+			);
+		} else if ( bankName ) {
+			prefix = sprintf(
+				/* translators: %1$s: customer's bank name, %2$s: date the dispute closed. */
+				__(
+					"<strong>Unfortunately, you've lost this dispute. The customer's bank, %1$s, reached this decision on %2$s.</strong>",
+					'woocommerce'
+				),
+				bankName,
+				closedAt
+			);
+		} else {
+			prefix = sprintf(
+				/* translators: %1$s: date the dispute closed. */
+				__(
+					"<strong>Unfortunately, you've lost this dispute. The customer's bank reached this decision on %1$s.</strong>",
+					'woocommerce'
+				),
+				closedAt
+			);
+		}
+	} else if ( metadata.__closed_by_merchant === '1' ) {
+		prefix = sprintf(
+			/* translators: %1$s: date the dispute closed. */
+			__(
+				'<strong>You accepted this dispute on %1$s.</strong>',
+				'woocommerce'
+			),
+			closedAt
+		);
+	}
+
+	return (
+		<p>
+			{ createInterpolateElement( prefix, { strong: <strong /> } ) }{ ' ' }
+			{ fee
+				? sprintf(
+						/* translators: %1$s: formatted dispute fee. */
+						__(
+							'The %1$s fee has been deducted from your account, and the disputed amount has been returned to your customer.',
+							'woocommerce'
+						),
+						formatAmount( fee.amount, fee.currency )
+				  )
+				: __(
+						'The disputed amount has been returned to your customer.',
+						'woocommerce'
+				  ) }{ ' ' }
+			<a href={ fee ? DISPUTE_FEES_DOC_URL : DISPUTED_AMOUNTS_DOC_URL }>
+				{ fee
+					? __( 'Learn more about dispute fees.', 'woocommerce' )
+					: __(
+							'Learn more about disputed amounts.',
+							'woocommerce'
+					  ) }
+			</a>
+		</p>
+	);
 };
 
 const getCustomerLabel = (
@@ -164,6 +290,15 @@ const RespondToDisputeActions = ( {
 
 	return (
 		<>
+			<p>
+				<strong>
+					{ DISPUTE_CLAIMS[ dispute.reason || '' ] ??
+						__(
+							'The cardholder claims this is an unauthorized charge.',
+							'woocommerce'
+						) }
+				</strong>
+			</p>
 			<p>
 				{ isInquiryStatus
 					? __(
@@ -246,8 +381,10 @@ const RespondToDisputeActions = ( {
 
 const ResolvedDisputeActions = ( {
 	dispute,
+	bankName,
 }: {
 	dispute: WooPaymentsDispute;
+	bankName?: string;
 } ) => {
 	const disputeId = getDisputeId( dispute );
 	const shouldShowSubmittedEvidenceLink =
@@ -259,6 +396,12 @@ const ResolvedDisputeActions = ( {
 	return (
 		<>
 			{ statusDescription && <p>{ statusDescription }</p> }
+			{ dispute.status === 'lost' && (
+				<LostDisputeDescription
+					dispute={ dispute }
+					bankName={ bankName }
+				/>
+			) }
 			{ shouldShowSubmittedEvidenceLink && (
 				<a
 					href={ getDisputeChallengeUrl( disputeId ) }
@@ -446,7 +589,15 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 						onIssueRefund={ onIssueRefund }
 					/>
 				) : (
-					<ResolvedDisputeActions dispute={ currentDispute } />
+					<ResolvedDisputeActions
+						dispute={ currentDispute }
+						bankName={
+							typeof transaction.payment_method_details?.card
+								?.issuer === 'string'
+								? transaction.payment_method_details.card.issuer
+								: undefined
+						}
+					/>
 				) }
 			</div>
 			{ isAcceptModalOpen && (
