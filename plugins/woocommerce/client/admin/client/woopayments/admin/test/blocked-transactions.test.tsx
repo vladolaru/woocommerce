@@ -383,6 +383,9 @@ describe( 'WooPayments Blocked transactions tab', () => {
 		expect(
 			screen.queryByRole( 'button', { name: 'Export' } )
 		).not.toBeInTheDocument();
+		// Client 11.1.0 renders an empty TableCard, whose empty text is
+		// `@woocommerce/components` `table.tsx` "No data to display".
+		expect( screen.getByText( 'No data to display' ) ).toBeInTheDocument();
 		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
 	} );
 
