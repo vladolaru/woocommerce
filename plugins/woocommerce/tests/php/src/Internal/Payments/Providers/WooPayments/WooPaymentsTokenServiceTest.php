@@ -9,11 +9,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use RuntimeException;
 use WC_Order;
@@ -35,6 +37,13 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	private array $created_services = array();
 
 	/**
+	 * Gateway initializer registered by a test, removed on tear down.
+	 *
+	 * @var callable|null
+	 */
+	private $gateway_initializer = null;
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
@@ -45,6 +54,13 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_payment_methods_list_item', array( $service, 'handle_woocommerce_payment_methods_list_item' ), 10 );
 		}
 		$this->created_services = array();
+		if ( null !== $this->gateway_initializer ) {
+			remove_action( 'wc_payment_gateways_initialized', $this->gateway_initializer, 100 );
+			$this->gateway_initializer                 = null;
+			WC()->payment_gateways()->payment_gateways = array();
+			WC()->payment_gateways()->init();
+		}
+		remove_all_filters( 'wcpay_dev_mode' );
 		delete_option( 'wcpay_pm_customer_1' );
 		delete_option( 'wcpay_pm_customer_2' );
 		delete_option( 'not_wcpay_pm_customer' );
@@ -1701,6 +1717,236 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->expectException( RuntimeException::class );
 
 		$sut->clear_all_cached_payment_methods();
+	}
+
+	/**
+	 * @testdox An admin's filtered read of a shopper's plugin-era cards should keep the same tokens and the default.
+	 *
+	 * Source: client 11.1.0 class-wc-payments-token-service.php:199-256 leaves tokens the provider still holds untouched.
+	 */
+	public function test_filtered_read_keeps_plugin_era_default_card_for_an_admin_reader(): void {
+		$user_id = $this->factory()->user->create();
+
+		list( $first, $second ) = $this->create_plugin_era_cards_with_second_default( $user_id );
+		wp_set_current_user( $this->factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array( $this->card_payment_method( 'pm_plugin_first' ), $this->card_payment_method( 'pm_plugin_second' ) ) ) );
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		$this->assert_plugin_era_default_survives_filtered_read( $user_id, $first->get_id(), $second->get_id() );
+	}
+
+	/**
+	 * @testdox The filtered read should pick the customer id with the plugin's mode rule, not the account's liveness.
+	 * @dataProvider provide_mode_cases
+	 *
+	 * Source: client 11.1.0 class-wc-payments-customer-service.php:392-396 keys the customer id by WC_Payments::mode()->is_test(),
+	 * which reads the gateway test_mode setting unless onboarding test mode is on (includes/core/class-mode.php maybe_init()).
+	 *
+	 * @param string $onboarding_test_mode Onboarding test mode option value.
+	 * @param string $test_mode_setting    Gateway settings test_mode value.
+	 * @param bool   $account_is_live      Cached account liveness.
+	 * @param string $mode_customer_id     Customer id the client's mode rule selects.
+	 */
+	public function test_filtered_read_resolves_customer_id_with_the_plugin_mode_rule( string $onboarding_test_mode, string $test_mode_setting, bool $account_is_live, string $mode_customer_id ): void {
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		update_option( 'wcpay_onboarding_test_mode', $onboarding_test_mode );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => $test_mode_setting ) );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id' => 'acct_mode',
+					'is_live'    => $account_is_live,
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+
+		$user_id = $this->factory()->user->create();
+
+		list( $first, $second ) = $this->create_plugin_era_cards_with_second_default( $user_id );
+		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_test' );
+		update_user_option( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, 'cus_live' );
+		wp_set_current_user( $this->factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$api_client = new class( $mode_customer_id, array( $this->card_payment_method( 'pm_plugin_first' ), $this->card_payment_method( 'pm_plugin_second' ) ) ) extends WooPaymentsApiClient {
+			/**
+			 * Customer id that holds the cards.
+			 *
+			 * @var string
+			 */
+			private string $holder;
+
+			/**
+			 * Cards held by that customer.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			private array $cards;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string                         $holder Customer id that holds the cards.
+			 * @param array<int,array<string,mixed>> $cards  Cards held by that customer.
+			 */
+			public function __construct( string $holder, array $cards ) {
+				$this->holder = $holder;
+				$this->cards  = $cards;
+			}
+
+			/**
+			 * List a customer's payment methods.
+			 *
+			 * @param string $customer_id Customer id.
+			 * @param string $type        Payment method type.
+			 * @param int    $limit       Page size.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_methods( string $customer_id, string $type, int $limit = 100 ): array {
+				unset( $limit );
+
+				return array( 'data' => $customer_id === $this->holder && 'card' === $type ? $this->cards : array() );
+			}
+		};
+
+		$account_service = new WooPaymentsAccountService();
+		$account_service->init( new LegacyProxy() );
+		$customer_service = new WooPaymentsCustomerService();
+		$customer_service->init( $api_client, $account_service, new WooPaymentsSessionService() );
+		$this->create_service( array(), $api_client, $customer_service, $account_service );
+
+		$this->assertSame( $account_is_live, $account_service->get_account_is_live(), 'The fixture must hold a valid cached account with this liveness.' );
+		$this->assert_plugin_era_default_survives_filtered_read( $user_id, $first->get_id(), $second->get_id() );
+	}
+
+	/**
+	 * Mode inputs paired with the customer id the client's mode rule selects.
+	 *
+	 * A cached test account is only valid under onboarding test mode (client includes/class-wc-payments-account.php:2554-2590),
+	 * which then forces test mode, so the live-setting row pairs a test account with onboarding test mode.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool,3:string}>
+	 */
+	public function provide_mode_cases(): array {
+		return array(
+			'onboarding test mode overrides a live setting' => array( 'yes', 'no', false, 'cus_test' ),
+			'test setting on a live account' => array( 'no', 'yes', true, 'cus_test' ),
+			'live setting on a live account' => array( 'no', 'no', true, 'cus_live' ),
+		);
+	}
+
+	/**
+	 * @testdox A cached provider list for the same customer that lacks a stored card should drop that card, as the plugin does.
+	 *
+	 * Source: client 11.1.0 class-wc-payments-token-service.php:271-290 serves `_wcpay_payment_methods` for a matching customer id,
+	 * and :241-247 deletes every stored token the list does not name.
+	 */
+	public function test_filtered_read_with_a_stale_same_customer_cache_drops_the_missing_card(): void {
+		$user_id = $this->factory()->user->create();
+
+		list( $first, $second ) = $this->create_plugin_era_cards_with_second_default( $user_id );
+		update_user_meta(
+			$user_id,
+			'_wcpay_payment_methods',
+			array(
+				'customer_id'         => 'cus_1',
+				'payment_method_card' => array( $this->card_payment_method( 'pm_plugin_first' ) ),
+			)
+		);
+		wp_set_current_user( $this->factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array( $this->card_payment_method( 'pm_plugin_first' ), $this->card_payment_method( 'pm_plugin_second' ) ) ) );
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		$tokens = WC_Payment_Tokens::get_customer_tokens( $user_id );
+
+		$this->assertSame( array( $first->get_id() ), array_keys( $tokens ), 'Only the card the cached list names must remain.' );
+		$this->assertNull( WC_Payment_Tokens::get( $second->get_id() ), 'The card missing from the cached list is deleted, default or not.' );
+		$this->assertSame( array(), $customer_service->fetch_counts, 'A cache for the same customer is served without a provider call.' );
+	}
+
+	/**
+	 * Create two plugin-era card tokens on the card gateway, the second one default.
+	 *
+	 * @param int $user_id Shopper user ID.
+	 * @return WC_Payment_Token_CC[]
+	 */
+	private function create_plugin_era_cards_with_second_default( int $user_id ): array {
+		$this->register_card_gateway_id();
+		$first  = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_plugin_first' );
+		$second = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_plugin_second' );
+		WC_Payment_Tokens::set_users_default( $user_id, $second->get_id() );
+
+		return array( $first, $second );
+	}
+
+	/**
+	 * Register a gateway with the card gateway ID, as a native request does before any token read.
+	 *
+	 * WC_Payment_Token_Data_Store::get_tokens() only returns tokens whose gateway is registered.
+	 */
+	private function register_card_gateway_id(): void {
+		$this->gateway_initializer = static function ( \WC_Payment_Gateways $wc_payment_gateways ): void {
+			$gateway = new class() extends \WC_Payment_Gateway {
+				/**
+				 * Constructor.
+				 */
+				public function __construct() {
+					$this->id = OrderPaymentStore::GATEWAY_ID;
+				}
+			};
+
+			$wc_payment_gateways->payment_gateways = array( $gateway );
+		};
+		add_action( 'wc_payment_gateways_initialized', $this->gateway_initializer, 100 );
+		WC()->payment_gateways()->payment_gateways = array();
+		WC()->payment_gateways()->init();
+	}
+
+	/**
+	 * Assert the filtered read returns the same two tokens with the second still default, in memory and in the table.
+	 *
+	 * @param int $user_id   Shopper user ID.
+	 * @param int $first_id  First token ID.
+	 * @param int $second_id Second (default) token ID.
+	 */
+	private function assert_plugin_era_default_survives_filtered_read( int $user_id, int $first_id, int $second_id ): void {
+		global $wpdb;
+
+		$tokens = WC_Payment_Tokens::get_customer_tokens( $user_id );
+		$ids    = array_keys( $tokens );
+		sort( $ids );
+
+		$this->assertSame( array( $first_id, $second_id ), $ids, 'The read must return the same stored tokens, not re-created ones.' );
+		$this->assertTrue( $tokens[ $second_id ]->is_default(), 'The plugin-era default must stay default in the returned object.' );
+		$this->assertFalse( $tokens[ $first_id ]->is_default() );
+		$this->assertSame(
+			'1',
+			(string) $wpdb->get_var( $wpdb->prepare( "SELECT is_default FROM {$wpdb->prefix}woocommerce_payment_tokens WHERE token_id = %d", $second_id ) ),
+			'The default column must still read 1 after the filtered read.'
+		);
+	}
+
+	/**
+	 * Build a provider card payment method.
+	 *
+	 * @param string $payment_method_id Provider payment method ID.
+	 * @return array<string,mixed>
+	 */
+	private function card_payment_method( string $payment_method_id ): array {
+		return array(
+			'id'   => $payment_method_id,
+			'type' => 'card',
+			'card' => array(
+				'brand'     => 'visa',
+				'last4'     => '4242',
+				'exp_month' => 12,
+				'exp_year'  => 2030,
+			),
+		);
 	}
 
 	/**
