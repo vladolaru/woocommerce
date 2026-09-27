@@ -17,6 +17,10 @@ use Automattic\WooCommerce\Internal\Admin\OrderTaxLookupMigrator;
 use Automattic\WooCommerce\Internal\BatchProcessing\BatchProcessingController;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\VariationGallery\Package as VariationGalleryPackage;
 
 /**
@@ -35,6 +39,12 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'wcpay_multi_currency_setup_completed' );
+		delete_option( 'woocommerce_native_payments_state' );
+		delete_option( 'wcpay_account_data' );
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'active_plugins' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 		parent::tearDown();
 	}
 
@@ -707,5 +717,59 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 
 		$this->assertSame( 'no', get_option( 'woocommerce_feature_multi_currency_enabled' ), 'The migration should preserve an existing feature decision.' );
 		$this->assertSame( 'woocommerce_feature_multi_currency_enabled', MultiCurrencyRuntimeArbiter::FEATURE_ENABLE_OPTION );
+	}
+
+	/**
+	 * @testdox Migration moves a plugin-active upgraded store off the never-written disabled tier so the switch controller loads on admin requests.
+	 *
+	 * Source: data/task-1.4-dormancy-design.md:84-96 (install/update repair is an authoritative writer; an active standalone plugin derives available).
+	 */
+	public function test_wc_update_11205_repair_native_payments_state(): void {
+		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
+
+		$db_updates = WC_Install::get_db_update_callbacks();
+		$this->assertArrayHasKey( '11.2.0-5', $db_updates );
+		$this->assertContains( 'wc_update_11205_repair_native_payments_state', $db_updates['11.2.0-5'] );
+
+		$container = wc_get_container();
+		$arbiter   = $container->get( NativePaymentsRuntimeArbiter::class );
+		$state     = $container->get( NativePaymentsState::class );
+		$matrix    = WooPaymentsProvider::get_bootstrap_root_matrix();
+		update_option( 'woocommerce_native_payments_enabled', 'yes' );
+		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id' => 'acct_upgraded_store',
+					'is_live'    => true,
+				),
+				'fetched' => time(),
+				'errored' => false,
+			),
+			false
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		$arbiter->invalidate();
+		$state->invalidate();
+
+		$this->assertFalse( get_option( NativePaymentsState::OPTION_NAME ), 'An upgraded plugin store has never written the native state.' );
+		$this->assertSame( NativePaymentsState::DISABLED, $state->get_state() );
+		$this->assertArrayNotHasKey( NativePaymentsState::DISABLED, $matrix, 'The disabled tier loads no switch controller.' );
+
+		wc_update_11205_repair_native_payments_state();
+		$state->invalidate();
+
+		$this->assertSame( NativePaymentsState::AVAILABLE, get_option( NativePaymentsState::OPTION_NAME ) );
+		$this->assertContains( WooPaymentsCutoverController::class, $matrix[ $state->get_state() ]['admin'] );
+
+		delete_option( NativePaymentsState::OPTION_NAME );
+		update_option( 'active_plugins', array() );
+		$arbiter->invalidate();
+		$state->invalidate();
+
+		wc_update_11205_repair_native_payments_state();
+
+		$this->assertFalse( get_option( NativePaymentsState::OPTION_NAME ), 'A store without the active plugin keeps its state for the cutover writers.' );
 	}
 }

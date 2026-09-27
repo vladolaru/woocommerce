@@ -35,6 +35,8 @@ use Automattic\WooCommerce\Internal\EmailEditor\WCTransactionalEmails\WCEmailPos
 use Automattic\WooCommerce\Internal\EmailEditor\WCTransactionalEmails\WCEmailTemplateSyncBackfill;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\ProductAttributesLookup\DataRegenerator;
 use Automattic\WooCommerce\Internal\ProductAttributesLookup\LookupDataStore;
 use Automattic\WooCommerce\Internal\ProductDownloads\ApprovedDirectories\Register as Download_Directories;
@@ -3827,4 +3829,22 @@ function wc_update_11204_seed_multi_currency_feature(): void {
 	$should_enable      = '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) && $has_prior_use;
 
 	add_option( MultiCurrencyRuntimeArbiter::FEATURE_ENABLE_OPTION, $should_enable ? 'yes' : 'no', '', true );
+}
+
+/**
+ * Write the native payments state for stores that upgraded with the WooPayments plugin active.
+ *
+ * Those stores never wrote the state, so they read as disabled and never load the switch notice.
+ *
+ * @since 11.2.0
+ *
+ * @return void
+ */
+function wc_update_11205_repair_native_payments_state(): void {
+	$container = wc_get_container();
+	if ( ! $container->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active() ) {
+		return;
+	}
+
+	$container->get( WooPaymentsAccountService::class )->synchronize_native_payments_state_from_options( true );
 }

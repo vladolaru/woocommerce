@@ -120,12 +120,12 @@ final class WooPayments_Transition_Seed_CLI {
 			'test_mode'                      => 'yes',
 			'upe_enabled_payment_method_ids' => array( 'card' ),
 		);
-		// Every profile seeds `active`, not `available`: with only `available`
-		// the seeded store shows neither the "Start the switch" admin notice
-		// nor, post-cutover, the native gateway. Why `active` is required for
-		// both is a product question this seed does not diagnose (tracked as
-		// a T.7 candidate); ownership before cutover still tracks the plugin
-		// regardless of this state.
+		// Every profile seeds `active` as a harness convenience, not because a
+		// real store has it: a real plugin-era store reaches `available`
+		// through the `wc_update_11205_repair_native_payments_state` update and
+		// `active` when the cutover finalizes. While the plugin is active,
+		// `active` reads as `available`, so ownership before cutover still
+		// tracks the plugin.
 		$native_state = 'active';
 		if ( 'cutover' === $profile ) {
 			$settings['upe_enabled_payment_method_ids'] = array( 'card', 'future_lpm' );
