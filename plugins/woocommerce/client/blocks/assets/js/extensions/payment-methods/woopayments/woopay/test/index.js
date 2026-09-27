@@ -102,6 +102,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			isWooPayGlobalThemeSupportEnabled: false,
 			shouldShowWooPayButton: true,
 			stylesCacheVersion: undefined,
+			woopayHost: 'https://pay.woo.test',
 			woopayAppearance: {
 				theme: 'stripe',
 				labels: 'floating',
@@ -950,6 +951,146 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			await sendWooPayMessage( { action: 'close_modal' } );
 			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
 			expect( document.body.style.overflow ).toBe( '' );
+		} );
+
+		// Client express-checkout-iframe.js:244-248: a result that arrives
+		// after the shopper closed the iframe does nothing.
+		it( 'ignores an init_woopay result that arrives after the iframe closed', async () => {
+			let resolveInit;
+			window.fetch = jest.fn( ( url ) =>
+				url === '/?wc-ajax=wcpay_init_woopay'
+					? new Promise( ( resolve ) => {
+							resolveInit = resolve;
+					  } )
+					: Promise.resolve( { json: () => Promise.resolve( {} ) } )
+			);
+			await openOtpIframe();
+
+			await sendWooPayMessage( {
+				action: 'redirect_to_woopay',
+				platformCheckoutUserSession: 'platform-session-1',
+			} );
+			expect( getInitCalls() ).toHaveLength( 1 );
+			await sendWooPayMessage( { action: 'close_modal' } );
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
+
+			await act( async () => {
+				resolveInit( {
+					json: () =>
+						Promise.resolve( {
+							result: 'success',
+							url: 'https://pay.woo.test/woopay/?platform_checkout_key=abc',
+						} ),
+				} );
+			} );
+			await act( async () => {
+				await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+			} );
+
+			expect( navigate ).not.toHaveBeenCalled();
+			expect( createNotice ).not.toHaveBeenCalled();
+		} );
+
+		// Recorded decision C11: the client has no .catch, so a network
+		// failure leaves the iframe open; native shows the client's
+		// unavailable notice and closes it, as for a failed result.
+		it( 'shows the unavailable notice and closes the iframe when init_woopay cannot be reached', async () => {
+			window.fetch = jest.fn( ( url ) =>
+				url === '/?wc-ajax=wcpay_init_woopay'
+					? Promise.reject( new TypeError( 'Failed to fetch' ) )
+					: Promise.resolve( { json: () => Promise.resolve( {} ) } )
+			);
+			await openOtpIframe();
+
+			await sendWooPayMessage( {
+				action: 'redirect_to_woopay',
+				platformCheckoutUserSession: 'platform-session-1',
+			} );
+
+			await waitFor( () => {
+				expect( createNotice ).toHaveBeenCalledWith(
+					'error',
+					'WooPay is unavailable at this time. Sorry for the inconvenience.',
+					{ context: 'wc/checkout' }
+				);
+			} );
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
+			expect( navigate ).not.toHaveBeenCalled();
+		} );
+
+		// Recorded decision C12: the client throws in new URL() on an
+		// unparsable host; native trusts no message at all.
+		it( 'trusts no message when the WooPay host cannot be parsed', async () => {
+			getMockPaymentMethodSettings().woopayHost = 'not a url';
+			await openOtpIframe();
+
+			for ( const origin of [ 'https://attacker.test', 'null' ] ) {
+				await sendWooPayMessage(
+					{
+						action: 'redirect_to_woopay',
+						platformCheckoutUserSession: 'forged-session',
+					},
+					origin
+				);
+				await sendWooPayMessage(
+					{
+						action: 'redirect_to_woopay_skip_session_init',
+						redirectUrl: 'https://attacker.test/phish',
+					},
+					origin
+				);
+				await sendWooPayMessage( { action: 'close_modal' }, origin );
+			}
+
+			expect( getInitCalls() ).toHaveLength( 0 );
+			expect( navigate ).not.toHaveBeenCalled();
+			expect(
+				document.querySelector( '.woopay-otp-iframe' )
+			).not.toBeNull();
+
+			fireEvent.keyUp( document, { key: 'Escape' } );
+		} );
+
+		// Client express-checkout-iframe.js:298-302.
+		it( 'closes the iframe on Escape and keeps it open on other keys', async () => {
+			await openOtpIframe();
+			const iframe = document.querySelector( '.woopay-otp-iframe' );
+			iframe.dispatchEvent( new window.Event( 'load' ) );
+			expect( document.body.style.overflow ).toBe( 'hidden' );
+
+			fireEvent.keyUp( document, { key: 'Enter' } );
+			expect(
+				document.querySelector( '.woopay-otp-iframe' )
+			).not.toBeNull();
+
+			fireEvent.keyUp( document, { key: 'Escape' } );
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
+			expect(
+				document.querySelector( '.woopay-otp-iframe-wrapper' )
+			).toBeNull();
+			expect( document.body.style.overflow ).toBe( '' );
+		} );
+
+		// Client express-checkout-iframe.js:291-296: Safari restores the
+		// page from the back-forward cache with the iframe still open.
+		it( 'closes the iframe when the page is restored from the back-forward cache', async () => {
+			await openOtpIframe();
+
+			window.dispatchEvent(
+				new window.PageTransitionEvent( 'pageshow', {
+					persisted: false,
+				} )
+			);
+			expect(
+				document.querySelector( '.woopay-otp-iframe' )
+			).not.toBeNull();
+
+			window.dispatchEvent(
+				new window.PageTransitionEvent( 'pageshow', {
+					persisted: true,
+				} )
+			);
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
 		} );
 	} );
 } );
