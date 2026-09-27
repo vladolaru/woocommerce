@@ -394,6 +394,12 @@ export const WooPaymentsOverviewPage = () => {
 						>
 							<Suspense fallback={ null }>
 								<StripeNotificationsBanner
+									// Unlike client 11.1.0's endless spinner (inbox N-139).
+									onInitError={ () => {
+										setBannerFailed( true );
+										setBannerLoading( false );
+										setBannerShown( true );
+									} }
 									onLoadError={ ( loadError ) => {
 										setBannerLoadError( loadError );
 										setBannerLoading( false );

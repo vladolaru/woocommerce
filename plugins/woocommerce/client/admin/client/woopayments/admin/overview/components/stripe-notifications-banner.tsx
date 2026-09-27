@@ -35,9 +35,11 @@ const genericError = __(
  * Stripe's embedded notification banner, as client 11.1.0 `embedded-components/index.tsx:192-224`.
  */
 export const StripeNotificationsBanner = ( {
+	onInitError,
 	onLoadError,
 	onNotificationsChange,
 }: {
+	onInitError: () => void;
 	onLoadError: ( loadError: LoadError ) => void;
 	onNotificationsChange: ( change: StripeNotificationsChange ) => void;
 } ) => {
@@ -67,17 +69,22 @@ export const StripeNotificationsBanner = ( {
 				setErrorMessage(
 					error instanceof Error ? error.message : genericError
 				);
+				onInitError();
 			} finally {
 				setLoading( false );
 			}
 		};
 
 		void initialize();
+		// One session per visit, as the client; the page passes new callbacks every render.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [] );
 
 	return (
 		<>
-			{ ( loading || ! connectInstance ) && <StripeSpinner /> }
+			{ ! errorMessage && ( loading || ! connectInstance ) && (
+				<StripeSpinner />
+			) }
 			{ errorMessage && (
 				<BannerNotice status="error">{ errorMessage }</BannerNotice>
 			) }

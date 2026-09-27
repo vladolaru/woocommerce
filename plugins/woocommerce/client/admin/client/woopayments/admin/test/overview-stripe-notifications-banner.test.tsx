@@ -269,7 +269,8 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 		expect( screen.queryByText( FINISH_SETUP_TASK ) ).toBeNull();
 	} );
 
-	it( 'shows the error notice and no banner when the account session fails', async () => {
+	// Better than client 11.1.0, whose loader spins forever here (owner decision, inbox N-139).
+	it( 'stops loading and shows the error notice and the update-details task when the account session fails', async () => {
 		mockCreateAccountSession.mockRejectedValue( {
 			code: 'woocommerce_woopayments_account_session_error',
 			message: 'Unable to create the WooPayments account session.',
@@ -281,7 +282,9 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 			await screen.findByText( SESSION_ERROR, {
 				selector: '.woopayments-banner-notice__content',
 			} )
-		).toBeInTheDocument();
+		).toBeVisible();
+		expect( screen.getByText( FINISH_SETUP_TASK ) ).toBeInTheDocument();
+		expect( document.querySelector( '.stripe-spinner' ) ).toBeNull();
 		await waitFor( () =>
 			expect( loadConnectAndInitialize ).not.toHaveBeenCalled()
 		);
