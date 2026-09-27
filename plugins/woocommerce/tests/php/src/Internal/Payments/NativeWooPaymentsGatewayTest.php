@@ -2169,6 +2169,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should reject add-payment-method requests with invalid fraud-prevention tokens before reading the setup intent.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:4578-4586` refuses without touching
+	 * the session token; the only rotation is `wc-payment-api/class-wc-payments-api-client.php:2956`,
+	 * after a `fraudulent` or `wcpay_card_testing_prevention` API decline.
 	 */
 	public function test_add_payment_method_rejects_invalid_fraud_prevention_token_when_enabled(): void {
 		wc_clear_notices();
@@ -2204,8 +2208,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->add_payment_method();
 
 		$this->assertSame( array( 'result' => 'error' ), $result );
-		$this->assertSame( 16, strlen( (string) $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) ) );
-		$this->assertNotSame( 'valid-token', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
+		$this->assertSame( 'valid-token', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ), 'A refusal must not rotate the session token; the client rotates it only on a fraudulent API decline.' );
 		$this->assertSame(
 			"We're not able to add this payment method. Please refresh the page and try again.",
 			wc_get_notices( 'error' )[0]['notice'] ?? ''
@@ -2650,8 +2653,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * `:1221` reads `null` when the POST field is absent (`isset($_POST[...]) ? ... : null`), and
 	 * `fraud-prevention/class-fraud-prevention-service.php:172-174` refuses a non-string token
 	 * outright; `:168-177` (`verify_token`) otherwise refuses a token that does not hash equal to the
-	 * session's. Order status after the refusal is intentionally not asserted: the client marks the
-	 * order `failed` here (F2), a documented parity gap left open for Task T.7.
+	 * session's. The thrown exception reaches the catch at `:1326-1327`, which marks the order
+	 * `failed` (no payment information exists yet), and the token is not rotated (only
+	 * `wc-payment-api/class-wc-payments-api-client.php:2956` rotates it, after a fraudulent decline).
 	 *
 	 * @dataProvider fraud_prevention_token_gateway_provider
 	 *
@@ -2697,8 +2701,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$result
 		);
 		$this->assertNull( $service->last_checkout_context );
-		$this->assertSame( 16, strlen( (string) $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) ) );
-		$this->assertNotSame( 'valid-token', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
+		$this->assertSame( 'valid-token', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
+		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
 		$this->assertSame(
 			"We're not able to process this payment. Please refresh the page and try again.",
 			wc_get_notices( 'error' )[0]['notice'] ?? ''
@@ -2933,6 +2937,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should reject checkout before creating a payment context when the failed-transaction limiter is active.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1229-1234` throws
+	 * `rate_limiter_enabled`; the catch marks the order `failed` (`:1326-1327`) and adds the rate-limiter
+	 * note (`:1403-1421`) with the order total through the explicit-price formatter, which leaves a
+	 * single-currency price unsuffixed.
 	 */
 	public function test_process_payment_rejects_checkout_when_failed_transaction_rate_limiter_is_active(): void {
 		wc_clear_notices();
@@ -2968,6 +2977,12 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			'Your payment was not processed.',
 			wc_get_notices( 'error' )[0]['notice'] ?? ''
+		);
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertContains(
+			'A payment of ' . wc_price( 12.00, array( 'currency' => $order->get_currency() ) ) . ' <strong>failed</strong> to complete because of too many failed transactions. A rate limiter was enabled for the user to prevent more attempts temporarily.',
+			array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) )
 		);
 	}
 

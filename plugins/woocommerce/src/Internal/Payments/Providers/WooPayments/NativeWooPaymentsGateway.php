@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -1533,6 +1534,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$fraud_prevention_error = $this->get_fraud_prevention_error_message( true );
 		if ( '' !== $fraud_prevention_error ) {
+			$order->update_status( OrderStatus::FAILED );
 			wc_add_notice( $fraud_prevention_error, 'error', array( 'icon' => 'error' ) );
 
 			return array(
@@ -1544,6 +1546,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$failed_transaction_rate_limiter_error = $this->get_failed_transaction_rate_limiter_error_message();
 		if ( '' !== $failed_transaction_rate_limiter_error ) {
+			$order->update_status( OrderStatus::FAILED );
+			$order->add_order_note( wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_rate_limited_payment_note( $order ) );
 			wc_add_notice( $failed_transaction_rate_limiter_error, 'error', array( 'icon' => 'error' ) );
 
 			return array(
@@ -2137,8 +2141,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( $fraud_prevention_service->verify_token( $this->sanitize_post_string( WooPaymentsFraudPreventionService::TOKEN_NAME ) ) ) {
 			return '';
 		}
-
-		$fraud_prevention_service->regenerate_token();
 
 		return $is_checkout
 			? __( "We're not able to process this payment. Please refresh the page and try again.", 'woocommerce' )

@@ -1270,6 +1270,25 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build the order note for a checkout refused by the failed-transaction rate limiter.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	public function format_rate_limited_payment_note( WC_Order $order ): string {
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: the failed payment amount. */
+				__( 'A payment of %1$s <strong>failed</strong> to complete because of too many failed transactions. A rate limiter was enabled for the user to prevent more attempts temporarily.', 'woocommerce' ),
+				array( 'strong' => '<strong>' )
+			),
+			$this->format_refund_amount( $order, (float) $order->get_total(), $order->get_currency() )
+		);
+	}
+
+	/**
 	 * Build the order note for a synchronous refund attempt that failed.
 	 *
 	 * @param WC_Order $order         Order object.
