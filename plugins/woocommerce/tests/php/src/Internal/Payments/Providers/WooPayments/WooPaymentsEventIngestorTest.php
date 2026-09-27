@@ -2759,6 +2759,62 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox charge.dispute.closed lost for the full charge after a partial refund refunds the remainder with line items and no restock.
+	 *
+	 * Client `os:632-661`: the refund amount is `min(remaining, disputed)`, but the
+	 * line items are cleared only when the disputed amount itself is below the order
+	 * total. A 50.00 dispute on a 50.00 order that already had 10.00 refunded is a
+	 * full dispute, so the 40.00 refund keeps its line items. The client passes no
+	 * `restock_items`, so the refund never asks to restock.
+	 */
+	public function test_dispute_closed_lost_after_partial_refund_keeps_line_items(): void {
+		$order = $this->create_refundable_woopayments_order( '50.00' );
+		$order->set_status( 'on-hold' );
+		$order->save();
+		$this->create_local_refund( $order, 10.0, 'Partial refund' );
+
+		$restock_requests = 0;
+		$count_restock    = function ( $can_restock ) use ( &$restock_requests ) {
+			++$restock_requests;
+			return $can_restock;
+		};
+		add_filter( 'woocommerce_can_restock_refunded_items', $count_restock );
+
+		$sut = $this->create_ingestor(
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new LegacyProxy(),
+			new WooPaymentsLegacyRuntime(),
+			$this->create_dispute_summary_api_client(
+				array(
+					'disputed_amount' => 5000,
+					'currency'        => 'usd',
+				)
+			)
+		);
+
+		$sut->process( $this->create_dispute_event( 'charge.dispute.closed', 'lost', array( 'charge' => $this->last_refund_charge_id ) ) );
+		remove_filter( 'woocommerce_can_restock_refunded_items', $count_restock );
+
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = $order instanceof WC_Order ? $order->get_refunds() : array();
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 2, $refunds );
+		$dispute_refunds = array_values(
+			array_filter(
+				$refunds,
+				static function ( WC_Order_Refund $refund ): bool {
+					return 'Dispute lost.' === $refund->get_reason();
+				}
+			)
+		);
+		$this->assertCount( 1, $dispute_refunds );
+		$this->assertSame( '-40.00', $dispute_refunds[0]->get_total() );
+		$this->assertCount( 1, $dispute_refunds[0]->get_items(), 'A full-amount dispute keeps the line items even after a partial refund.' );
+		$this->assertSame( 0, $restock_requests, 'The lost-dispute refund must not ask to restock items.' );
+	}
+
+	/**
 	 * @testdox Distinct lost disputes on one charge each create their own refund and note.
 	 */
 	public function test_dispute_closed_lost_creates_refund_for_each_distinct_dispute(): void {

@@ -355,9 +355,10 @@ class WooPaymentsDisputeEventHandler {
 			$disputed_amount = isset( $dispute_summary['disputed_amount'] ) ? (int) $dispute_summary['disputed_amount'] : 0;
 			if ( $disputed_amount > 0 ) {
 				$currency      = isset( $dispute_summary['currency'] ) && is_string( $dispute_summary['currency'] ) ? $dispute_summary['currency'] : $order->get_currency();
-				$refund_amount = min( $refund_amount, WooPaymentsCurrencyUtils::amount_from_minor_units( $disputed_amount, $currency ) );
-				$order_total   = (float) $order->get_total();
-				$line_items    = $refund_amount < $order_total ? array() : $line_items;
+				$disputed      = WooPaymentsCurrencyUtils::amount_from_minor_units( $disputed_amount, $currency );
+				$refund_amount = min( $refund_amount, $disputed );
+				// Only a partial dispute clears the line items; a prior partial refund does not.
+				$line_items = $disputed < (float) $order->get_total() ? array() : $line_items;
 			}
 		}
 
