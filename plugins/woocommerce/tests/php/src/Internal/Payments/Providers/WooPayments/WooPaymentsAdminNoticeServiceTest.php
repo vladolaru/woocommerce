@@ -469,7 +469,23 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			'first sale shown'    => array( 'one_and_done', 'shown', null, 'wcpay_one_and_done_notice_shown' ),
 			'first sale dismiss'  => array( 'one_and_done', 'dismiss', null, 'wcpay_one_and_done_notice_dismissed_at' ),
 			'first sale snooze'   => array( 'one_and_done', 'snooze', null, 'wcpay_one_and_done_notice_snoozed_at' ),
+			'post-KYC 7 cta'      => array( 'post_kyc_activation', 'cta', 7, 'wcpay_post_kyc_activation_7_dismissed' ),
+			'first sale cta'      => array( 'one_and_done', 'cta', null, 'wcpay_one_and_done_notice_dismissed_at' ),
 		);
+	}
+
+	/**
+	 * @testdox The test-to-live CTA writes no dismissal marker, like the client's handle_cta().
+	 */
+	public function test_test_to_live_cta_keeps_user_state(): void {
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$before = get_user_meta( $user_id );
+		$sut    = new WooPaymentsAdminNoticeService( static fn(): int => 1000 );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+
+		$this->assertTrue( $sut->record_action( 'test_to_live', 'cta' ) );
+		$this->assertSame( $before, get_user_meta( $user_id ) );
 	}
 
 	/**

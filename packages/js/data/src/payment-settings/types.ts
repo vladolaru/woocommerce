@@ -56,7 +56,11 @@ export type WooPaymentsAdminNoticeId =
 	| 'post_kyc_activation'
 	| 'one_and_done';
 
-export type WooPaymentsAdminNoticeAction = 'shown' | 'dismiss' | 'snooze';
+export type WooPaymentsAdminNoticeAction =
+	| 'shown'
+	| 'dismiss'
+	| 'snooze'
+	| 'cta';
 
 export type WooPaymentsAdminNotice = {
 	id: WooPaymentsAdminNoticeId;
@@ -75,6 +79,7 @@ export type WooPaymentsAdminNotice = {
 		shown: LinkData;
 		dismiss: LinkData;
 		snooze?: LinkData;
+		cta?: LinkData;
 	};
 };
 

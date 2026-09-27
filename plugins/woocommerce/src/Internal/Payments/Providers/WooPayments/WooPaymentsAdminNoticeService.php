@@ -54,9 +54,9 @@ class WooPaymentsAdminNoticeService {
 	 * Supported actions for each settings notice.
 	 */
 	private const ACTIONS = array(
-		'test_to_live'        => array( 'shown', 'dismiss', 'snooze' ),
-		'post_kyc_activation' => array( 'shown', 'dismiss' ),
-		'one_and_done'        => array( 'shown', 'dismiss', 'snooze' ),
+		'test_to_live'        => array( 'shown', 'dismiss', 'snooze', 'cta' ),
+		'post_kyc_activation' => array( 'shown', 'dismiss', 'cta' ),
+		'one_and_done'        => array( 'shown', 'dismiss', 'snooze', 'cta' ),
 	);
 
 	/**
@@ -200,6 +200,7 @@ class WooPaymentsAdminNoticeService {
 				'shown'   => array( 'href' => rest_url( $action_base . 'shown' ) ),
 				'dismiss' => array( 'href' => rest_url( $action_base . 'dismiss' ) ),
 				'snooze'  => array( 'href' => rest_url( $action_base . 'snooze' ) ),
+				'cta'     => array( 'href' => rest_url( $action_base . 'cta' ) ),
 			),
 		);
 	}
@@ -283,6 +284,7 @@ class WooPaymentsAdminNoticeService {
 				'shown'   => array( 'href' => rest_url( $action_base . 'shown' ) ),
 				'dismiss' => array( 'href' => rest_url( $action_base . 'dismiss' ) ),
 				'snooze'  => array( 'href' => rest_url( $action_base . 'snooze' ) ),
+				'cta'     => array( 'href' => rest_url( $action_base . 'cta' ) ),
 			),
 		);
 	}
@@ -434,6 +436,7 @@ class WooPaymentsAdminNoticeService {
 			'_links'  => array(
 				'shown'   => array( 'href' => rest_url( $action_base . 'shown' ) ),
 				'dismiss' => array( 'href' => rest_url( $action_base . 'dismiss' ) ),
+				'cta'     => array( 'href' => rest_url( $action_base . 'cta' ) ),
 			),
 		);
 	}
@@ -459,10 +462,17 @@ class WooPaymentsAdminNoticeService {
 		if ( 0 === $user_id ) {
 			return new WP_Error( 'woocommerce_woopayments_notice_user_required', __( 'Sign in to change this notice.', 'woocommerce' ) );
 		}
+		if ( 'test_to_live' === $notice_id && 'cta' === $action ) {
+			// Client 11.1.0 test-to-live handle_cta() records without a dismissal marker: the notice clears once live.
+			\WC_Tracks::record_event( 'wcpay_test_to_live_notice_cta_clicked', array( 'path' => $this->account_service->has_live_account() ? 'switch_mode' : 'onboarding' ) );
+			return true;
+		}
 
+		// A CTA click also dismisses the notice, like the client's record_dismissal_and_redirect().
+		$marker   = 'cta' === $action ? 'dismiss' : $action;
 		$meta_key = 'post_kyc_activation' === $notice_id
-			? sprintf( 'wcpay_post_kyc_activation_%d_%s', $stage, 'dismiss' === $action ? 'dismissed' : 'shown' )
-			: self::USER_META_KEYS[ $notice_id ][ $action ];
+			? sprintf( 'wcpay_post_kyc_activation_%d_%s', $stage, 'dismiss' === $marker ? 'dismissed' : 'shown' )
+			: self::USER_META_KEYS[ $notice_id ][ $marker ];
 		$now      = (int) call_user_func( $this->clock );
 		if ( metadata_exists( 'user', $user_id, $meta_key ) ) {
 			$existing_marker = (int) get_user_meta( $user_id, $meta_key, true );
@@ -473,6 +483,7 @@ class WooPaymentsAdminNoticeService {
 		} else {
 			$stored = add_user_meta( $user_id, $meta_key, $now, true );
 		}
+		$changed = (bool) $stored;
 		if ( ! $stored ) {
 			$existing_marker = (int) get_user_meta( $user_id, $meta_key, true );
 			$stored          = metadata_exists( 'user', $user_id, $meta_key ) && ( 'snooze' !== $action || $now < $existing_marker + 7 * DAY_IN_SECONDS );
@@ -490,7 +501,53 @@ class WooPaymentsAdminNoticeService {
 		if ( 'one_and_done' === $notice_id ) {
 			delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
 		}
+		if ( $changed ) {
+			$this->record_tracks_event( $notice_id . ':' . $action, $stage );
+		}
 
 		return true;
+	}
+
+	/**
+	 * Record the client 11.1.0 attach-rate notice Tracks event (`class-wc-payments-abstract-admin-notice.php:196,222,446,546`
+	 * and the notices' handle_cta()/hide_notice() overrides) once this user's notice state changed.
+	 *
+	 * @param string   $notice_action Notice identifier and action, joined by a colon.
+	 * @param int|null $stage         Post-KYC stage.
+	 */
+	private function record_tracks_event( string $notice_action, ?int $stage ): void {
+		$stage_properties = array( 'stage' => $stage );
+		switch ( $notice_action ) {
+			case 'test_to_live:shown':
+				\WC_Tracks::record_event( 'wcpay_test_to_live_notice_shown' );
+				break;
+			case 'test_to_live:dismiss':
+				\WC_Tracks::record_event( 'wcpay_test_to_live_notice_dismissed' );
+				break;
+			case 'test_to_live:snooze':
+				\WC_Tracks::record_event( 'wcpay_test_to_live_notice_snoozed' );
+				break;
+			case 'one_and_done:shown':
+				\WC_Tracks::record_event( 'wcpay_one_and_done_notice_shown' );
+				break;
+			case 'one_and_done:dismiss':
+				\WC_Tracks::record_event( 'wcpay_one_and_done_notice_dismissed' );
+				break;
+			case 'one_and_done:snooze':
+				\WC_Tracks::record_event( 'wcpay_one_and_done_notice_snoozed' );
+				break;
+			case 'one_and_done:cta':
+				\WC_Tracks::record_event( 'wcpay_one_and_done_notice_cta_clicked', array( 'destination' => 'marketing' ) );
+				break;
+			case 'post_kyc_activation:shown':
+				\WC_Tracks::record_event( 'wcpay_post_kyc_activation_notice_shown', $stage_properties );
+				break;
+			case 'post_kyc_activation:dismiss':
+				\WC_Tracks::record_event( 'wcpay_post_kyc_activation_notice_dismissed', $stage_properties );
+				break;
+			case 'post_kyc_activation:cta':
+				\WC_Tracks::record_event( 'wcpay_post_kyc_activation_notice_cta_clicked', $stage_properties );
+				break;
+		}
 	}
 }

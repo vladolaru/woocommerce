@@ -130,7 +130,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 		if ( null !== $this->admin_notice_service ) {
 			register_rest_route(
 				$this->route_namespace,
-				'/' . $this->rest_base . '/admin-notices/(?P<notice_id>test_to_live|post_kyc_activation|one_and_done)/(?P<action>shown|dismiss|snooze)',
+				'/' . $this->rest_base . '/admin-notices/(?P<notice_id>test_to_live|post_kyc_activation|one_and_done)/(?P<action>shown|dismiss|snooze|cta)',
 				array(
 					'methods'             => \WP_REST_Server::CREATABLE,
 					'callback'            => fn( $request ) => $this->run( $request, 'record_admin_notice_action' ),

@@ -37,7 +37,7 @@ const isCachedNoticeSuppressed = ( notice: WooPaymentsAdminNotice ) => {
 
 const suppressCachedNotice = (
 	notice: WooPaymentsAdminNotice,
-	action: 'dismiss' | 'snooze'
+	action: 'dismiss' | 'snooze' | 'cta'
 ) => {
 	suppressedCachedNotices.set(
 		notice,
@@ -111,8 +111,16 @@ export const WooPaymentsAdminNotices = ( {
 		}
 	};
 
+	// Client 11.1.0 records the notice CTA Tracks event server-side (handle_cta()).
+	const recordCtaClick = () =>
+		notice._links.cta
+			? apiFetch( { url: notice._links.cta.href, method: 'POST' } ).catch(
+					() => undefined
+			  )
+			: Promise.resolve();
+
 	const postAction = async (
-		action: 'dismiss' | 'snooze',
+		action: 'dismiss' | 'snooze' | 'cta',
 		onSuccess: () => void = finish
 	) => {
 		if ( pendingAction ) {
@@ -149,6 +157,7 @@ export const WooPaymentsAdminNotices = ( {
 			return;
 		}
 		setPendingAction( 'primary' );
+		void recordCtaClick();
 		recordPaymentsEvent( 'reactivate_payments_button_click', {
 			provider_id: wooPaymentsProviderId,
 			provider_extension_slug: wooPaymentsExtensionSlug,
@@ -228,9 +237,15 @@ export const WooPaymentsAdminNotices = ( {
 						href={ notice.primary.href }
 						aria-disabled={ pendingAction !== null }
 						onClick={ ( event: MouseEvent ) => {
-							if ( pendingAction !== null ) {
-								event.preventDefault();
+							event.preventDefault();
+							const onboardingHref = notice.primary.href;
+							if ( pendingAction !== null || ! onboardingHref ) {
+								return;
 							}
+							setPendingAction( 'primary' );
+							void recordCtaClick().then( () =>
+								window.location.assign( onboardingHref )
+							);
 						} }
 					>
 						{ notice.primary.label }
@@ -245,7 +260,7 @@ export const WooPaymentsAdminNotices = ( {
 							if ( ! navigationHref ) {
 								return;
 							}
-							void postAction( 'dismiss', () => {
+							void postAction( 'cta', () => {
 								finish();
 								window.location.assign( navigationHref );
 							} );

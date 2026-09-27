@@ -52,6 +52,7 @@ const notice: WooPaymentsAdminNotice = {
 		shown: { href: '/admin-notices/test_to_live/shown' },
 		dismiss: { href: '/admin-notices/test_to_live/dismiss' },
 		snooze: { href: '/admin-notices/test_to_live/snooze' },
+		cta: { href: '/admin-notices/test_to_live/cta' },
 	},
 };
 
@@ -70,6 +71,7 @@ const postKycNotice = (
 	_links: {
 		shown: { href: '/admin-notices/post_kyc_activation/shown' },
 		dismiss: { href: '/admin-notices/post_kyc_activation/dismiss' },
+		cta: { href: '/admin-notices/post_kyc_activation/cta' },
 	},
 } );
 
@@ -87,6 +89,7 @@ const oneAndDoneNotice: WooPaymentsAdminNotice = {
 		shown: { href: '/admin-notices/one_and_done/shown' },
 		dismiss: { href: '/admin-notices/one_and_done/dismiss' },
 		snooze: { href: '/admin-notices/one_and_done/snooze' },
+		cta: { href: '/admin-notices/one_and_done/cta' },
 	},
 };
 
@@ -343,7 +346,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 				success: boolean;
 			} ) => void = () => {};
 			( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
-				if ( url === currentNotice._links.dismiss.href ) {
+				if ( url === currentNotice._links.cta?.href ) {
 					return new Promise( ( resolve ) => {
 						finishDismiss = resolve;
 					} );
@@ -366,7 +369,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 			await userEvent.keyboard( key );
 
 			expect( apiFetch ).toHaveBeenCalledWith( {
-				url: currentNotice._links.dismiss.href,
+				url: currentNotice._links.cta?.href,
 				method: 'POST',
 				data: { stage: 7 },
 			} );
@@ -431,7 +434,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		);
 		let rejectRequest: ( error: Error ) => void = () => {};
 		( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
-			return url === currentNotice._links.dismiss.href
+			return url === currentNotice._links.cta?.href
 				? new Promise( ( _resolve, reject ) => {
 						rejectRequest = reject;
 				  } )
@@ -498,7 +501,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		const currentNotice = { ...oneAndDoneNotice };
 		let finishDismiss: ( value: { success: boolean } ) => void = () => {};
 		( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
-			if ( url === currentNotice._links.dismiss.href ) {
+			if ( url === currentNotice._links.cta?.href ) {
 				return new Promise( ( resolve ) => {
 					finishDismiss = resolve;
 				} );
@@ -522,7 +525,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 
 		expect( apiFetch ).toHaveBeenCalledTimes( 2 );
 		expect( apiFetch ).toHaveBeenLastCalledWith( {
-			url: currentNotice._links.dismiss.href,
+			url: currentNotice._links.cta?.href,
 			method: 'POST',
 		} );
 		expect( mockAssign ).not.toHaveBeenCalled();
@@ -538,7 +541,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 	it( 'keeps one-and-done visible and focused when promotion dismissal fails', async () => {
 		let rejectRequest: ( error: Error ) => void = () => {};
 		( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
-			return url === oneAndDoneNotice._links.dismiss.href
+			return url === oneAndDoneNotice._links.cta?.href
 				? new Promise( ( _resolve, reject ) => {
 						rejectRequest = reject;
 				  } )
@@ -640,6 +643,10 @@ describe( 'WooPaymentsAdminNotices', () => {
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Turn on live payments' } )
 		);
+		expect( apiFetch ).toHaveBeenCalledWith( {
+			url: currentNotice._links.cta?.href,
+			method: 'POST',
+		} );
 		expect( apiFetch ).toHaveBeenCalledWith( {
 			path: '/wc/v3/payments/settings',
 			method: 'POST',
@@ -777,5 +784,37 @@ describe( 'WooPaymentsAdminNotices', () => {
 			screen.getByText( currentNotice.message, { selector: 'p' } )
 		).toBeInTheDocument();
 		dateNow.mockRestore();
+	} );
+
+	it( 'records the test-to-live onboarding CTA before following its link', async () => {
+		const currentNotice: WooPaymentsAdminNotice = {
+			...notice,
+			primary: {
+				kind: 'onboard',
+				label: 'Turn on live payments',
+				href: '/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding',
+			},
+		};
+		render(
+			<WooPaymentsAdminNotices
+				notice={ currentNotice }
+				focusTargetRef={ { current: focusTarget } }
+				onDismiss={ jest.fn() }
+			/>
+		);
+
+		await userEvent.click(
+			screen.getByRole( 'link', { name: 'Turn on live payments' } )
+		);
+
+		expect( apiFetch ).toHaveBeenCalledWith( {
+			url: currentNotice._links.cta?.href,
+			method: 'POST',
+		} );
+		await waitFor( () =>
+			expect( mockAssign ).toHaveBeenCalledWith(
+				currentNotice.primary.href
+			)
+		);
 	} );
 } );
