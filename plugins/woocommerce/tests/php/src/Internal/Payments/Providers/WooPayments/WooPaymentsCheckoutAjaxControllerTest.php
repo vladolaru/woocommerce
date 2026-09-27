@@ -1002,11 +1002,20 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback should reject mismatched intent IDs before transport reads.
+	 * @testdox Order-status callback should reject mismatched intent IDs before transport reads and note the received ID.
+	 *
+	 * Source: client 11.1.0 `gw:4184-4188` (a missing `intent_id` is the translated "unknown") and `gw:4372-4384`
+	 * (the note for `intent_id_mismatch` and `empty_intent_id`).
+	 *
+	 * @dataProvider mismatched_intent_id_data
+	 *
+	 * @param string|null $received_intent_id Request intent ID, or null when the request has none.
+	 * @param string      $stored_intent_id   Intent ID stored on the order.
+	 * @param string      $noted_intent_id    Intent ID the order note names.
 	 */
-	public function test_update_order_status_rejects_mismatched_intent_id(): void {
+	public function test_update_order_status_rejects_mismatched_intent_id( ?string $received_intent_id, string $stored_intent_id, string $noted_intent_id ): void {
 		$order = $this->create_woopayments_order( '0.00' );
-		$order->update_meta_data( '_intent_id', 'seti_expected' );
+		$order->update_meta_data( '_intent_id', $stored_intent_id );
 		$order->save();
 
 		$api_client = new class() extends WooPaymentsApiClient {
@@ -1032,17 +1041,36 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			}
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 		};
-		$sut        = $this->create_controller( $api_client );
-		$response   = $sut->get_update_order_status_response(
-			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
-				'order_id'    => $order->get_id(),
-				'intent_id'   => 'seti_other',
-			)
+
+		$request = array(
+			'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+			'order_id'    => $order->get_id(),
 		);
+		if ( null !== $received_intent_id ) {
+			$request['intent_id'] = $received_intent_id;
+		}
+
+		$response = $this->create_controller( $api_client )->get_update_order_status_response( $request );
 
 		$this->assertArrayHasKey( 'error', $response );
 		$this->assertSame( 409, $response['status_code'] );
+		$this->assert_order_has_note_containing(
+			$order,
+			'A payment with ID <code>' . $noted_intent_id . '</code> was used in an attempt to pay for this order. This payment intent ID does not match any payments for this order, so it was ignored and the order was not updated.'
+		);
+	}
+
+	/**
+	 * Intent IDs that do not match the order.
+	 *
+	 * @return array<string,array{?string,string,string}>
+	 */
+	public function mismatched_intent_id_data(): array {
+		return array(
+			'different intent'       => array( 'seti_other', 'seti_expected', 'seti_other' ),
+			'no intent in request'   => array( null, 'seti_expected', 'unknown' ),
+			'no intent on the order' => array( 'seti_other', '', 'seti_other' ),
+		);
 	}
 
 	/**

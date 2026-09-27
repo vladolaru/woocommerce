@@ -196,7 +196,17 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 
 		$intent_id = $this->get_request_string( $request, 'intent_id' );
 		if ( '' === $intent_id || $intent_id !== (string) $order->get_meta( '_intent_id', true ) ) {
-			$order->add_order_note( __( 'WooPayments intent verification failed after customer authentication.', 'woocommerce' ) );
+			$order->add_order_note(
+				sprintf(
+					WooPaymentsHtmlUtils::escape_interpolated_html(
+						/* translators: %1: transaction ID of the payment or a translated string indicating an unknown ID. */
+						__( 'A payment with ID <code>%1$s</code> was used in an attempt to pay for this order. This payment intent ID does not match any payments for this order, so it was ignored and the order was not updated.', 'woocommerce' ),
+						array( 'code' => '<code>' )
+					),
+					/* translators: This will be used to indicate an unknown value for an ID. */
+					isset( $request['intent_id'] ) ? $intent_id : __( 'unknown', 'woocommerce' )
+				)
+			);
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
 
