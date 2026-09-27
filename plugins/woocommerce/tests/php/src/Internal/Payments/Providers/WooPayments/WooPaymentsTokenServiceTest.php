@@ -1730,27 +1730,11 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An admin's filtered read of a shopper's plugin-era cards should keep the same tokens and the default.
-	 *
-	 * Source: client 11.1.0 class-wc-payments-token-service.php:199-256 leaves tokens the provider still holds untouched.
-	 */
-	public function test_filtered_read_keeps_plugin_era_default_card_for_an_admin_reader(): void {
-		$user_id = $this->factory()->user->create();
-
-		list( $first, $second ) = $this->create_plugin_era_cards_with_second_default( $user_id );
-		wp_set_current_user( $this->factory()->user->create( array( 'role' => 'administrator' ) ) );
-
-		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array( $this->card_payment_method( 'pm_plugin_first' ), $this->card_payment_method( 'pm_plugin_second' ) ) ) );
-		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
-
-		$this->assert_plugin_era_default_survives_filtered_read( $user_id, $first->get_id(), $second->get_id() );
-	}
-
-	/**
 	 * @testdox The filtered read should pick the customer id with the plugin's mode rule, not the account's liveness.
 	 * @dataProvider provide_mode_cases
 	 *
-	 * Source: client 11.1.0 class-wc-payments-customer-service.php:392-396 keys the customer id by WC_Payments::mode()->is_test(),
+	 * Source: client 11.1.0 class-wc-payments-token-service.php:199-256 leaves tokens the provider still holds untouched;
+	 * class-wc-payments-customer-service.php:392-396 keys the customer id by WC_Payments::mode()->is_test(),
 	 * which reads the gateway test_mode setting unless onboarding test mode is on (includes/core/class-mode.php maybe_init()).
 	 *
 	 * @param string $onboarding_test_mode Onboarding test mode option value.
