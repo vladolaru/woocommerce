@@ -77,7 +77,18 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$request_token->setValue( null );
 			$this->state_store       = new WooPaymentsCutoverStateStore();
 			$this->scheduler         = new RecordingWooPaymentsCutoverActionScheduler( $this->state_store );
-			$this->preflight_service = new WooPaymentsCutoverPreflightService();
+			$this->preflight_service = new class() extends WooPaymentsCutoverPreflightService {
+				/**
+				 * Report the controlled site-local (non-network) activation state.
+				 *
+				 * The real implementation reads through `$legacy_proxy`, which this shared
+				 * fixture never initializes; every test using the default preflight service
+				 * exercises site-local reconciliation, so the answer is fixed.
+				 */
+				public function is_woopayments_network_active(): bool {
+					return false;
+				}
+			};
 			$this->cleanup_state();
 			$this->sut = $this->create_job( true );
 		}
@@ -265,6 +276,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Return the number of deactivation calls. */
 			public function get_deactivation_calls(): int {
 				return $this->deactivation_calls;
+			}
+
+			/**
+			 * Report the controlled site-local (non-network) activation state.
+			 *
+			 * The real implementation reads through `$legacy_proxy`, which this
+			 * isolated double never initializes; this scenario is site-local, so
+			 * the answer is fixed.
+			 */
+			public function is_woopayments_network_active(): bool {
+				return false;
 			}
 		};
 		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
@@ -796,6 +818,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				++$this->deactivation_calls;
 				return true;
 			}
+
+			/**
+			 * Report the controlled site-local (non-network) activation state.
+			 *
+			 * The real implementation reads through `$legacy_proxy`, which this
+			 * isolated double never initializes; this scenario is site-local, so
+			 * the answer is fixed.
+			 */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
 		};
 		$normalization      = new class() extends WooPaymentsCutoverNormalizationRunner {
 			/** @return array{ran:bool,changes:string[]} */
@@ -875,6 +908,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function get_queued_operational_actions(): array {
 				return array();
 			}
+
+			/**
+			 * Report the controlled site-local (non-network) activation state.
+			 *
+			 * The real implementation reads through `$legacy_proxy`, which this
+			 * isolated double never initializes; this scenario is site-local, so
+			 * the answer is fixed.
+			 */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
 		};
 		$normalization = new class( $failure_step ) extends WooPaymentsCutoverNormalizationRunner {
 			/** @var string */
@@ -951,6 +995,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** @return string[] */
 			public function get_reconciliation_failures(): array {
 				return $this->failures;
+			}
+
+			/**
+			 * Report the controlled site-local (non-network) activation state.
+			 *
+			 * The real implementation reads through `$legacy_proxy`, which this
+			 * isolated double never initializes; this scenario is site-local, so
+			 * the answer is fixed.
+			 */
+			public function is_woopayments_network_active(): bool {
+				return false;
 			}
 		};
 		$sut       = $this->create_job( true, $preflight );
@@ -1034,6 +1089,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 					$job->enqueue( 'merchant' );
 				}
 				return array( 'legacy_stripe_billing_subscriptions_present' );
+			}
+
+			/**
+			 * Report the controlled site-local (non-network) activation state.
+			 *
+			 * The real implementation reads through `$legacy_proxy`, which this
+			 * isolated double never initializes; this scenario is site-local, so
+			 * the answer is fixed.
+			 */
+			public function is_woopayments_network_active(): bool {
+				return false;
 			}
 		};
 		$job       = $this->create_job( true, $preflight );
@@ -2816,6 +2882,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function get_active_woopayments_plugin_file(): string {
 				return 'woocommerce-payments/woocommerce-payments.php';
 			}
+
+			/**
+			 * Report the controlled site-local (non-network) activation state.
+			 *
+			 * The real implementation reads through `$legacy_proxy`, which this
+			 * isolated double never initializes; this scenario is site-local, so
+			 * the answer is fixed.
+			 */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
 		};
 		$job       = new class(
 			static function () use ( $preflight ): void {
@@ -3830,6 +3907,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 */
 			public function get_active_woopayments_plugin_file(): string {
 				return $this->plugin_file;
+			}
+
+			/**
+			 * Report the controlled site-local (non-network) activation state.
+			 *
+			 * The real implementation reads through `$legacy_proxy`, which this
+			 * isolated double never initializes; every reconciliation case built
+			 * from this helper is a site-local scenario, so the answer is fixed.
+			 */
+			public function is_woopayments_network_active(): bool {
+				return false;
 			}
 
 			/**
