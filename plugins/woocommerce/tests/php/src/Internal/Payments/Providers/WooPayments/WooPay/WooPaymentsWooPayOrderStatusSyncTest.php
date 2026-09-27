@@ -672,6 +672,22 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Disabled reconciliation runs no query when there is no owned webhook to remove.
+	 */
+	public function test_disabled_reconciliation_without_owned_webhook_runs_no_query(): void {
+		global $wpdb;
+		$sync = $this->create_sync( true, false );
+		$sync->register();
+		$sync->reconcile_webhook();
+
+		$queries_before = $wpdb->num_queries;
+		$sync->reconcile_webhook();
+
+		$this->assertSame( 0, $wpdb->num_queries - $queries_before, 'admin_init runs this on every admin page and admin-ajax request.' );
+		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
+	}
+
+	/**
 	 * @testdox Enabled reconciliation recovers from a stale stored webhook ID.
 	 */
 	public function test_enabled_reconciliation_recovers_from_stale_id(): void {

@@ -413,9 +413,13 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 * Remove only the webhook row identified by the native ownership option.
 	 */
 	private function remove_owned_webhook(): bool {
-		$webhook_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
+		$stored_id  = get_option( self::WEBHOOK_ID_OPTION, false );
+		$webhook_id = absint( $stored_id );
 		if ( ! $webhook_id ) {
-			delete_option( self::WEBHOOK_ID_OPTION );
+			// delete_option() always runs a SELECT, so only call it for a stored invalid value.
+			if ( false !== $stored_id ) {
+				delete_option( self::WEBHOOK_ID_OPTION );
+			}
 			return true;
 		}
 
