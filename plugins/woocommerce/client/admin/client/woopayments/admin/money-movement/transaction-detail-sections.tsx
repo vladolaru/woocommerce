@@ -615,7 +615,7 @@ const getPaymentSummaryStatusLabel = (
 	}
 
 	if ( transaction.status === 'requires_capture' ) {
-		return __( 'Authorized', 'woocommerce' );
+		return __( 'Payment authorized', 'woocommerce' );
 	}
 
 	const refundedAmount = Number( transaction.amount_refunded );
@@ -625,8 +625,14 @@ const getPaymentSummaryStatusLabel = (
 		transaction.status || ''
 	);
 
-	if ( ! isSuccessfulCharge || ! hasRefundedAmount ) {
+	if ( ! isSuccessfulCharge ) {
 		return formatLabel( transaction.status );
+	}
+
+	if ( ! hasRefundedAmount ) {
+		return transaction.captured === true
+			? __( 'Paid', 'woocommerce' )
+			: __( 'Payment authorized', 'woocommerce' );
 	}
 
 	const chargeAmount = Math.abs( Number( transaction.amount ) );

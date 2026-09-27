@@ -587,6 +587,32 @@ describe( 'WooPayments money movement pages', () => {
 			},
 			'Refunded',
 		],
+		// Source: client 11.1.0 utils/charge/index.ts:168-169 and payment-status-chip/mappings.ts:45-52;
+		// charge fields from the recorded Fixtures/rec-t3-manual-capture.json entries.
+		[
+			'captured',
+			{
+				status: 'succeeded',
+				amount: 5000,
+				amount_refunded: 0,
+				refunded: false,
+				captured: true,
+				currency: 'usd',
+			},
+			'Paid',
+		],
+		[
+			'uncaptured',
+			{
+				status: 'succeeded',
+				amount: 5000,
+				amount_refunded: 0,
+				refunded: false,
+				captured: false,
+				currency: 'usd',
+			},
+			'Payment authorized',
+		],
 		[
 			'disputed and partially refunded',
 			{
@@ -4398,9 +4424,10 @@ describe( 'WooPayments money movement pages', () => {
 		const summary = screen
 			.getByRole( 'heading', { name: 'Summary' } )
 			.closest( 'section' ) as HTMLElement;
-		// F-TX (N-085): native renders "Authorized" here where client 11.1.0 renders
-		// "Payment authorized" (payment-status-chip/mappings.ts:45-51); asserting native's
-		// current label would pin the divergence, so that assertion is left for Task T.7 Step 5.
+		// Source: client 11.1.0 payment-status-chip/mappings.ts:49-52 ("Payment authorized").
+		expect(
+			within( summary ).getByText( 'Payment authorized' )
+		).toBeInTheDocument();
 		expect(
 			within( summary ).queryByText( 'Succeeded' )
 		).not.toBeInTheDocument();
