@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { useSelect } from '@wordpress/data';
 import { recordEvent } from '@woocommerce/tracks';
 import { loadConnectAndInitialize } from '@stripe/connect-js';
@@ -90,7 +90,7 @@ const FINISH_SETUP_TASK = 'Finish setting up WooPayments';
 const SESSION_ERROR =
 	'Unable to start onboarding. If this problem persists, please contact support.';
 
-const createShell = ( connected = true ) =>
+const createShell = ( connected = true, status = 'restricted' ) =>
 	( {
 		account: {
 			connected,
@@ -99,7 +99,7 @@ const createShell = ( connected = true ) =>
 			test_mode_onboarding: false,
 		},
 		account_status: {
-			status: 'restricted',
+			status,
 			current_deadline: null,
 			past_due: false,
 			account_link: '',
@@ -285,11 +285,79 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 		).toBeVisible();
 		expect( screen.getByText( FINISH_SETUP_TASK ) ).toBeInTheDocument();
 		expect( document.querySelector( '.stripe-spinner' ) ).toBeNull();
-		await waitFor( () =>
-			expect( loadConnectAndInitialize ).not.toHaveBeenCalled()
-		);
 		expect(
 			screen.queryByTestId( 'stripe-notification-banner' )
+		).toBeNull();
+	} );
+
+	it( 'does not initialize Connect without a publishable key', async () => {
+		mockCreateAccountSession.mockResolvedValue( {
+			clientSecret: 'cs_test',
+			publishableKey: '',
+			locale: 'fr_FR',
+		} );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		expect(
+			await screen.findByText( SESSION_ERROR, {
+				selector: '.woopayments-banner-notice__content',
+			} )
+		).toBeInTheDocument();
+		expect( loadConnectAndInitialize ).not.toHaveBeenCalled();
+	} );
+
+	it.each( [ 'rejected.fraud', 'under_review' ] )(
+		'shows the update-details task and creates no session for account status %s',
+		async ( status ) => {
+			mockGetShell.mockResolvedValue( createShell( true, status ) );
+
+			render( <WooPaymentsOverviewPage /> );
+
+			expect(
+				await screen.findByText( FINISH_SETUP_TASK )
+			).toBeInTheDocument();
+			expect( mockCreateAccountSession ).not.toHaveBeenCalled();
+		}
+	);
+
+	it( 'shows the loader card until Stripe reports notifications', async () => {
+		await renderWithBanner();
+
+		expect(
+			document.querySelector( '.stripe-notifications-banner-loader' )
+		).not.toBeNull();
+
+		notifyChange( 0, 0 );
+
+		expect(
+			document.querySelector( '.stripe-notifications-banner-loader' )
+		).toBeNull();
+	} );
+
+	it( 'shows no loader card for a complete account', async () => {
+		mockGetShell.mockResolvedValue( createShell( true, 'complete' ) );
+
+		await renderWithBanner();
+
+		expect(
+			document.querySelector( '.stripe-notifications-banner-loader' )
+		).toBeNull();
+	} );
+
+	it( 'shows the HTTPS warning only for an invalid request load error', async () => {
+		const props = await renderWithBanner();
+
+		act( () => {
+			props.onLoadError( {
+				elementTagName: 'stripe-connect-notification-banner',
+				error: { type: 'api_error', message: 'Stripe is down' },
+			} );
+		} );
+
+		expect( screen.getByText( FINISH_SETUP_TASK ) ).toBeInTheDocument();
+		expect(
+			screen.queryByText( /require HTTPS and cannot be displayed/ )
 		).toBeNull();
 	} );
 
