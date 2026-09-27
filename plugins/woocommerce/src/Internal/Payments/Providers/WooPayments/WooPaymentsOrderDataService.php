@@ -257,6 +257,12 @@ class WooPaymentsOrderDataService {
 		$fx    = $fee_breakdown_v1['fx'] ?? null;
 		if ( is_array( $fx ) && isset( $fx['from_currency'], $fx['to_currency'], $fx['to_amount'] ) ) {
 			$exchange_rate = $fee_breakdown_v1['sources']['balance_transaction_exchange_rate'] ?? null;
+			$details       = is_array( $charge['transaction_details'] ?? null ) ? $charge['transaction_details'] : array();
+			if ( is_numeric( $details['customer_amount_captured'] ?? null ) && is_numeric( $details['store_amount_captured'] ?? null ) && 0.0 !== (float) $details['customer_amount_captured'] ) {
+				// Captured timeline events carry the captured amounts; the client recomputes the rate from them (class-wc-payments-captured-event-note.php:861-885).
+				$rate          = $this->interpret_string_exchange_rate( (float) $details['store_amount_captured'] / (float) $details['customer_amount_captured'], (string) ( $details['customer_currency'] ?? '' ), (string) ( $details['store_currency'] ?? '' ) );
+				$exchange_rate = number_format( $rate, $rate > 1 ? 5 : 6, '.', '' );
+			}
 			if ( is_numeric( $exchange_rate ) ) {
 				$arrow   = html_entity_decode( '&rarr;', ENT_QUOTES, 'UTF-8' );
 				$lines[] = sprintf(

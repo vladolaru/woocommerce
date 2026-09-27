@@ -140,21 +140,17 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	 * calls it at `includes/class-wc-payments-order-service.php:869`
 	 * (`$details = ( new WC_Payments_Captured_Event_Note( $captured_event ) )->generate_html_note();`).
 	 *
-	 * For the EUR-converted row, native's FX line (this class) reads
-	 * `fee_breakdown_v1.sources.balance_transaction_exchange_rate` (1.13905) while the client's own
-	 * renderer recomputes the rate as `store_amount_captured / customer_amount_captured` from
-	 * `transaction_details` (1.13938) — a genuine, pre-existing client/native disagreement on that one
-	 * digit string, not a native defect this test can honestly assert against (F-FXRATE, T.7). Per
-	 * N-085 only the rate digits are left unasserted; the surrounding text both sides agree on
-	 * (`1.00 EUR → ` and ` USD: $14.06 USD`, the shared `to_amount`) is asserted, along with every
-	 * other line (fee, sub-rows, net payout), which matches the client's output exactly.
+	 * For the EUR-converted row, the FX rate follows the client's `format_fx()`
+	 * (`class-wc-payments-captured-event-note.php:861-885`): `store_amount_captured /
+	 * customer_amount_captured` from the event's `transaction_details` (1406 / 1234 = 1.13938), not
+	 * `fee_breakdown_v1.sources.balance_transaction_exchange_rate` (1.13905) (F-FXRATE, T.7).
 	 *
 	 * @dataProvider recorded_captured_event_fee_note_data
 	 *
 	 * @param string      $pair               REC-5a R-b fixture pair key.
 	 * @param string|null $expected_note      Expected full note, or null when only fragments are asserted (EUR row).
 	 * @param string[]    $expected_fragments Expected note fragments to assert when `$expected_note` is null.
-	 * @param string|null $expected_pattern   Regular expression the note must match, when asserting a shape (e.g. the FX line carrying a rate) without pinning specific digits.
+	 * @param string|null $expected_pattern   Regular expression the note must match (the EUR row's FX line).
 	 */
 	public function test_get_fee_breakdown_note_from_timeline_event_renders_captured_event( string $pair, ?string $expected_note, array $expected_fragments, ?string $expected_pattern = null ): void {
 		$note = $this->sut->get_fee_breakdown_note_from_timeline_event( $this->load_recorded_captured_timeline_event( $pair ) );
@@ -167,7 +163,7 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 			}
 		}
 		if ( null !== $expected_pattern ) {
-			$this->assertMatchesRegularExpression( $expected_pattern, $note, "The $pair note's FX line must carry a rate, even though the digits themselves are unasserted (F-FXRATE)." );
+			$this->assertMatchesRegularExpression( $expected_pattern, $note, "The $pair note's FX line must carry the client's recomputed rate (F-FXRATE)." );
 		}
 	}
 
@@ -187,7 +183,7 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 					. '</div>',
 				array(),
 			),
-			'eur_full_refund (converted, FX-rate digits excluded, T.7 F-FXRATE)' => array(
+			'eur_full_refund (converted, client-recomputed FX rate)' => array(
 				'eur_full_refund',
 				null,
 				array(
@@ -198,7 +194,7 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 					'<p>&nbsp;&nbsp;&nbsp;&nbsp;Currency conversion fee: 1%</p>' . PHP_EOL,
 					'<p>Net payout: $13.21 USD</p>' . PHP_EOL,
 				),
-				'/1\.00 EUR → \d+\.\d{5} USD: \$14\.06 USD/u',
+				'/<p>1\.00 EUR → 1\.13938 USD: \$14\.06 USD<\/p>/u',
 			),
 		);
 	}
