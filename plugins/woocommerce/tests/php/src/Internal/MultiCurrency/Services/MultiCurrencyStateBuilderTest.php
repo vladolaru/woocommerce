@@ -457,6 +457,31 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should read stored customer currencies only when asked for them, not while building state for a render.
+	 */
+	public function test_reads_stored_customer_currencies_only_on_demand(): void {
+		$reads = 0;
+		add_filter(
+			'pre_option_wcpay_multi_currency_stored_customer_currencies',
+			static function ( $pre ) use ( &$reads ) {
+				++$reads;
+				return $pre;
+			}
+		);
+
+		$state = $this->create_builder()->build();
+		$state->get_enabled_currencies();
+		$state->get_selected_currency();
+		$reads_during_render = $reads;
+		$state->get_customer_currencies();
+		$state->get_customer_currencies();
+		remove_all_filters( 'pre_option_wcpay_multi_currency_stored_customer_currencies' );
+
+		$this->assertSame( 0, $reads_during_render );
+		$this->assertSame( 1, $reads );
+	}
+
+	/**
 	 * @testdox Should return the same memoized state instance on repeated calls.
 	 */
 	public function test_memoizes_state_across_repeated_calls(): void {

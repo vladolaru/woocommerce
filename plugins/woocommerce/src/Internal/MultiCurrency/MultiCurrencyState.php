@@ -50,11 +50,11 @@ class MultiCurrencyState {
 	private MultiCurrencyCurrency $selected_currency;
 
 	/**
-	 * Customer-used currency codes.
+	 * Customer-used currency codes, or a loader resolved on first read.
 	 *
-	 * @var string[]
+	 * @var string[]|\Closure
 	 */
-	private array $customer_currencies;
+	private $customer_currencies;
 
 	/**
 	 * Constructor.
@@ -63,20 +63,20 @@ class MultiCurrencyState {
 	 * @param array<string,MultiCurrencyCurrency> $enabled_currencies   Enabled currencies.
 	 * @param MultiCurrencyCurrency               $default_currency     Default currency.
 	 * @param MultiCurrencyCurrency               $selected_currency    Selected currency.
-	 * @param string[]                            $customer_currencies Customer-used currency codes.
+	 * @param string[]|\Closure                   $customer_currencies Customer-used currency codes, or a loader returning them.
 	 */
 	public function __construct(
 		array $available_currencies,
 		array $enabled_currencies,
 		MultiCurrencyCurrency $default_currency,
 		MultiCurrencyCurrency $selected_currency,
-		array $customer_currencies = array()
+		$customer_currencies = array()
 	) {
 		$this->available_currencies = $available_currencies;
 		$this->enabled_currencies   = $enabled_currencies;
 		$this->default_currency     = $default_currency;
 		$this->selected_currency    = $selected_currency;
-		$this->customer_currencies  = array_values( array_unique( array_map( 'strtoupper', $customer_currencies ) ) );
+		$this->customer_currencies  = $customer_currencies instanceof \Closure ? $customer_currencies : $this->normalize_customer_currencies( $customer_currencies );
 	}
 
 	/**
@@ -127,7 +127,21 @@ class MultiCurrencyState {
 	 * @return string[]
 	 */
 	public function get_customer_currencies(): array {
+		if ( $this->customer_currencies instanceof \Closure ) {
+			$this->customer_currencies = $this->normalize_customer_currencies( ( $this->customer_currencies )() );
+		}
+
 		return $this->customer_currencies;
+	}
+
+	/**
+	 * Normalize customer-used currency codes.
+	 *
+	 * @param mixed $customer_currencies Customer-used currency codes.
+	 * @return string[]
+	 */
+	private function normalize_customer_currencies( $customer_currencies ): array {
+		return array_values( array_unique( array_map( 'strtoupper', (array) $customer_currencies ) ) );
 	}
 
 	/**

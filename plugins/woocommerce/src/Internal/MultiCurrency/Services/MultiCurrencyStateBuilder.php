@@ -177,7 +177,7 @@ class MultiCurrencyStateBuilder {
 			? $enabled[ $selected_code ]
 			: $default;
 
-		$this->cached_state            = new MultiCurrencyState( $available, $enabled, $default, $selected, $this->get_customer_currencies() );
+		$this->cached_state            = new MultiCurrencyState( $available, $enabled, $default, $selected, \Closure::fromCallable( array( $this, 'get_customer_currencies' ) ) );
 		$this->cached_state_generation = $current_generation;
 
 		return $this->cached_state;
