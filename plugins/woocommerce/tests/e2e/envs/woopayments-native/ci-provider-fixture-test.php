@@ -427,6 +427,20 @@ assert_true(
 	'Jetpack active-plugin reports must fail closed for unsupported methods'
 );
 
+$embedded_session_response = $fixture->intercept(
+	false,
+	array(
+		'method' => 'POST',
+		'body'   => '{"test_mode":true}',
+	),
+	'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts/embedded/session?body-hash=hash&nonce=nonce&signature=signature&timestamp=1&token=dummyblog%3A1%3A0&test_mode=1'
+);
+assert_true(
+	is_array( $embedded_session_response ) && 400 === $embedded_session_response['response']['code']
+		&& 'wcpay_embedded_session_unavailable' === json_decode( $embedded_session_response['body'], true )['code'],
+	'the Overview banner embedded-session request must be a known route answered as unavailable, not an unknown request'
+);
+
 $store_setup_url      = 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts/store_setup?body-hash=hash&nonce=nonce&signature=signature&timestamp=1&token=dummyblog%3A1%3A0';
 $store_setup_body     = wp_json_encode(
 	array(

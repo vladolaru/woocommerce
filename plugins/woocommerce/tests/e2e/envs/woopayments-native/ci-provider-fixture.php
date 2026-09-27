@@ -424,6 +424,18 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				return $this->response( $state['account'] );
 			case 'POST accounts/store_setup':
 				return $this->response( array() );
+			case 'POST accounts/embedded/session':
+				// The Overview's Stripe notifications banner asks for an embedded
+				// session. CI has no Stripe, so answer as the platform does when it
+				// cannot create one; the banner then takes its session-failure path.
+				return $this->response(
+					array(
+						'code'    => 'wcpay_embedded_session_unavailable',
+						'message' => 'Embedded account sessions are not available in the CI fixture.',
+						'data'    => array( 'status' => 400 ),
+					),
+					400
+				);
 			case 'POST compatibility':
 				return $this->response( array( 'result' => 'ok' ) );
 			case 'POST accounts/platform_checkout':
@@ -932,6 +944,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'GET public/onboarding/fields_data',
 			'POST accounts',
 			'POST accounts/store_setup',
+			'POST accounts/embedded/session',
 			'POST accounts/platform_checkout',
 			'POST compatibility',
 			'POST fraud_ruleset',
@@ -1516,16 +1529,17 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	/**
 	 * Creates a WordPress HTTP API response.
 	 *
-	 * @param array<int|string,mixed> $body Response body.
+	 * @param array<int|string,mixed> $body   Response body.
+	 * @param int                     $status HTTP status code.
 	 * @return array<string,mixed>
 	 */
-	private function response( array $body ): array {
+	private function response( array $body, int $status = 200 ): array {
 		return array(
 			'headers'  => array( 'content-type' => 'application/json; charset=utf-8' ),
 			'body'     => wp_json_encode( $body ),
 			'response' => array(
-				'code'    => 200,
-				'message' => 'OK',
+				'code'    => $status,
+				'message' => 200 === $status ? 'OK' : 'Bad Request',
 			),
 			'cookies'  => array(),
 			'filename' => null,
