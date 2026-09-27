@@ -1470,7 +1470,7 @@ class WooPaymentsWooPaySessionService {
 	 *
 	 * @return bool
 	 */
-	private function is_woopay_direct_checkout_enabled(): bool {
+	public function is_woopay_direct_checkout_enabled(): bool {
 		$account_data = $this->get_account_service()->get_cached_account_data();
 
 		return ! empty( $account_data['platform_direct_checkout_eligible'] )

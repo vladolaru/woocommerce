@@ -40,6 +40,13 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	public bool $direct_checkout_enabled = false;
 
 	/**
+	 * Number of frontend config builds.
+	 *
+	 * @var int
+	 */
+	public int $frontend_config_calls = 0;
+
+	/**
 	 * Last session email.
 	 *
 	 * @var string
@@ -115,12 +122,23 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Tell whether WooPay direct checkout is enabled.
+	 *
+	 * @return bool
+	 */
+	public function is_woopay_direct_checkout_enabled(): bool {
+		return $this->direct_checkout_enabled;
+	}
+
+	/**
 	 * Get WooPay frontend config.
 	 *
 	 * @param string $context Express checkout context.
 	 * @return array<string,mixed>
 	 */
 	public function get_woopay_frontend_config( string $context = 'checkout' ): array {
+		++$this->frontend_config_calls;
+
 		return array(
 			'isWooPayEnabled'               => $this->woopay_enabled,
 			'shouldShowWooPayButton'        => $this->should_show_woopay_button,

@@ -376,7 +376,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 
 		$supported_frontend_surface = $this->is_supported_frontend_surface();
 		$direct_checkout_surface    = $this->is_supported_direct_checkout_surface();
-		if ( ! $supported_frontend_surface && ! $direct_checkout_surface ) {
+		if ( ! $supported_frontend_surface && ( ! $direct_checkout_surface || ! $this->session_service->is_woopay_direct_checkout_enabled() ) ) {
 			return;
 		}
 

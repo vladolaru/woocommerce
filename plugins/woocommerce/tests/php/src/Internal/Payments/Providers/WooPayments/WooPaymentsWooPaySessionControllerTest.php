@@ -321,6 +321,30 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not build the WooPay config for a mini-cart page when direct checkout is off.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_mini_cart_page_skips_woopay_config_when_direct_checkout_is_off(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = false;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut->register();
+		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
+			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
+		}
+		wp_enqueue_script( 'wc-cart-fragments' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertSame( 0, $service->frontend_config_calls, 'Client 11.1.0 only runs direct checkout when it is enabled.' );
+		$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+	}
+
+	/**
 	 * @testdox Should not enqueue direct checkout assets for mini-carts on checkout pages.
 	 */
 	public function test_enqueue_frontend_assets_skips_mini_carts_on_checkout_pages(): void {
