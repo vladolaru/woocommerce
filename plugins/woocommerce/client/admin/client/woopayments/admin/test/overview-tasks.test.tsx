@@ -1,4 +1,9 @@
 /**
+ * External dependencies
+ */
+import { recordEvent } from '@woocommerce/tracks';
+
+/**
  * Internal dependencies
  */
 import {
@@ -7,6 +12,8 @@ import {
 	getVisibleOverviewTasks,
 	isDisputeDueWithinDays,
 } from '../overview/components/overview-tasks';
+
+jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const NOW = new Date( '2026-06-19T12:00:00.000Z' ).getTime();
@@ -259,7 +266,7 @@ describe( 'overview task builders', () => {
 		expect( task.href ).toContain( 'filter=awaiting_response' );
 	} );
 
-	it( 'builds a go-live task that dispatches the native activate-payments event', () => {
+	it( 'builds a go-live task that opens the live payments modal and records the click', () => {
 		const onActivatePayments = jest.fn();
 		const shell = createShell( {
 			account: {
@@ -285,6 +292,10 @@ describe( 'overview task builders', () => {
 
 		task.onClick?.();
 
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_overview_task_click',
+			{ task: 'go-live', source: 'wcpay-go-live-task' }
+		);
 		expect( onActivatePayments ).toHaveBeenCalled();
 	} );
 

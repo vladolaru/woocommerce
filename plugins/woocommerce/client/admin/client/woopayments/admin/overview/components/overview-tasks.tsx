@@ -372,12 +372,21 @@ const buildGoLiveTask = ( {
 		return null;
 	}
 
+	// Client 11.1.0 `overview/task-list/tasks/go-live-task.tsx:29-33`.
+	const onClick = () => {
+		recordEvent( 'wcpay_overview_task_click', {
+			task: 'go-live',
+			source: 'wcpay-go-live-task',
+		} );
+		onActivatePayments();
+	};
+
 	return {
 		key: 'go-live-payments',
 		level: 3,
 		title: __( 'Activate payments', 'woocommerce' ),
 		content: __( '10 minutes', 'woocommerce' ),
-		onClick: onActivatePayments,
+		onClick,
 		showActionButton: false,
 	};
 };

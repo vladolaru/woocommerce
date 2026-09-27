@@ -10,6 +10,7 @@ import { recordEvent } from '@woocommerce/tracks';
  * Internal dependencies
  */
 import { WooPaymentsAccountSettings } from '~/woopayments/settings/account-settings';
+import { SetupLivePaymentsModal } from '~/woopayments/settings/account-mode-notice';
 import { getWooPaymentsSettingsBootstrap } from '~/woopayments/settings/bootstrap';
 import {
 	getWooPaymentsDepositsOverview,
@@ -88,6 +89,7 @@ export const WooPaymentsOverviewPage = () => {
 	);
 	const [ updateBusinessDetailsShell, setUpdateBusinessDetailsShell ] =
 		useState< WooPaymentsOverviewShell | null >( null );
+	const [ isGoLiveModalVisible, setGoLiveModalVisible ] = useState( false );
 
 	// Client 11.1.0 `tos/request.ts:30-45`: record the KYC completion once, then clear the flag.
 	useEffect( () => {
@@ -248,10 +250,8 @@ export const WooPaymentsOverviewPage = () => {
 				shell,
 				disputes,
 				onOpenUpdateBusinessDetails: setUpdateBusinessDetailsShell,
-				onActivatePayments: () =>
-					document.dispatchEvent(
-						new CustomEvent( 'wcpay:activate_payments' )
-					),
+				// Client 11.1.0 `overview/task-list/tasks/go-live-task.tsx:12` opens the modal directly.
+				onActivatePayments: () => setGoLiveModalVisible( true ),
 		  } )
 		: [];
 	const shouldShowConnectionSuccessModal =
@@ -290,6 +290,14 @@ export const WooPaymentsOverviewPage = () => {
 				<UpdateBusinessDetailsModal
 					shell={ updateBusinessDetailsShell }
 					onClose={ () => setUpdateBusinessDetailsShell( null ) }
+				/>
+			) }
+			{ isGoLiveModalVisible && (
+				<SetupLivePaymentsModal
+					from="WCPAY_GO_LIVE_TASK"
+					source="wcpay-go-live-task"
+					setupUrl={ shell?.urls.setup }
+					onClose={ () => setGoLiveModalVisible( false ) }
 				/>
 			) }
 			<div className="woocommerce-woopayments-overview__cards">

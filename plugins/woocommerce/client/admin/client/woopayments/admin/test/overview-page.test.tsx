@@ -4,6 +4,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useSelect } from '@wordpress/data';
+import { recordEvent } from '@woocommerce/tracks';
 
 /**
  * Internal dependencies
@@ -96,6 +97,8 @@ jest.mock( '../capital/data', () => ( {
 jest.mock( '../../settings/data/actions', () => ( {
 	saveOption: jest.fn(),
 } ) );
+
+jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 
 jest.mock( 'react-intersection-observer', () => ( {
 	useInView: ( options: { onChange?: ( inView: boolean ) => void } = {} ) => {
@@ -310,6 +313,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 		mockUseSelect.mockReset();
 		mockCreateSuccessNotice.mockClear();
 		mockCreateErrorNotice.mockClear();
+		( recordEvent as jest.Mock ).mockClear();
 		getMockNotesDispatch().removeNote.mockReset();
 		getMockNotesDispatch().triggerNoteAction.mockReset();
 		getMockNotesDispatch().updateNote.mockReset();
@@ -809,6 +813,39 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 		expect(
 			await screen.findByText( 'WooPayments is in test mode.' )
+		).toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 `overview/task-list/tasks/go-live-task.tsx:12` opens the live payments
+	// modal directly; the native task used to dispatch an event nothing on this page heard.
+	it( 'opens the live payments modal when the go-live task is clicked', async () => {
+		mockGetShell.mockResolvedValue(
+			createShell( {
+				account: {
+					...createShell().account,
+					live: false,
+					test_drive: true,
+					test_mode_onboarding: true,
+				},
+			} )
+		);
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		await userEvent.click(
+			await screen.findByRole( 'button', { name: 'Activate payments' } )
+		);
+
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_overview_task_click',
+			{ task: 'go-live', source: 'wcpay-go-live-task' }
+		);
+		expect(
+			screen.getByRole( 'dialog', {
+				name: 'Activate payments on your store',
+			} )
 		).toBeInTheDocument();
 	} );
 
