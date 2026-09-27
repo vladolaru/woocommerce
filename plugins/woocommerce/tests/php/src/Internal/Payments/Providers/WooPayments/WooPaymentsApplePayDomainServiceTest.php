@@ -339,6 +339,29 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should show the Apple Pay domain notice only in the WooPayments settings section, not on every admin page.
+	 */
+	public function test_error_notice_renders_only_in_the_woopayments_settings_section(): void {
+		$this->service = $this->create_service( true, true );
+		$this->set_gateway_settings(
+			array(
+				'enabled'                           => 'yes',
+				'apple_pay_domain_set'              => 'no',
+				'express_checkout_checkout_methods' => array( 'payment_request' ),
+			)
+		);
+		update_option( self::ERROR_OPTION, 'Test error message' );
+		$this->service->register();
+
+		ob_start();
+		do_action( 'woocommerce_woocommerce_payments_admin_notices' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$settings_section = (string) ob_get_clean();
+
+		$this->assertFalse( has_action( 'admin_notices', array( $this->service, 'display_error_notice' ) ), 'Every admin page would read the error option and show the notice.' );
+		$this->assertStringContainsString( 'Test error message', $settings_section );
+	}
+
+	/**
 	 * @testdox Should not attach mutating hooks when the native runtime is dormant.
 	 */
 	public function test_register_is_noop_when_native_runtime_is_dormant(): void {

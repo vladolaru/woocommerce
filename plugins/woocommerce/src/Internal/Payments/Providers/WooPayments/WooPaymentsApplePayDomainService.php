@@ -107,7 +107,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		}
 
 		add_action( 'admin_init', array( $this, 'verify_domain_on_domain_name_change' ) );
-		add_action( 'admin_notices', array( $this, 'display_error_notice' ) );
 		add_action( 'woocommerce_woocommerce_payments_admin_notices', array( $this, 'display_error_notice' ) );
 		add_action( 'add_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this, 'verify_domain_on_new_apple_pay_settings' ), 10, 2 );
 		add_action( 'update_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this, 'verify_domain_on_updated_apple_pay_settings' ), 10, 2 );
