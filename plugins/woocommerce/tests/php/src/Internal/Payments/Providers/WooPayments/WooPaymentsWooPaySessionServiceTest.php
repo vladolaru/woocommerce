@@ -1217,17 +1217,18 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should not resolve the available gateways while building the frontend config when WooPay is off.
 	 */
 	public function test_frontend_config_does_not_resolve_available_gateways_when_woopay_is_off(): void {
-		$resolutions = 0;
-		add_filter(
-			'woocommerce_available_payment_gateways',
-			static function ( $gateways ) use ( &$resolutions ) {
-				++$resolutions;
-				return $gateways;
-			}
-		);
+		$resolutions      = 0;
+		$count_resolution = static function ( $gateways ) use ( &$resolutions ) {
+			++$resolutions;
+			return $gateways;
+		};
+		add_filter( 'woocommerce_available_payment_gateways', $count_resolution );
 
-		$config = $this->create_service( array( 'platform_checkout' => 'no' ) )->get_woopay_frontend_config( 'checkout' );
-		remove_all_filters( 'woocommerce_available_payment_gateways' );
+		try {
+			$config = $this->create_service( array( 'platform_checkout' => 'no' ) )->get_woopay_frontend_config( 'checkout' );
+		} finally {
+			remove_filter( 'woocommerce_available_payment_gateways', $count_resolution );
+		}
 
 		$this->assertSame( 0, $resolutions );
 		$this->assertFalse( $config['shouldShowWooPayButton'] );

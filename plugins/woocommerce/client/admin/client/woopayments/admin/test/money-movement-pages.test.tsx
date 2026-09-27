@@ -1069,14 +1069,15 @@ describe( 'WooPayments money movement pages', () => {
 			0
 		);
 		storageSpies.forEach( ( spy ) => spy.mockRestore() );
+		mockHistoryNavigate = null;
+		anchorClickSpy.mockRestore();
+		jest.useRealTimers();
+		// Throw only after cleanup so one failure cannot leak into the next test.
 		if ( storageCalls > 0 ) {
 			throw new Error(
 				`Hidden columns touched browser storage ${ storageCalls } time(s).`
 			);
 		}
-		mockHistoryNavigate = null;
-		anchorClickSpy.mockRestore();
-		jest.useRealTimers();
 	} );
 
 	it( 'announces loaded transactions and gives row links clear purpose', async () => {

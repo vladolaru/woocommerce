@@ -460,22 +460,23 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	 * @testdox Should read stored customer currencies only when asked for them, not while building state for a render.
 	 */
 	public function test_reads_stored_customer_currencies_only_on_demand(): void {
-		$reads = 0;
-		add_filter(
-			'pre_option_wcpay_multi_currency_stored_customer_currencies',
-			static function ( $pre ) use ( &$reads ) {
-				++$reads;
-				return $pre;
-			}
-		);
+		$reads      = 0;
+		$count_read = static function ( $pre ) use ( &$reads ) {
+			++$reads;
+			return $pre;
+		};
+		add_filter( 'pre_option_wcpay_multi_currency_stored_customer_currencies', $count_read );
 
-		$state = $this->create_builder()->build();
-		$state->get_enabled_currencies();
-		$state->get_selected_currency();
-		$reads_during_render = $reads;
-		$state->get_customer_currencies();
-		$state->get_customer_currencies();
-		remove_all_filters( 'pre_option_wcpay_multi_currency_stored_customer_currencies' );
+		try {
+			$state = $this->create_builder()->build();
+			$state->get_enabled_currencies();
+			$state->get_selected_currency();
+			$reads_during_render = $reads;
+			$state->get_customer_currencies();
+			$state->get_customer_currencies();
+		} finally {
+			remove_filter( 'pre_option_wcpay_multi_currency_stored_customer_currencies', $count_read );
+		}
 
 		$this->assertSame( 0, $reads_during_render );
 		$this->assertSame( 1, $reads );
