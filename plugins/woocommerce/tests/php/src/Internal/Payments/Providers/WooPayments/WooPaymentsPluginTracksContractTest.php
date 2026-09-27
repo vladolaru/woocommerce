@@ -152,10 +152,8 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 */
 	private const KNOWN_GAPS = array(
 		'wcadmin_wcpay_fraud_outcome_transactions_download' => 'plan.md T.7 Step 6 (b): the Blocked tab and its CSV export do not exist natively; routed to R4 (implementation-log 2026-09-27 18:37).',
-		'wcadmin_wcpay_overview_sandbox_mode_learn_more_clicked' => 'plan.md T.7 Step 6 (c): the Overview sandbox-mode notice and its Learn more link do not exist natively; routed to R7 (proposed in data/t7-batch14.md).',
 		'wcadmin_wcpay_overview_stripe_notifications_banner_action_completed' => 'plan.md T.7 Step 6 (b): the Stripe embedded notifications banner does not exist on the native Overview; routed to R3 (plan-task-t7.md section 5).',
 		'wcadmin_wcpay_overview_stripe_notifications_banner_update' => 'plan.md T.7 Step 6 (b): the Stripe embedded notifications banner does not exist on the native Overview; routed to R3 (plan-task-t7.md section 5).',
-		'wcadmin_wcpay_overview_test_mode_learn_more_clicked' => 'plan.md T.7 Step 6 (c): the Overview dev-mode test notice and its Learn more link do not exist natively; routed to R7 (proposed in data/t7-batch14.md).',
 		'wcpay_checkout_woopay_save_my_info_country_click' => 'plan.md T.7 Step 6 (a): the save-my-info country dropdown does not exist natively; routed to R2 (plan-task-t7.md section 5).',
 	);
 

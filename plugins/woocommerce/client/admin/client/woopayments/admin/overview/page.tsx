@@ -31,7 +31,10 @@ import type {
 } from './types';
 import { getSelectedBalanceCurrency } from './utils';
 import { SpotlightPromotion } from '../../promotions/spotlight';
-import { OverviewNotices } from './components/overview-notices';
+import {
+	OverviewModeNotice,
+	OverviewNotices,
+} from './components/overview-notices';
 import { buildOverviewTasks } from './components/overview-tasks';
 import { OverviewTaskList } from './components/overview-task-list';
 import { UpdateBusinessDetailsModal } from './components/update-business-details-modal';
@@ -271,6 +274,12 @@ export const WooPaymentsOverviewPage = () => {
 				{ __( 'Overview', 'woocommerce' ) }
 			</h1>
 			<OverviewNotices />
+			{ shell && (
+				<OverviewModeNotice
+					account={ shell.account }
+					setupUrl={ shell.urls.setup }
+				/>
+			) }
 			{ shell && (
 				<OverviewTaskList
 					tasks={ tasks }

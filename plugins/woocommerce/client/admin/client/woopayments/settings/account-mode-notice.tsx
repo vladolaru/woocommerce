@@ -28,23 +28,27 @@ const TEST_ACCOUNT_DEV_URL =
 const SETUP_LIVE_FROM = 'WCPAY_SETTINGS';
 const SETUP_LIVE_SOURCE = 'wcadmin-settings-page';
 
-const getSetupLiveUrl = ( setupUrl?: string ) =>
+const getSetupLiveUrl = ( setupUrl?: string, source = SETUP_LIVE_SOURCE ) =>
 	setupUrl
 		? addQueryArgs( setupUrl, {
-				source: SETUP_LIVE_SOURCE,
+				source,
 				from: 'wcpay-setup-live-payments',
 		  } )
 		: undefined;
 
-const SetupLivePaymentsModal = ( {
+export const SetupLivePaymentsModal = ( {
 	onClose,
 	setupUrl,
+	from = SETUP_LIVE_FROM,
+	source = SETUP_LIVE_SOURCE,
 }: {
 	onClose: () => void;
 	setupUrl?: string;
+	from?: string;
+	source?: string;
 } ) => {
 	const [ isSubmitted, setSubmitted ] = useState( false );
-	const setupLiveUrl = getSetupLiveUrl( setupUrl );
+	const setupLiveUrl = getSetupLiveUrl( setupUrl, source );
 	const handleSetup = (
 		event: React.MouseEvent< HTMLAnchorElement | HTMLButtonElement >
 	) => {
@@ -55,16 +59,16 @@ const SetupLivePaymentsModal = ( {
 
 		setSubmitted( true );
 		recordEvent( 'wcpay_onboarding_flow_setup_live_payments', {
-			from: SETUP_LIVE_FROM,
-			source: SETUP_LIVE_SOURCE,
+			from,
+			source,
 		} );
 		window.location.href = setupLiveUrl;
 	};
 	const handleClose = () => {
 		setSubmitted( false );
 		recordEvent( 'wcpay_setup_live_payments_modal_exit', {
-			from: SETUP_LIVE_FROM,
-			source: SETUP_LIVE_SOURCE,
+			from,
+			source,
 		} );
 		onClose();
 	};

@@ -796,6 +796,22 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	it( 'shows the test-mode notice from the overview shell account', async () => {
+		mockGetShell.mockResolvedValue(
+			createShell( {
+				account: { ...createShell().account, test_mode: true },
+			} )
+		);
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		expect(
+			await screen.findByText( 'WooPayments is in test mode.' )
+		).toBeInTheDocument();
+	} );
+
 	it( 'renders account details from the overview shell', async () => {
 		mockGetShell.mockResolvedValue(
 			createShell( {
