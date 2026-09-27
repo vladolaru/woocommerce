@@ -745,3 +745,17 @@
 		flex-direction: column;
 	}
 }
+
+// Client 11.1.0 `overview/style.scss:48-62`.
+.stripe-notifications-banner-wrapper {
+	padding-bottom: 0.25rem; // Keeps Stripe's banner border visible.
+	overflow: hidden;
+	margin-inline: -1px;
+}
+
+.stripe-notifications-banner-loader {
+	height: 160px;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+}

@@ -90,6 +90,22 @@ jest.mock( '../overview/data', () => ( {
 	submitWooPaymentsInstantDeposit: jest.fn(),
 } ) );
 
+// The banner has its own suite; here it fails to load, so the client's fallback update-details task shows.
+jest.mock( '../overview/components/stripe-notifications-banner', () => {
+	const { useEffect } = jest.requireActual( '@wordpress/element' );
+
+	return ( {
+		onLoadError,
+	}: {
+		onLoadError: ( error: { error: { type: string } } ) => void;
+	} ) => {
+		// Once, like Stripe's load error; the page passes a new callback every render.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		useEffect( () => onLoadError( { error: { type: 'api_error' } } ), [] );
+		return null;
+	};
+} );
+
 jest.mock( '../capital/data', () => ( {
 	getWooPaymentsCapitalActiveLoanSummary: jest.fn(),
 } ) );
@@ -1211,21 +1227,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).toBe(
 			screen.getByRole( 'heading', { name: 'WooPayments settings' } )
 		);
-	} );
-
-	it( 'does not create embedded account sessions without a mounted embedded notification UI', async () => {
-		mockGetOverview.mockResolvedValue( createDepositsOverview() );
-		mockGetRecent.mockResolvedValue( {
-			data: [],
-			total_count: 0,
-		} );
-
-		render( <WooPaymentsOverviewPage /> );
-
-		expect(
-			await screen.findByRole( 'heading', { name: 'Balance' } )
-		).toBeInTheDocument();
-		expect( mockCreateAccountSession ).not.toHaveBeenCalled();
 	} );
 
 	it( 'queries and renders WooPayments inbox notes from the notes store', async () => {

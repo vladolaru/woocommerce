@@ -394,19 +394,22 @@ const buildGoLiveTask = ( {
 export const buildOverviewTasks = ( {
 	shell,
 	disputes,
+	showUpdateDetailsTask = true,
 	onOpenUpdateBusinessDetails,
 	onActivatePayments,
 }: {
 	shell: WooPaymentsOverviewShell;
 	disputes: WooPaymentsOverviewDispute[];
+	showUpdateDetailsTask?: boolean;
 	onOpenUpdateBusinessDetails: ( shell: WooPaymentsOverviewShell ) => void;
 	onActivatePayments: () => void;
 } ): WooPaymentsOverviewTask[] =>
 	[
-		buildUpdateBusinessDetailsTask( {
-			shell,
-			onOpenUpdateBusinessDetails,
-		} ),
+		showUpdateDetailsTask &&
+			buildUpdateBusinessDetailsTask( {
+				shell,
+				onOpenUpdateBusinessDetails,
+			} ),
 		buildReconnectTask( shell.wpcom_reconnect_url ),
 		buildDisputeTask( disputes ),
 		buildGoLiveTask( { shell, onActivatePayments } ),

@@ -1,10 +1,19 @@
 /**
  * External dependencies
  */
-import { lazy, Suspense, useEffect, useState } from '@wordpress/element';
+import {
+	createInterpolateElement,
+	lazy,
+	Suspense,
+	useEffect,
+	useState,
+} from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
+import { dispatch } from '@wordpress/data';
+import { Card, ExternalLink, Notice } from '@wordpress/components';
 import { recordEvent } from '@woocommerce/tracks';
+import type { LoadError } from '@stripe/connect-js';
 
 /**
  * Internal dependencies
@@ -30,7 +39,10 @@ import type {
 	WooPaymentsOverviewDispute,
 	WooPaymentsOverviewShell,
 } from './types';
-import { getSelectedBalanceCurrency } from './utils';
+import {
+	getSelectedBalanceCurrency,
+	getSettingsPaymentsProviderRouteUrl,
+} from './utils';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 import {
 	OverviewModeNotice,
@@ -40,11 +52,17 @@ import { buildOverviewTasks } from './components/overview-tasks';
 import { OverviewTaskList } from './components/overview-task-list';
 import { UpdateBusinessDetailsModal } from './components/update-business-details-modal';
 import { ConnectionSuccessModal } from './components/connection-success-modal';
+import type { StripeNotificationsChange } from './components/stripe-notifications-banner';
+import StripeSpinner from '~/settings-payments/onboarding/providers/woopayments/components/stripe-spinner';
 
 const InboxNotifications = lazy( () =>
 	import( './components/inbox-notifications' ).then( ( module ) => ( {
 		default: module.InboxNotifications,
 	} ) )
+);
+
+const StripeNotificationsBanner = lazy(
+	() => import( './components/stripe-notifications-banner' )
 );
 
 const getErrorMessage = ( error: unknown ) => {
@@ -90,6 +108,12 @@ export const WooPaymentsOverviewPage = () => {
 	const [ updateBusinessDetailsShell, setUpdateBusinessDetailsShell ] =
 		useState< WooPaymentsOverviewShell | null >( null );
 	const [ isGoLiveModalVisible, setGoLiveModalVisible ] = useState( false );
+	// Client 11.1.0 `overview/index.js:72-92`: the update-details task stays hidden unless the Stripe banner fails to load.
+	const [ bannerLoadError, setBannerLoadError ] =
+		useState< LoadError | null >( null );
+	const [ isBannerShown, setBannerShown ] = useState( false );
+	const [ isBannerLoading, setBannerLoading ] = useState( true );
+	const [ bannerCountMemo, setBannerCountMemo ] = useState( 0 );
 
 	// Client 11.1.0 `tos/request.ts:30-45`: record the KYC completion once, then clear the flag.
 	useEffect( () => {
@@ -245,10 +269,58 @@ export const WooPaymentsOverviewPage = () => {
 		};
 	}, [] );
 
+	const accountStatus = shell?.account_status.status ?? '';
+	const showStripeBanner =
+		!! shell?.account.connected &&
+		! accountStatus.startsWith( 'rejected' ) &&
+		accountStatus !== 'under_review';
+
+	// Client 11.1.0 `overview/index.js:179-235`, per Stripe's custom notification-banner behavior.
+	const handleNotificationsChange = ( {
+		total,
+		actionRequired,
+	}: StripeNotificationsChange ) => {
+		if ( actionRequired > 0 || total > 0 ) {
+			setBannerShown( true );
+			recordEvent( 'wcpay_overview_stripe_notifications_banner_update', {
+				action_required_count: actionRequired,
+				total_count: total,
+			} );
+			setBannerCountMemo( total );
+		} else {
+			// Everything was addressed since the last change: ask for a refresh.
+			if ( bannerCountMemo > 0 ) {
+				dispatch( 'core/notices' ).createSuccessNotice(
+					__(
+						'Updates take a moment to appear. Please refresh the page in a minute.',
+						'woocommerce'
+					),
+					{
+						actions: [
+							{
+								label: __( 'Refresh', 'woocommerce' ),
+								url: getSettingsPaymentsProviderRouteUrl(
+									'/woopayments/overview'
+								),
+							},
+						],
+						explicitDismiss: true,
+					}
+				);
+				recordEvent(
+					'wcpay_overview_stripe_notifications_banner_action_completed'
+				);
+			}
+			setBannerShown( false );
+		}
+		setBannerLoading( false );
+	};
+
 	const tasks = shell
 		? buildOverviewTasks( {
 				shell,
 				disputes,
+				showUpdateDetailsTask: ! showStripeBanner || !! bannerLoadError,
 				onOpenUpdateBusinessDetails: setUpdateBusinessDetailsShell,
 				// Client 11.1.0 `overview/task-list/tasks/go-live-task.tsx:12` opens the modal directly.
 				onActivatePayments: () => setGoLiveModalVisible( true ),
@@ -279,6 +351,50 @@ export const WooPaymentsOverviewPage = () => {
 					account={ shell.account }
 					setupUrl={ shell.urls.setup }
 				/>
+			) }
+			{ bannerLoadError?.error.type === 'invalid_request_error' && (
+				<Notice status="warning" isDismissible={ false }>
+					{ createInterpolateElement(
+						__(
+							'Some account related notifications require HTTPS and cannot be displayed. View them on our financial partner’s website. <a>See details</a>',
+							'woocommerce'
+						),
+						{
+							a: (
+								<ExternalLink href="https://woocommerce.com/document/woopayments/startup-guide/#requirements">
+									<></>
+								</ExternalLink>
+							),
+						}
+					) }
+				</Notice>
+			) }
+			{ showStripeBanner && (
+				<>
+					{ isBannerLoading && accountStatus !== 'complete' && (
+						<Card>
+							<div className="stripe-notifications-banner-loader">
+								<StripeSpinner />
+							</div>
+						</Card>
+					) }
+					<div
+						className="stripe-notifications-banner-wrapper"
+						style={ { display: isBannerShown ? 'block' : 'none' } }
+					>
+						<Suspense fallback={ null }>
+							<StripeNotificationsBanner
+								onLoadError={ ( loadError ) => {
+									setBannerLoadError( loadError );
+									setBannerLoading( false );
+								} }
+								onNotificationsChange={
+									handleNotificationsChange
+								}
+							/>
+						</Suspense>
+					</div>
+				</>
 			) }
 			{ shell && (
 				<OverviewTaskList
