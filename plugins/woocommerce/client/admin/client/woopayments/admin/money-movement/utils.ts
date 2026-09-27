@@ -8,7 +8,10 @@ import { __, sprintf } from '@wordpress/i18n';
  */
 import { formatWooPaymentsAmount } from '../overview/utils';
 import { getPaymentMethodDefinition } from '../../settings/payment-method-definitions';
-import type { WooPaymentsTransaction } from './types';
+import type {
+	WooPaymentsPaymentMethodDetails,
+	WooPaymentsTransaction,
+} from './types';
 
 export const getErrorMessage = ( error: unknown, fallback: string ): string => {
 	if ( error instanceof Error && error.message ) {
@@ -392,6 +395,29 @@ export const formatDisputeReasonLabel = ( reason?: string ) => {
 			return __( 'Non-compliant', 'woocommerce' );
 		default:
 			return __( 'General', 'woocommerce' );
+	}
+};
+
+// Mirrors the client's getBankName (utils/charge/index.ts:339-363).
+export const getBankName = (
+	paymentMethodDetails?: WooPaymentsPaymentMethodDetails
+): string | undefined => {
+	const methodType = paymentMethodDetails?.type;
+
+	if ( methodType === 'card' ) {
+		const issuer = paymentMethodDetails?.card?.issuer;
+		return typeof issuer === 'string' ? issuer : undefined;
+	}
+
+	switch ( methodType ) {
+		case 'affirm':
+			return 'Affirm';
+		case 'afterpay_clearpay':
+			return 'Afterpay / Clearpay';
+		case 'klarna':
+			return 'Klarna';
+		default:
+			return undefined;
 	}
 };
 

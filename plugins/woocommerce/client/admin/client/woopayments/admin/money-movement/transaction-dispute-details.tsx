@@ -25,6 +25,7 @@ import {
 	formatDate,
 	formatDisputeReasonLabel,
 	formatLabel,
+	getBankName,
 	getDisputeId,
 	getErrorMessage,
 } from './utils';
@@ -591,12 +592,9 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 				) : (
 					<ResolvedDisputeActions
 						dispute={ currentDispute }
-						bankName={
-							typeof transaction.payment_method_details?.card
-								?.issuer === 'string'
-								? transaction.payment_method_details.card.issuer
-								: undefined
-						}
+						bankName={ getBankName(
+							transaction.payment_method_details
+						) }
 					/>
 				) }
 			</div>

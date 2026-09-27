@@ -6039,6 +6039,75 @@ describe( 'WooPayments money movement pages', () => {
 		}
 	);
 
+	/**
+	 * Client 11.1.0 lost footer names the BNPL provider, not just the card
+	 * issuer, for a charge made through it (`utils/charge/index.ts:339-363`).
+	 * Built from the recorded `lose_read_after_close` dispute with the
+	 * charge's payment method swapped for a BNPL type; every other field
+	 * (reason, metadata, effective_fee) stays as recorded.
+	 */
+	it.each( [
+		[ 'afterpay_clearpay', 'Afterpay / Clearpay' ],
+		[ 'klarna', 'Klarna' ],
+	] )(
+		"renders the client's %s label in the lost footer, not just the card issuer",
+		async ( paymentMethodType, bankLabel ) => {
+			const recorded = loadRec5bDispute( 'lose_read_after_close' );
+			const dispute = {
+				...recorded,
+				charge: {
+					...recorded.charge,
+					payment_method_details: { type: paymentMethodType },
+				},
+			};
+			renderRecordedDispute( dispute );
+
+			const footer = (
+				await screen.findByRole( 'link', {
+					name: 'Learn more about dispute fees.',
+				} )
+			).parentElement as HTMLElement;
+			expect( footer ).toHaveTextContent(
+				`Unfortunately, you've lost this dispute. The customer's bank, ${ bankLabel }, reached this decision on ${ formatRecordedDate(
+					dispute.metadata.__dispute_closed_at
+				) }.`
+			);
+		}
+	);
+
+	/**
+	 * The recorded `lose_read_after_close` dispute's __dispute_closed_at and
+	 * __evidence_submitted_at fall on the same calendar day, so a mutation
+	 * that reads the evidence date instead of the closed date would survive
+	 * the fixed-fixture test above. This variant moves __dispute_closed_at
+	 * one day later so the two dates disagree; per C17 the assertion checks
+	 * which date is chosen (the closed date), not native's date format.
+	 */
+	it( 'chooses the closed date, not the evidence date, for the lost footer', async () => {
+		const recorded = loadRec5bDispute( 'lose_read_after_close' );
+		const closedAt = String(
+			Number( recorded.metadata.__dispute_closed_at ) + 86400
+		);
+		const dispute = {
+			...recorded,
+			metadata: {
+				...recorded.metadata,
+				__dispute_closed_at: closedAt,
+			},
+		};
+		renderRecordedDispute( dispute );
+
+		const footer = (
+			await screen.findByRole( 'link', {
+				name: 'Learn more about dispute fees.',
+			} )
+		).parentElement as HTMLElement;
+		expect( footer ).toHaveTextContent( formatRecordedDate( closedAt ) );
+		expect( footer ).not.toHaveTextContent(
+			formatRecordedDate( dispute.metadata.__evidence_submitted_at )
+		);
+	} );
+
 	describe( 'WooPaymentsTransactionTimeline early fraud warnings', () => {
 		it( 'renders an actionable warning with the known reason and refund action', async () => {
 			const onRefund = jest.fn();

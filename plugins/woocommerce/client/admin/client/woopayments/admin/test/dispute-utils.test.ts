@@ -5,8 +5,8 @@ import {
 	getChargeDisputes,
 	getDisputeBalanceAdjustments,
 	getDisputeOrdinals,
+	getEffectiveDisputeFee,
 	getPrimaryDispute,
-	hasEffectiveDisputeFee,
 	isDisputeRefundable,
 } from '../money-movement/dispute-utils';
 
@@ -182,7 +182,9 @@ describe( 'WooPayments dispute utilities', () => {
 		] )(
 			'detects the effective fee for %s',
 			( _label, dispute, expected ) => {
-				expect( hasEffectiveDisputeFee( dispute ) ).toBe( expected );
+				expect( Boolean( getEffectiveDisputeFee( dispute ) ) ).toBe(
+					expected
+				);
 			}
 		);
 	} );

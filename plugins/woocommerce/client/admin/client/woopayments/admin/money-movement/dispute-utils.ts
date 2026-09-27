@@ -164,9 +164,6 @@ export const getEffectiveDisputeFee = ( dispute: WooPaymentsDispute ) => {
 		: undefined;
 };
 
-export const hasEffectiveDisputeFee = ( dispute: WooPaymentsDispute ) =>
-	!! getEffectiveDisputeFee( dispute );
-
 export const isDisputeInquiry = ( dispute: WooPaymentsDispute ) =>
 	typeof dispute.status === 'string' &&
 	dispute.status.startsWith( 'warning' );
