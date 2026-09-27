@@ -67,11 +67,12 @@ final class MultiCurrencySettingsCurrencyCatalog {
 		$default_code = $default->get_code();
 		$runtime      = $state->get_available_currencies();
 		$available    = array( $default_code => $default->jsonSerialize() );
+		$catalog      = $this->get_catalog_code_lookup();
 
 		foreach ( get_woocommerce_currencies() as $currency_code => $currency_name ) {
 			unset( $currency_name );
 			$currency_code = strtoupper( (string) $currency_code );
-			if ( $default_code === $currency_code ) {
+			if ( $default_code === $currency_code || ! isset( $catalog[ $currency_code ] ) ) {
 				continue;
 			}
 
@@ -96,13 +97,33 @@ final class MultiCurrencySettingsCurrencyCatalog {
 	}
 
 	/**
-	 * Tell whether a code exists in the WooCommerce currency catalog.
+	 * Tell whether a code can be enabled: a WooCommerce currency, limited to the
+	 * store currency and the rate provider's supported currencies when a provider is available.
 	 *
 	 * @param string $currency_code Currency code.
 	 * @return bool
 	 */
 	public function contains( string $currency_code ): bool {
-		return array_key_exists( strtoupper( $currency_code ), get_woocommerce_currencies() );
+		return isset( $this->get_catalog_code_lookup()[ strtoupper( $currency_code ) ] );
+	}
+
+	/**
+	 * Get the codes that can be enabled, keyed by code.
+	 *
+	 * Mirrors WooPayments 11.1.0 MultiCurrency::get_account_available_currencies(),
+	 * with the module's rate provider standing in for the payments account.
+	 *
+	 * @return array<string,true>
+	 */
+	private function get_catalog_code_lookup(): array {
+		if ( ! $this->rate_service->has_available_provider() ) {
+			return array_fill_keys( array_map( 'strtoupper', array_keys( get_woocommerce_currencies() ) ), true );
+		}
+
+		$codes   = $this->rate_service->get_supported_currency_codes();
+		$codes[] = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
+
+		return array_fill_keys( $codes, true );
 	}
 
 	/**
@@ -113,6 +134,7 @@ final class MultiCurrencySettingsCurrencyCatalog {
 	public function get_configured_currency_codes(): array {
 		$configured = get_option( self::OPTION_PREFIX . '_enabled_currencies', array() );
 		$configured = is_array( $configured ) ? $configured : array();
+		$catalog    = $this->get_catalog_code_lookup();
 		$codes      = array();
 
 		foreach ( $configured as $currency_code ) {
@@ -121,7 +143,7 @@ final class MultiCurrencySettingsCurrencyCatalog {
 			}
 
 			$currency_code = strtoupper( (string) $currency_code );
-			if ( '' === $currency_code || ! $this->contains( $currency_code ) || in_array( $currency_code, $codes, true ) ) {
+			if ( '' === $currency_code || ! isset( $catalog[ $currency_code ] ) || in_array( $currency_code, $codes, true ) ) {
 				continue;
 			}
 

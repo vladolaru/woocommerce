@@ -357,6 +357,52 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reject an enabled currency the available rate provider does not support and leave the option unchanged.
+	 *
+	 * Source: WooPayments 11.1.0 MultiCurrency::set_enabled_currencies() (:767-778) validates against the account list (:1707-1732).
+	 */
+	public function test_rejects_enabled_currency_the_rate_provider_does_not_support(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, null, true, true, null, array( 'EUR' ) );
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/update-enabled-currencies' );
+		$request->set_param( 'enabled', array( 'USD', 'GBP' ) );
+
+		$response = $sut->update_enabled_currencies( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertStringContainsString( 'GBP', $response->get_error_message() );
+		$this->assertSame( array( 'USD', 'EUR' ), get_option( 'wcpay_multi_currency_enabled_currencies' ) );
+	}
+
+	/**
+	 * @testdox Should list only the store currency and the provider-supported currencies as available.
+	 *
+	 * Source: WooPayments 11.1.0 MultiCurrency::initialize_available_currencies() (:1707-1732).
+	 */
+	public function test_lists_only_provider_supported_currencies_as_available(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, null, true, true, null, array( 'EUR' ) );
+
+		$data = $sut->get_store_currencies()->get_data();
+
+		$this->assertSame( array( 'USD', 'EUR' ), array_keys( $data['available'] ) );
+		$this->assertArrayNotHasKey( 'GBP', $data['available'] );
+	}
+
+	/**
+	 * @testdox Should accept an enabled currency the available rate provider supports.
+	 */
+	public function test_accepts_enabled_currency_the_rate_provider_supports(): void {
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, null, true, true, null, array( 'EUR' ) );
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/update-enabled-currencies' );
+		$request->set_param( 'enabled', array( 'USD', 'EUR' ) );
+
+		$response = $sut->update_enabled_currencies( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'USD', 'EUR' ), get_option( 'wcpay_multi_currency_enabled_currencies' ) );
+	}
+
+	/**
 	 * @testdox Should read and update single currency settings.
 	 */
 	public function test_reads_and_updates_single_currency_settings(): void {
@@ -520,6 +566,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * @param bool                                    $cache_optimized_mode    Whether cache mode is active.
 	 * @param bool|null                               $provider_available      Whether a registered provider is available.
 	 * @param MultiCurrencyCacheRenderingService|null $cache_rendering_service Cache rendering service.
+	 * @param string[]                                $supported_currencies    Currencies the provider supports; empty means all.
 	 * @return MultiCurrencyRestController
 	 */
 	private function create_controller(
@@ -527,7 +574,8 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		?MultiCurrencyStateBuilder $state_builder = null,
 		bool $cache_optimized_mode = true,
 		?bool $provider_available = null,
-		?MultiCurrencyCacheRenderingService $cache_rendering_service = null
+		?MultiCurrencyCacheRenderingService $cache_rendering_service = null,
+		array $supported_currencies = array()
 	): MultiCurrencyRestController {
 		$controller = new MultiCurrencyRestController();
 		$controller->init(
@@ -538,7 +586,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		);
 		$state_builder = $state_builder ?? $this->create_state_builder();
 		$controller->set_state_builder( $state_builder );
-		$controller->set_settings_currency_catalog( $this->create_settings_currency_catalog( $state_builder, $provider_available ) );
+		$controller->set_settings_currency_catalog( $this->create_settings_currency_catalog( $state_builder, $provider_available, $supported_currencies ) );
 		$controller->set_frontend_projection_service( $this->create_frontend_projection_service( $cache_optimized_mode ) );
 
 		$this->controllers[] = $controller;
@@ -570,12 +618,13 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param MultiCurrencyStateBuilder $state_builder      State builder.
 	 * @param bool|null                 $provider_available Whether a registered provider is available.
+	 * @param string[]                  $supported_currencies Currencies the provider supports; empty means all.
 	 * @return MultiCurrencySettingsCurrencyCatalog
 	 */
-	private function create_settings_currency_catalog( MultiCurrencyStateBuilder $state_builder, ?bool $provider_available ): MultiCurrencySettingsCurrencyCatalog {
+	private function create_settings_currency_catalog( MultiCurrencyStateBuilder $state_builder, ?bool $provider_available, array $supported_currencies = array() ): MultiCurrencySettingsCurrencyCatalog {
 		$registry = new CurrencyRateProviderRegistry();
 		if ( null !== $provider_available ) {
-			$registry->register( $this->create_rate_provider( $provider_available ) );
+			$registry->register( $this->create_rate_provider( $provider_available, $supported_currencies ) );
 		}
 
 		return new MultiCurrencySettingsCurrencyCatalog(
@@ -588,19 +637,25 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a rate provider with the requested availability.
 	 *
-	 * @param bool $available Whether the provider is available.
+	 * @param bool     $available Whether the provider is available.
+	 * @param string[] $supported Currencies the provider supports; empty means all.
 	 * @return \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider
 	 */
-	private function create_rate_provider( bool $available ): \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider {
-		return new class( $available ) implements \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider {
+	private function create_rate_provider( bool $available, array $supported = array() ): \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider {
+		return new class( $available, $supported ) implements \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider {
 			/** @var bool */
 			private bool $available;
 
+			/** @var string[] */
+			private array $supported;
+
 			/**
-			 * @param bool $available Whether the provider is available.
+			 * @param bool     $available Whether the provider is available.
+			 * @param string[] $supported Supported currencies.
 			 */
-			public function __construct( bool $available ) {
+			public function __construct( bool $available, array $supported ) {
 				$this->available = $available;
+				$this->supported = $supported;
 			}
 
 			/** @return string */
@@ -615,7 +670,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 
 			/** @return string[] */
 			public function get_supported_currencies(): array {
-				return array();
+				return $this->supported;
 			}
 
 			/**

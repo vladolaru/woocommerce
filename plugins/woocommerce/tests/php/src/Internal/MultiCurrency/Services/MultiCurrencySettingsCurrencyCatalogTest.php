@@ -80,6 +80,34 @@ class MultiCurrencySettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should limit the catalog to the store currency and the currencies an available provider supports.
+	 *
+	 * Source: WooPayments 11.1.0 MultiCurrency.php:1707-1732 (available list from the account) and :1740-1754 (enabled filtered by available).
+	 */
+	public function test_limits_the_catalog_to_provider_supported_currencies_when_a_provider_is_available(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR', 'GBP' ) );
+
+		$catalog    = $this->create_catalog( array( 'USD' ), array( 'USD' ), true, array( 'eur' ) );
+		$currencies = $catalog->get_store_currencies();
+
+		$this->assertSame( array( 'USD', 'EUR' ), array_keys( $currencies['available'] ) );
+		$this->assertSame( array( 'EUR' ), $catalog->get_configured_currency_codes() );
+		$this->assertSame( array( 'USD', 'EUR' ), array_keys( $currencies['enabled'] ) );
+		$this->assertTrue( $catalog->contains( 'USD' ) );
+		$this->assertFalse( $catalog->contains( 'GBP' ) );
+	}
+
+	/**
+	 * @testdox Should keep the WooCommerce-wide catalog while the registered provider is unavailable.
+	 */
+	public function test_keeps_the_woocommerce_catalog_during_a_provider_outage(): void {
+		$catalog = $this->create_catalog( array( 'USD' ), array( 'USD' ), false, array( 'EUR' ) );
+
+		$this->assertTrue( $catalog->contains( 'GBP' ) );
+		$this->assertCount( count( get_woocommerce_currencies() ), $catalog->get_store_currencies()['available'] );
+	}
+
+	/**
 	 * @testdox Should reuse positive runtime currency metadata in the static catalog.
 	 */
 	public function test_reuses_runtime_currency_metadata_when_a_currency_has_a_usable_rate(): void {
@@ -127,12 +155,13 @@ class MultiCurrencySettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 	 * @param string[]  $available_codes Runtime available currency codes.
 	 * @param string[]  $enabled_codes   Runtime enabled currency codes.
 	 * @param bool|null $provider_state  Whether a registered provider is available, or null when none exists.
+	 * @param string[]  $supported       Currencies the provider supports; empty means all.
 	 * @return MultiCurrencySettingsCurrencyCatalog
 	 */
-	private function create_catalog( array $available_codes = array( 'USD' ), array $enabled_codes = array( 'USD' ), ?bool $provider_state = null ): MultiCurrencySettingsCurrencyCatalog {
+	private function create_catalog( array $available_codes = array( 'USD' ), array $enabled_codes = array( 'USD' ), ?bool $provider_state = null, array $supported = array() ): MultiCurrencySettingsCurrencyCatalog {
 		$registry = new CurrencyRateProviderRegistry();
 		if ( null !== $provider_state ) {
-			$registry->register( $this->create_provider( $provider_state ) );
+			$registry->register( $this->create_provider( $provider_state, $supported ) );
 		}
 
 		return new MultiCurrencySettingsCurrencyCatalog(
@@ -189,19 +218,25 @@ class MultiCurrencySettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a rate provider.
 	 *
-	 * @param bool $available Whether the provider is available.
+	 * @param bool     $available Whether the provider is available.
+	 * @param string[] $supported Currencies the provider supports; empty means all.
 	 * @return CurrencyRateProvider
 	 */
-	private function create_provider( bool $available ): CurrencyRateProvider {
-		return new class( $available ) implements CurrencyRateProvider {
+	private function create_provider( bool $available, array $supported = array() ): CurrencyRateProvider {
+		return new class( $available, $supported ) implements CurrencyRateProvider {
 			/** @var bool */
 			private bool $available;
 
+			/** @var string[] */
+			private array $supported;
+
 			/**
-			 * @param bool $available Whether the provider is available.
+			 * @param bool     $available Whether the provider is available.
+			 * @param string[] $supported Supported currencies.
 			 */
-			public function __construct( bool $available ) {
+			public function __construct( bool $available, array $supported ) {
 				$this->available = $available;
+				$this->supported = $supported;
 			}
 
 			/** @return string */
@@ -216,7 +251,7 @@ class MultiCurrencySettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 
 			/** @return string[] */
 			public function get_supported_currencies(): array {
-				return array();
+				return $this->supported;
 			}
 
 			/**
