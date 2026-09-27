@@ -547,7 +547,7 @@ describe( 'WooPayments Blocked transactions tab', () => {
 
 		const [ fileName, csv ] = mockDownloadCSVFile.mock.calls[ 0 ];
 		expect( fileName ).toMatch(
-			/^blocked-transactions_\d{4}-\d{2}-\d{2}_tab-checkout_view-blocked\.csv$/
+			/^blocked-transactions_\d{4}-\d{2}-\d{2}_tab-blocked-page\.csv$/
 		);
 		expect( csv ).toBe(
 			[
@@ -573,6 +573,15 @@ describe( 'WooPayments Blocked transactions tab', () => {
 	// the export carries the list's search and sort order.
 	it( 'exports with the search and sort order of the list', async () => {
 		mockGetFraudOutcomesExport.mockResolvedValue( { data: [ ADA ] } );
+		mockGetQuery.mockReturnValue( {
+			page: 'wc-settings',
+			tab: 'checkout',
+			path: '/woopayments/transactions',
+			pagesize: '50',
+			sort: 'amount',
+			direction: 'asc',
+			view: 'blocked',
+		} );
 
 		renderAt(
 			'/woopayments/transactions?view=blocked&search=Ada%20Lovelace&search=Order%20%231521&sort=amount&direction=asc'
@@ -593,6 +602,11 @@ describe( 'WooPayments Blocked transactions tab', () => {
 			additional_status: 'review',
 			'search[]': [ 'Ada Lovelace', 'Order #1521' ],
 		} );
+		// Client 11.1.0 `blocked/index.tsx:128-148`: its admin URL names these
+		// `tab=blocked-page`, `per_page`, `orderby` and `order`.
+		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 0 ] ).toMatch(
+			/^blocked-transactions_\d{4}-\d{2}-\d{2}_tab-blocked-page_per-page-50_orderby-amount_order-asc\.csv$/
+		);
 	} );
 
 	it( 'shows the client error notice when the export fails', async () => {

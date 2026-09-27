@@ -70,6 +70,12 @@ type FraudOutcomesSummary = {
 type SearchValue = { key: string; label: string };
 
 const VIEW_PREFERENCES_ID = 'fraud_outcomes_block';
+// Client 11.1.0 TableCard query names for the native list params.
+const CLIENT_QUERY_KEYS: Record< string, string > = {
+	pagesize: 'per_page',
+	sort: 'orderby',
+	direction: 'order',
+};
 const NOT_FOUND = 'wcpay_fraud_outcome_not_found';
 
 // Client 11.1.0 `transactions/blocked/columns.tsx:28-60`: Date / Time and Amount sort.
@@ -265,11 +271,19 @@ export const WooPaymentsBlockedTransactions = () => {
 
 	const onDownload = async () => {
 		setIsDownloading( true );
-		// Client 11.1.0 `blocked/index.tsx:128-130, :148`: the file name carries the admin query minus page and path.
-		const { page, path, ...params } = getQuery() as Record<
-			string,
-			string
-		>;
+		// Client 11.1.0 `blocked/index.tsx:128-130, :148`: the file name carries
+		// the admin query minus page and path, under the client's URL names.
+		const {
+			page,
+			path,
+			tab,
+			view: nativeView,
+			...listQuery
+		} = getQuery() as Record< string, string >;
+		const params: Record< string, string > = { tab: 'blocked-page' };
+		Object.entries( listQuery ).forEach( ( [ key, value ] ) => {
+			params[ CLIENT_QUERY_KEYS[ key ] ?? key ] = value;
+		} );
 
 		try {
 			const { data = [] } =
