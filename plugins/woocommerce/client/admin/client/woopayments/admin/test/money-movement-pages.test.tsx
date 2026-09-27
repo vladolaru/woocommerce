@@ -5815,11 +5815,16 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
+		// Client 11.1.0 dispute-resolution-footer.tsx:38-98 (no bank name on this charge).
 		expect(
-			await screen.findByText(
-				"The customer's bank is reviewing your submitted evidence. This process can take more than 60 days."
-			)
-		).toBeInTheDocument();
+			(
+				await screen.findByRole( 'link', {
+					name: 'Learn more about monitoring dispute status.',
+				} )
+			).parentElement
+		).toHaveTextContent(
+			/^The customer's bank is currently reviewing the evidence you submitted on .+\. This process can sometimes take more than 60 days — we'll let you know once a decision has been made\. Learn more about monitoring dispute status\.$/
+		);
 		expect(
 			screen.getByRole( 'link', { name: 'View submitted evidence' } )
 		).toHaveAttribute(
@@ -5829,9 +5834,10 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it.each( [
+		// Client 11.1.0 dispute-resolution-footer.tsx:128-216, with its '-' for a missing closed date.
 		[
 			'won',
-			'You won this dispute. The disputed amount and dispute fee have been returned to your account.',
+			"Good news — you've won this dispute! The customer's bank reached this decision on -. Your account has been credited with the disputed amount and fee. Learn more about preventing disputes.",
 			{},
 		],
 	] )(
@@ -5867,7 +5873,16 @@ describe( 'WooPayments money movement pages', () => {
 				</MemoryRouter>
 			);
 
-			expect( await screen.findByText( message ) ).toBeInTheDocument();
+			expect(
+				(
+					await screen.findByRole( 'link', {
+						name: 'Learn more about preventing disputes.',
+					} )
+				).parentElement
+			).toHaveTextContent( message );
+			expect(
+				screen.getByRole( 'link', { name: 'View dispute details' } )
+			).toBeInTheDocument();
 		}
 	);
 
@@ -6096,6 +6111,96 @@ describe( 'WooPayments money movement pages', () => {
 					dispute.metadata.__dispute_closed_at
 				) }.`
 			);
+		}
+	);
+
+	/**
+	 * Client 11.1.0 resolution footers (`dispute-resolution-footer.tsx:38-98`,
+	 * `:128-216`, `:363-403`, `:433-461`) and action labels (`:206-209`,
+	 * `:350-353`, `:112-116`) for the recorded `lose_read_after_close` dispute
+	 * moved to each state. The closed date is one day after the evidence date
+	 * so each sentence proves which date it reads (format per C17).
+	 */
+	it.each( [
+		[
+			'under_review',
+			{},
+			'Learn more about monitoring dispute status.',
+			( submitted: string ) =>
+				`The customer's bank, Stripe Test (multi-country), is currently reviewing the evidence you submitted on ${ submitted }. This process can sometimes take more than 60 days — we'll let you know once a decision has been made. Learn more about monitoring dispute status.`,
+			'View submitted evidence',
+		],
+		[
+			'under_review',
+			{ reason: 'noncompliant' },
+			'Learn more about monitoring dispute status.',
+			( submitted: string ) =>
+				`Visa is currently reviewing the evidence you submitted on ${ submitted }. This process can sometimes take more than 60 days — we'll let you know once a decision has been made. Learn more about monitoring dispute status.`,
+			'View submitted evidence',
+		],
+		[
+			'won',
+			{},
+			'Learn more about preventing disputes.',
+			( _submitted: string, closed: string ) =>
+				`Good news — you've won this dispute! The customer's bank, Stripe Test (multi-country), reached this decision on ${ closed }. Your account has been credited with the disputed amount and fee. Learn more about preventing disputes.`,
+			'View dispute details',
+		],
+		[
+			'warning_under_review',
+			{},
+			'Learn more.',
+			( submitted: string ) =>
+				`You submitted evidence for this inquiry on ${ submitted }. Stripe Test (multi-country) is reviewing the case, which can take 120 days or more. You will be alerted when they make their final decision. Learn more.`,
+			'View submitted evidence',
+		],
+		[
+			'warning_closed',
+			{},
+			'Learn more about preventing disputes.',
+			( _submitted: string, closed: string ) =>
+				`This inquiry was closed on ${ closed }. Learn more about preventing disputes.`,
+			'View submitted evidence',
+		],
+		[
+			'lost',
+			{},
+			'Learn more about dispute fees.',
+			( _submitted: string, closed: string ) =>
+				`Unfortunately, you've lost this dispute. The customer's bank, Stripe Test (multi-country), reached this decision on ${ closed }.`,
+			'View dispute details',
+		],
+	] )(
+		'renders the client %s resolution footer for the recorded dispute',
+		async ( status, overrides, docLabel, expected, actionLabel ) => {
+			const recorded = loadRec5bDispute( 'lose_read_after_close' );
+			const closedAt = String(
+				Number( recorded.metadata.__evidence_submitted_at ) + 86400
+			);
+			renderRecordedDispute( {
+				...recorded,
+				...overrides,
+				status,
+				metadata: {
+					...recorded.metadata,
+					__dispute_closed_at: closedAt,
+				},
+			} );
+
+			const footer = (
+				await screen.findByRole( 'link', { name: docLabel } )
+			).parentElement as HTMLElement;
+			expect( footer ).toHaveTextContent(
+				expected(
+					formatRecordedDate(
+						recorded.metadata.__evidence_submitted_at
+					),
+					formatRecordedDate( closedAt )
+				)
+			);
+			expect(
+				screen.getByRole( 'link', { name: actionLabel } )
+			).toBeInTheDocument();
 		}
 	);
 

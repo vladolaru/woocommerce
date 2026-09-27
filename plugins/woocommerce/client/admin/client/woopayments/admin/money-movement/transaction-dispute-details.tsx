@@ -17,7 +17,10 @@ import type { ReactNode } from 'react';
  * Internal dependencies
  */
 import { closeWooPaymentsDispute } from './data';
-import { ACTIONABLE_DISPUTE_STATUSES } from './dispute-evidence-fields';
+import {
+	ACTIONABLE_DISPUTE_STATUSES,
+	isVisaComplianceDispute,
+} from './dispute-evidence-fields';
 import { getEffectiveDisputeFee } from './dispute-utils';
 import type { WooPaymentsDispute, WooPaymentsTransaction } from './types';
 import {
@@ -40,6 +43,10 @@ const DISPUTE_FEES_DOC_URL =
 	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#fees';
 const DISPUTED_AMOUNTS_DOC_URL =
 	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#amounts';
+const MONITOR_DISPUTE_STATUS_DOC_URL =
+	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#monitor-status';
+const PREVENTING_DISPUTES_DOC_URL =
+	'https://woocommerce.com/document/woopayments/fraud-and-disputes/preventing-disputes/';
 
 // Client disputes/strings.ts reason claims, with dispute-notice.tsx's fallback.
 const DISPUTE_CLAIMS: Record< string, string > = {
@@ -106,27 +113,148 @@ const getDisputeStatusLabel = ( status?: string ) => {
 	return formatLabel( status );
 };
 
-const getResolvedStatusDescription = ( dispute: WooPaymentsDispute ) => {
+const formatDisputeMetadataDate = ( timestamp: unknown ) =>
+	timestamp ? formatDate( Number( timestamp ) ) : '-';
+
+// Client 11.1.0 dispute-resolution-footer.tsx:38-98, 128-216, 363-403 and 433-461.
+const getResolvedStatusDescription = (
+	dispute: WooPaymentsDispute,
+	bankName?: string
+): { message: string; docUrl: string; docLabel: string } | null => {
+	const submittedAt = formatDisputeMetadataDate(
+		dispute.metadata?.__evidence_submitted_at
+	);
+	const isVisa = isVisaComplianceDispute(
+		dispute.reason,
+		dispute.enhanced_eligibility_types
+	);
+
 	switch ( dispute.status ) {
-		case 'under_review':
-			return __(
-				"The customer's bank is reviewing your submitted evidence. This process can take more than 60 days.",
-				'woocommerce'
+		case 'under_review': {
+			let lead = sprintf(
+				/* translators: %1$s: date the evidence was submitted. */
+				__(
+					"<strong>The customer's bank is currently reviewing the evidence you submitted on %1$s.</strong>",
+					'woocommerce'
+				),
+				submittedAt
 			);
-		case 'won':
-			return __(
-				'You won this dispute. The disputed amount and dispute fee have been returned to your account.',
-				'woocommerce'
+			if ( isVisa ) {
+				lead = sprintf(
+					/* translators: %1$s: date the evidence was submitted. */
+					__(
+						'<strong>Visa is currently reviewing the evidence you submitted on %1$s.</strong>',
+						'woocommerce'
+					),
+					submittedAt
+				);
+			} else if ( bankName ) {
+				lead = sprintf(
+					/* translators: %1$s: customer's bank name, %2$s: date the evidence was submitted. */
+					__(
+						"<strong>The customer's bank, %1$s, is currently reviewing the evidence you submitted on %2$s.</strong>",
+						'woocommerce'
+					),
+					bankName,
+					submittedAt
+				);
+			}
+			return {
+				message: `${ lead } ${ __(
+					"This process can sometimes take more than 60 days — we'll let you know once a decision has been made.",
+					'woocommerce'
+				) }`,
+				docUrl: MONITOR_DISPUTE_STATUS_DOC_URL,
+				docLabel: __(
+					'Learn more about monitoring dispute status.',
+					'woocommerce'
+				),
+			};
+		}
+		case 'won': {
+			const closedAt = formatDisputeMetadataDate(
+				dispute.metadata?.__dispute_closed_at
 			);
+			let lead = sprintf(
+				/* translators: %1$s: date the dispute closed. */
+				__(
+					"<strong>Good news — you've won this dispute! The customer's bank reached this decision on %1$s.</strong>",
+					'woocommerce'
+				),
+				closedAt
+			);
+			if ( isVisa ) {
+				lead = sprintf(
+					/* translators: %1$s: date the dispute closed. */
+					__(
+						"<strong>Good news — you've won this dispute! Visa reached this decision on %1$s.</strong>",
+						'woocommerce'
+					),
+					closedAt
+				);
+			} else if ( bankName ) {
+				lead = sprintf(
+					/* translators: %1$s: customer's bank name, %2$s: date the dispute closed. */
+					__(
+						"<strong>Good news — you've won this dispute! The customer's bank, %1$s, reached this decision on %2$s.</strong>",
+						'woocommerce'
+					),
+					bankName,
+					closedAt
+				);
+			}
+			return {
+				message: `${ lead } ${ __(
+					'Your account has been credited with the disputed amount and fee.',
+					'woocommerce'
+				) }`,
+				docUrl: PREVENTING_DISPUTES_DOC_URL,
+				docLabel: __(
+					'Learn more about preventing disputes.',
+					'woocommerce'
+				),
+			};
+		}
 		case 'warning_under_review':
-			return __(
-				"The customer's bank is reviewing the submitted inquiry evidence.",
-				'woocommerce'
-			);
+			return {
+				message: bankName
+					? sprintf(
+							/* translators: %1$s: date the evidence was submitted, %2$s: customer's bank name. */
+							__(
+								'You submitted evidence for this inquiry on %1$s. <strong>%2$s</strong> is reviewing the case, which can take 120 days or more. You will be alerted when they make their final decision.',
+								'woocommerce'
+							),
+							submittedAt,
+							bankName
+					  )
+					: sprintf(
+							/* translators: %s: date the evidence was submitted. */
+							__(
+								'You submitted evidence for this inquiry on %s. The <strong>cardholder’s bank</strong> is reviewing the case, which can take 120 days or more. You will be alerted when they make their final decision.',
+								'woocommerce'
+							),
+							submittedAt
+					  ),
+				docUrl: PAYMENT_INQUIRIES_DOC_URL,
+				docLabel: __( 'Learn more.', 'woocommerce' ),
+			};
 		case 'warning_closed':
-			return __( 'This payment inquiry is closed.', 'woocommerce' );
+			return {
+				message: sprintf(
+					/* translators: %s: date the inquiry closed. */
+					__( 'This inquiry was closed on %s.', 'woocommerce' ),
+					formatDisputeMetadataDate(
+						dispute.metadata?.__dispute_closed_at
+					)
+				),
+				docUrl: PREVENTING_DISPUTES_DOC_URL,
+				docLabel: __(
+					'Learn more about preventing disputes.',
+					'woocommerce'
+				),
+			};
 		default:
-			return '';
+			return null;
 	}
 };
 
@@ -391,12 +519,22 @@ const ResolvedDisputeActions = ( {
 	const shouldShowSubmittedEvidenceLink =
 		hasSubmittedEvidence( dispute ) ||
 		dispute.status === 'under_review' ||
+		dispute.status === 'won' ||
 		dispute.status === 'warning_under_review';
-	const statusDescription = getResolvedStatusDescription( dispute );
+	const statusDescription = getResolvedStatusDescription( dispute, bankName );
 
 	return (
 		<>
-			{ statusDescription && <p>{ statusDescription }</p> }
+			{ statusDescription && (
+				<p>
+					{ createInterpolateElement( statusDescription.message, {
+						strong: <strong />,
+					} ) }{ ' ' }
+					<a href={ statusDescription.docUrl }>
+						{ statusDescription.docLabel }
+					</a>
+				</p>
+			) }
 			{ dispute.status === 'lost' && (
 				<LostDisputeDescription
 					dispute={ dispute }
@@ -413,7 +551,9 @@ const ResolvedDisputeActions = ( {
 						} )
 					}
 				>
-					{ __( 'View submitted evidence', 'woocommerce' ) }
+					{ [ 'won', 'lost' ].includes( dispute.status || '' )
+						? __( 'View dispute details', 'woocommerce' )
+						: __( 'View submitted evidence', 'woocommerce' ) }
 				</a>
 			) }
 		</>
