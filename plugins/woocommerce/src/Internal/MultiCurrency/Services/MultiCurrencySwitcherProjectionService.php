@@ -149,7 +149,8 @@ class MultiCurrencySwitcherProjectionService {
 			$with_symbol,
 			$with_flag,
 			$this->get_accessible_label( '' ),
-			$select_styles
+			$select_styles,
+			true
 		);
 		$markup .= '</div></form>';
 
@@ -164,6 +165,7 @@ class MultiCurrencySwitcherProjectionService {
 	 * @param bool               $with_flag     Whether to include currency flags.
 	 * @param string             $aria_label    Accessible select label.
 	 * @param string             $select_styles Optional select styles.
+	 * @param bool               $plain_labels  Whether option labels are escaped as plain text (block) rather than filtered HTML (widget).
 	 * @return string
 	 */
 	private function get_select_markup(
@@ -171,7 +173,8 @@ class MultiCurrencySwitcherProjectionService {
 		bool $with_symbol,
 		bool $with_flag,
 		string $aria_label,
-		string $select_styles = ''
+		string $select_styles = '',
+		bool $plain_labels = false
 	): string {
 		$style_attribute = '' !== $select_styles
 			? ' style="' . esc_attr( $select_styles ) . '"'
@@ -180,7 +183,7 @@ class MultiCurrencySwitcherProjectionService {
 		$selected_code   = $state->get_selected_currency()->get_code();
 
 		foreach ( $state->get_enabled_currencies() as $currency ) {
-			$markup .= $this->get_currency_option_markup( $currency, $selected_code, $with_symbol, $with_flag );
+			$markup .= $this->get_currency_option_markup( $currency, $selected_code, $with_symbol, $with_flag, $plain_labels );
 		}
 
 		$markup .= '</select>';
@@ -195,18 +198,22 @@ class MultiCurrencySwitcherProjectionService {
 	 * @param string                $selected_code Selected currency code.
 	 * @param bool                  $with_symbol   Whether to include currency symbols.
 	 * @param bool                  $with_flag     Whether to include currency flags.
+	 * @param bool                  $plain_label   Whether to escape the label as plain text.
 	 * @return string
 	 */
 	private function get_currency_option_markup(
 		MultiCurrencyCurrency $currency,
 		string $selected_code,
 		bool $with_symbol,
-		bool $with_flag
+		bool $with_flag,
+		bool $plain_label
 	): string {
 		$code     = $currency->get_code();
 		$selected = $selected_code === $code ? ' selected' : '';
+		$label    = $this->get_currency_option_label( $currency, $with_symbol, $with_flag );
 
-		return '<option value="' . esc_attr( $code ) . '"' . $selected . '>' . esc_html( $this->get_currency_option_label( $currency, $with_symbol, $with_flag ) ) . '</option>';
+		// The plugin escapes block labels but prints widget labels unescaped (CurrencySwitcherBlock.php:178, CurrencySwitcherWidget.php:146).
+		return '<option value="' . esc_attr( $code ) . '"' . $selected . '>' . ( $plain_label ? esc_html( $label ) : wp_kses_post( $label ) ) . '</option>';
 	}
 
 	/**
