@@ -2701,6 +2701,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'valid-token', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
 		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
 		$this->assertSame(
+			array(),
+			preg_grep( '#<strong>failed</strong>#', array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) ),
+			'No payment note: the failed-payment note needs payment information (`:1354`) and the rate-limiter note is for `rate_limiter_enabled` only (`:1403`).'
+		);
+		$this->assertSame(
 			"We're not able to process this payment. Please refresh the page and try again.",
 			wc_get_notices( 'error' )[0]['notice'] ?? ''
 		);
@@ -2979,6 +2984,43 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'failed', $order->get_status() );
 		$this->assertContains(
 			'A payment of ' . wc_price( 12.00, array( 'currency' => $order->get_currency() ) ) . ' <strong>failed</strong> to complete because of too many failed transactions. A rate limiter was enabled for the user to prevent more attempts temporarily.',
+			array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) )
+		);
+	}
+
+	/**
+	 * @testdox Should suffix the rate-limiter note amount with the order currency in a multi-currency store.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1418` passes the total through
+	 * `WC_Payments_Explicit_Price_Formatter::get_explicit_price()`, which appends ` <currency code>`
+	 * when customer multi-currency is on and more than one currency is enabled
+	 * (`class-wc-payments-explicit-price-formatter.php:106-142`, `:167-190`).
+	 */
+	public function test_process_payment_rate_limiter_note_uses_explicit_price_in_multi_currency_store(): void {
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		$order   = $this->create_order();
+		$session = $this->create_session();
+		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			new RecordingPaymentProcessingService(),
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session )
+		);
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'USD', $order->get_currency() );
+		$this->assertContains(
+			'A payment of ' . wc_price( 12.00, array( 'currency' => 'USD' ) ) . ' USD <strong>failed</strong> to complete because of too many failed transactions. A rate limiter was enabled for the user to prevent more attempts temporarily.',
 			array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) )
 		);
 	}
@@ -4013,6 +4055,42 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		return array(
 			'negative amount'          => array( -1.0 ),
 			'one cent above the total' => array( 12.01 ),
+			'negative sub-cent amount' => array( -0.001 ),
+		);
+	}
+
+	/**
+	 * @testdox Should accept a refund that rounds to 0.00 without the amount check: $_dataName.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2926-2930` returns `true` when
+	 * `sprintf( '%0.2f', $amount )` is `'0.00'`, before the amount check at `:2932-2938`, so a refund of
+	 * 0.004 on a zero-total order is not `invalid-amount` even though it is above the total.
+	 *
+	 * @dataProvider zero_refund_amount_provider
+	 *
+	 * @param float  $amount      Refund amount.
+	 * @param string $order_total Order total.
+	 */
+	public function test_process_refund_accepts_zero_refund( float $amount, string $order_total ): void {
+		$order = $this->create_order();
+		$order->set_total( $order_total );
+		$order->save();
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider() );
+
+		$this->assertTrue( $gateway->process_refund( $order->get_id(), $amount, 'Restock only' ) );
+	}
+
+	/**
+	 * Refund amounts the client treats as a 0.00 no-op.
+	 *
+	 * @return array<string,array{0:float,1:string}>
+	 */
+	public function zero_refund_amount_provider(): array {
+		return array(
+			'0.00 on a 12.00 order'          => array( 0.0, '12.00' ),
+			'sub-cent on a zero-total order' => array( 0.004, '0.00' ),
 		);
 	}
 
