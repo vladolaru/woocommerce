@@ -1410,6 +1410,22 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $after_notice['state'], 'Consuming information must not stop silent retries.' );
 	}
 
+	/** @testdox An admin page with no reconnect notice due takes no cutover lease. */
+	public function test_reconnect_notice_check_takes_no_lease_when_nothing_is_due(): void {
+		$sut = $this->create_job( true );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$leases = 0;
+		$count  = static function () use ( &$leases ): void {
+			++$leases;
+		};
+		add_action( 'add_option_' . WooPaymentsCutoverStateStore::LEASE_OPTION_NAME, $count );
+
+		$this->assertFalse( $sut->consume_reconnect_notice() );
+		remove_action( 'add_option_' . WooPaymentsCutoverStateStore::LEASE_OPTION_NAME, $count );
+
+		$this->assertSame( 0, $leases, 'Every admin page renders this check while a switch is pending.' );
+	}
+
 	/** @testdox Consuming reconnect information cannot revise or fence a live worker claim. */
 	public function test_reconnect_notice_consumption_does_not_revise_a_running_claim(): void {
 		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_user_token_unavailable' ), true );

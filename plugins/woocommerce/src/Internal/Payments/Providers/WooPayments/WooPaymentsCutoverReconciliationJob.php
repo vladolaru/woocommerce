@@ -532,6 +532,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True only for the request that claimed the notice.
 	 */
 	public function consume_reconnect_notice(): bool {
+		// Checked before the lease too: admin pages call this while a switch is pending, and the lease writes options.
+		if ( ! $this->is_reconnect_notice_due( $this->state_store->get_record() ) ) {
+			return false;
+		}
 		$now   = time();
 		$token = $this->state_store->acquire_lease( $now );
 		if ( null === $token ) {
@@ -539,7 +543,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 		try {
 			$record = $this->state_store->get_record();
-			if ( ! is_array( $record ) || ! in_array( $record['state'], array( WooPaymentsCutoverState::PENDING, WooPaymentsCutoverState::DEFERRED ), true ) || ! $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => 'reconnect_required' ) ) || $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => 'reconnect_notice_shown' ) ) ) {
+			if ( ! is_array( $record ) || ! $this->is_reconnect_notice_due( $record ) ) {
 				return false;
 			}
 			$updated                           = $record;
@@ -552,6 +556,19 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		} finally {
 			$this->state_store->release_lease( $token );
 		}
+	}
+
+	/**
+	 * Tell whether a record carries a reconnect notice that has not been shown yet.
+	 *
+	 * @param array<string,mixed>|null $record Cutover record.
+	 * @return bool
+	 */
+	private function is_reconnect_notice_due( ?array $record ): bool {
+		return is_array( $record )
+			&& in_array( $record['state'], array( WooPaymentsCutoverState::PENDING, WooPaymentsCutoverState::DEFERRED ), true )
+			&& $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => 'reconnect_required' ) )
+			&& ! $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => 'reconnect_notice_shown' ) );
 	}
 
 	/**
