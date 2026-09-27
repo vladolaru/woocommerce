@@ -402,6 +402,28 @@ describe( 'WooPayments Blocked transactions tab', () => {
 		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
 			'Error retrieving on review transactions.'
 		);
+		// Client 11.1.0 `blocked/index.tsx:68-92` with `selectors.js:96-101`:
+		// a failed summary resolves to `{}`, so the summary row is not shown.
+		expect( screen.queryByText( /transactions\(s\)/ ) ).toBeNull();
+	} );
+
+	it( 'hides the summary while it reloads for a new search, like the client', async () => {
+		renderAt( '/woopayments/transactions?view=blocked' );
+		expect(
+			await screen.findByText( '2 transactions(s)' )
+		).toBeInTheDocument();
+
+		mockGetFraudOutcomesSummary.mockReturnValue( new Promise( () => {} ) );
+		act( () =>
+			navigateTo(
+				'/woopayments/transactions?view=blocked&search=Ada%20Lovelace'
+			)
+		);
+
+		await waitFor( () =>
+			expect( mockGetFraudOutcomesSummary ).toHaveBeenCalledTimes( 2 )
+		);
+		expect( screen.queryByText( /transactions\(s\)/ ) ).toBeNull();
 	} );
 
 	it( 'keeps the Blocked tab on the transactions and uncaptured views', async () => {

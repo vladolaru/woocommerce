@@ -205,14 +205,20 @@ export const WooPaymentsBlockedTransactions = () => {
 
 	// Client 11.1.0 `resolvers.js:159-199` and `hooks.ts:375-404`: the summary
 	// is keyed on the search only, so paging and sorting do not refetch it.
+	// It stays hidden while loading and after a failure other than not-found.
 	const searchKey = JSON.stringify( search ?? [] );
 	useEffect( () => {
 		let isCurrent = true;
+		setSummary( null );
 		void getWooPaymentsFraudOutcomeTransactionsSummary( {
 			status: 'block',
 		} )
+			.then( ( result ) => result || { count: 0, total: 0 } )
 			.catch( ( error: { code?: string } ) => {
-				if ( isCurrent && error?.code !== NOT_FOUND ) {
+				if ( error?.code === NOT_FOUND ) {
+					return { count: 0, total: 0 };
+				}
+				if ( isCurrent ) {
 					getNotices().createErrorNotice(
 						__(
 							'Error retrieving on review transactions.',
@@ -220,9 +226,9 @@ export const WooPaymentsBlockedTransactions = () => {
 						)
 					);
 				}
-				return { count: 0, total: 0 };
+				return null;
 			} )
-			.then( ( result ) => isCurrent && setSummary( result || {} ) );
+			.then( ( result ) => isCurrent && setSummary( result ) );
 
 		return () => {
 			isCurrent = false;
