@@ -13,14 +13,14 @@
       "store": "action_scheduler_hook",
       "match": "exact",
       "plugin_site": "includes/woopay/class-woopay-scheduler.php:74",
-      "group": "woocommerce-payments"
+      "group": null
     },
     {
       "key": "validate_woopay_compatibility",
       "store": "action_scheduler_hook",
       "match": "exact",
       "plugin_site": "includes/woopay/class-woopay-scheduler.php:58",
-      "group": "woocommerce-payments"
+      "group": null
     },
     {
       "key": "wcpay_check_affected_auth_fee_orders",
@@ -34,7 +34,7 @@
       "store": "action_scheduler_hook",
       "match": "exact",
       "plugin_site": "includes/subscriptions/class-wc-payments-subscriptions-migrator.php:73",
-      "group": "woocommerce-payments"
+      "group": null
     },
     {
       "key": "wcpay_post_kyc_activation_email_send",
@@ -62,21 +62,21 @@
       "store": "action_scheduler_hook",
       "match": "exact",
       "plugin_site": "includes/subscriptions/class-wc-payments-subscriptions-migrator.php:66",
-      "group": "woocommerce-payments"
+      "group": null
     },
     {
       "key": "wcpay_store_setup_sync",
       "store": "action_scheduler_hook",
       "match": "exact",
       "plugin_site": "includes/class-wc-payments-account.php:48",
-      "group": "woocommerce-payments"
+      "group": "woocommerce_payments"
     },
     {
       "key": "woopay_restore_order_customer_id",
       "store": "action_scheduler_hook",
       "match": "exact",
       "plugin_site": "includes/woopay/class-woopay-session.php:262",
-      "group": "woocommerce-payments"
+      "group": null
     },
     {
       "key": "wcpay_express_checkout_redirect_url",

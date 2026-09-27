@@ -23,8 +23,9 @@ class RecordingApplePayDomainScheduler extends WooPaymentsActionSchedulerService
 	 * @param string                  $hook Hook name.
 	 * @param array<int|string,mixed> $args Action args.
 	 * @param int|null                $timestamp Scheduled timestamp.
+	 * @param string                  $group Action Scheduler group (not recorded).
 	 */
-	public function schedule_job( string $hook, array $args = array(), ?int $timestamp = null ): void {
+	public function schedule_job( string $hook, array $args = array(), ?int $timestamp = null, string $group = self::GROUP_ID ): void {
 		$this->scheduled_jobs[] = array(
 			'hook'      => $hook,
 			'args'      => $args,

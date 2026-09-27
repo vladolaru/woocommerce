@@ -72,6 +72,13 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	const POST_KYC_ACTIVATION_EMAIL_SEND_ACTION = 'wcpay_post_kyc_activation_email_send';
 
 	/**
+	 * Preserved Action Scheduler group of the post-KYC activation email hook.
+	 *
+	 * @var string
+	 */
+	const POST_KYC_ACTIVATION_EMAIL_GROUP = 'woocommerce-payments';
+
+	/**
 	 * Preserved post-KYC activation email class registry key.
 	 *
 	 * @var string
@@ -673,7 +680,8 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			$this->scheduler->schedule_job(
 				self::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
 				array( $stage ),
-				max( $send_at, $now + MINUTE_IN_SECONDS )
+				max( $send_at, $now + MINUTE_IN_SECONDS ),
+				self::POST_KYC_ACTIVATION_EMAIL_GROUP
 			);
 		}
 	}

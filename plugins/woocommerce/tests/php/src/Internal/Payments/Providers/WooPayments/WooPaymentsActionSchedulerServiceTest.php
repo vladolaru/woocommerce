@@ -64,6 +64,22 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Scheduling under a given group avoids duplicate pending actions in that group.
+	 *
+	 * Client 11.1.0 class-wc-payments-action-scheduler-service.php:207-220 takes an optional group
+	 * and only replaces a job with the same hook, args and group.
+	 */
+	public function test_schedule_job_avoids_duplicate_pending_actions_in_given_group(): void {
+		$args = array( 'stage' => 7 );
+
+		$this->sut->schedule_job( $this->hook, $args, null, 'woocommerce-payments' );
+		$this->sut->schedule_job( $this->hook, $args, null, 'woocommerce-payments' );
+
+		$this->assertSame( 1, $this->count_pending_actions( $this->hook, $args, 'woocommerce-payments' ) );
+		$this->assertSame( 0, $this->count_pending_actions( $this->hook, $args ) );
+	}
+
+	/**
 	 * @testdox Scheduling does not pass the hook-unique flag so per-event args stay schedulable.
 	 */
 	public function test_schedule_job_does_not_pass_unique_flag(): void {
@@ -119,14 +135,15 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string              $hook Hook name.
 	 * @param array<string,mixed> $args Action args.
+	 * @param string              $group Action Scheduler group.
 	 * @return int
 	 */
-	private function count_pending_actions( string $hook, array $args ): int {
+	private function count_pending_actions( string $hook, array $args, string $group = 'woocommerce_payments' ): int {
 		$actions = as_get_scheduled_actions(
 			array(
 				'hook'   => $hook,
 				'args'   => $args,
-				'group'  => 'woocommerce_payments',
+				'group'  => $group,
 				'status' => ActionScheduler_Store::STATUS_PENDING,
 			)
 		);
@@ -143,17 +160,19 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 		}
 
 		foreach ( array( ActionScheduler_Store::STATUS_PENDING, ActionScheduler_Store::STATUS_RUNNING ) as $status ) {
-			$action_ids = as_get_scheduled_actions(
-				array(
-					'hook'   => $this->hook,
-					'group'  => 'woocommerce_payments',
-					'status' => $status,
-				),
-				'ids'
-			);
+			foreach ( array( 'woocommerce_payments', 'woocommerce-payments' ) as $group ) {
+				$action_ids = as_get_scheduled_actions(
+					array(
+						'hook'   => $this->hook,
+						'group'  => $group,
+						'status' => $status,
+					),
+					'ids'
+				);
 
-			foreach ( $action_ids as $action_id ) {
-				ActionScheduler::store()->cancel_action( (int) $action_id );
+				foreach ( $action_ids as $action_id ) {
+					ActionScheduler::store()->cancel_action( (int) $action_id );
+				}
 			}
 		}
 	}

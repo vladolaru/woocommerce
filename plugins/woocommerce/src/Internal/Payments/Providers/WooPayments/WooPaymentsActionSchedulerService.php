@@ -30,13 +30,14 @@ class WooPaymentsActionSchedulerService {
 	 * @param string                  $hook Hook name.
 	 * @param array<int|string,mixed> $args Action args.
 	 * @param int|null                $timestamp Scheduled timestamp. Defaults to now.
+	 * @param string                  $group Action Scheduler group. Defaults to the canonical group.
 	 */
-	public function schedule_job( string $hook, array $args = array(), ?int $timestamp = null ): void {
-		if ( $this->has_pending_action( $hook, $args ) ) {
+	public function schedule_job( string $hook, array $args = array(), ?int $timestamp = null, string $group = self::GROUP_ID ): void {
+		if ( $this->has_pending_action( $hook, $args, $group ) ) {
 			return;
 		}
 
-		as_schedule_single_action( $timestamp ?? time(), $hook, $args, self::GROUP_ID );
+		as_schedule_single_action( $timestamp ?? time(), $hook, $args, $group );
 	}
 
 	/**
@@ -48,14 +49,15 @@ class WooPaymentsActionSchedulerService {
 	 *
 	 * @param string                  $hook Hook name.
 	 * @param array<int|string,mixed> $args Action args.
+	 * @param string                  $group Action Scheduler group.
 	 * @return bool
 	 */
-	private function has_pending_action( string $hook, array $args ): bool {
+	private function has_pending_action( string $hook, array $args, string $group ): bool {
 		$actions = as_get_scheduled_actions(
 			array(
 				'hook'     => $hook,
 				'args'     => $args,
-				'group'    => self::GROUP_ID,
+				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => 1,
 				'orderby'  => 'none',

@@ -75,6 +75,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
 			as_unschedule_all_actions( WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION, null, WooPaymentsActionSchedulerService::GROUP_ID );
 			as_unschedule_all_actions( 'wcpay_post_kyc_activation_email_send', null, WooPaymentsActionSchedulerService::GROUP_ID );
+			as_unschedule_all_actions( 'wcpay_post_kyc_activation_email_send', null, 'woocommerce-payments' );
 		}
 		unset( $_GET['wcpay_referrer'], $_GET['wcpay_referrer_stage'], $_GET['_wpnonce'] );
 		remove_all_filters( 'wp_redirect' );
@@ -1042,6 +1043,23 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Post-KYC completion schedules activation emails under the plugin's post-KYC group.
+	 *
+	 * Client 11.1.0 class-wc-payments-post-kyc-activation-email-service.php:113 schedules each stage
+	 * under the literal 'woocommerce-payments', not the scheduler service's 'woocommerce_payments'.
+	 */
+	public function test_post_kyc_completion_schedules_emails_under_plugin_group(): void {
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new WooPaymentsActionSchedulerService() );
+
+		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', time() );
+
+		foreach ( array( 7, 14, 30 ) as $stage ) {
+			$this->assertIsInt( as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( $stage ), 'woocommerce-payments' ), "Stage {$stage} must be scheduled under woocommerce-payments." );
+		}
+		$this->assertFalse( as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', null, WooPaymentsActionSchedulerService::GROUP_ID ) );
+	}
+
+	/**
 	 * @testdox Dismissing a post-KYC notice leaves email eligibility, sent stages, and scheduled delivery unchanged.
 	 */
 	public function test_post_kyc_notice_dismissal_does_not_change_email_delivery(): void {
@@ -1053,10 +1071,10 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			$scheduled_at,
 			'wcpay_post_kyc_activation_email_send',
 			array( 7 ),
-			WooPaymentsActionSchedulerService::GROUP_ID,
+			'woocommerce-payments',
 			true
 		);
-		$scheduled_before = as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( 7 ), WooPaymentsActionSchedulerService::GROUP_ID );
+		$scheduled_before = as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( 7 ), 'woocommerce-payments' );
 		$notice_service   = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
 		$notice_service->init( $this->createMock( WooPaymentsAccountService::class ) );
 
@@ -1064,7 +1082,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
 		$this->assertFalse( get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
-		$this->assertSame( $scheduled_before, as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( 7 ), WooPaymentsActionSchedulerService::GROUP_ID ) );
+		$this->assertSame( $scheduled_before, as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( 7 ), 'woocommerce-payments' ) );
 		$this->assertSame( $scheduled_at, $scheduled_before );
 	}
 
