@@ -919,7 +919,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			'isReusable'        => $is_reusable,
 			'isBnpl'            => $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_BUY_NOW_PAY_LATER ),
 			'isExpressCheckout' => $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT ),
-			'showSaveOption'    => $is_reusable && $this->should_show_card_save_option( $saved_cards_enabled ),
+			'showSaveOption'    => $is_reusable && $this->should_show_save_option( $saved_cards_enabled ),
 			'supports'          => $this->get_blocks_supports(),
 			'countries'         => $definition->get_supported_countries( $account_country ),
 		);
@@ -1348,6 +1348,18 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			return false;
 		}
 
+		return $this->should_show_save_option( $saved_cards_enabled );
+	}
+
+	/**
+	 * Tell whether a reusable payment method should show the WooCommerce save-payment option.
+	 *
+	 * The logged-in WooPay guard applies to cards only, as in the plugin.
+	 *
+	 * @param bool $saved_cards_enabled Whether saved cards are enabled.
+	 * @return bool
+	 */
+	private function should_show_save_option( bool $saved_cards_enabled ): bool {
 		return $saved_cards_enabled && ! $this->cart_contains_subscription();
 	}
 

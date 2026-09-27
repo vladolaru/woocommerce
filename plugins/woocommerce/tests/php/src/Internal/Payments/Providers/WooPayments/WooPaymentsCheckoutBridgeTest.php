@@ -1033,6 +1033,44 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep the save option for a reusable non-card method when WooPay hides it for cards.
+	 *
+	 * Source: client 11.1.0 class-wc-payments-checkout.php:610-620 applies the logged-in WooPay guard to the card method only;
+	 * other reusable methods (Link carries TOKENIZATION in LinkDefinition.php) keep the saved-cards rule.
+	 */
+	public function test_get_payment_fields_js_config_keeps_non_card_save_option_for_logged_in_woopay_shoppers(): void {
+		wp_set_current_user( self::factory()->user->create() );
+
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge(
+			true,
+			array(
+				'country'      => 'US',
+				'capabilities' => array(
+					'card_payments' => 'active',
+					'link_payments' => 'active',
+				),
+				'fees'         => array( 'link' => array() ),
+			),
+			array(
+				'saved_cards'                    => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+			)
+		);
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$config = $bridge->get_payment_fields_js_config();
+
+		$this->assertTrue( $config['paymentMethodsConfig']['link']['isReusable'] );
+		$this->assertTrue( $config['paymentMethodsConfig']['link']['showSaveOption'], 'The WooPay guard must not hide the save option for a reusable non-card method.' );
+		$this->assertFalse( $config['paymentMethodsConfig']['card']['showSaveOption'], 'Logged-in WooPay shoppers must not see the card save option.' );
+	}
+
+	/**
 	 * @testdox Should hide saved-card controls when saved cards are disabled.
 	 */
 	public function test_get_payment_fields_js_config_hides_saved_card_controls_when_saved_cards_are_disabled(): void {
