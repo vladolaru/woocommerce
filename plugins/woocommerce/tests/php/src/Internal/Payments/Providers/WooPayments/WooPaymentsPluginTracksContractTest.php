@@ -144,7 +144,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		'wcpay_onboarding_flow_reset'                    => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
 		'wcpay_onboarding_test_account_disable'          => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
 		'wcpay_subscriptions_account_not_connected_save_product' => 'plan.md Decision 1 (Stripe Billing / WCPay Subscriptions excluded)',
-		'wcpay_post_kyc_activation_notice_snoozed'       => 'Client 11.1.0 never fires it: the post-KYC notice overrides supports_snooze() to false (includes/admin/attach-rate/class-wc-payments-post-kyc-activation-notice.php:214-215), so the base never hooks snooze_notice() (class-wc-payments-abstract-admin-notice.php:83); native matches with no snooze action (owner N-137 asked for client parity; R8 closed).',
+		'wcpay_post_kyc_activation_notice_snoozed'       => 'Client 11.1.0 never fires it: the post-KYC notice overrides supports_snooze() to false (includes/admin/attach-rate/class-wc-payments-post-kyc-activation-notice.php:214-215), so the base never hooks snooze_notice() (class-wc-payments-abstract-admin-notice.php:83); native matches with no snooze action (owner N-137 asked for a snooze; premise corrected, the client has none (V438); R8 closed).',
 	);
 
 	/**
