@@ -3235,6 +3235,9 @@ class WooPaymentsService {
 				$this->get_native_account_service()->clear_cache();
 			}
 
+			// Flag the new connection for the Overview's wcpay_stripe_connected Tracks event, as the plugin's finalize_embedded_connection() does.
+			$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => false ), false );
+
 			if ( ! $this->persist_pending_payment_methods_projection( $location ) ) {
 				$this->payment_methods_projection_fallback_location = $location;
 			}

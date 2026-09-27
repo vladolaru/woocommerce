@@ -915,6 +915,27 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native KYC finalization flags a new Stripe connection for the wcpay_stripe_connected Tracks event, like client 11.1.0 finalize_embedded_connection().
+	 */
+	public function test_finish_native_onboarding_kyc_session_flags_new_stripe_connection_for_tracks(): void {
+		update_option( '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => true ), false );
+		$fresh_account = array(
+			'account_id'        => 'acct_finalized_native',
+			'is_live'           => true,
+			'payments_enabled'  => true,
+			'details_submitted' => true,
+			'capabilities'      => array( 'card_payments' => 'active' ),
+			'fees'              => array( 'card' => array() ),
+		);
+		$this->arrange_native_finalize_projection( array( $fresh_account ), array( 'card' => true ) );
+
+		$this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertSame( array( 'is_existing_stripe_account' => false ), get_option( '_wcpay_onboarding_stripe_connected' ) );
+		$this->assertOptionNotAutoloaded( '_wcpay_onboarding_stripe_connected' );
+	}
+
+	/**
 	 * @testdox Native KYC finalization restores test-drive payment methods and keeps Link mutually exclusive with WooPay.
 	 */
 	public function test_finish_native_onboarding_kyc_session_restores_test_drive_payment_methods(): void {
