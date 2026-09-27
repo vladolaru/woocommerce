@@ -187,23 +187,39 @@ describe( 'WooPayments money movement data helpers', () => {
 				'+03:00'
 			);
 
-			expect( fraudOutcomes.searchParams.getAll( 'search' ) ).toEqual( [
+			// Repeated bare keys collapse to the last value in PHP; array keys reach the server whole.
+			expect( fraudOutcomes.searchParams.getAll( 'search[]' ) ).toEqual( [
 				'Ada',
 				'Grace',
 			] );
-			expect( fraudOutcomes.searchParams.getAll( 'search[]' ) ).toEqual(
+			expect( fraudOutcomes.searchParams.getAll( 'search' ) ).toEqual(
 				[]
 			);
-			expect( disputes.searchParams.getAll( 'status_is' ) ).toEqual( [
+			expect( disputes.searchParams.getAll( 'status_is[]' ) ).toEqual( [
 				'needs_response',
 				'under_review',
 			] );
-			expect( disputes.searchParams.getAll( 'status_is[]' ) ).toEqual(
-				[]
-			);
+			expect( disputes.searchParams.getAll( 'status_is' ) ).toEqual( [] );
 		} finally {
 			timezoneSpy.mockRestore();
 		}
+	} );
+
+	it( 'keeps an explicit array key as sent by the Blocked tab', async () => {
+		await getWooPaymentsFraudOutcomeTransactions( {
+			'search[]': [ 'Ada', 'Grace' ],
+		} as Record< string, unknown > );
+
+		const request = new URL(
+			( mockApiFetch.mock.calls[ 0 ][ 0 ] as { path: string } ).path,
+			'https://example.com'
+		);
+
+		expect( request.searchParams.getAll( 'search[]' ) ).toEqual( [
+			'Ada',
+			'Grace',
+		] );
+		expect( request.searchParams.getAll( 'search[][]' ) ).toEqual( [] );
 	} );
 
 	it( 'preserves authorizations endpoint paths and action routes', async () => {

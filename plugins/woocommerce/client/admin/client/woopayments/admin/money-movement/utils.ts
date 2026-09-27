@@ -42,7 +42,11 @@ export const buildPathWithQuery = (
 		}
 
 		if ( Array.isArray( value ) ) {
-			value.forEach( ( item ) => params.append( key, String( item ) ) );
+			// PHP keeps only the last of repeated bare keys, so send `key[]` like the client's addQueryArgs.
+			const arrayKey = key.endsWith( '[]' ) ? key : `${ key }[]`;
+			value.forEach( ( item ) =>
+				params.append( arrayKey, String( item ) )
+			);
 			return;
 		}
 
