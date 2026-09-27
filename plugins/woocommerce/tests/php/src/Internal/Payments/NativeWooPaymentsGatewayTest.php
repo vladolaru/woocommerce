@@ -2116,8 +2116,12 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should reject setup intents whose customer belongs to another user and not create a token.
+	 *
+	 * The customer check is native's own; its notice reuses the client's non-succeeded copy verbatim,
+	 * with no trailing period (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4448`).
 	 */
 	public function test_add_payment_method_rejects_setup_intent_owned_by_another_customer(): void {
+		wc_clear_notices();
 		$user_id = self::factory()->user->create();
 		wp_set_current_user( $user_id );
 		$_POST['wcpay-setup-intent'] = 'seti_native';
@@ -2162,6 +2166,79 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->add_payment_method();
 
 		$this->assertSame( array( 'result' => 'error' ), $result );
+		$this->assertCount( 1, wc_get_notices( 'error' ) );
+		$this->assertSame(
+			'Failed to add the provided payment method. Please try again later',
+			wc_get_notices( 'error' )[0]['notice'] ?? ''
+		);
+	}
+
+	/**
+	 * @testdox Should refuse a setup intent it cannot save with the client's copy: $_dataName.
+	 *
+	 * Oracle: client 11.1.0 `class-wc-payment-gateway-wcpay.php:4437` "We're not able to add this payment
+	 * method. Please try again later", with no trailing period. Native uses that copy for a succeeded
+	 * intent without a payment method, a token that cannot be created, and an unexpected exception.
+	 *
+	 * @dataProvider unsaveable_setup_intent_provider
+	 *
+	 * @param string $failure Which step fails: `no_payment_method`, `no_token` or `exception`.
+	 */
+	public function test_add_payment_method_refuses_unsaveable_setup_intent_with_client_copy( string $failure ): void {
+		wc_clear_notices();
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$_POST['wcpay-setup-intent'] = 'seti_native';
+
+		$api_client    = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_setup_intention' ) )
+			->getMock();
+		$intent_lookup = $api_client->method( 'get_setup_intention' )->with( 'seti_native' );
+		if ( 'exception' === $failure ) {
+			$intent_lookup->willThrowException( new \RuntimeException( 'Unexpected failure.' ) );
+		} else {
+			$intent_lookup->willReturn(
+				array_filter(
+					array(
+						'id'             => 'seti_native',
+						'status'         => 'succeeded',
+						'payment_method' => 'no_payment_method' === $failure ? null : 'pm_added',
+					)
+				)
+			);
+		}
+
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->method( 'get_or_create_token_for_user' )->willReturn( null );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service );
+
+		$result = $gateway->add_payment_method();
+
+		$this->assertSame( array( 'result' => 'error' ), $result );
+		$this->assertCount( 1, wc_get_notices( 'error' ) );
+		$this->assertSame(
+			"We're not able to add this payment method. Please try again later",
+			wc_get_notices( 'error' )[0]['notice'] ?? ''
+		);
+	}
+
+	/**
+	 * Steps of add_payment_method() that fail with the client's "not able" copy.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function unsaveable_setup_intent_provider(): array {
+		return array(
+			'succeeded intent without a payment method' => array( 'no_payment_method' ),
+			'token cannot be created'                   => array( 'no_token' ),
+			'setup intent lookup throws'                => array( 'exception' ),
+		);
 	}
 
 	/**
