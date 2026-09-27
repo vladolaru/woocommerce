@@ -865,36 +865,6 @@
 		return pattern.test( value );
 	}
 
-	// The Blocks checkout renders its fields after the script runs, so wait
-	// for the field inside the checkout block.
-	function getTargetElement( selector ) {
-		return new Promise( function ( resolve ) {
-			var checkoutBlock;
-			var observer;
-
-			if ( ! selector || document.querySelector( selector ) ) {
-				resolve( selector ? document.querySelector( selector ) : null );
-				return;
-			}
-
-			checkoutBlock = document.querySelector(
-				'[data-block-name="woocommerce/checkout"]'
-			);
-			if ( ! checkoutBlock || ! window.MutationObserver ) {
-				resolve( null );
-				return;
-			}
-
-			observer = new window.MutationObserver( function () {
-				if ( document.querySelector( selector ) ) {
-					observer.disconnect();
-					resolve( document.querySelector( selector ) );
-				}
-			} );
-			observer.observe( checkoutBlock, { childList: true, subtree: true } );
-		} );
-	}
-
 	// The plugin's request(): nested objects become bracketed form keys and
 	// empty values are left out.
 	function appendFormData( formData, data, prefix ) {
@@ -1242,16 +1212,14 @@
 		iframeWrapper.insertBefore( iframe, null );
 		iframeWrapper.addEventListener( 'click', closeIframe );
 
-		return getTracksIdentity()
-			.then( function ( identity ) {
-				tracksUserId = identity;
-				return getTargetElement( emailSelector );
-			} )
-			.then( function ( emailInput ) {
-				openIframe(
-					( emailInput && emailInput.value ) || config.woopaySessionEmail
-				);
-			} );
+		return getTracksIdentity().then( function ( identity ) {
+			var emailInput = document.querySelector( emailSelector );
+
+			tracksUserId = identity;
+			openIframe(
+				( emailInput && emailInput.value ) || config.woopaySessionEmail
+			);
+		} );
 	}
 
 	function continueWooPay() {
