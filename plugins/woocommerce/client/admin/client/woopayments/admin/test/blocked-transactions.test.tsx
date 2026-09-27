@@ -1,13 +1,13 @@
 /**
  * External dependencies
  */
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
 import { downloadCSVFile } from '@woocommerce/csv-export';
 import { getQuery } from '@woocommerce/navigation';
 import type { ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 
 /**
  * Internal dependencies
@@ -190,9 +190,18 @@ const REVIEW_ROW = {
 	fraud_meta_box_type: 'review',
 };
 
+let navigateTo: ( path: string ) => void = () => undefined;
+
+const NavigationProbe = () => {
+	navigateTo = useNavigate();
+
+	return null;
+};
+
 const renderAt = ( path: string ) =>
 	render(
 		<MemoryRouter initialEntries={ [ path ] }>
+			<NavigationProbe />
 			<WooPaymentsTransactionsPage />
 		</MemoryRouter>
 	);
@@ -300,6 +309,48 @@ describe( 'WooPayments Blocked transactions tab', () => {
 		expect( getPageViewPaths() ).toEqual( [
 			'payments_transactions_blocked',
 		] );
+	} );
+
+	// Client 11.1.0 `data/transactions/hooks.ts:375-404`: the summary selector
+	// re-resolves only when `status` or `search` changes; the list re-resolves
+	// on `paged`, `per_page`, `orderby`, `order` and `search` (`:334-373`).
+	it( 'refetches the summary only when the search changes, like the client', async () => {
+		renderAt( '/woopayments/transactions?view=blocked' );
+		await screen.findByRole( 'link', { name: 'Ada Lovelace' } );
+
+		for ( const path of [
+			'/woopayments/transactions?view=blocked&paged=2',
+			'/woopayments/transactions?view=blocked&paged=2&sort=amount&direction=asc',
+			'/woopayments/transactions?view=blocked&paged=2&sort=amount&direction=asc&pagesize=50',
+		] ) {
+			act( () => navigateTo( path ) );
+			await screen.findByRole( 'link', { name: 'Ada Lovelace' } );
+		}
+
+		expect( mockGetFraudOutcomes ).toHaveBeenCalledTimes( 4 );
+		expect( mockGetFraudOutcomes ).toHaveBeenLastCalledWith( {
+			status: 'block',
+			page: 2,
+			pagesize: 50,
+			sort: 'amount',
+			direction: 'asc',
+		} );
+		expect( mockGetFraudOutcomesSummary ).toHaveBeenCalledTimes( 1 );
+
+		act( () =>
+			navigateTo(
+				'/woopayments/transactions?view=blocked&paged=2&sort=amount&direction=asc&pagesize=50&search=Ada%20Lovelace'
+			)
+		);
+		await screen.findByRole( 'link', { name: 'Ada Lovelace' } );
+
+		await waitFor( () =>
+			expect( mockGetFraudOutcomesSummary ).toHaveBeenCalledTimes( 2 )
+		);
+		expect( mockGetFraudOutcomesSummary ).toHaveBeenLastCalledWith( {
+			status: 'block',
+		} );
+		expect( mockGetFraudOutcomes ).toHaveBeenCalledTimes( 5 );
 	} );
 
 	it( 'shows the total only for a single currency', async () => {

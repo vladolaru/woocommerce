@@ -170,14 +170,9 @@ export const WooPaymentsBlockedTransactions = () => {
 		recordEvent( 'page_view', { path: 'payments_transactions_blocked' } );
 	}, [] );
 
-	// Client 11.1.0 `data/transactions/resolvers.js:121-201` and `hooks.ts:334-373`.
+	// Client 11.1.0 `data/transactions/resolvers.js:121-151` and `hooks.ts:334-373`.
 	useEffect( () => {
 		let isCurrent = true;
-		const notify = ( message: string ) => ( error: { code?: string } ) => {
-			if ( isCurrent && error?.code !== NOT_FOUND ) {
-				getNotices().createErrorNotice( message );
-			}
-		};
 		setIsLoading( true );
 		void getWooPaymentsFraudOutcomeTransactions( {
 			status: 'block',
@@ -188,10 +183,12 @@ export const WooPaymentsBlockedTransactions = () => {
 			'search[]': toArray( query.search ),
 		} )
 			.then( ( response ) => response.data || [] )
-			.catch( ( error ) => {
-				notify( __( 'Error retrieving transactions.', 'woocommerce' ) )(
-					error
-				);
+			.catch( ( error: { code?: string } ) => {
+				if ( isCurrent && error?.code !== NOT_FOUND ) {
+					getNotices().createErrorNotice(
+						__( 'Error retrieving transactions.', 'woocommerce' )
+					);
+				}
 				return [];
 			} )
 			.then( ( data ) => {
@@ -200,16 +197,29 @@ export const WooPaymentsBlockedTransactions = () => {
 					setIsLoading( false );
 				}
 			} );
+
+		return () => {
+			isCurrent = false;
+		};
+	}, [ query ] );
+
+	// Client 11.1.0 `resolvers.js:159-199` and `hooks.ts:375-404`: the summary
+	// is keyed on the search only, so paging and sorting do not refetch it.
+	const searchKey = JSON.stringify( search ?? [] );
+	useEffect( () => {
+		let isCurrent = true;
 		void getWooPaymentsFraudOutcomeTransactionsSummary( {
 			status: 'block',
 		} )
-			.catch( ( error ) => {
-				notify(
-					__(
-						'Error retrieving on review transactions.',
-						'woocommerce'
-					)
-				)( error );
+			.catch( ( error: { code?: string } ) => {
+				if ( isCurrent && error?.code !== NOT_FOUND ) {
+					getNotices().createErrorNotice(
+						__(
+							'Error retrieving on review transactions.',
+							'woocommerce'
+						)
+					);
+				}
 				return { count: 0, total: 0 };
 			} )
 			.then( ( result ) => isCurrent && setSummary( result || {} ) );
@@ -217,7 +227,7 @@ export const WooPaymentsBlockedTransactions = () => {
 		return () => {
 			isCurrent = false;
 		};
-	}, [ query ] );
+	}, [ searchKey ] );
 
 	const pushQuery = ( nextQuery: WooPaymentsMoneyMovementQuery ) => {
 		const route = buildMoneyMovementRoutePath(
