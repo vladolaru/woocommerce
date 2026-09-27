@@ -587,6 +587,28 @@ describe( 'WooPayments WooPay checkout', () => {
 		);
 	} );
 
+	test( 'leaves the Blocks WooPay button wrapper to the Blocks renderer', () => {
+		// The Blocks express button renders its own #wcpay-woopay-button (client
+		// 11.1.0 woopay-express-checkout-button.js:469); this script can load on
+		// a Blocks cart for direct checkout and must not replace that button.
+		document.body.innerHTML =
+			'<div id="wcpay-woopay-button" class="wcpay-core-woopay-express">' +
+			'<button type="button" class="woopay-express-button" data-width-type="wide">WooPay</button>' +
+			'</div>';
+		const blocksButton = document.querySelector(
+			'#wcpay-woopay-button button'
+		);
+
+		require( '../woopayments-woopay' );
+
+		const buttons = document.querySelectorAll(
+			'#wcpay-woopay-button button'
+		);
+		expect( buttons ).toHaveLength( 1 );
+		expect( buttons[ 0 ] ).toBe( blocksButton );
+		expect( blocksButton.getAttribute( 'data-width-type' ) ).toBe( 'wide' );
+	} );
+
 	test( 'shows a checkout WooPay error in the selected gateway box only', async () => {
 		// Source: client 11.1.0 client/checkout/utils/show-error-checkout.js:4-55
 		// shows the failure where the shopper sees it, so the inline box must

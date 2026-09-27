@@ -644,4 +644,77 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			)
 		).toBe( false );
 	} );
+
+	// Client 11.1.0 wraps the button in `#wcpay-woopay-button`, swaps its content
+	// for a spinner and adds `is-loading` while WooPay initializes, and sets
+	// `data-width-type` from the width measured on mount: wide above 140px
+	// (client/checkout/woopay/express-button/woopay-express-checkout-button.js:108-114,375-381,449-469).
+	it( 'renders the client WooPay button wrapper, loading state and width type', async () => {
+		let resolveInit;
+		window.fetch = jest.fn( ( url ) =>
+			url === '/?wc-ajax=wcpay_init_woopay'
+				? new Promise( ( resolve ) => {
+						resolveInit = resolve;
+				  } )
+				: Promise.resolve( { json: () => Promise.resolve( {} ) } )
+		);
+
+		registerWooPay();
+		const expressRegistration =
+			registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
+		const { container } = render(
+			createElement( expressRegistration.content.type )
+		);
+
+		const wrapper = container.firstChild;
+		const button = screen.getByRole( 'button', { name: 'WooPay' } );
+		expect( wrapper ).toHaveAttribute( 'id', 'wcpay-woopay-button' );
+		expect( wrapper ).toContainElement( button );
+		expect( button ).toHaveAttribute( 'data-width-type', 'narrow' );
+		expect( button ).not.toHaveClass( 'is-loading' );
+
+		fireEvent.click( button );
+
+		await waitFor( () => {
+			expect( button ).toHaveClass( 'woopay-express-button is-loading' );
+		} );
+		expect(
+			button.querySelector( '.wc-block-components-spinner' )
+		).not.toBeNull();
+		expect( button.querySelector( '.button-content' ) ).toBeNull();
+
+		await act( async () => {
+			resolveInit( { json: () => Promise.resolve( {} ) } );
+		} );
+
+		await waitFor( () => {
+			expect( button ).not.toHaveClass( 'is-loading' );
+		} );
+		expect(
+			button.querySelector( '.wc-block-components-spinner' )
+		).toBeNull();
+		expect( button.querySelector( '.button-content' ) ).not.toBeNull();
+	} );
+
+	it.each( [
+		[ 141, 'wide' ],
+		[ 140, 'narrow' ],
+	] )(
+		'sets the WooPay button width type from a %ipx measured width',
+		( width, widthType ) => {
+			const rectSpy = jest
+				.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
+				.mockReturnValue( { width } );
+
+			registerWooPay();
+			const expressRegistration =
+				registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
+			render( createElement( expressRegistration.content.type ) );
+
+			expect(
+				screen.getByRole( 'button', { name: 'WooPay' } )
+			).toHaveAttribute( 'data-width-type', widthType );
+			rectSpy.mockRestore();
+		}
+	);
 } );

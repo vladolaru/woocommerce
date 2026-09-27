@@ -1109,8 +1109,10 @@
 			: getWooPayButtonLabel( type );
 		var button;
 
+		// The Blocks express button renders and owns its own wrapper.
 		if (
 			! container ||
+			container.classList.contains( 'wcpay-core-woopay-express' ) ||
 			! config.isWooPayEnabled ||
 			! config.shouldShowWooPayButton
 		) {

@@ -18,6 +18,7 @@ const supportedFeatures = settings.supports ||
 	settings.features || [ 'products' ];
 const preferredCardCacheKey = 'woopay_preferred_card';
 const wooPayConnectTimeout = 5000;
+const buttonWidthThreshold = 140;
 const brandAliases = {
 	american_express: 'amex',
 	diners_club: 'diners',
@@ -609,7 +610,15 @@ const WooPayExpressContent = () => {
 	const eventSource = buttonSettings.context || 'checkout';
 	const preferredCard = usePreferredCard();
 	const isLoadingRef = useRef( false );
+	const buttonRef = useRef( null );
 	const [ isLoading, setIsLoading ] = useState( false );
+	const [ measuredWidth, setMeasuredWidth ] = useState( null );
+
+	useEffect( () => {
+		if ( buttonRef.current ) {
+			setMeasuredWidth( buttonRef.current.getBoundingClientRect().width );
+		}
+	}, [] );
 
 	useEffect( () => {
 		recordWooPaymentsUserEvent( settings, 'woopay_button_load', {
@@ -721,19 +730,30 @@ const WooPayExpressContent = () => {
 	};
 
 	const ariaLabel = getWooPayButtonAriaLabel( buttonType, preferredCard );
-	const buttonContent = (
+	const buttonContent = isLoading ? (
+		<span className="wc-block-components-spinner" />
+	) : (
 		<WooPayButtonContent
 			buttonSettings={ buttonSettings }
 			preferredCard={ preferredCard }
 		/>
 	);
+	let buttonWidthType = null;
+	if ( measuredWidth !== null ) {
+		buttonWidthType =
+			measuredWidth > buttonWidthThreshold ? 'wide' : 'narrow';
+	}
 	const buttonProps = {
-		className: 'woopay-express-button',
+		ref: buttonRef,
+		className: isLoading
+			? 'woopay-express-button is-loading'
+			: 'woopay-express-button',
 		'aria-label': ariaLabel,
 		'aria-disabled': isLoading || undefined,
 		'data-type': buttonType,
 		'data-theme': buttonSettings.theme || 'dark',
 		'data-size': normalizeButtonSize( buttonSettings ),
+		'data-width-type': buttonWidthType,
 		style: {
 			height: `${ buttonSettings.height || '48' }px`,
 			borderRadius: `${ buttonSettings.radius || '4' }px`,
@@ -742,7 +762,7 @@ const WooPayExpressContent = () => {
 	};
 
 	return (
-		<div className="wcpay-core-woopay-express">
+		<div id="wcpay-woopay-button" className="wcpay-core-woopay-express">
 			{ settings.isWoopayFirstPartyAuthEnabled ? (
 				<a
 					{ ...buttonProps }

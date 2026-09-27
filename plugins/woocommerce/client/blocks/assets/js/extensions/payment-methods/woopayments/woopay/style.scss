@@ -127,6 +127,10 @@
 		opacity: 0.5;
 	}
 
+	&.is-loading {
+		opacity: 1;
+	}
+
 	&:not(:disabled):not(.is-placeholder):hover {
 		cursor: pointer;
 	}
