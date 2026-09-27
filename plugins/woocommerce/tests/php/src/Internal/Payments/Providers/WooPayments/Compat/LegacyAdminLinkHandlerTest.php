@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
+use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -222,7 +223,8 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 			$this->sut->handle_kyc_reminder_return();
 			$this->fail( 'Expected the redirect to be intercepted.' );
 		} catch ( \RuntimeException $exception ) {
-			$this->assertSame( 'wp_redirect intercepted: ' . admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding' ), $exception->getMessage() );
+			// Plugin 11.1.0 continues with `redirect_to_wcpay_connect( 'WCPAY_KYC_REMINDER' )`, which adds `from=WCPAY_KYC_REMINDER`.
+			$this->assertSame( 'wp_redirect intercepted: ' . admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding&from=WCPAY_KYC_REMINDER' ), $exception->getMessage() );
 		}
 
 		$this->assertSame( $offset, $recorded->events['wcadmin_wcpay_kyc_reminder_merchant_returned']['offset'] ?? null );
@@ -241,6 +243,28 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 			'weekly 2' => array( '2', 14, 'weekly-2' ),
 			'unknown'  => array( '9', 0, 'weekly-0' ),
 		);
+	}
+
+	/**
+	 * @testdox A KYC reminder link falls back to the overview with the plugin's `from=WCPAY_KYC_REMINDER` when no native route resolves.
+	 */
+	public function test_kyc_reminder_link_falls_back_to_overview_with_from(): void {
+		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$navigation = $this->createMock( WooPaymentsAdminNavigationController::class );
+		$navigation->method( 'get_legacy_payment_path_redirect_url' )->willReturn( '' );
+		$handler = new LegacyAdminLinkHandler();
+		$handler->init( $arbiter, $this->api_client, $navigation );
+		$_GET = array(
+			'page'                   => 'wc-admin',
+			'path'                   => '/payments/connect',
+			'wcpay-connect-redirect' => 'initial',
+		);
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$this->expectExceptionMessage( 'wp_redirect intercepted: ' . admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview&from=WCPAY_KYC_REMINDER' ) );
+
+		$handler->handle_kyc_reminder_return();
 	}
 
 	/**
@@ -353,12 +377,15 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_legacy_payment_path_redirect_url' ) )
 			->getMock();
+		// Like the real controller, resolve the legacy connect page and forward the other scalar query arguments.
 		$navigation->method( 'get_legacy_payment_path_redirect_url' )->willReturnCallback(
 			static function ( array $request ): string {
-				return array(
-					'page' => 'wc-admin',
-					'path' => '/payments/connect',
-				) === $request ? admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding' ) : '';
+				if ( 'wc-admin' !== ( $request['page'] ?? '' ) || '/payments/connect' !== ( $request['path'] ?? '' ) ) {
+					return '';
+				}
+				unset( $request['page'], $request['path'] );
+
+				return Utils::wc_payments_settings_url( '/woopayments/onboarding', $request );
 			}
 		);
 
