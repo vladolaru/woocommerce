@@ -280,13 +280,45 @@ class WooPaymentsOrderStatusChangeProjectionServiceTest extends WC_Unit_Test_Cas
 	}
 
 	/**
+	 * @testdox Should project an open authorization for an uncaptured payment.
+	 *
+	 * Source: client 11.1.0 `class-wc-payments-admin.php:880` and `class-wc-payments-order-service.php:1065-1067`.
+	 */
+	public function test_projects_open_authorization_for_uncaptured_payment(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+
+		$this->assertTrue( $this->sut->get_config( $order )['has_open_authorization'], 'A requires_capture intent is an open authorization.' );
+	}
+
+	/**
+	 * @testdox Should not project an open authorization for any other intent status.
+	 *
+	 * Source: client 11.1.0 `class-wc-payments-order-service.php:1065-1067`.
+	 *
+	 * @testWith ["succeeded"]
+	 *           ["canceled"]
+	 *           [""]
+	 *
+	 * @param string $intent_status Stored intent status.
+	 */
+	public function test_projects_no_open_authorization_for_other_intent_statuses( string $intent_status ): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', $intent_status );
+		$order->save();
+
+		$this->assertFalse( $this->sut->get_config( $order )['has_open_authorization'], "A {$intent_status} intent is not an open authorization." );
+	}
+
+	/**
 	 * @testdox Should project exactly the documented config keys.
 	 */
 	public function test_projects_exactly_the_documented_config_keys(): void {
 		$config = $this->sut->get_config( $this->create_order() );
 
 		$this->assertSame(
-			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id' ),
+			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id', 'has_open_authorization' ),
 			array_keys( $config ),
 			'The config contract is consumed by the browser and must not drift.'
 		);

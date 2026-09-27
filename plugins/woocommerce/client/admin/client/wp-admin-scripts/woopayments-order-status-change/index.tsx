@@ -7,7 +7,8 @@
  * edit screen's status dropdown and, for WooPayments orders, confirms the
  * intent before letting that happen: "Refunded" issues a real gateway refund,
  * and "Cancelled" on a still-refundable order asks whether a refund was meant
- * instead.
+ * instead. On an open authorization, "Completed" and "Cancelled" confirm the
+ * capture or cancel that the status change triggers.
  *
  * Everything here is DOM and React wiring. The rules live in `./strategies`,
  * which is pure and separately tested.
@@ -28,6 +29,7 @@ import type { ReactNode } from 'react';
 /**
  * Internal dependencies
  */
+import { AuthorizationConfirmationModal } from './authorization-confirmation-modal';
 import { CancelConfirmationModal } from './cancel-confirmation-modal';
 import { getOrderStatusChangeDecision } from './strategies';
 import { getOrderStatusField } from './order-status-field';
@@ -275,6 +277,16 @@ function initialize(): void {
 			case 'cancel-confirmation':
 				render(
 					<CancelConfirmationModal
+						previousStatus={ decision.previousStatus }
+						onClose={ dismiss }
+					/>
+				);
+				break;
+
+			case 'authorization-confirmation':
+				render(
+					<AuthorizationConfirmationModal
+						action={ decision.action }
 						previousStatus={ decision.previousStatus }
 						onClose={ dismiss }
 					/>

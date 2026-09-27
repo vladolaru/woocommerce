@@ -4,6 +4,7 @@
 import {
 	getOrderStatusChangeDecision,
 	ORDER_STATUS_CANCELLED,
+	ORDER_STATUS_COMPLETED,
 	ORDER_STATUS_REFUNDED,
 } from '../strategies';
 import type { WooPaymentsOrderStatusChangeConfig } from '../types';
@@ -17,6 +18,7 @@ const createConfig = (
 	formatted_refund_amount: '$25.00',
 	refunded_amount: 0,
 	charge_id: '',
+	has_open_authorization: false,
 	...overrides,
 } );
 
@@ -148,6 +150,55 @@ describe( 'getOrderStatusChangeDecision', () => {
 			const decision = getOrderStatusChangeDecision(
 				ORDER_STATUS_CANCELLED,
 				createConfig( { refund_amount: 0 } )
+			);
+
+			expect( decision ).toEqual( { type: 'none' } );
+		} );
+	} );
+
+	// Source: client 11.1.0 `client/order/order-status-change-strategies/index.tsx:235-255,321-332`.
+	describe( 'when the payment is an open authorization', () => {
+		it( 'confirms the capture when the merchant picks Completed', () => {
+			const decision = getOrderStatusChangeDecision(
+				ORDER_STATUS_COMPLETED,
+				createConfig( {
+					order_status: 'wc-on-hold',
+					has_open_authorization: true,
+				} )
+			);
+
+			expect( decision ).toEqual( {
+				type: 'authorization-confirmation',
+				action: 'capture',
+				previousStatus: 'wc-on-hold',
+			} );
+		} );
+
+		it( 'confirms cancelling the authorization, not a refund, when the merchant picks Cancelled', () => {
+			const decision = getOrderStatusChangeDecision(
+				ORDER_STATUS_CANCELLED,
+				createConfig( {
+					order_status: 'wc-on-hold',
+					has_open_authorization: true,
+					can_refund: true,
+					refund_amount: 25,
+				} )
+			);
+
+			expect( decision ).toEqual( {
+				type: 'authorization-confirmation',
+				action: 'cancel',
+				previousStatus: 'wc-on-hold',
+			} );
+		} );
+
+		it( 'does nothing when the order is already completed', () => {
+			const decision = getOrderStatusChangeDecision(
+				ORDER_STATUS_COMPLETED,
+				createConfig( {
+					order_status: ORDER_STATUS_COMPLETED,
+					has_open_authorization: true,
+				} )
 			);
 
 			expect( decision ).toEqual( { type: 'none' } );

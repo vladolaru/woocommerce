@@ -22,10 +22,8 @@ use WC_Order;
  * It is a pure projection: it reads the order and returns data. It registers no hooks, enqueues no
  * assets, and reads no request state.
  *
- * Authorization-related confirmations - the cancel-authorization and capture-authorization modals the
- * WooPayments extension also raises from this dropdown - are deliberately outside this contract. They
- * depend on the open-authorization signal and its lifecycle, which the manual-capture work owns, and
- * are expected to arrive with that work rather than be half-answered here.
+ * It also tells the browser whether the payment is an open authorization, so that Completed and
+ * Cancelled can confirm the capture or cancel they trigger (client 11.1.0 `class-wc-payments-admin.php:880`).
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
@@ -102,10 +100,11 @@ class WooPaymentsOrderStatusChangeProjectionService {
 	 *                             decoded - ready to place in modal copy as text, not as HTML.
 	 * - `refunded_amount`         (float)  Amount already refunded, in the order's currency.
 	 * - `charge_id`              (string) Provider charge ID when the order belongs to the active account mode.
+	 * - `has_open_authorization` (bool)   Whether the payment is authorized but not yet captured.
 	 *
 	 * @param WC_Order $order Order being edited.
 	 * @return array<string,mixed> The status-change confirmation config.
-	 * @phpstan-return array{order_status: string, can_refund: bool, refund_amount: float, formatted_refund_amount: string, refunded_amount: float, charge_id: string}
+	 * @phpstan-return array{order_status: string, can_refund: bool, refund_amount: float, formatted_refund_amount: string, refunded_amount: float, charge_id: string, has_open_authorization: bool}
 	 *
 	 * @since 11.0.0
 	 */
@@ -119,6 +118,7 @@ class WooPaymentsOrderStatusChangeProjectionService {
 			'formatted_refund_amount' => $this->format_in_order_currency( $order, $refund_amount ),
 			'refunded_amount'         => (float) $order->get_total_refunded(),
 			'charge_id'               => $this->get_charge_id_for_active_mode( $order ),
+			'has_open_authorization'  => 'requires_capture' === $order->get_meta( '_intention_status', true ),
 		);
 	}
 

@@ -33,6 +33,20 @@ jest.mock( '../cancel-confirmation-modal', () => ( {
 	} ) => <div>Cancel confirmation from { previousStatus }</div>,
 } ) );
 
+jest.mock( '../authorization-confirmation-modal', () => ( {
+	AuthorizationConfirmationModal: ( {
+		action,
+		previousStatus,
+	}: {
+		action: string;
+		previousStatus: string;
+	} ) => (
+		<div>
+			Authorization { action } confirmation from { previousStatus }
+		</div>
+	),
+} ) );
+
 import '../index';
 
 const bootEntry = () => {
@@ -93,6 +107,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 				<p class="form-field">
 					<select id="order_status">
 						<option value="wc-processing">Processing</option>
+						<option value="wc-completed">Completed</option>
 						<option value="wc-cancelled">Cancelled</option>
 						<option value="wc-refunded">Refunded</option>
 					</select>
@@ -131,6 +146,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 			formatted_refund_amount: '$42.50',
 			refunded_amount: 0,
 			charge_id: '',
+			has_open_authorization: false,
 		};
 		const refundButton = orderScreenQueries().getByRole( 'button', {
 			name: 'Refund',
@@ -163,6 +179,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 				formatted_refund_amount: '$42.50',
 				refunded_amount: 0,
 				charge_id: '',
+				has_open_authorization: false,
 			};
 		} );
 
@@ -214,6 +231,46 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 		} );
 	} );
 
+	// Source: client 11.1.0 `client/order/order-status-change-strategies/index.tsx:235-255,321-339`.
+	describe( 'on an authorized WooPayments order', () => {
+		beforeEach( () => {
+			window.woocommerceWooPaymentsOrderStatusChange = {
+				order_status: 'wc-processing',
+				can_refund: true,
+				refund_amount: 42.5,
+				formatted_refund_amount: '$42.50',
+				refunded_amount: 0,
+				charge_id: '',
+				has_open_authorization: true,
+			};
+		} );
+
+		it( 'confirms the capture before completing', () => {
+			bootEntry();
+			selectStatus( 'wc-completed' );
+
+			expect(
+				orderScreenQueries().getByText(
+					'Authorization capture confirmation from wc-processing'
+				)
+			).toBeInTheDocument();
+		} );
+
+		it( 'confirms cancelling the payment instead of asking about a refund', () => {
+			bootEntry();
+			selectStatus( 'wc-cancelled' );
+
+			expect(
+				orderScreenQueries().getByText(
+					'Authorization cancel confirmation from wc-processing'
+				)
+			).toBeInTheDocument();
+			expect(
+				orderScreenQueries().queryByText( /Cancel confirmation/ )
+			).not.toBeInTheDocument();
+		} );
+	} );
+
 	it( 'shows and announces why a refund is refused', () => {
 		window.woocommerceWooPaymentsOrderStatusChange = {
 			order_status: 'wc-processing',
@@ -222,6 +279,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 			formatted_refund_amount: '$42.50',
 			refunded_amount: 0,
 			charge_id: '',
+			has_open_authorization: false,
 		};
 
 		bootEntry();
@@ -245,6 +303,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 			formatted_refund_amount: '$42.50',
 			refunded_amount: 0,
 			charge_id: 'ch_disputed',
+			has_open_authorization: false,
 		};
 		mockApiFetch.mockResolvedValue( {
 			disputes: [
@@ -285,6 +344,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 			formatted_refund_amount: '$42.50',
 			refunded_amount: 0,
 			charge_id: 'ch_unknown_dispute',
+			has_open_authorization: false,
 		};
 		mockApiFetch.mockResolvedValue( {
 			dispute: { id: 'dp_unknown', status: 'future_status' },
@@ -311,6 +371,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 			formatted_refund_amount: '$42.50',
 			refunded_amount: 0,
 			charge_id: '',
+			has_open_authorization: false,
 		};
 		const refundButton = orderScreenQueries().getByRole( 'button', {
 			name: 'Refund',
@@ -351,6 +412,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 				formatted_refund_amount: '$42.50',
 				refunded_amount: 0,
 				charge_id: '',
+				has_open_authorization: false,
 			};
 			const refundButton = orderScreenQueries().getByRole( 'button', {
 				name: 'Refund',

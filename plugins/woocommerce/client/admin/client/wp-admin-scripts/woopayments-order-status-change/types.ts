@@ -25,6 +25,8 @@ export interface WooPaymentsOrderStatusChangeConfig {
 	refunded_amount: number;
 	/** Provider charge ID when this order belongs to the active account mode. */
 	charge_id: string;
+	/** Whether the payment is authorized but not yet captured. */
+	has_open_authorization: boolean;
 }
 
 /**
@@ -50,6 +52,12 @@ export type OrderStatusChangeDecision =
 	/** Ask the merchant whether they meant to refund rather than cancel. */
 	| {
 			type: 'cancel-confirmation';
+			previousStatus: string;
+	  }
+	/** Ask the merchant to confirm the capture or cancel the new status triggers. */
+	| {
+			type: 'authorization-confirmation';
+			action: 'capture' | 'cancel';
 			previousStatus: string;
 	  };
 

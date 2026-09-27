@@ -24,6 +24,7 @@ import type {
  * Status values as they appear in the `#order_status` dropdown, i.e. `wc-` prefixed.
  */
 export const ORDER_STATUS_CANCELLED = 'wc-cancelled';
+export const ORDER_STATUS_COMPLETED = 'wc-completed';
 export const ORDER_STATUS_REFUNDED = 'wc-refunded';
 
 /**
@@ -88,6 +89,16 @@ function decideCancelled(
 		return { type: 'none' };
 	}
 
+	// Cancelling an open authorization also cancels the payment, so confirm that
+	// instead of asking about a refund there is nothing yet to refund for.
+	if ( config.has_open_authorization ) {
+		return {
+			type: 'authorization-confirmation',
+			action: 'cancel',
+			previousStatus: config.order_status,
+		};
+	}
+
 	if ( config.can_refund && config.refund_amount > 0 ) {
 		return {
 			type: 'cancel-confirmation',
@@ -97,6 +108,32 @@ function decideCancelled(
 
 	// Nothing refundable is at stake, so cancelling is unambiguous.
 	return { type: 'none' };
+}
+
+/**
+ * Decide what should happen when the merchant picks "Completed".
+ *
+ * Completing an order with an open authorization also captures the payment.
+ *
+ * @param config Server-provided order context.
+ *
+ * @return The decision for a "Completed" selection.
+ */
+function decideCompleted(
+	config: WooPaymentsOrderStatusChangeConfig
+): OrderStatusChangeDecision {
+	if (
+		config.order_status === ORDER_STATUS_COMPLETED ||
+		! config.has_open_authorization
+	) {
+		return { type: 'none' };
+	}
+
+	return {
+		type: 'authorization-confirmation',
+		action: 'capture',
+		previousStatus: config.order_status,
+	};
 }
 
 /**
@@ -116,6 +153,8 @@ export function getOrderStatusChangeDecision(
 			return decideRefunded( config );
 		case ORDER_STATUS_CANCELLED:
 			return decideCancelled( config );
+		case ORDER_STATUS_COMPLETED:
+			return decideCompleted( config );
 		default:
 			// Every other status is core's business; WooPayments has nothing to
 			// confirm.
