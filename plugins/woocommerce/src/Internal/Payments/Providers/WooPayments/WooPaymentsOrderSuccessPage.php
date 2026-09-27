@@ -344,10 +344,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		}
 
 		try {
-			$this->get_frontend_tracking_controller()->record_user_event(
-				'order_success_page_view',
-				array( 'record_event_data' => array( 'track_on_all_stores' => true ) )
-			);
+			$this->get_frontend_tracking_controller()->queue_user_event( 'order_success_page_view' );
 		} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
 			// Tracking must never interrupt the order-success page.
 		}

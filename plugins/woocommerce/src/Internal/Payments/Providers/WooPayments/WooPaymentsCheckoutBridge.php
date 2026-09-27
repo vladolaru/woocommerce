@@ -347,24 +347,25 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Record the client 11.1.0 WooPay_Tracker shopper funnel event for the current hook (`class-woopay-tracker.php:73-81,496-532,608`).
 	 *
+	 * Page views are queued for the footer script, as the client does; the WooPay sign-up records at once, as in the client.
+	 *
 	 * @internal
 	 */
 	public function record_shopper_funnel_event(): void {
-		$all_stores = array( 'record_event_data' => array( 'track_on_all_stores' => true ) );
 		try {
 			$tracking = $this->get_frontend_tracking_controller();
 			switch ( current_action() ) {
 				case 'woocommerce_after_cart':
-					$tracking->record_user_event( 'cart_page_view', array( 'theme_type' => 'short_code' ) + $all_stores );
+					$tracking->queue_user_event( 'cart_page_view', array( 'theme_type' => 'short_code' ) );
 					break;
 				case 'woocommerce_blocks_enqueue_cart_block_scripts_after':
-					$tracking->record_user_event( 'cart_page_view', array( 'theme_type' => 'blocks' ) + $all_stores );
+					$tracking->queue_user_event( 'cart_page_view', array( 'theme_type' => 'blocks' ) );
 					break;
 				case 'woocommerce_after_single_product':
-					$tracking->record_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) + $all_stores );
+					$tracking->queue_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) );
 					break;
 				case 'before_woocommerce_pay_form':
-					$tracking->record_user_event( 'pay_for_order_page_view', $all_stores );
+					$tracking->queue_user_event( 'pay_for_order_page_view' );
 					break;
 				case 'woocommerce_payments_save_user_in_woopay':
 					$tracking->record_user_event( 'woopay_registered', array( 'source' => 'checkout' ) );
@@ -413,12 +414,11 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	private function record_checkout_page_view( string $theme_type ): void {
 		try {
-			$this->get_frontend_tracking_controller()->record_user_event(
+			$this->get_frontend_tracking_controller()->queue_user_event(
 				'checkout_page_view',
 				array(
-					'theme_type'        => $theme_type,
-					'woopay_enabled'    => $this->get_woopay_session_service()->is_woopay_enabled(),
-					'record_event_data' => array( 'track_on_all_stores' => true ),
+					'theme_type'     => $theme_type,
+					'woopay_enabled' => $this->get_woopay_session_service()->is_woopay_enabled(),
 				)
 			);
 		} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch

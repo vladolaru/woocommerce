@@ -82,13 +82,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$recorded_events = array();
 		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_shopper_tracking_enabled', 'record_user_event' ) )
+			->onlyMethods( array( 'is_shopper_tracking_enabled', 'queue_user_event' ) )
 			->getMock();
 		$tracker->method( 'is_shopper_tracking_enabled' )->willReturn( true );
-		$tracker->method( 'record_user_event' )->willReturnCallback(
-			static function ( string $event_name, array $properties ) use ( &$recorded_events ): bool {
+		$tracker->method( 'queue_user_event' )->willReturnCallback(
+			static function ( string $event_name, array $properties ) use ( &$recorded_events ): void {
 				$recorded_events[] = array( $event_name, $properties );
-				return true;
 			}
 		);
 
@@ -121,17 +120,15 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				array(
 					'checkout_page_view',
 					array(
-						'theme_type'        => 'short_code',
-						'woopay_enabled'    => true,
-						'record_event_data' => array( 'track_on_all_stores' => true ),
+						'theme_type'     => 'short_code',
+						'woopay_enabled' => true,
 					),
 				),
 				array(
 					'checkout_page_view',
 					array(
-						'theme_type'        => 'blocks',
-						'woopay_enabled'    => true,
-						'record_event_data' => array( 'track_on_all_stores' => true ),
+						'theme_type'     => 'blocks',
+						'woopay_enabled' => true,
 					),
 				),
 			),
@@ -147,11 +144,16 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$recorded_events = array();
 		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'record_user_event' ) )
+			->onlyMethods( array( 'queue_user_event', 'record_user_event' ) )
 			->getMock();
+		$tracker->method( 'queue_user_event' )->willReturnCallback(
+			static function ( string $event_name, array $properties = array() ) use ( &$recorded_events ): void {
+				$recorded_events[] = array( 'queued', $event_name, $properties );
+			}
+		);
 		$tracker->method( 'record_user_event' )->willReturnCallback(
 			static function ( string $event_name, array $properties ) use ( &$recorded_events ): bool {
-				$recorded_events[] = array( $event_name, $properties );
+				$recorded_events[] = array( 'recorded', $event_name, $properties );
 				return true;
 			}
 		);
@@ -169,16 +171,124 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		}
 
-		$all_stores = array( 'record_event_data' => array( 'track_on_all_stores' => true ) );
 		$this->assertSame(
 			array(
-				array( 'cart_page_view', array( 'theme_type' => 'short_code' ) + $all_stores ),
-				array( 'cart_page_view', array( 'theme_type' => 'blocks' ) + $all_stores ),
-				array( 'product_page_view', array( 'theme_type' => 'short_code' ) + $all_stores ),
-				array( 'pay_for_order_page_view', $all_stores ),
-				array( 'woopay_registered', array( 'source' => 'checkout' ) ),
+				array( 'queued', 'cart_page_view', array( 'theme_type' => 'short_code' ) ),
+				array( 'queued', 'cart_page_view', array( 'theme_type' => 'blocks' ) ),
+				array( 'queued', 'product_page_view', array( 'theme_type' => 'short_code' ) ),
+				array( 'queued', 'pay_for_order_page_view', array() ),
+				array( 'recorded', 'woopay_registered', array( 'source' => 'checkout' ) ),
 			),
 			$recorded_events
+		);
+	}
+
+	/**
+	 * @testdox Should queue guest page views for the footer script instead of recording them during render, like client 11.1.0.
+	 */
+	public function test_page_views_render_without_recording_and_queue_for_the_footer_script(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		wp_set_current_user( 0 );
+		$recorder_calls = 0;
+		$http_calls     = 0;
+		$count_recorder = static function ( $properties ) use ( &$recorder_calls ) {
+			++$recorder_calls;
+			return $properties;
+		};
+		$count_http     = static function ( $preempt ) use ( &$http_calls ) {
+			++$http_calls;
+			return $preempt;
+		};
+		add_filter( 'wcpay_tracks_event_properties', $count_recorder );
+		add_filter( 'pre_http_request', $count_http );
+
+		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$tracker = new WooPaymentsFrontendTrackingController();
+		$tracker->init(
+			$arbiter,
+			$this->create_account_service_for_bridge(
+				true,
+				array(
+					'country'                    => 'US',
+					'platform_checkout_eligible' => true,
+				),
+				array( 'platform_checkout' => 'yes' )
+			)
+		);
+		$sut = new WooPaymentsCheckoutBridge();
+		$sut->init( $this->create_legacy_runtime_for_bridge(), $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $tracker );
+
+		try {
+			$sut->register();
+			foreach ( array( 'woocommerce_after_cart', 'woocommerce_blocks_enqueue_cart_block_scripts_after', 'woocommerce_after_single_product', 'before_woocommerce_pay_form' ) as $hook ) {
+				do_action( $hook ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+			}
+			$sut->record_classic_checkout_page_view();
+			$sut->record_blocks_checkout_page_view();
+
+			// No recorder, identity (tk_ai cookie) or pixel during render; headers_sent() is true under the CLI, so the cookie itself is not observable.
+			$this->assertSame( 0, $recorder_calls );
+			$this->assertSame( 0, $http_calls );
+			$this->assertSame( 10, has_action( 'wp_footer', array( $tracker, 'enqueue_frontend_events_script' ) ) );
+			$tracker->enqueue_frontend_events_script();
+			$this->assertTrue( wp_script_is( 'wc-woopayments-frontend-tracks', 'enqueued' ) );
+			$localized = (string) wp_scripts()->get_data( 'wc-woopayments-frontend-tracks', 'data' );
+		} finally {
+			remove_filter( 'wcpay_tracks_event_properties', $count_recorder );
+			remove_filter( 'pre_http_request', $count_http );
+			remove_action( 'wp_footer', array( $tracker, 'enqueue_frontend_events_script' ) );
+			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
+			wp_deregister_script( 'wc-woopayments-frontend-tracks' );
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		}
+
+		$this->assertSame( 1, preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $localized, $matches ) );
+		$params      = json_decode( $matches[1], true );
+		$record_data = array(
+			'record_event_data' => array(
+				'is_admin_event'      => false,
+				'track_on_all_stores' => true,
+			),
+		);
+		$this->assertSame( admin_url( 'admin-ajax.php' ), $params['ajaxUrl'] );
+		$this->assertSame( 1, wp_verify_nonce( $params['nonce'], 'platform_tracks_nonce' ) );
+		$this->assertSame(
+			array(
+				array(
+					'event'      => 'cart_page_view',
+					'properties' => array( 'theme_type' => 'short_code' ) + $record_data,
+				),
+				array(
+					'event'      => 'cart_page_view',
+					'properties' => array( 'theme_type' => 'blocks' ) + $record_data,
+				),
+				array(
+					'event'      => 'product_page_view',
+					'properties' => array( 'theme_type' => 'short_code' ) + $record_data,
+				),
+				array(
+					'event'      => 'pay_for_order_page_view',
+					'properties' => $record_data,
+				),
+				array(
+					'event'      => 'checkout_page_view',
+					'properties' => array(
+						'theme_type'     => 'short_code',
+						'woopay_enabled' => false,
+					) + $record_data,
+				),
+				array(
+					'event'      => 'checkout_page_view',
+					'properties' => array(
+						'theme_type'     => 'blocks',
+						'woopay_enabled' => false,
+					) + $record_data,
+				),
+			),
+			$params['events']
 		);
 	}
 

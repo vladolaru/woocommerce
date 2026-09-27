@@ -156,6 +156,57 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should queue nothing and load no footer script when the store has shopper tracking off.
+	 */
+	public function test_queue_user_event_is_a_no_op_when_store_tracking_is_off(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'no' );
+		$sut = $this->create_controller( true );
+
+		$sut->queue_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) );
+		$sut->enqueue_frontend_events_script();
+
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
+		$this->assertFalse( wp_script_is( 'wc-woopayments-frontend-tracks', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should queue nothing when WooPay is off, as client 11.1.0's frontend sender drops page views when isShopperTrackingEnabled is false.
+	 */
+	public function test_queue_user_event_is_a_no_op_when_woopay_is_off(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'can_process_payments' )->willReturn( true );
+		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'platform_checkout_eligible' => true ) );
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
+		$sut = $this->create_controller( true, $account_service );
+
+		$sut->queue_user_event( 'cart_page_view', array( 'theme_type' => 'blocks' ) );
+
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
+		$this->assertTrue( $sut->is_shopper_tracking_enabled( false, true ) );
+	}
+
+	/**
+	 * @testdox Should queue page views even when the visitor who primes a page cache opted out; the AJAX recorder applies the per-visitor checks.
+	 */
+	public function test_queue_user_event_ignores_per_visitor_opt_out(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$_COOKIE['tk_opt-out'] = 'yes';
+		$sut                   = $this->create_controller( true );
+
+		$sut->queue_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) );
+
+		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
+		$this->assertFalse( $sut->is_shopper_tracking_enabled( false, true ) );
+	}
+
+	/**
 	 * @testdox Should preserve WooPayments Jetpack identity meta continuity.
 	 */
 	public function test_tracks_identity_prefers_jetpack_identity_meta(): void {

@@ -62,12 +62,11 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$recorded_events = array();
 		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'record_user_event' ) )
+			->onlyMethods( array( 'queue_user_event' ) )
 			->getMock();
-		$tracker->method( 'record_user_event' )->willReturnCallback(
-			static function ( string $event_name, array $properties ) use ( &$recorded_events ): bool {
+		$tracker->method( 'queue_user_event' )->willReturnCallback(
+			static function ( string $event_name, array $properties = array() ) use ( &$recorded_events ): void {
 				$recorded_events[] = array( $event_name, $properties );
-				return true;
 			}
 		);
 
@@ -93,12 +92,77 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				array(
-					'order_success_page_view',
-					array( 'record_event_data' => array( 'track_on_all_stores' => true ) ),
-				),
+				array( 'order_success_page_view', array() ),
 			),
 			$recorded_events
+		);
+	}
+
+	/**
+	 * @testdox Should queue a guest's thank-you page view for the footer script instead of recording it during render, like client 11.1.0.
+	 */
+	public function test_order_success_page_view_renders_without_recording_and_queues_for_the_footer_script(): void {
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		wp_set_current_user( 0 );
+		$recorder_calls = 0;
+		$http_calls     = 0;
+		$count_recorder = static function ( $properties ) use ( &$recorder_calls ) {
+			++$recorder_calls;
+			return $properties;
+		};
+		$count_http     = static function ( $preempt ) use ( &$http_calls ) {
+			++$http_calls;
+			return $preempt;
+		};
+		add_filter( 'wcpay_tracks_event_properties', $count_recorder );
+		add_filter( 'pre_http_request', $count_http );
+		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'can_process_payments' )->willReturn( true );
+		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'platform_checkout_eligible' => true ) );
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'yes' );
+		$tracker = new WooPaymentsFrontendTrackingController();
+		$tracker->init( $arbiter, $account_service );
+		$page  = $this->create_page( true, $tracker );
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->save();
+
+		try {
+			$page->record_order_success_page_view( $order->get_id() );
+
+			$this->assertSame( 0, $recorder_calls );
+			$this->assertSame( 0, $http_calls );
+			$tracker->enqueue_frontend_events_script();
+			$localized = (string) wp_scripts()->get_data( 'wc-woopayments-frontend-tracks', 'data' );
+		} finally {
+			remove_filter( 'wcpay_tracks_event_properties', $count_recorder );
+			remove_filter( 'pre_http_request', $count_http );
+			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
+			wp_deregister_script( 'wc-woopayments-frontend-tracks' );
+		}
+
+		$this->assertSame( 1, preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $localized, $matches ) );
+		$params = json_decode( $matches[1], true );
+		$this->assertSame(
+			array(
+				array(
+					'event'      => 'order_success_page_view',
+					'properties' => array(
+						'record_event_data' => array(
+							'is_admin_event'      => false,
+							'track_on_all_stores' => true,
+						),
+					),
+				),
+			),
+			$params['events']
 		);
 	}
 

@@ -75,6 +75,10 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 			'object' => true,
 			'prefix' => 'wcadmin_',
 		),
+		'queue_user_event'             => array(
+			'object' => true,
+			'prefix' => 'wcpay_',
+		),
 		'record_registration_event'    => array(
 			'object' => true,
 			'prefix' => 'wcpay_',

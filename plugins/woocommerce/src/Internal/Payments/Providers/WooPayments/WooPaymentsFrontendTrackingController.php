@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
@@ -26,6 +27,15 @@ use WP_User;
 class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 
 	private const USER_EVENT_PREFIX = 'wcpay';
+
+	private const FRONTEND_EVENTS_SCRIPT_HANDLE = 'wc-woopayments-frontend-tracks';
+
+	/**
+	 * Page-view events queued during render for the footer script to send.
+	 *
+	 * @var array<int,array{event:string,properties:array<string,mixed>}>
+	 */
+	private array $frontend_events = array();
 
 	/**
 	 * Runtime owner arbiter.
@@ -151,22 +161,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function is_shopper_tracking_enabled( bool $is_admin_event = false, bool $track_on_all_stores = false ): bool {
-		/**
-		 * Filters whether WooPayments shopper tracking is enabled.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param bool $is_enabled Whether shopper tracking is enabled.
-		 */
-		if ( ! apply_filters( 'wcpay_shopper_tracking_enabled', 'no' !== get_option( 'woocommerce_allow_tracking', '' ) ) ) {
-			return false;
-		}
-
-		if ( ! $this->get_account_service()->can_process_payments() ) {
-			return false;
-		}
-
-		if ( ! $this->is_country_tracks_eligible() ) {
+		if ( ! $this->is_store_tracking_enabled() ) {
 			return false;
 		}
 
@@ -191,10 +186,66 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			return true;
 		}
 
-		$account_data = $this->get_account_service()->get_cached_account_data();
+		return $this->is_woopay_tracking_enabled();
+	}
 
-		return 'yes' === $this->get_account_service()->get_gateway_setting( 'platform_checkout', 'no' )
-			&& ! empty( $account_data['platform_checkout_eligible'] );
+	/**
+	 * Queue a shopper page view for the footer script, like the plugin's `maybe_record_wcpay_shopper_event()` (11.1.0).
+	 *
+	 * Nothing is recorded during render, so no Tracks identity cookie or outbound request touches a cacheable page.
+	 * Only store-wide checks run here, including WooPay, which the plugin's frontend sender checks through
+	 * `isShopperTrackingEnabled`; the AJAX recorder applies the per-visitor ones.
+	 *
+	 * @param string              $event_name Event name without the wcpay_ prefix.
+	 * @param array<string,mixed> $properties Event properties.
+	 */
+	public function queue_user_event( string $event_name, array $properties = array() ): void {
+		if ( ! $this->is_store_tracking_enabled() || ! $this->is_woopay_tracking_enabled() ) {
+			return;
+		}
+
+		$properties['record_event_data'] = array(
+			'is_admin_event'      => false,
+			'track_on_all_stores' => true,
+		);
+		$this->frontend_events[]         = array(
+			'event'      => $event_name,
+			'properties' => $properties,
+		);
+
+		if ( false === has_action( 'wp_footer', array( $this, 'enqueue_frontend_events_script' ) ) ) {
+			add_action( 'wp_footer', array( $this, 'enqueue_frontend_events_script' ) );
+		}
+	}
+
+	/**
+	 * Enqueue the footer script that sends the queued page views through the platform Tracks AJAX action.
+	 *
+	 * @internal
+	 */
+	public function enqueue_frontend_events_script(): void {
+		if ( empty( $this->frontend_events ) ) {
+			return;
+		}
+
+		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
+		wp_enqueue_script(
+			self::FRONTEND_EVENTS_SCRIPT_HANDLE,
+			WC()->plugin_url() . '/assets/js/frontend/woopayments-frontend-tracks' . $suffix . '.js',
+			array(),
+			WC_VERSION,
+			true
+		);
+		wp_localize_script(
+			self::FRONTEND_EVENTS_SCRIPT_HANDLE,
+			'wc_woopayments_frontend_tracks_params',
+			array(
+				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+				'nonce'   => wp_create_nonce( 'platform_tracks_nonce' ),
+				'events'  => $this->frontend_events,
+			)
+		);
+		$this->frontend_events = array();
 	}
 
 	/**
@@ -452,6 +503,38 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 		}
 
 		return 'jetpack:' . base64_encode( $binary ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+	}
+
+	/**
+	 * Tell whether the store allows WooPayments shopper Tracks at all, before any per-visitor check.
+	 *
+	 * @return bool
+	 */
+	private function is_store_tracking_enabled(): bool {
+		/**
+		 * Filters whether WooPayments shopper tracking is enabled.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param bool $is_enabled Whether shopper tracking is enabled.
+		 */
+		if ( ! apply_filters( 'wcpay_shopper_tracking_enabled', 'no' !== get_option( 'woocommerce_allow_tracking', '' ) ) ) {
+			return false;
+		}
+
+		return $this->get_account_service()->can_process_payments() && $this->is_country_tracks_eligible();
+	}
+
+	/**
+	 * Tell whether WooPay is enabled and the account is eligible for it.
+	 *
+	 * @return bool
+	 */
+	private function is_woopay_tracking_enabled(): bool {
+		$account_data = $this->get_account_service()->get_cached_account_data();
+
+		return 'yes' === $this->get_account_service()->get_gateway_setting( 'platform_checkout', 'no' )
+			&& ! empty( $account_data['platform_checkout_eligible'] );
 	}
 
 	/**
