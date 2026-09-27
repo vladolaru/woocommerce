@@ -31,7 +31,11 @@ const decimalCurrencyRoundingOptions = {
 	'0': __( 'None', 'woocommerce' ),
 	'0.25': '0.25',
 	'0.50': '0.50',
-	'1.00': '1.00',
+	'1.00': sprintf(
+		/* translators: %s: recommended price rounding value, for example 1.00. */
+		__( '%s (recommended)', 'woocommerce' ),
+		'1.00'
+	),
 	'5.00': '5.00',
 	'10.00': '10.00',
 };
@@ -41,7 +45,11 @@ const zeroDecimalCurrencyRoundingOptions = {
 	'10': '10',
 	'25': '25',
 	'50': '50',
-	'100': '100',
+	'100': sprintf(
+		/* translators: %s: recommended price rounding value, for example 1.00. */
+		__( '%s (recommended)', 'woocommerce' ),
+		'100'
+	),
 	'500': '500',
 	'1000': '1000',
 };

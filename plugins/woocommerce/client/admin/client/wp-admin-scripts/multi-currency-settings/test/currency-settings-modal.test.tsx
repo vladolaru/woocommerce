@@ -515,6 +515,10 @@ describe( 'CurrencySettingsModal', () => {
 		const roundingSelect = await screen.findByLabelText( 'Price rounding' );
 		const charmSelect = screen.getByLabelText( 'Charm pricing' );
 		expect( roundingSelect ).toHaveValue( '1.00' );
+		// Source: client 11.1.0 single-currency/constants.js:12.
+		expect(
+			roundingSelect.querySelector( 'option[value="1.00"]' )
+		).toHaveTextContent( /^1\.00 \(recommended\)$/ );
 		expect(
 			roundingSelect.querySelector( 'option[value="0.50"]' )
 		).toBeInTheDocument();
@@ -541,6 +545,10 @@ describe( 'CurrencySettingsModal', () => {
 		const roundingSelect = await screen.findByLabelText( 'Price rounding' );
 		const charmSelect = screen.getByLabelText( 'Charm pricing' );
 		expect( roundingSelect ).toHaveValue( '100' );
+		// Source: client 11.1.0 single-currency/constants.js:21.
+		expect(
+			roundingSelect.querySelector( 'option[value="100"]' )
+		).toHaveTextContent( /^100 \(recommended\)$/ );
 		expect(
 			roundingSelect.querySelector( 'option[value="10"]' )
 		).toBeInTheDocument();
