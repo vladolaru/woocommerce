@@ -156,6 +156,35 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should hand a page-request event to core's Tracks footer pixel instead of sending it mid-request.
+	 */
+	public function test_records_through_core_tracks_event_transport(): void {
+		\WC_Tracks_Footer_Pixel::clear_events();
+		$requests = 0;
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		add_filter(
+			'pre_http_request',
+			static function () use ( &$requests ) {
+				++$requests;
+				return new \WP_Error( 'blocked', 'blocked' );
+			}
+		);
+		$sut = $this->create_controller( true );
+
+		$result = $sut->record_user_event( 'woopay_registered', array( 'source' => 'checkout' ) );
+
+		$events = \WC_Tracks_Footer_Pixel::get_events();
+		\WC_Tracks_Footer_Pixel::clear_events();
+		$this->assertTrue( $result );
+		$this->assertSame( 0, $requests );
+		$this->assertCount( 1, $events );
+		$this->assertInstanceOf( \WC_Tracks_Event::class, $events[0] );
+		$this->assertSame( 'wcpay_woopay_registered', $events[0]->_en );
+		$this->assertSame( 'checkout', $events[0]->source );
+	}
+
+	/**
 	 * @testdox Should queue nothing and load no footer script when the store has shopper tracking off.
 	 */
 	public function test_queue_user_event_is_a_no_op_when_store_tracking_is_off(): void {

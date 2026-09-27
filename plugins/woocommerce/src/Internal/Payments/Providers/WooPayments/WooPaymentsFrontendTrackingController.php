@@ -15,7 +15,6 @@ use Throwable;
 use WC_Tracks;
 use WC_Tracks_Client;
 use WC_Tracks_Event;
-use WP_Error;
 use WP_User;
 
 /**
@@ -273,7 +272,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record an already-prefixed event through the WooPayments tracking pixel.
+	 * Record an already-prefixed event through core's `WC_Tracks_Event::record()` transport.
 	 *
 	 * @param string              $event_name Full event name.
 	 * @param array<string,mixed> $properties Event properties.
@@ -314,12 +313,8 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			return $event->error;
 		}
 
-		$pixel = $event->build_pixel_url();
-		if ( ! $pixel ) {
-			return new WP_Error( 'invalid_pixel', 'cannot generate tracks pixel for given input', 400 );
-		}
-
-		return WC_Tracks_Client::record_pixel( $pixel );
+		// Core's transport: sent now in AJAX, REST, CLI and cron requests, otherwise from the footer pixel queue.
+		return $event->record();
 	}
 
 	/**
