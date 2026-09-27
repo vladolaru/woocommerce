@@ -84,7 +84,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 */
 	public function handle_kyc_reminder_return(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Email links carry no nonce; the capability check guards this read-only redirect.
-		if ( ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->should_native_register() || ! isset( $_GET['wcpay-connect-redirect'] ) ) {
+		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->should_native_register() || ! isset( $_GET['wcpay-connect-redirect'] ) ) {
 			return;
 		}
 

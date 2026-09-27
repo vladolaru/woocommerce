@@ -50,6 +50,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'allowed_redirect_hosts' );
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
 		remove_all_filters( 'wp_redirect' );
+		remove_all_filters( 'wp_doing_ajax' );
 		delete_transient( 'wcpay_stripe_onboarding_state' );
 		unset( $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'] );
 
@@ -258,6 +259,24 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$this->create_handler( false )->handle_kyc_reminder_return();
 
 		wp_set_current_user( 0 );
+		$this->sut->handle_kyc_reminder_return();
+
+		$this->assertSame( array(), $recorded->events );
+	}
+
+	/**
+	 * @testdox A KYC reminder link is ignored during an AJAX request, as in plugin 11.1.0 `maybe_redirect_by_get_param()` line 769.
+	 */
+	public function test_kyc_reminder_link_ignores_ajax_requests(): void {
+		$recorded = $this->record_tracks_events();
+		$_GET     = array(
+			'page'                   => 'wc-admin',
+			'path'                   => '/payments/connect',
+			'wcpay-connect-redirect' => 'initial',
+		);
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
 		$this->sut->handle_kyc_reminder_return();
 
 		$this->assertSame( array(), $recorded->events );
