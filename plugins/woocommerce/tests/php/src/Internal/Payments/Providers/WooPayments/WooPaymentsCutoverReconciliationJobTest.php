@@ -2172,6 +2172,112 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed network barrier moves every site to the active tier before ownership verification runs.
+	 *
+	 * Source: data/task-1.4-dormancy-design.md:84-96 (cutover completion is an authoritative state writer); the
+	 * single-site finalize path writes it right after deactivation, and the network barrier is where the plugin goes away.
+	 *
+	 * @group multisite
+	 */
+	public function test_network_barrier_activates_native_payments_on_every_site_before_verification(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-barrier-state.example.org' );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+			switch_to_blog( $site_id );
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'               => array(
+						'account_id' => 'acct_network_barrier_' . $site_id,
+						'is_live'    => true,
+					),
+					'fetched'            => time(),
+					'errored'            => false,
+					'consecutive_errors' => 0,
+				),
+				false
+			);
+			update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+			update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::AVAILABLE );
+			restore_current_blog();
+		}
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		$preflight     = new class() extends WooPaymentsCutoverPreflightService {
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+
+			/** Report a completed network deactivation. */
+			public function deactivate_woopayments_plugin(): bool {
+				return true;
+			}
+		};
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut           = $this->create_job( true, $preflight, null, true, $normalization, true, wc_get_container()->get( WooPaymentsAccountService::class ) );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			$this->assertSame( NativePaymentsState::AVAILABLE, get_option( NativePaymentsState::OPTION_NAME ), 'No site may leave the plugin tier before the whole network finalizes.' );
+
+			switch_to_blog( $second_site_id );
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			restore_current_blog();
+
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				switch_to_blog( $site_id );
+				$verification = $this->require_state_store()->get_record();
+				$this->assertIsArray( $verification );
+				$this->assertSame( WooPaymentsCutoverState::PENDING, $verification['state'], "Site {$site_id} must still await ownership verification." );
+				$this->assertSame( 'verify_native_ownership', $verification['current_step'] );
+				$this->assertSame( NativePaymentsState::ACTIVE, get_option( NativePaymentsState::OPTION_NAME ), "Site {$site_id} must register the native gateway as soon as the network deactivates the plugin." );
+				restore_current_blog();
+			}
+		} finally {
+			while ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
 	 * @testdox Network exclusion fences a paused worker and marker removal reopens one merchant-started generation everywhere.
 	 * @group multisite
 	 */

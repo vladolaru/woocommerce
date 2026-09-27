@@ -1330,6 +1330,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$verification['request_origin_token'] = self::$request_token;
 				$verification                         = $this->append_step( $verification, 'verify_native_ownership', $now );
 				if ( $this->state_store->compare_and_set_record( $record, $verification ) ) {
+					$this->account_service->synchronize_native_payments_state_from_options( false );
 					$this->scheduler->cancel( $generation, $record['attempt'] + 1 );
 					$this->ensure_record_scheduled( $verification, $now );
 				}
