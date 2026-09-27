@@ -58,7 +58,9 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Payment and capture notes preserve reference copy and explicit currency.
+	 * @testdox Payment and capture notes preserve reference copy and omit the currency code in a single-currency store.
+	 *
+	 * Source: client 11.1.0 class-wc-payments-order-service.php:2904-2910 and explicit-price-formatter.php:167-190.
 	 */
 	public function test_formats_payment_and_capture_notes_with_reference_copy_and_explicit_currency(): void {
 		$order = wc_create_order();
@@ -72,7 +74,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'path=%2Fpayments%2Ftransactions%2Fdetails', $transaction_url );
 		$this->assertSame(
 			sprintf(
-				'A payment of %1$s USD was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).',
+				'A payment of %1$s was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).',
 				wc_price( 25.00, array( 'currency' => 'USD' ) ),
 				$transaction_url
 			),
@@ -115,11 +117,11 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$unnamed_candidates = $sut->format_unusable_saved_payment_method_note_candidates( $order, '' );
 
 		$this->assertSame(
-			'A payment of ' . wc_price( 12.50, array( 'currency' => 'EUR' ) ) . ' EUR <strong>failed</strong>: the saved payment method <strong>Visa &lt;ending 4242&gt;</strong> can no longer be used. A new payment method is required.',
+			'A payment of ' . wc_price( 12.50, array( 'currency' => 'EUR' ) ) . ' <strong>failed</strong>: the saved payment method <strong>Visa &lt;ending 4242&gt;</strong> can no longer be used. A new payment method is required.',
 			$named_candidates[0]
 		);
 		$this->assertSame(
-			'A payment of ' . wc_price( 12.50, array( 'currency' => 'EUR' ) ) . ' EUR <strong>failed</strong>: the saved payment method can no longer be used. A new payment method is required.',
+			'A payment of ' . wc_price( 12.50, array( 'currency' => 'EUR' ) ) . ' <strong>failed</strong>: the saved payment method can no longer be used. A new payment method is required.',
 			$unnamed_candidates[0]
 		);
 		$this->assertSame(
@@ -147,7 +149,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			sprintf(
 				'A test payment of %1$s was processed using WooPayments in <strong>test mode</strong> (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>). No real funds were collected.',
-				wc_price( 25.00, array( 'currency' => 'USD' ) ) . ' USD',
+				wc_price( 25.00, array( 'currency' => 'USD' ) ),
 				$transaction_url
 			),
 			$sut->format_payment_success_note_candidates( $order, 'pi_test_charge', 'ch_test_charge', 'txn_test_charge', 'test' )[0]
@@ -178,7 +180,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				sprintf( 'Core test payment %1$s USD using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).', wc_price( 25.00, array( 'currency' => 'USD' ) ), $sut->transaction_url( 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' ) ),
+				sprintf( 'Core test payment %1$s using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).', wc_price( 25.00, array( 'currency' => 'USD' ) ), $sut->transaction_url( 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' ) ),
 				sprintf( 'Plugin test payment %1$s using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).', wc_price( 25.00, array( 'currency' => 'USD' ) ), $sut->transaction_url( 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' ) ),
 			),
 			$sut->format_payment_success_note_candidates( $order, 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' )
@@ -191,7 +193,6 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	public function test_payment_success_candidates_preserve_live_copy_for_non_test_modes(): void {
 		$sut                      = new WooPaymentsOrderNoteService();
 		$expected_live_candidates = array(
-			sprintf( 'A payment of %1$s USD was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).', wc_price( 25.00, array( 'currency' => 'USD' ) ), $sut->transaction_url( 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' ) ),
 			sprintf( 'A payment of %1$s was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_test_charge</a>).', wc_price( 25.00, array( 'currency' => 'USD' ) ), $sut->transaction_url( 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' ) ),
 		);
 
@@ -261,7 +262,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			sprintf(
-				'A payment of %1$s USD <strong>failed</strong> to complete with the following message: <code>%2$s</code>.',
+				'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.',
 				wc_price( 25.00, array( 'currency' => 'USD' ) ),
 				'Error: Your card was declined. The bank did not return any further details with this decline'
 			),
@@ -290,7 +291,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			sprintf(
-				'A payment of %1$s USD <strong>failed</strong> to complete with the following message: <code>%2$s</code>.',
+				'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.',
 				wc_price( 25.00, array( 'currency' => 'USD' ) ),
 				'Error: Your card has insufficient funds'
 			),
@@ -319,7 +320,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			sprintf(
-				'A payment of %1$s USD <strong>failed</strong>. %2$s',
+				'A payment of %1$s <strong>failed</strong>. %2$s',
 				wc_price( 25.00, array( 'currency' => 'USD' ) ),
 				'We couldn’t verify the postal code in the billing address. If the issue persists, suggest the customer to reach out to the card issuing bank.'
 			),
@@ -351,7 +352,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'path=%2Fpayments%2Ftransactions%2Fdetails', $url );
 		$this->assertSame(
 			sprintf(
-				'&#x1F6AB; A payment of %1$s USD was <strong>blocked</strong> by the following risk filters:<br>%2$s<br><br><a href="%3$s" target="_blank" rel="noopener noreferrer">View more details</a>.',
+				'&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by the following risk filters:<br>%2$s<br><br><a href="%3$s" target="_blank" rel="noopener noreferrer">View more details</a>.',
 				wc_price( 25.00, array( 'currency' => 'USD' ) ),
 				'&#8226; Block if the country resolved from customer IP is not listed in your selling countries',
 				$url
@@ -377,7 +378,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			sprintf(
-				'&#x1F6AB; A payment of %1$s USD was <strong>blocked</strong> by one or more risk filters.<br><br><a href="%2$s" target="_blank" rel="noopener noreferrer">View more details</a>.',
+				'&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by one or more risk filters.<br><br><a href="%2$s" target="_blank" rel="noopener noreferrer">View more details</a>.',
 				wc_price( 25.00, array( 'currency' => 'USD' ) ),
 				$url
 			),
@@ -540,7 +541,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 				$this->assertSame( $sut->{$native_method}( ...$arguments ), $candidates[0], "Native rendering must stay first for {$case_name}." );
 			}
 			if ( in_array( $case_name, $amount_case_names, true ) ) {
-				$this->assertStringContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must preserve its explicit currency suffix." );
+				$this->assertStringNotContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must omit the code in a single-currency store, as the client." );
 				$this->assertStringNotContainsString( ' USD ', $candidates[1], "Default-store plugin {$case_name} candidate must match the plugin's suffix-free amount." );
 			}
 		}
@@ -551,7 +552,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 			list( $candidate_method, $arguments ) = $cases[ $case_name ];
 			$candidates                           = $sut->{$candidate_method}( ...$arguments );
 			$this->assertCount( 3, $candidates, "Ambiguous plugin readiness must preserve both historical amount variants for {$case_name}." );
-			$this->assertStringContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must stay unchanged with an uninitialized enabled-currency list." );
+			$this->assertStringContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must carry the code while an additional currency is enabled." );
 			$this->assertStringNotContainsString( ' USD ', $candidates[1], "Ambiguous plugin {$case_name} candidates must include the suffix-free historical rendering first." );
 			$this->assertStringContainsString( ' USD ', $candidates[2], "Ambiguous plugin {$case_name} candidates must also include the explicit-currency historical rendering." );
 		}
@@ -562,7 +563,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 			list( $candidate_method, $arguments ) = $cases[ $case_name ];
 			$candidates                           = $sut->{$candidate_method}( ...$arguments );
 			$this->assertCount( 3, $candidates, "Configured plugin readiness must preserve both historical amount variants for {$case_name}." );
-			$this->assertStringContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must stay unchanged when multi-currency is enabled." );
+			$this->assertStringContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must carry the code when multi-currency is enabled." );
 			$this->assertStringNotContainsString( ' USD ', $candidates[1], "Configured plugin {$case_name} candidates must include the suffix-free historical rendering first." );
 			$this->assertStringContainsString( ' USD ', $candidates[2], "Configured plugin {$case_name} candidates must also include the explicit-currency historical rendering." );
 		}
@@ -571,7 +572,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		foreach ( $amount_case_names as $case_name ) {
 			list( $candidate_method, $arguments ) = $cases[ $case_name ];
 			$candidates                           = $sut->{$candidate_method}( ...$arguments );
-			$this->assertStringContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must stay unchanged when the plugin feature is disabled." );
+			$this->assertStringNotContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must omit the code when the plugin feature is disabled, as the client." );
 			$this->assertStringNotContainsString( ' USD ', $candidates[1], "Feature-disabled plugin {$case_name} candidate must ignore stale multi-currency readiness data." );
 		}
 

@@ -1681,11 +1681,13 @@ class WooPaymentsOrderNoteService {
 	/**
 	 * Format an order total using the canonical WooPayments note shape.
 	 *
+	 * Client 11.1.0 order-service.php:2904-2910 get_order_amount(): the code is added only when the explicit price is required.
+	 *
 	 * @param WC_Order $order Order object.
 	 * @return string
 	 */
 	private function format_order_amount( WC_Order $order ): string {
-		return wc_price( (float) $order->get_total(), array( 'currency' => $order->get_currency() ) ) . ' ' . $order->get_currency();
+		return $this->format_refund_amount( $order, (float) $order->get_total(), $order->get_currency() );
 	}
 
 	/**

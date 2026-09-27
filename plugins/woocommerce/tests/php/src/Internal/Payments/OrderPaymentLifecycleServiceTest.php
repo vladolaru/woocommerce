@@ -294,6 +294,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A payment success event skips a plugin-rendered equivalent success note before lifecycle mutation.
 	 */
 	public function test_payment_success_replay_with_a_plugin_equivalent_note_keeps_existing_order_state(): void {
+		// An additional currency makes the native (explicit-currency) and plugin (suffix-free) renderings differ.
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		$order           = $this->create_woopayments_order();
 		$note_candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_success_note_candidates( $order, 'pi_cutover', 'ch_cutover', 'txn_cutover' );
 

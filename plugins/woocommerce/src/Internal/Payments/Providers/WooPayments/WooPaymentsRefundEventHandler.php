@@ -389,6 +389,11 @@ class WooPaymentsRefundEventHandler {
 	 * @return bool
 	 */
 	private function should_output_native_explicit_price(): bool {
+		// Client 11.1.0 explicit-price-formatter.php:170-172: no code while customer multi-currency is off.
+		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
+			return false;
+		}
+
 		$store_currency     = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
 		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
 		$enabled_currencies = is_array( $enabled_currencies ) ? $enabled_currencies : array();

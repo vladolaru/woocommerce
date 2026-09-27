@@ -387,7 +387,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->save();
 		$transaction_url = wc_get_container()->get( WooPaymentsOrderNoteService::class )->transaction_url( 'pi_123', 'ch_123' );
 		$plugin_note     = sprintf( 'Plugin test payment %1$s using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_123</a>).', wc_price( 10.00, array( 'currency' => 'USD' ) ), $transaction_url );
-		$live_note       = sprintf( 'A payment of %1$s USD was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_123</a>).', wc_price( 10.00, array( 'currency' => 'USD' ) ), $transaction_url );
+		$live_note       = sprintf( 'A payment of %1$s was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_123</a>).', wc_price( 10.00, array( 'currency' => 'USD' ) ), $transaction_url );
 		$order->add_order_note( $plugin_note );
 
 		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array(), array( 'id' => 'evt_replay_test_mode' ) ) );
@@ -1462,7 +1462,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$note_service  = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class );
 		$expected_note = sprintf(
 			'Eine Zahlung von %1$s ist mit WooPayments <strong>fehlgeschlagen</strong> (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_123</a>). Mit der folgenden Meldung: <code>Issuer unavailable.</code>',
-			wc_price( 10.00, array( 'currency' => $order->get_currency() ) ) . ' ' . $order->get_currency(),
+			wc_price( 10.00, array( 'currency' => $order->get_currency() ) ),
 			$note_service->transaction_url( 'pi_123', 'ch_123' )
 		);
 

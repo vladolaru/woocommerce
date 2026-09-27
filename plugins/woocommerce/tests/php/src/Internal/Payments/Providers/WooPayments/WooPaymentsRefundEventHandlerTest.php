@@ -97,6 +97,23 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should omit the currency code from refund-event amounts while customer multi-currency is off.
+	 *
+	 * Source: client 11.1.0 class-wc-payments-explicit-price-formatter.php:170-172 (flag off: no explicit price).
+	 */
+	public function test_refund_event_amount_omits_currency_code_when_multi_currency_is_off(): void {
+		update_option( '_wcpay_feature_customer_multi_currency', '0' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$order  = $this->create_refundable_order();
+		$method = new \ReflectionMethod( $this->sut, 'format_refund_amount' );
+		$method->setAccessible( true );
+
+		$amount = $method->invoke( $this->sut, 4.00, 'USD', $order );
+
+		$this->assertStringNotContainsString( ' USD', wp_strip_all_tags( html_entity_decode( $amount ) ) );
+	}
+
+	/**
 	 * @testdox A successful synchronous refund and its webhook converge on one canonical note and refund row.
 	 */
 	public function test_successful_synchronous_refund_followed_by_webhook_converges(): void {

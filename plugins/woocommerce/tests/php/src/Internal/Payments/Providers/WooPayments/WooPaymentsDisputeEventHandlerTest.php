@@ -159,6 +159,53 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should omit the currency code from dispute amounts while customer multi-currency is off, whatever the order currency.
+	 *
+	 * Source: client 11.1.0 class-wc-payments-webhook-processing-service.php:726-730 and explicit-price-formatter.php:167-190.
+	 *
+	 * @dataProvider single_currency_dispute_amount_provider
+	 *
+	 * @param string   $flag               Customer multi-currency flag.
+	 * @param string[] $enabled_currencies Enabled currencies option.
+	 * @param string   $order_currency     Order currency.
+	 * @param string   $expected           Expected plain-text amount.
+	 */
+	public function test_formatted_dispute_amount_follows_the_client_explicit_price_rule( string $flag, array $enabled_currencies, string $order_currency, string $expected ): void {
+		$previous_store_currency     = get_option( 'woocommerce_currency' );
+		$previous_enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
+		$previous_flag               = get_option( '_wcpay_feature_customer_multi_currency', null );
+
+		try {
+			update_option( 'woocommerce_currency', 'USD' );
+			update_option( 'wcpay_multi_currency_enabled_currencies', $enabled_currencies );
+			update_option( '_wcpay_feature_customer_multi_currency', $flag );
+
+			$order = wc_create_order();
+			$order->set_currency( $order_currency );
+
+			$amount = $this->invoke_private( 'get_formatted_dispute_amount', array( $order, 5000 ) );
+
+			$this->assertSame( $expected, wp_strip_all_tags( html_entity_decode( $amount ) ) );
+		} finally {
+			update_option( 'woocommerce_currency', $previous_store_currency );
+			update_option( 'wcpay_multi_currency_enabled_currencies', $previous_enabled_currencies );
+			null === $previous_flag ? delete_option( '_wcpay_feature_customer_multi_currency' ) : update_option( '_wcpay_feature_customer_multi_currency', $previous_flag );
+		}
+	}
+
+	/**
+	 * Flag, enabled list and order currency with the client's explicit-price outcome.
+	 *
+	 * @return array<string,array{0:string,1:string[],2:string,3:string}>
+	 */
+	public function single_currency_dispute_amount_provider(): array {
+		return array(
+			'flag off with an enabled currency'    => array( '0', array( 'EUR' ), 'USD', '$50.00' ),
+			'single-currency store, foreign order' => array( '1', array(), 'EUR', '€50.00' ),
+		);
+	}
+
+	/**
 	 * @testdox Should let the public filter suppress native dispute currency output.
 	 */
 	public function test_public_filter_suppresses_native_dispute_currency_output(): void {
