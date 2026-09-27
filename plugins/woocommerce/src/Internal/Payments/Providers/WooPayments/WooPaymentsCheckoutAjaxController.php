@@ -334,7 +334,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		if ( ! $this->is_nonce_valid( $request, 'wcpay_create_setup_intent_nonce' ) ) {
-			return $this->json_error_response( __( "We're not able to add this payment method. Please refresh the page and try again.", 'woocommerce' ), 403 );
+			return $this->json_error_response( __( "We're not able to add this payment method. Please refresh the page and try again.", 'woocommerce' ), 400 );
 		}
 
 		// The card-testing prevention check must run BEFORE the SetupIntent is
@@ -354,7 +354,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		$user_id        = get_current_user_id();
 		$rate_limit_key = 'add_payment_method_' . $user_id;
 		if ( \WC_Rate_Limiter::retried_too_soon( $rate_limit_key ) ) {
-			return $this->json_error_response( __( 'You cannot add a new payment method so soon after the previous one. Please try again later.', 'woocommerce' ), 429 );
+			return $this->json_error_response( __( 'You cannot add a new payment method so soon after the previous one. Please try again later.', 'woocommerce' ), 400 );
 		}
 
 		$payment_method_id = $this->get_request_string( $request, 'wcpay-payment-method' );
@@ -392,10 +392,11 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 					$exception->get_decline_code(),
 					$exception->getMessage()
 				),
-				502
+				// Same status mapping as the plugin: 402 and a missing status answer 400.
+				in_array( $exception->get_http_code(), array( 0, 402 ), true ) ? 400 : $exception->get_http_code()
 			);
 		} catch ( Throwable $exception ) {
-			return $this->json_error_response( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ), 500 );
+			return $this->json_error_response( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ), 400 );
 		}
 	}
 

@@ -2680,10 +2680,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * test card, recorded in `Fixtures/rec-2-setup-intent-declines.json` (REC-2). All five recorded errors
 	 * are `card_error` and carry a `setup_intent` object (never `payment_intent`); the client's decline-code
 	 * lookup at `class-wc-payments-utils.php:801-817`, catalog `:852-866` (11.1.0) does not read either
-	 * intent object, only `code` and `decline_code`. The HTTP status this endpoint returns is deliberately
-	 * not asserted: native always answers 502 regardless of the platform's status
-	 * (`WooPaymentsCheckoutAjaxController.php:387-396`), while the client passes the platform's own code
-	 * through and maps 402 to 400 (`utils:878-891`); that divergence is finding F1 and stays unpinned.
+	 * intent object, only `code` and `decline_code`. The recorded 402 answers 400, as the client maps it
+	 * (`utils:878-891`).
 	 *
 	 * @dataProvider recorded_setup_intent_decline_data
 	 *
@@ -2731,6 +2729,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
 		$this->assertSame( $expected_message, $response['data']['error']['message'] );
 		$this->assertSame( 1, $http_client->request_count );
 		global $wpdb;
@@ -2845,9 +2844,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * The cooldown key (`add_payment_method_<user_id>`) is the same one WooCommerce's core My Account
 	 * add-payment-method form checks (`includes/class-wc-form-handler.php:608-628`); the AJAX SetupIntent
 	 * path must refuse before creating anything server-side, matching the plugin's check-before-create
-	 * ordering and message at `gw:4589-4593` (11.1.0). The HTTP status is not asserted: native returns 429
-	 * (`WooPaymentsCheckoutAjaxController.php:356-357`) while the client throws an `Add_Payment_Method_Exception`
-	 * that the same 402-to-400, default-400 mapping resolves to 400 (`utils:878-891`); finding F1, unpinned.
+	 * ordering and message at `gw:4589-4593` (11.1.0). The client's `Add_Payment_Method_Exception` answers the
+	 * default 400 (`utils:878-891`).
 	 */
 	public function test_create_setup_intent_refuses_inside_add_payment_method_rate_limit_without_provider_call(): void {
 		$user_id = $this->factory()->user->create();
@@ -2905,6 +2903,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
 		$this->assertSame(
 			'You cannot add a new payment method so soon after the previous one. Please try again later.',
 			$response['data']['error']['message']
@@ -2927,7 +2926,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertFalse( $response['success'] );
-		$this->assertSame( 502, $response['status_code'] );
+		$this->assertSame( 400, $response['status_code'] );
 		$this->assertSame( $platform_message, $response['data']['error']['message'] );
 	}
 
@@ -2946,12 +2945,99 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertFalse( $response['success'] );
-		$this->assertSame( 502, $response['status_code'] );
+		$this->assertSame( 503, $response['status_code'] );
 		$this->assertSame(
 			"We're not able to process this request. Please refresh the page and try again.",
 			$response['data']['error']['message']
 		);
 		$this->assertStringNotContainsString( $technical_message, wp_json_encode( $response ) );
+	}
+
+	/**
+	 * @testdox Setup-intent API errors answer the platform status, with 402 and a missing status answering 400.
+	 *
+	 * Source: client 11.1.0 `utils:878-891` (`get_filtered_error_status_code`), used at `gw:4612`.
+	 *
+	 * @dataProvider setup_intent_api_error_status_data
+	 *
+	 * @param int $http_code       Platform HTTP status on the exception.
+	 * @param int $expected_status Expected response status.
+	 */
+	public function test_create_setup_intent_answers_filtered_api_error_status( int $http_code, int $expected_status ): void {
+		$response = $this->get_create_setup_intent_api_error_response(
+			new WooPaymentsApiException( 'Error: Your card was declined.', 'card_declined', $http_code, 'card_error' )
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( $expected_status, $response['status_code'] );
+	}
+
+	/**
+	 * Platform statuses and the status the setup-intent response answers.
+	 *
+	 * @return array<string,array{int,int}>
+	 */
+	public function setup_intent_api_error_status_data(): array {
+		return array(
+			'402 decline'        => array( 402, 400 ),
+			'no HTTP status'     => array( 0, 400 ),
+			'transport failure'  => array( 500, 500 ),
+			'platform not found' => array( 404, 404 ),
+		);
+	}
+
+	/**
+	 * @testdox Setup-intent requests with an invalid nonce answer 400, as the client's exception does.
+	 *
+	 * Source: client 11.1.0 `gw:4568-4574` (`Add_Payment_Method_Exception`) and `utils:878-891` (default 400).
+	 */
+	public function test_create_setup_intent_rejects_invalid_nonce_with_400(): void {
+		wp_set_current_user( $this->factory()->user->create() );
+
+		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->never() )->method( 'create_and_confirm_setup_intention' );
+
+		$sut      = $this->create_controller( $api_client );
+		$response = $sut->get_create_setup_intent_response(
+			array(
+				'_ajax_nonce'          => 'invalid',
+				'wcpay-payment-method' => 'pm_card',
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
+		$this->assertSame( "We're not able to add this payment method. Please refresh the page and try again.", $response['data']['error']['message'] );
+	}
+
+	/**
+	 * @testdox Setup-intent requests that fail outside the platform call answer 400.
+	 *
+	 * Source: client 11.1.0 `utils:878-891` (a non-API exception answers the default 400).
+	 */
+	public function test_create_setup_intent_answers_400_for_non_api_failures(): void {
+		wp_set_current_user( $this->factory()->user->create() );
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_user' )->willThrowException( new \RuntimeException( 'Customer store unavailable.' ) );
+
+		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client->method( 'is_available' )->willReturn( true );
+
+		$sut      = $this->create_controller( $api_client, $customer_service );
+		$response = $sut->get_create_setup_intent_response(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => 'pm_card',
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
 	}
 
 	/**
