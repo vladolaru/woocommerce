@@ -4,6 +4,7 @@
 import { Button } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import { useEffect, useMemo, useState } from '@wordpress/element';
+import { decodeEntities } from '@wordpress/html-entities';
 import { __ } from '@wordpress/i18n';
 import { download } from '@wordpress/icons';
 import { Search } from '@woocommerce/components';
@@ -126,14 +127,27 @@ const blockedSearchCompleter = {
 	isDebounced: true,
 	getOptionIdentifier: ( option: SearchValue ) => option.label,
 	getOptionKeywords: ( option: SearchValue ) => [ option.label ],
-	getOptionLabel: ( option: SearchValue ) => (
-		<span
-			className="woocommerce-search__result-name"
-			aria-label={ option.label }
-		>
-			{ option.label }
-		</span>
-	),
+	// Client 11.1.0 `utils/compute-suggestion-match.ts`: bold the first match.
+	getOptionLabel: ( option: SearchValue, query = '' ) => {
+		const label = decodeEntities( option.label );
+		const start = query
+			? label.toLocaleLowerCase().indexOf( query.toLocaleLowerCase() )
+			: -1;
+		const end = start + query.length;
+
+		return (
+			<span
+				className="woocommerce-search__result-name"
+				aria-label={ option.label }
+			>
+				{ start < 0 ? label : label.substring( 0, start ) }
+				<strong className="components-form-token-field__suggestion-match">
+					{ start < 0 ? '' : label.substring( start, end ) }
+				</strong>
+				{ start < 0 ? '' : label.substring( end ) }
+			</span>
+		);
+	},
 	getOptionCompletion: ( option: SearchValue ) => ( {
 		key: option.label,
 		label: option.label,

@@ -477,6 +477,10 @@ describe( 'WooPayments Blocked transactions tab', () => {
 					key: string;
 					label: string;
 				} ) => unknown;
+				getOptionLabel: (
+					option: { key: string; label: string },
+					query: string
+				) => ReactNode;
 			};
 		};
 		expect( searchProps ).toMatchObject( {
@@ -509,6 +513,24 @@ describe( 'WooPayments Blocked transactions tab', () => {
 				label: 'Ada Lovelace',
 			} )
 		).toEqual( { key: 'Ada Lovelace', label: 'Ada Lovelace' } );
+		// Client 11.1.0 `autocompleter.tsx:55-71`: the matched part is bold.
+		const { container: optionLabel } = render(
+			<>
+				{ searchProps.autocompleter.getOptionLabel(
+					{ key: 'customer-1520', label: 'Ada Lovelace' },
+					'love'
+				) }
+			</>
+		);
+		expect(
+			optionLabel.querySelector( '.woocommerce-search__result-name' )
+		).toHaveAttribute( 'aria-label', 'Ada Lovelace' );
+		expect(
+			optionLabel.querySelector(
+				'strong.components-form-token-field__suggestion-match'
+			)
+		).toHaveTextContent( /^Love$/ );
+		expect( optionLabel ).toHaveTextContent( /^Ada Lovelace$/ );
 
 		await userEvent.click(
 			screen.getByRole( 'button', {
