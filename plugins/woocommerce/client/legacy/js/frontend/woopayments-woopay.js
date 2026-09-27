@@ -1570,8 +1570,7 @@
 		var phoneField;
 		var sourceField;
 		var viewportField;
-		var additionalInfo;
-		var agreement;
+		var fields;
 
 		if (
 			! form ||
@@ -1592,19 +1591,18 @@
 			escapeHtml( config.woopaySaveUserLabel ) +
 			'</label>' +
 			'</p>' +
-			'<p class="form-row form-row-wide">' +
+			'<div class="save-details-form form-row form-row-wide">' +
 			'<label for="woopay_user_phone_field_full">' +
 			escapeHtml( config.woopayPhoneLabel ) +
 			'</label>' +
 			'<input type="tel" id="woopay_user_phone_field_full" name="woopay_user_phone_field[full]" autocomplete="tel" />' +
-			'</p>' +
+			'</div>' +
 			'<input type="hidden" name="woopay_source_url" />' +
 			'<input type="hidden" name="woopay_viewport" />' +
 			'<input type="hidden" name="woopay_is_blocks" value="false" />';
-		additionalInfo = createWooPaySaveUserAdditionalInfo();
-		container.appendChild( additionalInfo );
-		agreement = createWooPaySaveUserAgreement();
-		container.appendChild( agreement );
+		fields = container.querySelector( '.save-details-form' );
+		fields.appendChild( createWooPaySaveUserAdditionalInfo() );
+		fields.appendChild( createWooPaySaveUserAgreement() );
 
 		insertionPoint = form.querySelector( '.form-row.place-order' );
 		if ( insertionPoint && insertionPoint.parentNode ) {
@@ -1627,8 +1625,7 @@
 		);
 
 		checkbox.checked = !! config.PRE_CHECK_SAVE_MY_INFO;
-		additionalInfo.hidden = ! checkbox.checked;
-		agreement.hidden = ! checkbox.checked;
+		fields.hidden = ! checkbox.checked;
 		sourceField.value = window.location.href;
 		viewportField.value = getWooPayViewport();
 
@@ -1640,8 +1637,7 @@
 		}
 
 		checkbox.addEventListener( 'change', function () {
-			additionalInfo.hidden = ! checkbox.checked;
-			agreement.hidden = ! checkbox.checked;
+			fields.hidden = ! checkbox.checked;
 			recordUserEvent( 'checkout_save_my_info_click', {
 				status: checkbox.checked ? 'checked' : 'unchecked',
 			} );

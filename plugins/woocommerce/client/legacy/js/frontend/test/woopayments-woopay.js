@@ -695,7 +695,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( agreement.textContent ).toBe(
 			"By continuing, you agree to WooPay's Terms of Service and Privacy Policy."
 		);
-		expect( agreement.hidden ).toBe( false );
+		expect( agreement.closest( '[hidden]' ) ).toBeNull();
 
 		const [ termsLink, privacyLink ] = agreement.querySelectorAll( 'a' );
 		expect( termsLink.textContent ).toBe( 'Terms of Service' );
@@ -732,7 +732,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		saveCheckbox.dispatchEvent(
 			new window.Event( 'change', { bubbles: true, cancelable: true } )
 		);
-		expect( agreement.hidden ).toBe( true );
+		expect( agreement.closest( '[hidden]' ) ).not.toBeNull();
 	} );
 
 	test( 'shows the WooPay additional-information line above the agreement under save my info', () => {
@@ -756,7 +756,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( additionalInfo.textContent ).toBe(
 			"Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay."
 		);
-		expect( additionalInfo.hidden ).toBe( false );
+		expect( additionalInfo.closest( '[hidden]' ) ).toBeNull();
 
 		const phoneField = document.querySelector(
 			'input[name="woopay_user_phone_field[full]"]'
@@ -784,7 +784,36 @@ describe( 'WooPayments WooPay checkout', () => {
 		saveCheckbox.dispatchEvent(
 			new window.Event( 'change', { bubbles: true, cancelable: true } )
 		);
-		expect( additionalInfo.hidden ).toBe( true );
+		expect( additionalInfo.closest( '[hidden]' ) ).not.toBeNull();
+	} );
+
+	test( 'shows the WooPay phone field only while save my info is checked', () => {
+		// Client 11.1.0 checkout-page-save-user.js renders the phone field
+		// inside the save-details form, which exists only while checked.
+		window.wcpay_core_woopay_config.PRE_CHECK_SAVE_MY_INFO = false;
+
+		require( '../woopayments-woopay' );
+
+		const saveCheckbox = document.querySelector(
+			'input[name="save_user_in_woopay"]'
+		);
+		const phoneField = document.querySelector(
+			'input[name="woopay_user_phone_field[full]"]'
+		);
+		expect( saveCheckbox.checked ).toBe( false );
+		expect( phoneField.closest( '[hidden]' ) ).not.toBeNull();
+
+		saveCheckbox.checked = true;
+		saveCheckbox.dispatchEvent(
+			new window.Event( 'change', { bubbles: true, cancelable: true } )
+		);
+		expect( phoneField.closest( '[hidden]' ) ).toBeNull();
+
+		saveCheckbox.checked = false;
+		saveCheckbox.dispatchEvent(
+			new window.Event( 'change', { bubbles: true, cancelable: true } )
+		);
+		expect( phoneField.closest( '[hidden]' ) ).not.toBeNull();
 	} );
 
 	test( 'keeps a translated agreement string as text, never markup', () => {
