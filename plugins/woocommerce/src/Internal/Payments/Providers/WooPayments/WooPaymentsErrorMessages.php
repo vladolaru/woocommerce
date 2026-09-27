@@ -18,6 +18,9 @@ class WooPaymentsErrorMessages {
 	/**
 	 * Get a safe shopper-facing message for a provider error.
 	 *
+	 * Follows the plugin's `get_filtered_error_message()` order: typed non-card errors are redacted, typeless and
+	 * unmapped card errors keep the platform message.
+	 *
 	 * @since 11.0.0
 	 *
 	 * @param string $error_type       Provider error type.
@@ -31,13 +34,12 @@ class WooPaymentsErrorMessages {
 			return __( 'There was an error while processing this request. If you continue to see this notice, please contact the admin.', 'woocommerce' );
 		}
 
-		// The plugin passes through typeless errors broadly. Native parity is deliberately limited to the observed card-testing error and the V15 invalid-request shape.
-		if ( '' !== $platform_message && ( ( '' === $error_type && 'wcpay_card_testing_prevention' === $error_code ) || ( 'invalid_request_error' === $error_type && 'invalid_request_error' === $error_code ) ) ) {
-			return $platform_message;
+		if ( 'wcpay_bad_request' === $error_code || ( '' !== $error_type && 'card_error' !== $error_type ) ) {
+			return self::get_generic_message();
 		}
 
 		if ( 'card_error' !== $error_type ) {
-			return self::get_generic_message();
+			return $platform_message;
 		}
 
 		if ( 'incorrect_zip' === $error_code ) {
@@ -54,7 +56,7 @@ class WooPaymentsErrorMessages {
 		}
 
 		if ( '' === $localized_message ) {
-			return self::get_generic_message();
+			return $platform_message;
 		}
 
 		return sprintf(

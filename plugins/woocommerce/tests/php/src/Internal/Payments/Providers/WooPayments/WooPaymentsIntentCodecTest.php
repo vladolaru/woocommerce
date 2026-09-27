@@ -346,10 +346,8 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$data = $outcome->get_data();
 
 		$this->assertSame( 'Malformed provider metadata for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame(
-			"We're not able to process this request. Please refresh the page and try again.",
-			$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ]
-		);
+		// A non-string type is dropped, so the error is typeless and keeps its message (client `class-wc-payments-utils.php:770`).
+		$this->assertSame( 'Malformed provider metadata for request req_private.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] );
 		$this->assertSame( array(), $warnings );
 	}
 
@@ -406,8 +404,26 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	public function grounded_transport_error_data(): array {
 		return array(
 			'card-testing prevention' => array( '', 'wcpay_card_testing_prevention', "Error: We're not able to add this payment method. Please try again later." ),
-			'phone length rejection'  => array( 'invalid_request_error', 'invalid_request_error', 'Error: Invalid string length: 55555501004242424242424242 must be at most 20 characters' ),
+			'unmapped card error'     => array( 'card_error', 'provider_internal_detail', 'Error: Your card does not support this type of purchase.' ),
 		);
+	}
+
+	/**
+	 * @testdox Failed transport outcomes redact a typed invalid-request error for the shopper and keep it for diagnostics.
+	 *
+	 * Source: client 11.1.0 `class-wc-payments-utils.php:797-798` (typed non-card errors use the generic copy).
+	 */
+	public function test_failed_transport_outcome_redacts_typed_invalid_request_error(): void {
+		$platform_message = 'Error: Invalid string length: 55555501004242424242424242 must be at most 20 characters';
+		$outcome          = WooPaymentsIntentCodec::failed_transport_outcome(
+			'charge',
+			new WooPaymentsApiException( $platform_message, 'invalid_request_error', 400, 'invalid_request_error' )
+		);
+
+		$data = $outcome->get_data();
+
+		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame( "We're not able to process this request. Please refresh the page and try again.", $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] );
 	}
 
 	/**
@@ -497,18 +513,17 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Failed amount_too_small outcomes without a data payload fall back to the generic shopper message.
+	 * @testdox Failed amount_too_small outcomes without a data payload keep the typeless platform message.
+	 *
+	 * Without a floor to render, the error is an ordinary typeless error (client `class-wc-payments-utils.php:770`, `:821`).
 	 */
-	public function test_failed_transport_outcome_amount_too_small_without_data_stays_generic(): void {
+	public function test_failed_transport_outcome_amount_too_small_without_data_keeps_platform_message(): void {
 		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
 			'charge',
 			new WooPaymentsApiException( 'Amount too small', 'amount_too_small', 400 )
 		);
 
-		$this->assertSame(
-			"We're not able to process this request. Please refresh the page and try again.",
-			$sut->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null
-		);
+		$this->assertSame( 'Amount too small', $sut->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
 	}
 
 	/**
