@@ -173,6 +173,11 @@ const listTests = ( configPath ) => {
 					...process.env,
 					BASE_URL: process.env.BASE_URL ?? 'http://localhost:8086',
 					CI: '1',
+					// Resolve @woocommerce/* workspace packages to their TypeScript source, as
+					// run-tests-with-env.sh does, so listing specs needs no package build.
+					NODE_OPTIONS: `${
+						process.env.NODE_OPTIONS ?? ''
+					} --conditions=wc-source`.trim(),
 				},
 				maxBuffer: 50 * 1024 * 1024,
 			}
