@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
 
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -45,10 +46,12 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_action( 'admin_init', array( $this->sut, 'handle_request' ) );
+		remove_action( 'admin_init', array( $this->sut, 'handle_kyc_reminder_return' ), 9 );
 		remove_all_filters( 'allowed_redirect_hosts' );
+		remove_all_filters( 'woocommerce_tracks_event_properties' );
 		remove_all_filters( 'wp_redirect' );
 		delete_transient( 'wcpay_stripe_onboarding_state' );
-		unset( $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'] );
+		unset( $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'] );
 
 		parent::tearDown();
 	}
@@ -194,6 +197,104 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A KYC reminder email link records the merchant return and redirects to the native route for the legacy connect page.
+	 * @dataProvider provider_kyc_reminder_links
+	 *
+	 * Source: platform `class-onboarding-reminder-email.php:63` and `class-onboarding-reminder-followup-email.php:45` mint
+	 * `admin.php?page=wc-admin&path=/payments/connect&wcpay-connect-redirect=<initial|second|1-4>`; plugin 11.1.0
+	 * `WC_Payments_Account::maybe_redirect_by_get_param()` lines 776-809 records the offset and description.
+	 *
+	 * @param string $reminder    The `wcpay-connect-redirect` value.
+	 * @param int    $offset      Expected offset in days.
+	 * @param string $description Expected description.
+	 */
+	public function test_kyc_reminder_link_records_return_and_redirects_to_native_route( string $reminder, int $offset, string $description ): void {
+		$recorded = $this->record_tracks_events();
+		$_GET     = array(
+			'page'                   => 'wc-admin',
+			'path'                   => '/payments/connect',
+			'wcpay-connect-redirect' => $reminder,
+		);
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		try {
+			$this->sut->handle_kyc_reminder_return();
+			$this->fail( 'Expected the redirect to be intercepted.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'wp_redirect intercepted: ' . admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding' ), $exception->getMessage() );
+		}
+
+		$this->assertSame( $offset, $recorded->events['wcadmin_wcpay_kyc_reminder_merchant_returned']['offset'] ?? null );
+		$this->assertSame( $description, $recorded->events['wcadmin_wcpay_kyc_reminder_merchant_returned']['description'] ?? null );
+	}
+
+	/**
+	 * KYC reminder link values and their Tracks properties.
+	 *
+	 * @return array<string,array{0:string,1:int,2:string}>
+	 */
+	public function provider_kyc_reminder_links(): array {
+		return array(
+			'initial'  => array( 'initial', 1, 'initial' ),
+			'second'   => array( 'second', 3, 'second' ),
+			'weekly 2' => array( '2', 14, 'weekly-2' ),
+			'unknown'  => array( '9', 0, 'weekly-0' ),
+		);
+	}
+
+	/**
+	 * @testdox A KYC reminder link is ignored off the legacy connect page, without the capability, or when the plugin owns the runtime.
+	 */
+	public function test_kyc_reminder_link_ignores_ineligible_requests(): void {
+		$recorded = $this->record_tracks_events();
+		$_GET     = array(
+			'page'                   => 'wc-admin',
+			'path'                   => '/payments/overview',
+			'wcpay-connect-redirect' => 'initial',
+		);
+		$this->sut->handle_kyc_reminder_return();
+
+		$_GET['path'] = '/payments/connect';
+		$this->create_handler( false )->handle_kyc_reminder_return();
+
+		wp_set_current_user( 0 );
+		$this->sut->handle_kyc_reminder_return();
+
+		$this->assertSame( array(), $recorded->events );
+	}
+
+	/**
+	 * @testdox The KYC reminder hook runs before the legacy route redirect at the default priority.
+	 */
+	public function test_registers_kyc_reminder_hook_before_legacy_route_redirects(): void {
+		$this->sut->register();
+
+		$this->assertSame( 9, has_action( 'admin_init', array( $this->sut, 'handle_kyc_reminder_return' ) ) );
+	}
+
+	/**
+	 * Record Tracks events by name.
+	 *
+	 * @return \stdClass Holder whose `events` property maps event names to properties.
+	 */
+	private function record_tracks_events(): \stdClass {
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$recorded         = new \stdClass();
+		$recorded->events = array();
+		add_filter(
+			'woocommerce_tracks_event_properties',
+			static function ( $properties, $event_name ) use ( $recorded ) {
+				$recorded->events[ $event_name ] = $properties;
+				return $properties;
+			},
+			10,
+			2
+		);
+
+		return $recorded;
+	}
+
+	/**
 	 * Add the Stripe redirect host for redirect tests.
 	 *
 	 * @param string[] $hosts Allowed hosts.
@@ -229,8 +330,21 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
 
+		$navigation = $this->getMockBuilder( WooPaymentsAdminNavigationController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_legacy_payment_path_redirect_url' ) )
+			->getMock();
+		$navigation->method( 'get_legacy_payment_path_redirect_url' )->willReturnCallback(
+			static function ( array $request ): string {
+				return array(
+					'page' => 'wc-admin',
+					'path' => '/payments/connect',
+				) === $request ? admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding' ) : '';
+			}
+		);
+
 		$handler = new LegacyAdminLinkHandler();
-		$handler->init( $arbiter, $this->api_client );
+		$handler->init( $arbiter, $this->api_client, $navigation );
 
 		return $handler;
 	}

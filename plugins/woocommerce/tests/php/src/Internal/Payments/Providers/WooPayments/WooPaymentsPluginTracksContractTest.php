@@ -192,7 +192,6 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		'wcpay_edit_order_refund_failure'                  => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_edit_order_refund_success'                  => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_first_live_sale'                            => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
-		'wcpay_kyc_reminder_merchant_returned'             => 'plan.md T.7 Step 6 (b): merchant-visible feature gap, scheduled to port.',
 		'wcpay_merchant_captured_auth'                     => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_one_and_done_notice_cta_clicked'            => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_one_and_done_notice_dismissed'              => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',

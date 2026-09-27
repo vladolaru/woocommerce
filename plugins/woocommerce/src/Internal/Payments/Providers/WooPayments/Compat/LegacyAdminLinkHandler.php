@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat;
 
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
@@ -37,16 +38,25 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	private WooPaymentsApiClient $api_client;
 
 	/**
+	 * Native WooPayments admin navigation, which resolves legacy admin routes.
+	 *
+	 * @var WooPaymentsAdminNavigationController
+	 */
+	private WooPaymentsAdminNavigationController $navigation;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter    Runtime owner arbiter.
-	 * @param WooPaymentsApiClient         $api_client Native WooPayments API client.
+	 * @param NativePaymentsRuntimeArbiter         $arbiter    Runtime owner arbiter.
+	 * @param WooPaymentsApiClient                 $api_client Native WooPayments API client.
+	 * @param WooPaymentsAdminNavigationController $navigation Native WooPayments admin navigation.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAdminNavigationController $navigation ): void {
 		$this->arbiter    = $arbiter;
 		$this->api_client = $api_client;
+		$this->navigation = $navigation;
 	}
 
 	/**
@@ -60,6 +70,58 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 		if ( false === has_action( 'admin_init', array( $this, 'handle_request' ) ) ) {
 			add_action( 'admin_init', array( $this, 'handle_request' ) );
 		}
+
+		// Priority 9 runs before the legacy route redirect, which would otherwise leave the connect page first.
+		if ( false === has_action( 'admin_init', array( $this, 'handle_kyc_reminder_return' ) ) ) {
+			add_action( 'admin_init', array( $this, 'handle_kyc_reminder_return' ), 9 );
+		}
+	}
+
+	/**
+	 * Record a merchant returning from a platform KYC reminder email and continue to the native route for the connect page.
+	 *
+	 * The email links to `page=wc-admin&path=/payments/connect&wcpay-connect-redirect=<reminder>`, matching the plugin's `maybe_redirect_by_get_param()` (11.1.0).
+	 */
+	public function handle_kyc_reminder_return(): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Email links carry no nonce; the capability check guards this read-only redirect.
+		if ( ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->should_native_register() || ! isset( $_GET['wcpay-connect-redirect'] ) ) {
+			return;
+		}
+
+		$connect_page = array(
+			'page' => 'wc-admin',
+			'path' => '/payments/connect',
+		);
+		foreach ( $connect_page as $key => $value ) {
+			if ( wc_clean( wp_unslash( $_GET[ $key ] ?? '' ) ) !== $value ) {
+				return;
+			}
+		}
+
+		$reminder = sanitize_text_field( wp_unslash( $_GET['wcpay-connect-redirect'] ) );
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		if ( in_array( $reminder, array( 'initial', 'second' ), true ) ) {
+			$offset      = 'initial' === $reminder ? 1 : 3;
+			$description = $reminder;
+		} else {
+			$week        = in_array( $reminder, array( '1', '2', '3', '4' ), true ) ? $reminder : '0';
+			$offset      = (int) $week * 7;
+			$description = 'weekly-' . $week;
+		}
+
+		if ( function_exists( 'wc_admin_record_tracks_event' ) ) {
+			wc_admin_record_tracks_event(
+				'wcpay_kyc_reminder_merchant_returned',
+				array(
+					'offset'      => $offset,
+					'description' => $description,
+				)
+			);
+		}
+
+		$redirect_url = $this->navigation->get_legacy_payment_path_redirect_url( $connect_page );
+		wp_safe_redirect( '' !== $redirect_url ? $redirect_url : Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH ) );
+		exit;
 	}
 
 	/**
