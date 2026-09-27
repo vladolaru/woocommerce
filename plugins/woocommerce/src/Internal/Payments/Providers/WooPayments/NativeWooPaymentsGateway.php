@@ -1534,7 +1534,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$fraud_prevention_error = $this->get_fraud_prevention_error_message( true );
 		if ( '' !== $fraud_prevention_error ) {
-			$order->update_status( OrderStatus::FAILED );
+			if ( ! $this->has_succeeded_intent( $order ) ) {
+				$order->update_status( OrderStatus::FAILED );
+			}
 			wc_add_notice( $fraud_prevention_error, 'error', array( 'icon' => 'error' ) );
 
 			return array(
@@ -1546,8 +1548,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$failed_transaction_rate_limiter_error = $this->get_failed_transaction_rate_limiter_error_message();
 		if ( '' !== $failed_transaction_rate_limiter_error ) {
-			$order->update_status( OrderStatus::FAILED );
-			$order->add_order_note( wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_rate_limited_payment_note( $order ) );
+			if ( ! $this->has_succeeded_intent( $order ) ) {
+				$order->update_status( OrderStatus::FAILED );
+				$order->add_order_note( wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_rate_limited_payment_note( $order ) );
+			}
 			wc_add_notice( $failed_transaction_rate_limiter_error, 'error', array( 'icon' => 'error' ) );
 
 			return array(
@@ -2538,6 +2542,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	private function get_payment_token_from_order( WC_Order $order ): ?WC_Payment_Token {
 		return $this->get_token_service()->get_active_token_for_order( $order );
+	}
+
+	/**
+	 * Whether the order's payment intent already succeeded.
+	 *
+	 * A refused checkout must not fail an order whose intent already succeeded, including a
+	 * subscription whose payment method was changed with a setup intent (client 11.1.0 `gw:1283`).
+	 *
+	 * @param WC_Order $order Order being paid.
+	 * @return bool
+	 */
+	private function has_succeeded_intent( WC_Order $order ): bool {
+		return 'succeeded' === (string) $order->get_meta( '_intention_status', true );
 	}
 
 	/**

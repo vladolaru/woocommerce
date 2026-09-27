@@ -2984,6 +2984,67 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should leave an order whose intent already succeeded untouched when checkout is refused: $_dataName.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1283` checks the order's
+	 * intention status first in the catch; when it is `succeeded` it returns before the failed
+	 * status (`:1326-1327`) and the rate-limiter note (`:1403-1421`) are reached.
+	 *
+	 * @dataProvider refused_checkout_with_succeeded_intent_provider
+	 *
+	 * @param string $refusal Which refusal branch runs: `fraud_token` or `rate_limiter`.
+	 */
+	public function test_process_payment_refusal_keeps_order_whose_intent_succeeded( string $refusal ): void {
+		wc_clear_notices();
+		$order = $this->create_order();
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$session = $this->create_session();
+		if ( 'fraud_token' === $refusal ) {
+			$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
+			$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
+			$fraud_prevention_service                               = $this->create_fraud_prevention_service( true, $session );
+		} else {
+			$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
+			$fraud_prevention_service = $this->create_fraud_prevention_service( false, $session );
+		}
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			new RecordingPaymentProcessingService(),
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$fraud_prevention_service,
+			new WooPaymentsFailedTransactionRateLimiter( $session )
+		);
+
+		$gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertCount( $note_count, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'Neither a status-change note nor the rate-limiter note may be added.' );
+	}
+
+	/**
+	 * Refusal branches of process_payment().
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function refused_checkout_with_succeeded_intent_provider(): array {
+		return array(
+			'fraud-token refusal'  => array( 'fraud_token' ),
+			'rate-limiter refusal' => array( 'rate_limiter' ),
+		);
+	}
+
+	/**
 	 * @testdox Should bump the failed-transaction limiter for extension-matching decline error codes.
 	 *
 	 * @dataProvider failed_transaction_limited_error_codes
