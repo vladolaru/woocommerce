@@ -252,10 +252,11 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Compose the client's started or failed note for a SetupIntent outcome.
+	 * Compose the client's started, failed or cancelled note for a SetupIntent outcome.
 	 *
-	 * Client 11.1.0: mark_payment_started() (os:418-427, 2202-2218) on the order-status callback, and the redirect
-	 * return's mark_payment_failed() with "UPE payment failed: ..." (gw:2376-2382, 2428-2446; os:2106-2130).
+	 * Client 11.1.0: mark_payment_started() (os:418-427, 2202-2218) on the order-status callback, the redirect
+	 * return's mark_payment_failed() with "UPE payment failed: ..." (gw:2376-2382, 2428-2446; os:2106-2130), and
+	 * mark_payment_capture_cancelled() for a canceled SetupIntent on either path (os:400-402, 1533-1554, 2315-2330).
 	 *
 	 * @param WC_Order       $order     Order object.
 	 * @param PaymentOutcome $outcome   SetupIntent outcome.
@@ -273,6 +274,9 @@ class WooPaymentsOrderEffectApplier {
 		} elseif ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			$note_candidates = $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id );
 			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED;
+		} elseif ( PaymentOutcome::STATUS_CANCELED === $outcome->get_status() ) {
+			$note_candidates = $this->note_service->format_capture_cancelled_note_candidates( $intent_id, '' );
+			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_CANCELED;
 		} else {
 			return array();
 		}

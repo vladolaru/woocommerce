@@ -884,7 +884,41 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		return array(
 			'requires_payment_method' => array( 'requires_payment_method' ),
 			'requires_action'         => array( 'requires_action' ),
+			'canceled'                => array( 'canceled' ),
 		);
+	}
+
+	/**
+	 * @testdox Zero-total setup-intent returns cancel the order with the cancellation note for a canceled SetupIntent without a setup error.
+	 *
+	 * Source: client 11.1.0 `process_redirect_payment()`. With no `get_last_setup_error()` (`gw:2361-2376`) it calls
+	 * `update_order_status_from_intent()` (`gw:2406`), which sends `canceled` to `mark_payment_capture_cancelled()`
+	 * (`os:400-402`): the cancellation note (`os:2315-2330`, ID in a code element per `utils:1056-1058`) and a
+	 * cancelled order (`os:1533-1554`).
+	 */
+	public function test_handle_wp_cancels_zero_total_order_for_canceled_setup_intent(): void {
+		$order                    = $this->create_order( '0.00' );
+		$api_client               = new RedirectReturnApiClientStub();
+		$api_client->setup_intent = array(
+			'id'             => 'seti_return_canceled',
+			'status'         => 'canceled',
+			'customer'       => 'cus_setup',
+			'payment_method' => 'pm_setup',
+		);
+		$confirmation_owner       = $this->create_confirmation_owner( $api_client );
+		$this->sut                = $this->create_controller( true, $confirmation_owner, $api_client );
+		$this->set_setup_intent_return_request( $order, 'seti_return_canceled' );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'cancelled', $reloaded->get_status() );
+		$notes = array_map(
+			static fn( $note ) => $note->content,
+			wc_get_order_notes( array( 'order_id' => $reloaded->get_id() ) )
+		);
+		$this->assertContains( 'Payment authorization was successfully <strong>cancelled</strong> (<code>seti_return_canceled</code>).', $notes );
 	}
 
 	/**

@@ -1541,6 +1541,61 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback should cancel the order with the cancellation note for a canceled SetupIntent, with or without a setup error.
+	 *
+	 * Source: client 11.1.0. The AJAX handler passes the fetched SetupIntent to `update_order_status_from_intent()`
+	 * (`gw:4339-4345`), which sends `canceled` to `mark_payment_capture_cancelled()` (`os:400-402`) whatever
+	 * `last_setup_error` holds (`os:2963-2967`). That writes the cancellation note (`os:2315-2330`), with the ID in a
+	 * code element (`utils:1056-1058`), and cancels the order (`os:1533-1554`). It writes no "UPE payment failed" note.
+	 *
+	 * @dataProvider canceled_setup_intent_data
+	 *
+	 * @param array<string,mixed>|null $last_setup_error SetupIntent setup error.
+	 */
+	public function test_update_order_status_cancels_order_for_canceled_setup_intent( ?array $last_setup_error ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', 'seti_canceled' );
+		$order->save();
+
+		$this->get_update_order_status_response_for_intent(
+			$order,
+			array(
+				'id'               => 'seti_canceled',
+				'status'           => 'canceled',
+				'customer'         => 'cus_native',
+				'payment_method'   => 'pm_native',
+				'last_setup_error' => $last_setup_error,
+			)
+		);
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'cancelled', $order->get_status() );
+		$this->assert_order_has_note_containing( $order, 'Payment authorization was successfully <strong>cancelled</strong> (<code>seti_canceled</code>).' );
+		foreach ( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) as $note ) {
+			$this->assertStringNotContainsString( 'UPE payment failed', (string) $note->content );
+		}
+	}
+
+	/**
+	 * Canceled SetupIntent shapes for the order-status callback.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|null}>
+	 */
+	public function canceled_setup_intent_data(): array {
+		return array(
+			'no setup error'   => array( null ),
+			'with setup error' => array(
+				array(
+					'type'    => 'invalid_request_error',
+					'code'    => 'setup_intent_authentication_failure',
+					'message' => 'We are unable to authenticate your payment method.',
+				),
+			),
+		);
+	}
+
+	/**
 	 * SetupIntent statuses the client's order service maps by error.
 	 *
 	 * @return array<string,array{0:string}>
