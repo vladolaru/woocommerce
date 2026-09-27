@@ -5,7 +5,10 @@ describe( 'WooPayments frontend Tracks queue', () => {
 		} );
 	};
 
+	let originalFetch;
+
 	beforeEach( () => {
+		originalFetch = window.fetch;
 		window.fetch = jest.fn().mockResolvedValue( {} );
 		window.wc_woopayments_frontend_tracks_params = {
 			ajaxUrl: '/wp-admin/admin-ajax.php',
@@ -27,7 +30,8 @@ describe( 'WooPayments frontend Tracks queue', () => {
 	} );
 
 	afterEach( () => {
-		delete window.fetch;
+		// Restore rather than delete: other suites' setup (msw) owns fetch.
+		window.fetch = originalFetch;
 		delete window.wc_woopayments_frontend_tracks_params;
 	} );
 
