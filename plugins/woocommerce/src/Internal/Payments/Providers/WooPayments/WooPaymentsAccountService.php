@@ -618,8 +618,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Rewrite the durable native payments state from the persisted account cache and gateway settings.
 	 *
-	 * Reads raw options only, with no account refresh. The cutover job calls it once it has deactivated the plugin,
-	 * and the update repair calls it for stores that never wrote the state.
+	 * Reads raw options only, with no account refresh.
 	 *
 	 * @since 11.2.0
 	 *

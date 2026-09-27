@@ -40,6 +40,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'wcpay_multi_currency_setup_completed' );
 		delete_option( 'woocommerce_native_payments_state' );
+		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'active_plugins' );
@@ -771,5 +772,57 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		wc_update_11205_repair_native_payments_state();
 
 		$this->assertFalse( get_option( NativePaymentsState::OPTION_NAME ), 'A store without the active plugin keeps its state for the cutover writers.' );
+	}
+
+	/**
+	 * @testdox Migration writes the disabled tier for a plugin-active store that native payments cannot serve: $_dataName.
+	 *
+	 * Source: data/task-1.4-dormancy-design.md:84-96 (disabled when native is off or the account is not eligible, ahead of the plugin check).
+	 *
+	 * @dataProvider provider_wc_update_11205_disabled_stores
+	 *
+	 * @param bool $eligible    Whether the account allows native payments.
+	 * @param bool $kill_switch Whether the native runtime kill switch is on.
+	 */
+	public function test_wc_update_11205_repair_writes_disabled_for_stores_native_cannot_serve( bool $eligible, bool $kill_switch ): void {
+		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
+
+		update_option( 'woocommerce_native_payments_enabled', 'yes' );
+		if ( $kill_switch ) {
+			update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, true );
+		}
+		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'      => 'acct_upgraded_store',
+					'is_live'         => true,
+					'native_payments' => array( 'eligible' => $eligible ),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			),
+			false
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+
+		wc_update_11205_repair_native_payments_state();
+
+		$this->assertSame( NativePaymentsState::DISABLED, get_option( NativePaymentsState::OPTION_NAME ) );
+	}
+
+	/**
+	 * Plugin-active stores the repair must leave on the disabled tier.
+	 *
+	 * @return array<string,array{bool,bool}>
+	 */
+	public function provider_wc_update_11205_disabled_stores(): array {
+		return array(
+			'account not eligible for native payments' => array( false, false ),
+			'native runtime kill switch on'            => array( true, true ),
+		);
 	}
 }
