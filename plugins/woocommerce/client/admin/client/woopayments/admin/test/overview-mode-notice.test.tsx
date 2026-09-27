@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
 
@@ -162,10 +162,23 @@ describe( 'OverviewModeNotice', () => {
 			'wcpay_setup_live_payments_modal_open',
 			{ from: 'WCPAY_OVERVIEW', source: 'wcpay-overview-page' }
 		);
-		expect(
-			screen.getByRole( 'dialog', {
-				name: 'Activate payments on your store',
-			} )
-		).toBeInTheDocument();
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Activate payments on your store',
+		} );
+		const activateUrl = new URL(
+			within( dialog )
+				.getByRole( 'link', { name: 'Activate payments' } )
+				.getAttribute( 'href' ) ?? '',
+			'https://example.test/wp-admin/'
+		);
+		expect( activateUrl.searchParams.get( 'path' ) ).toBe(
+			'/woopayments/onboarding'
+		);
+		expect( activateUrl.searchParams.get( 'source' ) ).toBe(
+			'wcpay-overview-page'
+		);
+		expect( activateUrl.searchParams.get( 'from' ) ).toBe(
+			'wcpay-setup-live-payments'
+		);
 	} );
 } );
