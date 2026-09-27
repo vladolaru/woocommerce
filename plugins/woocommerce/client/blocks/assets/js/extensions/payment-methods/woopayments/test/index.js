@@ -574,6 +574,9 @@ describe( 'wc-payment-method-woopayments', () => {
 		fireEvent.click(
 			screen.getByRole( 'checkbox', { name: 'Save to WooPay' } )
 		);
+		fireEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Save to WooPay' } )
+		);
 
 		await waitFor( () => {
 			const events = window.fetch.mock.calls
@@ -601,6 +604,10 @@ describe( 'wc-payment-method-woopayments', () => {
 					{
 						name: 'checkout_save_my_info_click',
 						props: { status: 'unchecked' },
+					},
+					{
+						name: 'checkout_woopay_save_my_info_mobile_enter',
+						props: {},
 					},
 				] )
 			);

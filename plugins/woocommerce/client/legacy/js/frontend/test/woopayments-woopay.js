@@ -546,7 +546,10 @@ describe( 'WooPayments WooPay checkout', () => {
 					full: '+15555550123',
 				},
 			} )
-		);
+		);		expect( getTrackingEvents() ).toContainEqual( {
+			name: 'checkout_woopay_save_my_info_mobile_enter',
+			props: {},
+		} );
 	} );
 
 	test( 'adds a valid IAPI variation with its current named form fields before WooPay init', async () => {
@@ -1694,5 +1697,23 @@ describe( 'WooPayments WooPay checkout', () => {
 			);
 			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
 		} );
+	} );
+
+	// Runs last: the module's cart click listener stays on document.body.
+	test( 'records the cart Proceed to checkout click like client 11.1.0 cart/index.js', () => {
+		document.body.innerHTML =
+			'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="#checkout">Checkout</a></div>';
+		window.wcpay_core_woopay_config.woopayButton.context = 'cart';
+		window.wcpay_core_woopay_config.shouldShowWooPayButton = false;
+		require( '../woopayments-woopay' );
+
+		document.querySelector( '.checkout-button' ).click();
+
+		expect( getTrackingEvents() ).toEqual( [
+			{
+				name: 'wcpay_proceed_to_checkout_button_click',
+				props: { woopay_direct_checkout: false },
+			},
+		] );
 	} );
 } );

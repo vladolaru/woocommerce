@@ -20,6 +20,13 @@
 	var preferredCardCacheKey = 'woopay_preferred_card';
 	var wooPayConnectTimeout = 5000;
 	var directCheckoutLoggedIn = false;
+	var hasPhoneForMobileEnter = false;
+	var proceedToCheckoutSelector =
+		'.wc-proceed-to-checkout .checkout-button,' +
+		'.wp-block-woocommerce-proceed-to-checkout-block,' +
+		'a.wp-block-woocommerce-mini-cart-checkout-button-block,' +
+		'a.wc-block-mini-cart__footer-checkout,' +
+		'.widget_shopping_cart a.button.checkout';
 	var brandAliases = {
 		american_express: 'amex',
 		diners_club: 'diners',
@@ -746,14 +753,31 @@
 		} );
 	}
 
-	function attachDirectCheckoutListeners() {
-		var selector =
-			'.wc-proceed-to-checkout .checkout-button,' +
-			'.wp-block-woocommerce-proceed-to-checkout-block,' +
-			'a.wp-block-woocommerce-mini-cart-checkout-button-block,' +
-			'a.wc-block-mini-cart__footer-checkout,' +
-			'.widget_shopping_cart a.button.checkout';
+	function attachProceedToCheckoutTracking() {
+		if ( getTrackingSource() !== 'cart' ) {
+			return;
+		}
+		document.body.addEventListener(
+			'click',
+			function ( event ) {
+				if (
+					event.target.closest &&
+					event.target.closest( proceedToCheckoutSelector )
+				) {
+					recordUserEvent( 'wcpay_proceed_to_checkout_button_click', {
+						woopay_direct_checkout:
+							!! config.isWooPayDirectCheckoutEnabled &&
+							( document.cookie || '' ).indexOf(
+								'skip_woopay=1'
+							) === -1,
+					} );
+				}
+			},
+			true
+		);
+	}
 
+	function attachDirectCheckoutListeners() {
 		if ( document.body.wooPayDirectCheckoutAttached ) {
 			return;
 		}
@@ -762,7 +786,7 @@
 		document.body.wooPayDirectCheckoutHandler = function ( event ) {
 			var element =
 				event.target && event.target.closest
-					? event.target.closest( selector )
+					? event.target.closest( proceedToCheckoutSelector )
 					: null;
 			var originalHref;
 
@@ -1496,6 +1520,17 @@
 		var viewportField = document.querySelector(
 			'input[name="woopay_viewport"]'
 		);
+		var hasPhone = !! (
+			checkbox &&
+			checkbox.checked &&
+			phoneField &&
+			phoneField.value.trim()
+		);
+
+		if ( hasPhone && ! hasPhoneForMobileEnter ) {
+			recordUserEvent( 'checkout_woopay_save_my_info_mobile_enter' );
+		}
+		hasPhoneForMobileEnter = hasPhone;
 
 		postWooPayAjax( 'set_woopay_phone_number', {
 			_wpnonce: config.woopaySessionNonce || '',
@@ -1663,6 +1698,7 @@
 		renderWooPaySaveUserFields();
 		fetchPreferredCardFromWooPay();
 		initializeDirectCheckout();
+		attachProceedToCheckoutTracking();
 	} );
 
 	if ( typeof module !== 'undefined' && module.exports ) {

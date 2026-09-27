@@ -140,6 +140,49 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should track the client 11.1.0 shopper funnel on the cart, product and pay-for-order hooks and on WooPay sign-up.
+	 */
+	public function test_tracks_shopper_funnel_events_on_their_hooks(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$recorded_events = array();
+		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'record_user_event' ) )
+			->getMock();
+		$tracker->method( 'record_user_event' )->willReturnCallback(
+			static function ( string $event_name, array $properties ) use ( &$recorded_events ): bool {
+				$recorded_events[] = array( $event_name, $properties );
+				return true;
+			}
+		);
+		$sut = new WooPaymentsCheckoutBridge();
+		$sut->init( $this->create_legacy_runtime_for_bridge(), $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $tracker );
+
+		try {
+			$sut->register();
+			foreach ( array( 'woocommerce_after_cart', 'woocommerce_blocks_enqueue_cart_block_scripts_after', 'woocommerce_after_single_product', 'before_woocommerce_pay_form', 'woocommerce_payments_save_user_in_woopay' ) as $hook ) {
+				$this->assertSame( 10, has_action( $hook, array( $sut, 'record_shopper_funnel_event' ) ) );
+				$sut->record_shopper_funnel_event(); // Outside the hook: no event.
+				do_action( $hook ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+			}
+		} finally {
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		}
+
+		$all_stores = array( 'record_event_data' => array( 'track_on_all_stores' => true ) );
+		$this->assertSame(
+			array(
+				array( 'cart_page_view', array( 'theme_type' => 'short_code' ) + $all_stores ),
+				array( 'cart_page_view', array( 'theme_type' => 'blocks' ) + $all_stores ),
+				array( 'product_page_view', array( 'theme_type' => 'short_code' ) + $all_stores ),
+				array( 'pay_for_order_page_view', $all_stores ),
+				array( 'woopay_registered', array( 'source' => 'checkout' ) ),
+			),
+			$recorded_events
+		);
+	}
+
+	/**
 	 * @testdox Should track classic and Store API order placement before payment with exact oracle guards.
 	 */
 	public function test_tracks_classic_and_store_api_order_placement_before_payment(): void {

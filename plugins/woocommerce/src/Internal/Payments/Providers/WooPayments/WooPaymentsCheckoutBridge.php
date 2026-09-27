@@ -337,6 +337,42 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		if ( false === has_action( 'woocommerce_pay_order_before_payment', array( $this, 'handle_woocommerce_after_checkout_form' ) ) ) {
 			add_action( 'woocommerce_pay_order_before_payment', array( $this, 'handle_woocommerce_after_checkout_form' ) );
 		}
+		foreach ( array( 'woocommerce_after_cart', 'woocommerce_blocks_enqueue_cart_block_scripts_after', 'woocommerce_after_single_product', 'before_woocommerce_pay_form', 'woocommerce_payments_save_user_in_woopay' ) as $hook ) {
+			if ( false === has_action( $hook, array( $this, 'record_shopper_funnel_event' ) ) ) {
+				add_action( $hook, array( $this, 'record_shopper_funnel_event' ), 10, 0 );
+			}
+		}
+	}
+
+	/**
+	 * Record the client 11.1.0 WooPay_Tracker shopper funnel event for the current hook (`class-woopay-tracker.php:73-81,496-532,608`).
+	 *
+	 * @internal
+	 */
+	public function record_shopper_funnel_event(): void {
+		$all_stores = array( 'record_event_data' => array( 'track_on_all_stores' => true ) );
+		try {
+			$tracking = $this->get_frontend_tracking_controller();
+			switch ( current_action() ) {
+				case 'woocommerce_after_cart':
+					$tracking->record_user_event( 'cart_page_view', array( 'theme_type' => 'short_code' ) + $all_stores );
+					break;
+				case 'woocommerce_blocks_enqueue_cart_block_scripts_after':
+					$tracking->record_user_event( 'cart_page_view', array( 'theme_type' => 'blocks' ) + $all_stores );
+					break;
+				case 'woocommerce_after_single_product':
+					$tracking->record_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) + $all_stores );
+					break;
+				case 'before_woocommerce_pay_form':
+					$tracking->record_user_event( 'pay_for_order_page_view', $all_stores );
+					break;
+				case 'woocommerce_payments_save_user_in_woopay':
+					$tracking->record_user_event( 'woopay_registered', array( 'source' => 'checkout' ) );
+					break;
+			}
+		} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+			// Tracking must never interrupt storefront rendering or checkout.
+		}
 	}
 
 	/**

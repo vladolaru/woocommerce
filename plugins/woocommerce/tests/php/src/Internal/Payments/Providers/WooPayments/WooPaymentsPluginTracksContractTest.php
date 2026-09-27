@@ -155,16 +155,10 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		'wcadmin_wcpay_overview_stripe_notifications_banner_action_completed' => 'plan.md T.7 Step 6 (b): the Stripe embedded notifications banner does not exist on the native Overview; routed to R3 (plan-task-t7.md section 5).',
 		'wcadmin_wcpay_overview_stripe_notifications_banner_update' => 'plan.md T.7 Step 6 (b): the Stripe embedded notifications banner does not exist on the native Overview; routed to R3 (plan-task-t7.md section 5).',
 		'wcadmin_wcpay_overview_test_mode_learn_more_clicked' => 'plan.md T.7 Step 6 (c): the Overview dev-mode test notice and its Learn more link do not exist natively; routed to R7 (proposed in data/t7-batch14.md).',
-		'wcpay_cart_page_view'                             => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_checkout_woopay_save_my_info_country_click' => 'plan.md T.7 Step 6 (a): the save-my-info country dropdown does not exist natively; routed to R2 (plan-task-t7.md section 5).',
-		'wcpay_checkout_woopay_save_my_info_mobile_enter'  => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
-		'wcpay_pay_for_order_page_view'                    => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_payment_method_disabled'                    => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_payment_method_enabled'                     => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_post_kyc_activation_notice_snoozed'         => 'plan.md T.7 Step 6 (c): unreachable in client 11.1.0 (the post-KYC notice overrides supports_snooze() to false, class-wc-payments-post-kyc-activation-notice.php:213-215) and native has no snooze action either; routed to R8 (proposed in data/t7-batch14.md) to close as an allowed difference.',
-		'wcpay_product_page_view'                          => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
-		'wcpay_wcpay_proceed_to_checkout_button_click'     => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
-		'wcpay_woopay_registered'                          => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 	);
 
 	/**

@@ -709,6 +709,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		initialIsSavingUser.current
 	);
 	const [ phone, setPhone ] = useState( getWooPayInitialPhone );
+	const hasPhoneForMobileEnter = useRef( false );
 	const saveUserLabel =
 		paymentSettings.woopaySaveUserLabel ||
 		__(
@@ -733,6 +734,18 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		}
 	}, [ paymentSettings ] );
 
+	// Client 11.1.0 checkout-page-save-user.js:169-174 records this once the phone is valid; native has no phone validation (R2).
+	const recordMobileEnter = ( nextPhone ) => {
+		const hasPhone = Boolean( nextPhone && nextPhone.trim() );
+		if ( hasPhone && ! hasPhoneForMobileEnter.current ) {
+			recordWooPaymentsUserEvent(
+				paymentSettings,
+				'checkout_woopay_save_my_info_mobile_enter'
+			);
+		}
+		hasPhoneForMobileEnter.current = hasPhone;
+	};
+
 	const updateSaveUser = ( checked, nextPhone = phone ) => {
 		setIsSavingUser( checked );
 		if ( ! checked ) {
@@ -745,6 +758,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 				status: checked ? 'checked' : 'unchecked',
 			}
 		);
+		recordMobileEnter( checked ? nextPhone : '' );
 		persistWooPaySaveUser(
 			paymentSettings,
 			checked,
@@ -823,13 +837,14 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 							onChange={ ( event ) =>
 								setPhone( event.target.value )
 							}
-							onBlur={ () =>
+							onBlur={ () => {
+								recordMobileEnter( phone );
 								persistWooPaySaveUser(
 									paymentSettings,
 									true,
 									phone
-								)
-							}
+								);
+							} }
 						/>
 						<WooPaySaveUserAdditionalInfo />
 						<WooPaySaveUserAgreement
