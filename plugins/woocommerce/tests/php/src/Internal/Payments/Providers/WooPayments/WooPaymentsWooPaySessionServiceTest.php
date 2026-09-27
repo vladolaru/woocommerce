@@ -1195,6 +1195,25 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not geolocate the shopper while building the frontend config when WooPay is off.
+	 */
+	public function test_frontend_config_does_not_geolocate_when_woopay_is_off(): void {
+		$geolocations = 0;
+		add_filter(
+			'woocommerce_geolocate_ip',
+			static function () use ( &$geolocations ) {
+				++$geolocations;
+				return 'US';
+			}
+		);
+
+		$config = $this->create_service( array( 'platform_checkout' => 'no' ), array(), null, null, null, false )->get_woopay_frontend_config( 'checkout' );
+
+		$this->assertSame( 0, $geolocations );
+		$this->assertFalse( $config['woopayIsCountryAvailable'] );
+	}
+
+	/**
 	 * @testdox Should report live mode in the WooPay frontend config so the express OTP iframe opens in live mode.
 	 */
 	public function test_woopay_frontend_config_reports_live_mode(): void {
