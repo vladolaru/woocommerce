@@ -261,8 +261,12 @@ function trackPageErrors( page: Page, baseUrl: string ): () => string[] {
  * cannot alias it.
  */
 function enabledCurrencyRow( page: Page, code: string ): Locator {
+	// Client 11.1.0 list-item.js:56-59 renders the code beside the name,
+	// as "Euro (€ EUR)", in the row header.
 	return page.getByRole( 'row' ).filter( {
-		has: page.getByRole( 'cell', { name: code, exact: true } ),
+		has: page.getByRole( 'rowheader', {
+			name: new RegExp( `\\s${ code }\\)$` ),
+		} ),
 	} );
 }
 
@@ -364,17 +368,21 @@ test(
 		await expectMultiCurrencySurfaceLoaded( page );
 
 		// Joined content: every REST-enabled currency renders exactly one
-		// row, keyed on its code cell.
-		for ( const columnHeader of [
-			'Name',
-			'Code',
-			'Exchange rate',
-			'Actions',
-		] ) {
+		// row, keyed on the code in its name cell. Client 11.1.0
+		// enabled-currencies-list/index.js:73-75 shows only the "Name" and
+		// "Exchange rate" headers; native keeps a visually hidden "Actions"
+		// header so the column stays labelled.
+		for ( const columnHeader of [ 'Name', 'Exchange rate' ] ) {
 			await expect(
 				page.getByRole( 'columnheader', { name: columnHeader } )
 			).toBeVisible();
 		}
+		await expect(
+			page.getByRole( 'columnheader', { name: 'Code' } )
+		).toHaveCount( 0 );
+		await expect(
+			page.getByRole( 'columnheader', { name: 'Actions' } )
+		).toHaveCount( 1 );
 		for ( const code of enabledCodes ) {
 			await expect( enabledCurrencyRow( page, code ) ).toHaveCount( 1 );
 		}
