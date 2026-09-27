@@ -1040,6 +1040,27 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Admin-notice classification runs no preflight scan on a native store that has no cutover record and no plugin.
+	 */
+	public function test_admin_notice_classification_skips_preflight_without_record_or_plugin(): void {
+		$preflight = new class() extends WooPaymentsCutoverPreflightService {
+			/** @var int Number of preflight scans. */
+			public int $scans = 0;
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				++$this->scans;
+				return array( 'legacy_stripe_billing_subscriptions_present' );
+			}
+		};
+		$sut       = $this->create_job( true, $preflight, null, false );
+
+		$this->assertNull( $sut->classify_for_admin_notice() );
+		$this->assertSame( 0, $preflight->scans, 'Every admin page would otherwise scan Action Scheduler, order meta and tables.' );
+		$this->assertNull( $sut->get_state_record() );
+	}
+
+	/**
 	 * @testdox Stripe exclusion removal opens an unscheduled generation that only a merchant click can start.
 	 */
 	public function test_removed_stripe_exclusion_waits_for_merchant_start(): void {

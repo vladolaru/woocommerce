@@ -467,7 +467,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			return $this->state_store->get_record();
 		}
-		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
+		// Without the plugin there is no switch to offer, so the preflight scan would run on every admin page for nothing.
+		if ( ! $this->arbiter->is_native_runtime_enabled() || ! $this->arbiter->is_plugin_runtime_active() ) {
 			return $record;
 		}
 
