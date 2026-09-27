@@ -587,6 +587,48 @@ describe( 'WooPayments WooPay checkout', () => {
 		);
 	} );
 
+	test( 'shows a checkout WooPay error in the selected gateway box only', async () => {
+		// Source: client 11.1.0 client/checkout/utils/show-error-checkout.js:4-55
+		// shows the failure where the shopper sees it, so the inline box must
+		// be the selected gateway's (P4b review M8). Placement is brief O7.
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<input id="billing_email" value="shopper@example.com" />' +
+			'<div id="wcpay-woopay-button"><div class="woopay-express-button is-placeholder"></div></div>' +
+			'<ul class="wc_payment_methods payment_methods methods">' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_klarna">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" />' +
+			'<div id="wcpay-core-payment-errors" class="wcpay-core-payment-errors">Stale Klarna error</div>' +
+			'</li>' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div class="wcpay-core-payment-errors" hidden></div>' +
+			'</li>' +
+			'</ul>' +
+			'</form>';
+		window.wcpay_core_woopay_config.confirmationErrorMessage =
+			'WooPay is unavailable right now.';
+		global.jQuery.post.mockImplementation( () => ( {
+			done: jest.fn( () => ( {
+				fail: jest.fn(),
+			} ) ),
+			fail: jest.fn( ( callback ) => callback() ),
+		} ) );
+
+		require( '../woopayments-woopay' );
+
+		document.querySelector( '#wcpay-woopay-button button' ).click();
+		await flushPromises();
+
+		const [ klarnaBox, cardBox ] = document.querySelectorAll(
+			'.wcpay-core-payment-errors'
+		);
+		expect( cardBox.textContent ).toBe( 'WooPay is unavailable right now.' );
+		expect( cardBox.hidden ).toBe( false );
+		expect( klarnaBox.textContent ).toBe( '' );
+		expect( klarnaBox.hidden ).toBe( true );
+	} );
+
 	test( 'does not add an invalid IAPI product form before WooPay init', async () => {
 		document.body.innerHTML =
 			'<form class="wp-block-add-to-cart-with-options is-invalid">' +

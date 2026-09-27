@@ -476,14 +476,32 @@
 		} );
 	}
 
+	// Each WooPayments gateway renders its own box, so the error goes to the
+	// selected gateway's box and the others are cleared.
 	function setError( message ) {
-		var errorElement = document.getElementById(
-			'wcpay-core-payment-errors'
+		var boxSelector =
+			'.wcpay-core-payment-errors, #wcpay-core-payment-errors';
+		var boxes = Array.prototype.slice.call(
+			document.querySelectorAll( boxSelector )
 		);
+		var selected = document.querySelector(
+			'input[name="payment_method"]:checked'
+		);
+		var listItem =
+			selected && selected.closest ? selected.closest( 'li' ) : null;
+		var errorElement =
+			( listItem && listItem.querySelector( boxSelector ) ) || boxes[ 0 ];
+
 		if ( ! errorElement ) {
 			return;
 		}
 
+		boxes.forEach( function ( box ) {
+			if ( box !== errorElement ) {
+				box.textContent = '';
+				box.hidden = true;
+			}
+		} );
 		errorElement.textContent = message || '';
 		errorElement.hidden = ! message;
 	}

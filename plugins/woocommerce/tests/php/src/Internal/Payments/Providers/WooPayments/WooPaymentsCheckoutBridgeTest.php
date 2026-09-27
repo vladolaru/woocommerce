@@ -340,6 +340,29 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should print the error box id once when several gateways render their fields.
+	 *
+	 * Source: P4b review M8 — a repeated id made the checkout script write every error into the first box.
+	 */
+	public function test_render_payment_fields_prints_error_box_id_once_across_gateways(): void {
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge( true );
+		$sut             = new WooPaymentsCheckoutBridge();
+		$sut->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		ob_start();
+		$sut->render_payment_fields();
+		$first = (string) ob_get_clean();
+		ob_start();
+		$sut->render_payment_fields();
+		$second = (string) ob_get_clean();
+
+		$this->assertSame( 1, substr_count( $first, 'id="wcpay-core-payment-errors"' ) );
+		$this->assertSame( 0, substr_count( $second, 'id="wcpay-core-payment-errors"' ) );
+		$this->assertStringContainsString( 'class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden', $second );
+	}
+
+	/**
 	 * @testdox Should not relocalize base checkout config after ordinary card fields render.
 	 */
 	public function test_after_checkout_form_does_not_duplicate_rendered_card_config(): void {

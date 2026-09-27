@@ -1645,6 +1645,55 @@ describe( 'WooPayments checkout', () => {
 		).not.toHaveBeenCalledWith( 'submit' );
 	} );
 
+	test( 'shows a classic confirmation error in the selected gateway box only', async () => {
+		// Source: client 11.1.0 client/checkout/utils/show-error-checkout.js:4-55
+		// shows the failure where the shopper sees it; native's inline box
+		// must therefore be the selected gateway's, not the first on the page
+		// (P4b review M8). Placement itself is owner brief O7.
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<ul class="wc_payment_methods payment_methods methods">' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_klarna">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" />' +
+			'<div class="payment_box">' +
+			'<div id="wcpay-core-payment-errors" class="woocommerce-error wcpay-core-payment-errors" role="alert">' +
+			'Stale Klarna error</div>' +
+			'</div>' +
+			'</li>' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div class="payment_box">' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'<div class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>' +
+			'</div>' +
+			'</li>' +
+			'</ul>' +
+			'<button id="place_order" type="button">Place order</button>' +
+			'</form>';
+		stripeMock.handleNextAction.mockResolvedValueOnce( {
+			error: {
+				message: 'Your card was declined.',
+				payment_intent: {
+					id: 'pi_failed_authentication',
+					status: 'requires_payment_method',
+				},
+			},
+		} );
+		window.location.hash =
+			'#wcpay-confirm-pi:123:pi_failed_authentication_secret_abc:nonce';
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		const [ klarnaBox, cardBox ] = document.querySelectorAll(
+			'.wcpay-core-payment-errors'
+		);
+		expect( cardBox.textContent ).toBe( 'Your card was declined.' );
+		expect( cardBox.hidden ).toBe( false );
+		expect( klarnaBox.textContent ).toBe( '' );
+		expect( klarnaBox.hidden ).toBe( true );
+	} );
+
 	test( 'consumes each classic confirmation hash once', async () => {
 		const replaceState = jest.spyOn( window.history, 'replaceState' );
 		stripeMock.handleNextAction.mockResolvedValue( {
