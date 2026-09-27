@@ -28,8 +28,6 @@ class WooPaymentsAdminMenuBadgeService {
 
 	private const AUTHORIZATION_SUMMARY_KEY_TEST_MODE = 'wcpay_test_authorization_summary_cache';
 
-	private const ERRORED_CACHE_RETRY_TTL = MINUTE_IN_SECONDS;
-
 	/**
 	 * WooPayments account service.
 	 *
@@ -201,9 +199,6 @@ class WooPaymentsAdminMenuBadgeService {
 		 * @param array<string,mixed> $cache_contents Badge cache wrapper.
 		 */
 		$ttl = (int) apply_filters( 'wcpay_database_cache_ttl', DAY_IN_SECONDS, $key, $cache_contents );
-		if ( ! empty( $cache_contents['errored'] ) ) {
-			$ttl = min( $ttl, self::ERRORED_CACHE_RETRY_TTL );
-		}
 
 		return ( (int) $cache_contents['fetched'] + $ttl ) < time();
 	}

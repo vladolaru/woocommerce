@@ -98,14 +98,35 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retry errored cold dispute cache after the short failure TTL expires.
+	 * @testdox Should keep an errored badge cache for the full TTL, like the client database cache, so admin pages do not refetch.
 	 */
-	public function test_get_disputes_awaiting_response_count_retries_cold_failure_after_short_ttl(): void {
+	public function test_get_disputes_awaiting_response_count_keeps_cold_failure_for_the_full_ttl(): void {
 		update_option(
 			'wcpay_dispute_status_counts_cache',
 			array(
 				'data'    => null,
-				'fetched' => time() - MINUTE_IN_SECONDS - 1,
+				'fetched' => time() - HOUR_IN_SECONDS,
+				'errored' => true,
+			),
+			false
+		);
+
+		$api_client = $this->create_api_client( array( 'needs_response' => 2 ) );
+		$sut        = $this->create_service( $api_client );
+
+		$this->assertSame( 0, $sut->get_disputes_awaiting_response_count() );
+		$this->assertSame( 0, $api_client->dispute_status_count_calls, 'Client 11.1.0 Database_Cache::get_ttl() keeps badge keys for 24 hours, errored or not.' );
+	}
+
+	/**
+	 * @testdox Should retry an errored badge cache once the TTL expires.
+	 */
+	public function test_get_disputes_awaiting_response_count_retries_cold_failure_after_ttl(): void {
+		update_option(
+			'wcpay_dispute_status_counts_cache',
+			array(
+				'data'    => null,
+				'fetched' => time() - DAY_IN_SECONDS - 1,
 				'errored' => true,
 			),
 			false
