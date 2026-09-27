@@ -52,6 +52,7 @@ const mockRecordEvent = recordEvent as jest.MockedFunction<
 let mockHistoryNavigate: ( ( to: string ) => void ) | null = null;
 
 jest.mock( '@woocommerce/navigation', () => ( {
+	...jest.requireActual( '@woocommerce/navigation' ),
 	getHistory: () => ( {
 		push: mockHistoryPush,
 	} ),
@@ -311,37 +312,33 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 	},
 } ) );
 
-jest.mock(
-	'../money-movement/transaction-search',
-	() => ( {
-		WooPaymentsTransactionSearch: ( {
-			value,
-			onChange,
-		}: {
-			value: string;
-			onChange: ( value: string ) => void;
-		} ) => (
-			<>
-				<input
-					type="search"
-					aria-label="Search transactions"
-					value={ value }
-					readOnly
-				/>
-				<button
-					type="button"
-					onClick={ () => onChange( 'MA05 Searchable' ) }
-				>
-					Mock apply transaction search
-				</button>
-				<button type="button" onClick={ () => onChange( '' ) }>
-					Mock clear transaction search
-				</button>
-			</>
-		),
-	} ),
-	{ virtual: true }
-);
+jest.mock( '../money-movement/transaction-search', () => ( {
+	WooPaymentsTransactionSearch: ( {
+		value,
+		onChange,
+	}: {
+		value: string;
+		onChange: ( value: string ) => void;
+	} ) => (
+		<>
+			<input
+				type="search"
+				aria-label="Search transactions"
+				value={ value }
+				readOnly
+			/>
+			<button
+				type="button"
+				onClick={ () => onChange( 'MA05 Searchable' ) }
+			>
+				Mock apply transaction search
+			</button>
+			<button type="button" onClick={ () => onChange( '' ) }>
+				Mock clear transaction search
+			</button>
+		</>
+	),
+} ) );
 
 // Covered by blocked-transactions.test.tsx; its Search import needs the real navigation module.
 jest.mock( '../money-movement/blocked-transactions', () => ( {
