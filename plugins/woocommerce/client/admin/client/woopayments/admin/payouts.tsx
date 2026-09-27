@@ -27,11 +27,7 @@ import {
 import type { WooPaymentsMoneyMovementDataView } from './money-movement/types';
 import { LiveStatusMessage, StatusMessage } from './money-movement/table';
 import { getErrorMessage } from './money-movement/utils';
-import {
-	getMoneyMovementViewPreferences,
-	mergeMoneyMovementViewPreferences,
-	setMoneyMovementViewPreferences,
-} from './money-movement/view-preferences';
+import { usePersistedHiddenFields } from './money-movement/view-preferences';
 import type {
 	WooPaymentsDeposit,
 	WooPaymentsDepositsQuery,
@@ -47,6 +43,8 @@ import { SpotlightPromotion } from '../promotions/spotlight';
 import './style.scss';
 
 type PayoutsSummary = WooPaymentsDepositsSummary;
+
+const PAYOUT_FIELDS = [ 'date', 'status', 'amount' ];
 type ExportMessage = {
 	text: string;
 	isError?: boolean;
@@ -97,8 +95,9 @@ export const WooPaymentsPayouts = () => {
 	const [ exportMessage, setExportMessage ] =
 		useState< ExportMessage | null >( null );
 	const [ isExporting, setIsExporting ] = useState( false );
-	const [ viewPreferences, setViewPreferences ] = useState( () =>
-		getMoneyMovementViewPreferences( 'payouts' )
+	const { visibleFields, saveFields } = usePersistedHiddenFields(
+		'wc_payments_payouts_hidden_columns',
+		PAYOUT_FIELDS
 	);
 	const location = useLocation();
 	const navigate = useNavigate();
@@ -112,18 +111,14 @@ export const WooPaymentsPayouts = () => {
 			} ),
 		[ location.search ]
 	);
-	const queryView = useMemo(
+	const view = useMemo(
 		() =>
 			moneyMovementQueryToDataViewsView( query, {
-				fields: [ 'date', 'status', 'amount' ],
+				fields: visibleFields,
 				titleField: 'date',
 				showTitle: false,
 			} ),
-		[ query ]
-	);
-	const view = useMemo(
-		() => mergeMoneyMovementViewPreferences( queryView, viewPreferences ),
-		[ queryView, viewPreferences ]
+		[ query, visibleFields ]
 	);
 	const fields = useMemo(
 		() => [
@@ -223,9 +218,7 @@ export const WooPaymentsPayouts = () => {
 	}, [ query ] );
 
 	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
-		setViewPreferences(
-			setMoneyMovementViewPreferences( 'payouts', nextView )
-		);
+		saveFields( nextView.fields );
 		navigate(
 			buildMoneyMovementRoutePath(
 				'/woopayments/payouts',

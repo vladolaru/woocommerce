@@ -23,6 +23,17 @@ import {
 	getWooPaymentsTransactions,
 	getWooPaymentsTransactionsSummary,
 } from '../money-movement/data';
+import {
+	mockUpdateUserPreferences,
+	setMockUserPreferences,
+} from './helpers/user-preferences';
+
+jest.mock( '@woocommerce/data', () => ( {
+	useUserPreferences: () =>
+		jest
+			.requireActual( './helpers/user-preferences' )
+			.useMockUserPreferences(),
+} ) );
 
 jest.mock( '../overview/data', () => ( {
 	getWooPaymentsDeposit: jest.fn(),
@@ -155,7 +166,7 @@ describe( 'WooPayments payout details admin surface', () => {
 			.spyOn( HTMLAnchorElement.prototype, 'click' )
 			.mockImplementation();
 		originalClipboard = navigator.clipboard;
-		window.localStorage.clear();
+		setMockUserPreferences( {} );
 		window.wcSettings = {
 			adminUrl: 'http://example.com/wp-admin',
 		};
@@ -482,6 +493,17 @@ describe( 'WooPayments payout details admin surface', () => {
 			deposit_id: 'po_test',
 			search: 'Ada',
 		} );
+		// The client's payout details reuse the transactions list and its key.
+		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+			wc_payments_transactions_hidden_columns: [ 'type' ],
+		} );
+		expect( mockDataViews ).toHaveBeenLastCalledWith(
+			expect.objectContaining( {
+				view: expect.objectContaining( {
+					fields: [ 'date', 'amount' ],
+				} ),
+			} )
+		);
 	} );
 
 	it( 'copies the bank reference ID to the clipboard and announces the result', async () => {

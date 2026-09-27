@@ -1,99 +1,72 @@
 /**
- * Internal dependencies
+ * External dependencies
  */
-import type { WooPaymentsMoneyMovementDataView } from './types';
+import { useMemo } from 'react';
+import { useUserPreferences } from '@woocommerce/data';
 
-type WooPaymentsMoneyMovementViewPreferences = Pick<
-	WooPaymentsMoneyMovementDataView,
-	'fields' | 'layout' | 'showTitle' | 'titleField'
->;
+/**
+ * The client's user meta keys for hidden list columns, registered in PHP by
+ * WooPaymentsUserPreferenceFields like WC_Payments::add_user_data_fields().
+ */
+export type WooPaymentsHiddenColumnsKey =
+	| 'wc_payments_transactions_hidden_columns'
+	| 'wc_payments_transactions_blocked_hidden_columns'
+	| 'wc_payments_transactions_uncaptured_hidden_columns'
+	| 'wc_payments_payouts_hidden_columns'
+	| 'wc_payments_disputes_hidden_columns'
+	| 'wc_payments_documents_hidden_columns';
 
-const STORAGE_PREFIX = 'woocommerce_woopayments_money_movement_view_';
+const SAME_COLUMN_KEYS: Record< string, string > = {};
 
-const hasStorage = () =>
-	typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+/**
+ * Keeps a list's hidden columns in user meta through core's user preferences
+ * store, like the client's usePersistedColumnVisibility(). The stored value is
+ * the client's list of hidden column keys; `columnKeys` maps native field ids
+ * to those keys where they differ, and keys native does not show are kept.
+ *
+ * @param preferenceKey The client's user meta key for this list.
+ * @param defaultFields The list's fields, visible when nothing is hidden.
+ * @param columnKeys    Native field id to client column key, where they differ.
+ */
+export const usePersistedHiddenFields = (
+	preferenceKey: WooPaymentsHiddenColumnsKey,
+	defaultFields: string[],
+	columnKeys: Record< string, string > = SAME_COLUMN_KEYS
+) => {
+	const { updateUserPreferences, ...preferences } = useUserPreferences();
+	const stored = ( preferences as Record< string, unknown > )[
+		preferenceKey
+	];
+	const hidden = Array.isArray( stored ) ? ( stored as string[] ) : [];
+	const hiddenKey = hidden.join( ',' );
+	const toColumnKey = ( field: string ) => columnKeys[ field ] ?? field;
 
-const getStorageKey = ( viewId: string ) => `${ STORAGE_PREFIX }${ viewId }`;
+	const visibleFields = useMemo(
+		() =>
+			defaultFields.filter(
+				( field ) => ! hidden.includes( columnKeys[ field ] ?? field )
+			),
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- hidden is a new array on every render.
+		[ defaultFields, columnKeys, hiddenKey ]
+	);
 
-const isRecord = ( value: unknown ): value is Record< string, unknown > =>
-	typeof value === 'object' && value !== null && ! Array.isArray( value );
+	// Writes only when the hidden set changes, never on paging, sorting or load.
+	const saveFields = ( fields: string[] = [] ) => {
+		const ownKeys = defaultFields.map( toColumnKey );
+		const nextHidden = [
+			...hidden.filter( ( key ) => ! ownKeys.includes( key ) ),
+			...defaultFields
+				.filter( ( field ) => ! fields.includes( field ) )
+				.map( toColumnKey ),
+		];
 
-const getStringArray = ( value: unknown ) =>
-	Array.isArray( value )
-		? value.filter( ( item ): item is string => typeof item === 'string' )
-		: undefined;
+		if (
+			nextHidden.length !== hidden.length ||
+			nextHidden.some( ( key ) => ! hidden.includes( key ) )
+		) {
+			void updateUserPreferences( { [ preferenceKey ]: nextHidden } );
+		}
+	};
 
-const sanitizePreferences = (
-	value: unknown
-): WooPaymentsMoneyMovementViewPreferences => {
-	if ( ! isRecord( value ) ) {
-		return {};
-	}
-
-	const preferences: WooPaymentsMoneyMovementViewPreferences = {};
-	const fields = getStringArray( value.fields );
-
-	if ( fields && fields.length > 0 ) {
-		preferences.fields = fields;
-	}
-
-	if ( isRecord( value.layout ) ) {
-		preferences.layout = value.layout;
-	}
-
-	if ( typeof value.showTitle === 'boolean' ) {
-		preferences.showTitle = value.showTitle;
-	}
-
-	if ( typeof value.titleField === 'string' && value.titleField ) {
-		preferences.titleField = value.titleField;
-	}
-
-	return preferences;
+	return { visibleFields, saveFields };
 };
-
-export const getMoneyMovementViewPreferences = (
-	viewId: string
-): WooPaymentsMoneyMovementViewPreferences => {
-	if ( ! hasStorage() ) {
-		return {};
-	}
-
-	try {
-		const storedValue = window.localStorage.getItem(
-			getStorageKey( viewId )
-		);
-
-		return storedValue
-			? sanitizePreferences( JSON.parse( storedValue ) )
-			: {};
-	} catch ( error ) {
-		return {};
-	}
-};
-
-export const setMoneyMovementViewPreferences = (
-	viewId: string,
-	view: WooPaymentsMoneyMovementDataView
-): WooPaymentsMoneyMovementViewPreferences => {
-	const preferences = sanitizePreferences( view );
-
-	if ( hasStorage() ) {
-		window.localStorage.setItem(
-			getStorageKey( viewId ),
-			JSON.stringify( preferences )
-		);
-	}
-
-	return preferences;
-};
-
-export const mergeMoneyMovementViewPreferences = (
-	view: WooPaymentsMoneyMovementDataView,
-	preferences: WooPaymentsMoneyMovementViewPreferences
-): WooPaymentsMoneyMovementDataView => ( {
-	...view,
-	...preferences,
-	fields: preferences.fields || view.fields,
-	layout: preferences.layout || view.layout,
-} );

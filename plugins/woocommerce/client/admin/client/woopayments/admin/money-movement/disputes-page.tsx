@@ -39,16 +39,16 @@ import {
 	getTransactionDetailsRoute,
 } from './utils';
 import { LiveStatusMessage, StatusMessage } from './table';
-import {
-	getMoneyMovementViewPreferences,
-	mergeMoneyMovementViewPreferences,
-	setMoneyMovementViewPreferences,
-} from './view-preferences';
+import { usePersistedHiddenFields } from './view-preferences';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 import '../style.scss';
 
 type DisputesSummary = Record< string, unknown >;
+
+const DISPUTE_FIELDS = [ 'date', 'reason', 'status', 'amount', 'action' ];
+// The client names the dispute date column `created`.
+const DISPUTE_COLUMN_KEYS = { date: 'created' };
 type ExportMessage = {
 	text: string;
 	isError?: boolean;
@@ -78,8 +78,10 @@ export const WooPaymentsDisputesPage = () => {
 	const [ exportMessage, setExportMessage ] =
 		useState< ExportMessage | null >( null );
 	const [ isExporting, setIsExporting ] = useState( false );
-	const [ viewPreferences, setViewPreferences ] = useState( () =>
-		getMoneyMovementViewPreferences( 'disputes' )
+	const { visibleFields, saveFields } = usePersistedHiddenFields(
+		'wc_payments_disputes_hidden_columns',
+		DISPUTE_FIELDS,
+		DISPUTE_COLUMN_KEYS
 	);
 	const location = useLocation();
 	const navigate = useNavigate();
@@ -93,18 +95,14 @@ export const WooPaymentsDisputesPage = () => {
 			} ),
 		[ location.search ]
 	);
-	const queryView = useMemo(
+	const view = useMemo(
 		() =>
 			moneyMovementQueryToDataViewsView( query, {
-				fields: [ 'date', 'reason', 'status', 'amount', 'action' ],
+				fields: visibleFields,
 				titleField: 'reason',
 				showTitle: false,
 			} ),
-		[ query ]
-	);
-	const view = useMemo(
-		() => mergeMoneyMovementViewPreferences( queryView, viewPreferences ),
-		[ queryView, viewPreferences ]
+		[ query, visibleFields ]
 	);
 	const fields = useMemo(
 		() => [
@@ -247,9 +245,7 @@ export const WooPaymentsDisputesPage = () => {
 	}, [ query ] );
 
 	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
-		setViewPreferences(
-			setMoneyMovementViewPreferences( 'disputes', nextView )
-		);
+		saveFields( nextView.fields );
 		navigate(
 			buildMoneyMovementRoutePath(
 				'/woopayments/disputes',

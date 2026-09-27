@@ -24,6 +24,7 @@ import {
 	getWooPaymentsTransactionsSummary,
 } from '../money-movement/data';
 import { formatAmount, formatDateTime } from '../money-movement/utils';
+import { setMockUserPreferences } from './helpers/user-preferences';
 
 // Client 11.1.0 references: client/transactions/index.tsx:57-61,93-102 (tab),
 // client/transactions/blocked/index.tsx and blocked/columns.tsx (view),
@@ -75,6 +76,13 @@ jest.mock( '@wordpress/data', () => ( {
 		createErrorNotice: mockCreateErrorNotice,
 		createSuccessNotice: jest.fn(),
 	} ) ),
+} ) );
+
+jest.mock( '@woocommerce/data', () => ( {
+	useUserPreferences: () =>
+		jest
+			.requireActual( './helpers/user-preferences' )
+			.useMockUserPreferences(),
 } ) );
 
 jest.mock( '@wordpress/dataviews/wp', () => ( {
@@ -214,7 +222,7 @@ const getPageViewPaths = () =>
 describe( 'WooPayments Blocked transactions tab', () => {
 	beforeEach( () => {
 		jest.clearAllMocks();
-		window.localStorage.clear();
+		setMockUserPreferences( {} );
 		window.wcSettings = {
 			...window.wcSettings,
 			adminUrl: 'http://example.com/wp-admin/',
@@ -314,6 +322,20 @@ describe( 'WooPayments Blocked transactions tab', () => {
 	// Client 11.1.0 `data/transactions/hooks.ts:375-404`: the summary selector
 	// re-resolves only when `status` or `search` changes; the list re-resolves
 	// on `paged`, `per_page`, `orderby`, `order` and `search` (`:334-373`).
+	it( "hides the columns stored under the client's blocked list key", async () => {
+		setMockUserPreferences( {
+			wc_payments_transactions_blocked_hidden_columns: [ 'customer' ],
+		} );
+		renderAt( '/woopayments/transactions?view=blocked' );
+
+		await screen.findByText( '2 transactions(s)' );
+		expect(
+			screen
+				.getAllByRole( 'columnheader' )
+				.map( ( header ) => header.textContent )
+		).toEqual( [ 'Date / Time', 'Amount', 'Status' ] );
+	} );
+
 	it( 'refetches the summary only when the search changes, like the client', async () => {
 		renderAt( '/woopayments/transactions?view=blocked' );
 		await screen.findByRole( 'link', { name: 'Ada Lovelace' } );

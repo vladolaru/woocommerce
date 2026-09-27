@@ -62,9 +62,8 @@ import {
 } from './utils';
 import { LiveStatusMessage, StatusMessage } from './table';
 import {
-	getMoneyMovementViewPreferences,
-	mergeMoneyMovementViewPreferences,
-	setMoneyMovementViewPreferences,
+	usePersistedHiddenFields,
+	type WooPaymentsHiddenColumnsKey,
 } from './view-preferences';
 import {
 	getSettingsPaymentsProviderAdminPath,
@@ -94,6 +93,31 @@ type WorkingMoneyMovementView = {
 type NoticeDispatch = {
 	createSuccessNotice: ( message: string ) => void;
 	createErrorNotice: ( message: string ) => void;
+};
+
+// Fields, the client's hidden-columns key and its column names per resource.
+const HIDDEN_COLUMNS: Record<
+	MoneyMovementResource,
+	[ WooPaymentsHiddenColumnsKey, string[], Record< string, string > ]
+> = {
+	transactions: [
+		'wc_payments_transactions_hidden_columns',
+		[ 'date', 'type', 'amount', 'fees', 'net', 'source', 'customer' ],
+		{ customer: 'customer_name' },
+	],
+	authorizations: [
+		'wc_payments_transactions_uncaptured_hidden_columns',
+		[
+			'authorized_date',
+			'capture_by',
+			'order',
+			'risk',
+			'amount',
+			'customer',
+			'actions',
+		],
+		{ authorized_date: 'created', risk: 'risk_level', actions: 'action' },
+	],
 };
 
 const TRANSACTION_TYPE_FILTER_ELEMENTS = [
@@ -245,8 +269,12 @@ export const WooPaymentsTransactionsPage = () => {
 	const [ isExporting, setIsExporting ] = useState( false );
 	const [ pendingAuthorizationAction, setPendingAuthorizationAction ] =
 		useState< PendingAuthorizationAction >( null );
-	const [ viewPreferences, setViewPreferences ] = useState( () =>
-		getMoneyMovementViewPreferences( resource )
+	const [ preferenceKey, defaultFields, columnKeys ] =
+		HIDDEN_COLUMNS[ resource ];
+	const { visibleFields, saveFields } = usePersistedHiddenFields(
+		preferenceKey,
+		defaultFields,
+		columnKeys
 	);
 	const [ workingView, setWorkingView ] =
 		useState< WorkingMoneyMovementView >( null );
@@ -271,38 +299,14 @@ export const WooPaymentsTransactionsPage = () => {
 	const queryView = useMemo(
 		() =>
 			moneyMovementQueryToDataViewsView( resourceQuery, {
-				fields: isUncaptured
-					? [
-							'authorized_date',
-							'capture_by',
-							'order',
-							'risk',
-							'amount',
-							'customer',
-							'actions',
-					  ]
-					: [
-							'date',
-							'type',
-							'amount',
-							'fees',
-							'net',
-							'source',
-							'customer',
-					  ],
+				fields: visibleFields,
 				titleField: isUncaptured ? 'order' : 'type',
 				showTitle: false,
 			} ),
-		[ isUncaptured, resourceQuery ]
-	);
-	const canonicalView = useMemo(
-		() => mergeMoneyMovementViewPreferences( queryView, viewPreferences ),
-		[ queryView, viewPreferences ]
+		[ isUncaptured, resourceQuery, visibleFields ]
 	);
 	const view =
-		workingView?.key === canonicalViewKey
-			? workingView.view
-			: canonicalView;
+		workingView?.key === canonicalViewKey ? workingView.view : queryView;
 	const transactionFields = useMemo(
 		() => [
 			{
@@ -443,7 +447,6 @@ export const WooPaymentsTransactionsPage = () => {
 	}, [] );
 
 	useEffect( () => {
-		setViewPreferences( getMoneyMovementViewPreferences( resource ) );
 		setExportMessage( null );
 	}, [ resource ] );
 
@@ -570,9 +573,7 @@ export const WooPaymentsTransactionsPage = () => {
 	}, [ loadUncapturedCount ] );
 
 	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
-		setViewPreferences(
-			setMoneyMovementViewPreferences( resource, nextView )
-		);
+		saveFields( nextView.fields );
 		setWorkingView( {
 			key: canonicalViewKey,
 			view: nextView,

@@ -42,6 +42,10 @@ import {
 	refundWooPaymentsCharge,
 } from '../money-movement/data';
 import { getWooPaymentsAccountSettings } from '../../settings/api';
+import {
+	mockUpdateUserPreferences,
+	setMockUserPreferences,
+} from './helpers/user-preferences';
 
 const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
@@ -60,6 +64,13 @@ jest.mock( '@woocommerce/navigation', () => ( {
 
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
+} ) );
+
+jest.mock( '@woocommerce/data', () => ( {
+	useUserPreferences: () =>
+		jest
+			.requireActual( './helpers/user-preferences' )
+			.useMockUserPreferences(),
 } ) );
 
 jest.mock( '@wordpress/data', () => {
@@ -509,12 +520,17 @@ const getDetailValue = ( container: HTMLElement, label: string ) => {
 
 describe( 'WooPayments money movement pages', () => {
 	let anchorClickSpy: jest.SpyInstance;
+	let storageSpies: jest.SpyInstance[];
 
 	beforeEach( () => {
 		anchorClickSpy = jest
 			.spyOn( HTMLAnchorElement.prototype, 'click' )
 			.mockImplementation();
-		window.localStorage.clear();
+		storageSpies = [
+			jest.spyOn( Storage.prototype, 'getItem' ),
+			jest.spyOn( Storage.prototype, 'setItem' ),
+		];
+		setMockUserPreferences( {} );
 		window.wcSettings = {
 			adminUrl: 'http://example.com/wp-admin',
 			countries: {
@@ -1047,6 +1063,11 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	afterEach( () => {
+		// Hidden columns live in user meta only, never in browser storage.
+		storageSpies.forEach( ( spy ) => {
+			expect( spy ).not.toHaveBeenCalled();
+			spy.mockRestore();
+		} );
 		mockHistoryNavigate = null;
 		anchorClickSpy.mockRestore();
 		jest.useRealTimers();
@@ -1209,12 +1230,13 @@ describe( 'WooPayments money movement pages', () => {
 		);
 
 		firstRender.unmount();
-		window.localStorage.setItem(
-			'woocommerce_woopayments_money_movement_view_transactions',
-			JSON.stringify( {
-				fields: [ 'date', 'type', 'customer', 'amount' ],
-			} )
-		);
+		setMockUserPreferences( {
+			wc_payments_transactions_hidden_columns: [
+				'fees',
+				'net',
+				'source',
+			],
+		} );
 
 		render(
 			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
@@ -1225,27 +1247,16 @@ describe( 'WooPayments money movement pages', () => {
 		await screen.findByText( 'Transactions loaded.' );
 		expect(
 			screen.getByTestId( 'money-movement-dataviews' )
-		).toHaveAttribute( 'data-visible-fields', 'date,type,customer,amount' );
+		).toHaveAttribute( 'data-visible-fields', 'date,type,amount,customer' );
 	} );
 
 	it( 'renders the settled field schema from normalized ordinary and exceptional rows', async () => {
 		const toLocaleStringSpy = jest
 			.spyOn( Date.prototype, 'toLocaleString' )
 			.mockReturnValue( 'Jul 20, 2026, 10:30 AM' );
-		window.localStorage.setItem(
-			'woocommerce_woopayments_money_movement_view_transactions',
-			JSON.stringify( {
-				fields: [
-					'date',
-					'type',
-					'amount',
-					'fees',
-					'net',
-					'source',
-					'customer',
-				],
-			} )
-		);
+		setMockUserPreferences( {
+			wc_payments_transactions_hidden_columns: [],
+		} );
 
 		mockGetTransactions.mockResolvedValue( {
 			data: [
@@ -1523,14 +1534,22 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it( 'drops transaction filter drafts when routing to uncaptured state without crossing preferences or query contracts', async () => {
-		window.localStorage.setItem(
-			'woocommerce_woopayments_money_movement_view_transactions',
-			JSON.stringify( { fields: [ 'date', 'type' ] } )
-		);
-		window.localStorage.setItem(
-			'woocommerce_woopayments_money_movement_view_authorizations',
-			JSON.stringify( { fields: [ 'order', 'amount' ] } )
-		);
+		setMockUserPreferences( {
+			wc_payments_transactions_hidden_columns: [
+				'amount',
+				'fees',
+				'net',
+				'source',
+				'customer_name',
+			],
+			wc_payments_transactions_uncaptured_hidden_columns: [
+				'created',
+				'capture_by',
+				'risk_level',
+				'customer',
+				'action',
+			],
+		} );
 		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
 		mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
 		mockGetAuthorizations.mockResolvedValue( { data: [], total_count: 0 } );
@@ -1565,22 +1584,7 @@ describe( 'WooPayments money movement pages', () => {
 		expect( mockGetAuthorizations ).toHaveBeenLastCalledWith(
 			expect.not.objectContaining( { type_is: expect.anything() } )
 		);
-		expect(
-			JSON.parse(
-				window.localStorage.getItem(
-					'woocommerce_woopayments_money_movement_view_transactions'
-				) || '{}'
-			)
-		).toEqual( expect.objectContaining( { fields: [ 'date', 'type' ] } ) );
-		expect(
-			JSON.parse(
-				window.localStorage.getItem(
-					'woocommerce_woopayments_money_movement_view_authorizations'
-				) || '{}'
-			)
-		).toEqual(
-			expect.objectContaining( { fields: [ 'order', 'amount' ] } )
-		);
+		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
 	} );
 
 	it( 'builds transaction list links with payment ids and transaction context', async () => {
@@ -1864,11 +1868,19 @@ describe( 'WooPayments money movement pages', () => {
 			);
 		} );
 
+		expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
+		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+			wc_payments_transactions_hidden_columns: [
+				'date',
+				'fees',
+				'net',
+				'source',
+				'customer_name',
+			],
+		} );
 		expect(
-			window.localStorage.getItem(
-				'woocommerce_woopayments_money_movement_view_transactions'
-			)
-		).toContain( '"fields":["type","amount"]' );
+			screen.getByTestId( 'money-movement-dataviews' )
+		).toHaveAttribute( 'data-visible-fields', 'type,amount' );
 		expect( mockGetTransactions ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
 				search: 'Ada',
@@ -2075,16 +2087,17 @@ describe( 'WooPayments money movement pages', () => {
 			);
 		} );
 
-		expect(
-			window.localStorage.getItem(
-				'woocommerce_woopayments_money_movement_view_authorizations'
-			)
-		).toContain( '"fields":["type","amount"]' );
-		expect(
-			window.localStorage.getItem(
-				'woocommerce_woopayments_money_movement_view_transactions'
-			)
-		).toBeNull();
+		expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
+		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+			wc_payments_transactions_uncaptured_hidden_columns: [
+				'created',
+				'capture_by',
+				'order',
+				'risk_level',
+				'customer',
+				'action',
+			],
+		} );
 	} );
 
 	it( 'keeps authorization capture pending and dispatches a success notice', async () => {
@@ -2573,6 +2586,28 @@ describe( 'WooPayments money movement pages', () => {
 			screen.getAllByText( 'Transaction unauthorized' )
 		).toHaveLength( 2 );
 		expect( screen.getByText( 'Disputes loaded.' ) ).toBeInTheDocument();
+	} );
+
+	it( "restores hidden dispute columns from the client's user meta key", async () => {
+		setMockUserPreferences( {
+			wc_payments_disputes_hidden_columns: [ 'created', 'customerEmail' ],
+		} );
+		mockGetDisputes.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetDisputesSummary.mockResolvedValue( { total_count: 0 } );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/disputes' ] }>
+				<WooPaymentsDisputesPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByTestId( 'money-movement-dataviews' )
+		).toHaveAttribute(
+			'data-visible-fields',
+			'reason,status,amount,action'
+		);
+		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
 	} );
 
 	it( 'uses URL query state for disputes and exposes reference-style response actions', async () => {

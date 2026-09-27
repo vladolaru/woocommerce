@@ -23,6 +23,17 @@ import {
 	saveWooPaymentsVatDetails,
 	validateWooPaymentsVatNumber,
 } from '../documents/data';
+import {
+	mockUpdateUserPreferences,
+	setMockUserPreferences,
+} from './helpers/user-preferences';
+
+jest.mock( '@woocommerce/data', () => ( {
+	useUserPreferences: () =>
+		jest
+			.requireActual( './helpers/user-preferences' )
+			.useMockUserPreferences(),
+} ) );
 
 jest.mock( '../documents/data', () => ( {
 	buildWooPaymentsDocumentUrl: ( documentId: string ) =>
@@ -64,8 +75,23 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		searchLabel?: string;
 		view?: Record< string, unknown >;
 	} ) => (
-		<div data-testid="documents-dataviews" aria-busy={ isLoading }>
+		<div
+			data-testid="documents-dataviews"
+			data-visible-fields={ ( view.fields as string[] )?.join( ',' ) }
+			aria-busy={ isLoading }
+		>
 			{ header }
+			<button
+				type="button"
+				onClick={ () =>
+					onChangeView?.( {
+						...view,
+						fields: [ 'date', 'type', 'actions' ],
+					} )
+				}
+			>
+				Mock hide Description
+			</button>
 			{ searchLabel && (
 				<input
 					type="search"
@@ -158,6 +184,7 @@ describe( 'WooPaymentsDocumentsPage', () => {
 
 	beforeEach( () => {
 		openSpy = jest.spyOn( window, 'open' ).mockImplementation();
+		setMockUserPreferences( {} );
 		window.wcSettings = {
 			adminUrl: 'http://example.com/wp-admin',
 		};
@@ -227,6 +254,33 @@ describe( 'WooPaymentsDocumentsPage', () => {
 				sort: 'date',
 				direction: 'desc',
 			} )
+		);
+	} );
+
+	it( "keeps hidden document columns in the client's user meta key", async () => {
+		setMockUserPreferences( {
+			wc_payments_documents_hidden_columns: [ 'download' ],
+		} );
+		renderDocumentsPage();
+
+		await screen.findByText( '1 document' );
+		expect( screen.getByTestId( 'documents-dataviews' ) ).toHaveAttribute(
+			'data-visible-fields',
+			'date,type,description'
+		);
+		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Mock hide Description' } )
+		);
+
+		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+			wc_payments_documents_hidden_columns: [ 'description' ],
+		} );
+		await waitFor( () =>
+			expect(
+				screen.getByTestId( 'documents-dataviews' )
+			).toHaveAttribute( 'data-visible-fields', 'date,type,actions' )
 		);
 	} );
 

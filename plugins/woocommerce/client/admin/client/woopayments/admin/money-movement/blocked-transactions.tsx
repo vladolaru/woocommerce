@@ -42,11 +42,7 @@ import {
 	formatDateTime,
 	getTransactionDetailsRoute,
 } from './utils';
-import {
-	getMoneyMovementViewPreferences,
-	mergeMoneyMovementViewPreferences,
-	setMoneyMovementViewPreferences,
-} from './view-preferences';
+import { usePersistedHiddenFields } from './view-preferences';
 import {
 	getSettingsPaymentsProviderAdminPath,
 	getSettingsPaymentsProviderRouteUrl,
@@ -70,7 +66,6 @@ type FraudOutcomesSummary = {
 };
 type SearchValue = { key: string; label: string };
 
-const VIEW_PREFERENCES_ID = 'fraud_outcomes_block';
 // Client 11.1.0 TableCard query names for the native list params.
 const CLIENT_QUERY_KEYS: Record< string, string > = {
 	pagesize: 'per_page',
@@ -86,6 +81,7 @@ const COLUMNS = [
 	{ key: 'customer', label: __( 'Customer', 'woocommerce' ), sort: false },
 	{ key: 'status', label: __( 'Status', 'woocommerce' ), sort: false },
 ];
+const COLUMN_KEYS = COLUMNS.map( ( { key } ) => key );
 
 // Client 11.1.0 `transactions/blocked/columns.tsx:62-101`: each cell's CSV value.
 const getCsvValue = ( item: FraudOutcomeTransaction, key: string ) =>
@@ -170,16 +166,14 @@ export const WooPaymentsBlockedTransactions = () => {
 	);
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ isDownloading, setIsDownloading ] = useState( false );
-	const [ preferences, setPreferences ] = useState( () =>
-		getMoneyMovementViewPreferences( VIEW_PREFERENCES_ID )
+	const { visibleFields, saveFields } = usePersistedHiddenFields(
+		'wc_payments_transactions_blocked_hidden_columns',
+		COLUMN_KEYS
 	);
 	const title = __( 'Blocked transactions', 'woocommerce' );
-	const view = mergeMoneyMovementViewPreferences(
-		moneyMovementQueryToDataViewsView(
-			{ sort: 'created', direction: 'desc', ...query },
-			{ fields: COLUMNS.map( ( { key } ) => key ), titleField: 'created' }
-		),
-		preferences
+	const view = moneyMovementQueryToDataViewsView(
+		{ sort: 'created', direction: 'desc', ...query },
+		{ fields: visibleFields, titleField: 'created' }
 	);
 	const columnsToDisplay = COLUMNS.filter(
 		( { key } ) => view.fields?.includes( key )
@@ -267,9 +261,7 @@ export const WooPaymentsBlockedTransactions = () => {
 		);
 	};
 	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
-		setPreferences(
-			setMoneyMovementViewPreferences( VIEW_PREFERENCES_ID, nextView )
-		);
+		saveFields( nextView.fields );
 		pushQuery( {
 			...dataViewsViewToMoneyMovementQuery( nextView, query ),
 			search: query.search,

@@ -28,6 +28,7 @@ import type {
 	WooPaymentsTransaction,
 } from './money-movement/types';
 import { WooPaymentsMoneyMovementDataViews } from './money-movement/dataviews';
+import { usePersistedHiddenFields } from './money-movement/view-preferences';
 import {
 	dataViewsViewToMoneyMovementQuery,
 	moneyMovementQueryToDataViewsView,
@@ -55,9 +56,11 @@ const DEFAULT_PAYOUT_TRANSACTIONS_QUERY = {
 	direction: 'desc',
 } as const satisfies WooPaymentsMoneyMovementQuery;
 
+const PAYOUT_TRANSACTION_FIELDS = [ 'date', 'type', 'amount' ];
+
 const getDefaultPayoutTransactionsView = () =>
 	moneyMovementQueryToDataViewsView( DEFAULT_PAYOUT_TRANSACTIONS_QUERY, {
-		fields: [ 'date', 'type', 'amount' ],
+		fields: PAYOUT_TRANSACTION_FIELDS,
 		titleField: 'type',
 		showTitle: false,
 	} );
@@ -137,6 +140,11 @@ export const WooPaymentsPayoutDetailsPage = () => {
 		useState< WooPaymentsMoneyMovementDataView >(
 			getDefaultPayoutTransactionsView
 		);
+	// The client's payout details list is its transactions list, with its key.
+	const { visibleFields, saveFields } = usePersistedHiddenFields(
+		'wc_payments_transactions_hidden_columns',
+		PAYOUT_TRANSACTION_FIELDS
+	);
 	const location = useLocation();
 	const payoutId = new URLSearchParams( location.search ).get( 'id' ) || '';
 	const transactionsQuery = useMemo(
@@ -456,8 +464,16 @@ export const WooPaymentsPayoutDetailsPage = () => {
 								<WooPaymentsMoneyMovementDataViews
 									fields={ payoutTransactionFields }
 									rows={ transactions }
-									view={ transactionsView }
-									onChangeView={ setTransactionsView }
+									view={ {
+										...transactionsView,
+										fields: visibleFields,
+									} }
+									onChangeView={ (
+										nextView: WooPaymentsMoneyMovementDataView
+									) => {
+										saveFields( nextView.fields );
+										setTransactionsView( nextView );
+									} }
 									total={
 										transactionCount ?? transactions.length
 									}

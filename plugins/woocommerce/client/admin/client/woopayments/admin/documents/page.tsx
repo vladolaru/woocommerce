@@ -39,6 +39,7 @@ import type {
 } from './types';
 import { WooPaymentsVatModal } from './vat-modal';
 import { formatDate } from '../money-movement/utils';
+import { usePersistedHiddenFields } from '../money-movement/view-preferences';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 
 type DocumentsAccountState = {
@@ -47,6 +48,10 @@ type DocumentsAccountState = {
 	country: string;
 	isTestMode: boolean;
 };
+
+const DOCUMENT_FIELDS = [ 'date', 'type', 'description', 'actions' ];
+// The client names the download column `download`.
+const DOCUMENT_COLUMN_KEYS = { actions: 'download' };
 
 type PendingDownload = {
 	document: WooPaymentsDocument;
@@ -176,9 +181,17 @@ export const WooPaymentsDocumentsPage = () => {
 	const [ pendingDownload, setPendingDownload ] =
 		useState< PendingDownload | null >( null );
 	const directDownloadAttempted = useRef( false );
+	const { visibleFields, saveFields } = usePersistedHiddenFields(
+		'wc_payments_documents_hidden_columns',
+		DOCUMENT_FIELDS,
+		DOCUMENT_COLUMN_KEYS
+	);
 	const view = useMemo(
-		() => documentsQueryToDataViewsView( query ),
-		[ query ]
+		() => ( {
+			...documentsQueryToDataViewsView( query ),
+			fields: visibleFields,
+		} ),
+		[ query, visibleFields ]
 	);
 
 	const openDocument = useCallback(
@@ -350,6 +363,7 @@ export const WooPaymentsDocumentsPage = () => {
 	);
 
 	const handleChangeView = ( nextView: WooPaymentsDocumentsDataView ) => {
+		saveFields( nextView.fields );
 		navigate(
 			buildDocumentsRoutePath(
 				'/woopayments/documents',

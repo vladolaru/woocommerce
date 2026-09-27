@@ -1,7 +1,8 @@
 /**
  * External dependencies
  */
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -14,6 +15,10 @@ import {
 	getWooPaymentsDepositsSummary,
 } from '../overview/data';
 import type { WooPaymentsDeposit } from '../overview/types';
+import {
+	mockUpdateUserPreferences,
+	setMockUserPreferences,
+} from './helpers/user-preferences';
 
 jest.mock( '../overview/data', () => ( {
 	getWooPaymentsDeposits: jest.fn(),
@@ -24,18 +29,37 @@ jest.mock( '../../promotions/spotlight', () => ( {
 	SpotlightPromotion: () => null,
 } ) );
 
+jest.mock( '@woocommerce/data', () => ( {
+	useUserPreferences: () =>
+		jest
+			.requireActual( './helpers/user-preferences' )
+			.useMockUserPreferences(),
+} ) );
+
 jest.mock( '@wordpress/dataviews/wp', () => ( {
 	DataViews: ( {
 		data = [],
 		fields = [],
+		view,
+		onChangeView,
 	}: {
 		data?: WooPaymentsDeposit[];
 		fields?: Array< {
 			id: string;
 			render?: ( props: { item: WooPaymentsDeposit } ) => ReactNode;
 		} >;
+		view: { fields?: string[] };
+		onChangeView: ( view: { fields?: string[] } ) => void;
 	} ) => (
-		<div role="table">
+		<div role="table" data-visible-fields={ view.fields?.join( ',' ) }>
+			<button
+				type="button"
+				onClick={ () =>
+					onChangeView( { ...view, fields: [ 'date' ] } )
+				}
+			>
+				Mock show only Date
+			</button>
 			{ data.map( ( item ) => (
 				<div role="row" key={ item.id }>
 					{ fields.map( ( field ) => (
@@ -61,7 +85,7 @@ describe( 'WooPaymentsPayouts', () => {
 	beforeEach( () => {
 		mockGetDeposits.mockReset();
 		mockGetDepositsSummary.mockReset();
-		window.localStorage.clear();
+		setMockUserPreferences( {} );
 		Object.defineProperty( window, 'wcSettings', {
 			configurable: true,
 			value: { adminUrl: 'https://example.com/wp-admin/' },
@@ -116,6 +140,50 @@ describe( 'WooPaymentsPayouts', () => {
 		expect( mockGetDepositsSummary ).toHaveBeenCalledWith(
 			expect.objectContaining( { status_is: 'paid' } )
 		);
+	} );
+
+	it( "keeps hidden payout columns in the client's user meta key", async () => {
+		const getItemSpy = jest.spyOn( Storage.prototype, 'getItem' );
+		const setItemSpy = jest.spyOn( Storage.prototype, 'setItem' );
+		setMockUserPreferences( {
+			wc_payments_payouts_hidden_columns: [ 'status', 'bankAccount' ],
+		} );
+		mockGetDeposits.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetDepositsSummary.mockResolvedValue( { count: 0 } );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/payouts' ] }>
+				<WooPaymentsPayouts />
+			</MemoryRouter>
+		);
+
+		expect( await screen.findByRole( 'table' ) ).toHaveAttribute(
+			'data-visible-fields',
+			'date,amount'
+		);
+		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Mock show only Date' } )
+			);
+		} );
+
+		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+			wc_payments_payouts_hidden_columns: [
+				'bankAccount',
+				'status',
+				'amount',
+			],
+		} );
+		expect( screen.getByRole( 'table' ) ).toHaveAttribute(
+			'data-visible-fields',
+			'date'
+		);
+		expect( getItemSpy ).not.toHaveBeenCalled();
+		expect( setItemSpy ).not.toHaveBeenCalled();
+		getItemSpy.mockRestore();
+		setItemSpy.mockRestore();
 	} );
 
 	it( 'renders only the pending payout returned for a pending-status query', async () => {
