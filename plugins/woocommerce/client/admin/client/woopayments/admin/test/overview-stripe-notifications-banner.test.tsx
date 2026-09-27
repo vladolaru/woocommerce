@@ -21,6 +21,7 @@ import {
 const mockCreateSuccessNotice = jest.fn();
 const mockConnectInstance = { id: 'connect-instance' };
 let mockBannerProps: Record< string, jest.Mock | unknown > | null = null;
+let mockBannerError: Error | null = null;
 
 jest.mock( '@stripe/connect-js', () => ( {
 	loadConnectAndInitialize: jest.fn( () => mockConnectInstance ),
@@ -37,17 +38,26 @@ jest.mock( '@stripe/react-connect-js', () => ( {
 		connectInstance === mockConnectInstance ? <>{ children }</> : null,
 	ConnectNotificationBanner: ( props: Record< string, unknown > ) => {
 		mockBannerProps = props;
+		if ( mockBannerError ) {
+			throw mockBannerError;
+		}
 		return <div data-testid="stripe-notification-banner" />;
 	},
 } ) );
 
-jest.mock( '@wordpress/data', () => ( {
-	...jest.requireActual( '@wordpress/data' ),
-	dispatch: jest.fn( () => ( {
-		createSuccessNotice: mockCreateSuccessNotice,
-	} ) ),
-	useSelect: jest.fn(),
-} ) );
+jest.mock( '@wordpress/data', () => {
+	const actual = jest.requireActual( '@wordpress/data' );
+	return {
+		...actual,
+		// @woocommerce/components dispatches to other stores while it loads.
+		dispatch: jest.fn( ( storeName ) =>
+			storeName === 'core/notices'
+				? { createSuccessNotice: mockCreateSuccessNotice }
+				: actual.dispatch( storeName )
+		),
+		useSelect: jest.fn(),
+	};
+} );
 
 jest.mock( '~/woopayments/settings/account-settings', () => ( {
 	WooPaymentsAccountSettings: () => null,
@@ -139,6 +149,7 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 	beforeEach( () => {
 		jest.clearAllMocks();
 		mockBannerProps = null;
+		mockBannerError = null;
 		( useSelect as jest.Mock ).mockReturnValue( {
 			isError: false,
 			isLoading: false,
@@ -277,5 +288,36 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 		expect(
 			screen.queryByTestId( 'stripe-notification-banner' )
 		).toBeNull();
+	} );
+
+	describe( 'when the banner fails', () => {
+		let consoleErrorSpy: jest.SpyInstance;
+
+		beforeEach( () => {
+			// React logs caught render errors; keep the output clean.
+			consoleErrorSpy = jest
+				.spyOn( console, 'error' )
+				.mockImplementation( () => {} );
+		} );
+
+		afterEach( () => {
+			consoleErrorSpy.mockRestore();
+		} );
+
+		it( 'keeps the Overview and shows the update-details task when the banner throws', async () => {
+			mockBannerError = new Error( 'Stripe wrapper failed' );
+
+			render( <WooPaymentsOverviewPage /> );
+
+			expect(
+				await screen.findByText( FINISH_SETUP_TASK )
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'heading', { level: 1, name: 'Overview' } )
+			).toBeInTheDocument();
+			expect(
+				document.querySelector( '.stripe-notifications-banner-loader' )
+			).toBeNull();
+		} );
 	} );
 } );

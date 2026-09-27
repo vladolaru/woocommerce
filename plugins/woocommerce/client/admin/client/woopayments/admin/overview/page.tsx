@@ -13,6 +13,7 @@ import apiFetch from '@wordpress/api-fetch';
 import { dispatch } from '@wordpress/data';
 import { Card, ExternalLink, Notice } from '@wordpress/components';
 import { recordEvent } from '@woocommerce/tracks';
+import { __experimentalErrorBoundary as ErrorBoundary } from '@woocommerce/components';
 import type { LoadError } from '@stripe/connect-js';
 
 /**
@@ -112,6 +113,7 @@ export const WooPaymentsOverviewPage = () => {
 	const [ bannerLoadError, setBannerLoadError ] =
 		useState< LoadError | null >( null );
 	const [ isBannerShown, setBannerShown ] = useState( false );
+	const [ hasBannerFailed, setBannerFailed ] = useState( false );
 	const [ isBannerLoading, setBannerLoading ] = useState( true );
 	const [ bannerCountMemo, setBannerCountMemo ] = useState( 0 );
 
@@ -320,7 +322,8 @@ export const WooPaymentsOverviewPage = () => {
 		? buildOverviewTasks( {
 				shell,
 				disputes,
-				showUpdateDetailsTask: ! showStripeBanner || !! bannerLoadError,
+				showUpdateDetailsTask:
+					! showStripeBanner || !! bannerLoadError || hasBannerFailed,
 				onOpenUpdateBusinessDetails: setUpdateBusinessDetailsShell,
 				// Client 11.1.0 `overview/task-list/tasks/go-live-task.tsx:12` opens the modal directly.
 				onActivatePayments: () => setGoLiveModalVisible( true ),
@@ -382,17 +385,25 @@ export const WooPaymentsOverviewPage = () => {
 						className="stripe-notifications-banner-wrapper"
 						style={ { display: isBannerShown ? 'block' : 'none' } }
 					>
-						<Suspense fallback={ null }>
-							<StripeNotificationsBanner
-								onLoadError={ ( loadError ) => {
-									setBannerLoadError( loadError );
-									setBannerLoading( false );
-								} }
-								onNotificationsChange={
-									handleNotificationsChange
-								}
-							/>
-						</Suspense>
+						{ /* Client 11.1.0 `overview/index.js:326`; also catches a failed chunk load. */ }
+						<ErrorBoundary
+							onError={ () => {
+								setBannerFailed( true );
+								setBannerLoading( false );
+							} }
+						>
+							<Suspense fallback={ null }>
+								<StripeNotificationsBanner
+									onLoadError={ ( loadError ) => {
+										setBannerLoadError( loadError );
+										setBannerLoading( false );
+									} }
+									onNotificationsChange={
+										handleNotificationsChange
+									}
+								/>
+							</Suspense>
+						</ErrorBoundary>
 					</div>
 				</>
 			) }
