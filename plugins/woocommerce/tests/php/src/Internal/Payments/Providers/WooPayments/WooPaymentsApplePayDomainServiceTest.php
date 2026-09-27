@@ -339,26 +339,98 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should show the Apple Pay domain notice only in the WooPayments settings section, not on every admin page.
+	 * @testdox Should show the Apple Pay domain notice on the WooPayments settings route merchants open: $path.
+	 *
+	 * @dataProvider provide_woopayments_settings_routes
+	 *
+	 * @param string $path The `path` query arg of the settings URL.
 	 */
-	public function test_error_notice_renders_only_in_the_woopayments_settings_section(): void {
-		$this->service = $this->create_service( true, true );
-		$this->set_gateway_settings(
+	public function test_error_notice_renders_on_the_woopayments_settings_route( string $path ): void {
+		$this->arrange_failed_domain_verification();
+
+		$output = $this->render_payments_settings_page(
 			array(
-				'enabled'                           => 'yes',
-				'apple_pay_domain_set'              => 'no',
-				'express_checkout_checkout_methods' => array( 'payment_request' ),
+				'page' => 'wc-settings',
+				'tab'  => 'checkout',
+				'path' => $path,
+				'from' => 'PAYMENTS_SETTINGS',
 			)
 		);
-		update_option( self::ERROR_OPTION, 'Test error message' );
-		$this->service->register();
 
-		ob_start();
-		do_action( 'woocommerce_woocommerce_payments_admin_notices' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		$settings_section = (string) ob_get_clean();
+		$this->assertStringContainsString( 'Test error message', $output );
+		$this->assertFalse( get_option( self::ERROR_OPTION ), 'The detailed error is shown once, as in the client.' );
+	}
 
-		$this->assertFalse( has_action( 'admin_notices', array( $this->service, 'display_error_notice' ) ), 'Every admin page would read the error option and show the notice.' );
-		$this->assertStringContainsString( 'Test error message', $settings_section );
+	/**
+	 * Settings routes where client 11.1.0 fired its WooPayments settings notices.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provide_woopayments_settings_routes(): array {
+		return array(
+			'settings'                   => array( '/woopayments/settings' ),
+			'express checkout sub-route' => array( '/woopayments/settings/express-checkout/payment_request' ),
+		);
+	}
+
+	/**
+	 * @testdox Should not show the Apple Pay domain notice outside the WooPayments settings route: $label.
+	 *
+	 * @dataProvider provide_other_admin_screens
+	 *
+	 * @param string              $label Screen label.
+	 * @param array<string,mixed> $query The screen's query args.
+	 */
+	public function test_error_notice_does_not_render_on_other_admin_screens( string $label, array $query ): void {
+		unset( $label );
+		$this->arrange_failed_domain_verification();
+
+		$previous_screen = $GLOBALS['current_screen'] ?? null;
+		set_current_screen( 'woocommerce_page_wc-settings' );
+		try {
+			$output = $this->render_payments_settings_page( $query );
+			ob_start();
+			do_action( 'admin_notices' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+			$output .= (string) ob_get_clean();
+		} finally {
+			$GLOBALS['current_screen'] = $previous_screen; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		}
+
+		$this->assertStringNotContainsString( 'apple-pay-message', $output );
+		$this->assertSame( 'Test error message', get_option( self::ERROR_OPTION ), 'The error stays stored until the settings route shows it.' );
+	}
+
+	/**
+	 * Admin screens that are not the WooPayments settings route.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>}>
+	 */
+	public function provide_other_admin_screens(): array {
+		return array(
+			'payments list'    => array(
+				'payments list',
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+				),
+			),
+			'fraud protection' => array(
+				'fraud protection',
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/settings/fraud-protection',
+				),
+			),
+			'overview'         => array(
+				'overview',
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/overview',
+				),
+			),
+		);
 	}
 
 	/**
@@ -440,5 +512,54 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	private function set_gateway_settings( array $settings ): void {
 		update_option( self::SETTINGS_OPTION, $settings );
 		update_option( self::APPLE_PAY_SETTINGS_OPTION, array( 'enabled' => 'yes' ) );
+	}
+
+	/**
+	 * Register a live-account service with a stored domain verification error.
+	 */
+	private function arrange_failed_domain_verification(): void {
+		$this->service = $this->create_service( true, true );
+		$this->set_gateway_settings(
+			array(
+				'enabled'                           => 'yes',
+				'apple_pay_domain_set'              => 'no',
+				'express_checkout_checkout_methods' => array( 'payment_request' ),
+			)
+		);
+		update_option( self::ERROR_OPTION, 'Test error message' );
+		$this->service->register();
+	}
+
+	/**
+	 * Render the Settings > Payments page for a request with the given query args.
+	 *
+	 * @param array<string,mixed> $query Request query args.
+	 * @return string
+	 */
+	private function render_payments_settings_page( array $query ): string {
+		global $current_section;
+
+		require_once WC_ABSPATH . 'includes/admin/settings/class-wc-settings-page.php';
+		require_once WC_ABSPATH . 'includes/admin/settings/class-wc-settings-payment-gateways.php';
+
+		$previous_get     = $_GET; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$previous_section = $current_section;
+		$_GET             = $query; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$current_section  = isset( $query['section'] ) ? (string) $query['section'] : '';
+
+		$buffer_level = ob_get_level();
+		try {
+			$page = new \WC_Settings_Payment_Gateways();
+			ob_start();
+			$page->output();
+
+			return (string) ob_get_clean();
+		} finally {
+			while ( ob_get_level() > $buffer_level ) {
+				ob_end_clean();
+			}
+			$_GET            = $previous_get;
+			$current_section = $previous_section;
+		}
 	}
 }

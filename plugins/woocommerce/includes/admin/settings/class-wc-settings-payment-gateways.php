@@ -294,7 +294,7 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 	private function render_react_section( string $section ) {
 		global $hide_save_button;
 		$hide_save_button = true;
-		if ( self::WOOPAYMENTS_SECTION_NAME === $section ) {
+		if ( self::WOOPAYMENTS_SECTION_NAME === $section || ( self::MAIN_SECTION_NAME === $section && $this->is_woopayments_settings_route() ) ) {
 			/**
 			 * Fires WooPayments notices inside its React settings section.
 			 *
@@ -303,6 +303,18 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 			do_action( 'woocommerce_woocommerce_payments_admin_notices' );
 		}
 		echo '<div id="experimental_wc_settings_payments_' . esc_attr( $section ) . '"></div>';
+	}
+
+	/**
+	 * Tell whether the request targets the WooPayments settings route or one of its express checkout sub-routes.
+	 *
+	 * @return bool Whether the request targets the WooPayments settings route.
+	 */
+	private function is_woopayments_settings_route(): bool {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only routing check.
+		$path = isset( $_GET['path'] ) && is_string( $_GET['path'] ) ? sanitize_text_field( wp_unslash( $_GET['path'] ) ) : '';
+
+		return '/woopayments/settings' === $path || str_starts_with( $path, '/woopayments/settings/express-checkout/' );
 	}
 
 	/**
