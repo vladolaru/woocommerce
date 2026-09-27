@@ -530,6 +530,11 @@ jobs:
       - name: 'Run the provider helper unit tests'
         run: pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts
 
+      - name: 'Validate WooPayments e2e contracts and routing'
+        run: |
+          cd plugins/woocommerce
+          node tests/e2e/bin/validate-woopayments-client-contract-map.mjs && node --test tests/e2e/bin/validate-woopayments-client-contract-map.test.mjs && node tests/e2e/bin/validate-woopayments-project-routing.mjs && node --test tests/e2e/bin/validate-woopayments-project-routing.test.mjs
+
       - name: 'Run secretless readonly project'
         env:
           E2E_WOOPAYMENTS_DIAGNOSTICS_DIR: '${{ runner.temp }}/woopayments-native-diagnostics'
