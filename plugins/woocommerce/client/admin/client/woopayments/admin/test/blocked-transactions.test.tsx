@@ -470,6 +470,10 @@ describe( 'WooPayments Blocked transactions tab', () => {
 			selected: Array< { key: string; label: string } >;
 			autocompleter: {
 				options: ( term: string ) => Promise< unknown[] >;
+				getOptionCompletion: ( option: {
+					key: string;
+					label: string;
+				} ) => unknown;
 			};
 		};
 		expect( searchProps ).toMatchObject( {
@@ -495,6 +499,13 @@ describe( 'WooPayments Blocked transactions tab', () => {
 			'block',
 			'ada'
 		);
+		// Client 11.1.0 `autocompleter.tsx:80-82`: completes to the label, not the key.
+		expect(
+			searchProps.autocompleter.getOptionCompletion( {
+				key: 'customer-1520',
+				label: 'Ada Lovelace',
+			} )
+		).toEqual( { key: 'Ada Lovelace', label: 'Ada Lovelace' } );
 
 		await userEvent.click(
 			screen.getByRole( 'button', {
@@ -553,6 +564,32 @@ describe( 'WooPayments Blocked transactions tab', () => {
 			'wcpay_fraud_outcome_transactions_download',
 			{ exported_transactions: 2, total_transactions: 2 }
 		);
+	} );
+
+	// Client 11.1.0 `blocked/index.tsx:128-139` and `resolvers.js:203-216`:
+	// the export carries the list's search and sort order.
+	it( 'exports with the search and sort order of the list', async () => {
+		mockGetFraudOutcomesExport.mockResolvedValue( { data: [ ADA ] } );
+
+		renderAt(
+			'/woopayments/transactions?view=blocked&search=Ada%20Lovelace&search=Order%20%231521&sort=amount&direction=asc'
+		);
+
+		await userEvent.click(
+			await screen.findByRole( 'button', { name: 'Export' } )
+		);
+
+		await waitFor( () =>
+			expect( mockDownloadCSVFile ).toHaveBeenCalledTimes( 1 )
+		);
+		expect( mockGetFraudOutcomesExport ).toHaveBeenCalledTimes( 1 );
+		expect( mockGetFraudOutcomesExport.mock.calls[ 0 ][ 0 ] ).toEqual( {
+			status: 'block',
+			sort: 'amount',
+			direction: 'asc',
+			additional_status: 'review',
+			'search[]': [ 'Ada Lovelace', 'Order #1521' ],
+		} );
 	} );
 
 	it( 'shows the client error notice when the export fails', async () => {
