@@ -2309,6 +2309,11 @@ class WooPaymentsApiClient {
 
 		if ( $response instanceof WP_Error ) {
 			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			if ( 'wcpay_wpcom_not_connected' === $response->get_error_code() ) {
+				// Client 11.1.0 class-wc-payments-http.php:59-65 answers a lost connection with 409, as the pre-check above.
+				throw new WooPaymentsApiException( $response->get_error_message(), 'wcpay_wpcom_not_connected', 409 );
+			}
+
 			throw new WooPaymentsApiException(
 				sprintf(
 					/* translators: %1$s: original error message. */

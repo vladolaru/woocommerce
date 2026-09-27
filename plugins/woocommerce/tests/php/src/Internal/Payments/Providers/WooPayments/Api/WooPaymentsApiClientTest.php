@@ -516,6 +516,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not retry deterministic local transport readiness failures.
+	 *
+	 * Source: client 11.1.0 includes/wc-payment-api/class-wc-payments-http.php:59-65 (wcpay_wpcom_not_connected, HTTP 409).
 	 */
 	public function test_post_request_does_not_retry_local_transport_readiness_failure(): void {
 		$http_client            = new FakeWooPaymentsHttpClient();
@@ -541,8 +543,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			);
 			$this->fail( 'Expected the local transport readiness failure to surface.' );
 		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertSame( 'wcpay_http_request_failed', $exception->get_error_code() );
-			$this->assertSame( 'Http request failed. Reason: Site is not connected to WordPress.com.', $exception->getMessage() );
+			$this->assertSame( 'wcpay_wpcom_not_connected', $exception->get_error_code() );
+			$this->assertSame( 409, $exception->get_http_code() );
+			$this->assertSame( 'Site is not connected to WordPress.com.', $exception->getMessage() );
 			$this->assertFalse( $sut->is_ambiguous_request_failure( $exception ), 'A local readiness failure never reached the platform.' );
 		}
 
