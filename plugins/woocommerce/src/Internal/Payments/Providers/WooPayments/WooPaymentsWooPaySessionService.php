@@ -1023,7 +1023,7 @@ class WooPaymentsWooPaySessionService {
 		$is_woopay_enabled                 = $this->is_woopay_enabled();
 		$is_country_available              = $is_woopay_enabled && $this->is_woopay_country_available();
 		$is_global_theme_enabled           = $this->is_woopay_global_theme_support_enabled();
-		$should_show_woopay                = $this->is_woopay_gateway_available() && $this->should_show_woopay_button_for_enabled_state( $context, $is_woopay_enabled );
+		$should_show_woopay                = $this->should_show_woopay_button_for_enabled_state( $context, $is_woopay_enabled ) && $this->is_woopay_gateway_available();
 		$woopay_appearance                 = $is_global_theme_enabled ? $this->get_woopay_appearance() : null;
 		$woopay_font_rules                 = $is_global_theme_enabled ? $this->get_woopay_font_rules() : array();
 		$woopay_session_email              = $this->get_current_shopper_email();
