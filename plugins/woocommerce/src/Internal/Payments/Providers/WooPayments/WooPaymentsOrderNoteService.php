@@ -1639,7 +1639,7 @@ class WooPaymentsOrderNoteService {
 		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
 			$formatted_price,
 			strtoupper( $order->get_currency() ),
-			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( $this->has_configured_additional_currency() )
+			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( $this->is_multi_currency_feature_enabled() && $this->has_configured_additional_currency() )
 		);
 	}
 
@@ -1664,10 +1664,7 @@ class WooPaymentsOrderNoteService {
 			return array( (string) call_user_func( $formatter, $formatted_price, $order ) );
 		}
 
-		if (
-			'1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ||
-			! $this->has_configured_additional_currency()
-		) {
+		if ( ! $this->is_multi_currency_feature_enabled() || ! $this->has_configured_additional_currency() ) {
 			return array( $formatted_price );
 		}
 
@@ -1704,6 +1701,17 @@ class WooPaymentsOrderNoteService {
 		}
 
 		return $this->format_order_amount( $order );
+	}
+
+	/**
+	 * Tell whether the WooPayments multi-currency feature flag is on.
+	 *
+	 * WooPayments 11.1.0 omits the explicit currency when it is off (explicit price formatter :170-172).
+	 *
+	 * @return bool
+	 */
+	private function is_multi_currency_feature_enabled(): bool {
+		return '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' );
 	}
 
 	/**

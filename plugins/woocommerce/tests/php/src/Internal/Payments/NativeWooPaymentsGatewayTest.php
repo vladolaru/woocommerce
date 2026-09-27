@@ -3103,6 +3103,41 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should omit the explicit currency from the rate-limiter note while the multi-currency flag is off.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payments-explicit-price-formatter.php:167-172` returns the bare price
+	 * when `_wcpay_feature_customer_multi_currency` is off, even with enabled currencies left in the option.
+	 */
+	public function test_process_payment_rate_limiter_note_omits_explicit_price_when_multi_currency_is_off(): void {
+		update_option( '_wcpay_feature_customer_multi_currency', '0' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		$order   = $this->create_order();
+		$session = $this->create_session();
+		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			new RecordingPaymentProcessingService(),
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session )
+		);
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'USD', $order->get_currency() );
+		$this->assertContains(
+			'A payment of ' . wc_price( 12.00, array( 'currency' => 'USD' ) ) . ' <strong>failed</strong> to complete because of too many failed transactions. A rate limiter was enabled for the user to prevent more attempts temporarily.',
+			array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) )
+		);
+	}
+
+	/**
 	 * @testdox Should leave an order whose intent already succeeded untouched when checkout is refused: $_dataName.
 	 *
 	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1283` checks the order's

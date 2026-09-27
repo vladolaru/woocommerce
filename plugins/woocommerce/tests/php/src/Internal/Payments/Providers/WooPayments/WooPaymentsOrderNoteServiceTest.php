@@ -795,7 +795,9 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$feature_disabled_candidates = $sut->format_created_refund_note_candidates( $order, $amount, $currency, $refund_id, $reason, $is_pending );
 
 		$this->assertCount( 2, $feature_disabled_candidates, 'Feature-disabled refunds should expose native and suffix-free plugin candidates.' );
-		$this->assertStringContainsString( $explicit_price, $feature_disabled_candidates[0], 'Native refund candidate zero must retain its existing explicit-currency output.' );
+		// WooPayments 11.1.0 explicit price formatter :170-172 adds no currency code while the multi-currency flag is off.
+		$this->assertStringContainsString( $formatted_price, $feature_disabled_candidates[0], 'Native refund candidate zero must contain the formatted refund amount.' );
+		$this->assertStringNotContainsString( $explicit_price, $feature_disabled_candidates[0], 'Feature-disabled native refund candidate must omit the stale explicit-currency suffix.' );
 		$this->assertStringContainsString( $formatted_price, $feature_disabled_candidates[1], 'Plugin refund candidate must contain the formatted refund amount.' );
 		$this->assertStringNotContainsString( $explicit_price, $feature_disabled_candidates[1], 'Feature-disabled plugin refund candidate must omit the stale explicit-currency suffix.' );
 
