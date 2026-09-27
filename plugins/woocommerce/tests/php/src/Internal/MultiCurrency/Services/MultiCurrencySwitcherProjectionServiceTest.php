@@ -122,6 +122,31 @@ class MultiCurrencySwitcherProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should entity-encode markup in a currency option label.
+	 *
+	 * Client 11.1.0 CurrencySwitcherBlock.php:178 prints the option text through `esc_html()`,
+	 * so a filtered symbol carrying tags reaches the shopper as text, not markup.
+	 */
+	public function test_entity_encodes_markup_in_currency_option_label(): void {
+		$symbol_filter = static function ( $symbol, $currency ) {
+			return 'GBP' === $currency ? '<b>£</b>' : $symbol;
+		};
+		add_filter( 'woocommerce_currency_symbol', $symbol_filter, 10, 2 );
+		$sut = $this->create_service( $this->create_state( 'USD' ) );
+
+		$markup = $sut->get_block_markup(
+			array(
+				'symbol' => true,
+				'flag'   => false,
+			)
+		);
+		remove_filter( 'woocommerce_currency_symbol', $symbol_filter, 10 );
+
+		$this->assertStringContainsString( '<option value="GBP">&lt;b&gt;£&lt;/b&gt; GBP</option>', $markup );
+		$this->assertStringNotContainsString( '<b>', $markup );
+	}
+
+	/**
 	 * @testdox Should offer enabled USD and EUR while excluding merely available CAD.
 	 * @see WooPayments 11.1.0 tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:52
 	 */

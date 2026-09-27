@@ -206,7 +206,7 @@ class MultiCurrencySwitcherProjectionService {
 		$code     = $currency->get_code();
 		$selected = $selected_code === $code ? ' selected' : '';
 
-		return '<option value="' . esc_attr( $code ) . '"' . $selected . '>' . wp_kses_post( $this->get_currency_option_label( $currency, $with_symbol, $with_flag ) ) . '</option>';
+		return '<option value="' . esc_attr( $code ) . '"' . $selected . '>' . esc_html( $this->get_currency_option_label( $currency, $with_symbol, $with_flag ) ) . '</option>';
 	}
 
 	/**
