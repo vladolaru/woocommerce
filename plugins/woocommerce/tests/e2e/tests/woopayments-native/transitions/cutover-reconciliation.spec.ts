@@ -47,6 +47,7 @@ interface CutoverStatus {
 	plugin_version: string;
 	preflight_failures: string[];
 	migrator_action: { status: string } | null;
+	native_state: string | null;
 }
 
 const CUTOVER_STATUS_PHP = String.raw`
@@ -63,6 +64,7 @@ return array(
 	'plugin_version' => $headers['Version'],
 	'preflight_failures' => $controller->get_preflight_failures(),
 	'migrator_action' => $action ? array( 'status' => ActionScheduler::store()->get_status( $migrator_id ) ) : null,
+	'native_state' => get_option( 'woocommerce_native_payments_state', null ),
 );
 `;
 
@@ -107,6 +109,36 @@ function validateCutoverActionURL( href: string, baseURL: string ): void {
 			'The product WooPayments cutover action is not bound to the nonce-protected controller entry point.'
 		);
 	}
+}
+
+/**
+ * Reads the registered gateway ids through a REST request, where native
+ * registers its gateway once the store is `active` (WP-CLI never does).
+ */
+async function readGatewayIds( restApi: ApiClient ): Promise< string[] > {
+	return (
+		( await restApi.get( 'wc/v3/payment_gateways' ) ).data as Array< {
+			id: string;
+		} >
+	 ).map( ( gateway ) => gateway.id );
+}
+
+/**
+ * Asserts the cutover left native payments `active` with its gateway
+ * registered, the state the cutover job writes once the plugin is off.
+ */
+async function expectNativeGatewayActive(
+	restApi: ApiClient,
+	status: CutoverStatus
+): Promise< void > {
+	expect(
+		status.native_state,
+		'the cutover must end with native payments active'
+	).toBe( 'active' );
+	expect(
+		await readGatewayIds( restApi ),
+		'the native gateway must be registered once the plugin is off'
+	).toContain( 'woocommerce_payments' );
 }
 
 async function createRunProduct(
@@ -183,7 +215,9 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 		expect( identity.blog_token_present ).toBe( true );
 		expect( identity.user_token_present ).toBe( true );
 		expect( identity.is_live ).toBe( false );
-		expect( identity.native_state ).toBe( 'active' );
+		// The seed runs the 11.2.0-5 repair update the way an upgraded
+		// plugin-era store does, which writes `available`.
+		expect( identity.native_state ).toBe( 'available' );
 		expect( identity.migrator_action_id ).toBeGreaterThan( 0 );
 		migratorActionId = identity.migrator_action_id;
 	} );
@@ -215,6 +249,10 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 				'unsupported_payment_methods_enabled'
 			);
 			expect( before.migrator_action?.status ).toBe( 'pending' );
+			expect(
+				before.native_state,
+				'the switch notice loads only from the available tier up'
+			).toBe( 'available' );
 
 			await page.goto( 'wp-login.php' );
 			await logIn( page, admin.username, admin.password, false );
@@ -265,6 +303,7 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 			await expect
 				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
 				.toBe( 'native' );
+			await expectNativeGatewayActive( restApi, completed );
 
 			await page.goto( 'wp-admin/plugins.php' );
 			await expect(
@@ -454,6 +493,7 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 		);
 		expect( identity.plugin_version ).toBe( '10.4.0' );
 		expect( identity.plugin_active ).toBe( true );
+		expect( identity.native_state ).toBe( 'available' );
 	} );
 
 	test.afterAll( async () => {
@@ -492,6 +532,7 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 			expect( before.plugin_version ).toBe( '10.4.0' );
 			expect( before.plugin_active ).toBe( true );
 			expect( before.preflight_failures ).toContain( VERSION_BLOCKER );
+			expect( before.native_state ).toBe( 'available' );
 
 			await page.goto( 'wp-login.php' );
 			await logIn( page, admin.username, admin.password, false );
@@ -579,6 +620,7 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 			).toBe( false );
 			expect( status.network_active ).toBe( false );
 			expect( status.preflight_failures ).toEqual( [] );
+			await expectNativeGatewayActive( restApi, status );
 		}
 	);
 } );

@@ -120,13 +120,6 @@ final class WooPayments_Transition_Seed_CLI {
 			'test_mode'                      => 'yes',
 			'upe_enabled_payment_method_ids' => array( 'card' ),
 		);
-		// Every profile seeds `active` as a harness convenience, not because a
-		// real store has it: a real plugin-era store reaches `available`
-		// through the `wc_update_11205_repair_native_payments_state` update and
-		// `active` when the cutover finalizes. While the plugin is active,
-		// `active` reads as `available`, so ownership before cutover still
-		// tracks the plugin.
-		$native_state = 'active';
 		if ( 'cutover' === $profile ) {
 			$settings['upe_enabled_payment_method_ids'] = array( 'card', 'future_lpm' );
 		}
@@ -145,7 +138,7 @@ final class WooPayments_Transition_Seed_CLI {
 		// long-lived process never loaded its classes; the rest runs in a
 		// fresh subprocess that boots with the plugin already active.
 		update_option( '_woopayments_transition_seed_account', $account, false );
-		$finish = 'woopayments-e2e-transition seed_finish --native-state=' . escapeshellarg( (string) $native_state );
+		$finish = 'woopayments-e2e-transition seed_finish';
 		if ( 'cutover' === $profile && ! empty( $assoc_args['pending-migrator'] ) ) {
 			$finish .= ' --pending-migrator';
 		}
@@ -159,9 +152,6 @@ final class WooPayments_Transition_Seed_CLI {
 	 *
 	 * ## OPTIONS
 	 *
-	 * [--native-state=<active|available>]
-	 * : Native payments state to write before reading identity back.
-	 *
 	 * [--pending-migrator]
 	 * : Schedule a pending wcpay_migrate_subscription_retry action.
 	 *
@@ -169,23 +159,20 @@ final class WooPayments_Transition_Seed_CLI {
 	 * @param array<string,string> $assoc_args Flags.
 	 */
 	public function seed_finish( array $args, array $assoc_args ): void {
-		$native_state = '' !== $assoc_args['native-state'] ? $assoc_args['native-state'] : null;
-		$account      = get_option( '_woopayments_transition_seed_account', null );
+		$account = get_option( '_woopayments_transition_seed_account', null );
 		delete_option( '_woopayments_transition_seed_account' );
 		if ( ! is_array( $account ) || ! class_exists( 'WC_Payments_Onboarding_Service' ) || ! class_exists( 'WC_Payments' ) ) {
 			WP_CLI::error( 'WooPayments onboarding/database-cache classes are unavailable.' );
 		}
 		WC_Payments_Onboarding_Service::set_test_mode( true );
 		WC_Payments::get_database_cache()->add( WCPay\Database_Cache::ACCOUNT_KEY, $account );
-		if ( null !== $native_state ) {
-			$state_service = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsState::class );
-			$target        = 'active' === $native_state
-				? Automattic\WooCommerce\Internal\Payments\NativePaymentsState::ACTIVE
-				: Automattic\WooCommerce\Internal\Payments\NativePaymentsState::AVAILABLE;
-			if ( ! $state_service->write_state( $target ) ) {
-				WP_CLI::error( "Native payments {$native_state} state could not be seeded." );
-			}
+		// This store is a fresh install, so WooCommerce never runs the 11.2.0-5
+		// update that an upgraded plugin-era store runs. Call it here, as that
+		// upgrade would, so the store reaches `available` the real way.
+		if ( ! function_exists( 'wc_update_11205_repair_native_payments_state' ) ) {
+			include_once WC_ABSPATH . 'includes/wc-update-functions.php';
 		}
+		wc_update_11205_repair_native_payments_state();
 		$migrator_action_id = null;
 		if ( ! empty( $assoc_args['pending-migrator'] ) ) {
 			$migrator_action_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_migrate_subscription_retry' );
@@ -195,7 +182,7 @@ final class WooPayments_Transition_Seed_CLI {
 			$migrator_action_id = (int) $migrator_action_id;
 		}
 		$identity                       = $this->read_identity();
-		$identity['native_state']       = $native_state;
+		$identity['native_state']       = get_option( 'woocommerce_native_payments_state', null );
 		$identity['migrator_action_id'] = $migrator_action_id;
 		WP_CLI::line( wp_json_encode( $identity ) );
 	}
