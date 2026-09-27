@@ -90,7 +90,7 @@
 		"test:e2e:paypal-standard": "pnpm test:e2e:default --project=paypal-standard",
 		"test:e2e:woopayments:contract-map": "node tests/e2e/bin/validate-woopayments-client-contract-map.mjs",
 		"test:e2e:woopayments:contract-map:unit": "node --test tests/e2e/bin/validate-woopayments-client-contract-map.test.mjs",
-		"test:e2e:woopayments:controller": "pnpm test:e2e:woopayments:contract-map:unit && pnpm test:e2e:woopayments:contract-map && node --test tests/e2e/bin/validate-woopayments-project-routing.test.mjs && bash tests/e2e/envs/woopayments-native/env-setup.test.sh && pnpm playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts",
+		"test:e2e:woopayments:controller": "pnpm test:e2e:woopayments:contract-map:unit && pnpm test:e2e:woopayments:contract-map && node --test tests/e2e/bin/validate-woopayments-project-routing.test.mjs && bash tests/e2e/envs/woopayments-native/env-setup.test.sh && NODE_OPTIONS=\"${NODE_OPTIONS:-} --conditions=wc-source\" pnpm playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts",
 		"test:e2e:woopayments:native:pr": "WCPAY_RUNTIME=native pnpm test:e2e:with-env woopayments-native --project=woopayments-native-provider --grep @woopayments-pr",
 		"test:e2e:woopayments:native:scheduled": "WCPAY_RUNTIME=native pnpm test:e2e:with-env woopayments-native --project=woopayments-native-readonly --project=woopayments-native-provider",
 		"test:env:start": "pnpm env:test",

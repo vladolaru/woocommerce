@@ -528,7 +528,8 @@ jobs:
         run: bash plugins/woocommerce/tests/e2e/envs/woopayments-native/perf-compare.sh --mode ci --store-url "$E2E_WOOPAYMENTS_NATIVE_STORE_URL" --wp-env-config "$E2E_WOOPAYMENTS_WP_ENV_CONFIG" --wp-env-service cli --output "$RUNNER_TEMP/woopayments-native-perf.tsv"
 
       - name: 'Run the provider helper unit tests'
-        run: pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts
+        # Resolve @woocommerce/* workspace packages to their TypeScript source, as run-tests-with-env.sh does, so no package build is needed.
+        run: NODE_OPTIONS="${NODE_OPTIONS:-} --conditions=wc-source" pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts
 
       - name: 'Validate WooPayments e2e contracts and routing'
         run: |
