@@ -159,6 +159,7 @@ class WooPaymentsLevel3Service {
 		// Admin-created orders can carry zero-quantity items; never divide by
 		// zero on the money path (the plugin would fatal here — deliberate
 		// hardening, not parity).
+		// Authorized divergence: plan.md revision log 2026-09-25 09:55 (a); client bug drafted in data/t7-plugin-follow-up-draft.md.
 		$quantity   = max( 1, (int) ceil( (float) $item->get_quantity() ) );
 		$tax_amount = $this->order_data_service->prepare_amount( (float) $item->get_total_tax(), $currency );
 		if ( $subtotal >= 0 ) {

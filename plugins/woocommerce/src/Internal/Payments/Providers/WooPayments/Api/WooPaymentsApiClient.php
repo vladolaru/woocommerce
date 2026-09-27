@@ -96,6 +96,7 @@ class WooPaymentsApiClient {
 		// Address autocomplete JWT is a credential; keep it out of logs.
 		'token',
 		// WooPay webhook signing secret is a credential; a logged copy would let a log reader forge order-status deliveries. Native-only hardening: the plugin's list does not carry it.
+		// Authorized divergence: data/security-review.md:21 (redact more, never less).
 		'webhook_secret',
 	);
 

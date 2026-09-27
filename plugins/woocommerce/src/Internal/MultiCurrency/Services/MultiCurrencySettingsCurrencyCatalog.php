@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocali
  *
  * Runtime state intentionally contains only currencies that have usable rates.
  * This catalog keeps configured currencies manageable while they await one.
+ * Authorized divergence: plan.md Decision 5; data/task-4.2-disable-providerless-design.md:27.
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native multi-currency runtime.

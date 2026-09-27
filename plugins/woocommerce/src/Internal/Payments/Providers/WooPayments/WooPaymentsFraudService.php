@@ -187,6 +187,7 @@ class WooPaymentsFraudService {
 		// When the platform sends no sandbox key, fail safe and ship no beacon
 		// key at all — a deliberate divergence from the plugin, which falls
 		// through to the production key in that config shape.
+		// Authorized divergence: plan.md revision log 2026-09-25 09:55 (a); client bug drafted in data/t7-plugin-follow-up-draft.md.
 		if ( $this->account_service->is_test_mode_enabled() ) {
 			if ( isset( $config['sandbox_beacon_key'] ) ) {
 				$config['beacon_key'] = $config['sandbox_beacon_key'];
