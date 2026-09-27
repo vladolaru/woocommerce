@@ -834,7 +834,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * (`gw:2361-2374`) and throws `upe_payment_intent_error` (`gw:2376-2382`). The catch calls
 	 * `mark_payment_failed()` with the intent's status and an empty charge ID (`gw:2428-2446`), which fails the
 	 * order and stores the status (`os:463-478`, `os:2889-2895`). The AJAX path keeps the same intent pending.
-	 * The client's failed note (`os:2106-2130`) is not asserted: native adds none for a SetupIntent (recorded divergence).
+	 * `mark_payment_failed()` writes the failed note (`os:2106-2130`) ending "UPE payment failed: <exception message>".
 	 *
 	 * @dataProvider setup_error_status_provider
 	 *
@@ -865,6 +865,14 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'failed', $reloaded->get_status() );
 		$this->assertSame( 1, $api_client->setup_intent_reads );
 		$this->assertSame( $status, $reloaded->get_meta( '_intention_status', true ) );
+		$notes = array_map(
+			static fn( $note ) => $note->content,
+			wc_get_order_notes( array( 'order_id' => $reloaded->get_id() ) )
+		);
+		$this->assertContains(
+			'A payment of ' . wc_price( 0, array( 'currency' => $reloaded->get_currency() ) ) . " <strong>failed</strong> using WooPayments (<code>seti_return_error</code>). UPE payment failed: We're not able to process this payment. Please try again later.",
+			$notes
+		);
 	}
 
 	/**

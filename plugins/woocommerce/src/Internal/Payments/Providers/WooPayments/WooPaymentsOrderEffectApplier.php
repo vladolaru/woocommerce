@@ -240,12 +240,48 @@ class WooPaymentsOrderEffectApplier {
 
 				return $this->merge_effect_data_into_outcome(
 					$outcome,
-					array( PaymentOutcome::DATA_META => array_merge( $existing_meta, $plan->get_setup_meta() ) ),
+					array_merge(
+						array( PaymentOutcome::DATA_META => array_merge( $existing_meta, $plan->get_setup_meta() ) ),
+						$this->compose_setup_intent_note_data( $context->get_order(), $outcome, (string) ( $plan->get_provider_result()['id'] ?? '' ) )
+					),
 					$plan
 				);
 		}
 
 		return $outcome;
+	}
+
+	/**
+	 * Compose the client's started or failed note for a SetupIntent outcome.
+	 *
+	 * Client 11.1.0: mark_payment_started() (os:418-427, 2202-2218) on the order-status callback, and the redirect
+	 * return's mark_payment_failed() with "UPE payment failed: ..." (gw:2376-2382, 2428-2446; os:2106-2130).
+	 *
+	 * @param WC_Order       $order     Order object.
+	 * @param PaymentOutcome $outcome   SetupIntent outcome.
+	 * @param string         $intent_id SetupIntent ID.
+	 * @return array<string,mixed>
+	 */
+	private function compose_setup_intent_note_data( WC_Order $order, PaymentOutcome $outcome, string $intent_id ): array {
+		if ( '' === $intent_id ) {
+			return array();
+		}
+
+		if ( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION === $outcome->get_status() ) {
+			$note_candidates = $this->note_service->format_payment_started_note_candidates( $order, $intent_id );
+			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED;
+		} elseif ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
+			$note_candidates = $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id );
+			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED;
+		} else {
+			return array();
+		}
+
+		return array(
+			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+			PaymentOutcome::DATA_NOTE_TYPE        => $note_type,
+			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
+		);
 	}
 
 	/**

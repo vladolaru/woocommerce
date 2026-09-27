@@ -392,6 +392,34 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build exact Core- and plugin-catalog renderings of a redirect-return payment-failure note.
+	 *
+	 * Client 11.1.0 gw:2376-2382, 2440-2441: "UPE payment failed: We're not able to process this payment. Please try again later."
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Intent ID.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.2.0
+	 */
+	public function format_redirect_payment_failed_note_candidates( WC_Order $order, string $intent_id ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			function ( string $text_domain, string $formatted_amount ) use ( $order, $intent_id ): string {
+				if ( 'woocommerce-payments' === $text_domain ) {
+					/* translators: %s: localized exception message. */
+					$message = sprintf( __( 'UPE payment failed: %s', 'woocommerce-payments' ), __( "We're not able to process this payment. Please try again later.", 'woocommerce-payments' ) ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				} else {
+					/* translators: %s: localized exception message. */
+					$message = sprintf( __( 'UPE payment failed: %s', 'woocommerce' ), __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
+				}
+
+				return $this->format_payment_failed_note_for_domain( $order, $intent_id, '', array(), $text_domain, $formatted_amount, $message );
+			}
+		);
+	}
+
+	/**
 	 * Build exact Core- and plugin-catalog renderings of a terminal payment-failure note.
 	 *
 	 * @param WC_Order            $order              Order object.
@@ -1022,9 +1050,10 @@ class WooPaymentsOrderNoteService {
 	 * @param array<string,mixed> $last_payment_error Provider error details.
 	 * @param string              $text_domain        Translation catalog to render.
 	 * @param ?string             $formatted_amount   Preformatted order amount, when supplied.
+	 * @param ?string             $message            Failure message to append instead of the provider error details.
 	 * @return string
 	 */
-	private function format_payment_failed_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, array $last_payment_error, string $text_domain, ?string $formatted_amount = null ): string {
+	private function format_payment_failed_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, array $last_payment_error, string $text_domain, ?string $formatted_amount = null, ?string $message = null ): string {
 		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
 		$transaction_url = $this->transaction_url( $intent_id, $charge_id );
 		if ( 'woocommerce-payments' === $text_domain ) {
@@ -1049,7 +1078,7 @@ class WooPaymentsOrderNoteService {
 			$transaction_url
 		);
 
-		return $note . ' ' . $this->format_payment_failure_message_for_domain( $last_payment_error, $text_domain );
+		return $note . ' ' . ( $message ?? $this->format_payment_failure_message_for_domain( $last_payment_error, $text_domain ) );
 	}
 
 	/**

@@ -1504,8 +1504,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * (`gw:4238-4242`) and calls `update_order_status_from_intent()` (`gw:4339-4345`). Its `get_intent_data()` sets
 	 * `error` only for PaymentIntents (`os:2963-2967`), so `last_setup_error` is never read and either status is
 	 * `mark_payment_started()` (`os:418-427`, `os:1695-1707`): the order stays pending. The redirect-return path
-	 * fails the same intent (see the redirect-return controller test). The client's started note (`os:2202-2218`)
-	 * is not asserted: native adds none for a SetupIntent (recorded divergence).
+	 * fails the same intent (see the redirect-return controller test). `mark_payment_started()` writes the started
+	 * note (`os:2202-2218`) with the SetupIntent ID in a code element (`utils:1056-1058` builds no URL for `seti_`).
 	 *
 	 * @dataProvider setup_intent_with_setup_error_status_data
 	 *
@@ -1537,6 +1537,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 409, $response['status_code'] );
 		$this->assertSame( 'pending', $order->get_status() );
 		$this->assertSame( $status, $order->get_meta( '_intention_status', true ) );
+		$this->assert_order_has_note_containing( $order, 'was <strong>started</strong> using WooPayments (<code>seti_setup_error</code>).' );
 	}
 
 	/**
