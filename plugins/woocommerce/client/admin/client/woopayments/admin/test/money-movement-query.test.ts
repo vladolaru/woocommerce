@@ -117,6 +117,23 @@ describe( 'WooPayments money movement query helpers', () => {
 		expect( params.has( 'wc_admin_page' ) ).toBe( false );
 	} );
 
+	it( 'serializes authorizations array filters as PHP arrays', () => {
+		const queryString =
+			moneyMovementQuery.serializeWooPaymentsAuthorizationsQuery( {
+				search: [ 'Ada', 'Grace' ],
+				date_between: [ '2026-06-01', '2026-06-19' ],
+			} );
+		const params = new URLSearchParams( queryString );
+
+		// Repeated bare keys collapse to the last value in PHP.
+		expect( params.getAll( 'search[]' ) ).toEqual( [ 'Ada', 'Grace' ] );
+		expect( params.getAll( 'date_between[]' ) ).toEqual( [
+			'2026-06-01',
+			'2026-06-19',
+		] );
+		expect( params.getAll( 'search' ) ).toEqual( [] );
+	} );
+
 	it( 'serializes authorizations query state without transaction-only filters', () => {
 		const queryHelpers = moneyMovementQuery as unknown as Record<
 			string,

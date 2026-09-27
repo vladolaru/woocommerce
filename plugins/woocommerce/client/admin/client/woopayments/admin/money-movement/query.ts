@@ -527,7 +527,9 @@ export const serializeWooPaymentsAuthorizationsQuery = (
 	const params = new URLSearchParams();
 
 	AUTHORIZATION_QUERY_PARAM_ORDER.forEach( ( key ) => {
-		addParam( params, key, sanitized[ key ] );
+		const value = sanitized[ key ];
+		// This is an API query: PHP keeps only the last of repeated bare keys.
+		addParam( params, Array.isArray( value ) ? `${ key }[]` : key, value );
 	} );
 
 	return params.toString();
