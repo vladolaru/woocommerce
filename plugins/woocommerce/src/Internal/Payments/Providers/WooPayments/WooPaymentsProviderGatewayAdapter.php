@@ -628,6 +628,7 @@ class WooPaymentsProviderGatewayAdapter {
 		$data[ PaymentOutcome::DATA_META ]                  = $meta;
 		$data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] = true;
 		// Client 11.1.0 gw:1426 passes the fraud flag, so the postal-code hint is withheld and the platform message shows.
+		// Authorized divergence: verification-ledger.md V432 decision C23 (client Blocks gw:1519-1531 drops the flag; not ported).
 		$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] = WooPaymentsErrorMessages::get_shopper_message(
 			$exception->get_error_type(),
 			$exception->get_error_code(),
