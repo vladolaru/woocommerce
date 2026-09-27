@@ -63,6 +63,8 @@ class MultiCurrencyCurrencyTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should serialize the currency state.
+	 *
+	 * Source: client 11.1.0 includes/multi-currency/Currency.php:264-277 (decoded name and symbol).
 	 */
 	public function test_serializes_currency_state(): void {
 		$currency = new MultiCurrencyCurrency( $this->create_localization(), 'USD', 1.0, true, 123456 );
@@ -75,7 +77,7 @@ class MultiCurrencyCurrencyTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'USD', $data['code'] );
 		$this->assertSame( 'United States (US) dollar', $data['name'] );
 		$this->assertSame( 1.0, $data['rate'] );
-		$this->assertSame( get_woocommerce_currency_symbol( 'USD' ), $data['symbol'] );
+		$this->assertSame( '$', $data['symbol'] );
 		$this->assertSame( 'left', $data['symbol_position'] );
 		$this->assertFalse( $data['is_zero_decimal'] );
 		$this->assertTrue( $data['is_default'] );

@@ -59,7 +59,8 @@ class MultiCurrencySettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 		$this->assertNull( $currencies['available']['GBP']['rate'] );
 		$this->assertSame( 'gbp', $currencies['available']['GBP']['id'] );
 		$this->assertSame( get_woocommerce_currencies()['GBP'], $currencies['available']['GBP']['name'] );
-		$this->assertSame( get_woocommerce_currency_symbol( 'GBP' ), $currencies['available']['GBP']['symbol'] );
+		// Client 11.1.0 Currency.php:272 decodes the symbol.
+		$this->assertSame( '£', $currencies['available']['GBP']['symbol'] );
 		$this->assertTrue( $catalog->contains( 'GBP' ) );
 		$this->assertFalse( $catalog->contains( 'XYZ' ) );
 	}

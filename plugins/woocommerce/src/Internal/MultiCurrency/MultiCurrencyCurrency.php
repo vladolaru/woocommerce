@@ -237,15 +237,17 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	/**
 	 * Specify data for JSON serialization.
 	 *
+	 * Name and symbol are entity-decoded, as client 11.1.0 Currency.php:269,272.
+	 *
 	 * @return array<string,mixed>
 	 */
 	public function jsonSerialize(): array {
 		return array(
 			'id'              => $this->get_id(),
 			'code'            => $this->get_code(),
-			'name'            => $this->get_name(),
+			'name'            => html_entity_decode( $this->get_name(), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 ),
 			'rate'            => $this->get_rate(),
-			'symbol'          => $this->get_symbol(),
+			'symbol'          => html_entity_decode( $this->get_symbol(), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 ),
 			'symbol_position' => $this->get_symbol_position(),
 			'is_zero_decimal' => $this->get_is_zero_decimal(),
 			'is_default'      => $this->get_is_default(),

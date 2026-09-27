@@ -178,9 +178,9 @@ final class MultiCurrencySettingsCurrencyCatalog {
 		return array(
 			'id'              => strtolower( $currency_code ),
 			'code'            => $currency_code,
-			'name'            => get_woocommerce_currencies()[ $currency_code ],
+			'name'            => html_entity_decode( get_woocommerce_currencies()[ $currency_code ], ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 ),
 			'rate'            => null,
-			'symbol'          => get_woocommerce_currency_symbol( $currency_code ),
+			'symbol'          => html_entity_decode( get_woocommerce_currency_symbol( $currency_code ), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 ),
 			'symbol_position' => (string) $format['currency_pos'],
 			'is_zero_decimal' => 0 === (int) $format['num_decimals'],
 			'is_default'      => false,
