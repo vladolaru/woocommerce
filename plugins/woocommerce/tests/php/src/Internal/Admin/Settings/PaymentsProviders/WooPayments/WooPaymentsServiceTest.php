@@ -808,12 +808,18 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			2
 		);
 
+		$referer                 = admin_url( 'admin.php?page=wc-admin' );
+		$_SERVER['HTTP_REFERER'] = $referer;
+
 		$url = $this->sut->handle_onboarding_referral( str_repeat( 'Ab', 30 ) );
+		unset( $_SERVER['HTTP_REFERER'] );
 
 		$this->assertSame( str_repeat( 'ab', 25 ), get_transient( 'woopayments_referral_code' ) );
+		$this->assertEqualsWithDelta( time() + 30 * DAY_IN_SECONDS, (int) get_option( '_transient_timeout_woopayments_referral_code' ), 60, 'The code is kept for 30 days.' );
 		$this->assertSame( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding&from=REFERRAL' ), $url );
 		$this->assertArrayHasKey( 'wcadmin_wcpay_account_referral', $recorded );
 		$this->assertSame( str_repeat( 'ab', 25 ), $recorded['wcadmin_wcpay_account_referral']['referral_code'] );
+		$this->assertSame( $referer, $recorded['wcadmin_wcpay_account_referral']['referrer'], 'The event records wp_get_referer() as `referrer`.' );
 	}
 
 	/**
