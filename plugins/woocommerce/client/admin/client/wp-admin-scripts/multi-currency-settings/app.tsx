@@ -13,6 +13,7 @@ import {
 } from '@wordpress/components';
 import { useDispatch } from '@wordpress/data';
 import { useEffect, useMemo, useRef, useState } from '@wordpress/element';
+import { decodeEntities } from '@wordpress/html-entities';
 import { __, sprintf } from '@wordpress/i18n';
 
 /**
@@ -52,6 +53,13 @@ const normalizeEnabledCodes = (
 	return availableCurrencies
 		.map( ( currency ) => currency.code )
 		.filter( ( code ) => selectedLookup.has( code ) );
+};
+
+// Client 11.1.0 enabled-currencies-list/list-item.js:58: "£ GBP", or "CHF" when the symbol is the code.
+const formatSymbolAndCode = ( currency: MultiCurrencyCurrency ): string => {
+	const symbol = decodeEntities( currency.symbol );
+
+	return symbol === currency.code ? symbol : `${ symbol } ${ currency.code }`;
 };
 
 const formatExchangeRate = ( currency: MultiCurrencyCurrency ): string => {
@@ -399,18 +407,23 @@ export function MultiCurrencySettingsApp() {
 				<thead>
 					<tr>
 						<th scope="col">{ __( 'Name', 'woocommerce' ) }</th>
-						<th scope="col">{ __( 'Code', 'woocommerce' ) }</th>
 						<th scope="col">
 							{ __( 'Exchange rate', 'woocommerce' ) }
 						</th>
-						<th scope="col">{ __( 'Actions', 'woocommerce' ) }</th>
+						<th scope="col" className="screen-reader-text">
+							{ __( 'Actions', 'woocommerce' ) }
+						</th>
 					</tr>
 				</thead>
 				<tbody>
 					{ enabledCurrencies.map( ( currency ) => (
 						<tr key={ currency.code }>
-							<th scope="row">{ currency.name }</th>
-							<td>{ currency.code }</td>
+							<th scope="row">
+								{ currency.name }{ ' ' }
+								<span className="woocommerce-multi-currency-settings__currency-code">
+									({ formatSymbolAndCode( currency ) })
+								</span>
+							</th>
 							<td>{ formatExchangeRate( currency ) }</td>
 							<td>
 								{ currency.is_default ? (

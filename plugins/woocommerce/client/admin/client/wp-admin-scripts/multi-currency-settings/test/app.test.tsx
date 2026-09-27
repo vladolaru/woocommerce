@@ -203,16 +203,30 @@ describe( 'MultiCurrencySettingsApp', () => {
 				name: 'Remove Euro as an enabled currency',
 			} )
 		).toBeInTheDocument();
-		// N-085: client 11.1.0 enabled-currencies-list/index.js:73-74 renders the
-		// "Name" and "Exchange rate" headers asserted here; native also renders
-		// "Code" and "Actions" headers the client does not (Task T.7 Step 5, F-COLS),
-		// so the exact header list is deliberately not asserted. list-item.js:65
-		// (`! isDefault &&`) hides the Edit/Manage action for the default row.
+		// Client 11.1.0 enabled-currencies-list/index.js:73-75 shows only the
+		// "Name" and "Exchange rate" headers and leaves the actions column
+		// unlabelled; list-item.js:56-59 shows the code beside the name. Native
+		// keeps a visually hidden "Actions" header so the column stays labelled.
+		// list-item.js:65 (`! isDefault &&`) hides the Manage action for the
+		// default row.
 		expect(
-			screen.getByRole( 'columnheader', { name: 'Name' } )
+			screen
+				.getAllByRole( 'columnheader' )
+				.map( ( header ) => header.textContent )
+		).toEqual( [ 'Name', 'Exchange rate', 'Actions' ] );
+		expect(
+			screen.queryByRole( 'columnheader', { name: 'Code' } )
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByRole( 'columnheader', { name: 'Actions' } )
+		).toHaveClass( 'screen-reader-text' );
+		expect(
+			screen.getByRole( 'rowheader', { name: 'Euro (€ EUR)' } )
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'columnheader', { name: 'Exchange rate' } )
+			screen.getByRole( 'rowheader', {
+				name: 'United States (US) dollar ($ USD)',
+			} )
 		).toBeInTheDocument();
 		expect(
 			screen.queryByRole( 'button', {
@@ -224,6 +238,29 @@ describe( 'MultiCurrencySettingsApp', () => {
 				name: 'Manage United States (US) dollar settings',
 			} )
 		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 list-item.js:58 omits the code when it equals the symbol;
+	// the client REST payload decodes the symbol (Currency.php:272).
+	it( 'shows the decoded symbol and code beside the currency name', async () => {
+		mockApiFetch.mockReset();
+		mockApiFetch.mockResolvedValueOnce( {
+			...currenciesResponse,
+			enabled: {
+				USD: currenciesResponse.available.USD,
+				EUR: { ...currenciesResponse.available.EUR, symbol: '&euro;' },
+				CAD: { ...currenciesResponse.available.CAD, symbol: 'CAD' },
+			},
+		} );
+
+		render( <MultiCurrencySettingsApp /> );
+
+		expect(
+			await screen.findByRole( 'rowheader', { name: 'Euro (€ EUR)' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'rowheader', { name: 'Canadian dollar (CAD)' } )
+		).toBeInTheDocument();
 	} );
 
 	it( 'removes a non-default enabled currency', async () => {
