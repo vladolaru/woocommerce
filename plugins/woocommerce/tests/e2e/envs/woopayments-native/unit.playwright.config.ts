@@ -1,11 +1,14 @@
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig( {
-	testDir: '../../utils',
-	// The driver tests under `woopayments-native/` still cover modules live
-	// specs import (P2-T); only Batch F, once every driver is gone, narrows
-	// this to the helper test alone.
-	testMatch: [ 'woopayments.test.ts', 'woopayments-native/**/*.test.ts' ],
+	// Narrowed in Batch F (T.4 Task 16) once the harness drivers were gone:
+	// the provider helper's own test plus the one surviving unit test for a
+	// kept `envs/woopayments-native/` module.
+	testDir: '../..',
+	testMatch: [
+		'utils/woopayments.test.ts',
+		'envs/woopayments-native/readonly-global-setup.test.ts',
+	],
 	fullyParallel: false,
 	retries: 0,
 	workers: 1,

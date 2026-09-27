@@ -65,10 +65,8 @@ function cardFrameRuntime(): 'client' | 'native' {
 }
 
 // The Blocks Card element's iframe for the given runtime. This readonly spec
-// is never provider-involved, so it carries no import from
-// utils/woopayments-native/drivers (the routing validator treats that
-// directory as provider machinery); these are the same two selectors
-// drivers/checkout.ts's getBlocksCardFrameSelector returns.
+// is never provider-involved, so it imports no provider machinery; these are
+// the same two selectors the shared helper's blocks Card frame lookup uses.
 function blocksCardFrameSelector( runtime: 'client' | 'native' ): string {
 	return runtime === 'client'
 		? '#payment-method .wcpay-payment-element iframe[name^="__privateStripeFrame"]'

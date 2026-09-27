@@ -39,9 +39,6 @@ export default {
 				/@woopayments-provider|@woopayments-transition|@woopayments-extension-compat/,
 			metadata: {
 				woopaymentsReadonlySetup: readonlySetupSelected,
-				...( readonlySetupSelected
-					? { woopaymentsAdminStatePath: ADMIN_STATE_PATH }
-					: {} ),
 			},
 			retries: 0,
 			workers: serializedProjectWorkerLimit,
@@ -53,7 +50,6 @@ export default {
 			grepInvert: /@woopayments-transition/,
 			metadata: {
 				woopaymentsReadonlySetup: false,
-				woopaymentsWorkerLimit: serializedProjectWorkerLimit,
 			},
 			retries: 0,
 			workers: serializedProjectWorkerLimit,
@@ -84,7 +80,6 @@ export default {
 			grep: /@woopayments-transition/,
 			metadata: {
 				woopaymentsReadonlySetup: false,
-				woopaymentsWorkerLimit: serializedProjectWorkerLimit,
 			},
 			retries: 0,
 			workers: serializedProjectWorkerLimit,

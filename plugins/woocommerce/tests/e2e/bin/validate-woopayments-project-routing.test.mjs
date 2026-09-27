@@ -95,8 +95,6 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 			everyReadonlyRetryCount: 0,
 			everyProviderRetryCount: 0,
 			everyTransitionRetryCount: 0,
-			providerWorkerCount: 1,
-			transitionWorkerCount: 1,
 			futureWooPaymentsSpecProjects: [ 'woopayments-native-readonly' ],
 		} );
 	} finally {
@@ -407,8 +405,8 @@ test( 'orphan contract annotations are rejected', () => {
 // Provider machinery reachability must match declared provider tags.
 // ---------------------------------------------------------------------------
 
-const providerDriverImport =
-	"import { completeCardCheckout } from '../../../utils/woopayments-native/drivers/checkout';";
+const providerMachineryImport =
+	"import { fillCardDetails } from '../../../utils/woopayments';";
 const rogueSpecFile = 'woopayments-native/shopper/rogue.spec.ts';
 const collectedTest = ( tags ) => ( {
 	file: rogueSpecFile,
@@ -440,9 +438,9 @@ const withSyntheticPackage = ( files, assertion ) => {
 const validateMachineryTags = ( tests, packageDirectory ) =>
 	projectRouting.validateProviderMachineryTags( tests, packageDirectory );
 
-test( 'a test reaching a provider driver without a provider tag is rejected', () => {
+test( 'a test reaching provider machinery without a provider tag is rejected', () => {
 	withSyntheticPackage(
-		{ [ `tests/e2e/tests/${ rogueSpecFile }` ]: providerDriverImport },
+		{ [ `tests/e2e/tests/${ rogueSpecFile }` ]: providerMachineryImport },
 		( packageDirectory ) => {
 			assert.throws(
 				() =>
@@ -458,7 +456,7 @@ test( 'a test reaching a provider driver without a provider tag is rejected', ()
 
 test( 'either provider involvement tag satisfies the provider machinery rule', () => {
 	withSyntheticPackage(
-		{ [ `tests/e2e/tests/${ rogueSpecFile }` ]: providerDriverImport },
+		{ [ `tests/e2e/tests/${ rogueSpecFile }` ]: providerMachineryImport },
 		( packageDirectory ) => {
 			for ( const tag of [
 				'woopayments-provider',
@@ -471,25 +469,6 @@ test( 'either provider involvement tag satisfies the provider machinery rule', (
 					)
 				);
 			}
-		}
-	);
-} );
-
-test( 'provider-prefixed utility modules count as provider machinery', () => {
-	withSyntheticPackage(
-		{
-			[ `tests/e2e/tests/${ rogueSpecFile }` ]:
-				"import { requireApprovedProviderFixture } from '../../../utils/woopayments-native/provider-fixture';",
-		},
-		( packageDirectory ) => {
-			assert.throws(
-				() =>
-					validateMachineryTags(
-						[ collectedTest( [] ) ],
-						packageDirectory
-					),
-				/must carry @woopayments-provider/
-			);
 		}
 	);
 } );
@@ -536,7 +515,7 @@ test( 'provider machinery reached through a local scenario module is caught', ()
 			[ `tests/e2e/tests/${ rogueSpecFile }` ]:
 				"import { runScenario } from '../scenarios/shared-scenario';",
 			'tests/e2e/tests/woopayments-native/scenarios/shared-scenario.ts':
-				providerDriverImport,
+				providerMachineryImport,
 		},
 		( packageDirectory ) => {
 			assert.throws(

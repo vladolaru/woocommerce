@@ -17,8 +17,9 @@
  * pnpm --dir plugins/woocommerce exec playwright test
  * --config=tests/e2e/envs/woopayments-native/playwright.config.ts
  * --project=woopayments-native-provider <spec>`
- * (the variables `env-setup.sh` requires, plus the two below it needs). A
- * spec not yet rewritten still runs through `run-provider-families.sh`.
+ * (the variables `env-setup.sh` requires, plus the two below it needs). Since
+ * T.4 Batch F this is the only provider entry point: every retained spec runs
+ * this way, and the harness's `run-provider-families.sh` is gone.
  *
  * The shared `restApi` fixture sends Basic Auth with the account's own login
  * password, which WordPress core only honours over the REST API when a

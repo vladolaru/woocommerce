@@ -269,13 +269,11 @@ function getOrderIdFromUrl( url: string ): number {
  * Click "Place order" and wait for a real dispatch signal — the Store API
  * checkout request, a Core checkout/payment state change, or navigation away
  * from checkout — before treating the click as sent. This is a local,
- * call-site-scoped copy of the dispatch-wait race in
- * drivers/checkout.ts's submitBlocksCheckout: this readonly spec is never
- * provider-involved, so it carries no import from
- * utils/woopayments-native/drivers (the routing validator treats that
- * directory as provider machinery). The retry-on-not-dispatched loop the
- * shared driver offers other callers is dropped: this journey's click always
- * dispatches, so a single attempt is the whole contract.
+ * call-site-scoped copy of the dispatch-wait race the shared provider helper
+ * uses for its own Blocks checkout submission: this readonly spec is never
+ * provider-involved, so it imports no provider machinery. The retry-on-not-
+ * dispatched loop the helper offers other callers is dropped: this journey's
+ * click always dispatches, so a single attempt is the whole contract.
  */
 async function submitZeroTotalCheckout( page: Page ): Promise< void > {
 	const checkoutUrl = page.url();

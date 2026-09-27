@@ -29,11 +29,7 @@ const providerInvolvementTags = [
 // Modules that drive the payment provider or handle its records. Reaching any
 // of them is what makes a test provider-involved in substance, which must
 // match the tags it declares.
-const providerMachineryPrefixes = [
-	'tests/e2e/utils/woopayments-native/drivers/',
-	'tests/e2e/utils/woopayments-native/provider-',
-	'tests/e2e/utils/woopayments',
-];
+const providerMachineryPrefixes = [ 'tests/e2e/utils/woopayments' ];
 // Matches `import x from '...'`, `export … from '...'` and bare `import '...'`.
 // Deliberately permissive: over-matching costs a false positive that a human
 // resolves by adding a tag, while under-matching silently ungates a test.
@@ -209,13 +205,11 @@ export const reachesProviderMachinery = ( entryFile, packageDirectory ) => {
 
 			if (
 				providerMachineryPrefixes.some( ( prefix ) =>
-					// A prefix ending in `/` or `-` groups a directory or a
-					// filename family (`provider-*.ts`) and matches by
-					// `startsWith`; a bare module path (no trailing
-					// separator) names one exact file - `woopayments.ts`
-					// resolves to `.../utils/woopayments` with no
-					// extension, and `startsWith` alone would also match
-					// the unrelated `utils/woopayments-native/` tree.
+					// A prefix ending in `/` or `-` would group a directory
+					// or a filename family and match by `startsWith`; the
+					// one prefix left is a bare module path (no trailing
+					// separator) naming one exact file - `woopayments.ts`
+					// resolves to `.../utils/woopayments` with no extension.
 					/[/-]$/.test( prefix )
 						? relativePath.startsWith( prefix )
 						: relativePath === prefix
@@ -462,12 +456,6 @@ export const validateWooPaymentsProjectRouting = () => {
 			wooPayments.projects.get( providerProject )?.retries,
 		everyTransitionRetryCount:
 			wooPayments.projects.get( transitionProject )?.retries,
-		providerWorkerCount:
-			wooPayments.projects.get( providerProject )?.metadata
-				.woopaymentsWorkerLimit,
-		transitionWorkerCount:
-			wooPayments.projects.get( transitionProject )?.metadata
-				.woopaymentsWorkerLimit,
 		futureWooPaymentsSpecProjects: [
 			...new Set(
 				wooPayments.tests

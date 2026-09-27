@@ -17,10 +17,8 @@ const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
 const PRODUCTS_API = 'wc/v3/products';
 const CARD_GATEWAY_ID = 'woocommerce_payments';
 // The native Blocks Card element's iframe. This readonly spec is never
-// provider-involved, so it carries no import from
-// utils/woopayments-native/drivers (the routing validator treats that
-// directory as provider machinery); the selector is the same one
-// drivers/checkout.ts's getBlocksCardFrameSelector returns for 'native'.
+// provider-involved, so it imports no provider machinery; the selector
+// matches the shared helper's blocks Card frame lookup for 'native'.
 const CARD_FRAME_SELECTOR =
 	'#wcpay-core-blocks-payment-element iframe[name^="__privateStripeFrame"]';
 

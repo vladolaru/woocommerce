@@ -4,7 +4,7 @@ import {
 	authenticatedAdminNonce,
 	runReadonlyGlobalSetup,
 	type ReadonlySetupRequestContext,
-} from '../../envs/woopayments-native/readonly-global-setup';
+} from './readonly-global-setup';
 
 test( 'admin warm-up rejects login redirects and foreign origins', async () => {
 	const login = {
