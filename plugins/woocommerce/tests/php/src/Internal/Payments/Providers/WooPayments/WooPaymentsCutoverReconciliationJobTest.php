@@ -1178,6 +1178,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox Manual deactivation supersedes an existing queued attempt with exact origin context and a fresh action.
 	 */
 	public function test_manual_deactivation_replaces_pending_action_with_exact_origin(): void {
+		if ( is_multisite() ) {
+			$this->markTestSkipped( 'A network-scope deactivation takes the network path on multisite; see the multisite twin below.' );
+		}
+
 		$sut = $this->require_sut();
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$queued = $this->require_state_store()->get_record();
@@ -1193,6 +1197,83 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertNotSame( $old_action_id, $manual['action_id'] );
 		$this->assertSame( ActionScheduler_Store::STATUS_CANCELED, ActionScheduler::store()->get_status( $old_action_id ) );
 		$this->assertSame( $manual['action_id'], $this->require_scheduler()->get_scheduled_action_id( $manual['generation'], $manual['attempt'] + 1 ) );
+	}
+
+	/**
+	 * @testdox Network deactivation of a plugin that was site-active when the cutover started opens a new network generation with the exact origin on every site.
+	 *
+	 * Source: plan-cutover-reconciliation.md:112-113 (a manual deactivation opens a new generation carrying its exact origin).
+	 *
+	 * @group multisite
+	 */
+	public function test_network_deactivation_of_a_site_level_cutover_carries_the_exact_origin_everywhere(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-network-deactivation.example.org' );
+		$preflight      = new class() extends WooPaymentsCutoverPreflightService {
+			/** @var bool */
+			public bool $network_active = false;
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return the controlled network activation. */
+			public function is_woopayments_network_active(): bool {
+				return $this->network_active;
+			}
+		};
+		$sut            = $this->create_job( true, $preflight );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$site_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $site_pending );
+			$this->assertFalse( $site_pending['network_cutover'] );
+			$old_action_id = $site_pending['action_id'];
+			switch_to_blog( $second_site_id );
+			$this->assertNull( $this->require_state_store()->get_record(), 'A site-level cutover must not reach other sites.' );
+			restore_current_blog();
+
+			$preflight->network_active = true;
+			$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', true ) );
+
+			$this->assertSame( ActionScheduler_Store::STATUS_CANCELED, ActionScheduler::store()->get_status( $old_action_id ) );
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				switch_to_blog( $site_id );
+				$manual = $this->require_state_store()->get_record();
+				$this->assertIsArray( $manual );
+				$this->assertSame( $site_pending['generation'] + 1, $manual['generation'], "Site {$site_id} must join the new network generation." );
+				$this->assertTrue( $manual['network_cutover'] );
+				$this->assertSame( WooPaymentsCutoverState::PENDING, $manual['state'] );
+				$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $manual['origin_plugin_file'] );
+				$this->assertSame( 'network', $manual['origin_plugin_scope'] );
+				$this->assertGreaterThan( 0, $manual['action_id'] );
+				$this->assertSame( $manual['action_id'], $this->require_scheduler()->get_scheduled_action_id( $manual['generation'], $manual['attempt'] + 1 ) );
+				restore_current_blog();
+			}
+		} finally {
+			while ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
 	}
 
 	/**
