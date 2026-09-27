@@ -238,9 +238,9 @@ final_probe_header() {
 }
 
 request_population_page() {
-	local state="$1" page="$2" path="$3" cookie="$4" body="$5"
+	local state="$1" page="$2" path="$3" cookie="$4" body="$5" headers="${6:-/dev/null}"
 	local result status final_url time_total final_path expected_path
-	if ! result="$(PERF_COMPARE_SAMPLE_KIND=population curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -o "$body" -w '%{http_code}\t%{url_effective}\t%{time_total}\n' "$REQUEST_BASE$path")"; then
+	if ! result="$(PERF_COMPARE_SAMPLE_KIND=population curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -D "$headers" -o "$body" -w '%{http_code}\t%{url_effective}\t%{time_total}\n' "$REQUEST_BASE$path")"; then
 		echo "Invalid populated session ($state): $page request failed." >&2
 		return 1
 	fi
@@ -253,18 +253,26 @@ EOF
 	if [[ "$final_path" != "$expected_path" ]]; then echo "Invalid populated session ($state): $page final path $final_path, expected $expected_path." >&2; return 1; fi
 }
 
+# The optional third argument is a suffix (population-rN) under which the session's first responses keep
+# their headers for the header gate: a cookie set once per session appears only on these requests.
 prepare_populated_session() {
 	local state="$1"
 	local cookie="$2"
+	local header_suffix="${3:-}"
 	local cart_api_body="$TEMP_ROOT/$state-population-cart-api.body"
 	local cart_body="$TEMP_ROOT/$state-population-cart.body"
 	local checkout_body="$TEMP_ROOT/$state-population-checkout.body"
+	local add_headers=/dev/null cart_api_headers=/dev/null cart_headers=/dev/null checkout_headers=/dev/null
+	if [[ -n "$header_suffix" ]]; then
+		add_headers="$TEMP_ROOT/$state-add_to_cart-$header_suffix.headers"; cart_api_headers="$TEMP_ROOT/$state-cart_api-$header_suffix.headers"
+		cart_headers="$TEMP_ROOT/$state-cart-$header_suffix.headers"; checkout_headers="$TEMP_ROOT/$state-checkout-$header_suffix.headers"
+	fi
 	: > "$cookie"
-	PERF_COMPARE_SAMPLE_KIND=population curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -o /dev/null "$REQUEST_BASE/?add-to-cart=$PRODUCT_ID&quantity=1" > /dev/null || { echo "Invalid populated session ($state): product add failed." >&2; return 1; }
-	request_population_page "$state" 'cart API' "$CART_API_PATH" "$cookie" "$cart_api_body" || return 1
+	PERF_COMPARE_SAMPLE_KIND=population curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -D "$add_headers" -o /dev/null "$REQUEST_BASE/?add-to-cart=$PRODUCT_ID&quantity=1" > /dev/null || { echo "Invalid populated session ($state): product add failed." >&2; return 1; }
+	request_population_page "$state" 'cart API' "$CART_API_PATH" "$cookie" "$cart_api_body" "$cart_api_headers" || return 1
 	grep -Eq '"items"[[:space:]]*:[[:space:]]*\[[[:space:]]*\{' "$cart_api_body" || { echo "Invalid populated session ($state): Store API cart is empty." >&2; return 1; }
-	request_population_page "$state" cart "$CART_PATH" "$cookie" "$cart_body" || return 1
-	request_population_page "$state" checkout "$CHECKOUT_PATH" "$cookie" "$checkout_body" || return 1
+	request_population_page "$state" cart "$CART_PATH" "$cookie" "$cart_body" "$cart_headers" || return 1
+	request_population_page "$state" checkout "$CHECKOUT_PATH" "$cookie" "$checkout_body" "$checkout_headers" || return 1
 }
 
 capture_page() {
@@ -318,7 +326,7 @@ sample_state_once() {
 	local cookie="$TEMP_ROOT/$state-r$repeat.cookies"
 	reset_database || { echo "Could not reset the database for performance state: $state (sample $repeat)" >&2; return 1; }
 	prepare_state "$state" || { echo "Could not prepare performance state: $state (sample $repeat)" >&2; return 1; }
-	prepare_populated_session "$state" "$cookie" || return 1
+	prepare_populated_session "$state" "$cookie" "population-r$repeat" || return 1
 	while [[ $index -lt ${#pages[@]} ]]; do
 		page="${pages[$index]}"; path="${paths[$index]}"
 		capture_page "$state" "$page" "$path" "warm-up-r$repeat" "$cookie" primary-warmup || return 1
@@ -448,6 +456,55 @@ write_gateway_rows() {
 	done
 }
 
+# Prints the sorted response header names ("header:<name>", lowercased) and the cookie names Set-Cookie
+# lines set ("cookie:<name>") across every response, redirects included, in the given header dumps.
+# Values are ignored. Message-framing headers are skipped: whether a body goes out chunked or with a
+# Content-Length depends on its size, not on what the code sent.
+response_header_names() {
+	cat "$@" | tr -d '\r' | awk '
+		/^HTTP\// { next }
+		/^[^ \t:]+:/ {
+			name = tolower( substr( $0, 1, index( $0, ":" ) - 1 ) )
+			if ( name == "set-cookie" ) {
+				value = substr( $0, index( $0, ":" ) + 1 )
+				sub( /^[ \t]+/, "", value )
+				print "cookie:" substr( value, 1, index( value "=", "=" ) - 1 )
+				next
+			}
+			if ( name ~ /^(content-length|transfer-encoding|connection|keep-alive)$/ ) next
+			print "header:" name
+		}
+	' | sort -u
+}
+
+# N-139 header/cookie gate: on every page, a native state must not set a cookie name or send a response
+# header name that baseline_noop does not. Each side is the union over the state's STATE_SAMPLES attempts
+# (session population, warm-up and capture requests), so an added name fails even when only one attempt
+# sends it, and a name baseline_noop sends on any attempt is allowed. Names present in both states pass
+# whatever their values; names only baseline_noop sends pass. active_plugin is the reference plugin and
+# is not gated. Appends one 'headers' row per gated state; query_delta carries the added-name count.
+write_header_rows() {
+	local state page added count verdict
+	local states=(disabled available connected active_native)
+	local pages=(add_to_cart cart_api front shop product cart checkout)
+	local candidate=() reference=()
+	for state in "${states[@]}"; do
+		if [[ "$MODE" == 'ci' && "$state" != 'disabled' && "$state" != 'active_native' ]]; then continue; fi
+		count=0; verdict=pass
+		for page in "${pages[@]}"; do
+			candidate=("$TEMP_ROOT/$state-$page-"*-r[0-9]*.headers); reference=("$TEMP_ROOT/baseline_noop-$page-"*-r[0-9]*.headers)
+			if [[ ! -f "${candidate[0]}" || ! -f "${reference[0]}" ]]; then verdict=fail; echo "Header gate ($state/$page): missing header captures." >&2; continue; fi
+			added="$(comm -13 <(response_header_names "${reference[@]}") <(response_header_names "${candidate[@]}"))"
+			if [[ -n "$added" ]]; then
+				verdict=fail; count=$((count + $(printf '%s\n' "$added" | wc -l)))
+				echo "Header gate ($state/$page): not sent by baseline_noop: $(printf '%s' "$added" | tr '\n' ' ')" >&2
+			fi
+		done
+		if [[ "$verdict" == 'fail' ]]; then GATE_FAILED=1; fi
+		printf '%s\theaders\tNA\tNA\tNA\tbaseline_noop\t%s\tNA\tNA\t%s\n' "$state" "$count" "$verdict" >> "$OUTPUT"
+	done
+}
+
 timing_gate() {
 	local pair state first second cookie metrics elapsed result median_native median_plugin percentage verdict
 	local native_times="$TEMP_ROOT/native-times" plugin_times="$TEMP_ROOT/plugin-times"
@@ -512,6 +569,7 @@ main() {
 	fi
 	write_rows
 	write_gateway_rows
+	write_header_rows
 	if [[ "$MODE" == local ]]; then
 		if [[ $SAMPLE_FAILED -ne 0 ]]; then
 			printf 'active_native\tcheckout_median\tNA\tNA\tNA\tactive_plugin\tNA\tNA\tNA\tNA,NA,NA,fail\n' >> "$OUTPUT"

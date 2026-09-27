@@ -144,7 +144,7 @@ fake_pnpm() {
 }
 
 fake_curl() {
-	local root="${PERF_FAKE_ROOT:?}" headers='' body='' cookie='' trace_header='' url='' state kind status=200 final_url queries memory hooks files=250 owner tier time_total=.100000 bootstrap=1 http=0 target gateway_first gateway_second repeat=''
+	local root="${PERF_FAKE_ROOT:?}" headers='' body='' cookie='' trace_header='' url='' state kind status=200 final_url queries memory hooks files=250 owner tier time_total=.100000 bootstrap=1 http=0 target gateway_first gateway_second repeat='' extra
 	while (($#)); do
 		case "$1" in
 		-D) headers="$2"; shift 2 ;;
@@ -201,11 +201,20 @@ fake_curl() {
 		wrong-final-page) final_url="${url%/}/wrong/" ;;
 		http-failure) status=503 ;;
 		esac
+		# Every state sends the same header and cookie names with state-specific values, so the header
+		# gate must compare names only. The header-* cases add or drop names on one side.
+		extra="Set-Cookie: woocommerce_items_in_cart=$state-$kind; path=/\r\nX-Request-Id: $state-$kind-${repeat:-0}\r\nTransfer-Encoding: chunked\r\n"
+		case "${PERF_FAKE_CASE:-}" in
+		header-new-cookie) [[ "$state" != active_native || "$repeat" != 2 ]] || extra+="set-cookie: wcpay_native_session=abc; path=/\r\n" ;;
+		header-new-name) [[ "$state" != active_native ]] || extra+="X-Native-Extra: 1\r\n" ;;
+		header-population-cookie) [[ "$state" != disabled || "$kind" != population ]] || extra+="Set-Cookie: wcpay_dormant=1\r\n" ;;
+		header-baseline-only) if [[ "$state" == baseline_noop ]]; then extra+="X-Baseline-Only: 1\r\nSet-Cookie: baseline_only=1\r\n"; else extra="${extra/Transfer-Encoding: chunked/Content-Length: 42}"; fi ;;
+		esac
 		if [[ -n "$headers" ]]; then
 			if [[ "${PERF_FAKE_CASE:-}" == 'attribution-artifact-failure' && "$kind" == attribution ]]; then
 				printf 'HTTP/1.1 %s OK\r\nX-WooCommerce-Native-Payments-Probe: error=attribution-artifacts\r\n\r\n' "$status" > "$headers"
 			else
-				printf 'HTTP/1.1 %s OK\r\nX-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%s;queries=%s;used_peak_bytes=%s;hooks=%s;files=%s;http=%s;gateway_first_queries=%s;gateway_second_queries=%s\r\n\r\n' "$status" "$state" "$tier" "$owner" "$bootstrap" "$queries" "$memory" "$hooks" "$files" "$http" "$gateway_first" "$gateway_second" > "$headers"
+				printf 'HTTP/1.1 %s OK\r\nX-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%s;queries=%s;used_peak_bytes=%s;hooks=%s;files=%s;http=%s;gateway_first_queries=%s;gateway_second_queries=%s\r\n%b\r\n' "$status" "$state" "$tier" "$owner" "$bootstrap" "$queries" "$memory" "$hooks" "$files" "$http" "$gateway_first" "$gateway_second" "$extra" > "$headers"
 			fi
 		fi
 		printf 'SAMPLE\t%s\t%s\n' "$kind" "$state" >> "$root/events.log"
@@ -476,7 +485,7 @@ local_root="$TEST_ROOT/local-pass"; local_output="$local_root/output/result.tsv"
 expected_account='{"data":{"account_id":"acct_native_ci","country":"US","default_currency":"usd","payments_enabled":true,"payouts_enabled":true,"details_submitted":true,"is_live":false,"test_publishable_key":"pk_test_native_ci","live_publishable_key":"","statement_descriptor":"NATIVE CI","statement_descriptor_kanji":"","statement_descriptor_kana":"","business_profile":{"name":"Native CI store","url":"https://example.test","support_address":{"country":"US"},"support_email":"support@example.test","support_phone":"+10000000000"},"branding":{"logo":"","icon":"","primary_color":"#000000","secondary_color":"#ffffff"},"communications_email":"owner@example.test","store_currencies":{"default":"usd"},"customer_currencies":{"supported":["usd","eur","aud","cad","chf","gbp","jpy","nzd","sek"]},"account_details":{"account_status":{"text":"Enabled"},"payout_status":{"text":"Enabled"},"banner":null},"deposits":{"interval":"daily","weekly_anchor":"monday","monthly_anchor":1,"delay_days":2,"status":"enabled","restrictions":"","completed_waiting_period":true},"platform_checkout_eligible":true,"capabilities":{"card_payments":"active","klarna_payments":"active"},"supported_payment_methods":["card","klarna"],"fees":{"card":[],"klarna":[]}},"fetched":1788898000,"errored":false,"consecutive_errors":0}'
 [[ "$(grep -Fc $'ACCOUNT_DATA\t'"$expected_account" "$local_root/events.log")" == 29 ]] || fail 'Connected and active states did not use the complete seed-time account cache.'
 [[ "$(grep -c $'^SEED_TIME\t1788898000$' "$local_root/events.log")" == 1 ]] || fail 'The account cache timestamp was not captured exactly once at seed time.'
-[[ "$(wc -l < "$local_output" | tr -d ' ')" == 38 ]] || fail 'Local output is not the complete 30-row matrix plus the six gateway rows plus timing row.'
+[[ "$(wc -l < "$local_output" | tr -d ' ')" == 42 ]] || fail 'Local output is not the complete 30-row matrix plus the six gateway rows, four header rows and timing row.'
 [[ "$(grep -c $'^CURL\tprimary-warmup\t' "$local_root/samples.log")" == 90 ]] || fail 'Local matrix did not warm all six states across five routes for each of the three STATE_SAMPLES attempts.'
 [[ "$(grep -c $'^CURL\tprimary-capture\t' "$local_root/samples.log")" == 90 ]] || fail 'Local matrix did not capture all six states across five routes for each of the three STATE_SAMPLES attempts.'
 if awk -F '\t' '$2 != "preflight" && $4 !~ /^http:\/\/canonical.native.test:8187\// { bad=1 } END { exit bad ? 0 : 1 }' "$local_root/samples.log"; then fail 'Shopper requests did not share the service home origin and cookie scope.'; fi
@@ -504,6 +513,10 @@ grep -Fq $'baseline_noop\tgateway\t2\t0\tNA\tbaseline_noop\t0\tNA\tNA\tpass' "$l
 grep -Fq $'disabled\tgateway\t3\t0\tNA\tbaseline_noop\t1\tNA\tNA\tpass' "$local_output" || fail 'The exact disabled gateway dormancy ceiling did not pass.'
 grep -Fq $'active_native\tgateway\t6\t0\tNA\tactive_plugin\t1\tNA\tNA\tpass' "$local_output" || fail 'The exact active_native gateway ceiling did not pass.'
 grep -Fq $'active_plugin\tgateway\t5\t0\tNA\tactive_plugin\t0\tNA\tNA\tinformational' "$local_output" || fail 'The exact active_plugin gateway row was not recorded as informational.'
+for state in disabled available connected active_native; do
+	grep -Fq "$state"$'\theaders\tNA\tNA\tNA\tbaseline_noop\t0\tNA\tNA\tpass' "$local_output" || fail "Identical header and cookie names with different values did not pass for $state."
+done
+if grep -q $'^active_plugin\theaders\t' "$local_output"; then fail 'The reference plugin state was header-gated.'; fi
 assert_cleaned "$local_root"
 
 # T.12: a query count elevated on exactly one of the STATE_SAMPLES attempts (the intermittent
@@ -523,7 +536,7 @@ assert_cleaned "$TEST_ROOT/persistent-query-regression"
 
 run_case gateway-native-boundary-pass gateway-native-boundary-pass 0 local
 boundary_output="$TEST_ROOT/gateway-native-boundary-pass/output/result.tsv"
-[[ "$(wc -l < "$boundary_output" | tr -d ' ')" == 38 ]] || fail 'The active_native gateway boundary case did not emit a complete deterministic TSV.'
+[[ "$(wc -l < "$boundary_output" | tr -d ' ')" == 42 ]] || fail 'The active_native gateway boundary case did not emit a complete deterministic TSV.'
 grep -Fq $'active_native\tgateway\t7\t0\tNA\tactive_plugin\t2\tNA\tNA\tpass' "$boundary_output" || fail 'The active_native gateway tolerance did not pass at exactly qd=2.'
 assert_cleaned "$TEST_ROOT/gateway-native-boundary-pass"
 
@@ -533,7 +546,7 @@ assert_cleaned "$TEST_ROOT/attribution-artifact-failure"
 
 for failure in query-fail memory-fail hook-fail timing-fail gateway-warm-fail gateway-dormancy-fail gateway-native-fail; do
 	run_case "$failure" "$failure" 1 local
-	[[ "$(wc -l < "$TEST_ROOT/$failure/output/result.tsv" | tr -d ' ')" == 38 ]] || fail "$failure did not emit a complete deterministic TSV."
+	[[ "$(wc -l < "$TEST_ROOT/$failure/output/result.tsv" | tr -d ' ')" == 42 ]] || fail "$failure did not emit a complete deterministic TSV."
 	assert_cleaned "$TEST_ROOT/$failure"
 done
 grep -Fq $'active_native\tcheckout_median\tNA\tNA\tNA\tactive_plugin\tNA\tNA\tNA\t105.001,100.000,5.001,fail' "$TEST_ROOT/timing-fail/output/result.tsv" || fail 'The 5.001% timing boundary did not fail.'
@@ -550,7 +563,7 @@ grep -Fq 'observed 1 outbound HTTP requests' "$TEST_ROOT/outbound-http/stderr" |
 
 run_case ci-pass pass 0 ci
 ci_root="$TEST_ROOT/ci-pass"; ci_output="$ci_root/output/result.tsv"
-[[ "$(wc -l < "$ci_output" | tr -d ' ')" == 19 ]] || fail 'CI output is not the complete three-state subset plus its three gateway rows.'
+[[ "$(wc -l < "$ci_output" | tr -d ' ')" == 21 ]] || fail 'CI output is not the complete three-state subset plus its three gateway and two header rows.'
 [[ "$(awk -F '\t' 'NR > 1 { states[$1]=1 } END { for (state in states) print state }' "$ci_output" | sort | tr '\n' ' ')" == 'active_native baseline_noop disabled ' ]] || fail 'CI sampled the wrong states.'
 grep -Fq $'baseline_noop\tgateway\t2\t0\tNA\tbaseline_noop\t0\tNA\tNA\tpass' "$ci_output" || fail 'The exact CI baseline_noop gateway row did not pass.'
 grep -Fq $'disabled\tgateway\t3\t0\tNA\tbaseline_noop\t1\tNA\tNA\tpass' "$ci_output" || fail 'The exact CI disabled gateway row did not pass.'
@@ -560,9 +573,28 @@ grep -Fq $'active_native\tgateway\t6\t0\tNA\tnot_evaluated\tNA\tNA\tNA\tnot_eval
 if grep -Eq '^REFERENCE_(INSTALL|ACTIVATE)' "$ci_root/events.log"; then fail 'CI touched the reference plugin.'; fi
 assert_cleaned "$ci_root"
 
+# N-139: a native state must not set a cookie name or send a header name baseline_noop does not.
+run_case header-new-cookie header-new-cookie 1 ci
+grep -Fq $'active_native\theaders\tNA\tNA\tNA\tbaseline_noop\t7\tNA\tNA\tfail' "$TEST_ROOT/header-new-cookie/output/result.tsv" || fail 'A cookie active_native sets on one attempt only did not fail the header gate.'
+grep -Fq 'Header gate (active_native/front): not sent by baseline_noop: cookie:wcpay_native_session' "$TEST_ROOT/header-new-cookie/stderr" || fail 'The header gate did not name the added cookie.'
+grep -Fq $'disabled\theaders\tNA\tNA\tNA\tbaseline_noop\t0\tNA\tNA\tpass' "$TEST_ROOT/header-new-cookie/output/result.tsv" || fail 'A state without added names did not pass the header gate.'
+assert_cleaned "$TEST_ROOT/header-new-cookie"
+
+run_case header-new-name header-new-name 1 ci
+grep -Fq $'active_native\theaders\tNA\tNA\tNA\tbaseline_noop\t7\tNA\tNA\tfail' "$TEST_ROOT/header-new-name/output/result.tsv" || fail 'A header name only active_native sends did not fail the header gate.'
+grep -Fq 'Header gate (active_native/checkout): not sent by baseline_noop: header:x-native-extra' "$TEST_ROOT/header-new-name/stderr" || fail 'The header gate did not name the added header.'
+
+run_case header-population-cookie header-population-cookie 1 ci
+grep -Fq $'disabled\theaders\tNA\tNA\tNA\tbaseline_noop\t4\tNA\tNA\tfail' "$TEST_ROOT/header-population-cookie/output/result.tsv" || fail 'A cookie a dormant state sets only while the session is populated did not fail the header gate.'
+grep -Fq 'Header gate (disabled/add_to_cart): not sent by baseline_noop: cookie:wcpay_dormant' "$TEST_ROOT/header-population-cookie/stderr" || fail 'The header gate did not name the population-request cookie.'
+
+run_case header-baseline-only header-baseline-only 0 ci
+grep -Fq $'active_native\theaders\tNA\tNA\tNA\tbaseline_noop\t0\tNA\tNA\tpass' "$TEST_ROOT/header-baseline-only/output/result.tsv" || fail 'Names only baseline_noop sends, or a framing-header swap, failed the header gate.'
+assert_cleaned "$TEST_ROOT/header-baseline-only"
+
 run_case gateway-warm-fail-ci gateway-warm-fail 1 ci
 gateway_warm_fail_ci_output="$TEST_ROOT/gateway-warm-fail-ci/output/result.tsv"
-[[ "$(wc -l < "$gateway_warm_fail_ci_output" | tr -d ' ')" == 19 ]] || fail 'CI gateway-warm-fail did not emit a complete deterministic TSV.'
+[[ "$(wc -l < "$gateway_warm_fail_ci_output" | tr -d ' ')" == 21 ]] || fail 'CI gateway-warm-fail did not emit a complete deterministic TSV.'
 grep -Fq $'active_native\tgateway\t6\t1\tNA\tnot_evaluated\tNA\tNA\tNA\tfail' "$gateway_warm_fail_ci_output" || fail 'CI active_native gateway did not fail on a nonzero warm call with no reference state evaluated.'
 assert_cleaned "$TEST_ROOT/gateway-warm-fail-ci"
 
