@@ -607,6 +607,96 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 	} );
 
+	it( 'shows the WooPay terms and privacy agreement under save my info and records link clicks', async () => {
+		// Client 11.1.0 client/components/woopay/save-user/agreement.js,
+		// rendered in the checked save-details form (checkout-page-save-user.js:402-403).
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( { success: true } ),
+		} );
+		document.body.innerHTML = `
+			<div class="wc-block-checkout">
+				<div class="wp-block-woocommerce-checkout-payment-block"></div>
+			</div>
+		`;
+
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		const termsLink = await screen.findByRole( 'link', {
+			name: 'Terms of Service',
+		} );
+		const privacyLink = screen.getByRole( 'link', {
+			name: 'Privacy Policy',
+		} );
+
+		expect( termsLink.closest( '.tos' ).textContent ).toBe(
+			"By continuing, you agree to WooPay's Terms of Service and Privacy Policy."
+		);
+		expect( termsLink ).toHaveAttribute(
+			'href',
+			'https://wordpress.com/tos/'
+		);
+		expect( privacyLink ).toHaveAttribute(
+			'href',
+			'https://automattic.com/privacy/'
+		);
+		[ termsLink, privacyLink ].forEach( ( link ) => {
+			expect( link ).toHaveAttribute( 'target', '_blank' );
+			expect( link ).toHaveAttribute( 'rel', 'noopener noreferrer' );
+		} );
+
+		fireEvent.click( termsLink );
+		fireEvent.click( privacyLink );
+
+		const trackedNames = () =>
+			window.fetch.mock.calls
+				.filter(
+					( [ url, options ] ) =>
+						url ===
+							'https://example.test/wp-admin/admin-ajax.php' &&
+						options.body.get( 'action' ) === 'platform_tracks'
+				)
+				.map( ( [ , options ] ) =>
+					options.body.get( 'tracksEventName' )
+				);
+
+		expect( trackedNames() ).toEqual(
+			expect.arrayContaining( [
+				'checkout_save_my_info_tos_click',
+				'checkout_save_my_info_privacy_policy_click',
+			] )
+		);
+
+		fireEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Save to WooPay' } )
+		);
+
+		await waitFor( () => {
+			expect(
+				screen.queryByRole( 'link', { name: 'Terms of Service' } )
+			).not.toBeInTheDocument();
+		} );
+	} );
+
 	it( 'renders test card instructions while the account is in test mode', () => {
 		const registration = registerWooPayments();
 		const content = registration.content;

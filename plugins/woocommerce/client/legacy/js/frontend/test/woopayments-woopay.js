@@ -673,6 +673,85 @@ describe( 'WooPayments WooPay checkout', () => {
 		).toBe( 'Choose product options before using WooPay.' );
 	} );
 
+	test( 'shows the WooPay terms and privacy agreement under save my info and records link clicks', () => {
+		// Client 11.1.0 client/components/woopay/save-user/agreement.js,
+		// rendered in the checked save-details form (checkout-page-save-user.js:402-403).
+		window.wcpay_core_woopay_config.woopayAgreementText =
+			"By continuing, you agree to WooPay's <termsOfService/> and <privacyPolicy/>.";
+		window.wcpay_core_woopay_config.woopayTermsOfServiceLabel =
+			'Terms of Service';
+		window.wcpay_core_woopay_config.woopayPrivacyPolicyLabel =
+			'Privacy Policy';
+
+		require( '../woopayments-woopay' );
+
+		const agreement = document.querySelector(
+			'#wcpay-woopay-save-user .tos'
+		);
+		expect( agreement ).not.toBeNull();
+		expect( agreement.textContent ).toBe(
+			"By continuing, you agree to WooPay's Terms of Service and Privacy Policy."
+		);
+		expect( agreement.hidden ).toBe( false );
+
+		const [ termsLink, privacyLink ] = agreement.querySelectorAll( 'a' );
+		expect( termsLink.textContent ).toBe( 'Terms of Service' );
+		expect( termsLink.getAttribute( 'href' ) ).toBe(
+			'https://wordpress.com/tos/'
+		);
+		expect( privacyLink.textContent ).toBe( 'Privacy Policy' );
+		expect( privacyLink.getAttribute( 'href' ) ).toBe(
+			'https://automattic.com/privacy/'
+		);
+		[ termsLink, privacyLink ].forEach( ( link ) => {
+			expect( link.getAttribute( 'target' ) ).toBe( '_blank' );
+			expect( link.getAttribute( 'rel' ) ).toBe( 'noopener noreferrer' );
+		} );
+
+		termsLink.dispatchEvent(
+			new window.MouseEvent( 'click', { bubbles: true, cancelable: true } )
+		);
+		privacyLink.dispatchEvent(
+			new window.MouseEvent( 'click', { bubbles: true, cancelable: true } )
+		);
+
+		expect( getTrackingEvents() ).toEqual(
+			expect.arrayContaining( [
+				{ name: 'checkout_save_my_info_tos_click', props: {} },
+				{ name: 'checkout_save_my_info_privacy_policy_click', props: {} },
+			] )
+		);
+
+		const saveCheckbox = document.querySelector(
+			'input[name="save_user_in_woopay"]'
+		);
+		saveCheckbox.checked = false;
+		saveCheckbox.dispatchEvent(
+			new window.Event( 'change', { bubbles: true, cancelable: true } )
+		);
+		expect( agreement.hidden ).toBe( true );
+	} );
+
+	test( 'keeps a translated agreement string as text, never markup', () => {
+		window.wcpay_core_woopay_config.woopayAgreementText =
+			'<img src=x onerror=alert(1)> <termsOfService/> <privacyPolicy/>';
+		window.wcpay_core_woopay_config.woopayTermsOfServiceLabel =
+			'<b>Terms</b>';
+		window.wcpay_core_woopay_config.woopayPrivacyPolicyLabel = 'Privacy';
+
+		require( '../woopayments-woopay' );
+
+		const agreement = document.querySelector(
+			'#wcpay-woopay-save-user .tos'
+		);
+		expect( agreement.querySelector( 'img' ) ).toBeNull();
+		expect( agreement.querySelector( 'b' ) ).toBeNull();
+		expect( agreement.querySelectorAll( 'a' ) ).toHaveLength( 2 );
+		expect( agreement.textContent ).toBe(
+			'<img src=x onerror=alert(1)> <b>Terms</b> Privacy'
+		);
+	} );
+
 	test( 'records WooPay save-info offer and checkbox events', () => {
 		require( '../woopayments-woopay' );
 

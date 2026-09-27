@@ -188,8 +188,6 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		'wcpay_account_referral'                           => 'plan.md T.7 Step 6 (b): merchant-visible feature gap, scheduled to port.',
 		'wcpay_capital_view_offer_redirect'                => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_cart_page_view'                             => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
-		'wcpay_checkout_save_my_info_privacy_policy_click' => 'plan.md T.7 Step 6 (a): WooPay save-my-info consent copy/country dropdown, scheduled to port.',
-		'wcpay_checkout_save_my_info_tos_click'            => 'plan.md T.7 Step 6 (a): WooPay save-my-info consent copy/country dropdown, scheduled to port.',
 		'wcpay_checkout_woopay_save_my_info_country_click' => 'plan.md T.7 Step 6 (a): WooPay save-my-info consent copy/country dropdown, scheduled to port.',
 		'wcpay_checkout_woopay_save_my_info_mobile_enter'  => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',
 		'wcpay_edit_order_refund_failure'                  => 'plan.md T.7 Step 6 (c): Tracks event on a surface native already has, scheduled to port.',

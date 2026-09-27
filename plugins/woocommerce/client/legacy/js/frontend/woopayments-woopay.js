@@ -1511,6 +1511,48 @@
 		} );
 	}
 
+	// Client 11.1.0 client/components/woopay/save-user/agreement.js.
+	function createWooPaySaveUserAgreement() {
+		var agreement = document.createElement( 'p' );
+		var links = {
+			termsOfService: {
+				href: 'https://wordpress.com/tos/',
+				label: config.woopayTermsOfServiceLabel,
+				onClick: function () {
+					recordUserEvent( 'checkout_save_my_info_tos_click' );
+				},
+			},
+			privacyPolicy: {
+				href: 'https://automattic.com/privacy/',
+				label: config.woopayPrivacyPolicyLabel,
+				onClick: function () {
+					recordUserEvent(
+						'checkout_save_my_info_privacy_policy_click'
+					);
+				},
+			},
+		};
+
+		agreement.className = 'form-row form-row-wide tos';
+		String( config.woopayAgreementText || '' )
+			.split( /<(termsOfService|privacyPolicy)\s*\/>/ )
+			.forEach( function ( part, index ) {
+				var spec = links[ part ];
+				var node = document.createTextNode( part );
+				if ( index % 2 ) {
+					node = document.createElement( 'a' );
+					node.href = spec.href;
+					node.target = '_blank';
+					node.rel = 'noopener noreferrer';
+					node.textContent = spec.label || '';
+					node.addEventListener( 'click', spec.onClick );
+				}
+				agreement.appendChild( node );
+			} );
+
+		return agreement;
+	}
+
 	function renderWooPaySaveUserFields() {
 		var form = document.querySelector( 'form.checkout' );
 		var insertionPoint;
@@ -1519,6 +1561,7 @@
 		var phoneField;
 		var sourceField;
 		var viewportField;
+		var agreement;
 
 		if (
 			! form ||
@@ -1548,6 +1591,8 @@
 			'<input type="hidden" name="woopay_source_url" />' +
 			'<input type="hidden" name="woopay_viewport" />' +
 			'<input type="hidden" name="woopay_is_blocks" value="false" />';
+		agreement = createWooPaySaveUserAgreement();
+		container.appendChild( agreement );
 
 		insertionPoint = form.querySelector( '.form-row.place-order' );
 		if ( insertionPoint && insertionPoint.parentNode ) {
@@ -1570,6 +1615,7 @@
 		);
 
 		checkbox.checked = !! config.PRE_CHECK_SAVE_MY_INFO;
+		agreement.hidden = ! checkbox.checked;
 		sourceField.value = window.location.href;
 		viewportField.value = getWooPayViewport();
 
@@ -1581,6 +1627,7 @@
 		}
 
 		checkbox.addEventListener( 'change', function () {
+			agreement.hidden = ! checkbox.checked;
 			recordUserEvent( 'checkout_save_my_info_click', {
 				status: checkbox.checked ? 'checked' : 'unchecked',
 			} );

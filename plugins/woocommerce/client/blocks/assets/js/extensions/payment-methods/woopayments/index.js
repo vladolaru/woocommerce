@@ -5,7 +5,13 @@ import { registerPaymentMethod } from '@woocommerce/blocks-registry';
 import { getPaymentMethodData, getSetting } from '@woocommerce/settings';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __ } from '@wordpress/i18n';
-import { createRoot, useEffect, useRef, useState } from '@wordpress/element';
+import {
+	createInterpolateElement,
+	createRoot,
+	useEffect,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { useSelect } from '@wordpress/data';
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
@@ -641,6 +647,50 @@ const persistWooPaySaveUser = async (
 	);
 };
 
+// Client 11.1.0 client/components/woopay/save-user/agreement.js.
+const WooPaySaveUserAgreement = ( { paymentSettings } ) => (
+	<div className="tos">
+		{ createInterpolateElement(
+			__(
+				"By continuing, you agree to WooPay's <termsOfService/> and <privacyPolicy/>.",
+				'woocommerce'
+			),
+			{
+				termsOfService: (
+					<a
+						target="_blank"
+						href="https://wordpress.com/tos/"
+						rel="noopener noreferrer"
+						onClick={ () => {
+							recordWooPaymentsUserEvent(
+								paymentSettings,
+								'checkout_save_my_info_tos_click'
+							);
+						} }
+					>
+						{ __( 'Terms of Service', 'woocommerce' ) }
+					</a>
+				),
+				privacyPolicy: (
+					<a
+						target="_blank"
+						href="https://automattic.com/privacy/"
+						rel="noopener noreferrer"
+						onClick={ () => {
+							recordWooPaymentsUserEvent(
+								paymentSettings,
+								'checkout_save_my_info_privacy_policy_click'
+							);
+						} }
+					>
+						{ __( 'Privacy Policy', 'woocommerce' ) }
+					</a>
+				),
+			}
+		) }
+	</div>
+);
+
 const WooPaySaveUserSection = ( { paymentSettings } ) => {
 	const initialIsSavingUser = useRef(
 		Boolean( paymentSettings.PRE_CHECK_SAVE_MY_INFO )
@@ -770,6 +820,9 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 									phone
 								)
 							}
+						/>
+						<WooPaySaveUserAgreement
+							paymentSettings={ paymentSettings }
 						/>
 					</div>
 				) : null }

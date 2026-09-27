@@ -1079,6 +1079,10 @@ class WooPaymentsWooPaySessionService {
 			),
 			'woopaySaveUserLabel'               => __( 'Securely save my information for 1-click checkout', 'woocommerce' ),
 			'woopayPhoneLabel'                  => __( 'Mobile phone number', 'woocommerce' ),
+			// Client 11.1.0 client/components/woopay/save-user/agreement.js; the classic script replaces the tags with links.
+			'woopayAgreementText'               => __( "By continuing, you agree to WooPay's <termsOfService/> and <privacyPolicy/>.", 'woocommerce' ),
+			'woopayTermsOfServiceLabel'         => __( 'Terms of Service', 'woocommerce' ),
+			'woopayPrivacyPolicyLabel'          => __( 'Privacy Policy', 'woocommerce' ),
 			'woopayOtpIframeTitle'              => __( 'WooPay SMS code verification', 'woocommerce' ),
 			'woopayUnavailableMessage'          => __( 'WooPay is unavailable at this time. Please complete your checkout below. Sorry for the inconvenience.', 'woocommerce' ),
 			'woopayExpressUnavailableMessage'   => __( 'WooPay is unavailable at this time. Sorry for the inconvenience.', 'woocommerce' ),
