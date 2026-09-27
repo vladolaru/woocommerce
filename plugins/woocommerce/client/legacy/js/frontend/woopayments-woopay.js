@@ -1522,7 +1522,7 @@
 
 	// Client 11.1.0 client/components/woopay/save-user/agreement.js.
 	function createWooPaySaveUserAgreement() {
-		var agreement = document.createElement( 'p' );
+		var agreement = document.createElement( 'div' );
 		var links = {
 			termsOfService: {
 				href: 'https://wordpress.com/tos/',
@@ -1542,7 +1542,7 @@
 			},
 		};
 
-		agreement.className = 'form-row form-row-wide tos';
+		agreement.className = 'tos';
 		String( config.woopayAgreementText || '' )
 			.split( /<(termsOfService|privacyPolicy)\s*\/>/ )
 			.forEach( function ( part, index ) {

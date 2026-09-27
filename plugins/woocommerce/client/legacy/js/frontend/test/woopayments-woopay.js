@@ -689,6 +689,9 @@ describe( 'WooPayments WooPay checkout', () => {
 			'#wcpay-woopay-save-user .tos'
 		);
 		expect( agreement ).not.toBeNull();
+		// The client's agreement.js wraps the copy in `<div className="tos">`.
+		expect( agreement.tagName ).toBe( 'DIV' );
+		expect( agreement.className ).toBe( 'tos' );
 		expect( agreement.textContent ).toBe(
 			"By continuing, you agree to WooPay's Terms of Service and Privacy Policy."
 		);
