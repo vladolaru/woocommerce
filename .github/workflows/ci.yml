@@ -527,6 +527,9 @@ jobs:
           TMPDIR: '${{ runner.temp }}'
         run: bash plugins/woocommerce/tests/e2e/envs/woopayments-native/perf-compare.sh --mode ci --store-url "$E2E_WOOPAYMENTS_NATIVE_STORE_URL" --wp-env-config "$E2E_WOOPAYMENTS_WP_ENV_CONFIG" --wp-env-service cli --output "$RUNNER_TEMP/woopayments-native-perf.tsv"
 
+      - name: 'Run the provider helper unit tests'
+        run: pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts
+
       - name: 'Run secretless readonly project'
         env:
           E2E_WOOPAYMENTS_DIAGNOSTICS_DIR: '${{ runner.temp }}/woopayments-native-diagnostics'
