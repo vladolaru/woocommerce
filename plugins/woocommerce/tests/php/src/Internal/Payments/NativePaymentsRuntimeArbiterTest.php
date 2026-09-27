@@ -72,6 +72,9 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 					}
 					return get_site_option( $name, $default_value );
 				},
+				'is_multisite'    => function () use ( $network ) {
+					return $network || is_multisite();
+				},
 				'class_exists'    => function ( $class_name, $autoload = true ) use ( $class_loaded ) {
 					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
 						return $class_loaded;
@@ -126,6 +129,33 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, $this->sut->get_runtime_owner(), 'A network-activated plugin owns the runtime.' );
 		$this->assertTrue( $this->sut->is_plugin_runtime_active(), 'A network-activated plugin owns the runtime.' );
 		$this->assertFalse( $this->sut->should_native_register(), 'Native must not register while a network-activated plugin owns the runtime.' );
+	}
+
+	/**
+	 * @testdox Owner resolution on a single site does not read the network plugin list.
+	 */
+	public function test_single_site_owner_resolution_skips_network_plugin_list(): void {
+		$network_reads = 0;
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_option'      => function ( $name, $default_value = false ) {
+					return 'active_plugins' === $name ? array() : get_option( $name, $default_value );
+				},
+				'get_site_option' => function ( $name, $default_value = false ) use ( &$network_reads ) {
+					++$network_reads;
+					return get_site_option( $name, $default_value );
+				},
+				'is_multisite'    => function () {
+					return false;
+				},
+				'defined'         => function ( $constant_name ) {
+					return 'WCPAY_PLUGIN_FILE' === $constant_name ? false : defined( $constant_name );
+				},
+			)
+		);
+
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
+		$this->assertSame( 0, $network_reads );
 	}
 
 	/**

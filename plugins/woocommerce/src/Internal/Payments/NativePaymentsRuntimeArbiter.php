@@ -251,6 +251,11 @@ class NativePaymentsRuntimeArbiter {
 			return true;
 		}
 
+		// A single site has no network plugin list; reading it would query a missing option on every request.
+		if ( ! $this->legacy_proxy->call_function( 'is_multisite' ) ) {
+			return false;
+		}
+
 		$network_active = (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() );
 		return isset( $network_active[ self::PLUGIN_FILE ] );
 	}

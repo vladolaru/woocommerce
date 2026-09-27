@@ -1849,6 +1849,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 					}
 					return get_site_option( $name, $default_value );
 				},
+				'is_multisite'       => function () {
+					return $this->plugin_network_active || is_multisite();
+				},
 				'get_plugins'        => function () use ( $entry ) {
 					return array(
 						$entry => array(
