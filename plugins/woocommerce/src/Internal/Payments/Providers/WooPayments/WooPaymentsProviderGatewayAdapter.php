@@ -627,9 +627,14 @@ class WooPaymentsProviderGatewayAdapter {
 		}
 		$data[ PaymentOutcome::DATA_META ]                  = $meta;
 		$data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] = true;
-		// The plugin withholds field-level guidance from blocked shoppers so a
-		// card tester is not told which check tripped; redact to the generic copy.
-		$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] = WooPaymentsErrorMessages::get_generic_message();
+		// Client 11.1.0 gw:1426 passes the fraud flag, so the postal-code hint is withheld and the platform message shows.
+		$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] = WooPaymentsErrorMessages::get_shopper_message(
+			$exception->get_error_type(),
+			$exception->get_error_code(),
+			$exception->get_decline_code(),
+			$exception->getMessage(),
+			true
+		);
 
 		$note_candidates = $this->note_service->format_fraud_blocked_note_candidates( $order, $exception->get_payment_intent_id(), $ruleset_results );
 		if ( array() !== $note_candidates ) {

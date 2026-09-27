@@ -155,6 +155,18 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A fraud-blocked incorrect_zip decline keeps the platform message instead of the postal-code hint.
+	 *
+	 * Source: client 11.1.0 `class-wc-payments-utils.php:799` (`! $blocked_by_fraud_rules` guard).
+	 */
+	public function test_get_shopper_message_keeps_platform_message_for_fraud_blocked_incorrect_zip(): void {
+		$this->assertSame(
+			'Error: Your postal code failed validation.',
+			WooPaymentsErrorMessages::get_shopper_message( 'card_error', 'incorrect_zip', '', 'Error: Your postal code failed validation.', true )
+		);
+	}
+
+	/**
 	 * @testdox A failed transport request uses the client's connection copy instead of the transport diagnostic.
 	 *
 	 * Source: client 11.1.0 `class-wc-payments-utils.php:773-774` (`Connection_Exception` branch).

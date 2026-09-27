@@ -911,6 +911,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'canceled', $meta['_intention_status'] ?? null );
 		$this->assertSame( 'pi_blocked_test', $outcome->get_provider_payment_id() );
 		$this->assertStringContainsString( '<strong>blocked</strong> by the following risk filters', $data[ PaymentOutcome::DATA_NOTE ] ?? '' );
+		// Client 11.1.0 test_process_payment_marks_order_as_blocked_for_fraud: the shopper notice equals the thrown message.
+		$this->assertSame( 'Error: Transaction blocked by fraud rules.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
 	}
 
 	/**
@@ -968,10 +970,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'block', $meta['_wcpay_fraud_meta_box_type'] ?? null, 'With the AVS rule enabled, an incorrect_zip decline is an AVS block.' );
 		$this->assertSame( wp_json_encode( array( 'avs_verification' => 'block' ) ), $meta['_wcpay_fraud_ruleset_results'] ?? null );
+		// Client 11.1.0 utils.php:799 with the fraud flag (gw:1426): no postal-code hint, the platform message shows
+		// (client test_process_payment_marks_order_as_blocked_for_fraud_avs_mismatch asserts the thrown message).
 		$this->assertSame(
-			"We're not able to process this request. Please refresh the page and try again.",
+			'Error: Your postal code failed validation.',
 			$outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null,
-			'A blocked shopper must not be told which field tripped the block.'
+			'An AVS-blocked shopper sees the platform message, not the postal-code hint.'
 		);
 
 		delete_transient( 'wcpay_fraud_protection_settings' );

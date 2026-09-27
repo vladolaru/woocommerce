@@ -27,9 +27,10 @@ class WooPaymentsErrorMessages {
 	 * @param string $error_code       Provider error code.
 	 * @param string $decline_code     Provider decline code.
 	 * @param string $platform_message Normalized platform message.
+	 * @param bool   $blocked_by_fraud_rules Whether fraud rules blocked the payment (client utils.php:799 then keeps the platform message).
 	 * @return string
 	 */
-	public static function get_shopper_message( string $error_type, string $error_code, string $decline_code = '', string $platform_message = '' ): string {
+	public static function get_shopper_message( string $error_type, string $error_code, string $decline_code = '', string $platform_message = '', bool $blocked_by_fraud_rules = false ): string {
 		if ( 'wcpay_http_request_failed' === $error_code ) {
 			return __( 'There was an error while processing this request. If you continue to see this notice, please contact the admin.', 'woocommerce' );
 		}
@@ -42,7 +43,7 @@ class WooPaymentsErrorMessages {
 			return $platform_message;
 		}
 
-		if ( 'incorrect_zip' === $error_code ) {
+		if ( 'incorrect_zip' === $error_code && ! $blocked_by_fraud_rules ) {
 			return __( 'We couldn’t verify the postal code in your billing address. Make sure the information is current with your card issuing bank and try again.', 'woocommerce' );
 		}
 
