@@ -50,6 +50,7 @@ assert_json "$WORK_DIR/plugin-capture.json" 'data["schema"] == "woopayments_meas
 assert_json "$WORK_DIR/plugin-capture.json" 'data["assets"]["classic-card.js"]["status"] == "present" and data["assets"]["classic-card.js"]["path"] == "dist/checkout.js" and data["assets"]["classic-card.js"]["raw_bytes"] == len(open("'"$plugin_repo"'/dist/checkout.js", "rb").read()) and data["assets"]["classic-card.js"]["gzip_bytes"] == len(__import__("gzip").compress(open("'"$plugin_repo"'/dist/checkout.js", "rb").read(), compresslevel=9))'
 assert_json "$WORK_DIR/plugin-capture.json" 'data["assets"]["blocks-express-checkout.js"] == {"status": "missing", "path": None}'
 assert_json "$WORK_DIR/plugin-capture.json" 'data["assets"]["woopay.js"] == {"status": "missing", "path": "dist/woopay.js"}'
+assert_json "$WORK_DIR/plugin-capture.json" 'data["assets"]["frontend-tracks.js"] == {"status": "missing", "path": "dist/frontend-tracks.js"}'
 
 # --- capture: wc-core profile (auto-detected from the plugins/woocommerce layout) ---
 core_repo="$WORK_DIR/wc-core"
@@ -59,6 +60,7 @@ bash "$GATE" capture --repo "$core_repo" --out "$WORK_DIR/core-capture.json" > /
 assert_json "$WORK_DIR/core-capture.json" 'data["profile"] == "wc-core"'
 assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["classic-card.js"]["status"] == "present" and data["assets"]["classic-card.js"]["path"] == "plugins/woocommerce/assets/js/frontend/woopayments-checkout.js"'
 assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["settings-main.css"] == {"status": "missing", "path": None}'
+assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["frontend-tracks.js"] == {"status": "missing", "path": "plugins/woocommerce/assets/js/frontend/woopayments-frontend-tracks.js"}'
 
 # --- capture: a missing repo directory fails closed ---
 expect_exit 2 'capture on a missing repo fails' bash "$GATE" capture --repo "$WORK_DIR/does-not-exist" --out "$WORK_DIR/missing.json"

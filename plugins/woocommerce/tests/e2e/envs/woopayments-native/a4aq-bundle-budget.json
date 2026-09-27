@@ -40,6 +40,10 @@
 		"woopay.js": {
 			"raw_growth_bytes": 20485,
 			"gzip_growth_bytes": 7005
+		},
+		"frontend-tracks.js": {
+			"raw_bytes": 738,
+			"gzip_bytes": 379
 		}
 	}
 }
