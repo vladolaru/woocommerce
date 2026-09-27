@@ -56,7 +56,7 @@ class MultiCurrencyCacheRenderingService {
 		$missing_rendering_mode = new \stdClass();
 		$rendering_mode         = get_option( MultiCurrencyFrontendProjectionService::OPTION_PREFIX . '_rendering_mode', $missing_rendering_mode );
 		if ( $missing_rendering_mode !== $rendering_mode ) {
-			update_option( self::AUTODETECT_DONE_OPTION, 'yes', false );
+			update_option( self::AUTODETECT_DONE_OPTION, 'yes', true );
 			return;
 		}
 
@@ -69,7 +69,7 @@ class MultiCurrencyCacheRenderingService {
 			);
 		}
 
-		update_option( self::AUTODETECT_DONE_OPTION, 'yes', false );
+		update_option( self::AUTODETECT_DONE_OPTION, 'yes', true );
 	}
 
 	/**

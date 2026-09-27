@@ -72,6 +72,19 @@ class MultiCurrencyCacheRenderingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $environment->calls );
 		$this->assertSame( 'cache', get_option( self::MODE_OPTION ) );
 		$this->assertSame( 'yes', get_option( self::DONE_OPTION ) );
+		// Read on every admin_init; client 11.1.0 autoloads it (MultiCurrency.php:1222).
+		$this->assertArrayHasKey( self::DONE_OPTION, wp_load_alloptions( true ) );
+	}
+
+	/**
+	 * @testdox Should autoload the completion marker when a stored mode ends detection.
+	 */
+	public function test_autoloads_the_completion_marker_when_a_mode_is_already_stored(): void {
+		add_option( self::MODE_OPTION, 'speed' );
+
+		$this->create_service( $this->create_environment( true ) )->maybe_auto_enable_cache_rendering_mode();
+
+		$this->assertArrayHasKey( self::DONE_OPTION, wp_load_alloptions( true ) );
 	}
 
 	/**
