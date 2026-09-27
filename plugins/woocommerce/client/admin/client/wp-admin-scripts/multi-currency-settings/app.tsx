@@ -410,8 +410,10 @@ export function MultiCurrencySettingsApp() {
 						<th scope="col">
 							{ __( 'Exchange rate', 'woocommerce' ) }
 						</th>
-						<th scope="col" className="screen-reader-text">
-							{ __( 'Actions', 'woocommerce' ) }
+						<th scope="col">
+							<span className="screen-reader-text">
+								{ __( 'Actions', 'woocommerce' ) }
+							</span>
 						</th>
 					</tr>
 				</thead>

@@ -1,7 +1,13 @@
 /**
  * External dependencies
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { speak } from '@wordpress/a11y';
 import apiFetch from '@wordpress/api-fetch';
@@ -217,9 +223,14 @@ describe( 'MultiCurrencySettingsApp', () => {
 		expect(
 			screen.queryByRole( 'columnheader', { name: 'Code' } )
 		).not.toBeInTheDocument();
-		expect(
-			screen.getByRole( 'columnheader', { name: 'Actions' } )
-		).toHaveClass( 'screen-reader-text' );
+		const actionsHeader = screen.getByRole( 'columnheader', {
+			name: 'Actions',
+		} );
+		// The cell keeps its table semantics; only its text is visually hidden.
+		expect( actionsHeader ).not.toHaveClass( 'screen-reader-text' );
+		expect( within( actionsHeader ).getByText( 'Actions' ) ).toHaveClass(
+			'screen-reader-text'
+		);
 		expect(
 			screen.getByRole( 'rowheader', { name: 'Euro (€ EUR)' } )
 		).toBeInTheDocument();
