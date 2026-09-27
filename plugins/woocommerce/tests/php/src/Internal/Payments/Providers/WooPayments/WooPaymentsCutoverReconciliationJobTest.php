@@ -2865,6 +2865,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/**
+			 * Report that the installed plugin files still carry an unsupported version.
+			 *
+			 * @param string $plugin_file Active plugin file.
+			 * @return string
+			 */
+			protected function get_installed_plugin_version( string $plugin_file ): string {
+				unset( $plugin_file ); // Avoid parameter not used PHPCS errors.
+				return '10.4.0';
+			}
+
+			/**
 			 * Record the handled release failure without relying on the global logger.
 			 *
 			 * @param string              $message Error message.
@@ -2920,19 +2931,25 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A successful plugin update clears its blocker and is not repeated by the successor attempt.
+	 * @testdox A successful plugin update defers quietly until the plugin records its new version, then finalizes without a second update.
+	 *
+	 * Source: client 11.1.0 `includes/class-wc-payments.php:376` bumps the recorded version on the plugin's next `init`,
+	 * so the request that ran the update still reads the old version.
 	 */
 	public function test_successful_plugin_update_is_not_repeated_after_the_version_blocker_clears(): void {
-		$preflight = new class() extends WooPaymentsCutoverPreflightService {
+		$preflight     = new class() extends WooPaymentsCutoverPreflightService {
 			/** @var bool */
 			private bool $version_unsupported = true;
+
+			/** @var int */
+			public int $deactivation_calls = 0;
 
 			/** @return string[] */
 			public function get_reconciliation_failures(): array {
 				return $this->version_unsupported ? array( 'woopayments_plugin_version_unsupported' ) : array();
 			}
 
-			/** Clear the controlled version failure after the core update succeeds. */
+			/** Clear the controlled version failure, as the plugin's own next request does. */
 			public function mark_plugin_version_supported(): void {
 				$this->version_unsupported = false;
 			}
@@ -2941,9 +2958,20 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function invalidate_current_blog_memoization(): void {
 			}
 
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
 			/** Return the controlled active plugin file. */
 			public function get_active_woopayments_plugin_file(): string {
 				return 'woocommerce-payments/woocommerce-payments.php';
+			}
+
+			/** Record the finalization deactivation. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivation_calls;
+				return true;
 			}
 
 			/**
@@ -2957,14 +2985,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return false;
 			}
 		};
-		$job       = new class(
-			static function () use ( $preflight ): void {
-				$preflight->mark_plugin_version_supported();
-			}
-		) extends WooPaymentsCutoverReconciliationJob {
-			/** @var \Closure */
-			private \Closure $mark_plugin_version_supported;
-
+		$job           = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @var int */
 			private int $metadata_refreshes = 0;
 
@@ -2974,14 +2995,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** @var bool[] */
 			private array $lock_observations = array();
 
-			/**
-			 * Initialize the controlled core update completion callback.
-			 *
-			 * @param \Closure $mark_plugin_version_supported Marks the controlled version as supported.
-			 */
-			public function __construct( \Closure $mark_plugin_version_supported ) {
-				$this->mark_plugin_version_supported = $mark_plugin_version_supported;
-			}
+			/** @var array<int,array<string,mixed>> */
+			private array $errors = array();
 
 			/** Refresh controlled update metadata. */
 			protected function refresh_plugin_update_metadata(): void {
@@ -2992,7 +3007,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 * Complete one controlled core plugin update.
 			 *
 			 * Returns an array, the real shape `Plugin_Upgrader::bulk_upgrade()` reports for a completed
-			 * install; `update_woopayments_plugin()` only counts an array result as a completed upgrade.
+			 * install. The recorded version option does not move here: the plugin bumps it on its next request.
 			 *
 			 * @param string $plugin_file Active plugin file.
 			 * @return array<string,mixed>
@@ -3000,8 +3015,31 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			protected function upgrade_woopayments_plugin_file( string $plugin_file ): array {
 				$this->upgraded_plugin_files[] = $plugin_file;
 				$this->lock_observations[]     = false !== get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false );
-				( $this->mark_plugin_version_supported )();
 				return array( 'destination_name' => 'woocommerce-payments' );
+			}
+
+			/**
+			 * Report the header version of the freshly installed plugin files.
+			 *
+			 * @param string $plugin_file Active plugin file.
+			 * @return string
+			 */
+			protected function get_installed_plugin_version( string $plugin_file ): string {
+				unset( $plugin_file ); // Avoid parameter not used PHPCS errors.
+				return '11.1.0';
+			}
+
+			/**
+			 * Record logged errors without relying on the global logger.
+			 *
+			 * @param string              $message Error message.
+			 * @param array<string,mixed> $context Error context.
+			 */
+			protected function write_log_error( string $message, array $context ): void {
+				$this->errors[] = array(
+					'message' => $message,
+					'context' => $context,
+				);
 			}
 
 			/** @return int */
@@ -3018,8 +3056,22 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function get_lock_observations(): array {
 				return $this->lock_observations;
 			}
+
+			/** @return array<int,array<string,mixed>> */
+			public function get_errors(): array {
+				return $this->errors;
+			}
 		};
-		$sut       = $this->create_job( true, $preflight, $job );
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut           = $this->create_job( true, $preflight, $job, true, $normalization );
 		$sut->enqueue( 'merchant' );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -3029,18 +3081,27 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$first = $this->require_state_store()->get_record();
 		$this->assertIsArray( $first );
-		$this->assertSame( array( 'normalization_failed' ), $first['deferred_codes'] );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $first['state'] );
+		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $first['deferred_codes'] );
+		$this->assertSame( array(), $job->get_errors(), 'A completed update that installed a supported version must not log an error.' );
 		$this->assertSame( 1, $job->get_metadata_refresh_count() );
 		$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php' ), $job->get_upgraded_plugin_files() );
 		$this->assertSame( array( true ), $job->get_lock_observations() );
 		$this->assertFalse( get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false ) );
+		$this->assertSame( 0, $preflight->deactivation_calls );
+
+		$preflight->mark_plugin_version_supported();
+		$this->require_scheduler()->cancel( $first['generation'], 2 );
 		$sut->handle_reconcile( $first['generation'], 2 );
 
 		$second = $this->require_state_store()->get_record();
 		$this->assertIsArray( $second );
-		$this->assertSame( array( 'normalization_failed' ), $second['deferred_codes'] );
+		$this->assertSame( WooPaymentsCutoverState::PENDING, $second['state'] );
+		$this->assertSame( 'verify_native_ownership', $second['current_step'] );
+		$this->assertSame( 1, $preflight->deactivation_calls );
 		$this->assertSame( 1, $job->get_metadata_refresh_count() );
 		$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php' ), $job->get_upgraded_plugin_files() );
+		$this->assertSame( array(), $job->get_errors() );
 	}
 
 	/**

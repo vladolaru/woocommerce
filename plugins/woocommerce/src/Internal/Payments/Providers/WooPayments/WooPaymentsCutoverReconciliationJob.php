@@ -887,7 +887,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				}
 				return;
 			}
-			if ( $plugin_update_succeeded && in_array( 'woopayments_plugin_version_unsupported', $remaining_failures, true ) ) {
+			// The plugin records its new version only on its next request, so check the installed files instead.
+			if ( $plugin_update_succeeded && in_array( 'woopayments_plugin_version_unsupported', $remaining_failures, true ) && ! $this->is_installed_woopayments_plugin_version_supported() ) {
 				$this->log_error( 'WooPayments cutover plugin update completed without installing a supported version.' );
 			}
 
@@ -1830,6 +1831,35 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		$upgrader = new \Plugin_Upgrader( new \Automatic_Upgrader_Skin() );
 		$results  = $upgrader->bulk_upgrade( array( $plugin_file ) );
 		return is_array( $results ) ? ( $results[ $plugin_file ] ?? false ) : false;
+	}
+
+	/**
+	 * Tell whether the installed WooPayments plugin files carry a cutover-supported version.
+	 *
+	 * @return bool
+	 */
+	private function is_installed_woopayments_plugin_version_supported(): bool {
+		$plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
+		$version     = '' === $plugin_file ? '' : $this->get_installed_plugin_version( $plugin_file );
+
+		return '' !== $version && version_compare( $version, WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION, '>=' );
+	}
+
+	/**
+	 * Read the header version of an installed plugin file.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $plugin_file Plugin file relative to the plugins directory.
+	 * @return string Header version, or an empty string when unreadable.
+	 */
+	protected function get_installed_plugin_version( string $plugin_file ): string {
+		if ( ! function_exists( 'get_plugin_data' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+		$plugin_data = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin_file, false, false );
+
+		return is_string( $plugin_data['Version'] ?? null ) ? trim( $plugin_data['Version'] ) : '';
 	}
 
 	/**
