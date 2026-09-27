@@ -109,7 +109,7 @@ const buildWooPayAjaxUrl = ( paymentSettings, endpoint ) =>
 		`wcpay_${ endpoint }`
 	);
 
-const postWooPayAjax = async ( paymentSettings, endpoint, data ) => {
+export const postWooPayAjax = async ( paymentSettings, endpoint, data ) => {
 	const body = new window.FormData();
 	Object.entries( data ).forEach( ( [ key, value ] ) => {
 		if ( value === undefined || value === null ) {
@@ -133,7 +133,7 @@ const postWooPayAjax = async ( paymentSettings, endpoint, data ) => {
 	return response.json();
 };
 
-const getWooPayAppearance = ( paymentSettings ) =>
+export const getWooPayAppearance = ( paymentSettings ) =>
 	paymentSettings.isWooPayGlobalThemeSupportEnabled
 		? ensureBlocksWooPayAppearance(
 				paymentSettings.stylesCacheVersion,

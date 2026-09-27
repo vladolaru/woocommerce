@@ -1159,4 +1159,241 @@ describe( 'WooPayments WooPay checkout', () => {
 			expect( navigate ).toHaveBeenCalledTimes( 1 );
 		} );
 	} );
+	// Client 11.1.0: with first-party auth off, the classic express button
+	// (emailSelector #billing_email, client/checkout/woopay/express-button/index.js:59)
+	// calls `expressCheckoutIframe( api, context, emailSelector )`
+	// (woopay-express-checkout-button.js:164-201), which opens the platform
+	// `/otp/` iframe (express-checkout-iframe.js:40-205) and, on the OTP
+	// result, posts init_woopay once with the platform user session
+	// (express-checkout-iframe.js:213-262, init-woopay.js:15-61).
+	describe( 'express OTP iframe without a WooPay user session', () => {
+		const expectedOtpUrl =
+			'https://pay.woo.test/otp/?testMode=true&needsHeader=false&wcpayVersion=11.1.0' +
+			'&email=shopper%40example.com&is_blocks=false&is_express=true&express_context=checkout' +
+			'&source_url=http%3A%2F%2Flocalhost%2F&viewport=0x0' +
+			'&tracksUserIdentity=%7B%22_ut%22%3A%22anon%22%2C%22_ui%22%3A%22tk-anon-1%22%7D';
+		let postMessage;
+		let navigate;
+
+		function getInitCalls() {
+			return window.fetch.mock.calls.filter(
+				( [ url ] ) => url === '/?wc-ajax=wcpay_init_woopay'
+			);
+		}
+
+		function sendWooPayMessage( data, origin ) {
+			window.dispatchEvent(
+				new window.MessageEvent( 'message', {
+					origin: origin || 'https://pay.woo.test',
+					data: data,
+				} )
+			);
+		}
+
+		async function openOtpIframe() {
+			const { __test__ } = require( '../woopayments-woopay' );
+			__test__.setNavigate( navigate );
+			document.querySelector( '#wcpay-woopay-button button' ).click();
+			await flushPromises();
+
+			return document.querySelector( '.woopay-otp-iframe' );
+		}
+
+		beforeEach( () => {
+			postMessage = jest.fn();
+			navigate = jest.fn();
+			Object.defineProperty(
+				window.HTMLIFrameElement.prototype,
+				'contentWindow',
+				{
+					configurable: true,
+					get: () => ( { postMessage } ),
+				}
+			);
+			Object.assign( window.wcpay_core_woopay_config, {
+				woopayUserSession: '',
+				woopayHost: 'https://pay.woo.test',
+				// wp_localize_script serves booleans as '1' and ''; the client
+				// sends its JSON boolean, so the query must read testMode=true.
+				testMode: '1',
+				wcpayVersionNumber: '11.1.0',
+				woopayOtpIframeTitle: 'WooPay SMS code verification',
+				woopayExpressUnavailableMessage:
+					'WooPay is unavailable at this time. Sorry for the inconvenience.',
+				woopayButtonNonce: 'button-nonce',
+			} );
+			// Earlier cases navigate to #fragments; source_url is the page URL.
+			window.history.replaceState( null, '', '/' );
+			document.cookie = 'tk_ai=tk-anon-1; path=/';
+			document.body.innerHTML =
+				'<div class="woocommerce-notices-wrapper"></div>' +
+				document.body.innerHTML;
+			document.querySelector( '.woocommerce-notices-wrapper' ).scrollIntoView =
+				jest.fn();
+		} );
+
+		afterEach( () => {
+			sendWooPayMessage( { action: 'close_modal' } );
+			document.cookie =
+				'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
+			delete window.HTMLIFrameElement.prototype.contentWindow;
+		} );
+
+		test( 'opens the platform OTP iframe with the client query instead of the direct-checkout redirect', async () => {
+			const iframe = await openOtpIframe();
+
+			expect( iframe ).not.toBeNull();
+			expect( iframe.getAttribute( 'src' ) ).toBe( expectedOtpUrl );
+			expect( iframe.title ).toBe( 'WooPay SMS code verification' );
+			expect( iframe.classList.contains( 'intrinsic-ignore' ) ).toBe( true );
+			const wrapper = iframe.parentElement;
+			expect(
+				wrapper.classList.contains( 'woopay-otp-iframe-wrapper' )
+			).toBe( true );
+			expect( wrapper.getAttribute( 'role' ) ).toBe( 'dialog' );
+			expect( wrapper.getAttribute( 'aria-modal' ) ).toBe( 'true' );
+			expect( wrapper.parentElement ).toBe( document.body );
+			expect( navigate ).not.toHaveBeenCalled();
+			expect( getInitCalls() ).toHaveLength( 0 );
+			expect(
+				global.jQuery.post.mock.calls.some( ( [ url ] ) =>
+					/init_woopay|get_woopay_minimum_session_data/.test( url )
+				)
+			).toBe( false );
+		} );
+
+		test( 'posts init_woopay once with the OTP user session and follows the returned URL', async () => {
+			let resolveInit;
+			window.fetch = jest.fn( ( url ) =>
+				url === '/?wc-ajax=wcpay_init_woopay'
+					? new Promise( ( resolve ) => {
+							resolveInit = resolve;
+					  } )
+					: Promise.resolve( { json: () => Promise.resolve( {} ) } )
+			);
+			await openOtpIframe();
+
+			sendWooPayMessage(
+				{
+					action: 'redirect_to_woopay',
+					platformCheckoutUserSession: 'forged-session',
+				},
+				'https://attacker.test'
+			);
+			expect( getInitCalls() ).toHaveLength( 0 );
+
+			sendWooPayMessage( {
+				action: 'otp_email_submitted',
+				userEmail: 'otp@example.com',
+			} );
+			sendWooPayMessage( {
+				action: 'redirect_to_platform_checkout',
+				platformCheckoutUserSession: 'platform-session-1',
+			} );
+			sendWooPayMessage( {
+				action: 'redirect_to_woopay',
+				platformCheckoutUserSession: 'platform-session-1',
+			} );
+
+			expect( getInitCalls() ).toHaveLength( 1 );
+			const body = getInitCalls()[ 0 ][ 1 ].body;
+			expect( body.get( '_wpnonce' ) ).toBe( 'init-nonce' );
+			expect( body.get( 'email' ) ).toBe( 'otp@example.com' );
+			expect( body.get( 'user_session' ) ).toBe( 'platform-session-1' );
+
+			resolveInit( {
+				json: () =>
+					Promise.resolve( {
+						result: 'success',
+						url: 'https://pay.woo.test/woopay/?platform_checkout_key=abc',
+					} ),
+			} );
+			await flushPromises();
+
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/woopay/?platform_checkout_key=abc'
+			);
+		} );
+
+		test( 'shows the WooPay unavailable notice and closes the iframe when init_woopay fails', async () => {
+			window.fetch = jest.fn( ( url, options ) => {
+				let data = {};
+				if ( url === '/?wc-ajax=wcpay_init_woopay' ) {
+					data = { result: 'failure' };
+				} else if (
+					options.body.get( 'action' ) ===
+					'woopay_express_checkout_button_show_error_notice'
+				) {
+					data = {
+						success: true,
+						data: {
+							notice: '<ul class="woocommerce-error"><li>WooPay unavailable</li></ul>',
+						},
+					};
+				}
+
+				return Promise.resolve( { json: () => Promise.resolve( data ) } );
+			} );
+			await openOtpIframe();
+
+			sendWooPayMessage( {
+				action: 'redirect_to_woopay',
+				platformCheckoutUserSession: 'platform-session-1',
+			} );
+			await flushPromises();
+
+			const noticeCall = window.fetch.mock.calls.find(
+				( [ url, options ] ) =>
+					url === 'https://example.test/admin-ajax.php' &&
+					options.body.get( 'action' ) ===
+						'woopay_express_checkout_button_show_error_notice'
+			);
+			expect( noticeCall ).toBeDefined();
+			expect( noticeCall[ 1 ].body.get( '_ajax_nonce' ) ).toBe(
+				'button-nonce'
+			);
+			expect( noticeCall[ 1 ].body.get( 'context' ) ).toBe( 'checkout' );
+			expect( noticeCall[ 1 ].body.get( 'message' ) ).toBe(
+				'WooPay is unavailable at this time. Sorry for the inconvenience.'
+			);
+			expect(
+				document.querySelector(
+					'.woocommerce-notices-wrapper .woocommerce-error'
+				).textContent
+			).toBe( 'WooPay unavailable' );
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
+			expect( navigate ).not.toHaveBeenCalled();
+		} );
+
+		test( 'follows the skip-session-init redirect, sizes the iframe and closes on close_modal', async () => {
+			const iframe = await openOtpIframe();
+
+			sendWooPayMessage( { action: 'iframe_height', height: 500 } );
+			expect( iframe.style.height ).toBe( '500px' );
+			expect( iframe.style.top ).toBe(
+				Math.floor( window.innerHeight / 2 - 250 ) + 'px'
+			);
+
+			iframe.dispatchEvent( new window.Event( 'load' ) );
+			expect( iframe.classList.contains( 'open' ) ).toBe( true );
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'setHeader', value: false },
+				'https://pay.woo.test'
+			);
+			expect( document.body.style.overflow ).toBe( 'hidden' );
+
+			sendWooPayMessage( {
+				action: 'redirect_to_woopay_skip_session_init',
+				redirectUrl: 'https://pay.woo.test/woopay/?skip=1',
+			} );
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/woopay/?skip=1'
+			);
+
+			sendWooPayMessage( { action: 'close_modal' } );
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
+			expect( document.body.style.overflow ).toBe( '' );
+		} );
+	} );
 } );

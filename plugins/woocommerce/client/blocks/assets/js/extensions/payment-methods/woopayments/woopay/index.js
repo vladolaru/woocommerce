@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from '@wordpress/element';
  */
 import { recordWooPaymentsUserEvent } from '../tracks';
 import { ensureBlocksWooPayAppearance } from '../upe-styles';
+import { expressCheckoutIframe } from './express-checkout-iframe';
 
 const PAYMENT_METHOD_NAME = 'woocommerce_payments';
 const settings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
@@ -418,38 +419,6 @@ const isValidWooPayMinimumSessionData = ( sessionData ) => {
 	);
 };
 
-const getWooPayMinimumSessionData = async () => {
-	if (
-		isValidWooPayMinimumSessionData( settings.woopayMinimumSessionData )
-	) {
-		return settings.woopayMinimumSessionData;
-	}
-
-	const body = new window.URLSearchParams();
-	body.append( '_ajax_nonce', settings.woopaySessionNonce || '' );
-
-	return postWooPayAjax( 'get_woopay_minimum_session_data', body );
-};
-
-const getWooPayMinimumSessionRedirectUrl = ( sessionData ) => {
-	if (
-		! settings.woopayHost ||
-		! isValidWooPayMinimumSessionData( sessionData )
-	) {
-		return '';
-	}
-
-	const params = new window.URLSearchParams( {
-		checkout_redirect: '1',
-		blog_id: sessionData.blog_id,
-		session: sessionData.data.session,
-		iv: sessionData.data.iv,
-		hash: sessionData.data.hash,
-	} );
-
-	return `${ settings.woopayHost }/woopay/?${ params.toString() }`;
-};
-
 const getWooPaySessionData = async () => {
 	const body = new window.URLSearchParams();
 	body.append( '_ajax_nonce', settings.woopaySessionNonce || '' );
@@ -628,12 +597,12 @@ const WooPayExpressContent = () => {
 
 	const continueWooPay = async () => {
 		if ( ! settings.woopayUserSession ) {
-			const sessionData = await getWooPayMinimumSessionData();
-			const redirectUrl =
-				getWooPayMinimumSessionRedirectUrl( sessionData );
-			if ( redirectUrl ) {
-				navigate( redirectUrl );
-			}
+			await expressCheckoutIframe(
+				settings,
+				eventSource,
+				'#email',
+				navigate
+			);
 			return;
 		}
 

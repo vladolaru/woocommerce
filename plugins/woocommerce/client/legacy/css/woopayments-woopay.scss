@@ -212,3 +212,46 @@
 	}
 }
 /* stylelint-enable no-descending-specificity, selector-class-pattern */
+
+/* Express-button OTP iframe (the WooPayments plugin's checkout/woopay/style.scss);
+the script centers it with inline top/left on wide viewports. */
+.woopay-otp-iframe {
+	transition: inset-block-start 500ms;
+	inline-size: 100%;
+	block-size: 100dvh; /* stylelint-disable-line unit-no-unknown */
+	position: fixed;
+	inset-block-start: 100%;
+	inset-inline-start: 0;
+	z-index: 355000;
+	border: 0;
+	background: #fff;
+
+	&.open {
+		inset-block-start: 0;
+	}
+}
+
+@media screen and (min-width: 768px) {
+
+	.woopay-otp-iframe-wrapper {
+		position: fixed;
+		background: rgba(117, 117, 117, 0.6);
+		inset-block-start: 0;
+		inset-inline-start: 0;
+		inline-size: 100vw;
+		block-size: 100vh;
+		display: block;
+		z-index: 355000;
+
+		.woopay-otp-iframe {
+			transition: none;
+			block-size: 90vh;
+			max-block-size: 650px;
+			position: absolute;
+			max-inline-size: 374px;
+			border-radius: 8px;
+			inset-inline-end: 50px;
+			inset-inline-start: auto;
+		}
+	}
+}

@@ -1195,6 +1195,15 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report live mode in the WooPay frontend config so the express OTP iframe opens in live mode.
+	 */
+	public function test_woopay_frontend_config_reports_live_mode(): void {
+		$config = $this->create_service( array(), array(), null, null, null, false )->get_woopay_frontend_config( 'checkout' );
+
+		$this->assertFalse( $config['testMode'] );
+	}
+
+	/**
 	 * @testdox Should build the preserved WooPay checkout frontend config.
 	 */
 	public function test_builds_woopay_checkout_frontend_config(): void {
@@ -1221,6 +1230,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '12345', $config['woopayMerchantId'] );
 		$this->assertSame( 'WooPay SMS code verification', $config['woopayOtpIframeTitle'] );
 		$this->assertSame( 'WooPay is unavailable at this time. Please complete your checkout below. Sorry for the inconvenience.', $config['woopayUnavailableMessage'] );
+		$this->assertSame( 'WooPay is unavailable at this time. Sorry for the inconvenience.', $config['woopayExpressUnavailableMessage'] );
+		$this->assertTrue( $config['testMode'] );
 		$this->assertSame( 'checkout', $config['woopayButton']['context'] );
 		$this->assertSame( 'default', $config['woopayButton']['type'] );
 		$this->assertSame( 'dark', $config['woopayButton']['theme'] );

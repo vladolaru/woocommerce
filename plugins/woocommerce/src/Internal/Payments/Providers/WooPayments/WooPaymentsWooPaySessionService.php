@@ -1044,6 +1044,7 @@ class WooPaymentsWooPaySessionService {
 			'isShopperTrackingEnabled'          => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
 			'is_shopper_tracking_enabled'       => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
 			'woopayHost'                        => $this->get_woopay_url(),
+			'testMode'                          => $this->get_account_service()->is_test_mode_enabled(),
 			'wcpayVersionNumber'                => WooPaymentsClientVersion::VERSION,
 			'woopayMerchantId'                  => $this->get_woopay_merchant_id(),
 			'initWooPayNonce'                   => wp_create_nonce( 'wcpay_init_woopay_nonce' ),
@@ -1080,6 +1081,7 @@ class WooPaymentsWooPaySessionService {
 			'woopayPhoneLabel'                  => __( 'Mobile phone number', 'woocommerce' ),
 			'woopayOtpIframeTitle'              => __( 'WooPay SMS code verification', 'woocommerce' ),
 			'woopayUnavailableMessage'          => __( 'WooPay is unavailable at this time. Please complete your checkout below. Sorry for the inconvenience.', 'woocommerce' ),
+			'woopayExpressUnavailableMessage'   => __( 'WooPay is unavailable at this time. Sorry for the inconvenience.', 'woocommerce' ),
 		);
 	}
 
