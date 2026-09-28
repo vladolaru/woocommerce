@@ -1040,6 +1040,35 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Admin-notice classification on a plugin store awaiting the start click scans once per record revision, not on every admin page.
+	 */
+	public function test_admin_notice_classification_reuses_the_scan_for_one_record_revision(): void {
+		$preflight = new class() extends WooPaymentsCutoverPreflightService {
+			/** @var int Number of preflight scans. */
+			public int $scans = 0;
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				++$this->scans;
+				return array();
+			}
+		};
+		$sut       = $this->create_job( true, $preflight );
+
+		for ( $page = 0; $page < 3; $page++ ) {
+			$this->assertNull( $sut->classify_for_admin_notice() );
+			$this->assertTrue( $sut->should_offer_start() );
+		}
+		$this->assertSame( 1, $preflight->scans, 'Three admin pages without a record should share one scan.' );
+
+		$cached               = get_option( 'woocommerce_woopayments_cutover_admin_classification' );
+		$cached['expires_at'] = time() - 1;
+		update_option( 'woocommerce_woopayments_cutover_admin_classification', $cached );
+		$sut->classify_for_admin_notice();
+		$this->assertSame( 2, $preflight->scans, 'An expired classification must be scanned again.' );
+	}
+
+	/**
 	 * @testdox Admin-notice classification runs no preflight scan on a native store that has no cutover record and no plugin.
 	 */
 	public function test_admin_notice_classification_skips_preflight_without_record_or_plugin(): void {
@@ -4834,6 +4863,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	private function cleanup_state(): void {
 		delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
 		delete_option( WooPaymentsCutoverStateStore::LEASE_OPTION_NAME );
+		delete_option( 'woocommerce_woopayments_cutover_admin_classification' );
 
 		foreach ( array( ActionScheduler_Store::STATUS_PENDING, ActionScheduler_Store::STATUS_RUNNING ) as $status ) {
 			$action_ids = as_get_scheduled_actions(

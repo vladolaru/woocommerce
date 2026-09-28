@@ -24,6 +24,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** State option name. */
 	public const STATE_OPTION = WooPaymentsCutoverStateStore::OPTION_NAME;
 
+	/** Autoloaded admin-notice Stripe Billing classification, keyed by record revision. */
+	public const ADMIN_CLASSIFICATION_OPTION = 'woocommerce_woopayments_cutover_admin_classification';
+
 	/** Reconciliation action hook. */
 	public const ACTION_HOOK = WooPaymentsCutoverActionScheduler::ACTION_HOOK;
 
@@ -451,7 +454,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				}
 				return $this->state_store->get_record();
 			}
-			if ( $this->can_reopen_terminal_record( $record ) ) {
+			if ( $this->can_reopen_terminal_record( $record, true ) ) {
 				$now   = time();
 				$token = $this->state_store->acquire_lease( $now );
 				if ( null !== $token ) {
@@ -472,13 +475,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return $record;
 		}
 
-		try {
-			$failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
-		} catch ( \Throwable $error ) {
-			$this->log_error( 'WooPayments cutover could not classify the admin notice.', array( 'error' => $error->getMessage() ) );
-			return null;
-		}
-		if ( ! in_array( 'legacy_stripe_billing_subscriptions_present', $failures, true ) ) {
+		if ( true !== $this->get_admin_stripe_billing_classification( null ) ) {
 			return null;
 		}
 
@@ -523,7 +520,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return ! $this->record_has_stripe_billing_failure( $record );
 		}
 
-		return $this->can_reopen_terminal_record( $record );
+		return $this->can_reopen_terminal_record( $record, true );
 	}
 
 	/**
@@ -2214,10 +2211,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Tell whether a terminal record is superseded by current local facts.
 	 *
-	 * @param array<string,mixed> $record Current terminal record.
+	 * @param array<string,mixed> $record           Current terminal record.
+	 * @param bool                $for_admin_notice Whether an admin notice asks, which may use the cached classification.
 	 * @return bool
 	 */
-	private function can_reopen_terminal_record( array $record ): bool {
+	private function can_reopen_terminal_record( array $record, bool $for_admin_notice = false ): bool {
 		if ( WooPaymentsCutoverState::DONE === $record['state'] ) {
 			try {
 				return $this->arbiter->is_plugin_runtime_active();
@@ -2231,6 +2229,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 		if ( true === ( $record['network_cutover'] ?? false ) && is_multisite() ) {
 			return ! $this->network_has_stripe_billing_failure();
+		}
+		if ( $for_admin_notice ) {
+			return false === $this->get_admin_stripe_billing_classification( $record );
 		}
 
 		try {
@@ -2253,13 +2254,41 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return $this->network_has_stripe_billing_failure();
 		}
 
-		try {
-			$failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
-		} catch ( \Throwable $error ) {
-			return false;
+		return true === $this->get_admin_stripe_billing_classification( $record );
+	}
+
+	/**
+	 * Classify the Stripe Billing marker for admin notices, reusing the result for one record revision and an hour.
+	 *
+	 * The full preflight scans Action Scheduler and order meta, so it must not run on every admin page. The worker re-checks before it acts.
+	 *
+	 * @param array<string,mixed>|null $record Current record, or null when none exists.
+	 * @return bool|null Whether the marker is present, or null when the preflight failed.
+	 */
+	private function get_admin_stripe_billing_classification( ?array $record ): ?bool {
+		$key    = is_array( $record ) ? $record['generation'] . ':' . $record['revision'] : 'none';
+		$cached = get_option( self::ADMIN_CLASSIFICATION_OPTION, null );
+		if ( is_array( $cached ) && ( $cached['key'] ?? null ) === $key && is_bool( $cached['present'] ?? null ) && time() < (int) ( $cached['expires_at'] ?? 0 ) ) {
+			return $cached['present'];
 		}
 
-		return in_array( 'legacy_stripe_billing_subscriptions_present', $failures, true );
+		try {
+			$present = in_array( 'legacy_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() ), true );
+		} catch ( \Throwable $error ) {
+			$this->log_error( 'WooPayments cutover could not classify the admin notice.', array( 'error' => $error->getMessage() ) );
+			return null;
+		}
+		update_option(
+			self::ADMIN_CLASSIFICATION_OPTION,
+			array(
+				'key'        => $key,
+				'present'    => $present,
+				'expires_at' => time() + HOUR_IN_SECONDS,
+			),
+			true
+		);
+
+		return $present;
 	}
 
 	/**
