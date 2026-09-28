@@ -85,8 +85,8 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	 * @var array<string,string>
 	 */
 	private const KNOWN_GAPS = array(
-		'_woopay_has_subscription'    => 'plan.md T.7 Step 6 (e): blocked for the owner (renewal money path).',
-		'is_attached_to_subscription' => 'plan.md T.7 Step 6 (e): blocked for the owner (renewal money path).',
+		'_woopay_has_subscription'    => 'plan.md T.7 Step 6 (e): blocked for the owner as O10 (renewal money path).',
+		'is_attached_to_subscription' => 'plan.md T.7 Step 6 (e): blocked for the owner as O10 (renewal money path).',
 	);
 
 	/**
