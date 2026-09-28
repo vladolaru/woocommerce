@@ -1289,10 +1289,10 @@ class WC_Install {
 		add_option( 'woocommerce_demo_store', 'no', '', 'no' );
 
 		// Native payments reads these on every request; autoloaded defaults keep dormant stores from querying missing options.
-		add_option( 'woocommerce_native_payments_state', 'disabled', '', true );
-		add_option( 'woocommerce_native_payments_killswitch', '0', '', true );
+		self::seed_autoloaded_option( 'woocommerce_native_payments_state', 'disabled' );
+		self::seed_autoloaded_option( 'woocommerce_native_payments_killswitch', '0' );
 		// WooPaymentsCutoverStateStore::ABSENT_RECORD: admin and cron requests read the cutover record.
-		add_option( 'woocommerce_woopayments_cutover_state', 'none', '', true );
+		self::seed_autoloaded_option( 'woocommerce_woopayments_cutover_state', 'none' );
 
 		if ( self::is_new_install() ) {
 			$account_cache   = get_option( 'wcpay_account_data', array() );
@@ -1311,6 +1311,38 @@ class WC_Install {
 			// For new installs, setup and enable Approved Product Download Directories.
 			wc_get_container()->get( Download_Directories_Sync::class )->init_feature( false, true );
 		}
+	}
+
+	/**
+	 * Add an autoloaded default only when the option row does not exist yet.
+	 *
+	 * WordPress add_option() trusts this request's notoptions cache and then upserts, so it can overwrite a value another
+	 * request wrote after this one read the option as missing. INSERT IGNORE never replaces an existing row.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $name  Option name.
+	 * @param string $value Default value.
+	 */
+	private static function seed_autoloaded_option( string $name, string $value ): void {
+		global $wpdb;
+
+		$wpdb->query(
+			$wpdb->prepare(
+				"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s)",
+				$name,
+				$value,
+				wp_determine_option_autoload_value( $name, $value, $value, true )
+			)
+		);
+
+		$notoptions = wp_cache_get( 'notoptions', 'options' );
+		if ( is_array( $notoptions ) && isset( $notoptions[ $name ] ) ) {
+			unset( $notoptions[ $name ] );
+			wp_cache_set( 'notoptions', $notoptions, 'options' );
+		}
+		wp_cache_delete( $name, 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
 	}
 
 	/**

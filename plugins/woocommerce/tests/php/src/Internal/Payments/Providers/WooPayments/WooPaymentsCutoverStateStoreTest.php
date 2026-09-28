@@ -109,6 +109,65 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WC_Install::create_options() seeds the cutover marker in a sub-site's own options table and keeps a record written there after a missed read.
+	 * @group multisite
+	 */
+	public function test_create_options_seeds_the_cutover_marker_per_site(): void {
+		global $wpdb;
+		$this->skipWithoutMultisite();
+		$name    = WooPaymentsCutoverStateStore::OPTION_NAME;
+		$record  = maybe_serialize( array( 'state' => 'pending' ) );
+		$blog_id = self::factory()->blog->create();
+		update_option( $name, 'none', true );
+
+		try {
+			switch_to_blog( $blog_id );
+			// An upgrading sub-site, so create_options() skips the new-install setup the bare test blog lacks tables for.
+			update_option( 'woocommerce_version', WC()->version );
+			update_option( 'woocommerce_coming_soon', 'no' );
+			$this->assertFalse( get_option( $name ) );
+			$wpdb->insert(
+				$wpdb->options,
+				array(
+					'option_name'  => $name,
+					'option_value' => $record,
+					'autoload'     => 'on',
+				)
+			);
+
+			$this->invoke_install_create_options();
+
+			$this->assertSame( $record, $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) ) );
+			$this->assertSame( array( 'state' => 'pending' ), get_option( $name ) );
+			$wpdb->delete( $wpdb->options, array( 'option_name' => $name ) );
+			wp_cache_delete( 'alloptions', 'options' );
+			wp_cache_delete( 'notoptions', 'options' );
+
+			$this->invoke_install_create_options();
+
+			$this->assertSame( 'none', get_option( $name ), 'A sub-site without a record should get its own marker.' );
+			restore_current_blog();
+			$this->assertSame( 'none', get_option( $name ), 'The main site keeps its own marker.' );
+		} finally {
+			while ( ms_is_switched() ) {
+				restore_current_blog();
+			}
+			delete_option( $name );
+			wpmu_delete_blog( $blog_id, true );
+		}
+	}
+
+	/**
+	 * Invoke the install-only WC_Install::create_options() seam.
+	 */
+	private function invoke_install_create_options(): void {
+		$create_options = function (): void {
+			static::create_options();
+		};
+		$create_options->call( new \WC_Install() );
+	}
+
+	/**
 	 * @testdox Rejects records whose state is outside the persisted cutover vocabulary.
 	 */
 	public function test_save_record_rejects_an_invalid_state(): void {

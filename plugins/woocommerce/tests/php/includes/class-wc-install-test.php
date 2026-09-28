@@ -498,20 +498,72 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox create_options keeps an existing native payments state and kill switch.
+	 * @testdox create_options keeps an existing native payments state, kill switch and cutover record.
 	 */
 	public function test_create_options_keeps_existing_native_payments_runtime_options(): void {
 		update_option( 'woocommerce_native_payments_state', 'active', true );
 		update_option( 'woocommerce_native_payments_killswitch', '1', true );
+		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, array( 'state' => 'done' ), true );
 
 		try {
 			$this->invoke_create_options();
 
 			$this->assertSame( 'active', get_option( 'woocommerce_native_payments_state' ) );
 			$this->assertSame( '1', get_option( 'woocommerce_native_payments_killswitch' ) );
+			$this->assertSame( array( 'state' => 'done' ), get_option( WooPaymentsCutoverStateStore::OPTION_NAME ) );
 		} finally {
 			delete_option( 'woocommerce_native_payments_state' );
 			delete_option( 'woocommerce_native_payments_killswitch' );
+			delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
+		}
+	}
+
+	/**
+	 * @testdox create_options keeps native payments values another request wrote after this request read them as missing.
+	 *
+	 * On the upgrade request the cutover job reads the missing record at init priority 1, before install runs
+	 * create_options(). A start click or plugin deactivation can write the first record in between.
+	 */
+	public function test_create_options_keeps_native_payments_values_written_after_a_missed_read(): void {
+		global $wpdb;
+		$written = array(
+			'woocommerce_native_payments_state'       => 'active',
+			'woocommerce_native_payments_killswitch'  => '1',
+			WooPaymentsCutoverStateStore::OPTION_NAME => maybe_serialize(
+				array(
+					'state'      => 'pending',
+					'generation' => 1,
+				)
+			),
+		);
+
+		try {
+			foreach ( $written as $name => $value ) {
+				delete_option( $name );
+				$this->assertFalse( get_option( $name ), "{$name} should start missing, which primes the notoptions cache." );
+				// Another request writes the value; this request's caches still say it is missing. The kill switch
+				// row is not autoloaded, so only a cleared notoptions entry lets this request read it.
+				$wpdb->insert(
+					$wpdb->options,
+					array(
+						'option_name'  => $name,
+						'option_value' => $value,
+						'autoload'     => 'woocommerce_native_payments_killswitch' === $name ? 'off' : 'on',
+					)
+				);
+			}
+
+			$this->invoke_create_options();
+
+			foreach ( $written as $name => $value ) {
+				$stored = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) );
+				$this->assertSame( $value, $stored, "The install seed must not replace the stored {$name}." );
+				$this->assertSame( maybe_unserialize( $value ), get_option( $name ), "The same request must read the stored {$name}." );
+			}
+		} finally {
+			foreach ( array_keys( $written ) as $name ) {
+				delete_option( $name );
+			}
 		}
 	}
 
