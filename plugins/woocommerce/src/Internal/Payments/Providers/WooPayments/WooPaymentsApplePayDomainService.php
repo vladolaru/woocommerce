@@ -470,14 +470,13 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 			return null;
 		}
 
-		$domain_set   = (string) $this->get_gateway_setting( 'apple_pay_domain_set', '' );
-		$error_notice = (string) get_option( self::ERROR_OPTION, '' );
-
-		if ( '' === $error_notice && 'no' !== $domain_set ) {
+		// The error is only ever stored together with the 'no' flag (client register_domain()),
+		// so skip the option read on healthy stores; this runs on every Payments tab load.
+		if ( 'no' !== (string) $this->get_gateway_setting( 'apple_pay_domain_set', '' ) ) {
 			return null;
 		}
 
-		return $error_notice;
+		return (string) get_option( self::ERROR_OPTION, '' );
 	}
 
 	/**

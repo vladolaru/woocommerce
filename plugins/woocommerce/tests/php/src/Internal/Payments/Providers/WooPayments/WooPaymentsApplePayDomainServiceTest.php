@@ -339,6 +339,68 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not read the stored domain error on a Payments tab load while the domain is verified.
+	 *
+	 * Client 11.1.0 stores the error only together with apple_pay_domain_set = 'no' (register_domain()),
+	 * so a verified store has nothing to show and pays no option read on every Payments tab load.
+	 */
+	public function test_payments_tab_skips_the_error_read_while_the_domain_is_verified(): void {
+		$this->service = $this->create_service( true, true );
+		$this->set_gateway_settings(
+			array(
+				'enabled'                           => 'yes',
+				'apple_pay_domain_set'              => 'yes',
+				'express_checkout_checkout_methods' => array( 'payment_request' ),
+			)
+		);
+		$reads = 0;
+		$spy   = static function ( $value ) use ( &$reads ) {
+			++$reads;
+			return $value;
+		};
+		add_filter( 'pre_option_' . self::ERROR_OPTION, $spy );
+		try {
+			$output    = $this->render_payments_settings_page(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/settings',
+				)
+			);
+			$bootstrap = $this->service->get_error_notice_for_settings_bootstrap();
+		} finally {
+			remove_filter( 'pre_option_' . self::ERROR_OPTION, $spy );
+		}
+
+		$this->assertStringNotContainsString( 'apple-pay-message', $output );
+		$this->assertNull( $bootstrap );
+		$this->assertSame( 0, $reads );
+	}
+
+	/**
+	 * @testdox Should escape a stored domain error before showing it.
+	 */
+	public function test_display_error_notice_escapes_the_stored_error(): void {
+		$this->service = $this->create_service( true, true );
+		$this->set_gateway_settings(
+			array(
+				'enabled'                           => 'yes',
+				'apple_pay_domain_set'              => 'no',
+				'express_checkout_checkout_methods' => array( 'payment_request' ),
+			)
+		);
+		update_option( self::ERROR_OPTION, '<script>alert(1)</script><b>bold</b>' );
+
+		ob_start();
+		$this->service->display_error_notice();
+		$output = ob_get_clean();
+
+		$this->assertStringNotContainsString( '<script>', $output );
+		$this->assertStringNotContainsString( '<b>bold</b>', $output );
+		$this->assertStringContainsString( '&lt;script&gt;alert(1)&lt;/script&gt;', $output );
+	}
+
+	/**
 	 * @testdox Should show the Apple Pay domain notice on the WooPayments settings route merchants open: $path.
 	 *
 	 * @dataProvider provide_woopayments_settings_routes
