@@ -9,6 +9,8 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyAdminLinkHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
+use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
 /**
@@ -31,12 +33,23 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	private WooPaymentsApiClient $api_client;
 
 	/**
+	 * Capital controller double.
+	 *
+	 * @var WooPaymentsCapitalRestController&MockObject
+	 */
+	private WooPaymentsCapitalRestController $capital;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
 
 		$this->api_client = $this->create_api_client();
+		$this->capital    = $this->getMockBuilder( WooPaymentsCapitalRestController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'redirect_loan_offer_request' ) )
+			->getMock();
 		$this->sut        = $this->create_handler( true );
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
@@ -48,14 +61,43 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		remove_action( 'admin_init', array( $this->sut, 'handle_request' ) );
 		remove_action( 'admin_init', array( $this->sut, 'handle_kyc_reminder_return' ), 9 );
+		remove_action( 'admin_init', array( $this->sut, 'handle_loan_offer_request' ), 12 );
 		remove_all_filters( 'allowed_redirect_hosts' );
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
 		remove_all_filters( 'wp_redirect' );
 		remove_all_filters( 'wp_doing_ajax' );
 		delete_transient( 'wcpay_stripe_onboarding_state' );
-		unset( $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'] );
+		unset( $_GET['wcpay-loan-offer'], $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'] );
 
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox A Capital offer email link reaches the loan-offer redirect at admin_init on an admin page, and other admin pages do not.
+	 */
+	public function test_loan_offer_link_redirects_at_admin_init(): void {
+		$this->capital->expects( $this->once() )->method( 'redirect_loan_offer_request' );
+		$this->sut->register();
+
+		$this->run_admin_init();
+		$_GET['wcpay-loan-offer'] = '';
+		$this->run_admin_init();
+	}
+
+	/**
+	 * Run the admin_init callbacks the handler registered, in priority order.
+	 */
+	private function run_admin_init(): void {
+		global $wp_filter;
+		$callbacks = $wp_filter['admin_init']->callbacks;
+		ksort( $callbacks );
+		foreach ( $callbacks as $priority_callbacks ) {
+			foreach ( $priority_callbacks as $callback ) {
+				if ( is_array( $callback['function'] ) && $this->sut === $callback['function'][0] ) {
+					call_user_func( $callback['function'] );
+				}
+			}
+		}
 	}
 
 	/**
@@ -254,7 +296,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$navigation = $this->createMock( WooPaymentsAdminNavigationController::class );
 		$navigation->method( 'get_legacy_payment_path_redirect_url' )->willReturn( '' );
 		$handler = new LegacyAdminLinkHandler();
-		$handler->init( $arbiter, $this->api_client, $navigation );
+		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital );
 		$_GET = array(
 			'page'                   => 'wc-admin',
 			'path'                   => '/payments/connect',
@@ -390,7 +432,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		);
 
 		$handler = new LegacyAdminLinkHandler();
-		$handler->init( $arbiter, $this->api_client, $navigation );
+		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital );
 
 		return $handler;
 	}

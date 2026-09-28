@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -45,6 +46,13 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	private WooPaymentsAdminNavigationController $navigation;
 
 	/**
+	 * Capital controller, which builds the loan offer link.
+	 *
+	 * @var WooPaymentsCapitalRestController
+	 */
+	private WooPaymentsCapitalRestController $capital;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -52,11 +60,13 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 * @param NativePaymentsRuntimeArbiter         $arbiter    Runtime owner arbiter.
 	 * @param WooPaymentsApiClient                 $api_client Native WooPayments API client.
 	 * @param WooPaymentsAdminNavigationController $navigation Native WooPayments admin navigation.
+	 * @param WooPaymentsCapitalRestController     $capital    Capital controller.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAdminNavigationController $navigation ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAdminNavigationController $navigation, WooPaymentsCapitalRestController $capital ): void {
 		$this->arbiter    = $arbiter;
 		$this->api_client = $api_client;
 		$this->navigation = $navigation;
+		$this->capital    = $capital;
 	}
 
 	/**
@@ -74,6 +84,21 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 		// Priority 9 runs before the legacy route redirect, which would otherwise leave the connect page first.
 		if ( false === has_action( 'admin_init', array( $this, 'handle_kyc_reminder_return' ) ) ) {
 			add_action( 'admin_init', array( $this, 'handle_kyc_reminder_return' ), 9 );
+		}
+
+		// The Capital controller loads only for REST requests, after admin_init, so its own hook never ran.
+		if ( false === has_action( 'admin_init', array( $this, 'handle_loan_offer_request' ) ) ) {
+			add_action( 'admin_init', array( $this, 'handle_loan_offer_request' ), 12 );
+		}
+	}
+
+	/**
+	 * Redirect a Capital offer email link, like the plugin's `maybe_redirect_by_get_param()` at admin_init priority 12 (11.1.0).
+	 */
+	public function handle_loan_offer_request(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Email links carry no nonce; the controller checks the capability.
+		if ( isset( $_GET['wcpay-loan-offer'] ) ) {
+			$this->capital->redirect_loan_offer_request();
 		}
 	}
 

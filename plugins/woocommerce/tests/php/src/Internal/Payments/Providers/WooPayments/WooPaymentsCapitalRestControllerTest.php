@@ -68,7 +68,8 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 		do_action( 'rest_api_init' );
 
 		$this->assertCapitalRoutesRegistered();
-		$this->assertNotFalse( has_action( 'admin_init', array( $this->sut, 'redirect_loan_offer_request' ) ) );
+		// The loan-offer redirect runs from LegacyAdminLinkHandler, which loads on admin pages.
+		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'redirect_loan_offer_request' ) ) );
 	}
 
 	/**
