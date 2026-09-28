@@ -105,6 +105,21 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Rewriting the unchanged autoloaded tier after an account refresh runs no query.
+	 */
+	public function test_write_state_runs_no_query_when_the_autoloaded_tier_is_unchanged(): void {
+		global $wpdb;
+		$this->assertTrue( $this->state->write_state( NativePaymentsState::ACTIVE ) );
+		wp_load_alloptions( true );
+
+		$queries = $wpdb->num_queries;
+		$this->assertTrue( $this->state->write_state( NativePaymentsState::ACTIVE ) );
+
+		$this->assertSame( 0, $wpdb->num_queries - $queries, 'Client 11.1.0 Database_Cache::write_to_cache() stops at update_option() and a cache delete.' );
+		$this->assertSame( NativePaymentsState::ACTIVE, $this->state->get_state() );
+	}
+
+	/**
 	 * @testdox State reads are memoized until explicitly invalidated.
 	 */
 	public function test_get_state_memoizes_reads_until_invalidated(): void {

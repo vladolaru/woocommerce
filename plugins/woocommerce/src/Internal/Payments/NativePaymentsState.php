@@ -95,6 +95,12 @@ final class NativePaymentsState {
 			return false;
 		}
 
+		// Every account refresh re-syncs the state; an unchanged autoloaded value needs no write or reread.
+		if ( get_option( self::OPTION_NAME, null ) === $state && array_key_exists( self::OPTION_NAME, wp_load_alloptions() ) ) {
+			$this->states[ get_current_blog_id() ] = $state;
+			return true;
+		}
+
 		update_option( self::OPTION_NAME, $state, true );
 		wp_set_option_autoload_values( array( self::OPTION_NAME => 'yes' ) );
 		wp_cache_delete( self::OPTION_NAME, 'options' );
