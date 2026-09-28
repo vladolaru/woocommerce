@@ -1203,6 +1203,32 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertGreaterThan( 0, $queued['action_id'] );
 	}
 
+	/**
+	 * @testdox The start click on a Stripe-excluded store runs a fresh preflight, so a cached "marker gone" admin classification cannot reopen the switch.
+	 */
+	public function test_start_click_ignores_the_cached_admin_classification(): void {
+		$preflight = $this->create_preflight_with_failures( array( 'legacy_stripe_billing_subscriptions_present' ) );
+		$sut       = $this->create_job( true, $preflight );
+		$excluded  = $sut->classify_for_admin_notice();
+		$this->assertIsArray( $excluded );
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $excluded['state'] );
+		// An earlier admin page cached this revision as "marker gone"; the subscription is still there.
+		update_option(
+			WooPaymentsCutoverReconciliationJob::ADMIN_CLASSIFICATION_OPTION,
+			array(
+				'key'        => $excluded['generation'] . ':' . $excluded['revision'],
+				'present'    => false,
+				'expires_at' => time() + HOUR_IN_SECONDS,
+			),
+			true
+		);
+
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+
+		$this->assertSame( $excluded, $this->require_state_store()->get_record(), 'A store that still has Stripe Billing subscriptions must stay excluded after the click.' );
+		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $excluded['generation'] + 1, 1 ), 'No generation may be scheduled.' );
+	}
+
 	/** @testdox A manual deactivation supersedes a current Stripe exclusion and persists the same exclusion without reactivation. */
 	public function test_manual_deactivation_supersedes_a_current_stripe_exclusion(): void {
 		$preflight = $this->create_preflight_with_failures( array( 'legacy_stripe_billing_subscriptions_present' ) );
