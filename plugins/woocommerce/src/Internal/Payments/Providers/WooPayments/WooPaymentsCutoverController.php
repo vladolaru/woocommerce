@@ -559,8 +559,11 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				return;
 			}
 			if ( WooPaymentsCutoverState::DONE === $record['state'] && ! $this->arbiter->is_plugin_runtime_active() ) {
-				$this->output_success_notice();
-				$this->output_disabled_payment_methods_notice( $record['informational_outcomes'] ?? array() );
+				// Shown once to a store manager, like the one-time reconnect notice; it was never dismissible otherwise.
+				if ( $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) && $this->reconciliation_job->consume_success_notice() ) {
+					$this->output_success_notice();
+					$this->output_disabled_payment_methods_notice( $record['informational_outcomes'] ?? array() );
+				}
 				return;
 			}
 		}

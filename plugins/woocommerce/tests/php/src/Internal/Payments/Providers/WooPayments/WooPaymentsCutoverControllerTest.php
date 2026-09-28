@@ -462,6 +462,38 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The post-cutover success notice shows once to a store manager, not on every admin page.
+	 */
+	public function test_success_notice_shows_once_after_cutover(): void {
+		$this->fake_plugin_active( false );
+		$this->fake_current_user_caps( true );
+		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var bool */
+			public bool $shown = false;
+
+			/** @return array<string,mixed>|null */
+			public function classify_for_admin_notice(): ?array {
+				return array(
+					'state'                  => WooPaymentsCutoverState::DONE,
+					'informational_outcomes' => array(),
+				);
+			}
+
+			/** Claim the notice once, like the durable record does. */
+			public function consume_success_notice(): bool {
+				$claimed     = ! $this->shown;
+				$this->shown = true;
+				return $claimed;
+			}
+		};
+
+		$controller = $this->create_cutover_controller( null, $job );
+
+		$this->assertStringContainsString( 'WooPayments is now fully native in WooCommerce.', $this->render_admin_notices( $controller ) );
+		$this->assertStringNotContainsString( 'fully native', $this->render_admin_notices( $controller ) );
+	}
+
+	/**
 	 * @testdox Active job states show only the switch-in-progress notice.
 	 * @testWith ["pending"]
 	 *           ["running"]

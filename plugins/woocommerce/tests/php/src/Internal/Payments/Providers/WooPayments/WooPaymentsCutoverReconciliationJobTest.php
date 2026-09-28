@@ -1040,6 +1040,28 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed cutover claims its success notice once and records it on the durable record.
+	 */
+	public function test_success_notice_is_consumed_once_per_completed_cutover(): void {
+		$sut = $this->create_job( true );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$done                    = $pending;
+		$done['revision']        = $pending['revision'] + 1;
+		$done['state']           = WooPaymentsCutoverState::DONE;
+		$done['action_id']       = 0;
+		$done['current_step']    = 'done';
+		$done['next_attempt_at'] = null;
+		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $done ) );
+
+		$this->assertTrue( $sut->consume_success_notice() );
+		$this->assertFalse( $sut->consume_success_notice() );
+		$this->assertSame( 'success_notice_shown', end( $sut->get_state_record()['informational_outcomes'] )['code'] ?? null );
+	}
+
+	/**
 	 * @testdox Admin-notice classification on a plugin store awaiting the start click scans once per record revision, not on every admin page.
 	 */
 	public function test_admin_notice_classification_reuses_the_scan_for_one_record_revision(): void {

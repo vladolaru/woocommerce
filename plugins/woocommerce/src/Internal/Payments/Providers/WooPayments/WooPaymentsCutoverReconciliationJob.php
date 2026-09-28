@@ -529,8 +529,31 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True only for the request that claimed the notice.
 	 */
 	public function consume_reconnect_notice(): bool {
-		// Checked before the lease too: admin pages call this while a switch is pending, and the lease writes options.
-		if ( ! $this->is_reconnect_notice_due( $this->state_store->get_record() ) ) {
+		return $this->consume_notice( fn( ?array $record ): bool => $this->is_reconnect_notice_due( $record ), 'reconnect_notice_shown' );
+	}
+
+	/**
+	 * Atomically consume the one post-cutover success notice, so it does not show on every admin page.
+	 *
+	 * @return bool True only for the request that claimed the notice.
+	 */
+	public function consume_success_notice(): bool {
+		return $this->consume_notice(
+			fn( ?array $record ): bool => is_array( $record ) && WooPaymentsCutoverState::DONE === $record['state'] && ! $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => 'success_notice_shown' ) ),
+			'success_notice_shown'
+		);
+	}
+
+	/**
+	 * Record a shown one-time notice on the current record.
+	 *
+	 * @param callable $is_due Tells whether a record still owes the notice.
+	 * @param string   $code   Informational outcome and step recorded once shown.
+	 * @return bool True only for the request that claimed the notice.
+	 */
+	private function consume_notice( callable $is_due, string $code ): bool {
+		// Checked before the lease too: admin pages call this, and the lease writes options.
+		if ( ! $is_due( $this->state_store->get_record() ) ) {
 			return false;
 		}
 		$now   = time();
@@ -540,14 +563,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 		try {
 			$record = $this->state_store->get_record();
-			if ( ! is_array( $record ) || ! $this->is_reconnect_notice_due( $record ) ) {
+			if ( ! is_array( $record ) || ! $is_due( $record ) ) {
 				return false;
 			}
 			$updated                           = $record;
 			$updated['revision']               = $record['revision'] + 1;
 			$updated['updated_at']             = $now;
-			$updated['informational_outcomes'] = $this->merge_information_outcomes( $record['informational_outcomes'], array( array( 'code' => 'reconnect_notice_shown' ) ) );
-			$updated                           = $this->append_step( $updated, 'reconnect_notice_shown', $now );
+			$updated['informational_outcomes'] = $this->merge_information_outcomes( $record['informational_outcomes'], array( array( 'code' => $code ) ) );
+			$updated                           = $this->append_step( $updated, $code, $now );
 
 			return $this->state_store->compare_and_set_record( $record, $updated );
 		} finally {
