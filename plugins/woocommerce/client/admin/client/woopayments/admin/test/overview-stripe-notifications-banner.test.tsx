@@ -238,14 +238,15 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 		);
 	} );
 
-	it( 'shows the update-details task and creates no session without a connected account', async () => {
+	// Client 11.1.0 overview/index.js:72-74: the task waits for the banner's onLoadError, which never fires without the banner.
+	it( 'hides the update-details task and creates no session without a connected account', async () => {
 		mockGetShell.mockResolvedValue( createShell( false ) );
 
 		render( <WooPaymentsOverviewPage /> );
+		await act( () => Promise.resolve() );
 
-		expect(
-			await screen.findByText( FINISH_SETUP_TASK )
-		).toBeInTheDocument();
+		expect( mockGetShell ).toHaveBeenCalled();
+		expect( screen.queryByText( FINISH_SETUP_TASK ) ).toBeNull();
 		expect( mockCreateAccountSession ).not.toHaveBeenCalled();
 		expect(
 			screen.queryByTestId( 'stripe-notification-banner' )
@@ -328,15 +329,15 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 	} );
 
 	it.each( [ 'rejected.fraud', 'under_review' ] )(
-		'shows the update-details task and creates no session for account status %s',
+		'hides the update-details task and creates no session for account status %s',
 		async ( status ) => {
 			mockGetShell.mockResolvedValue( createShell( true, status ) );
 
 			render( <WooPaymentsOverviewPage /> );
+			await act( () => Promise.resolve() );
 
-			expect(
-				await screen.findByText( FINISH_SETUP_TASK )
-			).toBeInTheDocument();
+			expect( mockGetShell ).toHaveBeenCalled();
+			expect( screen.queryByText( FINISH_SETUP_TASK ) ).toBeNull();
 			expect( mockCreateAccountSession ).not.toHaveBeenCalled();
 		}
 	);

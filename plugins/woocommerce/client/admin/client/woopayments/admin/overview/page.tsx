@@ -323,8 +323,10 @@ export const WooPaymentsOverviewPage = () => {
 		? buildOverviewTasks( {
 				shell,
 				disputes,
+				// Client 11.1.0 `overview/index.js:72-74,105-109`: only after the banner fails to load.
 				showUpdateDetailsTask:
-					! showStripeBanner || !! bannerLoadError || hasBannerFailed,
+					showStripeBanner &&
+					( !! bannerLoadError || hasBannerFailed ),
 				onOpenUpdateBusinessDetails: setUpdateBusinessDetailsShell,
 				// Client 11.1.0 `overview/task-list/tasks/go-live-task.tsx:12` opens the modal directly.
 				onActivatePayments: () => setGoLiveModalVisible( true ),

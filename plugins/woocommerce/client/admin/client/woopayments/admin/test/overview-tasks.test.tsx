@@ -228,6 +228,7 @@ describe( 'overview task builders', () => {
 
 	it( 'builds an urgent single dispute task that links to the transaction details route', () => {
 		const task = buildOverviewTasks( {
+			showUpdateDetailsTask: false,
 			shell: createShell(),
 			disputes: [ createDispute() ],
 			onOpenUpdateBusinessDetails: jest.fn(),
@@ -248,6 +249,7 @@ describe( 'overview task builders', () => {
 
 	it( 'builds a multiple-dispute task that links to the awaiting-response dispute list', () => {
 		const task = buildOverviewTasks( {
+			showUpdateDetailsTask: false,
 			shell: createShell(),
 			disputes: [
 				createDispute( { dispute_id: 'dp_one', amount: 1000 } ),
@@ -279,6 +281,7 @@ describe( 'overview task builders', () => {
 		} );
 
 		const task = buildOverviewTasks( {
+			showUpdateDetailsTask: false,
 			shell,
 			disputes: [],
 			onOpenUpdateBusinessDetails: jest.fn(),

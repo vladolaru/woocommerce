@@ -117,10 +117,6 @@ const buildUpdateBusinessDetailsTask = ( {
 	shell: WooPaymentsOverviewShell;
 	onOpenUpdateBusinessDetails: ( shell: WooPaymentsOverviewShell ) => void;
 } ): WooPaymentsOverviewTask | null => {
-	if ( ! shell.show_update_details_task ) {
-		return null;
-	}
-
 	const accountStatus = shell.account_status;
 	const status = accountStatus.status;
 	const completed = status === 'complete' || status === 'enabled';

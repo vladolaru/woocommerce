@@ -679,6 +679,43 @@ describe( 'WooPaymentsOverviewPage', () => {
 		expect( spotlightIndex ).toBeGreaterThan( balanceIndex );
 	} );
 
+	// Client 11.1.0 overview/index.js:72-74,105-109: the task shows only after the Stripe banner reports a load error, with no server gate.
+	it( 'shows the update-details task in the banner fallback state without a server flag', async () => {
+		mockGetShell.mockResolvedValue(
+			createShell( { show_update_details_task: false } )
+		);
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		expect(
+			await screen.findByText( 'Update WooPayments business details' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'hides the update-details task from under-review accounts, which never mount the banner', async () => {
+		mockGetShell.mockResolvedValue(
+			createShell( {
+				account_status: {
+					...createShell().account_status,
+					status: 'under_review',
+					details_submitted: false,
+				},
+				show_update_details_task: true,
+			} )
+		);
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		await screen.findByRole( 'heading', { name: 'Balance' } );
+		expect(
+			screen.queryByText( 'Finish setting up WooPayments' )
+		).not.toBeInTheDocument();
+	} );
+
 	it( 'does not fetch disputes when the shell reports no actionable disputes', async () => {
 		mockGetShell.mockResolvedValue(
 			createShell( {
