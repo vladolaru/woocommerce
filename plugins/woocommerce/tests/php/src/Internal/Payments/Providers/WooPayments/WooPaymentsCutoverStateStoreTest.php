@@ -109,6 +109,86 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A first save after a missed read fails and keeps a record another request created since.
+	 */
+	public function test_first_save_after_a_missed_read_keeps_a_record_created_behind_it(): void {
+		$this->assert_first_save_after_a_missed_read_keeps_the_winner();
+	}
+
+	/**
+	 * @testdox A first save that inserts no row reports a conflict even when the existing row holds the same record.
+	 */
+	public function test_first_save_that_inserts_no_row_reports_a_conflict(): void {
+		global $wpdb;
+		$sut    = $this->require_sut();
+		$record = $this->valid_record();
+
+		$this->assertNull( $sut->get_record() );
+		$wpdb->insert(
+			$wpdb->options,
+			array(
+				'option_name'  => WooPaymentsCutoverStateStore::OPTION_NAME,
+				'option_value' => maybe_serialize( $record ),
+				'autoload'     => 'on',
+			)
+		);
+
+		$this->assertFalse( $sut->save_record( $record ), 'Only the writer that created the row may claim the first save, like compare_and_set_record().' );
+		$this->assertSame( $record, $sut->get_record() );
+	}
+
+	/**
+	 * @testdox A sub-site's first save after a missed read fails and keeps a record another request created since.
+	 * @group multisite
+	 */
+	public function test_first_save_after_a_missed_read_keeps_a_sub_site_record_created_behind_it(): void {
+		$this->skipWithoutMultisite();
+		$blog_id = self::factory()->blog->create();
+
+		try {
+			switch_to_blog( $blog_id );
+			$this->assert_first_save_after_a_missed_read_keeps_the_winner();
+			delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
+			$this->assertTrue( $this->require_sut()->save_record( $this->valid_record() ), 'A sub-site without a row should still get its first record.' );
+			$this->assertArrayHasKey( WooPaymentsCutoverStateStore::OPTION_NAME, wp_load_alloptions( true ), 'The sub-site record should be autoloaded.' );
+			restore_current_blog();
+			$this->assertNull( $this->require_sut()->get_record(), 'The main site must not see the sub-site record.' );
+		} finally {
+			while ( ms_is_switched() ) {
+				restore_current_blog();
+			}
+			wpmu_delete_blog( $blog_id, true );
+		}
+	}
+
+	/**
+	 * Prime notoptions with a missed read, create the winner's row behind it, then attempt a first save.
+	 */
+	private function assert_first_save_after_a_missed_read_keeps_the_winner(): void {
+		global $wpdb;
+		$sut                 = $this->require_sut();
+		$name                = WooPaymentsCutoverStateStore::OPTION_NAME;
+		$winner              = $this->valid_record();
+		$loser               = $winner;
+		$loser['generation'] = $winner['generation'] + 1;
+
+		$this->assertNull( $sut->get_record() );
+		$this->assertArrayHasKey( $name, (array) wp_cache_get( 'notoptions', 'options' ), 'The missed read should be cached in notoptions.' );
+		$wpdb->insert(
+			$wpdb->options,
+			array(
+				'option_name'  => $name,
+				'option_value' => maybe_serialize( $winner ),
+				'autoload'     => 'on',
+			)
+		);
+
+		$this->assertFalse( $sut->save_record( $loser ), 'A first save must report a conflict when a record exists.' );
+		$this->assertSame( maybe_serialize( $winner ), $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) ), 'The stored row must stay the winner.' );
+		$this->assertSame( $winner, $sut->get_record(), 'The request must read the winner after the conflict.' );
+	}
+
+	/**
 	 * @testdox WC_Install::create_options() seeds the cutover marker in a sub-site's own options table and keeps a record written there after a missed read.
 	 * @group multisite
 	 */

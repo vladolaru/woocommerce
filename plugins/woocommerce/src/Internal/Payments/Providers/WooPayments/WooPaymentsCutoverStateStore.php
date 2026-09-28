@@ -74,12 +74,25 @@ class WooPaymentsCutoverStateStore {
 			throw new InvalidArgumentException( 'Invalid WooPayments cutover state record.' );
 		}
 
+		global $wpdb;
 		$current = get_option( self::OPTION_NAME, null );
 		if ( null === $current ) {
-			add_option( self::OPTION_NAME, $record, '', true );
+			// Not add_option(): it trusts this request's notoptions cache and upserts, so it could overwrite a record created since.
+			$value    = maybe_serialize( $record );
+			$inserted = $wpdb->query(
+				$wpdb->prepare(
+					"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s)",
+					self::OPTION_NAME,
+					$value,
+					wp_determine_option_autoload_value( self::OPTION_NAME, $record, $value, true )
+				)
+			);
+			$this->invalidate_record_cache();
+			if ( 1 !== $inserted ) {
+				return false;
+			}
 		} elseif ( self::ABSENT_RECORD === $current ) {
 			// Replace only the marker, so a concurrent first save still fails the readback below.
-			global $wpdb;
 			$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND BINARY option_value = %s", maybe_serialize( $record ), self::OPTION_NAME, self::ABSENT_RECORD ) );
 			$this->invalidate_record_cache();
 		} elseif ( $current !== $record ) {
