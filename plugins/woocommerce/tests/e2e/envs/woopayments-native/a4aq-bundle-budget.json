@@ -42,8 +42,8 @@
 			"gzip_growth_bytes": 7005
 		},
 		"frontend-tracks.js": {
-			"raw_bytes": 738,
-			"gzip_bytes": 379
+			"raw_bytes": 1753,
+			"gzip_bytes": 755
 		}
 	}
 }
