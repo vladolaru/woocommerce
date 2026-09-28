@@ -144,11 +144,16 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$recorded_events = array();
 		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'queue_user_event', 'record_user_event' ) )
+			->onlyMethods( array( 'queue_user_event', 'record_user_event', 'track_proceed_to_checkout_clicks' ) )
 			->getMock();
 		$tracker->method( 'queue_user_event' )->willReturnCallback(
 			static function ( string $event_name, array $properties = array() ) use ( &$recorded_events ): void {
 				$recorded_events[] = array( 'queued', $event_name, $properties );
+			}
+		);
+		$tracker->method( 'track_proceed_to_checkout_clicks' )->willReturnCallback(
+			static function ( callable $is_direct_checkout_enabled ) use ( &$recorded_events ): void {
+				$recorded_events[] = array( 'armed', 'proceed_to_checkout_button_click', array( 'woopay_direct_checkout' => $is_direct_checkout_enabled() ) );
 			}
 		);
 		$tracker->method( 'record_user_event' )->willReturnCallback(
@@ -158,7 +163,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			}
 		);
 		$sut = new WooPaymentsCheckoutBridge();
-		$sut->init( $this->create_legacy_runtime_for_bridge(), $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $tracker );
+		$sut->init( $this->create_legacy_runtime_for_bridge(), $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( true, true ), $this->create_frontend_styles_service_for_bridge(), $tracker );
 
 		try {
 			$sut->register();
@@ -174,7 +179,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				array( 'queued', 'cart_page_view', array( 'theme_type' => 'short_code' ) ),
+				array( 'armed', 'proceed_to_checkout_button_click', array( 'woopay_direct_checkout' => true ) ),
 				array( 'queued', 'cart_page_view', array( 'theme_type' => 'blocks' ) ),
+				array( 'armed', 'proceed_to_checkout_button_click', array( 'woopay_direct_checkout' => true ) ),
 				array( 'queued', 'product_page_view', array( 'theme_type' => 'short_code' ) ),
 				array( 'queued', 'pay_for_order_page_view', array() ),
 				array( 'recorded', 'woopay_registered', array( 'source' => 'checkout' ) ),
@@ -289,6 +296,70 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				),
 			),
 			$params['events']
+		);
+	}
+
+	/**
+	 * @testdox Should arm the Blocks cart Proceed to checkout click in the footer script without building the WooPay config, like client 11.1.0 cart/index.js.
+	 * @dataProvider direct_checkout_provider
+	 *
+	 * @param bool $direct_checkout_enabled Whether WooPay direct checkout is enabled.
+	 */
+	public function test_blocks_cart_arms_proceed_to_checkout_tracking_without_woopay_config( bool $direct_checkout_enabled ): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		wp_set_current_user( 0 );
+
+		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$tracker = new WooPaymentsFrontendTrackingController();
+		$tracker->init(
+			$arbiter,
+			$this->create_account_service_for_bridge(
+				true,
+				array(
+					'country'                    => 'US',
+					'platform_checkout_eligible' => true,
+				),
+				array( 'platform_checkout' => 'yes' )
+			)
+		);
+		$woopay = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_woopay_direct_checkout_enabled', 'get_woopay_frontend_config' ) )
+			->getMock();
+		$woopay->expects( $this->once() )->method( 'is_woopay_direct_checkout_enabled' )->willReturn( $direct_checkout_enabled );
+		$woopay->expects( $this->never() )->method( 'get_woopay_frontend_config' );
+		$sut = new WooPaymentsCheckoutBridge();
+		$sut->init( $this->create_legacy_runtime_for_bridge(), $this->create_account_service_for_bridge( true ), $woopay, $this->create_frontend_styles_service_for_bridge(), $tracker );
+
+		try {
+			$sut->register();
+			do_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+			$tracker->enqueue_frontend_events_script();
+			$localized = (string) wp_scripts()->get_data( 'wc-woopayments-frontend-tracks', 'data' );
+		} finally {
+			remove_action( 'wp_footer', array( $tracker, 'enqueue_frontend_events_script' ) );
+			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
+			wp_deregister_script( 'wc-woopayments-frontend-tracks' );
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		}
+
+		$this->assertSame( 1, preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $localized, $matches ) );
+		$params = json_decode( $matches[1], true );
+		$this->assertSame( array( 'woopayDirectCheckout' => $direct_checkout_enabled ), $params['proceedToCheckout'] );
+	}
+
+	/**
+	 * Provide WooPay direct checkout states.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function direct_checkout_provider(): array {
+		return array(
+			'direct checkout off' => array( false ),
+			'direct checkout on'  => array( true ),
 		);
 	}
 
@@ -1796,10 +1867,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	private function create_woopay_session_service_for_bridge( bool $enabled, bool $direct_checkout_enabled = false ) {
 		$service = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_woopay_enabled', 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
+			->onlyMethods( array( 'is_woopay_enabled', 'is_woopay_direct_checkout_enabled', 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
 			->getMock();
 
 		$service->method( 'is_woopay_enabled' )->willReturn( $enabled );
+		$service->method( 'is_woopay_direct_checkout_enabled' )->willReturn( $direct_checkout_enabled );
 		$service->method( 'get_woopay_frontend_config' )->willReturn(
 			array(
 				'isWooPayEnabled'                   => $enabled,

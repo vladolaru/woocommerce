@@ -221,6 +221,64 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should arm no cart click tracking, and not ask about direct checkout, when WooPay is off, as client 11.1.0's recorder drops the event then.
+	 */
+	public function test_proceed_to_checkout_tracking_is_a_no_op_when_woopay_is_off(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'can_process_payments' )->willReturn( true );
+		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'platform_checkout_eligible' => true ) );
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
+		$sut          = $this->create_controller( true, $account_service );
+		$direct_calls = 0;
+
+		$sut->track_proceed_to_checkout_clicks(
+			static function () use ( &$direct_calls ): bool {
+				++$direct_calls;
+				return true;
+			}
+		);
+		$sut->enqueue_frontend_events_script();
+
+		$this->assertSame( 0, $direct_calls );
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
+		$this->assertFalse( wp_script_is( 'wc-woopayments-frontend-tracks', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should load the footer script for cart click tracking even with no queued page view, and arm it once.
+	 */
+	public function test_proceed_to_checkout_tracking_loads_the_footer_script_on_its_own(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$sut = $this->create_controller( true );
+
+		try {
+			$sut->track_proceed_to_checkout_clicks( '__return_true' );
+			$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
+			$sut->enqueue_frontend_events_script();
+			$this->assertTrue( wp_script_is( 'wc-woopayments-frontend-tracks', 'enqueued' ) );
+			$localized = (string) wp_scripts()->get_data( 'wc-woopayments-frontend-tracks', 'data' );
+			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
+			$sut->enqueue_frontend_events_script();
+			$this->assertFalse( wp_script_is( 'wc-woopayments-frontend-tracks', 'enqueued' ) );
+		} finally {
+			remove_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) );
+			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
+			wp_deregister_script( 'wc-woopayments-frontend-tracks' );
+		}
+
+		$this->assertSame( 1, preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $localized, $matches ) );
+		$params = json_decode( $matches[1], true );
+		$this->assertSame( array(), $params['events'] );
+		$this->assertSame( array( 'woopayDirectCheckout' => true ), $params['proceedToCheckout'] );
+	}
+
+	/**
 	 * @testdox Should queue page views even when the visitor who primes a page cache opted out; the AJAX recorder applies the per-visitor checks.
 	 */
 	public function test_queue_user_event_ignores_per_visitor_opt_out(): void {

@@ -80,4 +80,99 @@ describe( 'WooPayments frontend Tracks queue', () => {
 
 		expect( window.fetch ).not.toHaveBeenCalled();
 	} );
+
+	describe( 'cart Proceed to checkout clicks', () => {
+		const listeners = [];
+		let originalAddEventListener;
+
+		const sentEvents = () =>
+			window.fetch.mock.calls.map( ( [ , init ] ) => {
+				const body = Object.fromEntries( init.body.entries() );
+				return [ body.tracksEventName, body.tracksEventProp ];
+			} );
+
+		const click = ( selector ) => {
+			window.fetch.mockClear();
+			document.querySelector( selector ).click();
+			return sentEvents();
+		};
+
+		beforeEach( () => {
+			// Track the listeners the script adds so each test removes its own.
+			originalAddEventListener = document.addEventListener;
+			document.addEventListener = function ( ...args ) {
+				listeners.push( args );
+				return originalAddEventListener.apply( this, args );
+			};
+			window.wc_woopayments_frontend_tracks_params.events = [];
+			document.body.innerHTML =
+				'<div class="wp-block-woocommerce-proceed-to-checkout-block">' +
+				'<a class="wc-block-cart__submit-button" href="#checkout"><span>Proceed to Checkout</span></a>' +
+				'</div>' +
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="#checkout">Proceed to checkout</a></div>' +
+				'<a class="wc-block-mini-cart__footer-checkout" href="#checkout">Go to checkout</a>' +
+				'<a class="other-link" href="#elsewhere">Elsewhere</a>';
+		} );
+
+		afterEach( () => {
+			document.addEventListener = originalAddEventListener;
+			listeners
+				.splice( 0 )
+				.forEach( ( args ) =>
+					document.removeEventListener( ...args )
+				);
+			document.body.innerHTML = '';
+			document.cookie = 'skip_woopay=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+		} );
+
+		it( 'records a Blocks, classic or mini-cart Proceed to checkout click like client 11.1.0 cart/index.js', () => {
+			window.wc_woopayments_frontend_tracks_params.proceedToCheckout = {
+				woopayDirectCheckout: false,
+			};
+			loadScript();
+
+			const expected = [
+				[
+					'wcpay_proceed_to_checkout_button_click',
+					'{"woopay_direct_checkout":false}',
+				],
+			];
+			expect(
+				click( '.wc-block-cart__submit-button span' )
+			).toEqual( expected );
+			expect( click( '.checkout-button' ) ).toEqual( expected );
+			expect(
+				click( '.wc-block-mini-cart__footer-checkout' )
+			).toEqual( expected );
+			expect( click( '.other-link' ) ).toEqual( [] );
+		} );
+
+		it( 'reports direct checkout unless the shopper skipped WooPay', () => {
+			window.wc_woopayments_frontend_tracks_params.proceedToCheckout = {
+				woopayDirectCheckout: true,
+			};
+			loadScript();
+
+			expect( click( '.checkout-button' ) ).toEqual( [
+				[
+					'wcpay_proceed_to_checkout_button_click',
+					'{"woopay_direct_checkout":true}',
+				],
+			] );
+
+			document.cookie = 'skip_woopay=1';
+			expect( click( '.checkout-button' ) ).toEqual( [
+				[
+					'wcpay_proceed_to_checkout_button_click',
+					'{"woopay_direct_checkout":false}',
+				],
+			] );
+		} );
+
+		it( 'records nothing when the cart did not ask for click tracking', () => {
+			loadScript();
+
+			expect( click( '.checkout-button' ) ).toEqual( [] );
+		} );
+	} );
 } );

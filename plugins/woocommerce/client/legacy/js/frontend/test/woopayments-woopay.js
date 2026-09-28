@@ -1700,8 +1700,8 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 	} );
 
-	// Runs last: the module's cart click listener stays on document.body.
-	test( 'records the cart Proceed to checkout click like client 11.1.0 cart/index.js', () => {
+	// The footer Tracks script records this click on every cart (woopayments-frontend-tracks.js), so WooPay must not record it too.
+	test( 'leaves the cart Proceed to checkout click to the footer Tracks script', () => {
 		document.body.innerHTML =
 			'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="#checkout">Checkout</a></div>';
 		window.wcpay_core_woopay_config.woopayButton.context = 'cart';
@@ -1710,11 +1710,6 @@ describe( 'WooPayments WooPay checkout', () => {
 
 		document.querySelector( '.checkout-button' ).click();
 
-		expect( getTrackingEvents() ).toEqual( [
-			{
-				name: 'wcpay_proceed_to_checkout_button_click',
-				props: { woopay_direct_checkout: false },
-			},
-		] );
+		expect( getTrackingEvents() ).toEqual( [] );
 	} );
 } );

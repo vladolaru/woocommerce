@@ -348,6 +348,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * Record the client 11.1.0 WooPay_Tracker shopper funnel event for the current hook (`class-woopay-tracker.php:73-81,496-532,608`).
 	 *
 	 * Page views are queued for the footer script, as the client does; the WooPay sign-up records at once, as in the client.
+	 * Cart pages also arm the footer script's "Proceed to checkout" click tracking, the client's `client/cart/index.js`.
 	 *
 	 * @internal
 	 */
@@ -357,9 +358,11 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			switch ( current_action() ) {
 				case 'woocommerce_after_cart':
 					$tracking->queue_user_event( 'cart_page_view', array( 'theme_type' => 'short_code' ) );
+					$tracking->track_proceed_to_checkout_clicks( fn(): bool => $this->get_woopay_session_service()->is_woopay_direct_checkout_enabled() );
 					break;
 				case 'woocommerce_blocks_enqueue_cart_block_scripts_after':
 					$tracking->queue_user_event( 'cart_page_view', array( 'theme_type' => 'blocks' ) );
+					$tracking->track_proceed_to_checkout_clicks( fn(): bool => $this->get_woopay_session_service()->is_woopay_direct_checkout_enabled() );
 					break;
 				case 'woocommerce_after_single_product':
 					$tracking->queue_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) );

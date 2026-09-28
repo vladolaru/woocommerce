@@ -753,30 +753,6 @@
 		} );
 	}
 
-	function attachProceedToCheckoutTracking() {
-		if ( getTrackingSource() !== 'cart' ) {
-			return;
-		}
-		document.body.addEventListener(
-			'click',
-			function ( event ) {
-				if (
-					event.target.closest &&
-					event.target.closest( proceedToCheckoutSelector )
-				) {
-					recordUserEvent( 'wcpay_proceed_to_checkout_button_click', {
-						woopay_direct_checkout:
-							!! config.isWooPayDirectCheckoutEnabled &&
-							( document.cookie || '' ).indexOf(
-								'skip_woopay=1'
-							) === -1,
-					} );
-				}
-			},
-			true
-		);
-	}
-
 	function attachDirectCheckoutListeners() {
 		if ( document.body.wooPayDirectCheckoutAttached ) {
 			return;
@@ -1698,7 +1674,6 @@
 		renderWooPaySaveUserFields();
 		fetchPreferredCardFromWooPay();
 		initializeDirectCheckout();
-		attachProceedToCheckoutTracking();
 	} );
 
 	if ( typeof module !== 'undefined' && module.exports ) {

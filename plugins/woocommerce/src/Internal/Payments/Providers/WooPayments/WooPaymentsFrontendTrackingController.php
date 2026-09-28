@@ -37,6 +37,13 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	private array $frontend_events = array();
 
 	/**
+	 * Cart "Proceed to checkout" click tracking for the footer script, or null when not armed.
+	 *
+	 * @var array{woopayDirectCheckout:bool}|null
+	 */
+	private ?array $proceed_to_checkout = null;
+
+	/**
 	 * Runtime owner arbiter.
 	 *
 	 * @var NativePaymentsRuntimeArbiter
@@ -212,6 +219,29 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			'properties' => $properties,
 		);
 
+		$this->add_frontend_events_script_hook();
+	}
+
+	/**
+	 * Have the footer script record cart "Proceed to checkout" clicks, like the plugin's cart script (11.1.0 `client/cart/index.js`).
+	 *
+	 * Armed only when the AJAX recorder would keep the event: the store-wide checks and WooPay, as for the queued page views.
+	 *
+	 * @param callable $is_woopay_direct_checkout_enabled Returns whether WooPay direct checkout is enabled; called only once armed.
+	 */
+	public function track_proceed_to_checkout_clicks( callable $is_woopay_direct_checkout_enabled ): void {
+		if ( ! $this->is_store_tracking_enabled() || ! $this->is_woopay_tracking_enabled() ) {
+			return;
+		}
+
+		$this->proceed_to_checkout = array( 'woopayDirectCheckout' => (bool) $is_woopay_direct_checkout_enabled() );
+		$this->add_frontend_events_script_hook();
+	}
+
+	/**
+	 * Print the footer script once, at wp_footer.
+	 */
+	private function add_frontend_events_script_hook(): void {
 		if ( false === has_action( 'wp_footer', array( $this, 'enqueue_frontend_events_script' ) ) ) {
 			add_action( 'wp_footer', array( $this, 'enqueue_frontend_events_script' ) );
 		}
@@ -223,7 +253,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function enqueue_frontend_events_script(): void {
-		if ( empty( $this->frontend_events ) ) {
+		if ( empty( $this->frontend_events ) && null === $this->proceed_to_checkout ) {
 			return;
 		}
 
@@ -239,12 +269,14 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			self::FRONTEND_EVENTS_SCRIPT_HANDLE,
 			'wc_woopayments_frontend_tracks_params',
 			array(
-				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-				'nonce'   => wp_create_nonce( 'platform_tracks_nonce' ),
-				'events'  => $this->frontend_events,
+				'ajaxUrl'           => admin_url( 'admin-ajax.php' ),
+				'nonce'             => wp_create_nonce( 'platform_tracks_nonce' ),
+				'events'            => $this->frontend_events,
+				'proceedToCheckout' => $this->proceed_to_checkout,
 			)
 		);
-		$this->frontend_events = array();
+		$this->frontend_events     = array();
+		$this->proceed_to_checkout = null;
 	}
 
 	/**
