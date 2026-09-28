@@ -11,7 +11,7 @@ import {
 import { __ } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 import { dispatch } from '@wordpress/data';
-import { Card, ExternalLink, Notice } from '@wordpress/components';
+import { Card, ExternalLink } from '@wordpress/components';
 import { recordEvent } from '@woocommerce/tracks';
 import { __experimentalErrorBoundary as ErrorBoundary } from '@woocommerce/components';
 import type { LoadError } from '@stripe/connect-js';
@@ -55,6 +55,7 @@ import { UpdateBusinessDetailsModal } from './components/update-business-details
 import { ConnectionSuccessModal } from './components/connection-success-modal';
 import type { StripeNotificationsChange } from './components/stripe-notifications-banner';
 import StripeSpinner from '~/settings-payments/onboarding/providers/woopayments/components/stripe-spinner';
+import BannerNotice from '~/settings-payments/onboarding/providers/woopayments/components/banner-notice';
 
 const InboxNotifications = lazy( () =>
 	import( './components/inbox-notifications' ).then( ( module ) => ( {
@@ -356,7 +357,11 @@ export const WooPaymentsOverviewPage = () => {
 				/>
 			) }
 			{ bannerLoadError?.error.type === 'invalid_request_error' && (
-				<Notice status="warning" isDismissible={ false }>
+				<BannerNotice
+					status="warning"
+					icon={ true }
+					isDismissible={ false }
+				>
 					{ createInterpolateElement(
 						__(
 							'Some account related notifications require HTTPS and cannot be displayed. View them on our financial partner’s website. <a>See details</a>',
@@ -370,7 +375,7 @@ export const WooPaymentsOverviewPage = () => {
 							),
 						}
 					) }
-				</Notice>
+				</BannerNotice>
 			) }
 			{ showStripeBanner && (
 				<>

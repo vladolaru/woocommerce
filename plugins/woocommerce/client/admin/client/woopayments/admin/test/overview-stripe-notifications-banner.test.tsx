@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import { useSelect } from '@wordpress/data';
 import { recordEvent } from '@woocommerce/tracks';
 import { loadConnectAndInitialize } from '@stripe/connect-js';
@@ -211,11 +211,31 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 		} );
 
 		expect( screen.getByText( FINISH_SETUP_TASK ) ).toBeInTheDocument();
+		// Client parity: a non-dismissible warning BannerNotice with its status icon.
+		const httpsWarning = screen.getByText(
+			/require HTTPS and cannot be displayed/,
+			{ selector: '.woopayments-banner-notice__content' }
+		);
+		expect( httpsWarning.parentElement ).toHaveClass(
+			'woopayments-banner-notice',
+			'is-warning'
+		);
 		expect(
-			screen.getByText( /require HTTPS and cannot be displayed/, {
-				selector: '.components-notice__content',
-			} )
-		).toBeInTheDocument();
+			httpsWarning.parentElement?.querySelector(
+				'.woopayments-banner-notice__icon'
+			)
+		).not.toBeNull();
+		expect(
+			httpsWarning.parentElement?.querySelector(
+				'.woopayments-banner-notice__dismiss'
+			)
+		).toBeNull();
+		expect(
+			within( httpsWarning ).getByRole( 'link', { name: /See details/ } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/startup-guide/#requirements'
+		);
 	} );
 
 	it( 'shows the update-details task and creates no session without a connected account', async () => {
