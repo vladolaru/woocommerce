@@ -340,7 +340,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		}
 		$multisite_blog_ids       = $this->multisite_blog_ids;
 		$this->multisite_blog_ids = array();
-		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_STATUS ] );
+		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_STATUS ], $_GET[ WooPaymentsCutoverController::QUERY_NOTICE ] );
 		delete_transient( 'woocommerce_woopayments_native_cutover_status' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_version' );
@@ -462,35 +462,89 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The post-cutover success notice shows once to a store manager, not on every admin page.
+	 * @testdox The completion notices stay on every admin page for a store manager until the manager dismisses each one.
 	 */
-	public function test_success_notice_shows_once_after_cutover(): void {
+	public function test_completion_notices_stay_until_a_manager_dismisses_them(): void {
 		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
-		$job = new class() extends WooPaymentsCutoverReconciliationJob {
-			/** @var bool */
-			public bool $shown = false;
-
-			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
-				return array(
-					'state'                  => WooPaymentsCutoverState::DONE,
-					'informational_outcomes' => array(),
-				);
-			}
-
-			/** Claim the notice once, like the durable record does. */
-			public function consume_success_notice(): bool {
-				$claimed     = ! $this->shown;
-				$this->shown = true;
-				return $claimed;
-			}
-		};
-
+		$job        = $this->create_completed_notice_job();
 		$controller = $this->create_cutover_controller( null, $job );
+		$redirects  = array();
+		$capture    = static function ( string $location ) use ( &$redirects ): string {
+			$redirects[] = $location;
+			return '';
+		};
+		add_filter( 'wp_redirect', $capture );
+		$this->register_exit_mock( static fn() => null );
+		$request_uri = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Restored after the test.
 
-		$this->assertStringContainsString( 'WooPayments is now fully native in WooCommerce.', $this->render_admin_notices( $controller ) );
-		$this->assertStringNotContainsString( 'fully native', $this->render_admin_notices( $controller ) );
+		try {
+			for ( $page = 0; $page < 2; $page++ ) {
+				$notices = $this->render_admin_notices( $controller );
+				$this->assertStringContainsString( 'WooPayments is now fully native in WooCommerce.', $notices );
+				$this->assertStringContainsString( 'were disabled during the switch', $notices );
+			}
+			$this->assertSame( array(), $job->dismissed, 'Rendering must not use up a notice, since the screen may not show it.' );
+
+			$_SERVER['REQUEST_URI'] = '/wp-admin/admin.php?page=wc-settings';
+			$this->follow_dismiss_link( $controller, $notices, WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS );
+			$notices = $this->render_admin_notices( $controller );
+		} finally {
+			remove_filter( 'wp_redirect', $capture );
+			if ( null === $request_uri ) {
+				unset( $_SERVER['REQUEST_URI'] );
+			} else {
+				$_SERVER['REQUEST_URI'] = $request_uri;
+			}
+		}
+
+		$this->assertSame( array( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ), $job->dismissed );
+		$this->assertSame( array( '/wp-admin/admin.php?page=wc-settings' ), $redirects, 'The dismissal returns to the same page without the action.' );
+		$this->assertStringNotContainsString( 'fully native', $notices );
+		$this->assertStringContainsString( 'were disabled during the switch', $notices, 'The other notice stays until it is dismissed too.' );
+	}
+
+	/**
+	 * @testdox A user who cannot manage WooCommerce never sees the completion notices and cannot dismiss them.
+	 */
+	public function test_completion_notices_are_for_store_managers_only(): void {
+		$this->fake_plugin_active( false );
+		$this->fake_current_user_caps( true );
+		$job        = $this->create_completed_notice_job();
+		$controller = $this->create_cutover_controller( null, $job );
+		$notices    = $this->render_admin_notices( $controller );
+		$this->fake_current_user_caps( false );
+
+		$this->assertSame( '', trim( $this->render_admin_notices( $controller ) ) );
+
+		$this->fake_wp_die_handler();
+		$this->expectException( WooPaymentsCutoverBlockedException::class );
+		try {
+			$this->follow_dismiss_link( $controller, $notices, WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS );
+		} finally {
+			$this->assertSame( array(), $job->dismissed );
+		}
+	}
+
+	/**
+	 * @testdox A completion notice dismissal with an invalid nonce dies before it changes the record.
+	 */
+	public function test_completion_notice_dismissal_requires_a_valid_nonce(): void {
+		$this->fake_plugin_active( false );
+		$this->fake_current_user_caps( true );
+		$job        = $this->create_completed_notice_job();
+		$controller = $this->create_cutover_controller( null, $job );
+		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_DISMISS_NOTICE;
+		$_GET[ WooPaymentsCutoverController::QUERY_NOTICE ] = WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS;
+		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsCutoverController::NONCE_ACTION );
+		$this->fake_wp_die_handler();
+
+		$this->expectException( WooPaymentsCutoverBlockedException::class );
+		try {
+			$controller->handle_admin_init();
+		} finally {
+			$this->assertSame( array(), $job->dismissed );
+		}
 	}
 
 	/**
@@ -1738,6 +1792,64 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				return $this->routes_registered;
 			}
 		};
+	}
+
+	/**
+	 * Create a completed-cutover job double that records dismissals on its record.
+	 *
+	 * @return WooPaymentsCutoverReconciliationJob&object{dismissed: string[]}
+	 */
+	private function create_completed_notice_job(): WooPaymentsCutoverReconciliationJob {
+		return new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var string[] Dismissed notices, in order. */
+			public array $dismissed = array();
+
+			/** @var array<string,mixed> Completed record with an unsupported payment method outcome. */
+			private array $record = array(
+				'state'                  => WooPaymentsCutoverState::DONE,
+				'informational_outcomes' => array(
+					array(
+						'code'               => 'unsupported_payment_methods_disabled',
+						'payment_method_ids' => array( 'giropay' ),
+					),
+				),
+			);
+
+			/** @return array<string,mixed>|null */
+			public function classify_for_admin_notice(): ?array {
+				return $this->record;
+			}
+
+			/**
+			 * Record the dismissal the way the durable record does.
+			 *
+			 * @param string $notice Notice to dismiss.
+			 */
+			public function dismiss_completion_notice( string $notice ): bool {
+				if ( ! $this->is_completion_notice_due( $this->record, $notice ) ) {
+					return false;
+				}
+				$this->dismissed[]                        = $notice;
+				$this->record['informational_outcomes'][] = array( 'code' => $notice . '_notice_dismissed' );
+				return true;
+			}
+		};
+	}
+
+	/**
+	 * Follow the dismiss link of one rendered completion notice.
+	 *
+	 * @param WooPaymentsCutoverController $controller Cutover controller.
+	 * @param string                       $notices    Rendered notice markup.
+	 * @param string                       $notice     Notice whose link to follow.
+	 */
+	private function follow_dismiss_link( WooPaymentsCutoverController $controller, string $notices, string $notice ): void {
+		$this->assertSame( 1, preg_match( '/href="([^"]*' . preg_quote( WooPaymentsCutoverController::QUERY_NOTICE . '=' . $notice, '/' ) . '[^"]*)"/', $notices, $matches ), "The {$notice} notice should render a dismiss link." );
+		wp_parse_str( (string) wp_parse_url( html_entity_decode( $matches[1] ), PHP_URL_QUERY ), $query );
+		foreach ( $query as $key => $value ) {
+			$_GET[ $key ] = $value;
+		}
+		$controller->handle_admin_init();
 	}
 
 	/**

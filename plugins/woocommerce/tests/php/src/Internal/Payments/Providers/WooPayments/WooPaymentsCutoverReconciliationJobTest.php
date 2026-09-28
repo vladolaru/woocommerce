@@ -1040,25 +1040,51 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A completed cutover claims its success notice once and records it on the durable record.
+	 * @testdox A completed cutover keeps each completion notice until a manager dismisses it, and records the dismissal on the durable record.
 	 */
-	public function test_success_notice_is_consumed_once_per_completed_cutover(): void {
-		$sut = $this->create_job( true );
+	public function test_completion_notices_stay_until_dismissed(): void {
+		$sut   = $this->create_job( true );
+		$store = $this->require_state_store();
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $store->get_record();
 		$this->assertIsArray( $pending );
 		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-		$done                    = $pending;
-		$done['revision']        = $pending['revision'] + 1;
-		$done['state']           = WooPaymentsCutoverState::DONE;
-		$done['action_id']       = 0;
-		$done['current_step']    = 'done';
-		$done['next_attempt_at'] = null;
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $done ) );
+		$done                           = $pending;
+		$done['revision']               = $pending['revision'] + 1;
+		$done['state']                  = WooPaymentsCutoverState::DONE;
+		$done['action_id']              = 0;
+		$done['current_step']           = 'done';
+		$done['next_attempt_at']        = null;
+		$done['informational_outcomes'] = array(
+			array(
+				'code'               => 'unsupported_payment_methods_disabled',
+				'payment_method_ids' => array( 'giropay' ),
+			),
+		);
+		$this->assertTrue( $store->compare_and_set_record( $pending, $done ) );
+		$success  = WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS;
+		$disabled = WooPaymentsCutoverReconciliationJob::NOTICE_DISABLED_PAYMENT_METHODS;
 
-		$this->assertTrue( $sut->consume_success_notice() );
-		$this->assertFalse( $sut->consume_success_notice() );
-		$this->assertSame( 'success_notice_shown', end( $sut->get_state_record()['informational_outcomes'] )['code'] ?? null );
+		for ( $page = 0; $page < 2; $page++ ) {
+			$this->assertTrue( $sut->is_completion_notice_due( $store->get_record(), $success ) );
+			$this->assertTrue( $sut->is_completion_notice_due( $store->get_record(), $disabled ) );
+		}
+		$this->assertSame( $done, $store->get_record(), 'Showing the notices must not change the record.' );
+		$this->assertFalse( $sut->dismiss_completion_notice( 'unknown' ) );
+		$this->assertSame( $done, $store->get_record(), 'An unknown notice must not change the record.' );
+
+		$this->assertTrue( $sut->dismiss_completion_notice( $success ) );
+		$this->assertFalse( $sut->dismiss_completion_notice( $success ), 'A dismissed notice stays dismissed.' );
+		wp_cache_flush();
+		$dismissed = $store->get_record();
+		$this->assertIsArray( $dismissed );
+		$this->assertSame( $done['revision'] + 1, $dismissed['revision'] );
+		$this->assertContains( array( 'code' => 'success_notice_dismissed' ), $dismissed['informational_outcomes'] );
+		$this->assertFalse( $sut->is_completion_notice_due( $dismissed, $success ) );
+		$this->assertTrue( $sut->is_completion_notice_due( $dismissed, $disabled ), 'Each notice is dismissed on its own.' );
+
+		$this->assertTrue( $sut->dismiss_completion_notice( $disabled ) );
+		$this->assertFalse( $sut->is_completion_notice_due( $store->get_record(), $disabled ) );
 	}
 
 	/**

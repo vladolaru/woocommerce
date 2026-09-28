@@ -123,6 +123,27 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public const QUERY_STATUS = 'wc_woopayments_cutover_status';
 
 	/**
+	 * Admin action that dismisses a completion notice.
+	 *
+	 * @var string
+	 */
+	public const ACTION_DISMISS_NOTICE = 'dismiss_notice';
+
+	/**
+	 * Query argument naming the completion notice to dismiss.
+	 *
+	 * @var string
+	 */
+	public const QUERY_NOTICE = 'wc_woopayments_cutover_notice';
+
+	/**
+	 * Nonce action for completion notice dismissals.
+	 *
+	 * @var string
+	 */
+	public const DISMISS_NONCE_ACTION = 'woocommerce_woopayments_cutover_dismiss_notice';
+
+	/**
 	 * Legacy status value retained for URL compatibility.
 	 *
 	 * @var string
@@ -222,6 +243,10 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		$this->maybe_auto_deactivate_plugin();
 
 		$action = isset( $_GET[ self::QUERY_ACTION ] ) ? sanitize_key( wp_unslash( $_GET[ self::QUERY_ACTION ] ) ) : '';
+		if ( self::ACTION_DISMISS_NOTICE === $action ) {
+			$this->dismiss_completion_notice();
+			return;
+		}
 		if ( self::ACTION_DISABLE !== $action ) {
 			return;
 		}
@@ -234,6 +259,57 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		$this->disable_woopayments_plugin();
 		wp_safe_redirect( admin_url( 'plugins.php' ) );
 		$this->legacy_proxy->exit();
+	}
+
+	/**
+	 * Persist a store manager's dismissal of a completion notice, then return to the same page.
+	 */
+	private function dismiss_completion_notice(): void {
+		$nonce = isset( $_GET[ self::NONCE_NAME ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::NONCE_NAME ] ) ) : '';
+		if ( ! wp_verify_nonce( $nonce, self::DISMISS_NONCE_ACTION ) ) {
+			wp_die( esc_html__( 'Action failed. Please refresh the page and retry.', 'woocommerce' ) );
+		}
+		if ( ! $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'Sorry, you are not allowed to do that.', 'woocommerce' ), '', array( 'response' => 403 ) );
+		}
+
+		$notice = isset( $_GET[ self::QUERY_NOTICE ] ) ? sanitize_key( wp_unslash( $_GET[ self::QUERY_NOTICE ] ) ) : '';
+		$this->reconciliation_job->dismiss_completion_notice( $notice );
+
+		$return_url = remove_query_arg( array( self::QUERY_ACTION, self::QUERY_NOTICE, self::NONCE_NAME ), $this->get_request_uri() );
+		wp_safe_redirect( '' !== $return_url ? $return_url : admin_url() );
+		$this->legacy_proxy->exit();
+	}
+
+	/**
+	 * Get the current request URI.
+	 *
+	 * @return string
+	 */
+	private function get_request_uri(): string {
+		return isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+	}
+
+	/**
+	 * Build the nonce-protected dismiss link for a completion notice.
+	 *
+	 * @param string $notice One of the WooPaymentsCutoverReconciliationJob::NOTICE_* constants.
+	 * @return string
+	 */
+	private function get_dismiss_notice_link( string $notice ): string {
+		$url = add_query_arg(
+			array(
+				self::QUERY_ACTION => self::ACTION_DISMISS_NOTICE,
+				self::QUERY_NOTICE => $notice,
+			),
+			'' !== $this->get_request_uri() ? $this->get_request_uri() : admin_url()
+		);
+
+		return sprintf(
+			'<a class="woocommerce-message-close notice-dismiss" href="%s" style="position:relative;float:right;padding:9px 0 9px 9px;text-decoration:none;"><span class="screen-reader-text">%s</span></a>',
+			esc_url( wp_nonce_url( $url, self::DISMISS_NONCE_ACTION, self::NONCE_NAME ) ),
+			esc_html__( 'Dismiss this notice.', 'woocommerce' )
+		);
 	}
 
 	/**
@@ -559,10 +635,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				return;
 			}
 			if ( WooPaymentsCutoverState::DONE === $record['state'] && ! $this->arbiter->is_plugin_runtime_active() ) {
-				// Shown once to a store manager, like the one-time reconnect notice; it was never dismissible otherwise.
-				if ( $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) && $this->reconciliation_job->consume_success_notice() ) {
-					$this->output_success_notice();
-					$this->output_disabled_payment_methods_notice( $record['informational_outcomes'] ?? array() );
+				// Shown to store managers until they dismiss them; rendering claims nothing, since some screens hide notices.
+				if ( $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
+					if ( $this->reconciliation_job->is_completion_notice_due( $record, WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ) ) {
+						$this->output_success_notice();
+					}
+					if ( $this->reconciliation_job->is_completion_notice_due( $record, WooPaymentsCutoverReconciliationJob::NOTICE_DISABLED_PAYMENT_METHODS ) ) {
+						$this->output_disabled_payment_methods_notice( $record['informational_outcomes'] ?? array() );
+					}
 				}
 				return;
 			}
@@ -593,7 +673,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				continue;
 			}
 			?>
-			<div class="notice notice-info is-dismissible"><p><?php esc_html_e( 'Some payment methods that are not supported by native WooPayments were disabled during the switch.', 'woocommerce' ); ?></p></div>
+			<div class="notice notice-info" style="position:relative;"><?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_DISABLED_PAYMENT_METHODS ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?><p><?php esc_html_e( 'Some payment methods that are not supported by native WooPayments were disabled during the switch.', 'woocommerce' ); ?></p></div>
 			<?php
 			return;
 		}
@@ -604,7 +684,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 */
 	public function output_success_notice(): void {
 		?>
-		<div class="notice notice-success is-dismissible">
+		<div class="notice notice-success" style="position:relative;">
+			<?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
 			<p><?php esc_html_e( 'WooPayments is now fully native in WooCommerce. Everything works as before.', 'woocommerce' ); ?></p>
 		</div>
 		<?php

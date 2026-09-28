@@ -27,6 +27,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Autoloaded admin-notice Stripe Billing classification, keyed by record revision. */
 	public const ADMIN_CLASSIFICATION_OPTION = 'woocommerce_woopayments_cutover_admin_classification';
 
+	/** Completion notice: the switch finished. */
+	public const NOTICE_SUCCESS = 'success';
+
+	/** Completion notice: payment methods native does not support were turned off. */
+	public const NOTICE_DISABLED_PAYMENT_METHODS = 'disabled_payment_methods';
+
 	/** Reconciliation action hook. */
 	public const ACTION_HOOK = WooPaymentsCutoverActionScheduler::ACTION_HOOK;
 
@@ -533,23 +539,36 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Atomically consume the one post-cutover success notice, so it does not show on every admin page.
+	 * Tell whether a completed record still shows a completion notice, which stays until a manager dismisses it.
 	 *
-	 * @return bool True only for the request that claimed the notice.
+	 * @param array<string,mixed>|null $record Cutover record.
+	 * @param string                   $notice One of the NOTICE_* constants.
+	 * @return bool
 	 */
-	public function consume_success_notice(): bool {
-		return $this->consume_notice(
-			fn( ?array $record ): bool => is_array( $record ) && WooPaymentsCutoverState::DONE === $record['state'] && ! $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => 'success_notice_shown' ) ),
-			'success_notice_shown'
-		);
+	public function is_completion_notice_due( ?array $record, string $notice ): bool {
+		return is_array( $record )
+			&& WooPaymentsCutoverState::DONE === ( $record['state'] ?? null )
+			&& in_array( $notice, array( self::NOTICE_SUCCESS, self::NOTICE_DISABLED_PAYMENT_METHODS ), true )
+			&& is_array( $record['informational_outcomes'] ?? null )
+			&& ! $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => $notice . '_notice_dismissed' ) );
 	}
 
 	/**
-	 * Record a shown one-time notice on the current record.
+	 * Record a manager's dismissal of a completion notice on the durable record.
+	 *
+	 * @param string $notice One of the NOTICE_* constants.
+	 * @return bool True only for the request that recorded the dismissal.
+	 */
+	public function dismiss_completion_notice( string $notice ): bool {
+		return $this->consume_notice( fn( ?array $record ): bool => $this->is_completion_notice_due( $record, $notice ), $notice . '_notice_dismissed' );
+	}
+
+	/**
+	 * Record a shown or dismissed notice on the current record.
 	 *
 	 * @param callable $is_due Tells whether a record still owes the notice.
-	 * @param string   $code   Informational outcome and step recorded once shown.
-	 * @return bool True only for the request that claimed the notice.
+	 * @param string   $code   Informational outcome and step recorded once shown or dismissed.
+	 * @return bool True only for the request that recorded it.
 	 */
 	private function consume_notice( callable $is_due, string $code ): bool {
 		// Checked before the lease too: admin pages call this, and the lease writes options.
