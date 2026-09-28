@@ -476,11 +476,18 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	public function get_payment_fields_js_config( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
+		return $this->complete_payment_fields_js_config( $this->get_payment_fields_js_config_base(), $payment_method_definition );
+	}
+
+	/**
+	 * Build the gateway-independent part of the payment fields config.
+	 *
+	 * @return array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}
+	 */
+	private function get_payment_fields_js_config_base(): array {
 		$force_network_saved_cards = $this->should_force_network_saved_cards();
 		$saved_cards_enabled       = $this->is_saved_cards_enabled();
 		$payment_context           = $this->get_payment_context();
-		$payment_methods_config    = $this->get_payment_methods_config( $saved_cards_enabled, $payment_method_definition, $payment_context['currency'] );
-		$payment_list_wallets      = $this->get_payment_list_wallets_config( $saved_cards_enabled, $payment_method_definition, $payment_context['currency'] );
 		$customer_data             = $this->get_customer_service()->get_prepared_customer_data();
 		if ( '' !== $payment_context['billing_country'] ) {
 			$customer_data['billing_country'] = $payment_context['billing_country'];
@@ -497,12 +504,12 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			'publishableKey'                           => $this->get_account_service()->get_publishable_key(),
 			'accountId'                                => $this->get_account_service()->get_account_id(),
 			'locale'                                   => $this->get_stripe_locale(),
-			'gatewayId'                                => $this->get_gateway_id_for_payment_method_definition( $payment_method_definition ),
+			'gatewayId'                                => '',
 			'ajaxUrl'                                  => admin_url( 'admin-ajax.php' ),
 			'wcAjaxUrl'                                => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
-			'paymentMethodsConfig'                     => $payment_methods_config,
-			'paymentListWalletsConfig'                 => $payment_list_wallets,
-			'paymentMethodTypes'                       => $this->get_payment_method_types_for_definition( $payment_method_definition, $payment_methods_config ),
+			'paymentMethodsConfig'                     => array(),
+			'paymentListWalletsConfig'                 => array(),
+			'paymentMethodTypes'                       => array(),
 			'testMode'                                 => $this->get_account_service()->is_test_mode_enabled(),
 			'enabledBillingFields'                     => $this->get_enabled_billing_fields(),
 			'currency'                                 => $payment_context['currency'],
@@ -561,7 +568,29 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 
 		if ( $this->is_changing_payment_method_for_subscription() ) {
 			$config['isChangingPayment'] = true;
+		}
 
+		return array(
+			'config'              => $config,
+			'saved_cards_enabled' => $saved_cards_enabled,
+			'currency'            => (string) $payment_context['currency'],
+		);
+	}
+
+	/**
+	 * Add the gateway-specific keys to a config base and apply the config filter.
+	 *
+	 * @param array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string} $base                      Config base.
+	 * @param WooPaymentsPaymentMethodDefinition|null                                    $payment_method_definition Optional payment method definition.
+	 * @return array<string,mixed>
+	 */
+	private function complete_payment_fields_js_config( array $base, ?WooPaymentsPaymentMethodDefinition $payment_method_definition ): array {
+		$config                             = $base['config'];
+		$config['gatewayId']                = $this->get_gateway_id_for_payment_method_definition( $payment_method_definition );
+		$config['paymentMethodsConfig']     = $this->get_payment_methods_config( $base['saved_cards_enabled'], $payment_method_definition, $base['currency'] );
+		$config['paymentListWalletsConfig'] = $this->get_payment_list_wallets_config( $base['saved_cards_enabled'], $payment_method_definition, $base['currency'] );
+		$config['paymentMethodTypes']       = $this->get_payment_method_types_for_definition( $payment_method_definition, $config['paymentMethodsConfig'] );
+		if ( ! empty( $config['isChangingPayment'] ) ) {
 			return $config;
 		}
 
@@ -618,10 +647,15 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * Get Blocks payment method data.
 	 *
 	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @param \ArrayObject|null                       $shared                    Holder that lets split gateways share one config base (client 11.1.0 registers one Blocks method).
+	 * @phpstan-param \ArrayObject<string,mixed>|null $shared
 	 * @return array<string,mixed>
 	 */
-	public function get_blocks_payment_method_data( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
-		$data = $this->get_payment_fields_js_config( $payment_method_definition );
+	public function get_blocks_payment_method_data( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null, ?\ArrayObject $shared = null ): array {
+		if ( null !== $shared && ! isset( $shared['base'] ) ) {
+			$shared['base'] = $this->get_payment_fields_js_config_base();
+		}
+		$data = null === $shared ? $this->get_payment_fields_js_config( $payment_method_definition ) : $this->complete_payment_fields_js_config( $shared['base'], $payment_method_definition );
 
 		// Sanitize the shopper-facing testing instructions after the wcpay_payment_fields_js_config
 		// filter has run. The Blocks checkout script renders this value via dangerouslySetInnerHTML,

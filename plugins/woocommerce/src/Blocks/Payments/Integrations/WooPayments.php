@@ -106,6 +106,13 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private ?NativeWooPaymentsGateway $payment_gateway;
 
 	/**
+	 * Config base shared by the split-gateway integrations of one registration.
+	 *
+	 * @var \ArrayObject<string,mixed>|null
+	 */
+	private ?\ArrayObject $shared_config = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Api                               $asset_api                 Asset API.
@@ -210,7 +217,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return array<string,mixed>
 	 */
 	public function get_payment_method_data() {
-		$data       = $this->checkout_bridge->get_blocks_payment_method_data( $this->payment_gateway ? $this->payment_gateway->get_payment_method_definition() : null );
+		$data       = $this->checkout_bridge->get_blocks_payment_method_data( $this->payment_gateway ? $this->payment_gateway->get_payment_method_definition() : null, $this->shared_config );
 		$gateway_id = null === $this->payment_gateway ? OrderPaymentStore::GATEWAY_ID : $this->payment_gateway->id;
 		$data       = array_merge(
 			$data,
@@ -241,16 +248,22 @@ final class WooPayments extends AbstractPaymentMethodType {
 			return array( $this );
 		}
 
+		$shared_config = new \ArrayObject();
+
 		return array_map(
-			fn( NativeWooPaymentsGateway $gateway ): WooPayments => new self(
-				$this->asset_api,
-				$this->arbiter,
-				$this->checkout_bridge,
-				$this->provider,
-				$this->woopay_session_service,
-				$this->express_checkout_service,
-				$gateway
-			),
+			function ( NativeWooPaymentsGateway $gateway ) use ( $shared_config ): WooPayments {
+				$integration                = new self(
+					$this->asset_api,
+					$this->arbiter,
+					$this->checkout_bridge,
+					$this->provider,
+					$this->woopay_session_service,
+					$this->express_checkout_service,
+					$gateway
+				);
+				$integration->shared_config = $shared_config;
+				return $integration;
+			},
 			$gateways
 		);
 	}

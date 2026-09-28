@@ -489,6 +489,42 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * @testdox Split-gateway Blocks integrations of one registration share one config holder, so the bridge builds the shared config once.
+	 */
+	public function test_split_gateway_integrations_share_one_config_holder(): void {
+		$asset_api = $this->getMockBuilder( AssetApi::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_blocks_payment_method_data', 'should_expose_checkout_surface' ) )
+			->getMock();
+		$holders   = array();
+		$bridge->method( 'get_blocks_payment_method_data' )->willReturnCallback(
+			static function ( $definition, $shared = null ) use ( &$holders ): array {
+				$holders[] = $shared;
+				return array();
+			}
+		);
+		$registry = new WooPaymentsPaymentMethodRegistry();
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( false );
+		$provider->method( 'get_payment_gateways' )->willReturn( array( new NativeWooPaymentsGateway( $registry->get( 'card' ) ), new NativeWooPaymentsGateway( $registry->get( 'klarna' ) ) ) );
+
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		foreach ( $integration->get_payment_method_integrations() as $payment_method ) {
+			$payment_method->get_payment_method_data();
+		}
+
+		$this->assertCount( 2, $holders );
+		$this->assertInstanceOf( \ArrayObject::class, $holders[0] );
+		$this->assertSame( $holders[0], $holders[1] );
+	}
+
+	/**
 	 * @testdox Blocks integration publication honors the registry availability filter.
 	 */
 	public function test_get_payment_method_integrations_honors_registry_availability_filter(): void {

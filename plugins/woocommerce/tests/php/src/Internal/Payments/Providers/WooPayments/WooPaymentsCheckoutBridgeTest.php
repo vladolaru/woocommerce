@@ -1443,6 +1443,46 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Split gateways sharing one holder build the gateway-independent Blocks config once, and still get their own gateway keys and filter pass.
+	 */
+	public function test_split_gateway_blocks_data_builds_the_shared_config_once(): void {
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge( true );
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$registry = new WooPaymentsPaymentMethodRegistry();
+		$builds   = 0;
+		$filtered = 0;
+		$count    = static function ( $value ) use ( &$builds ) {
+			++$builds;
+			return $value;
+		};
+		$filter   = static function ( $config ) use ( &$filtered ) {
+			++$filtered;
+			return $config;
+		};
+		add_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
+		add_filter( 'wcpay_payment_fields_js_config', $filter );
+
+		try {
+			$shared   = new \ArrayObject();
+			$gateways = array();
+			foreach ( array( 'card', 'klarna', 'affirm' ) as $payment_method_id ) {
+				$gateways[] = $bridge->get_blocks_payment_method_data( $registry->get( $payment_method_id ), $shared )['gatewayId'];
+			}
+		} finally {
+			remove_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
+			remove_filter( 'wcpay_payment_fields_js_config', $filter );
+		}
+
+		$this->assertSame( 1, $builds, 'Client 11.1.0 builds the payment fields config once for its single Blocks method.' );
+		$this->assertSame( 3, $filtered, 'Each gateway config still passes the wcpay_payment_fields_js_config filter.' );
+		$this->assertSame( array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_affirm' ), $gateways );
+	}
+
+	/**
 	 * @testdox Should include WooPay save-user data in Blocks payment method data.
 	 */
 	public function test_get_blocks_payment_method_data_includes_woopay_save_user_data(): void {
