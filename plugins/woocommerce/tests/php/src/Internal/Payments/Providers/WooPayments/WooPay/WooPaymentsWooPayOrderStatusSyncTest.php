@@ -733,6 +733,39 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A gateway settings save that keeps WooPay on keeps the owned webhook, whatever else it changes.
+	 */
+	public function test_settings_save_that_keeps_woopay_on_keeps_owned_webhook(): void {
+		$sync = $this->create_sync( true, true );
+		$sync->register();
+		$sync->reconcile_webhook();
+		$owned_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'platform_checkout' => 'yes',
+				'test_mode'         => 'no',
+			)
+		);
+
+		try {
+			update_option(
+				'woocommerce_woocommerce_payments_settings',
+				array(
+					'platform_checkout' => 'yes',
+					'test_mode'         => 'yes',
+				)
+			);
+		} finally {
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		$this->assertGreaterThan( 0, $owned_id );
+		$this->assertInstanceOf( \WC_Webhook::class, wc_get_webhook( $owned_id ) );
+		$this->assertSame( $owned_id, absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ) );
+	}
+
+	/**
 	 * @testdox An account refresh that leaves WooPay unavailable removes the owned webhook.
 	 */
 	public function test_account_refresh_removes_owned_webhook_when_woopay_is_unavailable(): void {
