@@ -43,25 +43,16 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * WooPayments account service.
-	 *
-	 * @var WooPaymentsAccountService
-	 */
-	private WooPaymentsAccountService $account_service;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param WooPaymentsApiClient         $api_client      Native WooPayments API client.
-	 * @param WooPaymentsAccountService    $account_service WooPayments account service.
+	 * @param NativePaymentsRuntimeArbiter $arbiter    Runtime owner arbiter.
+	 * @param WooPaymentsApiClient         $api_client Native WooPayments API client.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
-		$this->arbiter         = $arbiter;
-		$this->api_client      = $api_client;
-		$this->account_service = $account_service;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client ): void {
+		$this->arbiter    = $arbiter;
+		$this->api_client = $api_client;
 	}
 
 	/**
@@ -145,6 +136,10 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 	/**
 	 * Redirect legacy Capital offer links to a fresh provider loan offer link.
 	 *
+	 * Like the plugin's `maybe_redirect_by_get_param()` (11.1.0), any `manage_woocommerce` admin is sent on, with no
+	 * Capital eligibility check: a merchant's first offer email comes before any loan, and the platform refuses an
+	 * ineligible offer, which lands on the overview error notice.
+	 *
 	 * @return void
 	 */
 	public function redirect_loan_offer_request(): void {
@@ -152,7 +147,6 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 			wp_doing_ajax()
 			|| ! current_user_can( 'manage_woocommerce' )
 			|| ! $this->arbiter->should_native_register()
-			|| ! $this->can_access_capital_admin_area()
 		) {
 			return;
 		}
@@ -179,19 +173,6 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 			'callback'            => array( $this, $callback ),
 			'permission_callback' => array( $this, 'check_permission' ),
 		);
-	}
-
-	/**
-	 * Check whether the native Capital admin area should be reachable.
-	 *
-	 * @return bool
-	 */
-	private function can_access_capital_admin_area(): bool {
-		return $this->account_service->is_gateway_enabled()
-			&& $this->account_service->has_valid_account_for_admin_navigation()
-			&& ! $this->account_service->is_account_rejected()
-			&& ! $this->account_service->is_account_under_review()
-			&& $this->account_service->has_previous_capital_loans();
 	}
 
 	/**

@@ -6,9 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
-use PHPUnit\Framework\MockObject\MockObject;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -80,35 +78,6 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->sut->register();
 
 		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
-		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'redirect_loan_offer_request' ) ) );
-	}
-
-	/**
-	 * @testdox Capital route shells are registered when Capital is not eligible.
-	 */
-	public function test_registers_routes_when_capital_is_not_eligible(): void {
-		$this->sut = $this->create_controller( true, false );
-		$this->sut->register();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'rest_api_init' );
-
-		$this->assertCapitalRoutesRegistered();
-		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'redirect_loan_offer_request' ) ) );
-	}
-
-	/**
-	 * @testdox Capital route shells are registered when the account lacks full admin access.
-	 * @dataProvider provider_capital_admin_unavailable_account_states
-	 *
-	 * @param array<string,bool> $account_state Account state overrides.
-	 */
-	public function test_registers_routes_when_account_lacks_full_admin_access( array $account_state ): void {
-		$this->sut = $this->create_controller( true, true, $account_state );
-		$this->sut->register();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'rest_api_init' );
-
-		$this->assertCapitalRoutesRegistered();
 		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'redirect_loan_offer_request' ) ) );
 	}
 
@@ -227,39 +196,64 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy loan offer query arg is ignored when Capital is not eligible.
+	 * @testdox Loan offer link redirects any manage_woocommerce user to the Capital link, with no Capital eligibility check (plugin 11.1.0).
 	 */
-	public function test_loan_offer_query_arg_is_ignored_when_capital_is_not_eligible(): void {
-		$this->sut                = $this->create_controller( true, false );
+	public function test_loan_offer_query_arg_redirects_shop_manager_to_capital_link(): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'shop_manager' ) ) );
+		$this->api_client->capital_link_response = array(
+			'url' => 'https://connect.stripe.com/capital/view-offer',
+		);
+		$_GET['wcpay-loan-offer']                = '';
+
+		$this->assertSame( 'https://connect.stripe.com/capital/view-offer', $this->run_loan_offer_redirect() );
+		$this->assertSame( 'create_capital_link', $this->api_client->last_call );
+	}
+
+	/**
+	 * @testdox Loan offer link lands on the overview error notice when the platform refuses the Capital link.
+	 */
+	public function test_loan_offer_query_arg_redirects_to_overview_error_when_platform_fails(): void {
+		$this->api_client->exception = new WooPaymentsApiException( 'No active offer.', 'wcpay_capital_offer_unavailable', 400 );
+		$_GET['wcpay-loan-offer']    = '';
+
+		$location = rawurldecode( (string) $this->run_loan_offer_redirect() );
+
+		$this->assertSame( 'create_capital_link', $this->api_client->last_call );
+		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $location );
+		$this->assertStringContainsString( 'wcpay-loan-offer-error=1', $location );
+	}
+
+	/**
+	 * @testdox Loan offer link is ignored for users without manage_woocommerce.
+	 */
+	public function test_loan_offer_query_arg_is_ignored_without_manage_woocommerce(): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
 		$_GET['wcpay-loan-offer'] = '';
-		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
 
-		try {
-			$this->sut->redirect_loan_offer_request();
-		} catch ( \RuntimeException $exception ) {
-			$this->fail( 'Capital-ineligible loan offer requests should not redirect: ' . $exception->getMessage() );
-		}
-
+		$this->assertNull( $this->run_loan_offer_redirect() );
 		$this->assertSame( '', $this->api_client->last_call );
 	}
 
 	/**
-	 * @testdox Legacy loan offer query arg is ignored when the account lacks full admin access.
-	 * @dataProvider provider_capital_admin_unavailable_account_states
-	 *
-	 * @param array<string,bool> $account_state Account state overrides.
+	 * @testdox Loan offer redirect makes no platform call without the query arg.
 	 */
-	public function test_loan_offer_query_arg_is_ignored_when_account_lacks_full_admin_access( array $account_state ): void {
-		$this->sut                = $this->create_controller( true, true, $account_state );
+	public function test_loan_offer_redirect_makes_no_platform_call_without_query_arg(): void {
+		$this->api_client->capital_link_response = array(
+			'url' => 'https://connect.stripe.com/capital/view-offer',
+		);
+
+		$this->assertNull( $this->run_loan_offer_redirect() );
+		$this->assertSame( '', $this->api_client->last_call );
+	}
+
+	/**
+	 * @testdox Loan offer link is ignored when native does not own the runtime.
+	 */
+	public function test_loan_offer_query_arg_is_ignored_when_native_does_not_own_runtime(): void {
+		$this->sut                = $this->create_controller( false );
 		$_GET['wcpay-loan-offer'] = '';
-		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
 
-		try {
-			$this->sut->redirect_loan_offer_request();
-		} catch ( \RuntimeException $exception ) {
-			$this->fail( 'Full-admin-ineligible loan offer requests should not redirect: ' . $exception->getMessage() );
-		}
-
+		$this->assertNull( $this->run_loan_offer_redirect() );
 		$this->assertSame( '', $this->api_client->last_call );
 	}
 
@@ -352,6 +346,24 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * Run the loan offer redirect and return the intercepted location, or null when it did not redirect.
+	 *
+	 * @return string|null
+	 */
+	private function run_loan_offer_redirect(): ?string {
+		add_filter( 'allowed_redirect_hosts', array( $this, 'allow_stripe_redirect_host' ) );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		try {
+			$this->sut->redirect_loan_offer_request();
+		} catch ( \RuntimeException $exception ) {
+			return (string) preg_replace( '/^wp_redirect intercepted: /', '', $exception->getMessage() );
+		}
+
+		return null;
+	}
+
+	/**
 	 * Add the Stripe redirect host for redirect tests.
 	 *
 	 * @param string[] $hosts Allowed hosts.
@@ -375,44 +387,12 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Account states that should not expose Capital admin surfaces.
-	 *
-	 * @return array<string,array{account_state:array<string,bool>}>
-	 */
-	public function provider_capital_admin_unavailable_account_states(): array {
-		return array(
-			'gateway disabled'    => array(
-				'account_state' => array(
-					'is_gateway_enabled' => false,
-				),
-			),
-			'invalid admin state' => array(
-				'account_state' => array(
-					'has_valid_account_for_admin_navigation' => false,
-				),
-			),
-			'rejected account'    => array(
-				'account_state' => array(
-					'is_account_rejected' => true,
-				),
-			),
-			'under review'        => array(
-				'account_state' => array(
-					'is_account_under_review' => true,
-				),
-			),
-		);
-	}
-
-	/**
 	 * Create a native Capital REST controller.
 	 *
-	 * @param bool               $native_register            Whether native should own route registration.
-	 * @param bool               $has_previous_capital_loans Whether the account is Capital eligible.
-	 * @param array<string,bool> $account_state              Account state overrides.
+	 * @param bool $native_register Whether native should own route registration.
 	 * @return WooPaymentsCapitalRestController
 	 */
-	private function create_controller( bool $native_register, bool $has_previous_capital_loans = true, array $account_state = array() ): WooPaymentsCapitalRestController {
+	private function create_controller( bool $native_register ): WooPaymentsCapitalRestController {
 		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_native_register' ) )
@@ -420,40 +400,9 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
 
 		$controller = new WooPaymentsCapitalRestController();
-		$controller->init( $arbiter, $this->api_client, $this->create_account_service( $has_previous_capital_loans, $account_state ) );
+		$controller->init( $arbiter, $this->api_client );
 
 		return $controller;
-	}
-
-	/**
-	 * Create a native account service test double.
-	 *
-	 * @param bool               $has_previous_capital_loans Whether the account is Capital eligible.
-	 * @param array<string,bool> $overrides                  Account state overrides.
-	 * @return WooPaymentsAccountService&MockObject
-	 */
-	private function create_account_service( bool $has_previous_capital_loans, array $overrides = array() ): WooPaymentsAccountService {
-		$state = array_merge(
-			array(
-				'has_previous_capital_loans'             => $has_previous_capital_loans,
-				'is_gateway_enabled'                     => true,
-				'has_valid_account_for_admin_navigation' => true,
-				'is_account_rejected'                    => false,
-				'is_account_under_review'                => false,
-			),
-			$overrides
-		);
-
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array_keys( $state ) )
-			->getMock();
-
-		foreach ( $state as $method => $value ) {
-			$account_service->method( $method )->willReturn( $value );
-		}
-
-		return $account_service;
 	}
 
 	/**
