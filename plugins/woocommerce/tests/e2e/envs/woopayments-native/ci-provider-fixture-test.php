@@ -17,6 +17,10 @@ $discarded_option_updates = array();
 $discarded_option_deletes = array();
 
 require __DIR__ . '/ci-provider-fixture-test-wp-error.php';
+require __DIR__ . '/class-fixture-test-wpdb.php';
+
+// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The standalone harness supplies the WordPress database global itself.
+$wpdb = new Fixture_Test_Wpdb();
 
 /**
  * Records a WordPress filter registration.
@@ -1032,6 +1036,7 @@ foreach ( $invalid_contracts as list( $method, $url, $request_body ) ) {
 
 $requests = get_option( 'e2e_woopayments_native_request_log', array() );
 assert_true( array() !== $requests, 'provider requests must remain canonically recorded for audit coverage' );
+assert_same( array(), $wpdb->held_locks, 'every fixture log append must release its named lock' );
 $canonical_transactions = array_values(
 	array_filter(
 		$requests,

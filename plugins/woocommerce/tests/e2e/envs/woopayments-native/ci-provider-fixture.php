@@ -1497,15 +1497,45 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			}
 			$body = $this->canonicalize( $body );
 		}
-		$log   = get_option( self::REQUEST_LOG_OPTION, array() );
-		$log   = is_array( $log ) ? $log : array();
-		$log[] = array(
-			'method' => $method,
-			'path'   => $path,
-			'query'  => $query,
-			'body'   => $body,
+		$this->append_to_log(
+			self::REQUEST_LOG_OPTION,
+			array(
+				'method' => $method,
+				'path'   => $path,
+				'query'  => $query,
+				'body'   => $body,
+			)
 		);
-		update_option( self::REQUEST_LOG_OPTION, $log );
+	}
+
+	/**
+	 * Appends one entry to a fixture log option.
+	 *
+	 * Admin pages fire their list and summary requests together, so several store requests append at once. A plain
+	 * read-append-write lets the last writer drop the others' entries, and the audit then reports a route as never
+	 * requested (N-147). A MySQL named lock serializes the append, and the read skips the option cache the request
+	 * primed before the others wrote.
+	 *
+	 * @param string              $option Log option name.
+	 * @param array<string,mixed> $entry  Entry to append.
+	 */
+	private function append_to_log( string $option, array $entry ): void {
+		global $wpdb;
+
+		$locked = '1' === (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK( %s, 10 )', $option ) );
+		try {
+			wp_cache_delete( $option, 'options' );
+			wp_cache_delete( 'alloptions', 'options' );
+			wp_cache_delete( 'notoptions', 'options' );
+			$log   = get_option( $option, array() );
+			$log   = is_array( $log ) ? $log : array();
+			$log[] = $entry;
+			update_option( $option, $log, false );
+		} finally {
+			if ( $locked ) {
+				$wpdb->query( $wpdb->prepare( 'SELECT RELEASE_LOCK( %s )', $option ) );
+			}
+		}
 	}
 
 	/**
@@ -1553,13 +1583,13 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * @param string $message Failure message.
 	 */
 	private function failure( string $code, string $message ): WP_Error {
-		$failures   = get_option( self::FAILURE_LOG_OPTION, array() );
-		$failures   = is_array( $failures ) ? $failures : array();
-		$failures[] = array(
-			'code'    => $code,
-			'message' => $message,
+		$this->append_to_log(
+			self::FAILURE_LOG_OPTION,
+			array(
+				'code'    => $code,
+				'message' => $message,
+			)
 		);
-		update_option( self::FAILURE_LOG_OPTION, $failures );
 		return new WP_Error( 'woopayments_native_ci_' . $code, $message );
 	}
 }
