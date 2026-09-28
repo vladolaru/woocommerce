@@ -63,13 +63,7 @@ final class NativePaymentsState {
 	 * @return string One of the state constants.
 	 */
 	public function get_state(): string {
-		$blog_id = get_current_blog_id();
-		if ( ! array_key_exists( $blog_id, $this->states ) ) {
-			$stored_state             = get_option( self::OPTION_NAME, self::DISABLED );
-			$this->states[ $blog_id ] = $this->is_valid_state( $stored_state ) ? $stored_state : self::DISABLED;
-		}
-
-		$state = $this->states[ $blog_id ];
+		$state = $this->get_stored_state();
 		$owner = $this->runtime_arbiter->get_runtime_owner();
 		if ( NativePaymentsRuntimeArbiter::OWNER_NONE === $owner ) {
 			return self::DISABLED;
@@ -80,6 +74,25 @@ final class NativePaymentsState {
 		}
 
 		return $state;
+	}
+
+	/**
+	 * Get the stored state for the current blog, before runtime ownership clamps it.
+	 *
+	 * Support surfaces use it: a connected store keeps its stored tier while the kill switch disables it.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return string One of the state constants.
+	 */
+	public function get_stored_state(): string {
+		$blog_id = get_current_blog_id();
+		if ( ! array_key_exists( $blog_id, $this->states ) ) {
+			$stored_state             = get_option( self::OPTION_NAME, self::DISABLED );
+			$this->states[ $blog_id ] = $this->is_valid_state( $stored_state ) ? $stored_state : self::DISABLED;
+		}
+
+		return $this->states[ $blog_id ];
 	}
 
 	/**

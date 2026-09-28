@@ -3,12 +3,14 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use WC_Unit_Test_Case;
@@ -54,6 +56,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, '0', true );
+		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
 		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::DISABLED, true );
 		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 		$this->reset_legacy_proxy_mocks();
@@ -90,10 +94,27 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$this->set_native_state( $state );
+		// WC_Install::create_options() seeds these autoloaded, so a dormant store reads them for free.
+		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, '0', true );
+		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->get_runtime_owner(); // Resolved at bootstrap, before register().
+		wp_load_alloptions( true );
+		$queries = array();
+		$record  = static function ( $query ) use ( &$queries ) {
+			$queries[] = $query;
+			return $query;
+		};
+		add_filter( 'query', $record );
 
-		$sut->register();
+		try {
+			$sut->register();
+		} finally {
+			remove_filter( 'query', $record );
+		}
+
+		$this->assertSame( array(), $queries, 'Deciding to skip the report must read only autoloaded options.' );
 
 		$this->assertFalse( has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) ) );
@@ -109,6 +130,90 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$this->set_native_state( NativePaymentsState::CONNECTED );
+		$sut = $this->get_sut();
+		$this->remove_status_hooks( $sut );
+
+		$sut->register();
+
+		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
+	}
+
+	/**
+	 * @testdox A connected native store keeps the supportability hooks after support turns on the kill switch, which clamps its state to disabled.
+	 */
+	public function test_registers_supportability_hooks_for_a_killswitched_connected_store(): void {
+		$this->fake_plugin( false );
+		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, '1', true );
+		$this->set_native_state( NativePaymentsState::CONNECTED );
+		$this->assertSame( NativePaymentsState::DISABLED, wc_get_container()->get( NativePaymentsState::class )->get_state(), 'The kill switch should clamp the effective state.' );
+		$sut = $this->get_sut();
+		$this->remove_status_hooks( $sut );
+
+		$sut->register();
+
+		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) ) );
+		$this->assertSame( 10, has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
+	}
+
+	/**
+	 * @testdox A connected store whose native runtime the rollout filter turns off keeps the supportability hooks.
+	 */
+	public function test_registers_supportability_hooks_for_a_connected_store_with_the_runtime_off(): void {
+		$this->fake_plugin( false );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+		$this->set_native_state( NativePaymentsState::ACTIVE );
+		$sut = $this->get_sut();
+		$this->remove_status_hooks( $sut );
+
+		$sut->register();
+
+		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
+	}
+
+	/**
+	 * @testdox A store with the kill switch on registers the supportability hooks even before it connects.
+	 */
+	public function test_registers_supportability_hooks_while_the_kill_switch_is_on(): void {
+		$this->fake_plugin( false );
+		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, '1', true );
+		$this->set_native_state( NativePaymentsState::AVAILABLE );
+		$sut = $this->get_sut();
+		$this->remove_status_hooks( $sut );
+
+		$sut->register();
+
+		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
+	}
+
+	/**
+	 * @testdox A store with a cutover record registers the supportability hooks even when its state is not connected.
+	 */
+	public function test_registers_supportability_hooks_when_a_cutover_record_exists(): void {
+		$this->fake_plugin( false );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->set_native_state( NativePaymentsState::AVAILABLE );
+		$this->assertTrue(
+			( new WooPaymentsCutoverStateStore() )->save_record(
+				array(
+					'schema_version'         => 1,
+					'generation'             => 1,
+					'revision'               => 1,
+					'state'                  => WooPaymentsCutoverState::DEFERRED,
+					'started_at'             => 1_700_000_000,
+					'updated_at'             => 1_700_000_100,
+					'attempt'                => 1,
+					'action_id'              => 0,
+					'current_step'           => 'deferred',
+					'step_log'               => array(),
+					'deferred_codes'         => array( 'native_transport_unavailable' ),
+					'informational_outcomes' => array(),
+					'next_attempt_at'        => 1_700_001_000,
+					'lease_token'            => null,
+					'lease_expires_at'       => null,
+				)
+			)
+		);
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 

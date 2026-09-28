@@ -81,6 +81,13 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	private NativePaymentsState $native_payments_state;
 
 	/**
+	 * Cutover state store.
+	 *
+	 * @var WooPaymentsCutoverStateStore
+	 */
+	private WooPaymentsCutoverStateStore $cutover_state_store;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -92,6 +99,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @param WooPaymentsCutoverController                          $cutover_controller      Cutover controller.
 	 * @param CurrencyRateProviderRegistryFactory                   $provider_registry_factory Rate provider registry factory.
 	 * @param NativePaymentsState                                   $native_payments_state   Native payments state store.
+	 * @param WooPaymentsCutoverStateStore                          $cutover_state_store     Cutover state store.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
@@ -100,7 +108,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service,
 		WooPaymentsCutoverController $cutover_controller,
 		CurrencyRateProviderRegistryFactory $provider_registry_factory,
-		NativePaymentsState $native_payments_state
+		NativePaymentsState $native_payments_state,
+		WooPaymentsCutoverStateStore $cutover_state_store
 	): void {
 		$this->arbiter                   = $arbiter;
 		$this->account_service           = $account_service;
@@ -109,17 +118,18 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		$this->cutover_controller        = $cutover_controller;
 		$this->provider_registry_factory = $provider_registry_factory;
 		$this->native_payments_state     = $native_payments_state;
+		$this->cutover_state_store       = $cutover_state_store;
 	}
 
 	/**
 	 * Register supportability hooks.
 	 *
 	 * Registered where the WooPayments client would report too: a connected native store, or
-	 * while the plugin owns payments (cutover diagnostics during coexistence). Other stores never
-	 * run the client, so they skip the preflight and account read on the Status page.
+	 * while the plugin owns payments (cutover diagnostics during coexistence). Support also needs them
+	 * once the kill switch is on or a cutover started. Other stores skip the preflight and account read.
 	 */
 	public function register(): void {
-		if ( ! in_array( $this->native_payments_state->get_state(), array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true ) && ! $this->arbiter->is_plugin_runtime_active() ) {
+		if ( ! $this->has_support_diagnostics() ) {
 			return;
 		}
 
@@ -128,6 +138,20 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		add_filter( 'debug_information', array( $this, 'add_site_health_debug_info' ) );
 		add_filter( 'site_status_tests', array( $this, 'add_site_status_tests' ) );
 		add_action( 'wp_ajax_health-check-' . self::SITE_HEALTH_TEST_ACTION, array( $this, 'run_cutover_site_health_ajax_test' ) );
+	}
+
+	/**
+	 * Tell whether this store has native payments state for support to read. Every read is autoloaded.
+	 *
+	 * The stored tier is checked, not the effective one, because the kill switch clamps a connected store to disabled.
+	 *
+	 * @return bool
+	 */
+	private function has_support_diagnostics(): bool {
+		return in_array( $this->native_payments_state->get_stored_state(), array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true )
+			|| $this->arbiter->is_plugin_runtime_active()
+			|| (bool) get_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, false )
+			|| null !== $this->cutover_state_store->get_record();
 	}
 
 	/**
