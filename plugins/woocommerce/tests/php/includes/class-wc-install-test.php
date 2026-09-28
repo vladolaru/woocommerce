@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Caches\ProductCountCache;
 use Automattic\WooCommerce\Enums\ProductStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
 
 /**
@@ -473,6 +474,26 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 		} finally {
 			delete_option( 'woocommerce_native_payments_state' );
 			delete_option( 'woocommerce_native_payments_killswitch' );
+		}
+	}
+
+	/**
+	 * @testdox create_options seeds the autoloaded absent cutover record, so admin and cron requests read it without a query.
+	 */
+	public function test_create_options_seeds_the_absent_cutover_record(): void {
+		global $wpdb;
+		delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
+
+		try {
+			$this->invoke_create_options();
+			wp_load_alloptions( true );
+
+			$queries = $wpdb->num_queries;
+			$this->assertNull( ( new WooPaymentsCutoverStateStore() )->get_record() );
+			$this->assertSame( 0, $wpdb->num_queries - $queries, 'Reading the missing cutover record must not query the options table.' );
+			$this->assertSame( 'none', get_option( WooPaymentsCutoverStateStore::OPTION_NAME ) );
+		} finally {
+			delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
 		}
 	}
 

@@ -23,6 +23,9 @@ class WooPaymentsCutoverStateStore {
 	/** State option name. */
 	public const OPTION_NAME = 'woocommerce_woopayments_cutover_state';
 
+	/** Autoloaded value seeded at install for a store with no record, so reading it runs no query. */
+	public const ABSENT_RECORD = 'none';
+
 	/** Worker lease option name. */
 	public const LEASE_OPTION_NAME = 'woocommerce_woopayments_cutover_state_lease';
 
@@ -74,6 +77,11 @@ class WooPaymentsCutoverStateStore {
 		$current = get_option( self::OPTION_NAME, null );
 		if ( null === $current ) {
 			add_option( self::OPTION_NAME, $record, '', true );
+		} elseif ( self::ABSENT_RECORD === $current ) {
+			// Replace only the marker, so a concurrent first save still fails the readback below.
+			global $wpdb;
+			$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND BINARY option_value = %s", maybe_serialize( $record ), self::OPTION_NAME, self::ABSENT_RECORD ) );
+			$this->invalidate_record_cache();
 		} elseif ( $current !== $record ) {
 			return false;
 		} elseif ( ! array_key_exists( self::OPTION_NAME, wp_load_alloptions() ) ) {

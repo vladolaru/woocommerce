@@ -1291,6 +1291,8 @@ class WC_Install {
 		// Native payments reads these on every request; autoloaded defaults keep dormant stores from querying missing options.
 		add_option( 'woocommerce_native_payments_state', 'disabled', '', true );
 		add_option( 'woocommerce_native_payments_killswitch', '0', '', true );
+		// WooPaymentsCutoverStateStore::ABSENT_RECORD: admin and cron requests read the cutover record.
+		add_option( 'woocommerce_woopayments_cutover_state', 'none', '', true );
 
 		if ( self::is_new_install() ) {
 			$account_cache   = get_option( 'wcpay_account_data', array() );

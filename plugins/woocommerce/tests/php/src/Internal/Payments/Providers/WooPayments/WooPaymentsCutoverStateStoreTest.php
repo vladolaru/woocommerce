@@ -61,6 +61,54 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The install-seeded absent marker reads as no record without a query, and the first save replaces it.
+	 */
+	public function test_first_save_replaces_the_absent_marker(): void {
+		global $wpdb;
+		$sut    = $this->require_sut();
+		$record = $this->valid_record();
+		add_option( WooPaymentsCutoverStateStore::OPTION_NAME, 'none', '', true ); // What WC_Install::create_options() seeds.
+		wp_load_alloptions( true );
+
+		$queries = $wpdb->num_queries;
+		$this->assertNull( $sut->get_record() );
+		$this->assertSame( 0, $wpdb->num_queries - $queries, 'A never-cutover store must read the record from the autoloaded options.' );
+		$this->assertSame( 1, $sut->get_next_generation() );
+
+		$this->assertTrue( $sut->save_record( $record ), 'The first record should replace the absent marker.' );
+		$this->assertSame( $record, $sut->get_record() );
+		$this->assertArrayHasKey( WooPaymentsCutoverStateStore::OPTION_NAME, wp_load_alloptions( true ) );
+	}
+
+	/**
+	 * @testdox A save that loses the race for the absent marker fails and keeps the winner's record.
+	 */
+	public function test_first_save_over_the_absent_marker_fails_when_another_writer_wins(): void {
+		global $wpdb;
+		$sut                 = $this->require_sut();
+		$winner              = $this->valid_record();
+		$loser               = $winner;
+		$loser['generation'] = $winner['generation'] + 1;
+		add_option( WooPaymentsCutoverStateStore::OPTION_NAME, 'none', '', true ); // What WC_Install::create_options() seeds.
+		$race = function ( $query ) use ( &$race, $wpdb, $winner ) {
+			if ( 0 === stripos( ltrim( $query ), 'UPDATE' ) && false !== strpos( $query, WooPaymentsCutoverStateStore::OPTION_NAME ) ) {
+				remove_filter( 'query', $race );
+				$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $winner ) ), array( 'option_name' => WooPaymentsCutoverStateStore::OPTION_NAME ) );
+			}
+			return $query;
+		};
+		add_filter( 'query', $race );
+
+		try {
+			$this->assertFalse( $sut->save_record( $loser ), 'The losing writer must see a conflict.' );
+		} finally {
+			remove_filter( 'query', $race );
+		}
+
+		$this->assertSame( $winner, $sut->get_record(), 'The winning record must stay in place.' );
+	}
+
+	/**
 	 * @testdox Rejects records whose state is outside the persisted cutover vocabulary.
 	 */
 	public function test_save_record_rejects_an_invalid_state(): void {
