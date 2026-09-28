@@ -32,9 +32,17 @@ trait LoggerSpyTrait {
 	/**
 	 * Set up the spy logger.
 	 *
-	 * This method is called automatically before each test via the @before annotation.
+	 * Deliberately hooked via the precondition tag below rather than the before-each one: the
+	 * before-each hook runs ahead of the framework's own setUp(), which is where
+	 * WP_UnitTestCase_Base takes its one-time, process-wide snapshot of $wp_filter (see
+	 * WP_UnitTestCase_Base::_backup_hooks(), guarded by the static $hooks_saved so it only runs
+	 * once per test run). A filter added via the before-each hook on whichever test happens to
+	 * run first gets baked into that snapshot permanently, and every later test's tear_down()
+	 * restores $wp_filter to it -- reintroducing the first test's (by then stale) callback
+	 * forever and silently discarding the filter this method just added. The tag below runs
+	 * after setUp(), so the snapshot is already taken and this filter never leaks into it.
 	 *
-	 * @before
+	 * @preCondition
 	 * @return void
 	 */
 	protected function set_up_spy_logger(): void {
@@ -71,9 +79,13 @@ trait LoggerSpyTrait {
 	/**
 	 * Tear down the spy logger.
 	 *
-	 * This method is called automatically after each test via the @after annotation.
+	 * Hooked via the postcondition tag below, the counterpart to set_up_spy_logger()'s
+	 * precondition tag. It runs right after the test body, before the framework's own
+	 * tearDown() restores $wp_filter from the snapshot described there, so remove_filter() here
+	 * still finds this filter in place. (If the test itself fails, this method is skipped, but
+	 * tearDown()'s restore removes the filter anyway since it was never in the snapshot.)
 	 *
-	 * @after
+	 * @postCondition
 	 * @return void
 	 */
 	protected function tear_down_spy_logger(): void {
