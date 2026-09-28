@@ -531,6 +531,9 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 	} );
 
 	it( 'renders the cached preferred WooPay card on the express button', () => {
+		const rectSpy = jest
+			.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
+			.mockReturnValue( { width: 220 } );
 		window.localStorage.setItem(
 			'woopay_preferred_card',
 			JSON.stringify( {
@@ -549,10 +552,40 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			name: 'WooPay with Visa ending in 4242',
 		} );
 		expect( button ).toHaveTextContent( '4242' );
+		rectSpy.mockRestore();
+	} );
+
+	// Client 11.1.0 only shows the preferred card once the button measures at
+	// least 220px wide; below that it falls back to the plain WooPay label
+	// (woopay-express-checkout-button.js:32,387-392).
+	it( 'hides the cached preferred WooPay card on a narrow express button', () => {
+		const rectSpy = jest
+			.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
+			.mockReturnValue( { width: 219 } );
+		window.localStorage.setItem(
+			'woopay_preferred_card',
+			JSON.stringify( {
+				brand: 'visa',
+				last4: '4242',
+			} )
+		);
+
+		registerWooPay();
+		const expressRegistration =
+			registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
+
+		render( createElement( expressRegistration.content.type ) );
+
+		const button = screen.getByRole( 'button', { name: 'WooPay' } );
+		expect( button ).not.toHaveTextContent( '4242' );
+		rectSpy.mockRestore();
 	} );
 
 	it( 'clears the cached preferred WooPay card when Connect does not respond', async () => {
 		jest.useFakeTimers();
+		const rectSpy = jest
+			.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
+			.mockReturnValue( { width: 220 } );
 		const postMessage = jest.fn();
 		Object.defineProperty(
 			window.HTMLIFrameElement.prototype,
@@ -612,6 +645,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		).toBeVisible();
 
 		delete window.HTMLIFrameElement.prototype.contentWindow;
+		rectSpy.mockRestore();
 	} );
 
 	it( 'does not initialize WooPay from disabled product forms', async () => {

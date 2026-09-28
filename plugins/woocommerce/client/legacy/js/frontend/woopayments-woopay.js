@@ -19,6 +19,8 @@
 	var currentPreferredCard = null;
 	var preferredCardCacheKey = 'woopay_preferred_card';
 	var wooPayConnectTimeout = 5000;
+	var buttonWidthThreshold = 140;
+	var cardDisplayWidthThreshold = 220;
 	var directCheckoutLoggedIn = false;
 	var hasPhoneForMobileEnter = false;
 	var proceedToCheckoutSelector =
@@ -1439,13 +1441,10 @@
 		var settings = getWooPayButtonSettings();
 		var type = settings.type || 'default';
 		var preferredCard = currentPreferredCard;
-		var label = preferredCard
-			? 'WooPay with ' +
-			  getPreferredCardDisplayName( preferredCard ) +
-			  ' ending in ' +
-			  preferredCard.last4
-			: getWooPayButtonLabel( type );
 		var button;
+		var measuredWidth;
+		var widthType;
+		var displayedCard;
 
 		// The Blocks express button renders and owns its own wrapper.
 		if (
@@ -1466,17 +1465,37 @@
 			button.type = 'button';
 		}
 		button.className = 'woopay-express-button';
-		button.setAttribute( 'aria-label', label );
 		button.setAttribute( 'data-type', type );
 		button.setAttribute( 'data-theme', settings.theme || 'dark' );
 		button.setAttribute( 'data-size', normalizeButtonSize( settings ) );
 		button.style.height = ( settings.height || '48' ) + 'px';
 		button.style.borderRadius = ( settings.radius || '4' ) + 'px';
-		button.innerHTML = getWooPayButtonContent( settings, preferredCard );
 		button.addEventListener( 'click', initWooPay );
 
 		container.innerHTML = '';
 		container.appendChild( button );
+
+		// Client 11.1.0 measures the rendered button and only shows the
+		// preferred card once it is at least 220px wide
+		// (woopay-express-checkout-button.js:31-32,375-381,387-392).
+		measuredWidth = button.getBoundingClientRect().width;
+		widthType = measuredWidth > buttonWidthThreshold ? 'wide' : 'narrow';
+		button.setAttribute( 'data-width-type', widthType );
+		displayedCard =
+			preferredCard && measuredWidth >= cardDisplayWidthThreshold
+				? preferredCard
+				: null;
+
+		button.setAttribute(
+			'aria-label',
+			displayedCard
+				? 'WooPay with ' +
+				  getPreferredCardDisplayName( displayedCard ) +
+				  ' ending in ' +
+				  displayedCard.last4
+				: getWooPayButtonLabel( type )
+		);
+		button.innerHTML = getWooPayButtonContent( settings, displayedCard );
 
 		recordUserEvent( 'woopay_button_load', {
 			source: getTrackingSource(),

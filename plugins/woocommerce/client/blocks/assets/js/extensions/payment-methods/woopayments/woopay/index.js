@@ -20,6 +20,7 @@ const supportedFeatures = settings.supports ||
 const preferredCardCacheKey = 'woopay_preferred_card';
 const wooPayConnectTimeout = 5000;
 const buttonWidthThreshold = 140;
+const cardDisplayWidthThreshold = 220;
 const brandAliases = {
 	american_express: 'amex',
 	diners_club: 'diners',
@@ -661,20 +662,30 @@ const WooPayExpressContent = () => {
 		}
 	};
 
-	const ariaLabel = getWooPayButtonAriaLabel( buttonType, preferredCard );
-	const buttonContent = isLoading ? (
-		<span className="wc-block-components-spinner" />
-	) : (
-		<WooPayButtonContent
-			buttonSettings={ buttonSettings }
-			preferredCard={ preferredCard }
-		/>
-	);
 	let buttonWidthType = null;
 	if ( measuredWidth !== null ) {
 		buttonWidthType =
 			measuredWidth > buttonWidthThreshold ? 'wide' : 'narrow';
 	}
+	// Client 11.1.0 only shows the preferred card once the button measures at
+	// least 220px wide; below that it falls back to the plain WooPay label
+	// (woopay-express-checkout-button.js:32,387-392).
+	const displayedPreferredCard =
+		preferredCard && measuredWidth >= cardDisplayWidthThreshold
+			? preferredCard
+			: null;
+	const ariaLabel = getWooPayButtonAriaLabel(
+		buttonType,
+		displayedPreferredCard
+	);
+	const buttonContent = isLoading ? (
+		<span className="wc-block-components-spinner" />
+	) : (
+		<WooPayButtonContent
+			buttonSettings={ buttonSettings }
+			preferredCard={ displayedPreferredCard }
+		/>
+	);
 	const buttonProps = {
 		ref: buttonRef,
 		className: isLoading

@@ -406,6 +406,9 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 		test( 'renders the cached preferred WooPay card on the express button', () => {
+			const rectSpy = jest
+				.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
+				.mockReturnValue( { width: 220 } );
 			window.localStorage.setItem(
 				'woopay_preferred_card',
 				JSON.stringify( {
@@ -421,10 +424,65 @@ describe( 'WooPayments WooPay checkout', () => {
 				'WooPay with Visa ending in 4242'
 			);
 			expect( button.textContent ).toContain( '4242' );
+			rectSpy.mockRestore();
 		} );
+
+		// Client 11.1.0 only shows the preferred card once the button measures
+		// at least 220px wide; below that it falls back to the plain WooPay
+		// label (woopay-express-checkout-button.js:32,387-392).
+		test( 'hides the cached preferred WooPay card on a narrow express button', () => {
+			const rectSpy = jest
+				.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
+				.mockReturnValue( { width: 219 } );
+			window.localStorage.setItem(
+				'woopay_preferred_card',
+				JSON.stringify( {
+					brand: 'visa',
+					last4: '4242',
+				} )
+			);
+
+			require( '../woopayments-woopay' );
+
+			const button = document.querySelector( '#wcpay-woopay-button button' );
+			expect( button.getAttribute( 'aria-label' ) ).toBe( 'WooPay' );
+			expect( button.textContent ).not.toContain( '4242' );
+			rectSpy.mockRestore();
+		} );
+
+		// Client 11.1.0 sets `data-width-type` from the width measured on the
+		// rendered button: wide above 140px, narrow at or below it
+		// (woopay-express-checkout-button.js:31,375-381).
+		test.each( [
+			[ 141, 'wide' ],
+			[ 140, 'narrow' ],
+		] )(
+			'sets the WooPay button width type from a %ipx measured width',
+			( width, widthType ) => {
+				const rectSpy = jest
+					.spyOn(
+						window.HTMLElement.prototype,
+						'getBoundingClientRect'
+					)
+					.mockReturnValue( { width } );
+
+				require( '../woopayments-woopay' );
+
+				expect(
+					document
+						.querySelector( '#wcpay-woopay-button button' )
+						.getAttribute( 'data-width-type' )
+				).toBe( widthType );
+
+				rectSpy.mockRestore();
+			}
+		);
 
 		test( 'clears the cached preferred WooPay card when Connect does not respond', async () => {
 			jest.useFakeTimers();
+			const rectSpy = jest
+				.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
+				.mockReturnValue( { width: 220 } );
 			const postMessage = jest.fn();
 			Object.defineProperty( window.HTMLIFrameElement.prototype, 'contentWindow', {
 				configurable: true,
@@ -472,6 +530,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			).toBe( 'WooPay' );
 
 			delete window.HTMLIFrameElement.prototype.contentWindow;
+			rectSpy.mockRestore();
 		} );
 
 		test( 'does not add disabled product forms to the cart before product-page WooPay init', async () => {
