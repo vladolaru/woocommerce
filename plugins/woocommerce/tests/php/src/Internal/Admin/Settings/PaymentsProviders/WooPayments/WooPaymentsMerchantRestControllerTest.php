@@ -298,6 +298,24 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep the Apple Pay domain error when a logged-out visitor reports it shown.
+	 */
+	public function test_apple_pay_domain_error_shown_rejects_anonymous_user(): void {
+		update_option( 'wcpay_apple_pay_domain_error', 'Test error message' );
+		wp_set_current_user( 0 );
+
+		try {
+			$response     = $this->dispatch_apple_pay_domain_error_shown( hash( 'sha256', 'Test error message' ) );
+			$stored_error = get_option( 'wcpay_apple_pay_domain_error' );
+		} finally {
+			delete_option( 'wcpay_apple_pay_domain_error' );
+		}
+
+		$this->assertSame( 401, $response->get_status() );
+		$this->assertSame( 'Test error message', $stored_error );
+	}
+
+	/**
 	 * Report the Apple Pay domain error as shown through a controller with the real Apple Pay service.
 	 *
 	 * @param string|null $error_id Error identifier to send, or null to omit it.

@@ -3,11 +3,7 @@
  */
 import apiFetch from '@wordpress/api-fetch';
 import { ExternalLink, Notice } from '@wordpress/components';
-import {
-	createInterpolateElement,
-	RawHTML,
-	useEffect,
-} from '@wordpress/element';
+import { createInterpolateElement, useEffect } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
 /**
@@ -104,9 +100,12 @@ export const ApplePayDomainErrorNotice = () => {
 			</p>
 			{ domainError.error && (
 				<p>
-					<i>
-						<RawHTML>{ domainError.error }</RawHTML>
-					</i>
+					{ /* `error` is wp_kses'd server-side to plain text and <a href>. */ }
+					<i
+						dangerouslySetInnerHTML={ {
+							__html: domainError.error,
+						} }
+					/>
 				</p>
 			) }
 			<p>

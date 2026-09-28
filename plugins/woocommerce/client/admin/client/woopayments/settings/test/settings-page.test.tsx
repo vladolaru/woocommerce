@@ -672,9 +672,20 @@ describe( 'WooPaymentsSettingsPage', () => {
 					'Apple Pay domain verification failed with the following error:'
 				)
 			).toBeInTheDocument();
-			expect(
-				screen.getByRole( 'link', { name: 'https://example.com/help' } )
-			).toHaveAttribute( 'href', 'https://example.com/help' );
+			const detailLink = screen.getByRole( 'link', {
+				name: 'https://example.com/help',
+			} );
+			expect( detailLink ).toHaveAttribute(
+				'href',
+				'https://example.com/help'
+			);
+			// The detail renders as inline markup directly inside <i>, matching the
+			// client's <p><i>{error}</i></p>. A <div> wrapper here (from RawHTML)
+			// would be invalid nesting inside <p> and <i>.
+			expect( detailLink.parentElement?.tagName ).toBe( 'I' );
+			expect( detailLink.parentElement?.parentElement?.tagName ).toBe(
+				'P'
+			);
 			expect(
 				screen
 					.getAllByRole( 'link', { name: /^Learn more/ } )
@@ -720,6 +731,87 @@ describe( 'WooPaymentsSettingsPage', () => {
 						data: {
 							error_id:
 								'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+						},
+					},
+				],
+			] );
+		} );
+
+		it( 'keeps the domain error displayed and retries reporting it shown after the report fails', async () => {
+			setBootstrap( {
+				applePayDomainError: {
+					error: 'Domain not verified',
+					errorId:
+						'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+					logsUrl:
+						'https://example.com/wp-admin/admin.php?page=wc-status&tab=logs',
+				},
+			} );
+			mockApiFetch.mockImplementation( ( options ) => {
+				const path =
+					typeof options === 'string' ? options : options?.path;
+
+				if (
+					path ===
+					'/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown'
+				) {
+					return Promise.reject( new Error( 'Network error' ) );
+				}
+
+				if (
+					path === '/wc-admin/settings/payments/woopayments/account'
+				) {
+					return Promise.resolve( getDefaultAccountResponse() );
+				}
+
+				return Promise.resolve( {} );
+			} );
+
+			const shownCalls = () =>
+				mockApiFetch.mock.calls.filter(
+					( [ callOptions ] ) =>
+						typeof callOptions === 'object' &&
+						callOptions.path ===
+							'/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown'
+				);
+
+			const { unmount } = render( <WooPaymentsSettingsPage /> );
+
+			// Let the rejected "shown" report settle.
+			await waitFor( () => expect( shownCalls() ).toHaveLength( 1 ) );
+
+			// The server never received a successful report, so the notice must
+			// stay displayed rather than being treated as acknowledged.
+			expect(
+				screen.getByText(
+					'Apple Pay domain verification failed with the following error:'
+				)
+			).toBeInTheDocument();
+
+			unmount();
+			render( <WooPaymentsSettingsPage /> );
+
+			// The failed report is not remembered as shown, so a later mount in
+			// the same page session reports it again rather than staying silent.
+			await waitFor( () => expect( shownCalls() ).toHaveLength( 2 ) );
+			expect( shownCalls() ).toEqual( [
+				[
+					{
+						path: '/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown',
+						method: 'POST',
+						data: {
+							error_id:
+								'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+						},
+					},
+				],
+				[
+					{
+						path: '/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown',
+						method: 'POST',
+						data: {
+							error_id:
+								'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
 						},
 					},
 				],
