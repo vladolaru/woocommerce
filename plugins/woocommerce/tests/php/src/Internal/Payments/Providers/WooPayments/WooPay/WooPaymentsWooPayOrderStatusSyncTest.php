@@ -115,7 +115,9 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( 20, has_filter( 'woocommerce_webhook_topic_hooks', array( $native_sync, 'add_topics' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_webhook_payload', array( $native_sync, 'create_payload' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_order_status_changed', array( $native_sync, 'send_webhook' ) ) );
-		$this->assertSame( 10, has_action( 'admin_init', array( $native_sync, 'reconcile_webhook' ) ) );
+		$this->assertSame( 10, has_action( 'admin_init', array( $native_sync, 'maybe_create_woopay_order_webhook' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $native_sync, 'reconcile_webhook' ) ) );
+		$this->assertSame( 10, has_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $native_sync, 'handle_settings_update' ) ) );
 		$this->assertSame( 10, has_action( 'wcpay_store_setup_sync', array( $native_sync, 'reconcile_webhook' ) ) );
 
 		$plugin_sync = $this->create_sync( false );
@@ -126,7 +128,9 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'woocommerce_webhook_topic_hooks', array( $plugin_sync, 'add_topics' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_webhook_payload', array( $plugin_sync, 'create_payload' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_order_status_changed', array( $plugin_sync, 'send_webhook' ) ) );
-		$this->assertFalse( has_action( 'admin_init', array( $plugin_sync, 'reconcile_webhook' ) ) );
+		$this->assertFalse( has_action( 'admin_init', array( $plugin_sync, 'maybe_create_woopay_order_webhook' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_payments_account_refreshed', array( $plugin_sync, 'reconcile_webhook' ) ) );
+		$this->assertFalse( has_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $plugin_sync, 'handle_settings_update' ) ) );
 		$this->assertFalse( has_action( 'wcpay_store_setup_sync', array( $plugin_sync, 'reconcile_webhook' ) ) );
 	}
 
@@ -688,6 +692,64 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Admin pages read no webhook option while WooPay is off, like client 11.1.0, which registers nothing then.
+	 */
+	public function test_admin_init_reads_no_webhook_option_while_woopay_is_off(): void {
+		$sync = $this->create_sync( true, false );
+		$sync->register();
+		$reads = 0;
+		$count = static function ( $pre ) use ( &$reads ) {
+			++$reads;
+			return $pre;
+		};
+		add_filter( 'pre_option_' . self::WEBHOOK_ID_OPTION, $count );
+
+		try {
+			$this->run_admin_init_for( $sync );
+		} finally {
+			remove_filter( 'pre_option_' . self::WEBHOOK_ID_OPTION, $count );
+		}
+
+		$this->assertSame( 0, $reads );
+	}
+
+	/**
+	 * @testdox Turning WooPay off in the gateway settings removes the owned webhook without a current administrator.
+	 */
+	public function test_settings_disable_transition_removes_owned_webhook(): void {
+		$sync = $this->create_sync( true, true );
+		$sync->register();
+		$sync->reconcile_webhook();
+		$owned_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'platform_checkout' => 'yes' ) );
+		wp_set_current_user( 0 );
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'platform_checkout' => 'no' ) );
+
+		$this->assertGreaterThan( 0, $owned_id );
+		$this->assertNull( wc_get_webhook( $owned_id ) );
+		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+	}
+
+	/**
+	 * @testdox An account refresh that leaves WooPay unavailable removes the owned webhook.
+	 */
+	public function test_account_refresh_removes_owned_webhook_when_woopay_is_unavailable(): void {
+		$sync = $this->create_sync( true, true );
+		$sync->register();
+		$sync->reconcile_webhook();
+		$owned_id                              = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
+		$this->account_service->woopay_enabled = false;
+
+		do_action( 'woocommerce_payments_account_refreshed', array() );
+
+		$this->assertGreaterThan( 0, $owned_id );
+		$this->assertNull( wc_get_webhook( $owned_id ) );
+		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
+	}
+
+	/**
 	 * @testdox Enabled reconciliation recovers from a stale stored webhook ID.
 	 */
 	public function test_enabled_reconciliation_recovers_from_stale_id(): void {
@@ -1141,7 +1203,26 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		remove_filter( 'woocommerce_webhook_payload', array( $sync, 'create_payload' ) );
 		remove_action( 'woocommerce_order_status_changed', array( $sync, 'send_webhook' ) );
 		remove_action( 'admin_init', array( $sync, 'reconcile_webhook' ) );
+		remove_action( 'admin_init', array( $sync, 'maybe_create_woopay_order_webhook' ) );
+		remove_action( 'woocommerce_payments_account_refreshed', array( $sync, 'reconcile_webhook' ) );
+		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $sync, 'handle_settings_update' ) );
 		remove_action( 'wcpay_store_setup_sync', array( $sync, 'reconcile_webhook' ) );
+	}
+
+	/**
+	 * Run only the admin_init callbacks the given sync registered.
+	 *
+	 * @param WooPaymentsWooPayOrderStatusSync $sync Sync instance.
+	 */
+	private function run_admin_init_for( WooPaymentsWooPayOrderStatusSync $sync ): void {
+		global $wp_filter;
+		foreach ( $wp_filter['admin_init']->callbacks as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				if ( is_array( $callback['function'] ) && $sync === $callback['function'][0] ) {
+					call_user_func( $callback['function'] );
+				}
+			}
+		}
 	}
 }
 

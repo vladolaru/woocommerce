@@ -143,8 +143,17 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 			add_action( 'woocommerce_order_status_changed', array( $this, 'send_webhook' ), 10, 3 );
 		}
 
-		if ( false === has_action( 'admin_init', array( $this, 'reconcile_webhook' ) ) ) {
-			add_action( 'admin_init', array( $this, 'reconcile_webhook' ) );
+		if ( false === has_action( 'admin_init', array( $this, 'maybe_create_woopay_order_webhook' ) ) ) {
+			add_action( 'admin_init', array( $this, 'maybe_create_woopay_order_webhook' ) );
+		}
+
+		// Client 11.1.0 removes the webhook on account refresh and on the WooPay-disable settings change, not per admin page.
+		if ( false === has_action( 'woocommerce_payments_account_refreshed', array( $this, 'reconcile_webhook' ) ) ) {
+			add_action( 'woocommerce_payments_account_refreshed', array( $this, 'reconcile_webhook' ) );
+		}
+
+		if ( false === has_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $this, 'handle_settings_update' ) ) ) {
+			add_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $this, 'handle_settings_update' ), 10, 2 );
 		}
 
 		if ( false === has_action( 'wcpay_store_setup_sync', array( $this, 'reconcile_webhook' ) ) ) {
@@ -172,6 +181,33 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 		}
 
 		$this->maybe_create_webhook();
+	}
+
+	/**
+	 * Create the webhook on admin pages only while WooPay is on, so admin pages read nothing while it is off.
+	 *
+	 * @since 11.2.0
+	 */
+	public function maybe_create_woopay_order_webhook(): void {
+		if ( $this->arbiter->should_native_register() && $this->session_service->is_woopay_enabled() ) {
+			$this->reconcile_webhook();
+		}
+	}
+
+	/**
+	 * Remove the owned webhook when a settings save turns WooPay off.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param mixed $old_value Previous gateway settings.
+	 * @param mixed $value     New gateway settings.
+	 */
+	public function handle_settings_update( $old_value, $value ): void {
+		$was_enabled = is_array( $old_value ) && 'yes' === ( $old_value['platform_checkout'] ?? null );
+		$is_enabled  = is_array( $value ) && 'yes' === ( $value['platform_checkout'] ?? null );
+		if ( $was_enabled && ! $is_enabled && $this->arbiter->should_native_register() ) {
+			$this->remove_owned_webhook();
+		}
 	}
 
 	/**
