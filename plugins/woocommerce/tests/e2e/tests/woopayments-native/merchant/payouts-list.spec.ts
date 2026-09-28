@@ -27,6 +27,16 @@ const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
 
 const PAYOUTS_TERMINAL = /^(Payout history loaded\.|No payouts found\.)$/;
 
+// The payouts the secretless CI fixture serves (`deposits` in
+// `envs/woopayments-native/ci-provider-fixture.php`), in minor units. The
+// loaded status alone also passes on an empty list, so under the fixture the
+// case asserts these rows, which only a completed list fetch can render.
+const FIXTURE_PAYOUTS = [
+	{ id: 'po_ci_paid', status: 'Paid', amount: 9700 },
+	{ id: 'po_ci_pending', status: 'Pending', amount: 2500 },
+	{ id: 'po_ci_pending_2', status: 'Pending', amount: 1500 },
+] as const;
+
 // The failure shapes these release smokes exist to catch, matching the frozen
 // payouts-disputes smoke.
 const DENIAL_TEXT = /not allowed|do not have permission/i;
@@ -195,6 +205,40 @@ async function expectNoFailureShapes( page: Page ): Promise< void > {
 	await expect( page.getByText( MIGRATION_TEXT ) ).toHaveCount( 0 );
 }
 
+function formatUsd( minorUnits: number ): string {
+	return new Intl.NumberFormat( 'en-US', {
+		style: 'currency',
+		currency: 'USD',
+	} ).format( minorUnits / 100 );
+}
+
+/**
+ * Under the secretless CI fixture, assert the payout history lists exactly the
+ * fixture's payouts, each with its status and amount. Other stores hold their
+ * own payouts, so the check applies only to the fixture.
+ */
+async function expectFixturePayoutRows( page: Page ): Promise< void > {
+	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE !== 'true' ) {
+		return;
+	}
+	await expect( page.getByRole( 'status' ) ).toHaveText(
+		'Payout history loaded.'
+	);
+	await expect(
+		page.getByRole( 'row' ).filter( { has: page.getByRole( 'cell' ) } )
+	).toHaveCount( FIXTURE_PAYOUTS.length );
+	for ( const payout of FIXTURE_PAYOUTS ) {
+		const row = page.getByRole( 'row' ).filter( {
+			has: page.getByRole( 'link', {
+				name: new RegExp( `view payout details for ${ payout.id }$` ),
+			} ),
+		} );
+		await expect( row ).toHaveCount( 1 );
+		await expect( row ).toContainText( payout.status );
+		await expect( row ).toContainText( formatUsd( payout.amount ) );
+	}
+}
+
 /**
  * The precondition both contracts share: a connected account behind an enabled
  * native gateway. A degraded store must fail here rather than pass by rendering
@@ -245,6 +289,7 @@ test(
 		await expect( page.getByRole( 'status' ) ).toHaveText(
 			PAYOUTS_TERMINAL
 		);
+		await expectFixturePayoutRows( page );
 		expect( restTracker.observed() ).toBeGreaterThan( 0 );
 		expect( restTracker.failures() ).toEqual( [] );
 		expect( pageErrors() ).toEqual( [] );

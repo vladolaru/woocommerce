@@ -175,6 +175,26 @@ async function expectDataLoaded(
 	).toBeVisible();
 }
 
+/**
+ * Under the secretless CI fixture, assert the disputes list shows the fixture's
+ * disputes: it serves none (`disputes` in
+ * `envs/woopayments-native/ci-provider-fixture.php`), so the list must settle on
+ * its empty state with no dispute rows, which only a completed list fetch
+ * reports. Other stores hold their own disputes, so the check applies only to
+ * the fixture.
+ */
+async function expectFixtureDisputesEmpty( page: Page ): Promise< void > {
+	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE !== 'true' ) {
+		return;
+	}
+	await expect( page.getByRole( 'status' ) ).toHaveText(
+		'No disputes found.'
+	);
+	await expect(
+		page.getByRole( 'row' ).filter( { has: page.getByRole( 'cell' ) } )
+	).toHaveCount( 0 );
+}
+
 test(
 	'payments admin surfaces load for an authorized merchant without denial, fatal, or failed data fetches',
 	{
@@ -228,6 +248,7 @@ test(
 		await page.goto( DISPUTES_PATH );
 		await expectSurfaceLoaded( page, 'Disputes' );
 		await expectDataLoaded( page, DISPUTES_TERMINAL, 'Dispute' );
+		await expectFixtureDisputesEmpty( page );
 		// The terminal state above accepts the empty list, because the
 		// contract asks for a terminal state and not a seeded store — which
 		// means it alone cannot tell an empty list from a malformed payload

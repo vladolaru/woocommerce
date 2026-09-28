@@ -33,6 +33,16 @@ const TRANSACTIONS_TEST_TITLE =
 const TRANSACTIONS_TERMINAL =
 	/^(Transactions loaded\.|No transactions found\.)$/;
 
+// The one transaction the secretless CI fixture serves (`transactions` in
+// `envs/woopayments-native/ci-provider-fixture.php`), in minor units. The
+// loaded status alone also passes on an empty list, so under the fixture the
+// case asserts this row, which only a completed list fetch can render.
+const FIXTURE_TRANSACTION = {
+	type: 'Charge',
+	amount: 10000,
+	net: 9700,
+} as const;
+
 // The failure shapes these release smokes exist to catch, matching the frozen
 // payouts-disputes smoke.
 const DENIAL_TEXT = /not allowed|do not have permission/i;
@@ -206,6 +216,36 @@ async function expectNoFailureShapes( page: Page ): Promise< void > {
 	await expect( page.getByText( MIGRATION_TEXT ) ).toHaveCount( 0 );
 }
 
+function formatUsd( minorUnits: number ): string {
+	return new Intl.NumberFormat( 'en-US', {
+		style: 'currency',
+		currency: 'USD',
+	} ).format( minorUnits / 100 );
+}
+
+/**
+ * Under the secretless CI fixture, assert the transactions list shows exactly
+ * the fixture's transaction with its type, amount, and net. Other stores hold
+ * their own transactions, so the check applies only to the fixture.
+ */
+async function expectFixtureTransactionRow( page: Page ): Promise< void > {
+	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE !== 'true' ) {
+		return;
+	}
+	await expect( page.getByRole( 'status' ) ).toHaveText(
+		'Transactions loaded.'
+	);
+	const rows = page
+		.getByRole( 'row' )
+		.filter( { has: page.getByRole( 'cell' ) } );
+	await expect( rows ).toHaveCount( 1 );
+	await expect( rows ).toContainText( FIXTURE_TRANSACTION.type );
+	await expect( rows ).toContainText(
+		formatUsd( FIXTURE_TRANSACTION.amount )
+	);
+	await expect( rows ).toContainText( formatUsd( FIXTURE_TRANSACTION.net ) );
+}
+
 /**
  * The precondition every contract here shares: a connected account behind an
  * enabled native gateway. A degraded store must fail here rather than pass by
@@ -327,6 +367,7 @@ test(
 		await expect( page.getByRole( 'status' ) ).toHaveText(
 			TRANSACTIONS_TERMINAL
 		);
+		await expectFixtureTransactionRow( page );
 		expect( restTracker.observed() ).toBeGreaterThan( 0 );
 		expect( restTracker.failures() ).toEqual( [] );
 		expect( pageErrors() ).toEqual( [] );
