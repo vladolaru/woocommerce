@@ -1033,7 +1033,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string|null $feature_option Feature option value, or null when absent.
 	 * @param bool        $account_eligible Whether the account is direct-checkout eligible.
-	 * @param bool        $gateway_enabled Whether the base gateway is enabled.
+	 * @param bool        $gateway_enabled Whether the base gateway's enabled setting is on.
 	 * @param bool        $woopay_enabled Whether WooPay is enabled.
 	 * @param bool        $expected Expected direct-checkout config value.
 	 */
@@ -1044,20 +1044,11 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			update_option( '_wcpay_feature_woopay_direct_checkout', $feature_option );
 		}
 
-		if ( ! $gateway_enabled ) {
-			add_filter(
-				'woocommerce_available_payment_gateways',
-				static function ( array $gateways ): array {
-					unset( $gateways['woocommerce_payments'] );
-
-					return $gateways;
-				},
-				20
-			);
-		}
-
 		$sut = $this->create_service(
-			array( 'platform_checkout' => $woopay_enabled ? 'yes' : 'no' ),
+			array(
+				'enabled'           => $gateway_enabled ? 'yes' : 'no',
+				'platform_checkout' => $woopay_enabled ? 'yes' : 'no',
+			),
 			array( 'platform_direct_checkout_eligible' => $account_eligible )
 		);
 
@@ -1232,6 +1223,31 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 0, $resolutions );
 		$this->assertFalse( $config['shouldShowWooPayButton'] );
+	}
+
+	/**
+	 * @testdox Should decide direct checkout from the gateway's enabled setting without resolving the available gateways, like client 11.1.0.
+	 */
+	public function test_direct_checkout_check_does_not_resolve_available_gateways(): void {
+		$resolutions      = 0;
+		$count_resolution = static function ( $gateways ) use ( &$resolutions ) {
+			++$resolutions;
+			return $gateways;
+		};
+		add_filter( 'woocommerce_available_payment_gateways', $count_resolution );
+
+		try {
+			$woopay_off             = $this->create_service( array( 'platform_checkout' => 'no' ), array( 'platform_direct_checkout_eligible' => true ) )->is_woopay_direct_checkout_enabled();
+			$resolutions_woopay_off = $resolutions;
+			$woopay_on              = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) )->is_woopay_direct_checkout_enabled();
+		} finally {
+			remove_filter( 'woocommerce_available_payment_gateways', $count_resolution );
+		}
+
+		$this->assertSame( 0, $resolutions_woopay_off, 'WooPay off' );
+		$this->assertSame( 0, $resolutions, 'WooPay on' );
+		$this->assertFalse( $woopay_off );
+		$this->assertTrue( $woopay_on );
 	}
 
 	/**
@@ -2459,6 +2475,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	private function create_service( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null, ?WooPaymentsCustomerService $customer_service = null, bool $test_mode = true ): TestableWooPaySessionService {
 		$settings     = array_merge(
 			array(
+				'enabled'                              => 'yes',
 				'platform_checkout'                    => 'yes',
 				'manual_capture'                       => 'no',
 				'payment_request_button_type'          => 'default',

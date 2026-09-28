@@ -1468,6 +1468,9 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * Tell whether WooPay direct checkout is enabled for this store.
 	 *
+	 * Reads the gateway's enabled setting rather than resolving gateway availability, like the plugin's
+	 * `WC_Payments_Features::is_woopay_direct_checkout_enabled()` (11.1.0), so the check stays cheap on every cart page.
+	 *
 	 * @return bool
 	 */
 	public function is_woopay_direct_checkout_enabled(): bool {
@@ -1475,7 +1478,7 @@ class WooPaymentsWooPaySessionService {
 
 		return ! empty( $account_data['platform_direct_checkout_eligible'] )
 			&& '1' === get_option( '_wcpay_feature_woopay_direct_checkout', '1' )
-			&& $this->is_woopay_gateway_available()
+			&& $this->get_account_service()->is_gateway_enabled()
 			&& $this->is_woopay_enabled();
 	}
 
