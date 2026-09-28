@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Exception;
@@ -102,6 +103,13 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	private ?WooPaymentsAdminNoticeService $admin_notice_service = null;
 
 	/**
+	 * Apple Pay domain service, for the settings notice display acknowledgement.
+	 *
+	 * @var WooPaymentsApplePayDomainService|null
+	 */
+	private ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null;
+
+	/**
 	 * Native payments runtime arbiter.
 	 *
 	 * @var NativePaymentsRuntimeArbiter|null
@@ -140,6 +148,28 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			);
 		}
 
+		if ( null !== $this->apple_pay_domain_service ) {
+			// Same notice "shown" route family; the Apple Pay error is site state, not a per-user notice.
+			register_rest_route(
+				$this->route_namespace,
+				'/' . $this->rest_base . '/admin-notices/apple_pay_domain_error/shown',
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => fn( $request ) => $this->run( $request, 'record_apple_pay_domain_error_shown' ),
+					'permission_callback' => fn( $request ) => $this->check_admin_notice_permissions( $request ),
+					'args'                => array(
+						'error_id' => array(
+							'description' => __( 'SHA-256 identifier of the displayed Apple Pay domain error.', 'woocommerce' ),
+							'type'        => 'string',
+							'pattern'     => '^[a-f0-9]{64}$',
+							'required'    => true,
+						),
+					),
+				),
+				$override
+			);
+		}
+
 		register_rest_route(
 			$this->route_namespace,
 			'/' . $this->rest_base . '/account',
@@ -171,17 +201,18 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	/**
 	 * Initialize the class instance.
 	 *
-	 * @param WooPaymentsService                  $woopayments           The WooPayments-specific Payments settings page service.
-	 * @param WooPaymentsSettingsService|null     $settings_service      Optional native WooPayments settings service.
-	 * @param NativePaymentsRuntimeArbiter|null   $runtime_arbiter       Optional native payments runtime arbiter.
-	 * @param WooPaymentsPmPromotionsService|null $pm_promotions_service Optional native WooPayments PM promotions service.
-	 * @param WooPaymentsOverviewService|null     $overview_service      Optional native WooPayments Overview projection service.
-	 * @param WooPaymentsAccountService|null      $account_service       Optional native WooPayments account service.
-	 * @param WooPaymentsAdminNoticeService|null  $admin_notice_service  Optional current-user settings notice service.
+	 * @param WooPaymentsService                    $woopayments           The WooPayments-specific Payments settings page service.
+	 * @param WooPaymentsSettingsService|null       $settings_service      Optional native WooPayments settings service.
+	 * @param NativePaymentsRuntimeArbiter|null     $runtime_arbiter       Optional native payments runtime arbiter.
+	 * @param WooPaymentsPmPromotionsService|null   $pm_promotions_service Optional native WooPayments PM promotions service.
+	 * @param WooPaymentsOverviewService|null       $overview_service      Optional native WooPayments Overview projection service.
+	 * @param WooPaymentsAccountService|null        $account_service       Optional native WooPayments account service.
+	 * @param WooPaymentsAdminNoticeService|null    $admin_notice_service  Optional current-user settings notice service.
+	 * @param WooPaymentsApplePayDomainService|null $apple_pay_domain_service Optional Apple Pay domain service.
 	 *
 	 * @internal
 	 */
-	final public function init( WooPaymentsService $woopayments, ?WooPaymentsSettingsService $settings_service = null, ?NativePaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsAdminNoticeService $admin_notice_service = null ): void {
+	final public function init( WooPaymentsService $woopayments, ?WooPaymentsSettingsService $settings_service = null, ?NativePaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsAdminNoticeService $admin_notice_service = null, ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null ): void {
 		$this->woopayments           = $woopayments;
 		$this->settings_service      = $settings_service;
 		$this->runtime_arbiter       = $runtime_arbiter;
@@ -189,6 +220,8 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 		$this->overview_service      = $overview_service;
 		$this->account_service       = $account_service;
 		$this->admin_notice_service  = $admin_notice_service;
+
+		$this->apple_pay_domain_service = $apple_pay_domain_service;
 	}
 
 	/**
@@ -937,6 +970,28 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 		}
 
 		return rest_ensure_response( array( 'success' => $result ) );
+	}
+
+	/**
+	 * Clear the Apple Pay domain error after the React settings notice showed it, if it is unchanged.
+	 *
+	 * @param WP_REST_Request $request The request object.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_Error|WP_REST_Response
+	 */
+	protected function record_apple_pay_domain_error_shown( WP_REST_Request $request ) {
+		if ( null === $this->apple_pay_domain_service ) {
+			return new WP_Error( 'woocommerce_woopayments_notice_unavailable', __( 'The notice is unavailable.', 'woocommerce' ), array( 'status' => WP_Http::SERVICE_UNAVAILABLE ) );
+		}
+
+		$cleared = $this->apple_pay_domain_service->clear_displayed_error_notice_if_unchanged( (string) $request->get_param( 'error_id' ) );
+
+		return rest_ensure_response(
+			array(
+				'success' => true,
+				'cleared' => $cleared,
+			)
+		);
 	}
 
 	/**

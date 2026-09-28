@@ -626,6 +626,148 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeInTheDocument();
 	} );
 
+	describe( 'Apple Pay domain error notice', () => {
+		type BootstrapWindow = typeof window & {
+			wcSettings?: {
+				admin?: { woopaymentsSettings?: Record< string, unknown > };
+			};
+		};
+		let previousWcSettings: BootstrapWindow[ 'wcSettings' ];
+
+		beforeEach( () => {
+			previousWcSettings = ( window as BootstrapWindow ).wcSettings;
+		} );
+
+		afterEach( () => {
+			( window as BootstrapWindow ).wcSettings = previousWcSettings;
+		} );
+
+		const setBootstrap = (
+			woopaymentsSettings: Record< string, unknown >
+		) => {
+			( window as BootstrapWindow ).wcSettings = {
+				...previousWcSettings,
+				admin: { ...previousWcSettings?.admin, woopaymentsSettings },
+			};
+		};
+
+		it( 'shows the stored domain error when the page opens through in-app navigation', () => {
+			setBootstrap( {
+				applePayDomainError: {
+					error: 'Domain not verified, see <a href="https://example.com/help">https://example.com/help</a>',
+					logsUrl:
+						'https://example.com/wp-admin/admin.php?page=wc-status&tab=logs',
+				},
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen
+					.getByText( 'Express checkouts:' )
+					.closest( '.woopayments-settings-apple-pay-domain-notice' )
+			).toHaveClass( 'is-error' );
+			expect(
+				screen.getByText(
+					'Apple Pay domain verification failed with the following error:'
+				)
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'link', { name: 'https://example.com/help' } )
+			).toHaveAttribute( 'href', 'https://example.com/help' );
+			expect(
+				screen
+					.getAllByRole( 'link', { name: /^Learn more/ } )
+					.map( ( link ) => link.getAttribute( 'href' ) )
+			).toContain(
+				'https://woocommerce.com/document/woopayments/payment-methods/apple-pay/#button-does-not-appear'
+			);
+			expect(
+				screen.getByRole( 'link', { name: 'logs' } )
+			).toHaveAttribute(
+				'href',
+				'https://example.com/wp-admin/admin.php?page=wc-status&tab=logs'
+			);
+		} );
+
+		it( 'reports the displayed detail once per page load, even when the page opens again', () => {
+			setBootstrap( {
+				applePayDomainError: {
+					error: 'Domain not verified',
+					errorId:
+						'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+					logsUrl:
+						'https://example.com/wp-admin/admin.php?page=wc-status&tab=logs',
+				},
+			} );
+
+			const { unmount } = render( <WooPaymentsSettingsPage /> );
+			unmount();
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				mockApiFetch.mock.calls.filter(
+					( [ options ] ) =>
+						typeof options === 'object' &&
+						options.path ===
+							'/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown'
+				)
+			).toEqual( [
+				[
+					{
+						path: '/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown',
+						method: 'POST',
+						data: {
+							error_id:
+								'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+						},
+					},
+				],
+			] );
+		} );
+
+		it( 'shows the generic domain failure when no detailed error is stored', () => {
+			setBootstrap( {
+				applePayDomainError: {
+					error: '',
+					logsUrl:
+						'https://example.com/wp-admin/admin.php?page=wc-status&tab=logs',
+				},
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.getByText( 'Apple Pay domain verification failed.' )
+			).toBeInTheDocument();
+			expect(
+				screen.queryByText(
+					'Apple Pay domain verification failed with the following error:'
+				)
+			).not.toBeInTheDocument();
+			expect( mockApiFetch ).not.toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: '/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown',
+				} )
+			);
+		} );
+
+		it( 'shows no domain notice when the bootstrap carries no error', () => {
+			setBootstrap( {} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.queryByText( 'Express checkouts:' )
+			).not.toBeInTheDocument();
+			expect( mockApiFetch ).not.toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: '/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown',
+				} )
+			);
+		} );
+	} );
+
 	it( 'keeps settings sections visible with non-interactive placeholders while initial settings load', () => {
 		mockUseSettings.mockReturnValue( {
 			isLoading: true,

@@ -10,6 +10,9 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
@@ -284,6 +287,65 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['reportsArea'] );
 		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['existingFlag'] );
+	}
+
+	/**
+	 * @testdox Should preload the Apple Pay domain error for in-app navigation without clearing it on a list load.
+	 */
+	public function test_preloads_apple_pay_domain_error_without_clearing_it(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'              => 'yes',
+				'apple_pay_domain_set' => 'no',
+			)
+		);
+		update_option( 'wcpay_apple_pay_domain_error', 'Domain not verified, see https://example.com/help' );
+		$sut = $this->create_controller( true, array(), array(), $this->create_apple_pay_domain_service( true ) );
+
+		try {
+			$settings = $sut->preload_shared_settings( array() );
+		} finally {
+			$stored_error = get_option( 'wcpay_apple_pay_domain_error' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+			delete_option( 'wcpay_apple_pay_domain_error' );
+		}
+
+		$this->assertSame(
+			array(
+				'error'   => 'Domain not verified, see <a href="https://example.com/help">https://example.com/help</a>',
+				'errorId' => hash( 'sha256', 'Domain not verified, see https://example.com/help' ),
+				'logsUrl' => admin_url( 'admin.php?page=wc-status&tab=logs' ),
+			),
+			$settings['woopaymentsSettings']['applePayDomainError']
+		);
+		$this->assertSame( 'Domain not verified, see https://example.com/help', $stored_error, 'A Payments list load must not clear an error nobody saw.' );
+	}
+
+	/**
+	 * @testdox Should not preload an Apple Pay domain error when no domain verification failed.
+	 */
+	public function test_does_not_preload_apple_pay_domain_error_without_a_failure(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'              => 'yes',
+				'apple_pay_domain_set' => 'yes',
+			)
+		);
+		$sut = $this->create_controller( true, array(), array(), $this->create_apple_pay_domain_service( true ) );
+
+		try {
+			$settings = $sut->preload_shared_settings( array() );
+		} finally {
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		$this->assertArrayNotHasKey( 'applePayDomainError', $settings['woopaymentsSettings'] );
 	}
 
 	/**
@@ -1597,12 +1659,13 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the controller under test.
 	 *
-	 * @param bool                $native_register Whether native should own menu registration.
-	 * @param array<string,mixed> $account_state  Account state overrides.
-	 * @param array<string,int>   $badge_counts   Badge count overrides.
+	 * @param bool                                  $native_register          Whether native should own menu registration.
+	 * @param array<string,mixed>                   $account_state            Account state overrides.
+	 * @param array<string,int>                     $badge_counts             Badge count overrides.
+	 * @param WooPaymentsApplePayDomainService|null $apple_pay_domain_service Optional Apple Pay domain service; defaults to one with no notice due.
 	 * @return WooPaymentsAdminNavigationController
 	 */
-	private function create_controller( bool $native_register, array $account_state = array(), array $badge_counts = array() ): WooPaymentsAdminNavigationController {
+	private function create_controller( bool $native_register, array $account_state = array(), array $badge_counts = array(), ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null ): WooPaymentsAdminNavigationController {
 		$class_name = WooPaymentsAdminNavigationController::class;
 		$this->assertTrue( class_exists( $class_name ), 'WooPayments admin navigation controller should exist.' );
 
@@ -1615,7 +1678,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( $account_state );
 		$badge_service   = $this->create_badge_service( $badge_counts );
 		$controller      = new $class_name();
-		$controller->init( $arbiter, $account_service, $badge_service );
+		$controller->init( $arbiter, $account_service, $badge_service, $apple_pay_domain_service ?? $this->createMock( WooPaymentsApplePayDomainService::class ) );
 		$this->controllers[] = $controller;
 
 		return $controller;
@@ -1696,6 +1759,37 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		}
 
 		return $account_service;
+	}
+
+	/**
+	 * Create a real Apple Pay domain service with Apple Pay enabled.
+	 *
+	 * @param bool $live_account Whether the account is live.
+	 * @return WooPaymentsApplePayDomainService
+	 */
+	private function create_apple_pay_domain_service( bool $live_account ): WooPaymentsApplePayDomainService {
+		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'has_live_account', 'is_payment_request_method_enabled' ) )
+			->getMock();
+		$account_service->method( 'has_live_account' )->willReturn( $live_account );
+		$account_service->method( 'is_payment_request_method_enabled' )->willReturn( true );
+
+		$service = new WooPaymentsApplePayDomainService();
+		$service->init(
+			$arbiter,
+			$this->createMock( WooPaymentsApiClient::class ),
+			$account_service,
+			$this->createMock( WooPaymentsActionSchedulerService::class )
+		);
+
+		return $service;
 	}
 
 	/**

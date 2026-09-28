@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -209,6 +210,122 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		$response = $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' ) );
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( array( 'success' => true ), $response->get_data() );
+	}
+
+	/**
+	 * @testdox Should clear the Apple Pay domain error the React settings notice showed, when it is still stored.
+	 */
+	public function test_apple_pay_domain_error_shown_clears_the_matching_error(): void {
+		update_option( 'wcpay_apple_pay_domain_error', 'Test error message' );
+
+		try {
+			$response     = $this->dispatch_apple_pay_domain_error_shown( hash( 'sha256', 'Test error message' ) );
+			$stored_error = get_option( 'wcpay_apple_pay_domain_error' );
+		} finally {
+			delete_option( 'wcpay_apple_pay_domain_error' );
+		}
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame(
+			array(
+				'success' => true,
+				'cleared' => true,
+			),
+			$response->get_data()
+		);
+		$this->assertFalse( $stored_error );
+	}
+
+	/**
+	 * @testdox Should keep an Apple Pay domain error that was replaced between the page load and the shown report.
+	 */
+	public function test_apple_pay_domain_error_shown_keeps_a_replaced_error(): void {
+		update_option( 'wcpay_apple_pay_domain_error', 'Newer error from a retry' );
+
+		try {
+			$response     = $this->dispatch_apple_pay_domain_error_shown( hash( 'sha256', 'Test error message' ) );
+			$stored_error = get_option( 'wcpay_apple_pay_domain_error' );
+		} finally {
+			delete_option( 'wcpay_apple_pay_domain_error' );
+		}
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame(
+			array(
+				'success' => true,
+				'cleared' => false,
+			),
+			$response->get_data()
+		);
+		$this->assertSame( 'Newer error from a retry', $stored_error, 'The newer error stays for the next display.' );
+	}
+
+	/**
+	 * @testdox Should reject an Apple Pay shown report without a well-formed error identifier.
+	 */
+	public function test_apple_pay_domain_error_shown_requires_an_error_id(): void {
+		update_option( 'wcpay_apple_pay_domain_error', 'Test error message' );
+
+		try {
+			$missing      = $this->dispatch_apple_pay_domain_error_shown( null );
+			$malformed    = $this->dispatch_apple_pay_domain_error_shown( 'not-a-hash' );
+			$stored_error = get_option( 'wcpay_apple_pay_domain_error' );
+		} finally {
+			delete_option( 'wcpay_apple_pay_domain_error' );
+		}
+
+		$this->assertSame( 400, $missing->get_status() );
+		$this->assertSame( 400, $malformed->get_status() );
+		$this->assertSame( 'Test error message', $stored_error );
+	}
+
+	/**
+	 * @testdox Should keep the Apple Pay domain error when a user without store management permission reports it shown.
+	 */
+	public function test_apple_pay_domain_error_shown_rejects_non_manager(): void {
+		update_option( 'wcpay_apple_pay_domain_error', 'Test error message' );
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'subscriber' ) ) );
+
+		try {
+			$response     = $this->dispatch_apple_pay_domain_error_shown( hash( 'sha256', 'Test error message' ) );
+			$stored_error = get_option( 'wcpay_apple_pay_domain_error' );
+		} finally {
+			delete_option( 'wcpay_apple_pay_domain_error' );
+		}
+
+		$this->assertSame( 403, $response->get_status() );
+		$this->assertSame( 'Test error message', $stored_error );
+	}
+
+	/**
+	 * Report the Apple Pay domain error as shown through a controller with the real Apple Pay service.
+	 *
+	 * @param string|null $error_id Error identifier to send, or null to omit it.
+	 * @return \WP_REST_Response
+	 */
+	private function dispatch_apple_pay_domain_error_shown( ?string $error_id ): \WP_REST_Response {
+		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, null, new WooPaymentsApplePayDomainService() );
+		$this->sut->register_routes( true );
+
+		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/apple_pay_domain_error/shown' );
+		if ( null !== $error_id ) {
+			$request->set_param( 'error_id', $error_id );
+		}
+
+		return $this->server->dispatch( $request );
+	}
+
+	/**
+	 * @testdox The container-resolved merchant controller should expose the Apple Pay notice shown route.
+	 */
+	public function test_container_resolved_merchant_controller_registers_apple_pay_notice_route(): void {
+		$controller = wc_get_container()->get( WooPaymentsMerchantRestController::class );
+		$controller->register_routes( true );
+
+		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/apple_pay_domain_error/shown' );
+		$request->set_param( 'error_id', hash( 'sha256', 'Test error message' ) );
+		$response = $this->server->dispatch( $request );
+		$this->assertSame( 200, $response->get_status() );
 	}
 
 	/**

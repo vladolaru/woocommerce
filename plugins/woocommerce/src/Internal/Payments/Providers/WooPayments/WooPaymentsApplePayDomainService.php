@@ -74,6 +74,13 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	private array $pending_registration_events = array();
 
 	/**
+	 * Whether the server notice already handled the domain error in this request.
+	 *
+	 * @var bool
+	 */
+	private bool $server_notice_handled = false;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -334,28 +341,17 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * Display Apple Pay registration errors.
 	 */
 	public function display_error_notice(): void {
-		if ( ! $this->is_apple_pay_configured( $this->get_gateway_settings() ) || ! $this->account_service->has_live_account() ) {
+		$this->server_notice_handled = true;
+
+		$error_notice = $this->read_error_notice();
+		if ( null === $error_notice ) {
 			return;
 		}
 
-		$domain_set   = (string) $this->get_gateway_setting( 'apple_pay_domain_set', '' );
-		$error_notice = (string) get_option( self::ERROR_OPTION, '' );
 		$empty_notice = '' === $error_notice;
-
-		if ( $empty_notice && 'no' !== $domain_set ) {
-			return;
-		}
-
 		if ( ! $empty_notice ) {
-			delete_option( self::ERROR_OPTION );
+			$this->clear_displayed_error_notice();
 		}
-
-		$allowed_error_html = array(
-			'a' => array(
-				'href'  => array(),
-				'title' => array(),
-			),
-		);
 
 		$verification_failed = $empty_notice
 			? __( 'Apple Pay domain verification failed.', 'woocommerce' )
@@ -396,11 +392,110 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 				<?php echo $learn_more_text; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
 			</p>
 			<?php if ( ! $empty_notice ) : ?>
-				<p><i><?php echo wp_kses( make_clickable( esc_html( $error_notice ) ), $allowed_error_html ); ?></i></p>
+				<p><i><?php echo $this->format_error_notice( $error_notice ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped and filtered by wp_kses(). ?></i></p>
 			<?php endif; ?>
 			<p><?php echo $check_log_text; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></p>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Get the domain error notice for the React settings page bootstrap, without clearing it.
+	 *
+	 * Covers in-app navigation to the settings routes, where no server notice renders. The page
+	 * clears the detailed error through clear_displayed_error_notice_if_unchanged() once it shows it.
+	 *
+	 * @return array{error:string,errorId:string,logsUrl:string}|null Null when no notice is due or the server notice already handled it.
+	 */
+	public function get_error_notice_for_settings_bootstrap(): ?array {
+		if ( $this->server_notice_handled ) {
+			return null;
+		}
+
+		$error_notice = $this->read_error_notice();
+		if ( null === $error_notice ) {
+			return null;
+		}
+
+		return array(
+			'error'   => '' === $error_notice ? '' : $this->format_error_notice( $error_notice ),
+			'errorId' => '' === $error_notice ? '' : $this->get_error_id( $error_notice ),
+			'logsUrl' => admin_url( 'admin.php?page=wc-status&tab=logs' ),
+		);
+	}
+
+	/**
+	 * Clear the detailed domain error after a notice showed it, as client 11.1.0 does.
+	 */
+	public function clear_displayed_error_notice(): void {
+		delete_option( self::ERROR_OPTION );
+	}
+
+	/**
+	 * Clear the detailed domain error only if it is still the one a notice showed.
+	 *
+	 * A retry can store a newer error between page load and display; that one stays for the next display.
+	 *
+	 * @param string $error_id Identifier of the displayed error, from the settings bootstrap.
+	 * @return bool Whether the stored error matched and was cleared.
+	 */
+	public function clear_displayed_error_notice_if_unchanged( string $error_id ): bool {
+		$stored_error = (string) get_option( self::ERROR_OPTION, '' );
+		if ( '' === $stored_error || ! hash_equals( $this->get_error_id( $stored_error ), $error_id ) ) {
+			return false;
+		}
+
+		$this->clear_displayed_error_notice();
+
+		return true;
+	}
+
+	/**
+	 * Identify a stored domain error without sending it back to the server.
+	 *
+	 * @param string $error_notice Stored error message.
+	 * @return string
+	 */
+	private function get_error_id( string $error_notice ): string {
+		return hash( 'sha256', $error_notice );
+	}
+
+	/**
+	 * Read the domain error a notice should show, with the client's checks.
+	 *
+	 * @return string|null The stored error ('' when only the domain flag failed), or null when no notice is due.
+	 */
+	private function read_error_notice(): ?string {
+		if ( ! $this->is_apple_pay_configured( $this->get_gateway_settings() ) || ! $this->account_service->has_live_account() ) {
+			return null;
+		}
+
+		$domain_set   = (string) $this->get_gateway_setting( 'apple_pay_domain_set', '' );
+		$error_notice = (string) get_option( self::ERROR_OPTION, '' );
+
+		if ( '' === $error_notice && 'no' !== $domain_set ) {
+			return null;
+		}
+
+		return $error_notice;
+	}
+
+	/**
+	 * Format a stored domain error as the notice shows it: escaped, with clickable links.
+	 *
+	 * @param string $error_notice Stored error message.
+	 * @return string
+	 */
+	private function format_error_notice( string $error_notice ): string {
+		return wp_kses(
+			make_clickable( esc_html( $error_notice ) ),
+			array(
+				'a' => array(
+					'href'  => array(),
+					'title' => array(),
+				),
+			)
+		);
 	}
 
 	/**

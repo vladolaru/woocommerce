@@ -9,6 +9,7 @@ import { __ } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { getSettingsPaymentsProviderRouteUrl } from '../../admin/utils';
+import { ApplePayDomainErrorNotice } from '../apple-pay-domain-error-notice';
 import { ExpressCheckoutBusyState, ExpressCheckoutSaveBar } from './components';
 import {
 	asSettingsRecord,
@@ -161,6 +162,7 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 				</a>
 				<h1 id={ headingId }>{ title }</h1>
 			</header>
+			<ApplePayDomainErrorNotice />
 			{ content }
 		</section>
 	);

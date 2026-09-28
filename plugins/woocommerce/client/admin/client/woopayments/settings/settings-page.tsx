@@ -32,6 +32,7 @@ import { recordEvent } from '@woocommerce/tracks';
  */
 import { getSettingsPaymentsProviderRouteUrl } from '../admin/utils';
 import { AccountModeNotice } from './account-mode-notice';
+import { ApplePayDomainErrorNotice } from './apple-pay-domain-error-notice';
 import { getWooPaymentsSettingsBootstrap } from './bootstrap';
 import {
 	saveOption,
@@ -2559,6 +2560,8 @@ export const WooPaymentsSettingsPage = () => {
 					) }
 				</p>
 			</header>
+
+			<ApplePayDomainErrorNotice />
 
 			{ isLoading && ! hasSettings ? (
 				<SettingsLoadingSections />

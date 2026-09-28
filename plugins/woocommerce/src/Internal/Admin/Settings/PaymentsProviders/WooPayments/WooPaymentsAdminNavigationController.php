@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -155,22 +156,32 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	private WooPaymentsAdminMenuBadgeService $badge_service;
 
 	/**
+	 * WooPayments Apple Pay domain service.
+	 *
+	 * @var WooPaymentsApplePayDomainService
+	 */
+	private WooPaymentsApplePayDomainService $apple_pay_domain_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter     $arbiter         Runtime owner arbiter.
-	 * @param WooPaymentsAccountService        $account_service WooPayments account service.
-	 * @param WooPaymentsAdminMenuBadgeService $badge_service   WooPayments admin menu badge service.
+	 * @param NativePaymentsRuntimeArbiter     $arbiter                  Runtime owner arbiter.
+	 * @param WooPaymentsAccountService        $account_service          WooPayments account service.
+	 * @param WooPaymentsAdminMenuBadgeService $badge_service            WooPayments admin menu badge service.
+	 * @param WooPaymentsApplePayDomainService $apple_pay_domain_service WooPayments Apple Pay domain service.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
 		WooPaymentsAccountService $account_service,
-		WooPaymentsAdminMenuBadgeService $badge_service
+		WooPaymentsAdminMenuBadgeService $badge_service,
+		WooPaymentsApplePayDomainService $apple_pay_domain_service
 	): void {
-		$this->arbiter         = $arbiter;
-		$this->account_service = $account_service;
-		$this->badge_service   = $badge_service;
+		$this->arbiter                  = $arbiter;
+		$this->account_service          = $account_service;
+		$this->badge_service            = $badge_service;
+		$this->apple_pay_domain_service = $apple_pay_domain_service;
 	}
 
 	/**
@@ -295,6 +306,12 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$legacy_settings_candidate = apply_filters( 'wcpay_js_settings', $provider_settings );
 		if ( is_array( $legacy_settings_candidate ) ) {
 			$provider_settings = $legacy_settings_candidate;
+		}
+
+		// The settings page can open through in-app navigation, with no server-rendered notice.
+		$apple_pay_domain_error = $this->apple_pay_domain_service->get_error_notice_for_settings_bootstrap();
+		if ( null !== $apple_pay_domain_error ) {
+			$provider_settings['applePayDomainError'] = $apple_pay_domain_error;
 		}
 
 		$settings['woopaymentsSettings'] = $provider_settings;

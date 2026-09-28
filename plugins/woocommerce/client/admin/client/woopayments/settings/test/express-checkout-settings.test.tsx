@@ -334,6 +334,38 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	it( 'shows the Apple Pay domain error on in-app visits and reports it shown', () => {
+		mockSettingsBootstrap = {
+			...mockSettingsBootstrap,
+			applePayDomainError: {
+				error: 'Domain not verified',
+				errorId:
+					'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+				logsUrl:
+					'https://example.com/wp-admin/admin.php?page=wc-status&tab=logs',
+			},
+		};
+
+		render(
+			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+		);
+
+		expect(
+			screen.getByText(
+				'Apple Pay domain verification failed with the following error:'
+			)
+		).toBeInTheDocument();
+		expect( screen.getByText( 'Domain not verified' ) ).toBeInTheDocument();
+		expect( mockApiFetch ).toHaveBeenCalledWith( {
+			path: '/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown',
+			method: 'POST',
+			data: {
+				error_id:
+					'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+			},
+		} );
+	} );
+
 	it( 'renders Apple Pay and Google Pay detail controls with reference copy', async () => {
 		render(
 			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />

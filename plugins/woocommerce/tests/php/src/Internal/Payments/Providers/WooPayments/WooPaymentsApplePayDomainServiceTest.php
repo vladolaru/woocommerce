@@ -434,6 +434,55 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should leave the settings bootstrap empty after the server notice showed the error on a full page load.
+	 */
+	public function test_settings_bootstrap_is_empty_after_the_server_notice_rendered(): void {
+		$this->arrange_failed_domain_verification();
+
+		$output = $this->render_payments_settings_page(
+			array(
+				'page' => 'wc-settings',
+				'tab'  => 'checkout',
+				'path' => '/woopayments/settings',
+			)
+		);
+
+		$this->assertStringContainsString( 'Test error message', $output );
+		$this->assertNull( $this->service->get_error_notice_for_settings_bootstrap(), 'The footer bootstrap must not repeat the notice the page already shows.' );
+	}
+
+	/**
+	 * @testdox Should keep the detailed error when the settings bootstrap carries it, until a notice shows it.
+	 */
+	public function test_settings_bootstrap_keeps_the_error_until_a_notice_shows_it(): void {
+		$this->arrange_failed_domain_verification();
+
+		$notice = $this->service->get_error_notice_for_settings_bootstrap();
+
+		$this->assertSame( 'Test error message', $notice['error'] ?? null );
+		$this->assertSame( 'Test error message', get_option( self::ERROR_OPTION ) );
+
+		update_option( self::ERROR_OPTION, 'Newer error from a retry' );
+		$this->assertFalse( $this->service->clear_displayed_error_notice_if_unchanged( $notice['errorId'] ?? '' ) );
+		$this->assertSame( 'Newer error from a retry', get_option( self::ERROR_OPTION ), 'An error replaced after the page load stays for the next display.' );
+
+		$this->assertTrue( $this->service->clear_displayed_error_notice_if_unchanged( hash( 'sha256', 'Newer error from a retry' ) ) );
+		$this->assertFalse( get_option( self::ERROR_OPTION ) );
+	}
+
+	/**
+	 * @testdox Should deliver the generic domain failure to the settings bootstrap when no detailed error is stored.
+	 */
+	public function test_settings_bootstrap_carries_the_generic_domain_failure(): void {
+		$this->arrange_failed_domain_verification();
+		delete_option( self::ERROR_OPTION );
+
+		$notice = $this->service->get_error_notice_for_settings_bootstrap();
+
+		$this->assertSame( '', $notice['error'] ?? null );
+	}
+
+	/**
 	 * @testdox Should not attach mutating hooks when the native runtime is dormant.
 	 */
 	public function test_register_is_noop_when_native_runtime_is_dormant(): void {
