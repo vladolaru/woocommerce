@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
@@ -53,6 +54,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::DISABLED, true );
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 		$this->reset_legacy_proxy_mocks();
 
 		parent::tearDown();
@@ -63,6 +66,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_supportability_hooks_even_when_plugin_owns_runtime(): void {
 		$this->fake_plugin( true );
+		$this->set_native_state( NativePaymentsState::AVAILABLE );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
@@ -73,6 +77,44 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
 		$this->assertSame( 10, has_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) ) );
 		$this->assertSame( 10, has_action( 'wp_ajax_health-check-woocommerce-woopayments-native-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) ) );
+	}
+
+	/**
+	 * @testdox A store without a connected native account or the plugin registers no supportability hook, so the Status page runs no preflight or account read (client 11.1.0 is absent there).
+	 * @testWith ["disabled"]
+	 *           ["available"]
+	 *
+	 * @param string $state Stored native payments state.
+	 */
+	public function test_registers_nothing_without_a_connected_account_or_the_plugin( string $state ): void {
+		$this->fake_plugin( false );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->set_native_state( $state );
+		$sut = $this->get_sut();
+		$this->remove_status_hooks( $sut );
+
+		$sut->register();
+
+		$this->assertFalse( has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) ) );
+		$this->assertFalse( has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
+		$this->assertFalse( has_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) ) );
+		$this->assertFalse( has_action( 'wp_ajax_health-check-woocommerce-woopayments-native-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) ) );
+	}
+
+	/**
+	 * @testdox A connected native store registers the supportability hooks.
+	 */
+	public function test_registers_supportability_hooks_for_a_connected_native_store(): void {
+		$this->fake_plugin( false );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->set_native_state( NativePaymentsState::CONNECTED );
+		$sut = $this->get_sut();
+		$this->remove_status_hooks( $sut );
+
+		$sut->register();
+
+		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
 	}
 
 	/**
@@ -273,6 +315,17 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		);
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
 		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000 );
+	}
+
+	/**
+	 * Store a native payments tier and drop the request-local memo.
+	 *
+	 * @param string $state Native payments state.
+	 */
+	private function set_native_state( string $state ): void {
+		update_option( NativePaymentsState::OPTION_NAME, $state, true );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 	}
 
 	/**

@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
@@ -73,6 +74,13 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	private CurrencyRateProviderRegistryFactory $provider_registry_factory;
 
 	/**
+	 * Native payments state store.
+	 *
+	 * @var NativePaymentsState
+	 */
+	private NativePaymentsState $native_payments_state;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -83,6 +91,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service Fee remediation service.
 	 * @param WooPaymentsCutoverController                          $cutover_controller      Cutover controller.
 	 * @param CurrencyRateProviderRegistryFactory                   $provider_registry_factory Rate provider registry factory.
+	 * @param NativePaymentsState                                   $native_payments_state   Native payments state store.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
@@ -90,7 +99,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		WooPaymentsFrontendStylesService $frontend_styles_service,
 		WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service,
 		WooPaymentsCutoverController $cutover_controller,
-		CurrencyRateProviderRegistryFactory $provider_registry_factory
+		CurrencyRateProviderRegistryFactory $provider_registry_factory,
+		NativePaymentsState $native_payments_state
 	): void {
 		$this->arbiter                   = $arbiter;
 		$this->account_service           = $account_service;
@@ -98,15 +108,21 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		$this->fee_remediation_service   = $fee_remediation_service;
 		$this->cutover_controller        = $cutover_controller;
 		$this->provider_registry_factory = $provider_registry_factory;
+		$this->native_payments_state     = $native_payments_state;
 	}
 
 	/**
 	 * Register supportability hooks.
 	 *
-	 * This is intentionally arbiter-independent: support needs these diagnostics when
-	 * the plugin, native runtime, or no runtime owns payments.
+	 * Registered where the WooPayments client would report too: a connected native store, or
+	 * while the plugin owns payments (cutover diagnostics during coexistence). Other stores never
+	 * run the client, so they skip the preflight and account read on the Status page.
 	 */
 	public function register(): void {
+		if ( ! in_array( $this->native_payments_state->get_state(), array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true ) && ! $this->arbiter->is_plugin_runtime_active() ) {
+			return;
+		}
+
 		add_action( 'woocommerce_system_status_report', array( $this, 'render_status_report_section' ), 1 );
 		add_filter( 'woocommerce_debug_tools', array( $this, 'add_debug_tools' ) );
 		add_filter( 'debug_information', array( $this, 'add_site_health_debug_info' ) );
