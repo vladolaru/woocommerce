@@ -38,16 +38,6 @@ const FAMILY_TAGS = [
 	'@fidelity:woopay-hosted-express',
 ];
 
-/**
- * Why every case is `fixme` today (`FIDELITY-CLAIMS.md`, `woopay-hosted-express`):
- * F1, the native express button never opens the `/otp/` iframe the client
- * opens, and E1, the wpcom-local overlay signs WooPay's Store API calls with
- * the dev-tools mock marker, which native's strengthen-only
- * `wcpay_woopay_is_signed_with_blog_token` refuses (401).
- */
-const BLOCKED =
-	'BLOCKED (T.13): F1 native express button skips the client /otp/ iframe; E1 wpcom-local mock-signed Store API calls get 401 from native (S7 strengthen-only).';
-
 const WOOPAY_ORIGIN = 'http://woopay.localhost:30001';
 const SETTINGS_ROUTE = 'wc/v3/payments/settings';
 const PRODUCTS_ROUTE = 'wc/v3/products';
@@ -84,9 +74,7 @@ async function setWooPayEnabled(
 
 /**
  * Waits for the SMS the platform sends after `sentAfter` and returns its code
- * and sink line. The wpcom-local dev code `000000` is not used: the overlay
- * defines `__DEV_OTP_CODE__` as a constant while WooPay reads it with
- * `getenv()`, so the platform rejects it (E2 in the T.13 ledger).
+ * and sink line.
  */
 async function readOtpFromSink(
 	sentAfter: number
@@ -299,11 +287,10 @@ test.describe( 'WooPayments native hosted WooPay express checkout', () => {
 			path: 'classic-checkout/',
 		},
 	] ) {
-		test.fixme(
+		test(
 			`${ surface.id } a ${ surface.name } checkout paid through the WooPay express button, OTP and hosted WooPay returns to one processing order with is_woopay and one settled 1099 usd payment`,
 			{
 				tag: FAMILY_TAGS,
-				annotation: [ { type: 'issue', description: BLOCKED } ],
 			},
 			async ( { page, restApi } ) => {
 				const product = (
@@ -373,11 +360,10 @@ test.describe( 'WooPayments native hosted WooPay express checkout', () => {
 		);
 	}
 
-	test.fixme(
+	test(
 		'W3 a subscription paid through hosted WooPay renews on the WooPay-saved card when the merchant processes a renewal',
 		{
 			tag: FAMILY_TAGS,
-			annotation: [ { type: 'issue', description: BLOCKED } ],
 		},
 		async ( { page, restApi, baseURL, browser } ) => {
 			const product = (
