@@ -440,9 +440,14 @@ $embedded_session_response = $fixture->intercept(
 	'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts/embedded/session?body-hash=hash&nonce=nonce&signature=signature&timestamp=1&token=dummyblog%3A1%3A0&test_mode=1'
 );
 assert_true(
-	is_array( $embedded_session_response ) && 400 === $embedded_session_response['response']['code']
-		&& 'wcpay_embedded_session_unavailable' === json_decode( $embedded_session_response['body'], true )['code'],
-	'the Overview banner embedded-session request must be a known route answered as unavailable, not an unknown request'
+	is_array( $embedded_session_response ) && 500 === $embedded_session_response['response']['code']
+		&& 'Internal Server Error' === $embedded_session_response['response']['message']
+		&& array(
+			'code'    => 'wcpay_server_error',
+			'message' => 'Unexpected server error.',
+			'data'    => array( 'status' => 500 ),
+		) === json_decode( $embedded_session_response['body'], true ),
+	'the Overview banner embedded-session request must be a known route answered with the real platform session failure (wcpay_server_error, HTTP 500), not an unknown request'
 );
 
 $store_setup_url      = 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts/store_setup?body-hash=hash&nonce=nonce&signature=signature&timestamp=1&token=dummyblog%3A1%3A0';

@@ -1359,6 +1359,40 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should fail the embedded account session once, without retrying, on the platform's session failure (wcpay_server_error, HTTP 500).
+	 */
+	public function test_create_embedded_account_session_throws_on_platform_server_error(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array(
+				'code'    => 500,
+				'message' => 'Internal Server Error',
+			),
+			'headers'  => array( 'content-type' => 'application/json; charset=utf-8' ),
+			// Platform Server_Exception::to_wp_error() (wcpay core/exceptions/class-server-exception.php).
+			'body'     => wp_json_encode(
+				array(
+					'code'    => 'wcpay_server_error',
+					'message' => 'Unexpected server error.',
+					'data'    => array( 'status' => 500 ),
+				)
+			),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->create_embedded_account_session();
+			$this->fail( 'A platform 500 must fail the embedded account session.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertSame( 'wcpay_server_error', $exception->get_error_code() );
+			$this->assertSame( 500, $exception->get_http_code() );
+		}
+		$this->assertSame( 1, $http_client->request_count );
+	}
+
+	/**
 	 * @testdox Should create a customer through the native transport customers endpoint.
 	 */
 	public function test_create_customer_posts_to_customers_endpoint(): void {

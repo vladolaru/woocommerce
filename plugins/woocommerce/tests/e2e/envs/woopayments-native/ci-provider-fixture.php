@@ -426,15 +426,17 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				return $this->response( array() );
 			case 'POST accounts/embedded/session':
 				// The Overview's Stripe notifications banner asks for an embedded
-				// session. CI has no Stripe, so answer as the platform does when it
-				// cannot create one; the banner then takes its session-failure path.
+				// session. CI has no Stripe, so answer as the platform does when
+				// Stripe cannot create one: its Server_Exception becomes
+				// wcpay_server_error, HTTP 500, 'Unexpected server error.'. The
+				// banner then takes its session-failure path.
 				return $this->response(
 					array(
-						'code'    => 'wcpay_embedded_session_unavailable',
-						'message' => 'Embedded account sessions are not available in the CI fixture.',
-						'data'    => array( 'status' => 400 ),
+						'code'    => 'wcpay_server_error',
+						'message' => 'Unexpected server error.',
+						'data'    => array( 'status' => 500 ),
 					),
-					400
+					500
 				);
 			case 'POST compatibility':
 				return $this->response( array( 'result' => 'ok' ) );
@@ -1569,7 +1571,10 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'body'     => wp_json_encode( $body ),
 			'response' => array(
 				'code'    => $status,
-				'message' => 200 === $status ? 'OK' : 'Bad Request',
+				'message' => array(
+					200 => 'OK',
+					500 => 'Internal Server Error',
+				)[ $status ] ?? 'Bad Request',
 			),
 			'cookies'  => array(),
 			'filename' => null,
