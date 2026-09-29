@@ -2844,6 +2844,61 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should refuse a billing phone over 20 characters before any other check, as the client does.
+	 *
+	 * Client 11.1.0 throws Invalid_Phone_Number_Exception first thing in process_payment()'s try
+	 * (`class-wc-payment-gateway-wcpay.php:1204-1209`), ahead of the fraud-prevention token check; the
+	 * catch marks the order failed without a payment note and shows the exception's message.
+	 */
+	public function test_process_payment_refuses_a_billing_phone_over_20_characters_first(): void {
+		wc_clear_notices();
+		$order = $this->create_order();
+		$order->set_billing_phone( str_repeat( '1', 21 ) );
+		$order->save();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
+		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, null, null, $this->create_fraud_prevention_service( true, $session ) );
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame(
+			array(
+				'result'         => 'failure',
+				'redirect'       => '',
+				'payment_method' => '',
+			),
+			$result
+		);
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( array( 'Invalid phone number.' ), array_column( wc_get_notices( 'error' ), 'notice' ), 'The phone guard runs before the fraud-prevention check, so only its notice shows.' );
+	}
+
+	/**
+	 * @testdox Should accept a billing phone of exactly 20 characters, as the client does.
+	 */
+	public function test_process_payment_accepts_a_billing_phone_of_20_characters(): void {
+		wc_clear_notices();
+		$order = $this->create_order();
+		$order->set_billing_phone( str_repeat( '1', 20 ) );
+		$order->save();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertSame( array(), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
 	 * Gateways, crossed with a tampered vs. absent token, the refusal must cover.
 	 *
 	 * @return array<string,array{0:string|null,1:bool}>

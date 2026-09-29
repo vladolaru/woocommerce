@@ -1544,6 +1544,22 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
+		// The plugin refuses these first, before any other check (Invalid_Phone_Number_Exception).
+		// When the order already has a succeeded intent, the plugin's catch returns success with a
+		// downstream-error note instead; native keeps its early-guard shape pending owner item O12.
+		if ( 20 < strlen( $order->get_billing_phone() ) ) {
+			if ( ! $this->has_succeeded_intent( $order ) ) {
+				$order->update_status( OrderStatus::FAILED );
+			}
+			wc_add_notice( __( 'Invalid phone number.', 'woocommerce' ), 'error', array( 'icon' => 'error' ) );
+
+			return array(
+				'result'         => 'failure',
+				'redirect'       => '',
+				'payment_method' => '',
+			);
+		}
+
 		$fraud_prevention_error = $this->get_fraud_prevention_error_message( true );
 		if ( '' !== $fraud_prevention_error ) {
 			if ( ! $this->has_succeeded_intent( $order ) ) {
