@@ -155,53 +155,60 @@ const SandboxModeNotice = ( {
 				status="warning"
 				isDismissible={ false }
 			>
-				{ createInterpolateElement( message, {
-					strong: <strong />,
-					switchToLiveLink: (
-						<Button
-							variant="link"
-							onClick={ () => {
-								recordEvent(
-									'wcpay_setup_live_payments_modal_open',
-									{
-										from: 'WCPAY_OVERVIEW',
-										source: 'wcpay-overview-page',
-									}
-								);
-								setModalVisible( true );
-							} }
-						/>
-					),
-					resetAccountLink: link(
-						'https://woocommerce.com/document/woopayments/startup-guide/#resetting'
-					),
-				} ) }
-				<Dropdown
-					renderToggle={ ( { isOpen, onToggle } ) => (
-						<Button
-							icon={ help }
-							label={ helpLabel }
-							aria-expanded={ isOpen }
-							onClick={ onToggle }
-						/>
-					) }
-					renderContent={ () =>
-						createInterpolateElement( helpText, {
-							wpEnvLink: link(
-								'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/'
+				{ /* One child, and the interpolated message in its own element: WordPress's
+				Notice passes its children on as a list, and bare siblings or a bare
+				interpolated fragment there trip React's missing-key warning. */ }
+				<>
+					<span>
+						{ createInterpolateElement( message, {
+							strong: <strong />,
+							switchToLiveLink: (
+								<Button
+									variant="link"
+									onClick={ () => {
+										recordEvent(
+											'wcpay_setup_live_payments_modal_open',
+											{
+												from: 'WCPAY_OVERVIEW',
+												source: 'wcpay-overview-page',
+											}
+										);
+										setModalVisible( true );
+									} }
+								/>
 							),
-							learnMoreLink: link( helpUrl, () =>
-								recordEvent(
-									'wcpay_overview_sandbox_mode_learn_more_clicked',
-									{
-										account_type: accountType,
-										is_dev_mode: isDevMode,
-									}
-								)
+							resetAccountLink: link(
+								'https://woocommerce.com/document/woopayments/startup-guide/#resetting'
 							),
-						} )
-					}
-				/>
+						} ) }
+					</span>
+					<Dropdown
+						renderToggle={ ( { isOpen, onToggle } ) => (
+							<Button
+								icon={ help }
+								label={ helpLabel }
+								aria-expanded={ isOpen }
+								onClick={ onToggle }
+							/>
+						) }
+						renderContent={ () =>
+							createInterpolateElement( helpText, {
+								wpEnvLink: link(
+									'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/'
+								),
+								learnMoreLink: link( helpUrl, () =>
+									recordEvent(
+										'wcpay_overview_sandbox_mode_learn_more_clicked',
+										{
+											account_type: accountType,
+											is_dev_mode: isDevMode,
+										}
+									)
+								),
+							} )
+						}
+					/>
+				</>
 			</Notice>
 			{ isModalVisible && (
 				<SetupLivePaymentsModal
