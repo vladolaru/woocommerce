@@ -21,7 +21,7 @@ import {
 } from '../utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
 import { getPayoutStatusLabel } from '../../payout-status';
-import { formatExplicitCurrency } from '../../money-movement/utils';
+import { formatExplicitCurrency } from '../../currency';
 
 const PAYOUT_SCHEDULE_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/payout-schedule/';

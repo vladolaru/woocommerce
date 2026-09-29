@@ -23,7 +23,7 @@ import {
 	getSelectedBalanceCurrency,
 } from '../utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
-import { formatExplicitCurrency } from '../../money-movement/utils';
+import { formatExplicitCurrency } from '../../currency';
 
 const INSTANT_PAYOUTS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/instant-payouts/';
