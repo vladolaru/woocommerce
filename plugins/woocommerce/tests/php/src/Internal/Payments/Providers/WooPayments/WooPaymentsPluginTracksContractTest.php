@@ -139,7 +139,6 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		'wcpay_account_connect_finished'                 => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
 		'wcpay_account_connect_start'                    => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
 		'wcpay_account_connect_wpcom_connection_failure' => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
-		'wcpay_account_connect_wpcom_connection_start'   => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
 		'wcpay_account_connect_wpcom_connection_success' => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
 		'wcpay_onboarding_flow_reset'                    => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
 		'wcpay_onboarding_test_account_disable'          => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
