@@ -41,10 +41,10 @@ import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { WooPaymentsBlockedTransactions } from './blocked-transactions';
 import { WooPaymentsTransactionsList } from './transactions-list';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
+import { getRiskLevelLabel } from './transactions-list-fields';
 import {
 	formatAmount,
-	formatDate,
-	formatLabel,
+	formatDateTime,
 	getErrorMessage,
 	getTransactionDetailsRoute,
 } from './utils';
@@ -72,21 +72,23 @@ type NoticeDispatch = {
 	createErrorNotice: ( message: string ) => void;
 };
 
-// The uncaptured list's fields and the client's column names for them.
+// Client 11.1.0 `transactions/uncaptured/index.tsx:43-108`: the columns, in order.
 const AUTHORIZATION_FIELDS = [
-	'authorized_date',
+	'created',
 	'capture_by',
 	'order',
-	'risk',
+	'risk_level',
 	'amount',
-	'customer',
-	'actions',
+	'customer_email',
+	'customer_country',
+	'action',
 ];
-const AUTHORIZATION_COLUMN_KEYS = {
-	authorized_date: 'created',
-	risk: 'risk_level',
-	actions: 'action',
-};
+const NO_COLUMN_KEY_CHANGES: Record< string, string > = {};
+// The client's columns with `visible: false`.
+const AUTHORIZATION_DEFAULT_HIDDEN_COLUMNS = [
+	'customer_email',
+	'customer_country',
+];
 
 const getSummaryCount = ( summary: MoneyMovementSummary ) => {
 	const totalCount =
@@ -151,7 +153,7 @@ const getAuthorizationCaptureBy = ( value?: string | number ) => {
 
 	date.setUTCDate( date.getUTCDate() + 7 );
 
-	return formatDate( date.toISOString() );
+	return formatDateTime( date.toISOString() );
 };
 
 const getNotices = () =>
@@ -203,7 +205,8 @@ export const WooPaymentsTransactionsPage = () => {
 	const { visibleFields, saveFields } = usePersistedHiddenFields(
 		'wc_payments_transactions_uncaptured_hidden_columns',
 		AUTHORIZATION_FIELDS,
-		AUTHORIZATION_COLUMN_KEYS
+		NO_COLUMN_KEY_CHANGES,
+		AUTHORIZATION_DEFAULT_HIDDEN_COLUMNS
 	);
 	const [ workingView, setWorkingView ] =
 		useState< WorkingMoneyMovementView >( null );
@@ -479,16 +482,16 @@ export const WooPaymentsTransactionsPage = () => {
 
 	const authorizationFields = [
 		{
-			id: 'authorized_date',
-			label: __( 'Authorized date', 'woocommerce' ),
-			enableHiding: true,
+			id: 'created',
+			label: __( 'Authorized on', 'woocommerce' ),
+			enableHiding: false,
 			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
-				formatDate( item.created ),
+				formatDateTime( item.created ),
 		},
 		{
 			id: 'capture_by',
 			label: __( 'Capture by', 'woocommerce' ),
-			enableHiding: true,
+			enableHiding: false,
 			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
 				getAuthorizationCaptureBy( item.created ),
 		},
@@ -496,6 +499,7 @@ export const WooPaymentsTransactionsPage = () => {
 			id: 'order',
 			label: __( 'Order', 'woocommerce' ),
 			enableHiding: false,
+			enableSorting: false,
 			render: ( { item }: { item: WooPaymentsAuthorization } ) => {
 				const orderId = getAuthorizationOrderId( item );
 
@@ -503,10 +507,14 @@ export const WooPaymentsTransactionsPage = () => {
 					return '-';
 				}
 
+				// Client 11.1.0 `transactions/uncaptured/index.tsx:166`.
+				const orderLabel = item.customer_name
+					? `#${ orderId } ${ item.customer_name }`
+					: `#${ orderId }`;
 				const paymentIntentId = getAuthorizationPaymentIntentId( item );
 
 				if ( ! paymentIntentId ) {
-					return `#${ orderId }`;
+					return orderLabel;
 				}
 
 				return (
@@ -525,21 +533,18 @@ export const WooPaymentsTransactionsPage = () => {
 							orderId
 						) }
 					>
-						{ `#${ orderId }` }
+						{ orderLabel }
 					</a>
 				);
 			},
 		},
 		{
-			id: 'risk',
-			label: __( 'Risk', 'woocommerce' ),
+			id: 'risk_level',
+			label: __( 'Risk level', 'woocommerce' ),
 			enableHiding: true,
+			enableSorting: false,
 			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
-				formatLabel(
-					item.risk_level === undefined
-						? undefined
-						: String( item.risk_level )
-				),
+				getRiskLevelLabel( item.risk_level ),
 		},
 		{
 			id: 'amount',
@@ -549,16 +554,24 @@ export const WooPaymentsTransactionsPage = () => {
 				formatAmount( item.amount, item.currency ),
 		},
 		{
-			id: 'customer',
-			label: __( 'Customer', 'woocommerce' ),
+			id: 'customer_email',
+			label: __( 'Email', 'woocommerce' ),
 			enableHiding: true,
 			enableSorting: false,
 			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
-				item.customer_name || item.customer_email || '-',
+				item.customer_email || '-',
 		},
 		{
-			id: 'actions',
-			label: __( 'Actions', 'woocommerce' ),
+			id: 'customer_country',
+			label: __( 'Country', 'woocommerce' ),
+			enableHiding: true,
+			enableSorting: false,
+			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
+				item.customer_country || '-',
+		},
+		{
+			id: 'action',
+			label: __( 'Action', 'woocommerce' ),
 			enableHiding: false,
 			enableSorting: false,
 			render: ( { item }: { item: WooPaymentsAuthorization } ) => {

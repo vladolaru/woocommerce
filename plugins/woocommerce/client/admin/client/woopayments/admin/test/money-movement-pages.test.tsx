@@ -1562,11 +1562,13 @@ describe( 'WooPayments money movement pages', () => {
 				'source',
 				'customer_name',
 			],
+			// Client 11.1.0 `transactions/uncaptured/index.tsx:43-108` column keys.
 			wc_payments_transactions_uncaptured_hidden_columns: [
 				'created',
 				'capture_by',
 				'risk_level',
-				'customer',
+				'customer_email',
+				'customer_country',
 				'action',
 			],
 		} );
@@ -1968,22 +1970,24 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByRole( 'link', { name: 'Uncaptured (1)' } )
 		).toHaveAttribute( 'aria-current', 'page' );
 
+		// Client 11.1.0 `transactions/uncaptured/index.tsx:43-108`: Email and
+		// Country are `visible: false` until the merchant shows them.
 		expect(
 			await screen.findByRole( 'columnheader', {
-				name: 'Authorized date',
+				name: 'Authorized on',
 			} )
 		).toBeInTheDocument();
-		[
-			'Capture by',
-			'Order',
-			'Risk',
-			'Amount',
-			'Customer',
-			'Actions',
-		].forEach( ( label ) => {
+		[ 'Capture by', 'Order', 'Risk level', 'Amount', 'Action' ].forEach(
+			( label ) => {
+				expect(
+					screen.getByRole( 'columnheader', { name: label } )
+				).toBeInTheDocument();
+			}
+		);
+		[ 'Email', 'Country', 'Customer' ].forEach( ( label ) => {
 			expect(
-				screen.getByRole( 'columnheader', { name: label } )
-			).toBeInTheDocument();
+				screen.queryByRole( 'columnheader', { name: label } )
+			).not.toBeInTheDocument();
 		} );
 		expect(
 			screen.getByRole( 'button', {
@@ -1995,7 +1999,10 @@ describe( 'WooPayments money movement pages', () => {
 				name: 'Cancel authorization for order #123',
 			} )
 		).toBeInTheDocument();
-		expect( screen.getByText( 'Ada Lovelace' ) ).toBeInTheDocument();
+		// Client 11.1.0 `transactions/uncaptured/index.tsx:166` and
+		// `components/risk-level/index.tsx:18-30`.
+		expect( screen.getByText( '#123 Ada Lovelace' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Elevated' ) ).toBeInTheDocument();
 	} );
 
 	it( 'links uncaptured orders to payment details', async () => {
@@ -2121,12 +2128,14 @@ describe( 'WooPayments money movement pages', () => {
 
 		expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
 		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+			// Client 11.1.0 `transactions/uncaptured/index.tsx:43-108` column keys.
 			wc_payments_transactions_uncaptured_hidden_columns: [
 				'created',
 				'capture_by',
 				'order',
 				'risk_level',
-				'customer',
+				'customer_email',
+				'customer_country',
 				'action',
 			],
 		} );

@@ -86,11 +86,11 @@ const TRANSACTION_TYPE_FILTER_ELEMENTS = [
 } ) );
 
 // Client 11.1.0 `components/risk-level/index.tsx:18` and `strings.ts`.
-const RISK_LEVEL_LABELS = [
-	__( 'Normal', 'woocommerce' ),
-	__( 'Elevated', 'woocommerce' ),
-	__( 'Highest', 'woocommerce' ),
-];
+const RISK_LEVEL_LABELS: Record< string, string > = {
+	0: __( 'Normal', 'woocommerce' ),
+	1: __( 'Elevated', 'woocommerce' ),
+	2: __( 'Highest', 'woocommerce' ),
+};
 
 // Client 11.1.0 `deposits/strings.ts` `depositStatusLabels`.
 const PAYOUT_STATUS_LABELS: Record< string, string > = {
@@ -142,9 +142,12 @@ export const getTransactionChannelLabel = ( channel?: string | null ) => {
 	}
 };
 
-// Client 11.1.0 `components/risk-level/index.tsx` `calculateRiskMapping()`.
+// Client 11.1.0 `components/risk-level/index.tsx` `calculateRiskMapping()`:
+// a missing or unknown level reads N/A, never Normal.
 export const getRiskLevelLabel = ( risk?: number | string | null ) =>
-	RISK_LEVEL_LABELS[ Number( risk ) ] ?? __( 'N/A', 'woocommerce' );
+	Object.prototype.hasOwnProperty.call( RISK_LEVEL_LABELS, String( risk ) )
+		? RISK_LEVEL_LABELS[ String( risk ) ]
+		: __( 'N/A', 'woocommerce' );
 
 // Client 11.1.0 `components/order-link/index.tsx`.
 export const OrderLink = ( {
