@@ -2,7 +2,6 @@
  * External dependencies
  */
 import { useEffect, useState } from '@wordpress/element';
-import { __ } from '@wordpress/i18n';
 import {
 	loadConnectAndInitialize,
 	type LoadError,
@@ -18,7 +17,6 @@ import {
  */
 import appearance from '~/settings-payments/onboarding/providers/woopayments/steps/business-verification/components/embedded/appearance';
 import StripeSpinner from '~/settings-payments/onboarding/providers/woopayments/components/stripe-spinner';
-import BannerNotice from '~/settings-payments/onboarding/providers/woopayments/components/banner-notice';
 import { createWooPaymentsAccountSession } from '../data';
 
 export interface StripeNotificationsChange {
@@ -26,13 +24,10 @@ export interface StripeNotificationsChange {
 	actionRequired: number;
 }
 
-const genericError = __(
-	'Unable to start onboarding. If this problem persists, please contact support.',
-	'woocommerce'
-);
-
 /**
  * Stripe's embedded notification banner, as client 11.1.0 `embedded-components/index.tsx:192-224`.
+ *
+ * A failed session renders no copy: the client's onboarding-failure notice sits in the Overview's hidden wrapper.
  */
 export const StripeNotificationsBanner = ( {
 	onInitError,
@@ -45,7 +40,7 @@ export const StripeNotificationsBanner = ( {
 } ) => {
 	const [ connectInstance, setConnectInstance ] =
 		useState< StripeConnectInstance | null >( null );
-	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
+	const [ hasFailed, setFailed ] = useState( false );
 	const [ loading, setLoading ] = useState( true );
 
 	useEffect( () => {
@@ -53,7 +48,7 @@ export const StripeNotificationsBanner = ( {
 			try {
 				const session = await createWooPaymentsAccountSession();
 				if ( ! session.publishableKey ) {
-					throw new Error( genericError );
+					throw new Error( 'Missing publishable key.' );
 				}
 				const clientSecret = session.clientSecret ?? '';
 
@@ -65,10 +60,8 @@ export const StripeNotificationsBanner = ( {
 						locale: ( session.locale ?? '' ).replace( '_', '-' ),
 					} )
 				);
-			} catch ( error ) {
-				setErrorMessage(
-					error instanceof Error ? error.message : genericError
-				);
+			} catch {
+				setFailed( true );
 				onInitError();
 			} finally {
 				setLoading( false );
@@ -82,11 +75,8 @@ export const StripeNotificationsBanner = ( {
 
 	return (
 		<>
-			{ ! errorMessage && ( loading || ! connectInstance ) && (
+			{ ! hasFailed && ( loading || ! connectInstance ) && (
 				<StripeSpinner />
-			) }
-			{ errorMessage && (
-				<BannerNotice status="error">{ errorMessage }</BannerNotice>
 			) }
 			{ connectInstance && (
 				<ConnectComponentsProvider connectInstance={ connectInstance }>

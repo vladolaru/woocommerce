@@ -87,7 +87,7 @@ const mockGetShell = getWooPaymentsOverviewShell as jest.MockedFunction<
 >;
 
 const FINISH_SETUP_TASK = 'Finish setting up WooPayments';
-const SESSION_ERROR =
+const ONBOARDING_FAILURE =
 	'Unable to start onboarding. If this problem persists, please contact support.';
 
 const createShell = ( connected = true, status = 'restricted' ) =>
@@ -290,43 +290,51 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 		expect( screen.queryByText( FINISH_SETUP_TASK ) ).toBeNull();
 	} );
 
-	// Better than client 11.1.0, whose loader spins forever here (owner decision, inbox N-139).
-	it( 'stops loading and shows the error notice and the update-details task when the account session fails', async () => {
-		mockCreateAccountSession.mockRejectedValue( {
-			code: 'woocommerce_woopayments_account_session_error',
-			message: 'Unable to create the WooPayments account session.',
-		} );
+	// Client 11.1.0 embedded-components/index.tsx:203-207 renders the session error inside the hidden wrapper
+	// (overview/index.js:318-325), so the merchant never sees onboarding copy on the Overview. Unlike its
+	// endless loader card, native stops loading and shows the update-details task (owner rule, inbox N-139).
+	it.each( [
+		[
+			'the account session read fails',
+			() =>
+				mockCreateAccountSession.mockRejectedValue( {
+					code: 'woocommerce_woopayments_account_session_error',
+					message: 'Internal Server Error',
+				} ),
+		],
+		[
+			'the account session has no publishable key',
+			() =>
+				mockCreateAccountSession.mockResolvedValue( {
+					clientSecret: 'cs_test',
+					publishableKey: '',
+					locale: 'fr_FR',
+				} ),
+		],
+	] )(
+		'never renders onboarding-failure copy when %s',
+		async ( _label, arrange ) => {
+			arrange();
 
-		render( <WooPaymentsOverviewPage /> );
+			render( <WooPaymentsOverviewPage /> );
 
-		expect(
-			await screen.findByText( SESSION_ERROR, {
-				selector: '.woopayments-banner-notice__content',
-			} )
-		).toBeVisible();
-		expect( screen.getByText( FINISH_SETUP_TASK ) ).toBeInTheDocument();
-		expect( document.querySelector( '.stripe-spinner' ) ).toBeNull();
-		expect(
-			screen.queryByTestId( 'stripe-notification-banner' )
-		).toBeNull();
-	} );
-
-	it( 'does not initialize Connect without a publishable key', async () => {
-		mockCreateAccountSession.mockResolvedValue( {
-			clientSecret: 'cs_test',
-			publishableKey: '',
-			locale: 'fr_FR',
-		} );
-
-		render( <WooPaymentsOverviewPage /> );
-
-		expect(
-			await screen.findByText( SESSION_ERROR, {
-				selector: '.woopayments-banner-notice__content',
-			} )
-		).toBeInTheDocument();
-		expect( loadConnectAndInitialize ).not.toHaveBeenCalled();
-	} );
+			expect(
+				await screen.findByText( FINISH_SETUP_TASK )
+			).toBeInTheDocument();
+			expect( screen.queryByText( ONBOARDING_FAILURE ) ).toBeNull();
+			expect(
+				screen.queryByText( /Unable to start onboarding/ )
+			).toBeNull();
+			expect( document.querySelector( '.stripe-spinner' ) ).toBeNull();
+			expect(
+				document.querySelector( '.stripe-notifications-banner-loader' )
+			).toBeNull();
+			expect(
+				screen.queryByTestId( 'stripe-notification-banner' )
+			).toBeNull();
+			expect( loadConnectAndInitialize ).not.toHaveBeenCalled();
+		}
+	);
 
 	it.each( [ 'rejected.fraud', 'under_review' ] )(
 		'hides the update-details task and creates no session for account status %s',
@@ -377,8 +385,11 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 		} );
 
 		expect( screen.getByText( FINISH_SETUP_TASK ) ).toBeInTheDocument();
+		// Scoped to the notice: an earlier test's a11y-speak region keeps the spoken copy.
 		expect(
-			screen.queryByText( /require HTTPS and cannot be displayed/ )
+			screen.queryByText( /require HTTPS and cannot be displayed/, {
+				selector: '.woopayments-banner-notice__content',
+			} )
 		).toBeNull();
 	} );
 

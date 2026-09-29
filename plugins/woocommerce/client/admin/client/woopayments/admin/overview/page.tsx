@@ -401,11 +401,10 @@ export const WooPaymentsOverviewPage = () => {
 						>
 							<Suspense fallback={ null }>
 								<StripeNotificationsBanner
-									// Unlike client 11.1.0's endless spinner (inbox N-139).
+									// Client 11.1.0 keeps the wrapper hidden on a session failure (`overview/index.js:318-325`); unlike its endless spinner, stop loading (inbox N-139).
 									onInitError={ () => {
 										setBannerFailed( true );
 										setBannerLoading( false );
-										setBannerShown( true );
 									} }
 									onLoadError={ ( loadError ) => {
 										setBannerLoadError( loadError );
