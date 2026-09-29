@@ -36,6 +36,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		if ( $this->sut instanceof WooPaymentsOrderStatusChangeController ) {
 			remove_action( 'admin_enqueue_scripts', array( $this->sut, 'handle_admin_enqueue_scripts' ) );
+			remove_action( 'woocommerce_admin_order_data_after_payment_info', array( $this->sut, 'render_payment_details_container' ) );
 		}
 
 		wp_dequeue_script( self::SCRIPT_HANDLE );
@@ -80,6 +81,36 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 			has_action( 'admin_enqueue_scripts', array( $this->sut, 'handle_admin_enqueue_scripts' ) ),
 			'Native-owned runtime should register the confirmation script hook.'
 		);
+		$this->assertSame(
+			10,
+			has_action( 'woocommerce_admin_order_data_after_payment_info', array( $this->sut, 'render_payment_details_container' ) ),
+			'Native-owned runtime should print the order notice mount point after the payment info.'
+		);
+	}
+
+	/**
+	 * @testdox Should print the order notice mount point after the payment info only for WooPayments orders.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:174,277-282`.
+	 */
+	public function test_prints_the_payment_details_mount_point_only_for_woopayments_orders(): void {
+		$this->sut = $this->create_controller( true );
+
+		ob_start();
+		$this->sut->render_payment_details_container( $this->create_order() );
+		$woopayments_output = ob_get_clean();
+
+		ob_start();
+		$this->sut->render_payment_details_container( $this->create_order( 'bacs' ) );
+		$other_output = ob_get_clean();
+
+		ob_start();
+		$this->sut->render_payment_details_container( null );
+		$no_order_output = ob_get_clean();
+
+		$this->assertSame( '<div id="woocommerce-woopayments-order-payment-details"></div>', $woopayments_output );
+		$this->assertSame( '', $other_output );
+		$this->assertSame( '', $no_order_output );
 	}
 
 	/**
@@ -171,7 +202,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 		$config = $this->parse_emitted_config( $inline );
 
 		$this->assertSame(
-			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id', 'has_open_authorization' ),
+			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id', 'has_open_authorization', 'test_mode' ),
 			array_keys( $config ),
 			'The config contract is consumed by the browser and must not drift.'
 		);

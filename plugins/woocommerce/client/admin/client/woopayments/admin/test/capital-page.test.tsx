@@ -8,6 +8,10 @@ import apiFetch from '@wordpress/api-fetch';
  * Internal dependencies
  */
 import { WooPaymentsCapitalPage } from '../capital/page';
+import {
+	getTestModeNoticeText,
+	mockAccountMode,
+} from './helpers/test-mode-account';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
@@ -191,32 +195,36 @@ describe( 'WooPaymentsCapitalPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'shows a test mode notice for Capital loans when the connected account is in test mode', async () => {
-		mockCapitalApi( {
-			account: {
-				account: {
-					connected: true,
-					live: false,
-					mode: 'test',
-					test_mode: true,
-					test_drive: true,
-					sandbox: false,
-				},
-				urls: {},
-			},
-		} );
+	it( 'shows a test mode notice for Capital loans from the preloaded test mode flag', async () => {
+		mockCapitalApi();
+		mockAccountMode( true );
 
 		render( <WooPaymentsCapitalPage /> );
 
-		expect(
-			await screen.findByText( 'Viewing test loans.' )
-		).toBeInTheDocument();
+		// Client 11.1.0 capital/index.tsx:214.
+		expect( await getTestModeNoticeText() ).toBe(
+			'Viewing test loans. To view live loans, disable test mode in WooPayments settings.'
+		);
 		expect(
 			screen.getByRole( 'link', { name: 'WooPayments settings' } )
 		).toHaveAttribute(
 			'href',
 			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings'
 		);
+		// The client reads injected settings; the notice must not request the account.
+		expect( mockApiFetch ).not.toHaveBeenCalledWith(
+			expect.objectContaining( { path: ACCOUNT_PATH } )
+		);
+	} );
+
+	it( 'shows no test mode notice while the store is in live mode', async () => {
+		mockCapitalApi();
+		mockAccountMode( false );
+
+		render( <WooPaymentsCapitalPage /> );
+
+		await screen.findByRole( 'heading', { name: 'Capital Loans' } );
+		expect( await getTestModeNoticeText() ).toBeNull();
 	} );
 
 	it( 'normalizes provider date-time strings before rendering dates', async () => {

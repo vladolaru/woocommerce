@@ -41,6 +41,7 @@ import { WooPaymentsVatModal } from './vat-modal';
 import { formatDate } from '../money-movement/utils';
 import { usePersistedHiddenFields } from '../money-movement/view-preferences';
 import { SpotlightPromotion } from '../../promotions/spotlight';
+import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 
 type DocumentsAccountState = {
 	enabled: boolean;
@@ -408,6 +409,7 @@ export const WooPaymentsDocumentsPage = () => {
 	if ( errorMessage ) {
 		return (
 			<div className="woocommerce-woopayments-documents">
+				<WooPaymentsTestModeNotice currentPage="documents" />
 				<h1>{ __( 'Documents', 'woocommerce' ) }</h1>
 				<Notice status="error" isDismissible={ false }>
 					{ errorMessage }
@@ -419,6 +421,7 @@ export const WooPaymentsDocumentsPage = () => {
 	if ( ! accountState?.enabled ) {
 		return (
 			<div className="woocommerce-woopayments-documents">
+				<WooPaymentsTestModeNotice currentPage="documents" />
 				<h1>{ __( 'Documents', 'woocommerce' ) }</h1>
 				<Notice status="warning" isDismissible={ false }>
 					{ __(
@@ -460,6 +463,8 @@ export const WooPaymentsDocumentsPage = () => {
 
 	return (
 		<div className="woocommerce-woopayments-documents">
+			{ /* Client 11.1.0 documents/index.tsx:17. */ }
+			<WooPaymentsTestModeNotice currentPage="documents" />
 			<div
 				role="status"
 				aria-live="polite"

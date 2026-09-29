@@ -41,7 +41,10 @@ import {
 	requestWooPaymentsTransactionsExport,
 	refundWooPaymentsCharge,
 } from '../money-movement/data';
-import { getWooPaymentsAccountSettings } from '../../settings/api';
+import {
+	getTestModeNoticeText,
+	mockAccountMode,
+} from './helpers/test-mode-account';
 import {
 	mockUpdateUserPreferences,
 	setMockUserPreferences,
@@ -383,10 +386,6 @@ jest.mock( '../money-movement/data', () => ( {
 	refundWooPaymentsCharge: jest.fn(),
 } ) );
 
-jest.mock( '../../settings/api', () => ( {
-	getWooPaymentsAccountSettings: jest.fn(),
-} ) );
-
 const mockGetTransactions = getWooPaymentsTransactions as jest.MockedFunction<
 	typeof getWooPaymentsTransactions
 >;
@@ -457,10 +456,6 @@ const mockRequestDisputesExport =
 const mockGetDisputesExportUrl =
 	getWooPaymentsDisputesExportUrl as jest.MockedFunction<
 		typeof getWooPaymentsDisputesExportUrl
-	>;
-const mockGetAccountSettings =
-	getWooPaymentsAccountSettings as jest.MockedFunction<
-		typeof getWooPaymentsAccountSettings
 	>;
 
 const RouteChangeButton = ( { to }: { to: string } ) => {
@@ -557,22 +552,7 @@ describe( 'WooPayments money movement pages', () => {
 		mockGetTransactionsExportUrl.mockReset();
 		mockRequestDisputesExport.mockReset();
 		mockGetDisputesExportUrl.mockReset();
-		mockGetAccountSettings.mockReset();
-		mockGetAccountSettings.mockResolvedValue( {
-			account: {
-				id: 'acct_live',
-				mode: 'live',
-				default_currency: 'usd',
-				connected: true,
-				working: true,
-				can_process_payments: true,
-				test_mode: false,
-				test_drive: false,
-				sandbox: false,
-				live: true,
-			},
-			urls: {},
-		} );
+		mockAccountMode( false );
 		mockCreateSuccessNotice.mockReset();
 		mockCreateErrorNotice.mockReset();
 		mockRecordEvent.mockReset();
@@ -3688,21 +3668,7 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it( 'shows a payment detail test-mode notice for connected test accounts', async () => {
-		mockGetAccountSettings.mockResolvedValue( {
-			account: {
-				id: 'acct_test',
-				mode: 'test',
-				default_currency: 'usd',
-				connected: true,
-				working: true,
-				can_process_payments: true,
-				test_mode: true,
-				test_drive: true,
-				sandbox: false,
-				live: false,
-			},
-			urls: {},
-		} );
+		mockAccountMode( true );
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_test_mode',
 			status: 'succeeded',
@@ -3734,15 +3700,14 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		const notice = (
-			await screen.findByText( 'Viewing test payments.' )
-		).closest( '.components-notice' ) as HTMLElement;
-		expect( notice ).toBeInTheDocument();
-		expect(
-			within( notice ).getByText(
-				/Your WooPayments account is currently in test mode./
-			)
-		).toBeInTheDocument();
+		await screen.findByRole( 'heading', { name: 'Payment details' } );
+		// Client 11.1.0 payment-details/payment-details/index.tsx:75 (details view of `payments`).
+		expect( await getTestModeNoticeText() ).toBe(
+			'WooPayments was in test mode when this order was placed. To view live orders, disable test mode in WooPayments settings.'
+		);
+		const notice = document.querySelector(
+			'.woocommerce-woopayments-test-mode-notice'
+		) as HTMLElement;
 		expect(
 			within( notice ).getByRole( 'link', {
 				name: 'WooPayments settings',
@@ -3752,6 +3717,159 @@ describe( 'WooPayments money movement pages', () => {
 			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings'
 		);
 	} );
+
+	// Client 11.1.0 payment-details/payment-details/index.tsx:54: the notice is on the page before the payment
+	// loads and on the load-error view.
+	const renderPaymentDetailsFor = ( id: string ) =>
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					`/woopayments/transactions/details?id=${ id }`,
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+	const pendingRequest = () => new Promise< never >( () => {} );
+
+	it( 'shows the payment detail test-mode notice while the payment loads', () => {
+		mockAccountMode( true );
+		mockGetPaymentIntent.mockImplementation( pendingRequest );
+		mockGetTimeline.mockImplementation( pendingRequest );
+
+		renderPaymentDetailsFor( 'pi_test_mode_pending' );
+
+		expect(
+			document.querySelector(
+				'.woocommerce-woopayments-test-mode-notice'
+			)
+		).toHaveTextContent(
+			'WooPayments was in test mode when this order was placed. To view live orders, disable test mode in WooPayments settings.'
+		);
+	} );
+
+	it( 'shows the payment detail test-mode notice when the payment fails to load', async () => {
+		mockAccountMode( true );
+		mockGetPaymentIntent.mockRejectedValue(
+			new Error( 'Provider failed' )
+		);
+		mockGetTimeline.mockImplementation( pendingRequest );
+
+		renderPaymentDetailsFor( 'pi_test_mode_error' );
+
+		await waitFor( () =>
+			expect( screen.getByRole( 'alert' ) ).toBeInTheDocument()
+		);
+		expect(
+			document.querySelector(
+				'.woocommerce-woopayments-test-mode-notice'
+			)
+		).toHaveTextContent(
+			'WooPayments was in test mode when this order was placed. To view live orders, disable test mode in WooPayments settings.'
+		);
+	} );
+
+	it( 'waits for a non-payment transaction to load before showing the payment test-mode notice', () => {
+		mockAccountMode( true );
+		mockGetTransaction.mockImplementation( pendingRequest );
+		mockGetTimeline.mockImplementation( pendingRequest );
+
+		renderPaymentDetailsFor( 'txn_test_mode_pending' );
+
+		expect(
+			document.querySelector(
+				'.woocommerce-woopayments-test-mode-notice'
+			)
+		).toBeNull();
+	} );
+
+	// Client 11.1.0 transactions/index.tsx:105, above every tab.
+	it.each( [
+		[ true, '/woopayments/transactions' ],
+		[ false, '/woopayments/transactions' ],
+		[ true, '/woopayments/transactions?view=blocked' ],
+		[ false, '/woopayments/transactions?view=blocked' ],
+	] )(
+		'shows the transactions test-mode notice only in test mode (test mode: %s, %s)',
+		async ( testMode, route ) => {
+			mockAccountMode( testMode );
+			mockGetTransactions.mockResolvedValue( {
+				data: [],
+				total_count: 0,
+			} );
+			mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+
+			render(
+				<MemoryRouter initialEntries={ [ route ] }>
+					<WooPaymentsTransactionsPage />
+				</MemoryRouter>
+			);
+
+			expect( await getTestModeNoticeText() ).toBe(
+				testMode
+					? 'Viewing test transactions. To view live transactions, disable test mode in WooPayments settings.'
+					: null
+			);
+		}
+	);
+
+	// Client 11.1.0 disputes/index.tsx:451.
+	it.each( [ true, false ] )(
+		'shows the disputes test-mode notice only in test mode (test mode: %s)',
+		async ( testMode ) => {
+			mockAccountMode( testMode );
+			mockGetDisputes.mockResolvedValue( { data: [], total_count: 0 } );
+			mockGetDisputesSummary.mockResolvedValue( { total_count: 0 } );
+
+			render(
+				<MemoryRouter initialEntries={ [ '/woopayments/disputes' ] }>
+					<WooPaymentsDisputesPage />
+				</MemoryRouter>
+			);
+
+			expect( await getTestModeNoticeText() ).toBe(
+				testMode
+					? 'Viewing test disputes. To view live disputes, disable test mode in WooPayments settings.'
+					: null
+			);
+		}
+	);
+
+	// Client 11.1.0 payment-details/readers/index.js:37,137, including the error view.
+	it.each( [
+		[ true, 'rows' ],
+		[ false, 'rows' ],
+		[ true, 'error' ],
+		[ false, 'error' ],
+	] )(
+		'shows the card reader details test-mode notice only in test mode (test mode: %s, %s)',
+		async ( testMode, outcome ) => {
+			mockAccountMode( testMode );
+			if ( outcome === 'error' ) {
+				mockGetReaderChargeSummary.mockRejectedValue(
+					new Error( 'Reader provider failed.' )
+				);
+			} else {
+				mockGetReaderChargeSummary.mockResolvedValue( { data: [] } );
+			}
+
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions/details?id=ch_reader_fee_123&transaction_id=txn_reader_fee_123&transaction_type=card_reader_fee',
+					] }
+				>
+					<WooPaymentsTransactionDetailsPage />
+				</MemoryRouter>
+			);
+
+			expect( await getTestModeNoticeText() ).toBe(
+				testMode
+					? 'WooPayments was in test mode when this order was placed. To view live orders, disable test mode in WooPayments settings.'
+					: null
+			);
+		}
+	);
 
 	it( 'derives refund order ids from native order URLs when the detail payload omits the order id', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
@@ -7028,10 +7146,16 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it( 'qualifies every provider dispute timeline event for known disputes', () => {
+		// Source: client 11.1.0 map-events.js:1020-1275 withDisputeQualifier (status and main lines only).
 		render(
 			<WooPaymentsTransactionTimeline
 				events={ [
-					{ type: 'dispute_needs_response', dispute_id: 'dp_first' },
+					{
+						type: 'dispute_needs_response',
+						dispute_id: 'dp_first',
+						reason: 'fraudulent',
+						amount: null,
+					},
 					{ type: 'dispute_in_review', dispute_id: 'dp_second' },
 					{ type: 'dispute_won', dispute_id: 'dp_first' },
 					{ type: 'dispute_lost', dispute_id: 'dp_second' },
@@ -7046,6 +7170,8 @@ describe( 'WooPayments money movement pages', () => {
 					{
 						type: 'dispute_needs_response',
 						dispute_id: 'dp_unknown',
+						reason: 'fraudulent',
+						amount: null,
 					},
 					{ type: 'captured', amount: 4000, currency: 'usd' },
 				] }
@@ -7057,46 +7183,51 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		expect(
-			screen.getByText( 'Dispute needs response · Dispute 1 of 2' )
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Dispute in review · Dispute 2 of 2' )
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Dispute won · Dispute 1 of 2' )
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Dispute lost · Dispute 2 of 2' )
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Dispute warning closed · Dispute 1 of 2' )
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Dispute charge refunded · Dispute 2 of 2' )
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Dispute needs response' )
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'A payment of $40.00 was successfully charged.' )
-		).toBeInTheDocument();
+		const lines = Array.from(
+			screen
+				.getByRole( 'heading', { name: 'Timeline' } )
+				.nextElementSibling?.querySelectorAll( ':scope > li > span' ) ??
+				[]
+		).map( ( line ) => line.textContent );
+
+		expect( lines ).toEqual( [
+			'Payment status changed to Disputed: Needs response. · Dispute 1 of 2',
+			'No funds have been withdrawn yet.',
+			'Payment disputed as Transaction unauthorized. · Dispute 1 of 2',
+			'Payment status changed to Disputed: In review. · Dispute 2 of 2',
+			'Challenge evidence submitted. · Dispute 2 of 2',
+			'Payment status changed to Disputed: Won. · Dispute 1 of 2',
+			'Dispute won! The bank ruled in your favor. · Dispute 1 of 2',
+			'Payment status changed to Disputed: Lost. · Dispute 2 of 2',
+			"Dispute lost. Your customer's bank reviewed the evidence and decided in the customer's favor. · Dispute 2 of 2",
+			'Dispute inquiry closed. The bank chose not to pursue this dispute. · Dispute 1 of 2',
+			'The disputed charge has been refunded. · Dispute 2 of 2',
+			'Payment status changed to Disputed: Needs response.',
+			'No funds have been withdrawn yet.',
+			'Payment disputed as Transaction unauthorized.',
+			'Payment status changed to Paid.',
+			'A payment of $40.00 was successfully charged.',
+		] );
 	} );
 
-	it( 'preserves provider dispute labels when events include amounts', () => {
+	it( 'leaves dispute payout lines unqualified when events include amounts', () => {
+		// Source: client 11.1.0 map-events.test.js "leaves the deposit line unqualified".
 		render(
 			<WooPaymentsTransactionTimeline
 				events={ [
 					{
 						type: 'dispute_needs_response',
 						dispute_id: 'dp_first',
+						reason: 'fraudulent',
 						amount: 1000,
+						fee: 1500,
 						currency: 'usd',
 					},
 					{
 						type: 'dispute_won',
 						dispute_id: 'dp_second',
 						amount: 2000,
+						fee: -1500,
 						currency: 'usd',
 					},
 				] }
@@ -7109,10 +7240,18 @@ describe( 'WooPayments money movement pages', () => {
 		);
 
 		expect(
-			screen.getByText( 'Dispute needs response · Dispute 1 of 2' )
+			screen.getByText(
+				'Payment status changed to Disputed: Needs response. · Dispute 1 of 2'
+			)
 		).toBeInTheDocument();
 		expect(
-			screen.getByText( 'Dispute won · Dispute 2 of 2' )
+			screen.getByText( '$25.00 will be deducted from a future payout.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Payment status changed to Disputed: Won. · Dispute 2 of 2' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( '$35.00 will be added to a future payout.' )
 		).toBeInTheDocument();
 	} );
 

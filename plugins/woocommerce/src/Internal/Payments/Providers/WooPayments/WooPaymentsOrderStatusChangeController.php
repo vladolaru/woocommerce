@@ -49,6 +49,13 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	private const CONFIG_OBJECT_NAME = 'woocommerceWooPaymentsOrderStatusChange';
 
 	/**
+	 * ID of the order-screen notice mount point after the payment info.
+	 *
+	 * @var string
+	 */
+	private const PAYMENT_DETAILS_CONTAINER_ID = 'woocommerce-woopayments-order-payment-details';
+
+	/**
 	 * Runtime owner arbiter.
 	 *
 	 * @var NativePaymentsRuntimeArbiter
@@ -122,6 +129,28 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 		if ( false === has_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) ) ) {
 			add_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
 		}
+
+		if ( false === has_action( 'woocommerce_admin_order_data_after_payment_info', array( $this, 'render_payment_details_container' ) ) ) {
+			add_action( 'woocommerce_admin_order_data_after_payment_info', array( $this, 'render_payment_details_container' ) );
+		}
+	}
+
+	/**
+	 * Render the mount point for order notices after the order's payment info.
+	 *
+	 * Mirrors plugin 11.1.0 `WC_Payments_Admin::render_order_edit_payment_details_container()`, where the
+	 * browser renders the order's test-mode notice (client `order/index.js:131-141`).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $order The order being displayed.
+	 */
+	public function render_payment_details_container( $order = null ): void {
+		if ( ! $order instanceof WC_Order || ! $this->projection_service->should_offer_confirmation( $order ) ) {
+			return;
+		}
+
+		echo '<div id="' . esc_attr( self::PAYMENT_DETAILS_CONTAINER_ID ) . '"></div>';
 	}
 
 	/**

@@ -42,6 +42,7 @@ import {
 	getTransactionDetailsRoute,
 } from './money-movement/utils';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
+import { WooPaymentsTestModeNotice } from './test-mode-notice';
 import './style.scss';
 
 type PayoutTransactionSummary = Record< string, unknown >;
@@ -335,6 +336,8 @@ export const WooPaymentsPayoutDetailsPage = () => {
 			className="woocommerce-woopayments-money-movement"
 			aria-busy={ isLoading }
 		>
+			{ /* Client 11.1.0 deposits/details/index.tsx:317. */ }
+			<WooPaymentsTestModeNotice currentPage="deposits" isDetailsView />
 			<a
 				href={ getSettingsPaymentsProviderRouteUrl(
 					'/woopayments/payouts'

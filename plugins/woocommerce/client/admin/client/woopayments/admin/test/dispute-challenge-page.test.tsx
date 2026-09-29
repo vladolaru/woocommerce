@@ -26,6 +26,10 @@ import type {
 	WooPaymentsDispute,
 	WooPaymentsDisputeFile,
 } from '../money-movement/types';
+import {
+	getTestModeNoticeText,
+	mockAccountMode,
+} from './helpers/test-mode-account';
 
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
@@ -193,6 +197,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		mockUploadFile.mockReset();
 		mockRecordEvent.mockReset();
 		mockSpeak.mockReset();
+		mockAccountMode( false );
 		mockGetFileDetails.mockResolvedValue( {
 			id: 'file_unused',
 			filename: 'unused.pdf',
@@ -1070,4 +1075,21 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			} )
 		);
 	} );
+
+	// Client 11.1.0 disputes/new-evidence/index.tsx:1540.
+	it.each( [ true, false ] )(
+		'shows the dispute challenge test-mode notice only in test mode (test mode: %s)',
+		async ( testMode ) => {
+			mockAccountMode( testMode );
+			mockGetDispute.mockResolvedValue( makeDispute() );
+
+			renderChallengePage();
+
+			expect( await getTestModeNoticeText() ).toBe(
+				testMode
+					? 'WooPayments was in test mode when this dispute was created. To view live disputes, disable test mode in WooPayments settings.'
+					: null
+			);
+		}
+	);
 } );

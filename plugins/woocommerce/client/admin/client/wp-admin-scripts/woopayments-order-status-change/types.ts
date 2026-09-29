@@ -27,6 +27,8 @@ export interface WooPaymentsOrderStatusChangeConfig {
 	charge_id: string;
 	/** Whether the payment is authorized but not yet captured. */
 	has_open_authorization: boolean;
+	/** Whether the order was paid in test mode (`_wcpay_mode` is `test`). */
+	test_mode?: boolean;
 }
 
 /**

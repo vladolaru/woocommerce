@@ -19,6 +19,10 @@ import {
 	mockUpdateUserPreferences,
 	setMockUserPreferences,
 } from './helpers/user-preferences';
+import {
+	getTestModeNoticeText,
+	mockAccountMode,
+} from './helpers/test-mode-account';
 
 jest.mock( '../overview/data', () => ( {
 	getWooPaymentsDeposits: jest.fn(),
@@ -86,6 +90,7 @@ describe( 'WooPaymentsPayouts', () => {
 		mockGetDeposits.mockReset();
 		mockGetDepositsSummary.mockReset();
 		setMockUserPreferences( {} );
+		mockAccountMode( false );
 		Object.defineProperty( window, 'wcSettings', {
 			configurable: true,
 			value: { adminUrl: 'https://example.com/wp-admin/' },
@@ -232,4 +237,26 @@ describe( 'WooPaymentsPayouts', () => {
 			expect.objectContaining( { status_is: 'pending' } )
 		);
 	} );
+
+	// Client 11.1.0 deposits/index.tsx:153.
+	it.each( [ true, false ] )(
+		'shows the payouts test-mode notice only in test mode (test mode: %s)',
+		async ( testMode ) => {
+			mockAccountMode( testMode );
+			mockGetDeposits.mockResolvedValue( { data: [], total_count: 0 } );
+			mockGetDepositsSummary.mockResolvedValue( { count: 0 } );
+
+			render(
+				<MemoryRouter initialEntries={ [ '/woopayments/payouts' ] }>
+					<WooPaymentsPayouts />
+				</MemoryRouter>
+			);
+
+			expect( await getTestModeNoticeText() ).toBe(
+				testMode
+					? 'Viewing test payouts. To view live payouts, disable test mode in WooPayments settings.'
+					: null
+			);
+		}
+	);
 } );

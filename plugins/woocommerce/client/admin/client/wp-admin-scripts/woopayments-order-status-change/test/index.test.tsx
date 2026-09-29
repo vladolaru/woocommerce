@@ -295,6 +295,66 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 		).toContain( 'Order cannot be refunded' );
 	} );
 
+	// Client 11.1.0 order/index.js:131-141 and order/test-mode-notice/index.tsx.
+	describe( 'order test-mode notice', () => {
+		const CONTAINER_ID = 'woocommerce-woopayments-order-payment-details';
+
+		const bootWithOrderMode = (
+			testMode: boolean,
+			withContainer = true
+		) => {
+			if ( withContainer ) {
+				const container = document.createElement( 'div' );
+				container.id = CONTAINER_ID;
+				orderScreen?.prepend( container );
+			}
+			window.woocommerceWooPaymentsOrderStatusChange = {
+				order_status: 'wc-processing',
+				can_refund: true,
+				refund_amount: 42.5,
+				formatted_refund_amount: '$42.50',
+				refunded_amount: 0,
+				charge_id: '',
+				has_open_authorization: false,
+				test_mode: testMode,
+			};
+
+			bootEntry();
+
+			return document.getElementById( CONTAINER_ID );
+		};
+
+		it( 'renders into the payment info mount point for a test-mode order', () => {
+			const container = bootWithOrderMode( true ) as HTMLElement;
+
+			expect( container ).toHaveTextContent(
+				'WooPayments was in test mode when this order was placed. Learn more about test mode'
+			);
+			expect(
+				within( container ).getByRole( 'link', {
+					name: /Learn more about test mode/,
+				} )
+			).toHaveAttribute(
+				'href',
+				'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/'
+			);
+		} );
+
+		it( 'shows no notice for a live-mode order', () => {
+			expect( bootWithOrderMode( false ) ).toBeEmptyDOMElement();
+		} );
+
+		it( 'renders nothing when the mount point is missing', () => {
+			bootWithOrderMode( true, false );
+
+			expect(
+				orderScreenQueries().queryByText(
+					/WooPayments was in test mode/
+				)
+			).not.toBeInTheDocument();
+		} );
+	} );
+
 	it( 'locks order refunds when any fetched dispute blocks them', async () => {
 		window.woocommerceWooPaymentsOrderStatusChange = {
 			order_status: 'wc-processing',

@@ -39,6 +39,7 @@ import {
 	formatWooPaymentsAmount,
 } from './overview/utils';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
+import { WooPaymentsTestModeNotice } from './test-mode-notice';
 import { SpotlightPromotion } from '../promotions/spotlight';
 import './style.scss';
 
@@ -275,6 +276,8 @@ export const WooPaymentsPayouts = () => {
 
 	return (
 		<div className="woocommerce-woopayments-payouts">
+			{ /* Client 11.1.0 deposits/index.tsx:153. */ }
+			<WooPaymentsTestModeNotice currentPage="deposits" />
 			<SpotlightPromotion />
 			<section
 				className="woocommerce-woopayments-overview-card"

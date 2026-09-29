@@ -312,13 +312,36 @@ class WooPaymentsOrderStatusChangeProjectionServiceTest extends WC_Unit_Test_Cas
 	}
 
 	/**
+	 * @testdox Should project test mode only for orders stored with the test mode meta.
+	 *
+	 * Source: client 11.1.0 `class-wc-payments-admin.php:881`.
+	 *
+	 * @testWith ["test", true]
+	 *           ["prod", false]
+	 *           ["live", false]
+	 *           [null, false]
+	 *
+	 * @param string|null $order_mode Stored `_wcpay_mode`, or null for none.
+	 * @param bool        $expected   Expected projected test mode.
+	 */
+	public function test_projects_test_mode_from_the_order_mode_meta( ?string $order_mode, bool $expected ): void {
+		$order = $this->create_order();
+		if ( null !== $order_mode ) {
+			$order->update_meta_data( '_wcpay_mode', $order_mode );
+		}
+		$order->save();
+
+		$this->assertSame( $expected, $this->sut->get_config( $order )['test_mode'] );
+	}
+
+	/**
 	 * @testdox Should project exactly the documented config keys.
 	 */
 	public function test_projects_exactly_the_documented_config_keys(): void {
 		$config = $this->sut->get_config( $this->create_order() );
 
 		$this->assertSame(
-			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id', 'has_open_authorization' ),
+			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id', 'has_open_authorization', 'test_mode' ),
 			array_keys( $config ),
 			'The config contract is consumed by the browser and must not drift.'
 		);

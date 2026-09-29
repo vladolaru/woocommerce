@@ -46,6 +46,7 @@ import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { WooPaymentsTransactionSearch } from './transaction-search';
 import { WooPaymentsBlockedTransactions } from './blocked-transactions';
 import { runWooPaymentsExport } from './export';
+import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import {
 	formatAmount,
 	formatDate,
@@ -973,6 +974,8 @@ export const WooPaymentsTransactionsPage = () => {
 	if ( isBlocked ) {
 		return (
 			<div className="woocommerce-woopayments-money-movement">
+				{ /* Client 11.1.0 transactions/index.tsx:105, above every tab. */ }
+				<WooPaymentsTestModeNotice currentPage="transactions" />
 				<SpotlightPromotion />
 				<section>
 					<h2>{ __( 'Blocked transactions', 'woocommerce' ) }</h2>
@@ -985,6 +988,7 @@ export const WooPaymentsTransactionsPage = () => {
 
 	return (
 		<div className="woocommerce-woopayments-money-movement">
+			<WooPaymentsTestModeNotice currentPage="transactions" />
 			<SpotlightPromotion />
 			<section aria-busy={ isLoading }>
 				<h2>

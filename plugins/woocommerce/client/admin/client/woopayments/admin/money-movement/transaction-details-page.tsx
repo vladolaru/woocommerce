@@ -819,6 +819,11 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		transaction?.transaction_id || transaction?.id || transactionId || id;
 	const hasPaymentDetails = !! ( paymentIntentId || chargeId );
 	const hasDetailPaymentSurface = isCardReaderFeeRoute || hasPaymentDetails;
+	// The client's payment details route only takes payment ids, so it shows the notice while loading
+	// and on error too (client payment-details/payment-details/index.tsx:54); a payment id in the URL
+	// is known before the transaction loads.
+	const showTestModeNotice =
+		hasDetailPaymentSurface || /^(pi|ch|py)_/.test( id );
 	const orderId = transaction ? getOrderId( transaction, authorization ) : 0;
 	const isFraudReview =
 		!! transaction && isFraudReviewTransaction( transaction );
@@ -1172,6 +1177,13 @@ export const WooPaymentsTransactionDetailsPage = () => {
 			className="woocommerce-woopayments-money-movement"
 			aria-busy={ isLoading }
 		>
+			{ /* Client 11.1.0 payment-details/payment-details/index.tsx:54,75 and readers/index.js:37,137: first on the page, error view included. */ }
+			{ showTestModeNotice && (
+				<WooPaymentsTestModeNotice
+					currentPage="payments"
+					isDetailsView
+				/>
+			) }
 			<div className="woocommerce-woopayments-money-movement__detail-header">
 				<h2 ref={ paymentDetailsHeadingRef } tabIndex={ -1 }>
 					{ hasDetailPaymentSurface
@@ -1234,12 +1246,6 @@ export const WooPaymentsTransactionDetailsPage = () => {
 			{ isLoading && <StatusMessage>{ loadingMessage }</StatusMessage> }
 			{ errorMessage && (
 				<StatusMessage isError>{ errorMessage }</StatusMessage>
-			) }
-			{ hasDetailPaymentSurface && ! errorMessage && (
-				<WooPaymentsTestModeNotice
-					currentPage="payments"
-					isDetailsView
-				/>
 			) }
 			{ isCardReaderFeeRoute && ! errorMessage && (
 				<div className="woocommerce-woopayments-money-movement__detail-sections">

@@ -295,6 +295,35 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preload the test and dev mode flags the test-mode notice reads.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1012-1014` (`devMode`, `testMode` in `wcpaySettings`).
+	 *
+	 * @testWith [true, false]
+	 *           [true, true]
+	 *           [false, false]
+	 *
+	 * @param bool $test_mode Whether WooPayments runs in test mode.
+	 * @param bool $dev_mode  Whether WooPayments runs in dev mode.
+	 */
+	public function test_preloads_test_and_dev_mode_flags( bool $test_mode, bool $dev_mode ): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller(
+			true,
+			array(
+				'is_test_mode_enabled' => $test_mode,
+				'is_dev_mode_enabled'  => $dev_mode,
+			)
+		);
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame( $test_mode, $settings['woopaymentsSettings']['testMode'] );
+		$this->assertSame( $dev_mode, $settings['woopaymentsSettings']['devMode'] );
+	}
+
+	/**
 	 * @testdox Should preload the Apple Pay domain error for in-app navigation without clearing it on a list load.
 	 */
 	public function test_preloads_apple_pay_domain_error_without_clearing_it(): void {
@@ -2198,6 +2227,8 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 				'is_reports_enabled'                     => false,
 				'get_cached_account_data'                => array(),
 				'get_account_id'                         => '',
+				'is_test_mode_enabled'                   => false,
+				'is_dev_mode_enabled'                    => false,
 			),
 			$overrides
 		);

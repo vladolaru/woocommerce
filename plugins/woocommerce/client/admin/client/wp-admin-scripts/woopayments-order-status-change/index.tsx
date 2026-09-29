@@ -35,10 +35,13 @@ import { getOrderStatusChangeDecision } from './strategies';
 import { getOrderStatusField } from './order-status-field';
 import { RefundConfirmationModal } from './refund-confirmation-modal';
 import { WooPaymentsOrderDisputeNotice } from './order-dispute-notice';
+import { WooPaymentsOrderTestModeNotice } from './order-test-mode-notice';
 import type { WooPaymentsOrderStatusChangeConfig } from './types';
 
 const CONTAINER_CLASS_NAME = 'woocommerce-woopayments-order-status-change';
 const DISPUTE_CONTAINER_CLASS_NAME = `${ CONTAINER_CLASS_NAME }__dispute-notice`;
+const PAYMENT_DETAILS_CONTAINER_ID =
+	'woocommerce-woopayments-order-payment-details';
 let hasBoundEarlyFraudWarningRefundListener = false;
 
 /**
@@ -214,6 +217,17 @@ function initialize(): void {
 	}
 
 	bindEarlyFraudWarningRefundListener();
+
+	// Client 11.1.0 order/index.js:131-141: rendered into the mount point PHP prints after the payment
+	// info, and not at all when that mount point is missing.
+	const paymentDetailsContainer = document.getElementById(
+		PAYMENT_DETAILS_CONTAINER_ID
+	);
+	if ( config.test_mode && paymentDetailsContainer ) {
+		createRoot( paymentDetailsContainer ).render(
+			<WooPaymentsOrderTestModeNotice />
+		);
+	}
 
 	const field = getOrderStatusField();
 

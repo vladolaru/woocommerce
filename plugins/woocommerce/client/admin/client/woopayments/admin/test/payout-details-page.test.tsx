@@ -27,6 +27,10 @@ import {
 	mockUpdateUserPreferences,
 	setMockUserPreferences,
 } from './helpers/user-preferences';
+import {
+	getTestModeNoticeText,
+	mockAccountMode,
+} from './helpers/test-mode-account';
 
 jest.mock( '@woocommerce/data', () => ( {
 	useUserPreferences: () =>
@@ -167,6 +171,7 @@ describe( 'WooPayments payout details admin surface', () => {
 			.mockImplementation();
 		originalClipboard = navigator.clipboard;
 		setMockUserPreferences( {} );
+		mockAccountMode( false );
 		window.wcSettings = {
 			adminUrl: 'http://example.com/wp-admin',
 		};
@@ -764,4 +769,42 @@ describe( 'WooPayments payout details admin surface', () => {
 		expect( mockGetDeposit ).not.toHaveBeenCalled();
 		expect( mockGetTransactionsSummary ).not.toHaveBeenCalled();
 	} );
+
+	// Client 11.1.0 deposits/details/index.tsx:317.
+	it.each( [ true, false ] )(
+		'shows the payout details test-mode notice only in test mode (test mode: %s)',
+		async ( testMode ) => {
+			mockAccountMode( testMode );
+			mockGetDeposit.mockResolvedValue( {
+				id: 'po_test',
+				date: '2026-06-18',
+				type: 'deposit',
+				amount: 12500,
+				status: 'paid',
+				currency: 'usd',
+				automatic: true,
+			} );
+			mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+			mockGetTransactions.mockResolvedValue( {
+				total_count: 0,
+				data: [],
+			} );
+
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/payouts/details?id=po_test',
+					] }
+				>
+					<WooPaymentsPayoutDetailsPage />
+				</MemoryRouter>
+			);
+
+			expect( await getTestModeNoticeText() ).toBe(
+				testMode
+					? 'WooPayments was in test mode when these payouts were created. To view live payouts, disable test mode in WooPayments settings.'
+					: null
+			);
+		}
+	);
 } );

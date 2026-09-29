@@ -101,10 +101,12 @@ class WooPaymentsOrderStatusChangeProjectionService {
 	 * - `refunded_amount`         (float)  Amount already refunded, in the order's currency.
 	 * - `charge_id`              (string) Provider charge ID when the order belongs to the active account mode.
 	 * - `has_open_authorization` (bool)   Whether the payment is authorized but not yet captured.
+	 * - `test_mode`              (bool)   Whether the order was paid in test mode, for the order-screen
+	 *                             test-mode notice (client 11.1.0 class-wc-payments-admin.php:881).
 	 *
 	 * @param WC_Order $order Order being edited.
 	 * @return array<string,mixed> The status-change confirmation config.
-	 * @phpstan-return array{order_status: string, can_refund: bool, refund_amount: float, formatted_refund_amount: string, refunded_amount: float, charge_id: string, has_open_authorization: bool}
+	 * @phpstan-return array{order_status: string, can_refund: bool, refund_amount: float, formatted_refund_amount: string, refunded_amount: float, charge_id: string, has_open_authorization: bool, test_mode: bool}
 	 *
 	 * @since 11.0.0
 	 */
@@ -119,6 +121,7 @@ class WooPaymentsOrderStatusChangeProjectionService {
 			'refunded_amount'         => (float) $order->get_total_refunded(),
 			'charge_id'               => $this->get_charge_id_for_active_mode( $order ),
 			'has_open_authorization'  => 'requires_capture' === $order->get_meta( '_intention_status', true ),
+			'test_mode'               => 'test' === $order->get_meta( '_wcpay_mode', true ),
 		);
 	}
 

@@ -23,6 +23,7 @@ import {
 import type { WooPaymentsDispute } from './types';
 import { getErrorMessage } from './utils';
 import { LiveStatusMessage, StatusMessage } from './table';
+import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import '../style.scss';
 
 export const WooPaymentsDisputeChallengePage = () => {
@@ -184,6 +185,8 @@ export const WooPaymentsDisputeChallengePage = () => {
 			className="woocommerce-woopayments-money-movement"
 			aria-busy={ isLoading }
 		>
+			{ /* Client 11.1.0 disputes/new-evidence/index.tsx:1540. */ }
+			<WooPaymentsTestModeNotice currentPage="disputes" isDetailsView />
 			<h2>{ __( 'Challenge dispute', 'woocommerce' ) }</h2>
 			<LiveStatusMessage
 				isError={ !! errorMessage || !! fileDetailsWarning }

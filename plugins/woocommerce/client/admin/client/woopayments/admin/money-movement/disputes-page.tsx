@@ -41,6 +41,7 @@ import {
 import { LiveStatusMessage, StatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 import '../style.scss';
 
@@ -299,6 +300,8 @@ export const WooPaymentsDisputesPage = () => {
 
 	return (
 		<div className="woocommerce-woopayments-money-movement">
+			{ /* Client 11.1.0 disputes/index.tsx:451. */ }
+			<WooPaymentsTestModeNotice currentPage="disputes" />
 			<SpotlightPromotion />
 			<section aria-busy={ isLoading }>
 				<h2>{ __( 'Disputes', 'woocommerce' ) }</h2>

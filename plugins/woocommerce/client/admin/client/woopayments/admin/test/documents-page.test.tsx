@@ -27,6 +27,10 @@ import {
 	mockUpdateUserPreferences,
 	setMockUserPreferences,
 } from './helpers/user-preferences';
+import {
+	getTestModeNoticeText,
+	mockAccountMode,
+} from './helpers/test-mode-account';
 
 jest.mock( '@woocommerce/data', () => ( {
 	useUserPreferences: () =>
@@ -185,6 +189,7 @@ describe( 'WooPaymentsDocumentsPage', () => {
 	beforeEach( () => {
 		openSpy = jest.spyOn( window, 'open' ).mockImplementation();
 		setMockUserPreferences( {} );
+		mockAccountMode( false );
 		window.wcSettings = {
 			adminUrl: 'http://example.com/wp-admin',
 		};
@@ -585,4 +590,21 @@ describe( 'WooPaymentsDocumentsPage', () => {
 			)
 		);
 	} );
+
+	// Client 11.1.0 documents/index.tsx:17.
+	it.each( [ true, false ] )(
+		'shows the documents test-mode notice only in test mode (test mode: %s)',
+		async ( testMode ) => {
+			mockAccountMode( testMode );
+
+			renderDocumentsPage();
+
+			await screen.findByRole( 'heading', { name: 'Documents' } );
+			expect( await getTestModeNoticeText() ).toBe(
+				testMode
+					? 'Viewing test documents. To view live documents, disable test mode in WooPayments settings.'
+					: null
+			);
+		}
+	);
 } );
