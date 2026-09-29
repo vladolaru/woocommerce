@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
@@ -64,6 +65,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 				array( $controller, 'handle_payment_gateways_display' ),
 				5
 			);
+			remove_action( 'admin_init', array( $controller, 'maybe_redirect_to_onboarding' ), 16 );
 		}
 		WC()->payment_gateways()->payment_gateways = $this->original_payment_gateways;
 
@@ -75,7 +77,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		remove_filter( 'wp_doing_ajax', '__return_true' );
 		remove_all_filters( 'woocommerce_multi_currency_js_settings' );
 		remove_all_filters( 'wcpay_js_settings' );
-		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['woopayments-vat-details-redirect'] );
+		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['woopayments-vat-details-redirect'], $_GET['from'], $_SERVER['HTTP_REFERER'] );
+		delete_option( 'wcpay_account_data' );
+		delete_option( 'wcpay_onboarding_test_mode' );
 
 		parent::tearDown();
 	}
@@ -1657,15 +1661,438 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should register the onboarding redirect after the plugin's account redirects, like client 11.1.0.
+	 */
+	public function test_registers_onboarding_redirect_at_client_admin_init_priority(): void {
+		$sut = $this->create_controller( true );
+
+		$sut->register();
+
+		// Client 11.1.0 WC_Payments_Admin::init_hooks() hooks its child-page redirect on admin_init priority 16.
+		$this->assertSame( 16, has_action( 'admin_init', array( $sut, 'maybe_redirect_to_onboarding' ) ) );
+
+		remove_action( 'admin_menu', array( $sut, 'add_menu_items' ), 70 );
+		remove_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ), 10 );
+		remove_action( 'admin_init', array( $sut, 'maybe_redirect_to_onboarding' ), 16 );
+		remove_action( 'template_redirect', array( $sut, 'redirect_vat_details_request' ), 10 );
+		remove_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ), 10 );
+	}
+
+	/**
+	 * @testdox Should not register the onboarding redirect when native runtime does not own payments.
+	 */
+	public function test_does_not_register_onboarding_redirect_when_native_runtime_does_not_own_payments(): void {
+		$sut = $this->create_controller( false );
+
+		$sut->register();
+
+		$this->assertFalse( has_action( 'admin_init', array( $sut, 'maybe_redirect_to_onboarding' ) ) );
+	}
+
+	/**
+	 * @testdox Should redirect native WooPayments admin pages to onboarding when there is no account.
+	 * @dataProvider provider_onboarding_redirect_paths
+	 *
+	 * @param string               $path           Requested native WooPayments route path.
+	 * @param array<string,string> $expected_query Expected onboarding tracking query args.
+	 */
+	public function test_redirects_admin_pages_to_onboarding_without_an_account( string $path, array $expected_query ): void {
+		$this->set_admin_user();
+		$sut = $this->create_controller( true, $this->get_no_account_state() );
+
+		$url = $this->run_onboarding_redirect( $sut, $path );
+
+		$this->assert_onboarding_redirect( $url, $expected_query );
+	}
+
+	/**
+	 * Native WooPayments admin paths that need a working connection and a valid account.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>}>
+	 */
+	public function provider_onboarding_redirect_paths(): array {
+		$settings_query = array(
+			'from'   => 'WCADMIN_PAYMENT_SETTINGS',
+			'source' => 'wcadmin-settings-page',
+		);
+
+		return array(
+			'overview'                  => array(
+				'/woopayments/overview',
+				array(
+					'from'   => 'WCPAY_OVERVIEW',
+					'source' => 'unknown',
+				),
+			),
+			'payouts'                   => array( '/woopayments/payouts', array() ),
+			'payout details'            => array( '/woopayments/payouts/details', array() ),
+			'transactions'              => array( '/woopayments/transactions', array() ),
+			'transaction details'       => array( '/woopayments/transactions/details', array() ),
+			'reports'                   => array( '/woopayments/reports', array() ),
+			'disputes'                  => array( '/woopayments/disputes', array() ),
+			'dispute details'           => array( '/woopayments/disputes/details', array() ),
+			'dispute challenge'         => array( '/woopayments/disputes/challenge', array() ),
+			'card readers'              => array( '/woopayments/card-readers', array() ),
+			'loans'                     => array( '/woopayments/loans', array() ),
+			'documents'                 => array( '/woopayments/documents', array() ),
+			'settings'                  => array( '/woopayments/settings', $settings_query ),
+			'express checkout settings' => array( '/woopayments/settings/express-checkout/payment_request', $settings_query ),
+			'fraud protection settings' => array( '/woopayments/settings/fraud-protection', $settings_query ),
+		);
+	}
+
+	/**
+	 * @testdox Should match native WooPayments admin paths by prefix, like the client's unanchored path regex.
+	 */
+	public function test_redirects_paths_that_start_with_a_guarded_path(): void {
+		$this->set_admin_user();
+		$sut = $this->create_controller( true, $this->get_no_account_state() );
+
+		// Client 11.1.0 matches `/^(paths)/` with no end anchor, so `/payments/overview-something` redirects too.
+		$url = $this->run_onboarding_redirect( $sut, '/woopayments/overview-something' );
+
+		$this->assert_onboarding_redirect(
+			$url,
+			array(
+				'from'   => 'WCPAY_OVERVIEW',
+				'source' => 'unknown',
+			)
+		);
+	}
+
+	/**
+	 * @testdox Should send the referer-derived onboarding source with the Overview redirect, like client 11.1.0.
+	 * @dataProvider provider_overview_redirect_sources
+	 *
+	 * @param string               $referer         Referer URL.
+	 * @param array<string,string> $extra_request   Extra query args on the Overview request.
+	 * @param string               $expected_source Expected onboarding source.
+	 */
+	public function test_redirects_overview_to_onboarding_with_referer_source( string $referer, array $extra_request, string $expected_source ): void {
+		$this->set_admin_user();
+		$sut                     = $this->create_controller( true, $this->get_no_account_state() );
+		$_SERVER['HTTP_REFERER'] = $referer;
+
+		$url = $this->run_onboarding_redirect_for_request(
+			$sut,
+			array_merge(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/overview',
+				),
+				$extra_request
+			)
+		);
+
+		// Client 11.1.0 WC_Payments_Account::maybe_redirect_from_overview_page() passes FROM_OVERVIEW_PAGE and get_source().
+		$this->assert_onboarding_redirect(
+			$url,
+			array(
+				'from'   => 'WCPAY_OVERVIEW',
+				'source' => $expected_source,
+			)
+		);
+	}
+
+	/**
+	 * Overview requests and the onboarding source the redirect should carry.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>,2:string}>
+	 */
+	public function provider_overview_redirect_sources(): array {
+		return array(
+			'payments task referer'     => array( admin_url( 'admin.php?page=wc-admin&task=payments' ), array(), 'wcadmin-payment-task' ),
+			'native payouts referer'    => array( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts' ), array(), 'wcpay-payouts-page' ),
+			'payments settings referer' => array( admin_url( 'admin.php?page=wc-settings&tab=checkout' ), array(), 'wcadmin-settings-page' ),
+			'from param over referer'   => array( admin_url( 'admin.php?page=wc-admin&task=payments' ), array( 'from' => 'WCPAY_PAYOUTS' ), 'wcpay-payouts-page' ),
+		);
+	}
+
+	/**
+	 * @testdox Should redirect to onboarding when the account is valid but the WordPress.com connection is not working.
+	 */
+	public function test_redirects_to_onboarding_without_a_working_connection(): void {
+		$this->set_admin_user();
+		$sut = $this->create_controller( true, array(), array(), null, false );
+
+		$url = $this->run_onboarding_redirect( $sut, '/woopayments/transactions' );
+
+		$this->assert_onboarding_redirect( $url, array() );
+	}
+
+	/**
+	 * @testdox Should redirect to onboarding when the connection works but the account is not valid.
+	 * @dataProvider provider_invalid_account_states
+	 *
+	 * @param array<string,mixed> $account_state Account state overrides.
+	 */
+	public function test_redirects_to_onboarding_with_an_invalid_account( array $account_state ): void {
+		$this->set_admin_user();
+		$sut = $this->create_controller( true, $account_state );
+
+		$url = $this->run_onboarding_redirect( $sut, '/woopayments/disputes/details' );
+
+		$this->assert_onboarding_redirect( $url, array() );
+	}
+
+	/**
+	 * Accounts that fail the client's `is_stripe_account_valid()` check.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public function provider_invalid_account_states(): array {
+		return array(
+			'details not submitted'     => array(
+				array(
+					'is_details_submitted' => false,
+					'has_valid_account_for_admin_navigation' => false,
+				),
+			),
+			'card payments unrequested' => array(
+				array(
+					'has_valid_account_for_admin_navigation' => false,
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should not redirect native WooPayments admin pages with a valid account and a working connection.
+	 * @dataProvider provider_onboarding_redirect_paths
+	 *
+	 * @param string $path Requested native WooPayments route path.
+	 */
+	public function test_does_not_redirect_with_a_valid_account_and_working_connection( string $path ): void {
+		$this->set_admin_user();
+		$sut = $this->create_controller( true );
+
+		$this->assertSame( '', $this->run_onboarding_redirect( $sut, $path ) );
+	}
+
+	/**
+	 * @testdox Should not redirect a test-drive account with a working connection, read from the platform account payload.
+	 * @dataProvider provider_onboarding_redirect_paths
+	 *
+	 * @param string $path Requested native WooPayments route path.
+	 */
+	public function test_does_not_redirect_a_test_drive_account_with_working_connection( string $path ): void {
+		$this->set_admin_user();
+		// Test-drive onboarding turns on onboarding test mode, which a test-mode account needs to count as cached.
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		// Account fields as the platform returns them for a test-drive account created through NOX "Test payments".
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => array(
+					'account_id'           => 'acct_test_drive_1',
+					'test_publishable_key' => 'pk_test_drive_1',
+					'is_live'              => false,
+					'is_test_drive'        => true,
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+					'capabilities'         => array(
+						'card_payments' => 'active',
+					),
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		$account_service = new WooPaymentsAccountService();
+		$account_service->init( new LegacyProxy() );
+
+		$sut = $this->create_controller_with_account_service( $account_service, true );
+
+		$this->assertSame( '', $this->run_onboarding_redirect( $sut, $path ) );
+	}
+
+	/**
+	 * @testdox Should not redirect the onboarding route itself, so the redirect cannot loop.
+	 */
+	public function test_does_not_redirect_the_onboarding_route(): void {
+		$this->set_admin_user();
+		$sut = $this->create_controller( true, $this->get_no_account_state(), array(), null, false );
+
+		$this->assertSame( '', $this->run_onboarding_redirect( $sut, '/woopayments/onboarding' ) );
+	}
+
+	/**
+	 * @testdox Should not redirect users without manage_woocommerce.
+	 */
+	public function test_does_not_redirect_to_onboarding_without_manage_woocommerce_capability(): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
+		$sut = $this->create_controller( true, $this->get_no_account_state() );
+
+		$this->assertSame( '', $this->run_onboarding_redirect( $sut, '/woopayments/overview' ) );
+	}
+
+	/**
+	 * @testdox Should not redirect to onboarding during AJAX requests.
+	 */
+	public function test_does_not_redirect_to_onboarding_during_ajax_requests(): void {
+		$this->set_admin_user();
+		$sut = $this->create_controller( true, $this->get_no_account_state() );
+		add_filter( 'wp_doing_ajax', '__return_true' );
+
+		$this->assertSame( '', $this->run_onboarding_redirect( $sut, '/woopayments/overview' ) );
+	}
+
+	/**
+	 * @testdox Should not redirect requests outside the native WooPayments admin routes.
+	 * @dataProvider provider_unrelated_admin_requests
+	 *
+	 * @param array<string,string> $request Query request.
+	 */
+	public function test_does_not_redirect_unrelated_admin_requests( array $request ): void {
+		$this->set_admin_user();
+		$sut = $this->create_controller( true, $this->get_no_account_state() );
+
+		$this->assertSame( '', $this->run_onboarding_redirect_for_request( $sut, $request ) );
+	}
+
+	/**
+	 * Requests that are not native WooPayments admin routes.
+	 *
+	 * @return array<string,array{0:array<string,string>}>
+	 */
+	public function provider_unrelated_admin_requests(): array {
+		return array(
+			'payments settings main page'  => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+				),
+			),
+			'other payments settings path' => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/offline/bacs',
+				),
+			),
+			'other settings tab'           => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'general',
+					'path' => '/woopayments/overview',
+				),
+			),
+			'wc-admin page with the path'  => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/woopayments/overview',
+				),
+			),
+			'nested path not at the start' => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/other/woopayments/overview',
+				),
+			),
+		);
+	}
+
+	/**
+	 * Get the account state of a store with no WooPayments account.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_no_account_state(): array {
+		return array(
+			'has_account'                            => false,
+			'is_details_submitted'                   => false,
+			'has_valid_account_for_admin_navigation' => false,
+		);
+	}
+
+	/**
+	 * Log in as a store manager.
+	 */
+	private function set_admin_user(): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+	}
+
+	/**
+	 * Run the onboarding redirect for a native WooPayments route path.
+	 *
+	 * @param WooPaymentsAdminNavigationController $sut  Controller under test.
+	 * @param string                               $path Native WooPayments route path.
+	 * @return string The intercepted redirect location, or an empty string.
+	 */
+	private function run_onboarding_redirect( WooPaymentsAdminNavigationController $sut, string $path ): string {
+		return $this->run_onboarding_redirect_for_request(
+			$sut,
+			array(
+				'page' => 'wc-settings',
+				'tab'  => 'checkout',
+				'path' => $path,
+			)
+		);
+	}
+
+	/**
+	 * Run the onboarding redirect for a query request.
+	 *
+	 * @param WooPaymentsAdminNavigationController $sut     Controller under test.
+	 * @param array<string,string>                 $request Query request.
+	 * @return string The intercepted redirect location, or an empty string.
+	 */
+	private function run_onboarding_redirect_for_request( WooPaymentsAdminNavigationController $sut, array $request ): string {
+		foreach ( $request as $key => $value ) {
+			$_GET[ $key ] = $value;
+		}
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ), 10, 1 );
+
+		try {
+			$sut->maybe_redirect_to_onboarding();
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'wp_redirect intercepted', $exception->getMessage() );
+		}
+
+		return $this->intercepted_redirect;
+	}
+
+	/**
+	 * Assert a redirect went to the native WooPayments onboarding route with exactly the expected query.
+	 *
+	 * The client 11.1.0 redirect drops its "complete your setup" notice, so the URL carries no notice argument.
+	 *
+	 * @param string               $url            Intercepted redirect location.
+	 * @param array<string,string> $expected_query Expected onboarding tracking query args.
+	 */
+	private function assert_onboarding_redirect( string $url, array $expected_query ): void {
+		$this->assertNotSame( '', $url, 'Expected a redirect to WooPayments onboarding.' );
+		$this->assertSame( admin_url( 'admin.php' ), strtok( $url, '?' ) );
+
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertSame(
+			array_merge(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/onboarding',
+				),
+				$expected_query
+			),
+			$query
+		);
+	}
+
+	/**
 	 * Create the controller under test.
 	 *
 	 * @param bool                                  $native_register          Whether native should own menu registration.
 	 * @param array<string,mixed>                   $account_state            Account state overrides.
 	 * @param array<string,int>                     $badge_counts             Badge count overrides.
 	 * @param WooPaymentsApplePayDomainService|null $apple_pay_domain_service Optional Apple Pay domain service; defaults to one with no notice due.
+	 * @param bool                                  $connected                Whether the WordPress.com connection works.
 	 * @return WooPaymentsAdminNavigationController
 	 */
-	private function create_controller( bool $native_register, array $account_state = array(), array $badge_counts = array(), ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null ): WooPaymentsAdminNavigationController {
+	private function create_controller( bool $native_register, array $account_state = array(), array $badge_counts = array(), ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null, bool $connected = true ): WooPaymentsAdminNavigationController {
 		$class_name = WooPaymentsAdminNavigationController::class;
 		$this->assertTrue( class_exists( $class_name ), 'WooPayments admin navigation controller should exist.' );
 
@@ -1677,8 +2104,34 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->create_account_service( $account_state );
 		$badge_service   = $this->create_badge_service( $badge_counts );
-		$controller      = new $class_name();
-		$controller->init( $arbiter, $account_service, $badge_service, $apple_pay_domain_service ?? $this->createMock( WooPaymentsApplePayDomainService::class ) );
+		$api_client      = $this->createMock( WooPaymentsApiClient::class );
+		$api_client->method( 'is_available' )->willReturn( $connected );
+		$controller = new $class_name();
+		$controller->init( $arbiter, $account_service, $badge_service, $apple_pay_domain_service ?? $this->createMock( WooPaymentsApplePayDomainService::class ), $api_client );
+		$this->controllers[] = $controller;
+
+		return $controller;
+	}
+
+	/**
+	 * Create the controller under test with a given account service.
+	 *
+	 * @param WooPaymentsAccountService $account_service Account service.
+	 * @param bool                      $connected       Whether the WordPress.com connection works.
+	 * @return WooPaymentsAdminNavigationController
+	 */
+	private function create_controller_with_account_service( WooPaymentsAccountService $account_service, bool $connected ): WooPaymentsAdminNavigationController {
+		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+
+		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client->method( 'is_available' )->willReturn( $connected );
+
+		$controller = new WooPaymentsAdminNavigationController();
+		$controller->init( $arbiter, $account_service, $this->create_badge_service(), $this->createMock( WooPaymentsApplePayDomainService::class ), $api_client );
 		$this->controllers[] = $controller;
 
 		return $controller;
