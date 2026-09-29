@@ -154,7 +154,14 @@ export const payoutFailureMessages: Record< string, string > = {
 	),
 };
 
-const getPayoutStatusLabel = ( payout: WooPaymentsDeposit ) => {
+/**
+ * The client's payout status label, shared by the payouts list and payout details.
+ *
+ * @param payout The payout.
+ */
+export const getPayoutStatusLabel = (
+	payout: Pick< WooPaymentsDeposit, 'type' | 'status' >
+) => {
 	const status =
 		payout.type === 'withdrawal' && payout.status === 'paid'
 			? 'deducted'

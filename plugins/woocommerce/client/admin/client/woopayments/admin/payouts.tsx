@@ -33,11 +33,8 @@ import type {
 	WooPaymentsDepositsQuery,
 	WooPaymentsDepositsSummary,
 } from './overview/types';
-import {
-	formatPayoutDate,
-	formatPayoutStatus,
-	formatWooPaymentsAmount,
-} from './overview/utils';
+import { formatPayoutDate, formatWooPaymentsAmount } from './overview/utils';
+import { getPayoutStatusLabel } from './payout-details';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 import { WooPaymentsTestModeNotice } from './test-mode-notice';
 import { SpotlightPromotion } from '../promotions/spotlight';
@@ -188,7 +185,7 @@ export const WooPaymentsPayouts = () => {
 				enableHiding: false,
 				enableSorting: false,
 				render: ( { item }: { item: WooPaymentsDeposit } ) =>
-					formatPayoutStatus( item.status ),
+					getPayoutStatusLabel( item ),
 			},
 			{
 				id: 'bankAccount',

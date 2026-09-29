@@ -132,7 +132,9 @@ describe( 'WooPaymentsPayouts', () => {
 		if ( ! row ) {
 			throw new Error( 'The paid payout has no row.' );
 		}
-		expect( within( row ).getByText( 'Paid' ) ).toBeInTheDocument();
+		expect(
+			within( row ).getByText( 'Completed (paid)' )
+		).toBeInTheDocument();
 		expect( within( row ).getByText( '$25.00' ) ).toBeInTheDocument();
 		expect( screen.getByText( '1 payouts' ) ).toBeInTheDocument();
 		expect(
