@@ -1213,15 +1213,27 @@ describe( 'WooPayments money movement pages', () => {
 			screen.getByTestId( 'money-movement-dataviews' )
 		).toHaveAttribute(
 			'data-visible-fields',
-			'date,type,amount,fees,net,source,customer'
+			'date,type,channel,amount,fees,net,order,source,customer_name,deposit'
 		);
 
 		firstRender.unmount();
 		setMockUserPreferences( {
 			wc_payments_transactions_hidden_columns: [
+				'transaction_id',
+				'channel',
+				'customer_currency',
+				'customer_amount',
+				'currency',
 				'fees',
 				'net',
+				'order',
 				'source',
+				'customer_email',
+				'customer_country',
+				'risk_level',
+				'deposit_id',
+				'deposit',
+				'deposit_status',
 			],
 		} );
 
@@ -1234,15 +1246,32 @@ describe( 'WooPayments money movement pages', () => {
 		await screen.findByText( 'Transactions loaded.' );
 		expect(
 			screen.getByTestId( 'money-movement-dataviews' )
-		).toHaveAttribute( 'data-visible-fields', 'date,type,amount,customer' );
+		).toHaveAttribute(
+			'data-visible-fields',
+			'date,type,amount,customer_name'
+		);
 	} );
 
 	it( 'renders the settled field schema from normalized ordinary and exceptional rows', async () => {
 		const toLocaleStringSpy = jest
 			.spyOn( Date.prototype, 'toLocaleString' )
 			.mockReturnValue( 'Jul 20, 2026, 10:30 AM' );
+		// Only the columns this schema case covers; transactions-list.test.tsx covers the rest.
 		setMockUserPreferences( {
-			wc_payments_transactions_hidden_columns: [],
+			wc_payments_transactions_hidden_columns: [
+				'transaction_id',
+				'channel',
+				'customer_currency',
+				'customer_amount',
+				'currency',
+				'order',
+				'customer_email',
+				'customer_country',
+				'risk_level',
+				'deposit_id',
+				'deposit',
+				'deposit_status',
+			],
 		} );
 
 		mockGetTransactions.mockResolvedValue( {
@@ -1378,7 +1407,11 @@ describe( 'WooPayments money movement pages', () => {
 			expect(
 				within( readerRow ).queryByText( /Visa/ )
 			).not.toBeInTheDocument();
-			expect( within( readerRow ).getAllByText( '-' ) ).toHaveLength( 2 );
+			// Client 11.1.0 `transactions/list/index.tsx:509-514`: no customer on reader fees.
+			expect( within( readerRow ).getAllByText( '-' ) ).toHaveLength( 1 );
+			expect(
+				within( readerRow ).getByText( 'N/A' )
+			).toBeInTheDocument();
 
 			expect(
 				screen.getByText( 'Giropay DE89370400440532013000' )
@@ -1858,11 +1891,23 @@ describe( 'WooPayments money movement pages', () => {
 		expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
 		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
 			wc_payments_transactions_hidden_columns: [
+				'transaction_id',
 				'date',
+				'channel',
+				'customer_currency',
+				'customer_amount',
+				'currency',
 				'fees',
 				'net',
+				'order',
 				'source',
 				'customer_name',
+				'customer_email',
+				'customer_country',
+				'risk_level',
+				'deposit_id',
+				'deposit',
+				'deposit_status',
 			],
 		} );
 		expect(

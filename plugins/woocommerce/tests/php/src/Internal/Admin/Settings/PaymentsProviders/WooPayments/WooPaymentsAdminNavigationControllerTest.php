@@ -324,6 +324,23 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preload that WooCommerce Subscriptions is inactive for the transactions list's Subscription # column.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1021` (`isSubscriptionsActive` in `wcpaySettings`).
+	 */
+	public function test_preloads_inactive_subscriptions_plugin_flag(): void {
+		$this->assertFalse( class_exists( 'WC_Subscriptions' ), 'The unit environment must not load WooCommerce Subscriptions.' );
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller( true );
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertArrayHasKey( 'isSubscriptionsActive', $settings['woopaymentsSettings'] );
+		$this->assertFalse( $settings['woopaymentsSettings']['isSubscriptionsActive'] );
+	}
+
+	/**
 	 * @testdox Should preload the Apple Pay domain error for in-app navigation without clearing it on a list load.
 	 */
 	public function test_preloads_apple_pay_domain_error_without_clearing_it(): void {

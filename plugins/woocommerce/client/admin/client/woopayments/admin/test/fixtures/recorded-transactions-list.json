@@ -1,0 +1,107 @@
+{
+	"_meta": {
+		"recording": "GET wp-json/wc/v3/payments/transactions?per_page=25&page=<n> on the native :8889 store (Transact platform via wpcom-local, Stripe test mode), 2026-09-29",
+		"sanitized": "customer names and emails replaced; store host replaced with store.example.com; every other value verbatim",
+		"rows": "a USD card charge on an order with a WooCommerce Subscriptions subscription and an Analytics customer, settled in a paid payout; an EUR Bancontact payment settled in USD, not yet in a payout; an EUR card refund with no order, in a paid payout"
+	},
+	"response": {
+		"data": [
+			{
+				"transaction_id": "txn_3UI4HnBzWlxcwgpP0JarqoHY",
+				"type": "charge",
+				"date": "2026-09-21 10:17:24",
+				"source": "visa",
+				"customer_name": "Test Shopper",
+				"customer_email": "shopper-arqohy@example.com",
+				"customer_country": "US",
+				"amount": 1998,
+				"net": 1910,
+				"fees": 88,
+				"currency": "usd",
+				"risk_level": 0,
+				"charge_id": "ch_3UI4HnBzWlxcwgpP0ymb5gt6",
+				"deposit_id": "po_1UIINjBzWlxcwgpPhN8rvYGM",
+				"available_on": "2026-09-22 00:00:00",
+				"exchange_rate": 1,
+				"customer_amount": 1998,
+				"customer_currency": "usd",
+				"order_id": 4520,
+				"source_identifier": "4242",
+				"amount_in_usd": 1998,
+				"source_device": null,
+				"channel": null,
+				"deposit_status": "paid",
+				"order": {
+					"number": "4520",
+					"url": "https://store.example.com/wp-admin/admin.php?page=wc-orders&action=edit&id=4520",
+					"customer_url": "admin.php?page=wc-admin&path=/customers&filter=single_customer&customers=188",
+					"subscriptions": [
+						{
+							"number": "3175",
+							"url": "https://store.example.com/wp-admin/admin.php?page=wc-orders--shop_subscription&action=edit&id=3175"
+						}
+					]
+				},
+				"payment_intent_id": "pi_3UI4HnBzWlxcwgpP0nLgXAkq"
+			},
+			{
+				"transaction_id": "txn_3UL1dOBzWlxcwgpP0mS3Cjpg",
+				"type": "payment",
+				"date": "2026-09-29 14:03:57",
+				"source": "bancontact",
+				"customer_name": "Test Shopper",
+				"customer_email": "shopper-s3cjpg@example.com",
+				"customer_country": "BE",
+				"amount": 1247,
+				"net": 1169,
+				"fees": 78,
+				"currency": "usd",
+				"risk_level": 0,
+				"charge_id": "py_3UL1dOBzWlxcwgpP0xhnQpOB",
+				"deposit_id": null,
+				"available_on": "2026-10-01 00:00:00",
+				"exchange_rate": 1.13441,
+				"customer_amount": 1099,
+				"customer_currency": "eur",
+				"order_id": 5547,
+				"source_identifier": "7061",
+				"amount_in_usd": 1247,
+				"source_device": null,
+				"channel": null,
+				"order": {
+					"number": "5547",
+					"url": "https://store.example.com/wp-admin/admin.php?page=wc-orders&action=edit&id=5547",
+					"customer_url": null,
+					"subscriptions": []
+				},
+				"payment_intent_id": "pi_3UL1dOBzWlxcwgpP0K4TdcZH"
+			},
+			{
+				"transaction_id": "txn_3UJWs2BzWlxcwgpP1FuXruQg",
+				"type": "refund",
+				"date": "2026-09-25 13:53:59",
+				"source": "visa",
+				"customer_name": null,
+				"customer_email": null,
+				"customer_country": null,
+				"amount": -1407,
+				"net": -1407,
+				"fees": 0,
+				"currency": "usd",
+				"risk_level": 0,
+				"charge_id": "ch_3UJWs2BzWlxcwgpP1y9vRrWr",
+				"deposit_id": "po_1UKTF6BzWlxcwgpPTSVZ57gl",
+				"available_on": "2026-09-28 00:00:00",
+				"exchange_rate": 1.14016,
+				"customer_amount": 1234,
+				"customer_currency": "eur",
+				"order_id": null,
+				"source_identifier": "4242",
+				"amount_in_usd": -1407,
+				"source_device": null,
+				"channel": null,
+				"deposit_status": "paid"
+			}
+		]
+	}
+}

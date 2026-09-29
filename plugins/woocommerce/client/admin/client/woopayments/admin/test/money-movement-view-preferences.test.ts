@@ -130,6 +130,46 @@ describe( 'WooPayments list hidden columns', () => {
 		expect( setItemSpy ).not.toHaveBeenCalled();
 	} );
 
+	it( "keeps the client's hidden-by-default columns hidden until a preference is stored", async () => {
+		hydrateCurrentUser( {
+			wc_payments_transactions_hidden_columns: '',
+		} );
+		const { result } = renderHook( () =>
+			usePersistedHiddenFields(
+				'wc_payments_transactions_hidden_columns',
+				[ 'date', 'risk_level', 'amount' ],
+				undefined,
+				[ 'risk_level', 'deposit_id' ]
+			)
+		);
+
+		expect( result.current.visibleFields ).toEqual( [ 'date', 'amount' ] );
+
+		// A view change that keeps the defaults writes nothing.
+		await act( async () => {
+			result.current.saveFields( [ 'date', 'amount' ] );
+		} );
+		expect( mockFetch ).not.toHaveBeenCalled();
+
+		// Showing a default-hidden column stores the rest of the defaults, including columns this view lacks.
+		await act( async () => {
+			result.current.saveFields( [ 'date', 'risk_level', 'amount' ] );
+		} );
+		const writes = () =>
+			mockFetch.mock.calls.filter(
+				( [ , request ] ) => request?.method === 'POST'
+			);
+		await waitFor( () => expect( writes() ).toHaveLength( 1 ) );
+		expect( JSON.parse( writes()[ 0 ][ 1 ].body ) ).toEqual( {
+			id: 7,
+			woocommerce_meta: {
+				wc_payments_transactions_hidden_columns: JSON.stringify( [
+					'deposit_id',
+				] ),
+			},
+		} );
+	} );
+
 	it( 'does not write when a view change leaves the hidden columns as they are', async () => {
 		hydrateCurrentUser( {
 			wc_payments_transactions_uncaptured_hidden_columns: JSON.stringify(

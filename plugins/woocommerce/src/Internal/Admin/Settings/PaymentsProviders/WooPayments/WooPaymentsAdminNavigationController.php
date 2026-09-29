@@ -303,6 +303,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		// Plugin 11.1.0 `WC_Payments_Admin` localizes this for `maybeTrackStripeConnected()`.
 		$track_stripe_connected                                  = get_option( '_wcpay_onboarding_stripe_connected' );
 		$settings['woopaymentsSettings']['trackStripeConnected'] = $track_stripe_connected ? $track_stripe_connected : '';
+		// Plugin 11.1.0 `class-wc-payments-admin.php:1021` localizes this for the transactions list's Subscription # column.
+		$settings['woopaymentsSettings']['isSubscriptionsActive'] = $this->is_subscriptions_plugin_active();
 
 		$provider_settings = $settings['woopaymentsSettings'];
 
@@ -339,6 +341,17 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings'] = $provider_settings;
 
 		return $settings;
+	}
+
+	/**
+	 * Whether WooCommerce Subscriptions 2.2.0 or later is active, like the plugin's `isSubscriptionsActive`.
+	 *
+	 * @return bool
+	 */
+	private function is_subscriptions_plugin_active(): bool {
+		return class_exists( 'WC_Subscriptions' )
+			&& isset( \WC_Subscriptions::$version )
+			&& version_compare( (string) \WC_Subscriptions::$version, '2.2.0', '>=' );
 	}
 
 	/**

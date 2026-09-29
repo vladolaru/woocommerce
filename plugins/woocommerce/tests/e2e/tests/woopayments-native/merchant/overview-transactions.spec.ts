@@ -43,6 +43,23 @@ const FIXTURE_TRANSACTION = {
 	net: 9700,
 } as const;
 
+// Client 11.1.0 `transactions/list/index.tsx:136-291`: the columns without
+// `visible: false`, in order, as the list shows them before the merchant picks
+// columns. Subscription # only shows with WooCommerce Subscriptions active.
+const TRANSACTIONS_DEFAULT_COLUMNS = [
+	'Date / time',
+	'Type',
+	'Sales channel',
+	'Amount',
+	'Fees',
+	'Net',
+	'Order #',
+	'Subscription #',
+	'Payment method',
+	'Customer',
+	'Payout date',
+] as const;
+
 // The failure shapes these release smokes exist to catch, matching the frozen
 // payouts-disputes smoke.
 const DENIAL_TEXT = /not allowed|do not have permission/i;
@@ -246,6 +263,62 @@ async function expectFixtureTransactionRow( page: Page ): Promise< void > {
 	await expect( rows ).toContainText( formatUsd( FIXTURE_TRANSACTION.net ) );
 }
 
+// DataViews appends the sort direction arrow to the sorted column's header.
+function columnHeaders( names: readonly string[] ): RegExp[] {
+	return names.map(
+		( name ) =>
+			new RegExp(
+				`^${ name.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' ) }[↑↓]?$`
+			)
+	);
+}
+
+/**
+ * Assert the transactions list shows the client's default columns and, on a
+ * store with its own transactions (not the secretless CI fixture, whose one
+ * row has no order), that an order-backed row fills each of them the way the
+ * client does.
+ */
+async function expectTransactionColumns(
+	page: Page,
+	paymentsSettings: Record< string, unknown >
+): Promise< void > {
+	const expectedColumns = TRANSACTIONS_DEFAULT_COLUMNS.filter(
+		( column ) =>
+			column !== 'Subscription #' ||
+			paymentsSettings.is_subscriptions_plugin_active === true
+	);
+	await expect( page.getByRole( 'columnheader' ) ).toHaveText(
+		columnHeaders( expectedColumns )
+	);
+	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true' ) {
+		return;
+	}
+
+	const orderRow = page
+		.getByRole( 'row' )
+		.filter( { has: page.getByRole( 'cell' ) } )
+		.filter( {
+			has: page.getByRole( 'link', { name: /^\d+$/, exact: true } ),
+		} )
+		.first();
+	await expect( orderRow ).toBeVisible();
+	const cells = ( await orderRow.getByRole( 'cell' ).allInnerTexts() ).map(
+		( text ) => text.trim()
+	);
+	expect( cells ).toHaveLength( expectedColumns.length );
+	const cell = ( column: ( typeof expectedColumns )[ number ] ) =>
+		cells[ expectedColumns.indexOf( column ) ];
+	expect( cell( 'Sales channel' ) ).toMatch(
+		/^(Online store|In-person|In-person \(POS\))$/
+	);
+	expect( cell( 'Order #' ) ).toMatch( /^\d+$/ );
+	expect( cell( 'Net' ) ).toMatch( /\d+\.\d{2}/ );
+	expect( cell( 'Payment method' ) ).not.toMatch( /^-?$/ );
+	expect( cell( 'Customer' ) ).not.toBe( '' );
+	expect( cell( 'Payout date' ) ).toMatch( /\d{4}|^Future payout$/ );
+}
+
 /**
  * The precondition every contract here shares: a connected account behind an
  * enabled native gateway. A degraded store must fail here rather than pass by
@@ -253,7 +326,7 @@ async function expectFixtureTransactionRow( page: Page ): Promise< void > {
  */
 async function expectConnectedNativeStore(
 	restApi: ApiClient
-): Promise< void > {
+): Promise< Record< string, unknown > > {
 	const runtimeStatus = ( await restApi.get( RUNTIME_STATUS_API ) )
 		.data as Record< string, unknown >;
 	expect(
@@ -266,6 +339,7 @@ async function expectConnectedNativeStore(
 	const paymentsSettings = ( await restApi.get( PAYMENTS_SETTINGS_API ) )
 		.data as Record< string, unknown >;
 	expect( paymentsSettings.is_wcpay_enabled ).toBe( true );
+	return paymentsSettings;
 }
 
 test(
@@ -352,7 +426,7 @@ test(
 	},
 	async ( { restApi, page, baseURL } ) => {
 		const storeBase = requireBaseUrl( baseURL );
-		await expectConnectedNativeStore( restApi );
+		const paymentsSettings = await expectConnectedNativeStore( restApi );
 		const restTracker = trackFailedRestResponses( page, storeBase );
 		const pageErrors = trackPageErrors( page, storeBase );
 
@@ -368,6 +442,8 @@ test(
 			TRANSACTIONS_TERMINAL
 		);
 		await expectFixtureTransactionRow( page );
+		// N-186: every column the client shows by default, filled from real rows.
+		await expectTransactionColumns( page, paymentsSettings );
 		expect( restTracker.observed() ).toBeGreaterThan( 0 );
 		expect( restTracker.failures() ).toEqual( [] );
 		expect( pageErrors() ).toEqual( [] );
