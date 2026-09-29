@@ -707,7 +707,6 @@ describe( 'WooPayments money movement pages', () => {
 			{},
 		],
 		[ 'a missing charge ID', { id: '' }, { id: 'du_incomplete' }, {} ],
-		[ 'a missing order ID', { order: {} }, { id: 'du_incomplete' }, {} ],
 		[ 'a missing inquiry ID', {}, {}, {} ],
 	] )(
 		'keeps inquiries with %s unavailable from the primary refund action',
@@ -774,6 +773,80 @@ describe( 'WooPayments money movement pages', () => {
 			expect( mockRefundCharge ).not.toHaveBeenCalled();
 		}
 	);
+
+	// Client 11.1.0 `payment-details/summary/index.tsx:870-878` passes `onIssueRefund` to every dispute
+	// pane regardless of the order, and `dispute-awaiting-response-details.tsx:429-431` opens the refund
+	// modal for an inquiry; `data/payment-intents/actions.ts:52-62` then sends no order id.
+	it( 'offers the inquiry refund when the charge has no order ID', async () => {
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_incomplete_inquiry',
+			status: 'succeeded',
+			amount: 5000,
+			currency: 'usd',
+			created: 1781712000,
+			charge: {
+				id: 'ch_incomplete_inquiry',
+				payment_intent: 'pi_incomplete_inquiry',
+				balance_transaction: 'txn_incomplete_inquiry',
+				type: 'charge',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				captured: true,
+				amount_refunded: 0,
+				refunded: false,
+				order: {},
+				dispute: {
+					id: 'du_incomplete',
+					status: 'warning_needs_response',
+					reason: 'fraudulent',
+				},
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+		mockRefundCharge.mockResolvedValue( { id: 're_incomplete_inquiry' } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_incomplete_inquiry&transaction_id=txn_incomplete_inquiry',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		const issueRefundButton = await screen.findByRole( 'button', {
+			name: 'Issue refund',
+		} );
+		expect( issueRefundButton ).not.toHaveAttribute(
+			'aria-disabled',
+			'true'
+		);
+		await userEvent.click( issueRefundButton );
+		const dialog = await screen.findByRole( 'dialog', {
+			name: 'Refund transaction',
+		} );
+		expect(
+			within( dialog ).getByText(
+				'Issuing a refund will close the inquiry, returning the amount in question back to the cardholder. No additional fees apply.'
+			)
+		).toBeInTheDocument();
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', {
+				name: 'Refund transaction',
+			} )
+		);
+
+		await waitFor( () =>
+			expect( mockRefundCharge ).toHaveBeenCalledWith( {
+				chargeId: 'ch_incomplete_inquiry',
+				amount: 5000,
+				reason: null,
+				orderId: undefined,
+			} )
+		);
+	} );
 
 	it( 'keeps an inquiry without a payment intent unavailable from the primary refund action', async () => {
 		mockGetCharge.mockResolvedValue( {
@@ -3674,7 +3747,10 @@ describe( 'WooPayments money movement pages', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'does not offer transaction detail refunds when the charge is not order-backed', async () => {
+	// Client 11.1.0 `payment-details/summary/index.tsx:370-384,781-848,897-903` and
+	// `missing-order-notice/index.tsx:25-66`: a captured charge with no order keeps the refund menu
+	// (full refund only, since a partial refund needs an order number) and shows the missing-order notice.
+	it( 'offers the full refund and the missing-order notice when the charge has no order', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_no_order',
 			status: 'succeeded',
@@ -3710,16 +3786,27 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByRole( 'heading', { name: 'Payment details' } )
 		).toBeInTheDocument();
 		expect(
-			screen.queryByRole( 'button', { name: 'Transaction actions' } )
-		).not.toBeInTheDocument();
-		expect(
 			screen.getByText(
-				'This payment is not linked to a WooCommerce order.'
+				'This transaction is not connected to order. Investigate this purchase and refund the transaction as needed.',
+				{ selector: 'section p' }
 			)
 		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Refund' } )
+		).toBeVisible();
 		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
-			'Transaction details loaded. This payment is not linked to a WooCommerce order.'
+			'Transaction details loaded. This transaction is not connected to order.'
 		);
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Transaction actions' } )
+		);
+		expect(
+			screen.getByRole( 'menuitem', { name: 'Refund in full' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'menuitem', { name: 'Partial refund' } )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'shows a payment detail test-mode notice for connected test accounts', async () => {

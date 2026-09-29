@@ -629,6 +629,14 @@
 	margin: 0;
 }
 
+.woocommerce-woopayments-money-movement__notice-card--with-actions {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	justify-content: space-between;
+}
+
 .woocommerce-woopayments-money-movement__dispute-label {
 	color: #646970;
 	font-size: 12px;

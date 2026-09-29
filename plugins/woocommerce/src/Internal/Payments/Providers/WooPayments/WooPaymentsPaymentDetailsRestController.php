@@ -229,16 +229,20 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Process an order-backed payment detail refund.
+	 * Process a payment detail refund.
+	 *
+	 * Like client 11.1.0 `WC_REST_Payments_Refunds_Controller::process_refund()`, an order that exists
+	 * is refunded through WooCommerce; a missing or unknown order refunds the charge directly.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function process_refund( WP_REST_Request $request ) {
-		$order = $this->get_refund_order( $request );
-		if ( is_wp_error( $order ) ) {
-			return $order;
+		$order_id = absint( $request->get_param( 'order_id' ) );
+		$order    = $order_id > 0 ? wc_get_order( $order_id ) : false;
+		if ( ! $order instanceof WC_Order ) {
+			return $this->process_charge_refund( $request );
 		}
 
 		$charge_id       = sanitize_text_field( (string) $request->get_param( 'charge_id' ) );
@@ -510,32 +514,50 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Get the refund order from the request.
+	 * Refund a charge that has no WooCommerce order.
+	 *
+	 * Ports client 11.1.0 `process_charge_refund()` and its `Refund_Charge` request: the charge must be a `ch_`
+	 * or `py_` ID, the amount a positive integer, and nothing is written locally. The client throws on invalid
+	 * input (a fatal); native refuses it with a 400 instead.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
-	 * @return WC_Order|WP_Error
+	 * @return WP_REST_Response|WP_Error
 	 */
-	private function get_refund_order( WP_REST_Request $request ) {
-		$order_id = absint( $request->get_param( 'order_id' ) );
-		if ( $order_id <= 0 ) {
+	private function process_charge_refund( WP_REST_Request $request ) {
+		$charge_id = $request->get_param( 'charge_id' );
+		if ( ! is_string( $charge_id ) || ! preg_match( '/^(ch|py)_\w{1,250}$/', $charge_id ) ) {
 			return new WP_Error(
-				'wcpay_refund_missing_order',
-				__( 'WooPayments refunds from transaction details require a WooCommerce order.', 'woocommerce' ),
+				'wcpay_core_invalid_request_parameter_stripe_id',
+				__( 'The charge ID is not a valid WooPayments charge identifier.', 'woocommerce' ),
 				array( 'status' => 400 )
 			);
 		}
 
-		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof WC_Order ) {
+		$amount = filter_var( $request->get_param( 'amount' ), FILTER_VALIDATE_INT );
+		if ( false === $amount || $amount <= 0 ) {
+			return $this->get_invalid_refund_amount_error();
+		}
+
+		$reason = $request->get_param( 'reason' );
+		if ( null !== $reason && ! is_string( $reason ) ) {
 			return new WP_Error(
-				'wcpay_refund_missing_order',
-				__( 'The WooCommerce order for this WooPayments refund was not found.', 'woocommerce' ),
-				array( 'status' => 404 )
+				'wcpay_refund_invalid_reason',
+				__( 'The refund reason is not valid.', 'woocommerce' ),
+				array( 'status' => 400 )
 			);
 		}
 
-		return $order;
+		try {
+			// The client sets no idempotency key here, so the transport mints a fresh one per request.
+			return new WP_REST_Response( $this->api_client->refund_charge( $charge_id, $amount, $reason, 'transaction_details_no_order', '' ) );
+		} catch ( WooPaymentsApiException $exception ) {
+			return new WP_Error(
+				'wcpay_refund_payment',
+				$exception->getMessage(),
+				array( 'status' => 500 )
+			);
+		}
 	}
 
 	/**

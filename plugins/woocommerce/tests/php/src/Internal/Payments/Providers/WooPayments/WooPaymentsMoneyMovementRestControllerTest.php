@@ -514,49 +514,6 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Payment detail refund route rejects refunds without a WooCommerce order.
-	 */
-	public function test_payment_detail_refund_route_rejects_missing_order(): void {
-		$this->create_payment_details_controller( true )->register_routes();
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/refund' );
-		$request->set_body_params(
-			array(
-				'charge_id' => 'ch_order',
-				'amount'    => 5000,
-			)
-		);
-
-		$response = $this->server->dispatch( $request );
-		$data     = $response->get_data();
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'wcpay_refund_missing_order', $data['code'] );
-	}
-
-	/**
-	 * @testdox Payment detail refund route rejects unknown orders with its own error code.
-	 */
-	public function test_payment_detail_refund_route_rejects_unknown_order(): void {
-		$this->create_payment_details_controller( true )->register_routes();
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/refund' );
-		$request->set_body_params(
-			array(
-				'charge_id' => 'ch_order',
-				'amount'    => 5000,
-				'order_id'  => 999999,
-			)
-		);
-
-		$response = $this->server->dispatch( $request );
-		$data     = $response->get_data();
-
-		$this->assertSame( 404, $response->get_status() );
-		$this->assertSame( 'wcpay_refund_missing_order', $data['code'] );
-	}
-
-	/**
 	 * @testdox Payment detail refund route rejects charge IDs that do not belong to the order.
 	 */
 	public function test_payment_detail_refund_route_rejects_charge_order_mismatch(): void {

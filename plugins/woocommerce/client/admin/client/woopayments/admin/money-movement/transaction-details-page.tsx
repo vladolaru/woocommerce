@@ -62,7 +62,7 @@ import {
 } from './dispute-utils';
 import { WooPaymentsTransactionDisputeDetails } from './transaction-dispute-details';
 import {
-	hasPaymentOrderContext,
+	isPaymentOrderMissing,
 	WooPaymentsMissingOrderNotice,
 	WooPaymentsPaymentIdentifiersSection,
 	WooPaymentsPaymentMethodDetailsSection,
@@ -309,15 +309,10 @@ const isTransactionPartiallyRefunded = (
 	typeof transaction.amount_refunded === 'number' &&
 	transaction.amount_refunded > 0;
 
-const isTransactionRefundEligible = (
-	transaction: WooPaymentsTransaction,
-	refundOrderId: number
-) => {
-	if (
-		! refundOrderId ||
-		transaction.captured !== true ||
-		transaction.refunded
-	) {
+// Client 11.1.0 `payment-details/summary/index.tsx:370-384`: the actions menu needs a captured,
+// unrefunded charge whose disputes all allow a refund; a linked order is not required.
+const isTransactionRefundEligible = ( transaction: WooPaymentsTransaction ) => {
+	if ( transaction.captured !== true || transaction.refunded ) {
 		return false;
 	}
 
@@ -887,9 +882,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		liveStatusMessage = timelineErrorMessage;
 	} else if ( isLoading ) {
 		liveStatusMessage = loadingMessage;
-	} else if ( transaction && ! hasPaymentOrderContext( transaction ) ) {
+	} else if ( transaction && isPaymentOrderMissing( transaction ) ) {
 		liveStatusMessage = __(
-			'Transaction details loaded. This payment is not linked to a WooCommerce order.',
+			'Transaction details loaded. This transaction is not connected to order.',
 			'woocommerce'
 		);
 	}
@@ -951,13 +946,11 @@ export const WooPaymentsTransactionDetailsPage = () => {
 	const hasValidFullRefundData =
 		!! paymentIntentId &&
 		!! chargeId &&
-		!! refundOrderId &&
 		typeof fullRefundAmount === 'number' &&
 		Number.isFinite( fullRefundAmount ) &&
 		fullRefundAmount > 0;
 	const isRefundEligible =
-		!! transaction &&
-		isTransactionRefundEligible( transaction, refundOrderId );
+		!! transaction && isTransactionRefundEligible( transaction );
 	const isPartiallyRefunded =
 		!! transaction && isTransactionPartiallyRefunded( transaction );
 	const showFullRefundAction =
@@ -965,7 +958,10 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		! isPartiallyRefunded &&
 		hasValidFullRefundData &&
 		( ! isOpenRefundInquiry || !! currentInquiryId );
-	const showPartialRefundAction = isRefundEligible && !! refundOrderUrl;
+	// Client 11.1.0 `payment-details/summary/index.tsx:376-378`: partial refunds happen on the order
+	// page, so they need an order number.
+	const showPartialRefundAction =
+		isRefundEligible && !! transaction?.order?.number;
 	const showRefundActions = showFullRefundAction || showPartialRefundAction;
 	const pendingAction =
 		pendingAuthorizationAction?.routeKey === routeKey &&
@@ -1005,11 +1001,15 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		window.setTimeout( focusRefundModalOpener, 0 );
 	};
 
-	const handleRefundModalOpen = ( opener?: HTMLElement ) => {
+	const openRefundModal = ( opener?: HTMLElement ) => {
 		refundModalOpenerRef.current = opener || null;
 		setRefundReason( null );
 		setRefundTargetDispute( undefined );
 		setIsRefundModalOpen( true );
+	};
+
+	const handleRefundModalOpen = ( opener?: HTMLElement ) => {
+		openRefundModal( opener );
 		recordEvent( 'payments_transactions_details_refund_modal_open', {
 			payment_intent_id: paymentIntentId,
 		} );
@@ -1086,7 +1086,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 				chargeId,
 				amount: fullRefundAmount,
 				reason: refundReason === 'other' ? null : refundReason,
-				orderId: refundOrderId,
+				// Client 11.1.0 `data/payment-intents/actions.ts:52-62` sends `charge.order?.id`, so an
+				// order-less charge omits it and the route refunds the charge directly.
+				orderId: refundOrderId || undefined,
 			} );
 			if ( ! isCurrentRefundRoute() ) {
 				return;
@@ -1415,6 +1417,8 @@ export const WooPaymentsTransactionDetailsPage = () => {
 						/>
 						<WooPaymentsMissingOrderNotice
 							transaction={ transaction }
+							// Client 11.1.0 `payment-details/summary/index.tsx:897-903` opens the modal with no open event.
+							onRefund={ openRefundModal }
 						/>
 						<WooPaymentsPaymentIdentifiersSection
 							paymentIntentId={ paymentIntentId }

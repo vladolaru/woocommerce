@@ -1,8 +1,9 @@
 /**
  * External dependencies
  */
+import { Button } from '@wordpress/components';
 import { __, sprintf } from '@wordpress/i18n';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -66,13 +67,10 @@ const LinkedValue = ( {
 const getOrderNumber = ( order?: WooPaymentsPaymentOrder ) =>
 	order?.number || order?.id || '';
 
-export const hasPaymentOrderContext = ( transaction: WooPaymentsTransaction ) =>
-	!! (
-		transaction.order &&
-		( transaction.order.id ||
-			transaction.order.number ||
-			transaction.order.url )
-	);
+// Client 11.1.0 `payment-details/summary/index.tsx:897` checks `! charge.order` on the raw platform shape. A deleted or
+// unknown order arrives as `order: []`, which is truthy, so only a null or absent order counts as missing.
+export const isPaymentOrderMissing = ( transaction: WooPaymentsTransaction ) =>
+	! transaction.order;
 
 const getRecordReferenceLabel = (
 	recordType: string,
@@ -871,23 +869,46 @@ export const WooPaymentsPaymentSummarySection = ( {
 	);
 };
 
+// Client 11.1.0 `payment-details/summary/missing-order-notice/index.tsx:25-66`: the notice offers a
+// Refund button until the charge is refunded, and then says it can no longer be disputed.
 export const WooPaymentsMissingOrderNotice = ( {
 	transaction,
+	onRefund,
 }: {
 	transaction: WooPaymentsTransaction;
+	onRefund: ( opener: HTMLElement ) => void;
 } ) => {
-	if ( hasPaymentOrderContext( transaction ) ) {
+	if ( ! isPaymentOrderMissing( transaction ) ) {
 		return null;
 	}
 
 	return (
-		<section className="woocommerce-woopayments-money-movement__notice-card">
+		<section className="woocommerce-woopayments-money-movement__notice-card woocommerce-woopayments-money-movement__notice-card--with-actions">
 			<p>
 				{ __(
-					'This payment is not linked to a WooCommerce order.',
+					'This transaction is not connected to order.',
 					'woocommerce'
-				) }
+				) }{ ' ' }
+				{ transaction.refunded
+					? __(
+							'It has been refunded and is not a subject for disputes.',
+							'woocommerce'
+					  )
+					: __(
+							'Investigate this purchase and refund the transaction as needed.',
+							'woocommerce'
+					  ) }
 			</p>
+			{ ! transaction.refunded && (
+				<Button
+					variant="primary"
+					onClick={ ( event: MouseEvent< HTMLButtonElement > ) =>
+						onRefund( event.currentTarget )
+					}
+				>
+					{ __( 'Refund', 'woocommerce' ) }
+				</Button>
+			) }
 		</section>
 	);
 };

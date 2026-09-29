@@ -73,7 +73,7 @@ export interface WooPaymentsRefundRequest {
 	chargeId: string;
 	amount: number;
 	reason: string | null;
-	orderId: number | string;
+	orderId?: number | string;
 }
 
 export interface WooPaymentsRefundResponse {
