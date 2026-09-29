@@ -1,0 +1,73 @@
+// Client 11.1.0 `deposits/details/style.scss`: the payout overview header.
+.woocommerce-woopayments-payout-overview {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	display: flex;
+	flex-wrap: wrap;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.woocommerce-woopayments-payout-overview__item {
+	display: flex;
+	flex: 1 1 200px;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0;
+	padding: 24px;
+}
+
+.woocommerce-woopayments-payout-overview--instant > li + li {
+	border-inline-start: 1px solid #dcdcde;
+}
+
+.woocommerce-woopayments-payout-overview__label {
+	font-size: 14px;
+	line-height: 20px;
+}
+
+.woocommerce-woopayments-payout-overview__value {
+	font-size: 20px;
+	line-height: 28px;
+}
+
+.woocommerce-woopayments-payout-overview__value--fee {
+	color: #8a2424;
+}
+
+.woocommerce-woopayments-payout-overview__value--net {
+	color: #005c12;
+}
+
+.woocommerce-woopayments-payout-overview__amount {
+	flex-grow: 1;
+	font-size: 36px;
+	line-height: 1.2;
+	margin: 0;
+	padding: 24px;
+	text-align: end;
+	align-self: center;
+}
+
+.woocommerce-woopayments-payout-overview__failure {
+	border-inline-start-color: #d63638;
+}
+
+@media (max-width: 659px) {
+	.woocommerce-woopayments-payout-overview {
+		flex-direction: column;
+	}
+
+	.woocommerce-woopayments-payout-overview--instant > li + li {
+		border-inline-start: 0;
+		border-block-start: 1px solid #dcdcde;
+	}
+
+	.woocommerce-woopayments-payout-overview__amount {
+		align-self: stretch;
+		border-block-start: 1px solid #dcdcde;
+		text-align: start;
+	}
+}

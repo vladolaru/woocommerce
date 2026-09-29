@@ -3,6 +3,10 @@
  */
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { speak } from '@wordpress/a11y';
+import {
+	getSettings as getDateSettings,
+	setSettings as setDateSettings,
+} from '@wordpress/date';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
@@ -889,4 +893,323 @@ describe( 'WooPayments payout details admin surface', () => {
 			);
 		}
 	);
+
+	// Client 11.1.0 `deposits/details/index.tsx:104-243` and `deposits/strings.ts`.
+	describe( 'payout overview', () => {
+		// Client 11.1.0 `deposits/details/__tests__/index.test.tsx` fixture.
+		const clientDeposit = {
+			id: 'po_mock',
+			date: '2020-01-02 17:46:02',
+			type: 'deposit',
+			amount: 2000,
+			status: 'paid',
+			bankAccount: 'MOCK BANK •••• 1234 (USD)',
+			automatic: true,
+			fee: 30,
+			fee_percentage: 1.5,
+			currency: 'USD',
+		};
+		let originalDateSettings: ReturnType< typeof getDateSettings >;
+
+		const renderPayout = async (
+			deposit: Parameters< typeof mockGetDeposit.mockResolvedValue >[ 0 ]
+		) => {
+			mockGetDeposit.mockResolvedValue( deposit );
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/payouts/details?id=po_mock',
+					] }
+				>
+					<WooPaymentsPayoutDetailsPage />
+				</MemoryRouter>
+			);
+			await screen.findByText( 'MOCK BANK •••• 1234 (USD)' );
+		};
+
+		const getOverviewItem = ( label: string ) =>
+			screen.getByText( label ).closest( 'li' );
+
+		beforeEach( () => {
+			originalDateSettings = getDateSettings();
+			// The client test's `wcpaySettings.dateFormat`.
+			setDateSettings( {
+				...originalDateSettings,
+				formats: { ...originalDateSettings.formats, date: 'M j, Y' },
+			} );
+			mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+			mockGetTransactions.mockResolvedValue( {
+				total_count: 0,
+				data: [],
+			} );
+		} );
+
+		afterEach( () => {
+			setDateSettings( originalDateSettings );
+		} );
+
+		it( 'renders an automatic payout with its date, status and amount', async () => {
+			await renderPayout( clientDeposit );
+
+			expect(
+				getOverviewItem( 'Payout date: Jan 2, 2020' )
+			).toHaveTextContent( 'Completed (paid)' );
+			expect( screen.getByText( '$20.00' ) ).toBeInTheDocument();
+			expect( screen.queryByText( 'Payout amount' ) ).toBeNull();
+			expect( screen.queryByText( /service fee/ ) ).toBeNull();
+		} );
+
+		it( 'renders an automatic withdrawal as deducted', async () => {
+			await renderPayout( {
+				...clientDeposit,
+				type: 'withdrawal',
+				amount: -2000,
+			} );
+
+			expect(
+				getOverviewItem( 'Withdrawal date: Jan 2, 2020' )
+			).toHaveTextContent( 'Completed (deducted)' );
+			expect(
+				screen.queryByText( 'Completed (paid)' )
+			).not.toBeInTheDocument();
+		} );
+
+		it.each( [
+			[ 'pending', 'Pending' ],
+			[ 'in_transit', 'In transit' ],
+			[ 'canceled', 'Canceled' ],
+			[ 'failed', 'Failed' ],
+		] )(
+			'labels the %s status like the client',
+			async ( status, label ) => {
+				await renderPayout( { ...clientDeposit, status } );
+
+				expect(
+					getOverviewItem( 'Payout date: Jan 2, 2020' )
+				).toHaveTextContent( label );
+			}
+		);
+
+		it( 'breaks down an instant payout into amount, service fee and net amount', async () => {
+			await renderPayout( { ...clientDeposit, automatic: false } );
+
+			expect(
+				screen.getByRole( 'list', { name: 'Payout overview' } )
+			).toBeInTheDocument();
+			expect(
+				getOverviewItem( 'Instant payout date: Jan 2, 2020' )
+			).toHaveTextContent( 'Completed (paid)' );
+			expect( getOverviewItem( 'Payout amount' ) ).toHaveTextContent(
+				'$20.30'
+			);
+			const fee = getOverviewItem( '1.5% service fee' );
+			expect( fee ).toHaveTextContent( '$0.30' );
+			expect( fee?.lastElementChild ).toHaveClass(
+				'woocommerce-woopayments-payout-overview__value--fee'
+			);
+			const net = getOverviewItem( 'Net payout amount' );
+			expect( net ).toHaveTextContent( '$20.00' );
+			expect( net?.lastElementChild ).toHaveClass(
+				'woocommerce-woopayments-payout-overview__value--net'
+			);
+		} );
+
+		it( 'does not mark a zero service fee', async () => {
+			await renderPayout( {
+				...clientDeposit,
+				automatic: false,
+				fee: 0,
+				fee_percentage: 0,
+			} );
+
+			const fee = getOverviewItem( '0% service fee' );
+			expect( fee ).toHaveTextContent( '$0.00' );
+			expect( fee?.lastElementChild ).not.toHaveClass(
+				'woocommerce-woopayments-payout-overview__value--fee'
+			);
+		} );
+
+		it( 'uses withdrawal wording for an instant withdrawal breakdown', async () => {
+			await renderPayout( {
+				...clientDeposit,
+				type: 'withdrawal',
+				automatic: false,
+			} );
+
+			expect(
+				screen.getByRole( 'list', { name: 'Withdrawal overview' } )
+			).toBeInTheDocument();
+			expect(
+				getOverviewItem( 'Withdrawal date: Jan 2, 2020' )
+			).toHaveTextContent( 'Completed (deducted)' );
+			expect( getOverviewItem( 'Withdrawal amount' ) ).toHaveTextContent(
+				'$20.30'
+			);
+			expect(
+				getOverviewItem( 'Net withdrawal amount' )
+			).toHaveTextContent( '$20.00' );
+		} );
+
+		// Client 11.1.0 `deposits/strings.ts:37-147`.
+		it.each( [
+			[
+				'insufficient_funds',
+				'Your account has insufficient funds to cover your negative balance.',
+			],
+			[
+				'bank_account_restricted',
+				'The bank account has restrictions on either the type or number of transfers allowed. This normally indicates that the bank account is a savings or other non-checking account.',
+			],
+			[
+				'debit_not_authorized',
+				'Debit transactions are not approved on your bank account. Bank accounts need to be set up for both credit and debit transfers.',
+			],
+			[
+				'invalid_card',
+				'The card used was invalid. This usually means the card number is invalid or the account has been closed.',
+			],
+			[
+				'declined',
+				'The bank has declined this transfer. Please contact the bank for more information.',
+			],
+			[
+				'invalid_transaction',
+				'The transfer was refused by the issuing bank because this type of payment is not permitted for this card. Please contact the issuing bank for clarification.',
+			],
+			[
+				'refer_to_card_issuer',
+				'The transfer was refused by the card issuer. Please contact the issuing bank for clarification.',
+			],
+			[
+				'unsupported_card',
+				'The bank no longer supports transfers to this card.',
+			],
+			[
+				'lost_or_stolen_card',
+				'The card used has been reported lost or stolen. Please contact the issuing bank for clarification.',
+			],
+			[
+				'invalid_issuer',
+				'The issuer specified by the card number does not exist. Please verify card details.',
+			],
+			[
+				'expired_card',
+				'The card used has expired. Please switch to a different card or payment method. Contact the issuing bank for clarification.',
+			],
+			[
+				'could_not_process',
+				'The bank or the payment processor could not process this transfer.',
+			],
+			[
+				'invalid_account_number',
+				'The bank account details on file are probably incorrect. While the routing number appears correct, the account number is invalid.',
+			],
+			[
+				'incorrect_account_holder_name',
+				'The bank account holder name on file appears to be incorrect.',
+			],
+			[ 'account_closed', 'The bank account has been closed.' ],
+			[
+				'no_account',
+				'The bank account details on file are probably incorrect. No bank account could be located with those details.',
+			],
+			[
+				'exceeds_amount_limit',
+				'The card issuer has declined the transaction as it will exceed the card limit. Please switch to a different card or payment method. Contact the issuing bank for clarification.',
+			],
+			[ 'account_frozen', 'The bank account has been frozen.' ],
+			[
+				'issuer_unavailable',
+				'The issuing bank is currently unavailable. Our system will automatically try again on your next payout date, or you can switch to a different payout method.',
+			],
+			[
+				'invalid_currency',
+				'The bank was unable to process this transfer because of its currency. This is probably because the bank account cannot accept payments in that currency.',
+			],
+			[
+				'incorrect_account_type',
+				'The bank account type is incorrect. This value can only be checking or savings in most countries. In Japan, it can only be futsu or toza.',
+			],
+			[
+				'incorrect_account_holder_details',
+				'The bank could not process this transfer. Please check that the entered bank account details match the corresponding account bank statement exactly.',
+			],
+			[
+				'bank_ownership_changed',
+				'The destination bank account is no longer valid because its branch has changed ownership.',
+			],
+			[
+				'exceeds_count_limit',
+				'The selected card has exceeded its card usage frequency limit. Please switch to a different card or payment method. Contact the issuing bank for clarification.',
+			],
+			[
+				'incorrect_account_holder_address',
+				'Your bank notified us that the bank account holder address on file is incorrect.',
+			],
+			[
+				'incorrect_account_holder_tax_id',
+				'Your bank notified us that the bank account holder tax ID on file is incorrect.',
+			],
+			[
+				'invalid_account_number_length',
+				'Your bank notified us that the bank account number is too long.',
+			],
+		] )(
+			'maps the %s failure code to the client message',
+			async ( failureCode, message ) => {
+				await renderPayout( {
+					...clientDeposit,
+					status: 'failed',
+					failure_code: failureCode,
+					failure_message: 'Raw Stripe failure message',
+				} );
+
+				expect( screen.getByText( 'Failure reason:' ) ).toBeVisible();
+				expect( screen.getByText( message ) ).toBeInTheDocument();
+				expect(
+					screen.queryByText( 'Raw Stripe failure message' )
+				).not.toBeInTheDocument();
+			}
+		);
+
+		it.each( [
+			[ 'an unmapped failure code', 'unknown_failure_code' ],
+			[ 'no failure code', undefined ],
+		] )(
+			'falls back to the raw failure message for %s',
+			async ( _case, failureCode ) => {
+				await renderPayout( {
+					...clientDeposit,
+					status: 'failed',
+					failure_code: failureCode,
+					failure_message:
+						'Failure error message originally captured from the Stripe Payout object',
+				} );
+
+				expect(
+					screen.getByText(
+						'Failure error message originally captured from the Stripe Payout object'
+					)
+				).toBeInTheDocument();
+			}
+		);
+
+		it( 'shows Unknown when a failed payout has no failure code or message', async () => {
+			await renderPayout( { ...clientDeposit, status: 'failed' } );
+
+			expect(
+				screen.getByText( 'Failure reason:' ).parentElement
+			).toHaveTextContent( 'Failure reason: Unknown' );
+		} );
+
+		it( 'shows the failure reason only for failed payouts', async () => {
+			await renderPayout( {
+				...clientDeposit,
+				failure_code: 'insufficient_funds',
+				failure_message: 'Raw Stripe failure message',
+			} );
+
+			expect( screen.queryByText( 'Failure reason:' ) ).toBeNull();
+		} );
+	} );
 } );
