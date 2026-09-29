@@ -1615,6 +1615,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $already_paid_result;
 		}
 
+		// Recorded before the payment runs, whatever its outcome, as the plugin's
+		// Payment_Information::from_payment_request() does. The plugin passes true,
+		// which the meta tables store as '1'.
+		if ( ! empty( $_POST['is_woopay'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$order->add_meta_data( 'is_woopay', '1', true );
+			$order->save_meta_data();
+		}
+
 		$client_error_result = $this->maybe_fail_for_client_payment_method_error( $order, $is_subscription_change );
 		if ( is_array( $client_error_result ) ) {
 			return $client_error_result;

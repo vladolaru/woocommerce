@@ -838,7 +838,7 @@
       "key": "is_woopay",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1306"
+      "plugin_site": "includes/class-payment-information.php:285"
     },
     {
       "key": "last4",

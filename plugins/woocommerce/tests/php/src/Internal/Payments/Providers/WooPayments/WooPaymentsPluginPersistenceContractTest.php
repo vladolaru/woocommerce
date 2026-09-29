@@ -41,6 +41,20 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	);
 
 	/**
+	 * The persistence profile, which lists keys without persisting them.
+	 *
+	 * @var string
+	 */
+	private const PERSISTENCE_PROFILE_FILE = 'src/Internal/Payments/Providers/WooPayments/WooPaymentsPersistenceProfile.php';
+
+	/**
+	 * Calls whose key argument only reads a persisted value.
+	 *
+	 * @var array<int,string>
+	 */
+	private const READ_FUNCTIONS = array( 'get_meta', 'get_option' );
+
+	/**
 	 * The four Action Scheduler hooks proven at runtime (D2/D5): native must actually run a
 	 * handler on them, not merely name them in a string literal.
 	 *
@@ -78,6 +92,17 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	);
 
 	/**
+	 * Fixture keys client 11.1.0 itself only reads, so a native reader is parity.
+	 *
+	 * @var array<string,string>
+	 */
+	private const PLUGIN_READ_ONLY_KEYS = array(
+		'wcpay_frt_review_feature_active'      => 'Client 11.1.0 only reads it (class-wc-payments-features.php:262); the platform or support sets it.',
+		'wcpay_session_rate_limiter_disabled_' => 'Client 11.1.0 only reads it (class-session-rate-limiter.php:92); support sets it by hand.',
+		'_intent_status'                       => 'Client 11.1.0 only reads it (class-wc-rest-payments-charges-controller.php:89); older plugin versions wrote it.',
+	);
+
+	/**
 	 * Fixture keys that are recorded parity defects, scheduled for a later fix (D8, T.7 Step 6).
 	 * Unlike ALLOWED_DIFFERENCES, these are not permanent: `test_allowed_differences_are_not_stale`
 	 * fails once native carries the key, forcing the fix to remove the entry here too.
@@ -87,6 +112,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	private const KNOWN_GAPS = array(
 		'_woopay_has_subscription'    => 'plan.md T.7 Step 6 (e): blocked for the owner as O10 (renewal money path).',
 		'is_attached_to_subscription' => 'plan.md T.7 Step 6 (e): blocked for the owner as O10 (renewal money path).',
+		'wcpay_activation_timestamp'  => 'Client 11.1.0 adds it on activation (class-wc-payments.php:1589); native only reads it (WooPaymentsOperationalQueueService). Reported to the monitor 2026-09-29 (T.13, V482) for a decision.',
 	);
 
 	/**
@@ -163,7 +189,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 
 		foreach ( self::$fixture['entries'] as $entry ) {
 			$key = $entry['key'];
-			if ( isset( self::ALLOWED_DIFFERENCES[ $key ] ) || isset( self::KNOWN_GAPS[ $key ] ) ) {
+			if ( isset( self::ALLOWED_DIFFERENCES[ $key ] ) || isset( self::KNOWN_GAPS[ $key ] ) || isset( self::PLUGIN_READ_ONLY_KEYS[ $key ] ) ) {
 				continue;
 			}
 
@@ -247,20 +273,101 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Harvest every string literal from the native scan roots, once per test.
+	 * Harvest the string literals that can show native persists a key, once per test.
+	 *
+	 * The persistence profile's key list only lists keys, and a get_meta()/get_option() key only
+	 * reads one, so neither counts: a key named nowhere else has no native writer (how is_woopay
+	 * went unwritten until T.13 W1). The profile's own constant declarations still count.
 	 *
 	 * @return array<int,string>
 	 */
 	private function native_literals(): array {
-		$plugin_path = WC()->plugin_path();
-		$roots       = array_map(
+		$plugin_path  = WC()->plugin_path();
+		$profile_file = $plugin_path . '/' . self::PERSISTENCE_PROFILE_FILE;
+		$roots        = array_map(
 			static function ( string $root ) use ( $plugin_path ): string {
 				return $plugin_path . '/' . $root;
 			},
 			self::SCAN_ROOTS
 		);
 
-		return $this->native_all_php_string_literals( $this->native_collect_files( $roots, array( 'php' ) ) );
+		$literals = array();
+		foreach ( $this->native_collect_files( $roots, array( 'php' ) ) as $path ) {
+			$tokens = $this->native_tokenize( $path );
+			foreach ( $tokens as $index => $token ) {
+				if ( ! is_array( $token ) || T_CONSTANT_ENCAPSED_STRING !== $token[0] || $this->is_read_call_key( $tokens, $index ) ) {
+					continue;
+				}
+
+				if ( $profile_file === $path && ! $this->is_constant_declaration_value( $tokens, $index ) ) {
+					continue;
+				}
+
+				$value = $this->native_resolve_literal( $token[1] );
+				if ( null !== $value ) {
+					$literals[] = $value;
+				}
+			}
+		}
+
+		return $literals;
+	}
+
+	/**
+	 * Whether the literal at the given index is the value of a `const NAME = '...';` declaration.
+	 *
+	 * @param array<int,mixed> $tokens PHP tokens.
+	 * @param int              $index  Index of the literal token.
+	 */
+	private function is_constant_declaration_value( array $tokens, int $index ): bool {
+		$previous = $this->previous_significant_tokens( $tokens, $index, 3 );
+
+		return 3 === count( $previous )
+			&& '=' === $previous[0]
+			&& is_array( $previous[1] )
+			&& T_STRING === $previous[1][0]
+			&& is_array( $previous[2] )
+			&& T_CONST === $previous[2][0];
+	}
+
+	/**
+	 * The given number of non-trivia tokens before an index, nearest first.
+	 *
+	 * @param array<int,mixed> $tokens PHP tokens.
+	 * @param int              $index  Index to look back from (exclusive).
+	 * @param int              $count  How many tokens to collect.
+	 * @return array<int,mixed>
+	 */
+	private function previous_significant_tokens( array $tokens, int $index, int $count ): array {
+		$previous = array();
+		for ( $i = $index - 1; $i >= 0; $i-- ) {
+			if ( is_array( $tokens[ $i ] ) && in_array( $tokens[ $i ][0], array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT ), true ) ) {
+				continue;
+			}
+
+			$previous[] = $tokens[ $i ];
+			if ( count( $previous ) === $count ) {
+				break;
+			}
+		}
+
+		return $previous;
+	}
+
+	/**
+	 * Whether the literal at the given index is the first argument of a read call such as get_meta().
+	 *
+	 * @param array<int,mixed> $tokens PHP tokens.
+	 * @param int              $index  Index of the literal token.
+	 */
+	private function is_read_call_key( array $tokens, int $index ): bool {
+		$previous = $this->previous_significant_tokens( $tokens, $index, 2 );
+
+		return 2 === count( $previous )
+			&& '(' === $previous[0]
+			&& is_array( $previous[1] )
+			&& T_STRING === $previous[1][0]
+			&& in_array( $previous[1][1], self::READ_FUNCTIONS, true );
 	}
 
 	/**

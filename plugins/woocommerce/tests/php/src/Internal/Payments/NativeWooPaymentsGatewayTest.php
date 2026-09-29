@@ -81,6 +81,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		unset( $_POST['wcpay-fraud-prevention-token'] );
 		unset( $_POST['is-woopay-preflight-check'] );
 		unset( $_POST['platform-checkout-intent'] );
+		unset( $_POST['is_woopay'] );
 		unset( $_POST['woocommerce_pay'] );
 		unset( $_POST['_wcsnonce'] );
 		unset( $_POST['change_payment_method'] );
@@ -4132,6 +4133,89 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
 		$this->assertSame( '', $service->last_checkout_context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID ] ?? null );
+	}
+
+	/**
+	 * @testdox Should mark a WooPay checkout's order with is_woopay before the payment runs, whatever its outcome.
+	 */
+	public function test_process_payment_marks_a_woopay_order_even_when_the_payment_fails(): void {
+		$order                     = $this->create_order();
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array() );
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		// WooPay's merchant checkout body sends is_woopay (PaymentsHandler::get_merchant_checkout_body()).
+		$_POST['wcpay-payment-method'] = 'pm_woopay';
+		$_POST['is_woopay']            = '1';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( '1', $order->get_meta( 'is_woopay', true ), 'Client 11.1.0 Payment_Information::from_payment_request() adds is_woopay before processing (class-payment-information.php:284-287).' );
+	}
+
+	/**
+	 * @testdox Should keep one is_woopay entry when a WooPay order is paid again, as the client adds it as unique.
+	 */
+	public function test_process_payment_keeps_one_is_woopay_entry_on_a_retry(): void {
+		$order = $this->create_order();
+		$order->add_meta_data( 'is_woopay', '1', true );
+		$order->save_meta_data();
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array() );
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$_POST['wcpay-payment-method'] = 'pm_woopay';
+		$_POST['is_woopay']            = '1';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 1, $order->get_meta( 'is_woopay', false ), 'Client 11.1.0 adds is_woopay with $unique = true (class-payment-information.php:285).' );
+	}
+
+	/**
+	 * @testdox Should mark a WooPay order before the client payment-method error check, as the client does.
+	 */
+	public function test_process_payment_marks_a_woopay_order_before_the_client_error_check(): void {
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$_POST['wcpay-payment-method']               = 'woocommerce_payments_payment_method_error';
+		$_POST['wcpay-payment-method-error-message'] = 'Your card number is invalid.';
+		$_POST['wcpay-payment-method-error-code']    = 'incomplete_number';
+		$_POST['is_woopay']                          = '1';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( '1', $order->get_meta( 'is_woopay', true ), 'Client 11.1.0 writes is_woopay before it turns the payment-method error into a failure (class-payment-information.php:284-296).' );
+	}
+
+	/**
+	 * @testdox Should not mark an ordinary checkout's order with is_woopay.
+	 */
+	public function test_process_payment_does_not_mark_an_ordinary_order_as_woopay(): void {
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( '', $order->get_meta( 'is_woopay', true ) );
 	}
 
 	/**
