@@ -68,6 +68,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsUserPreferenceFields',
+		self::WCPAY . 'WooPaymentsHomeTasks',
 	);
 
 	/** Connected AJAX roots. */
@@ -112,6 +113,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsUserPreferenceFields',
+		self::WCPAY . 'WooPaymentsHomeTasks',
 	);
 
 	/** Connected cron and Action Scheduler roots. */
@@ -182,6 +184,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsUserPreferenceFields',
+		self::WCPAY . 'WooPaymentsHomeTasks',
 	);
 
 	/** Active AJAX roots. */
@@ -240,6 +243,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsUserPreferenceFields',
+		self::WCPAY . 'WooPaymentsHomeTasks',
 		WooPaymentsWooPayPreflightGuard::class,
 		self::WCPAY . 'WooPaymentsCheckoutBridge',
 		self::WCPAY . 'WooPaymentsAddressProvider',

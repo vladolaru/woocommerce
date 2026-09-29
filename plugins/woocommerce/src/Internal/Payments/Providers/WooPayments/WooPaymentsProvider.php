@@ -135,6 +135,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsOperationalQueueService::class,
 			WooPaymentsTestModeOrderEmailService::class,
 			WooPaymentsUserPreferenceFields::class,
+			WooPaymentsHomeTasks::class,
 		);
 		$connected_ajax             = array(
 			WooPaymentsAccountService::class,
@@ -167,6 +168,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				WooPaymentsOperationalQueueService::class,
 				WooPaymentsTestModeOrderEmailService::class,
 				WooPaymentsUserPreferenceFields::class,
+				WooPaymentsHomeTasks::class,
 			)
 		);
 		$connected_cron             = array(

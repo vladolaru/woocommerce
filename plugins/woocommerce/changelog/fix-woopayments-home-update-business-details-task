@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments "Update WooPayments business details" task on WooCommerce Home for restricted accounts, as WooPayments does.
