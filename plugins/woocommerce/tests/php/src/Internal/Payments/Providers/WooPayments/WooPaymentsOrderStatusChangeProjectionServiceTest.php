@@ -365,7 +365,7 @@ class WooPaymentsOrderStatusChangeProjectionServiceTest extends WC_Unit_Test_Cas
 		$config = $this->sut->get_config( $this->create_order() );
 
 		$this->assertSame(
-			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id', 'has_open_authorization', 'test_mode', 'disable_manual_refunds' ),
+			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id', 'has_open_authorization', 'test_mode', 'disable_manual_refunds', 'should_use_explicit_price' ),
 			array_keys( $config ),
 			'The config contract is consumed by the browser and must not drift.'
 		);

@@ -389,7 +389,7 @@ describe( 'PayoutsOverviewCard', () => {
 		expect( screen.getByText( 'Status' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'Amount' ) ).toBeInTheDocument();
 		expect( screen.getAllByText( '$10.00' ).length ).toBeGreaterThan( 0 );
-		expect( screen.getByText( 'Paid' ) ).toHaveClass(
+		expect( screen.getByText( 'Completed (paid)' ) ).toHaveClass(
 			'woocommerce-woopayments-overview__status-chip',
 			'woocommerce-woopayments-overview__status-chip--paid'
 		);

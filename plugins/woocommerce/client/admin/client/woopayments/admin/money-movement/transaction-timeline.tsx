@@ -13,9 +13,15 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
  */
 import type { WooPaymentsTimelineEvent } from './types';
 import type { WooPaymentsDisputeOrder } from './dispute-utils';
-import { formatAmount, formatDisputeReasonLabel, formatLabel } from './utils';
+import {
+	formatAmount,
+	formatDisputeReasonLabel,
+	formatExplicitCurrency,
+	formatLabel,
+} from './utils';
 import {
 	composeFxString,
+	formatExplicitMoney,
 	formatMoney,
 	getCapturedDetails,
 	getEnvelopeDepositImpact,
@@ -410,16 +416,18 @@ const getRefundFx = ( event: WooPaymentsTimelineEvent ) => {
 	const rate =
 		toMajor( toAmount, to ) / toMajor( Math.abs( fromAmount ), from );
 	const unit = toMajor( 100, from ) === 1 ? 100 : 1;
-	const payout = formatAmount( toAmount, to );
+	// Client 11.1.0 `map-events.js:943-946` and `formatFX()`: both amounts with the explicit currency code.
+	const payout = formatExplicitCurrency( toAmount, to );
 	const formattedRate = rate
 		.toFixed( rate < 1 ? 6 : 5 )
 		.replace( /\.?0+$/, '' );
 
 	return {
 		payout,
-		line: `${ formatAmount(
+		line: `${ formatExplicitCurrency(
 			unit,
-			from
+			from,
+			true
 		) } → ${ formattedRate } ${ to.toUpperCase() }: ${ payout }`,
 	};
 };
@@ -451,7 +459,7 @@ const getRefundPayoutMessage = ( event: WooPaymentsTimelineEvent ) => {
 	const amount =
 		getRefundFx( event )?.payout ??
 		( refunded !== undefined &&
-			formatAmount( refunded, getCurrency( event ) ) );
+			formatExplicitCurrency( refunded, getCurrency( event ) ) );
 
 	if ( ! amount ) {
 		return null;
@@ -475,7 +483,7 @@ const getDisputeDepositImpact = ( event: WooPaymentsTimelineEvent ) => {
 	const impact = getEnvelopeDepositImpact( event );
 
 	if ( impact ) {
-		return formatMoney(
+		return formatExplicitMoney(
 			impact.amount,
 			impact.currency || getCurrency( event )
 		);
@@ -485,7 +493,7 @@ const getDisputeDepositImpact = ( event: WooPaymentsTimelineEvent ) => {
 
 	return amount === undefined
 		? undefined
-		: formatMoney(
+		: formatExplicitMoney(
 				Math.abs( amount ) + Math.abs( getNumber( event, 'fee' ) ?? 0 ),
 				getCurrency( event )
 		  );
@@ -533,7 +541,8 @@ const getNetworkCostRow = (
 		return undefined;
 	}
 
-	const formattedAmount = formatMoney( amount, currency );
+	// Client 11.1.0 `map-events.js:1169-1176`.
+	const formattedAmount = formatExplicitMoney( amount, currency );
 	const isCrossCurrency =
 		getString( event, 'currency' )?.toLowerCase() !==
 		currency.toLowerCase();
@@ -562,10 +571,12 @@ const getNetworkCostRow = (
 	};
 };
 
+// `isExplicit` follows the client's `stringWithAmount( ..., true )` and `formatExplicitCurrency()` headlines.
 const createAmountMessage = (
 	template: TranslatableText< `${ string }%s${ string }` >,
 	event: WooPaymentsTimelineEvent,
-	...amountKeys: string[]
+	amountKeys: string[],
+	isExplicit = false
 ) => {
 	const amount = getAmount( event, ...amountKeys );
 
@@ -573,7 +584,9 @@ const createAmountMessage = (
 		return undefined;
 	}
 
-	return sprintf( template, formatAmount( amount, getCurrency( event ) ) );
+	const format = isExplicit ? formatExplicitCurrency : formatAmount;
+
+	return sprintf( template, format( amount, getCurrency( event ) ) );
 };
 
 const mapTimelineEvent = (
@@ -606,8 +619,8 @@ const mapTimelineEvent = (
 					'woocommerce'
 				),
 				event,
-				'amount_authorized',
-				'amount'
+				[ 'amount_authorized', 'amount' ],
+				true
 			);
 
 			return [
@@ -631,8 +644,8 @@ const mapTimelineEvent = (
 					: /* translators: %s: formatted amount. */
 					  __( 'Authorization for %s was voided.', 'woocommerce' ),
 				event,
-				'amount_authorized',
-				'amount'
+				[ 'amount_authorized', 'amount' ],
+				true
 			);
 
 			return [
@@ -659,8 +672,8 @@ const mapTimelineEvent = (
 					'woocommerce'
 				),
 				event,
-				'amount_captured',
-				'amount'
+				[ 'amount_captured', 'amount' ],
+				true
 			);
 			const captured = getCapturedDetails( event );
 
@@ -700,8 +713,8 @@ const mapTimelineEvent = (
 					'woocommerce'
 				),
 				event,
-				'amount_refunded',
-				'amount'
+				[ 'amount_refunded', 'amount' ],
+				true
 			);
 			const payoutMessage = getRefundPayoutMessage( event );
 
@@ -738,8 +751,8 @@ const mapTimelineEvent = (
 				/* translators: %s: formatted amount. */
 				__( 'A refund of %s failed.', 'woocommerce' ),
 				event,
-				'amount_refunded',
-				'amount'
+				[ 'amount_refunded', 'amount' ],
+				true
 			);
 			const failureReason = getString( event, 'failure_reason' );
 
@@ -787,7 +800,10 @@ const mapTimelineEvent = (
 										'A payment of %1$s failed: %2$s.',
 										'woocommerce'
 									),
-									formatMoney( amount, getCurrency( event ) ),
+									formatExplicitMoney(
+										amount,
+										getCurrency( event )
+									),
 									failureMessage
 							  ),
 					date,
@@ -806,7 +822,7 @@ const mapTimelineEvent = (
 					: /* translators: %s: formatted amount. */
 					  __( 'Dispute amount: %s', 'woocommerce' ),
 				event,
-				'amount'
+				[ 'amount' ]
 			);
 
 			return [

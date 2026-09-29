@@ -28,7 +28,12 @@ import {
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { WooPaymentsTransactionSearch } from './transaction-search';
 import { runWooPaymentsExport } from './export';
-import { formatAmount, getErrorMessage, getResourceId } from './utils';
+import {
+	formatAmount,
+	formatExplicitCurrency,
+	getErrorMessage,
+	getResourceId,
+} from './utils';
 import { LiveStatusMessage, StatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import {
@@ -286,7 +291,7 @@ export const WooPaymentsTransactionsList = (
 			sprintf(
 				/* translators: %s: total amount of the listed transactions. */
 				__( '%s total', 'woocommerce' ),
-				formatAmount( summaryTotal, summaryCurrency )
+				formatExplicitCurrency( summaryTotal, summaryCurrency )
 			)
 		);
 	}
@@ -306,7 +311,7 @@ export const WooPaymentsTransactionsList = (
 			sprintf(
 				/* translators: %s: net amount of the listed transactions. */
 				__( '%s net', 'woocommerce' ),
-				formatAmount( summaryNet, summaryCurrency )
+				formatExplicitCurrency( summaryNet, summaryCurrency )
 			)
 		);
 	}

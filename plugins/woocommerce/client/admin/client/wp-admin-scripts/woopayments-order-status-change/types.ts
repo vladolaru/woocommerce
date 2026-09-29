@@ -31,6 +31,8 @@ export interface WooPaymentsOrderStatusChangeConfig {
 	test_mode?: boolean;
 	/** Whether to hide core's manual refund button; false only after a provider refund failed. */
 	disable_manual_refunds?: boolean;
+	/** Whether the dispute notice adds the currency code to amounts, like the client's `shouldUseExplicitPrice`. */
+	should_use_explicit_price?: boolean;
 }
 
 /**

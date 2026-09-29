@@ -33,6 +33,7 @@ import { runWooPaymentsExport } from './export';
 import {
 	formatAmount,
 	formatDateTime,
+	formatExplicitCurrency,
 	formatDisputeReasonLabel,
 	formatLabel,
 	getDisputeId,
@@ -208,7 +209,7 @@ export const WooPaymentsDisputesPage = () => {
 				label: __( 'Amount', 'woocommerce' ),
 				enableHiding: false,
 				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					formatAmount( item.amount, item.currency ),
+					formatExplicitCurrency( item.amount, item.currency ),
 			},
 			{
 				id: 'currency',

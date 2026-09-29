@@ -13,7 +13,6 @@ import type { ReactNode } from 'react';
 import type { WooPaymentsDeposit, WooPaymentsDepositsOverview } from '../types';
 import {
 	formatPayoutDate,
-	formatPayoutStatus,
 	formatWooPaymentsAmount,
 	getAmountForCurrency,
 	getMonthlyAnchorLabel,
@@ -21,6 +20,8 @@ import {
 	getSelectedBalanceCurrency,
 } from '../utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
+import { getPayoutStatusLabel } from '../../payout-status';
+import { formatExplicitCurrency } from '../../money-movement/utils';
 
 const PAYOUT_SCHEDULE_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/payout-schedule/';
@@ -163,7 +164,8 @@ const RecentPayoutsList = ( {
 								payout.status
 							) }` }
 						>
-							{ formatPayoutStatus( payout.status ) }
+							{ /* Client 11.1.0 `components/deposits-overview/recent-deposits-list.tsx:53`. */ }
+							{ getPayoutStatusLabel( payout ) }
 						</span>
 					</td>
 					<td>
@@ -424,7 +426,8 @@ export const PayoutsOverviewCard = ( {
 										'Payouts are paused while your available funds balance remains below %s.',
 										'woocommerce'
 									),
-									formatWooPaymentsAmount(
+									// Client 11.1.0 `components/deposits-overview/index.tsx:186`.
+									formatExplicitCurrency(
 										minimumPayoutAmount,
 										currency
 									)

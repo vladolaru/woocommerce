@@ -23,6 +23,7 @@ import {
 	getSelectedBalanceCurrency,
 } from '../utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
+import { formatExplicitCurrency } from '../../money-movement/utils';
 
 const INSTANT_PAYOUTS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/instant-payouts/';
@@ -89,7 +90,7 @@ const InstantPayoutModal = ( {
 				<li className="woocommerce-woopayments-instant-payout-modal__net">
 					{ __( 'Net payout amount:', 'woocommerce' ) }{ ' ' }
 					<span>
-						{ formatWooPaymentsAmount(
+						{ formatExplicitCurrency(
 							instantBalance.net,
 							instantBalance.currency
 						) }
@@ -115,7 +116,7 @@ const InstantPayoutModal = ( {
 					{ sprintf(
 						/* translators: %s: Net instant payout amount. */
 						__( 'Pay out %s now', 'woocommerce' ),
-						formatWooPaymentsAmount(
+						formatExplicitCurrency(
 							instantBalance.net,
 							instantBalance.currency
 						)

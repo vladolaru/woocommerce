@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Order;
@@ -105,10 +106,12 @@ class WooPaymentsOrderStatusChangeProjectionService {
 	 *                             test-mode notice (client 11.1.0 class-wc-payments-admin.php:881).
 	 * - `disable_manual_refunds` (bool)   Whether to hide core's "Refund manually" button. True unless the
 	 *                             last provider refund failed (client 11.1.0 class-wc-payments-admin.php:873).
+	 * - `should_use_explicit_price` (bool) Whether the dispute notice adds the currency code to amounts
+	 *                             (client 11.1.0 class-wc-payments-admin.php:1040).
 	 *
 	 * @param WC_Order $order Order being edited.
 	 * @return array<string,mixed> The status-change confirmation config.
-	 * @phpstan-return array{order_status: string, can_refund: bool, refund_amount: float, formatted_refund_amount: string, refunded_amount: float, charge_id: string, has_open_authorization: bool, test_mode: bool, disable_manual_refunds: bool}
+	 * @phpstan-return array{order_status: string, can_refund: bool, refund_amount: float, formatted_refund_amount: string, refunded_amount: float, charge_id: string, has_open_authorization: bool, test_mode: bool, disable_manual_refunds: bool, should_use_explicit_price: bool}
 	 *
 	 * @since 11.0.0
 	 */
@@ -116,15 +119,17 @@ class WooPaymentsOrderStatusChangeProjectionService {
 		$refund_amount = (float) $order->get_remaining_refund_amount();
 
 		return array(
-			'order_status'            => $this->get_dropdown_order_status( $order ),
-			'can_refund'              => $this->can_refund_at_provider( $order ),
-			'refund_amount'           => $refund_amount,
-			'formatted_refund_amount' => $this->format_in_order_currency( $order, $refund_amount ),
-			'refunded_amount'         => (float) $order->get_total_refunded(),
-			'charge_id'               => $this->get_charge_id_for_active_mode( $order ),
-			'has_open_authorization'  => 'requires_capture' === $order->get_meta( '_intention_status', true ),
-			'test_mode'               => 'test' === $order->get_meta( '_wcpay_mode', true ),
-			'disable_manual_refunds'  => 'failed' !== $order->get_meta( '_wcpay_refund_status', true ),
+			'order_status'              => $this->get_dropdown_order_status( $order ),
+			'can_refund'                => $this->can_refund_at_provider( $order ),
+			'refund_amount'             => $refund_amount,
+			'formatted_refund_amount'   => $this->format_in_order_currency( $order, $refund_amount ),
+			'refunded_amount'           => (float) $order->get_total_refunded(),
+			'charge_id'                 => $this->get_charge_id_for_active_mode( $order ),
+			'has_open_authorization'    => 'requires_capture' === $order->get_meta( '_intention_status', true ),
+			'test_mode'                 => 'test' === $order->get_meta( '_wcpay_mode', true ),
+			'disable_manual_refunds'    => 'failed' !== $order->get_meta( '_wcpay_refund_status', true ),
+			// Plugin 11.1.0 localizes `shouldUseExplicitPrice` for the disputed order notice's amount.
+			'should_use_explicit_price' => MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price(),
 		);
 	}
 

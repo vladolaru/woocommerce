@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+
 /**
  * Projects explicit currency suffixes for multi-currency price displays.
  *
@@ -32,6 +34,35 @@ class MultiCurrencyExplicitPriceProjectionService {
 		 * @param bool $default Whether explicit currency output is enabled by default.
 		 */
 		return (bool) apply_filters( 'wcpay_multi_currency_should_output_explicit_price', $default_should_output );
+	}
+
+	/**
+	 * Tell whether admin amounts should include an explicit currency code, with the plugin's default rule.
+	 *
+	 * Plugin 11.1.0 `WC_Payments_Explicit_Price_Formatter::is_explicit_price_required()`: Multi-Currency is on and more
+	 * than one currency is enabled. The enabled-currencies option is checked first, so the Multi-Currency state is only
+	 * built when an additional currency is configured. The filter always runs, as in the plugin.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool Whether admin amounts should include an explicit currency code.
+	 */
+	public static function should_output_explicit_admin_price(): bool {
+		$container = wc_get_container();
+		$default   = false;
+
+		if (
+			$container->get( MultiCurrencyRuntimeArbiter::class )->should_core_register()
+			&& $container->get( MultiCurrencyUsageDetector::class )->has_additional_enabled_currencies()
+		) {
+			try {
+				$default = $container->get( MultiCurrencyStateBuilderFactory::class )->create()->build()->has_additional_currencies_enabled();
+			} catch ( \Throwable $e ) {
+				$default = false;
+			}
+		}
+
+		return self::should_output_explicit_price( $default );
 	}
 
 	/**

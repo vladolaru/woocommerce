@@ -24,9 +24,9 @@ import {
 import { getEffectiveDisputeFee } from './dispute-utils';
 import type { WooPaymentsDispute, WooPaymentsTransaction } from './types';
 import {
-	formatAmount,
 	formatDate,
 	formatDisputeReasonLabel,
+	formatExplicitCurrency,
 	formatLabel,
 	getBankName,
 	getDisputeId,
@@ -336,7 +336,7 @@ const LostDisputeDescription = ( {
 							'The %1$s fee has been deducted from your account, and the disputed amount has been returned to your customer.',
 							'woocommerce'
 						),
-						formatAmount( fee.amount, fee.currency )
+						formatExplicitCurrency( fee.amount, fee.currency )
 				  )
 				: __(
 						'The disputed amount has been returned to your customer.',
@@ -850,7 +850,7 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 				/>
 				<DetailRow
 					label={ __( 'Amount', 'woocommerce' ) }
-					value={ formatAmount(
+					value={ formatExplicitCurrency(
 						currentDispute.amount ?? transaction.amount,
 						currentDispute.currency || transaction.currency
 					) }

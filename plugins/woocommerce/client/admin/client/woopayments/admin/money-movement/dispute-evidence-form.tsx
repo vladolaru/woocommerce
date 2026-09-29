@@ -47,9 +47,9 @@ import {
 } from './dispute-evidence-fields';
 import type { WooPaymentsDispute, WooPaymentsDisputeFile } from './types';
 import {
-	formatAmount,
 	formatDate,
 	formatDisputeReasonLabel,
+	formatExplicitCurrency,
 	formatLabel,
 	getBankName,
 	getDisputeId,
@@ -719,7 +719,10 @@ export const DisputeEvidenceForm = ( {
 					<div>
 						<dt>{ __( 'Amount', 'woocommerce' ) }</dt>
 						<dd>
-							{ formatAmount( dispute.amount, dispute.currency ) }
+							{ formatExplicitCurrency(
+								dispute.amount,
+								dispute.currency
+							) }
 						</dd>
 					</div>
 					<div>

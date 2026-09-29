@@ -21,8 +21,10 @@ import {
 	formatCapitalPercent,
 	getCapitalLoanTransactionsUrl,
 } from './active-loan-summary';
-import { formatWooPaymentsAmount } from '../overview/utils';
-import { getErrorMessage } from '../money-movement/utils';
+import {
+	formatExplicitCurrency,
+	getErrorMessage,
+} from '../money-movement/utils';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 
 const getLoanStatus = ( loan: WooPaymentsCapitalLoan ) =>
@@ -128,14 +130,14 @@ const LoanListSummary = ( { loans }: { loans: WooPaymentsCapitalLoan[] } ) => {
 				{ sprintf(
 					/* translators: %s: formatted Capital loan total amount. */
 					__( '%s total', 'woocommerce' ),
-					formatWooPaymentsAmount( totalAmount, currency )
+					formatExplicitCurrency( totalAmount, currency )
 				) }
 			</span>
 			<span>
 				{ sprintf(
 					/* translators: %s: formatted Capital loan fixed-fee total. */
 					__( '%s fixed fees', 'woocommerce' ),
-					formatWooPaymentsAmount( totalFees, currency )
+					formatExplicitCurrency( totalFees, currency )
 				) }
 			</span>
 		</div>
@@ -270,13 +272,13 @@ export const WooPaymentsCapitalPage = () => {
 										<LoanStatusChip loan={ loan } />
 									</td>
 									<td>
-										{ formatWooPaymentsAmount(
+										{ formatExplicitCurrency(
 											loan.amount,
 											loan.currency
 										) }
 									</td>
 									<td>
-										{ formatWooPaymentsAmount(
+										{ formatExplicitCurrency(
 											loan.fee_amount,
 											loan.currency
 										) }

@@ -25,8 +25,8 @@ import {
 	isDisputeRefundable,
 } from '../../woopayments/admin/money-movement/dispute-utils';
 import {
-	formatAmount,
 	formatDate,
+	formatExplicitCurrency,
 	formatDisputeReasonLabel,
 	getTransactionDetailsRoute,
 } from '../../woopayments/admin/money-movement/utils';
@@ -119,9 +119,11 @@ const LockedNotice = ( {
 const AwaitingResponseNotice = ( {
 	disputes,
 	detailsUrl,
+	shouldUseExplicitPrice,
 }: {
 	disputes: WooPaymentsDispute[];
 	detailsUrl: string;
+	shouldUseExplicitPrice: boolean;
 } ) => {
 	const earliestDueBy = Math.min( ...disputes.map( getEvidenceDueBy ) );
 	const countdownDays = Math.floor(
@@ -149,9 +151,12 @@ const AwaitingResponseNotice = ( {
 	if ( disputes.length === 1 ) {
 		const dispute = disputes[ 0 ];
 		const isInquiry = isDisputeInquiry( dispute );
-		const formattedAmount = formatAmount(
+		// Client 11.1.0 `components/disputed-order-notice/index.js:147,183`.
+		const formattedAmount = formatExplicitCurrency(
 			getNoticeAmount( dispute ),
-			getNoticeCurrency( [ dispute ] )
+			getNoticeCurrency( [ dispute ] ),
+			false,
+			shouldUseExplicitPrice
 		);
 		const reason = formatDisputeReasonLabel( dispute.reason );
 		const message = isInquiry
@@ -207,7 +212,12 @@ const AwaitingResponseNotice = ( {
 					'woocommerce'
 				),
 				disputes.length,
-				formatAmount( totalAmount, currency )
+				formatExplicitCurrency(
+					totalAmount,
+					currency,
+					false,
+					shouldUseExplicitPrice
+				)
 		  )
 		: sprintf(
 				/* translators: 1: dispute count, 2: combined disputed amount. */
@@ -216,7 +226,12 @@ const AwaitingResponseNotice = ( {
 					'woocommerce'
 				),
 				disputes.length,
-				formatAmount( totalAmount, currency )
+				formatExplicitCurrency(
+					totalAmount,
+					currency,
+					false,
+					shouldUseExplicitPrice
+				)
 		  );
 
 	return (
@@ -241,9 +256,11 @@ const AwaitingResponseNotice = ( {
 export const WooPaymentsOrderDisputeNotice = ( {
 	chargeId,
 	onDisableOrderRefund,
+	shouldUseExplicitPrice = false,
 }: {
 	chargeId: string;
 	onDisableOrderRefund: ( status: string ) => void;
+	shouldUseExplicitPrice?: boolean;
 } ) => {
 	const [ charge, setCharge ] = useState< WooPaymentsCharge | null >( null );
 
@@ -303,6 +320,7 @@ export const WooPaymentsOrderDisputeNotice = ( {
 			<AwaitingResponseNotice
 				disputes={ awaitingDisputes }
 				detailsUrl={ detailsUrl }
+				shouldUseExplicitPrice={ shouldUseExplicitPrice }
 			/>
 		);
 	}

@@ -43,8 +43,8 @@ import { WooPaymentsTransactionsList } from './transactions-list';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import { getRiskLevelLabel } from './transactions-list-fields';
 import {
-	formatAmount,
 	formatDateTime,
+	formatExplicitCurrency,
 	getErrorMessage,
 	getTransactionDetailsRoute,
 } from './utils';
@@ -551,7 +551,7 @@ export const WooPaymentsTransactionsPage = () => {
 			label: __( 'Amount', 'woocommerce' ),
 			enableHiding: true,
 			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
-				formatAmount( item.amount, item.currency ),
+				formatExplicitCurrency( item.amount, item.currency ),
 		},
 		{
 			id: 'customer_email',
@@ -774,7 +774,7 @@ export const WooPaymentsTransactionsPage = () => {
 					{ typeof summaryTotal === 'number' &&
 						shouldShowSummaryTotal( summary ) && (
 							<span>
-								{ formatAmount(
+								{ formatExplicitCurrency(
 									summaryTotal,
 									summaryCurrency
 								) }

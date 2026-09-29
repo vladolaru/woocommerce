@@ -17,13 +17,16 @@ import { useLocation } from 'react-router-dom';
 import { getWooPaymentsDeposit } from './overview/data';
 import type { WooPaymentsDeposit } from './overview/types';
 import {
-	formatPayoutStatus,
 	formatWooPaymentsAmount,
 	getPayoutStatusClassName,
 } from './overview/utils';
+import { getPayoutStatusLabel } from './payout-status';
 import type { WooPaymentsMoneyMovementQuery } from './money-movement/types';
 import { buildMoneyMovementRoutePath } from './money-movement/query';
-import { getErrorMessage } from './money-movement/utils';
+import {
+	formatExplicitCurrency,
+	getErrorMessage,
+} from './money-movement/utils';
 import { WooPaymentsTransactionsList } from './money-movement/transactions-list';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 import { WooPaymentsTestModeNotice } from './test-mode-notice';
@@ -32,18 +35,6 @@ import './payout-details.scss';
 
 const INSTANT_PAYOUTS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/instant-payouts/#request-an-instant-payout';
-
-/**
- * Client 11.1.0 `deposits/strings.ts:24-32`. `deducted` is a paid withdrawal.
- */
-export const payoutStatusLabels: Record< string, string > = {
-	paid: __( 'Completed (paid)', 'woocommerce' ),
-	deducted: __( 'Completed (deducted)', 'woocommerce' ),
-	pending: __( 'Pending', 'woocommerce' ),
-	in_transit: __( 'In transit', 'woocommerce' ),
-	canceled: __( 'Canceled', 'woocommerce' ),
-	failed: __( 'Failed', 'woocommerce' ),
-};
 
 /**
  * Client 11.1.0 `deposits/strings.ts:37-147`: payout failure code to display string.
@@ -154,22 +145,6 @@ export const payoutFailureMessages: Record< string, string > = {
 	),
 };
 
-/**
- * The client's payout status label, shared by the payouts list and payout details.
- *
- * @param payout The payout.
- */
-export const getPayoutStatusLabel = (
-	payout: Pick< WooPaymentsDeposit, 'type' | 'status' >
-) => {
-	const status =
-		payout.type === 'withdrawal' && payout.status === 'paid'
-			? 'deducted'
-			: payout.status;
-
-	return payoutStatusLabels[ status ] || formatPayoutStatus( payout.status );
-};
-
 // Client 11.1.0 `utils/date-time.ts` `formatDateTimeFromString()`: the site date format, read as UTC.
 const formatPayoutDateLabel = ( payout: WooPaymentsDeposit ) => {
 	const rawDate = payout.date || payout.created || '';
@@ -266,7 +241,7 @@ const PayoutOverview = ( { payout }: { payout: WooPaymentsDeposit } ) => {
 								? __( 'Withdrawal amount', 'woocommerce' )
 								: __( 'Payout amount', 'woocommerce' )
 						}
-						value={ formatWooPaymentsAmount(
+						value={ formatExplicitCurrency(
 							payout.amount + fee,
 							payout.currency
 						) }
@@ -292,7 +267,7 @@ const PayoutOverview = ( { payout }: { payout: WooPaymentsDeposit } ) => {
 								? __( 'Net withdrawal amount', 'woocommerce' )
 								: __( 'Net payout amount', 'woocommerce' )
 						}
-						value={ formatWooPaymentsAmount(
+						value={ formatExplicitCurrency(
 							payout.amount,
 							payout.currency
 						) }
@@ -303,7 +278,7 @@ const PayoutOverview = ( { payout }: { payout: WooPaymentsDeposit } ) => {
 				<ul className="woocommerce-woopayments-payout-overview woocommerce-woopayments-payout-overview--automatic">
 					<PayoutDateItem payout={ payout } />
 					<li className="woocommerce-woopayments-payout-overview__amount">
-						{ formatWooPaymentsAmount(
+						{ formatExplicitCurrency(
 							payout.amount,
 							payout.currency
 						) }

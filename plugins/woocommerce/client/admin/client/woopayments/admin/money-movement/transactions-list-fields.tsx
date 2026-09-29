@@ -12,6 +12,7 @@ import type { WooPaymentsTransaction } from './types';
 import {
 	formatAmount,
 	formatDate,
+	formatExplicitCurrency,
 	formatDateTime,
 	getResourceId,
 	getTransactionDetailsRoute,
@@ -22,6 +23,7 @@ import {
 	getTransactionTypeLabel,
 } from './utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import { payoutStatusLabels } from '../payout-status';
 
 /**
  * A transactions list row: the platform's list fields plus the order context
@@ -90,16 +92,6 @@ const RISK_LEVEL_LABELS: Record< string, string > = {
 	0: __( 'Normal', 'woocommerce' ),
 	1: __( 'Elevated', 'woocommerce' ),
 	2: __( 'Highest', 'woocommerce' ),
-};
-
-// Client 11.1.0 `deposits/strings.ts` `depositStatusLabels`.
-const PAYOUT_STATUS_LABELS: Record< string, string > = {
-	paid: __( 'Completed (paid)', 'woocommerce' ),
-	deducted: __( 'Completed (deducted)', 'woocommerce' ),
-	pending: __( 'Pending', 'woocommerce' ),
-	in_transit: __( 'In transit', 'woocommerce' ),
-	canceled: __( 'Canceled', 'woocommerce' ),
-	failed: __( 'Failed', 'woocommerce' ),
 };
 
 type WooPaymentsSubscriptionsWindow = typeof window & {
@@ -184,7 +176,7 @@ const CustomerLink = ( {
 
 // Client 11.1.0 `transactions/list/converted-amount.tsx`.
 const ConvertedAmount = ( { item }: FieldRenderProps ) => {
-	const formatted = formatAmount(
+	const formatted = formatExplicitCurrency(
 		getTransactionListAmount( item ),
 		item.currency
 	);
@@ -201,7 +193,7 @@ const ConvertedAmount = ( { item }: FieldRenderProps ) => {
 	const convertedFrom = sprintf(
 		/* translators: %s: amount in the currency the customer paid. */
 		__( 'Converted from %s', 'woocommerce' ),
-		formatAmount( item.customer_amount ?? 0, fromCurrency )
+		formatExplicitCurrency( item.customer_amount ?? 0, fromCurrency )
 	);
 
 	return (
@@ -371,7 +363,7 @@ export const getTransactionListFields = (
 			filterBy: false as const,
 			getValue: ( { item }: FieldRenderProps ) => item.net ?? '',
 			render: ( { item }: FieldRenderProps ) =>
-				formatAmount( item.net, item.currency ),
+				formatExplicitCurrency( item.net, item.currency ),
 		},
 		{
 			id: 'order',
@@ -490,9 +482,10 @@ export const getTransactionListFields = (
 						label: __( 'Payout status', 'woocommerce' ),
 						enableSorting: false,
 						filterBy: false as const,
+						// Client 11.1.0 `transactions/list/index.tsx:438-440`: the plain status map, with no withdrawal rule.
 						render: ( { item }: FieldRenderProps ) =>
 							( item.deposit_status &&
-								PAYOUT_STATUS_LABELS[ item.deposit_status ] ) ||
+								payoutStatusLabels[ item.deposit_status ] ) ||
 							'',
 					},
 			  ]

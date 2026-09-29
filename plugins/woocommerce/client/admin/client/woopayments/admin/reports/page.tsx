@@ -50,7 +50,7 @@ import type {
 } from './types';
 import './style.scss';
 import {
-	formatAmount as formatMoneyMovementAmount,
+	formatExplicitCurrency,
 	getTransactionDetailsRoute,
 } from '../money-movement/utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
@@ -174,16 +174,6 @@ const navigateReportsRoute = (
 
 	navigate( buildReportsRoute( search ) );
 };
-
-const formatAmount = ( amount = 0, currency = 'usd' ) =>
-	new Intl.NumberFormat( undefined, {
-		style: 'currency',
-		currency: currency.toUpperCase() || 'USD',
-		currencyDisplay: 'narrowSymbol',
-	} ).format( amount / 100 );
-
-const formatExplicitAmount = ( amount = 0, currency = 'usd' ) =>
-	`${ formatAmount( amount, currency ) } ${ currency.toUpperCase() }`;
 
 const getBalanceReportIdentity = () => {
 	const identity =
@@ -995,7 +985,8 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				getValue: ( { item }: { item: BalanceRow } ) => item.amount,
 				render: ( { item }: { item: BalanceRow } ) => (
 					<span>
-						{ formatMoneyMovementAmount(
+						{ /* Client 11.1.0 `reports/balance/format.ts:110`. */ }
+						{ formatExplicitCurrency(
 							item.amount,
 							reportCurrency
 						) }
@@ -1484,7 +1475,8 @@ const FeesReport = ( { now }: { now: Date } ) => {
 					item.amount ?? 0,
 				render: ( { item }: { item: ReportsFee } ) => (
 					<span>
-						{ formatExplicitAmount(
+						{ /* Client 11.1.0 `reports/fees/fields.tsx:145`. */ }
+						{ formatExplicitCurrency(
 							item.amount ?? 0,
 							item.deposit_currency || item.transaction_currency
 						) }
@@ -1498,7 +1490,8 @@ const FeesReport = ( { now }: { now: Date } ) => {
 				getValue: ( { item }: { item: ReportsFee } ) => item.fees ?? 0,
 				render: ( { item }: { item: ReportsFee } ) => (
 					<span>
-						{ formatExplicitAmount(
+						{ /* Client 11.1.0 `reports/fees/fields.tsx:161`. */ }
+						{ formatExplicitCurrency(
 							item.fees ?? 0,
 							item.deposit_currency || item.transaction_currency
 						) }

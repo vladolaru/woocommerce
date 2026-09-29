@@ -26,15 +26,21 @@ import {
 } from './money-movement/query';
 import type { WooPaymentsMoneyMovementDataView } from './money-movement/types';
 import { LiveStatusMessage, StatusMessage } from './money-movement/table';
-import { getErrorMessage } from './money-movement/utils';
+import {
+	formatExplicitCurrency,
+	getErrorMessage,
+} from './money-movement/utils';
 import { usePersistedHiddenFields } from './money-movement/view-preferences';
 import type {
 	WooPaymentsDeposit,
 	WooPaymentsDepositsQuery,
 	WooPaymentsDepositsSummary,
 } from './overview/types';
-import { formatPayoutDate, formatWooPaymentsAmount } from './overview/utils';
-import { getPayoutStatusLabel } from './payout-details';
+import { formatPayoutDate } from './overview/utils';
+import {
+	getPayoutStatusLabel,
+	PAYOUT_STATUS_FILTER_ELEMENTS,
+} from './payout-status';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 import { WooPaymentsTestModeNotice } from './test-mode-notice';
 import { SpotlightPromotion } from '../promotions/spotlight';
@@ -177,13 +183,16 @@ export const WooPaymentsPayouts = () => {
 				label: __( 'Amount', 'woocommerce' ),
 				enableHiding: false,
 				render: ( { item }: { item: WooPaymentsDeposit } ) =>
-					formatWooPaymentsAmount( item.amount, item.currency ),
+					formatExplicitCurrency( item.amount, item.currency ),
 			},
 			{
 				id: 'status',
 				label: __( 'Status', 'woocommerce' ),
 				enableHiding: false,
 				enableSorting: false,
+				// Client 11.1.0 `deposits/filters/config.js:143-181`: "Is" and "Is not" one status.
+				elements: PAYOUT_STATUS_FILTER_ELEMENTS,
+				filterBy: { operators: [ 'is', 'isNot' ] as const },
 				render: ( { item }: { item: WooPaymentsDeposit } ) =>
 					getPayoutStatusLabel( item ),
 			},
@@ -339,7 +348,7 @@ export const WooPaymentsPayouts = () => {
 					</span>
 					{ typeof summaryTotal === 'number' && (
 						<span>
-							{ formatWooPaymentsAmount(
+							{ formatExplicitCurrency(
 								summaryTotal,
 								summaryCurrency
 							) }

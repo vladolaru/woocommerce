@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Add the payout status filter to the WooPayments payouts list and show the client payout status labels on the overview payouts card.

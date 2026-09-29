@@ -978,8 +978,8 @@ describe( 'WooPaymentsReportsPage', () => {
 			'href',
 			'http://example.com/wp-admin/admin.php?page=wc-orders&action=edit&id=99'
 		);
-		expect( screen.getByText( '$25.00 USD' ) ).toBeInTheDocument();
-		expect( screen.getByText( '-$1.20 USD' ) ).toBeInTheDocument();
+		expect( screen.getByText( '$25.00' ) ).toBeInTheDocument();
+		expect( screen.getByText( '-$1.20' ) ).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'status', { name: 'Fees export status' } )
 		).toBeEmptyDOMElement();

@@ -38,8 +38,8 @@ import {
 } from './query';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import {
-	formatAmount,
 	formatDateTime,
+	formatExplicitCurrency,
 	getTransactionDetailsRoute,
 } from './utils';
 import { usePersistedHiddenFields } from './view-preferences';
@@ -351,7 +351,7 @@ export const WooPaymentsBlockedTransactions = () => {
 					) }
 				>
 					{ key === 'amount'
-						? formatAmount( item.amount, item.currency )
+						? formatExplicitCurrency( item.amount, item.currency )
 						: getCsvValue( item, key ) }
 				</a>
 			),
@@ -366,7 +366,7 @@ export const WooPaymentsBlockedTransactions = () => {
 					</span>
 					{ totalRows > 0 && summary.currencies?.length === 1 && (
 						<span>
-							{ formatAmount(
+							{ formatExplicitCurrency(
 								summary.total,
 								summary.currencies[ 0 ]
 							) }{ ' ' }

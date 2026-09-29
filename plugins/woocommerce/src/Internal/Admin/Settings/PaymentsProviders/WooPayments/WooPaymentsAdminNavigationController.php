@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPa
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
@@ -305,6 +306,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['trackStripeConnected'] = $track_stripe_connected ? $track_stripe_connected : '';
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1021` localizes this for the transactions list's Subscription # column.
 		$settings['woopaymentsSettings']['isSubscriptionsActive'] = $this->is_subscriptions_plugin_active();
+		// Plugin 11.1.0 `class-wc-payments-admin.php:1040` localizes this for `formatExplicitCurrency()`.
+		$settings['woopaymentsSettings']['shouldUseExplicitPrice'] = MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price();
 
 		$provider_settings = $settings['woopaymentsSettings'];
 

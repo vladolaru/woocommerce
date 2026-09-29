@@ -290,6 +290,9 @@ function initialize(): void {
 				onDisableOrderRefund={ ( status ) =>
 					disableOrderRefund( status, config )
 				}
+				shouldUseExplicitPrice={
+					config.should_use_explicit_price === true
+				}
 			/>
 		);
 	}

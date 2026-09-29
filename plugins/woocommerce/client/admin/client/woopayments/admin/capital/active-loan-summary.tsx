@@ -7,7 +7,7 @@ import { __, sprintf } from '@wordpress/i18n';
  * Internal dependencies
  */
 import type { WooPaymentsCapitalSummary } from './types';
-import { formatWooPaymentsAmount } from '../overview/utils';
+import { formatExplicitCurrency } from '../money-movement/utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 
 const getDateValue = ( value: string | number ): string | number => {
@@ -130,14 +130,11 @@ export const ActiveLoanSummary = ( {
 						{ sprintf(
 							/* translators: 1: paid amount, 2: total amount. */
 							__( '%1$s of %2$s', 'woocommerce' ),
-							formatWooPaymentsAmount(
+							formatExplicitCurrency(
 								details.paid_amount,
 								details.currency
 							),
-							formatWooPaymentsAmount(
-								totalDue,
-								details.currency
-							)
+							formatExplicitCurrency( totalDue, details.currency )
 						) }
 					</dd>
 				</div>
@@ -158,11 +155,11 @@ export const ActiveLoanSummary = ( {
 						{ sprintf(
 							/* translators: 1: paid amount, 2: total period amount. */
 							__( '%1$s of %2$s minimum', 'woocommerce' ),
-							formatWooPaymentsAmount(
+							formatExplicitCurrency(
 								details.current_repayment_interval.paid_amount,
 								details.currency
 							),
-							formatWooPaymentsAmount(
+							formatExplicitCurrency(
 								periodDue,
 								details.currency
 							)
@@ -178,7 +175,7 @@ export const ActiveLoanSummary = ( {
 				<div>
 					<dt>{ __( 'Loan amount', 'woocommerce' ) }</dt>
 					<dd>
-						{ formatWooPaymentsAmount(
+						{ formatExplicitCurrency(
 							details.advance_amount,
 							details.currency
 						) }
@@ -187,7 +184,7 @@ export const ActiveLoanSummary = ( {
 				<div>
 					<dt>{ __( 'Fixed fee', 'woocommerce' ) }</dt>
 					<dd>
-						{ formatWooPaymentsAmount(
+						{ formatExplicitCurrency(
 							details.fee_amount,
 							details.currency
 						) }

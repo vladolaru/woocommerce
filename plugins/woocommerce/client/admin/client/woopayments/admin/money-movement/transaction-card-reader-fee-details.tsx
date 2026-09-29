@@ -13,7 +13,12 @@ import type {
 	WooPaymentsReaderChargeSummaryResponse,
 	WooPaymentsReaderChargeSummaryRow,
 } from './types';
-import { formatAmount, formatLabel, getErrorMessage } from './utils';
+import {
+	formatAmount,
+	formatExplicitCurrency,
+	formatLabel,
+	getErrorMessage,
+} from './utils';
 import { LiveStatusMessage, StatusMessage } from './table';
 
 const READER_CHARGE_SUMMARY_TIMEOUT_MS = 15000;
@@ -258,7 +263,7 @@ export const WooPaymentsCardReaderFeeDetails = ( {
 								</td>
 								<td>{ getTransactionCount( row ) || '-' }</td>
 								<td>
-									{ formatAmount(
+									{ formatExplicitCurrency(
 										getFeeAmount( row ),
 										getFeeCurrency( row )
 									) }

@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
  * Internal dependencies
  */
 import type { WooPaymentsTimelineEvent } from './types';
-import { formatAmount } from './utils';
+import { formatAmount, formatExplicitCurrency } from './utils';
 import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
 
 // Ports the captured-event body of client 11.1.0: map-events.js (the legacy `fee_rates` path)
@@ -49,6 +49,24 @@ export const getNumber = (
  */
 export const formatMoney = ( amount: number, currency?: string ) =>
 	formatAmount( amount === 0 ? 0 : amount, currency || 'usd' );
+
+/**
+ * Formats a minor-unit amount like formatMoney(), with the currency code when the client's `formatExplicitCurrency()` adds it.
+ *
+ * @param amount     Amount in minor units.
+ * @param currency   Currency code.
+ * @param skipSymbol Whether to trim off the currency symbol.
+ */
+export const formatExplicitMoney = (
+	amount: number,
+	currency?: string,
+	skipSymbol = false
+) =>
+	formatExplicitCurrency(
+		amount === 0 ? 0 : amount,
+		currency || 'usd',
+		skipSymbol
+	);
 
 const getDisplaySymbol = ( currency: string ) => {
 	try {
@@ -115,10 +133,12 @@ export const formatFx = (
 		.toFixed( rate < 1 ? 6 : 5 )
 		.replace( /\.?0+$/, '' );
 
-	return `${ formatMoney(
+	// Client 11.1.0 `multi-currency/client/utils/currency/index.js:260-276` `formatFX()`.
+	return `${ formatExplicitMoney(
 		unit,
-		fromCurrency
-	) } → ${ formattedRate } ${ toCurrency.toUpperCase() }: ${ formatMoney(
+		fromCurrency,
+		true
+	) } → ${ formattedRate } ${ toCurrency.toUpperCase() }: ${ formatExplicitMoney(
 		Math.abs( toAmount ),
 		toCurrency
 	) }`;
@@ -509,7 +529,7 @@ const getLegacyNet = ( event: WooPaymentsTimelineEvent ) => {
 
 		return captured === undefined || fee === undefined
 			? undefined
-			: formatMoney(
+			: formatExplicitMoney(
 					captured - fee,
 					getString( details, 'store_currency' )
 			  );
@@ -521,7 +541,7 @@ const getLegacyNet = ( event: WooPaymentsTimelineEvent ) => {
 
 	return captured === undefined || fee === undefined
 		? undefined
-		: formatMoney( captured - fee, getString( event, 'currency' ) );
+		: formatExplicitMoney( captured - fee, getString( event, 'currency' ) );
 };
 
 const getBreakdown = ( event: WooPaymentsTimelineEvent ) =>
@@ -599,7 +619,7 @@ const resolveNoteText = ( code: string, meta?: TimelineRecord ) => {
 				'WooPayments refunded its %s application fee on this transaction.',
 				'woocommerce'
 			),
-			formatMoney( refundedAmount, refundedCurrency )
+			formatExplicitMoney( refundedAmount, refundedCurrency )
 		);
 	}
 
@@ -609,8 +629,8 @@ const resolveNoteText = ( code: string, meta?: TimelineRecord ) => {
 			'WooPayments refunded %1$s of its %2$s application fee on this transaction.',
 			'woocommerce'
 		),
-		formatMoney( refundedAmount, refundedCurrency ),
-		formatMoney( originalAmount, refundedCurrency )
+		formatExplicitMoney( refundedAmount, refundedCurrency ),
+		formatExplicitMoney( originalAmount, refundedCurrency )
 	);
 };
 
@@ -829,7 +849,7 @@ const composeCapturedBodyFromBreakdown = (
 			sprintf(
 				/* translators: %s: net payout amount. */
 				__( 'Net payout: %s', 'woocommerce' ),
-				formatMoney(
+				formatExplicitMoney(
 					captureNetAmount,
 					getString( captureNet, 'currency' ) || storeCurrency
 				)
@@ -870,7 +890,7 @@ export const getCapturedDetails = ( event: WooPaymentsTimelineEvent ) => {
 			net:
 				captureNetAmount === undefined
 					? undefined
-					: formatMoney(
+					: formatExplicitMoney(
 							captureNetAmount,
 							getString( captureNet, 'currency' )
 					  ),

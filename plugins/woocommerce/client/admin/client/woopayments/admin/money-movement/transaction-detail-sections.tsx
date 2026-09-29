@@ -21,6 +21,7 @@ import type {
 import {
 	formatAmount,
 	formatDateTime,
+	formatExplicitCurrency,
 	formatLabel,
 	getChargeChannelLabel,
 } from './utils';
@@ -555,11 +556,17 @@ const getTransactionFee = ( transaction: WooPaymentsTransaction ) =>
 const formatPaymentSummaryAmount = (
 	amount: number | undefined,
 	currency: string | undefined,
-	showCurrencyCode: boolean
+	showCurrencyCode: boolean,
+	isExplicit = false
 ) => {
-	const formattedAmount = formatAmount( amount, currency );
+	// Client 11.1.0 `payment-details/summary/index.tsx` uses `formatExplicitCurrency()` for all but the fees.
+	const formattedAmount = isExplicit
+		? formatExplicitCurrency( amount, currency )
+		: formatAmount( amount, currency );
 
-	return showCurrencyCode && currency
+	return showCurrencyCode &&
+		currency &&
+		! formattedAmount.includes( currency.toUpperCase() )
 		? `${ formattedAmount } ${ currency.toUpperCase() }`
 		: formattedAmount;
 };
@@ -737,6 +744,7 @@ export const WooPaymentsPaymentSummarySection = ( {
 							formatPaymentSummaryAmount(
 								balanceTransaction.amount,
 								balanceCurrency,
+								true,
 								true
 							)
 						) }
@@ -746,7 +754,7 @@ export const WooPaymentsPaymentSummarySection = ( {
 					<span>
 						{ sprintf(
 							refundedAmountLabel,
-							formatAmount(
+							formatExplicitCurrency(
 								-Math.abs(
 									Number( transaction.amount_refunded )
 								),
@@ -776,7 +784,8 @@ export const WooPaymentsPaymentSummarySection = ( {
 							formatPaymentSummaryAmount(
 								paydownAmount,
 								balanceCurrency || transaction.currency,
-								hasDifferentBalanceCurrency
+								hasDifferentBalanceCurrency,
+								true
 							)
 						) }
 					</span>
@@ -789,7 +798,8 @@ export const WooPaymentsPaymentSummarySection = ( {
 							formatPaymentSummaryAmount(
 								net,
 								netCurrency,
-								netFromBalance && hasDifferentBalanceCurrency
+								netFromBalance && hasDifferentBalanceCurrency,
+								true
 							)
 						) }
 					</span>
