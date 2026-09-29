@@ -115,8 +115,8 @@ describe( 'overview task builders', () => {
 		expect( task.href ).toContain( 'from=WCPAY_OVERVIEW' );
 	} );
 
-	it( 'builds a restricted-soon update task that opens the details modal', () => {
-		const onOpenUpdateBusinessDetails = jest.fn();
+	// The click behavior is covered in `overview-update-business-details-task-link.test.tsx`.
+	it( 'builds a restricted-soon update task with the deadline', () => {
 		const shell = createShell( {
 			account_status: {
 				...createShell().account_status,
@@ -137,7 +137,7 @@ describe( 'overview task builders', () => {
 		const task = buildOverviewTasks( {
 			shell,
 			disputes: [],
-			onOpenUpdateBusinessDetails,
+			onOpenUpdateBusinessDetails: jest.fn(),
 			onActivatePayments: jest.fn(),
 		} )[ 0 ];
 
@@ -147,10 +147,6 @@ describe( 'overview task builders', () => {
 			actionLabel: 'Update',
 		} );
 		expect( task.content ).toContain( 'Update by' );
-
-		task.onClick?.();
-
-		expect( onOpenUpdateBusinessDetails ).toHaveBeenCalledWith( shell );
 	} );
 
 	it( 'filters generic requirement errors from the update details task content', () => {

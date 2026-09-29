@@ -182,7 +182,28 @@ const buildUpdateBusinessDetailsTask = ( {
 		};
 	}
 
-	return { ...task, onClick: () => onOpenUpdateBusinessDetails( shell ) };
+	if ( hasMultipleErrors ) {
+		return { ...task, onClick: () => onOpenUpdateBusinessDetails( shell ) };
+	}
+
+	// Like the client, an empty link (test-drive accounts) still opens a blank tab.
+	const accountLink = accountStatus.account_link;
+	const accountLinkWithSource = accountLink
+		? addQueryArgs( accountLink, {
+				from: 'WCPAY_OVERVIEW',
+				source: 'wcpay-update-business-details-task',
+		  } )
+		: '';
+
+	return {
+		...task,
+		onClick: () => {
+			recordEvent( 'wcpay_account_details_link_clicked', {
+				source: 'wcpay-update-business-details-task',
+			} );
+			window.open( accountLinkWithSource, '_blank' );
+		},
+	};
 };
 
 // Client 11.1.0 `overview/task-list/tasks/reconnect-task.tsx:13-53`.
