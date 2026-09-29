@@ -122,7 +122,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$sut = new WooPaymentsApiClient();
 		$sut->init( $http_client, $this->create_account_service( true, false ) );
 
-		$result = $sut->create_login_link( 'https://example.com/overview' );
+		$result = $sut->create_login_link( home_url( '/overview' ) );
 
 		$this->assertSame( 'https://connect.stripe.com/express/login_test', $result['url'] );
 		$this->assertSame( '/sites/123/wcpay/accounts/login_links', $http_client->last_path );
@@ -131,10 +131,154 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				'test_mode'    => false,
-				'redirect_url' => 'https://example.com/overview',
+				'redirect_url' => home_url( '/overview' ),
 			),
 			json_decode( (string) $http_client->last_body, true )
 		);
+	}
+
+	/**
+	 * @testdox Should fire the plugin's wpcay_get_account_login_data filter once with the login request object.
+	 *
+	 * Pinned WooPayments 11.1.0: Get_Account_Login_Data::$hook and Request::send()/apply_filters( $hook, $this ), no extra arguments.
+	 */
+	public function test_create_login_link_fires_legacy_login_data_filter_with_the_request(): void {
+		list( $sut ) = $this->make_login_link_sut( true );
+
+		$captured = array();
+		$filter   = static function ( ...$args ) use ( &$captured ) {
+			$captured[] = $args;
+
+			return $args[0];
+		};
+
+		add_filter( 'wpcay_get_account_login_data', $filter, 10, 99 );
+		try {
+			$sut->create_login_link( home_url( '/overview' ) );
+		} finally {
+			remove_filter( 'wpcay_get_account_login_data', $filter, 10 );
+		}
+
+		$this->assertCount( 1, $captured, 'The filter should fire exactly once per login link.' );
+		$this->assertCount( 1, $captured[0], 'The plugin passes only the request object.' );
+
+		$request = $captured[0][0];
+		$this->assertInstanceOf( 'WCPay\Core\Server\Request\Get_Account_Login_Data', $request );
+		$this->assertSame( 'accounts/login_links', $request->get_api() );
+		$this->assertSame( 'POST', $request->get_method() );
+		$this->assertTrue( $request->should_use_user_token() );
+		$this->assertSame( home_url( '/overview' ), $request->get_param( 'redirect_url' ) );
+		$this->assertSame( 'true', $request->get_param( 'test_mode' ) );
+	}
+
+	/**
+	 * @testdox Should send the login request as changed by the wpcay_get_account_login_data filter.
+	 */
+	public function test_create_login_link_sends_the_filtered_login_request(): void {
+		list( $sut, $http_client ) = $this->make_login_link_sut( false );
+
+		$filter = static function ( $request ) {
+			$request->set_redirect_url( home_url( '/filtered-overview' ) );
+			$request->set_param( 'extension_param', 'kept' );
+
+			return $request;
+		};
+
+		add_filter( 'wpcay_get_account_login_data', $filter );
+		try {
+			$result = $sut->create_login_link( home_url( '/overview' ) );
+		} finally {
+			remove_filter( 'wpcay_get_account_login_data', $filter );
+		}
+
+		$this->assertSame( 'https://connect.stripe.com/express/login_test', $result['url'] );
+		$this->assertSame( '/sites/123/wcpay/accounts/login_links', $http_client->last_path );
+		$this->assertTrue( $http_client->last_use_user_token );
+		$this->assertSame(
+			array(
+				'test_mode'       => false,
+				'redirect_url'    => home_url( '/filtered-overview' ),
+				'extension_param' => 'kept',
+			),
+			json_decode( (string) $http_client->last_body, true )
+		);
+	}
+
+	/**
+	 * @testdox Should refuse a non-request value returned by the wpcay_get_account_login_data filter without sending anything.
+	 *
+	 * @testWith [null]
+	 *           ["https://attacker.example/login"]
+	 *           [{"redirect_url": "http://example.org/overview"}]
+	 *
+	 * @param mixed $filtered Value the filter returns.
+	 */
+	public function test_create_login_link_rejects_an_invalid_filtered_value( $filtered ): void {
+		list( $sut, $http_client ) = $this->make_login_link_sut( false );
+
+		$filter = static function () use ( $filtered ) {
+			return $filtered;
+		};
+
+		add_filter( 'wpcay_get_account_login_data', $filter );
+		try {
+			$sut->create_login_link( home_url( '/overview' ) );
+			$this->fail( 'An invalid filtered login request must not be sent.' );
+		} catch ( WooPaymentsApiException $e ) {
+			$this->assertSame( 'wcpay_invalid_filtered_request', $e->get_error_code() );
+		} finally {
+			remove_filter( 'wpcay_get_account_login_data', $filter );
+		}
+
+		$this->assertSame( '', $http_client->last_path, 'Nothing should reach the transport.' );
+	}
+
+	/**
+	 * @testdox Should refuse a login redirect URL outside the allowed redirect hosts, as the plugin's set_redirect_url() does.
+	 *
+	 * Pinned WooPayments 11.1.0: Get_Account_Login_Data::set_redirect_url() and Request::validate_redirect_url().
+	 */
+	public function test_create_login_link_rejects_a_filtered_redirect_url_outside_the_allowed_hosts(): void {
+		list( $sut, $http_client ) = $this->make_login_link_sut( false );
+
+		$filter = static function ( $request ) {
+			$request->set_redirect_url( 'https://attacker.example/overview' );
+
+			return $request;
+		};
+
+		add_filter( 'wpcay_get_account_login_data', $filter );
+		try {
+			$sut->create_login_link( home_url( '/overview' ) );
+			$this->fail( 'A redirect URL outside the allowed hosts must be refused.' );
+		} catch ( WooPaymentsApiException $e ) {
+			$this->assertSame( 'wcpay_core_invalid_request_parameter_invalid_redirect_url', $e->get_error_code() );
+		} finally {
+			remove_filter( 'wpcay_get_account_login_data', $filter );
+		}
+
+		$this->assertSame( '', $http_client->last_path, 'Nothing should reach the transport.' );
+	}
+
+	/**
+	 * Build an API client whose fake transport answers a login-link request.
+	 *
+	 * @param bool $test_mode_onboarding Whether the account is onboarding in test mode.
+	 * @return array{0: WooPaymentsApiClient, 1: FakeWooPaymentsHttpClient}
+	 */
+	private function make_login_link_sut( bool $test_mode_onboarding ): array {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'url' => 'https://connect.stripe.com/express/login_test' ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false, $test_mode_onboarding ) );
+
+		return array( $sut, $http_client );
 	}
 
 	/**

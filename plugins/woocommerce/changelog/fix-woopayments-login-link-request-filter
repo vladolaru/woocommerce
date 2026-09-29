@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Fire the WooPayments `wpcay_get_account_login_data` filter again when creating Stripe dashboard login links, so extensions can change the request.

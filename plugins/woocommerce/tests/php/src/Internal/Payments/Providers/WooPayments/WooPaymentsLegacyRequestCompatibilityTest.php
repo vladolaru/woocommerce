@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountCapitalLinkRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountLoginDataRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsListRequest;
@@ -302,6 +303,7 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 			'get PM promotions'         => array( WooPaymentsGetPmPromotionsRequest::class, 'WCPay\Core\Server\Request\Get_PM_Promotions' ),
 			'activate PM promotion'     => array( WooPaymentsActivatePmPromotionRequest::class, 'WCPay\Core\Server\Request\Activate_PM_Promotion' ),
 			'get account capital link'  => array( WooPaymentsGetAccountCapitalLinkRequest::class, 'WCPay\Core\Server\Request\Get_Account_Capital_Link' ),
+			'get account login data'    => array( WooPaymentsGetAccountLoginDataRequest::class, 'WCPay\Core\Server\Request\Get_Account_Login_Data' ),
 		);
 	}
 
@@ -490,6 +492,14 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 				'user_token' => true,
 				'dynamic'    => false,
 			),
+			'wpcay_get_account_login_data'                => array(
+				'class'      => WooPaymentsGetAccountLoginDataRequest::class,
+				'api'        => 'accounts/login_links',
+				'method'     => 'POST',
+				'raw'        => false,
+				'user_token' => true,
+				'dynamic'    => false,
+			),
 		);
 	}
 
@@ -511,6 +521,8 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 				return WooPaymentsActivatePmPromotionRequest::from_id( 'promo_test' );
 			case WooPaymentsGetAccountCapitalLinkRequest::class:
 				return WooPaymentsGetAccountCapitalLinkRequest::from_urls( 'https://example.test/return', 'https://example.test/refresh' );
+			case WooPaymentsGetAccountLoginDataRequest::class:
+				return WooPaymentsGetAccountLoginDataRequest::from_redirect_url( home_url( '/overview' ), false );
 			case WooPaymentsReportingBalanceSummaryRequest::class:
 				return WooPaymentsReportingBalanceSummaryRequest::from_params(
 					array(
@@ -563,6 +575,7 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 		WooPaymentsGetPmPromotionsRequest::register_legacy_aliases();
 		WooPaymentsActivatePmPromotionRequest::register_legacy_aliases();
 		WooPaymentsGetAccountCapitalLinkRequest::register_legacy_aliases();
+		WooPaymentsGetAccountLoginDataRequest::register_legacy_aliases();
 	}
 
 	/**

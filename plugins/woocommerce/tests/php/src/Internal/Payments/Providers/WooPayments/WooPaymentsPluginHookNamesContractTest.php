@@ -70,7 +70,8 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	/**
 	 * Fixture hook names native intentionally does not fire, with the recorded authority.
 	 *
-	 * `data/bc-inventory-undecided-classified.tsv`, the `hooks` rows classified DECIDED (54 rows).
+	 * `data/bc-inventory-undecided-classified.tsv`, the `hooks` rows classified DECIDED (54 rows, less
+	 * `wpcay_get_account_login_data`, which native fires again since F-T60-24).
 	 * Every citation below is copied verbatim from that TSV's `native_evidence_or_authority` column,
 	 * which already corrected the seven wrong Decision 1 citations the review found.
 	 *
@@ -130,7 +131,6 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 		'woocommerce_payments_changed_subscription_payment_method' => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:99 §1(a)',
 		'woocommerce_payments_order_failed'                => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:96 §1(a)',
 		'woocommerce_woocommerce_payments_updated'         => 'data/bc-surface-diff.md:124 §1(b) dropped by design (no plugin version)',
-		'wpcay_get_account_login_data'                     => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:80 §1(a)',
 	);
 
 	/**

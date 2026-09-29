@@ -1641,22 +1641,19 @@ class WooPaymentsApiClient {
 	/**
 	 * Create a one-time Stripe dashboard login link.
 	 *
-	 * Mirrors the plugin's `Get_Account_Login_Data` request (11.1.0): user-token auth and the test-mode-onboarding flag.
+	 * Mirrors the plugin's `Get_Account_Login_Data` request (11.1.0): user-token auth, the test-mode-onboarding flag and its `wpcay_get_account_login_data` filter.
 	 *
 	 * @param string $redirect_url URL to return to from the dashboard.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function create_login_link( string $redirect_url ): array {
-		return $this->request(
-			array(
-				'redirect_url' => $redirect_url,
-				'test_mode'    => $this->account_service->is_test_mode_onboarding_enabled(),
+		return $this->request_with_legacy_request_filter(
+			WooPaymentsGetAccountLoginDataRequest::from_redirect_url(
+				$redirect_url,
+				$this->account_service->is_test_mode_onboarding_enabled()
 			),
-			self::ACCOUNTS_API . '/login_links',
-			'POST',
-			true,
-			true
+			'wpcay_get_account_login_data'
 		);
 	}
 
@@ -2461,6 +2458,8 @@ class WooPaymentsApiClient {
 			WooPaymentsActivatePmPromotionRequest::register_legacy_aliases();
 		} elseif ( $request instanceof WooPaymentsGetAccountCapitalLinkRequest ) {
 			WooPaymentsGetAccountCapitalLinkRequest::register_legacy_aliases();
+		} elseif ( $request instanceof WooPaymentsGetAccountLoginDataRequest ) {
+			WooPaymentsGetAccountLoginDataRequest::register_legacy_aliases();
 		} elseif ( $request instanceof WooPaymentsAuthorizationsListRequest ) {
 			WooPaymentsAuthorizationsListRequest::register_legacy_alias();
 		} elseif ( $request instanceof WooPaymentsDocumentsListRequest ) {
