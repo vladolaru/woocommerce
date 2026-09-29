@@ -3,6 +3,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
@@ -26,17 +31,39 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	private $sut;
 
 	/**
+	 * Original option values restored after each test.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $original_options = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
 
+		foreach ( array( 'woocommerce_currency', '_wcpay_feature_customer_multi_currency', 'wcpay_multi_currency_enabled_currencies', 'wcpay_multi_currency_exchange_rate_eur', 'wcpay_multi_currency_manual_rate_eur' ) as $option_name ) {
+			$this->original_options[ $option_name ] = get_option( $option_name, null );
+		}
 		$this->sut = new WooPaymentsDisputeEventHandler();
 		$this->sut->init(
 			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
 			new class() extends WooPaymentsApiClient {},
 			wc_get_container()->get( WooPaymentsDisputeCacheService::class )
 		);
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		foreach ( $this->original_options as $option_name => $option_value ) {
+			null === $option_value ? delete_option( $option_name ) : update_option( $option_name, $option_value );
+		}
+		$this->original_options = array();
+		$this->reset_container_replacements();
+		parent::tearDown();
 	}
 
 	/**
@@ -136,104 +163,68 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should include an explicit currency code in dispute amounts when multiple currencies are enabled.
-	 */
-	public function test_formatted_dispute_amount_includes_currency_code_when_multiple_currencies_are_enabled(): void {
-		$previous_store_currency     = get_option( 'woocommerce_currency' );
-		$previous_enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
-
-		try {
-			update_option( 'woocommerce_currency', 'USD' );
-			update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP', 'EUR' ) );
-
-			$order = wc_create_order();
-			$order->set_currency( 'USD' );
-
-			$amount = $this->invoke_private( 'get_formatted_dispute_amount', array( $order, 5000 ) );
-
-			$this->assertStringContainsString( '$50.00 USD', wp_strip_all_tags( html_entity_decode( $amount ) ), 'Dispute amounts should match the extension explicit-currency note format.' );
-		} finally {
-			update_option( 'woocommerce_currency', $previous_store_currency );
-			update_option( 'wcpay_multi_currency_enabled_currencies', $previous_enabled_currencies );
-		}
-	}
-
-	/**
-	 * @testdox Should omit the currency code from dispute amounts while customer multi-currency is off, whatever the order currency.
+	 * @testdox Dispute amounts follow the client explicit-price rule.
 	 *
-	 * Source: client 11.1.0 class-wc-payments-webhook-processing-service.php:726-730 and explicit-price-formatter.php:167-190.
+	 * Source: client 11.1.0 class-wc-payments-webhook-processing-service.php:726-730 (dispute amount) and
+	 * class-wc-payments-explicit-price-formatter.php:55-74,167-190 (Multi-Currency on with a second currency, then the filter).
 	 *
-	 * @dataProvider single_currency_dispute_amount_provider
+	 * @dataProvider explicit_price_rule_provider
 	 *
-	 * @param string   $flag               Customer multi-currency flag.
-	 * @param string[] $enabled_currencies Enabled currencies option.
-	 * @param string   $order_currency     Order currency.
-	 * @param string   $expected           Expected plain-text amount.
+	 * @param bool        $core_multi_currency Whether core Multi-Currency owns the runtime.
+	 * @param string[]    $enabled_currencies  Enabled currencies option.
+	 * @param string|null $plugin_flag         Stale WooPayments `_wcpay_feature_customer_multi_currency` value, or null when absent.
+	 * @param bool|null   $filter_result       Value the filter returns, or null for no filter.
+	 * @param string      $order_currency      Order currency.
+	 * @param bool        $expected_default    Default the filter must receive.
+	 * @param string      $expected            Expected plain-text amount.
 	 */
-	public function test_formatted_dispute_amount_follows_the_client_explicit_price_rule( string $flag, array $enabled_currencies, string $order_currency, string $expected ): void {
-		$previous_store_currency     = get_option( 'woocommerce_currency' );
-		$previous_enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
-		$previous_flag               = get_option( '_wcpay_feature_customer_multi_currency', null );
-
-		try {
-			update_option( 'woocommerce_currency', 'USD' );
-			update_option( 'wcpay_multi_currency_enabled_currencies', $enabled_currencies );
-			update_option( '_wcpay_feature_customer_multi_currency', $flag );
-
-			$order = wc_create_order();
-			$order->set_currency( $order_currency );
-
-			$amount = $this->invoke_private( 'get_formatted_dispute_amount', array( $order, 5000 ) );
-
-			$this->assertSame( $expected, wp_strip_all_tags( html_entity_decode( $amount ) ) );
-		} finally {
-			update_option( 'woocommerce_currency', $previous_store_currency );
-			update_option( 'wcpay_multi_currency_enabled_currencies', $previous_enabled_currencies );
-			null === $previous_flag ? delete_option( '_wcpay_feature_customer_multi_currency' ) : update_option( '_wcpay_feature_customer_multi_currency', $previous_flag );
-		}
-	}
-
-	/**
-	 * Flag, enabled list and order currency with the client's explicit-price outcome.
-	 *
-	 * @return array<string,array{0:string,1:string[],2:string,3:string}>
-	 */
-	public function single_currency_dispute_amount_provider(): array {
-		return array(
-			'flag off with an enabled currency'    => array( '0', array( 'EUR' ), 'USD', '$50.00' ),
-			'single-currency store, foreign order' => array( '1', array(), 'EUR', '€50.00' ),
-		);
-	}
-
-	/**
-	 * @testdox Should let the public filter suppress native dispute currency output.
-	 */
-	public function test_public_filter_suppresses_native_dispute_currency_output(): void {
-		$previous_store_currency     = get_option( 'woocommerce_currency' );
-		$previous_enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
-		$defaults                    = array();
+	public function test_formatted_dispute_amount_follows_the_client_explicit_price_rule( bool $core_multi_currency, array $enabled_currencies, ?string $plugin_flag, ?bool $filter_result, string $order_currency, bool $expected_default, string $expected ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', $enabled_currencies );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		null === $plugin_flag ? delete_option( '_wcpay_feature_customer_multi_currency' ) : update_option( '_wcpay_feature_customer_multi_currency', $plugin_flag );
+		$arbiter   = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_core_register' ) )
+			->getMock();
+		$container = wc_get_container();
+		// Keep the real feature definition working if FeaturesController registers it while the mock is in place.
+		$arbiter->init( $container->get( NativePaymentsRuntimeArbiter::class ), $container->get( LegacyProxy::class ), $container->get( FeaturesController::class ), $container->get( MultiCurrencyFeatureController::class ) );
+		$arbiter->method( 'should_core_register' )->willReturn( $core_multi_currency );
+		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
+		$defaults = array();
 		add_filter(
 			'wcpay_multi_currency_should_output_explicit_price',
-			static function ( bool $current_default ) use ( &$defaults ): bool {
+			static function ( bool $current_default ) use ( &$defaults, $filter_result ): bool {
 				$defaults[] = $current_default;
-				return false;
+				return $filter_result ?? $current_default;
 			}
 		);
+		$order = wc_create_order();
+		$order->set_currency( $order_currency );
 
-		try {
-			update_option( 'woocommerce_currency', 'USD' );
-			update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-			$order = wc_create_order();
-			$order->set_currency( 'USD' );
+		$amount = $this->invoke_private( 'get_formatted_dispute_amount', array( $order, 5000 ) );
 
-			$amount = $this->invoke_private( 'get_formatted_dispute_amount', array( $order, 5000 ) );
+		$this->assertSame( $expected, html_entity_decode( wp_strip_all_tags( $amount ) ) );
+		$this->assertSame( array( $expected_default ), $defaults, 'The filter must run once per amount with the client default.' );
+	}
 
-			$this->assertStringNotContainsString( '$50.00 USD', wp_strip_all_tags( html_entity_decode( $amount ) ) );
-			$this->assertSame( array( true ), $defaults );
-		} finally {
-			update_option( 'woocommerce_currency', $previous_store_currency );
-			update_option( 'wcpay_multi_currency_enabled_currencies', $previous_enabled_currencies );
-		}
+	/**
+	 * Store states with the client's dispute amount outcome.
+	 *
+	 * @return array<string,array{0:bool,1:string[],2:?string,3:?bool,4:string,5:bool,6:string}>
+	 */
+	public function explicit_price_rule_provider(): array {
+		return array(
+			'Multi-Currency on with a second currency'     => array( true, array( 'USD', 'EUR' ), null, null, 'USD', true, '$50.00 USD' ),
+			'Multi-Currency on, foreign-currency order'    => array( true, array( 'USD', 'EUR' ), null, null, 'EUR', true, '€50.00 EUR' ),
+			'Multi-Currency on, stale plugin flag off'     => array( true, array( 'USD', 'EUR' ), '0', null, 'USD', true, '$50.00 USD' ),
+			'Multi-Currency on, single currency'           => array( true, array( 'USD' ), null, null, 'EUR', false, '€50.00' ),
+			'Multi-Currency off, stale enabled currencies' => array( false, array( 'USD', 'EUR' ), '1', null, 'USD', false, '$50.00' ),
+			'filter forces the code while Multi-Currency is off' => array( false, array( 'USD', 'EUR' ), null, true, 'USD', false, '$50.00 USD' ),
+			'filter removes the code while Multi-Currency is on' => array( true, array( 'USD', 'EUR' ), null, false, 'USD', true, '$50.00' ),
+		);
 	}
 
 	/**

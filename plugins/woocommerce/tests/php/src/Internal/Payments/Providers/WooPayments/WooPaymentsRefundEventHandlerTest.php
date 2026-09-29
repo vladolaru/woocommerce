@@ -3,6 +3,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -51,6 +56,9 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$this->original_multi_currency_options = array(
 			'_wcpay_feature_customer_multi_currency'  => get_option( '_wcpay_feature_customer_multi_currency', null ),
 			'wcpay_multi_currency_enabled_currencies' => get_option( 'wcpay_multi_currency_enabled_currencies', null ),
+			'wcpay_multi_currency_exchange_rate_eur'  => get_option( 'wcpay_multi_currency_exchange_rate_eur', null ),
+			'wcpay_multi_currency_manual_rate_eur'    => get_option( 'wcpay_multi_currency_manual_rate_eur', null ),
+			'woocommerce_currency'                    => get_option( 'woocommerce_currency', null ),
 		);
 		$this->sut                             = wc_get_container()->get( WooPaymentsRefundEventHandler::class );
 	}
@@ -70,47 +78,82 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		}
 		$this->original_multi_currency_options = array();
+		$this->reset_container_replacements();
 		parent::tearDown();
 	}
 
 	/**
-	 * @testdox Should let the public filter suppress native refund-event currency output.
+	 * @testdox Failed refund notes follow the client explicit-price rule.
+	 *
+	 * Source: client 11.1.0 class-wc-payments-order-service.php:1969-1972 (failed refund note amount) and
+	 * class-wc-payments-explicit-price-formatter.php:55-74,167-190 (Multi-Currency on with a second currency, then the filter).
+	 *
+	 * @dataProvider explicit_price_rule_provider
+	 *
+	 * @param bool        $core_multi_currency Whether core Multi-Currency owns the runtime.
+	 * @param string|null $plugin_flag         Stale WooPayments `_wcpay_feature_customer_multi_currency` value, or null when absent.
+	 * @param bool|null   $filter_result       Value the filter returns, or null for no filter.
+	 * @param bool        $expected_default    Default the filter must receive.
+	 * @param string      $expected_note       Expected plain-text note.
 	 */
-	public function test_public_filter_suppresses_native_refund_event_currency_output(): void {
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+	public function test_failed_refund_note_follows_the_client_explicit_price_rule( bool $core_multi_currency, ?string $plugin_flag, ?bool $filter_result, bool $expected_default, string $expected_note ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		null === $plugin_flag ? delete_option( '_wcpay_feature_customer_multi_currency' ) : update_option( '_wcpay_feature_customer_multi_currency', $plugin_flag );
+		$this->set_core_multi_currency( $core_multi_currency );
 		$defaults = array();
 		add_filter(
 			'wcpay_multi_currency_should_output_explicit_price',
-			static function ( bool $current_default ) use ( &$defaults ): bool {
+			static function ( bool $current_default ) use ( &$defaults, $filter_result ): bool {
 				$defaults[] = $current_default;
-				return false;
+				return $filter_result ?? $current_default;
 			}
 		);
 		$order  = $this->create_refundable_order();
-		$method = new \ReflectionMethod( $this->sut, 'format_refund_amount' );
+		$method = new \ReflectionMethod( $this->sut, 'get_failed_refund_note' );
 		$method->setAccessible( true );
 
-		$amount = $method->invoke( $this->sut, 4.00, 'USD', $order );
+		$note = $method->invoke( $this->sut, $order, 're_123', 400, 'usd', true, '' );
 
-		$this->assertStringNotContainsString( ' USD', wp_strip_all_tags( html_entity_decode( $amount ) ) );
-		$this->assertSame( array( true ), $defaults );
+		$this->assertSame( $expected_note, html_entity_decode( wp_strip_all_tags( $note ) ) );
+		$this->assertSame( array( $expected_default ), $defaults, 'The filter must run once per note with the client default.' );
 	}
 
 	/**
-	 * @testdox Should omit the currency code from refund-event amounts while customer multi-currency is off.
+	 * Store states with the client's failed-refund note outcome.
 	 *
-	 * Source: client 11.1.0 class-wc-payments-explicit-price-formatter.php:170-172 (flag off: no explicit price).
+	 * @return array<string,array{0:bool,1:?string,2:?bool,3:bool,4:string}>
 	 */
-	public function test_refund_event_amount_omits_currency_code_when_multi_currency_is_off(): void {
-		update_option( '_wcpay_feature_customer_multi_currency', '0' );
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-		$order  = $this->create_refundable_order();
-		$method = new \ReflectionMethod( $this->sut, 'format_refund_amount' );
-		$method->setAccessible( true );
+	public function explicit_price_rule_provider(): array {
+		$with_code    = 'A refund of $4.00 USD was cancelled using WooPayments (re_123).';
+		$without_code = 'A refund of $4.00 was cancelled using WooPayments (re_123).';
 
-		$amount = $method->invoke( $this->sut, 4.00, 'USD', $order );
+		return array(
+			'Multi-Currency on with a second currency'     => array( true, null, null, true, $with_code ),
+			'Multi-Currency on, stale plugin flag off'     => array( true, '0', null, true, $with_code ),
+			'Multi-Currency off, stale enabled currencies' => array( false, '1', null, false, $without_code ),
+			'filter forces the code while Multi-Currency is off' => array( false, null, true, false, $with_code ),
+			'filter removes the code while Multi-Currency is on' => array( true, null, false, true, $without_code ),
+		);
+	}
 
-		$this->assertStringNotContainsString( ' USD', wp_strip_all_tags( html_entity_decode( $amount ) ) );
+	/**
+	 * Make core Multi-Currency own the runtime, or not.
+	 *
+	 * @param bool $enabled Whether core Multi-Currency should own the runtime.
+	 */
+	private function set_core_multi_currency( bool $enabled ): void {
+		$arbiter   = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_core_register' ) )
+			->getMock();
+		$container = wc_get_container();
+		// Keep the real feature definition working if FeaturesController registers it while the mock is in place.
+		$arbiter->init( $container->get( NativePaymentsRuntimeArbiter::class ), $container->get( LegacyProxy::class ), $container->get( FeaturesController::class ), $container->get( MultiCurrencyFeatureController::class ) );
+		$arbiter->method( 'should_core_register' )->willReturn( $enabled );
+		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 	}
 
 	/**

@@ -376,54 +376,11 @@ class WooPaymentsRefundEventHandler {
 			return (string) call_user_func( $extension_formatter, $formatted_amount, $order );
 		}
 
-		if ( ! MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( $this->should_output_native_explicit_price() ) ) {
-			return $formatted_amount;
-		}
-
-		return $this->append_currency_suffix( $formatted_amount, $order->get_currency() );
-	}
-
-	/**
-	 * Tell whether native refund notes should include explicit currency suffixes.
-	 *
-	 * @return bool
-	 */
-	private function should_output_native_explicit_price(): bool {
-		// Client 11.1.0 explicit-price-formatter.php:170-172: no code while customer multi-currency is off.
-		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
-			return false;
-		}
-
-		$store_currency     = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
-		$enabled_currencies = is_array( $enabled_currencies ) ? $enabled_currencies : array();
-		$enabled_currencies = array_map(
-			static fn( $currency_code ) => strtoupper( (string) $currency_code ),
-			$enabled_currencies
+		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
+			$formatted_amount,
+			$order->get_currency(),
+			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price()
 		);
-
-		return count( array_unique( array_merge( array( $store_currency ), $enabled_currencies ) ) ) > 1;
-	}
-
-	/**
-	 * Append a currency suffix when the price does not already include one.
-	 *
-	 * @param string $price         Formatted price.
-	 * @param string $currency_code Currency code.
-	 * @return string
-	 */
-	private function append_currency_suffix( string $price, string $currency_code ): string {
-		$currency_code = strtoupper( trim( $currency_code ) );
-		if ( '' === $currency_code ) {
-			return $price;
-		}
-
-		$price_to_check = html_entity_decode( wp_strip_all_tags( $price ), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 );
-		if ( false === strpos( $price_to_check, $currency_code ) ) {
-			return $price . ' ' . $currency_code;
-		}
-
-		return $price;
 	}
 
 	/**

@@ -4,6 +4,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -82,9 +86,29 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->original_multi_currency_options = array(
 			'_wcpay_feature_customer_multi_currency'  => get_option( '_wcpay_feature_customer_multi_currency', null ),
 			'wcpay_multi_currency_enabled_currencies' => get_option( 'wcpay_multi_currency_enabled_currencies', null ),
+			'wcpay_multi_currency_exchange_rate_eur'  => get_option( 'wcpay_multi_currency_exchange_rate_eur', null ),
+			'wcpay_multi_currency_manual_rate_eur'    => get_option( 'wcpay_multi_currency_manual_rate_eur', null ),
 		);
 		$this->sut                             = wc_get_container()->get( WooPaymentsEventIngestor::class );
 		$this->last_refund_charge_id           = 'ch_123';
+	}
+
+	/**
+	 * Run core Multi-Currency with EUR next to the store currency.
+	 */
+	private function enable_core_multi_currency_with_second_currency(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		$arbiter   = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_core_register' ) )
+			->getMock();
+		$container = wc_get_container();
+		// Keep the real feature definition working if FeaturesController registers it while the mock is in place.
+		$arbiter->init( $container->get( NativePaymentsRuntimeArbiter::class ), $container->get( LegacyProxy::class ), $container->get( FeaturesController::class ), $container->get( MultiCurrencyFeatureController::class ) );
+		$arbiter->method( 'should_core_register' )->willReturn( true );
+		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 	}
 
 	/**
@@ -123,6 +147,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			}
 		}
 		$this->original_multi_currency_options = array();
+		$this->reset_container_replacements();
 		parent::tearDown();
 	}
 
@@ -3236,7 +3261,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox charge.refunded notes include explicit currency when native multi-currency has additional currencies.
 	 */
 	public function test_charge_refunded_uses_explicit_currency_in_created_refund_notes(): void {
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$this->enable_core_multi_currency_with_second_currency();
 		$order = $this->create_refundable_woopayments_order( '10.00' );
 
 		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded' ) );
@@ -3682,7 +3707,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox charge.refund.updated notes include explicit currency when native multi-currency has additional currencies.
 	 */
 	public function test_charge_refund_updated_uses_explicit_currency_in_failed_refund_notes(): void {
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$this->enable_core_multi_currency_with_second_currency();
 		$order = $this->create_refundable_woopayments_order( '10.00' );
 
 		$this->sut->process(

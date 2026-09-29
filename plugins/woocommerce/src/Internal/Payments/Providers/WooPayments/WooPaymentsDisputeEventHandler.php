@@ -466,30 +466,8 @@ class WooPaymentsDisputeEventHandler {
 		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
 			$price,
 			strtoupper( $currency ),
-			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( $this->should_output_explicit_dispute_currency() )
+			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price()
 		);
-	}
-
-	/**
-	 * Tell whether a dispute amount needs an explicit currency code.
-	 *
-	 * @return bool
-	 */
-	private function should_output_explicit_dispute_currency(): bool {
-		// Client 11.1.0 webhook-processing-service.php:726-730 and explicit-price-formatter.php:167-190: flag and enabled count only.
-		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
-			return false;
-		}
-
-		$store_currency     = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
-		$enabled_currencies = is_array( $enabled_currencies ) ? $enabled_currencies : array();
-		$enabled_currencies = array_map(
-			static fn( $currency_code ) => strtoupper( (string) $currency_code ),
-			$enabled_currencies
-		);
-
-		return count( array_unique( array_merge( array( $store_currency ), $enabled_currencies ) ) ) > 1;
 	}
 
 	/**

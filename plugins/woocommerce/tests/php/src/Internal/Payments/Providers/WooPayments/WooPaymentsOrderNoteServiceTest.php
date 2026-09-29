@@ -3,6 +3,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -54,6 +59,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 			}
 		}
 		$this->original_options = array();
+		$this->reset_container_replacements();
 		parent::tearDown();
 	}
 
@@ -92,6 +98,89 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 			'Capture failed.',
 			$sut->format_capture_failed_note( $order, 'pi_test_charge', 'ch_test_charge', 'Capture failed.' )
 		);
+	}
+
+	/**
+	 * @testdox Refund and payment notes follow the client explicit-price rule.
+	 *
+	 * Source: client 11.1.0 class-wc-payments-order-service.php:2630-2631 (created refund note), :2904-2910 (order amount) and
+	 * class-wc-payments-explicit-price-formatter.php:55-74,167-190 (Multi-Currency on with a second currency, then the filter).
+	 *
+	 * @dataProvider explicit_price_rule_provider
+	 *
+	 * @param bool        $core_multi_currency Whether core Multi-Currency owns the runtime.
+	 * @param string|null $plugin_flag         Stale WooPayments `_wcpay_feature_customer_multi_currency` value, or null when absent.
+	 * @param bool|null   $filter_result       Value the filter returns, or null for no filter.
+	 * @param bool        $expected_default    Default the filter must receive.
+	 * @param string      $code                Expected currency code suffix, including its leading space, or ''.
+	 */
+	public function test_notes_follow_the_client_explicit_price_rule( bool $core_multi_currency, ?string $plugin_flag, ?bool $filter_result, bool $expected_default, string $code ): void {
+		$this->configure_second_currency();
+		null === $plugin_flag ? delete_option( '_wcpay_feature_customer_multi_currency' ) : update_option( '_wcpay_feature_customer_multi_currency', $plugin_flag );
+		$this->set_core_multi_currency( $core_multi_currency );
+		$defaults = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$defaults, $filter_result ): bool {
+				$defaults[] = $current_default;
+				return $filter_result ?? $current_default;
+			}
+		);
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->set_total( '25.00' );
+		$order->save();
+		$sut = new WooPaymentsOrderNoteService();
+
+		$refund_note  = $sut->format_created_refund_note( $order, 4.00, 'USD', 're_123', '', false );
+		$payment_note = $sut->format_payment_success_note( $order, 'pi_123', 'ch_123', 'txn_123' );
+
+		$this->assertSame( "A refund of \$4.00{$code} was successfully processed using WooPayments (re_123).", html_entity_decode( wp_strip_all_tags( $refund_note ) ) );
+		$this->assertSame( "A payment of \$25.00{$code} was successfully charged using WooPayments (pi_123).", html_entity_decode( wp_strip_all_tags( $payment_note ) ) );
+		$this->assertSame( array( $expected_default, $expected_default ), $defaults, 'The filter must run once per note with the client default.' );
+	}
+
+	/**
+	 * Store states with the client's note outcome.
+	 *
+	 * @return array<string,array{0:bool,1:?string,2:?bool,3:bool,4:string}>
+	 */
+	public function explicit_price_rule_provider(): array {
+		return array(
+			'Multi-Currency on with a second currency'     => array( true, null, null, true, ' USD' ),
+			'Multi-Currency on, stale plugin flag off'     => array( true, '0', null, true, ' USD' ),
+			'Multi-Currency off, stale enabled currencies' => array( false, '1', null, false, '' ),
+			'filter forces the code while Multi-Currency is off' => array( false, null, true, false, ' USD' ),
+			'filter removes the code while Multi-Currency is on' => array( true, null, false, true, '' ),
+		);
+	}
+
+	/**
+	 * Enable EUR next to the USD store currency, with a manual rate so Multi-Currency can offer it.
+	 */
+	private function configure_second_currency(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+	}
+
+	/**
+	 * Make core Multi-Currency own the runtime, or not.
+	 *
+	 * @param bool $enabled Whether core Multi-Currency should own the runtime.
+	 */
+	private function set_core_multi_currency( bool $enabled ): void {
+		$arbiter   = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_core_register' ) )
+			->getMock();
+		$container = wc_get_container();
+		// Keep the real feature definition working if FeaturesController registers it while the mock is in place.
+		$arbiter->init( $container->get( NativePaymentsRuntimeArbiter::class ), $container->get( LegacyProxy::class ), $container->get( FeaturesController::class ), $container->get( MultiCurrencyFeatureController::class ) );
+		$arbiter->method( 'should_core_register' )->willReturn( $enabled );
+		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 	}
 
 	/**
@@ -548,17 +637,19 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$this->set_core_multi_currency( false );
 		foreach ( $amount_case_names as $case_name ) {
 			list( $candidate_method, $arguments ) = $cases[ $case_name ];
 			$candidates                           = $sut->{$candidate_method}( ...$arguments );
 			$this->assertCount( 3, $candidates, "Ambiguous plugin readiness must preserve both historical amount variants for {$case_name}." );
-			$this->assertStringContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must carry the code while an additional currency is enabled." );
+			$this->assertStringNotContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must omit the code while core Multi-Currency is off, whatever the stale plugin options say." );
 			$this->assertStringNotContainsString( ' USD ', $candidates[1], "Ambiguous plugin {$case_name} candidates must include the suffix-free historical rendering first." );
 			$this->assertStringContainsString( ' USD ', $candidates[2], "Ambiguous plugin {$case_name} candidates must also include the explicit-currency historical rendering." );
 		}
 
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.90' );
+		$this->set_core_multi_currency( true );
 		foreach ( $amount_case_names as $case_name ) {
 			list( $candidate_method, $arguments ) = $cases[ $case_name ];
 			$candidates                           = $sut->{$candidate_method}( ...$arguments );
@@ -572,7 +663,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		foreach ( $amount_case_names as $case_name ) {
 			list( $candidate_method, $arguments ) = $cases[ $case_name ];
 			$candidates                           = $sut->{$candidate_method}( ...$arguments );
-			$this->assertStringNotContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must omit the code when the plugin feature is disabled, as the client." );
+			$this->assertStringContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must follow core Multi-Currency, not the stale plugin flag." );
 			$this->assertStringNotContainsString( ' USD ', $candidates[1], "Feature-disabled plugin {$case_name} candidate must ignore stale multi-currency readiness data." );
 		}
 
@@ -642,8 +733,8 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should let the public filter suppress the native refund-note fallback currency output.
 	 */
 	public function test_public_filter_suppresses_native_refund_note_fallback_currency_output(): void {
-		update_option( 'woocommerce_currency', 'USD' );
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$this->configure_second_currency();
+		$this->set_core_multi_currency( true );
 		$defaults = array();
 		add_filter(
 			'wcpay_multi_currency_should_output_explicit_price',
@@ -791,6 +882,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		update_option( '_wcpay_feature_customer_multi_currency', '0' );
+		$this->set_core_multi_currency( false );
 		$formatted_price             = wc_price( $amount, array( 'currency' => $currency ) );
 		$explicit_price              = $formatted_price . ' ' . strtoupper( $order->get_currency() );
 		$feature_disabled_candidates = $sut->format_created_refund_note_candidates( $order, $amount, $currency, $refund_id, $reason, $is_pending );
@@ -803,10 +895,13 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$this->assertStringNotContainsString( $explicit_price, $feature_disabled_candidates[1], 'Feature-disabled plugin refund candidate must omit the stale explicit-currency suffix.' );
 
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		$this->set_core_multi_currency( true );
 		$ambiguous_candidates = $sut->format_created_refund_note_candidates( $order, $amount, $currency, $refund_id, $reason, $is_pending );
 
 		$this->assertCount( 3, $ambiguous_candidates, 'Ambiguous refund readiness should preserve both historical plugin amount variants.' );
-		$this->assertStringContainsString( $explicit_price, $ambiguous_candidates[0], 'Native refund candidate zero must remain unchanged.' );
+		$this->assertStringContainsString( $explicit_price, $ambiguous_candidates[0], 'Native refund candidate zero must carry the code while core Multi-Currency runs with a second currency.' );
 		$this->assertStringContainsString( $formatted_price, $ambiguous_candidates[1], 'Suffix-free plugin refund candidate must remain first.' );
 		$this->assertStringNotContainsString( $explicit_price, $ambiguous_candidates[1], 'First plugin refund candidate must omit the explicit suffix.' );
 		$this->assertStringContainsString( $explicit_price, $ambiguous_candidates[2], 'Second plugin refund candidate must include the explicit suffix.' );

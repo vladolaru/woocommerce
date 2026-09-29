@@ -4,6 +4,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -40,6 +45,23 @@ use WC_Unit_Test_Case;
  * Tests for the NativeWooPaymentsGateway class.
  */
 class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Make core Multi-Currency own the runtime, or not.
+	 *
+	 * @param bool $enabled Whether core Multi-Currency should own the runtime.
+	 */
+	private function set_core_multi_currency( bool $enabled ): void {
+		$arbiter   = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_core_register' ) )
+			->getMock();
+		$container = wc_get_container();
+		// Keep the real feature definition working if FeaturesController registers it while the mock is in place.
+		$arbiter->init( $container->get( NativePaymentsRuntimeArbiter::class ), $container->get( LegacyProxy::class ), $container->get( FeaturesController::class ), $container->get( MultiCurrencyFeatureController::class ) );
+		$arbiter->method( 'should_core_register' )->willReturn( $enabled );
+		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
+	}
 
 	/**
 	 * Tear down test fixtures.
@@ -3181,11 +3203,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1418` passes the total through
 	 * `WC_Payments_Explicit_Price_Formatter::get_explicit_price()`, which appends ` <currency code>`
 	 * when customer multi-currency is on and more than one currency is enabled
-	 * (`class-wc-payments-explicit-price-formatter.php:106-142`, `:167-190`).
+	 * (`class-wc-payments-explicit-price-formatter.php:106-142`, `:167-190`). Native reads core Multi-Currency.
 	 */
 	public function test_process_payment_rate_limiter_note_uses_explicit_price_in_multi_currency_store(): void {
-		update_option( '_wcpay_feature_customer_multi_currency', '1' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		$this->set_core_multi_currency( true );
 		$order   = $this->create_order();
 		$session = $this->create_session();
 		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
@@ -3213,14 +3237,16 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should omit the explicit currency from the rate-limiter note while the multi-currency flag is off.
+	 * @testdox Should omit the explicit currency from the rate-limiter note while Multi-Currency is off.
 	 *
 	 * Oracle: WooPayments 11.1.0 `class-wc-payments-explicit-price-formatter.php:167-172` returns the bare price
-	 * when `_wcpay_feature_customer_multi_currency` is off, even with enabled currencies left in the option.
+	 * when Multi-Currency is off, even with enabled currencies left in the option. Native reads core Multi-Currency.
 	 */
 	public function test_process_payment_rate_limiter_note_omits_explicit_price_when_multi_currency_is_off(): void {
-		update_option( '_wcpay_feature_customer_multi_currency', '0' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		$this->set_core_multi_currency( false );
 		$order   = $this->create_order();
 		$session = $this->create_session();
 		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
