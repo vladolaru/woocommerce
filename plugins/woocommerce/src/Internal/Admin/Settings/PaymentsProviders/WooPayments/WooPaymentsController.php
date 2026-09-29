@@ -36,6 +36,8 @@ class WooPaymentsController {
 	public function register() {
 		add_action( 'admin_init', array( $this, 'handle_returns_from_wpcom' ) );
 		add_action( 'admin_init', array( $this, 'handle_referral_link' ), 13 );
+		// Fires only when the Settings page loads, before any output.
+		add_action( 'load-woocommerce_page_wc-settings', array( $this, 'maybe_redirect_to_onboarding' ) );
 	}
 
 	/**
@@ -49,6 +51,34 @@ class WooPaymentsController {
 	final public function init( Payments $payments, WooPaymentsService $woopayments ): void {
 		$this->payments    = $payments;
 		$this->woopayments = $woopayments;
+	}
+
+	/**
+	 * Send merchants from native WooPayments admin pages to onboarding in every native payments state.
+	 *
+	 * The admin navigation controller only loads for connected stores; this covers the rest. The redirect is resolved
+	 * only for a guarded WooPayments route and decides once per request, so connected stores are not handled twice.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @internal
+	 */
+	public function maybe_redirect_to_onboarding(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect for native admin routes.
+		if ( '' === WooPaymentsOnboardingRedirect::get_guarded_path( $_GET ) ) {
+			return;
+		}
+
+		$this->get_onboarding_redirect()->maybe_redirect();
+	}
+
+	/**
+	 * Resolve the shared onboarding redirect.
+	 *
+	 * @return WooPaymentsOnboardingRedirect
+	 */
+	protected function get_onboarding_redirect(): WooPaymentsOnboardingRedirect {
+		return wc_get_container()->get( WooPaymentsOnboardingRedirect::class );
 	}
 
 	/**

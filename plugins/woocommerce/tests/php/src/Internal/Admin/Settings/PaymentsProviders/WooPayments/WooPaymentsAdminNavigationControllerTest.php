@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOnboardingRedirect;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
@@ -2106,8 +2107,10 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$badge_service   = $this->create_badge_service( $badge_counts );
 		$api_client      = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->method( 'is_available' )->willReturn( $connected );
-		$controller = new $class_name();
-		$controller->init( $arbiter, $account_service, $badge_service, $apple_pay_domain_service ?? $this->createMock( WooPaymentsApplePayDomainService::class ), $api_client );
+		$controller          = new $class_name();
+		$onboarding_redirect = new WooPaymentsOnboardingRedirect();
+		$onboarding_redirect->init( $arbiter, $api_client, $account_service );
+		$controller->init( $arbiter, $account_service, $badge_service, $apple_pay_domain_service ?? $this->createMock( WooPaymentsApplePayDomainService::class ), $onboarding_redirect );
 		$this->controllers[] = $controller;
 
 		return $controller;
@@ -2130,8 +2133,10 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->method( 'is_available' )->willReturn( $connected );
 
-		$controller = new WooPaymentsAdminNavigationController();
-		$controller->init( $arbiter, $account_service, $this->create_badge_service(), $this->createMock( WooPaymentsApplePayDomainService::class ), $api_client );
+		$controller          = new WooPaymentsAdminNavigationController();
+		$onboarding_redirect = new WooPaymentsOnboardingRedirect();
+		$onboarding_redirect->init( $arbiter, $api_client, $account_service );
+		$controller->init( $arbiter, $account_service, $this->create_badge_service(), $this->createMock( WooPaymentsApplePayDomainService::class ), $onboarding_redirect );
 		$this->controllers[] = $controller;
 
 		return $controller;

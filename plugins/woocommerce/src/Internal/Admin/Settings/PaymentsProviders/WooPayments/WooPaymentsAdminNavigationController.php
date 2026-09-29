@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
@@ -92,24 +91,6 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		self::PATH_DOCUMENTS,
 	);
 
-	/**
-	 * Native routes that need a working connection and a valid account, matched by prefix.
-	 *
-	 * Mirrors the client 11.1.0 Payments child pages plus its settings page, which redirect to onboarding
-	 * otherwise. Detail and settings sub-routes match through their parent prefix.
-	 */
-	private const ONBOARDING_GUARDED_PATHS = array(
-		self::PATH_OVERVIEW,
-		self::PATH_PAYOUTS,
-		self::PATH_TRANSACTIONS,
-		self::PATH_REPORTS,
-		self::PATH_DISPUTES,
-		self::PATH_CARD_READERS,
-		self::PATH_LOANS,
-		self::PATH_DOCUMENTS,
-		self::PATH_SETTINGS,
-	);
-
 	private const SETTINGS_FRAGMENT_ADVANCED = 'advanced';
 
 	private const SETTINGS_FRAGMENT_PAYMENT_METHODS = 'payment-methods';
@@ -187,11 +168,11 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	private WooPaymentsApplePayDomainService $apple_pay_domain_service;
 
 	/**
-	 * WooPayments API client.
+	 * WooPayments onboarding redirect.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var WooPaymentsOnboardingRedirect
 	 */
-	private WooPaymentsApiClient $api_client;
+	private WooPaymentsOnboardingRedirect $onboarding_redirect;
 
 	/**
 	 * Initialize the class instance.
@@ -202,20 +183,20 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @param WooPaymentsAccountService        $account_service          WooPayments account service.
 	 * @param WooPaymentsAdminMenuBadgeService $badge_service            WooPayments admin menu badge service.
 	 * @param WooPaymentsApplePayDomainService $apple_pay_domain_service WooPayments Apple Pay domain service.
-	 * @param WooPaymentsApiClient             $api_client               WooPayments API client.
+	 * @param WooPaymentsOnboardingRedirect    $onboarding_redirect      WooPayments onboarding redirect.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsAdminMenuBadgeService $badge_service,
 		WooPaymentsApplePayDomainService $apple_pay_domain_service,
-		WooPaymentsApiClient $api_client
+		WooPaymentsOnboardingRedirect $onboarding_redirect
 	): void {
 		$this->arbiter                  = $arbiter;
 		$this->account_service          = $account_service;
 		$this->badge_service            = $badge_service;
 		$this->apple_pay_domain_service = $apple_pay_domain_service;
-		$this->api_client               = $api_client;
+		$this->onboarding_redirect      = $onboarding_redirect;
 	}
 
 	/**
@@ -402,53 +383,14 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	/**
 	 * Redirect native WooPayments admin pages to onboarding without a working connection and a valid account.
 	 *
-	 * Ports client 11.1.0 `WC_Payments_Admin::maybe_redirect_from_payments_admin_child_pages()` and the Overview and
-	 * settings redirects in `WC_Payments_Account`. The client drops its "complete your setup" notice, so none is sent.
+	 * Runs at the client's admin_init priority; see WooPaymentsOnboardingRedirect for the ported client behavior.
 	 *
 	 * @since 11.2.0
 	 *
 	 * @return void
 	 */
 	public function maybe_redirect_to_onboarding(): void {
-		if ( wp_doing_ajax() || ! current_user_can( self::CAPABILITY ) ) {
-			return;
-		}
-
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only redirect for native admin routes.
-		if ( 'wc-settings' !== $this->get_request_scalar( $_GET, 'page' ) || 'checkout' !== $this->get_request_scalar( $_GET, 'tab' ) ) {
-			return;
-		}
-
-		$current_path = $this->get_raw_request_scalar( $_GET, 'path' );
-		// phpcs:enable WordPress.Security.NonceVerification.Recommended
-
-		$guarded_path = '';
-		foreach ( self::ONBOARDING_GUARDED_PATHS as $path ) {
-			if ( str_starts_with( $current_path, $path ) ) {
-				$guarded_path = $path;
-				break;
-			}
-		}
-
-		if ( '' === $guarded_path ) {
-			return;
-		}
-
-		if ( $this->api_client->is_available() && $this->account_service->has_valid_account_for_admin_navigation() ) {
-			return;
-		}
-
-		$query = array();
-		if ( self::PATH_OVERVIEW === $guarded_path ) {
-			$query['from']   = WooPaymentsOnboardingSource::FROM_OVERVIEW_PAGE;
-			$query['source'] = WooPaymentsOnboardingSource::get_source();
-		} elseif ( self::PATH_SETTINGS === $guarded_path ) {
-			$query['from']   = WooPaymentsOnboardingSource::FROM_WCADMIN_PAYMENTS_SETTINGS;
-			$query['source'] = WooPaymentsOnboardingSource::SOURCE_WCADMIN_SETTINGS_PAGE;
-		}
-
-		wp_safe_redirect( Utils::wc_payments_settings_url( self::PATH_ONBOARDING, $query ) );
-		exit;
+		$this->onboarding_redirect->maybe_redirect();
 	}
 
 	/**
