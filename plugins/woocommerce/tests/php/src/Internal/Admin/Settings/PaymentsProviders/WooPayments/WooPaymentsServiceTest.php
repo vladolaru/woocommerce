@@ -1654,6 +1654,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $cached['data']['is_test_drive'] );
 		$this->assertTrue( $cached['data']['payments_enabled'] );
 		$this->assertTrue( $cached['data']['details_submitted'] );
+		$this->assertSame( 0, $cached['fetched'], 'The client clears its account cache after test-drive init (class-wc-payments-onboarding-service.php:796), so the next read fetches the full account; the partial record must not pass as fresh.' );
 		$this->assertTrue( $account_service->can_process_payments() );
 	}
 

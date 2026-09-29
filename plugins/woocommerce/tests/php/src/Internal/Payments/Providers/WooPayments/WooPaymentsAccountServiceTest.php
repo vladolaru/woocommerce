@@ -1176,6 +1176,64 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should refetch the full account on the next read after onboarding caches a partial record, in $context requests.
+	 *
+	 * @dataProvider provide_account_read_contexts
+	 *
+	 * @param string $context Request context label.
+	 * @param string $screen  Screen to set, so is_admin() matches the context.
+	 */
+	public function test_partial_onboarding_record_is_replaced_by_the_full_account_on_the_next_read( string $context, string $screen ): void {
+		set_current_screen( $screen );
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		$full_account = $this->load_recorded_test_drive_account();
+		$api_client   = $this->create_recorded_account_api_client( $full_account, false );
+		$sut          = $this->create_service_with_api_client( $api_client );
+
+		$sut->cache_account_data_until_refreshed( $this->get_partial_onboarding_record() );
+		$account = $sut->get_cached_account_data();
+		$cached  = get_option( 'wcpay_account_data' );
+
+		$this->assertSame( 1, $api_client->calls, 'The client clears its cache after test-drive init (class-wc-payments-onboarding-service.php:796), so the next read fetches the account.' );
+		$this->assertSame( $full_account, $account );
+		$this->assertSame( $full_account, $cached['data'] );
+		$this->assertGreaterThan( 0, $cached['fetched'] );
+		$this->assertFalse( $cached['errored'] );
+		$this->assertSame( 'active', $account['capabilities']['card_payments'] );
+	}
+
+	/**
+	 * Request contexts an account read can run in; WP-CLI and REST reads take the front-end branch of the TTL.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provide_account_read_contexts(): array {
+		return array(
+			'admin'     => array( 'admin', 'dashboard' ),
+			'front-end' => array( 'front-end', 'front' ),
+		);
+	}
+
+	/**
+	 * @testdox Should keep the partial onboarding record, including its publishable key, when the refetch fails.
+	 */
+	public function test_partial_onboarding_record_keeps_the_publishable_key_when_the_refetch_fails(): void {
+		set_current_screen( 'dashboard' );
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		$api_client = $this->create_recorded_account_api_client( array(), true );
+		$sut        = $this->create_service_with_api_client( $api_client );
+
+		$sut->cache_account_data_until_refreshed( $this->get_partial_onboarding_record() );
+		$account = $sut->get_cached_account_data();
+		$cached  = get_option( 'wcpay_account_data' );
+
+		$this->assertSame( 1, $api_client->calls );
+		$this->assertSame( 'acct_1UL3bQJQsm0lol5W', $account['account_id'] );
+		$this->assertSame( 'pk_test_partial', $account['test_publishable_key'], 'A failed refetch must not lose the key checkout needs (566fd534c3d).' );
+		$this->assertTrue( $cached['errored'] );
+	}
+
+	/**
 	 * @testdox Should refresh account data from the native API client and persist the full account payload.
 	 */
 	public function test_refresh_account_data_fetches_and_caches_full_account_payload(): void {
@@ -1706,6 +1764,102 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$sut->init( new LegacyProxy() );
 
 		return $sut;
+	}
+
+	/**
+	 * Load the recorded full account of a new test-drive account (REC-T60-2).
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_test_drive_account(): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t60-test-drive-account.json' ), true );
+
+		return $fixture['account'];
+	}
+
+	/**
+	 * The partial record native onboarding writes from a test-drive init response.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_partial_onboarding_record(): array {
+		return array(
+			'account_id'           => 'acct_1UL3bQJQsm0lol5W',
+			'test_publishable_key' => 'pk_test_partial',
+			'is_live'              => false,
+			'is_test_drive'        => true,
+			'payments_enabled'     => true,
+			'details_submitted'    => true,
+		);
+	}
+
+	/**
+	 * Create a transport double that returns a recorded account or fails, and counts fetches.
+	 *
+	 * @param array<string,mixed> $account Account to return.
+	 * @param bool                $fail    Whether every fetch fails.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_recorded_account_api_client( array $account, bool $fail ): WooPaymentsApiClient {
+		return new class( $account, $fail ) extends WooPaymentsApiClient {
+			/**
+			 * Number of account fetch attempts.
+			 *
+			 * @var int
+			 */
+			public int $calls = 0;
+
+			/**
+			 * Account to return.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $account;
+
+			/**
+			 * Whether every fetch fails.
+			 *
+			 * @var bool
+			 */
+			private bool $fail;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $account Account to return.
+			 * @param bool                $fail    Whether every fetch fails.
+			 */
+			public function __construct( array $account, bool $fail ) {
+				$this->account = $account;
+				$this->fail    = $fail;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return the recorded account or fail.
+			 *
+			 * @param string $woocommerce_store_id WooCommerce store ID.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException When set to fail.
+			 */
+			public function get_account( string $woocommerce_store_id = '' ): array {
+				++$this->calls;
+				if ( $this->fail ) {
+					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+				}
+
+				return $this->account;
+			}
+		};
 	}
 
 	/**

@@ -3810,7 +3810,7 @@ class WooPaymentsService {
 			$readiness_default['details_submitted'] ?? $default_ready
 		);
 
-		$this->get_native_account_service()->cache_account_data( $account_data );
+		$this->get_native_account_service()->cache_account_data_until_refreshed( $account_data );
 		$this->set_native_gateway_test_mode( ! $is_live );
 
 		return true;

@@ -396,6 +396,27 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Persist partial account data that the next read must replace with the full account.
+	 *
+	 * The plugin clears its account cache after onboarding creates or finishes an account, so the next read fetches
+	 * the full record. Keeping the partial record, marked as never fetched, gives the same refetch while leaving the
+	 * account ID and publishable key available if that refetch fails.
+	 *
+	 * @since 11.2.0
+	 * @param array<string,mixed> $account_data Partial account data from an onboarding response.
+	 * @return void
+	 */
+	public function cache_account_data_until_refreshed( array $account_data ): void {
+		try {
+			$cache_contents            = $this->build_account_cache_contents( $account_data, false );
+			$cache_contents['fetched'] = 0;
+			$this->persist_account_cache( $cache_contents );
+		} catch ( \Throwable $e ) {
+			return;
+		}
+	}
+
+	/**
 	 * Immediately overwrite the preserved account cache with a connected-but-no-account payload.
 	 *
 	 * This avoids reading a stale account while the platform finishes deleting it.
