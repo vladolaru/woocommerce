@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { admin } from '../../../test-data/data';
@@ -46,6 +47,19 @@ const SUBSCRIPTIONS_SETTINGS_PATH =
 const TRANSACTIONS_TERMINAL =
 	/^(Transactions loaded\.|No transactions found\.)$/;
 const DISPUTES_TERMINAL = /^(Disputes loaded\.|No disputes found\.)$/;
+
+// Client 11.1.0 `disputes/index.tsx:50-148`: the columns without `visible:
+// false`, in order, without the info-button column native folds into the row.
+const DISPUTE_COLUMNS = [
+	'Amount',
+	'Status',
+	'Reason',
+	'Source',
+	'Order #',
+	'Customer',
+	'Respond by',
+	'Action',
+] as const;
 
 // The failure shapes these release smokes exist to catch. Each surface must
 // reach a terminal, readable state without any of them.
@@ -171,8 +185,85 @@ async function expectDataLoaded(
 	// The grid the merchant reads, keyed on a named column header rather than
 	// on whichever table happens to come first in the document.
 	await expect(
-		page.getByRole( 'columnheader', { name: columnHeader } )
+		page.getByRole( 'columnheader', { name: columnHeader, exact: true } )
 	).toBeVisible();
+}
+
+// DataViews appends the sort direction arrow to the sorted column's header.
+function columnHeaders( names: readonly string[] ): RegExp[] {
+	return names.map(
+		( name ) =>
+			new RegExp(
+				`^${ name.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' ) }[↑↓]?$`
+			)
+	);
+}
+
+/**
+ * Assert the disputes list shows the client's default columns and, on a store
+ * with its own disputes (the secretless CI fixture serves none), that the
+ * newest dispute fills them and that a dispute still awaiting a response
+ * before its due date shows when to respond by.
+ */
+async function expectDisputeColumns(
+	page: Page,
+	restApi: ApiClient
+): Promise< void > {
+	await expect( page.getByRole( 'columnheader' ) ).toHaveText(
+		columnHeaders( DISPUTE_COLUMNS )
+	);
+	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true' ) {
+		return;
+	}
+
+	const rows = page
+		.getByRole( 'row' )
+		.filter( { has: page.getByRole( 'cell' ) } );
+	const readRow = async ( row: ReturnType< typeof rows.first > ) => {
+		const cells = ( await row.getByRole( 'cell' ).allInnerTexts() ).map(
+			( text ) => text.trim()
+		);
+		expect( cells ).toHaveLength( DISPUTE_COLUMNS.length );
+		return ( column: ( typeof DISPUTE_COLUMNS )[ number ] ) =>
+			cells[ DISPUTE_COLUMNS.indexOf( column ) ];
+	};
+	const newest = await readRow( rows.first() );
+	expect( newest( 'Amount' ) ).toMatch( /\d+\.\d{2}/ );
+	expect( newest( 'Reason' ) ).not.toBe( '' );
+	expect( newest( 'Source' ) ).not.toMatch( /^-?$/ );
+	expect( newest( 'Order #' ) ).toMatch( /^(\d+|–)$/ );
+
+	// The page the list shows, read from the route; `due_by` is UTC, as the client's `moment.utc()` reads it.
+	const disputes = (
+		(
+			await restApi.get( DISPUTES_API, {
+				page: 1,
+				pagesize: 25,
+				sort: 'created',
+				direction: 'desc',
+			} )
+		).data as { data: Array< Record< string, unknown > > }
+	 ).data;
+	const awaiting = disputes.find(
+		( dispute ) =>
+			[ 'needs_response', 'warning_needs_response' ].includes(
+				String( dispute.status )
+			) &&
+			Date.parse( `${ String( dispute.due_by ).replace( ' ', 'T' ) }Z` ) >
+				Date.now()
+	);
+	if ( awaiting ) {
+		const respondBy = await readRow(
+			rows.filter( {
+				has: page.getByRole( 'link', {
+					name: new RegExp(
+						`dispute ${ String( awaiting.dispute_id ) } `
+					),
+				} ),
+			} )
+		);
+		expect( respondBy( 'Respond by' ) ).not.toBe( '' );
+	}
 }
 
 /**
@@ -241,13 +332,13 @@ test(
 		// failed-fetch oracle below spans the whole payments admin app.
 		await page.goto( TRANSACTIONS_PATH );
 		await expectSurfaceLoaded( page, 'Transactions' );
-		await expectDataLoaded( page, TRANSACTIONS_TERMINAL, 'Date' );
+		await expectDataLoaded( page, TRANSACTIONS_TERMINAL, 'Date / time' );
 
 		// Contract: the disputes list surface loads without fatal,
 		// migration, capability, or data-fetch errors.
 		await page.goto( DISPUTES_PATH );
 		await expectSurfaceLoaded( page, 'Disputes' );
-		await expectDataLoaded( page, DISPUTES_TERMINAL, 'Dispute' );
+		await expectDataLoaded( page, DISPUTES_TERMINAL, 'Reason' );
 		await expectFixtureDisputesEmpty( page );
 		// The terminal state above accepts the empty list, because the
 		// contract asks for a terminal state and not a seeded store — which
@@ -257,6 +348,8 @@ test(
 		const disputesPayload = ( await restApi.get( DISPUTES_API ) )
 			.data as Record< string, unknown >;
 		expect( Array.isArray( disputesPayload.data ) ).toBe( true );
+		// N-186: the client's dispute columns, filled from the route's own rows.
+		await expectDisputeColumns( page, restApi );
 
 		// No store REST request behind any visited surface failed. The
 		// observed count guards the oracle itself: an empty failure set

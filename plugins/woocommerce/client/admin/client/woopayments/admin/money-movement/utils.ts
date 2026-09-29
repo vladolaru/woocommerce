@@ -310,6 +310,11 @@ export const getTransactionListFees = (
 		: undefined;
 };
 
+export const getTransactionSourceLabel = ( source: string ) =>
+	TRANSACTION_SOURCE_LABELS[ source ] ||
+	getPaymentMethodDefinition( source )?.label ||
+	formatLabel( source );
+
 export const getTransactionListPaymentMethod = (
 	transaction: WooPaymentsTransaction
 ) => {
@@ -327,10 +332,7 @@ export const getTransactionListPaymentMethod = (
 		return '-';
 	}
 
-	const sourceLabel =
-		TRANSACTION_SOURCE_LABELS[ source ] ||
-		getPaymentMethodDefinition( source )?.label ||
-		formatLabel( source );
+	const sourceLabel = getTransactionSourceLabel( source );
 	const identifier = transaction.source_identifier;
 
 	if ( ! identifier ) {

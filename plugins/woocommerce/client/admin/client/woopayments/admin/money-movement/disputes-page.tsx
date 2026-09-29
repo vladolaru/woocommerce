@@ -3,7 +3,7 @@
  */
 import { Button } from '@wordpress/components';
 import { useEffect, useMemo, useState } from '@wordpress/element';
-import { __, sprintf } from '@wordpress/i18n';
+import { __, _n, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -19,6 +19,7 @@ import {
 import type {
 	WooPaymentsDispute,
 	WooPaymentsMoneyMovementDataView,
+	WooPaymentsPaymentOrder,
 } from './types';
 import { isDisputeActionable } from './dispute-evidence-fields';
 import {
@@ -31,13 +32,15 @@ import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { runWooPaymentsExport } from './export';
 import {
 	formatAmount,
-	formatDate,
+	formatDateTime,
 	formatDisputeReasonLabel,
 	formatLabel,
 	getDisputeId,
 	getErrorMessage,
 	getTransactionDetailsRoute,
+	getTransactionSourceLabel,
 } from './utils';
+import { OrderLink } from './transactions-list-fields';
 import { LiveStatusMessage, StatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
@@ -47,9 +50,99 @@ import '../style.scss';
 
 type DisputesSummary = Record< string, unknown >;
 
-const DISPUTE_FIELDS = [ 'date', 'reason', 'status', 'amount', 'action' ];
-// The client names the dispute date column `created`.
-const DISPUTE_COLUMN_KEYS = { date: 'created' };
+/**
+ * A disputes list row: the platform's cached dispute plus the order context
+ * the REST controller adds (`WooPaymentsMoneyMovementOrderService`).
+ */
+type WooPaymentsDisputeListRow = WooPaymentsDispute & {
+	source?: string | null;
+	customer_country?: string | null;
+	due_by?: string | null;
+	order?: WooPaymentsPaymentOrder | null;
+};
+
+// Client 11.1.0 `disputes/index.tsx:50-148`, in order; its info-button `details` column is the row link here.
+const DISPUTE_FIELDS = [
+	'amount',
+	'currency',
+	'status',
+	'reason',
+	'source',
+	'order',
+	'customerName',
+	'customerEmail',
+	'customerCountry',
+	'created',
+	'due_by',
+	'action',
+];
+// The platform sorts on `due_by`; the client's column key is `dueBy`.
+const DISPUTE_COLUMN_KEYS = { due_by: 'dueBy' };
+// The client's columns with `visible: false`.
+const DISPUTE_DEFAULT_HIDDEN_COLUMNS = [
+	'currency',
+	'customerEmail',
+	'customerCountry',
+	'created',
+];
+const HOUR_IN_MS = 60 * 60 * 1000;
+
+// The cache stores UTC `Y-m-d H:i:s` strings, as the client's `moment.utc()` reads them.
+const parseUtcDate = ( value: string ) =>
+	new Date(
+		/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test( value )
+			? `${ value.replace( ' ', 'T' ) }Z`
+			: value
+	);
+
+/**
+ * The client's Respond by cell: nothing unless a response is due, a countdown
+ * inside 72 hours, and the due date otherwise.
+ * Client 11.1.0 `disputes/index.tsx:158-192` `smartDueDate()`.
+ *
+ * @param dispute The dispute row.
+ * @param now     The current time in milliseconds.
+ */
+export const getDisputeRespondBy = (
+	dispute: WooPaymentsDisputeListRow,
+	now = Date.now()
+) => {
+	if ( ! dispute.due_by || ! isDisputeActionable( dispute ) ) {
+		return '';
+	}
+
+	const dueBy = parseUtcDate( dispute.due_by );
+	const diff = dueBy.getTime() - now;
+	const diffHours = Math.trunc( diff / HOUR_IN_MS );
+
+	if ( Number.isNaN( diff ) || diffHours <= 0 ) {
+		return '';
+	}
+
+	const diffDays = Math.trunc( diff / ( 24 * HOUR_IN_MS ) );
+
+	if ( diffHours <= 72 ) {
+		return (
+			<span className="woocommerce-woopayments-money-movement__chip is-alert">
+				{ diffHours <= 24
+					? __( 'Last day today', 'woocommerce' )
+					: sprintf(
+							/* translators: %d: number of days left to respond to the dispute. */
+							_n(
+								'%d day left',
+								'%d days left',
+								diffDays,
+								'woocommerce'
+							),
+							diffDays
+					  ) }
+			</span>
+		);
+	}
+
+	return formatDateTime( dueBy.toISOString() );
+};
+
 type ExportMessage = {
 	text: string;
 	isError?: boolean;
@@ -71,7 +164,9 @@ const getSummaryCurrency = ( summary: DisputesSummary ) =>
 	typeof summary.currency === 'string' ? summary.currency : undefined;
 
 export const WooPaymentsDisputesPage = () => {
-	const [ disputes, setDisputes ] = useState< WooPaymentsDispute[] >( [] );
+	const [ disputes, setDisputes ] = useState< WooPaymentsDisputeListRow[] >(
+		[]
+	);
 	const [ totalCount, setTotalCount ] = useState( 0 );
 	const [ summary, setSummary ] = useState< DisputesSummary >( {} );
 	const [ isLoading, setIsLoading ] = useState( true );
@@ -82,7 +177,8 @@ export const WooPaymentsDisputesPage = () => {
 	const { visibleFields, saveFields } = usePersistedHiddenFields(
 		'wc_payments_disputes_hidden_columns',
 		DISPUTE_FIELDS,
-		DISPUTE_COLUMN_KEYS
+		DISPUTE_COLUMN_KEYS,
+		DISPUTE_DEFAULT_HIDDEN_COLUMNS
 	);
 	const location = useLocation();
 	const navigate = useNavigate();
@@ -108,39 +204,102 @@ export const WooPaymentsDisputesPage = () => {
 	const fields = useMemo(
 		() => [
 			{
-				id: 'date',
-				label: __( 'Date', 'woocommerce' ),
-				enableHiding: true,
-				render: ( { item }: { item: WooPaymentsDispute } ) =>
-					formatDate( item.date || item.created ),
+				id: 'amount',
+				label: __( 'Amount', 'woocommerce' ),
+				enableHiding: false,
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
+					formatAmount( item.amount, item.currency ),
 			},
 			{
-				id: 'reason',
-				label: __( 'Dispute', 'woocommerce' ),
+				id: 'currency',
+				label: __( 'Currency', 'woocommerce' ),
 				enableHiding: false,
-				render: ( { item }: { item: WooPaymentsDispute } ) =>
-					formatDisputeReasonLabel( item.reason ),
+				enableSorting: false,
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
+					item.currency || '-',
 			},
 			{
 				id: 'status',
 				label: __( 'Status', 'woocommerce' ),
-				enableHiding: true,
-				render: ( { item }: { item: WooPaymentsDispute } ) =>
+				enableHiding: false,
+				enableSorting: false,
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
 					formatLabel( item.status ),
 			},
 			{
-				id: 'amount',
-				label: __( 'Amount', 'woocommerce' ),
-				enableHiding: true,
-				render: ( { item }: { item: WooPaymentsDispute } ) =>
-					formatAmount( item.amount, item.currency ),
+				id: 'reason',
+				label: __( 'Reason', 'woocommerce' ),
+				enableHiding: false,
+				enableSorting: false,
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
+					formatDisputeReasonLabel( item.reason ),
+			},
+			{
+				id: 'source',
+				label: __( 'Source', 'woocommerce' ),
+				enableHiding: false,
+				enableSorting: false,
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
+					item.source
+						? getTransactionSourceLabel( item.source )
+						: '-',
+			},
+			{
+				id: 'order',
+				label: __( 'Order #', 'woocommerce' ),
+				enableHiding: false,
+				enableSorting: false,
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
+					<OrderLink order={ item.order } />
+				),
+			},
+			{
+				id: 'customerName',
+				label: __( 'Customer', 'woocommerce' ),
+				enableSorting: false,
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
+					// The client links an empty name too; an empty link has no accessible name.
+					item.order?.customer_url && item.customer_name ? (
+						<a href={ item.order.customer_url }>
+							{ item.customer_name }
+						</a>
+					) : (
+						item.customer_name || '-'
+					),
+			},
+			{
+				id: 'customerEmail',
+				label: __( 'Email', 'woocommerce' ),
+				enableSorting: false,
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
+					item.customer_email || '-',
+			},
+			{
+				id: 'customerCountry',
+				label: __( 'Country', 'woocommerce' ),
+				enableSorting: false,
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
+					item.customer_country || '-',
+			},
+			{
+				id: 'created',
+				label: __( 'Disputed on', 'woocommerce' ),
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
+					formatDateTime( item.created || item.date ),
+			},
+			{
+				id: 'due_by',
+				label: __( 'Respond by', 'woocommerce' ),
+				enableHiding: false,
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
+					getDisputeRespondBy( item ),
 			},
 			{
 				id: 'action',
 				label: __( 'Action', 'woocommerce' ),
 				enableHiding: false,
 				enableSorting: false,
-				render: ( { item }: { item: WooPaymentsDispute } ) => {
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => {
 					const id = getDisputeId( item );
 					const isActionable = isDisputeActionable( item );
 					const reasonLabel = formatDisputeReasonLabel( item.reason );

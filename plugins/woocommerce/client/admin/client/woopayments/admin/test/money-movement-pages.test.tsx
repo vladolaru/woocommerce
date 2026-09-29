@@ -2637,7 +2637,8 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByTestId( 'money-movement-dataviews' )
 		).toHaveAttribute(
 			'data-visible-fields',
-			'reason,status,amount,action'
+			// Client 11.1.0: a stored list shows every column it does not hide.
+			'amount,currency,status,reason,source,order,customerName,customerCountry,due_by,action'
 		);
 		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
 	} );
