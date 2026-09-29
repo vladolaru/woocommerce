@@ -24,6 +24,8 @@ class WooPaymentsAdminMenuBadgeService {
 
 	private const DISPUTE_STATUS_COUNTS_KEY_TEST_MODE = 'wcpay_test_dispute_status_counts_cache';
 
+	private const ACTIVE_DISPUTES_KEY = 'wcpay_active_dispute_cache';
+
 	private const AUTHORIZATION_SUMMARY_KEY = 'wcpay_authorization_summary_cache';
 
 	private const AUTHORIZATION_SUMMARY_KEY_TEST_MODE = 'wcpay_test_authorization_summary_cache';
@@ -73,6 +75,42 @@ class WooPaymentsAdminMenuBadgeService {
 			0,
 			(int) ( $counts['needs_response'] ?? 0 ) + (int) ( $counts['warning_needs_response'] ?? 0 )
 		);
+	}
+
+	/**
+	 * Get the disputes awaiting a response, soonest due first.
+	 *
+	 * Ports client 11.1.0 `WC_Payments_Task_Disputes::get_disputes_needing_response()`: the first 50 disputes in
+	 * the `wcpay_active_dispute_cache` option, refreshed at most once per cache TTL and cleared by dispute events.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function get_active_disputes(): array {
+		$disputes = $this->get_or_add_cached_array(
+			self::ACTIVE_DISPUTES_KEY,
+			function (): array {
+				$response = $this->api_client->get_disputes(
+					array(
+						'pagesize' => 50,
+						'search'   => array( 'warning_needs_response', 'needs_response' ),
+					)
+				);
+				$disputes = is_array( $response['data'] ?? null ) ? $response['data'] : array();
+
+				usort(
+					$disputes,
+					static function ( $a, $b ): int {
+						return new \DateTime( (string) ( $a['due_by'] ?? '' ) ) <=> new \DateTime( (string) ( $b['due_by'] ?? '' ) );
+					}
+				);
+
+				return $disputes;
+			}
+		);
+
+		return array_values( array_filter( $disputes, 'is_array' ) );
 	}
 
 	/**

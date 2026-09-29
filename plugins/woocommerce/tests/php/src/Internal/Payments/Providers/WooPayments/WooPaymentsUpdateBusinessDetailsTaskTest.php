@@ -7,6 +7,8 @@ use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskList;
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesTask;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHomeTasks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsUpdateBusinessDetailsTask;
 use WC_Unit_Test_Case;
@@ -43,7 +45,7 @@ class WooPaymentsUpdateBusinessDetailsTaskTest extends WC_Unit_Test_Case {
 			$extended->tasks = array_values(
 				array_filter(
 					$extended->tasks,
-					static fn( $task ): bool => ! $task instanceof WooPaymentsUpdateBusinessDetailsTask
+					static fn( $task ): bool => ! $task instanceof WooPaymentsUpdateBusinessDetailsTask && ! $task instanceof WooPaymentsDisputesTask
 				)
 			);
 		}
@@ -285,7 +287,7 @@ class WooPaymentsUpdateBusinessDetailsTaskTest extends WC_Unit_Test_Case {
 		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
 
 		$registrar = new WooPaymentsHomeTasks();
-		$registrar->init( $arbiter, $account_service );
+		$registrar->init( $arbiter, $account_service, $this->createMock( WooPaymentsAdminMenuBadgeService::class ) );
 
 		return $registrar;
 	}

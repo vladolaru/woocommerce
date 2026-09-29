@@ -17,7 +17,7 @@ defined( 'ABSPATH' ) || exit;
  * Adds the native WooPayments tasks to the WC Home "Things to do next" list.
  *
  * Loads only for connected stores, on admin and REST requests, since WC Home reads its task lists over REST.
- * The tasks read the account cache only when the list is rendered.
+ * The tasks read the account and dispute caches only when the list is rendered.
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.
@@ -39,16 +39,25 @@ class WooPaymentsHomeTasks implements RegisterHooksInterface {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Service that owns the cached dispute data.
+	 *
+	 * @var WooPaymentsAdminMenuBadgeService
+	 */
+	private WooPaymentsAdminMenuBadgeService $dispute_data_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param WooPaymentsAccountService    $account_service WooPayments account service.
+	 * @param NativePaymentsRuntimeArbiter     $arbiter              Runtime owner arbiter.
+	 * @param WooPaymentsAccountService        $account_service      WooPayments account service.
+	 * @param WooPaymentsAdminMenuBadgeService $dispute_data_service Service that owns the cached dispute data.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsAccountService $account_service ): void {
-		$this->arbiter         = $arbiter;
-		$this->account_service = $account_service;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsAccountService $account_service, WooPaymentsAdminMenuBadgeService $dispute_data_service ): void {
+		$this->arbiter              = $arbiter;
+		$this->account_service      = $account_service;
+		$this->dispute_data_service = $dispute_data_service;
 	}
 
 	/**
@@ -77,5 +86,6 @@ class WooPaymentsHomeTasks implements RegisterHooksInterface {
 		}
 
 		TaskLists::add_task( 'extended', new WooPaymentsUpdateBusinessDetailsTask( $task_list, $this->account_service ) );
+		TaskLists::add_task( 'extended', new WooPaymentsDisputesTask( $task_list, $this->account_service, $this->dispute_data_service ) );
 	}
 }
