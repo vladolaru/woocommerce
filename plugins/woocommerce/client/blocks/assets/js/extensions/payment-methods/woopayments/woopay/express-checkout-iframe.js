@@ -8,6 +8,7 @@ import { dispatch } from '@wordpress/data';
  */
 import { getTracksIdentity } from '../tracks';
 import {
+	claimWooPayRedirect,
 	getTargetElement,
 	getWooPayAppearance,
 	initWooPay,
@@ -208,6 +209,9 @@ export const expressCheckoutIframe = async (
 				break;
 			case 'redirect_to_platform_checkout':
 			case 'redirect_to_woopay': {
+				if ( ! claimWooPayRedirect( e ) ) {
+					break;
+				}
 				const promise = initWooPay(
 					paymentSettings,
 					userEmail || e.data.userEmail,

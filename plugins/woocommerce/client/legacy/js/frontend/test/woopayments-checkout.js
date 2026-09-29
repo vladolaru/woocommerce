@@ -3870,6 +3870,37 @@ describe( 'WooPayments checkout', () => {
 			);
 		} );
 
+		test( 'starts init_woopay only for a redirect no other WooPay script has claimed', async () => {
+			const redirect = {
+				action: 'redirect_to_platform_checkout',
+				platformCheckoutUserSession: 'session-token',
+			};
+			// The express button's listener, registered first from its own script.
+			function expressScript( e ) {
+				e.wcWooPayInitClaimed = true;
+			}
+			window.addEventListener( 'message', expressScript );
+			const input = await setupWooPayEmailInput();
+			await typeEmail( input, 'shopper@example.com' );
+
+			postWooPayMessage( redirect );
+			await flushPromises();
+			expect( getPostCalls( 'init_woopay' ) ).toHaveLength( 0 );
+
+			window.removeEventListener( 'message', expressScript );
+			let claimed;
+			function laterScript( e ) {
+				claimed = e.wcWooPayInitClaimed;
+			}
+			window.addEventListener( 'message', laterScript );
+			postWooPayMessage( redirect );
+			await flushPromises();
+			window.removeEventListener( 'message', laterScript );
+
+			expect( getPostCalls( 'init_woopay' ) ).toHaveLength( 1 );
+			expect( claimed ).toBe( true );
+		} );
+
 		test( 'shows the unavailable notice and closes the iframe when init_woopay fails', async () => {
 			postResponses.init_woopay = { response: { result: 'error' } };
 			const input = await setupWooPayEmailInput();

@@ -174,6 +174,23 @@ export const initWooPay = ( paymentSettings, userEmail, userSession ) => {
 };
 
 /**
+ * Claims a WooPay redirect message for this listener's init_woopay request.
+ * The email input and the express button listen from separate bundles, so
+ * their in-flight guards are separate (client 11.1.0 bundles both on Blocks
+ * and shares one guard). The claim lives on the event both listeners receive.
+ *
+ * @param {MessageEvent} event The platform's redirect message.
+ * @return {boolean} True when this listener handles the message.
+ */
+export const claimWooPayRedirect = ( event ) => {
+	if ( event.wcWooPayInitClaimed ) {
+		return false;
+	}
+	event.wcWooPayInitClaimed = true;
+	return true;
+};
+
+/**
  * The plugin's isPreviewing(): the Customizer preview iframe (which carries
  * customize_messenger_channel) or a post preview.
  *
@@ -607,6 +624,9 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 				break;
 			case 'redirect_to_platform_checkout':
 			case 'redirect_to_woopay': {
+				if ( ! claimWooPayRedirect( e ) ) {
+					break;
+				}
 				const promise = initWooPay(
 					paymentSettings,
 					woopayEmailInput.value,

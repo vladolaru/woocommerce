@@ -491,6 +491,37 @@ describe( 'WooPay email input (blocks)', () => {
 		);
 	} );
 
+	test( 'starts init_woopay only for a redirect no other WooPay bundle has claimed', async () => {
+		const redirect = {
+			action: 'redirect_to_platform_checkout',
+			platformCheckoutUserSession: 'session-token',
+		};
+		// The express button's listener, registered first from its own bundle.
+		const expressBundle = ( e ) => {
+			e.wcWooPayInitClaimed = true;
+		};
+		window.addEventListener( 'message', expressBundle );
+		const input = await setup();
+		await typeEmail( input, 'shopper@example.com' );
+
+		postWooPayMessage( redirect );
+		await flushPromises();
+		expect( getAjaxCalls( 'init_woopay' ) ).toHaveLength( 0 );
+
+		window.removeEventListener( 'message', expressBundle );
+		let claimed;
+		const laterBundle = ( e ) => {
+			claimed = e.wcWooPayInitClaimed;
+		};
+		window.addEventListener( 'message', laterBundle );
+		postWooPayMessage( redirect );
+		await flushPromises();
+		await flushPromises();
+
+		expect( getAjaxCalls( 'init_woopay' ) ).toHaveLength( 1 );
+		expect( claimed ).toBe( true );
+	} );
+
 	test( 'enriches the first email payload before the card payment method mounts', async () => {
 		document.body.innerHTML =
 			'<form class="wc-block-checkout wc-block-checkout__form">' +

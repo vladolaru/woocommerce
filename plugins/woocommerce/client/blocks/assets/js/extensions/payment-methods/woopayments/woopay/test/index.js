@@ -927,6 +927,34 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			expect( navigate ).toHaveBeenCalledTimes( 1 );
 		} );
 
+		it( 'starts init_woopay only for a redirect no other WooPay bundle has claimed', async () => {
+			const redirect = {
+				action: 'redirect_to_platform_checkout',
+				platformCheckoutUserSession: 'platform-session-1',
+			};
+			// The email input's listener, registered first from its own bundle.
+			const emailInputBundle = ( e ) => {
+				e.wcWooPayInitClaimed = true;
+			};
+			window.addEventListener( 'message', emailInputBundle );
+			await openOtpIframe();
+
+			await sendWooPayMessage( redirect );
+			expect( getInitCalls() ).toHaveLength( 0 );
+
+			window.removeEventListener( 'message', emailInputBundle );
+			let claimed;
+			const laterBundle = ( e ) => {
+				claimed = e.wcWooPayInitClaimed;
+			};
+			window.addEventListener( 'message', laterBundle );
+			await sendWooPayMessage( redirect );
+			window.removeEventListener( 'message', laterBundle );
+
+			expect( getInitCalls() ).toHaveLength( 1 );
+			expect( claimed ).toBe( true );
+		} );
+
 		it( 'shows the WooPay unavailable notice and closes the iframe when init_woopay fails', async () => {
 			window.fetch = jest.fn( ( url ) =>
 				Promise.resolve( {

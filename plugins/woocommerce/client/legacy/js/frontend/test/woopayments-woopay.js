@@ -1534,6 +1534,34 @@ describe( 'WooPayments WooPay checkout', () => {
 			);
 		} );
 
+		test( 'starts init_woopay only for a redirect no other WooPay script has claimed', async () => {
+			const redirect = {
+				action: 'redirect_to_platform_checkout',
+				platformCheckoutUserSession: 'platform-session-1',
+			};
+			// The email input's listener, registered first from its own script.
+			function emailInputScript( e ) {
+				e.wcWooPayInitClaimed = true;
+			}
+			window.addEventListener( 'message', emailInputScript );
+			await openOtpIframe();
+
+			sendWooPayMessage( redirect );
+			expect( getInitCalls() ).toHaveLength( 0 );
+
+			window.removeEventListener( 'message', emailInputScript );
+			let claimed;
+			function laterScript( e ) {
+				claimed = e.wcWooPayInitClaimed;
+			}
+			window.addEventListener( 'message', laterScript );
+			sendWooPayMessage( redirect );
+			window.removeEventListener( 'message', laterScript );
+
+			expect( getInitCalls() ).toHaveLength( 1 );
+			expect( claimed ).toBe( true );
+		} );
+
 		test( 'shows the WooPay unavailable notice and closes the iframe when init_woopay fails', async () => {
 			window.fetch = jest.fn( ( url, options ) => {
 				let data = {};

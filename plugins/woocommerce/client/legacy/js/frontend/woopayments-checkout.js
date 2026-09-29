@@ -2731,6 +2731,18 @@
 			: null;
 	}
 
+	// The email input (woopayments-checkout.js) and the express button
+	// (woopayments-woopay.js) both answer WooPay's redirect message from
+	// separate scripts with separate in-flight guards. The first listener
+	// claims the event they share, so only one init_woopay starts.
+	function claimWooPayRedirect( event ) {
+		if ( event.wcWooPayInitClaimed ) {
+			return false;
+		}
+		event.wcWooPayInitClaimed = true;
+		return true;
+	}
+
 	// The plugin's initWooPay(): a single init_woopay request in flight per
 	// page — WooPay's <Login> re-renders and fires the redirect message
 	// twice, and the second call must return undefined.
@@ -3201,6 +3213,9 @@
 						break;
 					case 'redirect_to_platform_checkout':
 					case 'redirect_to_woopay':
+						if ( ! claimWooPayRedirect( e ) ) {
+							break;
+						}
 						promise = initWooPayFromEmailInput(
 							woopayEmailInput.value,
 							e.data.platformCheckoutUserSession
