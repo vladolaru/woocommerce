@@ -95,6 +95,12 @@ export interface WooPaymentsDispute {
 				id?: string;
 				payment_intent?: string;
 				balance_transaction?: string | { id?: string };
+				created?: number;
+				billing_details?: WooPaymentsBillingDetails;
+				payment_method_details?: WooPaymentsPaymentMethodDetails;
+				level3?: {
+					line_items?: Array< { product_description?: string } >;
+				};
 		  };
 	payment_intent?: string;
 	transaction_id?: string;

@@ -23,7 +23,10 @@ import { recordEvent } from '@woocommerce/tracks';
  * Internal dependencies
  */
 import { updateWooPaymentsDispute } from './data';
-import { generateDisputeCoverLetter } from './dispute-evidence-cover-letter';
+import {
+	generateDisputeCoverLetter,
+	getCoverLetterMerchantDetails,
+} from './dispute-evidence-cover-letter';
 import { DisputeEvidenceFileUpload } from './dispute-evidence-file-upload';
 import {
 	DOCUMENT_EVIDENCE_FIELDS,
@@ -48,10 +51,12 @@ import {
 	formatDate,
 	formatDisputeReasonLabel,
 	formatLabel,
+	getBankName,
 	getDisputeId,
 	getErrorMessage,
 } from './utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import { useGetSettings } from '../../settings/data/hooks';
 import './dispute-evidence.scss';
 
 type DisputeEvidenceFormProps = {
@@ -291,17 +296,29 @@ export const DisputeEvidenceForm = ( {
 
 		return fields;
 	}, [ evidence, filesByField, recommendedShippingDocuments ] );
-	const generatedCoverLetter = useMemo(
-		() =>
-			generateDisputeCoverLetter( {
-				dispute,
-				productType,
-				evidence,
-				refundStatus,
-				duplicateStatus,
-			} ),
-		[ dispute, duplicateStatus, evidence, productType, refundStatus ]
-	);
+	// Client 11.1.0 new-evidence/index.tsx:132-133 reads the payments settings and the charge's bank.
+	const settings = useGetSettings();
+	const generatedCoverLetter = useMemo( () => {
+		const charge =
+			typeof dispute.charge === 'object' ? dispute.charge : undefined;
+
+		return generateDisputeCoverLetter( {
+			...getCoverLetterMerchantDetails( settings ),
+			dispute,
+			bankName: getBankName( charge?.payment_method_details ),
+			productType,
+			evidence,
+			refundStatus,
+			duplicateStatus,
+		} );
+	}, [
+		dispute,
+		duplicateStatus,
+		evidence,
+		productType,
+		refundStatus,
+		settings,
+	] );
 	const disputeTracksProperties = useMemo(
 		() => ( {
 			dispute_id: disputeId,

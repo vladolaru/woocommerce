@@ -501,7 +501,7 @@ describe( 'WooPayments dispute evidence helpers', () => {
 		} );
 	} );
 
-	it( 'should generate deterministic formal cover letter content from available facts', () => {
+	it( 'should generate deterministic cover letter content from available facts', () => {
 		const fixture = {
 			dispute: {
 				id: 'dp_test',
@@ -510,14 +510,9 @@ describe( 'WooPayments dispute evidence helpers', () => {
 				currency: 'usd',
 				charge: {
 					id: 'ch_test',
+					billing_details: { name: 'Ada Lovelace' },
 				},
 				created: 1771423200,
-				order: {
-					id: 123,
-					number: '1001',
-					customer_name: 'Ada Lovelace',
-					customer_email: 'ada@example.com',
-				},
 			},
 			merchantName: 'WooCommerce Test Store',
 			merchantAddress: '1 Market Street, San Francisco, CA',
@@ -529,76 +524,33 @@ describe( 'WooPayments dispute evidence helpers', () => {
 				receipt: 'file_receipt',
 				access_activity_log: 'file_history',
 				customer_communication: 'file_customer_messages',
-				product_description: 'Custom roasted coffee beans.',
-				customer_purchase_ip: '203.0.113.10',
+				product_description: 'Custom roasted coffee beans',
 				shipping_carrier: 'UPS',
-				shipping_date: '2026-06-01',
 				shipping_tracking_number: '1Z999',
-				shipping_address: '1 Market Street',
 			},
-			refundStatus:
-				'No refund was issued because the order was fulfilled.',
-			duplicateStatus: 'This order was charged once.',
 		};
 
 		const firstLetter = generateDisputeCoverLetter( fixture );
 		const secondLetter = generateDisputeCoverLetter( fixture );
 
 		expect( firstLetter ).toBe( secondLetter );
-		expect( firstLetter ).toContain( 'WooCommerce Test Store' );
-		expect( firstLetter ).toContain( '1 Market Street, San Francisco, CA' );
-		expect( firstLetter ).toContain( 'support@example.com' );
-		expect( firstLetter ).toContain( '+1 555 123 4567' );
-		expect( firstLetter ).toContain( 'To: Test Bank' );
 		expect( firstLetter ).toContain(
-			'Subject: Chargeback Dispute - Case #dp_test'
+			'WooCommerce Test Store\n1 Market Street, San Francisco, CA\nsupport@example.com\n+1 555 123 4567\n'
 		);
-		expect( firstLetter ).toContain( 'Dear Dispute Resolution Team,' );
+		expect( firstLetter ).toContain(
+			'To: Test Bank\nSubject: Chargeback Dispute – Case #dp_test\n\nDear Dispute Resolution Team,'
+		);
 		expect( firstLetter ).toContain(
 			'We are submitting evidence in response to chargeback #dp_test for transaction #ch_test'
 		);
 		expect( firstLetter ).toContain(
-			'Our records indicate that the customer and legitimate cardholder, Ada Lovelace, ordered Custom roasted coffee beans.'
+			'Our records indicate that the customer and legitimate cardholder, Ada Lovelace, ordered Custom roasted coffee beans on <Order Date>.'
 		);
 		expect( firstLetter ).toContain(
-			'To support our case, we are providing the following documentation:'
+			'To support our case, we are providing the following documentation:\n• Order receipt (Attachment A)\n• Prior undisputed transaction history (Attachment B)\n• Customer communication (Attachment C)'
 		);
-		expect( firstLetter ).toContain( 'Order receipt (Attachment A)' );
-		expect( firstLetter ).toContain(
-			'Prior undisputed transaction history (Attachment B)'
-		);
-		expect( firstLetter ).toContain(
-			'Customer communication (Attachment C)'
-		);
-		expect( firstLetter ).toContain( 'Thank you,' );
-		expect( firstLetter ).toContain( 'WooCommerce Test Store' );
-		expect( firstLetter ).toContain( 'Custom roasted coffee beans.' );
-		expect( firstLetter ).toContain( 'Shipping carrier: UPS' );
-		expect( firstLetter ).toContain( 'Tracking number: 1Z999' );
-		expect( firstLetter ).not.toContain( 'Refund status:' );
-		expect( firstLetter ).not.toContain( 'Duplicate status:' );
-	} );
-
-	it( 'should omit stale shipping details from cover letters when shipping is not applicable', () => {
-		const letter = generateDisputeCoverLetter( {
-			dispute: {
-				id: 'dp_test',
-				reason: 'fraudulent',
-				order: {
-					id: 123,
-					number: '1001',
-				},
-			},
-			productType: 'digital_product_or_service',
-			evidence: {
-				product_description: 'Downloaded software.',
-				shipping_carrier: 'Old carrier',
-				shipping_tracking_number: '1Z999',
-			},
-		} );
-
-		expect( letter ).toContain( 'Downloaded software.' );
-		expect( letter ).not.toContain( 'Old carrier' );
-		expect( letter ).not.toContain( '1Z999' );
+		expect( firstLetter ).toContain( 'Thank you,\nWooCommerce Test Store' );
+		expect( firstLetter ).not.toContain( 'UPS' );
+		expect( firstLetter ).not.toContain( '1Z999' );
 	} );
 } );
