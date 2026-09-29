@@ -4025,6 +4025,178 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native charge uses the intent WooPay already confirmed instead of creating a second one.
+	 */
+	public function test_native_charge_uses_the_woopay_intent_instead_of_creating_one(): void {
+		$order      = $this->create_woopayments_order( '10.99' );
+		$api_client = $this->create_woopay_intent_api_client(
+			array(
+				'id'             => 'pi_woopay',
+				'status'         => 'succeeded',
+				'customer'       => 'cus_platform_clone',
+				'payment_method' => 'pm_merchant_clone',
+				'currency'       => 'usd',
+				'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+			)
+		);
+
+		$outcome = $this->charge_with_woopay_intent( $order, $api_client, 'pi_woopay' );
+
+		$this->assertSame( array( 'pi_woopay' ), $api_client->payment_intent_reads );
+		$this->assertSame( 0, $api_client->creates, 'Client 11.1.0 uses the WooPay intent and never creates a second one (class-wc-payment-gateway-wcpay.php:1792-1812).' );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'pi_woopay', $outcome->get_provider_payment_id() );
+		$this->assertSame( 'pm_merchant_clone', $outcome->get_payment_method_id() );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, $outcome->get_effect_plan()->get_type() );
+	}
+
+	/**
+	 * @testdox Native charge refuses a WooPay intent whose metadata names another order, with the client's message.
+	 */
+	public function test_native_charge_refuses_a_woopay_intent_confirmed_for_another_order(): void {
+		$order      = $this->create_woopayments_order( '10.99' );
+		$other_id   = $order->get_id() + 1;
+		$api_client = $this->create_woopay_intent_api_client(
+			array(
+				'id'             => 'pi_woopay',
+				'status'         => 'succeeded',
+				'payment_method' => 'pm_merchant_clone',
+				'metadata'       => array( 'order_id' => (string) $other_id ),
+			)
+		);
+
+		$outcome = $this->charge_with_woopay_intent( $order, $api_client, 'pi_woopay' );
+
+		$this->assertSame( 0, $api_client->creates );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'order_id_mismatch', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertSame(
+			sprintf( 'We&#039;re not able to process this payment. Please try again later. WooPayMeta: intent_meta_order_id: %1$d, order_id: %2$d', $other_id, $order->get_id() ),
+			$outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null,
+			'Client 11.1.0 throws Order_ID_Mismatch_Exception with this message and shows it to the shopper.'
+		);
+		$this->assertStringContainsString( 'WooPayMeta: intent_meta_order_id: ' . $other_id, (string) ( $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] ?? '' ), 'Client 11.1.0 records the refusal in the failed-payment order note.' );
+	}
+
+	/**
+	 * @testdox Native charge fails without creating an intent when the WooPay intent cannot be read.
+	 */
+	public function test_native_charge_fails_when_the_woopay_intent_cannot_be_read(): void {
+		$order      = $this->create_woopayments_order( '10.99' );
+		$api_client = $this->create_woopay_intent_api_client(
+			array(),
+			array(),
+			new WooPaymentsApiException( 'No such payment_intent: \'pi_missing\'', 'resource_missing', 404, 'invalid_request_error' )
+		);
+
+		$outcome = $this->charge_with_woopay_intent( $order, $api_client, 'pi_missing' );
+
+		$this->assertSame( array( 'pi_missing' ), $api_client->payment_intent_reads );
+		$this->assertSame( 0, $api_client->creates, 'Client 11.1.0 lets the Get_Intention failure fail the payment; it never falls back to a new intent.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'resource_missing', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+	}
+
+	/**
+	 * @testdox Native charge refuses a malformed WooPay intent id before any request, with the client's message.
+	 */
+	public function test_native_charge_refuses_a_malformed_woopay_intent_id_before_reading_it(): void {
+		$order      = $this->create_woopayments_order( '10.99' );
+		$api_client = $this->create_woopay_intent_api_client( array( 'id' => 'abc123' ) );
+
+		$outcome = $this->charge_with_woopay_intent( $order, $api_client, 'abc123' );
+
+		$this->assertSame( array(), $api_client->payment_intent_reads, 'Client 11.1.0 Get_Intention validates the id before sending (class-request.php:669-708).' );
+		$this->assertSame( 0, $api_client->creates );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'wcpay_core_invalid_request_parameter_stripe_id', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertSame( 'abc123 is not a valid Stripe identifier', $outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+	}
+
+	/**
+	 * @testdox Native charge treats a WooPay intent id of "0" as absent, as the client's empty() check does.
+	 */
+	public function test_native_charge_treats_a_zero_woopay_intent_id_as_absent(): void {
+		$order      = $this->create_woopayments_order( '10.99' );
+		$api_client = $this->create_woopay_intent_api_client( array() );
+
+		$outcome = $this->charge_with_woopay_intent( $order, $api_client, '0' );
+
+		$this->assertSame( array(), $api_client->payment_intent_reads );
+		$this->assertSame( 1, $api_client->creates, 'Client 11.1.0 guards the fetch with ! empty() (class-wc-payment-gateway-wcpay.php:1799) and creates the intent instead.' );
+		$this->assertSame( 'pi_second', $outcome->get_provider_payment_id() );
+	}
+
+	/**
+	 * @testdox Native zero-total checkout uses the setup intent WooPay already confirmed instead of creating one.
+	 */
+	public function test_native_setup_intent_uses_the_woopay_setup_intent_instead_of_creating_one(): void {
+		$order      = $this->create_woopayments_order( '0.00' );
+		$api_client = $this->create_woopay_intent_api_client(
+			array(),
+			array(
+				'id'             => 'seti_woopay',
+				'status'         => 'succeeded',
+				'customer'       => 'cus_native',
+				'payment_method' => 'pm_merchant_clone',
+				'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+			)
+		);
+
+		$outcome = $this->charge_with_woopay_intent( $order, $api_client, 'seti_woopay' );
+
+		$this->assertSame( array( 'seti_woopay' ), $api_client->setup_intent_reads );
+		$this->assertSame( array(), $api_client->payment_intent_reads );
+		$this->assertSame( 0, $api_client->creates, 'Client 11.1.0 uses the WooPay setup intent and never creates one (class-wc-payment-gateway-wcpay.php:1926-1942).' );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'seti_woopay', $outcome->get_provider_payment_id() );
+		$this->assertSame( 'pm_merchant_clone', $outcome->get_payment_method_id() );
+	}
+
+	/**
+	 * @testdox Native zero-total checkout fails without creating a setup intent when the WooPay setup intent cannot be read.
+	 */
+	public function test_native_setup_intent_fails_when_the_woopay_setup_intent_cannot_be_read(): void {
+		$order      = $this->create_woopayments_order( '0.00' );
+		$api_client = $this->create_woopay_intent_api_client(
+			array(),
+			array(),
+			new WooPaymentsApiException( 'No such setupintent: \'seti_missing\'', 'resource_missing', 404, 'invalid_request_error' )
+		);
+
+		$outcome = $this->charge_with_woopay_intent( $order, $api_client, 'seti_missing' );
+
+		$this->assertSame( array( 'seti_missing' ), $api_client->setup_intent_reads );
+		$this->assertSame( 0, $api_client->creates, 'Client 11.1.0 lets the Get_Setup_Intention failure fail the payment (class-wc-payment-gateway-wcpay.php:1926-1932).' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'resource_missing', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+	}
+
+	/**
+	 * @testdox Native zero-total checkout refuses a WooPay setup intent whose metadata names another order.
+	 */
+	public function test_native_setup_intent_refuses_a_woopay_setup_intent_for_another_order(): void {
+		$order      = $this->create_woopayments_order( '0.00' );
+		$api_client = $this->create_woopay_intent_api_client(
+			array(),
+			array(
+				'id'             => 'seti_woopay',
+				'status'         => 'succeeded',
+				'payment_method' => 'pm_merchant_clone',
+				'metadata'       => array( 'order_id' => 'not-a-number' ),
+			)
+		);
+
+		$outcome = $this->charge_with_woopay_intent( $order, $api_client, 'seti_woopay' );
+
+		$this->assertSame( 0, $api_client->creates );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'order_id_mismatch', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertSame( 'We\'re not able to process this payment. Please try again later.', $outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+	}
+
+	/**
 	 * @testdox Charge should prefer native SetupIntent transport for zero-total card checkout.
 	 */
 	public function test_charge_prefers_native_setup_intent_for_zero_total_checkout(): void {
@@ -5930,6 +6102,180 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order detector.
 		eval( 'namespace { function wcs_order_contains_subscription( $order, $order_type = array() ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
+	}
+
+	/**
+	 * Charge an order through native transport with a WooPay intent in the checkout context.
+	 *
+	 * @param WC_Order             $order            Order to charge.
+	 * @param WooPaymentsApiClient $api_client       Transport double.
+	 * @param string               $woopay_intent_id Intent id WooPay sent.
+	 * @return PaymentOutcome
+	 */
+	private function charge_with_woopay_intent( WC_Order $order, WooPaymentsApiClient $api_client, string $woopay_intent_id ): PaymentOutcome {
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
+
+		$sut = $this->create_adapter( new RecordingLegacyGateway( array( 'result' => 'success' ) ), $api_client, $customer_service, null, $this->create_account_service( true ) );
+
+		return $sut->charge(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'pm_platform',
+				array(),
+				array(
+					'is_woopay' => true,
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID => $woopay_intent_id,
+				)
+			),
+			'key_woopay'
+		);
+	}
+
+	/**
+	 * Create a transport double that serves WooPay intents and counts intent creation.
+	 *
+	 * @param array<string,mixed>          $payment_intent PaymentIntent the read returns.
+	 * @param array<string,mixed>          $setup_intent   SetupIntent the read returns.
+	 * @param WooPaymentsApiException|null $read_failure   Failure every read throws instead.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_woopay_intent_api_client( array $payment_intent, array $setup_intent = array(), ?WooPaymentsApiException $read_failure = null ): WooPaymentsApiClient {
+		return new class( $payment_intent, $setup_intent, $read_failure ) extends WooPaymentsApiClient {
+			/**
+			 * PaymentIntent ids read.
+			 *
+			 * @var string[]
+			 */
+			public array $payment_intent_reads = array();
+
+			/**
+			 * SetupIntent ids read.
+			 *
+			 * @var string[]
+			 */
+			public array $setup_intent_reads = array();
+
+			/**
+			 * Intent creation count.
+			 *
+			 * @var int
+			 */
+			public int $creates = 0;
+
+			/**
+			 * PaymentIntent the read returns.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $payment_intent;
+
+			/**
+			 * SetupIntent the read returns.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $setup_intent;
+
+			/**
+			 * Failure every read throws.
+			 *
+			 * @var WooPaymentsApiException|null
+			 */
+			private ?WooPaymentsApiException $read_failure;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed>          $payment_intent PaymentIntent the read returns.
+			 * @param array<string,mixed>          $setup_intent   SetupIntent the read returns.
+			 * @param WooPaymentsApiException|null $read_failure   Failure every read throws.
+			 */
+			public function __construct( array $payment_intent, array $setup_intent, ?WooPaymentsApiException $read_failure ) {
+				$this->payment_intent = $payment_intent;
+				$this->setup_intent   = $setup_intent;
+				$this->read_failure   = $read_failure;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a payment intention.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException When the double is set to fail.
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				$this->payment_intent_reads[] = $intent_id;
+				if ( null !== $this->read_failure ) {
+					throw $this->read_failure;
+				}
+
+				return $this->payment_intent;
+			}
+
+			/**
+			 * Retrieve a setup intention.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException When the double is set to fail.
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				$this->setup_intent_reads[] = $setup_intent_id;
+				if ( null !== $this->read_failure ) {
+					throw $this->read_failure;
+				}
+
+				return $this->setup_intent;
+			}
+
+			/**
+			 * Count a payment intention creation.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				++$this->creates;
+
+				return array(
+					'id'             => 'pi_second',
+					'status'         => 'succeeded',
+					'payment_method' => 'pm_merchant_clone',
+				);
+			}
+
+			/**
+			 * Count a setup intention creation.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				++$this->creates;
+
+				return array(
+					'id'             => 'seti_second',
+					'status'         => 'succeeded',
+					'payment_method' => 'pm_merchant_clone',
+				);
+			}
+		};
 	}
 
 	/**

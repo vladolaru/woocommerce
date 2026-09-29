@@ -2726,6 +2726,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				'payment_method_error'      => $this->sanitize_post_string( 'wcpay-payment-method-error-message' ),
 				'payment_method_error_code' => $this->sanitize_post_string( 'wcpay-payment-method-error-code' ),
 				'is_woopay'                 => ! empty( $_POST['is_woopay'] ), // phpcs:ignore WordPress.Security.NonceVerification.Missing
+				WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID => $this->get_woopay_intent_id(),
 			)
 		);
 
@@ -2738,6 +2739,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return $provider_data;
+	}
+
+	/**
+	 * Read the intent WooPay already confirmed for this order from its merchant checkout request.
+	 *
+	 * Uses the plugin's WooPay_Utilities::sanitize_intent_id() rule: keep word characters only.
+	 *
+	 * @return string
+	 */
+	private function get_woopay_intent_id(): string {
+		$intent_id = wp_unslash( $_POST['platform-checkout-intent'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+		return is_string( $intent_id ) ? (string) preg_replace( '/[^\w_]+/', '', $intent_id ) : '';
 	}
 
 	/**

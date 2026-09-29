@@ -47,6 +47,15 @@ class WooPaymentsIntentRequestBuilder {
 	public const PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE = 'subscription_payment_method_change';
 
 	/**
+	 * Provider-data key for the intent WooPay already confirmed for this order.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @var string
+	 */
+	public const PROVIDER_DATA_WOOPAY_INTENT_ID = 'woopay_intent_id';
+
+	/**
 	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService

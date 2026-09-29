@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEv
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedTransactionRateLimiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
@@ -79,6 +80,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		unset( $_POST['wcpay-express-checkout-context'] );
 		unset( $_POST['wcpay-fraud-prevention-token'] );
 		unset( $_POST['is-woopay-preflight-check'] );
+		unset( $_POST['platform-checkout-intent'] );
 		unset( $_POST['woocommerce_pay'] );
 		unset( $_POST['_wcsnonce'] );
 		unset( $_POST['change_payment_method'] );
@@ -4093,6 +4095,43 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
 		$this->assertSame( 'pm_platform', $service->last_checkout_context->get_payment_method_id() );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['is_platform_payment_method'] );
+	}
+
+	/**
+	 * @testdox Should pass the WooPay intent id through provider data with the client's sanitize rule.
+	 */
+	public function test_process_payment_passes_the_sanitized_woopay_intent_to_provider_data(): void {
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		// WooPay's merchant checkout body (PaymentsHandler::get_merchant_checkout_body()) sends the
+		// intent it confirmed under this key; client 11.1.0 keeps only word characters after unslashing.
+		$_POST['wcpay-payment-method']     = 'pm_woopay';
+		$_POST['platform-checkout-intent'] = 'pi_3Ab-c<x>\\\'';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertSame( 'pi_3Abcx', $service->last_checkout_context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID ] ?? null );
+	}
+
+	/**
+	 * @testdox Should leave the WooPay intent id empty when the checkout sends none.
+	 */
+	public function test_process_payment_leaves_the_woopay_intent_empty_without_one(): void {
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertSame( '', $service->last_checkout_context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID ] ?? null );
 	}
 
 	/**

@@ -376,23 +376,31 @@ class WooPaymentsProviderGatewayAdapter {
 
 		$this->assert_total_meets_cached_platform_minimum( $order );
 
-		$customer_id     = $this->get_customer_id_for_context( $context );
-		$request_data    = $this->request_builder->charge_request_data( $context, $payment_credential, $customer_id, $is_recurring );
-		$idempotency_key = $this->resolve_charge_idempotency_key( $order, $idempotency_key );
+		$customer_id      = $this->get_customer_id_for_context( $context );
+		$woopay_intent_id = $this->get_woopay_intent_id( $context );
 
-		try {
-			$result = $this->api_client->create_and_confirm_payment_intention( $request_data, $idempotency_key );
-		} catch ( WooPaymentsApiException $exception ) {
-			if ( ! $this->is_missing_customer_exception( $exception ) ) {
-				return $this->failed_charge_outcome( $order, $exception, true );
-			}
+		if ( ! empty( $woopay_intent_id ) ) {
+			$this->assert_valid_stripe_id( $woopay_intent_id );
+			$result = $this->api_client->get_payment_intention( $woopay_intent_id );
+			$this->assert_woopay_intent_belongs_to_order( $result, $order, true );
+		} else {
+			$request_data    = $this->request_builder->charge_request_data( $context, $payment_credential, $customer_id, $is_recurring );
+			$idempotency_key = $this->resolve_charge_idempotency_key( $order, $idempotency_key );
 
-			$customer_id              = $this->customer_service->recreate_customer_for_order( $order );
-			$request_data['customer'] = $customer_id;
 			try {
 				$result = $this->api_client->create_and_confirm_payment_intention( $request_data, $idempotency_key );
 			} catch ( WooPaymentsApiException $exception ) {
-				return $this->failed_charge_outcome( $order, $exception, true );
+				if ( ! $this->is_missing_customer_exception( $exception ) ) {
+					return $this->failed_charge_outcome( $order, $exception, true );
+				}
+
+				$customer_id              = $this->customer_service->recreate_customer_for_order( $order );
+				$request_data['customer'] = $customer_id;
+				try {
+					$result = $this->api_client->create_and_confirm_payment_intention( $request_data, $idempotency_key );
+				} catch ( WooPaymentsApiException $exception ) {
+					return $this->failed_charge_outcome( $order, $exception, true );
+				}
 			}
 		}
 
@@ -739,19 +747,27 @@ class WooPaymentsProviderGatewayAdapter {
 			return $this->missing_payment_credential_outcome();
 		}
 
-		$customer_id  = $this->get_customer_id_for_context( $context );
-		$request_data = $this->request_builder->setup_intent_request_data( $context, $payment_credential, $customer_id, $is_recurring );
+		$customer_id      = $this->get_customer_id_for_context( $context );
+		$woopay_intent_id = $this->get_woopay_intent_id( $context );
 
-		try {
-			$result = $this->create_setup_intent( $request_data, $payment_credential, $idempotency_key );
-		} catch ( WooPaymentsApiException $exception ) {
-			if ( ! $this->is_missing_customer_exception( $exception ) ) {
-				throw $exception;
+		if ( ! empty( $woopay_intent_id ) ) {
+			$this->assert_valid_stripe_id( $woopay_intent_id );
+			$result = $this->api_client->get_setup_intention( $woopay_intent_id );
+			$this->assert_woopay_intent_belongs_to_order( $result, $order, false );
+		} else {
+			$request_data = $this->request_builder->setup_intent_request_data( $context, $payment_credential, $customer_id, $is_recurring );
+
+			try {
+				$result = $this->create_setup_intent( $request_data, $payment_credential, $idempotency_key );
+			} catch ( WooPaymentsApiException $exception ) {
+				if ( ! $this->is_missing_customer_exception( $exception ) ) {
+					throw $exception;
+				}
+
+				$customer_id              = $this->customer_service->recreate_customer_for_order( $order );
+				$request_data['customer'] = $customer_id;
+				$result                   = $this->create_setup_intent( $request_data, $payment_credential, $idempotency_key );
 			}
-
-			$customer_id              = $this->customer_service->recreate_customer_for_order( $order );
-			$request_data['customer'] = $customer_id;
-			$result                   = $this->create_setup_intent( $request_data, $payment_credential, $idempotency_key );
 		}
 
 		$confirmation_token = WooPaymentsIntentCodec::is_confirmation_token( $payment_credential ) ? $payment_credential : '';
@@ -769,6 +785,76 @@ class WooPaymentsProviderGatewayAdapter {
 		);
 
 		return $outcome->with_effect_plan( $plan );
+	}
+
+	/**
+	 * Get the intent WooPay already confirmed for this order, when the checkout came from WooPay.
+	 *
+	 * @param PaymentContext $context Payment context.
+	 * @return string
+	 */
+	private function get_woopay_intent_id( PaymentContext $context ): string {
+		$intent_id = $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID ] ?? '';
+
+		return is_string( $intent_id ) ? $intent_id : '';
+	}
+
+	/**
+	 * Refuse a malformed Stripe id before any request, as the plugin's Request::validate_stripe_id() does.
+	 *
+	 * @param string $id Stripe object id.
+	 * @return void
+	 * @throws WooPaymentsApiException When the id is not a Stripe id.
+	 */
+	private function assert_valid_stripe_id( string $id ): void {
+		if ( preg_match( '/^[a-z]+_\w{1,250}$/', $id ) ) {
+			return;
+		}
+
+		throw new WooPaymentsApiException(
+			esc_html(
+				sprintf(
+					/* translators: %s: a Stripe object id. */
+					__( '%s is not a valid Stripe identifier', 'woocommerce' ),
+					$id
+				)
+			),
+			'wcpay_core_invalid_request_parameter_stripe_id'
+		);
+	}
+
+	/**
+	 * Refuse a WooPay intent whose metadata names another order, as the plugin's Order_ID_Mismatch_Exception does.
+	 *
+	 * @param array<string,mixed> $intent            Intent WooPay confirmed.
+	 * @param WC_Order            $order             Order being paid.
+	 * @param bool                $is_payment_intent Whether the intent is a PaymentIntent rather than a SetupIntent.
+	 * @return void
+	 * @throws WooPaymentsApiException When the intent was confirmed for another order.
+	 */
+	private function assert_woopay_intent_belongs_to_order( array $intent, WC_Order $order, bool $is_payment_intent ): void {
+		$metadata             = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
+		$intent_order_id_raw  = $metadata['order_id'] ?? '';
+		$intent_meta_order_id = is_numeric( $intent_order_id_raw ) ? intval( $intent_order_id_raw ) : 0;
+		if ( $intent_meta_order_id === $order->get_id() ) {
+			return;
+		}
+
+		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is structured data, worded and escaped exactly as the plugin's.
+		if ( $is_payment_intent ) {
+			throw new WooPaymentsApiException(
+				sprintf(
+					/* translators: %1$s: order id recorded on the WooPay intent, %2$s: order id being paid. We do not need to translate WooPayMeta. */
+					esc_html( __( 'We\'re not able to process this payment. Please try again later. WooPayMeta: intent_meta_order_id: %1$s, order_id: %2$s', 'woocommerce' ) ),
+					esc_attr( (string) $intent_meta_order_id ),
+					esc_attr( (string) $order->get_id() )
+				),
+				'order_id_mismatch'
+			);
+		}
+
+		throw new WooPaymentsApiException( __( 'We\'re not able to process this payment. Please try again later.', 'woocommerce' ), 'order_id_mismatch' );
+		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}
 
 	/**
