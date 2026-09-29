@@ -3,8 +3,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
 
+use Automattic\Jetpack\Connection\Manager;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -48,6 +50,20 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Jetpack connection manager in place before the test replaced it.
+	 *
+	 * @var mixed
+	 */
+	private $previous_jetpack_manager = null;
+
+	/**
+	 * Whether the test replaced the Jetpack connection manager.
+	 *
+	 * @var bool
+	 */
+	private bool $jetpack_manager_replaced = false;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -60,7 +76,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$this->account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'has_account', 'is_details_submitted', 'clear_cache' ) )
+			->onlyMethods( array( 'has_account', 'is_details_submitted', 'clear_cache', 'is_test_mode_enabled' ) )
 			->getMock();
 		$this->account_service->method( 'has_account' )->willReturn( true );
 		$this->sut = $this->create_handler( true );
@@ -75,13 +91,19 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		remove_action( 'admin_init', array( $this->sut, 'handle_request' ) );
 		remove_action( 'admin_init', array( $this->sut, 'handle_login_request' ) );
 		remove_action( 'admin_init', array( $this->sut, 'handle_kyc_reminder_return' ), 9 );
+		remove_action( 'admin_init', array( $this->sut, 'handle_reconnect_wpcom_request' ) );
+		remove_all_filters( 'jetpack_use_iframe_authorization_flow' );
+		if ( $this->jetpack_manager_replaced ) {
+			$this->set_jetpack_manager( $this->previous_jetpack_manager );
+			$this->jetpack_manager_replaced = false;
+		}
 		remove_action( 'admin_init', array( $this->sut, 'handle_loan_offer_request' ), 12 );
 		remove_all_filters( 'allowed_redirect_hosts' );
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
 		remove_all_filters( 'wp_redirect' );
 		remove_all_filters( 'wp_doing_ajax' );
 		delete_transient( 'wcpay_stripe_onboarding_state' );
-		unset( $_GET['wcpay-loan-offer'], $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'], $_GET['wcpay-login'], $_GET['_wpnonce'], $_REQUEST['_wpnonce'], $_GET['from'] );
+		unset( $_GET['wcpay-loan-offer'], $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'], $_GET['wcpay-login'], $_GET['wcpay-reconnect-wpcom'], $_GET['_wpnonce'], $_REQUEST['_wpnonce'], $_GET['from'] );
 
 		parent::tearDown();
 	}
@@ -244,6 +266,171 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$_GET['wcpay-login']  = '1';
 		$_GET['_wpnonce']     = $nonce;
 		$_REQUEST['_wpnonce'] = $nonce;
+	}
+
+	/**
+	 * @testdox The WordPress.com reconnect link is handled at admin_init only while native owns the runtime.
+	 */
+	public function test_registers_reconnect_handler_only_when_native_owns_runtime(): void {
+		$this->sut->register();
+		$this->assertNotFalse( has_action( 'admin_init', array( $this->sut, 'handle_reconnect_wpcom_request' ) ) );
+
+		remove_action( 'admin_init', array( $this->sut, 'handle_reconnect_wpcom_request' ) );
+		$this->sut = $this->create_handler( false );
+		$this->sut->register();
+		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'handle_reconnect_wpcom_request' ) ) );
+	}
+
+	/**
+	 * @testdox The reconnect link records the connection start and redirects a registered site to the Jetpack authorization flow.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-account.php:1300-1318,1983-1993` and `class-wc-payments-http.php:186-212`.
+	 */
+	public function test_reconnect_link_redirects_to_jetpack_authorization(): void {
+		$manager = $this->replace_jetpack_manager( true );
+		$manager->expects( $this->never() )->method( 'try_registration' );
+		$manager->expects( $this->once() )
+			->method( 'get_authorization_url' )
+			->with( null, Utils::wc_payments_settings_url( '/woopayments/settings' ) )
+			->willReturn( 'https://jetpack.wordpress.com/jetpack.authorize/1/?client_id=1' );
+		$recorded = $this->record_tracks_events();
+		$this->set_reconnect_request( wp_create_nonce( 'wcpay-reconnect-wpcom' ) );
+		$_GET['from'] = 'WCPAY_OVERVIEW';
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$location = $this->run_and_get_redirect( array( $this->sut, 'handle_reconnect_wpcom_request' ) );
+
+		$this->assertStringStartsWith( 'https://jetpack.wordpress.com/jetpack.authorize/1/', $location );
+		parse_str( (string) wp_parse_url( $location, PHP_URL_QUERY ), $query );
+		$this->assertSame( 'woocommerce-core-profiler', $query['from'] );
+		$this->assertSame( 'woocommerce', $query['plugin_name'] );
+		$this->assertSame( 'production', $query['calypso_env'] );
+		$this->assertFalse( apply_filters( 'jetpack_use_iframe_authorization_flow', true ) );
+		$this->assertArrayHasKey( 'wcadmin_wcpay_account_connect_wpcom_connection_start', $recorded->events );
+		$this->assertTrue( $recorded->events['wcadmin_wcpay_account_connect_wpcom_connection_start']['is_reconnect'] );
+		$this->assertSame( 'WCPAY_OVERVIEW', $recorded->events['wcadmin_wcpay_account_connect_wpcom_connection_start']['from'] );
+	}
+
+	/**
+	 * @testdox The reconnect link registers an unregistered site before redirecting to the authorization flow.
+	 */
+	public function test_reconnect_link_registers_site_first(): void {
+		$manager = $this->replace_jetpack_manager( false );
+		$manager->expects( $this->once() )->method( 'try_registration' )->willReturn( true );
+		$manager->method( 'get_authorization_url' )->willReturn( 'https://jetpack.wordpress.com/jetpack.authorize/1/' );
+		$this->set_reconnect_request( wp_create_nonce( 'wcpay-reconnect-wpcom' ) );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$location = $this->run_and_get_redirect( array( $this->sut, 'handle_reconnect_wpcom_request' ) );
+
+		$this->assertStringStartsWith( 'https://jetpack.wordpress.com/jetpack.authorize/1/', $location );
+	}
+
+	/**
+	 * @testdox A failed site registration lands on Overview with the link error notice instead of the plugin's fatal.
+	 */
+	public function test_reconnect_link_registration_failure_lands_on_overview_error(): void {
+		$manager = $this->replace_jetpack_manager( false );
+		$manager->method( 'try_registration' )->willReturn( new \WP_Error( 'register_failed', 'Registration failed.' ) );
+		$manager->expects( $this->never() )->method( 'get_authorization_url' );
+		$this->set_reconnect_request( wp_create_nonce( 'wcpay-reconnect-wpcom' ) );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$location = rawurldecode( $this->run_and_get_redirect( array( $this->sut, 'handle_reconnect_wpcom_request' ) ) );
+
+		$this->assertStringContainsString( 'page=wc-settings&tab=checkout&path=/woopayments/overview', $location );
+		$this->assertStringContainsString( 'wcpay-server-link-error=1', $location );
+	}
+
+	/**
+	 * @testdox The reconnect link refuses a request without a valid nonce before touching the connection.
+	 */
+	public function test_reconnect_link_requires_valid_nonce(): void {
+		$manager = $this->replace_jetpack_manager( true );
+		$manager->expects( $this->never() )->method( 'get_authorization_url' );
+		$this->set_reconnect_request( wp_create_nonce( 'wcpay-login' ) );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$this->expectException( \WPDieException::class );
+		$this->sut->handle_reconnect_wpcom_request();
+	}
+
+	/**
+	 * @testdox The reconnect link does nothing for users who cannot manage WooCommerce.
+	 */
+	public function test_reconnect_link_requires_manage_woocommerce(): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
+		$manager = $this->replace_jetpack_manager( true );
+		$manager->expects( $this->never() )->method( 'get_authorization_url' );
+		$this->set_reconnect_request( wp_create_nonce( 'wcpay-reconnect-wpcom' ) );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$this->sut->handle_reconnect_wpcom_request();
+	}
+
+	/**
+	 * Simulate a click on the reconnect link built by the plugin's `get_wpcom_reconnect_url()`.
+	 *
+	 * @param string $nonce Request nonce.
+	 */
+	private function set_reconnect_request( string $nonce ): void {
+		$_GET['wcpay-reconnect-wpcom'] = '1';
+		$_GET['_wpnonce']              = $nonce;
+		$_REQUEST['_wpnonce']          = $nonce;
+	}
+
+	/**
+	 * Run a handler and return the intercepted redirect target.
+	 *
+	 * @param callable $handler Handler.
+	 * @return string
+	 */
+	private function run_and_get_redirect( callable $handler ): string {
+		try {
+			$handler();
+		} catch ( \RuntimeException $exception ) {
+			return substr( $exception->getMessage(), strlen( 'wp_redirect intercepted: ' ) );
+		}
+
+		$this->fail( 'Expected the redirect to be intercepted.' );
+	}
+
+	/**
+	 * Replace the Jetpack connection manager with a double.
+	 *
+	 * @param bool $is_connected Whether the site is registered.
+	 * @return Manager&MockObject
+	 */
+	private function replace_jetpack_manager( bool $is_connected ): Manager {
+		$manager = $this->getMockBuilder( Manager::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_connected', 'has_connected_owner', 'try_registration', 'get_authorization_url' ) )
+			->getMock();
+		$manager->method( 'is_connected' )->willReturn( $is_connected );
+		$manager->method( 'has_connected_owner' )->willReturn( false );
+
+		$property = new \ReflectionProperty( JetpackConnection::class, 'manager' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$property->setAccessible( true );
+		}
+		$this->previous_jetpack_manager = $property->getValue();
+		$this->jetpack_manager_replaced = true;
+		$this->set_jetpack_manager( $manager );
+
+		return $manager;
+	}
+
+	/**
+	 * Set the Jetpack connection manager.
+	 *
+	 * @param mixed $manager Manager.
+	 */
+	private function set_jetpack_manager( $manager ): void {
+		$property = new \ReflectionProperty( JetpackConnection::class, 'manager' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$property->setAccessible( true );
+		}
+		$property->setValue( null, $manager );
 	}
 
 	/**

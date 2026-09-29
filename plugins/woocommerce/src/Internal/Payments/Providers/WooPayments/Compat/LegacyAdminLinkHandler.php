@@ -7,14 +7,17 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -93,6 +96,10 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 
 		if ( false === has_action( 'admin_init', array( $this, 'handle_login_request' ) ) ) {
 			add_action( 'admin_init', array( $this, 'handle_login_request' ) );
+		}
+
+		if ( false === has_action( 'admin_init', array( $this, 'handle_reconnect_wpcom_request' ) ) ) {
+			add_action( 'admin_init', array( $this, 'handle_reconnect_wpcom_request' ) );
 		}
 
 		// Priority 9 runs before the legacy route redirect, which would otherwise leave the connect page first.
@@ -226,6 +233,97 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 				: Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH, array( 'wcpay-login-error' => '1' ) )
 		);
 		exit;
+	}
+
+	/**
+	 * Restart the WordPress.com connection when its owner is gone (`wcpay-reconnect-wpcom`).
+	 *
+	 * Mirrors the plugin's `maybe_handle_onboarding()` reconnect branch and `WC_Payments_Http::start_connection()`
+	 * (11.1.0 `class-wc-payments-account.php:1300-1318`, `class-wc-payments-http.php:186-212`). The plugin fatals when
+	 * site registration fails; native lands on Overview with `wcpay-server-link-error` instead.
+	 */
+	public function handle_reconnect_wpcom_request(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- check_admin_referer() below verifies the nonce.
+		if ( ! isset( $_GET['wcpay-reconnect-wpcom'] ) || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->should_native_register() ) {
+			return;
+		}
+
+		check_admin_referer( 'wcpay-reconnect-wpcom' );
+
+		$manager = JetpackConnection::get_manager();
+		$this->record_wpcom_connection_start( $manager );
+
+		if ( ! $manager->is_connected() ) {
+			$result = $manager->try_registration();
+			if ( is_wp_error( $result ) ) {
+				wp_safe_redirect( Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH, array( 'wcpay-server-link-error' => '1' ) ) );
+				exit;
+			}
+		}
+
+		add_filter( 'jetpack_use_iframe_authorization_flow', '__return_false' );
+		// Same logic as in WC-Admin.
+		$calypso_env = defined( 'WOOCOMMERCE_CALYPSO_ENVIRONMENT' ) && in_array( WOOCOMMERCE_CALYPSO_ENVIRONMENT, array( 'development', 'wpcalypso', 'horizon', 'stage' ), true ) ? WOOCOMMERCE_CALYPSO_ENVIRONMENT : 'production';
+		// The plugin returns to its settings page, which is the native WooPayments settings route.
+		$authorization_url = $manager->get_authorization_url( null, Utils::wc_payments_settings_url( '/woopayments/settings' ) );
+
+		add_filter( 'allowed_redirect_hosts', array( $this, 'allow_jetpack_redirect_host' ) );
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'from'        => 'woocommerce-core-profiler',
+					// Same identity as native onboarding (`Utils::get_wpcom_connection_authorization()`).
+					'plugin_name' => Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ? 'woocommerce-payments' : 'woocommerce',
+					'calypso_env' => $calypso_env,
+				),
+				is_string( $authorization_url ) ? $authorization_url : ''
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Allow the Jetpack authorization host, like the plugin's `WC_Payments_Http::allowed_redirect_hosts()` (11.1.0).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $hosts Allowed redirect hosts.
+	 * @return mixed
+	 */
+	public function allow_jetpack_redirect_host( $hosts ) {
+		if ( is_array( $hosts ) && ! in_array( 'jetpack.wordpress.com', $hosts, true ) ) {
+			$hosts[] = 'jetpack.wordpress.com';
+		}
+
+		return $hosts;
+	}
+
+	/**
+	 * Record the plugin's `wcpay_account_connect_wpcom_connection_start` event for a reconnect.
+	 *
+	 * The plugin also merges its cached platform tracking info; native has no reader for that cache.
+	 *
+	 * @param \Automattic\Jetpack\Connection\Manager $manager Jetpack connection manager.
+	 */
+	private function record_wpcom_connection_start( $manager ): void {
+		if ( ! function_exists( 'wc_admin_record_tracks_event' ) ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- The caller verified the nonce.
+		$from = isset( $_GET['from'] ) ? sanitize_text_field( wp_unslash( $_GET['from'] ) ) : '';
+
+		wc_admin_record_tracks_event(
+			'wcpay_account_connect_wpcom_connection_start',
+			array(
+				'is_reconnect'      => true,
+				'from'              => $from,
+				'is_test_mode'      => $this->account_service->is_test_mode_enabled(),
+				'jetpack_connected' => $manager->is_connected() && $manager->has_connected_owner(),
+				'wcpay_version'     => WooPaymentsClientVersion::VERSION,
+				'woo_country_code'  => WC()->countries->get_base_country(),
+			)
+		);
 	}
 
 	/**
