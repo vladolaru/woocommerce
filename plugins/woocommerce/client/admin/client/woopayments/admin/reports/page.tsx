@@ -121,6 +121,20 @@ type GlobalSettings = typeof globalThis & {
 	};
 };
 
+/**
+ * Format a balance summary amount with an explicit leading `+` on inflows.
+ *
+ * Client 11.1.0 `reports/balance/format.ts:106-114`: outflows already carry `-`, and zero stays unsigned.
+ *
+ * @param amount       Amount in minor units.
+ * @param currencyCode Currency code.
+ */
+const formatBalanceAmount = ( amount: number, currencyCode: string ) => {
+	const formatted = formatExplicitCurrency( amount, currencyCode );
+
+	return amount > 0 ? `+${ formatted }` : formatted;
+};
+
 const normalizeReportsTab = ( tab: string | null ): ReportsTab =>
 	tab === 'fees' ? 'fees' : 'balance';
 
@@ -985,11 +999,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				getValue: ( { item }: { item: BalanceRow } ) => item.amount,
 				render: ( { item }: { item: BalanceRow } ) => (
 					<span>
-						{ /* Client 11.1.0 `reports/balance/format.ts:110`. */ }
-						{ formatExplicitCurrency(
-							item.amount,
-							reportCurrency
-						) }
+						{ formatBalanceAmount( item.amount, reportCurrency ) }
 					</span>
 				),
 			},

@@ -493,7 +493,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		const dataViews = await screen.findByTestId( 'reports-dataviews' );
 		expect(
 			within( dataViews ).getByText(
-				formatMoneyMovementAmount( 162672, 'cad' )
+				`+${ formatMoneyMovementAmount( 162672, 'cad' ) }`
 			)
 		).toBeInTheDocument();
 
@@ -502,6 +502,26 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 
 		expect( printSpy ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	// Client 11.1.0 reports/balance/format.ts:106-114 and __tests__/format.test.ts:37-85: inflows carry an
+	// explicit `+`, outflows keep their `-`.
+	it( 'signs Balance inflows with a leading plus and keeps outflows negative', async () => {
+		renderReportsPage();
+
+		const dataViews = await screen.findByTestId( 'reports-dataviews' );
+		expect(
+			within( dataViews ).getByText( '+$1,626.72' )
+		).toBeInTheDocument();
+		expect(
+			within( dataViews ).getByText( '+$10.00' )
+		).toBeInTheDocument();
+		expect(
+			within( dataViews ).getByText( '-$60.64' )
+		).toBeInTheDocument();
+		expect(
+			within( dataViews ).queryByText( '$1,626.72' )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'downloads the loaded Balance summary with business and account identity CSV columns', async () => {
