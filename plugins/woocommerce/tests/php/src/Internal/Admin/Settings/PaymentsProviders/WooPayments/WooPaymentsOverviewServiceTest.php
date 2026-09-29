@@ -44,6 +44,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_dispute_status_counts_cache' );
 		delete_option( 'wcpay_test_dispute_status_counts_cache' );
 		delete_option( '_wcpay_feature_dispute_readiness_overview' );
+		delete_option( 'wcpay_instant_deposits_previously_eligible' );
 
 		parent::tearDown();
 	}
@@ -103,6 +104,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 				),
 				'capital'              => array(
 					'has_active_loan' => true,
+					'loans'           => array( 'flxln_paid|paid', 'flxln_123456|active', array( 'not-a-loan' ) ),
 				),
 				'requirements'         => array(
 					'currently_due'    => array( 'representative.verification.document' ),
@@ -158,7 +160,8 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'restricted_soon', $overview['account_status']['status'] );
 		$this->assertSame( 1781740800, $overview['account_status']['current_deadline'] );
 		$this->assertFalse( $overview['account_status']['past_due'] );
-		$this->assertSame( 'https://connect.stripe.com/setup/s/acct_native_test', $overview['account_status']['account_link'] );
+		// A test-drive account has no dashboard access (client 11.1.0 `class-wc-payments-account.php:382`), and a raw account field is never forwarded.
+		$this->assertSame( '', $overview['account_status']['account_link'] );
 		$this->assertSame( 'verification_document_missing_front', $overview['account_status']['requirements']['errors'][0]['code'] );
 		$this->assertTrue( $overview['account_status']['details_submitted'] );
 		$this->assertTrue( $overview['account_status']['payments_enabled'] );
@@ -195,6 +198,8 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->assertTrue( $overview['feature_flags']['dispute_readiness_overview'] );
 		$this->assertTrue( $overview['account_loans']['has_active_loan'] );
+		$this->assertSame( array( 'flxln_paid|paid', 'flxln_123456|active' ), $overview['account_loans']['loans'] );
+		$this->assertFalse( $overview['instant_deposits_previously_eligible'] );
 		$this->assertSame( '', $overview['wpcom_reconnect_url'] );
 		$this->assertStringContainsString( 'path=/woopayments/overview', $overview['urls']['overview_page'] );
 		$this->assertStringContainsString( 'path=/woopayments/onboarding', $overview['urls']['setup'] );
@@ -229,8 +234,35 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertNull( $overview['account_details'] );
 		$this->assertSame( array(), $overview['account_fees'] );
 		$this->assertSame( array( 'dispute_readiness_overview' => true ), $overview['feature_flags'] );
-		$this->assertSame( array( 'has_active_loan' => false ), $overview['account_loans'] );
+		$this->assertFalse( $overview['account_loans']['has_active_loan'] );
+		$this->assertSame( array(), $overview['account_loans']['loans'] );
 		$this->assertSame( '', $overview['wpcom_reconnect_url'] );
+	}
+
+	/**
+	 * @testdox Should link a non-test-drive account to the nonce-protected dashboard login and expose the instant payout eligibility flag.
+	 */
+	public function test_get_overview_exposes_dashboard_login_link_and_instant_payout_flag(): void {
+		$this->cache_account_data(
+			array(
+				'account_id'        => 'acct_live_test',
+				'details_submitted' => true,
+				'payments_enabled'  => true,
+				'is_live'           => true,
+				'is_test_drive'     => false,
+			)
+		);
+		// Written by `WooPaymentsOperationalQueueService` once the account is eligible, like the plugin's `handle_instant_deposits_inbox_note()`.
+		update_option( 'wcpay_instant_deposits_previously_eligible', true );
+
+		$overview = $this->sut->get_overview();
+		$query    = array();
+		wp_parse_str( (string) wp_parse_url( $overview['account_status']['account_link'], PHP_URL_QUERY ), $query );
+
+		$this->assertSame( '/woopayments/overview', $query['path'] ?? null );
+		$this->assertSame( '1', $query['wcpay-login'] ?? null );
+		$this->assertSame( 1, wp_verify_nonce( $query['_wpnonce'] ?? '', 'wcpay-login' ) );
+		$this->assertTrue( $overview['instant_deposits_previously_eligible'] );
 	}
 
 	/**

@@ -1639,6 +1639,28 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Create a one-time Stripe dashboard login link.
+	 *
+	 * Mirrors the plugin's `Get_Account_Login_Data` request (11.1.0): user-token auth and the test-mode-onboarding flag.
+	 *
+	 * @param string $redirect_url URL to return to from the dashboard.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function create_login_link( string $redirect_url ): array {
+		return $this->request(
+			array(
+				'redirect_url' => $redirect_url,
+				'test_mode'    => $this->account_service->is_test_mode_onboarding_enabled(),
+			),
+			self::ACCOUNTS_API . '/login_links',
+			'POST',
+			true,
+			true
+		);
+	}
+
+	/**
 	 * Retrieve recommended payment methods for onboarding.
 	 *
 	 * This route is intentionally not sent through the signed provider request path because recommendations are used

@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyAdminLinkHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
@@ -40,17 +41,29 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	private WooPaymentsCapitalRestController $capital;
 
 	/**
+	 * Account service double.
+	 *
+	 * @var WooPaymentsAccountService&MockObject
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->api_client = $this->create_api_client();
-		$this->capital    = $this->getMockBuilder( WooPaymentsCapitalRestController::class )
+		$this->api_client      = $this->create_api_client();
+		$this->capital         = $this->getMockBuilder( WooPaymentsCapitalRestController::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'redirect_loan_offer_request' ) )
 			->getMock();
-		$this->sut        = $this->create_handler( true );
+		$this->account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'has_account', 'is_details_submitted', 'clear_cache' ) )
+			->getMock();
+		$this->account_service->method( 'has_account' )->willReturn( true );
+		$this->sut = $this->create_handler( true );
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 	}
@@ -60,6 +73,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_action( 'admin_init', array( $this->sut, 'handle_request' ) );
+		remove_action( 'admin_init', array( $this->sut, 'handle_login_request' ) );
 		remove_action( 'admin_init', array( $this->sut, 'handle_kyc_reminder_return' ), 9 );
 		remove_action( 'admin_init', array( $this->sut, 'handle_loan_offer_request' ), 12 );
 		remove_all_filters( 'allowed_redirect_hosts' );
@@ -67,7 +81,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wp_redirect' );
 		remove_all_filters( 'wp_doing_ajax' );
 		delete_transient( 'wcpay_stripe_onboarding_state' );
-		unset( $_GET['wcpay-loan-offer'], $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'] );
+		unset( $_GET['wcpay-loan-offer'], $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'], $_GET['wcpay-login'], $_GET['_wpnonce'], $_REQUEST['_wpnonce'], $_GET['from'] );
 
 		parent::tearDown();
 	}
@@ -113,6 +127,123 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$this->sut->register();
 
 		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'handle_request' ) ) );
+	}
+
+	/**
+	 * @testdox The Overview "Edit details" link is handled at admin_init only while native owns the runtime.
+	 */
+	public function test_registers_login_handler_only_when_native_owns_runtime(): void {
+		$this->sut->register();
+		$this->assertNotFalse( has_action( 'admin_init', array( $this->sut, 'handle_login_request' ) ) );
+
+		remove_action( 'admin_init', array( $this->sut, 'handle_login_request' ) );
+		$this->sut = $this->create_handler( false );
+		$this->sut->register();
+		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'handle_login_request' ) ) );
+	}
+
+	/**
+	 * @testdox The dashboard login link clears the account cache and redirects to the platform login URL that returns to Overview.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-account.php:1276-1297` and `class-wc-payments-redirect-service.php:275-285`.
+	 */
+	public function test_login_link_redirects_to_dashboard(): void {
+		$this->account_service->method( 'is_details_submitted' )->willReturn( true );
+		$this->account_service->expects( $this->once() )->method( 'clear_cache' );
+		$this->api_client->login_response = array( 'url' => 'https://connect.stripe.com/express/login_test' );
+		$this->set_login_request( wp_create_nonce( 'wcpay-login' ) );
+		add_filter( 'allowed_redirect_hosts', array( $this, 'allow_stripe_redirect_host' ) );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		try {
+			$this->sut->handle_login_request();
+			$this->fail( 'Expected the redirect to be intercepted.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'wp_redirect intercepted: https://connect.stripe.com/express/login_test', $exception->getMessage() );
+		}
+
+		$this->assertSame( Utils::wc_payments_settings_url( '/woopayments/overview' ), $this->api_client->login_redirect_url );
+		$this->assertSame( array(), $this->api_client->last_args );
+	}
+
+	/**
+	 * @testdox The dashboard login link sends an account with unsubmitted details to the KYC account link instead.
+	 */
+	public function test_login_link_sends_unsubmitted_account_to_kyc_link(): void {
+		$this->account_service->method( 'is_details_submitted' )->willReturn( false );
+		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
+		$this->api_client->response = array(
+			'url'   => 'https://connect.stripe.com/setup/kyc',
+			'state' => 'state_kyc',
+		);
+		$this->set_login_request( wp_create_nonce( 'wcpay-login' ) );
+		$_GET['from'] = 'WCPAY_ACCOUNT_DETAILS';
+		add_filter( 'allowed_redirect_hosts', array( $this, 'allow_stripe_redirect_host' ) );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		try {
+			$this->sut->handle_login_request();
+			$this->fail( 'Expected the redirect to be intercepted.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'wp_redirect intercepted: https://connect.stripe.com/setup/kyc', $exception->getMessage() );
+		}
+
+		$this->assertSame(
+			array(
+				'from' => 'WCPAY_ACCOUNT_DETAILS',
+				'type' => 'complete_kyc_link',
+			),
+			$this->api_client->last_args
+		);
+		$this->assertNull( $this->api_client->login_redirect_url );
+		$this->assertSame( 'state_kyc', get_transient( 'wcpay_stripe_onboarding_state' ) );
+	}
+
+	/**
+	 * @testdox A failed dashboard login lands on Overview with the login error notice.
+	 */
+	public function test_login_link_failure_redirects_to_overview_error(): void {
+		$this->account_service->method( 'is_details_submitted' )->willReturn( true );
+		$this->api_client->login_exception = new WooPaymentsApiException( 'Login unavailable.', 'login_unavailable', 503 );
+		$this->set_login_request( wp_create_nonce( 'wcpay-login' ) );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		try {
+			$this->sut->handle_login_request();
+			$this->fail( 'Expected the redirect to be intercepted.' );
+		} catch ( \RuntimeException $caught ) {
+			$location = rawurldecode( $caught->getMessage() );
+			$this->assertStringContainsString( 'path=/woopayments/overview', $location );
+			$this->assertStringContainsString( 'wcpay-login-error=1', $location );
+		}
+	}
+
+	/**
+	 * @testdox The dashboard login link refuses a request without a valid nonce before calling the platform.
+	 */
+	public function test_login_link_requires_valid_nonce(): void {
+		$this->set_login_request( 'invalid' );
+
+		try {
+			$this->sut->handle_login_request();
+			$this->fail( 'Expected the nonce check to stop the request.' );
+		} catch ( \WPDieException $exception ) {
+			unset( $exception );
+		}
+
+		$this->assertNull( $this->api_client->login_redirect_url );
+		$this->assertSame( array(), $this->api_client->last_args );
+	}
+
+	/**
+	 * Simulate a click on the Overview dashboard login link.
+	 *
+	 * @param string $nonce Request nonce.
+	 */
+	private function set_login_request( string $nonce ): void {
+		$_GET['wcpay-login']  = '1';
+		$_GET['_wpnonce']     = $nonce;
+		$_REQUEST['_wpnonce'] = $nonce;
 	}
 
 	/**
@@ -296,7 +427,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$navigation = $this->createMock( WooPaymentsAdminNavigationController::class );
 		$navigation->method( 'get_legacy_payment_path_redirect_url' )->willReturn( '' );
 		$handler = new LegacyAdminLinkHandler();
-		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital );
+		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital, $this->account_service );
 		$_GET = array(
 			'page'                   => 'wc-admin',
 			'path'                   => '/payments/connect',
@@ -432,7 +563,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		);
 
 		$handler = new LegacyAdminLinkHandler();
-		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital );
+		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital, $this->account_service );
 
 		return $handler;
 	}
@@ -453,6 +584,31 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 
 			/** @var array<string,mixed> */
 			public array $last_args = array();
+
+			/** @var array<string,mixed> */
+			public array $login_response = array();
+
+			/** @var WooPaymentsApiException|null */
+			public ?WooPaymentsApiException $login_exception = null;
+
+			/** @var string|null */
+			public ?string $login_redirect_url = null;
+
+			/**
+			 * Create a dashboard login link.
+			 *
+			 * @param string $redirect_url Return URL.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException When configured.
+			 */
+			public function create_login_link( string $redirect_url ): array {
+				$this->login_redirect_url = $redirect_url;
+				if ( null !== $this->login_exception ) {
+					throw $this->login_exception;
+				}
+
+				return $this->login_response;
+			}
 
 			/**
 			 * Create an account link.

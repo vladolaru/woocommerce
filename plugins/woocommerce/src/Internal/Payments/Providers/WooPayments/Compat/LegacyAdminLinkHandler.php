@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -53,20 +54,29 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	private WooPaymentsCapitalRestController $capital;
 
 	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter         $arbiter    Runtime owner arbiter.
-	 * @param WooPaymentsApiClient                 $api_client Native WooPayments API client.
-	 * @param WooPaymentsAdminNavigationController $navigation Native WooPayments admin navigation.
-	 * @param WooPaymentsCapitalRestController     $capital    Capital controller.
+	 * @param NativePaymentsRuntimeArbiter         $arbiter         Runtime owner arbiter.
+	 * @param WooPaymentsApiClient                 $api_client      Native WooPayments API client.
+	 * @param WooPaymentsAdminNavigationController $navigation      Native WooPayments admin navigation.
+	 * @param WooPaymentsCapitalRestController     $capital         Capital controller.
+	 * @param WooPaymentsAccountService            $account_service WooPayments account service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAdminNavigationController $navigation, WooPaymentsCapitalRestController $capital ): void {
-		$this->arbiter    = $arbiter;
-		$this->api_client = $api_client;
-		$this->navigation = $navigation;
-		$this->capital    = $capital;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAdminNavigationController $navigation, WooPaymentsCapitalRestController $capital, WooPaymentsAccountService $account_service ): void {
+		$this->arbiter         = $arbiter;
+		$this->api_client      = $api_client;
+		$this->navigation      = $navigation;
+		$this->capital         = $capital;
+		$this->account_service = $account_service;
 	}
 
 	/**
@@ -79,6 +89,10 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 
 		if ( false === has_action( 'admin_init', array( $this, 'handle_request' ) ) ) {
 			add_action( 'admin_init', array( $this, 'handle_request' ) );
+		}
+
+		if ( false === has_action( 'admin_init', array( $this, 'handle_login_request' ) ) ) {
+			add_action( 'admin_init', array( $this, 'handle_login_request' ) );
 		}
 
 		// Priority 9 runs before the legacy route redirect, which would otherwise leave the connect page first.
@@ -170,6 +184,57 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 		$args = is_array( $args ) ? $args : array();
 		unset( $args['wcpay-link-handler'] );
 
+		$this->redirect_to_account_link( $args );
+	}
+
+	/**
+	 * Redirect the Overview "Edit details" link (`wcpay-login`) to the Stripe dashboard.
+	 *
+	 * Mirrors the plugin's `maybe_handle_onboarding()` login branch (11.1.0 `class-wc-payments-account.php:1276-1297`):
+	 * an account with unsubmitted details goes to the KYC link instead, and a failure lands on Overview with `wcpay-login-error`.
+	 */
+	public function handle_login_request(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- check_admin_referer() below verifies the nonce.
+		if ( ! isset( $_GET['wcpay-login'] ) || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->should_native_register() ) {
+			return;
+		}
+
+		check_admin_referer( 'wcpay-login' );
+
+		if ( $this->account_service->has_account() && ! $this->account_service->is_details_submitted() ) {
+			$args = wc_clean( wp_unslash( $_GET ) );
+			$args = is_array( $args ) ? $args : array();
+			unset( $args['wcpay-login'], $args['_wpnonce'] );
+			$args['type'] = 'complete_kyc_link';
+
+			$this->redirect_to_account_link( $args );
+		}
+
+		$url = '';
+		try {
+			// Like the plugin, drop the account cache so details edited on the dashboard show on return.
+			$this->account_service->clear_cache();
+			$login = $this->api_client->create_login_link( Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH ) );
+			$url   = isset( $login['url'] ) && is_string( $login['url'] ) ? $login['url'] : '';
+		} catch ( WooPaymentsApiException $exception ) {
+			unset( $exception );
+		}
+
+		wp_safe_redirect(
+			'' !== $url
+				? $url
+				: Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH, array( 'wcpay-login-error' => '1' ) )
+		);
+		exit;
+	}
+
+	/**
+	 * Create a platform account link and redirect to it, or to the Overview link error.
+	 *
+	 * @param array<string,mixed> $args Account-link arguments.
+	 * @return never
+	 */
+	private function redirect_to_account_link( array $args ): void {
 		try {
 			$link = $this->api_client->create_account_link( $args );
 			$url  = isset( $link['url'] ) && is_string( $link['url'] ) ? $link['url'] : '';

@@ -182,7 +182,71 @@
 }
 
 .woocommerce-woopayments-account-details__fees {
+	border-top: 1px solid #dcdcde;
 	margin-top: 16px;
+	padding-top: 16px;
+}
+
+.woocommerce-woopayments-account-details__header,
+.woocommerce-woopayments-active-loan__section-header {
+	align-items: center;
+	display: flex;
+	gap: 16px;
+	justify-content: space-between;
+	margin-bottom: 12px;
+}
+
+.woocommerce-woopayments-account-details__header h2,
+.woocommerce-woopayments-active-loan__section-header h2 {
+	margin: 0;
+}
+
+.woocommerce-woopayments-active-loan__view-transactions {
+	white-space: nowrap;
+}
+
+.woocommerce-woopayments-account-details__payout-status {
+	align-items: center;
+	display: flex;
+	gap: 4px;
+}
+
+.woocommerce-woopayments-account-details__payout-popover-content {
+	max-width: 300px;
+	padding: 12px;
+}
+
+.woocommerce-woopayments-account-fees__fee p {
+	margin: 0 0 8px;
+}
+
+.woocommerce-woopayments-account-fees__progress {
+	align-items: center;
+	display: grid;
+	gap: 4px 12px;
+	grid-template-columns: minmax(0, 1fr) auto;
+	margin: 8px 0;
+}
+
+.woocommerce-woopayments-account-fees__progress-track {
+	background: #f0f0f0;
+	border-radius: 4px;
+	grid-column: 1 / -1;
+	height: 8px;
+	overflow: hidden;
+}
+
+.woocommerce-woopayments-account-fees__progress-fill {
+	background: var(--wp-admin-theme-color, #3858e9);
+	height: 100%;
+}
+
+.woocommerce-woopayments-account-fees__progress span:last-child {
+	text-align: end;
+}
+
+.woocommerce-woopayments-overview__instant-payout-unavailable {
+	margin: 16px 0 0;
 }
 
 .woocommerce-woopayments-account-details__fees ul,

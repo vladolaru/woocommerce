@@ -290,4 +290,71 @@ describe( 'AccountBalancesCard', () => {
 		);
 		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
 	} );
+
+	// Client 11.1.0 `components/account-balances/index.tsx:226-251`.
+	describe( 'instant payouts unavailable warning', () => {
+		const instantBalance = ( amount: number ) => ( {
+			amount,
+			currency: 'usd',
+			fee: 14,
+			net: 886,
+			fee_percentage: 1.5,
+		} );
+		const renderCard = (
+			previouslyEligible: boolean,
+			instant: ReturnType< typeof instantBalance >[]
+		) =>
+			render(
+				<AccountBalancesCard
+					isLoading={ false }
+					errorMessage={ null }
+					overview={ createOverview( {
+						balance: {
+							available: [ { amount: 1000, currency: 'usd' } ],
+							pending: [ { amount: 250, currency: 'usd' } ],
+							instant,
+						},
+					} ) }
+					selectedCurrency="usd"
+					instantDepositsPreviouslyEligible={ previouslyEligible }
+				/>
+			);
+		const queryWarning = () =>
+			screen.queryByText(
+				/Instant payouts are currently unavailable for your account\./,
+				{ selector: '.components-notice__content' }
+			);
+
+		it.each( [
+			[ 'no instant balance', [] ],
+			[ 'a zero instant balance', [ instantBalance( 0 ) ] ],
+		] )(
+			'warns a previously eligible account with %s',
+			( _label, instant ) => {
+				renderCard( true, instant );
+
+				expect( queryWarning() ).toBeInTheDocument();
+				expect(
+					screen.getByRole( 'link', {
+						name: /Learn about eligibility requirements/,
+					} )
+				).toHaveAttribute(
+					'href',
+					'https://woocommerce.com/document/woopayments/payouts/instant-payouts/'
+				);
+			}
+		);
+
+		it( 'does not warn while an instant balance is available', () => {
+			renderCard( true, [ instantBalance( 900 ) ] );
+
+			expect( queryWarning() ).not.toBeInTheDocument();
+		} );
+
+		it( 'does not warn an account that was never eligible', () => {
+			renderCard( false, [] );
+
+			expect( queryWarning() ).not.toBeInTheDocument();
+		} );
+	} );
 } );

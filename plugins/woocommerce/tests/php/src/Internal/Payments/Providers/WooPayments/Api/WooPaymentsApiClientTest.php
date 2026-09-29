@@ -106,6 +106,38 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should create dashboard login links with the user token and the onboarding test-mode flag.
+	 *
+	 * Pinned WooPayments 11.1.0: Get_Account_Login_Data (`accounts/login_links`, POST, user token, test mode only when onboarding in test mode).
+	 */
+	public function test_create_login_link_posts_redirect_url_with_user_token(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'url' => 'https://connect.stripe.com/express/login_test' ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( true, false ) );
+
+		$result = $sut->create_login_link( 'https://example.com/overview' );
+
+		$this->assertSame( 'https://connect.stripe.com/express/login_test', $result['url'] );
+		$this->assertSame( '/sites/123/wcpay/accounts/login_links', $http_client->last_path );
+		$this->assertSame( 'POST', $http_client->last_method );
+		$this->assertTrue( $http_client->last_use_user_token );
+		$this->assertSame(
+			array(
+				'test_mode'    => false,
+				'redirect_url' => 'https://example.com/overview',
+			),
+			json_decode( (string) $http_client->last_body, true )
+		);
+	}
+
+	/**
 	 * @testdox Should build the site-scoped WPCOM endpoint and lift idempotency_key into the request headers.
 	 *
 	 * Pinned WooPayments 11.1.0: Refund_Charge::get_api() and ::DEFAULT_PARAMS.

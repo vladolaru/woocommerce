@@ -1,9 +1,9 @@
 /**
  * External dependencies
  */
-import { Button, ExternalLink, Modal } from '@wordpress/components';
+import { Button, ExternalLink, Modal, Notice } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
-import { useState } from '@wordpress/element';
+import { createInterpolateElement, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
 
@@ -133,6 +133,7 @@ export const AccountBalancesCard = ( {
 	selectedCurrency,
 	onCurrencyChange,
 	onInstantPayoutSubmit,
+	instantDepositsPreviouslyEligible = false,
 }: {
 	isLoading: boolean;
 	errorMessage: string | null;
@@ -142,6 +143,7 @@ export const AccountBalancesCard = ( {
 	onInstantPayoutSubmit?: (
 		currency: string
 	) => Promise< WooPaymentsDeposit >;
+	instantDepositsPreviouslyEligible?: boolean;
 } ) => {
 	const [ isInstantPayoutModalOpen, setIsInstantPayoutModalOpen ] =
 		useState( false );
@@ -350,6 +352,33 @@ export const AccountBalancesCard = ( {
 							</Button>
 						</div>
 					) }
+					{ /* Client 11.1.0 `components/account-balances/index.tsx:226-251`. */ }
+					{ instantDepositsPreviouslyEligible &&
+						( ! instantBalance || instantBalance.amount === 0 ) && (
+							<Notice
+								className="woocommerce-woopayments-overview__instant-payout-unavailable"
+								status="warning"
+								isDismissible={ false }
+							>
+								{ createInterpolateElement(
+									__(
+										'Instant payouts are currently unavailable for your account. <a>Learn about eligibility requirements</a>',
+										'woocommerce'
+									),
+									{
+										a: (
+											<ExternalLink
+												href={
+													INSTANT_PAYOUTS_DOCS_URL
+												}
+											>
+												<></>
+											</ExternalLink>
+										),
+									}
+								) }
+							</Notice>
+						) }
 					{ isInstantPayoutModalOpen && instantBalance && (
 						<InstantPayoutModal
 							instantBalance={ instantBalance }

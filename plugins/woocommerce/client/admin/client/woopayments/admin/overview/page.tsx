@@ -448,6 +448,9 @@ export const WooPaymentsOverviewPage = () => {
 					selectedCurrency={ selectedCurrency || undefined }
 					onCurrencyChange={ setSelectedCurrency }
 					onInstantPayoutSubmit={ reloadOverviewAndPayouts }
+					instantDepositsPreviouslyEligible={
+						!! shell?.instant_deposits_previously_eligible
+					}
 				/>
 				<PayoutsOverviewCard
 					isLoading={ isLoading || isPayoutsLoading }
@@ -462,6 +465,7 @@ export const WooPaymentsOverviewPage = () => {
 					<AccountDetailsCard
 						accountDetails={ shell.account_details }
 						accountFees={ shell.account_fees }
+						accountLink={ shell.account_status.account_link }
 					/>
 					<DisputeReadinessCard
 						enabled={ shouldLoadDisputeReadiness }
@@ -471,6 +475,7 @@ export const WooPaymentsOverviewPage = () => {
 						hasActiveLoan={
 							!! shell.account_loans?.has_active_loan
 						}
+						loans={ shell.account_loans?.loans }
 					/>
 				</>
 			) }

@@ -60,6 +60,8 @@ class WooPaymentsOverviewService {
 			'account_fees'                          => $this->get_active_account_fees( $account_data ),
 			'feature_flags'                         => $this->get_feature_flags_projection(),
 			'account_loans'                         => $this->get_account_loans_projection( $account_data ),
+			// Client 11.1.0 `class-wc-payments-admin.php:1062` localizes this option as `instantDepositsPreviouslyEligible`.
+			'instant_deposits_previously_eligible'  => $this->is_truthy( get_option( 'wcpay_instant_deposits_previously_eligible', false ) ),
 			'wpcom_reconnect_url'                   => '',
 			'urls'                                  => array(
 				'overview_page' => Utils::wc_payments_settings_url( '/woopayments/overview' ),
@@ -110,13 +112,35 @@ class WooPaymentsOverviewService {
 			'status'            => $this->get_account_status( $account_data ),
 			'current_deadline'  => $this->get_current_deadline( $account_data ),
 			'past_due'          => $this->has_past_due_requirements( $account_data ),
-			'account_link'      => $this->get_scalar( $account_data['account_link'] ?? $account_data['accountLink'] ?? '' ),
+			'account_link'      => $this->get_dashboard_login_url( $account_data ),
 			'requirements'      => array(
 				'errors' => $this->get_requirement_errors( $account_data ),
 			),
 			'details_submitted' => $this->is_truthy( $account_data['details_submitted'] ?? false ),
 			'payments_enabled'  => $this->is_truthy( $account_data['payments_enabled'] ?? false ),
 			'deposits_enabled'  => $this->is_truthy( $account_data['deposits_enabled'] ?? $account_data['payouts_enabled'] ?? false ),
+		);
+	}
+
+	/**
+	 * Get the Stripe dashboard login URL that `LegacyAdminLinkHandler::handle_login_request()` serves.
+	 *
+	 * Client 11.1.0 `class-wc-payments-account.php:382,1888-1895`: test-drive accounts have no dashboard access, so they get no link.
+	 *
+	 * @param array<string,mixed> $account_data Cached account data.
+	 * @return string
+	 */
+	private function get_dashboard_login_url( array $account_data ): string {
+		if ( '' === $this->get_account_id( $account_data ) || $this->is_truthy( $account_data['is_test_drive'] ?? false ) ) {
+			return '';
+		}
+
+		return Utils::wc_payments_settings_url(
+			'/woopayments/overview',
+			array(
+				'wcpay-login' => '1',
+				'_wpnonce'    => wp_create_nonce( 'wcpay-login' ),
+			)
 		);
 	}
 
@@ -252,6 +276,7 @@ class WooPaymentsOverviewService {
 				'woocommerce_remind_me_later_todo_tasks',
 				'wcpay_connection_success_modal_dismissed',
 				'_wcpay_feature_dispute_readiness_overview',
+				'wcpay_instant_deposits_previously_eligible',
 			)
 		);
 	}
@@ -345,20 +370,30 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Get native Overview account-loan flags.
+	 * Get native Overview account-loan data.
+	 *
+	 * `loans` keeps the platform's `<loan id>|<status>` strings, which client 11.1.0 reads from `wcpaySettings.accountLoans.loans`
+	 * to link the active loan's transactions (`components/active-loan-summary/index.tsx:114-123`).
 	 *
 	 * @param array<string,mixed> $account_data Preserved account data snapshot.
-	 * @return array<string,bool>
+	 * @return array{has_active_loan:bool,loans:string[]}
 	 */
 	private function get_account_loans_projection( array $account_data ): array {
 		$account_loans = $account_data['capital'] ?? $account_data['account_loans'] ?? $account_data['accountLoans'] ?? array();
+		$account_loans = is_array( $account_loans ) ? $account_loans : array();
+		$loans         = array();
+
+		foreach ( is_array( $account_loans['loans'] ?? null ) ? $account_loans['loans'] : array() as $loan ) {
+			$loan = $this->get_scalar( $loan );
+			if ( '' !== $loan ) {
+				$loans[] = $loan;
+			}
+		}
 
 		return array(
-			'has_active_loan' => is_array( $account_loans )
-				&& (
-					$this->is_truthy( $account_loans['has_active_loan'] ?? false )
-					|| $this->is_truthy( $account_loans['hasActiveLoan'] ?? false )
-				),
+			'has_active_loan' => $this->is_truthy( $account_loans['has_active_loan'] ?? false )
+				|| $this->is_truthy( $account_loans['hasActiveLoan'] ?? false ),
+			'loans'           => $loans,
 		);
 	}
 

@@ -15,63 +15,22 @@ import type {
 	WooPaymentsCapitalLoan,
 	WooPaymentsCapitalSummary,
 } from './types';
+import {
+	ActiveLoanSummary,
+	formatCapitalDate,
+	formatCapitalPercent,
+	getCapitalLoanTransactionsUrl,
+} from './active-loan-summary';
 import { formatWooPaymentsAmount } from '../overview/utils';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import { getErrorMessage } from '../money-movement/utils';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
-
-const getDateValue = ( value: string | number ): string | number => {
-	if ( typeof value === 'number' ) {
-		return value < 10000000000 ? value * 1000 : value;
-	}
-
-	const match = value
-		.trim()
-		.match( /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/ );
-
-	if ( ! match ) {
-		return value;
-	}
-
-	const [ , year, month, day, hour, minute, second ] = match;
-
-	return Date.UTC(
-		Number( year ),
-		Number( month ) - 1,
-		Number( day ),
-		Number( hour ),
-		Number( minute ),
-		Number( second )
-	);
-};
-
-const formatDate = ( value?: string | number | null ) => {
-	if ( ! value ) {
-		return '-';
-	}
-
-	const date = new Date( getDateValue( value ) );
-
-	if ( Number.isNaN( date.getTime() ) ) {
-		return '-';
-	}
-
-	return date.toLocaleDateString( undefined, {
-		year: 'numeric',
-		month: 'short',
-		day: 'numeric',
-	} );
-};
-
-const formatPercent = ( value: number ) =>
-	`${ Number( ( value * 100 ).toFixed( 2 ) ) }%`;
 
 const getLoanStatus = ( loan: WooPaymentsCapitalLoan ) =>
 	loan.fully_paid_at
 		? sprintf(
 				/* translators: %s: loan paid-off date. */
 				__( 'Paid off: %s', 'woocommerce' ),
-				formatDate( loan.fully_paid_at )
+				formatCapitalDate( loan.fully_paid_at )
 		  )
 		: __( 'Active', 'woocommerce' );
 
@@ -80,123 +39,27 @@ const getLoanStatusClassName = ( loan: WooPaymentsCapitalLoan ) =>
 		? 'woocommerce-woopayments-capital__status-chip is-paid-off'
 		: 'woocommerce-woopayments-capital__status-chip is-active';
 
-const ActiveLoanSummary = ( {
+const CapitalActiveLoanSummary = ( {
 	summary,
 	loans,
 }: {
 	summary: WooPaymentsCapitalSummary;
 	loans: WooPaymentsCapitalLoan[];
 } ) => {
-	const details = summary.details;
-
-	if ( ! details ) {
+	if ( ! summary.details ) {
 		return null;
 	}
 
-	const totalDue = details.advance_amount + details.fee_amount;
-	const periodDue =
-		details.current_repayment_interval.paid_amount +
-		details.current_repayment_interval.remaining_amount;
-	const activeLoanId =
-		loans.find( ( loan ) => ! loan.fully_paid_at )?.stripe_loan_id || '';
-	const activeLoanUrl = activeLoanId
-		? getSettingsPaymentsProviderRouteUrl(
-				`/woopayments/transactions?loan_id_is=${ encodeURIComponent(
-					activeLoanId
-				) }`
-		  )
-		: '';
-
 	return (
 		<section className="woocommerce-woopayments-capital__section">
-			<div className="woocommerce-woopayments-capital__section-header">
-				<h3>{ __( 'Active loan overview', 'woocommerce' ) }</h3>
-				{ activeLoanUrl && (
-					<a
-						className="woocommerce-woopayments-capital__view-transactions"
-						href={ activeLoanUrl }
-					>
-						{ __( 'View transactions', 'woocommerce' ) }
-					</a>
-				) }
-			</div>
-			<dl className="woocommerce-woopayments-capital__summary">
-				<div>
-					<dt>{ __( 'Total repaid', 'woocommerce' ) }</dt>
-					<dd>
-						{ sprintf(
-							/* translators: 1: paid amount, 2: total amount. */
-							__( '%1$s of %2$s', 'woocommerce' ),
-							formatWooPaymentsAmount(
-								details.paid_amount,
-								details.currency
-							),
-							formatWooPaymentsAmount(
-								totalDue,
-								details.currency
-							)
-						) }
-					</dd>
-				</div>
-				<div>
-					<dt>
-						{ sprintf(
-							/* translators: %s: repayment period due date. */
-							__(
-								'Repaid this period (until %s)',
-								'woocommerce'
-							),
-							formatDate(
-								details.current_repayment_interval.due_at
-							)
-						) }
-					</dt>
-					<dd>
-						{ sprintf(
-							/* translators: 1: paid amount, 2: total period amount. */
-							__( '%1$s of %2$s minimum', 'woocommerce' ),
-							formatWooPaymentsAmount(
-								details.current_repayment_interval.paid_amount,
-								details.currency
-							),
-							formatWooPaymentsAmount(
-								periodDue,
-								details.currency
-							)
-						) }
-					</dd>
-				</div>
-				<div>
-					<dt>{ __( 'Loan disbursed', 'woocommerce' ) }</dt>
-					<dd>{ formatDate( details.advance_paid_out_at ) }</dd>
-				</div>
-				<div>
-					<dt>{ __( 'Loan amount', 'woocommerce' ) }</dt>
-					<dd>
-						{ formatWooPaymentsAmount(
-							details.advance_amount,
-							details.currency
-						) }
-					</dd>
-				</div>
-				<div>
-					<dt>{ __( 'Fixed fee', 'woocommerce' ) }</dt>
-					<dd>
-						{ formatWooPaymentsAmount(
-							details.fee_amount,
-							details.currency
-						) }
-					</dd>
-				</div>
-				<div>
-					<dt>{ __( 'Withhold rate', 'woocommerce' ) }</dt>
-					<dd>{ formatPercent( details.withhold_rate ) }</dd>
-				</div>
-				<div>
-					<dt>{ __( 'First paydown', 'woocommerce' ) }</dt>
-					<dd>{ formatDate( details.repayments_begin_at ) }</dd>
-				</div>
-			</dl>
+			<ActiveLoanSummary
+				details={ summary.details }
+				activeLoanId={
+					loans.find( ( loan ) => ! loan.fully_paid_at )
+						?.stripe_loan_id
+				}
+				baseClassName="woocommerce-woopayments-capital"
+			/>
 		</section>
 	);
 };
@@ -208,11 +71,7 @@ const LoanStatusChip = ( { loan }: { loan: WooPaymentsCapitalLoan } ) => (
 );
 
 const getLoanTransactionsUrl = ( loan: WooPaymentsCapitalLoan ) =>
-	getSettingsPaymentsProviderRouteUrl(
-		`/woopayments/transactions?loan_id_is=${ encodeURIComponent(
-			loan.stripe_loan_id
-		) }`
-	);
+	getCapitalLoanTransactionsUrl( loan.stripe_loan_id );
 
 const LoanActionLink = ( { loan }: { loan: WooPaymentsCapitalLoan } ) => (
 	<a
@@ -223,7 +82,7 @@ const LoanActionLink = ( { loan }: { loan: WooPaymentsCapitalLoan } ) => (
 		<span className="screen-reader-text">
 			{ sprintf(
 				/* translators: %s: loan ID. */
-				__( ' for loan %s', 'woocommerce' ),
+				__( 'for loan %s', 'woocommerce' ),
 				loan.stripe_loan_id
 			) }
 		</span>
@@ -367,7 +226,7 @@ export const WooPaymentsCapitalPage = () => {
 				</p>
 			</section>
 			{ summary.details && ! errorMessage && (
-				<ActiveLoanSummary summary={ summary } loans={ loans } />
+				<CapitalActiveLoanSummary summary={ summary } loans={ loans } />
 			) }
 			{ hasLoans && (
 				<section className="woocommerce-woopayments-capital__section">
@@ -402,7 +261,11 @@ export const WooPaymentsCapitalPage = () => {
 						<tbody>
 							{ loans.map( ( loan ) => (
 								<tr key={ loan.stripe_loan_id }>
-									<td>{ formatDate( loan.paid_out_at ) }</td>
+									<td>
+										{ formatCapitalDate(
+											loan.paid_out_at
+										) }
+									</td>
 									<td>
 										<LoanStatusChip loan={ loan } />
 									</td>
@@ -419,10 +282,14 @@ export const WooPaymentsCapitalPage = () => {
 										) }
 									</td>
 									<td>
-										{ formatPercent( loan.withhold_rate ) }
+										{ formatCapitalPercent(
+											loan.withhold_rate
+										) }
 									</td>
 									<td>
-										{ formatDate( loan.first_paydown_at ) }
+										{ formatCapitalDate(
+											loan.first_paydown_at
+										) }
 									</td>
 									<td>
 										<LoanActionLink loan={ loan } />

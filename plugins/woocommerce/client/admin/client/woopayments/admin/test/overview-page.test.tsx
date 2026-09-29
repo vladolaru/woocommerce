@@ -924,17 +924,17 @@ describe( 'WooPaymentsOverviewPage', () => {
 				account_fees: [
 					{
 						payment_method: 'card',
-						label: 'Cards',
 						fee: {
 							base: {
 								currency: 'usd',
-								percentage_rate: 2.9,
+								percentage_rate: 0.029,
 								fixed_rate: 30,
 							},
 							discount: [
 								{
-									percentage_rate: 2.6,
-									fixed_rate: 30,
+									discount: 0.3,
+									end_time: '2025-03-31 12:00:00',
+									volume_currency: 'usd',
 								},
 							],
 						},
@@ -958,7 +958,51 @@ describe( 'WooPaymentsOverviewPage', () => {
 		expect(
 			screen.getByText( 'Please update your business details.' )
 		).toBeInTheDocument();
-		expect( screen.getByText( 'Cards' ) ).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Active discounts' } )
+		).toBeInTheDocument();
+		expect( screen.getByText( 'Card transactions:' ) ).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: /Edit details/ } )
+		).toHaveAttribute(
+			'href',
+			'https://connect.example/update?from=WCPAY_ACCOUNT_DETAILS&source=wcpay-account-details'
+		);
+	} );
+
+	it( 'links the active loan from the shell loans and warns when instant payouts became unavailable', async () => {
+		mockGetShell.mockResolvedValue(
+			createShell( {
+				account_loans: {
+					has_active_loan: true,
+					loans: [ 'flxln_paid|paid', 'flxln_123456|active' ],
+				},
+				instant_deposits_previously_eligible: true,
+			} )
+		);
+		mockGetActiveLoanSummary.mockResolvedValue( createActiveLoanSummary() );
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( {
+			data: [],
+			total_count: 0,
+		} );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		expect(
+			await screen.findByRole( 'link', { name: 'View transactions' } )
+		).toHaveAttribute(
+			'href',
+			expect.stringContaining(
+				'path=%2Fwoopayments%2Ftransactions&loan_id_is=flxln_123456'
+			)
+		);
+		expect(
+			await screen.findByText(
+				/Instant payouts are currently unavailable for your account\./,
+				{ selector: '.components-notice__content' }
+			)
+		).toBeInTheDocument();
 	} );
 
 	it( 'fetches the active loan summary when the shell reports an active loan', async () => {

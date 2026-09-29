@@ -146,6 +146,11 @@ export interface WooPaymentsOverviewTasksVisibility {
 export interface WooPaymentsOverviewAccountDetailsStatus {
 	text?: string;
 	background_color?: string;
+	popover?: {
+		text?: string;
+		cta_text?: string;
+		cta_link?: string;
+	};
 	[ key: string ]: unknown;
 }
 
@@ -165,7 +170,6 @@ export interface WooPaymentsOverviewAccountDetails {
 
 export interface WooPaymentsOverviewAccountFee {
 	payment_method: string;
-	label?: string;
 	fee: {
 		base?: Record< string, unknown >;
 		discount?: Record< string, unknown >[];
@@ -187,7 +191,10 @@ export interface WooPaymentsOverviewShell {
 	};
 	account_loans?: {
 		has_active_loan?: boolean;
+		/** `<loan id>|<status>` strings, as client 11.1.0 `wcpaySettings.accountLoans.loans`. */
+		loans?: string[];
 	};
+	instant_deposits_previously_eligible?: boolean;
 	wpcom_reconnect_url: string;
 	urls: {
 		overview_page?: string;
