@@ -4,12 +4,14 @@
 import {
 	Button,
 	DropdownMenu,
+	ExternalLink,
 	MenuGroup,
 	MenuItem,
 	Modal,
 	RadioControl,
 } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
+import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import {
 	createInterpolateElement,
 	useCallback,
@@ -20,6 +22,7 @@ import {
 import { moreVertical } from '@wordpress/icons';
 import { __, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
+import moment from 'moment';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 /**
@@ -96,6 +99,8 @@ type LoadTransactionOptions = {
 	setLoading?: boolean;
 };
 
+const CAPTURE_DOCUMENTATION_URL =
+	'https://woocommerce.com/document/woopayments/settings-guide/authorize-and-capture/#capturing-authorized-payments';
 const DETAIL_ACTION_FOCUS_SELECTOR =
 	'.woocommerce-woopayments-money-movement__authorization-actions, .woocommerce-woopayments-money-movement__authorization-notice, .woocommerce-woopayments-money-movement__refund-actions, .woocommerce-woopayments-money-movement__refund-modal, .woocommerce-woopayments-money-movement__dispute-response';
 const REFUND_DIALOG_ID = 'woocommerce-woopayments-refund-dialog';
@@ -407,6 +412,78 @@ const normalizePaymentIntent = (
 				? intent.status
 				: transaction.status || intent.status,
 	};
+};
+
+// Client 11.1.0 `payment-details/summary/index.tsx:944-959`: an authorization must be captured within 7 days.
+const getCaptureDeadline = ( authorization: WooPaymentsAuthorization ) =>
+	moment.utc( authorization.created ).add( 7, 'days' );
+
+/**
+ * Time left until the capture deadline, as moment's `fromNow( true )` reads it with the client's
+ * relative-time strings (client 11.1.0 `payment-details/summary/index.tsx:433-445`). Built here
+ * instead of mutating moment's shared `en` locale, which other admin screens also read.
+ *
+ * @param deadline Capture deadline.
+ */
+const formatCaptureTimeLeft = ( deadline: moment.Moment ) => {
+	const duration = moment.duration( { from: moment(), to: deadline } ).abs();
+	const round = moment.relativeTimeRounding();
+	const count = ( unit: moment.unitOfTime.Base ) =>
+		round( duration.as( unit ) );
+	const threshold = ( key: string ) =>
+		Number( moment.relativeTimeThreshold( key ) );
+
+	if ( count( 's' ) <= threshold( 'ss' ) ) {
+		return __( 'a second', 'woocommerce' );
+	}
+	if ( count( 's' ) < threshold( 's' ) ) {
+		/* translators: %d: number of seconds. */
+		return sprintf( __( '%d seconds', 'woocommerce' ), count( 's' ) );
+	}
+	if ( count( 'm' ) <= 1 ) {
+		return __( 'a minute', 'woocommerce' );
+	}
+	if ( count( 'm' ) < threshold( 'm' ) ) {
+		/* translators: %d: number of minutes. */
+		return sprintf( __( '%d minutes', 'woocommerce' ), count( 'm' ) );
+	}
+	if ( count( 'h' ) <= 1 ) {
+		return __( 'an hour', 'woocommerce' );
+	}
+	if ( count( 'h' ) < threshold( 'h' ) ) {
+		/* translators: %d: number of hours. */
+		return sprintf( __( '%d hours', 'woocommerce' ), count( 'h' ) );
+	}
+	if ( count( 'd' ) <= 1 ) {
+		return __( 'a day', 'woocommerce' );
+	}
+	if ( count( 'd' ) < threshold( 'd' ) ) {
+		/* translators: %d: number of days. */
+		return sprintf( __( '%d days', 'woocommerce' ), count( 'd' ) );
+	}
+	if ( count( 'M' ) <= 1 ) {
+		return __( 'a month', 'woocommerce' );
+	}
+	if ( count( 'M' ) < threshold( 'M' ) ) {
+		/* translators: %d: number of months. */
+		return sprintf( __( '%d months', 'woocommerce' ), count( 'M' ) );
+	}
+	if ( count( 'y' ) <= 1 ) {
+		return __( 'a year', 'woocommerce' );
+	}
+	/* translators: %d: number of years. */
+	return sprintf( __( '%d years', 'woocommerce' ), count( 'y' ) );
+};
+
+// Client 11.1.0 `utils/date-time.ts` `formatDateTimeFromString( ..., { includeTime: true } )`: site formats and timezone.
+const formatCaptureDeadline = ( deadline: moment.Moment ) => {
+	const { formats } = getDateSettings();
+
+	return dateI18n(
+		`${ formats.date } / ${ formats.time }`,
+		deadline.toISOString(),
+		undefined
+	);
 };
 
 const setRefundDialogId = ( overlay: HTMLDivElement | null ) => {
@@ -835,7 +912,11 @@ export const WooPaymentsTransactionDetailsPage = () => {
 	const showAuthorizationActions =
 		!! transaction && !! authorization && !! paymentIntentId && orderId > 0;
 	const showFraudReviewActions = showAuthorizationActions && isFraudReview;
-	const showCaptureNotice = showAuthorizationActions && ! isFraudReview;
+	// Client 11.1.0 `payment-details/summary/index.tsx:904-967`: the notice stays during fraud review, without its Capture button.
+	const showCaptureNotice = showAuthorizationActions;
+	const captureDeadline = authorization
+		? getCaptureDeadline( authorization )
+		: null;
 	const wcSettings = window.wcSettings as
 		| ( typeof window.wcSettings & {
 				countries?: Record< string, string >;
@@ -1369,49 +1450,82 @@ export const WooPaymentsTransactionDetailsPage = () => {
 								);
 							}
 						) }
-						{ showCaptureNotice && (
+						{ showCaptureNotice && captureDeadline && (
 							<section className="woocommerce-woopayments-overview-card woocommerce-woopayments-money-movement__authorization-notice">
 								<p>
-									{ __(
-										'You must capture this charge within the next 7 days.',
-										'woocommerce'
-									) }
+									{ createInterpolateElement(
+										__(
+											'You must <a>capture</a> this charge within the next',
+											'woocommerce'
+										),
+										{
+											a: (
+												<ExternalLink
+													href={
+														CAPTURE_DOCUMENTATION_URL
+													}
+												>
+													<></>
+												</ExternalLink>
+											),
+										}
+									) }{ ' ' }
+									<abbr
+										title={ formatCaptureDeadline(
+											captureDeadline
+										) }
+									>
+										<b>
+											{ formatCaptureTimeLeft(
+												captureDeadline
+											) }
+										</b>
+									</abbr>
+									{ isFraudReview &&
+										`. ${ __(
+											'Approving this transaction will capture the charge.',
+											'woocommerce'
+										) }` }
 								</p>
-								<Button
-									variant="primary"
-									isBusy={ pendingAction === 'capture' }
-									disabled={ isAuthorizationActionPending }
-									accessibleWhenDisabled
-									onClick={
-										isAuthorizationActionPending
-											? undefined
-											: () =>
-													handleAuthorizationAction(
-														'capture'
-													)
-									}
-									aria-label={
-										pendingAction === 'capture'
-											? sprintf(
-													/* translators: %s: order ID. */
-													__(
-														'Capturing authorization for order #%s',
-														'woocommerce'
-													),
-													String( orderId )
-											  )
-											: sprintf(
-													/* translators: %s: order ID. */
-													__(
-														'Capture authorization for order #%s',
-														'woocommerce'
-													),
-													String( orderId )
-											  )
-									}
-								>
-									{ __( 'Capture', 'woocommerce' ) }
-								</Button>
+								{ ! isFraudReview && (
+									<Button
+										variant="primary"
+										isBusy={ pendingAction === 'capture' }
+										disabled={
+											isAuthorizationActionPending
+										}
+										accessibleWhenDisabled
+										onClick={
+											isAuthorizationActionPending
+												? undefined
+												: () =>
+														handleAuthorizationAction(
+															'capture'
+														)
+										}
+										aria-label={
+											pendingAction === 'capture'
+												? sprintf(
+														/* translators: %s: order ID. */
+														__(
+															'Capturing authorization for order #%s',
+															'woocommerce'
+														),
+														String( orderId )
+												  )
+												: sprintf(
+														/* translators: %s: order ID. */
+														__(
+															'Capture authorization for order #%s',
+															'woocommerce'
+														),
+														String( orderId )
+												  )
+										}
+									>
+										{ __( 'Capture', 'woocommerce' ) }
+									</Button>
+								) }
 							</section>
 						) }
 						<WooPaymentsPaymentMethodDetailsSection
