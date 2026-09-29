@@ -37,7 +37,6 @@ const buildTask = (
 		shell,
 		disputes: [],
 		onOpenUpdateBusinessDetails,
-		onActivatePayments: jest.fn(),
 	} );
 
 	return { shell, task, onOpenUpdateBusinessDetails };

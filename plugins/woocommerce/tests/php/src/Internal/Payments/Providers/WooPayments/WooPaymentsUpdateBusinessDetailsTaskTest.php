@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesTask;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGoLiveTask;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHomeTasks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsUpdateBusinessDetailsTask;
 use WC_Unit_Test_Case;
@@ -45,7 +46,7 @@ class WooPaymentsUpdateBusinessDetailsTaskTest extends WC_Unit_Test_Case {
 			$extended->tasks = array_values(
 				array_filter(
 					$extended->tasks,
-					static fn( $task ): bool => ! $task instanceof WooPaymentsUpdateBusinessDetailsTask && ! $task instanceof WooPaymentsDisputesTask
+					static fn( $task ): bool => ! $task instanceof WooPaymentsUpdateBusinessDetailsTask && ! $task instanceof WooPaymentsDisputesTask && ! $task instanceof WooPaymentsGoLiveTask
 				)
 			);
 		}

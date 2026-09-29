@@ -11,6 +11,7 @@ import { recordEvent } from '@woocommerce/tracks';
  * Internal dependencies
  */
 import { getWooPaymentsAccountSettings } from './api';
+import './setup-live-payments-modal.scss';
 
 type AccountModeNoticeState = {
 	kind: 'test' | 'sandbox';

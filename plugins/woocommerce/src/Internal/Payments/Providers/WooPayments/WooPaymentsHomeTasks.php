@@ -87,5 +87,6 @@ class WooPaymentsHomeTasks implements RegisterHooksInterface {
 
 		TaskLists::add_task( 'extended', new WooPaymentsUpdateBusinessDetailsTask( $task_list, $this->account_service ) );
 		TaskLists::add_task( 'extended', new WooPaymentsDisputesTask( $task_list, $this->account_service, $this->dispute_data_service ) );
+		TaskLists::add_task( 'extended', new WooPaymentsGoLiveTask( $task_list, $this->account_service ) );
 	}
 }

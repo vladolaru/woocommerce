@@ -116,7 +116,6 @@ describe( 'OverviewTaskList', () => {
 				{ ...dispute, dispute_id: 'dp_2', evidence_due_by: NOW },
 			],
 			onOpenUpdateBusinessDetails: jest.fn(),
-			onActivatePayments: jest.fn(),
 		} ).filter( ( task ) => task.key.startsWith( 'dispute' ) );
 		render(
 			<OverviewTaskList

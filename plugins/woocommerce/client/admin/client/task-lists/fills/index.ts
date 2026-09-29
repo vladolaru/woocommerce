@@ -9,6 +9,7 @@ import './appearance';
 import './tax';
 import './deprecated-tasks';
 import './launch-your-store';
+import '~/woopayments/home-tasks/go-live-task';
 
 const possiblyImportProductTask = async () => {
 	if ( isImportProduct() ) {

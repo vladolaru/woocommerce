@@ -1,9 +1,4 @@
 /**
- * External dependencies
- */
-import { recordEvent } from '@woocommerce/tracks';
-
-/**
  * Internal dependencies
  */
 import {
@@ -102,7 +97,6 @@ describe( 'overview task builders', () => {
 			shell,
 			disputes: [],
 			onOpenUpdateBusinessDetails: jest.fn(),
-			onActivatePayments: jest.fn(),
 		} )[ 0 ];
 
 		expect( task ).toMatchObject( {
@@ -138,7 +132,6 @@ describe( 'overview task builders', () => {
 			shell,
 			disputes: [],
 			onOpenUpdateBusinessDetails: jest.fn(),
-			onActivatePayments: jest.fn(),
 		} )[ 0 ];
 
 		expect( task ).toMatchObject( {
@@ -175,7 +168,6 @@ describe( 'overview task builders', () => {
 			shell,
 			disputes: [],
 			onOpenUpdateBusinessDetails: jest.fn(),
-			onActivatePayments: jest.fn(),
 		} )[ 0 ];
 
 		expect( task.actionLabel ).toBe( 'Update' );
@@ -209,7 +201,6 @@ describe( 'overview task builders', () => {
 			shell,
 			disputes: [],
 			onOpenUpdateBusinessDetails: jest.fn(),
-			onActivatePayments: jest.fn(),
 		} )[ 0 ];
 
 		expect( task ).toMatchObject( {
@@ -228,7 +219,6 @@ describe( 'overview task builders', () => {
 			shell: createShell(),
 			disputes: [ createDispute() ],
 			onOpenUpdateBusinessDetails: jest.fn(),
-			onActivatePayments: jest.fn(),
 		} )[ 0 ];
 
 		expect( task ).toMatchObject( {
@@ -252,7 +242,6 @@ describe( 'overview task builders', () => {
 				createDispute( { dispute_id: 'dp_two', amount: 2500 } ),
 			],
 			onOpenUpdateBusinessDetails: jest.fn(),
-			onActivatePayments: jest.fn(),
 		} )[ 0 ];
 
 		expect( task ).toMatchObject( {
@@ -264,38 +253,24 @@ describe( 'overview task builders', () => {
 		expect( task.href ).toContain( 'filter=awaiting_response' );
 	} );
 
-	it( 'builds a go-live task that opens the live payments modal and records the click', () => {
-		const onActivatePayments = jest.fn();
-		const shell = createShell( {
-			account: {
-				...createShell().account,
-				live: false,
-				test_drive: true,
-				test_mode_onboarding: true,
-				dev_mode: false,
-			},
-		} );
-
-		const task = buildOverviewTasks( {
+	// Client 11.1.0 `overview/index.js:105` calls getTasks() without showGoLiveTask: the go-live task is a WC Home task only.
+	it( 'never builds the go-live task, even for a connected test-mode account', () => {
+		const tasks = buildOverviewTasks( {
 			showUpdateDetailsTask: false,
-			shell,
+			shell: createShell( {
+				account: {
+					...createShell().account,
+					live: false,
+					test_drive: true,
+					test_mode_onboarding: true,
+					dev_mode: false,
+				},
+			} ),
 			disputes: [],
 			onOpenUpdateBusinessDetails: jest.fn(),
-			onActivatePayments,
-		} )[ 0 ];
-
-		expect( task ).toMatchObject( {
-			key: 'go-live-payments',
-			title: 'Activate payments',
 		} );
 
-		task.onClick?.();
-
-		expect( recordEvent ).toHaveBeenCalledWith(
-			'wcpay_overview_task_click',
-			{ task: 'go-live', source: 'wcpay-go-live-task' }
-		);
-		expect( onActivatePayments ).toHaveBeenCalled();
+		expect( tasks ).toEqual( [] );
 	} );
 
 	it( 'filters dismissed, deleted, and currently snoozed tasks', () => {

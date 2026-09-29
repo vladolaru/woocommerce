@@ -20,7 +20,6 @@ import type { LoadError } from '@stripe/connect-js';
  * Internal dependencies
  */
 import { WooPaymentsAccountSettings } from '~/woopayments/settings/account-settings';
-import { SetupLivePaymentsModal } from '~/woopayments/settings/account-mode-notice';
 import { getWooPaymentsSettingsBootstrap } from '~/woopayments/settings/bootstrap';
 import {
 	getWooPaymentsDepositsOverview,
@@ -110,7 +109,6 @@ export const WooPaymentsOverviewPage = () => {
 	);
 	const [ updateBusinessDetailsShell, setUpdateBusinessDetailsShell ] =
 		useState< WooPaymentsOverviewShell | null >( null );
-	const [ isGoLiveModalVisible, setGoLiveModalVisible ] = useState( false );
 	// Client 11.1.0 `overview/index.js:72-92`: the update-details task stays hidden unless the Stripe banner fails to load.
 	const [ bannerLoadError, setBannerLoadError ] =
 		useState< LoadError | null >( null );
@@ -341,8 +339,6 @@ export const WooPaymentsOverviewPage = () => {
 					showStripeBanner &&
 					( !! bannerLoadError || hasBannerFailed ),
 				onOpenUpdateBusinessDetails: setUpdateBusinessDetailsShell,
-				// Client 11.1.0 `overview/task-list/tasks/go-live-task.tsx:12` opens the modal directly.
-				onActivatePayments: () => setGoLiveModalVisible( true ),
 		  } )
 		: [];
 	// Client 11.1.0 `overview/index.js:117-118,140-144`.
@@ -444,14 +440,6 @@ export const WooPaymentsOverviewPage = () => {
 				<UpdateBusinessDetailsModal
 					shell={ updateBusinessDetailsShell }
 					onClose={ () => setUpdateBusinessDetailsShell( null ) }
-				/>
-			) }
-			{ isGoLiveModalVisible && (
-				<SetupLivePaymentsModal
-					from="WCPAY_GO_LIVE_TASK"
-					source="wcpay-go-live-task"
-					setupUrl={ shell?.urls.setup }
-					onClose={ () => setGoLiveModalVisible( false ) }
 				/>
 			) }
 			{ showBalanceAndPayouts && (

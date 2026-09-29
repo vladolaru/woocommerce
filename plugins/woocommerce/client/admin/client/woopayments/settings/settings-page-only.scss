@@ -15,31 +15,6 @@
 	}
 }
 
-.woopayments-settings-setup-live-modal {
-	&__content {
-		display: flex;
-		flex-direction: column;
-		gap: 16px;
-
-		p,
-		ul {
-			margin: 0;
-		}
-
-		ul {
-			display: grid;
-			gap: 12px;
-			padding-left: 20px;
-		}
-	}
-
-	&__footer {
-		display: flex;
-		justify-content: flex-end;
-		margin-top: 24px;
-	}
-}
-
 .woopayments-settings-payout-bank-account {
 	margin: 0;
 	color: $gray-700;

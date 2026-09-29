@@ -875,9 +875,8 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).toBeInTheDocument();
 	} );
 
-	// Client 11.1.0 `overview/task-list/tasks/go-live-task.tsx:12` opens the live payments
-	// modal directly; the native task used to dispatch an event nothing on this page heard.
-	it( 'opens the live payments modal when the go-live task is clicked', async () => {
+	// Client 11.1.0 `overview/index.js:105` calls getTasks() without showGoLiveTask: the go-live task is on WC Home only.
+	it( 'does not show the go-live task for a connected test-mode account', async () => {
 		mockGetShell.mockResolvedValue(
 			createShell( {
 				account: {
@@ -886,6 +885,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 					test_drive: true,
 					test_mode_onboarding: true,
 				},
+				wpcom_reconnect_url: 'https://wordpress.com/reconnect',
 			} )
 		);
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
@@ -893,19 +893,13 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 		render( <WooPaymentsOverviewPage /> );
 
-		await userEvent.click(
-			await screen.findByRole( 'button', { name: 'Activate payments' } )
-		);
-
-		expect( recordEvent ).toHaveBeenCalledWith(
-			'wcpay_overview_task_click',
-			{ task: 'go-live', source: 'wcpay-go-live-task' }
-		);
+		// The reconnect task proves the task list rendered.
 		expect(
-			screen.getByRole( 'dialog', {
-				name: 'Activate payments on your store',
-			} )
+			await screen.findByText( 'Reconnect WooPayments' )
 		).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'Activate payments' )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'renders account details from the overview shell', async () => {

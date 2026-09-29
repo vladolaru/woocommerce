@@ -365,53 +365,16 @@ const buildDisputeTask = (
 	};
 };
 
-const buildGoLiveTask = ( {
-	shell,
-	onActivatePayments,
-}: {
-	shell: WooPaymentsOverviewShell;
-	onActivatePayments: () => void;
-} ): WooPaymentsOverviewTask | null => {
-	if (
-		! shell.account.connected ||
-		shell.account.live ||
-		shell.account.dev_mode ||
-		! ( shell.account.test_drive || shell.account.test_mode_onboarding )
-	) {
-		return null;
-	}
-
-	// Client 11.1.0 `overview/task-list/tasks/go-live-task.tsx:29-33`.
-	const onClick = () => {
-		recordEvent( 'wcpay_overview_task_click', {
-			task: 'go-live',
-			source: 'wcpay-go-live-task',
-		} );
-		onActivatePayments();
-	};
-
-	return {
-		key: 'go-live-payments',
-		level: 3,
-		title: __( 'Activate payments', 'woocommerce' ),
-		content: __( '10 minutes', 'woocommerce' ),
-		onClick,
-		showActionButton: false,
-	};
-};
-
 export const buildOverviewTasks = ( {
 	shell,
 	disputes,
 	showUpdateDetailsTask = true,
 	onOpenUpdateBusinessDetails,
-	onActivatePayments,
 }: {
 	shell: WooPaymentsOverviewShell;
 	disputes: WooPaymentsOverviewDispute[];
 	showUpdateDetailsTask?: boolean;
 	onOpenUpdateBusinessDetails: ( shell: WooPaymentsOverviewShell ) => void;
-	onActivatePayments: () => void;
 } ): WooPaymentsOverviewTask[] =>
 	[
 		showUpdateDetailsTask &&
@@ -421,7 +384,8 @@ export const buildOverviewTasks = ( {
 			} ),
 		buildReconnectTask( shell.wpcom_reconnect_url ),
 		buildDisputeTask( disputes ),
-		buildGoLiveTask( { shell, onActivatePayments } ),
+		// No go-live task: client 11.1.0 `overview/index.js:105` calls getTasks() without showGoLiveTask, so the
+		// task shows only on WC Home (`WooPaymentsGoLiveTask` and `woopayments/home-tasks/go-live-task.tsx`).
 	].filter( Boolean ) as WooPaymentsOverviewTask[];
 
 // Native once let merchants dismiss or snooze these tasks, which the client never allows, so stored entries for them are ignored.
