@@ -50,7 +50,16 @@ const PRICE = '10.99';
 const PRICE_MINOR = 1099;
 const CARD = { brand: 'visa', last4: '4242' };
 const PAID_ORDER_STATUSES = [ 'processing', 'completed' ];
-const SHOPPER_PHONE = '2015550123';
+/**
+ * A fictional US number (201-555-0100..0199) for each new WooPay account,
+ * picked from the clock so reruns within a day spread over the range: WooPay
+ * caps SMS codes at 8 per phone number a day (OTPThrottler
+ * DAILY_LIMIT_PER_PHONE), so one fixed number stops the family after 8 runs.
+ */
+function shopperPhone(): string {
+	const pick = Math.floor( Date.now() / 1000 ) % 100;
+	return `20155501${ String( pick ).padStart( 2, '0' ) }`;
+}
 const OTP_TIMEOUT_MS = 60_000;
 const RETURN_TIMEOUT_MS = 120_000;
 
@@ -132,6 +141,40 @@ async function readNewOrderIds(
 }
 
 /**
+ * Fills one of the hosted checkout's Stripe card fields, which live in
+ * separate `__privateStripeFrame` frames.
+ */
+async function fillStripeField(
+	page: Page,
+	label: RegExp,
+	value: string
+): Promise< void > {
+	let field: Frame | undefined;
+	await expect
+		.poll(
+			async () => {
+				for ( const frame of page.frames() ) {
+					if (
+						frame.name().startsWith( '__privateStripeFrame' ) &&
+						( await frame
+							.getByRole( 'textbox', { name: label } )
+							.count() ) > 0
+					) {
+						field = frame;
+						return true;
+					}
+				}
+				return false;
+			},
+			{ timeout: 60_000 }
+		)
+		.toBe( true );
+	await ( field as Frame )
+		.getByRole( 'textbox', { name: label } )
+		.fill( value );
+}
+
+/**
  * Clicks the WooPay express button and completes the platform's own flow:
  * the `/otp/` iframe (the client's mechanic, asserted here), a new WooPay
  * account on a test phone number, the SMS code, the hosted checkout on
@@ -155,7 +198,7 @@ async function payThroughWooPay(
 	);
 
 	const otp = page.frameLocator( 'iframe.woopay-otp-iframe' );
-	await otp.getByLabel( 'Mobile number' ).fill( SHOPPER_PHONE );
+	await otp.getByLabel( 'Mobile number' ).fill( shopperPhone() );
 	const sentAfter = Date.now() - 1_000;
 	await otp.getByRole( 'button', { name: 'Continue' } ).click();
 	const { code, line } = await readOtpFromSink( sentAfter );
@@ -168,35 +211,46 @@ async function payThroughWooPay(
 		{ timeout: RETURN_TIMEOUT_MS }
 	);
 
-	// Hosted checkout: a new WooPay account enters its card once, in the
-	// platform's own Stripe Payment Element.
-	let cardFrame: Frame | undefined;
-	await expect
-		.poll(
-			async () => {
-				for ( const frame of page.frames() ) {
-					if (
-						frame.name().startsWith( '__privateStripeFrame' ) &&
-						( await frame.getByLabel( 'Card number' ).count() ) > 0
-					) {
-						cardFrame = frame;
-						return true;
-					}
-				}
-				return false;
-			},
-			{ timeout: 60_000 }
-		)
-		.toBe( true );
-	if ( ! cardFrame ) {
-		throw new Error( 'hosted WooPay rendered no card field.' );
+	// Hosted checkout: Stripe's split card fields, each in its own frame,
+	// then the platform's review step before the order is placed.
+	await fillStripeField( page, /card number/i, TEST_CARDS.basic.number );
+	await fillStripeField( page, /expiration/i, TEST_CARDS.basic.expiry );
+	await fillStripeField( page, /CVC/i, TEST_CARDS.basic.cvc );
+	const cookieBanner = page.getByRole( 'button', {
+		name: 'Close and accept',
+	} );
+	if ( await cookieBanner.isVisible() ) {
+		await cookieBanner.click();
+		// The banner fades out and swallows clicks until it is gone.
+		await expect( cookieBanner ).toBeHidden();
 	}
-	await cardFrame.getByLabel( 'Card number' ).fill( TEST_CARDS.basic.number );
-	await cardFrame.getByLabel( /^Expir/i ).fill( TEST_CARDS.basic.expiry );
-	await cardFrame
-		.getByLabel( /^Security code|^CVC/i )
-		.fill( TEST_CARDS.basic.cvc );
-	await page.getByRole( 'button', { name: /^(Place order|Pay)/i } ).click();
+	// A new WooPay account has no saved address; the platform asks for one.
+	const addAddress = page.getByRole( 'button', { name: 'Add new address' } );
+	if ( await addAddress.isVisible() ) {
+		await addAddress.click();
+		const form = page.getByRole( 'dialog' );
+		await form
+			.getByRole( 'combobox', { name: 'Country / Region' } )
+			.selectOption( 'US' );
+		await form.getByRole( 'textbox', { name: 'First name' } ).fill( 'Woo' );
+		await form
+			.getByRole( 'textbox', { name: 'Last name' } )
+			.fill( 'Shopper' );
+		await form
+			.getByRole( 'textbox', { name: 'Street address' } )
+			.fill( '969 Market' );
+		await form
+			.getByRole( 'textbox', { name: 'City' } )
+			.fill( 'San Francisco' );
+		await form
+			.getByRole( 'combobox', { name: 'State', exact: true } )
+			.selectOption( 'CA' );
+		await form.getByRole( 'textbox', { name: 'ZIP Code' } ).fill( '94103' );
+		await form.getByRole( 'button', { name: 'Add', exact: true } ).click();
+		await expect( form ).toBeHidden();
+	}
+	await page.getByRole( 'button', { name: 'Review your order' } ).click();
+	await page.getByRole( 'button', { name: /^Place order for/ } ).click();
 
 	await page.waitForURL( /\/order-received\/[1-9]\d*/, {
 		timeout: RETURN_TIMEOUT_MS,
@@ -258,6 +312,11 @@ test.describe( 'WooPayments native hosted WooPay express checkout', () => {
 		);
 		await setWooPayEnabled( restApi, true );
 		await createClassicCheckoutPage();
+	} );
+
+	// A fresh shopper per case: WooPay remembers the account the previous case
+	// created for an email, and a returning account skips the sign-up steps.
+	test.beforeEach( async ( { restApi } ) => {
 		customer = getFakeUser( 'customer' );
 		customerId = (
 			( await restApi.post( 'wc/v3/customers', customer ) ).data as {
@@ -266,12 +325,15 @@ test.describe( 'WooPayments native hosted WooPay express checkout', () => {
 		 ).id;
 	} );
 
-	test.afterAll( async ( { restApi } ) => {
+	test.afterEach( async ( { restApi } ) => {
 		if ( customerId ) {
 			await restApi.delete( `wc/v3/customers/${ customerId }`, {
 				force: true,
 			} );
 		}
+	} );
+
+	test.afterAll( async ( { restApi } ) => {
 		await setWooPayEnabled( restApi, wooPayWasEnabled );
 	} );
 
