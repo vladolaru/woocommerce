@@ -24,6 +24,17 @@ const CONTRACT_IDS = {
 
 const RUNTIME_STATUS_API = 'wc-native-payments-e2e/v1/status';
 const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
+const DEPOSITS_API = 'wc/v3/payments/deposits';
+
+// Client 11.1.0 `deposits/list/index.tsx:41-94`: every column shows by default.
+const PAYOUT_COLUMNS = [
+	'Date',
+	'Type',
+	'Amount',
+	'Status',
+	'Bank account',
+	'Bank reference ID',
+] as const;
 
 const PAYOUTS_TERMINAL = /^(Payout history loaded\.|No payouts found\.)$/;
 
@@ -239,6 +250,95 @@ async function expectFixturePayoutRows( page: Page ): Promise< void > {
 	}
 }
 
+// DataViews appends the sort direction arrow to the sorted column's header.
+function columnHeaders( names: readonly string[] ): RegExp[] {
+	return names.map(
+		( name ) =>
+			new RegExp(
+				`^${ name.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' ) }[↑↓]?$`
+			)
+	);
+}
+
+/**
+ * Assert the payout history shows the client's columns and, on a store with its
+ * own payouts (the secretless CI fixture's payouts carry no type or bank
+ * details), that the latest payout fills its type and bank columns.
+ */
+async function expectPayoutColumns( page: Page ): Promise< void > {
+	await expect( page.getByRole( 'columnheader' ) ).toHaveText(
+		columnHeaders( PAYOUT_COLUMNS )
+	);
+	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true' ) {
+		return;
+	}
+
+	const firstRow = page
+		.getByRole( 'row' )
+		.filter( { has: page.getByRole( 'cell' ) } )
+		.first();
+	const cells = ( await firstRow.getByRole( 'cell' ).allInnerTexts() ).map(
+		( text ) => text.trim()
+	);
+	expect( cells ).toHaveLength( PAYOUT_COLUMNS.length );
+	const cell = ( column: ( typeof PAYOUT_COLUMNS )[ number ] ) =>
+		cells[ PAYOUT_COLUMNS.indexOf( column ) ];
+	expect( cell( 'Type' ) ).toMatch( /^(Payout|Withdrawal)$/ );
+	expect( cell( 'Bank account' ) ).not.toBe( '' );
+	expect( cell( 'Bank reference ID' ) ).not.toBe( '' );
+}
+
+/**
+ * F-T60-8: payout details list the payout's transactions with the transactions
+ * list, which brings its CSV export (client 11.1.0
+ * `deposits/details/index.tsx:356`). The secretless CI fixture serves no payout
+ * details, so this runs on stores with their own payouts only.
+ */
+async function expectPayoutDetailsTransactions(
+	page: Page,
+	restApi: ApiClient
+): Promise< void > {
+	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true' ) {
+		return;
+	}
+
+	// Instant payouts show no transactions, as in the client.
+	const payouts = (
+		(
+			await restApi.get( DEPOSITS_API, {
+				sort: 'date',
+				direction: 'desc',
+			} )
+		).data as { data: Array< { id: string; automatic?: boolean } > }
+	 ).data;
+	const payout = payouts.find( ( item ) => item.automatic !== false );
+	expect( payout, 'the store must hold an automatic payout' ).toBeTruthy();
+
+	await page
+		.getByRole( 'link', {
+			name: new RegExp( `view payout details for ${ payout?.id }$` ),
+		} )
+		.click();
+	await expect(
+		page.getByRole( 'heading', { name: 'Payout details', exact: true } )
+	).toBeVisible();
+	await expect(
+		page.getByRole( 'status' ).filter( { hasText: 'Transactions loaded.' } )
+	).toHaveCount( 1 );
+	await expect(
+		page.getByRole( 'button', { name: 'Download transactions' } )
+	).toBeEnabled();
+	await expect(
+		page.getByRole( 'columnheader', { name: 'Order #', exact: true } )
+	).toBeVisible();
+	await expect(
+		page.getByRole( 'columnheader', { name: 'Payout date', exact: true } )
+	).toHaveCount( 0 );
+	await expect(
+		page.getByRole( 'row' ).filter( { has: page.getByRole( 'cell' ) } )
+	).not.toHaveCount( 0 );
+}
+
 /**
  * The precondition both contracts share: a connected account behind an enabled
  * native gateway. A degraded store must fail here rather than pass by rendering
@@ -290,6 +390,9 @@ test(
 			PAYOUTS_TERMINAL
 		);
 		await expectFixturePayoutRows( page );
+		// N-186: the client's payout columns, then payout details with the transactions list's export.
+		await expectPayoutColumns( page );
+		await expectPayoutDetailsTransactions( page, restApi );
 		expect( restTracker.observed() ).toBeGreaterThan( 0 );
 		expect( restTracker.failures() ).toEqual( [] );
 		expect( pageErrors() ).toEqual( [] );

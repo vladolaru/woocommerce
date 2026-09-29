@@ -164,7 +164,7 @@ describe( 'WooPaymentsPayouts', () => {
 
 		expect( await screen.findByRole( 'table' ) ).toHaveAttribute(
 			'data-visible-fields',
-			'date,amount'
+			'date,type,amount,bankReferenceId'
 		);
 		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
 
@@ -176,9 +176,11 @@ describe( 'WooPaymentsPayouts', () => {
 
 		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
 			wc_payments_payouts_hidden_columns: [
-				'bankAccount',
-				'status',
+				'type',
 				'amount',
+				'status',
+				'bankAccount',
+				'bankReferenceId',
 			],
 		} );
 		expect( screen.getByRole( 'table' ) ).toHaveAttribute(

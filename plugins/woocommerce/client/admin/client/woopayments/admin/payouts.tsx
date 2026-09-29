@@ -45,7 +45,21 @@ import './style.scss';
 
 type PayoutsSummary = WooPaymentsDepositsSummary;
 
-const PAYOUT_FIELDS = [ 'date', 'status', 'amount' ];
+// Client 11.1.0 `deposits/list/index.tsx:41-94`, in order; its info-button `details` column is the date link here.
+const PAYOUT_FIELDS = [
+	'date',
+	'type',
+	'amount',
+	'status',
+	'bankAccount',
+	'bankReferenceId',
+];
+
+// Client 11.1.0 `deposits/strings.ts` `displayType`.
+const PAYOUT_TYPE_LABELS: Record< string, string > = {
+	deposit: __( 'Payout', 'woocommerce' ),
+	withdrawal: __( 'Withdrawal', 'woocommerce' ),
+};
 type ExportMessage = {
 	text: string;
 	isError?: boolean;
@@ -125,7 +139,7 @@ export const WooPaymentsPayouts = () => {
 		() => [
 			{
 				id: 'date',
-				label: __( 'Dispatch date', 'woocommerce' ),
+				label: __( 'Date', 'woocommerce' ),
 				enableHiding: false,
 				render: ( { item }: { item: WooPaymentsDeposit } ) => (
 					<a
@@ -144,7 +158,7 @@ export const WooPaymentsPayouts = () => {
 							{ sprintf(
 								/* translators: %s: payout ID. */
 								__(
-									' - view payout details for %s',
+									'- view payout details for %s',
 									'woocommerce'
 								),
 								item.id
@@ -154,18 +168,41 @@ export const WooPaymentsPayouts = () => {
 				),
 			},
 			{
-				id: 'status',
-				label: __( 'Status', 'woocommerce' ),
-				enableHiding: true,
+				id: 'type',
+				label: __( 'Type', 'woocommerce' ),
+				enableHiding: false,
+				enableSorting: false,
 				render: ( { item }: { item: WooPaymentsDeposit } ) =>
-					formatPayoutStatus( item.status ),
+					PAYOUT_TYPE_LABELS[ item.type ] || '',
 			},
 			{
 				id: 'amount',
 				label: __( 'Amount', 'woocommerce' ),
-				enableHiding: true,
+				enableHiding: false,
 				render: ( { item }: { item: WooPaymentsDeposit } ) =>
 					formatWooPaymentsAmount( item.amount, item.currency ),
+			},
+			{
+				id: 'status',
+				label: __( 'Status', 'woocommerce' ),
+				enableHiding: false,
+				enableSorting: false,
+				render: ( { item }: { item: WooPaymentsDeposit } ) =>
+					formatPayoutStatus( item.status ),
+			},
+			{
+				id: 'bankAccount',
+				label: __( 'Bank account', 'woocommerce' ),
+				enableSorting: false,
+				render: ( { item }: { item: WooPaymentsDeposit } ) =>
+					item.bankAccount || '',
+			},
+			{
+				id: 'bankReferenceId',
+				label: __( 'Bank reference ID', 'woocommerce' ),
+				enableSorting: false,
+				render: ( { item }: { item: WooPaymentsDeposit } ) =>
+					item.bank_reference_key ?? __( 'N/A', 'woocommerce' ),
 			},
 		],
 		[]

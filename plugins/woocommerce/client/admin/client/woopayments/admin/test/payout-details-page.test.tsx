@@ -5,7 +5,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { speak } from '@wordpress/a11y';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 
 /**
  * Internal dependencies
@@ -21,7 +21,9 @@ import {
 } from '../overview/data';
 import {
 	getWooPaymentsTransactions,
+	getWooPaymentsTransactionsExportUrl,
 	getWooPaymentsTransactionsSummary,
+	requestWooPaymentsTransactionsExport,
 } from '../money-movement/data';
 import {
 	mockUpdateUserPreferences,
@@ -50,7 +52,31 @@ jest.mock( '../overview/data', () => ( {
 jest.mock( '../money-movement/data', () => ( {
 	getWooPaymentsTransactions: jest.fn(),
 	getWooPaymentsTransactionsSummary: jest.fn(),
+	requestWooPaymentsTransactionsExport: jest.fn(),
+	getWooPaymentsTransactionsExportUrl: jest.fn(),
 } ) );
+
+const mockHistoryPush = jest.fn();
+let mockNavigate: ( ( to: string ) => void ) | null = null;
+
+jest.mock( '@woocommerce/navigation', () => ( {
+	...jest.requireActual( '@woocommerce/navigation' ),
+	getHistory: () => ( { push: mockHistoryPush } ),
+} ) );
+
+// Follows the list's settings-shell history pushes inside the memory router.
+const RouterBridge = () => {
+	const location = useLocation();
+	const navigate = useNavigate();
+
+	mockNavigate = ( to ) => navigate( to );
+
+	return (
+		<output data-testid="payout-details-route">
+			{ `${ location.pathname }${ location.search }` }
+		</output>
+	);
+};
 
 jest.mock( '@wordpress/a11y', () => ( {
 	speak: jest.fn(),
@@ -159,6 +185,14 @@ const mockGetTransactionsSummary =
 	getWooPaymentsTransactionsSummary as jest.MockedFunction<
 		typeof getWooPaymentsTransactionsSummary
 	>;
+const mockRequestTransactionsExport =
+	requestWooPaymentsTransactionsExport as jest.MockedFunction<
+		typeof requestWooPaymentsTransactionsExport
+	>;
+const mockGetTransactionsExportUrl =
+	getWooPaymentsTransactionsExportUrl as jest.MockedFunction<
+		typeof getWooPaymentsTransactionsExportUrl
+	>;
 const mockSpeak = speak as jest.MockedFunction< typeof speak >;
 
 describe( 'WooPayments payout details admin surface', () => {
@@ -184,6 +218,18 @@ describe( 'WooPayments payout details admin surface', () => {
 		mockGetTransactionsSummary.mockReset();
 		mockDataViews.mockClear();
 		mockSpeak.mockReset();
+		mockRequestTransactionsExport.mockReset();
+		mockGetTransactionsExportUrl.mockReset();
+		mockHistoryPush.mockReset();
+		mockHistoryPush.mockImplementation( ( to: string ) => {
+			// The settings shell's admin path carries the route in `path` and its query beside it.
+			const url = new URL( to, 'http://example.com/wp-admin/' );
+			const route = url.searchParams.get( 'path' ) || '';
+			[ 'page', 'tab', 'path' ].forEach( ( key ) =>
+				url.searchParams.delete( key )
+			);
+			mockNavigate?.( `${ route }?${ url.searchParams.toString() }` );
+		} );
 	} );
 
 	afterEach( () => {
@@ -386,28 +432,36 @@ describe( 'WooPayments payout details admin surface', () => {
 			await screen.findByText( 'STRIPE TEST BANK **** 6789' )
 		).toBeInTheDocument();
 		expect( mockGetDeposit ).toHaveBeenCalledWith( 'po_test' );
-		expect( mockGetTransactionsSummary ).toHaveBeenCalledWith( {
-			deposit_id: 'po_test',
-		} );
+		expect( mockGetTransactionsSummary ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				deposit_id: 'po_test',
+			} )
+		);
 		expect( mockGetTransactions ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				deposit_id: 'po_test',
 			} )
 		);
 		expect(
-			screen.getByRole( 'link', {
+			await screen.findByRole( 'link', {
 				name: 'View transaction details for Charge transaction txn_payout',
 			} )
 		).toBeInTheDocument();
 		expect( screen.getByText( 'REF123' ) ).toBeInTheDocument();
-		expect( screen.getAllByText( '$125.00' ) ).toHaveLength( 3 );
-		expect( screen.getByText( '3' ) ).toBeInTheDocument();
-		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
-			'Payout details loaded.'
+		// The payout amount and the transaction's amount.
+		expect( screen.getAllByText( '$125.00' ) ).toHaveLength( 2 );
+		// The transactions list summary, like the client's TableCard summary.
+		expect( screen.getByText( '3 transactions' ) ).toBeInTheDocument();
+		expect( screen.getByText( '$140.00 total' ) ).toBeInTheDocument();
+		expect( screen.getByText( '$15.00 fees' ) ).toBeInTheDocument();
+		expect( screen.getByText( '$125.00 net' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Payout details loaded.' ) ).toHaveAttribute(
+			'role',
+			'status'
 		);
 	} );
 
-	it( 'renders normal payout transaction history through DataViews with a deposit-scoped query', async () => {
+	it( 'lists the payout through the transactions list, scoped to the payout, with its export', async () => {
 		mockGetDeposit.mockResolvedValue( {
 			id: 'po_test',
 			date: '2026-06-18',
@@ -439,36 +493,41 @@ describe( 'WooPayments payout details admin surface', () => {
 				},
 			],
 		} );
+		mockRequestTransactionsExport.mockResolvedValue( {
+			export_id: 'export_payout',
+		} );
+		mockGetTransactionsExportUrl.mockResolvedValue( {
+			download_url: 'https://example.com/payout.csv',
+		} );
 
 		render(
 			<MemoryRouter
 				initialEntries={ [ '/woopayments/payouts/details?id=po_test' ] }
 			>
 				<WooPaymentsPayoutDetailsPage />
+				<RouterBridge />
 			</MemoryRouter>
 		);
 
-		expect(
-			await screen.findByTestId( 'money-movement-dataviews' )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'searchbox', {
-				name: 'Search payout transactions',
-			} )
-		).toBeInTheDocument();
+		await screen.findByText( 'Transactions loaded.' );
+		// Client 11.1.0 `transactions/list/index.tsx:311`: every transactions column but the payout ones.
 		expect( mockDataViews ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
-				searchLabel: 'Search payout transactions',
+				searchLabel: 'Search transactions',
 				paginationInfo: {
 					totalItems: 3,
 					totalPages: 1,
 				},
-				fields: expect.arrayContaining( [
-					expect.objectContaining( { id: 'date' } ),
-					expect.objectContaining( { id: 'type' } ),
-					expect.objectContaining( { id: 'amount' } ),
-				] ),
 			} )
+		);
+		const fieldIds = mockDataViews.mock.lastCall?.[ 0 ].fields?.map(
+			( field ) => field.id
+		);
+		expect( fieldIds ).toEqual(
+			expect.arrayContaining( [ 'order', 'channel', 'net', 'source' ] )
+		);
+		expect( fieldIds?.some( ( id ) => id.startsWith( 'deposit' ) ) ).toBe(
+			false
 		);
 		expect( mockGetTransactions ).toHaveBeenLastCalledWith( {
 			deposit_id: 'po_test',
@@ -477,6 +536,23 @@ describe( 'WooPayments payout details admin surface', () => {
 			sort: 'date',
 			direction: 'desc',
 		} );
+		// The payout scope is not a filter the merchant can remove.
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view ).toEqual(
+			expect.objectContaining( { filters: [] } )
+		);
+
+		// F-T60-8: the list's own export, scoped to the payout.
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Download transactions' } )
+			);
+		} );
+		expect( mockRequestTransactionsExport ).toHaveBeenCalledWith(
+			expect.objectContaining( { deposit_id: 'po_test' } )
+		);
+		expect( mockGetTransactionsExportUrl ).toHaveBeenCalledWith(
+			'export_payout'
+		);
 
 		await userEvent.click(
 			screen.getByRole( 'button', {
@@ -484,6 +560,7 @@ describe( 'WooPayments payout details admin surface', () => {
 			} )
 		);
 
+		// Paging, sorting and search stay in the payout's URL.
 		await waitFor( () =>
 			expect( mockGetTransactions ).toHaveBeenLastCalledWith( {
 				deposit_id: 'po_test',
@@ -494,21 +571,20 @@ describe( 'WooPayments payout details admin surface', () => {
 				direction: 'asc',
 			} )
 		);
-		expect( mockGetTransactionsSummary ).toHaveBeenLastCalledWith( {
-			deposit_id: 'po_test',
-			search: 'Ada',
-		} );
+		expect(
+			screen.getByTestId( 'payout-details-route' )
+		).toHaveTextContent(
+			'/woopayments/payouts/details?paged=2&pagesize=10&sort=amount&direction=asc&search=Ada&id=po_test'
+		);
 		// The client's payout details reuse the transactions list and its key.
 		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
-			wc_payments_transactions_hidden_columns: [ 'type' ],
+			wc_payments_transactions_hidden_columns: expect.arrayContaining( [
+				'type',
+				'net',
+				'deposit_id',
+				'deposit_status',
+			] ),
 		} );
-		expect( mockDataViews ).toHaveBeenLastCalledWith(
-			expect.objectContaining( {
-				view: expect.objectContaining( {
-					fields: [ 'date', 'amount' ],
-				} ),
-			} )
-		);
 	} );
 
 	it( 'copies the bank reference ID to the clipboard and announces the result', async () => {
@@ -572,13 +648,17 @@ describe( 'WooPayments payout details admin surface', () => {
 		);
 		// The shared status live region must not duplicate the announcement.
 		await waitFor( () =>
-			expect( screen.getByRole( 'status' ) ).toHaveTextContent(
-				'Payout details loaded.'
-			)
+			expect(
+				screen.getByText( 'Payout details loaded.' )
+			).toHaveAttribute( 'role', 'status' )
 		);
-		expect( screen.getByRole( 'status' ) ).not.toHaveTextContent(
-			'Bank reference ID copied.'
-		);
+		screen
+			.getAllByRole( 'status' )
+			.forEach( ( region ) =>
+				expect( region ).not.toHaveTextContent(
+					'Bank reference ID copied.'
+				)
+			);
 		expect(
 			screen.queryByText( 'Bank reference ID copied.' )
 		).not.toBeInTheDocument();
@@ -684,7 +764,9 @@ describe( 'WooPayments payout details admin surface', () => {
 			'href',
 			'https://woocommerce.com/document/woopayments/payouts/instant-payouts/#request-an-instant-payout'
 		);
+		// Client 11.1.0 `deposits/details/index.tsx:330-353`: no list, so no list or summary request.
 		expect( mockGetTransactions ).not.toHaveBeenCalled();
+		expect( mockGetTransactionsSummary ).not.toHaveBeenCalled();
 		expect(
 			screen.queryByRole( 'link', {
 				name: 'View transaction details for Charge transaction txn_payout',

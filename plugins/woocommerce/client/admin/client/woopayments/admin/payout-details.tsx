@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { Button } from '@wordpress/components';
-import { useEffect, useMemo, useState } from '@wordpress/element';
+import { useCallback, useEffect, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { speak } from '@wordpress/a11y';
 import type { ReactNode } from 'react';
@@ -18,103 +18,16 @@ import {
 	formatPayoutStatus,
 	formatWooPaymentsAmount,
 } from './overview/utils';
-import {
-	getWooPaymentsTransactions,
-	getWooPaymentsTransactionsSummary,
-} from './money-movement/data';
-import type {
-	WooPaymentsMoneyMovementDataView,
-	WooPaymentsMoneyMovementQuery,
-	WooPaymentsTransaction,
-} from './money-movement/types';
-import { WooPaymentsMoneyMovementDataViews } from './money-movement/dataviews';
-import { usePersistedHiddenFields } from './money-movement/view-preferences';
-import {
-	dataViewsViewToMoneyMovementQuery,
-	moneyMovementQueryToDataViewsView,
-} from './money-movement/query';
-import {
-	formatAmount,
-	formatDate,
-	formatLabel,
-	getErrorMessage,
-	getResourceId,
-	getTransactionDetailsRoute,
-} from './money-movement/utils';
+import type { WooPaymentsMoneyMovementQuery } from './money-movement/types';
+import { buildMoneyMovementRoutePath } from './money-movement/query';
+import { getErrorMessage } from './money-movement/utils';
+import { WooPaymentsTransactionsList } from './money-movement/transactions-list';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 import { WooPaymentsTestModeNotice } from './test-mode-notice';
 import './style.scss';
 
-type PayoutTransactionSummary = Record< string, unknown >;
-
 const INSTANT_PAYOUTS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/instant-payouts/#request-an-instant-payout';
-
-const DEFAULT_PAYOUT_TRANSACTIONS_QUERY = {
-	page: 1,
-	pagesize: 25,
-	sort: 'date',
-	direction: 'desc',
-} as const satisfies WooPaymentsMoneyMovementQuery;
-
-const PAYOUT_TRANSACTION_FIELDS = [ 'date', 'type', 'amount' ];
-
-const getDefaultPayoutTransactionsView = () =>
-	moneyMovementQueryToDataViewsView( DEFAULT_PAYOUT_TRANSACTIONS_QUERY, {
-		fields: PAYOUT_TRANSACTION_FIELDS,
-		titleField: 'type',
-		showTitle: false,
-	} );
-
-const getPayoutTransactionsQuery = (
-	payoutId: string,
-	view: WooPaymentsMoneyMovementDataView
-): WooPaymentsMoneyMovementQuery => ( {
-	...dataViewsViewToMoneyMovementQuery(
-		view,
-		DEFAULT_PAYOUT_TRANSACTIONS_QUERY
-	),
-	deposit_id: payoutId,
-} );
-
-const getPayoutTransactionsSummaryQuery = (
-	query: WooPaymentsMoneyMovementQuery
-): WooPaymentsMoneyMovementQuery => ( {
-	deposit_id: query.deposit_id,
-	...( query.search ? { search: query.search } : {} ),
-} );
-
-const getSummaryNumber = (
-	summary: PayoutTransactionSummary,
-	keys: string[]
-) => {
-	for ( const key of keys ) {
-		const value = summary[ key ];
-
-		if ( typeof value === 'number' ) {
-			return value;
-		}
-	}
-
-	return undefined;
-};
-
-const getSummaryCurrency = (
-	summary: PayoutTransactionSummary,
-	payout: WooPaymentsDeposit
-) => {
-	const currency = summary.currency;
-
-	return typeof currency === 'string' ? currency : payout.currency;
-};
-
-const formatSummaryAmount = (
-	value: number | undefined,
-	currency?: string | null
-) =>
-	typeof value === 'number'
-		? formatWooPaymentsAmount( value, currency )
-		: '-';
 
 const SummaryRow = ( {
 	label,
@@ -131,74 +44,25 @@ const SummaryRow = ( {
 
 export const WooPaymentsPayoutDetailsPage = () => {
 	const [ payout, setPayout ] = useState< WooPaymentsDeposit | null >( null );
-	const [ summary, setSummary ] = useState< PayoutTransactionSummary >( {} );
-	const [ transactions, setTransactions ] = useState<
-		WooPaymentsTransaction[]
-	>( [] );
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
-	const [ transactionsView, setTransactionsView ] =
-		useState< WooPaymentsMoneyMovementDataView >(
-			getDefaultPayoutTransactionsView
-		);
-	// The client's payout details list is its transactions list, with its key.
-	const { visibleFields, saveFields } = usePersistedHiddenFields(
-		'wc_payments_transactions_hidden_columns',
-		PAYOUT_TRANSACTION_FIELDS
-	);
 	const location = useLocation();
 	const payoutId = new URLSearchParams( location.search ).get( 'id' ) || '';
-	const transactionsQuery = useMemo(
-		() => getPayoutTransactionsQuery( payoutId, transactionsView ),
-		[ payoutId, transactionsView ]
-	);
-	const payoutTransactionFields = useMemo(
-		() => [
-			{
-				id: 'date',
-				label: __( 'Date', 'woocommerce' ),
-				enableHiding: true,
-				render: ( { item }: { item: WooPaymentsTransaction } ) =>
-					formatDate( item.date || item.created ),
-			},
-			{
-				id: 'type',
-				label: __( 'Type', 'woocommerce' ),
-				enableHiding: false,
-				render: ( { item }: { item: WooPaymentsTransaction } ) => {
-					const transactionId = getResourceId( item );
+	// The list keeps its paging, sorting and search in this page's URL, next to the payout ID.
+	const buildPayoutTransactionsRoute = useCallback(
+		( query: WooPaymentsMoneyMovementQuery ) => {
+			const { deposit_id: _depositId, ...listQuery } = query;
+			const route = buildMoneyMovementRoutePath(
+				'/woopayments/payouts/details',
+				listQuery
+			);
 
-					return (
-						<a
-							href={ getSettingsPaymentsProviderRouteUrl(
-								getTransactionDetailsRoute( item )
-							) }
-							aria-label={ sprintf(
-								/* translators: 1: transaction type, 2: transaction ID. */
-								__(
-									'View transaction details for %1$s transaction %2$s',
-									'woocommerce'
-								),
-								formatLabel( item.type ),
-								transactionId
-							) }
-						>
-							{ formatLabel( item.type ) }
-						</a>
-					);
-				},
-			},
-			{
-				id: 'amount',
-				label: __( 'Amount', 'woocommerce' ),
-				enableHiding: true,
-				render: ( { item }: { item: WooPaymentsTransaction } ) =>
-					formatAmount( item.amount, item.currency ),
-			},
-		],
-		[]
+			return `${ route }${
+				route.includes( '?' ) ? '&' : '?'
+			}id=${ encodeURIComponent( payoutId ) }`;
+		},
+		[ payoutId ]
 	);
-
 	useEffect( () => {
 		let isMounted = true;
 
@@ -215,20 +79,9 @@ export const WooPaymentsPayoutDetailsPage = () => {
 
 			try {
 				const nextPayout = await getWooPaymentsDeposit( payoutId );
-				const isInstantPayout = nextPayout.automatic === false;
-				const [ nextSummary, nextTransactions ] = await Promise.all( [
-					getWooPaymentsTransactionsSummary(
-						getPayoutTransactionsSummaryQuery( transactionsQuery )
-					),
-					isInstantPayout
-						? Promise.resolve( { data: [] } )
-						: getWooPaymentsTransactions( transactionsQuery ),
-				] );
 
 				if ( isMounted ) {
 					setPayout( nextPayout );
-					setSummary( nextSummary );
-					setTransactions( nextTransactions.data || [] );
 					setErrorMessage( null );
 				}
 			} catch ( error ) {
@@ -255,7 +108,7 @@ export const WooPaymentsPayoutDetailsPage = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [ payoutId, transactionsQuery ] );
+	}, [ payoutId ] );
 
 	const copyBankReferenceId = async () => {
 		if ( ! payout?.bank_reference_key ) {
@@ -298,16 +151,6 @@ export const WooPaymentsPayoutDetailsPage = () => {
 		liveStatusMessage = loadingMessage;
 	}
 
-	const summaryCurrency = payout
-		? getSummaryCurrency( summary, payout )
-		: null;
-	const transactionCount = getSummaryNumber( summary, [
-		'count',
-		'total_count',
-	] );
-	const grossAmount = getSummaryNumber( summary, [ 'total', 'gross' ] );
-	const fees = getSummaryNumber( summary, [ 'fees', 'fee' ] );
-	const netAmount = getSummaryNumber( summary, [ 'net', 'amount' ] );
 	const isWithdrawal = payout?.type === 'withdrawal';
 	const isInstantPayout = payout?.automatic === false;
 	const payoutLabel = isWithdrawal
@@ -425,33 +268,6 @@ export const WooPaymentsPayoutDetailsPage = () => {
 					) }
 					<section className="woocommerce-woopayments-overview-card">
 						<h3>{ payoutTransactionsTitle }</h3>
-						<dl className="woocommerce-woopayments-money-movement__details">
-							<SummaryRow
-								label={ __( 'Transactions', 'woocommerce' ) }
-								value={ transactionCount ?? '-' }
-							/>
-							<SummaryRow
-								label={ __( 'Gross amount', 'woocommerce' ) }
-								value={ formatSummaryAmount(
-									grossAmount,
-									summaryCurrency
-								) }
-							/>
-							<SummaryRow
-								label={ __( 'Fees', 'woocommerce' ) }
-								value={ formatSummaryAmount(
-									fees,
-									summaryCurrency
-								) }
-							/>
-							<SummaryRow
-								label={ __( 'Net amount', 'woocommerce' ) }
-								value={ formatSummaryAmount(
-									netAmount,
-									summaryCurrency
-								) }
-							/>
-						</dl>
 						{ isInstantPayout ? (
 							<p className="woocommerce-woopayments-money-movement__notice">
 								{ __(
@@ -464,36 +280,10 @@ export const WooPaymentsPayoutDetailsPage = () => {
 							</p>
 						) : (
 							<>
-								<WooPaymentsMoneyMovementDataViews
-									fields={ payoutTransactionFields }
-									rows={ transactions }
-									view={ {
-										...transactionsView,
-										fields: visibleFields,
-									} }
-									onChangeView={ (
-										nextView: WooPaymentsMoneyMovementDataView
-									) => {
-										saveFields( nextView.fields );
-										setTransactionsView( nextView );
-									} }
-									total={
-										transactionCount ?? transactions.length
-									}
-									isLoading={ isLoading }
-									searchLabel={ __(
-										'Search payout transactions',
-										'woocommerce'
-									) }
-									empty={
-										<p>
-											{ __(
-												'No transactions found for this payout.',
-												'woocommerce'
-											) }
-										</p>
-									}
-									getItemId={ getResourceId }
+								{ /* Client 11.1.0 deposits/details/index.tsx:356: the transactions list, scoped to the payout. */ }
+								<WooPaymentsTransactionsList
+									depositId={ payout.id }
+									buildRoute={ buildPayoutTransactionsRoute }
 								/>
 								{ allTransactionsUrl && (
 									<p className="woocommerce-woopayments-money-movement__footer-actions">
