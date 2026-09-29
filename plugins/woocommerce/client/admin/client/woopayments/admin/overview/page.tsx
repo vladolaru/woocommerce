@@ -104,6 +104,7 @@ export const WooPaymentsOverviewPage = () => {
 	const [ shell, setShell ] = useState< WooPaymentsOverviewShell | null >(
 		null
 	);
+	const [ isShellSettled, setShellSettled ] = useState( false );
 	const [ disputes, setDisputes ] = useState< WooPaymentsOverviewDispute[] >(
 		[]
 	);
@@ -152,7 +153,20 @@ export const WooPaymentsOverviewPage = () => {
 		return deposit;
 	};
 
+	const accountStatus = shell?.account_status.status ?? '';
+	// Client 11.1.0 `overview/index.js:113-116`: these accounts get a reduced page.
+	const isAccountRejectedOrUnderReview =
+		accountStatus.startsWith( 'rejected' ) ||
+		accountStatus === 'under_review';
+	// Client 11.1.0 `overview/index.js:306-367` mounts neither card, so neither request runs, for these accounts.
+	const showBalanceAndPayouts =
+		isShellSettled && ! isAccountRejectedOrUnderReview;
+
 	useEffect( () => {
+		if ( ! showBalanceAndPayouts ) {
+			return;
+		}
+
 		let isMounted = true;
 
 		const loadOverview = async () => {
@@ -190,7 +204,7 @@ export const WooPaymentsOverviewPage = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [] );
+	}, [ showBalanceAndPayouts ] );
 
 	useEffect( () => {
 		if ( selectedCurrency === null ) {
@@ -239,6 +253,7 @@ export const WooPaymentsOverviewPage = () => {
 				}
 
 				setShell( nextShell );
+				setShellSettled( true );
 
 				if (
 					! nextShell.account.connected ||
@@ -263,6 +278,7 @@ export const WooPaymentsOverviewPage = () => {
 			.catch( () => {
 				if ( isMounted ) {
 					setShell( null );
+					setShellSettled( true );
 					setDisputes( [] );
 				}
 			} );
@@ -272,11 +288,8 @@ export const WooPaymentsOverviewPage = () => {
 		};
 	}, [] );
 
-	const accountStatus = shell?.account_status.status ?? '';
 	const showStripeBanner =
-		!! shell?.account.connected &&
-		! accountStatus.startsWith( 'rejected' ) &&
-		accountStatus !== 'under_review';
+		!! shell?.account.connected && ! isAccountRejectedOrUnderReview;
 
 	// Client 11.1.0 `overview/index.js:179-235`, per Stripe's custom notification-banner behavior.
 	const handleNotificationsChange = ( {
@@ -332,18 +345,20 @@ export const WooPaymentsOverviewPage = () => {
 				onActivatePayments: () => setGoLiveModalVisible( true ),
 		  } )
 		: [];
+	// Client 11.1.0 `overview/index.js:117-118,140-144`.
 	const shouldShowConnectionSuccessModal =
 		!! shell &&
 		new URLSearchParams( window.location.search ).get(
 			'wcpay-connection-success'
 		) === '1' &&
 		! shell.account.test_mode_onboarding &&
-		shell.account.can_process_payments &&
+		shell.account_status.payments_enabled &&
 		shell.account_status.deposits_enabled;
-	const hasWorkingConnectedAccount =
-		!! shell && shell.account.connected && shell.account.working;
+	// Client 11.1.0 `overview/index.js:134-139,385`: the account status decides, not whether payments are enabled.
+	const showAccountStatusSections =
+		!! shell?.account.connected && ! isAccountRejectedOrUnderReview;
 	const shouldLoadDisputeReadiness =
-		hasWorkingConnectedAccount &&
+		showAccountStatusSections &&
 		!! shell?.feature_flags?.dispute_readiness_overview;
 
 	return (
@@ -419,7 +434,7 @@ export const WooPaymentsOverviewPage = () => {
 					</div>
 				</>
 			) }
-			{ shell && (
+			{ shell && ! isAccountRejectedOrUnderReview && (
 				<OverviewTaskList
 					tasks={ tasks }
 					visibility={ shell.overview_tasks_visibility }
@@ -439,26 +454,28 @@ export const WooPaymentsOverviewPage = () => {
 					onClose={ () => setGoLiveModalVisible( false ) }
 				/>
 			) }
-			<div className="woocommerce-woopayments-overview__cards">
-				<AccountBalancesCard
-					isLoading={ isLoading }
-					errorMessage={ overviewErrorMessage }
-					overview={ overview }
-					selectedCurrency={ selectedCurrency || undefined }
-					onCurrencyChange={ setSelectedCurrency }
-					onInstantPayoutSubmit={ reloadOverviewAndPayouts }
-					instantDepositsPreviouslyEligible={
-						!! shell?.instant_deposits_previously_eligible
-					}
-				/>
-				<PayoutsOverviewCard
-					isLoading={ isLoading || isPayoutsLoading }
-					errorMessage={ payoutsErrorMessage }
-					overview={ overview }
-					recentPayouts={ recentPayouts }
-					selectedCurrency={ selectedCurrency || undefined }
-				/>
-			</div>
+			{ showBalanceAndPayouts && (
+				<div className="woocommerce-woopayments-overview__cards">
+					<AccountBalancesCard
+						isLoading={ isLoading }
+						errorMessage={ overviewErrorMessage }
+						overview={ overview }
+						selectedCurrency={ selectedCurrency || undefined }
+						onCurrencyChange={ setSelectedCurrency }
+						onInstantPayoutSubmit={ reloadOverviewAndPayouts }
+						instantDepositsPreviouslyEligible={
+							!! shell?.instant_deposits_previously_eligible
+						}
+					/>
+					<PayoutsOverviewCard
+						isLoading={ isLoading || isPayoutsLoading }
+						errorMessage={ payoutsErrorMessage }
+						overview={ overview }
+						recentPayouts={ recentPayouts }
+						selectedCurrency={ selectedCurrency || undefined }
+					/>
+				</div>
+			) }
 			{ shell && (
 				<>
 					<AccountDetailsCard
@@ -478,7 +495,7 @@ export const WooPaymentsOverviewPage = () => {
 					/>
 				</>
 			) }
-			{ hasWorkingConnectedAccount && (
+			{ showAccountStatusSections && (
 				<Suspense fallback={ null }>
 					<InboxNotifications />
 				</Suspense>

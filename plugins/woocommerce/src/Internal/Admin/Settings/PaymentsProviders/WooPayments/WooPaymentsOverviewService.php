@@ -8,6 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 
@@ -62,7 +64,7 @@ class WooPaymentsOverviewService {
 			'account_loans'                         => $this->get_account_loans_projection( $account_data ),
 			// Client 11.1.0 `class-wc-payments-admin.php:1062` localizes this option as `instantDepositsPreviouslyEligible`.
 			'instant_deposits_previously_eligible'  => $this->is_truthy( get_option( 'wcpay_instant_deposits_previously_eligible', false ) ),
-			'wpcom_reconnect_url'                   => '',
+			'wpcom_reconnect_url'                   => $this->get_wpcom_reconnect_url(),
 			'urls'                                  => array(
 				'overview_page' => Utils::wc_payments_settings_url( '/woopayments/overview' ),
 				'settings'      => Utils::wc_payments_settings_url( '/woopayments/settings' ),
@@ -118,8 +120,70 @@ class WooPaymentsOverviewService {
 			),
 			'details_submitted' => $this->is_truthy( $account_data['details_submitted'] ?? false ),
 			'payments_enabled'  => $this->is_truthy( $account_data['payments_enabled'] ?? false ),
-			'deposits_enabled'  => $this->is_truthy( $account_data['deposits_enabled'] ?? $account_data['payouts_enabled'] ?? false ),
+			'deposits_enabled'  => $this->are_deposits_enabled( $account_data ),
 		);
+	}
+
+	/**
+	 * Tell whether the platform reports payouts as enabled.
+	 *
+	 * Client 11.1.0 `overview/index.js:118` reads `accountStatus.deposits?.status === 'enabled'`, which
+	 * `class-wc-payments-account.php:378` fills from the cached account's `deposits` object.
+	 *
+	 * @param array<string,mixed> $account_data Cached account data.
+	 * @return bool
+	 */
+	private function are_deposits_enabled( array $account_data ): bool {
+		$deposits = is_array( $account_data['deposits'] ?? null ) ? $account_data['deposits'] : array();
+
+		return 'enabled' === $this->get_scalar( $deposits['status'] ?? '' );
+	}
+
+	/**
+	 * Get the WordPress.com reconnect URL, sent only when the site is connected but has lost its connection owner.
+	 *
+	 * Client 11.1.0 `class-wc-payments-admin.php:1035` builds it with `WC_Payments_Account::get_wpcom_reconnect_url()`
+	 * (`class-wc-payments-account.php:1983-1993`), and `class-wc-payments-account.php:1307` handles it. The client's connection
+	 * check already requires an owner (`wc-payment-api/class-wc-payments-http.php:137-139` vs `:165-167`), so this stays empty in practice.
+	 *
+	 * @return string
+	 */
+	private function get_wpcom_reconnect_url(): string {
+		if ( ! $this->is_server_connected() || $this->has_server_connection_owner() ) {
+			return '';
+		}
+
+		return admin_url(
+			add_query_arg(
+				array(
+					'wcpay-reconnect-wpcom' => '1',
+					'_wpnonce'              => wp_create_nonce( 'wcpay-reconnect-wpcom' ),
+				),
+				'admin.php'
+			)
+		);
+	}
+
+	/**
+	 * Tell whether the WordPress.com connection works, like client 11.1.0 `WC_Payments_API_Client::is_server_connected()`.
+	 *
+	 * @return bool
+	 */
+	protected function is_server_connected(): bool {
+		return ( new WooPaymentsHttpClient() )->is_connected();
+	}
+
+	/**
+	 * Tell whether the connection has an owner, like client 11.1.0 `WC_Payments_API_Client::has_server_connection_owner()`.
+	 *
+	 * @return bool
+	 */
+	protected function has_server_connection_owner(): bool {
+		try {
+			return ! empty( JetpackConnection::get_manager()->get_connection_owner_id() );
+		} catch ( \Throwable $e ) {
+			return true;
+		}
 	}
 
 	/**

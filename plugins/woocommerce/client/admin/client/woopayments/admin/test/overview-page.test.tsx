@@ -703,6 +703,11 @@ describe( 'WooPaymentsOverviewPage', () => {
 					details_submitted: false,
 				},
 				show_update_details_task: true,
+				account_details: {
+					account_status: { text: 'Paused' },
+					payout_status: { text: 'Unavailable' },
+					banner: null,
+				},
 			} )
 		);
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
@@ -710,7 +715,8 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 		render( <WooPaymentsOverviewPage /> );
 
-		await screen.findByRole( 'heading', { name: 'Balance' } );
+		// Client 11.1.0 `overview/index.js:306-367`: under review hides Balance too, so wait on the shell-rendered card.
+		await screen.findByRole( 'heading', { name: 'Account details' } );
 		expect(
 			screen.queryByText( 'Finish setting up WooPayments' )
 		).not.toBeInTheDocument();

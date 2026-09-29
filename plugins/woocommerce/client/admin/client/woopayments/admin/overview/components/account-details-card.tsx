@@ -73,8 +73,18 @@ export const AccountDetailsCard = ( {
 	accountFees?: WooPaymentsOverviewAccountFee[];
 	accountLink?: string;
 } ) => {
+	// Client 11.1.0 `components/account-details/index.tsx:45-52,96-97`.
 	if ( ! accountDetails ) {
-		return null;
+		return (
+			<section className="woocommerce-woopayments-overview-card woocommerce-woopayments-account-details">
+				<div className="woocommerce-woopayments-account-details__header">
+					<h2 tabIndex={ -1 }>
+						{ __( 'Account details', 'woocommerce' ) }
+					</h2>
+				</div>
+				<p>{ __( 'Error loading account details.', 'woocommerce' ) }</p>
+			</section>
+		);
 	}
 
 	// Client 11.1.0 `components/account-details/index.tsx:59-64` and `header-title.tsx:37-55`.

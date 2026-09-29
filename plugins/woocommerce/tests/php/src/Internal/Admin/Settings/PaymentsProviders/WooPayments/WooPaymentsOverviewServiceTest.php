@@ -60,7 +60,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 				'live_publishable_key' => 'pk_live_secret',
 				'details_submitted'    => true,
 				'payments_enabled'     => true,
-				'deposits_enabled'     => true,
+				'deposits'             => array( 'status' => 'enabled' ),
 				'is_live'              => false,
 				'is_test_drive'        => true,
 				'account_details'      => array(
