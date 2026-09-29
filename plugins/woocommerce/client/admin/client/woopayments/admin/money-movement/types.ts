@@ -32,6 +32,7 @@ export interface WooPaymentsTransaction {
 	fee?: number;
 	fees?: number;
 	net?: number;
+	paydown?: WooPaymentsChargePaydown | null;
 	order_id?: number | string;
 	source?: string;
 	source_identifier?: string;
@@ -152,7 +153,15 @@ export interface WooPaymentsCharge {
 	amount_refunded?: number;
 	refunded?: boolean;
 	captured?: boolean;
+	paydown?: WooPaymentsChargePaydown | null;
 	status?: string;
+}
+
+/**
+ * Capital loan repayment withheld from a charge; the platform charge endpoint appends it.
+ */
+export interface WooPaymentsChargePaydown {
+	amount: number;
 }
 
 export interface WooPaymentsPaymentIntent {

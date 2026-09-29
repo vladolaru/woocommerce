@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments payment details summary shows the capital loan repayment taken from a payment and the net amount after it.

@@ -548,6 +548,9 @@ const StackedLines = ( { lines }: { lines: ReactNode[] } ) => {
 	);
 };
 
+const getFiniteNumber = ( value: unknown ) =>
+	typeof value === 'number' && Number.isFinite( value ) ? value : undefined;
+
 const getTransactionFee = ( transaction: WooPaymentsTransaction ) =>
 	transaction.fee ?? transaction.application_fee_amount;
 
@@ -675,8 +678,16 @@ export const WooPaymentsPaymentSummarySection = ( {
 		: getTransactionFee( transaction );
 	const feeCurrency = feeFromBalance ? balanceCurrency : transaction.currency;
 	const netFromBalance = typeof balanceTransaction?.net === 'number';
-	const net = netFromBalance ? balanceTransaction.net : transaction.net;
 	const netCurrency = netFromBalance ? balanceCurrency : transaction.currency;
+	// Client 11.1.0 `payment-details/summary/index.tsx:420-431`: a capital loan repayment comes out of the net.
+	const paydownAmount = transaction.paydown
+		? getFiniteNumber( transaction.paydown.amount )
+		: undefined;
+	const chargeNet = netFromBalance ? balanceTransaction.net : transaction.net;
+	const net =
+		paydownAmount !== undefined && typeof chargeNet === 'number'
+			? chargeNet - Math.abs( paydownAmount )
+			: chargeNet;
 	const hasConvertedAmount =
 		hasDifferentBalanceCurrency &&
 		typeof balanceTransaction?.amount === 'number';
@@ -755,6 +766,19 @@ export const WooPaymentsPaymentSummarySection = ( {
 								-Math.abs( Number( fee ) ),
 								feeCurrency,
 								feeFromBalance && hasDifferentBalanceCurrency
+							)
+						) }
+					</span>
+				) }
+				{ paydownAmount !== undefined && (
+					<span>
+						{ sprintf(
+							/* translators: %s: formatted loan repayment amount. */
+							__( 'Loan repayment: %s', 'woocommerce' ),
+							formatPaymentSummaryAmount(
+								paydownAmount,
+								balanceCurrency || transaction.currency,
+								hasDifferentBalanceCurrency
 							)
 						) }
 					</span>

@@ -373,6 +373,7 @@ const normalizeCharge = (
 		captured: charge.captured,
 		fee: adjustedAmounts.fee,
 		net: adjustedAmounts.net,
+		paydown: charge.paydown,
 		status: charge.status,
 	};
 };

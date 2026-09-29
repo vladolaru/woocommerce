@@ -8,13 +8,17 @@ import { getSettings, setSettings } from '@wordpress/date';
 /**
  * Internal dependencies
  */
+import { WooPaymentsPaymentSummarySection } from '../money-movement/transaction-detail-sections';
 import { WooPaymentsTransactionDetailsPage } from '../money-movement/transaction-details-page';
 import {
 	getWooPaymentsAuthorization,
 	getWooPaymentsPaymentIntent,
 	getWooPaymentsTimeline,
 } from '../money-movement/data';
-import type { WooPaymentsCharge } from '../money-movement/types';
+import type {
+	WooPaymentsCharge,
+	WooPaymentsTransaction,
+} from '../money-movement/types';
 import { mockAccountMode } from './helpers/test-mode-account';
 
 jest.mock( '@woocommerce/tracks', () => ( {
@@ -84,6 +88,12 @@ const getBaseCharge = (): WooPaymentsCharge => ( {
 		type: 'card',
 	},
 } );
+
+const getSummary = () => {
+	const heading = screen.getByRole( 'heading', { name: 'Summary' } );
+
+	return heading.closest( 'section' ) as typeof heading;
+};
 
 const renderDetailsPage = () =>
 	render(
@@ -254,6 +264,75 @@ describe( 'WooPayments payment details summary parity', () => {
 			).toBeInTheDocument();
 			expect(
 				screen.getByRole( 'button', { name: 'Block transaction' } )
+			).toBeInTheDocument();
+		} );
+	} );
+
+	describe( 'loan repayment (client summary/index.tsx:420-431,646-681)', () => {
+		it( 'shows the loan repayment and reduces the net by it', () => {
+			render(
+				<WooPaymentsPaymentSummarySection
+					transaction={
+						{
+							...getBaseCharge(),
+							paydown: { amount: -300 },
+						} as WooPaymentsTransaction
+					}
+				/>
+			);
+
+			const summary = getSummary();
+			expect(
+				within( summary ).getByText( 'Loan repayment: -$3.00' )
+			).toBeInTheDocument();
+			expect(
+				within( summary ).getByText( 'Net: $16.30' )
+			).toBeInTheDocument();
+			expect( within( summary ).getByText( '$16.30' ) ).toHaveProperty(
+				'tagName',
+				'DD'
+			);
+		} );
+
+		it( 'shows no loan repayment line without a paydown', () => {
+			render(
+				<WooPaymentsPaymentSummarySection
+					transaction={
+						{
+							...getBaseCharge(),
+							paydown: null,
+						} as WooPaymentsTransaction
+					}
+				/>
+			);
+
+			const summary = getSummary();
+			expect(
+				within( summary ).queryByText( /Loan repayment/ )
+			).not.toBeInTheDocument();
+			expect(
+				within( summary ).getByText( 'Net: $19.30' )
+			).toBeInTheDocument();
+		} );
+
+		it( 'carries the platform charge paydown into the payment details page', async () => {
+			mockGetPaymentIntent.mockResolvedValue( {
+				id: 'pi_abc',
+				status: 'succeeded',
+				amount: 2000,
+				currency: 'usd',
+				charge: {
+					...getBaseCharge(),
+					paydown: { amount: -300 },
+				},
+			} );
+			renderDetailsPage();
+
+			expect(
+				await screen.findByText( 'Loan repayment: -$3.00' )
+			).toBeInTheDocument();
+			expect(
+				within( getSummary() ).getByText( 'Net: $16.30' )
 			).toBeInTheDocument();
 		} );
 	} );
