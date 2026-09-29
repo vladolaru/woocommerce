@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments dispute evidence for general, unrecognized, and other bank-reported reasons recommends the same supporting documents as the WooPayments plugin.

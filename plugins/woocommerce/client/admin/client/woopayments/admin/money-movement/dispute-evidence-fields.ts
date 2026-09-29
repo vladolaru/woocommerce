@@ -1200,6 +1200,55 @@ const REFERENCE_EVIDENCE_MATRIX: Record<
 	},
 };
 
+const SUBSCRIPTION_PROOF_FALLBACK_DESCRIPTION = __(
+	'Such as billing history, subscription status, or cancellation logs.',
+	'woocommerce'
+);
+
+// Client 11.1.0 recommended-document-fields.ts:375-397, for reasons outside the evidence matrix.
+const getUnrecognizedFallbackDocuments = (): RecommendedDocumentField[] =>
+	buildRecommendedDocuments( [
+		[
+			'customer_signature',
+			30,
+			__( "Customer's signature", 'woocommerce' ),
+			RECOMMENDED_DOCUMENT_DESCRIPTIONS.customer_signature,
+		],
+		[
+			'access_activity_log',
+			40,
+			__( 'Proof of active subscription', 'woocommerce' ),
+			SUBSCRIPTION_PROOF_FALLBACK_DESCRIPTION,
+		],
+	] );
+
+// Client 11.1.0 recommended-document-fields.ts:398-429 (`general`), also the client's
+// fallback for any other reason outside the evidence matrix (line 435).
+const getGeneralFallbackDocuments = (): RecommendedDocumentField[] =>
+	buildRecommendedDocuments( [
+		[
+			'access_activity_log',
+			40,
+			__( 'Proof of active subscription', 'woocommerce' ),
+			SUBSCRIPTION_PROOF_FALLBACK_DESCRIPTION,
+		],
+		[
+			'refund_policy',
+			50,
+			__( 'Store refund policy', 'woocommerce' ),
+			REFUND_POLICY_DESCRIPTION,
+		],
+		[
+			'service_documentation',
+			60,
+			__( 'Terms of service', 'woocommerce' ),
+			__(
+				"A screenshot of your store's terms of service.",
+				'woocommerce'
+			),
+		],
+	] );
+
 export const needsShipping = ( reason?: string, productType = '' ): boolean =>
 	productType === 'physical_product' &&
 	! REASONS_WITHOUT_SHIPPING.includes( reason || '' );
@@ -1249,20 +1298,25 @@ export const getRecommendedDocumentFields = ( {
 	}
 
 	if ( ! documents ) {
-		documents = buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
-		] );
+		documents = [
+			...buildRecommendedDocuments( [
+				[
+					'receipt',
+					10,
+					__( 'Order receipt', 'woocommerce' ),
+					ORDER_RECEIPT_DESCRIPTION,
+				],
+				[
+					'uncategorized_file',
+					100,
+					__( 'Other documents', 'woocommerce' ),
+					OTHER_DOCUMENTS_DESCRIPTION,
+				],
+			] ),
+			...( reason === 'unrecognized'
+				? getUnrecognizedFallbackDocuments()
+				: getGeneralFallbackDocuments() ),
+		];
 	}
 
 	if (

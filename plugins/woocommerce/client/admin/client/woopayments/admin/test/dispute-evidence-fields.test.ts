@@ -242,6 +242,115 @@ describe( 'WooPayments dispute evidence helpers', () => {
 		).toEqual( [ 'customer_communication', 'uncategorized_file' ] );
 	} );
 
+	// Client 11.1.0 recommended-document-fields.ts:125-155 and 375-446.
+	const ORDER_RECEIPT = {
+		key: 'receipt',
+		label: 'Order receipt',
+		description:
+			"A copy of the customer's receipt, which can be found in the receipt history for this transaction.",
+	};
+	const CUSTOMER_COMMUNICATION = {
+		key: 'customer_communication',
+		label: 'Customer communication',
+		description:
+			'Any correspondence with the customer regarding this purchase.',
+	};
+	const PROOF_OF_ACTIVE_SUBSCRIPTION = {
+		key: 'access_activity_log',
+		label: 'Proof of active subscription',
+		description:
+			'Such as billing history, subscription status, or cancellation logs.',
+	};
+	const OTHER_DOCUMENTS = {
+		key: 'uncategorized_file',
+		label: 'Other documents',
+		description:
+			'Any other relevant documents that will support your case.',
+	};
+	const withoutOrder = ( input: Parameters< typeof getFieldKeys >[ 0 ] ) =>
+		getRecommendedDocumentFields( input ).map(
+			( { key, label, description } ) => ( { key, label, description } )
+		);
+
+	it( 'should recommend signature and subscription proof for unrecognized disputes', () => {
+		expect(
+			withoutOrder( {
+				reason: 'unrecognized',
+				productType: 'physical_product',
+			} )
+		).toEqual( [
+			ORDER_RECEIPT,
+			CUSTOMER_COMMUNICATION,
+			{
+				key: 'customer_signature',
+				label: "Customer's signature",
+				description:
+					"Any relevant documents showing the customer's signature, such as signed proof of delivery.",
+			},
+			PROOF_OF_ACTIVE_SUBSCRIPTION,
+			OTHER_DOCUMENTS,
+		] );
+	} );
+
+	it.each( [
+		'general',
+		'bank_cannot_process',
+		'check_returned',
+		'customer_initiated',
+		'debit_not_authorized',
+		'incorrect_account_details',
+		'insufficient_funds',
+	] )(
+		'should recommend the general document set for %s disputes',
+		( reason ) => {
+			expect(
+				withoutOrder( {
+					reason,
+					productType: 'digital_product_or_service',
+				} )
+			).toEqual( [
+				ORDER_RECEIPT,
+				CUSTOMER_COMMUNICATION,
+				PROOF_OF_ACTIVE_SUBSCRIPTION,
+				{
+					key: 'refund_policy',
+					label: 'Store refund policy',
+					description: "A screenshot of your store's refund policy.",
+				},
+				{
+					key: 'service_documentation',
+					label: 'Terms of service',
+					description:
+						"A screenshot of your store's terms of service.",
+				},
+				OTHER_DOCUMENTS,
+			] );
+		}
+	);
+
+	it( 'should submit the general fallback documents under their client evidence keys', () => {
+		const payload = buildEvidencePayload(
+			{
+				reason: 'general',
+				productType: 'digital_product_or_service',
+				evidence: {
+					access_activity_log: 'file_subscription',
+					refund_policy: 'file_refund_policy',
+					service_documentation: 'file_terms',
+					customer_signature: 'file_signature',
+				},
+			},
+			false
+		);
+
+		expect( payload.evidence ).toMatchObject( {
+			access_activity_log: 'file_subscription',
+			refund_policy: 'file_refund_policy',
+			service_documentation: 'file_terms',
+			customer_signature: 'file_signature',
+		} );
+	} );
+
 	it( 'should preserve the dispute evidence clearing contract', () => {
 		const payload = buildEvidencePayload(
 			{
