@@ -42,8 +42,9 @@ const PAYOUTS_TERMINAL = /^(Payout history loaded\.|No payouts found\.)$/;
 // `envs/woopayments-native/ci-provider-fixture.php`), in minor units. The
 // loaded status alone also passes on an empty list, so under the fixture the
 // case asserts these rows, which only a completed list fetch can render.
+// Status labels are the client's (11.1.0 deposits/strings.ts:24-32).
 const FIXTURE_PAYOUTS = [
-	{ id: 'po_ci_paid', status: 'Paid', amount: 9700 },
+	{ id: 'po_ci_paid', status: 'Completed (paid)', amount: 9700 },
 	{ id: 'po_ci_pending', status: 'Pending', amount: 2500 },
 	{ id: 'po_ci_pending_2', status: 'Pending', amount: 1500 },
 ] as const;
