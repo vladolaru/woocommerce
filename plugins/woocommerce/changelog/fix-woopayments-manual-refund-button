@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments orders hide the "Refund manually" button unless a refund through WooPayments has failed, and explain what a manual refund means when it is shown.

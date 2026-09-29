@@ -117,6 +117,9 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 						<button type="button" class="refund-items">Refund</button>
 						<span class="woocommerce-help-tip"></span>
 					</span>
+					<div class="wc-order-data-row">
+						<button type="button" class="button do-manual-refund tips" data-tip="Core tip">Refund $42.50 manually</button>
+					</div>
 				</div>
 			</form>
 		`;
@@ -293,6 +296,119 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 		expect(
 			document.getElementById( 'a11y-speak-assertive' )?.textContent
 		).toContain( 'Order cannot be refunded' );
+	} );
+
+	// Client 11.1.0 order/index.js:62-92 and class-wc-payments-admin.php:873-874.
+	describe( 'manual refund button', () => {
+		const MANUAL_REFUNDS_TIP =
+			'Refunding manually requires reimbursing your customer offline via cash, check, etc. The refund amounts entered here will only be used to balance your analytics.';
+
+		const bootWithManualRefunds = ( disableManualRefunds: boolean ) => {
+			window.woocommerceWooPaymentsOrderStatusChange = {
+				order_status: 'wc-processing',
+				can_refund: true,
+				refund_amount: 42.5,
+				formatted_refund_amount: '$42.50',
+				refunded_amount: 0,
+				charge_id: '',
+				has_open_authorization: false,
+				disable_manual_refunds: disableManualRefunds,
+			};
+
+			bootEntry();
+		};
+
+		const getManualRefundButton = () => {
+			const button = orderScreen?.querySelector( '.do-manual-refund' );
+			if ( ! ( button instanceof window.HTMLButtonElement ) ) {
+				throw new Error( 'Expected the manual refund button.' );
+			}
+
+			return button;
+		};
+
+		const openRefundPanel = () => {
+			const refundButton = orderScreenQueries().getByRole( 'button', {
+				name: 'Refund',
+			} );
+			act( () => {
+				refundButton.click();
+			} );
+		};
+
+		it( 'hides the manual refund button when the refund panel opens', () => {
+			bootWithManualRefunds( true );
+			const manualRefundButton = getManualRefundButton();
+
+			expect( manualRefundButton ).not.toHaveStyle( { display: 'none' } );
+			openRefundPanel();
+
+			expect( manualRefundButton ).toHaveStyle( { display: 'none' } );
+			expect( manualRefundButton ).not.toHaveAttribute( 'title' );
+		} );
+
+		it( 'keeps the manual refund button and explains it after a refund failed', () => {
+			bootWithManualRefunds( false );
+			openRefundPanel();
+
+			const manualRefundButton = getManualRefundButton();
+			expect( manualRefundButton ).not.toHaveStyle( { display: 'none' } );
+			expect( manualRefundButton ).toHaveAttribute(
+				'title',
+				MANUAL_REFUNDS_TIP
+			);
+		} );
+
+		it( 'regenerates the tooltip through tipTip when jQuery is present', () => {
+			const tipTip = jest.fn();
+			const jQuery = jest.fn( ( target: typeof document.body ) => ( {
+				on: ( eventName: string, handler: () => void ) =>
+					target.addEventListener( eventName, handler ),
+				tipTip,
+			} ) );
+			( window as unknown as { jQuery?: unknown } ).jQuery = jQuery;
+
+			try {
+				bootWithManualRefunds( false );
+				openRefundPanel();
+			} finally {
+				delete ( window as unknown as { jQuery?: unknown } ).jQuery;
+			}
+
+			expect( jQuery ).toHaveBeenCalledWith( getManualRefundButton() );
+			expect( tipTip ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		it( 'hides the button again after the order items box reloads its markup', () => {
+			bootWithManualRefunds( true );
+			const itemsBox = orderScreen?.querySelector(
+				'#woocommerce-order-items'
+			);
+			if ( itemsBox ) {
+				// Core replaces the box content via AJAX after item edits; the box itself stays.
+				itemsBox.innerHTML = `
+					<button type="button" class="refund-items">Refund</button>
+					<div class="wc-order-data-row">
+						<button type="button" class="button do-manual-refund tips">Refund $42.50 manually</button>
+					</div>
+				`;
+			}
+			openRefundPanel();
+
+			expect( getManualRefundButton() ).toHaveStyle( {
+				display: 'none',
+			} );
+		} );
+
+		it( 'hides the manual refund button when the status field is absent', () => {
+			document.getElementById( 'order_status' )?.remove();
+			bootWithManualRefunds( true );
+			openRefundPanel();
+
+			expect( getManualRefundButton() ).toHaveStyle( {
+				display: 'none',
+			} );
+		} );
 	} );
 
 	// Client 11.1.0 order/index.js:131-141 and order/test-mode-notice/index.tsx.

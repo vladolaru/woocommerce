@@ -29,6 +29,8 @@ export interface WooPaymentsOrderStatusChangeConfig {
 	has_open_authorization: boolean;
 	/** Whether the order was paid in test mode (`_wcpay_mode` is `test`). */
 	test_mode?: boolean;
+	/** Whether to hide core's manual refund button; false only after a provider refund failed. */
+	disable_manual_refunds?: boolean;
 }
 
 /**

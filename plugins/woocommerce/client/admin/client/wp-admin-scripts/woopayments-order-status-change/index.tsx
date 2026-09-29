@@ -56,6 +56,7 @@ let hasBoundEarlyFraudWarningRefundListener = false;
  */
 type JQueryLike = ( target: Element ) => {
 	on: ( eventName: string, handler: () => void ) => void;
+	tipTip?: () => void;
 };
 
 /**
@@ -122,6 +123,49 @@ function bindEarlyFraudWarningRefundListener(): void {
 	} );
 
 	hasBoundEarlyFraudWarningRefundListener = true;
+}
+
+/**
+ * Hide core's manual refund button, or explain it, each time the refund panel opens.
+ *
+ * Client 11.1.0 order/index.js:62-92. The listener sits on the order items box, which
+ * both order screens (legacy and HPOS) render, because core replaces its content after item edits.
+ *
+ * @param disableManualRefunds Whether to hide the button rather than explain it.
+ */
+function bindManualRefundButton( disableManualRefunds: boolean ): void {
+	const orderItems = document.getElementById( 'woocommerce-order-items' );
+	if ( ! orderItems ) {
+		return;
+	}
+
+	orderItems.addEventListener( 'click', ( event ) => {
+		if (
+			! ( event.target instanceof Element ) ||
+			! event.target.closest( 'button.refund-items' )
+		) {
+			return;
+		}
+
+		document
+			.querySelectorAll< HTMLElement >( '.do-manual-refund' )
+			.forEach( ( manualRefundButton ) => {
+				if ( disableManualRefunds ) {
+					manualRefundButton.style.display = 'none';
+					return;
+				}
+
+				// jQuery.tipTip builds the tooltip from the title attribute, so it is regenerated after setting it.
+				manualRefundButton.setAttribute(
+					'title',
+					__(
+						'Refunding manually requires reimbursing your customer offline via cash, check, etc. The refund amounts entered here will only be used to balance your analytics.',
+						'woocommerce'
+					)
+				);
+				getJQuery()?.( manualRefundButton ).tipTip?.();
+			} );
+	} );
 }
 
 /**
@@ -217,6 +261,7 @@ function initialize(): void {
 	}
 
 	bindEarlyFraudWarningRefundListener();
+	bindManualRefundButton( config.disable_manual_refunds ?? false );
 
 	// Client 11.1.0 order/index.js:131-141: rendered into the mount point PHP prints after the payment
 	// info, and not at all when that mount point is missing.

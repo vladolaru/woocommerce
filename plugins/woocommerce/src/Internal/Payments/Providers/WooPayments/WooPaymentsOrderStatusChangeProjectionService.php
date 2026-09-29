@@ -103,10 +103,12 @@ class WooPaymentsOrderStatusChangeProjectionService {
 	 * - `has_open_authorization` (bool)   Whether the payment is authorized but not yet captured.
 	 * - `test_mode`              (bool)   Whether the order was paid in test mode, for the order-screen
 	 *                             test-mode notice (client 11.1.0 class-wc-payments-admin.php:881).
+	 * - `disable_manual_refunds` (bool)   Whether to hide core's "Refund manually" button. True unless the
+	 *                             last provider refund failed (client 11.1.0 class-wc-payments-admin.php:873).
 	 *
 	 * @param WC_Order $order Order being edited.
 	 * @return array<string,mixed> The status-change confirmation config.
-	 * @phpstan-return array{order_status: string, can_refund: bool, refund_amount: float, formatted_refund_amount: string, refunded_amount: float, charge_id: string, has_open_authorization: bool, test_mode: bool}
+	 * @phpstan-return array{order_status: string, can_refund: bool, refund_amount: float, formatted_refund_amount: string, refunded_amount: float, charge_id: string, has_open_authorization: bool, test_mode: bool, disable_manual_refunds: bool}
 	 *
 	 * @since 11.0.0
 	 */
@@ -122,6 +124,7 @@ class WooPaymentsOrderStatusChangeProjectionService {
 			'charge_id'               => $this->get_charge_id_for_active_mode( $order ),
 			'has_open_authorization'  => 'requires_capture' === $order->get_meta( '_intention_status', true ),
 			'test_mode'               => 'test' === $order->get_meta( '_wcpay_mode', true ),
+			'disable_manual_refunds'  => 'failed' !== $order->get_meta( '_wcpay_refund_status', true ),
 		);
 	}
 

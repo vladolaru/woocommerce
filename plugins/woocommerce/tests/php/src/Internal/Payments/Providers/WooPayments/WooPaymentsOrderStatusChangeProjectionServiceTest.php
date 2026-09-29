@@ -335,13 +335,37 @@ class WooPaymentsOrderStatusChangeProjectionServiceTest extends WC_Unit_Test_Cas
 	}
 
 	/**
+	 * @testdox Should allow manual refunds only after a provider refund has failed.
+	 *
+	 * Source: client 11.1.0 `class-wc-payments-admin.php:873` and `class-wc-payment-gateway-wcpay.php:3020-3022`.
+	 *
+	 * @testWith ["failed", false]
+	 *           ["successful", true]
+	 *           ["pending", true]
+	 *           ["", true]
+	 *           [null, true]
+	 *
+	 * @param string|null $refund_status Stored `_wcpay_refund_status`, or null for none.
+	 * @param bool        $expected      Expected projected `disable_manual_refunds`.
+	 */
+	public function test_projects_manual_refunds_disabled_unless_a_refund_failed( ?string $refund_status, bool $expected ): void {
+		$order = $this->create_order();
+		if ( null !== $refund_status ) {
+			$order->update_meta_data( '_wcpay_refund_status', $refund_status );
+		}
+		$order->save();
+
+		$this->assertSame( $expected, $this->sut->get_config( $order )['disable_manual_refunds'] );
+	}
+
+	/**
 	 * @testdox Should project exactly the documented config keys.
 	 */
 	public function test_projects_exactly_the_documented_config_keys(): void {
 		$config = $this->sut->get_config( $this->create_order() );
 
 		$this->assertSame(
-			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id', 'has_open_authorization', 'test_mode' ),
+			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id', 'has_open_authorization', 'test_mode', 'disable_manual_refunds' ),
 			array_keys( $config ),
 			'The config contract is consumed by the browser and must not drift.'
 		);
