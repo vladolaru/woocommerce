@@ -3769,6 +3769,64 @@ describe( 'WooPayments money movement pages', () => {
 		);
 	} );
 
+	// Client 11.1.0 payment-details/payment-details/index.tsx:67 passes getBankName( charge ) to the timeline
+	// (utils/charge/index.ts:339-363), which names the bank in the lost-dispute line.
+	it( "names the customer's bank on a lost dispute in the payment timeline", async () => {
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_lost_dispute',
+			status: 'succeeded',
+			amount: 10000,
+			currency: 'usd',
+			created: 1586055370,
+			charge: {
+				id: 'ch_lost_dispute',
+				payment_intent: 'pi_lost_dispute',
+				type: 'charge',
+				amount: 10000,
+				currency: 'usd',
+				created: 1586055370,
+				captured: true,
+				amount_refunded: 0,
+				refunded: false,
+				payment_method_details: {
+					type: 'card',
+					card: { issuer: 'Example Issuing Bank' },
+				},
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( {
+			data: [
+				{
+					amount: 10000,
+					currency: 'USD',
+					balance_currency: 'USD',
+					datetime: 1586055370,
+					fee: 1500,
+					type: 'dispute_lost',
+				},
+			],
+		} );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_lost_dispute',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByText( 'Example Issuing Bank' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Example Issuing Bank' ).closest( 'li, div' )
+		).toHaveTextContent(
+			"Dispute lost. Your customer's bank, Example Issuing Bank, reviewed the evidence and decided in the customer's favor."
+		);
+	} );
+
 	it( 'waits for a non-payment transaction to load before showing the payment test-mode notice', () => {
 		mockAccountMode( true );
 		mockGetTransaction.mockImplementation( pendingRequest );
@@ -7248,7 +7306,9 @@ describe( 'WooPayments money movement pages', () => {
 			screen.getByText( '$25.00 will be deducted from a future payout.' )
 		).toBeInTheDocument();
 		expect(
-			screen.getByText( 'Payment status changed to Disputed: Won. · Dispute 2 of 2' )
+			screen.getByText(
+				'Payment status changed to Disputed: Won. · Dispute 2 of 2'
+			)
 		).toBeInTheDocument();
 		expect(
 			screen.getByText( '$35.00 will be added to a future payout.' )

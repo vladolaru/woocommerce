@@ -43,7 +43,12 @@ import type {
 	WooPaymentsTimelineEvent,
 	WooPaymentsTransaction,
 } from './types';
-import { formatAmount, getDisputeId, getErrorMessage } from './utils';
+import {
+	formatAmount,
+	getBankName,
+	getDisputeId,
+	getErrorMessage,
+} from './utils';
 import {
 	getChargeDisputes,
 	getDisputeBalanceAdjustments,
@@ -1428,6 +1433,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							}
 							refundDialogId={ REFUND_DIALOG_ID }
 							isRefundDialogOpen={ isRefundModalOpen }
+							bankName={ getBankName(
+								transaction.payment_method_details
+							) }
 						/>
 					</div>
 					{ isRefundModalOpen && (

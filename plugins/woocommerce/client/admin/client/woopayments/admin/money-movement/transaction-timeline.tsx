@@ -5,6 +5,7 @@ import { Button } from '@wordpress/components';
 import { dateI18n } from '@wordpress/date';
 import { createInterpolateElement } from '@wordpress/element';
 import { __, sprintf, TranslatableText } from '@wordpress/i18n';
+import { addQueryArgs } from '@wordpress/url';
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 
 /**
@@ -12,7 +13,18 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
  */
 import type { WooPaymentsTimelineEvent } from './types';
 import type { WooPaymentsDisputeOrder } from './dispute-utils';
-import { formatAmount, formatLabel } from './utils';
+import { formatAmount, formatDisputeReasonLabel, formatLabel } from './utils';
+import {
+	composeFxString,
+	formatMoney,
+	getCapturedDetails,
+	getEnvelopeDepositImpact,
+	getNumber,
+	getRecord,
+	getString,
+	getTransactionDetails,
+	isFxEvent,
+} from './transaction-timeline-fees';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
 
@@ -56,25 +68,111 @@ const formatTimelineDate = ( value: string | number ) => {
 	return dateI18n( 'M j, Y', date );
 };
 
-const getString = (
-	record: Record< string, unknown >,
-	key: string
-): string | undefined => {
-	const value = record[ key ];
-
-	return typeof value === 'string' && value ? value : undefined;
+// Client 11.1.0 timeline/mappings.ts paymentFailureMapping.
+const paymentFailureMessages: Record< string, string > = {
+	card_declined: __( 'The card was declined by the bank', 'woocommerce' ),
+	expired_card: __( 'The card has expired', 'woocommerce' ),
+	incorrect_cvc: __( 'The security code is incorrect', 'woocommerce' ),
+	incorrect_number: __( 'The card number is incorrect', 'woocommerce' ),
+	incorrect_zip: __( 'The postal code is incorrect', 'woocommerce' ),
+	invalid_cvc: __( 'The security code is invalid', 'woocommerce' ),
+	invalid_expiry_month: __(
+		'The expiration month is invalid',
+		'woocommerce'
+	),
+	invalid_expiry_year: __( 'The expiration year is invalid', 'woocommerce' ),
+	invalid_number: __( 'The card number is invalid', 'woocommerce' ),
+	processing_error: __(
+		'An error occurred while processing the card',
+		'woocommerce'
+	),
+	authentication_required: __(
+		'The payment requires authentication',
+		'woocommerce'
+	),
+	insufficient_funds: __(
+		'The card has insufficient funds to complete the purchase',
+		'woocommerce'
+	),
 };
 
-const getNumber = (
-	record: Record< string, unknown >,
-	key: string
-): number | undefined => {
-	const value = record[ key ];
-
-	return typeof value === 'number' && Number.isFinite( value )
-		? value
-		: undefined;
+// Client 11.1.0 timeline/mappings.ts fraudOutcomeRulesetMapping.
+const fraudOutcomeRulesetMessages: Record<
+	string,
+	Record< string, string >
+> = {
+	review: {
+		avs_verification: __(
+			'Place in review if the AVS verification fails',
+			'woocommerce'
+		),
+		address_mismatch: __(
+			'Place in review if the shipping address country differs from the billing address country',
+			'woocommerce'
+		),
+		international_ip_address: __(
+			'Place in review if the country resolved from customer IP is not listed in your selling countries',
+			'woocommerce'
+		),
+		ip_address_mismatch: __(
+			'Place in review if the order originates from a country different from the shipping address country',
+			'woocommerce'
+		),
+		order_items_threshold: __(
+			'Place in review if the items count is not in your defined range',
+			'woocommerce'
+		),
+		purchase_price_threshold: __(
+			'Place in review if the purchase price is not in your defined range',
+			'woocommerce'
+		),
+	},
+	block: {
+		avs_verification: __(
+			'Block if the AVS verification fails',
+			'woocommerce'
+		),
+		address_mismatch: __(
+			'Block if the shipping address differs from the billing address',
+			'woocommerce'
+		),
+		international_ip_address: __(
+			'Block if the country resolved from customer IP is not listed in your selling countries',
+			'woocommerce'
+		),
+		ip_address_mismatch: __(
+			'Block if the order originates from a country different from the shipping address country',
+			'woocommerce'
+		),
+		order_items_threshold: __(
+			'Block if the items count is not in your defined range',
+			'woocommerce'
+		),
+		purchase_price_threshold: __(
+			'Block if the purchase price is not in your defined range',
+			'woocommerce'
+		),
+	},
 };
+
+// Dispute reasons the client's disputes/strings.ts `reasons` map knows; others get the generic headline.
+const knownDisputeReasons = new Set( [
+	'bank_cannot_process',
+	'check_returned',
+	'credit_not_processed',
+	'customer_initiated',
+	'debit_not_authorized',
+	'duplicate',
+	'fraudulent',
+	'general',
+	'incorrect_account_details',
+	'insufficient_funds',
+	'product_not_received',
+	'product_unacceptable',
+	'subscription_canceled',
+	'unrecognized',
+	'noncompliant',
+] );
 
 const getAmount = ( event: WooPaymentsTimelineEvent, ...keys: string[] ) => {
 	for ( const key of keys ) {
@@ -105,12 +203,113 @@ const qualifyDisputeMessage = (
 		return message;
 	}
 
+	if ( typeof message !== 'string' ) {
+		return (
+			<>
+				{ message }
+				{ ` · ${ sprintf(
+					/* translators: 1: dispute position, 2: total disputes on the charge. */
+					__( 'Dispute %1$d of %2$d', 'woocommerce' ),
+					ordinal,
+					disputeOrder.total
+				) }` }
+			</>
+		);
+	}
+
 	return sprintf(
 		/* translators: 1: timeline message, 2: dispute position, 3: total disputes on the charge. */
 		__( '%1$s · Dispute %2$d of %3$d', 'woocommerce' ),
-		String( message ),
+		message,
 		ordinal,
 		disputeOrder.total
+	);
+};
+
+const getStatusChangeMessage = ( status: string ) =>
+	sprintf(
+		/* translators: %s: new payment status. */
+		__( 'Payment status changed to %s.', 'woocommerce' ),
+		status
+	);
+
+type PayoutDirection = 'added' | 'deducted' | 'subtracted';
+
+const getFuturePayoutTemplate = ( direction: PayoutDirection ) => {
+	switch ( direction ) {
+		case 'added':
+			/* translators: %s: formatted amount. */
+			return __( '%s will be added to a future payout.', 'woocommerce' );
+		case 'subtracted':
+			/* translators: %s: formatted amount. */
+			return __(
+				'%s will be subtracted from a future payout.',
+				'woocommerce'
+			);
+		default:
+			/* translators: %s: formatted amount. */
+			return __(
+				'%s will be deducted from a future payout.',
+				'woocommerce'
+			);
+	}
+};
+
+const getLinkedPayoutTemplate = ( direction: PayoutDirection ) => {
+	switch ( direction ) {
+		case 'added':
+			/* translators: 1: formatted amount, 2: payout arrival date. */
+			return __(
+				'%1$s was added to your <a>%2$s payout</a>.',
+				'woocommerce'
+			);
+		case 'subtracted':
+			/* translators: 1: formatted amount, 2: payout arrival date. */
+			return __(
+				'%1$s was subtracted from your <a>%2$s payout</a>.',
+				'woocommerce'
+			);
+		default:
+			/* translators: 1: formatted amount, 2: payout arrival date. */
+			return __(
+				'%1$s was deducted from your <a>%2$s payout</a>.',
+				'woocommerce'
+			);
+	}
+};
+
+// Client getDepositTimelineItem() and getFinancingPaydownTimelineItem() headlines.
+const getPayoutMessage = (
+	event: WooPaymentsTimelineEvent,
+	amount: string,
+	direction: PayoutDirection
+) => {
+	const deposit = getRecord( event.deposit );
+	const depositId = getString( deposit, 'id' );
+	const arrivalDate = getNumber( deposit, 'arrival_date' );
+
+	if ( ! depositId || ! arrivalDate ) {
+		return sprintf( getFuturePayoutTemplate( direction ), amount );
+	}
+
+	return createInterpolateElement(
+		sprintf(
+			getLinkedPayoutTemplate( direction ),
+			amount,
+			formatTimelineDate( arrivalDate )
+		),
+		{
+			a: (
+				// eslint-disable-next-line jsx-a11y/anchor-has-content -- Content is interpolated.
+				<a
+					href={ getSettingsPaymentsProviderRouteUrl(
+						`/woopayments/payouts/details?id=${ encodeURIComponent(
+							depositId
+						) }`
+					) }
+				/>
+			),
+		}
 	);
 };
 
@@ -123,6 +322,36 @@ const getFallbackMessage = ( event: WooPaymentsTimelineEvent ) => {
 	}
 
 	const userName = getTimelineUserName( event );
+	const userId = event.user?.id;
+	const isManualFraudOutcome =
+		event.type === 'fraud_outcome_manual_approve' ||
+		event.type === 'fraud_outcome_manual_block';
+
+	// Client getManualFraudOutcomeTimelineItem(): the user name links to their profile.
+	if (
+		isManualFraudOutcome &&
+		userName &&
+		( typeof userId === 'number' || typeof userId === 'string' )
+	) {
+		const template =
+			event.type === 'fraud_outcome_manual_block'
+				? /* translators: %s: user name, <a>: link to the user. */
+				  __( 'Payment was blocked by <a>%s</a>', 'woocommerce' )
+				: /* translators: %s: user name, <a>: link to the user. */
+				  __( 'Payment was approved by <a>%s</a>', 'woocommerce' );
+
+		return createInterpolateElement( sprintf( template, userName ), {
+			a: (
+				// eslint-disable-next-line jsx-a11y/anchor-has-content -- Content is interpolated.
+				<a
+					href={ addQueryArgs( 'user-edit.php', {
+						user_id: userId,
+					} ) }
+				/>
+			),
+		} );
+	}
+
 	if ( event.type === 'fraud_outcome_manual_approve' ) {
 		return userName
 			? sprintf(
@@ -228,78 +457,109 @@ const getRefundPayoutMessage = ( event: WooPaymentsTimelineEvent ) => {
 		return null;
 	}
 
-	const deposit = ( event.deposit || {} ) as Record< string, unknown >;
-	const depositId = getString( deposit, 'id' );
-	const arrivalDate = getNumber( deposit, 'arrival_date' );
-
-	if ( ! depositId || ! arrivalDate ) {
-		return sprintf(
-			/* translators: %s: formatted amount. */
-			__( '%s will be deducted from a future payout.', 'woocommerce' ),
-			amount
-		);
-	}
-
-	return createInterpolateElement(
-		sprintf(
-			/* translators: 1: formatted amount, 2: payout arrival date. */
-			__(
-				'%1$s was deducted from your <a>%2$s payout</a>.',
-				'woocommerce'
-			),
-			amount,
-			formatTimelineDate( arrivalDate )
-		),
-		{
-			a: (
-				// eslint-disable-next-line jsx-a11y/anchor-has-content -- Content is interpolated.
-				<a
-					href={ getSettingsPaymentsProviderRouteUrl(
-						`/woopayments/payouts/details?id=${ encodeURIComponent(
-							depositId
-						) }`
-					) }
-				/>
-			),
-		}
-	);
+	return getPayoutMessage( event, amount, 'deducted' );
 };
 
-const getCapturedBody = ( event: WooPaymentsTimelineEvent ) => {
-	const body: ReactNode[] = [];
-	const currency = getCurrency( event );
-	const fee = getAmount( event, 'fee' );
-	const tax = getAmount( event, 'tax' );
-	const net = getAmount( event, 'net' );
+// Client buildAutomaticFraudOutcomeRuleset(): one line per rule that did not allow the payment.
+// Allowed rules have no message, so the lookup drops them.
+const getFraudOutcomeRulesetLines = ( event: WooPaymentsTimelineEvent ) =>
+	Object.entries( getRecord( event.ruleset_results ) ?? {} )
+		.map(
+			( [ rule, ruleStatus ] ) =>
+				fraudOutcomeRulesetMessages[ String( ruleStatus ) ]?.[ rule ]
+		)
+		.filter( Boolean );
 
-	if ( fee !== undefined ) {
-		body.push(
-			createBodyLine(
-				__( 'Fee', 'woocommerce' ),
-				formatAmount( Math.abs( fee ), currency )
-			)
+// Client dispute_needs_response, dispute_won and dispute_lost payout lines.
+const getDisputeDepositImpact = ( event: WooPaymentsTimelineEvent ) => {
+	const impact = getEnvelopeDepositImpact( event );
+
+	if ( impact ) {
+		return formatMoney(
+			impact.amount,
+			impact.currency || getCurrency( event )
 		);
 	}
 
-	if ( tax !== undefined ) {
-		body.push(
-			createBodyLine(
-				__( 'Tax', 'woocommerce' ),
-				formatAmount( Math.abs( tax ), currency )
-			)
+	const amount = getNumber( event, 'amount' );
+
+	return amount === undefined
+		? undefined
+		: formatMoney(
+				Math.abs( amount ) + Math.abs( getNumber( event, 'fee' ) ?? 0 ),
+				getCurrency( event )
+		  );
+};
+
+const getDisputeLostHeadline = (
+	event: WooPaymentsTimelineEvent,
+	bankName?: string
+) => {
+	let headline: string;
+
+	if ( event.reason === 'noncompliant' ) {
+		headline = __(
+			"<strong>Dispute lost.</strong> Visa reviewed the evidence and decided in the customer's favor.",
+			'woocommerce'
+		);
+	} else if ( bankName ) {
+		headline = sprintf(
+			/* translators: %s: customer's bank name. */
+			__(
+				"<strong>Dispute lost.</strong> Your customer's bank, <strong>%s</strong>, reviewed the evidence and decided in the customer's favor.",
+				'woocommerce'
+			),
+			bankName
+		);
+	} else {
+		headline = __(
+			"<strong>Dispute lost.</strong> Your customer's bank reviewed the evidence and decided in the customer's favor.",
+			'woocommerce'
 		);
 	}
 
-	if ( net !== undefined ) {
-		body.push(
-			createBodyLine(
-				__( 'Net payout', 'woocommerce' ),
-				formatAmount( net, currency )
-			)
-		);
+	return createInterpolateElement( headline, { strong: <strong /> } );
+};
+
+const getNetworkCostRow = (
+	event: WooPaymentsTimelineEvent,
+	date?: string | number
+): TimelineDisplayEvent | undefined => {
+	const networkCost = getRecord( event.network_cost );
+	const amount = getNumber( networkCost, 'amount' );
+	const currency = getString( networkCost, 'currency' );
+
+	if ( amount === undefined || ! currency ) {
+		return undefined;
 	}
 
-	return body.filter( Boolean );
+	const formattedAmount = formatMoney( amount, currency );
+	const isCrossCurrency =
+		getString( event, 'currency' )?.toLowerCase() !==
+		currency.toLowerCase();
+
+	return {
+		message: getPayoutMessage(
+			event,
+			isCrossCurrency
+				? sprintf(
+						/* translators: %s: formatted network cost amount. */
+						__( '%s in your account currency', 'woocommerce' ),
+						formattedAmount
+				  )
+				: formattedAmount,
+			'deducted'
+		),
+		body: [
+			event.reason === 'noncompliant'
+				? __(
+						'Network costs associated with resolving Visa compliance disputes.',
+						'woocommerce'
+				  )
+				: __( 'Network cost for the dispute.', 'woocommerce' ),
+		],
+		date,
+	};
 };
 
 const createAmountMessage = (
@@ -321,7 +581,8 @@ const mapTimelineEvent = (
 	disputeOrder?: WooPaymentsDisputeOrder,
 	onRefund?: ( opener: HTMLElement ) => void,
 	refundDialogId?: string,
-	isRefundDialogOpen = false
+	isRefundDialogOpen = false,
+	bankName?: string
 ): TimelineDisplayEvent[] => {
 	const date = getEventDate( event );
 	const type = event.type || '';
@@ -401,6 +662,7 @@ const mapTimelineEvent = (
 				'amount_captured',
 				'amount'
 			);
+			const captured = getCapturedDetails( event );
 
 			return [
 				{
@@ -410,9 +672,21 @@ const mapTimelineEvent = (
 					),
 					date,
 				},
+				...( captured.net
+					? [
+							{
+								message: getPayoutMessage(
+									event,
+									captured.net,
+									'added'
+								),
+								date,
+							},
+					  ]
+					: [] ),
 				{
 					message: message || getFallbackMessage( event ),
-					body: getCapturedBody( event ),
+					body: captured.body,
 					date,
 				},
 			];
@@ -485,25 +759,37 @@ const mapTimelineEvent = (
 			];
 		}
 		case 'failed': {
-			const message = createAmountMessage(
-				/* translators: %s: formatted amount. */
-				__( 'A payment of %s failed.', 'woocommerce' ),
-				event,
-				'amount'
-			);
-			const failureReason = getString( event, 'failure_reason' );
+			const reason = getString( event, 'reason' );
+			const failureMessage =
+				reason &&
+				Object.prototype.hasOwnProperty.call(
+					paymentFailureMessages,
+					reason
+				)
+					? paymentFailureMessages[ reason ]
+					: __( 'The payment was declined', 'woocommerce' );
+			const amount = getAmount( event, 'amount' );
 
 			return [
 				{
-					message: message || __( 'Payment failed.', 'woocommerce' ),
-					body: failureReason
-						? [
-								createBodyLine(
-									__( 'Reason', 'woocommerce' ),
-									failureReason
-								),
-						  ].filter( Boolean )
-						: undefined,
+					message: getStatusChangeMessage(
+						__( 'Failed', 'woocommerce' )
+					),
+					date,
+				},
+				{
+					message:
+						amount === undefined
+							? __( 'Payment failed.', 'woocommerce' )
+							: sprintf(
+									/* translators: 1: payment amount, 2: failure reason message. */
+									__(
+										'A payment of %1$s failed: %2$s.',
+										'woocommerce'
+									),
+									formatMoney( amount, getCurrency( event ) ),
+									failureMessage
+							  ),
 					date,
 				},
 			];
@@ -534,16 +820,220 @@ const mapTimelineEvent = (
 				},
 			];
 		}
-		case 'dispute_needs_response':
+		case 'dispute_needs_response': {
+			const reason = getString( event, 'reason' );
+			const reasonHeadline =
+				reason && knownDisputeReasons.has( reason )
+					? sprintf(
+							/* translators: %s: dispute reason. */
+							__( 'Payment disputed as %s.', 'woocommerce' ),
+							formatDisputeReasonLabel( reason )
+					  )
+					: __( 'Payment disputed', 'woocommerce' );
+			const amount = getNumber( event, 'amount' );
+			const fee = getNumber( event, 'fee' );
+			const details = getTransactionDetails( event );
+			const disputedAmount = isFxEvent( event )
+				? formatMoney(
+						getNumber( details, 'customer_amount' ) ?? 0,
+						getString( details, 'customer_currency' )
+				  )
+				: formatMoney( amount ?? 0, getCurrency( event ) );
+			const payoutRow: TimelineDisplayEvent =
+				amount === undefined
+					? {
+							message: __(
+								'No funds have been withdrawn yet.',
+								'woocommerce'
+							),
+							body: [
+								__(
+									"The cardholder's bank is requesting more information to decide whether to return these funds to the cardholder.",
+									'woocommerce'
+								),
+							],
+							date,
+					  }
+					: {
+							message: getPayoutMessage(
+								event,
+								getDisputeDepositImpact( event ) ?? '',
+								'deducted'
+							),
+							body: [
+								sprintf(
+									/* translators: %s: disputed amount. */
+									__( 'Disputed amount: %s', 'woocommerce' ),
+									disputedAmount
+								),
+								composeFxString( event ),
+								fee === undefined
+									? undefined
+									: sprintf(
+											/* translators: %s: dispute fee. */
+											__( 'Fee: %s', 'woocommerce' ),
+											formatMoney(
+												fee,
+												getCurrency( event )
+											)
+									  ),
+							].filter( Boolean ),
+							date,
+					  };
+
+			return [
+				{
+					message: qualifyDisputeMessage(
+						getStatusChangeMessage(
+							__( 'Disputed: Needs response', 'woocommerce' )
+						),
+						event,
+						disputeOrder
+					),
+					date,
+				},
+				payoutRow,
+				{
+					message: qualifyDisputeMessage(
+						reasonHeadline,
+						event,
+						disputeOrder
+					),
+					date,
+				},
+			];
+		}
 		case 'dispute_in_review':
-		case 'dispute_won':
-		case 'dispute_lost':
+			return [
+				{
+					message: qualifyDisputeMessage(
+						getStatusChangeMessage(
+							__( 'Disputed: In review', 'woocommerce' )
+						),
+						event,
+						disputeOrder
+					),
+					date,
+				},
+				{
+					message: qualifyDisputeMessage(
+						__( 'Challenge evidence submitted.', 'woocommerce' ),
+						event,
+						disputeOrder
+					),
+					date,
+				},
+			];
+		case 'dispute_won': {
+			const amount = getNumber( event, 'amount' );
+			const depositImpact = getDisputeDepositImpact( event );
+
+			return [
+				{
+					message: qualifyDisputeMessage(
+						getStatusChangeMessage(
+							__( 'Disputed: Won', 'woocommerce' )
+						),
+						event,
+						disputeOrder
+					),
+					date,
+				},
+				...( amount !== undefined && depositImpact
+					? [
+							{
+								message: getPayoutMessage(
+									event,
+									depositImpact,
+									'added'
+								),
+								body: [
+									sprintf(
+										/* translators: %s: reversed dispute amount. */
+										__(
+											'Dispute reversal: %s',
+											'woocommerce'
+										),
+										formatMoney(
+											amount,
+											getCurrency( event )
+										)
+									),
+									sprintf(
+										/* translators: %s: refunded dispute fee. */
+										__( 'Fee refund: %s', 'woocommerce' ),
+										formatMoney(
+											Math.abs(
+												getNumber( event, 'fee' ) ?? 0
+											),
+											getCurrency( event )
+										)
+									),
+								],
+								date,
+							},
+					  ]
+					: [] ),
+				{
+					message: qualifyDisputeMessage(
+						__(
+							'Dispute won! The bank ruled in your favor.',
+							'woocommerce'
+						),
+						event,
+						disputeOrder
+					),
+					date,
+				},
+			];
+		}
+		case 'dispute_lost': {
+			const networkCostRow = getNetworkCostRow( event, date );
+
+			return [
+				...( networkCostRow ? [ networkCostRow ] : [] ),
+				{
+					message: qualifyDisputeMessage(
+						getStatusChangeMessage(
+							__( 'Disputed: Lost', 'woocommerce' )
+						),
+						event,
+						disputeOrder
+					),
+					date,
+				},
+				{
+					message: qualifyDisputeMessage(
+						getDisputeLostHeadline( event, bankName ),
+						event,
+						disputeOrder
+					),
+					date,
+				},
+			];
+		}
 		case 'dispute_warning_closed':
+			return [
+				{
+					message: qualifyDisputeMessage(
+						__(
+							'Dispute inquiry closed. The bank chose not to pursue this dispute.',
+							'woocommerce'
+						),
+						event,
+						disputeOrder
+					),
+					date,
+				},
+			];
 		case 'dispute_charge_refunded':
 			return [
 				{
 					message: qualifyDisputeMessage(
-						getFallbackMessage( event ),
+						__(
+							'The disputed charge has been refunded.',
+							'woocommerce'
+						),
 						event,
 						disputeOrder
 					),
@@ -551,16 +1041,46 @@ const mapTimelineEvent = (
 				},
 			];
 		case 'financing_paydown': {
-			const message = createAmountMessage(
-				/* translators: %s: formatted amount. */
-				__( 'A financing paydown of %s was applied.', 'woocommerce' ),
-				event,
-				'amount'
-			);
+			const amount = getNumber( event, 'amount' );
+			const loanId = getString( event, 'loan_id' );
+
+			if ( amount === undefined ) {
+				return [ { message: getFallbackMessage( event ), date } ];
+			}
 
 			return [
 				{
-					message: message || getFallbackMessage( event ),
+					message: getPayoutMessage(
+						event,
+						formatMoney( Math.abs( amount ), getCurrency( event ) ),
+						'subtracted'
+					),
+					body: loanId
+						? [
+								createInterpolateElement(
+									sprintf(
+										/* translators: %s: loan ID. */
+										__(
+											'Loan repayment: <a>Loan %s</a>',
+											'woocommerce'
+										),
+										loanId
+									),
+									{
+										a: (
+											// eslint-disable-next-line jsx-a11y/anchor-has-content -- Content is interpolated.
+											<a
+												href={ getSettingsPaymentsProviderRouteUrl(
+													`/woopayments/transactions?loan_id_is=${ encodeURIComponent(
+														loanId
+													) }`
+												) }
+											/>
+										),
+									}
+								),
+						  ]
+						: undefined,
 					date,
 				},
 			];
@@ -666,26 +1186,31 @@ const mapTimelineEvent = (
 		case 'fraud_outcome_manual_approve':
 		case 'fraud_outcome_manual_block':
 			return [ { message: getFallbackMessage( event ), date } ];
-		case 'fraud_outcome_auto_review':
+		case 'fraud_outcome_review':
 			return [
 				{
 					message: __(
 						'Payment was screened by your fraud filters and placed in review.',
 						'woocommerce'
 					),
+					body: getFraudOutcomeRulesetLines( event ),
 					date,
 				},
 			];
-		case 'fraud_outcome_auto_block':
+		case 'fraud_outcome_block':
 			return [
 				{
 					message: __(
 						'Payment was screened by your fraud filters and blocked.',
 						'woocommerce'
 					),
+					body: getFraudOutcomeRulesetLines( event ),
 					date,
 				},
 			];
+		// The platform records allowed screenings too; the client timeline has no line for them.
+		case 'fraud_outcome_allow':
+			return [];
 		default:
 			return [ { message: getFallbackMessage( event ), date } ];
 	}
@@ -697,12 +1222,15 @@ export const WooPaymentsTransactionTimeline = ( {
 	onRefund,
 	refundDialogId,
 	isRefundDialogOpen = false,
+	bankName,
 }: {
 	events: WooPaymentsTimelineEvent[];
 	disputeOrder?: WooPaymentsDisputeOrder;
 	onRefund?: ( opener: HTMLElement ) => void;
 	refundDialogId?: string;
 	isRefundDialogOpen?: boolean;
+	/** Customer's bank, named in the lost dispute headline. */
+	bankName?: string;
 } ) => {
 	const rows = events.flatMap( ( event ) =>
 		mapTimelineEvent(
@@ -710,7 +1238,8 @@ export const WooPaymentsTransactionTimeline = ( {
 			disputeOrder,
 			onRefund,
 			refundDialogId,
-			isRefundDialogOpen
+			isRefundDialogOpen,
+			bankName
 		)
 	);
 
