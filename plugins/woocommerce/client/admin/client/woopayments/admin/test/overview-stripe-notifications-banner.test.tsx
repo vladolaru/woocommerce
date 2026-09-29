@@ -131,7 +131,13 @@ const bannerProps = () =>
 
 const renderWithBanner = async () => {
 	render( <WooPaymentsOverviewPage /> );
-	await screen.findByTestId( 'stripe-notification-banner' );
+	// The banner is a React.lazy chunk; the first test in the file pays its cold import, which exceeds the
+	// default 1s wait on loaded CI runners.
+	await screen.findByTestId(
+		'stripe-notification-banner',
+		{},
+		{ timeout: 10000 }
+	);
 	return bannerProps();
 };
 
