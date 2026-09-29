@@ -731,6 +731,26 @@ test.describe( 'WooPayments native card authentication', () => {
 					} ),
 				] );
 
+				// The order keeps the one failed charge, as client 11.1.0 does
+				// (attach_intent_info_to_order(), gw:4220-4226, os:1362-1363,
+				// REC-3DS-3b). The page posts update_order_status after the failed
+				// next action (F-3DS-1), so the write can land after the intent read.
+				const failedCharge = (
+					providerIntent.charges?.data as Array< { id?: unknown } >
+				 )[ 0 ];
+				expect( typeof failedCharge.id ).toBe( 'string' );
+				await expect
+					.poll(
+						async () =>
+							(
+								await readOrderSnapshot(
+									restApi,
+									dispatch.orderId
+								)
+							).chargeId,
+						{ timeout: 30_000 }
+					)
+					.toBe( failedCharge.id );
 				const order = await readOrderSnapshot(
 					restApi,
 					dispatch.orderId
@@ -741,7 +761,6 @@ test.describe( 'WooPayments native card authentication', () => {
 				expect( order.paymentMethod ).toBe( 'woocommerce_payments' );
 				expect( order.orderKey ).toBe( dispatch.orderKey );
 				expect( order.intentId ).toBe( dispatch.intentId );
-				expect( order.chargeId ).toBe( '' );
 
 				const newOrders = await readNewOrders(
 					restApi,
