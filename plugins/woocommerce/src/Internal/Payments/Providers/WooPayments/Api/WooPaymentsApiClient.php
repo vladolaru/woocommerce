@@ -756,6 +756,15 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Retrieve the site's platform tracking info, such as its hosting provider.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_tracking_info(): array {
+		return $this->request( array(), self::TRACKING_API . '/info', 'GET' );
+	}
+
+	/**
 	 * Retrieve failed webhook events for replay.
 	 *
 	 * @return array<string,mixed>

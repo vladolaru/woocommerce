@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -64,6 +65,13 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Platform tracking info reader.
+	 *
+	 * @var WooPaymentsTrackingInfoService
+	 */
+	private WooPaymentsTrackingInfoService $tracking_info;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -73,13 +81,15 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 * @param WooPaymentsAdminNavigationController $navigation      Native WooPayments admin navigation.
 	 * @param WooPaymentsCapitalRestController     $capital         Capital controller.
 	 * @param WooPaymentsAccountService            $account_service WooPayments account service.
+	 * @param WooPaymentsTrackingInfoService       $tracking_info   Platform tracking info reader.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAdminNavigationController $navigation, WooPaymentsCapitalRestController $capital, WooPaymentsAccountService $account_service ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAdminNavigationController $navigation, WooPaymentsCapitalRestController $capital, WooPaymentsAccountService $account_service, WooPaymentsTrackingInfoService $tracking_info ): void {
 		$this->arbiter         = $arbiter;
 		$this->api_client      = $api_client;
 		$this->navigation      = $navigation;
 		$this->capital         = $capital;
 		$this->account_service = $account_service;
+		$this->tracking_info   = $tracking_info;
 	}
 
 	/**
@@ -301,7 +311,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	/**
 	 * Record the plugin's `wcpay_account_connect_wpcom_connection_start` event for a reconnect.
 	 *
-	 * The plugin also merges its cached platform tracking info; native has no reader for that cache.
+	 * Like the plugin's `tracks_event()`, the cached platform tracking info is merged last.
 	 *
 	 * @param \Automattic\Jetpack\Connection\Manager $manager Jetpack connection manager.
 	 */
@@ -315,13 +325,16 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 
 		wc_admin_record_tracks_event(
 			'wcpay_account_connect_wpcom_connection_start',
-			array(
-				'is_reconnect'      => true,
-				'from'              => $from,
-				'is_test_mode'      => $this->account_service->is_test_mode_enabled(),
-				'jetpack_connected' => $manager->is_connected() && $manager->has_connected_owner(),
-				'wcpay_version'     => WooPaymentsClientVersion::VERSION,
-				'woo_country_code'  => WC()->countries->get_base_country(),
+			array_merge(
+				array(
+					'is_reconnect'      => true,
+					'from'              => $from,
+					'is_test_mode'      => $this->account_service->is_test_mode_enabled(),
+					'jetpack_connected' => $manager->is_connected() && $manager->has_connected_owner(),
+					'wcpay_version'     => WooPaymentsClientVersion::VERSION,
+					'woo_country_code'  => WC()->countries->get_base_country(),
+				),
+				$this->tracking_info->get_tracking_info() ?? array()
 			)
 		);
 	}

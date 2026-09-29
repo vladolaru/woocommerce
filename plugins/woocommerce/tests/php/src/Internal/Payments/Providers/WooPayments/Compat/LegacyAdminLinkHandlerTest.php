@@ -13,6 +13,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyAdminLinkHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
@@ -50,6 +52,13 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Tracking info double.
+	 *
+	 * @var WooPaymentsTrackingInfoService&MockObject
+	 */
+	private WooPaymentsTrackingInfoService $tracking_info;
+
+	/**
 	 * Jetpack connection manager in place before the test replaced it.
 	 *
 	 * @var mixed
@@ -79,7 +88,11 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'has_account', 'is_details_submitted', 'clear_cache', 'is_test_mode_enabled' ) )
 			->getMock();
 		$this->account_service->method( 'has_account' )->willReturn( true );
-		$this->sut = $this->create_handler( true );
+		$this->tracking_info = $this->getMockBuilder( WooPaymentsTrackingInfoService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_tracking_info' ) )
+			->getMock();
+		$this->sut           = $this->create_handler( true );
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 	}
@@ -309,6 +322,58 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'wcadmin_wcpay_account_connect_wpcom_connection_start', $recorded->events );
 		$this->assertTrue( $recorded->events['wcadmin_wcpay_account_connect_wpcom_connection_start']['is_reconnect'] );
 		$this->assertSame( 'WCPAY_OVERVIEW', $recorded->events['wcadmin_wcpay_account_connect_wpcom_connection_start']['from'] );
+	}
+
+	/**
+	 * @testdox The reconnect connection-start event carries the plugin's default properties plus the cached platform tracking info.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-account.php:1307-1315` (event props), `:3156-3169,3203-3220` (tracks_event()
+	 * merges get_tracking_info() last), and the platform's `tracking/info` response (`hosting_provider`).
+	 */
+	public function test_reconnect_event_merges_platform_tracking_info(): void {
+		$manager = $this->replace_jetpack_manager( true );
+		$manager->method( 'get_authorization_url' )->willReturn( 'https://jetpack.wordpress.com/jetpack.authorize/1/' );
+		$this->tracking_info->expects( $this->once() )->method( 'get_tracking_info' )->willReturn(
+			array(
+				'hosting_provider' => 'fixture-host-7',
+				'wcpay_version'    => 'platform-override',
+			)
+		);
+		$this->account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$recorded = $this->record_tracks_events();
+		$this->set_reconnect_request( wp_create_nonce( 'wcpay-reconnect-wpcom' ) );
+		$_GET['from'] = 'WCPAY_OVERVIEW';
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$this->run_and_get_redirect( array( $this->sut, 'handle_reconnect_wpcom_request' ) );
+
+		$properties = $recorded->events['wcadmin_wcpay_account_connect_wpcom_connection_start'];
+		$this->assertSame( 'fixture-host-7', $properties['hosting_provider'] );
+		// The plugin merges the tracking info after its defaults, so a platform key wins.
+		$this->assertSame( 'platform-override', $properties['wcpay_version'] );
+		$this->assertTrue( $properties['is_reconnect'] );
+		$this->assertSame( 'WCPAY_OVERVIEW', $properties['from'] );
+		$this->assertTrue( $properties['is_test_mode'] );
+		$this->assertFalse( $properties['jetpack_connected'] );
+		$this->assertSame( WC()->countries->get_base_country(), $properties['woo_country_code'] );
+	}
+
+	/**
+	 * @testdox Without platform tracking info the reconnect event keeps the plugin's default properties only.
+	 */
+	public function test_reconnect_event_without_tracking_info(): void {
+		$manager = $this->replace_jetpack_manager( true );
+		$manager->method( 'get_authorization_url' )->willReturn( 'https://jetpack.wordpress.com/jetpack.authorize/1/' );
+		$this->tracking_info->method( 'get_tracking_info' )->willReturn( null );
+		$recorded = $this->record_tracks_events();
+		$this->set_reconnect_request( wp_create_nonce( 'wcpay-reconnect-wpcom' ) );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$this->run_and_get_redirect( array( $this->sut, 'handle_reconnect_wpcom_request' ) );
+
+		$properties = $recorded->events['wcadmin_wcpay_account_connect_wpcom_connection_start'];
+		$this->assertArrayNotHasKey( 'hosting_provider', $properties );
+		$this->assertSame( WooPaymentsClientVersion::VERSION, $properties['wcpay_version'] );
 	}
 
 	/**
@@ -614,7 +679,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$navigation = $this->createMock( WooPaymentsAdminNavigationController::class );
 		$navigation->method( 'get_legacy_payment_path_redirect_url' )->willReturn( '' );
 		$handler = new LegacyAdminLinkHandler();
-		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital, $this->account_service );
+		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital, $this->account_service, $this->tracking_info );
 		$_GET = array(
 			'page'                   => 'wc-admin',
 			'path'                   => '/payments/connect',
@@ -750,7 +815,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		);
 
 		$handler = new LegacyAdminLinkHandler();
-		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital, $this->account_service );
+		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital, $this->account_service, $this->tracking_info );
 
 		return $handler;
 	}
