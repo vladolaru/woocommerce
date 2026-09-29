@@ -3731,6 +3731,80 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeInTheDocument();
 	} );
 
+	it.each( [
+		[ 'weekly', '', 'monday' ],
+		[ 'weekly', 'thursday', 'thursday' ],
+		[ 'monthly', '', '1' ],
+		[ 'monthly', '15', '15' ],
+	] )(
+		'seeds the %s payout anchor from %p to %p before changing the interval',
+		async ( newInterval, currentAnchor, seededAnchor ) => {
+			const calls: string[] = [];
+			const setInterval = jest.fn( ( value: string ) =>
+				calls.push( `interval:${ value }` )
+			);
+			const setWeeklyAnchor = jest.fn( ( value: string ) =>
+				calls.push( `weekly:${ value }` )
+			);
+			const setMonthlyAnchor = jest.fn( ( value: string ) =>
+				calls.push( `monthly:${ value }` )
+			);
+			mockUseDepositScheduleInterval.mockReturnValue( [
+				'daily',
+				setInterval,
+			] );
+			mockUseDepositScheduleWeeklyAnchor.mockReturnValue( [
+				newInterval === 'weekly' ? currentAnchor : 'monday',
+				setWeeklyAnchor,
+			] );
+			mockUseDepositScheduleMonthlyAnchor.mockReturnValue( [
+				newInterval === 'monthly' ? currentAnchor : '1',
+				setMonthlyAnchor,
+			] );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			await userEvent.selectOptions(
+				screen.getByRole( 'combobox', { name: 'Frequency' } ),
+				newInterval
+			);
+
+			expect( calls ).toEqual( [
+				`${ newInterval }:${ seededAnchor }`,
+				`interval:${ newInterval }`,
+			] );
+		}
+	);
+
+	it( 'does not seed a payout anchor when switching to daily payouts', async () => {
+		const setInterval = jest.fn();
+		const setWeeklyAnchor = jest.fn();
+		const setMonthlyAnchor = jest.fn();
+		mockUseDepositScheduleInterval.mockReturnValue( [
+			'weekly',
+			setInterval,
+		] );
+		mockUseDepositScheduleWeeklyAnchor.mockReturnValue( [
+			'',
+			setWeeklyAnchor,
+		] );
+		mockUseDepositScheduleMonthlyAnchor.mockReturnValue( [
+			'',
+			setMonthlyAnchor,
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.selectOptions(
+			screen.getByRole( 'combobox', { name: 'Frequency' } ),
+			'daily'
+		);
+
+		expect( setInterval ).toHaveBeenCalledWith( 'daily' );
+		expect( setWeeklyAnchor ).not.toHaveBeenCalled();
+		expect( setMonthlyAnchor ).not.toHaveBeenCalled();
+	} );
+
 	it( 'renders notification email warning and confirmation when the email changes', async () => {
 		mockUseAccountCommunicationsEmail.mockImplementation( () =>
 			useState( 'owner@example.com' )

@@ -1876,6 +1876,20 @@ const PayoutsSettingsSection = () => {
 		depositRestrictions === 'schedule_restricted';
 	const isWaitingPeriodIncomplete = ! completedWaitingPeriod;
 
+	const handleIntervalChange = ( newInterval: string ) => {
+		switch ( newInterval ) {
+			case 'weekly':
+				setWeeklyAnchor( weeklyAnchor || 'monday' );
+				break;
+
+			case 'monthly':
+				setMonthlyAnchor( monthlyAnchor || '1' );
+				break;
+		}
+
+		setInterval( newInterval );
+	};
+
 	return (
 		<SettingsSection
 			id="payouts"
@@ -1937,7 +1951,7 @@ const PayoutsSettingsSection = () => {
 							label={ __( 'Frequency', 'woocommerce' ) }
 							value={ payoutInterval }
 							options={ intervalOptions }
-							onChange={ setInterval }
+							onChange={ handleIntervalChange }
 							__nextHasNoMarginBottom
 							__next40pxDefaultSize
 						/>
