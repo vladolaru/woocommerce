@@ -350,7 +350,7 @@ class WooPaymentsSettingsService {
 			'payment_request_button_theme'               => $this->get_string_setting( $settings, 'payment_request_button_theme' ),
 			'payment_request_button_border_radius'       => $this->get_int_setting( $settings, 'payment_request_button_border_radius', 4 ),
 			'is_saved_cards_enabled'                     => $this->is_yes( $settings['saved_cards'] ),
-			'is_card_present_eligible'                   => false,
+			'is_card_present_eligible'                   => $this->is_card_present_eligible(),
 			'is_woopay_enabled'                          => $this->is_yes( $settings['platform_checkout'] ?? 'no' ),
 			'woopay_last_disable_date'                   => $this->get_string_setting( $settings, 'platform_checkout_last_disable_date' ),
 			'is_woopay_global_theme_support_enabled'     => $this->is_yes( $settings['is_woopay_global_theme_support_enabled'] ?? 'no' ),
@@ -1072,6 +1072,25 @@ class WooPaymentsSettingsService {
 		}
 
 		return $this->sanitize_duplicate_payment_method_ids( $payment_method_ids );
+	}
+
+	/**
+	 * Tell whether the account is card-present eligible and Cash on delivery is an available gateway.
+	 *
+	 * The account check runs first so the available-gateway lookup only happens for eligible accounts.
+	 *
+	 * @return bool
+	 */
+	private function is_card_present_eligible(): bool {
+		if ( ! $this->account_service->is_card_present_eligible() ) {
+			return false;
+		}
+
+		if ( ! function_exists( 'WC' ) || ! WC()->payment_gateways() ) {
+			return false;
+		}
+
+		return isset( WC()->payment_gateways()->get_available_payment_gateways()['cod'] );
 	}
 
 	/**

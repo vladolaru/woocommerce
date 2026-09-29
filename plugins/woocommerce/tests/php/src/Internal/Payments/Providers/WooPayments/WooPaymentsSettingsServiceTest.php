@@ -1131,6 +1131,45 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report card-present eligibility only for eligible accounts with Cash on delivery available, looking up available gateways only for eligible accounts.
+	 *
+	 * @testWith [true, true, true, 1]
+	 *           [true, false, false, 1]
+	 *           [false, true, false, 0]
+	 *
+	 * @param bool $account_eligible Whether the cached account is card-present eligible.
+	 * @param bool $cod_available    Whether Cash on delivery is an available gateway.
+	 * @param bool $expected         Expected is_card_present_eligible value.
+	 * @param int  $expected_lookups Expected available-gateway lookups.
+	 */
+	public function test_get_settings_derives_card_present_eligibility_from_account_and_cod( bool $account_eligible, bool $cod_available, bool $expected, int $expected_lookups ): void {
+		$this->set_connected_account_data();
+		$account_data                                  = get_option( 'wcpay_account_data' );
+		$account_data['data']['card_present_eligible'] = $account_eligible;
+		update_option( 'wcpay_account_data', $account_data );
+
+		$lookups = 0;
+		add_filter(
+			'woocommerce_available_payment_gateways',
+			static function ( $gateways ) use ( &$lookups, $cod_available ) {
+				++$lookups;
+				if ( $cod_available ) {
+					$gateways['cod'] = new \WC_Gateway_COD();
+				} else {
+					unset( $gateways['cod'] );
+				}
+
+				return $gateways;
+			}
+		);
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertSame( $expected, $settings['is_card_present_eligible'] );
+		$this->assertSame( $expected_lookups, $lookups, 'The available-gateway lookup must run only for card-present eligible accounts.' );
+	}
+
+	/**
 	 * @testdox Should persist active gateway settings and refresh the settings response.
 	 */
 	public function test_update_settings_persists_active_gateway_settings_and_returns_refreshed_contract(): void {
