@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { Button, Modal } from '@wordpress/components';
+import { Button, CheckboxControl, Modal } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import {
 	createInterpolateElement,
@@ -38,6 +38,8 @@ const RESPONDING_TO_DISPUTES_DOC_URL =
 	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#responding';
 const PAYMENT_INQUIRIES_DOC_URL =
 	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#inquiries';
+const VISA_COMPLIANCE_DISPUTES_DOC_URL =
+	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#visa-compliance-disputes';
 
 const DISPUTE_FEES_DOC_URL =
 	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#fees';
@@ -380,25 +382,105 @@ const DetailRow = ( { label, value }: { label: string; value: ReactNode } ) => {
 	);
 };
 
+// Client 11.1.0 dispute-awaiting-response-details.tsx getLearnMoreDocsUrl() and getHelpLinkText().
+const getDisputeDocumentation = (
+	isInquiryStatus: boolean,
+	isVisaCompliance: boolean
+) => {
+	if ( isInquiryStatus ) {
+		return {
+			href: PAYMENT_INQUIRIES_DOC_URL,
+			label: __( 'Learn more about payment inquiries', 'woocommerce' ),
+		};
+	}
+
+	if ( isVisaCompliance ) {
+		return {
+			href: VISA_COMPLIANCE_DISPUTES_DOC_URL,
+			label: __(
+				'Learn more about Visa compliance disputes',
+				'woocommerce'
+			),
+		};
+	}
+
+	return {
+		href: RESPONDING_TO_DISPUTES_DOC_URL,
+		label: __( 'Learn more about responding to disputes', 'woocommerce' ),
+	};
+};
+
 const DisputeDocumentationLink = ( {
 	isInquiryStatus,
+	isVisaCompliance,
 	onClick,
 }: {
 	isInquiryStatus: boolean;
+	isVisaCompliance: boolean;
 	onClick: () => void;
-} ) => (
-	<a
-		onClick={ onClick }
-		href={
-			isInquiryStatus
-				? PAYMENT_INQUIRIES_DOC_URL
-				: RESPONDING_TO_DISPUTES_DOC_URL
-		}
-	>
-		{ isInquiryStatus
-			? __( 'Learn more about payment inquiries', 'woocommerce' )
-			: __( 'Learn more about responding to disputes', 'woocommerce' ) }
-	</a>
+} ) => {
+	const { href, label } = getDisputeDocumentation(
+		isInquiryStatus,
+		isVisaCompliance
+	);
+
+	return (
+		<a onClick={ onClick } href={ href }>
+			{ label }
+		</a>
+	);
+};
+
+// Client 11.1.0 dispute-steps.tsx NonCompliantDisputeSteps.
+const VisaComplianceDisputeSteps = () => (
+	<div className="woocommerce-woopayments-money-movement__dispute-steps">
+		<h4>{ __( 'Steps you can take', 'woocommerce' ) }</h4>
+		<p>
+			{ __(
+				'We recommend reviewing your options before responding by the deadline.',
+				'woocommerce'
+			) }
+		</p>
+		<ul>
+			<li>
+				<strong>
+					{ __( 'Accepting the dispute', 'woocommerce' ) }
+				</strong>
+				<p>
+					{ __(
+						'Accepting the dispute means you’ll forfeit the funds, pay the standard dispute fee, and avoid the $500 USD Visa network fee.',
+						'woocommerce'
+					) }
+				</p>
+				<a href={ VISA_COMPLIANCE_DISPUTES_DOC_URL }>
+					{ __( 'Learn more', 'woocommerce' ) }
+				</a>
+			</li>
+			<li>
+				<strong>
+					{ __( 'Challenge the dispute', 'woocommerce' ) }
+				</strong>
+				<p>
+					{ __(
+						'Challenging the dispute will incur a $500 USD Visa network fee, which is charged when you submit evidence. This fee will be refunded if you win the dispute.',
+						'woocommerce'
+					) }
+				</p>
+				<a href={ VISA_COMPLIANCE_DISPUTES_DOC_URL }>
+					{ __( 'Learn more', 'woocommerce' ) }
+				</a>
+			</li>
+		</ul>
+		<p className="woocommerce-woopayments-money-movement__notice">
+			{ createInterpolateElement(
+				__(
+					'<strong>The outcome of this dispute will be determined by Visa.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.',
+					'woocommerce'
+				),
+				{ strong: <strong /> }
+			) }
+		</p>
+	</div>
 );
 
 const RespondToDisputeActions = ( {
@@ -416,6 +498,17 @@ const RespondToDisputeActions = ( {
 } ) => {
 	const disputeId = getDisputeId( dispute );
 	const isInquiryStatus = isInquiry( dispute.status );
+	const isVisaCompliance = isVisaComplianceDispute(
+		dispute.reason,
+		dispute.enhanced_eligibility_types
+	);
+	// Client 11.1.0 `dispute-awaiting-response-details.tsx:185-189`: staged evidence means the fee was already acknowledged.
+	const [
+		isVisaComplianceConditionAccepted,
+		setVisaComplianceConditionAccepted,
+	] = useState( !! dispute.evidence_details?.has_evidence );
+	const isChallengeDisabled =
+		isVisaCompliance && ! isVisaComplianceConditionAccepted;
 	const challengeLabel = isInquiryStatus
 		? __( 'Submit evidence', 'woocommerce' )
 		: __( 'Challenge dispute', 'woocommerce' );
@@ -449,19 +542,39 @@ const RespondToDisputeActions = ( {
 							'woocommerce'
 					  ) }
 			</p>
+			{ isVisaCompliance && ! isInquiryStatus && (
+				<VisaComplianceDisputeSteps />
+			) }
+			{ isVisaCompliance && (
+				<CheckboxControl
+					onChange={ setVisaComplianceConditionAccepted }
+					checked={ isVisaComplianceConditionAccepted }
+					label={ __(
+						'By checking this box, you acknowledge that challenging this Visa compliance dispute incurs a $500 USD network fee, which will be refunded if you win the dispute.',
+						'woocommerce'
+					) }
+					__nextHasNoMarginBottom
+				/>
+			) }
 			<div className="woocommerce-woopayments-money-movement__dispute-actions">
-				<a
-					className="components-button is-primary"
-					href={ getDisputeChallengeUrl( disputeId ) }
-					onClick={ () =>
-						recordEvent( 'wcpay_dispute_challenge_clicked', {
-							dispute_id: disputeId,
-							status: dispute.status,
-						} )
-					}
-				>
-					{ challengeLabel }
-				</a>
+				{ isChallengeDisabled ? (
+					<Button variant="primary" disabled>
+						{ challengeLabel }
+					</Button>
+				) : (
+					<a
+						className="components-button is-primary"
+						href={ getDisputeChallengeUrl( disputeId ) }
+						onClick={ () =>
+							recordEvent( 'wcpay_dispute_challenge_clicked', {
+								dispute_id: disputeId,
+								status: dispute.status,
+							} )
+						}
+					>
+						{ challengeLabel }
+					</a>
+				) }
 				{ isInquiryStatus ? (
 					<Button
 						variant="secondary"
@@ -520,6 +633,7 @@ const RespondToDisputeActions = ( {
 			) }
 			<DisputeDocumentationLink
 				isInquiryStatus={ isInquiryStatus }
+				isVisaCompliance={ isVisaCompliance }
 				onClick={ () =>
 					recordEvent(
 						'wcpay_dispute_help_link_clicked',
