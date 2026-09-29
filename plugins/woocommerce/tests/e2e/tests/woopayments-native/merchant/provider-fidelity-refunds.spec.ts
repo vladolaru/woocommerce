@@ -5,6 +5,7 @@ import { fillBillingCheckoutBlocks } from '@woocommerce/e2e-utils-playwright';
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { admin } from '../../../test-data/data';
 import { random } from '../../../utils/helpers';
+import { wpEvalJson } from '../../../utils/cli';
 import { logIn } from '../../../utils/login';
 import {
 	expectSettledCardPayment,
@@ -29,6 +30,13 @@ import {
  * `WC_AJAX::refund_line_items()` compares strictly, and a boolean silently
  * downgrades to a local-only refund, which is exactly the failure this
  * family exists to detect.
+ *
+ * `R8`, native-only (the client has no e2e case for it): a paid card payment whose order the merchant force-deleted is refunded in full from
+ * its native transaction details, as client 11.1.0 allows
+ * (`payment-details/summary/index.tsx:370-384,781-848,897-903`). The platform
+ * refund must carry `refund_source: transaction_details_no_order`
+ * (`class-wc-rest-payments-refunds-controller.php:46-114`), and WooCommerce
+ * must write nothing locally.
  */
 
 const CONTRACT_R1 =
@@ -52,6 +60,14 @@ const RECEIPT_TIMEOUT_MS = 60_000;
 
 const PRODUCTS_ROUTE = 'wc/v3/products';
 const ORDERS_ROUTE = 'wc/v3/orders';
+
+interface SettledRefund {
+	id: string;
+	amountMinor: number;
+	currency: string;
+	balanceTransactionId: string;
+	metadata: Record< string, unknown >;
+}
 
 interface PaidOrder {
 	productId: number;
@@ -291,6 +307,16 @@ function isLockTimeout( error: unknown ): boolean {
 	return status === 429;
 }
 
+/** A related provider object's ID; the charge read expands the refund's balance transaction. */
+function relatedId( value: unknown ): string {
+	if ( typeof value === 'string' ) {
+		return value;
+	}
+	return typeof value === 'object' && value !== null && 'id' in value
+		? String( ( value as { id: unknown } ).id )
+		: '';
+}
+
 /**
  * Poll the exact provider charge until it carries exactly one succeeded
  * refund, twice in a row - a single read can catch a value mid-propagation,
@@ -300,7 +326,7 @@ function isLockTimeout( error: unknown ): boolean {
 async function waitForSettledRefund(
 	restApi: ApiClient,
 	chargeId: string
-): Promise< { id: string; amountMinor: number; currency: string } > {
+): Promise< SettledRefund > {
 	const deadline = Date.now() + SETTLE_BUDGET_MS;
 	let previous = '';
 
@@ -322,6 +348,8 @@ async function waitForSettledRefund(
 							status?: unknown;
 							amount?: unknown;
 							currency?: unknown;
+							balance_transaction?: unknown;
+							metadata?: unknown;
 					  }
 					| undefined;
 				if ( refund?.status === 'succeeded' ) {
@@ -343,6 +371,13 @@ async function waitForSettledRefund(
 							id: String( refund.id ),
 							amountMinor: Number( refund.amount ),
 							currency: String( refund.currency ).toUpperCase(),
+							balanceTransactionId: relatedId(
+								refund.balance_transaction
+							),
+							metadata: ( refund.metadata ?? {} ) as Record<
+								string,
+								unknown
+							>,
 						};
 					}
 					previous = serialized;
@@ -481,6 +516,246 @@ test(
 			).toEqual( [ wooRefunds[ 0 ].id ] );
 			expect( String( order.currency ).toUpperCase() ).toBe( CURRENCY );
 			expect( order.status ).toBe( 'refunded' );
+		} finally {
+			await restApi.delete( `${ PRODUCTS_ROUTE }/${ paid.productId }`, {
+				force: true,
+			} );
+		}
+	}
+);
+
+/** Client 11.1.0 `class-wc-rest-payments-refunds-controller.php:112`, the source an order-less refund carries. */
+const NO_ORDER_REFUND_SOURCE = 'transaction_details_no_order';
+
+/** The one line of client 11.1.0 `missing-order-notice/index.tsx:49-52` both notice variants start with. */
+const MISSING_ORDER_NOTICE = 'This transaction is not connected to order.';
+
+/**
+ * Permanently delete the paid order through the REST API, the same way the
+ * Orders screen's "Delete permanently" ends, and prove it no longer resolves.
+ */
+async function forceDeleteOrder(
+	restApi: ApiClient,
+	orderId: number
+): Promise< void > {
+	await restApi.delete( `${ ORDERS_ROUTE }/${ orderId }`, { force: true } );
+	let status: number | undefined;
+	try {
+		await restApi.get( `${ ORDERS_ROUTE }/${ orderId }` );
+		status = 200;
+	} catch ( error ) {
+		status = ( error as { response?: { status?: number } } | undefined )
+			?.response?.status;
+	}
+	expect( status, `order ${ orderId } must be gone after deletion` ).toBe(
+		404
+	);
+}
+
+/**
+ * Poll the intent's timeline until it carries its `full_refund` event,
+ * tolerating 429 `lock_timeout` on the read like the charge poll above.
+ */
+async function waitForFullRefundEvent(
+	restApi: ApiClient,
+	intentId: string
+): Promise< Array< Record< string, unknown > > > {
+	const deadline = Date.now() + SETTLE_BUDGET_MS;
+	for (;;) {
+		try {
+			const timeline = (
+				await restApi.get(
+					`wc/v3/payments/timeline/${ encodeURIComponent(
+						intentId
+					) }`
+				)
+			).data as { data?: unknown };
+			const events = Array.isArray( timeline.data )
+				? ( timeline.data as Array< Record< string, unknown > > )
+				: [];
+			const refundEvents = events.filter(
+				( event ) => event.type === 'full_refund'
+			);
+			if ( refundEvents.length > 0 ) {
+				return refundEvents;
+			}
+		} catch ( error ) {
+			if ( ! isLockTimeout( error ) || Date.now() >= deadline ) {
+				throw error;
+			}
+		}
+
+		if ( Date.now() >= deadline ) {
+			throw new Error(
+				`Timeline of ${ intentId } carried no full_refund event within ${ SETTLE_BUDGET_MS }ms.`
+			);
+		}
+		await new Promise( ( resolve ) =>
+			setTimeout( resolve, SETTLE_INTERVAL_MS )
+		);
+	}
+}
+
+interface LocalOrderWrites {
+	orderExists: boolean;
+	refundIds: number[];
+	paymentOrderIds: number[];
+}
+
+/**
+ * Read, inside the store, whether anything local now carries this payment:
+ * the deleted order, a refund under it, or any order whose stored intent or
+ * charge is this one. The REST API cannot answer this for a deleted parent.
+ */
+async function readLocalOrderWrites(
+	paid: PaidOrder
+): Promise< LocalOrderWrites > {
+	return wpEvalJson< LocalOrderWrites >( `
+		$order_id  = ${ paid.orderId };
+		$intent_id = ${ JSON.stringify( paid.intentId ) };
+		$charge_id = ${ JSON.stringify( paid.chargeId ) };
+		return array(
+			'orderExists'     => false !== wc_get_order( $order_id ),
+			'refundIds'       => array_map( 'intval', wc_get_orders( array( 'type' => 'shop_order_refund', 'parent' => $order_id, 'limit' => -1, 'return' => 'ids' ) ) ),
+			'paymentOrderIds' => array_map( 'intval', wc_get_orders( array(
+				'type'       => array( 'shop_order', 'shop_order_refund' ),
+				'status'     => array_keys( wc_get_order_statuses() ),
+				'limit'      => -1,
+				'return'     => 'ids',
+				'meta_query' => array(
+					'relation' => 'OR',
+					array( 'key' => '_intent_id', 'value' => $intent_id ),
+					array( 'key' => '_charge_id', 'value' => $charge_id ),
+				),
+			) ) ),
+		);
+	` );
+}
+
+test(
+	'A card payment whose order was force-deleted is refunded in full from its transaction details as one succeeded provider refund tagged transaction_details_no_order, and WooCommerce writes no order or refund for it',
+	{ tag: FAMILY_TAGS },
+	async ( { page, restApi } ) => {
+		test.setTimeout( 420_000 );
+
+		const paid = await createPaidCardOrder( page, restApi );
+		try {
+			await forceDeleteOrder( restApi, paid.orderId );
+
+			// Precondition, as recorded for re_3UL6CXBzWlxcwgpP1SBvx2Md: the
+			// store answers a charge whose order is gone with `order: []`.
+			const before = await getCharge( restApi, paid.chargeId );
+			expect( before.order ).toEqual( [] );
+			expect( before.captured ).toBe( true );
+			expect( before.refunded ).toBe( false );
+
+			await page.goto( 'wp-login.php' );
+			await logIn( page, admin.username, admin.password );
+			const params = new URLSearchParams( {
+				page: 'wc-settings',
+				tab: 'checkout',
+				path: '/woopayments/transactions/details',
+				id: paid.intentId,
+			} );
+			await page.goto( `wp-admin/admin.php?${ params.toString() }` );
+			await expect(
+				page.getByRole( 'heading', { name: 'Payment details' } )
+			).toBeVisible( { timeout: RECEIPT_TIMEOUT_MS } );
+			const actions = page.getByRole( 'button', {
+				name: 'Transaction actions',
+			} );
+			await expect(
+				actions,
+				'a captured, unrefunded charge must offer refund actions without a linked order'
+			).toBeVisible( { timeout: RECEIPT_TIMEOUT_MS } );
+
+			// Client 11.1.0 shows the notice only on `! charge.order`, and `[]` is truthy.
+			await expect(
+				page.getByText( MISSING_ORDER_NOTICE, { exact: false } )
+			).toHaveCount( 0 );
+
+			await actions.click();
+			const actionsMenu = page.getByRole( 'menu', {
+				name: 'Transaction actions',
+			} );
+			await expect(
+				actionsMenu.getByRole( 'menuitem' ),
+				'without an order number only the full refund is offered'
+			).toHaveText( [ 'Refund in full' ] );
+			await actionsMenu
+				.getByRole( 'menuitem', { name: 'Refund in full' } )
+				.click();
+
+			const dialog = page.getByRole( 'dialog', {
+				name: 'Refund transaction',
+			} );
+			await expect( dialog ).toBeVisible();
+			await expect( dialog ).toContainText(
+				`This will issue a full refund of $${ PRICE } to the customer.`
+			);
+			await dialog.getByLabel( 'Requested by customer' ).check();
+
+			const refundRequest = page.waitForRequest(
+				( request ) =>
+					request.method() === 'POST' &&
+					request.url().includes( 'payments/refund' )
+			);
+			const refundResponse = page.waitForResponse(
+				( response ) =>
+					response.request().method() === 'POST' &&
+					response.url().includes( 'payments/refund' )
+			);
+			await dialog
+				.getByRole( 'button', { name: 'Refund transaction' } )
+				.click();
+			// Client 11.1.0 `data/payment-intents/actions.ts:52-62`: `order_id` is
+			// `charge.order?.id`, undefined here, so the body carries none.
+			expect( ( await refundRequest ).postDataJSON() ).toEqual( {
+				charge_id: paid.chargeId,
+				amount: AMOUNT_MINOR,
+				reason: REFUND_REASON,
+			} );
+			expect(
+				( await refundResponse ).status(),
+				'the store must accept the order-less refund'
+			).toBe( 200 );
+			await expect(
+				page
+					.getByText( `Refunded payment #${ paid.intentId }.` )
+					.first()
+			).toBeVisible( { timeout: RECEIPT_TIMEOUT_MS } );
+
+			const settledRefund = await waitForSettledRefund(
+				restApi,
+				paid.chargeId
+			);
+			expect( settledRefund.amountMinor ).toBe( AMOUNT_MINOR );
+			expect( settledRefund.currency ).toBe( CURRENCY );
+			expect( settledRefund.metadata ).toMatchObject( {
+				refund_source: NO_ORDER_REFUND_SOURCE,
+				merchant_refund_reason: REFUND_REASON,
+			} );
+
+			const refundEvents = await waitForFullRefundEvent(
+				restApi,
+				paid.intentId
+			);
+			expect( refundEvents ).toHaveLength( 1 );
+			expect( refundEvents[ 0 ] ).toMatchObject( {
+				amount_refunded: AMOUNT_MINOR,
+				currency: CURRENCY,
+				reason: REFUND_REASON,
+				transaction_id: settledRefund.balanceTransactionId,
+			} );
+
+			expect(
+				await readLocalOrderWrites( paid ),
+				'an order-less refund must write no order or order refund'
+			).toEqual( {
+				orderExists: false,
+				refundIds: [],
+				paymentOrderIds: [],
+			} );
 		} finally {
 			await restApi.delete( `${ PRODUCTS_ROUTE }/${ paid.productId }`, {
 				force: true,
