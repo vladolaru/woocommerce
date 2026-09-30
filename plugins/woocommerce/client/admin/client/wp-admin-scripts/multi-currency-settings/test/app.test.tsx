@@ -1097,6 +1097,40 @@ describe( 'MultiCurrencySettingsApp', () => {
 		] );
 	} );
 
+	// Owner ruling N-251 R5: a currency without a flag has no code badge in the
+	// add dialog, so its code must stay readable in the label text (client
+	// 11.1.0 modal-checkbox.js:39-53 shows the code in the badge and after the
+	// symbol).
+	it( 'keeps the code readable for currencies without a flag', async () => {
+		mockApiFetch.mockReset();
+		const swissFranc = {
+			...currenciesResponse.available.CAD,
+			id: 'chf',
+			code: 'CHF',
+			name: 'Swiss franc',
+			symbol: 'CHF',
+		};
+		mockApiFetch.mockResolvedValueOnce( {
+			...currenciesResponse,
+			available: { ...currenciesResponse.available, CHF: swissFranc },
+		} );
+
+		render( <MultiCurrencySettingsApp /> );
+
+		await userEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Add/remove currencies',
+			} )
+		);
+
+		expect(
+			screen.getByRole( 'checkbox', { name: 'Swiss franc (CHF)' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'checkbox', { name: 'Canadian dollar ($ CAD)' } )
+		).toBeInTheDocument();
+	} );
+
 	it( 'makes the update action available again once a currency is selected', async () => {
 		mockApiFetch.mockResolvedValueOnce( updatedResponse );
 
