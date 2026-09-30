@@ -60,6 +60,7 @@ import {
 	isDisputeInquiry,
 	isDisputeRefundable,
 } from './dispute-utils';
+import { WooPaymentsDisputeOutcome } from './dispute-recommendations';
 import { WooPaymentsTransactionDisputeDetails } from './transaction-dispute-details';
 import {
 	isPaymentOrderMissing,
@@ -1559,6 +1560,8 @@ export const WooPaymentsTransactionDetailsPage = () => {
 								</WooPaymentsSummaryCardNotice>
 							) }
 						</WooPaymentsPaymentSummarySection>
+						{ /* Client 11.1.0 `payment-details/summary/index.tsx:1055-1066`: right after the summary. */ }
+						<WooPaymentsDisputeOutcome disputes={ disputes } />
 						<WooPaymentsTransactionTimeline
 							events={ timelineEvents }
 							hasError={ !! timelineErrorMessage }

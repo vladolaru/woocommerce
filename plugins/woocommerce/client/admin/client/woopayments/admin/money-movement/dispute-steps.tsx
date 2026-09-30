@@ -27,22 +27,25 @@ const InfoIcon = InfoOutlineIcon as ElementType< { className?: string } >;
 /**
  * A collapsible panel with a title, a subtitle and a chevron. Client 11.1.0 `components/accordion` (`lg` body).
  *
- * @param props             Component props.
- * @param props.title       Panel title.
- * @param props.subtitle    Text under the title.
- * @param props.initialOpen Whether the panel starts open.
- * @param props.className   Extra class name.
- * @param props.children    Panel content.
+ * @param props              Component props.
+ * @param props.title        Panel title.
+ * @param props.subtitle     Text under the title.
+ * @param props.subtitleNode Text under the toggle, shown only when open; for content with links.
+ * @param props.initialOpen  Whether the panel starts open.
+ * @param props.className    Extra class name.
+ * @param props.children     Panel content.
  */
 export const WooPaymentsAccordion = ( {
 	title,
 	subtitle,
+	subtitleNode,
 	initialOpen = false,
 	className = '',
 	children,
 }: {
 	title: string;
 	subtitle?: ReactNode;
+	subtitleNode?: ReactNode;
 	initialOpen?: boolean;
 	className?: string;
 	children: ReactNode;
@@ -75,6 +78,12 @@ export const WooPaymentsAccordion = ( {
 					/>
 				</Button>
 			</h2>
+			{ /* Client 11.1.0 `components/accordion/body.tsx:98-106`: links cannot sit inside the toggle. */ }
+			{ subtitleNode && isOpen && (
+				<div className="woocommerce-woopayments-accordion__subtitle woocommerce-woopayments-accordion__subtitle--external">
+					{ subtitleNode }
+				</div>
+			) }
 			{ isOpen && (
 				<div className="woocommerce-woopayments-accordion__content">
 					{ children }
