@@ -221,9 +221,10 @@ describe( 'overview task builders', () => {
 			onOpenUpdateBusinessDetails: jest.fn(),
 		} )[ 0 ];
 
+		// Client 11.1.0 `dispute-task.tsx:123-138`: due within 24 hours adds the last-day suffix.
 		expect( task ).toMatchObject( {
 			key: 'dispute-resolution-task-dp_test',
-			title: 'Respond to a dispute for $10.00',
+			title: 'Respond to a dispute for $10.00 – Last day',
 			actionLabel: 'Respond now',
 			level: 1,
 		} );

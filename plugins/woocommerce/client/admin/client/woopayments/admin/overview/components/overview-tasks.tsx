@@ -1,9 +1,11 @@
 /**
  * External dependencies
  */
+import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { addQueryArgs } from '@wordpress/url';
 import { recordEvent } from '@woocommerce/tracks';
+import moment from 'moment';
 import type { ReactNode } from 'react';
 
 /**
@@ -24,50 +26,30 @@ import {
 	getRequirementErrorMessages,
 } from './requirement-error-messages';
 
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
-
 export const formatTaskCurrency = ( amount: number, currency?: string ) =>
 	formatWooPaymentsAmount( amount, currency );
 
-const normalizeTimestamp = ( value?: number | string | null ) => {
+// Client 11.1.0 `disputes/utils.ts:46-50`: a number is a Unix timestamp, a string is a UTC date.
+const getDisputeDueMoment = ( dispute: WooPaymentsOverviewDispute ) => {
+	const value =
+		dispute.evidence_due_by ??
+		dispute.evidence_details?.due_by ??
+		dispute.due_by;
+
 	if ( value === undefined || value === null || value === '' ) {
 		return null;
 	}
 
-	if ( typeof value === 'number' ) {
-		return value < 10000000000 ? value * 1000 : value;
-	}
-
 	const numericValue = Number( value );
+	let dueMoment = moment.utc( value );
 	if ( Number.isFinite( numericValue ) ) {
-		return numericValue < 10000000000 ? numericValue * 1000 : numericValue;
+		dueMoment = moment.utc(
+			numericValue < 10000000000 ? numericValue * 1000 : numericValue
+		);
 	}
 
-	const parsedValue = new Date( value ).getTime();
-
-	return Number.isNaN( parsedValue ) ? null : parsedValue;
+	return dueMoment.isValid() ? dueMoment : null;
 };
-
-const formatTaskDate = ( value?: number | string | null ) => {
-	const timestamp = normalizeTimestamp( value );
-
-	if ( timestamp === null ) {
-		return '';
-	}
-
-	return new Date( timestamp ).toLocaleDateString( undefined, {
-		year: 'numeric',
-		month: 'short',
-		day: 'numeric',
-	} );
-};
-
-const getDisputeDueTimestamp = ( dispute: WooPaymentsOverviewDispute ) =>
-	normalizeTimestamp(
-		dispute.evidence_due_by ??
-			dispute.evidence_details?.due_by ??
-			dispute.due_by
-	);
 
 const getDisputeId = ( dispute: WooPaymentsOverviewDispute ) =>
 	dispute.dispute_id || dispute.id || '';
@@ -246,59 +228,108 @@ const buildReconnectTask = (
 	};
 };
 
+// Client 11.1.0 `disputes/utils.ts:41-61` `isDueWithin()`: due within the window and not yet past due.
 export const isDisputeDueWithinDays = (
 	dispute: WooPaymentsOverviewDispute,
 	days: number,
 	now = Date.now()
 ) => {
-	const dueTimestamp = getDisputeDueTimestamp( dispute );
+	const dueMoment = getDisputeDueMoment( dispute );
 
-	return dueTimestamp !== null && dueTimestamp <= now + days * DAY_IN_MS;
+	if ( ! dueMoment ) {
+		return false;
+	}
+
+	const nowMoment = moment.utc( now );
+
+	return (
+		dueMoment.diff( nowMoment, 'days', true ) <= days &&
+		! nowMoment.isAfter( dueMoment )
+	);
 };
 
+// Client 11.1.0 `overview/task-list/tasks/dispute-task.tsx:35-221` and `tasks.tsx:71-74`.
 const buildDisputeTask = (
 	disputes: WooPaymentsOverviewDispute[]
 ): WooPaymentsOverviewTask | null => {
-	const urgentDisputes = disputes
-		.filter( ( dispute ) => isDisputeDueWithinDays( dispute, 7 ) )
+	const activeDisputes = disputes
+		.filter( ( dispute ) => getDisputeDueMoment( dispute ) !== null )
 		.sort(
 			( a, b ) =>
-				( getDisputeDueTimestamp( a ) ?? 0 ) -
-				( getDisputeDueTimestamp( b ) ?? 0 )
+				( getDisputeDueMoment( a )?.valueOf() ?? 0 ) -
+				( getDisputeDueMoment( b )?.valueOf() ?? 0 )
 		);
+	const countDueWithinDays = ( days: number ) =>
+		activeDisputes.filter( ( dispute ) =>
+			isDisputeDueWithinDays( dispute, days )
+		).length;
+	const numDisputesDueWithin7Days = countDueWithinDays( 7 );
 
-	if ( urgentDisputes.length === 0 ) {
+	if ( numDisputesDueWithin7Days === 0 ) {
 		return null;
 	}
 
-	// Client 11.1.0 `overview/task-list/tasks/dispute-task.tsx:83-86,110-112`: red within 72 hours, yellow before.
-	const isUrgent = urgentDisputes.some( ( dispute ) =>
-		isDisputeDueWithinDays( dispute, 3 )
-	);
-	// Client 11.1.0 `overview/task-list/tasks/dispute-task.tsx:52-56`.
+	const activeDisputeCount = activeDisputes.length;
+	const numDisputesDueWithin24h = countDueWithinDays( 1 );
+	// Red within 72 hours, yellow before.
+	const isUrgent = countDueWithinDays( 3 ) >= 1;
 	const onClick = () =>
 		recordEvent( 'wcpay_overview_task_click', {
 			task: 'dispute-resolution-task',
-			active_dispute_count: urgentDisputes.length,
+			active_dispute_count: activeDisputeCount,
 		} );
 
-	if ( urgentDisputes.length === 1 ) {
-		const dispute = urgentDisputes[ 0 ];
+	if ( activeDisputeCount === 1 ) {
+		const dispute = activeDisputes[ 0 ];
 		const chargeId = getDisputeChargeId( dispute );
+		const dueMoment = getDisputeDueMoment( dispute ) as moment.Moment;
+		const amountFormatted = formatTaskCurrency(
+			dispute.amount ?? 0,
+			dispute.currency
+		);
 
 		return {
 			key: `dispute-resolution-task-${ getDisputeId( dispute ) }`,
 			level: 1,
-			title: sprintf(
-				/* translators: %s: Disputed amount. */
-				__( 'Respond to a dispute for %s', 'woocommerce' ),
-				formatTaskCurrency( dispute.amount ?? 0, dispute.currency )
-			),
-			content: sprintf(
-				/* translators: %s: Dispute response deadline. */
-				__( 'Respond by %s.', 'woocommerce' ),
-				formatTaskDate( getDisputeDueTimestamp( dispute ) )
-			),
+			title:
+				numDisputesDueWithin24h >= 1
+					? sprintf(
+							/* translators: %s: Disputed amount. */
+							__(
+								'Respond to a dispute for %s – Last day',
+								'woocommerce'
+							),
+							amountFormatted
+					  )
+					: sprintf(
+							/* translators: %s: Disputed amount. */
+							__( 'Respond to a dispute for %s', 'woocommerce' ),
+							amountFormatted
+					  ),
+			content:
+				numDisputesDueWithin24h >= 1
+					? sprintf(
+							/* translators: %s: Response deadline time in the site timezone, for example "11:59 PM". */
+							__( 'Respond today by %s', 'woocommerce' ),
+							dateI18n(
+								'g:i A',
+								dueMoment.toISOString(),
+								undefined
+							)
+					  )
+					: sprintf(
+							/* translators: 1: Response deadline date in the site date format, 2: Time left, for example "2 days". */
+							__(
+								'By %1$s – %2$s left to respond',
+								'woocommerce'
+							),
+							dateI18n(
+								getDateSettings().formats.date,
+								dueMoment.toISOString(),
+								undefined
+							),
+							dueMoment.fromNow( true )
+					  ),
 			actionLabel: __( 'Respond now', 'woocommerce' ),
 			href: getSettingsPaymentsProviderRouteUrl(
 				`/woopayments/transactions/details?id=${ encodeURIComponent(
@@ -313,7 +344,7 @@ const buildDisputeTask = (
 
 	const currencies = Array.from(
 		new Set(
-			urgentDisputes
+			activeDisputes
 				.map( ( dispute ) => dispute.currency?.toLowerCase() )
 				.filter( Boolean )
 		)
@@ -326,9 +357,9 @@ const buildDisputeTask = (
 						'Respond to %1$d active disputes for a total of %2$s',
 						'woocommerce'
 					),
-					urgentDisputes.length,
+					activeDisputeCount,
 					formatTaskCurrency(
-						urgentDisputes.reduce(
+						activeDisputes.reduce(
 							( total, dispute ) =>
 								total + ( dispute.amount ?? 0 ),
 							0
@@ -341,28 +372,36 @@ const buildDisputeTask = (
 					_n(
 						'Respond to %d active dispute',
 						'Respond to %d active disputes',
-						urgentDisputes.length,
+						activeDisputeCount,
 						'woocommerce'
 					),
-					urgentDisputes.length
+					activeDisputeCount
 			  );
 
 	return {
-		key: `dispute-resolution-task-${ urgentDisputes
+		key: `dispute-resolution-task-${ activeDisputes
 			.map( getDisputeId )
 			.join( '-' ) }`,
 		level: 1,
 		title,
-		content: sprintf(
-			/* translators: %d: Number of disputes due soon. */
-			_n(
-				'Last week to respond to %d dispute.',
-				'Last week to respond to %d disputes.',
-				urgentDisputes.length,
-				'woocommerce'
-			),
-			urgentDisputes.length
-		),
+		content:
+			numDisputesDueWithin24h >= 1
+				? sprintf(
+						/* translators: %d: Number of disputes due within 24 hours. */
+						__(
+							'Final day to respond to %d of the disputes',
+							'woocommerce'
+						),
+						numDisputesDueWithin24h
+				  )
+				: sprintf(
+						/* translators: %d: Number of disputes due within 7 days. */
+						__(
+							'Last week to respond to %d of the disputes',
+							'woocommerce'
+						),
+						numDisputesDueWithin7Days
+				  ),
 		actionLabel: __( 'See disputes', 'woocommerce' ),
 		href: getSettingsPaymentsProviderRouteUrl(
 			'/woopayments/disputes?filter=awaiting_response'
