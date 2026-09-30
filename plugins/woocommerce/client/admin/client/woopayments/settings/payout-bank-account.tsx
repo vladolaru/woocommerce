@@ -16,8 +16,13 @@ type ExternalAccount = {
 
 type DepositsOverview = {
 	account?: {
-		account_link?: string | false;
 		default_external_accounts?: ExternalAccount[];
+	};
+};
+
+type OverviewShell = {
+	account_status?: {
+		account_link?: string;
 	};
 };
 
@@ -31,6 +36,16 @@ const getPayoutOverview = async (): Promise< DepositsOverview > =>
 		path: '/wc/v3/payments/deposits/overview-all',
 		method: 'GET',
 	} );
+
+// Client 11.1.0 `settings/deposits/index.js:209-212` reads `wcpaySettings.accountStatus.accountLink`, which the native Overview shell carries.
+const getAccountLink = async (): Promise< string | undefined > => {
+	const shell = await apiFetch< OverviewShell >( {
+		path: '/wc-admin/settings/payments/woopayments/overview',
+		method: 'GET',
+	} );
+
+	return shell.account_status?.account_link || undefined;
+};
 
 const getAccountLinkWithFailureSource = ( accountLink: string ) =>
 	addQueryArgs( accountLink, {
@@ -50,18 +65,17 @@ export const PayoutBankAccount = () => {
 	useEffect( () => {
 		let isMounted = true;
 
-		getPayoutOverview()
-			.then( ( overview ) => {
+		Promise.all( [
+			getPayoutOverview(),
+			getAccountLink().catch( () => undefined ),
+		] )
+			.then( ( [ overview, accountLink ] ) => {
 				if ( ! isMounted ) {
 					return;
 				}
 
 				const externalAccounts =
 					overview.account?.default_external_accounts ?? [];
-				const accountLink =
-					typeof overview.account?.account_link === 'string'
-						? overview.account.account_link
-						: undefined;
 				const hasErroredExternalAccount = externalAccounts.some(
 					( externalAccount ) => externalAccount.status === 'errored'
 				);
@@ -98,12 +112,21 @@ export const PayoutBankAccount = () => {
 			>
 				<span>{ payoutFailureMessage }</span>{ ' ' }
 				{ accountLink ? (
-					<a href={ accountLink }>
+					// Client 11.1.0 `components/deposits-overview/deposit-notices.tsx:203-216`.
+					<ExternalLink
+						href={ accountLink }
+						onClick={ () =>
+							recordEvent( 'wcpay_account_details_link_clicked', {
+								from: 'WCPAY_PAYOUTS',
+								source: 'wcpay-payout-failure-notice',
+							} )
+						}
+					>
 						{ __(
 							'update your bank account details',
 							'woocommerce'
 						) }
-					</a>
+					</ExternalLink>
 				) : (
 					__( 'Update your bank account details.', 'woocommerce' )
 				) }

@@ -1,6 +1,8 @@
 /**
  * External dependencies
  */
+import fs from 'fs';
+import nodePath from 'path';
 import { speak } from '@wordpress/a11y';
 import apiFetch from '@wordpress/api-fetch';
 import {
@@ -135,6 +137,26 @@ jest.mock( '../../promotions/spotlight', () => ( {
 
 const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
 const mockSpeak = speak as jest.MockedFunction< typeof speak >;
+
+// The recorded native :8889 Overview shell (see its `_meta`), with the dashboard login link an account that is not a test drive gets.
+const RECORDED_SHELL = JSON.parse(
+	fs.readFileSync(
+		nodePath.join(
+			__dirname,
+			'../../admin/test/fixtures/recorded-overview-shell.json'
+		),
+		'utf8'
+	)
+).response;
+const ACCOUNT_LINK =
+	'https://store.example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview&wcpay-login=1&_wpnonce=abc123';
+const createShellWithAccountLink = () => ( {
+	...RECORDED_SHELL,
+	account_status: {
+		...RECORDED_SHELL.account_status,
+		account_link: ACCOUNT_LINK,
+	},
+} );
 const mockRecordEvent = recordEvent as jest.MockedFunction<
 	typeof recordEvent
 >;
@@ -3188,7 +3210,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 			return Promise.resolve( {
 				account: {
-					account_link: 'https://connect.stripe.test/account',
 					default_currency: 'usd',
 					default_external_accounts: [],
 				},
@@ -3405,7 +3426,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 			return Promise.resolve( {
 				account: {
-					account_link: 'https://connect.stripe.test/account',
 					default_currency: 'usd',
 					default_external_accounts: [],
 				},
@@ -3534,10 +3554,13 @@ describe( 'WooPaymentsSettingsPage', () => {
 				} );
 			}
 
+			if ( path === '/wc-admin/settings/payments/woopayments/overview' ) {
+				return Promise.resolve( createShellWithAccountLink() );
+			}
+
 			if ( path === '/wc/v3/payments/deposits/overview-all' ) {
 				return Promise.resolve( {
 					account: {
-						account_link: 'https://connect.stripe.test/account',
 						default_currency: 'usd',
 						default_external_accounts: [
 							{ currency: 'usd', status: 'enabled' },
@@ -3592,7 +3615,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			await within( section ).findByRole( 'link', {
 				name: /Manage in Stripe/,
 			} )
-		).toHaveAttribute( 'href', 'https://connect.stripe.test/account' );
+		).toHaveAttribute( 'href', ACCOUNT_LINK );
 	} );
 
 	it( 'renders the failed payout bank-account notice when an external account errored', async () => {
@@ -3619,10 +3642,13 @@ describe( 'WooPaymentsSettingsPage', () => {
 				} );
 			}
 
+			if ( path === '/wc-admin/settings/payments/woopayments/overview' ) {
+				return Promise.resolve( createShellWithAccountLink() );
+			}
+
 			if ( path === '/wc/v3/payments/deposits/overview-all' ) {
 				return Promise.resolve( {
 					account: {
-						account_link: 'https://connect.stripe.test/account',
 						default_currency: 'usd',
 						default_external_accounts: [
 							{ currency: 'usd', status: 'errored' },
@@ -3643,7 +3669,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'link', {
-				name: 'update your bank account details',
+				name: /^update your bank account details/,
 			} )
 		).toHaveAttribute(
 			'href',
@@ -3682,7 +3708,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 			if ( path === '/wc/v3/payments/deposits/overview-all' ) {
 				return Promise.resolve( {
 					account: {
-						account_link: 'https://connect.stripe.test/account',
 						default_currency: 'usd',
 						default_external_accounts: [
 							{ currency: 'usd', status: 'enabled' },
