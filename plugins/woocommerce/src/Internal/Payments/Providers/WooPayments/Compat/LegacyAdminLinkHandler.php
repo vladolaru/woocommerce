@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOnboardingSource;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
@@ -28,6 +29,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @internal Transitional compatibility component for the native payments runtime.
  */
 class LegacyAdminLinkHandler implements RegisterHooksInterface {
+
+	/**
+	 * The plugin's `WC_Payments_Account::ONBOARDING_STATE_TRANSIENT`, holding the hosted KYC state secret.
+	 */
+	private const ONBOARDING_STATE_TRANSIENT = 'wcpay_stripe_onboarding_state';
 
 	/**
 	 * Runtime owner arbiter.
@@ -117,6 +123,11 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 			add_action( 'admin_init', array( $this, 'handle_kyc_reminder_return' ), 9 );
 		}
 
+		// Priority 9 also finalizes a hosted KYC return before the legacy route redirect sends it on to Overview.
+		if ( false === has_action( 'admin_init', array( $this, 'handle_hosted_kyc_return' ) ) ) {
+			add_action( 'admin_init', array( $this, 'handle_hosted_kyc_return' ), 9 );
+		}
+
 		// The Capital controller loads only for REST requests, after admin_init, so its own hook never ran.
 		if ( false === has_action( 'admin_init', array( $this, 'handle_loan_offer_request' ) ) ) {
 			add_action( 'admin_init', array( $this, 'handle_loan_offer_request' ), 12 );
@@ -179,6 +190,64 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 		$from         = array( 'from' => 'WCPAY_KYC_REMINDER' );
 		$redirect_url = $this->navigation->get_legacy_payment_path_redirect_url( $connect_page + $from );
 		wp_safe_redirect( '' !== $redirect_url ? $redirect_url : Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH, $from ) );
+		exit;
+	}
+
+	/**
+	 * Finalize the return from the platform's hosted KYC (`wcpay-state` and `wcpay-mode`), started by a `complete_kyc_link`.
+	 *
+	 * Mirrors the plugin's `finalize_connection()` (11.1.0 `class-wc-payments-account.php:2354-2437`), reached from
+	 * `maybe_handle_onboarding()` (:1866-1880). The plugin's `wcpay_account_connect_finished` event is superseded by NOX events.
+	 */
+	public function handle_hosted_kyc_return(): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- The platform return carries no nonce; the stored state secret is the check, like the plugin.
+		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->should_native_register() || ! isset( $_GET['wcpay-state'], $_GET['wcpay-mode'] ) ) {
+			return;
+		}
+
+		$state            = sanitize_text_field( wp_unslash( $_GET['wcpay-state'] ) );
+		$mode             = sanitize_text_field( wp_unslash( $_GET['wcpay-mode'] ) );
+		$connection_error = ! empty( $_GET['wcpay-connection-error'] );
+		$params           = array(
+			'from'   => isset( $_GET['from'] ) ? sanitize_text_field( wp_unslash( $_GET['from'] ) ) : '',
+			'source' => WooPaymentsOnboardingSource::get_source(),
+		);
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		if ( get_transient( self::ONBOARDING_STATE_TRANSIENT ) !== $state ) {
+			$this->redirect_to_connect_page( $params );
+		}
+
+		delete_transient( self::ONBOARDING_STATE_TRANSIENT );
+		$this->account_service->clear_cache();
+		wc_get_container()->get( WooPaymentsService::class )->finalize_native_hosted_kyc_connection( 'live' === $mode );
+
+		$params['from'] = WooPaymentsOnboardingSource::FROM_STRIPE;
+		if ( $connection_error ) {
+			// The merchant left KYC early: the account exists but is not valid yet.
+			$params['wcpay-connection-error'] = '1';
+			$this->redirect_to_connect_page( $params );
+		}
+
+		$params['wcpay-connection-success'] = '1';
+		wp_safe_redirect( Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH, $params ) );
+		exit;
+	}
+
+	/**
+	 * Redirect to the native route for the plugin's connect page, or to Overview when none resolves.
+	 *
+	 * @param array<string,string> $params Query arguments to carry.
+	 * @return never
+	 */
+	private function redirect_to_connect_page( array $params ): void {
+		$redirect_url = $this->navigation->get_legacy_payment_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => '/payments/connect',
+			) + $params
+		);
+		wp_safe_redirect( '' !== $redirect_url ? $redirect_url : Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH, $params ) );
 		exit;
 	}
 
@@ -352,7 +421,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 
 			if ( '' !== $url ) {
 				if ( 'complete_kyc_link' === ( $args['type'] ?? '' ) && isset( $link['state'] ) ) {
-					set_transient( 'wcpay_stripe_onboarding_state', $link['state'], DAY_IN_SECONDS );
+					set_transient( self::ONBOARDING_STATE_TRANSIENT, $link['state'], DAY_IN_SECONDS );
 				}
 
 				wp_safe_redirect( $url );

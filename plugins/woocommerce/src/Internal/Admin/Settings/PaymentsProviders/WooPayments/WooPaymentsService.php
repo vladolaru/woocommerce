@@ -3237,16 +3237,7 @@ class WooPaymentsService {
 				$this->get_native_account_service()->clear_cache();
 			}
 
-			$this->enable_native_gateway_after_kyc_finalization( $is_live );
-			$this->restore_native_test_drive_payment_methods();
-
-			// Flag the new connection for the Overview's wcpay_stripe_connected Tracks event, as the plugin's finalize_embedded_connection() does.
-			$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => false ), false );
-
-			// Stamp a live KYC submission once, for the post-KYC nudge clock (client 11.1.0 finalize_embedded_connection()).
-			if ( $is_live && ! $this->proxy->call_function( 'get_option', self::KYC_SUBMITTED_DATE_OPTION ) ) {
-				$this->proxy->call_function( 'update_option', self::KYC_SUBMITTED_DATE_OPTION, $this->proxy->call_function( 'time' ), false );
-			}
+			$this->apply_native_kyc_connection( $is_live );
 
 			$response['params'] = array(
 				'promo'                    => isset( $response['promotion_id'] ) && is_scalar( $response['promotion_id'] ) ? (string) $response['promotion_id'] : '',
@@ -3263,6 +3254,35 @@ class WooPaymentsService {
 		}
 
 		return $response;
+	}
+
+	/**
+	 * Apply a KYC return from the platform's hosted onboarding, like client 11.1.0 finalize_connection() after its state check.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param bool $is_live Whether the returned account is live.
+	 */
+	public function finalize_native_hosted_kyc_connection( bool $is_live ): void {
+		$this->apply_native_kyc_connection( $is_live );
+	}
+
+	/**
+	 * Apply the local side of a finished KYC, shared by client 11.1.0 finalize_embedded_connection() and finalize_connection().
+	 *
+	 * @param bool $is_live Whether the finalized account is live.
+	 */
+	private function apply_native_kyc_connection( bool $is_live ): void {
+		$this->enable_native_gateway_after_kyc_finalization( $is_live );
+		$this->restore_native_test_drive_payment_methods();
+
+		// Flag the new connection for the Overview's wcpay_stripe_connected Tracks event, as the plugin does.
+		$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => false ), false );
+
+		// Stamp a live KYC submission once, for the post-KYC nudge clock.
+		if ( $is_live && ! $this->proxy->call_function( 'get_option', self::KYC_SUBMITTED_DATE_OPTION ) ) {
+			$this->proxy->call_function( 'update_option', self::KYC_SUBMITTED_DATE_OPTION, $this->proxy->call_function( 'time' ), false );
+		}
 	}
 
 	/**

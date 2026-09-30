@@ -48,6 +48,7 @@ final class WooPaymentsOnboardingSource {
 	public const FROM_SETTINGS                  = 'WCPAY_SETTINGS';
 	public const FROM_PAYOUTS                   = 'WCPAY_PAYOUTS';
 	public const FROM_GO_LIVE_TASK              = 'WCPAY_GO_LIVE_TASK';
+	public const FROM_STRIPE                    = 'STRIPE';
 
 	private const VALID_SOURCES = array(
 		self::SOURCE_WCADMIN_PAYMENT_TASK,

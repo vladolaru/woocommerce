@@ -104,6 +104,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		remove_action( 'admin_init', array( $this->sut, 'handle_request' ) );
 		remove_action( 'admin_init', array( $this->sut, 'handle_login_request' ) );
 		remove_action( 'admin_init', array( $this->sut, 'handle_kyc_reminder_return' ), 9 );
+		remove_action( 'admin_init', array( $this->sut, 'handle_hosted_kyc_return' ), 9 );
 		remove_action( 'admin_init', array( $this->sut, 'handle_reconnect_wpcom_request' ) );
 		remove_all_filters( 'jetpack_use_iframe_authorization_flow' );
 		if ( $this->jetpack_manager_replaced ) {
@@ -116,7 +117,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wp_redirect' );
 		remove_all_filters( 'wp_doing_ajax' );
 		delete_transient( 'wcpay_stripe_onboarding_state' );
-		unset( $_GET['wcpay-loan-offer'], $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'], $_GET['wcpay-login'], $_GET['wcpay-reconnect-wpcom'], $_GET['_wpnonce'], $_REQUEST['_wpnonce'], $_GET['from'] );
+		unset( $_GET['wcpay-loan-offer'], $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'], $_GET['wcpay-login'], $_GET['wcpay-reconnect-wpcom'], $_GET['_wpnonce'], $_REQUEST['_wpnonce'], $_GET['from'], $_GET['wcpay-state'], $_GET['wcpay-mode'], $_GET['wcpay-account-id'], $_GET['wcpay-connection-error'] );
 
 		parent::tearDown();
 	}
@@ -738,6 +739,164 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$this->sut->register();
 
 		$this->assertSame( 9, has_action( 'admin_init', array( $this->sut, 'handle_kyc_reminder_return' ) ) );
+	}
+
+	/**
+	 * @testdox The hosted KYC return handler runs before the legacy route redirect, and only while native owns the runtime.
+	 */
+	public function test_registers_hosted_kyc_return_hook_before_legacy_route_redirects(): void {
+		$this->sut->register();
+		$this->assertSame( 9, has_action( 'admin_init', array( $this->sut, 'handle_hosted_kyc_return' ) ) );
+
+		remove_action( 'admin_init', array( $this->sut, 'handle_hosted_kyc_return' ), 9 );
+		$this->sut = $this->create_handler( false );
+		$this->sut->register();
+		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'handle_hosted_kyc_return' ) ) );
+	}
+
+	/**
+	 * Plugin 11.1.0 `maybe_handle_onboarding()` (class-wc-payments-account.php:1866-1880) hands a `wcpay-state` return to
+	 * `finalize_connection()` (:2354-2437), which enables the gateway in the returned mode, restores the test-drive methods,
+	 * and lands on Overview. The return URL is the platform's (`class-links-controller.php:126`, `class-onboarding-redirect-controller.php:612-635`).
+	 *
+	 * @testdox A hosted KYC return with the stored state enables the gateway in the returned mode and lands on Overview, like plugin 11.1.0.
+	 */
+	public function test_hosted_kyc_return_finalizes_connection_and_redirects_to_overview(): void {
+		$this->account_service->expects( $this->once() )->method( 'clear_cache' );
+		set_transient( 'wcpay_stripe_onboarding_state', 'state_kyc', DAY_IN_SECONDS );
+		set_transient( 'test_drive_account_settings_for_live_account', array( 'enabled_payment_methods' => array( 'card', 'link' ) ), HOUR_IN_SECONDS );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'no',
+				'test_mode'                      => 'yes',
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+		delete_option( 'wcpay_kyc_submitted_date' );
+		$_GET = $this->get_hosted_kyc_return_query( 'state_kyc', 'live' );
+		$this->sut->register();
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$location = $this->run_and_get_redirect( fn() => $this->run_admin_init() );
+		$settings = get_option( 'woocommerce_woocommerce_payments_settings' );
+
+		$this->assertSame(
+			Utils::wc_payments_settings_url(
+				'/woopayments/overview',
+				array(
+					'from'                     => 'STRIPE',
+					'source'                   => 'unknown',
+					'wcpay-connection-success' => '1',
+				)
+			),
+			$location
+		);
+		$this->assertSame( 'yes', $settings['enabled'] );
+		$this->assertSame( 'no', $settings['test_mode'] );
+		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'no', $settings['platform_checkout'] );
+		$this->assertFalse( get_transient( 'wcpay_stripe_onboarding_state' ) );
+		$this->assertFalse( get_transient( 'test_drive_account_settings_for_live_account' ) );
+		$this->assertSame( array( 'is_existing_stripe_account' => false ), get_option( '_wcpay_onboarding_stripe_connected' ) );
+		$this->assertNotFalse( get_option( 'wcpay_kyc_submitted_date', false ) );
+	}
+
+	/**
+	 * Plugin 11.1.0 `finalize_connection()` (class-wc-payments-account.php:2417-2424): a return with `wcpay-connection-error`
+	 * still enables the gateway, then sends the merchant back to the connect page to finish KYC.
+	 *
+	 * @testdox A hosted KYC return that left KYC early enables the gateway in test mode and sends the merchant back to onboarding, like plugin 11.1.0.
+	 */
+	public function test_hosted_kyc_return_with_connection_error_redirects_to_onboarding(): void {
+		$this->account_service->expects( $this->once() )->method( 'clear_cache' );
+		set_transient( 'wcpay_stripe_onboarding_state', 'state_kyc', DAY_IN_SECONDS );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'no' ) );
+		$_GET = array( 'wcpay-connection-error' => '1' ) + $this->get_hosted_kyc_return_query( 'state_kyc', 'test' );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$location = $this->run_and_get_redirect( fn() => $this->sut->handle_hosted_kyc_return() );
+		$settings = get_option( 'woocommerce_woocommerce_payments_settings' );
+
+		$this->assertSame(
+			Utils::wc_payments_settings_url(
+				'/woopayments/onboarding',
+				array(
+					'from'                   => 'STRIPE',
+					'source'                 => 'unknown',
+					'wcpay-connection-error' => '1',
+				)
+			),
+			$location
+		);
+		$this->assertSame( 'yes', $settings['enabled'] );
+		$this->assertSame( 'yes', $settings['test_mode'] );
+		$this->assertFalse( get_transient( 'wcpay_stripe_onboarding_state' ) );
+	}
+
+	/**
+	 * Plugin 11.1.0 `finalize_connection()` (class-wc-payments-account.php:2355-2368) rejects a state it did not store.
+	 *
+	 * @testdox A hosted KYC return with an unknown state changes nothing and sends the merchant back to onboarding, like plugin 11.1.0.
+	 */
+	public function test_hosted_kyc_return_with_unknown_state_redirects_to_onboarding(): void {
+		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
+		set_transient( 'wcpay_stripe_onboarding_state', 'state_kyc', DAY_IN_SECONDS );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'no' ) );
+		$_GET = $this->get_hosted_kyc_return_query( 'state_forged', 'live' );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$location = $this->run_and_get_redirect( fn() => $this->sut->handle_hosted_kyc_return() );
+
+		$this->assertSame(
+			Utils::wc_payments_settings_url(
+				'/woopayments/onboarding',
+				array(
+					'from'   => '',
+					'source' => 'unknown',
+				)
+			),
+			$location
+		);
+		$this->assertSame( array( 'enabled' => 'no' ), get_option( 'woocommerce_woocommerce_payments_settings' ) );
+		$this->assertSame( 'state_kyc', get_transient( 'wcpay_stripe_onboarding_state' ) );
+	}
+
+	/**
+	 * @testdox A hosted KYC return is ignored during an AJAX request, without the capability, or when the plugin owns the runtime.
+	 */
+	public function test_hosted_kyc_return_ignores_ineligible_requests(): void {
+		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
+		set_transient( 'wcpay_stripe_onboarding_state', 'state_kyc', DAY_IN_SECONDS );
+		$_GET = $this->get_hosted_kyc_return_query( 'state_kyc', 'live' );
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$this->create_handler( false )->handle_hosted_kyc_return();
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		$this->sut->handle_hosted_kyc_return();
+		remove_all_filters( 'wp_doing_ajax' );
+		wp_set_current_user( 0 );
+		$this->sut->handle_hosted_kyc_return();
+
+		$this->assertSame( 'state_kyc', get_transient( 'wcpay_stripe_onboarding_state' ) );
+	}
+
+	/**
+	 * Build the platform's hosted KYC return query (`class-onboarding-redirect-controller.php:612-635`).
+	 *
+	 * @param string $state Returned state secret.
+	 * @param string $mode  Returned account mode.
+	 * @return array<string,string>
+	 */
+	private function get_hosted_kyc_return_query( string $state, string $mode ): array {
+		return array(
+			'page'             => 'wc-admin',
+			'path'             => '/payments/overview',
+			'wcpay-state'      => $state,
+			'wcpay-account-id' => 'acct_finalized_native',
+			'wcpay-mode'       => $mode,
+		);
 	}
 
 	/**
