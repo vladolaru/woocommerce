@@ -597,6 +597,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->reset_frontend_surface_state();
+		// A post or query left by an earlier test would give the express checkout handler a product or cart context.
+		unset( $GLOBALS['post'] );
+		$GLOBALS['wp_query']     = new \WP_Query(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		$GLOBALS['wp_the_query'] = $GLOBALS['wp_query']; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		// The fraud service falls back to the platform's public fraud-services
 		// config when the account payload carries none; unit tests must never
 		// reach the real platform.
