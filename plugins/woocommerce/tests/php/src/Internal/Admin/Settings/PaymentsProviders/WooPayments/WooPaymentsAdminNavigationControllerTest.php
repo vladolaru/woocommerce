@@ -835,6 +835,49 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should open the native Transactions view that matches a client 11.1.0 Transactions tab link.
+	 *
+	 * Client 11.1.0 `client/transactions/index.tsx:32-43, :77-97` writes the open tab to the URL as
+	 * `tab=transactions-page|uncaptured-page|blocked-page`; native reads `view=uncaptured|blocked`.
+	 *
+	 * @dataProvider provider_client_transactions_tabs
+	 *
+	 * @param string      $client_tab    Client 11.1.0 Transactions tab name.
+	 * @param string|null $expected_view Native Transactions view, or null for the default list.
+	 */
+	public function test_maps_legacy_payment_transactions_tab_url_to_native_view( string $client_tab, ?string $expected_view ): void {
+		$sut = $this->create_controller( true );
+
+		$url = $sut->get_legacy_payment_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => '/payments/transactions',
+				'tab'  => $client_tab,
+			)
+		);
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertSame( 'wc-settings', $query['page'] );
+		$this->assertSame( 'checkout', $query['tab'] );
+		$this->assertSame( '/woopayments/transactions', $query['path'] );
+		$this->assertSame( $expected_view, $query['view'] ?? null );
+	}
+
+	/**
+	 * Client 11.1.0 Transactions tab names and the native view each one opens.
+	 *
+	 * @return array<string,array{0:string,1:string|null}>
+	 */
+	public function provider_client_transactions_tabs(): array {
+		return array(
+			'uncaptured' => array( 'uncaptured-page', 'uncaptured' ),
+			'blocked'    => array( 'blocked-page', 'blocked' ),
+			'all'        => array( 'transactions-page', null ),
+			'unknown'    => array( 'review-page', null ),
+		);
+	}
+
+	/**
 	 * @testdox Should redirect every client 11.1.0 WC Admin route to a native route.
 	 *
 	 * Source: Fixtures/plugin-11.1.0-admin-routes.json (client/index.js:145-361, includes/admin/class-wc-payments-admin.php:230-611).

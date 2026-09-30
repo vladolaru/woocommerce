@@ -104,6 +104,17 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 
 	private const LEGACY_LOANS_ROUTE = '/payments/loans';
 
+	private const LEGACY_TRANSACTIONS_ROUTE = '/payments/transactions';
+
+	/**
+	 * Client 11.1.0 Transactions tab names (`client/transactions/index.tsx:77-97`, written to the URL as `tab`)
+	 * mapped to the native Transactions `view` values.
+	 */
+	private const LEGACY_TRANSACTIONS_TAB_VIEWS = array(
+		'uncaptured-page' => 'uncaptured',
+		'blocked-page'    => 'blocked',
+	);
+
 	/**
 	 * Client 11.1.0 WC Admin paths mapped to the native `/woopayments/*` routes.
 	 *
@@ -121,7 +132,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		'/payments/deposits/details'           => self::PATH_PAYOUT_DETAILS,
 		'/payments/payouts'                    => self::PATH_PAYOUTS,
 		'/payments/payouts/details'            => self::PATH_PAYOUT_DETAILS,
-		'/payments/transactions'               => self::PATH_TRANSACTIONS,
+		self::LEGACY_TRANSACTIONS_ROUTE        => self::PATH_TRANSACTIONS,
 		'/payments/transactions/details'       => self::PATH_TRANSACTION_DETAILS,
 		self::LEGACY_REPORTS_ROUTE             => self::PATH_REPORTS,
 		'/payments/disputes'                   => self::PATH_DISPUTES,
@@ -456,11 +467,15 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 			$query[ $sanitized_key ] = sanitize_text_field( wp_unslash( (string) $value ) );
 		}
 
-		if ( self::LEGACY_REPORTS_ROUTE === $legacy_path && isset( $query['tab'] ) ) {
-			$query['report_tab'] = $query['tab'];
-			unset( $query['tab'] );
-		} else {
-			unset( $query['tab'] );
+		// `tab` belongs to wc-settings on native routes, so the client's tab moves to the argument each native page reads.
+		$legacy_tab = $query['tab'] ?? null;
+		unset( $query['tab'] );
+		if ( self::LEGACY_REPORTS_ROUTE === $legacy_path && null !== $legacy_tab ) {
+			$query['report_tab'] = $legacy_tab;
+		}
+
+		if ( self::LEGACY_TRANSACTIONS_ROUTE === $legacy_path && isset( self::LEGACY_TRANSACTIONS_TAB_VIEWS[ (string) $legacy_tab ] ) ) {
+			$query['view'] = self::LEGACY_TRANSACTIONS_TAB_VIEWS[ (string) $legacy_tab ];
 		}
 
 		if ( '/payments/multi-currency-setup' === $legacy_path ) {
