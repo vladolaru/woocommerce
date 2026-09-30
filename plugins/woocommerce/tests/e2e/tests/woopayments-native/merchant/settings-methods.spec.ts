@@ -125,7 +125,7 @@ test(
 		).toBeVisible();
 		await expect(
 			page.getByRole( 'checkbox', {
-				name: 'Issue an authorization on checkout and capture later',
+				name: 'Enable manual capture',
 			} )
 		).toBeVisible();
 		await expect(
