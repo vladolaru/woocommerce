@@ -111,6 +111,10 @@ const expectRouteUnavailable = ( routePath: string ) => {
 	expect( screen.getByRole( 'status' ) ).toHaveTextContent(
 		unavailableMessage
 	);
+	// Monitor row L13: the message sits in a card, not as bare text on the page.
+	expect(
+		screen.getByRole( 'status' ).closest( '.components-card' )
+	).not.toBeNull();
 	expect(
 		screen.queryByText( 'Loading WooPayments…' )
 	).not.toBeInTheDocument();

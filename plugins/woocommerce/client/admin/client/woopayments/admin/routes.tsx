@@ -1,6 +1,7 @@
 /**
  * External dependencies
  */
+import { Card, CardBody } from '@wordpress/components';
 import { lazy, Suspense } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
@@ -190,31 +191,36 @@ const WooPaymentsAdminAreaUnavailable = () => {
 			? __( 'Go to WooPayments overview', 'woocommerce' )
 			: __( 'Go to WooPayments settings', 'woocommerce' );
 
+	// Monitor row L13: the message sits in a card, as the client's unavailable pages do.
 	return (
-		<div role="status" aria-live="polite">
-			<p>
-				{ __(
-					'This WooPayments admin area is unavailable.',
-					'woocommerce'
-				) }
-			</p>
-			<p>
-				{ __(
-					'Your current account status does not allow access to this page.',
-					'woocommerce'
-				) }
-			</p>
-			<a href={ getSettingsPaymentsProviderRouteUrl( fallbackPath ) }>
-				{ fallbackLabel }
-			</a>
-		</div>
+		<Card>
+			<CardBody role="status" aria-live="polite">
+				<p>
+					{ __(
+						'This WooPayments admin area is unavailable.',
+						'woocommerce'
+					) }
+				</p>
+				<p>
+					{ __(
+						'Your current account status does not allow access to this page.',
+						'woocommerce'
+					) }
+				</p>
+				<a href={ getSettingsPaymentsProviderRouteUrl( fallbackPath ) }>
+					{ fallbackLabel }
+				</a>
+			</CardBody>
+		</Card>
 	);
 };
 
 const WooPaymentsReportsUnavailable = () => (
-	<div role="status" aria-live="polite">
-		{ __( 'Reports are unavailable.', 'woocommerce' ) }
-	</div>
+	<Card>
+		<CardBody role="status" aria-live="polite">
+			{ __( 'Reports are unavailable.', 'woocommerce' ) }
+		</CardBody>
+	</Card>
 );
 
 const WooPaymentsProtectedRoute = ( {
