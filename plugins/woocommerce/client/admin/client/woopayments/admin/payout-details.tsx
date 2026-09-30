@@ -492,9 +492,9 @@ export const WooPaymentsPayoutDetailsPage = () => {
 							}
 						/>
 					</dl>
-					<section className="woocommerce-woopayments-overview-card">
-						<h3>{ payoutTransactionsTitle }</h3>
-						{ isInstantPayout ? (
+					{ isInstantPayout ? (
+						<section className="woocommerce-woopayments-overview-card">
+							<h3>{ payoutTransactionsTitle }</h3>
 							<p className="woocommerce-woopayments-money-movement__notice">
 								{ __(
 									"We're unable to show transaction history on instant payouts.",
@@ -504,30 +504,31 @@ export const WooPaymentsPayoutDetailsPage = () => {
 									{ __( 'Learn more', 'woocommerce' ) }
 								</a>
 							</p>
-						) : (
-							<>
-								{ /* Client 11.1.0 deposits/details/index.tsx:356: the transactions list, scoped to the payout. */ }
-								<WooPaymentsTransactionsList
-									depositId={ payout.id }
-									buildRoute={ buildPayoutTransactionsRoute }
-								/>
-								{ allTransactionsUrl && (
-									<p className="woocommerce-woopayments-money-movement__footer-actions">
-										<a href={ allTransactionsUrl }>
-											{ sprintf(
-												/* translators: %s: payout or withdrawal. */
-												__(
-													'View all transactions in this %s',
-													'woocommerce'
-												),
-												payoutLabel
-											) }
-										</a>
-									</p>
-								) }
-							</>
-						) }
-					</section>
+						</section>
+					) : (
+						<>
+							{ /* Client 11.1.0 deposits/details/index.tsx:356: the transactions list card, scoped to the payout, not inside another card. */ }
+							<WooPaymentsTransactionsList
+								depositId={ payout.id }
+								buildRoute={ buildPayoutTransactionsRoute }
+								title={ payoutTransactionsTitle }
+							/>
+							{ allTransactionsUrl && (
+								<p className="woocommerce-woopayments-money-movement__footer-actions">
+									<a href={ allTransactionsUrl }>
+										{ sprintf(
+											/* translators: %s: payout or withdrawal. */
+											__(
+												'View all transactions in this %s',
+												'woocommerce'
+											),
+											payoutLabel
+										) }
+									</a>
+								</p>
+							) }
+						</>
+					) }
 				</>
 			) }
 		</section>

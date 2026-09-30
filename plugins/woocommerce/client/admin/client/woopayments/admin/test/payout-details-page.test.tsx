@@ -539,6 +539,16 @@ describe( 'WooPayments payout details admin surface', () => {
 		);
 
 		await screen.findByText( 'Transactions loaded.' );
+		// Client 11.1.0 `deposits/details/index.tsx:356`: the list's own card, not a card inside another.
+		const listCard = document.querySelector(
+			'.woocommerce-woopayments-money-movement-dataviews'
+		);
+		expect( listCard ).not.toBeNull();
+		expect(
+			listCard?.parentElement?.closest(
+				'.woocommerce-woopayments-overview-card'
+			)
+		).toBeNull();
 		// Client 11.1.0 `transactions/list/index.tsx:311`: every transactions column but the payout ones.
 		expect( mockDataViews ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
