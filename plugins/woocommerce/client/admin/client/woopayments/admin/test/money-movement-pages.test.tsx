@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
 import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
-import { getSettings, setSettings } from '@wordpress/date';
+import { dateI18n, getSettings, setSettings } from '@wordpress/date';
 
 /**
  * Internal dependencies
@@ -51,6 +51,10 @@ import {
 	mockUpdateUserPreferences,
 	setMockUserPreferences,
 } from './helpers/user-preferences';
+
+// `ExternalLink` adds "(opens in a new tab)" to the accessible name; match the visible label.
+const linkNamed = ( label: string ) => ( accessibleName: string ) =>
+	accessibleName.startsWith( label );
 
 // Headlines of core `Timeline` items, newest first.
 const getTimelineHeadlines = () =>
@@ -5782,22 +5786,63 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		expect(
+		const pane = (
 			await screen.findByRole( 'heading', { name: 'Dispute details' } )
+		).closest( '[role="group"]' ) as HTMLElement;
+		// Client 11.1.0 dispute-details/dispute-notice.tsx: the urgent notice with the claim and deadline.
+		expect(
+			within( pane )
+				.getByText(
+					'The cardholder claims this is an unauthorized transaction.'
+				)
+				.closest( '.components-notice' )
+		).toHaveTextContent(
+			"The cardholder claims this is an unauthorized transaction. If you believe this is incorrect, you have until 12:00 AM on June 20, 2026 to challenge the dispute with your customer's bank. If you accept the dispute, you will forfeit the funds and pay the dispute fee."
+		);
+		// Client 11.1.0 dispute-details/dispute-summary-row.tsx.
+		expect(
+			Array.from( pane.querySelectorAll( 'dt' ) ).map(
+				( term ) => term.textContent
+			)
+		).toEqual( [
+			'Dispute Amount',
+			'Disputed On',
+			'Reason',
+			'Respond By',
+		] );
+		expect( getDetailValue( pane, 'Dispute Amount' ) ).toHaveTextContent(
+			'$50.00'
+		);
+		expect( getDetailValue( pane, 'Reason' ) ).toHaveTextContent(
+			'Transaction unauthorized'
+		);
+		expect(
+			within( getDetailValue( pane, 'Reason' ) ).getByRole( 'button', {
+				name: 'Learn more',
+			} )
 		).toBeInTheDocument();
-		expect( screen.getByText( 'Response needed' ) ).toBeInTheDocument();
+		expect( getDetailValue( pane, 'Respond By' ) ).toHaveTextContent(
+			/^June 20, 2026 12:00 AM \(/
+		);
+		// The pane sits inside the summary card, as the client's DisputePane does.
+		expect(
+			within(
+				screen.getByRole( 'region', { name: 'Summary' } )
+			).getByRole( 'heading', { name: 'Dispute details' } )
+		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'link', { name: 'Challenge dispute' } )
 		).toHaveAttribute(
 			'href',
 			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes%2Fchallenge&id=dp_test'
 		);
+		// Client 11.1.0 dispute-awaiting-response-details.tsx:420-438: a tertiary Accept dispute.
 		expect(
 			screen.getByRole( 'button', { name: 'Accept dispute' } )
-		).toBeInTheDocument();
+		).toHaveClass( 'is-tertiary' );
 		expect(
 			screen.getByRole( 'link', {
-				name: 'Learn more about responding to disputes',
+				name: linkNamed( 'Learn more about responding to disputes' ),
 			} )
 		).toHaveAttribute(
 			'href',
@@ -5890,37 +5935,33 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
+		// Client 11.1.0 summary/index.tsx:108-145, 993-1003: one pane per dispute inside the summary card,
+		// oldest first, each labelled "Dispute N of M"; the awaiting one has the details, the won one its footer.
 		const disputeHeadings = await screen.findAllByRole( 'heading', {
 			name: 'Dispute details',
 		} );
-		expect( disputeHeadings ).toHaveLength( 2 );
-		expect(
+		expect( disputeHeadings ).toHaveLength( 1 );
+		const panes = Array.from(
 			screen
-				.getAllByText( /^Dispute \d of 2$/ )
-				.map( ( node ) => node.textContent )
-		).toEqual( [ 'Dispute 1 of 2', 'Dispute 2 of 2' ] );
-
-		const disputeSections = disputeHeadings.map(
-			( heading ) => heading.closest( 'section' ) as HTMLElement
-		);
+				.getByRole( 'region', { name: 'Summary' } )
+				.querySelectorAll( '.woocommerce-woopayments-dispute-pane' )
+		) as HTMLElement[];
 		expect(
-			disputeSections.map(
-				( section ) =>
-					getDetailValue( section, 'Dispute ID' ).textContent
+			panes.map(
+				( pane ) =>
+					pane.querySelector(
+						'.woocommerce-woopayments-money-movement__dispute-label'
+					)?.textContent
 			)
-		).toEqual( [ 'dp_older', 'dp_newer' ] );
-		expect(
-			new Set(
-				disputeSections.map( ( section ) =>
-					section.getAttribute( 'aria-labelledby' )
-				)
-			).size
-		).toBe( 2 );
-		disputeSections.forEach( ( section ) => {
-			const headingId = section.getAttribute( 'aria-labelledby' );
-			expect( headingId ).not.toBeNull();
-			expect( document.getElementById( headingId || '' ) ).not.toBeNull();
-		} );
+		).toEqual( [ 'Dispute 1 of 2', 'Dispute 2 of 2' ] );
+		expect( within( panes[ 0 ] ).getByRole( 'group' ) ).toHaveAttribute(
+			'aria-labelledby',
+			disputeHeadings[ 0 ].id
+		);
+		expect( panes[ 0 ] ).toHaveTextContent( '$30.00' );
+		expect( panes[ 1 ] ).toHaveTextContent(
+			"Good news — you've won this dispute!"
+		);
 
 		const summary = screen.getByRole( 'region', {
 			name: 'Summary',
@@ -6073,10 +6114,11 @@ describe( 'WooPayments money movement pages', () => {
 		expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
 			'Dispute accepted.'
 		);
-		expect( await screen.findByText( 'Lost' ) ).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'heading', { name: 'Dispute details' } )
-		).toHaveFocus();
+		// Client 11.1.0 dispute-resolution-footer.tsx: the pane turns into the lost footer, which takes focus.
+		const lostOutcome = await screen.findByText(
+			/^This dispute was lost on/
+		);
+		expect( lostOutcome.closest( '[tabindex="-1"]' ) ).toHaveFocus();
 	} );
 
 	it( 'does not steal focus after accepting a dispute when the modal was dismissed while pending', async () => {
@@ -6169,7 +6211,9 @@ describe( 'WooPayments money movement pages', () => {
 			await Promise.resolve();
 		} );
 
-		expect( await screen.findByText( 'Lost' ) ).toBeInTheDocument();
+		expect(
+			await screen.findByText( /^This dispute was lost on/ )
+		).toBeInTheDocument();
 		expect( outsideFocusTarget ).toHaveFocus();
 	} );
 
@@ -6255,10 +6299,11 @@ describe( 'WooPayments money movement pages', () => {
 			await Promise.resolve();
 		} );
 
-		expect( await screen.findByText( 'Lost' ) ).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'heading', { name: 'Dispute details' } )
-		).toHaveFocus();
+		// Client 11.1.0 dispute-resolution-footer.tsx: the pane turns into the lost footer, which takes focus.
+		const lostOutcome = await screen.findByText(
+			/^This dispute was lost on/
+		);
+		expect( lostOutcome.closest( '[tabindex="-1"]' ) ).toHaveFocus();
 	} );
 
 	it( 'surfaces dispute accept failures from transaction details', async () => {
@@ -6472,11 +6517,13 @@ describe( 'WooPayments money movement pages', () => {
 		expect(
 			(
 				await screen.findByRole( 'link', {
-					name: 'Learn more about monitoring dispute status.',
+					name: linkNamed(
+						'Learn more about monitoring dispute status.'
+					),
 				} )
 			).parentElement
 		).toHaveTextContent(
-			/^The customer's bank is currently reviewing the evidence you submitted on .+\. This process can sometimes take more than 60 days — we'll let you know once a decision has been made\. Learn more about monitoring dispute status\.$/
+			/^The customer's bank is currently reviewing the evidence you submitted on .+\. This process can sometimes take more than 60 days — we'll let you know once a decision has been made\. Learn more about monitoring dispute status\./
 		);
 		expect(
 			screen.getByRole( 'link', { name: 'View submitted evidence' } )
@@ -6529,7 +6576,9 @@ describe( 'WooPayments money movement pages', () => {
 			expect(
 				(
 					await screen.findByRole( 'link', {
-						name: 'Learn more about preventing disputes.',
+						name: linkNamed(
+							'Learn more about preventing disputes.'
+						),
 					} )
 				).parentElement
 			).toHaveTextContent( message );
@@ -6608,7 +6657,7 @@ describe( 'WooPayments money movement pages', () => {
 			).toBeInTheDocument();
 			expect(
 				screen.getByRole( 'link', {
-					name: 'Learn more about disputed amounts.',
+					name: linkNamed( 'Learn more about disputed amounts.' ),
 				} )
 			).toBeInTheDocument();
 			expect(
@@ -6666,12 +6715,13 @@ describe( 'WooPayments money movement pages', () => {
 		);
 	};
 
+	// Client 11.1.0 `formatDateTimeFromTimestamp()`: the site date format (`F j, Y` in these tests), read as UTC.
 	const formatRecordedDate = ( timestamp: string ) =>
-		new Date( Number( timestamp ) * 1000 ).toLocaleDateString( undefined, {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric',
-		} );
+		dateI18n(
+			'F j, Y',
+			new Date( Number( timestamp ) * 1000 ).toISOString(),
+			undefined
+		);
 
 	/**
 	 * Client 11.1.0 dispute notice claim (`disputes/strings.ts:158`,
@@ -6720,7 +6770,7 @@ describe( 'WooPayments money movement pages', () => {
 
 			const footer = (
 				await screen.findByRole( 'link', {
-					name: 'Learn more about dispute fees.',
+					name: linkNamed( 'Learn more about dispute fees.' ),
 				} )
 			).parentElement as HTMLElement;
 			expect( footer ).toHaveTextContent(
@@ -6756,7 +6806,7 @@ describe( 'WooPayments money movement pages', () => {
 
 			const footer = (
 				await screen.findByRole( 'link', {
-					name: 'Learn more about dispute fees.',
+					name: linkNamed( 'Learn more about dispute fees.' ),
 				} )
 			).parentElement as HTMLElement;
 			expect( footer ).toHaveTextContent(
@@ -6841,7 +6891,9 @@ describe( 'WooPayments money movement pages', () => {
 			} );
 
 			const footer = (
-				await screen.findByRole( 'link', { name: docLabel } )
+				await screen.findByRole( 'link', {
+					name: linkNamed( docLabel ),
+				} )
 			).parentElement as HTMLElement;
 			expect( footer ).toHaveTextContent(
 				expected(
@@ -6881,7 +6933,7 @@ describe( 'WooPayments money movement pages', () => {
 
 		const footer = (
 			await screen.findByRole( 'link', {
-				name: 'Learn more about dispute fees.',
+				name: linkNamed( 'Learn more about dispute fees.' ),
 			} )
 		).parentElement as HTMLElement;
 		expect( footer ).toHaveTextContent( formatRecordedDate( closedAt ) );

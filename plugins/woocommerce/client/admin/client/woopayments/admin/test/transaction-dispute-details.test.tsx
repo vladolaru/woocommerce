@@ -99,7 +99,10 @@ describe( 'WooPaymentsTransactionDisputeDetails Visa compliance', () => {
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'link', {
-				name: 'Learn more about Visa compliance disputes',
+				name: ( accessibleName: string ) =>
+					accessibleName.startsWith(
+						'Learn more about Visa compliance disputes'
+					),
 			} )
 		).toHaveAttribute(
 			'href',
@@ -136,8 +139,16 @@ describe( 'WooPaymentsTransactionDisputeDetails Visa compliance', () => {
 		expect(
 			screen.getByRole( 'checkbox', { name: VISA_ACKNOWLEDGEMENT } )
 		).toBeChecked();
+		// Client 11.1.0 dispute-awaiting-response-details.tsx:331-339, 410-415: the staged-evidence notice
+		// and the "Continue with challenge" label.
 		expect(
-			screen.getByRole( 'link', { name: 'Challenge dispute' } )
+			screen.getByText(
+				"You initiated a challenge to this dispute. Click 'Continue with challenge' to proceed with your draft response.",
+				{ selector: '.components-notice__content' }
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: 'Continue with challenge' } )
 		).toBeInTheDocument();
 	} );
 
@@ -160,7 +171,10 @@ describe( 'WooPaymentsTransactionDisputeDetails Visa compliance', () => {
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'link', {
-				name: 'Learn more about responding to disputes',
+				name: ( accessibleName: string ) =>
+					accessibleName.startsWith(
+						'Learn more about responding to disputes'
+					),
 			} )
 		).toBeInTheDocument();
 	} );

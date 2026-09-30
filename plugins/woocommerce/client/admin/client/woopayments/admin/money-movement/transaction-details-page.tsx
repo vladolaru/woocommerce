@@ -1436,6 +1436,35 @@ export const WooPaymentsTransactionDetailsPage = () => {
 								)
 							}
 						>
+							{ disputeOrder.orderedDisputes.map(
+								( dispute, index ) => {
+									const disputeId = getDisputeId( dispute );
+
+									return (
+										<WooPaymentsTransactionDisputeDetails
+											key={ `${
+												disputeId || 'dispute'
+											}-${ index }` }
+											transaction={ transaction }
+											dispute={ dispute }
+											ordinal={
+												disputeOrder.orderById[
+													disputeId
+												] || index + 1
+											}
+											total={ disputeOrder.total }
+											onIssueRefund={
+												showFullRefundAction
+													? () =>
+															handleInquiryRefundModalOpen(
+																dispute
+															)
+													: undefined
+											}
+										/>
+									);
+								}
+							) }
 							<WooPaymentsMissingOrderNotice
 								transaction={ transaction }
 								// Client 11.1.0 `payment-details/summary/index.tsx:897-903` opens the modal with no open event.
@@ -1530,35 +1559,6 @@ export const WooPaymentsTransactionDetailsPage = () => {
 								</WooPaymentsSummaryCardNotice>
 							) }
 						</WooPaymentsPaymentSummarySection>
-						{ disputeOrder.orderedDisputes.map(
-							( dispute, index ) => {
-								const disputeId = getDisputeId( dispute );
-
-								return (
-									<WooPaymentsTransactionDisputeDetails
-										key={ `${
-											disputeId || 'dispute'
-										}-${ index }` }
-										transaction={ transaction }
-										dispute={ dispute }
-										ordinal={
-											disputeOrder.orderById[
-												disputeId
-											] || index + 1
-										}
-										total={ disputeOrder.total }
-										onIssueRefund={
-											showFullRefundAction
-												? () =>
-														handleInquiryRefundModalOpen(
-															dispute
-														)
-												: undefined
-										}
-									/>
-								);
-							}
-						) }
 						<WooPaymentsTransactionTimeline
 							events={ timelineEvents }
 							hasError={ !! timelineErrorMessage }

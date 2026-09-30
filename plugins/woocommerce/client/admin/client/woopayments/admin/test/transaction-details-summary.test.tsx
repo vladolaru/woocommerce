@@ -2,6 +2,7 @@
  * External dependencies
  */
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { getSettings, setSettings } from '@wordpress/date';
 
@@ -367,6 +368,70 @@ describe( 'WooPayments payment details summary parity', () => {
 
 			expect( getTerms() ).toContain( 'Subscription' );
 			expect( getValue( 'Subscription' ) ).toHaveTextContent( /^–$/ );
+		} );
+	} );
+
+	describe( 'fee breakdown (client summary/index.tsx:316-338, 573-641)', () => {
+		it( 'splits the fees behind a help icon when a dispute fee applies', async () => {
+			render(
+				<WooPaymentsPaymentSummarySection
+					transaction={
+						{
+							...getBaseCharge(),
+							balance_transaction: {
+								amount: 2000,
+								currency: 'usd',
+								fee: 1570,
+								net: 430,
+							},
+							disputes: [
+								{
+									id: 'dp_1',
+									status: 'needs_response',
+									effective_fee: {
+										amount: 1500,
+										currency: 'usd',
+									},
+								},
+							],
+						} as unknown as WooPaymentsTransaction
+					}
+				/>
+			);
+
+			await userEvent.click(
+				within( getSummary() ).getByRole( 'button', {
+					name: 'Fee breakdown',
+				} )
+			);
+
+			expect(
+				Array.from(
+					document.querySelectorAll(
+						'.woocommerce-woopayments-payment-summary__fee-breakdown > div'
+					)
+				).map( ( row ) => row.textContent )
+			).toEqual( [
+				'Transaction fee$0.70',
+				'Dispute fee$15.00',
+				'Total fees$15.70',
+			] );
+		} );
+
+		it( 'has no help icon without a dispute fee', () => {
+			render(
+				<WooPaymentsPaymentSummarySection
+					transaction={
+						getBaseCharge() as unknown as WooPaymentsTransaction
+					}
+				/>
+			);
+
+			expect(
+				within( getSummary() ).queryByRole( 'button', {
+					name: 'Fee breakdown',
+				} )
+			).not.toBeInTheDocument();
 		} );
 	} );
 

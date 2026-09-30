@@ -11,7 +11,7 @@ import {
 	Flex,
 } from '@wordpress/components';
 import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
-import { __, sprintf } from '@wordpress/i18n';
+import { __, _n, sprintf } from '@wordpress/i18n';
 import { addQueryArgs } from '@wordpress/url';
 import moment from 'moment';
 import type { MouseEvent, ReactNode } from 'react';
@@ -38,6 +38,7 @@ import {
 	DISPUTE_STATUS_LABELS,
 	getChargeDisputes,
 	getDisputeBalanceAdjustments,
+	getEffectiveDisputeFee,
 	getPrimaryDispute,
 	isDisputeAwaitingResponse,
 } from './dispute-utils';
@@ -50,6 +51,7 @@ import {
 	type StatusChipType,
 } from '../overview/components/status-chip';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import { HelpPopover } from '../overview/components/help-popover';
 import './transaction-details.scss';
 
 type CardDetails = NonNullable< WooPaymentsPaymentMethodDetails[ 'card' ] >;
@@ -825,6 +827,14 @@ export const WooPaymentsPaymentSummarySection = ( {
 	const status = hasDisplayValue( transaction.status )
 		? getPaymentSummaryStatus( transaction )
 		: null;
+	// Client 11.1.0 `summary/index.tsx:316-338, 573-641`: with dispute fees, a help icon splits the fees.
+	const disputeFees = getChargeDisputes( transaction )
+		.map( getEffectiveDisputeFee )
+		.filter( ( disputeFee ) => !! disputeFee );
+	const disputeFeeTotal = disputeFees.reduce(
+		( total, disputeFee ) => total + ( disputeFee?.amount ?? 0 ),
+		0
+	);
 
 	return (
 		<Card
@@ -857,17 +867,17 @@ export const WooPaymentsPaymentSummarySection = ( {
 							</div>
 							<div className="woocommerce-woopayments-payment-summary__breakdown">
 								{ hasConvertedAmount && (
-									<p className="woocommerce-woopayments-payment-summary__settlement-currency">
+									<div className="woocommerce-woopayments-payment-summary__settlement-currency">
 										{ formatPaymentSummaryAmount(
 											balanceTransaction.amount,
 											balanceCurrency,
 											true,
 											true
 										) }
-									</p>
+									</div>
 								) }
 								{ hasRefundedAmount && (
-									<p>
+									<div>
 										{ sprintf(
 											refundedAmountLabel,
 											formatExplicitCurrency(
@@ -879,10 +889,10 @@ export const WooPaymentsPaymentSummarySection = ( {
 												transaction.currency
 											)
 										) }
-									</p>
+									</div>
 								) }
 								{ hasDisplayValue( fee ) && (
-									<p>
+									<div>
 										{ sprintf(
 											/* translators: %s: formatted fee amount. */
 											__( 'Fees: %s', 'woocommerce' ),
@@ -893,10 +903,69 @@ export const WooPaymentsPaymentSummarySection = ( {
 													hasDifferentBalanceCurrency
 											)
 										) }
-									</p>
+										{ disputeFees.length > 0 && (
+											<HelpPopover
+												label={ __(
+													'Fee breakdown',
+													'woocommerce'
+												) }
+											>
+												<dl className="woocommerce-woopayments-payment-summary__fee-breakdown">
+													{ [
+														[
+															__(
+																'Transaction fee',
+																'woocommerce'
+															),
+															Math.abs(
+																Number( fee )
+															) - disputeFeeTotal,
+														],
+														[
+															_n(
+																'Dispute fee',
+																'Dispute fees',
+																disputeFees.length,
+																'woocommerce'
+															),
+															disputeFeeTotal,
+														],
+														[
+															__(
+																'Total fees',
+																'woocommerce'
+															),
+															Math.abs(
+																Number( fee )
+															),
+														],
+													].map(
+														( [
+															label,
+															amount,
+														] ) => (
+															<div key={ label }>
+																<dt>
+																	{ label }
+																</dt>
+																<dd>
+																	{ formatAmount(
+																		Number(
+																			amount
+																		),
+																		feeCurrency
+																	) }
+																</dd>
+															</div>
+														)
+													) }
+												</dl>
+											</HelpPopover>
+										) }
+									</div>
 								) }
 								{ paydownAmount !== undefined && (
-									<p>
+									<div>
 										{ sprintf(
 											/* translators: %s: formatted loan repayment amount. */
 											__(
@@ -911,10 +980,10 @@ export const WooPaymentsPaymentSummarySection = ( {
 												true
 											)
 										) }
-									</p>
+									</div>
 								) }
 								{ hasDisplayValue( net ) && (
-									<p>
+									<div>
 										{ sprintf(
 											/* translators: %s: formatted net amount. */
 											__( 'Net: %s', 'woocommerce' ),
@@ -926,7 +995,7 @@ export const WooPaymentsPaymentSummarySection = ( {
 												true
 											)
 										) }
-									</p>
+									</div>
 								) }
 							</div>
 						</div>
