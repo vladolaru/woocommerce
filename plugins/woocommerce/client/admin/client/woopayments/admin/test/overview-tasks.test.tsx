@@ -1,4 +1,10 @@
 /**
+ * External dependencies
+ */
+import fs from 'fs';
+import path from 'path';
+
+/**
  * Internal dependencies
  */
 import {
@@ -58,13 +64,21 @@ const createShell = ( overrides: Record< string, unknown > = {} ) => ( {
 	...overrides,
 } );
 
+// A needs-response row from the recorded native :8889 disputes list; see the file's `_meta`.
+const [ RECORDED_DISPUTE ] = JSON.parse(
+	fs.readFileSync(
+		path.join( __dirname, 'fixtures/recorded-disputes-list.json' ),
+		'utf8'
+	)
+).response.data as Array< Record< string, unknown > >;
+
+// The cached list stores `due_by` as a UTC `Y-m-d H:i:s` string.
+const formatDueBy = ( timestamp: number ) =>
+	new Date( timestamp ).toISOString().slice( 0, 19 ).replace( 'T', ' ' );
+
 const createDispute = ( overrides: Record< string, unknown > = {} ) => ( {
-	id: 'dp_test',
-	dispute_id: 'dp_test',
-	charge_id: 'ch_test',
-	amount: 1000,
-	currency: 'usd',
-	evidence_due_by: NOW + DAY_IN_MS,
+	...RECORDED_DISPUTE,
+	due_by: formatDueBy( NOW + DAY_IN_MS ),
 	...overrides,
 } );
 
@@ -223,15 +237,15 @@ describe( 'overview task builders', () => {
 
 		// Client 11.1.0 `dispute-task.tsx:123-138`: due within 24 hours adds the last-day suffix.
 		expect( task ).toMatchObject( {
-			key: 'dispute-resolution-task-dp_test',
-			title: 'Respond to a dispute for $10.00 – Last day',
+			key: `dispute-resolution-task-${ RECORDED_DISPUTE.dispute_id }`,
+			title: 'Respond to a dispute for $50.00 – Last day',
 			actionLabel: 'Respond now',
 			level: 1,
 		} );
 		expect( task.href ).toContain(
 			'path=%2Fwoopayments%2Ftransactions%2Fdetails'
 		);
-		expect( task.href ).toContain( 'id=ch_test' );
+		expect( task.href ).toContain( `id=${ RECORDED_DISPUTE.charge_id }` );
 	} );
 
 	it( 'builds a multiple-dispute task that links to the awaiting-response dispute list', () => {
@@ -265,10 +279,10 @@ describe( 'overview task builders', () => {
 				showUpdateDetailsTask: false,
 				shell: createShell(),
 				disputes: [
-					createDispute( { evidence_due_by: NOW + dueIn } ),
+					createDispute( { due_by: formatDueBy( NOW + dueIn ) } ),
 					createDispute( {
 						dispute_id: 'dp_later',
-						evidence_due_by: NOW + 6 * DAY_IN_MS,
+						due_by: formatDueBy( NOW + 6 * DAY_IN_MS ),
 					} ),
 				],
 				onOpenUpdateBusinessDetails: jest.fn(),
@@ -327,7 +341,38 @@ describe( 'overview task builders', () => {
 		);
 		expect(
 			isDisputeDueWithinDays(
-				createDispute( { evidence_due_by: NOW + 8 * DAY_IN_MS } ),
+				createDispute( { due_by: formatDueBy( NOW + 8 * DAY_IN_MS ) } ),
+				7,
+				NOW
+			)
+		).toBe( false );
+	} );
+
+	// Client 11.1.0 `dispute-task.tsx:31-44` and `disputes/utils.ts:41-61` read the cached row's `due_by` only.
+	it( 'reads the due date from the cached row, not from Stripe dispute fields the list never returns', () => {
+		const [ task ] = buildOverviewTasks( {
+			showUpdateDetailsTask: false,
+			shell: createShell(),
+			disputes: [
+				createDispute( {
+					evidence_due_by: NOW + 30 * DAY_IN_MS,
+					evidence_details: { due_by: NOW + 30 * DAY_IN_MS },
+				} ),
+			],
+			onOpenUpdateBusinessDetails: jest.fn(),
+		} );
+
+		expect( task?.title ).toBe(
+			'Respond to a dispute for $50.00 – Last day'
+		);
+	} );
+
+	it( 'ignores a numeric due_by, which the cached list never returns', () => {
+		expect(
+			isDisputeDueWithinDays(
+				createDispute( {
+					due_by: Math.floor( ( NOW + DAY_IN_MS ) / 1000 ),
+				} ),
 				7,
 				NOW
 			)

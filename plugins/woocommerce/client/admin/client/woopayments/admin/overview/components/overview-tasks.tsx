@@ -29,38 +29,22 @@ import {
 export const formatTaskCurrency = ( amount: number, currency?: string ) =>
 	formatWooPaymentsAmount( amount, currency );
 
-// Client 11.1.0 `disputes/utils.ts:46-50`: a number is a Unix timestamp, a string is a UTC date.
+// Client 11.1.0 `dispute-task.tsx:31-44` and `disputes/utils.ts:46-50`: the cached row's `due_by`, a UTC date string.
 const getDisputeDueMoment = ( dispute: WooPaymentsOverviewDispute ) => {
-	const value =
-		dispute.evidence_due_by ??
-		dispute.evidence_details?.due_by ??
-		dispute.due_by;
-
-	if ( value === undefined || value === null || value === '' ) {
+	if ( typeof dispute.due_by !== 'string' || dispute.due_by === '' ) {
 		return null;
 	}
 
-	const numericValue = Number( value );
-	let dueMoment = moment.utc( value );
-	if ( Number.isFinite( numericValue ) ) {
-		dueMoment = moment.utc(
-			numericValue < 10000000000 ? numericValue * 1000 : numericValue
-		);
-	}
+	const dueMoment = moment.utc( dispute.due_by );
 
 	return dueMoment.isValid() ? dueMoment : null;
 };
 
 const getDisputeId = ( dispute: WooPaymentsOverviewDispute ) =>
-	dispute.dispute_id || dispute.id || '';
+	dispute.dispute_id ?? '';
 
-const getDisputeChargeId = ( dispute: WooPaymentsOverviewDispute ) => {
-	if ( typeof dispute.charge === 'string' ) {
-		return dispute.charge;
-	}
-
-	return dispute.charge_id || dispute.charge?.id || dispute.id || '';
-};
+const getDisputeChargeId = ( dispute: WooPaymentsOverviewDispute ) =>
+	dispute.charge_id ?? '';
 
 // Client 11.1.0 `overview/task-list/tasks/update-business-details-task.tsx:18-171`.
 const buildUpdateBusinessDetailsTask = ( {

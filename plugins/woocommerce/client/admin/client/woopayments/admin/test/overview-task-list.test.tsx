@@ -1,6 +1,8 @@
 /**
  * External dependencies
  */
+import fs from 'fs';
+import path from 'path';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
@@ -40,6 +42,20 @@ const mockSaveOption = saveOption as jest.MockedFunction< typeof saveOption >;
 
 const NOW = new Date( '2026-06-19T12:00:00.000Z' ).getTime();
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+// The two needs-response rows from the recorded native :8889 disputes list; see the file's `_meta`.
+const RECORDED_AWAITING_RESPONSE = (
+	JSON.parse(
+		fs.readFileSync(
+			path.join( __dirname, 'fixtures/recorded-disputes-list.json' ),
+			'utf8'
+		)
+	).response.data as Array< Record< string, unknown > >
+ ).filter( ( dispute ) => dispute.status === 'needs_response' );
+
+// The cached list stores `due_by` as a UTC `Y-m-d H:i:s` string.
+const formatDueBy = ( timestamp: number ) =>
+	new Date( timestamp ).toISOString().slice( 0, 19 ).replace( 'T', ' ' );
 
 const createVisibility = ( overrides = {} ) => ( {
 	dismissed_todo_tasks: [],
@@ -120,15 +136,15 @@ describe( 'OverviewTaskList', () => {
 
 	it( 'records the client 11.1.0 dispute task click and opens the disputes list', async () => {
 		// Expected properties: client `overview/task-list/tasks/dispute-task.tsx:52-56`.
-		const dispute = { dispute_id: 'dp_1', amount: 1000, currency: 'usd' };
+		const [ first, second ] = RECORDED_AWAITING_RESPONSE;
 		const tasks = buildOverviewTasks( {
 			shell: {
 				account: { connected: true },
 				account_status: { requirements: { errors: [] } },
 			} as never,
 			disputes: [
-				{ ...dispute, evidence_due_by: NOW + DAY_IN_MS },
-				{ ...dispute, dispute_id: 'dp_2', evidence_due_by: NOW },
+				{ ...first, due_by: formatDueBy( NOW + DAY_IN_MS ) },
+				{ ...second, due_by: formatDueBy( NOW + 2 * DAY_IN_MS ) },
 			],
 			onOpenUpdateBusinessDetails: jest.fn(),
 		} ).filter( ( task ) => task.key.startsWith( 'dispute' ) );

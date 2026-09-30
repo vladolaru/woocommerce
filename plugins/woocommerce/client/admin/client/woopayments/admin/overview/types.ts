@@ -211,18 +211,14 @@ export interface WooPaymentsOverviewShell {
 	};
 }
 
+/** A cached dispute row from `wc/v3/payments/disputes`, as client 11.1.0 `types/disputes.d.ts` `CachedDispute` reads it. */
 export interface WooPaymentsOverviewDispute {
-	id?: string;
 	dispute_id?: string;
 	charge_id?: string;
-	charge?: string | { id?: string };
 	amount?: number;
 	currency?: string;
-	due_by?: number | string;
-	evidence_due_by?: number | string;
-	evidence_details?: {
-		due_by?: number | string;
-	};
+	/** UTC `Y-m-d H:i:s`. */
+	due_by?: string;
 }
 
 export interface WooPaymentsOverviewDisputesResponse {

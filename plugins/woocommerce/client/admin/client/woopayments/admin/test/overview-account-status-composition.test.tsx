@@ -1,6 +1,8 @@
 /**
  * External dependencies
  */
+import fs from 'fs';
+import path from 'path';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { useSelect } from '@wordpress/data';
 
@@ -51,13 +53,21 @@ const mockUseSelect = useSelect as jest.Mock;
 const mockGetDepositsOverview = getWooPaymentsDepositsOverview as jest.Mock;
 const mockGetDisputeReadiness = getWooPaymentsDisputeReadiness as jest.Mock;
 
-// A dispute due tomorrow, so the task list has a task to show.
+// A needs-response row from the recorded native :8889 disputes list, due tomorrow so the task list has a task to show.
 const urgentDispute = () => ( {
-	dispute_id: 'dp_urgent',
-	charge_id: 'ch_urgent',
-	amount: 5000,
-	currency: 'usd',
-	due_by: Math.floor( Date.now() / 1000 ) + 24 * 60 * 60,
+	...(
+		JSON.parse(
+			fs.readFileSync(
+				path.join( __dirname, 'fixtures/recorded-disputes-list.json' ),
+				'utf8'
+			)
+		).response.data as Array< Record< string, unknown > >
+	 )[ 0 ],
+	// The cached list stores `due_by` as a UTC `Y-m-d H:i:s` string.
+	due_by: new Date( Date.now() + 24 * 60 * 60 * 1000 )
+		.toISOString()
+		.slice( 0, 19 )
+		.replace( 'T', ' ' ),
 } );
 
 const renderForStatus = async ( status: string, paymentsEnabled = true ) => {
