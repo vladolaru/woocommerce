@@ -50,6 +50,22 @@ const currencyValues = (
 	currencies: Record< string, MultiCurrencyCurrency >
 ): MultiCurrencyCurrency[] => Object.values( currencies );
 
+// Client 11.1.0 MultiCurrency.php:1724-1728 sorts currencies by name (PHP ksort), with the store currency first where it is listed.
+const byName = (
+	first: MultiCurrencyCurrency,
+	second: MultiCurrencyCurrency
+): number => {
+	if ( Boolean( first.is_default ) !== Boolean( second.is_default ) ) {
+		return first.is_default ? -1 : 1;
+	}
+
+	if ( first.name === second.name ) {
+		return 0;
+	}
+
+	return first.name < second.name ? -1 : 1;
+};
+
 const normalizeEnabledCodes = (
 	codes: string[],
 	defaultCode: string,
@@ -271,22 +287,20 @@ export function MultiCurrencySettingsApp() {
 	}, [ isModalOpen, hasNoSelectedCurrency ] );
 
 	const filteredAvailableCurrencies = useMemo( () => {
-		const query = search.trim().toLowerCase();
+		const query = search.toLocaleLowerCase();
 
-		return availableCurrencies.filter( ( currency ) => {
-			if ( currency.code === defaultCode ) {
-				return false;
-			}
-
-			if ( query === '' ) {
-				return true;
-			}
-
-			return (
-				currency.name.toLowerCase().includes( query ) ||
-				currency.code.toLowerCase().includes( query )
+		// Client 11.1.0 enabled-currencies-list/modal.js:45-54 matches the symbol, code and name.
+		return [ ...availableCurrencies ]
+			.sort( byName )
+			.filter(
+				( currency ) =>
+					currency.code !== defaultCode &&
+					`${ decodeEntities( currency.symbol ) } ${
+						currency.code
+					} ${ currency.name }`
+						.toLocaleLowerCase()
+						.includes( query )
 			);
-		} );
 	}, [ availableCurrencies, defaultCode, search ] );
 
 	const saveEnabledCurrencies = async ( codes: string[] ) => {
@@ -450,91 +464,99 @@ export function MultiCurrencySettingsApp() {
 					</tr>
 				</thead>
 				<tbody>
-					{ enabledCurrencies.map( ( currency ) => (
-						<tr key={ currency.code }>
-							<th scope="row">
-								{ /* Client 11.1.0 list-item.js:47-55: the flag, or the code when there is none. */ }
-								<span
-									className="woocommerce-multi-currency-settings__currency-flag"
-									aria-hidden="true"
-								>
-									{ currency.flag || currency.code }
-								</span>{ ' ' }
-								{ currency.name }{ ' ' }
-								<span className="woocommerce-multi-currency-settings__currency-code">
-									({ formatSymbolAndCode( currency ) })
-								</span>
-							</th>
-							<td>
-								{ formatExchangeRate(
-									currency,
-									currencies.default
-								) }
-							</td>
-							<td>
-								{ /* Client 11.1.0 list-item.js:64-94 and index.js:88-90: no actions on the default row. */ }
-								{ ! currency.is_default && (
-									<>
-										<Button
-											variant="link"
-											disabled={ isSaving }
-											accessibleWhenDisabled
-											aria-label={ sprintf(
-												/* translators: %s: Currency name. */
-												__(
-													'Manage %s settings',
+					{ [ ...enabledCurrencies ]
+						.sort( byName )
+						.map( ( currency ) => (
+							<tr key={ currency.code }>
+								<th scope="row">
+									{ /* Client 11.1.0 list-item.js:47-55: the flag, or the code when there is none. */ }
+									<span
+										className="woocommerce-multi-currency-settings__currency-flag"
+										aria-hidden="true"
+									>
+										{ currency.flag || currency.code }
+									</span>{ ' ' }
+									{ currency.name }{ ' ' }
+									<span className="woocommerce-multi-currency-settings__currency-code">
+										({ formatSymbolAndCode( currency ) })
+									</span>
+								</th>
+								<td>
+									{ formatExchangeRate(
+										currency,
+										currencies.default
+									) }
+								</td>
+								<td>
+									{ /* Client 11.1.0 list-item.js:64-94 and index.js:88-90: no actions on the default row. */ }
+									{ ! currency.is_default && (
+										<>
+											<Button
+												variant="link"
+												disabled={ isSaving }
+												accessibleWhenDisabled
+												aria-label={ sprintf(
+													/* translators: %s: Currency name. */
+													__(
+														'Manage %s settings',
+														'woocommerce'
+													),
+													currency.name
+												) }
+												onClick={ (
+													event: React.MouseEvent< HTMLButtonElement >
+												) => {
+													manageCurrencyButtonRef.current =
+														event.currentTarget;
+													setManagedCurrencyCode(
+														currency.code
+													);
+												} }
+											>
+												{ __(
+													'Manage',
 													'woocommerce'
-												),
-												currency.name
-											) }
-											onClick={ (
-												event: React.MouseEvent< HTMLButtonElement >
-											) => {
-												manageCurrencyButtonRef.current =
-													event.currentTarget;
-												setManagedCurrencyCode(
-													currency.code
-												);
-											} }
-										>
-											{ __( 'Manage', 'woocommerce' ) }
-										</Button>{ ' ' }
-										<Button
-											variant="link"
-											disabled={ isSaving }
-											accessibleWhenDisabled
-											aria-label={ sprintf(
-												/* translators: %s: Currency name. */
-												__(
-													'Remove %s as an enabled currency',
+												) }
+											</Button>{ ' ' }
+											<Button
+												variant="link"
+												disabled={ isSaving }
+												accessibleWhenDisabled
+												aria-label={ sprintf(
+													/* translators: %s: Currency name. */
+													__(
+														'Remove %s as an enabled currency',
+														'woocommerce'
+													),
+													currency.name
+												) }
+												onClick={ () =>
+													saveEnabledCurrencies(
+														enabledCurrencies
+															.map(
+																(
+																	enabledCurrency
+																) =>
+																	enabledCurrency.code
+															)
+															.filter(
+																( code ) =>
+																	code !==
+																	currency.code
+															)
+													)
+												}
+											>
+												{ __(
+													'Remove',
 													'woocommerce'
-												),
-												currency.name
-											) }
-											onClick={ () =>
-												saveEnabledCurrencies(
-													enabledCurrencies
-														.map(
-															(
-																enabledCurrency
-															) =>
-																enabledCurrency.code
-														)
-														.filter(
-															( code ) =>
-																code !==
-																currency.code
-														)
-												)
-											}
-										>
-											{ __( 'Remove', 'woocommerce' ) }
-										</Button>
-									</>
-								) }
-							</td>
-						</tr>
-					) ) }
+												) }
+											</Button>
+										</>
+									) }
+								</td>
+							</tr>
+						) ) }
 				</tbody>
 			</table>
 
@@ -555,6 +577,7 @@ export function MultiCurrencySettingsApp() {
 			{ isModalOpen && (
 				<Modal
 					title={ __( 'Add enabled currencies', 'woocommerce' ) }
+					focusOnMount="firstContentElement"
 					onRequestClose={ () => setIsModalOpen( false ) }
 				>
 					<SearchControl
@@ -564,12 +587,31 @@ export function MultiCurrencySettingsApp() {
 						value={ search }
 						onChange={ ( value ) => setSearch( value ) }
 					/>
-					<div>
+					<h3>
+						{ search
+							? sprintf(
+									/* translators: %d: Number of currencies matching the search. */
+									__(
+										'Search results (%d currencies)',
+										'woocommerce'
+									),
+									filteredAvailableCurrencies.length
+							  )
+							: __( 'All currencies', 'woocommerce' ) }
+					</h3>
+					<div className="woocommerce-multi-currency-settings__currency-choices">
 						{ filteredAvailableCurrencies.map( ( currency ) => (
 							<CheckboxControl
 								__nextHasNoMarginBottom
 								key={ currency.code }
-								label={ `${ currency.name } ${ currency.code }` }
+								// Client 11.1.0 modal-checkbox.js:34-56: flag, name, then symbol and code.
+								label={ [
+									currency.flag,
+									currency.name,
+									`(${ formatSymbolAndCode( currency ) })`,
+								]
+									.filter( Boolean )
+									.join( ' ' ) }
 								checked={ selectedCodes.includes(
 									currency.code
 								) }
@@ -589,7 +631,7 @@ export function MultiCurrencySettingsApp() {
 					) }
 					<div className="woocommerce-multi-currency-settings__modal-actions">
 						<Button
-							variant="tertiary"
+							variant="secondary"
 							onClick={ () => setIsModalOpen( false ) }
 						>
 							{ __( 'Cancel', 'woocommerce' ) }

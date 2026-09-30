@@ -34,6 +34,15 @@
 		}
 	}
 
+	// Client 11.1.0 enabled-currencies-list/style.scss: the currency list scrolls under the search, the actions stay in view.
+	&__currency-choices {
+		display: grid;
+		gap: 8px;
+		max-height: min(420px, 50vh);
+		overflow-y: auto;
+		padding: 2px;
+	}
+
 	&__currency-flag {
 		display: inline-block;
 		min-width: 2em;

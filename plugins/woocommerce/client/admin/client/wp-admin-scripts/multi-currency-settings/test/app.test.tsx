@@ -598,7 +598,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 		).toBeInTheDocument();
 
 		fireEvent.click(
-			screen.getByRole( 'checkbox', { name: 'Canadian dollar CAD' } )
+			screen.getByRole( 'checkbox', { name: 'Canadian dollar ($ CAD)' } )
 		);
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Update selected' } )
@@ -654,9 +654,9 @@ describe( 'MultiCurrencySettingsApp', () => {
 		).toBeInTheDocument();
 
 		for ( const name of [
-			'British pound GBP',
-			'Canadian dollar CAD',
-			'Australian dollar AUD',
+			'British pound (£ GBP)',
+			'Canadian dollar ($ CAD)',
+			'Australian dollar ($ AUD)',
 		] ) {
 			fireEvent.click( screen.getByRole( 'checkbox', { name } ) );
 		}
@@ -718,10 +718,10 @@ describe( 'MultiCurrencySettingsApp', () => {
 		);
 
 		const canadianDollarCheckbox = screen.getByRole( 'checkbox', {
-			name: 'Canadian dollar CAD',
+			name: 'Canadian dollar ($ CAD)',
 		} );
 		const britishPoundCheckbox = screen.getByRole( 'checkbox', {
-			name: 'British pound GBP',
+			name: 'British pound (£ GBP)',
 		} );
 		await userEvent.click( canadianDollarCheckbox );
 		await userEvent.click( britishPoundCheckbox );
@@ -794,7 +794,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 			} )
 		);
 		const euroCheckbox = screen.getByRole( 'checkbox', {
-			name: 'Euro EUR',
+			name: '🇪🇺 Euro (€ EUR)',
 		} );
 		await userEvent.click( euroCheckbox );
 
@@ -849,11 +849,11 @@ describe( 'MultiCurrencySettingsApp', () => {
 		);
 
 		const euroCheckbox = screen.getByRole( 'checkbox', {
-			name: 'Euro EUR',
+			name: '🇪🇺 Euro (€ EUR)',
 		} );
 		expect( euroCheckbox ).toBeChecked();
 		expect(
-			screen.getAllByRole( 'checkbox', { name: 'Euro EUR' } )
+			screen.getAllByRole( 'checkbox', { name: '🇪🇺 Euro (€ EUR)' } )
 		).toHaveLength( 1 );
 
 		const searchInput = screen.getByRole( 'searchbox', {
@@ -861,7 +861,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 		} );
 		await userEvent.type( searchInput, 'Euro' );
 		expect(
-			screen.getAllByRole( 'checkbox', { name: 'Euro EUR' } )
+			screen.getAllByRole( 'checkbox', { name: '🇪🇺 Euro (€ EUR)' } )
 		).toHaveLength( 1 );
 		expect( screen.getAllByRole( 'checkbox' ) ).toHaveLength( 1 );
 		expect( euroCheckbox ).toBeChecked();
@@ -875,6 +875,79 @@ describe( 'MultiCurrencySettingsApp', () => {
 		expect( euroCheckbox ).toBeChecked();
 	} );
 
+	// Client 11.1.0 enabled-currencies-list/modal.js:45-54 (search over symbol,
+	// code and name), 176-187 (list heading) and modal-checkbox.js:34-56 (flag,
+	// name, then symbol and code). The search focus on open (modal.js:136) needs
+	// layout that jsdom lacks; it is checked in the browser.
+	it( 'searches currencies by symbol and labels them like the client', async () => {
+		render( <MultiCurrencySettingsApp /> );
+
+		await userEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Add/remove currencies',
+			} )
+		);
+
+		const searchInput = screen.getByRole( 'searchbox', {
+			name: 'Search currencies',
+		} );
+		expect(
+			screen.getByRole( 'heading', { name: 'All currencies' } )
+		).toBeInTheDocument();
+
+		await userEvent.type( searchInput, '£' );
+
+		expect( screen.getAllByRole( 'checkbox' ) ).toHaveLength( 1 );
+		expect(
+			screen.getByRole( 'checkbox', { name: 'British pound (£ GBP)' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', {
+				name: 'Search results (1 currencies)',
+			} )
+		).toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 MultiCurrency.php:1724-1728 sorts the available currencies
+	// by name, and :1744-1760 lists the enabled ones in that order after the
+	// store currency.
+	it( 'lists currencies by name like the client', async () => {
+		mockApiFetch.mockReset();
+		mockApiFetch.mockResolvedValueOnce( addedCurrencyResponse );
+
+		render( <MultiCurrencySettingsApp /> );
+
+		await screen.findByRole( 'rowheader', { name: 'Euro (€ EUR)' } );
+		expect(
+			screen
+				.getAllByRole( 'rowheader' )
+				.map( ( header ) => header.textContent )
+		).toEqual( [
+			'USD United States (US) dollar ($ USD)',
+			'CAD Canadian dollar ($ CAD)',
+			'🇪🇺 Euro (€ EUR)',
+		] );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Add/remove currencies' } )
+		);
+
+		expect(
+			screen
+				.getAllByRole( 'checkbox' )
+				.map(
+					( checkbox ) =>
+						checkbox.closest( '.components-checkbox-control' )
+							?.textContent
+				)
+		).toEqual( [
+			'Australian dollar ($ AUD)',
+			'British pound (£ GBP)',
+			'Canadian dollar ($ CAD)',
+			'🇪🇺 Euro (€ EUR)',
+		] );
+	} );
+
 	it( 'makes the update action available again once a currency is selected', async () => {
 		mockApiFetch.mockResolvedValueOnce( updatedResponse );
 
@@ -885,9 +958,11 @@ describe( 'MultiCurrencySettingsApp', () => {
 				name: 'Add/remove currencies',
 			} )
 		);
-		fireEvent.click( screen.getByRole( 'checkbox', { name: 'Euro EUR' } ) );
 		fireEvent.click(
-			screen.getByRole( 'checkbox', { name: 'Canadian dollar CAD' } )
+			screen.getByRole( 'checkbox', { name: '🇪🇺 Euro (€ EUR)' } )
+		);
+		fireEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Canadian dollar ($ CAD)' } )
 		);
 
 		const updateButton = screen.getByRole( 'button', {
