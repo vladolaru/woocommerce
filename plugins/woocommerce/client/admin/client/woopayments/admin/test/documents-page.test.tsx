@@ -15,6 +15,7 @@ import { MemoryRouter } from 'react-router-dom';
 /**
  * Internal dependencies
  */
+import { summaryItem } from './helpers/table-summary';
 import { WooPaymentsDocumentsPage } from '../documents/page';
 import {
 	getWooPaymentsDocuments,
@@ -60,6 +61,7 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		header,
 		isLoading,
 		onChangeView,
+		search = true,
 		searchLabel,
 		view = {},
 	}: {
@@ -76,6 +78,7 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		header?: ReactNode;
 		isLoading?: boolean;
 		onChangeView?: ( view: Record< string, unknown > ) => void;
+		search?: boolean;
 		searchLabel?: string;
 		view?: Record< string, unknown >;
 	} ) => (
@@ -96,7 +99,7 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 			>
 				Mock hide Description
 			</button>
-			{ searchLabel && (
+			{ search && searchLabel && (
 				<input
 					type="search"
 					aria-label={ searchLabel }
@@ -229,15 +232,19 @@ describe( 'WooPaymentsDocumentsPage', () => {
 			'Loading Documents…'
 		);
 
+		// Client 11.1.0 `documents/list/index.tsx:241-290`: a TableCard titled Documents with the count in its footer.
 		expect(
 			await screen.findByRole( 'heading', { name: 'Documents' } )
 		).toBeInTheDocument();
-		expect( screen.getByText( 'Test Mode' ) ).toBeInTheDocument();
-		expect( screen.getByText( '1 document' ) ).toBeInTheDocument();
+		expect(
+			await screen.findByText( summaryItem( '1 document' ) )
+		).toBeInTheDocument();
 		expect( screen.getByText( 'Date' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'Type' ) ).toBeInTheDocument();
-		expect( screen.getByText( 'Filter Date' ) ).toBeInTheDocument();
-		expect( screen.getByText( 'Filter Type' ) ).toBeInTheDocument();
+		// The date and type filters sit under Show: Advanced filters.
+		expect( screen.getByLabelText( 'Show' ) ).toHaveValue( 'all' );
+		expect( screen.queryByText( 'Filter Date' ) ).not.toBeInTheDocument();
+		expect( screen.queryByText( 'Filter Type' ) ).not.toBeInTheDocument();
 		expect( screen.getByText( 'Description' ) ).toBeInTheDocument();
 		expect( screen.getAllByText( 'Download' ).length ).toBeGreaterThan( 0 );
 		expect( screen.getAllByText( 'Tax Invoice' ).length ).toBeGreaterThan(
@@ -268,7 +275,7 @@ describe( 'WooPaymentsDocumentsPage', () => {
 		} );
 		renderDocumentsPage();
 
-		await screen.findByText( '1 document' );
+		await screen.findByText( summaryItem( '1 document' ) );
 		expect( screen.getByTestId( 'documents-dataviews' ) ).toHaveAttribute(
 			'data-visible-fields',
 			'date,type,description'
@@ -289,7 +296,7 @@ describe( 'WooPaymentsDocumentsPage', () => {
 		);
 	} );
 
-	it( 'shows Test Mode when explicit test fields are set on a live account', async () => {
+	it( 'leaves test mode to the page notice instead of a badge beside the title', async () => {
 		mockGetDocumentsAccount.mockResolvedValue( {
 			...enabledAccount,
 			account: {
@@ -302,25 +309,32 @@ describe( 'WooPaymentsDocumentsPage', () => {
 
 		renderDocumentsPage();
 
-		expect( await screen.findByText( 'Test Mode' ) ).toBeInTheDocument();
+		await screen.findByText( summaryItem( '1 document' ) );
+		expect( screen.queryByText( 'Test Mode' ) ).not.toBeInTheDocument();
 	} );
 
-	it( 'maps DataViews search to the preserved Documents match query', async () => {
-		renderDocumentsPage();
+	it( 'offers the advanced filters and "match any" under Show: Advanced filters, and no search', async () => {
+		renderDocumentsPage( [ '/woopayments/documents?filter=advanced' ] );
 
-		const searchbox = await screen.findByRole( 'searchbox', {
-			name: 'Search documents',
-		} );
+		await screen.findByText( summaryItem( '1 document' ) );
+		expect( screen.queryByRole( 'searchbox' ) ).not.toBeInTheDocument();
+		expect( screen.getByText( 'Filter Date' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Filter Type' ) ).toBeInTheDocument();
+
 		await act( async () => {
-			await userEvent.type( searchbox, 'invoice' );
+			await userEvent.selectOptions(
+				screen.getByLabelText( 'Documents match' ),
+				'any'
+			);
 		} );
 
 		await waitFor( () =>
 			expect( mockGetDocuments ).toHaveBeenLastCalledWith(
-				expect.objectContaining( {
-					match: 'invoice',
-				} )
+				expect.objectContaining( { match: 'any' } )
 			)
+		);
+		expect( mockGetDocumentsSummary ).toHaveBeenLastCalledWith(
+			expect.objectContaining( { match: 'any' } )
 		);
 	} );
 

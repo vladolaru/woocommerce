@@ -132,7 +132,9 @@ export const getListMatchFilter = (
 
 // Client 11.1.0 FilterPicker `update()`: any choice but "Advanced filters" drops the advanced filters.
 const ADVANCED_FILTER_PARAMS = [
+	'match',
 	'type_is',
+	'type_is_not',
 	'status_is',
 	'status_is_not',
 	'date_after',

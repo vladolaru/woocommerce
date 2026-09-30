@@ -13,7 +13,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 // @ts-expect-error - Use the WordPress-bundled DataViews entry in wp-admin builds.
-import { DataViews, type Field } from '@wordpress/dataviews/wp';
+import type { Field } from '@wordpress/dataviews/wp';
 
 /**
  * Internal dependencies
@@ -38,20 +38,32 @@ import type {
 	WooPaymentsVatDetails,
 } from './types';
 import { WooPaymentsVatModal } from './vat-modal';
-import { formatDate } from '../money-movement/utils';
+import { formatSiteDateTime } from '../money-movement/utils';
 import { usePersistedHiddenFields } from '../money-movement/view-preferences';
+import { WooPaymentsMoneyMovementDataViews } from '../money-movement/dataviews';
+import {
+	getListMatchFilter,
+	getListShowFilter,
+	getQueryForShowFilter,
+	withListShowFilter,
+	WooPaymentsListFilters,
+	type WooPaymentsListShowFilter,
+} from '../money-movement/list-filters';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
-import '../dataviews.scss';
 
 type DocumentsAccountState = {
 	enabled: boolean;
 	hasSubmittedVatData: boolean;
 	country: string;
-	isTestMode: boolean;
 };
 
 const DOCUMENT_FIELDS = [ 'date', 'type', 'description', 'actions' ];
+// Client 11.1.0 `documents/filters/config.ts:35-51`: "Show" all documents or the advanced filters.
+const DOCUMENTS_SHOW_FILTERS: WooPaymentsListShowFilter[] = [
+	'all',
+	'advanced',
+];
 // The client names the download column `download`.
 const DOCUMENT_COLUMN_KEYS = { actions: 'download' };
 
@@ -86,18 +98,10 @@ const getErrorMessage = ( error: unknown, fallback: string ): string => {
 const getDocumentsAccountState = (
 	response: WooPaymentsDocumentsAccountResponse
 ): DocumentsAccountState => {
-	const account = response.account;
-	const isExplicitTestMode =
-		!! account?.test_mode ||
-		!! account?.test_drive ||
-		!! account?.sandbox ||
-		account?.mode === 'test';
-
 	return {
 		enabled: !! response.documents?.enabled,
 		hasSubmittedVatData: !! response.documents?.has_submitted_vat_data,
 		country: response.documents?.country || '',
-		isTestMode: !! account?.connected && isExplicitTestMode,
 	};
 };
 
@@ -120,8 +124,8 @@ const getDocumentDescription = ( document: WooPaymentsDocument ) => {
 		return sprintf(
 			/* translators: 1: Period start date. 2: Period end date. */
 			__( 'Tax invoice for %1$s to %2$s', 'woocommerce' ),
-			formatDate( document.period_from ),
-			formatDate( document.period_to )
+			formatSiteDateTime( document.period_from, false ),
+			formatSiteDateTime( document.period_to, false )
 		);
 	}
 
@@ -167,10 +171,25 @@ const getDirectDownloadDocument = (
 export const WooPaymentsDocumentsPage = () => {
 	const location = useLocation();
 	const navigate = useNavigate();
-	const query = useMemo(
+	const showFilter = getListShowFilter(
+		location.search || '',
+		DOCUMENTS_SHOW_FILTERS
+	);
+	const isAdvanced = showFilter === 'advanced';
+	const routeQuery = useMemo(
 		() => parseDocumentsQuery( location.search || '' ),
 		[ location.search ]
 	);
+	// The advanced filters' "match any" only applies under Show: Advanced filters.
+	const query = useMemo( () => {
+		if ( isAdvanced || ! routeQuery.match ) {
+			return routeQuery;
+		}
+
+		const { match, ...rest } = routeQuery;
+
+		return rest;
+	}, [ isAdvanced, routeQuery ] );
 	const [ documents, setDocuments ] = useState< WooPaymentsDocument[] >( [] );
 	const [ summary, setSummary ] = useState< WooPaymentsDocumentsSummary >(
 		{}
@@ -305,20 +324,25 @@ export const WooPaymentsDocumentsPage = () => {
 				type: 'date',
 				label: __( 'Date', 'woocommerce' ),
 				enableHiding: true,
-				filterBy: {
-					operators: [ 'before', 'after', 'between' ],
-				},
+				// Client 11.1.0 `documents/filters/config.ts`: the date and type filters sit under Advanced filters.
+				filterBy: isAdvanced
+					? {
+							operators: [ 'before', 'after', 'between' ],
+							isPrimary: true,
+					  }
+					: false,
+				// Client 11.1.0 `documents/list/index.tsx:205-208`: the site date format.
 				render: ( { item }: { item: WooPaymentsDocument } ) =>
-					formatDate( item.date ),
+					formatSiteDateTime( item.date, false ),
 			},
 			{
 				id: 'type',
 				type: 'text',
 				label: __( 'Type', 'woocommerce' ),
 				enableHiding: false,
-				filterBy: {
-					operators: [ 'is', 'isNot' ],
-				},
+				filterBy: isAdvanced
+					? { operators: [ 'is', 'isNot' ], isPrimary: true }
+					: false,
 				elements: [
 					{
 						label: __( 'Tax Invoice', 'woocommerce' ),
@@ -345,7 +369,7 @@ export const WooPaymentsDocumentsPage = () => {
 
 					return (
 						<Button
-							variant="secondary"
+							variant="link"
 							disabled={ ! documentId }
 							aria-label={ sprintf(
 								/* translators: 1: Document type. 2: Document ID. */
@@ -361,17 +385,30 @@ export const WooPaymentsDocumentsPage = () => {
 				},
 			},
 		],
-		[ openDocument ]
+		[ openDocument, isAdvanced ]
 	);
 
-	const handleChangeView = ( nextView: WooPaymentsDocumentsDataView ) => {
-		saveFields( nextView.fields );
+	const navigateTo = (
+		nextQuery: typeof query,
+		nextShowFilter = showFilter
+	) =>
 		navigate(
-			buildDocumentsRoutePath(
-				'/woopayments/documents',
-				dataViewsViewToDocumentsQuery( nextView, query )
+			withListShowFilter(
+				buildDocumentsRoutePath( '/woopayments/documents', nextQuery ),
+				nextShowFilter
 			)
 		);
+	const handleChangeView = ( nextView: WooPaymentsDocumentsDataView ) => {
+		saveFields( nextView.fields );
+
+		// DataViews adds a filter without a value first; wait for the value.
+		if (
+			nextView.filters?.some( ( filter ) => filter.value === undefined )
+		) {
+			return;
+		}
+
+		navigateTo( dataViewsViewToDocumentsQuery( nextView, query ) );
 	};
 
 	const handleVatCompleted = ( details: WooPaymentsVatDetails ) => {
@@ -435,70 +472,81 @@ export const WooPaymentsDocumentsPage = () => {
 	}
 
 	const summaryCount = getSummaryCount( summary, totalCount );
-	const header = (
-		<div className="woocommerce-woopayments-documents__header">
-			<div>
-				<div className="woocommerce-woopayments-documents__title-row">
-					<h1>{ __( 'Documents', 'woocommerce' ) }</h1>
-					{ accountState.isTestMode && (
-						<span className="woocommerce-woopayments-documents__test-mode">
-							{ __( 'Test Mode', 'woocommerce' ) }
-						</span>
-					) }
-				</div>
-				<p>
-					{ sprintf(
-						/* translators: %d: Number of documents. */
-						_n(
-							'%d document',
-							'%d documents',
-							summaryCount,
-							'woocommerce'
-						),
-						summaryCount
-					) }
-				</p>
-			</div>
-		</div>
-	);
+	const listFilters = [
+		{
+			id: 'show',
+			label: __( 'Show', 'woocommerce' ),
+			value: showFilter,
+			options: [
+				{ label: __( 'All documents', 'woocommerce' ), value: 'all' },
+				{
+					label: __( 'Advanced filters', 'woocommerce' ),
+					value: 'advanced',
+				},
+			],
+			onChange: ( value: string ) => {
+				const nextFilter = getListShowFilter(
+					`filter=${ value }`,
+					DOCUMENTS_SHOW_FILTERS
+				);
+
+				navigateTo(
+					getQueryForShowFilter( routeQuery, nextFilter ),
+					nextFilter
+				);
+			},
+		},
+		...( isAdvanced
+			? [
+					getListMatchFilter(
+						__( 'Documents match', 'woocommerce' ),
+						query.match === 'any' ? 'any' : 'all',
+						( value ) =>
+							navigateTo( {
+								...query,
+								match: value === 'any' ? 'any' : undefined,
+							} )
+					),
+			  ]
+			: [] ),
+	];
 
 	return (
 		<div className="woocommerce-woopayments-documents">
 			{ /* Client 11.1.0 documents/index.tsx:17. */ }
 			<WooPaymentsTestModeNotice currentPage="documents" />
-			<div
-				role="status"
-				aria-live="polite"
-				aria-atomic="true"
-				className="screen-reader-text"
-			>
-				{ isLoading ? __( 'Loading Documents…', 'woocommerce' ) : '' }
-			</div>
-			<DataViews
+			<WooPaymentsListFilters filters={ listFilters } />
+			{ /* Client 11.1.0 `documents/list/index.tsx:241-290`: a TableCard titled Documents with the count in its footer. */ }
+			<WooPaymentsMoneyMovementDataViews
 				view={ view }
 				onChangeView={ handleChangeView }
 				fields={ fields }
-				data={ documents }
+				rows={ documents }
 				isLoading={ isLoading }
-				search
+				search={ false }
 				searchLabel={ __( 'Search documents', 'woocommerce' ) }
-				header={ header }
-				paginationInfo={ {
-					totalItems: totalCount,
-					totalPages: Math.ceil(
-						totalCount / ( view.perPage || 25 )
-					),
-				} }
-				defaultLayouts={ {
-					table: {},
-				} }
+				title={ __( 'Documents', 'woocommerce' ) }
+				summary={
+					isLoading
+						? []
+						: [
+								{
+									label: _n(
+										'document',
+										'documents',
+										summaryCount,
+										'woocommerce'
+									),
+									value: String( summaryCount ),
+								},
+						  ]
+				}
+				numericFields={ [ 'actions' ] }
+				total={ totalCount }
+				loadingMessage={ __( 'Loading Documents…', 'woocommerce' ) }
+				empty={ __( 'No data to display', 'woocommerce' ) }
 				getItemId={ getDocumentId }
 			/>
-			{ ! isLoading && documents.length === 0 && (
-				<div className="woocommerce-woopayments-documents__empty">
-					{ __( 'No documents found.', 'woocommerce' ) }
-				</div>
-			) }
 			<SpotlightPromotion />
 			{ pendingDownload && (
 				<WooPaymentsVatModal
