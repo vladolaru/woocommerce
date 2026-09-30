@@ -613,6 +613,31 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should name the store's own currency in the geolocation notice while prices are converted.
+	 *
+	 * Client 11.1.0 MultiCurrency.php:1064 reads the store currency from the woocommerce_currency option; on the
+	 * storefront get_woocommerce_currency() returns the visitor's converted currency, which hid the notice.
+	 */
+	public function test_renders_geolocation_notice_with_store_currency_while_prices_are_converted(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		$converted_currency = static function () {
+			return 'CAD';
+		};
+		add_filter( 'woocommerce_currency', $converted_currency, 900 );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service( true, 'CAD' ) );
+		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD', 'CA' ) );
+
+		ob_start();
+		$sut->handle_wp_footer();
+		$markup = (string) ob_get_clean();
+		remove_filter( 'woocommerce_currency', $converted_currency, 900 );
+
+		$this->assertStringContainsString( 'visiting from Canada', $markup );
+		$this->assertStringContainsString( '?currency=USD', $markup );
+		$this->assertStringContainsString( 'Use United States (US) dollar instead.', $markup );
+	}
+
+	/**
 	 * @testdox Should not render geolocation notice for the store default currency.
 	 */
 	public function test_does_not_render_geolocation_notice_for_store_default_currency(): void {

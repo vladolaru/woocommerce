@@ -259,8 +259,9 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * @internal
 	 */
 	public function handle_wp_footer(): void {
+		// The store's own currency is the option: on the storefront get_woocommerce_currency() returns the converted one (client 11.1.0 MultiCurrency.php:1064).
 		$current_currency_code    = strtoupper( $this->get_persistence_service()->get_selected_currency_code() );
-		$store_currency_code      = strtoupper( get_woocommerce_currency() );
+		$store_currency_code      = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
 		$geolocated_currency_code = $this->get_geolocation_service()->get_currency_by_customer_location();
 
 		// The settings Preview always shows the notice, like client 11.1.0 MultiCurrency.php:1070-1081.
