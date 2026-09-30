@@ -23,6 +23,17 @@ class MultiCurrencySettingsProjectionService {
 	private const ADMIN_ASSET_HANDLE    = 'wc-admin-multi-currency-settings';
 
 	/**
+	 * Get the URL of the Multi-currency settings tab.
+	 *
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	public static function get_settings_page_url(): string {
+		return admin_url( 'admin.php?page=wc-settings&tab=' . self::SETTINGS_TAB );
+	}
+
+	/**
 	 * Project the multi-currency settings page manifest.
 	 *
 	 * @param bool $is_cli             Whether the current request is WP-CLI.
