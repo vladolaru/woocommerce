@@ -181,10 +181,15 @@
 	margin: 0 0 8px;
 }
 
-.woocommerce-woopayments-account-details__fees {
+.woocommerce-woopayments-account-details__fees,
+.woocommerce-woopayments-account-details__tools {
 	border-top: 1px solid #dcdcde;
 	margin-top: 16px;
 	padding-top: 16px;
+}
+
+.woocommerce-woopayments-account-details__tools p {
+	margin: 0 0 12px;
 }
 
 .woocommerce-woopayments-account-details__header,

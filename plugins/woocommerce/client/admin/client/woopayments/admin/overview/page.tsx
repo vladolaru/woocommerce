@@ -470,6 +470,10 @@ export const WooPaymentsOverviewPage = () => {
 						accountDetails={ shell.account_details }
 						accountFees={ shell.account_fees }
 						accountLink={ shell.account_status.account_link }
+						isTestModeOnboarding={
+							shell.account.test_mode_onboarding
+						}
+						onboardingUrl={ shell.urls.onboarding }
 					/>
 					<DisputeReadinessCard
 						enabled={ shouldLoadDisputeReadiness }

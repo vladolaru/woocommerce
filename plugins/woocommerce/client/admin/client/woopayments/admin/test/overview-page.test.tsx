@@ -902,6 +902,40 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	// Client 11.1.0 `components/account-details/index.tsx:82` mounts Account Tools only during test-mode onboarding.
+	it( 'shows the account tools in the account details during test-mode onboarding', async () => {
+		mockGetShell.mockResolvedValue(
+			createShell( {
+				account: {
+					...createShell().account,
+					test_mode_onboarding: true,
+				},
+				account_details: {
+					account_status: {
+						text: 'Complete',
+						background_color: 'green',
+					},
+					payout_status: {
+						text: 'Active',
+						background_color: 'green',
+					},
+					banner: null,
+				},
+			} )
+		);
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		expect(
+			await screen.findByRole( 'heading', { name: 'Account tools' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Reset account' } )
+		).toBeInTheDocument();
+	} );
+
 	it( 'renders account details from the overview shell', async () => {
 		mockGetShell.mockResolvedValue(
 			createShell( {

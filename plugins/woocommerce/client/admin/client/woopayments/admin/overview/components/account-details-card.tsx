@@ -16,6 +16,7 @@ import type {
 	WooPaymentsOverviewAccountFee,
 } from '../types';
 import { AccountFees } from './account-fees';
+import { AccountTools } from './account-tools';
 
 const ACCOUNT_DETAILS_SOURCE = {
 	from: 'WCPAY_ACCOUNT_DETAILS',
@@ -68,10 +69,14 @@ export const AccountDetailsCard = ( {
 	accountDetails,
 	accountFees = [],
 	accountLink,
+	isTestModeOnboarding = false,
+	onboardingUrl = '',
 }: {
 	accountDetails?: WooPaymentsOverviewAccountDetails | null;
 	accountFees?: WooPaymentsOverviewAccountFee[];
 	accountLink?: string;
+	isTestModeOnboarding?: boolean;
+	onboardingUrl?: string;
 } ) => {
 	// Client 11.1.0 `components/account-details/index.tsx:45-52,96-97`.
 	if ( ! accountDetails ) {
@@ -137,6 +142,9 @@ export const AccountDetailsCard = ( {
 							</a>
 						) }
 				</div>
+			) }
+			{ isTestModeOnboarding && (
+				<AccountTools onboardingUrl={ onboardingUrl } />
 			) }
 			<AccountFees accountFees={ accountFees } />
 		</section>

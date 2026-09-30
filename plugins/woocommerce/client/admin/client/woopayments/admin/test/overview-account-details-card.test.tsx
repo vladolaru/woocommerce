@@ -1,8 +1,9 @@
 /**
  * External dependencies
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import apiFetch from '@wordpress/api-fetch';
 import { recordEvent } from '@woocommerce/tracks';
 
 /**
@@ -15,6 +16,24 @@ import type {
 } from '../overview/types';
 
 jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
+
+const mockCreateNotice = jest.fn();
+
+jest.mock( '@wordpress/data', () => {
+	const actual = jest.requireActual( '@wordpress/data' );
+
+	return {
+		...actual,
+		useDispatch: jest.fn( ( store ) =>
+			store === 'core/notices'
+				? { createNotice: mockCreateNotice }
+				: actual.useDispatch( store )
+		),
+	};
+} );
+
+const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
 
 // Recorded :8889 overview shell `account_details` (2026-09-29), the platform shape the client's `payout-status-wrapper.tsx` reads.
 const createAccountDetails = (
@@ -350,6 +369,155 @@ describe( 'AccountDetailsCard', () => {
 			expect(
 				screen.getByText( 'Unknown transactions:' )
 			).toBeInTheDocument();
+		} );
+	} );
+	// Client 11.1.0 `components/account-details/account-tools/index.tsx:27-52`, rendered at `account-details/index.tsx:82`.
+	describe( 'account tools', () => {
+		const originalLocation = window.location;
+		const mockAssign = jest.fn();
+		const onboardingUrl =
+			'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fonboarding';
+
+		beforeAll( () => {
+			Object.defineProperty( window, 'location', {
+				configurable: true,
+				value: { assign: mockAssign },
+			} );
+		} );
+
+		afterAll( () => {
+			Object.defineProperty( window, 'location', {
+				configurable: true,
+				value: originalLocation,
+			} );
+		} );
+
+		beforeEach( () => {
+			mockAssign.mockClear();
+			mockApiFetch.mockReset();
+			mockCreateNotice.mockClear();
+		} );
+
+		const renderTools = ( isTestModeOnboarding: boolean ) =>
+			render(
+				<AccountDetailsCard
+					accountDetails={ createAccountDetails() }
+					isTestModeOnboarding={ isTestModeOnboarding }
+					onboardingUrl={ onboardingUrl }
+				/>
+			);
+
+		it( 'offers the account reset during test-mode onboarding', () => {
+			renderTools( true );
+
+			expect(
+				screen.getByRole( 'heading', { name: 'Account tools' } )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText(
+					'You are using a test account. If you are experiencing problems completing account setup, or wish to test with a different email/country associated with your account, you can reset your account and start from the beginning.'
+				)
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'button', { name: 'Reset account' } )
+			).toBeInTheDocument();
+		} );
+
+		it( 'hides the account tools outside test-mode onboarding', () => {
+			renderTools( false );
+
+			expect(
+				screen.queryByRole( 'heading', { name: 'Account tools' } )
+			).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'button', { name: 'Reset account' } )
+			).not.toBeInTheDocument();
+		} );
+
+		it( 'resets the account through the onboarding reset endpoint and restarts onboarding on confirm', async () => {
+			mockApiFetch.mockResolvedValue( { success: true } );
+			renderTools( true );
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Reset account' } )
+			);
+
+			expect(
+				screen.getByRole( 'dialog', {
+					name: 'Reset your test account',
+				} )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText(
+					/When you reset your test account, all payment data/
+				)
+			).toBeInTheDocument();
+
+			await userEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Yes, reset test account',
+				} )
+			);
+
+			await waitFor( () =>
+				expect( mockAssign ).toHaveBeenCalledWith(
+					`${ onboardingUrl }&from=WCPAY_RESET_ACCOUNT&source=wcpay-reset-account`
+				)
+			);
+			expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+			expect( mockApiFetch ).toHaveBeenCalledWith( {
+				path: '/wc-admin/settings/payments/woopayments/onboarding/reset?from=WCPAY_RESET_ACCOUNT&source=wcpay-reset-account',
+				method: 'POST',
+			} );
+		} );
+
+		it( 'does not reset the account when the modal is dismissed', async () => {
+			renderTools( true );
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Reset account' } )
+			);
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Close' } )
+			);
+
+			await waitFor( () =>
+				expect(
+					screen.queryByRole( 'dialog', {
+						name: 'Reset your test account',
+					} )
+				).not.toBeInTheDocument()
+			);
+			expect( mockApiFetch ).not.toHaveBeenCalled();
+			expect( mockAssign ).not.toHaveBeenCalled();
+		} );
+
+		it( 'stays on the Overview when the reset fails', async () => {
+			mockApiFetch.mockRejectedValue( new Error( 'reset failed' ) );
+			renderTools( true );
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Reset account' } )
+			);
+			await userEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Yes, reset test account',
+				} )
+			);
+
+			await waitFor( () =>
+				expect(
+					screen.queryByRole( 'dialog', {
+						name: 'Reset your test account',
+					} )
+				).not.toBeInTheDocument()
+			);
+			expect( mockAssign ).not.toHaveBeenCalled();
+			expect( mockCreateNotice ).toHaveBeenCalledWith(
+				'error',
+				'Failed to reset your WooPayments account.',
+				{ isDismissible: true }
+			);
 		} );
 	} );
 } );
