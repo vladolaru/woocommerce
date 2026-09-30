@@ -71,7 +71,8 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * Fixture hook names native intentionally does not fire, with the recorded authority.
 	 *
 	 * `data/bc-inventory-undecided-classified.tsv`, the `hooks` rows classified DECIDED (54 rows, less
-	 * `wpcay_get_account_login_data`, which native fires again since F-T60-24).
+	 * `wpcay_get_account_login_data`, which native fires again since F-T60-24, and
+	 * `wcpay_prepare_fraud_config`, which native fires through `apply_filters_deprecated()` since N-196).
 	 * Every citation below is copied verbatim from that TSV's `native_evidence_or_authority` column,
 	 * which already corrected the seven wrong Decision 1 citations the review found.
 	 *
@@ -118,7 +119,6 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 		'wcpay_payment_fields_upe'                         => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:89 §1(a)',
 		'wcpay_payment_request_button_locale'              => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:102 §1(a)',
 		'wcpay_plugins_page_js_settings'                   => 'data/bc-surface-diff.md:120 §1(b) dropped by design (no plugin row)',
-		'wcpay_prepare_fraud_config'                       => 'data/consumer-map/consumer-map.md:67 + data/bc-surface-diff.md:131 §1(c) renamed (successor asserted by test_renamed_hooks_fire_their_successor)',
 		'wcpay_prepare_terminal_payment_request'           => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:86 §1(a)',
 		'wcpay_refund_charge_request'                      => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:75 §1(a)',
 		'wcpay_review_prompt_experiment_variant'           => 'data/client-delta-10.8.0-11.1.0.tsv:81 and :105 (11.0.0 review-prompt rows, n/a, owner review 2026-09-12)',
@@ -135,7 +135,9 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 
 	/**
 	 * `wcpay_prepare_fraud_config` was renamed; its successor is asserted separately with its own
-	 * arity (D4's `test_renamed_hooks_fire_their_successor`).
+	 * arity (D4's `test_renamed_hooks_fire_their_successor`). The old name still fires through
+	 * `apply_filters_deprecated()` until WooCommerce 12.0.0 (N-196), so the fire-site scan resolves
+	 * it too and it carries no `ALLOWED_DIFFERENCES` entry.
 	 *
 	 * @var array<string,array{successor:string,arity:int}>
 	 */
@@ -410,6 +412,9 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * call whose hook-name argument resolves to a literal, either directly or through a
 	 * `self::`/`static::`/`ClassName::CONST` reference or one of `HOOK_ARGUMENT_WRAPPERS`.
 	 *
+	 * `apply_filters_deprecated`/`do_action_deprecated` count too: they fire the old name for its
+	 * existing callbacks, with the arity of their literal `array( ... )` argument list.
+	 *
 	 * @return array<string,array<int,array{arity:int,kind:string,site:string}>>
 	 */
 	private function native_hook_fire_sites(): array {
@@ -440,11 +445,12 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 					continue;
 				}
 
-				$call_name  = $token[1];
-				$is_hook_fn = in_array( $call_name, array( 'apply_filters', 'do_action' ), true );
-				$wrapper    = self::HOOK_ARGUMENT_WRAPPERS[ $call_name ] ?? null;
+				$call_name     = $token[1];
+				$is_hook_fn    = in_array( $call_name, array( 'apply_filters', 'do_action' ), true );
+				$is_deprecated = in_array( $call_name, array( 'apply_filters_deprecated', 'do_action_deprecated' ), true );
+				$wrapper       = self::HOOK_ARGUMENT_WRAPPERS[ $call_name ] ?? null;
 
-				if ( ! $is_hook_fn && null === $wrapper ) {
+				if ( ! $is_hook_fn && ! $is_deprecated && null === $wrapper ) {
 					continue;
 				}
 
@@ -456,6 +462,21 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 				$close_index = $this->native_matching_paren_index( $tokens, $open_index );
 				$args        = $this->native_split_top_level_commas( $tokens, $open_index + 1, $close_index - 1 );
 				$line        = is_array( $token ) ? $token[2] : 0;
+
+				if ( $is_deprecated ) {
+					$name  = isset( $args[0] ) ? $this->native_resolve_name_arg( $args[0], $file ) : null;
+					$arity = isset( $args[1] ) ? $this->native_literal_array_length( $args[1] ) : null;
+					if ( null === $name || null === $arity ) {
+						continue;
+					}
+
+					$sites[ $name ][] = array(
+						'arity' => $arity,
+						'kind'  => 'apply_filters_deprecated' === $call_name ? 'filter' : 'action',
+						'site'  => $relative . ':' . $line,
+					);
+					continue;
+				}
 
 				if ( $is_hook_fn ) {
 					if ( array() === $args ) {
@@ -563,6 +584,39 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 		$args[] = $current;
 
 		return $args;
+	}
+
+	/**
+	 * The element count of a literal `array( ... )` argument, or null when the argument is anything
+	 * else (a variable, a call).
+	 *
+	 * @param array<int,mixed> $arg_tokens Argument token slice.
+	 */
+	private function native_literal_array_length( array $arg_tokens ): ?int {
+		$significant = $this->native_strip_trivia( $arg_tokens );
+		$count       = count( $significant );
+		if ( 0 === $count ) {
+			return null;
+		}
+
+		if ( ! is_array( $significant[0] ) || T_ARRAY !== $significant[0][0] || ! isset( $significant[1] ) || '(' !== $significant[1] || ')' !== $significant[ $count - 1 ] ) {
+			return null;
+		}
+
+		$inner = array_slice( $significant, 2, $count - 3 );
+
+		if ( array() === $inner ) {
+			return 0;
+		}
+
+		$elements = $this->native_split_top_level_commas( $inner, 0, count( $inner ) - 1 );
+		$last     = end( $elements );
+		if ( array() === $last ) {
+			// A trailing comma adds no element.
+			array_pop( $elements );
+		}
+
+		return count( $elements );
 	}
 
 	/**

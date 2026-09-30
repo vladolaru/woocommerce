@@ -234,6 +234,112 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should apply a callback on the deprecated wcpay_prepare_fraud_config filter and emit a deprecation notice.
+	 */
+	public function test_legacy_per_service_filter_changes_config_with_deprecation_notice(): void {
+		$this->setExpectedDeprecated( 'wcpay_prepare_fraud_config' );
+		$this->seed_account_fraud_services( array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) ) );
+
+		add_filter(
+			'wcpay_prepare_fraud_config',
+			static function ( $config, string $service_id ) {
+				$config['legacy_service_id'] = $service_id;
+				return $config;
+			},
+			10,
+			2
+		);
+
+		$config = $this->make_sut()->get_fraud_services_config();
+
+		$this->assertSame( 'sift', $config['sift']['legacy_service_id'], 'The legacy filter result must reach the served config.' );
+		$this->assertSame( 'prod_beacon', $config['sift']['beacon_key'], 'The legacy filter must receive the prepared config.' );
+	}
+
+	/**
+	 * @testdox Should fire the deprecated filter before the native filter, and pass its result to the native filter.
+	 */
+	public function test_legacy_per_service_filter_fires_before_native_filter(): void {
+		$this->setExpectedDeprecated( 'wcpay_prepare_fraud_config' );
+		$this->seed_account_fraud_services( array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) ) );
+
+		$calls = array();
+		add_filter(
+			'wcpay_prepare_fraud_config',
+			static function ( $config ) use ( &$calls ) {
+				$calls[]         = 'legacy';
+				$config['order'] = array( 'legacy' );
+				return $config;
+			}
+		);
+		add_filter(
+			'woocommerce_woopayments_fraud_service_config',
+			static function ( $config ) use ( &$calls ) {
+				$calls[]           = 'native';
+				$config['order'][] = 'native';
+				return $config;
+			}
+		);
+
+		$config = $this->make_sut()->get_fraud_services_config();
+
+		$this->assertSame( array( 'legacy', 'native' ), $calls, 'The deprecated filter must fire first.' );
+		$this->assertSame( array( 'legacy', 'native' ), $config['sift']['order'], 'The native filter must receive the deprecated filter result.' );
+	}
+
+	/**
+	 * @testdox Should fall back to the unfiltered config when a deprecated filter callback returns an invalid value.
+	 * @testWith ["not-an-array"]
+	 *           [42]
+	 *           [false]
+	 *
+	 * @param mixed $invalid Invalid value returned by the legacy callback.
+	 */
+	public function test_legacy_per_service_filter_invalid_return_falls_back( $invalid ): void {
+		$this->setExpectedDeprecated( 'wcpay_prepare_fraud_config' );
+		$this->seed_account_fraud_services( array( 'stripe' => array( 'publishable' => 'pk_test' ) ) );
+
+		add_filter(
+			'wcpay_prepare_fraud_config',
+			static function () use ( $invalid ) {
+				return $invalid;
+			}
+		);
+
+		$config = $this->make_sut()->get_fraud_services_config();
+
+		$this->assertSame( array( 'stripe' => array( 'publishable' => 'pk_test' ) ), $config );
+	}
+
+	/**
+	 * @testdox Should let a deprecated filter callback disable a service by returning null, as the plugin documented.
+	 */
+	public function test_legacy_per_service_filter_can_disable_a_service(): void {
+		$this->setExpectedDeprecated( 'wcpay_prepare_fraud_config' );
+		$this->seed_account_fraud_services(
+			array(
+				'stripe' => array(),
+				'sift'   => array( 'beacon_key' => 'prod_beacon' ),
+			)
+		);
+
+		add_filter(
+			'wcpay_prepare_fraud_config',
+			static function ( $config, string $service_id ) {
+				return 'sift' === $service_id ? null : $config;
+			},
+			10,
+			2
+		);
+
+		$config = $this->make_sut()->get_fraud_services_config();
+
+		$this->assertArrayHasKey( 'sift', $config );
+		$this->assertNull( $config['sift'] );
+		$this->assertSame( array(), $config['stripe'] );
+	}
+
+	/**
 	 * Seed the preserved account payload with a fraud-services config.
 	 *
 	 * Written through the account service's own cache writer so the cache

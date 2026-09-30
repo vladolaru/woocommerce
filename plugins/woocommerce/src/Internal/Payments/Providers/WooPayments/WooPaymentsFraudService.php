@@ -138,6 +138,27 @@ class WooPaymentsFraudService {
 			/**
 			 * Filters a single prepared fraud-service config before it is served to clients.
 			 *
+			 * Bridges the WooPayments plugin's filter name for existing callbacks.
+			 *
+			 * @since 11.0.0
+			 * @deprecated 11.0.0 Use woocommerce_woopayments_fraud_service_config instead. Scheduled for removal in WooCommerce 12.0.0.
+			 *
+			 * @param array<string,mixed>|null $service_config Prepared service config, or null when the service should not be used.
+			 * @param string                   $service_id     Fraud service identifier (e.g. 'sift').
+			 */
+			$legacy_service_config = apply_filters_deprecated(
+				'wcpay_prepare_fraud_config',
+				array( $service_config, $service_id ),
+				'11.0.0',
+				self::FILTER_FRAUD_SERVICE_CONFIG
+			);
+			if ( is_array( $legacy_service_config ) || null === $legacy_service_config ) {
+				$service_config = $legacy_service_config;
+			}
+
+			/**
+			 * Filters a single prepared fraud-service config before it is served to clients.
+			 *
 			 * @since 11.0.0
 			 *
 			 * @param array<string,mixed>|null $service_config Prepared service config, or null when the service should not be used.
