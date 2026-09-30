@@ -67,7 +67,7 @@ final class MultiCurrencySettingsCurrencyCatalog {
 		$default      = $state->get_default_currency();
 		$default_code = $default->get_code();
 		$runtime      = $state->get_available_currencies();
-		$available    = array( $default_code => $default->jsonSerialize() );
+		$available    = array( $default_code => $this->with_number_format( $default->jsonSerialize() ) );
 		$catalog      = $this->get_catalog_code_lookup();
 
 		foreach ( get_woocommerce_currencies() as $currency_code => $currency_name ) {
@@ -77,9 +77,11 @@ final class MultiCurrencySettingsCurrencyCatalog {
 				continue;
 			}
 
-			$available[ $currency_code ] = isset( $runtime[ $currency_code ] )
-				? $runtime[ $currency_code ]->jsonSerialize()
-				: $this->get_currency_without_rate( $currency_code );
+			$available[ $currency_code ] = $this->with_number_format(
+				isset( $runtime[ $currency_code ] )
+					? $runtime[ $currency_code ]->jsonSerialize()
+					: $this->get_currency_without_rate( $currency_code )
+			);
 		}
 
 		$enabled = array( $default_code => $available[ $default_code ] );
@@ -164,6 +166,25 @@ final class MultiCurrencySettingsCurrencyCatalog {
 			'available' => $this->rate_service->has_available_provider(),
 			'source'    => $this->rate_service->get_automatic_rate_source_id(),
 		);
+	}
+
+	/**
+	 * Add the currency's number format, which the settings price preview formats amounts with.
+	 *
+	 * Client 11.1.0 formats that preview with each currency's locale separators and precision
+	 * (class-wc-payments-admin.php:949-964, multi-currency/client/utils/currency/index.js:83-113).
+	 *
+	 * @param array<string,mixed> $currency Currency DTO.
+	 * @return array<string,mixed>
+	 */
+	private function with_number_format( array $currency ): array {
+		$format = $this->localization_service->get_currency_format( (string) ( $currency['code'] ?? '' ) );
+
+		$currency['thousand_separator'] = (string) ( $format['thousand_sep'] ?? ',' );
+		$currency['decimal_separator']  = (string) ( $format['decimal_sep'] ?? '.' );
+		$currency['num_decimals']       = (int) ( $format['num_decimals'] ?? 2 );
+
+		return $currency;
 	}
 
 	/**

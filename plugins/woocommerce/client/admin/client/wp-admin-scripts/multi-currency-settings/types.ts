@@ -11,6 +11,9 @@ export interface MultiCurrencyCurrency {
 	charm: number;
 	rounding: string;
 	last_updated: number | null;
+	thousand_separator?: string;
+	decimal_separator?: string;
+	num_decimals?: number;
 }
 
 export interface AutomaticRatesDescriptor {

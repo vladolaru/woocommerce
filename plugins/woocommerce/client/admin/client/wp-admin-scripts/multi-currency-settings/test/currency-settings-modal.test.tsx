@@ -259,6 +259,90 @@ describe( 'CurrencySettingsModal', () => {
 		] );
 	} );
 
+	// Client 11.1.0 single-currency/index.js:166-184 and 442-457 with
+	// currency-preview.js:18-81: a price in the store currency (20 to start) is
+	// converted with the selected rate, rounded up to the rounding step, charmed,
+	// and formatted in the target currency's own locale format.
+	describe( 'price preview', () => {
+		const euroWithFormat = {
+			...euroCurrency,
+			symbol_position: 'right_space',
+			thousand_separator: '.',
+			decimal_separator: ',',
+			num_decimals: 2,
+		};
+
+		it( 'converts a store price with the automatic rate and the formatting rules', async () => {
+			mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+			renderModal( {
+				currency: euroWithFormat,
+				availableCurrency: euroWithFormat,
+			} );
+
+			expect(
+				await screen.findByText(
+					'Enter a price in your default currency (United States (US) dollar) to see it converted to Euro using the exchange rate and formatting rules above.'
+				)
+			).toBeInTheDocument();
+			const storePrice = screen.getByLabelText(
+				'United States (US) dollar'
+			);
+			expect( storePrice ).toHaveValue( '20' );
+			// 20 × 0.92 = 18.40, rounded up to the default 1.00 step.
+			expect( screen.getByLabelText( 'Euro' ) ).toHaveValue( '19,00 €' );
+			expect( screen.getByLabelText( 'Euro' ) ).toBeDisabled();
+
+			fireEvent.change( storePrice, { target: { value: '100' } } );
+			expect( screen.getByLabelText( 'Euro' ) ).toHaveValue( '92,00 €' );
+
+			fireEvent.change( storePrice, { target: { value: 'abc' } } );
+			expect( screen.getByLabelText( 'Euro' ) ).toHaveValue(
+				'Please enter a valid number'
+			);
+		} );
+
+		it( 'follows the manual rate, rounding and charm being edited', async () => {
+			mockApiFetch.mockResolvedValueOnce( manualSettingsResponse );
+
+			renderModal( {
+				currency: euroWithFormat,
+				availableCurrency: euroWithFormat,
+			} );
+
+			// 20 × 0.95 = 19.00, rounded to 1.00, minus 0.01.
+			expect( await screen.findByLabelText( 'Euro' ) ).toHaveValue(
+				'18,99 €'
+			);
+
+			fireEvent.change( screen.getByLabelText( 'Price rounding' ), {
+				target: { value: '5.00' },
+			} );
+			// 19.00 rounded up to 20.00, minus 0.01.
+			expect( screen.getByLabelText( 'Euro' ) ).toHaveValue( '19,99 €' );
+		} );
+
+		it( 'formats zero-decimal currencies without decimals', async () => {
+			mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+			const yenWithFormat = {
+				...yenCurrency,
+				thousand_separator: ',',
+				decimal_separator: '.',
+				num_decimals: 0,
+			};
+
+			renderModal( {
+				currency: yenWithFormat,
+				availableCurrency: yenWithFormat,
+			} );
+
+			// 20 × 0.92 = 18.40, rounded up to the default 100 step.
+			expect(
+				await screen.findByLabelText( 'Japanese yen' )
+			).toHaveValue( '¥100' );
+		} );
+	} );
+
 	it( 'omits the manual rate when saving automatic currency settings', async () => {
 		mockApiFetch
 			.mockResolvedValueOnce( automaticSettingsResponse )

@@ -126,6 +126,26 @@ class MultiCurrencySettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should give each currency its number format for the settings price preview.
+	 *
+	 * Client 11.1.0 formats the preview with each currency's locale separators and precision
+	 * (class-wc-payments-admin.php:949-964, multi-currency/client/utils/currency/index.js:83-113).
+	 */
+	public function test_exposes_each_currency_number_format_for_the_price_preview(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$currencies = $this->create_catalog( array( 'USD', 'EUR' ), array( 'USD', 'EUR' ) )->get_store_currencies();
+
+		$this->assertSame( '.', $currencies['available']['EUR']['thousand_separator'] );
+		$this->assertSame( ',', $currencies['available']['EUR']['decimal_separator'] );
+		$this->assertSame( 2, $currencies['available']['EUR']['num_decimals'] );
+		$this->assertSame( ',', $currencies['default']['thousand_separator'] );
+		$this->assertSame( '.', $currencies['default']['decimal_separator'] );
+		// Currencies without a usable rate carry the same fields.
+		$this->assertSame( 0, $currencies['available']['JPY']['num_decimals'] );
+		$this->assertSame( '.', $currencies['available']['JPY']['decimal_separator'] );
+	}
+
+	/**
 	 * @testdox Should describe absent, unavailable, and available automatic rate sources.
 	 */
 	public function test_describes_automatic_rate_source_availability_without_conflating_an_outage_with_absence(): void {
@@ -282,8 +302,12 @@ class MultiCurrencySettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 			 * @return array<string,mixed>
 			 */
 			public function get_currency_format( $currency_code ): array {
+				$is_euro = 'EUR' === strtoupper( (string) $currency_code );
+
 				return array(
-					'currency_pos' => 'left',
+					'currency_pos' => $is_euro ? 'right_space' : 'left',
+					'thousand_sep' => $is_euro ? '.' : ',',
+					'decimal_sep'  => $is_euro ? ',' : '.',
 					'num_decimals' => 'JPY' === strtoupper( (string) $currency_code ) ? 0 : 2,
 				);
 			}

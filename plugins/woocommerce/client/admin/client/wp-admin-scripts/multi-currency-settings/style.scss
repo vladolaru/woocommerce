@@ -87,6 +87,39 @@
 		}
 	}
 
+	&__preview {
+		h3 {
+			margin: 8px 0 0;
+			font-size: 14px;
+		}
+
+		p {
+			margin: 4px 0 12px;
+			color: #757575;
+		}
+	}
+
+	// Client 11.1.0 single-currency/style.scss:44-96: the store price and the converted price side by side,
+	// the converted price as plain bold text.
+	&__preview-fields {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+		align-items: end;
+
+		.components-base-control__field {
+			margin: 0;
+		}
+
+		.text-control-with-affixes.disabled input {
+			border: none;
+			box-shadow: none;
+			color: inherit;
+			background: none;
+			font-weight: 600;
+		}
+	}
+
 	&__modal-actions {
 		display: flex;
 		gap: 8px;

@@ -24,6 +24,7 @@ import { __, sprintf } from '@wordpress/i18n';
 /**
  * Internal dependencies
  */
+import { CurrencyPreview } from './currency-preview';
 import type {
 	AutomaticRatesDescriptor,
 	CurrencySettingsResponse,
@@ -495,6 +496,17 @@ export function CurrencySettingsModal( {
 						onChange={ ( value ) =>
 							updateSettings( { priceCharm: value } )
 						}
+					/>
+					<CurrencyPreview
+						storeCurrency={ defaultCurrency }
+						targetCurrency={ availableCurrency }
+						manualRate={
+							settings.exchangeRateType === 'manual'
+								? settings.manualRate
+								: null
+						}
+						rounding={ settings.priceRounding }
+						charm={ settings.priceCharm }
 					/>
 					<div className="woocommerce-multi-currency-settings__modal-actions">
 						<Button variant="tertiary" onClick={ onClose }>
