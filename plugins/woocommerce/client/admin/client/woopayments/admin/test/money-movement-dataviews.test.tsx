@@ -58,9 +58,7 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 				total={ 52 }
 				isLoading={ false }
 				title="Transactions"
-				toolbarActions={
-					<button type="button">Download transactions</button>
-				}
+				toolbarActions={ <button type="button">Export</button> }
 				searchLabel="Search transactions"
 			/>
 		);
@@ -69,7 +67,7 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 			screen.getByRole( 'heading', { name: 'Transactions' } )
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'button', { name: 'Download transactions' } )
+			screen.getByRole( 'button', { name: 'Export' } )
 		).toBeInTheDocument();
 		expect( screen.getByText( 'txn_1' ) ).toBeInTheDocument();
 		expect( mockDataViews ).toHaveBeenCalledWith(

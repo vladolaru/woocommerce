@@ -66,10 +66,14 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 	DataViews: ( {
 		data = [],
 		fields = [],
+		header,
+		search,
 		view = {},
 	}: {
 		data?: Array< Record< string, unknown > >;
 		fields?: MockField[];
+		header?: ReactNode;
+		search?: boolean;
 		view?: { fields?: string[] };
 	} ) => {
 		mockFields = fields;
@@ -81,7 +85,9 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 			<div
 				data-testid="disputes-dataviews"
 				data-visible-fields={ ( view.fields || [] ).join( ',' ) }
+				data-search={ String( search ) }
 			>
+				{ header }
 				<div role="row">
 					{ visible.map( ( field ) => (
 						<div role="columnheader" key={ field.id }>
@@ -264,6 +270,32 @@ describe( 'WooPayments disputes list columns', () => {
 		expect( getCell( won, 'order' ) ).toHaveTextContent( '–' );
 		expect( getCell( won, 'status' ) ).toHaveTextContent( 'Won' );
 		expect( getCell( won, 'due_by' ) ).toHaveTextContent( /^$/ );
+	} );
+
+	it( "shows the client's card toolbar: the title and Export only with rows, and no search", async () => {
+		renderPage();
+		await screen.findByText( 'Disputes loaded.' );
+
+		expect(
+			screen.getByRole( 'heading', { name: 'Disputes' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Export' } )
+		).toBeInTheDocument();
+		expect( screen.getByTestId( 'disputes-dataviews' ) ).toHaveAttribute(
+			'data-search',
+			'false'
+		);
+	} );
+
+	it( 'hides Export when there are no disputes, like the client', async () => {
+		mockGetDisputes.mockResolvedValue( { data: [], total_count: 0 } );
+		renderPage();
+		await screen.findByText( 'No disputes found.' );
+
+		expect(
+			screen.queryByRole( 'button', { name: 'Export' } )
+		).not.toBeInTheDocument();
 	} );
 
 	it( "counts down the client's last 72 hours to respond", () => {

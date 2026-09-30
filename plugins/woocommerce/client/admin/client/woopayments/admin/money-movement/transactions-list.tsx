@@ -1,7 +1,6 @@
 /**
  * External dependencies
  */
-import { Button } from '@wordpress/components';
 import { useCallback, useEffect, useMemo, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { getHistory } from '@woocommerce/navigation';
@@ -34,7 +33,7 @@ import {
 	getErrorMessage,
 	getResourceId,
 } from './utils';
-import { LiveStatusMessage, StatusMessage } from './table';
+import { ExportButton, LiveStatusMessage, StatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import {
 	TRANSACTION_LIST_DEFAULT_HIDDEN_COLUMNS,
@@ -365,14 +364,14 @@ export const WooPaymentsTransactionsList = (
 							value={ searchValue }
 							onChange={ handleSearchChange }
 						/>
-						<Button
-							variant="secondary"
-							onClick={ handleExport }
-							isBusy={ isExporting }
-							disabled={ isExporting }
-						>
-							{ __( 'Download transactions', 'woocommerce' ) }
-						</Button>
+						{ /* Client 11.1.0 `transactions/list/index.tsx`: Export only with rows. */ }
+						{ transactions.length > 0 && (
+							<ExportButton
+								onClick={ handleExport }
+								isBusy={ isExporting }
+								disabled={ isLoading || isExporting }
+							/>
+						) }
 					</>
 				}
 			/>

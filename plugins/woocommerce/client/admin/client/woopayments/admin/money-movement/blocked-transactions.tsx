@@ -1,12 +1,10 @@
 /**
  * External dependencies
  */
-import { Button } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import { useEffect, useMemo, useState } from '@wordpress/element';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __ } from '@wordpress/i18n';
-import { download } from '@wordpress/icons';
 import { Search } from '@woocommerce/components';
 import { getHistory, getQuery } from '@woocommerce/navigation';
 import { recordEvent } from '@woocommerce/tracks';
@@ -37,6 +35,7 @@ import {
 	parseMoneyMovementQuery,
 } from './query';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
+import { ExportButton } from './table';
 import {
 	formatDateTime,
 	formatExplicitCurrency,
@@ -409,15 +408,11 @@ export const WooPaymentsBlockedTransactions = () => {
 							autocompleter={ blockedSearchCompleter }
 						/>
 						{ rows.length > 0 && (
-							<Button
-								variant="secondary"
-								icon={ download }
+							<ExportButton
 								onClick={ onDownload }
 								isBusy={ isDownloading }
 								disabled={ isLoading || isDownloading }
-							>
-								{ __( 'Export', 'woocommerce' ) }
-							</Button>
+							/>
 						) }
 					</>
 				}

@@ -786,6 +786,8 @@ export const WooPaymentsTransactionsPage = () => {
 					onChangeView={ handleViewChange }
 					total={ totalCount || authorizations.length }
 					isLoading={ isLoading }
+					// Client 11.1.0 `transactions/uncaptured/index.tsx:257-272`: no search on this card.
+					search={ false }
 					searchLabel={ __(
 						'Search uncaptured transactions',
 						'woocommerce'

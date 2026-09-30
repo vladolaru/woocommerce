@@ -1867,12 +1867,13 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it( 'offers searchable transaction exports with the active query', async () => {
+		// Client 11.1.0 offers Export only when the list has rows.
 		mockGetTransactions.mockResolvedValue( {
-			data: [],
-			total_count: 0,
-		} );
+			data: [ { transaction_id: 'txn_test', type: 'charge' } ],
+			total_count: 1,
+		} as never );
 		mockGetTransactionsSummary.mockResolvedValue( {
-			total_count: 0,
+			total_count: 1,
 			total: 0,
 			currency: 'usd',
 		} );
@@ -1899,10 +1900,11 @@ describe( 'WooPayments money movement pages', () => {
 			} )
 		).toHaveValue( 'Ada' );
 
+		const exportButton = await screen.findByRole( 'button', {
+			name: 'Export',
+		} );
 		await act( async () => {
-			await userEvent.click(
-				screen.getByRole( 'button', { name: 'Download transactions' } )
-			);
+			await userEvent.click( exportButton );
 		} );
 		expect(
 			await screen.findByText(
@@ -2174,11 +2176,13 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
+		// The client's uncaptured card has no search box; a `search` in the URL still applies.
+		await screen.findByText( 'Uncaptured transactions loaded.' );
 		expect(
-			await screen.findByRole( 'searchbox', {
+			screen.queryByRole( 'searchbox', {
 				name: 'Search uncaptured transactions',
 			} )
-		).toHaveValue( 'Ada' );
+		).not.toBeInTheDocument();
 
 		expect( mockGetAuthorizations ).toHaveBeenCalledWith(
 			expect.objectContaining( {
@@ -2783,11 +2787,21 @@ describe( 'WooPayments money movement pages', () => {
 
 	it( 'offers dispute exports with the active query', async () => {
 		mockGetDisputes.mockResolvedValue( {
-			data: [],
-			total_count: 0,
+			data: [
+				{
+					id: 'dp_test',
+					charge_id: 'ch_test',
+					reason: 'fraudulent',
+					status: 'needs_response',
+					date: '2026-06-18',
+					amount: 5000,
+					currency: 'usd',
+				},
+			],
+			total_count: 1,
 		} );
 		mockGetDisputesSummary.mockResolvedValue( {
-			total_count: 0,
+			total_count: 1,
 			total: 0,
 			currency: 'usd',
 		} );
@@ -2808,13 +2822,11 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		expect(
-			await screen.findAllByText( 'No disputes found.' )
-		).not.toHaveLength( 0 );
+		const exportButton = await screen.findByRole( 'button', {
+			name: 'Export',
+		} );
 		await act( async () => {
-			await userEvent.click(
-				screen.getByRole( 'button', { name: 'Download disputes' } )
-			);
+			await userEvent.click( exportButton );
 		} );
 		expect(
 			await screen.findByText(

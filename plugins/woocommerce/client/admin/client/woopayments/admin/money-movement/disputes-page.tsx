@@ -1,7 +1,6 @@
 /**
  * External dependencies
  */
-import { Button } from '@wordpress/components';
 import { useEffect, useMemo, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
@@ -49,7 +48,7 @@ import {
 	getTransactionSourceLabel,
 } from './utils';
 import { OrderLink } from './transactions-list-fields';
-import { LiveStatusMessage, StatusMessage } from './table';
+import { ExportButton, LiveStatusMessage, StatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import { formatCurrencyName } from '../currency';
@@ -688,19 +687,21 @@ export const WooPaymentsDisputesPage = () => {
 					onChangeView={ handleViewChange }
 					total={ totalCount || disputes.length }
 					isLoading={ isLoading }
+					// Client 11.1.0 `disputes/index.tsx:527-551`: the disputes card has no search.
+					search={ false }
 					searchLabel={ __( 'Search disputes', 'woocommerce' ) }
 					title={ __( 'Disputes', 'woocommerce' ) }
 					empty={ __( 'No disputes found.', 'woocommerce' ) }
 					getItemId={ getDisputeId }
 					toolbarActions={
-						<Button
-							variant="secondary"
-							onClick={ handleExport }
-							isBusy={ isExporting }
-							disabled={ isExporting }
-						>
-							{ __( 'Download disputes', 'woocommerce' ) }
-						</Button>
+						// Client 11.1.0 `disputes/index.tsx:370, :539-548`: Export only with rows.
+						disputes.length > 0 && (
+							<ExportButton
+								onClick={ handleExport }
+								isBusy={ isExporting }
+								disabled={ isLoading || isExporting }
+							/>
+						)
 					}
 				/>
 			</section>

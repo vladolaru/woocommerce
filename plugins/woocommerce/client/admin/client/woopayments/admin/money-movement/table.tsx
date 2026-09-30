@@ -1,6 +1,9 @@
 /**
  * External dependencies
  */
+import { Button } from '@wordpress/components';
+import { __ } from '@wordpress/i18n';
+import { download } from '@wordpress/icons';
 import type { HTMLAttributes, ReactNode } from 'react';
 
 const getLiveStatusAttributes = ( {
@@ -60,6 +63,34 @@ export const LiveStatusMessage = ( {
 	>
 		{ children }
 	</p>
+);
+
+/**
+ * A list's export button. Client 11.1.0 `components/download-button/index.tsx`.
+ *
+ * @param props          The button props.
+ * @param props.onClick  Starts the export.
+ * @param props.isBusy   Whether an export is running.
+ * @param props.disabled Whether the button is disabled.
+ */
+export const ExportButton = ( {
+	onClick,
+	isBusy = false,
+	disabled = false,
+}: {
+	onClick: () => void;
+	isBusy?: boolean;
+	disabled?: boolean;
+} ) => (
+	<Button
+		__next40pxDefaultSize
+		icon={ download }
+		onClick={ onClick }
+		isBusy={ isBusy }
+		disabled={ disabled }
+	>
+		{ __( 'Export', 'woocommerce' ) }
+	</Button>
 );
 
 export const EmptyState = ( { children }: { children: ReactNode } ) => (

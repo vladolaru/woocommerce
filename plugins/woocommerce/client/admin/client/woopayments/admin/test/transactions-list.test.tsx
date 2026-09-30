@@ -506,10 +506,11 @@ describe( 'WooPayments transactions list columns', () => {
 			)
 		);
 
+		const exportButton = await screen.findByRole( 'button', {
+			name: 'Export',
+		} );
 		await act( async () => {
-			await userEvent.click(
-				screen.getByRole( 'button', { name: 'Download transactions' } )
-			);
+			await userEvent.click( exportButton );
 		} );
 		expect( mockRequestExport ).toHaveBeenCalledWith( scope );
 		clickSpy.mockRestore();

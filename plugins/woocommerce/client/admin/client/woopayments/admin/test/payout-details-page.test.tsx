@@ -336,12 +336,13 @@ describe( 'WooPayments payout details admin surface', () => {
 	} );
 
 	it( 'offers payout exports with the active query', async () => {
+		// Client 11.1.0 offers Export only when the list has rows.
 		mockGetDeposits.mockResolvedValue( {
-			total_count: 0,
-			data: [],
-		} );
+			total_count: 1,
+			data: [ { id: 'po_test', type: 'deposit', status: 'paid' } ],
+		} as never );
 		mockGetDepositsSummary.mockResolvedValue( {
-			count: 0,
+			count: 1,
 			total: 0,
 			currency: 'usd',
 		} );
@@ -363,10 +364,11 @@ describe( 'WooPayments payout details admin surface', () => {
 		);
 
 		await screen.findByRole( 'status' );
+		const exportButton = await screen.findByRole( 'button', {
+			name: 'Export',
+		} );
 		await act( async () => {
-			await userEvent.click(
-				screen.getByRole( 'button', { name: 'Download payouts' } )
-			);
+			await userEvent.click( exportButton );
 		} );
 		expect(
 			await screen.findByText(
@@ -546,10 +548,11 @@ describe( 'WooPayments payout details admin surface', () => {
 		);
 
 		// F-T60-8: the list's own export, scoped to the payout.
+		const exportButton = await screen.findByRole( 'button', {
+			name: 'Export',
+		} );
 		await act( async () => {
-			await userEvent.click(
-				screen.getByRole( 'button', { name: 'Download transactions' } )
-			);
+			await userEvent.click( exportButton );
 		} );
 		expect( mockRequestTransactionsExport ).toHaveBeenCalledWith(
 			expect.objectContaining( { deposit_id: 'po_test' } )

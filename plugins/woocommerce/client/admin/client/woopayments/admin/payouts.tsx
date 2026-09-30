@@ -1,7 +1,6 @@
 /**
  * External dependencies
  */
-import { Button } from '@wordpress/components';
 import { useEffect, useMemo, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
@@ -26,7 +25,11 @@ import {
 	parseMoneyMovementQuery,
 } from './money-movement/query';
 import type { WooPaymentsMoneyMovementDataView } from './money-movement/types';
-import { LiveStatusMessage, StatusMessage } from './money-movement/table';
+import {
+	ExportButton,
+	LiveStatusMessage,
+	StatusMessage,
+} from './money-movement/table';
 import {
 	formatExplicitCurrency,
 	getErrorMessage,
@@ -364,19 +367,21 @@ export const WooPaymentsPayouts = () => {
 					onChangeView={ handleViewChange }
 					total={ totalCount || payouts.length }
 					isLoading={ isLoading }
+					// Client 11.1.0 `deposits/list/index.tsx:291-315`: the payouts card has no search.
+					search={ false }
 					searchLabel={ __( 'Search payouts', 'woocommerce' ) }
 					title={ __( 'Payout history', 'woocommerce' ) }
 					empty={ __( 'No payouts found.', 'woocommerce' ) }
 					getItemId={ ( payout ) => payout.id }
 					toolbarActions={
-						<Button
-							variant="secondary"
-							onClick={ handleExport }
-							isBusy={ isExporting }
-							disabled={ isExporting }
-						>
-							{ __( 'Download payouts', 'woocommerce' ) }
-						</Button>
+						// Client 11.1.0 `deposits/list/index.tsx:215, :303-312`: Export only with rows.
+						payouts.length > 0 && (
+							<ExportButton
+								onClick={ handleExport }
+								isBusy={ isExporting }
+								disabled={ isLoading || isExporting }
+							/>
+						)
 					}
 				/>
 			</section>
