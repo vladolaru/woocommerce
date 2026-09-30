@@ -1,6 +1,8 @@
 /**
  * External dependencies
  */
+import fs from 'fs';
+import path from 'path';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
@@ -12,45 +14,44 @@ import { PayoutsOverviewCard } from '../overview/components/payouts-overview-car
 import type {
 	WooPaymentsDeposit,
 	WooPaymentsDepositsOverview,
+	WooPaymentsOverviewAccountDeposits,
+	WooPaymentsOverviewAccountStatus,
 } from '../overview/types';
 
 jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 
+const readRecordedResponse = ( file: string ) =>
+	JSON.parse(
+		fs.readFileSync( path.join( __dirname, 'fixtures', file ), 'utf8' )
+	).response;
+
+// Recorded native :8889 responses; see each file's `_meta`.
+const RECORDED_OVERVIEW = readRecordedResponse(
+	'recorded-deposits-overview-all.json'
+) as WooPaymentsDepositsOverview;
+const RECORDED_ACCOUNT_STATUS = (
+	readRecordedResponse( 'recorded-overview-shell.json' ) as {
+		account_status: WooPaymentsOverviewAccountStatus;
+	}
+ ).account_status;
+
+// The recorded `deposits/overview-all` response in the scenario most tests share: $10.00 available, nothing pending, weekly Monday payouts.
 const createOverview = (
 	overrides: Partial< WooPaymentsDepositsOverview > = {}
 ): WooPaymentsDepositsOverview => ( {
+	...RECORDED_OVERVIEW,
 	balance: {
-		available: [
-			{
-				amount: 1000,
-				currency: 'usd',
-			},
-		],
-		pending: [
-			{
-				amount: 0,
-				currency: 'usd',
-			},
-		],
-		instant: [],
+		...RECORDED_OVERVIEW.balance,
+		available: [ { amount: 1000, currency: 'usd' } ],
+		pending: [ { amount: 0, currency: 'usd' } ],
 	},
 	account: {
-		default_currency: 'usd',
-		deposits_enabled: true,
-		deposits_blocked: false,
+		...RECORDED_OVERVIEW.account,
 		deposits_schedule: {
 			delay_days: 7,
 			interval: 'weekly',
 			weekly_anchor: 'monday',
 		},
-		completed_waiting_period: true,
-		minimum_scheduled_deposit_amounts: {
-			usd: 500,
-		},
-		default_external_accounts: [],
-	},
-	deposit: {
-		last_paid: [],
 	},
 	...overrides,
 } );
@@ -70,6 +71,18 @@ const createDeposit = (
 	fee_percentage: 0,
 	created: 1781740800,
 	...overrides,
+} );
+
+// The recorded Overview shell `account_status`, which carries what client 11.1.0 reads from `wcpaySettings.accountStatus` (`class-wc-payments-account.php:378,382`).
+const createAccountStatus = (
+	deposits: Partial< WooPaymentsOverviewAccountDeposits > = {},
+	accountLink = RECORDED_ACCOUNT_STATUS.account_link
+): Pick< WooPaymentsOverviewAccountStatus, 'account_link' | 'deposits' > => ( {
+	account_link: accountLink,
+	deposits: {
+		...( RECORDED_ACCOUNT_STATUS.deposits as WooPaymentsOverviewAccountDeposits ),
+		...deposits,
+	},
 } );
 
 // Notices also reach the a11y speak regions, so read the card itself.
@@ -94,6 +107,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ null }
 				recentPayouts={ [] }
 			/>
@@ -111,23 +125,23 @@ describe( 'PayoutsOverviewCard', () => {
 		);
 	} );
 
+	// Client 11.1.0 `components/deposits-overview/index.tsx:133-142` hides the card whatever the payout history holds.
 	it( 'hides the card for a new account with no pending or available funds', () => {
 		const { container } = render(
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus( {
+					completed_waiting_period: false,
+				} ) }
 				overview={ createOverview( {
 					balance: {
 						available: [ { amount: 0, currency: 'usd' } ],
 						pending: [ { amount: 0, currency: 'usd' } ],
 						instant: [],
 					},
-					account: {
-						...createOverview().account,
-						completed_waiting_period: false,
-					},
 				} ) }
-				recentPayouts={ [] }
+				recentPayouts={ [ createDeposit() ] }
 			/>
 		);
 
@@ -139,24 +153,27 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus( {
+					completed_waiting_period: false,
+				} ) }
 				overview={ createOverview( {
 					balance: {
 						available: [ { amount: 0, currency: 'usd' } ],
 						pending: [ { amount: 1500, currency: 'usd' } ],
 						instant: [],
 					},
-					account: {
-						...createOverview().account,
-						completed_waiting_period: false,
-					},
 				} ) }
-				recentPayouts={ [] }
+				recentPayouts={ [ createDeposit() ] }
 			/>
 		);
 
 		expect(
 			inCard().getByText( /standard 7-day waiting period/i )
 		).toBeInTheDocument();
+		// Client 11.1.0 `index.tsx:105-108,207-244`: no schedule change before the waiting period ends.
+		expect(
+			screen.queryByRole( 'link', { name: 'Change payout schedule' } )
+		).not.toBeInTheDocument();
 		// Client 11.1.0 `deposits-overview/index.tsx:136-246`: the balances live in the Balance card only.
 		expect( inCard().queryByText( '$15.00' ) ).not.toBeInTheDocument();
 		expect( inCard().queryByText( 'Pending' ) ).not.toBeInTheDocument();
@@ -168,6 +185,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					account: {
 						...createOverview().account,
@@ -187,16 +205,24 @@ describe( 'PayoutsOverviewCard', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'keeps failed-payout recovery visible when payouts are suspended', () => {
+	// Client 11.1.0 `index.tsx:161-194`: a blocked account gets the suspended notice instead of every other payout notice.
+	it( 'shows only the suspended notice when payouts are blocked', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus(
+					{},
+					'https://example.com/account-link'
+				) }
 				overview={ createOverview( {
+					balance: {
+						available: [ { amount: 100, currency: 'usd' } ],
+						pending: [ { amount: 0, currency: 'usd' } ],
+						instant: [],
+					},
 					account: {
 						...createOverview().account,
-						account_link: 'https://example.com/account-link',
-						deposits_enabled: false,
 						deposits_blocked: true,
 						default_external_accounts: [
 							{
@@ -214,9 +240,35 @@ describe( 'PayoutsOverviewCard', () => {
 			inCard().getByText( /Your payouts are temporarily suspended/i )
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'link', {
-				name: 'update your bank account details',
-			} )
+			inCard().queryByText( /a recent payout failed/i )
+		).not.toBeInTheDocument();
+		expect(
+			inCard().queryByText( /remains below/i )
+		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 `index.tsx:107-108,162`: only `deposits_blocked` suspends payouts on the card.
+	it( 'keeps the schedule change and shows no suspended notice when only payouts_enabled is off', () => {
+		render(
+			<PayoutsOverviewCard
+				isLoading={ false }
+				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
+				overview={ createOverview( {
+					account: {
+						...createOverview().account,
+						deposits_enabled: false,
+					},
+				} ) }
+				recentPayouts={ [ createDeposit() ] }
+			/>
+		);
+
+		expect(
+			inCard().queryByText( /Your payouts are temporarily suspended/i )
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: 'Change payout schedule' } )
 		).toBeInTheDocument();
 	} );
 
@@ -225,20 +277,23 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					balance: {
-						available: [ { amount: 100, currency: 'usd' } ],
-						pending: [ { amount: 0, currency: 'usd' } ],
+						available: [ { amount: 50, currency: 'eur' } ],
+						pending: [ { amount: 0, currency: 'eur' } ],
 						instant: [],
 					},
 				} ) }
+				selectedCurrency="eur"
 				recentPayouts={ [] }
 			/>
 		);
 
+		// The recorded platform minimum is €1.00 for EUR (and none for USD).
 		expect(
 			inCard().getByText(
-				/Payouts are paused while your available funds balance remains below \$5.00/i
+				/Payouts are paused while your available funds balance remains below €1.00/i
 			)
 		).toBeInTheDocument();
 
@@ -246,6 +301,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					balance: {
 						available: [ { amount: -100, currency: 'usd' } ],
@@ -267,10 +323,13 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus(
+					{},
+					'https://example.com/account-link'
+				) }
 				overview={ createOverview( {
 					account: {
 						...createOverview().account,
-						account_link: 'https://example.com/account-link',
 						default_external_accounts: [
 							{
 								currency: 'usd',
@@ -290,12 +349,14 @@ describe( 'PayoutsOverviewCard', () => {
 		).toBeInTheDocument();
 
 		const updateLink = screen.getByRole( 'link', {
-			name: 'update your bank account details',
+			name: /^update your bank account details/,
 		} );
 		expect( updateLink ).toHaveAttribute(
 			'href',
 			'https://example.com/account-link?from=WCPAY_PAYOUTS&source=wcpay-payout-failure-notice'
 		);
+		// Client 11.1.0 `deposit-notices.tsx:205-216` renders an `ExternalLink`.
+		expect( updateLink ).toHaveAttribute( 'target', '_blank' );
 
 		fireEvent.click( updateLink );
 
@@ -313,6 +374,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage="Unable to load recent payouts."
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [] }
 			/>
@@ -331,6 +393,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [] }
 			/>
@@ -346,6 +409,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ null }
 				recentPayouts={ [] }
 			/>
@@ -356,6 +420,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [] }
 			/>
@@ -370,6 +435,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ null }
 				recentPayouts={ [ createDeposit() ] }
 			/>
@@ -387,6 +453,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [ createDeposit() ] }
 			/>
@@ -433,6 +500,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					account: {
 						...createOverview().account,
@@ -455,6 +523,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [] }
 			/>
@@ -470,6 +539,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					account: {
 						...createOverview().account,
@@ -491,6 +561,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					account: {
 						...createOverview().account,
@@ -514,6 +585,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [] }
 			/>
@@ -545,6 +617,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					balance: {
 						available: [ { amount: 0, currency: 'usd' } ],
@@ -570,6 +643,7 @@ describe( 'PayoutsOverviewCard', () => {
 			<PayoutsOverviewCard
 				isLoading={ false }
 				errorMessage={ null }
+				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [ createDeposit() ] }
 			/>
@@ -588,5 +662,116 @@ describe( 'PayoutsOverviewCard', () => {
 		expect( recordEvent ).toHaveBeenCalledWith(
 			'wcpay_overview_deposits_change_schedule_click'
 		);
+	} );
+	// Client 11.1.0 `components/deposits-overview/index.tsx:82-84,152-158`.
+	it.each( [ 'schedule_restricted', 'deposits_blocked', '' ] )(
+		'hides the payout schedule sentence when the payout restriction is "%s"',
+		( restrictions ) => {
+			render(
+				<PayoutsOverviewCard
+					isLoading={ false }
+					errorMessage={ null }
+					accountStatus={ createAccountStatus( { restrictions } ) }
+					overview={ createOverview() }
+					recentPayouts={ [] }
+				/>
+			);
+
+			expect( getScheduleSummary() ).not.toBeInTheDocument();
+		}
+	);
+
+	// Client 11.1.0 `index.tsx:82-84,105-106` reads an absent `accountStatus.deposits` as restricted and still waiting.
+	it( 'hides the schedule sentence and shows the waiting period without account payout data', () => {
+		render(
+			<PayoutsOverviewCard
+				isLoading={ false }
+				errorMessage={ null }
+				overview={ createOverview() }
+				recentPayouts={ [] }
+			/>
+		);
+
+		expect( getScheduleSummary() ).not.toBeInTheDocument();
+		expect(
+			inCard().getByText( /standard 7-day waiting period/i )
+		).toBeInTheDocument();
+	} );
+
+	it( 'reads the waiting period and minimum payout from the account status, not the payouts overview response', () => {
+		render(
+			<PayoutsOverviewCard
+				isLoading={ false }
+				errorMessage={ null }
+				accountStatus={ createAccountStatus( {
+					completed_waiting_period: false,
+					minimum_scheduled_deposit_amounts: {},
+				} ) }
+				overview={ createOverview( {
+					balance: {
+						available: [ { amount: 100, currency: 'usd' } ],
+						pending: [ { amount: 0, currency: 'usd' } ],
+						instant: [],
+					},
+					account: {
+						...createOverview().account,
+						// The `deposits/overview-all` response never carries these; a stale copy here must not count.
+						...( {
+							completed_waiting_period: true,
+							minimum_scheduled_deposit_amounts: { usd: 500 },
+						} as Record< string, unknown > ),
+					},
+				} ) }
+				recentPayouts={ [ createDeposit() ] }
+			/>
+		);
+
+		expect(
+			inCard().getByText( /standard 7-day waiting period/i )
+		).toBeInTheDocument();
+		expect(
+			inCard().queryByText( /remains below/i )
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'link', { name: 'Change payout schedule' } )
+		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 `index.tsx:165-191`: waiting period, no funds, negative balance, failed payout, then minimum balance.
+	it( 'orders the payout notices as the client does', () => {
+		render(
+			<PayoutsOverviewCard
+				isLoading={ false }
+				errorMessage={ null }
+				accountStatus={ createAccountStatus(
+					{},
+					'https://example.com/account-link'
+				) }
+				overview={ createOverview( {
+					balance: {
+						available: [ { amount: 0, currency: 'usd' } ],
+						pending: [ { amount: 1500, currency: 'usd' } ],
+						instant: [],
+					},
+					account: {
+						...createOverview().account,
+						default_external_accounts: [
+							{ currency: 'usd', status: 'errored' },
+						],
+					},
+				} ) }
+				recentPayouts={ [] }
+			/>
+		);
+
+		const notices = document.querySelector(
+			'.woocommerce-woopayments-overview__notices'
+		)?.textContent;
+		expect(
+			notices?.indexOf( 'You have no funds available.' )
+		).toBeLessThan( notices?.indexOf( 'a recent payout failed' ) ?? -1 );
+		expect(
+			notices?.indexOf( 'You have no funds available.' )
+		).toBeGreaterThan( -1 );
 	} );
 } );

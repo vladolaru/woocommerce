@@ -9,7 +9,8 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the Overview shell `account_status.deposits_enabled` flag, which gates the connection-success modal.
+ * Tests for the Overview shell's payout fields: `account_status.deposits_enabled`, which gates the connection-success modal,
+ * and `account_status.deposits`, which the payouts card reads as client 11.1.0 reads `wcpaySettings.accountStatus.deposits`.
  */
 class WooPaymentsOverviewServiceDepositsStatusTest extends WC_Unit_Test_Case {
 
@@ -76,6 +77,92 @@ class WooPaymentsOverviewServiceDepositsStatusTest extends WC_Unit_Test_Case {
 		$overview = $this->sut->get_overview();
 
 		$this->assertFalse( $overview['account_status']['deposits_enabled'] );
+	}
+
+	/**
+	 * @testdox Should pass the cached account's payout restriction, waiting period and minimum payout amounts to the payouts card.
+	 */
+	public function test_projects_the_cached_deposits_fields_the_payouts_card_reads(): void {
+		$account_data = $this->get_recorded_account_data();
+		// Local WPCOM `class-accounts-controller.php:1128` fills this from `Currency::get_minimum_scheduled_deposit_amounts()`, keyed by lowercase currency.
+		$account_data['deposits']['minimum_scheduled_deposit_amounts'] = array(
+			'usd' => 500,
+			'eur' => 100,
+		);
+		$this->cache_account_data( $account_data );
+
+		$overview = $this->sut->get_overview();
+
+		// Client 11.1.0 `class-wc-payments-account.php:378` passes the cached `deposits` object as `accountStatus.deposits`.
+		$this->assertSame(
+			array(
+				'restrictions'                      => 'deposits_unrestricted',
+				'completed_waiting_period'          => true,
+				'minimum_scheduled_deposit_amounts' => array(
+					'usd' => 500,
+					'eur' => 100,
+				),
+			),
+			$overview['account_status']['deposits']
+		);
+	}
+
+	/**
+	 * @testdox Should pass the "$restrictions" payout restriction and an unfinished waiting period through unchanged.
+	 *
+	 * @testWith ["schedule_restricted"]
+	 *           ["deposits_blocked"]
+	 *
+	 * @param string $restrictions Platform payout restriction.
+	 */
+	public function test_projects_restricted_payouts_and_unfinished_waiting_period( string $restrictions ): void {
+		$account_data                             = $this->get_recorded_account_data();
+		$account_data['deposits']['restrictions'] = $restrictions;
+		$account_data['deposits']['completed_waiting_period'] = false;
+		$this->cache_account_data( $account_data );
+
+		$overview = $this->sut->get_overview();
+
+		$this->assertSame( $restrictions, $overview['account_status']['deposits']['restrictions'] );
+		$this->assertFalse( $overview['account_status']['deposits']['completed_waiting_period'] );
+	}
+
+	/**
+	 * @testdox Should send empty payout fields when the cached account has no deposits object, as the client's `deposits ?? []` does.
+	 */
+	public function test_projects_empty_deposits_fields_without_a_deposits_object(): void {
+		$account_data = $this->get_recorded_account_data();
+		unset( $account_data['deposits'] );
+		$this->cache_account_data( $account_data );
+
+		$overview = $this->sut->get_overview();
+
+		$this->assertSame(
+			array(
+				'restrictions'                      => '',
+				'completed_waiting_period'          => false,
+				'minimum_scheduled_deposit_amounts' => array(),
+			),
+			$overview['account_status']['deposits']
+		);
+	}
+
+	/**
+	 * @testdox Should keep the bank account details and non-numeric minimum amounts out of the payout fields.
+	 */
+	public function test_keeps_bank_details_and_invalid_amounts_out_of_the_deposits_fields(): void {
+		$account_data = $this->get_recorded_account_data();
+		$account_data['deposits']['minimum_scheduled_deposit_amounts'] = array(
+			'usd' => 500,
+			'eur' => array( 'nested' ),
+			'gbp' => 'not-a-number',
+		);
+		$this->cache_account_data( $account_data );
+
+		$overview = $this->sut->get_overview();
+
+		$this->assertArrayNotHasKey( 'default_external_accounts', $overview['account_status']['deposits'] );
+		$this->assertSame( array( 'usd' => 500 ), $overview['account_status']['deposits']['minimum_scheduled_deposit_amounts'] );
 	}
 
 	/**

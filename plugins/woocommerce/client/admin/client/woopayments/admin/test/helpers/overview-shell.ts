@@ -1,10 +1,24 @@
 /**
+ * External dependencies
+ */
+import fs from 'fs';
+import path from 'path';
+
+/**
  * Internal dependencies
  */
 import type {
 	WooPaymentsOverviewAccountStatus,
 	WooPaymentsOverviewShell,
 } from '../../overview/types';
+
+// The payout fields `:8889` returned in the shell's `account_status.deposits`; see `fixtures/recorded-overview-shell.json`.
+const RECORDED_ACCOUNT_DEPOSITS = JSON.parse(
+	fs.readFileSync(
+		path.join( __dirname, '../fixtures/recorded-overview-shell.json' ),
+		'utf8'
+	)
+).response.account_status.deposits;
 
 /**
  * The Overview shell `:8889` returned on 2026-09-30 for a complete test-drive account, with test-mode onboarding
@@ -40,6 +54,7 @@ export const createRecordedOverviewShell = (
 		details_submitted: true,
 		payments_enabled: true,
 		deposits_enabled: true,
+		deposits: RECORDED_ACCOUNT_DEPOSITS,
 		...accountStatus,
 	},
 	show_update_details_task: false,

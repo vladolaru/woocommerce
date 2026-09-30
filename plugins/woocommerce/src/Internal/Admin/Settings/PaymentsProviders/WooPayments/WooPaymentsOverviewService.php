@@ -121,6 +121,35 @@ class WooPaymentsOverviewService {
 			'details_submitted' => $this->is_truthy( $account_data['details_submitted'] ?? false ),
 			'payments_enabled'  => $this->is_truthy( $account_data['payments_enabled'] ?? false ),
 			'deposits_enabled'  => $this->are_deposits_enabled( $account_data ),
+			'deposits'          => $this->get_deposits_projection( $account_data ),
+		);
+	}
+
+	/**
+	 * Get the cached account's payout fields that the Overview payouts card reads.
+	 *
+	 * Client 11.1.0 `class-wc-payments-account.php:378` passes the cached `deposits` object as `accountStatus.deposits`,
+	 * and `components/deposits-overview/index.tsx:82-108` reads these three fields from it. Bank account details stay out.
+	 *
+	 * @param array<string,mixed> $account_data Cached account data.
+	 * @return array{restrictions:string,completed_waiting_period:bool,minimum_scheduled_deposit_amounts:array<string,int>}
+	 */
+	private function get_deposits_projection( array $account_data ): array {
+		$deposits        = is_array( $account_data['deposits'] ?? null ) ? $account_data['deposits'] : array();
+		$minimum_amounts = array();
+
+		if ( is_array( $deposits['minimum_scheduled_deposit_amounts'] ?? null ) ) {
+			foreach ( $deposits['minimum_scheduled_deposit_amounts'] as $currency => $amount ) {
+				if ( is_string( $currency ) && is_numeric( $amount ) ) {
+					$minimum_amounts[ $currency ] = (int) $amount;
+				}
+			}
+		}
+
+		return array(
+			'restrictions'                      => $this->get_scalar( $deposits['restrictions'] ?? '' ),
+			'completed_waiting_period'          => $this->is_truthy( $deposits['completed_waiting_period'] ?? false ),
+			'minimum_scheduled_deposit_amounts' => $minimum_amounts,
 		);
 	}
 

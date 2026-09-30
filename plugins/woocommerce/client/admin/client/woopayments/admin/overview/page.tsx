@@ -460,6 +460,7 @@ export const WooPaymentsOverviewPage = () => {
 						overview={ overview }
 						recentPayouts={ recentPayouts }
 						selectedCurrency={ selectedCurrency || undefined }
+						accountStatus={ shell?.account_status }
 					/>
 				</>
 			) }

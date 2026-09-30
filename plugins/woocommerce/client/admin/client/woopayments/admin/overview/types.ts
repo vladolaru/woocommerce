@@ -43,8 +43,6 @@ export interface WooPaymentsDepositsAccount {
 	deposits_blocked?: boolean;
 	deposits_disabled?: boolean;
 	deposits_schedule?: WooPaymentsDepositSchedule;
-	completed_waiting_period?: boolean;
-	minimum_scheduled_deposit_amounts?: Record< string, number >;
 	default_external_accounts?: WooPaymentsExternalAccount[];
 }
 
@@ -124,6 +122,13 @@ export interface WooPaymentsOverviewRequirementError {
 	requirement?: string;
 }
 
+/** The cached account's payout fields, as client 11.1.0 reads `wcpaySettings.accountStatus.deposits`. */
+export interface WooPaymentsOverviewAccountDeposits {
+	restrictions: string;
+	completed_waiting_period: boolean;
+	minimum_scheduled_deposit_amounts: Record< string, number >;
+}
+
 export interface WooPaymentsOverviewAccountStatus {
 	status: string;
 	current_deadline: number | null;
@@ -135,6 +140,7 @@ export interface WooPaymentsOverviewAccountStatus {
 	details_submitted: boolean;
 	payments_enabled: boolean;
 	deposits_enabled: boolean;
+	deposits?: WooPaymentsOverviewAccountDeposits;
 }
 
 export interface WooPaymentsOverviewTasksVisibility {

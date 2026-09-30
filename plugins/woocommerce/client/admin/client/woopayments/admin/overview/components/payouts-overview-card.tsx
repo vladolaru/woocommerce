@@ -22,7 +22,11 @@ import type { ReactNode } from 'react';
 /**
  * Internal dependencies
  */
-import type { WooPaymentsDeposit, WooPaymentsDepositsOverview } from '../types';
+import type {
+	WooPaymentsDeposit,
+	WooPaymentsDepositsOverview,
+	WooPaymentsOverviewAccountStatus,
+} from '../types';
 import {
 	formatPayoutSiteDate,
 	formatWooPaymentsAmount,
@@ -134,7 +138,8 @@ const FailedPayoutNotice = ( { accountLink }: { accountLink?: string } ) => {
 				'woocommerce'
 			) }{ ' ' }
 			{ accountLinkWithSource ? (
-				<a
+				// Client 11.1.0 `components/deposits-overview/deposit-notices.tsx:203-216`.
+				<ExternalLink
 					href={ accountLinkWithSource }
 					onClick={ () =>
 						recordEvent( 'wcpay_account_details_link_clicked', {
@@ -144,7 +149,7 @@ const FailedPayoutNotice = ( { accountLink }: { accountLink?: string } ) => {
 					}
 				>
 					{ __( 'update your bank account details', 'woocommerce' ) }
-				</a>
+				</ExternalLink>
 			) : (
 				__( 'Update your bank account details.', 'woocommerce' )
 			) }
@@ -246,12 +251,18 @@ export const PayoutsOverviewCard = ( {
 	overview,
 	recentPayouts,
 	selectedCurrency,
+	accountStatus,
 }: {
 	isLoading: boolean;
 	errorMessage: string | null;
 	overview: WooPaymentsDepositsOverview | null;
 	recentPayouts: WooPaymentsDeposit[];
 	selectedCurrency?: string;
+	/** The Overview shell's account status, which carries what client 11.1.0 reads from `wcpaySettings.accountStatus`. */
+	accountStatus?: Pick<
+		WooPaymentsOverviewAccountStatus,
+		'account_link' | 'deposits'
+	>;
 } ) => {
 	const historyUrl = getSettingsPaymentsProviderRouteUrl(
 		'/woopayments/payouts'
@@ -354,22 +365,23 @@ export const PayoutsOverviewCard = ( {
 		currency
 	);
 	const totalFunds = availableFunds + pendingFunds;
+	// Client 11.1.0 `components/deposits-overview/index.tsx:82-113`: the cached account's payout fields, and only `deposits_blocked` suspends.
+	const accountDeposits = accountStatus?.deposits;
+	const isPayoutsUnrestricted =
+		accountDeposits?.restrictions === 'deposits_unrestricted';
 	const hasCompletedWaitingPeriod =
-		overview.account.completed_waiting_period ?? true;
-	const isPayoutsSuspended =
-		overview.account.deposits_blocked ||
-		overview.account.deposits_enabled === false ||
-		overview.account.deposits_disabled;
+		!! accountDeposits?.completed_waiting_period;
+	const isPayoutsSuspended = !! overview.account.deposits_blocked;
 	const minimumPayoutAmount =
-		overview.account.minimum_scheduled_deposit_amounts?.[
+		accountDeposits?.minimum_scheduled_deposit_amounts?.[
 			currency.toLowerCase()
 		] ?? 0;
 	const isBelowMinimumPayout =
-		availableFunds > 0 &&
-		minimumPayoutAmount > 0 &&
-		availableFunds < minimumPayoutAmount;
+		availableFunds > 0 && availableFunds < minimumPayoutAmount;
 	const hasNegativeBalance = totalFunds < 0;
-	const scheduleText = getScheduleText( overview );
+	const scheduleText = isPayoutsUnrestricted
+		? getScheduleText( overview )
+		: null;
 	const hasErroredExternalAccount =
 		overview.account.default_external_accounts?.some(
 			( externalAccount ) =>
@@ -377,10 +389,7 @@ export const PayoutsOverviewCard = ( {
 					currency.toLowerCase() &&
 				externalAccount.status === 'errored'
 		) ?? false;
-	const accountLink =
-		typeof overview.account.account_link === 'string'
-			? overview.account.account_link
-			: undefined;
+	const accountLink = accountStatus?.account_link;
 	const canChangePayoutSchedule =
 		! isPayoutsSuspended && hasCompletedWaitingPeriod;
 	const isAwaitingPendingFunds =
@@ -396,8 +405,7 @@ export const PayoutsOverviewCard = ( {
 	if (
 		! hasCompletedWaitingPeriod &&
 		availableFunds === 0 &&
-		pendingFunds === 0 &&
-		recentPayouts.length === 0
+		pendingFunds === 0
 	) {
 		return null;
 	}
@@ -442,7 +450,8 @@ export const PayoutsOverviewCard = ( {
 
 					{ hasNotices && (
 						<CardBody className="woocommerce-woopayments-overview__notices">
-							{ isPayoutsSuspended && (
+							{ /* Client 11.1.0 `components/deposits-overview/index.tsx:161-194`: suspended replaces every other notice, which keep this order. */ }
+							{ isPayoutsSuspended ? (
 								<PayoutNotice>
 									{ __(
 										'Your payouts are temporarily suspended.',
@@ -454,13 +463,7 @@ export const PayoutsOverviewCard = ( {
 										{ __( 'Learn more', 'woocommerce' ) }
 									</ExternalLink>
 								</PayoutNotice>
-							) }
-							{ hasErroredExternalAccount && (
-								<FailedPayoutNotice
-									accountLink={ accountLink }
-								/>
-							) }
-							{ ! isPayoutsSuspended && (
+							) : (
 								<>
 									{ ! hasCompletedWaitingPeriod && (
 										<PayoutNotice>
@@ -477,6 +480,19 @@ export const PayoutsOverviewCard = ( {
 													'Learn more',
 													'woocommerce'
 												) }
+											</ExternalLink>
+										</PayoutNotice>
+									) }
+									{ isAwaitingPendingFunds && (
+										<PayoutNotice>
+											{ __(
+												'You have no funds available.',
+												'woocommerce'
+											) }{ ' ' }
+											<ExternalLink
+												href={ PENDING_FUNDS_DOCS_URL }
+											>
+												{ __( 'Why?', 'woocommerce' ) }
 											</ExternalLink>
 										</PayoutNotice>
 									) }
@@ -499,6 +515,11 @@ export const PayoutsOverviewCard = ( {
 											</ExternalLink>
 										</PayoutNotice>
 									) }
+									{ hasErroredExternalAccount && (
+										<FailedPayoutNotice
+											accountLink={ accountLink }
+										/>
+									) }
 									{ isBelowMinimumPayout && (
 										<PayoutNotice>
 											{ sprintf(
@@ -520,19 +541,6 @@ export const PayoutsOverviewCard = ( {
 													'Learn more',
 													'woocommerce'
 												) }
-											</ExternalLink>
-										</PayoutNotice>
-									) }
-									{ isAwaitingPendingFunds && (
-										<PayoutNotice>
-											{ __(
-												'You have no funds available.',
-												'woocommerce'
-											) }{ ' ' }
-											<ExternalLink
-												href={ PENDING_FUNDS_DOCS_URL }
-											>
-												{ __( 'Why?', 'woocommerce' ) }
 											</ExternalLink>
 										</PayoutNotice>
 									) }

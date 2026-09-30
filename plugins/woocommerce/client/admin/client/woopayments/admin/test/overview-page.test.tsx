@@ -1,7 +1,9 @@
 /**
  * External dependencies
  */
-import { act, render, screen, waitFor } from '@testing-library/react';
+import fs from 'fs';
+import path from 'path';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useSelect } from '@wordpress/data';
 import { recordEvent } from '@woocommerce/tracks';
@@ -180,6 +182,14 @@ const createDeferred = < T, >() => {
 	return { promise, resolve, reject };
 };
 
+// The payout fields `:8889` returned in the shell's `account_status.deposits`; see `fixtures/recorded-overview-shell.json`.
+const RECORDED_ACCOUNT_DEPOSITS = JSON.parse(
+	fs.readFileSync(
+		path.join( __dirname, 'fixtures/recorded-overview-shell.json' ),
+		'utf8'
+	)
+).response.account_status.deposits;
+
 const createShell = ( overrides: Record< string, unknown > = {} ) => ( {
 	account: {
 		id: 'acct_test',
@@ -206,6 +216,7 @@ const createShell = ( overrides: Record< string, unknown > = {} ) => ( {
 		details_submitted: true,
 		payments_enabled: true,
 		deposits_enabled: true,
+		deposits: RECORDED_ACCOUNT_DEPOSITS,
 	},
 	show_update_details_task: false,
 	disputes_awaiting_response_count: null,
@@ -238,7 +249,6 @@ const createDepositsOverview = () => ( {
 			interval: 'weekly',
 			weekly_anchor: 'monday',
 		},
-		completed_waiting_period: true,
 		default_external_accounts: [],
 	},
 	deposit: {
@@ -485,7 +495,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 					interval: 'weekly',
 					weekly_anchor: 'monday',
 				},
-				completed_waiting_period: true,
 				default_external_accounts: [],
 			},
 			deposit: {
@@ -570,7 +579,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 					interval: 'weekly',
 					weekly_anchor: 'monday',
 				},
-				completed_waiting_period: true,
 				default_external_accounts: [],
 			},
 			deposit: {
@@ -1740,6 +1748,38 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 		expect( accountDetailsHeading.ownerDocument.activeElement ).toBe(
 			accountDetailsHeading
+		);
+	} );
+	// Client 11.1.0 `components/deposits-overview/index.tsx:82-108` reads these from `wcpaySettings.accountStatus`, which the shell's `account_status` carries.
+	it( 'gives the payouts card the payout fields from the shell account status', async () => {
+		mockGetShell.mockResolvedValue(
+			createShell( {
+				account_status: {
+					...createShell().account_status,
+					deposits: {
+						...RECORDED_ACCOUNT_DEPOSITS,
+						completed_waiting_period: false,
+					},
+				},
+			} )
+		);
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( {
+			data: [],
+			total_count: 0,
+		} );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		// Notices also reach the a11y speak regions, so read the card itself.
+		const payoutsCard = within(
+			await screen.findByRole( 'region', { name: 'Payouts' } )
+		);
+		expect(
+			await payoutsCard.findByText( /standard 7-day waiting period/ )
+		).toBeInTheDocument();
+		expect( payoutsCard.getByText( 'every Monday' ).tagName ).toBe(
+			'STRONG'
 		);
 	} );
 } );

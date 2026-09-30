@@ -108,7 +108,6 @@ describe( 'WooPayments Overview composition by account status', () => {
 				default_currency: 'usd',
 				deposits_enabled: true,
 				deposits_schedule: { interval: 'daily' },
-				completed_waiting_period: true,
 				default_external_accounts: [],
 			},
 			deposit: { last_paid: [] },
