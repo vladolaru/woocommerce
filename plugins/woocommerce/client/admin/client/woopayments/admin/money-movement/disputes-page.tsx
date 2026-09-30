@@ -651,7 +651,6 @@ export const WooPaymentsDisputesPage = () => {
 			<SpotlightPromotion />
 			<WooPaymentsListFilters filters={ listFilters } />
 			<section aria-busy={ isLoading }>
-				<h2>{ __( 'Disputes', 'woocommerce' ) }</h2>
 				<LiveStatusMessage isError={ !! errorMessage }>
 					{ liveStatusMessage }
 				</LiveStatusMessage>
@@ -690,6 +689,7 @@ export const WooPaymentsDisputesPage = () => {
 					total={ totalCount || disputes.length }
 					isLoading={ isLoading }
 					searchLabel={ __( 'Search disputes', 'woocommerce' ) }
+					title={ __( 'Disputes', 'woocommerce' ) }
 					empty={ __( 'No disputes found.', 'woocommerce' ) }
 					getItemId={ getDisputeId }
 					toolbarActions={

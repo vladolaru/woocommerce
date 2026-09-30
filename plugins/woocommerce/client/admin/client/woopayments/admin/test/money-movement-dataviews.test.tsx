@@ -57,7 +57,7 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 				onChangeView={ onChangeView }
 				total={ 52 }
 				isLoading={ false }
-				header={ <h2>Transactions</h2> }
+				title="Transactions"
 				toolbarActions={
 					<button type="button">Download transactions</button>
 				}

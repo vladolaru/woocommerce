@@ -323,11 +323,7 @@ export const WooPaymentsPayouts = () => {
 			{ /* Client 11.1.0 deposits/index.tsx:153. */ }
 			<WooPaymentsTestModeNotice currentPage="deposits" />
 			<SpotlightPromotion />
-			<section
-				className="woocommerce-woopayments-overview-card"
-				aria-busy={ isLoading }
-			>
-				<h2>{ __( 'Payout history', 'woocommerce' ) }</h2>
+			<section aria-busy={ isLoading }>
 				<LiveStatusMessage isError={ !! errorMessage }>
 					{ liveStatusMessage }
 				</LiveStatusMessage>
@@ -369,6 +365,7 @@ export const WooPaymentsPayouts = () => {
 					total={ totalCount || payouts.length }
 					isLoading={ isLoading }
 					searchLabel={ __( 'Search payouts', 'woocommerce' ) }
+					title={ __( 'Payout history', 'woocommerce' ) }
 					empty={ __( 'No payouts found.', 'woocommerce' ) }
 					getItemId={ ( payout ) => payout.id }
 					toolbarActions={

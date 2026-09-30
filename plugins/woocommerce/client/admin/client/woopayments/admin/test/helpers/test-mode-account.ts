@@ -53,7 +53,8 @@ export const getTestModeNoticeText = async (): Promise< string | null > => {
 		return null;
 	}
 
-	const heading = document.querySelector( 'h1, h2' );
+	// The page heading, or the transactions tabs that come first on those pages.
+	const heading = document.querySelector( 'h1, h2, [role="tablist"], nav' );
 	expect( heading ).not.toBeNull();
 	expect(
 		// eslint-disable-next-line no-bitwise -- compareDocumentPosition returns a bitmask.

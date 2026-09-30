@@ -385,6 +385,7 @@ export const WooPaymentsBlockedTransactions = () => {
 				isLoading={ isLoading }
 				search={ false }
 				searchLabel={ title }
+				title={ title }
 				// Client 11.1.0 uses TableCard, whose empty text this is.
 				empty={ __( 'No data to display', 'woocommerce' ) }
 				getItemId={ ( item ) =>

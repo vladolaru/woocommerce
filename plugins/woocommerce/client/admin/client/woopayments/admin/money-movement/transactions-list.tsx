@@ -59,6 +59,8 @@ export type WooPaymentsTransactionsListProps = {
 	depositId?: string;
 	/** Builds the settings-shell route for a changed list query. */
 	buildRoute: ( query: WooPaymentsMoneyMovementQuery ) => string;
+	/** The card title, like the client's `TransactionsList` "Transactions". */
+	title?: string;
 };
 
 const getSummaryNumber = ( summary: TransactionsSummary, key: string ) =>
@@ -80,7 +82,7 @@ const getSummaryCount = ( summary: TransactionsSummary ) =>
 export const WooPaymentsTransactionsList = (
 	props: WooPaymentsTransactionsListProps
 ) => {
-	const { depositId, buildRoute } = props;
+	const { depositId, buildRoute, title } = props;
 	const location = useLocation();
 	const [ transactions, setTransactions ] = useState<
 		WooPaymentsTransactionListRow[]
@@ -354,6 +356,7 @@ export const WooPaymentsTransactionsList = (
 				isLoading={ isLoading }
 				search={ false }
 				searchLabel={ __( 'Search transactions', 'woocommerce' ) }
+				title={ title }
 				empty={ emptyMessage }
 				getItemId={ getResourceId }
 				toolbarActions={

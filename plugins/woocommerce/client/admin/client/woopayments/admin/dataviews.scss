@@ -4,3 +4,51 @@
 // With a `.css` extension Sass would leave a plain CSS `@import` instead.
 // stylelint-disable-next-line scss/at-import-partial-extension
 @import "@wordpress/dataviews/build-style/style";
+
+// Client 11.1.0 `TableCard`: one top row with the title, search, actions and then the column
+// menu. DataViews puts the title and actions after its own controls, so the header wrappers
+// step aside (`display: contents`) and `order` puts the title first and the column menu last.
+.woocommerce-woopayments-money-movement-dataviews {
+	.dataviews__view-actions {
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px 16px;
+
+		> :last-child,
+		.woocommerce-woopayments-money-movement-dataviews__header {
+			display: contents;
+		}
+
+		// The "View options" menu, the client's column menu.
+		> :last-child > .components-dropdown {
+			order: 1;
+		}
+	}
+
+	.woocommerce-woopayments-money-movement-dataviews__title {
+		font-size: 16px;
+		font-weight: 600;
+		line-height: 1.5;
+		margin: 0;
+		order: -1;
+	}
+
+	.woocommerce-woopayments-money-movement-dataviews__actions {
+		align-items: center;
+		display: flex;
+		flex: 1 1 auto;
+		flex-wrap: wrap;
+		gap: 8px;
+		justify-content: flex-end;
+
+		// The transactions and blocked searches take the room left in the row, as in the client.
+		> :not(.components-button) {
+			flex: 1 1 240px;
+		}
+	}
+
+	// Client 11.1.0 `@woocommerce/components` `table/style.scss`: the header row sits on a grey band.
+	.dataviews-view-table thead th {
+		background-color: #f8f9fa;
+	}
+}

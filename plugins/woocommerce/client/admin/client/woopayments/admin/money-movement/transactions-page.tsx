@@ -729,7 +729,6 @@ export const WooPaymentsTransactionsPage = () => {
 				<WooPaymentsTestModeNotice currentPage="transactions" />
 				<SpotlightPromotion />
 				<section>
-					<h2>{ __( 'Blocked transactions', 'woocommerce' ) }</h2>
 					{ tabsNav }
 					<WooPaymentsBlockedTransactions />
 				</section>
@@ -743,10 +742,10 @@ export const WooPaymentsTransactionsPage = () => {
 				<WooPaymentsTestModeNotice currentPage="transactions" />
 				<SpotlightPromotion />
 				<section>
-					<h2>{ __( 'Transactions', 'woocommerce' ) }</h2>
 					{ tabsNav }
 					<WooPaymentsTransactionsList
 						buildRoute={ buildTransactionsRoute }
+						title={ __( 'Transactions', 'woocommerce' ) }
 					/>
 				</section>
 			</div>
@@ -758,7 +757,6 @@ export const WooPaymentsTransactionsPage = () => {
 			<WooPaymentsTestModeNotice currentPage="transactions" />
 			<SpotlightPromotion />
 			<section aria-busy={ isLoading }>
-				<h2>{ __( 'Uncaptured transactions', 'woocommerce' ) }</h2>
 				{ tabsNav }
 				<LiveStatusMessage isError={ !! errorMessage }>
 					{ liveStatusMessage }
@@ -792,6 +790,7 @@ export const WooPaymentsTransactionsPage = () => {
 						'Search uncaptured transactions',
 						'woocommerce'
 					) }
+					title={ __( 'Uncaptured transactions', 'woocommerce' ) }
 					empty={ emptyMessage }
 					getItemId={ getAuthorizationPaymentIntentId }
 				/>

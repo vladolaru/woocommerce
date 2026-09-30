@@ -44,9 +44,11 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 	DataViews: ( {
 		data = [],
 		fields = [],
+		header,
 		view,
 		onChangeView,
 	}: {
+		header?: ReactNode;
 		data?: WooPaymentsDeposit[];
 		fields?: Array< {
 			id: string;
@@ -56,6 +58,7 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		onChangeView: ( view: { fields?: string[] } ) => void;
 	} ) => (
 		<div role="table" data-visible-fields={ view.fields?.join( ',' ) }>
+			{ header }
 			<button
 				type="button"
 				onClick={ () =>
