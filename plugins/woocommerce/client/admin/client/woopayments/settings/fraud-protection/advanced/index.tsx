@@ -4,11 +4,11 @@
 import {
 	Button,
 	Card,
-	CheckboxControl,
 	ExternalLink,
 	Notice,
 	RadioControl,
 	TextControl,
+	ToggleControl,
 } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import {
@@ -27,6 +27,7 @@ import type { KeyboardEvent, ReactNode } from 'react';
  * Internal dependencies
  */
 import { getSettingsPaymentsProviderRouteUrl } from '../../../admin/utils';
+import '../../../../settings-payments/settings-payments-body.scss';
 import {
 	useAdvancedFraudProtectionSettings,
 	useCurrentProtectionLevel,
@@ -448,7 +449,7 @@ const RuleToggle = ( {
 
 	return (
 		<div className="woopayments-fraud-protection-rule__toggle">
-			<CheckboxControl
+			<ToggleControl
 				checked={ settingUI.enabled }
 				label={ label }
 				help={ description }

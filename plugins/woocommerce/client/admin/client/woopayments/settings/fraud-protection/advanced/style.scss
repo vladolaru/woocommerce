@@ -1,25 +1,67 @@
 .woopayments-fraud-protection-advanced {
-	max-width: 960px;
-	margin: 0;
+	display: grid;
+	grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+	align-items: start;
+	column-gap: 24px;
+	max-width: 1120px;
+	margin: 32px 12px 80px;
+	color: $gray-900;
+
+	> * {
+		grid-column: 2;
+	}
+
+	> .woopayments-fraud-protection-advanced__back-link,
+	> h1 {
+		grid-column: 1 / -1;
+	}
+
+	> h1 {
+		margin: 0 0 24px;
+		font-size: 24px;
+		line-height: 32px;
+		font-weight: 600;
+	}
+
+	> .woopayments-fraud-protection-advanced__description {
+		grid-column: 1;
+		grid-row: span 5;
+	}
+
+	@include breakpoint("<782px") {
+		grid-template-columns: 1fr;
+
+		> *,
+		> .woopayments-fraud-protection-advanced__description {
+			grid-column: 1;
+			grid-row: auto;
+		}
+	}
 }
 
 .woopayments-fraud-protection-advanced__back-link {
-	display: inline-block;
-	margin: 0 0 16px;
+	display: inline-flex;
+	margin-bottom: 12px;
+	font-size: 13px;
+	line-height: 20px;
+	text-decoration: none;
 }
 
 .woopayments-fraud-protection-advanced__description {
-	margin: 16px 0 24px;
+	margin: 0 0 24px;
 
 	h2 {
-		margin: 0 0 8px;
-		font-size: 20px;
-		line-height: 28px;
+		margin: 0;
+		font-size: 16px;
+		line-height: 24px;
+		font-weight: 600;
 	}
 
 	p {
-		margin: 0;
-		color: #646970;
+		margin: 8px 0 0;
+		color: $gray-700;
+		font-size: 13px;
+		line-height: 20px;
 	}
 }
 
@@ -33,12 +75,13 @@
 }
 
 .woopayments-fraud-protection-rule {
-	padding: 20px;
+	padding: 24px;
 
 	h3 {
 		margin: 0 0 16px;
-		font-size: 16px;
-		line-height: 24px;
+		font-size: 14px;
+		line-height: 20px;
+		font-weight: 600;
 	}
 }
 
@@ -88,7 +131,7 @@
 }
 
 .woopayments-fraud-protection-rule__threshold-details {
-	margin: 0 0 8px 32px;
+	margin: 0 0 8px 44px;
 
 	h4 {
 		margin: 0 0 12px;
