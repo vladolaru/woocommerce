@@ -203,6 +203,10 @@ class WooPaymentsExpressCheckoutService {
 						return true;
 					}
 
+					if ( ! $this->is_amazon_pay_button_available() ) {
+						return false;
+					}
+
 					return in_array(
 						WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_AMAZON_PAY,
 						WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_methods( $this->account_service, array( $method ), $context, $currency ),
@@ -271,6 +275,30 @@ class WooPaymentsExpressCheckoutService {
 		return $this->account_service->is_gateway_enabled()
 			&& $this->account_service->has_working_account()
 			&& ( $this->is_payment_request_enabled() || $this->can_use_amazon_pay() );
+	}
+
+	/**
+	 * Tell whether the client's button-only Amazon Pay guards hold.
+	 *
+	 * Mirrors WooPayments' `can_use_amazon_pay()`: no Amazon Pay button while express methods sit in the
+	 * payment-method list, and the base gateway availability (gateway enabled, HTTPS in live mode outside admin).
+	 * At payment time the gateway's own `is_available()` already enforces the latter two.
+	 *
+	 * @return bool
+	 */
+	private function is_amazon_pay_button_available(): bool {
+		if (
+			WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
+			&& $this->is_truthy_gateway_setting( 'express_checkout_in_payment_methods' )
+		) {
+			return false;
+		}
+
+		if ( ! $this->account_service->is_gateway_enabled() ) {
+			return false;
+		}
+
+		return is_admin() || $this->account_service->is_test_mode_enabled() || wc_checkout_is_https();
 	}
 
 	/**

@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Unit_Test_Case;
@@ -21,6 +22,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		wc_empty_cart();
 		delete_option( 'woocommerce_default_country' );
 		delete_option( 'woocommerce_currency' );
+		delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
 		delete_option( 'woocommerce_price_num_decimals' );
@@ -1054,22 +1056,97 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not require Amazon Pay in UPE card method settings when express checkout enables it.
+	 * @testdox Should offer Amazon Pay in every express checkout surface only while each of the client's availability conditions holds.
+	 *
+	 * @dataProvider provider_amazon_pay_availability_conditions
+	 *
+	 * @param array<string,mixed> $settings  Gateway setting overrides.
+	 * @param bool                $test_mode Whether the account is in test mode.
+	 * @param bool                $in_list   Whether the dynamic checkout feature is on (express methods may sit in the payment-method list).
+	 * @param bool                $expected  Whether Amazon Pay should be usable.
 	 */
-	public function test_amazon_pay_eligibility_uses_express_checkout_settings_not_upe_card_settings(): void {
+	public function test_amazon_pay_honors_client_availability_conditions( array $settings, bool $test_mode, bool $in_list, bool $expected ): void {
+		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', $in_list ? '1' : '0' );
+		$sut = $this->create_service(
+			array_merge(
+				array(
+					'express_checkout_product_methods'  => array( 'payment_request', 'amazon_pay' ),
+					'express_checkout_cart_methods'     => array( 'payment_request', 'amazon_pay' ),
+					'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
+					'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
+				),
+				$settings
+			),
+			true,
+			array( 'ece_confirmation_tokens_disabled' => false ),
+			true,
+			true,
+			$test_mode
+		);
+
+		$this->assertSame( $expected, $sut->can_use_amazon_pay( 'USD' ), 'Store API extension data' );
+		$this->assertSame( $expected ? array( 'payment_request', 'amazon_pay' ) : array( 'payment_request' ), $sut->get_enabled_methods_for_context( 'checkout' ), 'Button enabled methods' );
+		$this->assertSame( $expected ? array( 'card', 'amazon_pay' ) : array( 'card' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ), 'Button payment method types' );
+	}
+
+	/**
+	 * Data provider for the Amazon Pay availability conditions.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:bool,2:bool,3:bool}>
+	 */
+	public function provider_amazon_pay_availability_conditions(): array {
+		return array(
+			'all conditions hold'                        => array( array(), true, false, true ),
+			'merchant switched amazon pay off'           => array( array( 'upe_enabled_payment_method_ids' => array( 'card' ) ), true, false, false ),
+			'express methods in the payment-method list' => array( array( 'express_checkout_in_payment_methods' => 'yes' ), true, true, false ),
+			'list setting on without the feature flag'   => array( array( 'express_checkout_in_payment_methods' => 'yes' ), true, false, true ),
+			'woopayments gateway disabled'               => array( array( 'enabled' => 'no' ), true, false, false ),
+			'live mode without https'                    => array( array(), false, false, false ),
+		);
+	}
+
+	/**
+	 * @testdox Should skip the live-mode HTTPS guard for Amazon Pay in admin, like the client's express availability check.
+	 */
+	public function test_amazon_pay_skips_https_guard_in_admin(): void {
 		$sut = $this->create_service(
 			array(
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_enabled_payment_method_ids'    => array( 'card' ),
+				'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 			),
 			true,
-			array(
-				'ece_confirmation_tokens_disabled' => false,
-			)
+			array( 'ece_confirmation_tokens_disabled' => false ),
+			true,
+			true,
+			false
 		);
 
-		$this->assertSame( array( 'card', 'amazon_pay' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
-		$this->assertSame( array( 'payment_request', 'amazon_pay' ), $sut->get_enabled_methods_for_context( 'checkout' ) );
+		$this->assertFalse( $sut->can_use_amazon_pay( 'USD' ), 'Storefront requires HTTPS in live mode.' );
+
+		$GLOBALS['current_screen'] = \WP_Screen::get( 'dashboard' ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		try {
+			$this->assertTrue( $sut->can_use_amazon_pay( 'USD' ) );
+		} finally {
+			unset( $GLOBALS['current_screen'] );
+		}
+	}
+
+	/**
+	 * @testdox Should reject a submitted Amazon Pay payment type once the merchant switched Amazon Pay off.
+	 */
+	public function test_payment_time_allowlist_rejects_amazon_pay_the_merchant_switched_off(): void {
+		$settings = array(
+			'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
+			'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
+			'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
+		);
+		$eligible = array( 'ece_confirmation_tokens_disabled' => false );
+
+		$enabled  = $this->create_account_service( $settings, $eligible );
+		$disabled = $this->create_account_service( array_merge( $settings, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) ), $eligible );
+
+		$this->assertSame( array( 'card', 'amazon_pay' ), WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_account( $enabled, 'checkout', 'USD' ) );
+		$this->assertSame( array( 'card' ), WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_account( $disabled, 'checkout', 'USD' ) );
 	}
 
 	/**
@@ -1144,6 +1221,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 				false,
 			),
 			'amazon pay not eligible'          => array( $amazon_only, array( 'capabilities' => array() ), false ),
+			'amazon pay switched off'          => array( array_merge( $amazon_only, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) ), array(), false ),
 		);
 	}
 
@@ -1435,10 +1513,13 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $account_data         Account data.
 	 * @param bool                $merge_defaults       Whether to merge default gateway settings.
 	 * @param bool                $shopper_tracking     Whether shopper tracking is enabled.
+	 * @param bool                $test_mode            Whether the account is in test mode.
 	 * @return WooPaymentsExpressCheckoutService
 	 */
-	private function create_service( array $settings = array(), bool $can_process_payments = true, array $account_data = array(), bool $merge_defaults = true, bool $shopper_tracking = true ): WooPaymentsExpressCheckoutService {
+	private function create_service( array $settings = array(), bool $can_process_payments = true, array $account_data = array(), bool $merge_defaults = true, bool $shopper_tracking = true, bool $test_mode = true ): WooPaymentsExpressCheckoutService {
 		$default_settings = array(
+			'enabled'                              => 'yes',
+			'upe_enabled_payment_method_ids'       => array( 'card', 'amazon_pay' ),
 			'manual_capture'                       => 'no',
 			'payment_request'                      => 'yes',
 			'payment_request_button_type'          => 'default',
@@ -1450,7 +1531,36 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			'express_checkout_checkout_methods'    => array( 'payment_request' ),
 		);
 		$settings         = $merge_defaults ? array_merge( $default_settings, $settings ) : $settings;
-		$account_data     = array_merge(
+		$account_service  = $this->create_account_service( $settings, $account_data, $test_mode );
+
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( $can_process_payments );
+
+		$tracking_controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_shopper_tracking_enabled' ) )
+			->getMock();
+		$tracking_controller->method( 'is_shopper_tracking_enabled' )->willReturn( $shopper_tracking );
+
+		$sut = new WooPaymentsExpressCheckoutService();
+		$sut->init( $account_service, $provider, $tracking_controller );
+
+		return $sut;
+	}
+
+	/**
+	 * Create a WooPayments account service mock backed by gateway settings and account data.
+	 *
+	 * @param array<string,mixed> $settings     Gateway settings.
+	 * @param array<string,mixed> $account_data Account data overrides.
+	 * @param bool                $test_mode    Whether the account is in test mode.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service( array $settings, array $account_data = array(), bool $test_mode = true ): WooPaymentsAccountService {
+		$account_data = array_merge(
 			array(
 				'country'          => 'US',
 				'payments_enabled' => true,
@@ -1476,28 +1586,13 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_id' )->willReturn( 'acct_123' );
 		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
 		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
-		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account_service->method( 'is_payment_request_enabled' )->willReturn( 'yes' === ( $settings['payment_request'] ?? 'no' ) );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			static fn( string $key, $fallback = null ) => array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback
 		);
 
-		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments' ) )
-			->getMock();
-		$provider->method( 'can_process_payments' )->willReturn( $can_process_payments );
-
-		$tracking_controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_shopper_tracking_enabled' ) )
-			->getMock();
-		$tracking_controller->method( 'is_shopper_tracking_enabled' )->willReturn( $shopper_tracking );
-
-		$sut = new WooPaymentsExpressCheckoutService();
-		$sut->init( $account_service, $provider, $tracking_controller );
-
-		return $sut;
+		return $account_service;
 	}
 
 	/**

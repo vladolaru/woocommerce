@@ -237,6 +237,10 @@ class WooPaymentsExpressPaymentMethodTypes {
 			return false;
 		}
 
+		if ( ! self::is_amazon_pay_enabled_by_merchant( $account_service ) ) {
+			return false;
+		}
+
 		if ( function_exists( 'wc_tax_enabled' ) && wc_tax_enabled() && 'billing' === get_option( 'woocommerce_tax_based_on' ) && 'pay_for_order' !== $context ) {
 			return false;
 		}
@@ -248,6 +252,21 @@ class WooPaymentsExpressPaymentMethodTypes {
 		$currency = '' === $currency ? get_woocommerce_currency() : $currency;
 
 		return self::is_amazon_pay_currency_supported( strtolower( $currency ), strtoupper( (string) ( $account_data['country'] ?? '' ) ) );
+	}
+
+	/**
+	 * Tell whether the merchant has Amazon Pay switched on in the WooPayments settings.
+	 *
+	 * The client's Amazon Pay gateway is enabled exactly while `amazon_pay` is in the enabled payment
+	 * method IDs, and its express payment-type allowlist drops Amazon Pay when that gateway is disabled.
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @return bool
+	 */
+	private static function is_amazon_pay_enabled_by_merchant( WooPaymentsAccountService $account_service ): bool {
+		$enabled = $account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( self::STRIPE_TYPE_CARD ) );
+
+		return is_array( $enabled ) && in_array( self::EXPRESS_METHOD_AMAZON_PAY, self::normalize_express_method_ids( $enabled ), true );
 	}
 
 	/**
