@@ -46,6 +46,7 @@ const mockUseAmazonPayEnabledSettings = jest.fn();
 const mockUseLinkEnabledSettings = jest.fn();
 const mockUseWooPayShowIncompatibilityNotice = jest.fn();
 const mockUseGetAvailablePaymentMethodIds = jest.fn();
+const mockUseDevMode = jest.fn();
 const originalLocation = window.location;
 const mockExpressCheckoutMount = jest.fn();
 const mockExpressCheckoutUnmount = jest.fn();
@@ -82,6 +83,7 @@ jest.mock( '../data/hooks', () => ( {
 		mockUseWooPayShowIncompatibilityNotice(),
 	useGetAvailablePaymentMethodIds: () =>
 		mockUseGetAvailablePaymentMethodIds(),
+	useDevMode: () => mockUseDevMode(),
 } ) );
 
 jest.mock( '../bootstrap', () => ( {
@@ -246,7 +248,26 @@ const setHookDefaults = () => {
 		'apple_pay',
 		'google_pay',
 	] );
+	mockUseDevMode.mockReturnValue( false );
 	mockSaveSettings.mockResolvedValue( true );
+};
+
+const mockAccountSettingsResponse = ( account: Record< string, unknown > ) => {
+	mockApiFetch.mockImplementation( ( options ) => {
+		const path = typeof options === 'string' ? options : options?.path;
+
+		if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+			return Promise.resolve( {
+				account: {
+					connected: true,
+					...account,
+				},
+				urls: { setup: '#live-onboarding' },
+			} );
+		}
+
+		return Promise.resolve( { id: 'file_logo' } );
+	} );
 };
 
 describe( 'WooPaymentsExpressCheckoutSettings', () => {
@@ -364,6 +385,90 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 					'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 			},
 		} );
+	} );
+
+	// Client 11.1.0 WC_Payment_Gateway_WCPay::admin_options() fires the admin notices hook,
+	// test and sandbox account notices included, on every `method=` subpage too.
+	it.each( [ 'payment_request', 'woopay', 'amazon_pay' ] )(
+		'shows the test-account notice below the %s subpage header',
+		async ( methodId ) => {
+			mockAccountSettingsResponse( {
+				live: false,
+				test_drive: true,
+				sandbox: false,
+			} );
+
+			render(
+				<WooPaymentsExpressCheckoutSettings methodId={ methodId } />
+			);
+
+			const heading = await screen.findByText(
+				'You are using a test account.'
+			);
+			const notice = heading.closest(
+				'.woopayments-settings-account-mode-notice'
+			) as HTMLElement;
+			expect( notice ).toBeInTheDocument();
+			expect(
+				within( notice ).getByRole( 'button', {
+					name: 'Activate payments',
+				} )
+			).toBeInTheDocument();
+			expect(
+				screen
+					.getByRole( 'heading', { level: 1 } )
+					.compareDocumentPosition( notice )
+			).toBe( window.Node.DOCUMENT_POSITION_FOLLOWING );
+		}
+	);
+
+	it( 'shows the sandbox notice with the development-mode copy on subpages', async () => {
+		mockUseDevMode.mockReturnValue( true );
+		mockAccountSettingsResponse( {
+			live: false,
+			test_drive: false,
+			sandbox: true,
+		} );
+
+		render(
+			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+		);
+
+		const notice = (
+			await screen.findByText( 'You are using a sandbox test account.' )
+		).closest( '.woopayments-settings-account-mode-notice' ) as HTMLElement;
+		expect(
+			within( notice ).getByText(
+				/Development mode is enabled for the store!/
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', { name: 'Activate payments' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'shows no account notice on subpages for a live account', async () => {
+		mockAccountSettingsResponse( {
+			live: true,
+			test_drive: false,
+			sandbox: false,
+		} );
+
+		render(
+			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+		);
+
+		await waitFor( () =>
+			expect( mockApiFetch ).toHaveBeenCalledWith( {
+				path: '/wc-admin/settings/payments/woopayments/account',
+				method: 'GET',
+			} )
+		);
+		expect(
+			document.querySelector(
+				'.woopayments-settings-account-mode-notice'
+			)
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'renders Apple Pay and Google Pay detail controls with reference copy', async () => {
@@ -1278,7 +1383,10 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 			)
 		);
 
-		const uploadBody = mockApiFetch.mock.calls[ 0 ][ 0 ].body as FormData;
+		const uploadCall = mockApiFetch.mock.calls.find(
+			( [ options ] ) => options?.path === '/wc/v3/payments/file'
+		);
+		const uploadBody = uploadCall?.[ 0 ].body as FormData;
 
 		expect( uploadBody.get( 'file' ) ).toBe( logoFile );
 		expect( uploadBody.get( 'purpose' ) ).toBe( 'business_logo' );
@@ -1305,7 +1413,9 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 			);
 		} );
 
-		expect( mockApiFetch ).not.toHaveBeenCalled();
+		expect( mockApiFetch ).not.toHaveBeenCalledWith(
+			expect.objectContaining( { path: '/wc/v3/payments/file' } )
+		);
 		expect( setLogoId ).not.toHaveBeenCalled();
 		expect( mockDispatch ).not.toHaveBeenCalledWith( 'core/notices' );
 		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();

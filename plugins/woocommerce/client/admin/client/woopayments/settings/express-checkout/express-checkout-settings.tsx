@@ -9,6 +9,7 @@ import { __ } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { getSettingsPaymentsProviderRouteUrl } from '../../admin/utils';
+import { AccountModeNotice } from '../account-mode-notice';
 import { ApplePayDomainErrorNotice } from '../apple-pay-domain-error-notice';
 import { ExpressCheckoutBusyState, ExpressCheckoutSaveBar } from './components';
 import {
@@ -16,7 +17,7 @@ import {
 	isAmazonPayExpressCheckoutAvailable,
 	isWooPayExpressCheckoutAvailable,
 } from './settings-utils';
-import { useGetSettings, useSettings } from '../data/hooks';
+import { useDevMode, useGetSettings, useSettings } from '../data/hooks';
 import './style.scss';
 
 type ExpressCheckoutMethodId = 'woopay' | 'payment_request' | 'amazon_pay';
@@ -83,6 +84,7 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 	const { isLoading, isSaving } = useSettings();
 	const settings = asSettingsRecord( useGetSettings() );
 	const hasSettings = Object.keys( settings ).length > 0;
+	const isDevModeEnabled = Boolean( useDevMode() );
 
 	if ( ! isExpressCheckoutMethodId( methodId ) ) {
 		return (
@@ -163,6 +165,9 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 				<h1 id={ headingId }>{ title }</h1>
 			</header>
 			<ApplePayDomainErrorNotice />
+			{ ! isLoading && hasSettings && (
+				<AccountModeNotice isDevModeEnabled={ isDevModeEnabled } />
+			) }
 			{ content }
 		</section>
 	);
