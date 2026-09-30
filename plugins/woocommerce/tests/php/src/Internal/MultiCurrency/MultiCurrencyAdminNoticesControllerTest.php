@@ -93,7 +93,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( self::CANONICAL_NONCE_QUERY, $markup );
 		$this->assertStringNotContainsString( self::LEGACY_NOTICE_QUERY, $markup );
 		$this->assertStringNotContainsString( self::LEGACY_NONCE_QUERY, $markup );
-		$this->assertStringContainsString( 'class="woocommerce-message-close notice-dismiss"', $markup );
+		$this->assertStringContainsString( 'class="notice-dismiss" style="text-decoration:none;"', $markup );
 	}
 
 	/**

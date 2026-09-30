@@ -105,8 +105,11 @@ class MultiCurrencyAdminNoticeProjectionService {
 	 * @since 11.0.0
 	 */
 	public static function get_notice_markup( array $notice, string $dismiss_url = '' ): string {
-		$markup  = '<div class="' . esc_attr( (string) ( $notice['class'] ?? '' ) ) . '" style="position:relative;">';
-		$markup .= self::get_dismiss_link_markup( (bool) ( $notice['dismissible'] ?? false ), $dismiss_url );
+		$dismiss_link = self::get_dismiss_link_markup( (bool) ( $notice['dismissible'] ?? false ), $dismiss_url );
+		// A dismissible notice keeps core's 38px on the right for the dismiss control, as `.notice.is-dismissible` does.
+		$style   = '' === $dismiss_link ? 'position:relative;' : 'position:relative;padding-right:38px;';
+		$markup  = '<div class="' . esc_attr( (string) ( $notice['class'] ?? '' ) ) . '" style="' . $style . '">';
+		$markup .= $dismiss_link;
 		$markup .= '<p>';
 		$markup .= wp_kses(
 			(string) ( $notice['message'] ?? '' ),
@@ -180,7 +183,10 @@ class MultiCurrencyAdminNoticeProjectionService {
 			return '';
 		}
 
-		return '<a href="' . esc_url( $dismiss_url ) . '" class="woocommerce-message-close notice-dismiss" style="position:relative;float:right;padding:9px 0 9px 9px;text-decoration:none;"></a>';
+		// Core's dismiss placement (top right, aligned with the first line) instead of client 11.1.0's floated link, which
+		// WooCommerce's `.woocommerce-message-close` rule pushes 12px down (owner ruling N-251 R7). The `is-dismissible`
+		// class is left off so WordPress does not add its own JavaScript-only dismiss button next to this nonce link.
+		return '<a href="' . esc_url( $dismiss_url ) . '" class="notice-dismiss" style="text-decoration:none;"><span class="screen-reader-text">' . esc_html__( 'Dismiss this notice.', 'woocommerce' ) . '</span></a>';
 	}
 
 	/**

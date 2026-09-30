@@ -87,18 +87,18 @@ class MultiCurrencyAdminNoticeProjectionServiceTest extends WC_Unit_Test_Case {
 			'https://example.test/wp-admin/?wcpay-multi-currency-hide-notice=currency_changed'
 		);
 
+		// Owner ruling N-251 R7: core's dismiss placement (top right, aligned with the text, room kept on the
+		// right) instead of the client's floated link; the dismissal still goes through the nonce link.
 		$this->assertStringContainsString(
-			'<div class="notice notice-warning" style="position:relative;">',
+			'<div class="notice notice-warning" style="position:relative;padding-right:38px;">',
 			$markup
 		);
 		$this->assertStringContainsString(
-			'class="woocommerce-message-close notice-dismiss"',
+			'<a href="https://example.test/wp-admin/?wcpay-multi-currency-hide-notice=currency_changed" class="notice-dismiss" style="text-decoration:none;"><span class="screen-reader-text">Dismiss this notice.</span></a>',
 			$markup
 		);
-		$this->assertStringContainsString(
-			'style="position:relative;float:right;padding:9px 0 9px 9px;text-decoration:none;"',
-			$markup
-		);
+		$this->assertStringNotContainsString( 'woocommerce-message-close', $markup );
+		$this->assertStringNotContainsString( 'float:right', $markup );
 		$this->assertStringContainsString(
 			'<p>The store currency was recently changed. The following currencies are set to manual rates and may need updates: Canadian dollar</p>',
 			$markup
