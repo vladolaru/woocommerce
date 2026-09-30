@@ -190,6 +190,57 @@
 	}
 }
 
+// Client 11.1.0 enabled-currencies-list/style.scss:192-222 and currency-delete-illustration/styles.scss:
+// a 495px dialog with the currency symbol crossed out above the methods that need it.
+.woocommerce-multi-currency-settings__remove-modal {
+	max-width: 495px;
+
+	p {
+		font-size: 14px;
+		line-height: 19px;
+	}
+}
+
+.woocommerce-multi-currency-settings__remove-illustration {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 96px;
+	height: 72px;
+	margin: 30px auto 24px;
+	background-color: #000580;
+	color: #ffe600;
+	font-size: 48px;
+	line-height: 72px;
+
+	svg {
+		position: absolute;
+		top: -17px;
+		inset-inline-end: -17px;
+		fill: #cc1818;
+		background: #fff;
+		border-radius: 50%;
+	}
+}
+
+.woocommerce-multi-currency-settings__remove-methods {
+	margin: 14px 0 22px;
+
+	li {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		margin-bottom: 12px;
+	}
+
+	// Client 11.1.0 settings/payment-method-icon/style.scss:21-25.
+	img {
+		max-width: 45px;
+		height: auto;
+	}
+}
+
 // Client 11.1.0 components/preview-modal/index.scss: a near full-screen dialog around the store page.
 .woocommerce-multi-currency-settings__preview-modal {
 	width: calc(100vw - 64px);

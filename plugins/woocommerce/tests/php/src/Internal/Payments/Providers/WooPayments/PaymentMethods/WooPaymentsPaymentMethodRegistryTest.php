@@ -487,7 +487,8 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'capabilities'               => array( 'refunds' ),
 					'icon'                       => 'assets/images/payment-methods/ideal.svg',
 					'dark_icon'                  => 'assets/images/payment-methods/ideal-dark.svg',
-					'settings_icon'              => 'assets/images/payment-methods/ideal.svg',
+					// Client 11.1.0 IdealDefinition::get_settings_icon_url() (:160-162) is its iDEAL | Wero tile; core ships it as ideal-wero.svg.
+					'settings_icon'              => 'assets/images/payment-methods/ideal-wero.svg',
 				),
 			),
 			'link'              => array(

@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -72,7 +73,10 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			return;
 		}
 
-		$this->assertSame( array( WooPaymentsMultiCurrencyProviderBootstrap::class ), WooPaymentsProvider::get_multi_currency_provider_roots() );
+		$this->assertSame(
+			array( WooPaymentsMultiCurrencyProviderBootstrap::class, WooPaymentsMultiCurrencyPaymentMethodsMap::class ),
+			WooPaymentsProvider::get_multi_currency_provider_roots()
+		);
 	}
 
 	/**

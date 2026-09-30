@@ -410,6 +410,8 @@ class WooPaymentsPaymentMethodRegistry {
 				'capabilities'               => array( self::REFUNDS ),
 				'icon'                       => 'assets/images/payment-methods/ideal.svg',
 				'dark_icon'                  => 'assets/images/payment-methods/ideal-dark.svg',
+				// Client 11.1.0 IdealDefinition::get_settings_icon_url() is its iDEAL | Wero tile; core ships it as ideal-wero.svg.
+				'settings_icon'              => 'assets/images/payment-methods/ideal-wero.svg',
 			),
 			array(
 				'id'                         => 'link',

@@ -441,6 +441,108 @@ describe( 'MultiCurrencySettingsApp', () => {
 		);
 	} );
 
+	// Client 11.1.0 enabled-currencies-list/delete-button.js:21-145 (and the
+	// map printed by class-wc-payments-currency-manager.php:145-176, fixture
+	// shape from enabled-currencies-list/__tests__/index.test.js:261): removing
+	// a currency an enabled payment method needs asks first, naming the methods.
+	describe( 'removing a currency that payment methods need', () => {
+		afterEach( () => {
+			delete window.multiCurrencyPaymentMethodsMap;
+			delete window.multiCurrencyPaymentMethodIcons;
+		} );
+
+		it( 'asks first and removes only after confirming', async () => {
+			window.multiCurrencyPaymentMethodsMap = {
+				EUR: { bancontact: 'Bancontact', ideal: 'iDEAL | Wero' },
+			};
+			window.multiCurrencyPaymentMethodIcons = {
+				bancontact:
+					'https://example.com/assets/images/payment-methods/bancontact.svg',
+				ideal: 'https://example.com/assets/images/payment-methods/ideal-wero.svg',
+			};
+			mockApiFetch.mockResolvedValueOnce( removedCurrencyResponse );
+
+			render( <MultiCurrencySettingsApp /> );
+
+			fireEvent.click(
+				await screen.findByRole( 'button', {
+					name: 'Remove Euro as an enabled currency',
+				} )
+			);
+
+			const dialog = screen.getByRole( 'dialog', {
+				name: 'Remove Euro',
+			} );
+			expect( dialog ).toHaveTextContent(
+				'Are you sure you want to remove Euro (EUR €)? Your customers will no longer be able to pay in this currency and use payment methods listed below.'
+			);
+			expect(
+				within( dialog )
+					.getAllByRole( 'listitem' )
+					.map( ( item ) => item.textContent )
+			).toEqual( [ 'Bancontact', 'iDEAL | Wero' ] );
+			expect(
+				within( dialog )
+					.getByText( 'iDEAL | Wero' )
+					.parentElement?.querySelector( 'img' )
+			).toHaveAttribute(
+				'src',
+				'https://example.com/assets/images/payment-methods/ideal-wero.svg'
+			);
+			expect( dialog ).toHaveTextContent(
+				'You can add Euro (EUR €) again at any time in Multi-Currency settings.'
+			);
+			expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+			);
+			expect(
+				screen.queryByRole( 'dialog', { name: 'Remove Euro' } )
+			).not.toBeInTheDocument();
+			expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+
+			fireEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Remove Euro as an enabled currency',
+				} )
+			);
+			fireEvent.click(
+				within(
+					screen.getByRole( 'dialog', { name: 'Remove Euro' } )
+				).getByRole( 'button', { name: 'Remove' } )
+			);
+
+			await waitFor( () =>
+				expect( mockApiFetch ).toHaveBeenLastCalledWith( {
+					path: '/wc/v3/payments/multi-currency/update-enabled-currencies',
+					method: 'POST',
+					data: { enabled: [ 'USD' ] },
+				} )
+			);
+		} );
+
+		it( 'removes at once when no enabled method needs the currency', async () => {
+			window.multiCurrencyPaymentMethodsMap = {
+				GBP: { klarna: 'Klarna' },
+			};
+			mockApiFetch.mockResolvedValueOnce( removedCurrencyResponse );
+
+			render( <MultiCurrencySettingsApp /> );
+
+			fireEvent.click(
+				await screen.findByRole( 'button', {
+					name: 'Remove Euro as an enabled currency',
+				} )
+			);
+
+			expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
+			await waitFor( () =>
+				expect( mockApiFetch ).toHaveBeenCalledTimes( 2 )
+			);
+		} );
+	} );
+
 	it( 'opens the currency settings modal for a non-default currency', async () => {
 		render( <MultiCurrencySettingsApp /> );
 

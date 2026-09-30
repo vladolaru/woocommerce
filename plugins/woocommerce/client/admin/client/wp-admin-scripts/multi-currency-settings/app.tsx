@@ -36,6 +36,10 @@ import type {
 import { SettingsSection } from './settings-section';
 import { StoreLevelSettings } from './store-settings';
 import { CurrencySettingsModal } from './currency-settings-modal';
+import {
+	getDependentPaymentMethods,
+	RemoveCurrencyModal,
+} from './remove-currency-modal';
 
 const REST_BASE = '/wc/v3/payments/multi-currency';
 const EMPTY_SELECTION_HINT_ID =
@@ -175,6 +179,8 @@ export function MultiCurrencySettingsApp() {
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ isSaving, setIsSaving ] = useState( false );
 	const [ isModalOpen, setIsModalOpen ] = useState( false );
+	const [ currencyToRemove, setCurrencyToRemove ] =
+		useState< MultiCurrencyCurrency | null >( null );
 	const [ managedCurrencyCode, setManagedCurrencyCode ] = useState<
 		string | null
 	>( null );
@@ -339,6 +345,25 @@ export function MultiCurrencySettingsApp() {
 		} finally {
 			setIsSaving( false );
 		}
+	};
+
+	const removeCurrency = ( code: string ) =>
+		saveEnabledCurrencies(
+			enabledCurrencies
+				.map( ( enabledCurrency ) => enabledCurrency.code )
+				.filter( ( enabledCode ) => enabledCode !== code )
+		);
+
+	// Client 11.1.0 delete-button.js:24-39: ask first only when enabled payment methods need the currency.
+	const requestRemoval = ( currency: MultiCurrencyCurrency ) => {
+		if (
+			Object.keys( getDependentPaymentMethods( currency.code ) ).length
+		) {
+			setCurrencyToRemove( currency );
+			return;
+		}
+
+		void removeCurrency( currency.code );
 	};
 
 	const openModal = () => {
@@ -532,19 +557,8 @@ export function MultiCurrencySettingsApp() {
 													) }
 													showTooltip={ false }
 													onClick={ () =>
-														saveEnabledCurrencies(
-															enabledCurrencies
-																.map(
-																	(
-																		enabledCurrency
-																	) =>
-																		enabledCurrency.code
-																)
-																.filter(
-																	( code ) =>
-																		code !==
-																		currency.code
-																)
+														requestRemoval(
+															currency
 														)
 													}
 												/>
@@ -569,6 +583,17 @@ export function MultiCurrencySettingsApp() {
 			</SettingsSection>
 
 			<StoreLevelSettings />
+
+			{ currencyToRemove && (
+				<RemoveCurrencyModal
+					currency={ currencyToRemove }
+					onCancel={ () => setCurrencyToRemove( null ) }
+					onConfirm={ () => {
+						setCurrencyToRemove( null );
+						void removeCurrency( currencyToRemove.code );
+					} }
+				/>
+			) }
 
 			{ managedCurrency && currencies && (
 				<CurrencySettingsModal
