@@ -26,14 +26,23 @@ class WooPaymentsCurrencyComplianceNotice implements RegisterHooksInterface {
 	private NativePaymentsRuntimeArbiter $arbiter;
 
 	/**
+	 * Account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
+	 * @param NativePaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
+	 * @param WooPaymentsAccountService    $account_service Account service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsAccountService $account_service ): void {
+		$this->arbiter         = $arbiter;
+		$this->account_service = $account_service;
 	}
 
 	/**
@@ -44,7 +53,42 @@ class WooPaymentsCurrencyComplianceNotice implements RegisterHooksInterface {
 			return;
 		}
 
+		add_action( 'admin_notices', array( $this, 'display_not_supported_currency_notice' ), 9999 );
 		add_action( 'admin_notices', array( $this, 'display_isk_decimal_notice' ) );
+	}
+
+	/**
+	 * Warn when the connected account does not support the store currency.
+	 *
+	 * Client 11.1.0 `WC_Payments_Admin::display_not_supported_currency_notice()`: an empty
+	 * supported list never warns, and the bold label carries no currency code.
+	 *
+	 * @internal
+	 */
+	public function display_not_supported_currency_notice(): void {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			return;
+		}
+
+		$supported_currencies = $this->account_service->get_customer_supported_currencies();
+		if ( array() === $supported_currencies || in_array( strtolower( get_woocommerce_currency() ), $supported_currencies, true ) ) {
+			return;
+		}
+
+		?>
+		<div id="wcpay-unsupported-currency-notice" class="notice notice-warning">
+			<p>
+				<b><?php esc_html_e( 'Unsupported currency:', 'woocommerce' ); ?></b>
+				<?php
+				printf(
+					/* translators: %s: WooPayments */
+					esc_html__( 'The selected currency is not available for the country set in your %s account.', 'woocommerce' ),
+					'WooPayments'
+				);
+				?>
+			</p>
+		</div>
+		<?php
 	}
 
 	/**
