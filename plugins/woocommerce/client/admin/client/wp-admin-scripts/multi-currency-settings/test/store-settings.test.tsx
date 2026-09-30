@@ -97,6 +97,41 @@ describe( 'StoreLevelSettings', () => {
 		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
 	} );
 
+	// Client 11.1.0 store-settings/index.js:28-48 (section description),
+	// 147-155 (rendering mode help) and 182-215 (Storefront switcher help).
+	it( 'explains the store settings with the client help text and links', async () => {
+		mockApiFetch.mockResolvedValueOnce( storeSettingsResponse );
+
+		render( <StoreLevelSettings /> );
+
+		expect(
+			await screen.findByText(
+				/^Store settings allow your customers to choose which currency they would like to use when shopping at your store\./
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: /Learn more/ } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/#store-settings'
+		);
+		expect(
+			screen.getByText(
+				'Choose how multi-currency prices are rendered. "Optimized for caching" outputs identical HTML for all visitors and converts prices client-side, allowing hosting providers to cache pages effectively.'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'checkbox', {
+				name: /Add a currency switcher to the Storefront theme/i,
+			} )
+		).toHaveAccessibleDescription(
+			'A currency switcher is also available in your widgets. Configure now'
+		);
+		expect(
+			screen.getByRole( 'link', { name: 'Configure now' } )
+		).toHaveAttribute( 'href', 'widgets.php' );
+	} );
+
 	it( 'saves store settings with preserved REST option keys', async () => {
 		const save = createDeferred< typeof storeSettingsResponse >();
 		mockApiFetch

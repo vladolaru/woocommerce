@@ -281,6 +281,23 @@ describe( 'MultiCurrencySettingsApp', () => {
 
 	// Client 11.1.0 list-item.js:58 omits the code when it equals the symbol;
 	// the client REST payload decodes the symbol (Currency.php:272).
+	// Client 11.1.0 enabled-currencies-list/index.js:26-46.
+	it( 'explains enabled currencies with a Learn more link', async () => {
+		render( <MultiCurrencySettingsApp /> );
+
+		expect(
+			await screen.findByText(
+				/^Accept payments in multiple currencies\. Prices are converted based on exchange rates and rounding rules\./
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: /Learn more/ } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/#enabled-currencies'
+		);
+	} );
+
 	it( 'shows the decoded symbol and code beside the currency name', async () => {
 		mockApiFetch.mockReset();
 		mockApiFetch.mockResolvedValueOnce( {

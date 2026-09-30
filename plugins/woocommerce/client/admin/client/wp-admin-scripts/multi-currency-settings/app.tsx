@@ -6,13 +6,20 @@ import apiFetch from '@wordpress/api-fetch';
 import {
 	Button,
 	CheckboxControl,
+	ExternalLink,
 	Modal,
 	Notice,
 	SearchControl,
 	Spinner,
 } from '@wordpress/components';
 import { useDispatch } from '@wordpress/data';
-import { useEffect, useMemo, useRef, useState } from '@wordpress/element';
+import {
+	createInterpolateElement,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __, sprintf } from '@wordpress/i18n';
 
@@ -412,6 +419,21 @@ export function MultiCurrencySettingsApp() {
 					{ __( 'Add/remove currencies', 'woocommerce' ) }
 				</Button>
 			</div>
+			<p>
+				{ createInterpolateElement(
+					__(
+						'Accept payments in multiple currencies. Prices are converted based on exchange rates and rounding rules. <learnMoreLink>Learn more</learnMoreLink>',
+						'woocommerce'
+					),
+					{
+						learnMoreLink: (
+							<ExternalLink href="https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/#enabled-currencies">
+								<></>
+							</ExternalLink>
+						),
+					}
+				) }
+			</p>
 
 			<table className="widefat striped">
 				<thead>

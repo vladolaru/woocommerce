@@ -5,13 +5,19 @@ import apiFetch from '@wordpress/api-fetch';
 import {
 	Button,
 	CheckboxControl,
+	ExternalLink,
 	Icon,
 	Notice,
 	RadioControl,
 	Spinner,
 } from '@wordpress/components';
 import { useDispatch } from '@wordpress/data';
-import { useEffect, useMemo, useState } from '@wordpress/element';
+import {
+	createInterpolateElement,
+	useEffect,
+	useMemo,
+	useState,
+} from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { info } from '@wordpress/icons';
 
@@ -218,6 +224,21 @@ export function StoreLevelSettings() {
 	return (
 		<section className="woocommerce-multi-currency-settings__store-settings">
 			<h2>{ __( 'Store settings', 'woocommerce' ) }</h2>
+			<p>
+				{ createInterpolateElement(
+					__(
+						'Store settings allow your customers to choose which currency they would like to use when shopping at your store. <learnMoreLink>Learn more</learnMoreLink>',
+						'woocommerce'
+					),
+					{
+						learnMoreLink: (
+							<ExternalLink href="https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/#store-settings">
+								<></>
+							</ExternalLink>
+						),
+					}
+				) }
+			</p>
 			<CheckboxControl
 				__nextHasNoMarginBottom
 				checked={ draftSettings.enableAutoCurrency }
@@ -239,6 +260,16 @@ export function StoreLevelSettings() {
 						'Add a currency switcher to the Storefront theme on breadcrumb section.',
 						'woocommerce'
 					) }
+					help={ createInterpolateElement(
+						__(
+							'A currency switcher is also available in your widgets. <linkToWidgets>Configure now</linkToWidgets>',
+							'woocommerce'
+						),
+						{
+							// eslint-disable-next-line jsx-a11y/anchor-has-content -- The link text comes from the interpolated string.
+							linkToWidgets: <a href="widgets.php" />,
+						}
+					) }
 					onChange={ ( checked ) =>
 						updateDraftSettings( {
 							enableStorefrontSwitcher: Boolean( checked ),
@@ -249,6 +280,10 @@ export function StoreLevelSettings() {
 			{ draftSettings.isCacheOptimizedFeatureEnabled && (
 				<RadioControl
 					label={ __( 'Price rendering mode', 'woocommerce' ) }
+					help={ __(
+						'Choose how multi-currency prices are rendered. "Optimized for caching" outputs identical HTML for all visitors and converts prices client-side, allowing hosting providers to cache pages effectively.',
+						'woocommerce'
+					) }
 					selected={ draftSettings.renderingMode }
 					options={ [
 						{
