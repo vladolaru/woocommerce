@@ -3,7 +3,14 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -608,6 +615,42 @@ describe( 'WooPayments transactions list Show and currency filters', () => {
 		} );
 		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
 			expect.not.stringMatching( /type_is|filter=/ )
+		);
+	} );
+
+	it( 'passes "match any" from the advanced filters to the list, summary and export', async () => {
+		mockGetTransactions.mockResolvedValue( {
+			data: [ { transaction_id: 'txn_match', type: 'charge' } ],
+			total_count: 1,
+		} as never );
+		mockRequestExport.mockReset();
+		mockRequestExport.mockRejectedValue( new Error( 'Stop here.' ) );
+		renderList( undefined, '?filter=advanced&type_is=refund&match=any' );
+		await screen.findByText( 'Transactions loaded.' );
+
+		expect( screen.getByLabelText( 'Transactions match' ) ).toHaveValue(
+			'any'
+		);
+		expect( mockGetTransactions ).toHaveBeenLastCalledWith(
+			expect.objectContaining( { match: 'any', type_is: 'refund' } )
+		);
+		expect( mockGetSummary ).toHaveBeenLastCalledWith(
+			expect.objectContaining( { match: 'any' } )
+		);
+
+		fireEvent.click( screen.getByRole( 'button', { name: 'Export' } ) );
+		await waitFor( () =>
+			expect( mockRequestExport ).toHaveBeenCalledWith(
+				expect.objectContaining( { match: 'any' } )
+			)
+		);
+
+		// Choosing "all" again drops the argument from the route.
+		fireEvent.change( screen.getByLabelText( 'Transactions match' ), {
+			target: { value: 'all' },
+		} );
+		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
+			expect.not.stringContaining( 'match=' )
 		);
 	} );
 

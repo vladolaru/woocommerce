@@ -45,11 +45,14 @@ import {
 import { getSettingsPaymentsProviderAdminPath } from '../utils';
 import { formatCurrencyName } from '../currency';
 import {
+	getListMatch,
+	getListMatchFilter,
 	getListShowFilter,
 	getQueryForShowFilter,
 	withListShowFilter,
 	WooPaymentsListFilters,
 	type WooPaymentsListFilter,
+	type WooPaymentsListMatch,
 	type WooPaymentsListShowFilter,
 } from './list-filters';
 
@@ -146,10 +149,15 @@ export const WooPaymentsTransactionsList = (
 		[ location.search ]
 	);
 	// The payout scope is a request parameter, not a DataViews filter the merchant can change.
-	const query = useMemo(
-		() => ( depositId ? { ...urlQuery, deposit_id: depositId } : urlQuery ),
-		[ depositId, urlQuery ]
-	);
+	// Client 11.1.0 `data/transactions/resolvers.js:29`: "match any" goes to the list, summary and export.
+	const match = isAdvanced ? getListMatch( location.search ) : 'all';
+	const query = useMemo( () => {
+		const scopedQuery = depositId
+			? { ...urlQuery, deposit_id: depositId }
+			: urlQuery;
+
+		return match === 'any' ? { ...scopedQuery, match } : scopedQuery;
+	}, [ depositId, urlQuery, match ] );
 	const queryView = useMemo(
 		() =>
 			moneyMovementQueryToDataViewsView( urlQuery, {
@@ -222,11 +230,16 @@ export const WooPaymentsTransactionsList = (
 
 	const pushRoute = (
 		nextQuery: WooPaymentsMoneyMovementQuery,
-		nextShowFilter = showFilter
+		nextShowFilter = showFilter,
+		nextMatch: WooPaymentsListMatch = match
 	) =>
 		getHistory().push(
 			getSettingsPaymentsProviderAdminPath(
-				withListShowFilter( buildRoute( nextQuery ), nextShowFilter )
+				withListShowFilter(
+					buildRoute( nextQuery ),
+					nextShowFilter,
+					nextMatch
+				)
 			)
 		);
 	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
@@ -386,6 +399,21 @@ export const WooPaymentsTransactionsList = (
 			},
 		},
 	];
+
+	if ( isAdvanced ) {
+		listFilters.push(
+			getListMatchFilter(
+				__( 'Transactions match', 'woocommerce' ),
+				match,
+				( value ) =>
+					pushRoute(
+						urlQuery,
+						showFilter,
+						value === 'any' ? 'any' : 'all'
+					)
+			)
+		);
+	}
 
 	// Client 11.1.0 `transactions/filters/index.tsx`: the currency select shows for more than one currency.
 	if ( currencyChoices.length > 1 ) {

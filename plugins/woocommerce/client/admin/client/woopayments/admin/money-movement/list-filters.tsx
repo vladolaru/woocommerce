@@ -2,6 +2,7 @@
  * External dependencies
  */
 import { SelectControl } from '@wordpress/components';
+import { __ } from '@wordpress/i18n';
 
 export type WooPaymentsListFilter = {
 	id: string;
@@ -62,20 +63,72 @@ export const getListShowFilter = (
 };
 
 /**
- * Adds the "Show" choice to a list route, as the client's FilterPicker keeps it in the URL.
+ * Whether the advanced filters match all or any, the client's `match` argument; `all` stays out of the URL.
+ */
+export type WooPaymentsListMatch = 'all' | 'any';
+
+/**
+ * Reads the list's `match` argument.
+ *
+ * @param search The route's query string.
+ */
+export const getListMatch = ( search: string ): WooPaymentsListMatch =>
+	new URLSearchParams( search ).get( 'match' ) === 'any' ? 'any' : 'all';
+
+/**
+ * Adds the "Show" choice, and "match any" for the advanced filters, to a list route,
+ * as the client's FilterPicker and AdvancedFilters keep them in the URL.
  *
  * @param route      The list route.
  * @param showFilter The "Show" choice.
+ * @param match      Whether the advanced filters match all or any.
  */
 export const withListShowFilter = (
 	route: string,
-	showFilter: WooPaymentsListShowFilter
-) =>
-	showFilter === 'all'
-		? route
-		: `${ route }${
-				route.includes( '?' ) ? '&' : '?'
-		  }filter=${ showFilter }`;
+	showFilter: WooPaymentsListShowFilter,
+	match: WooPaymentsListMatch = 'all'
+) => {
+	const params = new URLSearchParams();
+
+	if ( showFilter !== 'all' ) {
+		params.append( 'filter', showFilter );
+	}
+
+	if ( showFilter === 'advanced' && match === 'any' ) {
+		params.append( 'match', 'any' );
+	}
+
+	const extra = params.toString();
+
+	if ( ! extra ) {
+		return route;
+	}
+
+	return `${ route }${ route.includes( '?' ) ? '&' : '?' }${ extra }`;
+};
+
+/**
+ * The advanced filters' "match all or any" select.
+ * Client 11.1.0 `AdvancedFilters`, for example "Disputes match <select /> filters" (`disputes/filters/config.ts:104-114`).
+ *
+ * @param label    The select label, such as "Disputes match".
+ * @param match    The current choice.
+ * @param onChange Called with the new choice.
+ */
+export const getListMatchFilter = (
+	label: string,
+	match: WooPaymentsListMatch,
+	onChange: ( value: string ) => void
+): WooPaymentsListFilter => ( {
+	id: 'match',
+	label,
+	value: match,
+	options: [
+		{ label: __( 'All filters', 'woocommerce' ), value: 'all' },
+		{ label: __( 'Any filter', 'woocommerce' ), value: 'any' },
+	],
+	onChange,
+} );
 
 // Client 11.1.0 FilterPicker `update()`: any choice but "Advanced filters" drops the advanced filters.
 const ADVANCED_FILTER_PARAMS = [

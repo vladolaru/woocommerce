@@ -24,6 +24,7 @@ import {
 import {
 	getWooPaymentsDisputes,
 	getWooPaymentsDisputesSummary,
+	requestWooPaymentsDisputesExport,
 } from '../money-movement/data';
 import { setMockUserPreferences } from './helpers/user-preferences';
 
@@ -482,6 +483,52 @@ describe( 'WooPayments disputes Show and currency filters', () => {
 			'Won',
 			'Lost',
 		] );
+	} );
+
+	it( 'offers the match select only under Advanced filters', async () => {
+		const { unmount } = renderPage();
+		await screen.findByText( 'Disputes loaded.' );
+		expect(
+			screen.queryByLabelText( 'Disputes match' )
+		).not.toBeInTheDocument();
+		unmount();
+
+		renderPage( '/woopayments/disputes?filter=advanced' );
+		await screen.findByText( 'Disputes loaded.' );
+		const match = screen.getByLabelText( 'Disputes match' );
+		expect( match ).toHaveValue( 'all' );
+		expect( lastQuery( mockGetDisputes ) ).not.toHaveProperty( 'match' );
+
+		fireEvent.change( match, { target: { value: 'any' } } );
+		await waitFor( () =>
+			expect( lastQuery( mockGetDisputes ).match ).toBe( 'any' )
+		);
+	} );
+
+	it( 'passes "match any" from the advanced filters to the list, summary and export', async () => {
+		const mockRequestExport =
+			requestWooPaymentsDisputesExport as jest.MockedFunction<
+				typeof requestWooPaymentsDisputesExport
+			>;
+		mockRequestExport.mockReset();
+		mockRequestExport.mockRejectedValue( new Error( 'Stop here.' ) );
+		renderPage(
+			'/woopayments/disputes?filter=advanced&status_is=won&status_is=lost&match=any'
+		);
+		await screen.findByText( 'Disputes loaded.' );
+
+		expect( lastQuery( mockGetDisputes ) ).toMatchObject( {
+			match: 'any',
+			status_is: [ 'won', 'lost' ],
+		} );
+		expect( lastQuery( mockGetSummary ).match ).toBe( 'any' );
+
+		fireEvent.click( screen.getByRole( 'button', { name: 'Export' } ) );
+		await waitFor( () =>
+			expect( mockRequestExport ).toHaveBeenCalledWith(
+				expect.objectContaining( { match: 'any' } )
+			)
+		);
 	} );
 
 	it( 'shows the currency select for more than one currency and filters by the chosen one', async () => {

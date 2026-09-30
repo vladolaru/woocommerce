@@ -309,7 +309,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/payouts?page=4&pagesize=50&sort=amount&direction=asc&search=po_test&status_is=paid&store_currency_is=usd',
+					'/woopayments/payouts?page=4&pagesize=50&sort=amount&direction=asc&status_is=paid&store_currency_is=usd&filter=advanced&match=any',
 				] }
 			>
 				<WooPaymentsPayouts />
@@ -327,13 +327,15 @@ describe( 'WooPayments payout details admin surface', () => {
 				pagesize: 50,
 				sort: 'amount',
 				direction: 'asc',
-				match: 'po_test',
+				// Client 11.1.0 `data/deposits/resolvers.js:78`: the advanced filters' "match any".
+				match: 'any',
 				status_is: 'paid',
 				store_currency_is: 'usd',
 			} )
 		);
 		expect( mockGetDepositsSummary ).toHaveBeenCalledWith(
 			expect.objectContaining( {
+				match: 'any',
 				status_is: 'paid',
 				store_currency_is: 'usd',
 			} )
@@ -361,7 +363,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/payouts?status_is=paid&store_currency_is=usd',
+					'/woopayments/payouts?status_is=paid&store_currency_is=usd&filter=advanced&match=any',
 				] }
 			>
 				<WooPaymentsPayouts />
@@ -389,6 +391,7 @@ describe( 'WooPayments payout details admin surface', () => {
 
 		expect( mockRequestDepositsExport ).toHaveBeenCalledWith(
 			expect.objectContaining( {
+				match: 'any',
 				status_is: 'paid',
 				store_currency_is: 'usd',
 			} )

@@ -34,10 +34,14 @@ import {
 	parseMoneyMovementQuery,
 } from './query';
 import {
+	getListMatch,
+	getListMatchFilter,
 	getListShowFilter,
 	getQueryForShowFilter,
 	withListShowFilter,
 	WooPaymentsListFilters,
+	type WooPaymentsListFilter,
+	type WooPaymentsListMatch,
 	type WooPaymentsListShowFilter,
 } from './list-filters';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
@@ -122,7 +126,8 @@ const ALL_CURRENCIES = '---';
  */
 export const getDisputesApiQuery = (
 	query: WooPaymentsMoneyMovementQuery,
-	showFilter: WooPaymentsListShowFilter
+	showFilter: WooPaymentsListShowFilter,
+	match: WooPaymentsListMatch = 'all'
 ): WooPaymentsMoneyMovementQuery => {
 	const apiQuery = normalizeDateFiltersForApi( query );
 
@@ -130,16 +135,22 @@ export const getDisputesApiQuery = (
 		apiQuery.search = [ ...ACTIONABLE_DISPUTE_STATUSES ];
 	}
 
+	if ( showFilter === 'advanced' && match === 'any' ) {
+		apiQuery.match = 'any';
+	}
+
 	return apiQuery;
 };
 
 const buildDisputesRoute = (
 	query: WooPaymentsMoneyMovementQuery,
-	showFilter: WooPaymentsListShowFilter
+	showFilter: WooPaymentsListShowFilter,
+	match: WooPaymentsListMatch = 'all'
 ) =>
 	withListShowFilter(
 		buildMoneyMovementRoutePath( '/woopayments/disputes', query ),
-		showFilter
+		showFilter,
+		match
 	);
 
 // Client 11.1.0 `components/dispute-status-chip`: colours per status, red for any awaiting a response.
@@ -262,9 +273,10 @@ export const WooPaymentsDisputesPage = () => {
 		DISPUTES_SHOW_FILTERS
 	);
 	const isAdvanced = showFilter === 'advanced';
+	const match = getListMatch( location.search );
 	const apiQuery = useMemo(
-		() => getDisputesApiQuery( query, showFilter ),
-		[ query, showFilter ]
+		() => getDisputesApiQuery( query, showFilter, match ),
+		[ query, showFilter, match ]
 	);
 	const view = useMemo(
 		() =>
@@ -525,7 +537,8 @@ export const WooPaymentsDisputesPage = () => {
 		navigate(
 			buildDisputesRoute(
 				dataViewsViewToMoneyMovementQuery( nextView, query, 'created' ),
-				showFilter
+				showFilter,
+				match
 			)
 		);
 	};
@@ -553,7 +566,7 @@ export const WooPaymentsDisputesPage = () => {
 			nextQuery.store_currency_is = value;
 		}
 
-		navigate( buildDisputesRoute( nextQuery, showFilter ) );
+		navigate( buildDisputesRoute( nextQuery, showFilter, match ) );
 	};
 	const handleExport = async () => {
 		setIsExporting( true );
@@ -626,7 +639,7 @@ export const WooPaymentsDisputesPage = () => {
 		storeCurrencies = [ currencyFilter ];
 	}
 
-	const listFilters = [
+	const listFilters: WooPaymentsListFilter[] = [
 		{
 			id: 'show',
 			label: __( 'Show', 'woocommerce' ),
@@ -645,6 +658,23 @@ export const WooPaymentsDisputesPage = () => {
 			onChange: handleShowFilterChange,
 		},
 	];
+
+	if ( isAdvanced ) {
+		listFilters.push(
+			getListMatchFilter(
+				__( 'Disputes match', 'woocommerce' ),
+				match,
+				( value ) =>
+					navigate(
+						buildDisputesRoute(
+							query,
+							showFilter,
+							value === 'any' ? 'any' : 'all'
+						)
+					)
+			)
+		);
+	}
 
 	if ( storeCurrencies.length > 1 ) {
 		listFilters.unshift( {

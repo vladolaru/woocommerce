@@ -29,11 +29,14 @@ import type {
 	WooPaymentsMoneyMovementQuery,
 } from './money-movement/types';
 import {
+	getListMatch,
+	getListMatchFilter,
 	getListShowFilter,
 	getQueryForShowFilter,
 	withListShowFilter,
 	WooPaymentsListFilters,
 	type WooPaymentsListFilter,
+	type WooPaymentsListMatch,
 	type WooPaymentsListShowFilter,
 } from './money-movement/list-filters';
 import { formatCurrencyName } from './currency';
@@ -111,14 +114,16 @@ const getFirstString = ( value: unknown ) => {
 	return typeof value === 'string' && value ? value : undefined;
 };
 
+// Client 11.1.0 `data/deposits/resolvers.js:76-89`: `match` is the advanced filters' "all or any".
 const getPayoutsRequestQuery = (
-	query: ReturnType< typeof parseMoneyMovementQuery >
+	query: ReturnType< typeof parseMoneyMovementQuery >,
+	match: WooPaymentsListMatch
 ): WooPaymentsDepositsQuery => ( {
 	page: query.page,
 	pagesize: query.pagesize,
 	sort: query.sort,
 	direction: query.direction,
-	match: getFirstString( query.search ),
+	match: match === 'any' ? match : undefined,
 	store_currency_is: getFirstString( query.store_currency_is ),
 	status_is: getFirstString( query.status_is ),
 	status_is_not: getFirstString( query.status_is_not ),
@@ -157,6 +162,7 @@ export const WooPaymentsPayouts = () => {
 		PAYOUTS_SHOW_FILTERS
 	);
 	const isAdvanced = showFilter === 'advanced';
+	const match = isAdvanced ? getListMatch( location.search ) : 'all';
 	const view = useMemo(
 		() =>
 			moneyMovementQueryToDataViewsView( query, {
@@ -259,7 +265,7 @@ export const WooPaymentsPayouts = () => {
 			setIsLoading( true );
 
 			try {
-				const requestQuery = getPayoutsRequestQuery( query );
+				const requestQuery = getPayoutsRequestQuery( query, match );
 				const [ response, nextSummary ] = await Promise.all( [
 					getWooPaymentsDeposits( requestQuery ),
 					getWooPaymentsDepositsSummary( requestQuery ),
@@ -297,11 +303,12 @@ export const WooPaymentsPayouts = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [ query ] );
+	}, [ query, match ] );
 
 	const navigateTo = (
 		nextQuery: WooPaymentsMoneyMovementQuery,
-		nextShowFilter = showFilter
+		nextShowFilter = showFilter,
+		nextMatch: WooPaymentsListMatch = match
 	) =>
 		navigate(
 			withListShowFilter(
@@ -309,7 +316,8 @@ export const WooPaymentsPayouts = () => {
 					'/woopayments/payouts',
 					nextQuery
 				),
-				nextShowFilter
+				nextShowFilter,
+				nextMatch
 			)
 		);
 	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
@@ -329,7 +337,7 @@ export const WooPaymentsPayouts = () => {
 		setExportMessage( null );
 
 		try {
-			const requestQuery = getPayoutsRequestQuery( query );
+			const requestQuery = getPayoutsRequestQuery( query, match );
 
 			await runWooPaymentsExport( {
 				requestExport: () =>
@@ -438,6 +446,21 @@ export const WooPaymentsPayouts = () => {
 			},
 		},
 	];
+
+	if ( isAdvanced ) {
+		listFilters.push(
+			getListMatchFilter(
+				__( 'Payouts match', 'woocommerce' ),
+				match,
+				( value ) =>
+					navigateTo(
+						query,
+						showFilter,
+						value === 'any' ? 'any' : 'all'
+					)
+			)
+		);
+	}
 
 	// Client 11.1.0 `deposits/filters/index.js`: the currency select shows for more than one currency.
 	if ( storeCurrencies.length > 1 ) {
