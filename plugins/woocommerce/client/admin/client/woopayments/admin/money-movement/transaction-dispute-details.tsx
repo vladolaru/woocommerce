@@ -10,6 +10,7 @@ import {
 	FlexItem,
 	Modal,
 	Notice,
+	Tooltip,
 } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import {
@@ -35,7 +36,11 @@ import {
 	isVisaComplianceDispute,
 } from './dispute-evidence-fields';
 import { getEffectiveDisputeFee } from './dispute-utils';
-import type { WooPaymentsDispute, WooPaymentsTransaction } from './types';
+import type {
+	WooPaymentsBillingDetails,
+	WooPaymentsDispute,
+	WooPaymentsTransaction,
+} from './types';
 import {
 	formatDisputeReasonLabel,
 	formatExplicitCurrency,
@@ -46,6 +51,12 @@ import {
 } from './utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import { HelpPopover } from '../overview/components/help-popover';
+import {
+	DisputeSteps,
+	InquirySteps,
+	NonCompliantDisputeSteps,
+	NotDefendableInquirySteps,
+} from './dispute-steps';
 
 const RESPONDING_TO_DISPUTES_DOC_URL =
 	'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#responding';
@@ -414,58 +425,6 @@ const DisputeDocumentationLink = ( {
 	);
 };
 
-// Client 11.1.0 dispute-steps.tsx NonCompliantDisputeSteps.
-const VisaComplianceDisputeSteps = () => (
-	<div className="woocommerce-woopayments-money-movement__dispute-steps">
-		<h4>{ __( 'Steps you can take', 'woocommerce' ) }</h4>
-		<p>
-			{ __(
-				'We recommend reviewing your options before responding by the deadline.',
-				'woocommerce'
-			) }
-		</p>
-		<ul>
-			<li>
-				<strong>
-					{ __( 'Accepting the dispute', 'woocommerce' ) }
-				</strong>
-				<p>
-					{ __(
-						'Accepting the dispute means you’ll forfeit the funds, pay the standard dispute fee, and avoid the $500 USD Visa network fee.',
-						'woocommerce'
-					) }
-				</p>
-				<a href={ VISA_COMPLIANCE_DISPUTES_DOC_URL }>
-					{ __( 'Learn more', 'woocommerce' ) }
-				</a>
-			</li>
-			<li>
-				<strong>
-					{ __( 'Challenge the dispute', 'woocommerce' ) }
-				</strong>
-				<p>
-					{ __(
-						'Challenging the dispute will incur a $500 USD Visa network fee, which is charged when you submit evidence. This fee will be refunded if you win the dispute.',
-						'woocommerce'
-					) }
-				</p>
-				<a href={ VISA_COMPLIANCE_DISPUTES_DOC_URL }>
-					{ __( 'Learn more', 'woocommerce' ) }
-				</a>
-			</li>
-		</ul>
-		<p className="woocommerce-woopayments-money-movement__notice">
-			{ createInterpolateElement(
-				__(
-					'<strong>The outcome of this dispute will be determined by Visa.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.',
-					'woocommerce'
-				),
-				{ strong: <strong /> }
-			) }
-		</p>
-	</div>
-);
-
 // Client 11.1.0 `disputes/strings.ts` reason summaries, shown behind the Reason help icon.
 const DISPUTE_REASON_SUMMARIES: Record< string, string > = {
 	credit_not_processed: __(
@@ -790,6 +749,8 @@ const RespondToDisputeActions = ( {
 	refundGuidanceId,
 	paymentMethod,
 	bankName,
+	customer,
+	chargeCreated,
 }: {
 	dispute: WooPaymentsDispute;
 	onAccept: () => void;
@@ -798,6 +759,8 @@ const RespondToDisputeActions = ( {
 	refundGuidanceId: string;
 	paymentMethod?: string;
 	bankName?: string;
+	customer?: WooPaymentsBillingDetails;
+	chargeCreated?: number | string;
 } ) => {
 	const disputeId = getDisputeId( dispute );
 	const isInquiryStatus = isInquiry( dispute.status );
@@ -813,6 +776,19 @@ const RespondToDisputeActions = ( {
 	const isChallengeDisabled =
 		isVisaCompliance && ! isVisaComplianceConditionAccepted;
 	const hasStagedEvidence = !! dispute.evidence_details?.has_evidence;
+	// Client 11.1.0 `dispute-awaiting-response-details.tsx:275-281`: Klarna inquiries cannot be challenged.
+	const isDefendable = ! ( paymentMethod === 'klarna' && isInquiryStatus );
+	const stepsProps = { dispute, customer, chargeCreated, bankName };
+	let steps = <DisputeSteps { ...stepsProps } />;
+	if ( isInquiryStatus ) {
+		steps = isDefendable ? (
+			<InquirySteps { ...stepsProps } />
+		) : (
+			<NotDefendableInquirySteps { ...stepsProps } />
+		);
+	} else if ( isVisaCompliance ) {
+		steps = <NonCompliantDisputeSteps />;
+	}
 	let challengeLabel: string = isInquiryStatus
 		? __( 'Submit evidence', 'woocommerce' )
 		: __( 'Challenge dispute', 'woocommerce' );
@@ -845,9 +821,7 @@ const RespondToDisputeActions = ( {
 				</Notice>
 			) }
 			<DisputeSummaryRow dispute={ dispute } />
-			{ isVisaCompliance && ! isInquiryStatus && (
-				<VisaComplianceDisputeSteps />
-			) }
+			{ steps }
 			<DisputeDocumentationLink
 				isInquiryStatus={ isInquiryStatus }
 				isVisaCompliance={ isVisaCompliance }
@@ -870,11 +844,12 @@ const RespondToDisputeActions = ( {
 				/>
 			) }
 			<div className="woocommerce-woopayments-money-movement__dispute-actions">
-				{ isChallengeDisabled ? (
+				{ isDefendable && isChallengeDisabled && (
 					<Button variant="primary" disabled>
 						{ challengeLabel }
 					</Button>
-				) : (
+				) }
+				{ isDefendable && ! isChallengeDisabled && (
 					<a
 						className="components-button is-primary"
 						href={ getDisputeChallengeUrl( disputeId ) }
@@ -890,7 +865,7 @@ const RespondToDisputeActions = ( {
 				) }
 				{ isInquiryStatus ? (
 					<Button
-						variant="tertiary"
+						variant={ isDefendable ? 'tertiary' : 'primary' }
 						disabled={ ! onIssueRefund }
 						accessibleWhenDisabled
 						aria-describedby={
@@ -930,6 +905,34 @@ const RespondToDisputeActions = ( {
 					>
 						{ __( 'Accept dispute', 'woocommerce' ) }
 					</Button>
+				) }
+				{ ! isDefendable && (
+					<Tooltip
+						text={ __(
+							'Challenge available if the inquiry escalates to a dispute',
+							'woocommerce'
+						) }
+					>
+						<span
+							className="woocommerce-woopayments-dispute-pane__challenge-disabled"
+							tabIndex={ 0 }
+							role="button"
+							aria-disabled="true"
+							aria-label={ __(
+								'Challenge dispute — available if the inquiry escalates to a dispute',
+								'woocommerce'
+							) }
+						>
+							<Button
+								variant="primary"
+								disabled
+								tabIndex={ -1 }
+								aria-hidden="true"
+							>
+								{ __( 'Challenge dispute', 'woocommerce' ) }
+							</Button>
+						</span>
+					</Tooltip>
 				) }
 			</div>
 			{ isInquiryStatus && ! onIssueRefund && (
@@ -1185,6 +1188,8 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 								transaction.payment_method_details?.type
 							}
 							bankName={ bankName }
+							customer={ transaction.billing_details }
+							chargeCreated={ transaction.created }
 						/>
 					</div>
 				</div>

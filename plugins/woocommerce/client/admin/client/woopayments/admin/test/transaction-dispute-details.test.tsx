@@ -179,3 +179,182 @@ describe( 'WooPaymentsTransactionDisputeDetails Visa compliance', () => {
 		).toBeInTheDocument();
 	} );
 } );
+
+// Client 11.1.0 payment-details/dispute-details/dispute-steps.tsx and
+// dispute-awaiting-response-details.tsx:279-470.
+describe( 'WooPaymentsTransactionDisputeDetails steps you can take', () => {
+	const transaction = {
+		id: 'pi_test',
+		amount: 5000,
+		currency: 'usd',
+		created: 1771423200,
+		billing_details: { name: 'Ada Lovelace', email: 'ada@example.com' },
+		payment_method_details: { type: 'card' },
+	};
+	const renderPane = (
+		dispute: Partial< WooPaymentsDispute >,
+		paymentMethod = 'card'
+	) =>
+		render(
+			<WooPaymentsTransactionDisputeDetails
+				transaction={ {
+					...transaction,
+					payment_method_details: { type: paymentMethod },
+				} }
+				dispute={ {
+					id: 'dp_1',
+					amount: 5000,
+					currency: 'usd',
+					created: 1771509600,
+					evidence_details: {
+						has_evidence: false,
+						due_by: 1772028000,
+					},
+					...dispute,
+				} }
+				ordinal={ 1 }
+				total={ 1 }
+				onIssueRefund={ jest.fn() }
+			/>
+		);
+	const getItemTitles = () =>
+		Array.from(
+			document.querySelectorAll(
+				'.woocommerce-woopayments-dispute-step__name'
+			)
+		).map( ( title ) => title.textContent );
+
+	beforeEach( () => {
+		window.wcSettings = {
+			...window.wcSettings,
+			adminUrl: 'https://example.com/wp-admin/',
+			siteTitle: 'Example Store',
+		};
+	} );
+
+	it( 'offers the collapsed dispute steps with the customer email', async () => {
+		renderPane( { reason: 'fraudulent', status: 'needs_response' } );
+
+		const toggle = screen.getByRole( 'button', {
+			name: /^Steps you can take/,
+		} );
+		expect( toggle ).toHaveAttribute( 'aria-expanded', 'false' );
+		expect( toggle ).toHaveTextContent(
+			'We recommend reviewing your options before responding before the deadline.'
+		);
+		expect( screen.queryByText( 'Contact your customer' ) ).toBeNull();
+
+		await userEvent.click( toggle );
+
+		expect( getItemTitles() ).toEqual( [
+			'Contact your customer',
+			'Ask for the dispute to be withdrawn',
+			'Challenge or accept the dispute',
+		] );
+		const email = screen
+			.getByRole( 'link', { name: 'Email customer' } )
+			.getAttribute( 'href' ) as string;
+		expect( email ).toMatch( /^mailto:ada@example\.com\?subject=/ );
+		expect( decodeURIComponent( email ) ).toContain(
+			'subject=Problem with your purchase from Example Store on February 18, 2026?'
+		);
+		expect( decodeURIComponent( email ) ).toContain(
+			'Hello Ada Lovelace,\n\nWe noticed that on February 19, 2026, you disputed a $50.00 charge on February 18, 2026.'
+		);
+		expect(
+			screen.getByRole( 'link', { name: 'Learn more ↗' } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#withdrawals'
+		);
+		expect(
+			screen.getByText(
+				"The outcome of this dispute will be determined by the cardholder's bank."
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'offers the inquiry steps with the inquiry email', async () => {
+		renderPane( {
+			reason: 'fraudulent',
+			status: 'warning_needs_response',
+		} );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: /^Steps you can take/ } )
+		);
+
+		expect( getItemTitles() ).toEqual( [
+			'Contact your customer',
+			'Submit evidence or issue a refund',
+		] );
+		expect(
+			decodeURIComponent(
+				screen
+					.getByRole( 'link', { name: 'Email customer' } )
+					.getAttribute( 'href' ) as string
+			)
+		).toContain( 'you raised a question with your payment provider' );
+		expect(
+			screen.getByText(
+				"The outcome of this inquiry will be determined by the cardholder's bank."
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: 'Submit evidence' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'lets a Klarna inquiry only be refunded, with the challenge explained', async () => {
+		renderPane(
+			{
+				reason: 'credit_not_processed',
+				status: 'warning_needs_response',
+			},
+			'klarna'
+		);
+
+		expect(
+			screen.queryByRole( 'link', { name: 'Submit evidence' } )
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Issue refund' } )
+		).toHaveClass( 'is-primary' );
+		expect(
+			screen.getByRole( 'button', {
+				name: 'Challenge dispute — available if the inquiry escalates to a dispute',
+			} )
+		).toHaveAttribute( 'aria-disabled', 'true' );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: /^Steps you can take/ } )
+		);
+
+		expect( getItemTitles() ).toEqual( [
+			'Contact your customer',
+			'Issue a refund',
+			'Respond when the inquiry becomes a dispute',
+		] );
+		expect(
+			screen.getByText(
+				"Reach out to the customer to check if they're returning the item(s)."
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'opens the Visa compliance steps by default', () => {
+		renderPane( {
+			reason: 'noncompliant',
+			status: 'needs_response',
+			enhanced_eligibility_types: [ 'visa_compliance' ],
+		} );
+
+		expect(
+			screen.getByRole( 'button', { name: /^Steps you can take/ } )
+		).toHaveAttribute( 'aria-expanded', 'true' );
+		expect( getItemTitles() ).toEqual( [
+			'Accepting the dispute',
+			'Challenge the dispute',
+		] );
+	} );
+} );
