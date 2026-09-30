@@ -27,7 +27,12 @@ final class NativePaymentsState {
 	/** A native account exists without checkout enabled. */
 	public const CONNECTED = 'connected';
 
-	/** Native checkout is enabled. */
+	/**
+	 * Native checkout is enabled.
+	 *
+	 * Onboarding enables the card gateway when it applies the payment-method picks, so a store reaches this tier once its account is cached, before KYC, as the client loads its checkout code then.
+	 * Checkout still offers nothing until the account can take payments.
+	 */
 	public const ACTIVE = 'active';
 
 	/**

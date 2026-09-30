@@ -1093,6 +1093,32 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Enabling the card gateway at session creation must not load the active tier while no account is cached:
+	 * the tier only follows the gateway once an account exists.
+	 *
+	 * @testdox A store that leaves onboarding before an account exists stays in the available tier after the card gateway is enabled.
+	 */
+	public function test_kyc_session_without_an_account_keeps_the_store_out_of_the_active_tier(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		$state = wc_get_container()->get( NativePaymentsState::class );
+		$state->invalidate();
+		$this->assertTrue( $state->write_state( NativePaymentsState::AVAILABLE ), 'The store starts native-owned without an account.' );
+		$fixture = $this->arrange_native_nox_picks(
+			array( 'card' => true ),
+			array( 'upe_enabled_payment_method_ids' => array( 'card' ) ),
+			'no'
+		);
+
+		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'yes', get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['enabled'], 'Session creation enabled the card gateway.' );
+		$this->assertFalse( wc_get_container()->get( WooPaymentsAccountService::class )->has_account(), 'The platform created no account yet.' );
+		$this->assertSame( NativePaymentsState::AVAILABLE, $state->get_state(), 'Without an account the store stays below the active tier.' );
+	}
+
+	/**
 	 * Client 11.1.0 update_enabled_payment_methods_ids() only enables gateways of methods in the merged list (:1532-1538),
 	 * so the card gateway stays as it was when card is neither stored nor picked.
 	 *

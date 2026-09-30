@@ -99,6 +99,56 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An active store whose card gateway onboarding enabled offers it at checkout only once the account can take payments ($label).
+	 * @dataProvider account_readiness_cases
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string $label             Case label.
+	 * @param bool   $details_submitted Whether the account details were submitted.
+	 * @param bool   $payments_enabled  Whether the account can accept payments.
+	 * @param bool   $available         Whether checkout must offer the gateway.
+	 */
+	public function test_active_store_offers_the_gateway_only_when_the_account_can_take_payments( string $label, bool $details_submitted, bool $payments_enabled, bool $available ): void {
+		unset( $label );
+		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+		add_filter(
+			'pre_option_woocommerce_woocommerce_payments_settings',
+			static fn() => array(
+				'enabled'   => 'yes',
+				'test_mode' => 'yes',
+			)
+		);
+		// Only the WPCOM connection is stubbed; the account readiness comes from the real account service and cache.
+		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client->method( 'is_available' )->willReturn( true );
+		$account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		$account_service->cache_account_data(
+			array(
+				'account_id'           => 'acct_test123',
+				'status'               => $payments_enabled ? 'complete' : 'restricted',
+				'is_live'              => true,
+				'details_submitted'    => $details_submitted,
+				'payments_enabled'     => $payments_enabled,
+				'live_publishable_key' => 'pk_live_test123',
+				'test_publishable_key' => 'pk_test_test123',
+			)
+		);
+		$provider = new WooPaymentsProvider();
+		$provider->init( wc_get_container()->get( WooPaymentsProviderGatewayAdapter::class ), $api_client, $account_service );
+		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
+
+		$this->run_bootstrap( '__return_false' );
+		$this->reload_payment_gateways();
+
+		$gateway = WC()->payment_gateways()->payment_gateways()[ OrderPaymentStore::GATEWAY_ID ] ?? null;
+		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $gateway, 'An active store registers the gateway.' );
+		$this->assertSame( 'yes', $gateway->enabled, 'The card gateway is enabled, as onboarding leaves it.' );
+		$this->assertSame( $available, $gateway->is_available() );
+		$this->assertSame( $available, array_key_exists( OrderPaymentStore::GATEWAY_ID, WC()->payment_gateways()->get_available_payment_gateways() ) );
+	}
+
+	/**
 	 * @testdox A connected store keeps the saved-card hooks on requests that never build the gateway list.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
@@ -228,6 +278,14 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 			'connected, gateway disabled'               => array( 'connected', NativePaymentsState::CONNECTED, 'no', false ),
 			'connected, gateway enabled but tier stale' => array( 'stale connected', NativePaymentsState::CONNECTED, 'yes', false ),
 			'active, gateway enabled (fixture control)' => array( 'active', NativePaymentsState::ACTIVE, 'yes', true ),
+		);
+	}
+
+	/** @return array<string,array{string,bool,bool,bool}> */
+	public static function account_readiness_cases(): array {
+		return array(
+			'details not submitted, payments disabled' => array( 'not ready', false, false, false ),
+			'details submitted, payments enabled (control)' => array( 'ready', true, true, true ),
 		);
 	}
 
