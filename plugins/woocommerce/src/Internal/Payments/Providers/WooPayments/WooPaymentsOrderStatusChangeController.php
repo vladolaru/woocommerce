@@ -13,7 +13,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
 
 /**
- * Loads the native WooPayments order status-change confirmation on the order-edit screen.
+ * Loads the native WooPayments order status-change confirmation on the order-edit screen, and prints
+ * the client's order-screen payment rows (WooPay line and transaction fee under the totals).
  *
  * The script it enqueues intercepts the order-edit status dropdown so that moving a WooPayments order
  * to Refunded raises a confirmation modal that refunds at the provider, instead of core silently
@@ -133,6 +134,87 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 		if ( false === has_action( 'woocommerce_admin_order_data_after_payment_info', array( $this, 'render_payment_details_container' ) ) ) {
 			add_action( 'woocommerce_admin_order_data_after_payment_info', array( $this, 'render_payment_details_container' ) );
 		}
+
+		if ( false === has_action( 'woocommerce_admin_order_totals_after_total', array( $this, 'render_woopay_payment_method_name' ) ) ) {
+			add_action( 'woocommerce_admin_order_totals_after_total', array( $this, 'render_woopay_payment_method_name' ) );
+		}
+
+		if ( false === has_action( 'woocommerce_admin_order_totals_after_total', array( $this, 'render_transaction_fee_row' ) ) ) {
+			add_action( 'woocommerce_admin_order_totals_after_total', array( $this, 'render_transaction_fee_row' ) );
+		}
+	}
+
+	/**
+	 * Render the "Paid with WooPay" line under the order totals of a WooPay order.
+	 *
+	 * Mirrors plugin 11.1.0 `WC_Payments_Admin::show_woopay_payment_method_name_admin()`.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $order_id The order ID.
+	 */
+	public function render_woopay_payment_method_name( $order_id = 0 ): void {
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof WC_Order || ! $order->get_meta( 'is_woopay' ) ) {
+			return;
+		}
+
+		$last4 = (string) $order->get_meta( 'last4' );
+		?>
+		<div class="wc-payment-gateway-method-name-woopay-wrapper">
+			<?php esc_html_e( 'Paid with', 'woocommerce' ); ?>
+			<img alt="WooPay" src="<?php echo esc_url_raw( WC()->plugin_url() . '/assets/images/payment-methods/woo-short.svg' ); ?>">
+			<?php
+			if ( '' !== $last4 ) {
+				esc_html_e( 'Card ending in', 'woocommerce' );
+				echo ' ' . esc_html( $last4 );
+			}
+			?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render the WooPayments transaction fee row under the order totals.
+	 *
+	 * Mirrors plugin 11.1.0 `WC_Payments_Admin::display_wcpay_transaction_fee()`: hidden while the
+	 * payment awaits capture and when no fee is stored.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $order_id The order ID.
+	 */
+	public function render_transaction_fee_row( $order_id = 0 ): void {
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof WC_Order || 'requires_capture' === $order->get_meta( '_intention_status' ) ) {
+			return;
+		}
+
+		$transaction_fee = $order->get_meta( '_wcpay_transaction_fee' );
+		if ( ! $transaction_fee ) {
+			return;
+		}
+
+		?>
+		<tr>
+			<td class="label wcpay-transaction-fee">
+				<?php
+				echo wc_help_tip( // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wc_help_tip() escapes its tip.
+					sprintf(
+						/* translators: %s: WooPayments */
+						__( 'This represents the fee %s collects for the transaction.', 'woocommerce' ),
+						'WooPayments'
+					)
+				);
+				?>
+				<?php esc_html_e( 'Transaction Fee:', 'woocommerce' ); ?>
+			</td>
+			<td width="1%"></td>
+			<td class="total">
+				-<?php echo wp_kses_post( wc_price( (float) $transaction_fee, array( 'currency' => $order->get_currency() ) ) ); ?>
+			</td>
+		</tr>
+		<?php
 	}
 
 	/**
@@ -170,6 +252,9 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 			return;
 		}
 
+		wp_enqueue_style( 'woocommerce_admin_styles' );
+		wp_add_inline_style( 'woocommerce_admin_styles', $this->get_inline_styles() );
+
 		if ( ! $this->is_script_asset_available() ) {
 			return;
 		}
@@ -188,6 +273,18 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 			'before'
 		);
 		wp_enqueue_script( self::SCRIPT_HANDLE );
+	}
+
+	/**
+	 * Get the order screen styles for the WooPay line.
+	 *
+	 * Client 11.1.0 `assets/css/admin.css:193-202`: the WooPay line sits at the end of the totals.
+	 *
+	 * @return string
+	 */
+	private function get_inline_styles(): string {
+		return '.wc-payment-gateway-method-name-woopay-wrapper{display:flex;justify-content:end;align-items:center}'
+			. '.wc-payment-gateway-method-name-woopay-wrapper img{margin:0 5px;padding-top:2px}';
 	}
 
 	/**

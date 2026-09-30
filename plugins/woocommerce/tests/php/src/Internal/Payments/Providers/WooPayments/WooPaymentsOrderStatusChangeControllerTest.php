@@ -37,6 +37,8 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 		if ( $this->sut instanceof WooPaymentsOrderStatusChangeController ) {
 			remove_action( 'admin_enqueue_scripts', array( $this->sut, 'handle_admin_enqueue_scripts' ) );
 			remove_action( 'woocommerce_admin_order_data_after_payment_info', array( $this->sut, 'render_payment_details_container' ) );
+			remove_action( 'woocommerce_admin_order_totals_after_total', array( $this->sut, 'render_woopay_payment_method_name' ) );
+			remove_action( 'woocommerce_admin_order_totals_after_total', array( $this->sut, 'render_transaction_fee_row' ) );
 		}
 
 		wp_dequeue_script( self::SCRIPT_HANDLE );
@@ -111,6 +113,76 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( '<div id="woocommerce-woopayments-order-payment-details"></div>', $woopayments_output );
 		$this->assertSame( '', $other_output );
 		$this->assertSame( '', $no_order_output );
+	}
+
+	/**
+	 * @testdox Should show the WooPayments transaction fee below the order totals, like the client.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:183,1329-1363`.
+	 */
+	public function test_prints_the_transaction_fee_row_after_the_order_total(): void {
+		$this->sut = $this->create_controller( true );
+		$this->sut->register();
+
+		$order = $this->create_order();
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.78' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+
+		$output = $this->render_totals_after_total( $order );
+
+		$this->assertStringContainsString( '<td class="label wcpay-transaction-fee">', $output );
+		$this->assertStringContainsString( 'This represents the fee WooPayments collects for the transaction.', $output, 'The row carries the client help tip.' );
+		$this->assertMatchesRegularExpression( '#</span>\s+Transaction Fee:#', $output, 'The label is spaced from its help tip.' );
+		$this->assertStringContainsString( '-' . wp_kses( wc_price( 0.78, array( 'currency' => $order->get_currency() ) ), 'post' ), $output, 'The fee shows as a negative amount in the order currency.' );
+	}
+
+	/**
+	 * @testdox Should not show a transaction fee while the payment awaits capture or when no fee is stored.
+	 *
+	 * @testWith ["requires_capture", "0.78"]
+	 *           ["succeeded", ""]
+	 *
+	 * @param string $intent_status Stored intent status.
+	 * @param string $fee           Stored transaction fee.
+	 */
+	public function test_hides_the_transaction_fee_row( string $intent_status, string $fee ): void {
+		$this->sut = $this->create_controller( true );
+		$this->sut->register();
+
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', $intent_status );
+		if ( '' !== $fee ) {
+			$order->update_meta_data( '_wcpay_transaction_fee', $fee );
+		}
+		$order->save();
+
+		$this->assertStringNotContainsString( 'Transaction Fee:', $this->render_totals_after_total( $order ) );
+	}
+
+	/**
+	 * @testdox Should show the WooPay payment line with the card's last four digits on WooPay orders.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:182,1304-1322`.
+	 */
+	public function test_prints_the_woopay_payment_method_name_for_woopay_orders(): void {
+		$this->sut = $this->create_controller( true );
+		$this->sut->register();
+
+		$order = $this->create_order();
+		$order->update_meta_data( 'is_woopay', '1' );
+		$order->update_meta_data( 'last4', '4242' );
+		$order->save();
+
+		$output = $this->render_totals_after_total( $order );
+
+		$this->assertStringContainsString( '<div class="wc-payment-gateway-method-name-woopay-wrapper">', $output );
+		$this->assertStringContainsString( 'Paid with', $output );
+		$this->assertStringContainsString( '<img alt="WooPay" src="' . esc_url_raw( WC()->plugin_url() . '/assets/images/payment-methods/woo-short.svg' ) . '">', $output );
+		$this->assertMatchesRegularExpression( '/Card ending in\s+4242/', $output );
+
+		$plain = $this->create_order();
+		$this->assertStringNotContainsString( 'woopay-wrapper', $this->render_totals_after_total( $plain ), 'Orders not paid with WooPay get no WooPay line.' );
 	}
 
 	/**
@@ -313,6 +385,20 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		return $order;
+	}
+
+	/**
+	 * Fire the order totals hook the way the order items box does and capture its output.
+	 *
+	 * @param WC_Order $order Order being displayed.
+	 * @return string
+	 */
+	private function render_totals_after_total( WC_Order $order ): string {
+		ob_start();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Re-firing core's order totals hook.
+		do_action( 'woocommerce_admin_order_totals_after_total', $order->get_id() );
+
+		return (string) ob_get_clean();
 	}
 
 	/**
