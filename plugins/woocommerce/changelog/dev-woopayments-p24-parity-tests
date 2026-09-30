@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add tests proving the built-in WooPayments Przelewy24 (P24) method matches the WooPayments plugin: offered for PLN and EUR with a Polish billing rule, and charged as a p24 payment.

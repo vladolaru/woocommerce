@@ -476,6 +476,49 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 `P24Definition.php` supports EUR and PLN for Polish shoppers; `class-upe-payment-method.php` applies the
+	 * currencies in `is_currency_valid()` (:311-326) and hands the countries to checkout through `get_countries()` (:386-397).
+	 *
+	 * @testdox Should offer the P24 gateway only for the client's P24 currencies and keep its Polish shopper rule.
+	 */
+	public function test_p24_gateway_availability_follows_client_currencies_and_shopper_country(): void {
+		$this->activate_native_tier();
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'p24' );
+		$this->assertNotNull( $definition );
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency        = 'PLN';
+		$currency_filter = static function () use ( &$currency ): string {
+			return $currency;
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_p24_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'PL', 'p24_payments', true, 'pln' ) );
+
+			$this->assertSame( OrderPaymentStore::GATEWAY_ID_PREFIX . 'p24', $gateway->id );
+			$availability_by_currency = array(
+				'PLN' => true,
+				'EUR' => true,
+				'USD' => false,
+				'GBP' => false,
+			);
+			foreach ( $availability_by_currency as $currency_case => $expected ) {
+				$currency = $currency_case;
+				$this->assertSame( $expected, $gateway->is_available(), "P24 availability for {$currency_case}" );
+			}
+			$this->assertSame( array( 'PL' ), $gateway->get_payment_method_definition()->get_supported_countries( 'PL' ) );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_p24_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
 	 * @testdox Shopper country rules should not restrict gateway availability by merchant country.
 	 * @dataProvider payment_method_country_availability_provider
 	 *

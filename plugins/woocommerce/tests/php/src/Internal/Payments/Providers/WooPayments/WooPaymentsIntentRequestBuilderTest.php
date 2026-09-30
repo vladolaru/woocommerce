@@ -182,6 +182,43 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 `get_payment_method_types()` (class-wc-payment-gateway-wcpay.php:2530-2535) resolves the split gateway to its
+	 * Stripe type, which `P24Definition::get_stripe_payment_method_type()` sets to `p24`.
+	 *
+	 * @testdox A P24 intent request declares the p24 payment method type and a redirect return URL, like client 11.1.0.
+	 */
+	public function test_p24_intent_request_uses_the_client_payment_method_type(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'PLN' );
+		$order->set_total( '25.00' );
+		$order->save();
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		$request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID_PREFIX . 'p24', 'pm_p24' ),
+			'pm_p24',
+			'cus_native',
+			false
+		);
+
+		$this->assertSame( array( 'p24' ), $request['payment_method_types'] );
+		$this->assertArrayNotHasKey( 'mandate_data', $request );
+		$this->assertStringStartsWith( $order->get_checkout_order_received_url(), $request['return_url'] );
+	}
+
+	/**
 	 * @testdox Redirect return URL preserves an explicit payment-method save request.
 	 */
 	public function test_redirect_return_url_preserves_explicit_save_request(): void {

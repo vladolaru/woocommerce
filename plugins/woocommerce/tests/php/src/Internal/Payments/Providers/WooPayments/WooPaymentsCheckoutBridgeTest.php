@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -996,6 +997,39 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$this->assertStringEndsWith( '/assets/images/payment-methods/afterpay-cashapp-logo.svg', $afterpay_config['icon'] );
 		$this->assertStringEndsWith( '/assets/images/payment-methods/afterpay-cashapp-logo-dark.svg', $afterpay_config['darkIcon'] );
+	}
+
+	/**
+	 * Client 11.1.0 `P24Definition.php` titles the method "Przelewy24 (P24)", ships `p24.svg` as every icon and limits shoppers
+	 * to Poland; `class-upe-payment-method.php::get_countries()` (:386-397) is what checkout filters billing countries by.
+	 *
+	 * @testdox Should expose the P24 split gateway to checkout with the client's title, icon and Polish shopper rule.
+	 */
+	public function test_get_payment_fields_js_config_exposes_p24_like_the_client(): void {
+		$account_service = $this->create_account_service_for_bridge(
+			true,
+			array(
+				'country'      => 'PL',
+				'capabilities' => array(
+					'card_payments' => 'active',
+					'p24_payments'  => 'active',
+				),
+			),
+			array( 'upe_enabled_payment_method_ids' => array( 'card', 'p24' ) )
+		);
+		$registry        = new WooPaymentsPaymentMethodRegistry();
+		$sut             = new WooPaymentsCheckoutBridge();
+		$sut->init( $this->create_legacy_runtime_for_bridge(), $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge(), null, $registry );
+
+		$p24_config = $sut->get_payment_fields_js_config( $registry->get( 'p24' ) )['paymentMethodsConfig']['p24'];
+
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID_PREFIX . 'p24', $p24_config['gatewayId'] );
+		$this->assertSame( 'Przelewy24 (P24)', $p24_config['title'] );
+		$this->assertStringEndsWith( '/assets/images/payment-methods/p24.svg', $p24_config['icon'] );
+		$this->assertStringEndsWith( '/assets/images/payment-methods/p24.svg', $p24_config['darkIcon'] );
+		$this->assertSame( array( 'PL' ), $p24_config['countries'] );
+		$this->assertFalse( $p24_config['isReusable'] );
+		$this->assertFalse( $p24_config['isBnpl'] );
 	}
 
 	/**
