@@ -365,6 +365,19 @@ const jsConfig = {
 			// Not to generate chunk names because it caused a stressful workflow when deploying the plugin to WP.org
 			// See https://github.com/woocommerce/woocommerce-admin/pull/5229
 			name: false,
+			cacheGroups: {
+				// Native WooPayments routes share most of their styles. Emit them
+				// once as one async stylesheet instead of a copy per route chunk.
+				woopaymentsStyles: {
+					type: 'css/mini-extract',
+					test:
+						path.resolve( __dirname, 'client/woopayments' ) +
+						path.sep,
+					name: 'settings-payments-woopayments-shared',
+					chunks: 'async',
+					enforce: true,
+				},
+			},
 		},
 	},
 };
