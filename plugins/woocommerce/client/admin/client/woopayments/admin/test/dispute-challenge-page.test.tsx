@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { speak } from '@wordpress/a11y';
 import { MemoryRouter } from 'react-router-dom';
@@ -220,6 +220,61 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		jest.restoreAllMocks();
 	} );
 
+	it( 'shows the client dispute summary, steps, outcome notice and buttons', async () => {
+		// Client 11.1.0 new-evidence/index.tsx:1035-1059, 1348-1449, 1543-1597.
+		mockGetDispute.mockResolvedValue( makeDispute() );
+
+		renderChallengePage();
+
+		const summary = (
+			await screen.findByRole( 'heading', { name: 'Challenge dispute' } )
+		).closest( '.components-panel__body' ) as HTMLElement;
+		expect( summary ).toHaveClass( 'is-opened' );
+		expect(
+			within( summary ).getByText(
+				'The cardholder claims this is an unauthorized transaction.'
+			)
+		).toBeInTheDocument();
+		expect(
+			Array.from( summary.querySelectorAll( 'dt' ) ).map(
+				( term ) => term.textContent
+			)
+		).toEqual( [
+			'Dispute Amount',
+			'Disputed On',
+			'Reason',
+			'Respond By',
+			'Order',
+		] );
+		expect(
+			Array.from(
+				document.querySelectorAll( '.woocommerce-stepper__step-label' )
+			).map( ( label ) => label.textContent )
+		).toEqual( [ 'Purchase info', 'Shipping details', 'Review' ] );
+		expect(
+			document.querySelector( '.woocommerce-stepper__step.is-active' )
+		).toHaveTextContent( 'Purchase info' );
+		expect(
+			screen
+				.getByText(
+					"The outcome of this dispute will be determined by the cardholder's bank."
+				)
+				.closest( '.components-notice' )
+		).toHaveClass( 'is-info' );
+		expect(
+			screen.getByRole( 'link', { name: 'Cancel' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Save for later' } )
+		).toHaveClass( 'is-tertiary' );
+		expect( screen.getByRole( 'button', { name: 'Next' } ) ).toHaveClass(
+			'is-primary'
+		);
+		expect(
+			screen.queryByRole( 'button', { name: 'Back' } )
+		).not.toBeInTheDocument();
+	} );
+
 	it( 'should render an actionable evidence form with enabled controls', async () => {
 		mockGetDispute.mockResolvedValue( makeDispute() );
 
@@ -243,13 +298,11 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			screen.getByLabelText( 'Upload order receipt' )
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'button', { name: 'Save draft' } )
+			screen.getByRole( 'button', { name: 'Save for later' } )
 		).toBeEnabled();
+		expect( screen.getByRole( 'button', { name: 'Next' } ) ).toBeEnabled();
 		expect(
-			screen.getByRole( 'button', { name: 'Continue' } )
-		).toBeEnabled();
-		expect(
-			screen.queryByRole( 'button', { name: 'Submit evidence' } )
+			screen.queryByRole( 'button', { name: 'Submit' } )
 		).not.toBeInTheDocument();
 		expect(
 			screen.queryByText(
@@ -333,7 +386,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			screen.getByRole( 'textbox', { name: 'Product description' } ),
 			'Custom roasted coffee beans.'
 		);
-		await clickButton( 'Continue' );
+		await clickButton( 'Next' );
 
 		await waitFor( () =>
 			expect( mockUpdateDispute ).toHaveBeenCalledWith(
@@ -373,8 +426,8 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 
 		renderChallengePage();
 
-		await screen.findByRole( 'button', { name: 'Continue' } );
-		await clickButton( 'Continue' );
+		await screen.findByRole( 'button', { name: 'Next' } );
+		await clickButton( 'Next' );
 
 		expect(
 			await screen.findByRole( 'heading', {
@@ -482,7 +535,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			screen.getByRole( 'textbox', { name: 'Product description' } ),
 			'Downloaded software.'
 		);
-		await clickButton( 'Continue' );
+		await clickButton( 'Next' );
 
 		expect(
 			await screen.findByRole( 'heading', {
@@ -552,7 +605,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			} )
 		);
 		await userEvent.type( details, 'The compliance dispute is incorrect.' );
-		await clickButton( 'Submit evidence' );
+		await clickButton( 'Submit' );
 
 		await waitFor( () =>
 			expect( mockUpdateDispute ).toHaveBeenCalledWith(
@@ -600,9 +653,22 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 
 		renderChallengePage();
 
+		// Client 11.1.0 new-evidence/index.tsx:1348-1533: a read-only dispute keeps Cancel and Next
+		// to browse the steps, and drops Save for later and Submit.
 		expect(
-			await screen.findByText( 'This dispute is read-only.' )
-		).toBeInTheDocument();
+			await screen.findByRole( 'button', { name: 'Next' } )
+		).toBeEnabled();
+		expect(
+			screen.getByRole( 'link', { name: 'Cancel' } )
+		).toHaveAttribute(
+			'href',
+			expect.stringContaining(
+				'path=%2Fwoopayments%2Fdisputes%2Fdetails&id=dp_test'
+			)
+		);
+		expect(
+			screen.queryByText( 'This dispute is read-only.' )
+		).not.toBeInTheDocument();
 		expect(
 			screen.getByRole( 'textbox', { name: 'Product description' } )
 		).toHaveAttribute( 'readonly' );
@@ -610,10 +676,10 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			screen.queryByLabelText( 'Upload order receipt' )
 		).not.toBeInTheDocument();
 		expect(
-			screen.queryByRole( 'button', { name: 'Save draft' } )
+			screen.queryByRole( 'button', { name: 'Save for later' } )
 		).not.toBeInTheDocument();
 		expect(
-			screen.queryByRole( 'button', { name: 'Submit evidence' } )
+			screen.queryByRole( 'button', { name: 'Submit' } )
 		).not.toBeInTheDocument();
 	} );
 
@@ -730,7 +796,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		);
 		expect( screen.getByText( 'replacement.pdf' ) ).toBeInTheDocument();
 
-		await clickButton( 'Save draft' );
+		await clickButton( 'Save for later' );
 
 		await waitFor( () => expect( mockUpdateDispute ).toHaveBeenCalled() );
 		expect( mockUpdateDispute.mock.calls[ 0 ][ 1 ].evidence.receipt ).toBe(
@@ -784,7 +850,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			'Order receipt uploaded.',
 			'polite'
 		);
-		await clickButton( 'Save draft' );
+		await clickButton( 'Save for later' );
 
 		await waitFor( () =>
 			expect( mockUpdateDispute ).toHaveBeenCalledWith(
@@ -826,7 +892,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			screen.getByRole( 'textbox', { name: 'Product description' } ),
 			'Downloaded software.'
 		);
-		await clickButton( 'Save draft' );
+		await clickButton( 'Save for later' );
 
 		await waitFor( () =>
 			expect( mockUpdateDispute ).toHaveBeenCalledWith(
@@ -905,7 +971,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			screen.getByRole( 'combobox', { name: 'Product type' } ),
 			'digital_product_or_service'
 		);
-		await clickButton( 'Save draft' );
+		await clickButton( 'Save for later' );
 
 		await waitFor( () =>
 			expect( mockUpdateDispute ).toHaveBeenCalledWith(
@@ -940,7 +1006,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		await uploadFile( 'Upload order receipt' );
 
 		const saveButton = screen.getByRole( 'button', {
-			name: 'Save draft',
+			name: 'Save for later',
 		} );
 		expect( saveButton ).toHaveAttribute( 'aria-disabled', 'true' );
 		await userEvent.click( saveButton );
@@ -970,7 +1036,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		await uploadFile( 'Upload order receipt' );
 
 		const saveButton = screen.getByRole( 'button', {
-			name: 'Save draft',
+			name: 'Save for later',
 		} );
 		saveButton.focus();
 		expect( saveButton ).toHaveFocus();
@@ -991,14 +1057,14 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		mockGetDispute.mockResolvedValue( makeDispute() );
 
 		renderChallengePage();
-		await screen.findByRole( 'button', { name: 'Continue' } );
-		await clickButton( 'Continue' );
+		await screen.findByRole( 'button', { name: 'Next' } );
+		await clickButton( 'Next' );
 		await screen.findByRole( 'heading', {
 			name: 'Add your shipping details',
 		} );
-		await clickButton( 'Continue' );
-		await screen.findByRole( 'button', { name: 'Submit evidence' } );
-		await clickButton( 'Submit evidence' );
+		await clickButton( 'Next' );
+		await screen.findByRole( 'button', { name: 'Submit' } );
+		await clickButton( 'Submit' );
 
 		expect( window.confirm ).toHaveBeenCalledWith(
 			'Are you sure you’re ready to submit this evidence? Evidence submissions are final.'
@@ -1035,8 +1101,8 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		);
 
 		renderChallengePage();
-		await screen.findByRole( 'button', { name: 'Save draft' } );
-		await clickButton( 'Save draft' );
+		await screen.findByRole( 'button', { name: 'Save for later' } );
+		await clickButton( 'Save for later' );
 
 		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
 			'Provider failed'

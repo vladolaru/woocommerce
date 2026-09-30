@@ -4,20 +4,30 @@
 import { speak } from '@wordpress/a11y';
 import {
 	Button,
+	Card,
+	CardBody,
 	ExternalLink,
+	Notice,
+	Panel,
+	PanelBody,
 	SelectControl,
 	TextControl,
 	TextareaControl,
 } from '@wordpress/components';
 import {
+	createInterpolateElement,
 	useCallback,
 	useEffect,
 	useMemo,
 	useRef,
 	useState,
 } from '@wordpress/element';
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
+import { chevronRight } from '@wordpress/icons';
+import { Stepper } from '@woocommerce/components';
+import InfoOutlineIcon from 'gridicons/dist/info-outline';
 import { recordEvent } from '@woocommerce/tracks';
+import type { ElementType } from 'react';
 
 /**
  * Internal dependencies
@@ -47,9 +57,6 @@ import {
 } from './dispute-evidence-fields';
 import type { WooPaymentsDispute, WooPaymentsDisputeFile } from './types';
 import {
-	formatDate,
-	formatDisputeReasonLabel,
-	formatExplicitCurrency,
 	formatLabel,
 	getBankName,
 	getDisputeId,
@@ -57,6 +64,11 @@ import {
 } from './utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import { useGetSettings } from '../../settings/data/hooks';
+import { OrderLink } from './transactions-list-fields';
+import {
+	DisputeNotice,
+	DisputeSummaryRow,
+} from './transaction-dispute-details';
 import './dispute-evidence.scss';
 
 type DisputeEvidenceFormProps = {
@@ -113,21 +125,37 @@ const getStepLabel = ( step: EvidenceStep ) => {
 	}
 };
 
+// Client 11.1.0 `components/inline-notice`: the info-outline gridicon; the shared typings omit its class name.
+const OutcomeIcon = InfoOutlineIcon as ElementType< { className?: string } >;
+
+// Client 11.1.0 new-evidence/index.tsx:473-479: the stepper labels.
+const getStepTabLabel = ( step: EvidenceStep ) => {
+	switch ( step ) {
+		case 'shipping':
+			return __( 'Shipping details', 'woocommerce' );
+		case 'review':
+			return __( 'Review', 'woocommerce' );
+		default:
+			return __( 'Purchase info', 'woocommerce' );
+	}
+};
+
 const getStepDescription = ( step: EvidenceStep ) => {
 	switch ( step ) {
+		// Client 11.1.0 `disputes/new-evidence/index.tsx:79-96`.
 		case 'basics':
 			return __(
-				'Add product and customer details that support your response.',
+				"The more info you can provide, the stronger your case will be. To speed things up, we've prefilled some fields for you — please check for accuracy and upload any relevant documents.",
 				'woocommerce'
 			);
 		case 'shipping':
 			return __(
-				'Add the shipment information for this physical product.',
+				"We've prefilled some of this for you — please check that it's correct and upload the recommended document.",
 				'woocommerce'
 			);
 		case 'review':
 			return __(
-				'Review the generated cover letter before submitting evidence.',
+				"Using the information you've provided, we've automatically generated a cover letter for you. Before submitting to your customer's bank, please check all of the details are correct and make any required changes.",
 				'woocommerce'
 			);
 		case 'confirmation':
@@ -183,6 +211,11 @@ export const DisputeEvidenceForm = ( {
 		useState< EvidenceFileMap >( fileDetails );
 	const [ currentStep, setCurrentStep ] =
 		useState< EvidenceStep >( 'basics' );
+	// Client 11.1.0 new-evidence/index.tsx:481-483: the summary is open only on the first step.
+	const [ isSummaryOpen, setIsSummaryOpen ] = useState( true );
+	useEffect( () => {
+		setIsSummaryOpen( currentStep === 'basics' );
+	}, [ currentStep ] );
 	const [ isCoverLetterManuallyEdited, setIsCoverLetterManuallyEdited ] =
 		useState(
 			() => !! getStringEvidenceValue( dispute, 'uncategorized_text' )
@@ -205,6 +238,10 @@ export const DisputeEvidenceForm = ( {
 	const duplicateControlId = `${ disputeId }-duplicate-status-duplicate`;
 	const notDuplicateControlId = `${ disputeId }-duplicate-status-not-duplicate`;
 	const readOnly = ! isDisputeActionable( dispute );
+	const disputeCharge =
+		typeof dispute.charge === 'object' ? dispute.charge : undefined;
+	const chargePaymentMethod = disputeCharge?.payment_method_details;
+	const bankName = getBankName( chargePaymentMethod );
 	const isUploadingEvidence =
 		Object.values( uploadingFields ).some( Boolean );
 	const formLocked = readOnly || !! saveInProgress || isUploadingEvidence;
@@ -702,45 +739,33 @@ export const DisputeEvidenceForm = ( {
 			ref={ formContainerRef }
 			className="woocommerce-woopayments-dispute-evidence"
 		>
-			<div className="woocommerce-woopayments-dispute-evidence__summary">
-				<dl className="woocommerce-woopayments-money-movement__details">
-					<div>
-						<dt>{ __( 'Dispute ID', 'woocommerce' ) }</dt>
-						<dd>{ disputeId }</dd>
-					</div>
-					<div>
-						<dt>{ __( 'Reason', 'woocommerce' ) }</dt>
-						<dd>{ formatDisputeReasonLabel( dispute.reason ) }</dd>
-					</div>
-					<div>
-						<dt>{ __( 'Status', 'woocommerce' ) }</dt>
-						<dd>{ formatLabel( dispute.status ) }</dd>
-					</div>
-					<div>
-						<dt>{ __( 'Amount', 'woocommerce' ) }</dt>
-						<dd>
-							{ formatExplicitCurrency(
-								dispute.amount,
-								dispute.currency
-							) }
-						</dd>
-					</div>
-					<div>
-						<dt>{ __( 'Evidence due', 'woocommerce' ) }</dt>
-						<dd>
-							{ formatDate(
-								dispute.evidence_due_by ||
-									dispute.evidence_details?.due_by
-							) }
-						</dd>
-					</div>
-				</dl>
-				{ readOnly && (
-					<p className="woocommerce-woopayments-dispute-evidence__readonly">
-						{ __( 'This dispute is read-only.', 'woocommerce' ) }
-					</p>
-				) }
-			</div>
+			{ /* Client 11.1.0 new-evidence/index.tsx:1543-1575: the dispute summary, open on the first step. */ }
+			{ ! isVisaCompliance && (
+				<Panel className="woocommerce-woopayments-dispute-evidence__summary">
+					<PanelBody
+						title={ __( 'Challenge dispute', 'woocommerce' ) }
+						opened={ isSummaryOpen }
+						onToggle={ () => setIsSummaryOpen( ! isSummaryOpen ) }
+					>
+						<DisputeNotice
+							dispute={ dispute }
+							paymentMethod={ chargePaymentMethod?.type }
+							bankName={ bankName }
+						/>
+						<DisputeSummaryRow
+							dispute={ dispute }
+							extraItems={ [
+								{
+									title: __( 'Order', 'woocommerce' ),
+									content: (
+										<OrderLink order={ dispute.order } />
+									),
+								},
+							] }
+						/>
+					</PanelBody>
+				</Panel>
+			) }
 			{ notice && (
 				<div
 					ref={ noticeRef }
@@ -827,277 +852,405 @@ export const DisputeEvidenceForm = ( {
 					</div>
 				</div>
 			) : (
-				<form className="woocommerce-woopayments-dispute-evidence__form">
-					<div
-						className="woocommerce-woopayments-dispute-evidence__step"
-						aria-current="step"
-					>
-						<h3 ref={ stepHeadingRef } tabIndex={ -1 }>
-							{ isVisaCompliance
-								? __( 'Dispute information', 'woocommerce' )
-								: getStepLabel( currentStep ) }
-						</h3>
-						<p>
-							{ isVisaCompliance
-								? __(
-										'Tell us about this compliance dispute and upload any relevant documents.',
-										'woocommerce'
-								  )
-								: getStepDescription( currentStep ) }
-						</p>
-					</div>
-					{ isVisaCompliance && (
-						<>
-							<fieldset className="woocommerce-woopayments-dispute-evidence__section">
-								<legend>
-									{ __( 'Dispute details', 'woocommerce' ) }
-								</legend>
-								<h4>
-									{ __(
-										'Tell us about the dispute',
-										'woocommerce'
-									) }
-								</h4>
-								<p className="woocommerce-woopayments-dispute-evidence__section-description">
-									{ __(
-										'This is a compliance case and the issuer has indicated network rules have been violated. Please check for accuracy and upload any relevant documents.',
-										'woocommerce'
-									) }
+				// Client 11.1.0 new-evidence/index.tsx:1583-1597: the steps and the step content in one card.
+				<Card className="woocommerce-woopayments-dispute-evidence__stepper-card">
+					{ ! isVisaCompliance && (
+						<Stepper
+							className="woocommerce-woopayments-dispute-evidence__stepper"
+							currentStep={ currentStep }
+							steps={ ( includeShippingStep
+								? ( [
+										'basics',
+										'shipping',
+										'review',
+								  ] as const )
+								: ( [ 'basics', 'review' ] as const )
+							).map( ( step ) => ( {
+								key: step,
+								label: getStepTabLabel( step ),
+								description: '',
+								content: null,
+							} ) ) }
+						/>
+					) }
+					<CardBody className="woocommerce-woopayments-dispute-evidence__stepper-content">
+						<form className="woocommerce-woopayments-dispute-evidence__form">
+							<div
+								className="woocommerce-woopayments-dispute-evidence__step"
+								aria-current="step"
+							>
+								<h2 ref={ stepHeadingRef } tabIndex={ -1 }>
+									{ isVisaCompliance
+										? __(
+												'Dispute information',
+												'woocommerce'
+										  )
+										: getStepLabel( currentStep ) }
+								</h2>
+								<p>
+									{ isVisaCompliance
+										? __(
+												'Tell us about this compliance dispute and upload any relevant documents.',
+												'woocommerce'
+										  )
+										: getStepDescription( currentStep ) }
 								</p>
-								<TextareaControl
-									label={ __(
-										'Why do you disagree with this dispute?',
-										'woocommerce'
-									) }
-									help={ __(
-										'Please enter any relevant details here.',
-										'woocommerce'
-									) }
-									value={ evidence.uncategorized_text }
-									readOnly={ formLocked }
-									maxLength={ 20000 }
-									rows={ 10 }
-									__nextHasNoMarginBottom
-									onChange={
-										handleVisaComplianceDetailsChange
-									}
-								/>
-							</fieldset>
-							{ renderRecommendedDocumentsSection() }
-						</>
-					) }
-					{ ! isVisaCompliance && currentStep === 'basics' && (
-						<>
-							<fieldset className="woocommerce-woopayments-dispute-evidence__section">
-								<legend>
-									{ __( 'Product details', 'woocommerce' ) }
-								</legend>
-								<SelectControl
-									label={ __(
-										'Product type',
-										'woocommerce'
-									) }
-									value={ productType }
-									options={ PRODUCT_TYPE_OPTIONS }
-									disabled={ formLocked }
-									__next40pxDefaultSize
-									__nextHasNoMarginBottom
-									onChange={ handleProductTypeChange }
-								/>
-								<TextareaControl
-									label={ __(
-										'Product description',
-										'woocommerce'
-									) }
-									value={ evidence.product_description }
-									readOnly={ formLocked }
-									__nextHasNoMarginBottom
-									onChange={ ( value ) =>
-										updateEvidenceField(
-											'product_description',
-											value
-										)
-									}
-								/>
-								<TextControl
-									label={ __(
-										'Customer purchase IP',
-										'woocommerce'
-									) }
-									value={ evidence.customer_purchase_ip }
-									readOnly={ formLocked }
-									__next40pxDefaultSize
-									__nextHasNoMarginBottom
-									onChange={ ( value ) =>
-										updateEvidenceField(
-											'customer_purchase_ip',
-											value
-										)
-									}
-								/>
-							</fieldset>
-							{ dispute.reason === 'credit_not_processed' && (
-								<fieldset className="woocommerce-woopayments-dispute-evidence__section">
-									<legend>
-										{ __( 'Refund status', 'woocommerce' ) }
-									</legend>
-									<div className="woocommerce-woopayments-dispute-evidence__radio-group">
-										<label
-											htmlFor={ refundIssuedControlId }
-										>
-											<input
-												id={ refundIssuedControlId }
-												type="radio"
-												name="woocommerce-woopayments-dispute-refund-status"
-												value="refund_has_been_issued"
-												checked={
-													refundStatus ===
-													'refund_has_been_issued'
-												}
-												disabled={ formLocked }
-												onChange={ () =>
-													handleRefundStatusChange(
-														'refund_has_been_issued'
-													)
-												}
-											/>
+							</div>
+							{ isVisaCompliance && (
+								<>
+									<fieldset className="woocommerce-woopayments-dispute-evidence__section">
+										<legend>
 											{ __(
-												'Refund has been issued',
+												'Dispute details',
 												'woocommerce'
 											) }
-										</label>
-										<label
-											htmlFor={ refundNotOwedControlId }
-										>
-											<input
-												id={ refundNotOwedControlId }
-												type="radio"
-												name="woocommerce-woopayments-dispute-refund-status"
-												value="refund_was_not_owed"
-												checked={
-													refundStatus ===
-													'refund_was_not_owed'
-												}
-												disabled={ formLocked }
-												onChange={ () =>
-													handleRefundStatusChange(
-														'refund_was_not_owed'
-													)
-												}
-											/>
+										</legend>
+										<h4>
 											{ __(
-												'Refund was not owed',
+												'Tell us about the dispute',
 												'woocommerce'
 											) }
-										</label>
-									</div>
-								</fieldset>
+										</h4>
+										<p className="woocommerce-woopayments-dispute-evidence__section-description">
+											{ __(
+												'This is a compliance case and the issuer has indicated network rules have been violated. Please check for accuracy and upload any relevant documents.',
+												'woocommerce'
+											) }
+										</p>
+										<TextareaControl
+											label={ __(
+												'Why do you disagree with this dispute?',
+												'woocommerce'
+											) }
+											help={ __(
+												'Please enter any relevant details here.',
+												'woocommerce'
+											) }
+											value={
+												evidence.uncategorized_text
+											}
+											readOnly={ formLocked }
+											maxLength={ 20000 }
+											rows={ 10 }
+											__nextHasNoMarginBottom
+											onChange={
+												handleVisaComplianceDetailsChange
+											}
+										/>
+									</fieldset>
+									{ renderRecommendedDocumentsSection() }
+								</>
 							) }
-							{ dispute.reason === 'duplicate' && (
-								<fieldset className="woocommerce-woopayments-dispute-evidence__section">
-									<legend>
-										{ __(
-											'Was this charge a duplicate?',
-											'woocommerce'
-										) }
-									</legend>
-									<div className="woocommerce-woopayments-dispute-evidence__radio-group">
-										<label htmlFor={ duplicateControlId }>
-											<input
-												id={ duplicateControlId }
-												type="radio"
-												name="woocommerce-woopayments-dispute-duplicate-status"
-												value="is_duplicate"
-												checked={
-													duplicateStatus ===
-													'is_duplicate'
-												}
-												disabled={ formLocked }
-												onChange={ () =>
-													handleDuplicateStatusChange(
-														'is_duplicate'
-													)
-												}
-											/>
-											{ __(
-												'It was a duplicate',
-												'woocommerce'
-											) }
-										</label>
-										<label
-											htmlFor={ notDuplicateControlId }
-										>
-											<input
-												id={ notDuplicateControlId }
-												type="radio"
-												name="woocommerce-woopayments-dispute-duplicate-status"
-												value="is_not_duplicate"
-												checked={
-													duplicateStatus ===
-													'is_not_duplicate'
-												}
-												disabled={ formLocked }
-												onChange={ () =>
-													handleDuplicateStatusChange(
-														'is_not_duplicate'
-													)
-												}
-											/>
-											{ __(
-												'It was not a duplicate',
-												'woocommerce'
-											) }
-										</label>
-									</div>
-								</fieldset>
-							) }
-							{ renderRecommendedDocumentsSection() }
-						</>
-					) }
-					{ ! isVisaCompliance && currentStep === 'shipping' && (
-						<>
-							<fieldset className="woocommerce-woopayments-dispute-evidence__section">
-								<legend>
-									{ __( 'Shipping details', 'woocommerce' ) }
-								</legend>
-								{ SHIPPING_EVIDENCE_FIELDS.map( ( field ) => (
-									<TextControl
-										key={ field }
-										label={ formatLabel( field ) }
-										value={ evidence[ field ] }
-										readOnly={ formLocked }
-										__next40pxDefaultSize
-										__nextHasNoMarginBottom
-										onChange={ ( value ) =>
-											updateEvidenceField( field, value )
-										}
-									/>
-								) ) }
-							</fieldset>
-							{ renderRecommendedDocumentsSection(
-								shippingDocumentFieldsToRender
-							) }
-						</>
-					) }
-					{ ! isVisaCompliance && currentStep === 'review' && (
-						<fieldset className="woocommerce-woopayments-dispute-evidence__section">
-							<legend>{ __( 'Review', 'woocommerce' ) }</legend>
-							<TextareaControl
-								label={ __( 'Cover letter', 'woocommerce' ) }
-								value={
-									evidence.uncategorized_text ||
-									generatedCoverLetter
-								}
-								readOnly={ formLocked }
-								__nextHasNoMarginBottom
-								onChange={ handleCoverLetterChange }
-							/>
-						</fieldset>
-					) }
-					{ ! readOnly && (
-						<div className="woocommerce-woopayments-dispute-evidence__actions">
 							{ ! isVisaCompliance &&
-								currentStep !== 'basics' && (
+								currentStep === 'basics' && (
+									<>
+										<fieldset className="woocommerce-woopayments-dispute-evidence__section">
+											<legend>
+												{ __(
+													'Product details',
+													'woocommerce'
+												) }
+											</legend>
+											<SelectControl
+												label={ __(
+													'Product type',
+													'woocommerce'
+												) }
+												value={ productType }
+												options={ PRODUCT_TYPE_OPTIONS }
+												disabled={ formLocked }
+												__next40pxDefaultSize
+												__nextHasNoMarginBottom
+												onChange={
+													handleProductTypeChange
+												}
+											/>
+											<TextareaControl
+												label={ __(
+													'Product description',
+													'woocommerce'
+												) }
+												value={
+													evidence.product_description
+												}
+												readOnly={ formLocked }
+												__nextHasNoMarginBottom
+												onChange={ ( value ) =>
+													updateEvidenceField(
+														'product_description',
+														value
+													)
+												}
+											/>
+											<TextControl
+												label={ __(
+													'Customer purchase IP',
+													'woocommerce'
+												) }
+												value={
+													evidence.customer_purchase_ip
+												}
+												readOnly={ formLocked }
+												__next40pxDefaultSize
+												__nextHasNoMarginBottom
+												onChange={ ( value ) =>
+													updateEvidenceField(
+														'customer_purchase_ip',
+														value
+													)
+												}
+											/>
+										</fieldset>
+										{ dispute.reason ===
+											'credit_not_processed' && (
+											<fieldset className="woocommerce-woopayments-dispute-evidence__section">
+												<legend>
+													{ __(
+														'Refund status',
+														'woocommerce'
+													) }
+												</legend>
+												<div className="woocommerce-woopayments-dispute-evidence__radio-group">
+													<label
+														htmlFor={
+															refundIssuedControlId
+														}
+													>
+														<input
+															id={
+																refundIssuedControlId
+															}
+															type="radio"
+															name="woocommerce-woopayments-dispute-refund-status"
+															value="refund_has_been_issued"
+															checked={
+																refundStatus ===
+																'refund_has_been_issued'
+															}
+															disabled={
+																formLocked
+															}
+															onChange={ () =>
+																handleRefundStatusChange(
+																	'refund_has_been_issued'
+																)
+															}
+														/>
+														{ __(
+															'Refund has been issued',
+															'woocommerce'
+														) }
+													</label>
+													<label
+														htmlFor={
+															refundNotOwedControlId
+														}
+													>
+														<input
+															id={
+																refundNotOwedControlId
+															}
+															type="radio"
+															name="woocommerce-woopayments-dispute-refund-status"
+															value="refund_was_not_owed"
+															checked={
+																refundStatus ===
+																'refund_was_not_owed'
+															}
+															disabled={
+																formLocked
+															}
+															onChange={ () =>
+																handleRefundStatusChange(
+																	'refund_was_not_owed'
+																)
+															}
+														/>
+														{ __(
+															'Refund was not owed',
+															'woocommerce'
+														) }
+													</label>
+												</div>
+											</fieldset>
+										) }
+										{ dispute.reason === 'duplicate' && (
+											<fieldset className="woocommerce-woopayments-dispute-evidence__section">
+												<legend>
+													{ __(
+														'Was this charge a duplicate?',
+														'woocommerce'
+													) }
+												</legend>
+												<div className="woocommerce-woopayments-dispute-evidence__radio-group">
+													<label
+														htmlFor={
+															duplicateControlId
+														}
+													>
+														<input
+															id={
+																duplicateControlId
+															}
+															type="radio"
+															name="woocommerce-woopayments-dispute-duplicate-status"
+															value="is_duplicate"
+															checked={
+																duplicateStatus ===
+																'is_duplicate'
+															}
+															disabled={
+																formLocked
+															}
+															onChange={ () =>
+																handleDuplicateStatusChange(
+																	'is_duplicate'
+																)
+															}
+														/>
+														{ __(
+															'It was a duplicate',
+															'woocommerce'
+														) }
+													</label>
+													<label
+														htmlFor={
+															notDuplicateControlId
+														}
+													>
+														<input
+															id={
+																notDuplicateControlId
+															}
+															type="radio"
+															name="woocommerce-woopayments-dispute-duplicate-status"
+															value="is_not_duplicate"
+															checked={
+																duplicateStatus ===
+																'is_not_duplicate'
+															}
+															disabled={
+																formLocked
+															}
+															onChange={ () =>
+																handleDuplicateStatusChange(
+																	'is_not_duplicate'
+																)
+															}
+														/>
+														{ __(
+															'It was not a duplicate',
+															'woocommerce'
+														) }
+													</label>
+												</div>
+											</fieldset>
+										) }
+										{ renderRecommendedDocumentsSection() }
+									</>
+								) }
+							{ ! isVisaCompliance &&
+								currentStep === 'shipping' && (
+									<>
+										<fieldset className="woocommerce-woopayments-dispute-evidence__section">
+											<legend>
+												{ __(
+													'Shipping details',
+													'woocommerce'
+												) }
+											</legend>
+											{ SHIPPING_EVIDENCE_FIELDS.map(
+												( field ) => (
+													<TextControl
+														key={ field }
+														label={ formatLabel(
+															field
+														) }
+														value={
+															evidence[ field ]
+														}
+														readOnly={ formLocked }
+														__next40pxDefaultSize
+														__nextHasNoMarginBottom
+														onChange={ ( value ) =>
+															updateEvidenceField(
+																field,
+																value
+															)
+														}
+													/>
+												)
+											) }
+										</fieldset>
+										{ renderRecommendedDocumentsSection(
+											shippingDocumentFieldsToRender
+										) }
+									</>
+								) }
+							{ ! isVisaCompliance &&
+								currentStep === 'review' && (
+									<fieldset className="woocommerce-woopayments-dispute-evidence__section">
+										<legend>
+											{ __( 'Review', 'woocommerce' ) }
+										</legend>
+										<TextareaControl
+											label={ __(
+												'Cover letter',
+												'woocommerce'
+											) }
+											value={
+												evidence.uncategorized_text ||
+												generatedCoverLetter
+											}
+											readOnly={ formLocked }
+											__nextHasNoMarginBottom
+											onChange={ handleCoverLetterChange }
+										/>
+									</fieldset>
+								) }
+							{ /* Client 11.1.0 new-evidence/index.tsx:1035-1059: who decides the outcome. */ }
+							{ ! isVisaCompliance && (
+								<Notice
+									status="info"
+									isDismissible={ false }
+									className="woocommerce-woopayments-dispute-evidence__outcome"
+								>
+									<OutcomeIcon className="woocommerce-woopayments-dispute-evidence__outcome-icon" />
+									<span>
+										{ createInterpolateElement(
+											bankName
+												? sprintf(
+														/* translators: %s: the customer's bank. */
+														__(
+															'<strong>The outcome of this dispute will be determined by %s.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.',
+															'woocommerce'
+														),
+														bankName
+												  )
+												: __(
+														"<strong>The outcome of this dispute will be determined by the cardholder's bank.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.",
+														'woocommerce'
+												  ),
+											{ strong: <strong /> }
+										) }
+									</span>
+								</Notice>
+							) }
+							{ /* Client 11.1.0 new-evidence/index.tsx:1348-1533: Cancel or Back on the left, Save for later and Next or Submit on the right. */ }
+							<div className="woocommerce-woopayments-dispute-evidence__actions">
+								{ isVisaCompliance ||
+								currentStep === 'basics' ? (
+									<Button
+										variant="secondary"
+										href={ getSettingsPaymentsProviderRouteUrl(
+											`/woopayments/disputes/details?id=${ encodeURIComponent(
+												disputeId
+											) }`
+										) }
+									>
+										{ __( 'Cancel', 'woocommerce' ) }
+									</Button>
+								) : (
 									<Button
 										variant="secondary"
 										type="button"
@@ -1111,55 +1264,81 @@ export const DisputeEvidenceForm = ( {
 										{ __( 'Back', 'woocommerce' ) }
 									</Button>
 								) }
-							<Button
-								variant="secondary"
-								type="button"
-								isBusy={ saveInProgress === 'draft' }
-								accessibleWhenDisabled
-								disabled={
-									!! saveInProgress || isUploadingEvidence
-								}
-								onClick={ () => handleSave( false ) }
-							>
-								{ __( 'Save draft', 'woocommerce' ) }
-							</Button>
-							{ ! isVisaCompliance &&
-								getNextStep(
-									currentStep,
-									includeShippingStep
-								) && (
-									<Button
-										variant="primary"
-										type="button"
-										isBusy={ saveInProgress === 'draft' }
-										accessibleWhenDisabled
-										disabled={
-											!! saveInProgress ||
-											isUploadingEvidence
-										}
-										onClick={ handleContinue }
-									>
-										{ __( 'Continue', 'woocommerce' ) }
-									</Button>
-								) }
-							{ ( isVisaCompliance ||
-								currentStep === 'review' ) && (
-								<Button
-									variant="primary"
-									type="button"
-									isBusy={ saveInProgress === 'submit' }
-									accessibleWhenDisabled
-									disabled={
-										!! saveInProgress || isUploadingEvidence
-									}
-									onClick={ () => handleSave( true ) }
-								>
-									{ __( 'Submit evidence', 'woocommerce' ) }
-								</Button>
-							) }
-						</div>
-					) }
-				</form>
+								<div className="woocommerce-woopayments-dispute-evidence__actions-right">
+									{ ! readOnly && (
+										<Button
+											variant="tertiary"
+											type="button"
+											isBusy={
+												saveInProgress === 'draft'
+											}
+											accessibleWhenDisabled
+											disabled={
+												!! saveInProgress ||
+												isUploadingEvidence
+											}
+											onClick={ () =>
+												handleSave( false )
+											}
+										>
+											{ __(
+												'Save for later',
+												'woocommerce'
+											) }
+										</Button>
+									) }
+									{ ! isVisaCompliance &&
+										getNextStep(
+											currentStep,
+											includeShippingStep
+										) && (
+											<Button
+												variant="primary"
+												type="button"
+												icon={ chevronRight }
+												iconPosition="right"
+												isBusy={
+													saveInProgress === 'draft'
+												}
+												accessibleWhenDisabled
+												disabled={
+													!! saveInProgress ||
+													isUploadingEvidence
+												}
+												onClick={ handleContinue }
+											>
+												{ __( 'Next', 'woocommerce' ) }
+											</Button>
+										) }
+									{ ! readOnly &&
+										( isVisaCompliance ||
+											currentStep === 'review' ) && (
+											<Button
+												variant="primary"
+												type="button"
+												isBusy={
+													saveInProgress === 'submit'
+												}
+												accessibleWhenDisabled
+												disabled={
+													!! saveInProgress ||
+													isUploadingEvidence
+												}
+												onClick={ () =>
+													handleSave( true )
+												}
+											>
+												{ __(
+													'Submit',
+													'woocommerce'
+												) }
+											</Button>
+										) }
+								</div>
+							</div>
+						</form>
+					</CardBody>
+				</Card>
 			) }
 		</div>
 	);

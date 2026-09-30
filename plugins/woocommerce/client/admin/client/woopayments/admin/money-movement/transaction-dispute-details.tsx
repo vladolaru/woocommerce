@@ -24,7 +24,7 @@ import { Icon, backup, lock, pencil } from '@wordpress/icons';
 import { recordEvent } from '@woocommerce/tracks';
 import NoticeOutlineIcon from 'gridicons/dist/notice-outline';
 import moment from 'moment';
-import type { ElementType } from 'react';
+import type { ElementType, ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -653,7 +653,7 @@ const getDisputeNoticeText = (
 // Client 11.1.0 `components/inline-notice`: the notice-outline gridicon, which takes a class name the shared typings omit.
 const NoticeIcon = NoticeOutlineIcon as ElementType< { className?: string } >;
 
-const DisputeNotice = ( {
+export const DisputeNotice = ( {
 	dispute,
 	paymentMethod,
 	bankName,
@@ -721,7 +721,14 @@ const DisputeDueByDate = ( { dueBy }: { dueBy?: number } ) => {
 };
 
 // Client 11.1.0 `dispute-details/dispute-summary-row.tsx`.
-const DisputeSummaryRow = ( { dispute }: { dispute: WooPaymentsDispute } ) => {
+export const DisputeSummaryRow = ( {
+	dispute,
+	extraItems = [],
+}: {
+	dispute: WooPaymentsDispute;
+	/** Items after Respond By, such as the challenge page's Order. */
+	extraItems?: Array< { title: string; content: ReactNode } >;
+} ) => {
 	const summary = DISPUTE_REASON_SUMMARIES[ dispute.reason || '' ];
 	const items = [
 		{
@@ -760,6 +767,7 @@ const DisputeSummaryRow = ( { dispute }: { dispute: WooPaymentsDispute } ) => {
 				/>
 			),
 		},
+		...extraItems,
 	];
 
 	return (

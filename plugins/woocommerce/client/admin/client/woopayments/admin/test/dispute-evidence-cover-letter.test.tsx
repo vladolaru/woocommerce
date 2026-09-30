@@ -88,7 +88,7 @@ const renderReviewStep = async ( dispute: WooPaymentsDispute ) => {
 		screen.getByRole( 'textbox', { name: 'Product description' } ),
 		'Downloaded software.'
 	);
-	await userEvent.click( screen.getByRole( 'button', { name: 'Continue' } ) );
+	await userEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
 
 	const coverLetter = await screen.findByRole( 'textbox', {
 		name: 'Cover letter',

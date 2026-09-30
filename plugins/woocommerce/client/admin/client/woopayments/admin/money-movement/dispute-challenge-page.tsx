@@ -187,7 +187,6 @@ export const WooPaymentsDisputeChallengePage = () => {
 		>
 			{ /* Client 11.1.0 disputes/new-evidence/index.tsx:1540. */ }
 			<WooPaymentsTestModeNotice currentPage="disputes" isDetailsView />
-			<h2>{ __( 'Challenge dispute', 'woocommerce' ) }</h2>
 			<LiveStatusMessage
 				isError={ !! errorMessage || !! fileDetailsWarning }
 			>
