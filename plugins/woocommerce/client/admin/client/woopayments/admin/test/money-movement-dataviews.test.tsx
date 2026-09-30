@@ -132,9 +132,16 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 			/>
 		);
 
+		// DataViews shows the empty text in its own no-results area, so the
+		// wrapper passes it through rather than adding a second message.
+		expect( mockDataViews ).toHaveBeenLastCalledWith(
+			expect.objectContaining( {
+				empty: <p>No transactions found.</p>,
+			} )
+		);
 		expect(
-			screen.getByText( 'No transactions found.' )
-		).toBeInTheDocument();
+			screen.queryByText( 'No transactions found.' )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'allows callers to replace the built-in plain-text search', () => {

@@ -173,7 +173,8 @@ export const WooPaymentsBlockedTransactions = () => {
 	const title = __( 'Blocked transactions', 'woocommerce' );
 	const view = moneyMovementQueryToDataViewsView(
 		{ sort: 'created', direction: 'desc', ...query },
-		{ fields: visibleFields, titleField: 'created' }
+		// Without `showTitle: false` DataViews adds a second Date / Time column.
+		{ fields: visibleFields, titleField: 'created', showTitle: false }
 	);
 	const columnsToDisplay = COLUMNS.filter(
 		( { key } ) => view.fields?.includes( key )

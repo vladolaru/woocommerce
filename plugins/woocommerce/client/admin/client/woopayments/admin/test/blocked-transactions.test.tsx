@@ -90,6 +90,7 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		data = [],
 		fields = [],
 		header,
+		empty,
 		view = {},
 	}: {
 		data?: Array< Record< string, unknown > >;
@@ -102,15 +103,17 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 			} ) => ReactNode;
 		} >;
 		header?: ReactNode;
-		view?: { fields?: string[] };
+		empty?: ReactNode;
+		view?: { fields?: string[]; showTitle?: boolean };
 	} ) => {
 		const visibleFields = fields.filter(
 			( field ) => ! view.fields || view.fields.includes( field.id )
 		);
 
 		return (
-			<div>
+			<div data-show-title={ String( view.showTitle ) }>
 				{ header }
+				{ data.length === 0 && empty }
 				<div role="row">
 					{ visibleFields.map( ( field ) => (
 						<div key={ field.id } role="columnheader">
@@ -256,6 +259,10 @@ describe( 'WooPayments Blocked transactions tab', () => {
 				.getAllByRole( 'columnheader' )
 				.map( ( header ) => header.textContent )
 		).toEqual( [ 'Date / Time', 'Amount', 'Customer', 'Status' ] );
+		// DataViews would add its own title column, a second "Date / Time".
+		expect(
+			document.querySelector( '[data-show-title]' )
+		).toHaveAttribute( 'data-show-title', 'false' );
 
 		const [ , adaRow, graceRow ] = screen.getAllByRole( 'row' );
 		expect(

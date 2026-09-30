@@ -95,12 +95,8 @@ export function WooPaymentsMoneyMovementDataViews<
 					table: {},
 				} }
 				getItemId={ resolvedGetItemId }
+				empty={ empty }
 			/>
-			{ ! isLoading && rows.length === 0 && empty && (
-				<div className="woocommerce-woopayments-money-movement-dataviews__empty">
-					{ empty }
-				</div>
-			) }
 		</div>
 	);
 }
