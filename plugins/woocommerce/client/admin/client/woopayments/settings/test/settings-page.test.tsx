@@ -2925,14 +2925,13 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeInTheDocument();
 		expect( within( dialog ).getByText( 'Affirm' ) ).toBeInTheDocument();
 		expect(
-			within( dialog ).getByText( 'Apple Pay / Google Pay' )
+			within( dialog ).getByText( 'Google Pay' )
 		).toBeInTheDocument();
+		expect( within( dialog ).getByText( 'Apple Pay' ) ).toBeInTheDocument();
 		expect(
 			within( dialog ).getByText( 'Amazon Pay' )
 		).toBeInTheDocument();
-		expect(
-			within( dialog ).getByText( 'Link by Stripe' )
-		).toBeInTheDocument();
+		expect( within( dialog ).getByText( 'Link' ) ).toBeInTheDocument();
 		expect( within( dialog ).getByText( 'WooPay' ) ).toBeInTheDocument();
 
 		await userEvent.click(
@@ -2946,6 +2945,42 @@ describe( 'WooPaymentsSettingsPage', () => {
 				action: 'disable',
 				context: 'wcpay-settings',
 			}
+		);
+	} );
+
+	it( 'shows every affected payment method with its logo in a standard-size disable confirmation', async () => {
+		mockUseIsWCPayEnabled.mockReturnValue( [ true, jest.fn() ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Enable WooPayments' } )
+		);
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Disable WooPayments',
+		} );
+		const items = within( dialog ).getAllByRole( 'listitem' );
+
+		expect( dialog ).toHaveClass( 'has-size-medium' );
+		expect( items.map( ( item ) => item.textContent ) ).toEqual( [
+			'Credit / Debit Cards',
+			'Affirm',
+			'Google Pay',
+			'Apple Pay',
+			'Amazon Pay',
+			'Link',
+			'WooPay',
+		] );
+		items.forEach( ( item ) => {
+			expect( item.querySelector( 'img' ) ).toHaveAttribute(
+				'src',
+				expect.stringMatching( /^images\/.+\.(svg|png)$/ )
+			);
+		} );
+		expect( items[ 4 ].querySelector( 'img' ) ).toHaveAttribute(
+			'src',
+			'images/payment-methods/amazon-pay.svg'
 		);
 	} );
 

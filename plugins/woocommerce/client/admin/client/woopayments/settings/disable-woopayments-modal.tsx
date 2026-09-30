@@ -57,69 +57,78 @@ export const WooPaymentsDisableConfirmationModal = ( {
 				PROVIDER_NAME
 			) }
 			className="woopayments-settings-disable-modal"
+			size="medium"
 			onRequestClose={ onClose }
 		>
-			<p>
-				{ sprintf(
-					/* translators: %s: Payment provider name. */
-					__(
-						'%s is currently powering multiple popular payment methods on your store. Without it, they will no longer be available to your customers, which may influence sales.',
-						'woocommerce'
-					),
-					PROVIDER_NAME
-				) }
-			</p>
-			<p>
-				{ sprintf(
-					/* translators: %s: Payment provider name. */
-					__( 'Payment methods that need %s:', 'woocommerce' ),
-					PROVIDER_NAME
-				) }
-			</p>
-			{ affectedMethods.length > 0 && (
-				<ul className="woopayments-settings-disable-modal__payment-methods-list">
-					{ affectedMethods.map( ( method ) => (
-						<li key={ method.id }>
-							<AffectedPaymentMethodIcon method={ method } />
-							<span>{ method.label }</span>
-						</li>
-					) ) }
-				</ul>
-			) }
-			<p className="woopayments-settings-disable-modal__help">
-				<strong>{ __( 'Need help?', 'woocommerce' ) }</strong>{ ' ' }
-				{ Children.toArray(
-					createInterpolateElement(
-						sprintf(
-							/* translators: %s: Payment provider name. */
-							__(
-								'Learn more about <wooPaymentsLink>%s</wooPaymentsLink> or <supportLink>contact WooCommerce Support</supportLink>.',
-								'woocommerce'
-							),
-							PROVIDER_NAME
+			<div className="woopayments-settings-modal">
+				<p>
+					{ sprintf(
+						/* translators: %s: Payment provider name. */
+						__(
+							'%s is currently powering multiple popular payment methods on your store. Without it, they will no longer be available to your customers, which may influence sales.',
+							'woocommerce'
 						),
-						{
-							wooPaymentsLink: (
-								<ExternalLink href={ WOOPAYMENTS_DOC_URL }>
-									<></>
-								</ExternalLink>
-							),
-							supportLink: (
-								<ExternalLink href={ WOOCOMMERCE_SUPPORT_URL }>
-									<></>
-								</ExternalLink>
-							),
-						}
-					)
+						PROVIDER_NAME
+					) }
+				</p>
+				<p>
+					{ sprintf(
+						/* translators: %s: Payment provider name. */
+						__( 'Payment methods that need %s:', 'woocommerce' ),
+						PROVIDER_NAME
+					) }
+				</p>
+				{ affectedMethods.length > 0 && (
+					<ul className="woopayments-settings-disable-modal__payment-methods-list">
+						{ affectedMethods.map( ( method ) => (
+							<li key={ method.id }>
+								<AffectedPaymentMethodIcon method={ method } />
+								<span>{ method.label }</span>
+							</li>
+						) ) }
+					</ul>
 				) }
-			</p>
-			<div className="woopayments-settings-modal__actions">
-				<Button variant="secondary" onClick={ onClose }>
-					{ __( 'Cancel', 'woocommerce' ) }
-				</Button>
-				<Button variant="primary" isDestructive onClick={ onConfirm }>
-					{ __( 'Disable', 'woocommerce' ) }
-				</Button>
+				<p className="woopayments-settings-disable-modal__help">
+					<strong>{ __( 'Need help?', 'woocommerce' ) }</strong>{ ' ' }
+					{ Children.toArray(
+						createInterpolateElement(
+							sprintf(
+								/* translators: %s: Payment provider name. */
+								__(
+									'Learn more about <wooPaymentsLink>%s</wooPaymentsLink> or <supportLink>contact WooCommerce Support</supportLink>.',
+									'woocommerce'
+								),
+								PROVIDER_NAME
+							),
+							{
+								wooPaymentsLink: (
+									<ExternalLink href={ WOOPAYMENTS_DOC_URL }>
+										<></>
+									</ExternalLink>
+								),
+								supportLink: (
+									<ExternalLink
+										href={ WOOCOMMERCE_SUPPORT_URL }
+									>
+										<></>
+									</ExternalLink>
+								),
+							}
+						)
+					) }
+				</p>
+				<div className="woopayments-settings-modal__actions">
+					<Button variant="secondary" onClick={ onClose }>
+						{ __( 'Cancel', 'woocommerce' ) }
+					</Button>
+					<Button
+						variant="primary"
+						isDestructive
+						onClick={ onConfirm }
+					>
+						{ __( 'Disable', 'woocommerce' ) }
+					</Button>
+				</div>
 			</div>
 		</Modal>
 	);

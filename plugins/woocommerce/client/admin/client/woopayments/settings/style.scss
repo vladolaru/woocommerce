@@ -596,27 +596,13 @@
 }
 
 .woopayments-settings-disable-modal {
-	.components-modal__content > div {
+	&__payment-methods-list {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
-	}
-
-	p {
-		margin: 0;
-	}
-
-	&__payment-methods-list {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 8px;
+		gap: 12px;
 		margin: 0;
 		padding: 0;
 		list-style: none;
-
-		@include breakpoint("<782px") {
-			grid-template-columns: 1fr;
-		}
 
 		li {
 			display: flex;

@@ -6,7 +6,9 @@ import { __ } from '@wordpress/i18n';
 /**
  * Internal dependencies
  */
+import { WC_ASSET_URL } from '~/utils/admin-settings';
 import { AMAZON_PAY_DEFINITION } from './amazon-pay-definition';
+import { EXPRESS_CHECKOUT_METHOD_ICONS } from './express-checkout/method-icons';
 import { getPaymentMethodDefinition } from './payment-method-definitions';
 import { getPaymentMethodAvailability } from './payment-methods-list';
 import {
@@ -32,6 +34,12 @@ export type WooPaymentsAffectedPaymentMethod = {
 	label: string;
 	iconUrl?: string;
 };
+
+const [ APPLE_PAY_ICON, GOOGLE_PAY_ICON ] =
+	EXPRESS_CHECKOUT_METHOD_ICONS.payment_request;
+const WOOPAY_ICON_URL = `${
+	WC_ASSET_URL || ''
+}images/payment-methods/woo-short.svg`;
 
 const asSettingsRecord = ( value: unknown ): SettingsRecord =>
 	value && typeof value === 'object' ? ( value as SettingsRecord ) : {};
@@ -105,8 +113,14 @@ export const useWooPaymentsAffectedCheckoutMethods = () => {
 
 	if ( isPaymentRequestEnabled ) {
 		addAffectedPaymentMethod( affectedMethods, {
-			id: 'payment_request',
-			label: __( 'Apple Pay / Google Pay', 'woocommerce' ),
+			id: 'google_pay',
+			label: __( 'Google Pay', 'woocommerce' ),
+			iconUrl: GOOGLE_PAY_ICON.src,
+		} );
+		addAffectedPaymentMethod( affectedMethods, {
+			id: 'apple_pay',
+			label: __( 'Apple Pay', 'woocommerce' ),
+			iconUrl: APPLE_PAY_ICON.src,
 		} );
 	}
 
@@ -119,13 +133,15 @@ export const useWooPaymentsAffectedCheckoutMethods = () => {
 		addAffectedPaymentMethod( affectedMethods, {
 			id: 'amazon_pay',
 			label: __( 'Amazon Pay', 'woocommerce' ),
+			iconUrl: EXPRESS_CHECKOUT_METHOD_ICONS.amazon_pay[ 0 ].src,
 		} );
 	}
 
 	if ( enabledMethodIds.includes( 'link' ) ) {
 		addAffectedPaymentMethod( affectedMethods, {
 			id: 'link',
-			label: __( 'Link by Stripe', 'woocommerce' ),
+			label: __( 'Link', 'woocommerce' ),
+			iconUrl: EXPRESS_CHECKOUT_METHOD_ICONS.link[ 0 ].src,
 		} );
 	}
 
@@ -133,6 +149,7 @@ export const useWooPaymentsAffectedCheckoutMethods = () => {
 		addAffectedPaymentMethod( affectedMethods, {
 			id: 'woopay',
 			label: __( 'WooPay', 'woocommerce' ),
+			iconUrl: WOOPAY_ICON_URL,
 		} );
 	}
 
