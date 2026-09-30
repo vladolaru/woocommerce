@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -152,6 +153,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 					'saved_cards' => 'yes',
 				)
 			);
+			$this->make_native_active_on_current_site();
 			$primary_token_id = $this->create_card_token( $user_id, 'pm_primary' );
 			$gateway          = new NativeWooPaymentsGateway();
 			$provider         = $this->getMockBuilder( WooPaymentsProvider::class )
@@ -200,6 +202,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 					'saved_cards' => 'no',
 				)
 			);
+			$this->make_native_active_on_current_site();
 			$gateway->init_settings();
 			$this->assertTrue( $gateway->is_available() );
 			$this->assertSame( 'no', $gateway->get_option( 'saved_cards' ) );
@@ -225,6 +228,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 					'saved_cards' => 'yes',
 				)
 			);
+			$this->make_native_active_on_current_site();
 			$this->assertSame( array( 'pm_secondary' ), $this->get_payment_method_ids( $gateway ) );
 			$this->assertTrue( $gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
 			restore_current_blog();
@@ -248,6 +252,8 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			delete_option( 'woocommerce_woocommerce_payments_settings' );
 			delete_option( 'wcpay_account_data' );
 			delete_option( 'woocommerce_currency' );
+			delete_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+			delete_option( NativePaymentsState::OPTION_NAME );
 			wp_set_current_user( 0 );
 			wc_get_container()->reset_all_resolved();
 			wpmu_delete_blog( $secondary_blog_id, true );
@@ -282,6 +288,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 					'saved_cards' => 'yes',
 				)
 			);
+			$this->make_native_active_on_current_site();
 			$runtime_arbiter->invalidate();
 			add_filter( 'wcpay_test_mode', '__return_true' );
 
@@ -319,6 +326,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 					'saved_cards' => 'yes',
 				)
 			);
+			$this->make_native_active_on_current_site();
 			$runtime_arbiter->invalidate();
 
 			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $runtime_arbiter->get_runtime_owner(), 'Native should also own the secondary site once it enables native, independent of the primary site.' );
@@ -396,6 +404,18 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			wc_get_container()->reset_all_resolved();
 			wpmu_delete_blog( $secondary_blog_id, true );
 		}
+	}
+
+	/**
+	 * Make native the active payments owner on the current site, as the account service's tier sync does in production.
+	 *
+	 * These tests write the account cache and gateway settings as raw options, which bypass that sync.
+	 */
+	private function make_native_active_on_current_site(): void {
+		update_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, 'yes' );
+		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( NativePaymentsState::class )->write_state( NativePaymentsState::ACTIVE );
 	}
 
 	/**
