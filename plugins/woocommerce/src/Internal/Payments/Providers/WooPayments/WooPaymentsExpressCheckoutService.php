@@ -285,7 +285,8 @@ class WooPaymentsExpressCheckoutService {
 	public function is_express_checkout_available(): bool {
 		return $this->account_service->is_gateway_enabled()
 			&& $this->account_service->has_working_account()
-			&& ( $this->is_payment_request_enabled() || $this->can_use_amazon_pay() );
+			// Client 11.1.0 class-wc-payments-express-checkout-button-handler.php:79 checks Amazon Pay whichever locations list it.
+			&& ( $this->is_payment_request_enabled() || $this->is_amazon_pay_usable() );
 	}
 
 	/**
