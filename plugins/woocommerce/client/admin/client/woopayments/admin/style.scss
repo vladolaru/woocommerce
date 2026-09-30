@@ -745,6 +745,24 @@
 }
 
 .woocommerce-woopayments-money-movement__dispute-actions,
+.woocommerce-woopayments-money-movement__dispute-modal-lines {
+	margin: 0 0 24px;
+	padding: 0;
+	list-style: none;
+
+	li {
+		display: flex;
+		gap: 12px;
+		align-items: flex-start;
+		margin: 0 0 16px;
+	}
+
+	svg {
+		flex-shrink: 0;
+		fill: currentColor;
+	}
+}
+
 .woocommerce-woopayments-money-movement__dispute-modal-actions {
 	align-items: center;
 	display: flex;

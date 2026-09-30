@@ -10,6 +10,7 @@ import {
 	useState,
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
+import { Icon, backup, lock } from '@wordpress/icons';
 import { recordEvent } from '@woocommerce/tracks';
 import type { ReactNode } from 'react';
 
@@ -739,6 +740,7 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 	}
 
 	const disputeId = getDisputeId( currentDispute );
+	const acceptFee = getEffectiveDisputeFee( currentDispute );
 	const idSuffix = `${ ordinal }-${ disputeId || 'unknown' }`.replace(
 		/[^a-zA-Z0-9_-]/g,
 		'-'
@@ -886,16 +888,42 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 					title={ __( 'Accept the dispute?', 'woocommerce' ) }
 					onRequestClose={ closeAcceptModal }
 				>
-					<p>
-						{ sprintf(
-							/* translators: %s: dispute ID. */
-							__(
-								'Accepting dispute %s marks it as lost. This action cannot be undone.',
-								'woocommerce'
-							),
-							disputeId
-						) }
-					</p>
+					<ul className="woocommerce-woopayments-money-movement__dispute-modal-lines">
+						<li>
+							<Icon icon={ backup } size={ 24 } />
+							<span>
+								{ createInterpolateElement(
+									acceptFee
+										? sprintf(
+												/* translators: %s: dispute fee, <em>: emphasis HTML element. */
+												__(
+													'Accepting the dispute marks it as <em>Lost</em>. The disputed amount and the %s dispute fee will not be returned to you.',
+													'woocommerce'
+												),
+												formatExplicitCurrency(
+													acceptFee.amount,
+													acceptFee.currency
+												)
+										  )
+										: /* translators: <em>: emphasis HTML element. */
+										  __(
+												'Accepting the dispute marks it as <em>Lost</em>. The disputed amount will not be returned to you.',
+												'woocommerce'
+										  ),
+									{ em: <em /> }
+								) }
+							</span>
+						</li>
+						<li>
+							<Icon icon={ lock } size={ 24 } />
+							<span>
+								{ __(
+									'This action is final and cannot be undone.',
+									'woocommerce'
+								) }
+							</span>
+						</li>
+					</ul>
 					<div className="woocommerce-woopayments-money-movement__dispute-modal-actions">
 						<Button variant="tertiary" onClick={ closeAcceptModal }>
 							{ __( 'Cancel', 'woocommerce' ) }

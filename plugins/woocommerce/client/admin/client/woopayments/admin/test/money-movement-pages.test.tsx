@@ -5715,6 +5715,57 @@ describe( 'WooPayments money movement pages', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( 'names the dispute fee in the accept confirmation when one was charged', async () => {
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_test',
+			status: 'succeeded',
+			amount: 5000,
+			currency: 'usd',
+			created: 1781712000,
+			charge: {
+				id: 'ch_test',
+				balance_transaction: 'txn_test',
+				type: 'charge',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				payment_intent: 'pi_test',
+				dispute: {
+					id: 'dp_test',
+					status: 'needs_response',
+					reason: 'fraudulent',
+					amount: 5000,
+					currency: 'usd',
+					effective_fee: { amount: 1500, currency: 'usd' },
+				},
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_test&transaction_id=txn_test',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		const acceptButton = await screen.findByRole( 'button', {
+			name: 'Accept dispute',
+		} );
+
+		await act( async () => {
+			await userEvent.click( acceptButton );
+		} );
+
+		// Client 11.1.0 dispute-awaiting-response-details.tsx:146 (fee via formatExplicitCurrency; single-currency store, so no code).
+		expect( screen.getByRole( 'dialog' ) ).toHaveTextContent(
+			'Accepting the dispute marks it as Lost. The disputed amount and the $15.00 dispute fee will not be returned to you.'
+		);
+	} );
+
 	it( 'accepts a dispute from the transaction detail decision layer', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_test',
@@ -5767,6 +5818,13 @@ describe( 'WooPayments money movement pages', () => {
 			screen.getByRole( 'heading', { name: 'Accept the dispute?' } )
 		).toBeInTheDocument();
 		const acceptDialog = screen.getByRole( 'dialog' );
+		// Client 11.1.0 dispute-awaiting-response-details.tsx:153 (no fee charged).
+		expect( acceptDialog ).toHaveTextContent(
+			'Accepting the dispute marks it as Lost. The disputed amount will not be returned to you.'
+		);
+		expect( acceptDialog ).toHaveTextContent(
+			'This action is final and cannot be undone.'
+		);
 
 		await act( async () => {
 			await userEvent.click(
