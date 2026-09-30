@@ -116,8 +116,6 @@ export const InboxNotifications = () => {
 	const [ noteToDismiss, setNoteToDismiss ] = useState< InboxNote | null >(
 		null
 	);
-	const [ shouldPreserveEmptyState, setShouldPreserveEmptyState ] =
-		useState( false );
 	const headingRef = useRef< HTMLHeadingElement >( null );
 	const noteToDismissElementRef = useRef< HTMLElement | null >( null );
 	const { isError, isLoading, notes } = useSelect( ( select ) => {
@@ -177,13 +175,6 @@ export const InboxNotifications = () => {
 		}
 		recordDismissed( noteToDismiss, true );
 
-		const shouldPreserveEmptyStateAfterDismissal =
-			visibleNotes.length === 1;
-
-		if ( shouldPreserveEmptyStateAfterDismissal ) {
-			setShouldPreserveEmptyState( true );
-		}
-
 		try {
 			const removedNote = await getNotesDispatch().removeNote(
 				noteToDismiss.id
@@ -213,9 +204,6 @@ export const InboxNotifications = () => {
 		} catch ( error ) {
 			setNoteToDismiss( null );
 			noteToDismissElementRef.current = null;
-			if ( shouldPreserveEmptyStateAfterDismissal ) {
-				setShouldPreserveEmptyState( false );
-			}
 			getNoticesDispatch().createErrorNotice(
 				_n(
 					'Message could not be dismissed',
@@ -270,10 +258,6 @@ export const InboxNotifications = () => {
 		);
 	}
 
-	if ( visibleNotes.length === 0 && ! shouldPreserveEmptyState ) {
-		return null;
-	}
-
 	return (
 		<>
 			<section
@@ -290,9 +274,14 @@ export const InboxNotifications = () => {
 					{ __( 'Inbox', 'woocommerce' ) }
 				</h2>
 				{ visibleNotes.length === 0 ? (
-					<p role="status">
-						{ __( 'No inbox notifications.', 'woocommerce' ) }
-					</p>
+					// Client 11.1.0 `overview/inbox-notifications/index.js:48-56,85-87`.
+					<section className="woocommerce-empty-activity-card">
+						{ __(
+							'As things begin to happen in your store your inbox will start to fill up. ' +
+								"You'll see things like achievements, new feature announcements, extension recommendations and more!",
+							'woocommerce'
+						) }
+					</section>
 				) : (
 					<Section component={ false }>
 						{ visibleNotes.map( ( note ) => {
