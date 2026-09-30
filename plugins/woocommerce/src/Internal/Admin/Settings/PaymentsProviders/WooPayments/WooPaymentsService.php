@@ -3343,7 +3343,8 @@ class WooPaymentsService {
 		return $this->enable_native_payment_methods(
 			$this->get_native_picked_payment_method_ids( $picks ),
 			$this->is_native_onboarding_pick_selected( $picks['woopay'] ?? false ),
-			$wallets_picked
+			$wallets_picked,
+			true
 		);
 	}
 
@@ -3354,9 +3355,11 @@ class WooPaymentsService {
 	 * @param string[]  $payment_method_ids      Payment method IDs to enable.
 	 * @param bool|null $woopay_picked           WooPay pick, or null to keep the stored WooPay setting.
 	 * @param bool|null $payment_request_enabled Apple Pay / Google Pay pick, or null to keep the stored wallet state.
+	 * @param bool      $enable_card_gateway     Whether an enabled card method also enables the card gateway, as the client's
+	 *                                           update_enabled_payment_methods_ids() does for every method in the list.
 	 * @return bool Whether the canonical settings and split gateways were persisted.
 	 */
-	private function enable_native_payment_methods( array $payment_method_ids, ?bool $woopay_picked = null, ?bool $payment_request_enabled = null ): bool {
+	private function enable_native_payment_methods( array $payment_method_ids, ?bool $woopay_picked = null, ?bool $payment_request_enabled = null, bool $enable_card_gateway = false ): bool {
 		$settings           = $this->proxy->call_function( 'get_option', WooPaymentsSettingsService::SETTINGS_OPTION, array() );
 		$settings           = is_array( $settings ) ? $settings : array();
 		$enabled_ids        = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array( 'card' );
@@ -3366,6 +3369,9 @@ class WooPaymentsService {
 		$is_woopay_enabled = ( $woopay_picked ?? $was_woopay_enabled ) && ! in_array( 'link', $enabled_ids, true );
 
 		$settings['upe_enabled_payment_method_ids'] = $enabled_ids;
+		if ( $enable_card_gateway && in_array( 'card', $enabled_ids, true ) ) {
+			$settings['enabled'] = 'yes';
+		}
 		if ( $is_woopay_enabled !== $was_woopay_enabled ) {
 			$settings['platform_checkout'] = $is_woopay_enabled ? 'yes' : 'no';
 			if ( ! $is_woopay_enabled ) {

@@ -1065,6 +1065,60 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 update_enabled_payment_methods_ids() enables the gateway of every method in the merged enabled list
+	 * (includes/class-wc-payments-onboarding-service.php:1532-1538). For `card` that gateway is the main WooPayments gateway
+	 * (class-wc-payments.php:631), so creating the embedded KYC session turns the card gateway on before any KYC.
+	 *
+	 * @testdox Creating the embedded KYC session enables the card gateway when card is enabled, like client 11.1.0.
+	 */
+	public function test_kyc_session_creation_enables_card_gateway_like_client(): void {
+		$fixture = $this->arrange_native_nox_picks(
+			array(
+				'card'  => true,
+				'ideal' => true,
+			),
+			array(
+				'enabled'                        => 'no',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			),
+			'no'
+		);
+
+		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session' ) );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'yes', $settings['enabled'], 'The card gateway is enabled with the card payment method.' );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'], 'The picked split gateway is enabled.' );
+	}
+
+	/**
+	 * Client 11.1.0 update_enabled_payment_methods_ids() only enables gateways of methods in the merged list (:1532-1538),
+	 * so the card gateway stays as it was when card is neither stored nor picked.
+	 *
+	 * @testdox Creating the embedded KYC session leaves the card gateway alone when card is not enabled, like client 11.1.0.
+	 */
+	public function test_kyc_session_creation_leaves_card_gateway_without_card(): void {
+		$fixture = $this->arrange_native_nox_picks(
+			array(
+				'ideal' => true,
+			),
+			array(
+				'enabled'                        => 'no',
+				'upe_enabled_payment_method_ids' => array( 'ideal' ),
+			),
+			'no'
+		);
+
+		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session' ) );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'ideal' ), $settings['upe_enabled_payment_method_ids'], 'Card stays out of the enabled methods.' );
+		$this->assertSame( 'no', $settings['enabled'], 'The card gateway is not enabled without the card payment method.' );
+	}
+
+	/**
 	 * Client 11.1.0 update_enabled_payment_methods_ids() keeps WooPay off when Link is enabled, even when WooPay is picked (:1540-1548).
 	 *
 	 * @testdox A NOX WooPay pick leaves WooPay off when Link is picked too, like client 11.1.0.
