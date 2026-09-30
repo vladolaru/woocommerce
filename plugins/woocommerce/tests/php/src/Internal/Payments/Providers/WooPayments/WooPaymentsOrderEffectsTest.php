@@ -594,31 +594,60 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox SEPA metadata omits provider-only expected debit dates.
+	 * The charge's SEPA Direct Debit payment method details as the platform returns them.
+	 *
+	 * The client stores this array unchanged (class-wc-payments-order-service.php:1373-1377 and :3118-3121).
+	 *
+	 * @return array<string,mixed>
 	 */
-	public function test_display_projection_omits_non_persisted_sepa_details(): void {
+	private function sepa_charge_payment_method_details(): array {
+		return array(
+			'sepa_debit' => array(
+				'bank_code'           => '19043',
+				'branch_code'         => '',
+				'country'             => 'AT',
+				'expected_debit_date' => '2026-07-09',
+				'fingerprint'         => 'webhook_fingerprint',
+				'last4'               => '3201',
+				'mandate'             => 'webhook_mandate',
+			),
+			'type'       => 'sepa_debit',
+		);
+	}
+
+	/**
+	 * @testdox SEPA payment method details metadata keeps the full charge shape, including the expected debit date, like the client.
+	 */
+	public function test_display_projection_keeps_full_sepa_details(): void {
 		$effects = WooPaymentsOrderEffects::compose_payment_method_display_details(
 			array(
 				'charges' => array(
 					'data' => array(
-						array(
-							'payment_method_details' => array(
-								'type'       => 'sepa_debit',
-								'sepa_debit' => array(
-									'expected_debit_date' => '2026-07-09',
-									'last4'               => '3201',
-								),
-							),
-						),
+						array( 'payment_method_details' => $this->sepa_charge_payment_method_details() ),
 					),
 				),
 			)
 		);
-		$details = json_decode( $effects['meta']['_wcpay_payment_method_details'], true );
 
-		$this->assertIsArray( $details );
-		$this->assertSame( '3201', $details['sepa_debit']['last4'] );
-		$this->assertArrayNotHasKey( 'expected_debit_date', $details['sepa_debit'] );
+		$this->assertSame(
+			wp_json_encode( $this->sepa_charge_payment_method_details() ),
+			$effects['meta']['_wcpay_payment_method_details']
+		);
+	}
+
+	/**
+	 * @testdox Completed-charge backfill stores the full SEPA details, including the expected debit date, like the client.
+	 */
+	public function test_completed_charge_backfill_keeps_full_sepa_details(): void {
+		$meta = WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
+			array( 'payment_method_details' => $this->sepa_charge_payment_method_details() ),
+			true
+		);
+
+		$this->assertSame(
+			wp_json_encode( $this->sepa_charge_payment_method_details() ),
+			$meta['_wcpay_payment_method_details']
+		);
 	}
 
 	/**

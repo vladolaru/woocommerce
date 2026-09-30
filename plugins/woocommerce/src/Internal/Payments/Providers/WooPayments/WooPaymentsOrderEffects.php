@@ -142,7 +142,7 @@ class WooPaymentsOrderEffects {
 	 * @param string              $payment_method_type    Provider payment method type.
 	 * @param string              $wallet_type            Wrapped wallet type.
 	 * @param string              $express_checkout_type  Existing express-checkout identity.
-	 * @param bool                $persist_payment_method_details Whether to persist normalized detail metadata.
+	 * @param bool                $persist_payment_method_details Whether to persist the payment method details metadata.
 	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string}|array{}
 	 */
 	private static function compose_payment_method_display_effects( array $payment_method_details, string $payment_method_type, string $wallet_type, string $express_checkout_type, bool $persist_payment_method_details = true ): array {
@@ -153,7 +153,7 @@ class WooPaymentsOrderEffects {
 
 		$meta = array();
 		if ( $persist_payment_method_details && ! empty( $payment_method_details ) ) {
-			$encoded_details = wp_json_encode( self::payment_method_details_for_order_meta( $payment_method_details ) );
+			$encoded_details = wp_json_encode( $payment_method_details );
 			if ( false !== $encoded_details ) {
 				$meta['_wcpay_payment_method_details'] = $encoded_details;
 			}
@@ -331,7 +331,7 @@ class WooPaymentsOrderEffects {
 
 		$payment_method_details = isset( $charge['payment_method_details'] ) && is_array( $charge['payment_method_details'] ) ? $charge['payment_method_details'] : array();
 		if ( ! empty( $payment_method_details ) ) {
-			$encoded_details = wp_json_encode( self::payment_method_details_for_order_meta( $payment_method_details ) );
+			$encoded_details = wp_json_encode( $payment_method_details );
 			if ( false !== $encoded_details ) {
 				$meta['_wcpay_payment_method_details'] = $encoded_details;
 			}
@@ -519,20 +519,6 @@ class WooPaymentsOrderEffects {
 	 */
 	public static function interpret_stripe_amount( int $amount, string $currency ): float {
 		return WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency );
-	}
-
-	/**
-	 * Normalize payment method details before storing order metadata.
-	 *
-	 * @param array<string,mixed> $payment_method_details Payment method details.
-	 * @return array<string,mixed>
-	 */
-	public static function payment_method_details_for_order_meta( array $payment_method_details ): array {
-		if ( isset( $payment_method_details['sepa_debit'] ) && is_array( $payment_method_details['sepa_debit'] ) ) {
-			unset( $payment_method_details['sepa_debit']['expected_debit_date'] );
-		}
-
-		return $payment_method_details;
 	}
 
 	/**

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: Keep sepa_debit.expected_debit_date in native WooPayments _wcpay_payment_method_details order meta, storing the charge payment method details unchanged as WooPayments 11.1.0 does.
+
