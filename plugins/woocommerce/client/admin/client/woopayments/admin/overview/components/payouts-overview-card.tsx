@@ -16,6 +16,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { calendar } from '@wordpress/icons';
 import { addQueryArgs } from '@wordpress/url';
 import { recordEvent } from '@woocommerce/tracks';
+import moment from 'moment';
 import type { ReactNode } from 'react';
 
 /**
@@ -49,8 +50,13 @@ const PAYOUTS_HEADING_ID = 'woocommerce-woopayments-payouts-heading';
 const PENDING_FUNDS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/payout-schedule/#pending-funds';
 
-const formatScheduleAnchor = ( value: string ) =>
-	value.replace( /^\w/, ( match ) => match.toUpperCase() );
+// Client 11.1.0 `components/deposits-overview/deposit-schedule.tsx:47-51`: the English anchor names the day, moment's current locale (the site's, from WordPress) names it on screen.
+const formatScheduleAnchor = ( weeklyAnchor: string ) =>
+	moment()
+		.locale( 'en' )
+		.day( weeklyAnchor )
+		.locale( moment.locale() )
+		.format( 'dddd' );
 
 // Client 11.1.0 `components/deposits-overview/deposit-schedule.tsx:29-104`.
 const getScheduleText = ( overview: WooPaymentsDepositsOverview ) => {
