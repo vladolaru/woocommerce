@@ -5,9 +5,7 @@ import { Button } from '@wordpress/components';
 import { useCallback, useEffect, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { speak } from '@wordpress/a11y';
-import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import clsx from 'clsx';
-import moment from 'moment';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 
@@ -18,6 +16,7 @@ import '../../settings-payments/settings-payments-body.scss';
 import { getWooPaymentsDeposit } from './overview/data';
 import type { WooPaymentsDeposit } from './overview/types';
 import {
+	formatPayoutSiteDate,
 	formatWooPaymentsAmount,
 	getPayoutStatusClassName,
 } from './overview/utils';
@@ -146,24 +145,6 @@ export const payoutFailureMessages: Record< string, string > = {
 	),
 };
 
-// Client 11.1.0 `utils/date-time.ts` `formatDateTimeFromString()`: the site date format, read as UTC.
-const formatPayoutDateLabel = ( payout: WooPaymentsDeposit ) => {
-	const rawDate = payout.date || payout.created || '';
-	const date = moment.utc(
-		typeof rawDate === 'number' && rawDate < 10000000000
-			? rawDate * 1000
-			: rawDate
-	);
-
-	return date.isValid()
-		? dateI18n(
-				getDateSettings().formats.date,
-				date.toISOString(),
-				undefined
-		  )
-		: '-';
-};
-
 const OverviewItem = ( {
 	label,
 	value,
@@ -199,7 +180,7 @@ const PayoutDateItem = ( { payout }: { payout: WooPaymentsDeposit } ) => {
 
 	return (
 		<OverviewItem
-			label={ `${ label }: ${ formatPayoutDateLabel( payout ) }` }
+			label={ `${ label }: ${ formatPayoutSiteDate( payout ) }` }
 			value={
 				<span
 					className={ clsx(

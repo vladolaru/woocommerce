@@ -251,14 +251,17 @@ const createDeposit = (
 
 describe( 'PayoutsOverviewCard status copy', () => {
 	// Client 11.1.0 `components/deposits-overview/recent-deposits-list.tsx:53` renders `DepositStatusChip`.
+	// Chip colours from client 11.1.0 `components/deposit-status-chip/index.tsx:18-24`.
 	it.each( [
-		[ 'deposit', 'paid', 'Completed (paid)' ],
-		[ 'withdrawal', 'paid', 'Completed (deducted)' ],
-		[ 'deposit', 'in_transit', 'In transit' ],
-		[ 'deposit', 'canceled', 'Canceled' ],
+		[ 'deposit', 'paid', 'Completed (paid)', 'success' ],
+		[ 'withdrawal', 'paid', 'Completed (deducted)', 'success' ],
+		[ 'deposit', 'pending', 'Pending', 'warning' ],
+		[ 'deposit', 'in_transit', 'In transit', 'primary' ],
+		[ 'deposit', 'failed', 'Failed', 'error' ],
+		[ 'deposit', 'canceled', 'Canceled', 'info' ],
 	] )(
-		'shows a recent %s with status %s as "%s"',
-		( type, status, label ) => {
+		'shows a recent %s with status %s as a "%s" %s chip',
+		( type, status, label, chipType ) => {
 			render(
 				<PayoutsOverviewCard
 					isLoading={ false }
@@ -271,7 +274,8 @@ describe( 'PayoutsOverviewCard status copy', () => {
 			const chip = screen.getByText( label );
 
 			expect( chip ).toHaveClass(
-				'woocommerce-woopayments-overview__status-chip'
+				'woocommerce-status-badge',
+				`woocommerce-status-badge--${ chipType }`
 			);
 			expect( chip ).toHaveTextContent(
 				new RegExp( `^${ label.replace( /[()]/g, '\\$&' ) }$` )

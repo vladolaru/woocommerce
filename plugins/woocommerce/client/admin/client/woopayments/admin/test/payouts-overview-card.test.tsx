@@ -1,7 +1,8 @@
 /**
  * External dependencies
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
 
 /**
@@ -70,6 +71,12 @@ const createDeposit = (
 	created: 1781740800,
 	...overrides,
 } );
+
+// Notices also reach the a11y speak regions, so read the card itself.
+const inCard = () =>
+	within( screen.getByRole( 'region', { name: 'Payouts' } ) );
+const getScheduleSummary = () =>
+	document.querySelector( '.woocommerce-woopayments-overview__schedule' );
 
 describe( 'PayoutsOverviewCard', () => {
 	beforeEach( () => {
@@ -148,9 +155,12 @@ describe( 'PayoutsOverviewCard', () => {
 		);
 
 		expect(
-			screen.getByText( /standard 7-day waiting period/i )
+			inCard().getByText( /standard 7-day waiting period/i )
 		).toBeInTheDocument();
-		expect( screen.getByText( '$15.00' ) ).toBeInTheDocument();
+		// Client 11.1.0 `deposits-overview/index.tsx:136-246`: the balances live in the Balance card only.
+		expect( inCard().queryByText( '$15.00' ) ).not.toBeInTheDocument();
+		expect( inCard().queryByText( 'Pending' ) ).not.toBeInTheDocument();
+		expect( inCard().queryByText( 'Available' ) ).not.toBeInTheDocument();
 	} );
 
 	it( 'shows suspended-payouts guidance without schedule actions', () => {
@@ -170,7 +180,7 @@ describe( 'PayoutsOverviewCard', () => {
 		);
 
 		expect(
-			screen.getByText( /Your payouts are temporarily suspended/i )
+			inCard().getByText( /Your payouts are temporarily suspended/i )
 		).toBeInTheDocument();
 		expect(
 			screen.queryByRole( 'link', { name: /change payout schedule/i } )
@@ -201,7 +211,7 @@ describe( 'PayoutsOverviewCard', () => {
 		);
 
 		expect(
-			screen.getByText( /Your payouts are temporarily suspended/i )
+			inCard().getByText( /Your payouts are temporarily suspended/i )
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'link', {
@@ -227,7 +237,7 @@ describe( 'PayoutsOverviewCard', () => {
 		);
 
 		expect(
-			screen.getByText(
+			inCard().getByText(
 				/Payouts are paused while your available funds balance remains below \$5.00/i
 			)
 		).toBeInTheDocument();
@@ -248,7 +258,7 @@ describe( 'PayoutsOverviewCard', () => {
 		);
 
 		expect(
-			screen.getByText( /WooPayments balance remains negative/i )
+			inCard().getByText( /WooPayments balance remains negative/i )
 		).toBeInTheDocument();
 	} );
 
@@ -274,7 +284,7 @@ describe( 'PayoutsOverviewCard', () => {
 		);
 
 		expect(
-			screen.getByText(
+			inCard().getByText(
 				/Payouts are currently paused because a recent payout failed/i
 			)
 		).toBeInTheDocument();
@@ -308,12 +318,9 @@ describe( 'PayoutsOverviewCard', () => {
 			/>
 		);
 
-		expect(
-			screen.getByText(
-				'Available funds are automatically dispatched every Monday.'
-			)
-		).toBeInTheDocument();
-		expect( screen.getAllByText( '$10.00' ).length ).toBeGreaterThan( 0 );
+		expect( getScheduleSummary() ).toHaveTextContent(
+			'Available funds are automatically dispatched every Monday.'
+		);
 		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
 			'Unable to load recent payouts.'
 		);
@@ -371,7 +378,7 @@ describe( 'PayoutsOverviewCard', () => {
 		expect(
 			screen.getByRole( 'heading', { name: 'Payouts' } )
 		).toBeInTheDocument();
-		expect( screen.getByText( 'Dispatch date' ) ).toBeInTheDocument();
+		expect( inCard().getByText( 'Dispatch date' ) ).toBeInTheDocument();
 		expect( screen.getAllByText( '$10.00' ).length ).toBeGreaterThan( 0 );
 	} );
 
@@ -385,14 +392,19 @@ describe( 'PayoutsOverviewCard', () => {
 			/>
 		);
 
-		expect( screen.getByText( 'Dispatch date' ) ).toBeInTheDocument();
-		expect( screen.getByText( 'Status' ) ).toBeInTheDocument();
-		expect( screen.getByText( 'Amount' ) ).toBeInTheDocument();
+		expect( inCard().getByText( 'Dispatch date' ) ).toBeInTheDocument();
+		expect( inCard().getByText( 'Status' ) ).toBeInTheDocument();
+		expect( inCard().getByText( 'Amount' ) ).toBeInTheDocument();
 		expect( screen.getAllByText( '$10.00' ).length ).toBeGreaterThan( 0 );
-		expect( screen.getByText( 'Completed (paid)' ) ).toHaveClass(
-			'woocommerce-woopayments-overview__status-chip',
-			'woocommerce-woopayments-overview__status-chip--paid'
+		// Client 11.1.0 `components/deposit-status-chip`: paid is a success chip.
+		expect( inCard().getByText( 'Completed (paid)' ) ).toHaveClass(
+			'woocommerce-status-badge',
+			'woocommerce-status-badge--success'
 		);
+		// Client 11.1.0 `recent-deposits-list.tsx:48` shows the date in the site format.
+		expect(
+			screen.getByRole( 'link', { name: 'View payout po_test details' } )
+		).toHaveTextContent( 'June 18, 2026' );
 
 		expect(
 			screen.getByRole( 'link', { name: 'View payout po_test details' } )
@@ -433,11 +445,11 @@ describe( 'PayoutsOverviewCard', () => {
 			/>
 		);
 
-		expect(
-			screen.getByText(
-				'Available funds are automatically dispatched every day.'
-			)
-		).toBeInTheDocument();
+		expect( getScheduleSummary() ).toHaveTextContent(
+			'Available funds are automatically dispatched every day.'
+		);
+		// Client 11.1.0 `deposit-schedule.tsx:33-44` sets the interval in bold.
+		expect( inCard().getByText( 'every day' ).tagName ).toBe( 'STRONG' );
 
 		rerender(
 			<PayoutsOverviewCard
@@ -448,11 +460,9 @@ describe( 'PayoutsOverviewCard', () => {
 			/>
 		);
 
-		expect(
-			screen.getByText(
-				'Available funds are automatically dispatched every Monday.'
-			)
-		).toBeInTheDocument();
+		expect( getScheduleSummary() ).toHaveTextContent(
+			'Available funds are automatically dispatched every Monday.'
+		);
 	} );
 
 	it( 'uses reference payout schedule copy for monthly and month-end payouts', () => {
@@ -473,11 +483,9 @@ describe( 'PayoutsOverviewCard', () => {
 			/>
 		);
 
-		expect(
-			screen.getByText(
-				'Available funds are automatically dispatched on the 15th of every month.'
-			)
-		).toBeInTheDocument();
+		expect( getScheduleSummary() ).toHaveTextContent(
+			'Available funds are automatically dispatched on the 15th of every month.'
+		);
 
 		rerender(
 			<PayoutsOverviewCard
@@ -496,14 +504,12 @@ describe( 'PayoutsOverviewCard', () => {
 			/>
 		);
 
-		expect(
-			screen.getByText(
-				'Available funds are automatically dispatched on the last day of every month.'
-			)
-		).toBeInTheDocument();
+		expect( getScheduleSummary() ).toHaveTextContent(
+			'Available funds are automatically dispatched on the last day of every month.'
+		);
 	} );
 
-	it( 'keeps payout schedule help copy visible', () => {
+	it( 'keeps the payout schedule help behind the schedule help icon', async () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
@@ -511,6 +517,14 @@ describe( 'PayoutsOverviewCard', () => {
 				overview={ createOverview() }
 				recentPayouts={ [] }
 			/>
+		);
+
+		expect(
+			screen.queryByText( /The timing and amount of your payouts/ )
+		).not.toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Payout schedule tooltip' } )
 		);
 
 		expect(
@@ -543,7 +557,7 @@ describe( 'PayoutsOverviewCard', () => {
 		);
 
 		expect(
-			screen.getByText( /You have no funds available/i )
+			inCard().getByText( /You have no funds available/i )
 		).toBeInTheDocument();
 		expect( screen.getByRole( 'link', { name: /Why\?/ } ) ).toHaveAttribute(
 			'href',

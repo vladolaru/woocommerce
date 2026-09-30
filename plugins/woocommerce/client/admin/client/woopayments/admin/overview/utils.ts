@@ -1,7 +1,9 @@
 /**
  * External dependencies
  */
+import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { _x, sprintf } from '@wordpress/i18n';
+import moment from 'moment';
 
 /**
  * Internal dependencies
@@ -179,6 +181,30 @@ export const formatPayoutDate = ( deposit: WooPaymentsDeposit ) => {
 		month: 'short',
 		day: 'numeric',
 	} );
+};
+
+/**
+ * The payout date in the site date format, read as UTC, as client 11.1.0 `utils/date-time.ts` `formatDateTimeFromString()` shows it.
+ *
+ * @param payout The payout.
+ */
+export const formatPayoutSiteDate = (
+	payout: Pick< WooPaymentsDeposit, 'date' | 'created' >
+) => {
+	const rawDate = payout.date || payout.created || '';
+	const date = moment.utc(
+		typeof rawDate === 'number' && rawDate < 10000000000
+			? rawDate * 1000
+			: rawDate
+	);
+
+	return date.isValid()
+		? dateI18n(
+				getDateSettings().formats.date,
+				date.toISOString(),
+				undefined
+		  )
+		: '-';
 };
 
 export const formatPayoutStatus = ( status: string ) =>

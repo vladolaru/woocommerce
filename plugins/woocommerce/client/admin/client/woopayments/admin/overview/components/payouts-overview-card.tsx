@@ -1,8 +1,19 @@
 /**
  * External dependencies
  */
-import { ExternalLink } from '@wordpress/components';
+import {
+	Button,
+	Card,
+	CardBody,
+	CardFooter,
+	CardHeader,
+	ExternalLink,
+	Icon,
+	Notice,
+} from '@wordpress/components';
+import { createInterpolateElement } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
+import { calendar } from '@wordpress/icons';
 import { addQueryArgs } from '@wordpress/url';
 import { recordEvent } from '@woocommerce/tracks';
 import type { ReactNode } from 'react';
@@ -12,16 +23,17 @@ import type { ReactNode } from 'react';
  */
 import type { WooPaymentsDeposit, WooPaymentsDepositsOverview } from '../types';
 import {
-	formatPayoutDate,
+	formatPayoutSiteDate,
 	formatWooPaymentsAmount,
 	getAmountForCurrency,
 	getMonthlyAnchorLabel,
-	getPayoutStatusClassName,
 	getSelectedBalanceCurrency,
 } from '../utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
 import { getPayoutStatusLabel } from '../../payout-status';
 import { formatExplicitCurrency } from '../../currency';
+import { HelpPopover } from './help-popover';
+import { StatusChip, type StatusChipType } from './status-chip';
 
 const PAYOUT_SCHEDULE_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/payout-schedule/';
@@ -33,64 +45,73 @@ const NEGATIVE_BALANCE_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/fees/account-showing-negative-balance/';
 const MINIMUM_PAYOUT_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/payout-schedule/#minimum-payout-amounts';
+const PAYOUTS_HEADING_ID = 'woocommerce-woopayments-payouts-heading';
 const PENDING_FUNDS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/payout-schedule/#pending-funds';
 
 const formatScheduleAnchor = ( value: string ) =>
 	value.replace( /^\w/, ( match ) => match.toUpperCase() );
 
+// Client 11.1.0 `components/deposits-overview/deposit-schedule.tsx:29-104`.
 const getScheduleText = ( overview: WooPaymentsDepositsOverview ) => {
 	const schedule = overview.account.deposits_schedule;
 	const interval = schedule?.interval;
+	let message = '';
 
 	if ( ! interval || interval === 'manual' ) {
 		return null;
 	}
 
 	if ( interval === 'daily' ) {
-		return __(
-			'Available funds are automatically dispatched every day.',
+		message = __(
+			'Available funds are automatically dispatched <strong>every day</strong>.',
 			'woocommerce'
 		);
-	}
-
-	if ( interval === 'weekly' && schedule.weekly_anchor ) {
-		return sprintf(
+	} else if ( interval === 'weekly' && schedule.weekly_anchor ) {
+		message = sprintf(
 			/* translators: %s: Day of the week. */
 			__(
-				'Available funds are automatically dispatched every %s.',
+				'Available funds are automatically dispatched <strong>every %s</strong>.',
 				'woocommerce'
 			),
 			formatScheduleAnchor( schedule.weekly_anchor )
 		);
+	} else if ( interval === 'monthly' && schedule.monthly_anchor ) {
+		message =
+			schedule.monthly_anchor === 31
+				? __(
+						'Available funds are automatically dispatched <strong>on the last day of every month</strong>.',
+						'woocommerce'
+				  )
+				: sprintf(
+						/* translators: %s: Day of the month. */
+						__(
+							'Available funds are automatically dispatched <strong>on the %s of every month</strong>.',
+							'woocommerce'
+						),
+						getMonthlyAnchorLabel( schedule.monthly_anchor )
+				  );
 	}
 
-	if ( interval === 'monthly' && schedule.monthly_anchor ) {
-		if ( schedule.monthly_anchor === 31 ) {
-			return __(
-				'Available funds are automatically dispatched on the last day of every month.',
-				'woocommerce'
-			);
-		}
-
-		return sprintf(
-			/* translators: %s: Day of the month. */
-			__(
-				'Available funds are automatically dispatched on the %s of every month.',
-				'woocommerce'
-			),
-			getMonthlyAnchorLabel( schedule.monthly_anchor )
-		);
-	}
-
-	return null;
+	return message
+		? createInterpolateElement( message, { strong: <strong /> } )
+		: null;
 };
 
 const PayoutNotice = ( { children }: { children: ReactNode } ) => (
-	<p className="woocommerce-woopayments-overview__notice" role="status">
+	<Notice status="warning" isDismissible={ false }>
 		{ children }
-	</p>
+	</Notice>
 );
+
+// Client 11.1.0 `components/deposit-status-chip/index.tsx:18-24`.
+const PAYOUT_STATUS_CHIP_TYPES: Record< string, StatusChipType > = {
+	pending: 'warning',
+	in_transit: 'primary',
+	paid: 'success',
+	failed: 'error',
+	canceled: 'info',
+};
 
 const FailedPayoutNotice = ( { accountLink }: { accountLink?: string } ) => {
 	const accountLinkWithSource = accountLink
@@ -126,6 +147,7 @@ const FailedPayoutNotice = ( { accountLink }: { accountLink?: string } ) => {
 	);
 };
 
+// Client 11.1.0 `components/deposits-overview/recent-deposits-list.tsx`.
 const RecentPayoutsList = ( {
 	payouts,
 }: {
@@ -143,6 +165,7 @@ const RecentPayoutsList = ( {
 			{ payouts.map( ( payout ) => (
 				<tr key={ payout.id }>
 					<td>
+						<Icon icon={ calendar } size={ 17 } />
 						<a
 							href={ getSettingsPaymentsProviderRouteUrl(
 								`/woopayments/payouts/details?id=${ encodeURIComponent(
@@ -155,18 +178,17 @@ const RecentPayoutsList = ( {
 								payout.id
 							) }
 						>
-							{ formatPayoutDate( payout ) }
+							{ formatPayoutSiteDate( payout ) }
 						</a>
 					</td>
 					<td>
-						<span
-							className={ `woocommerce-woopayments-overview__status-chip ${ getPayoutStatusClassName(
-								payout.status
-							) }` }
-						>
-							{ /* Client 11.1.0 `components/deposits-overview/recent-deposits-list.tsx:53`. */ }
-							{ getPayoutStatusLabel( payout ) }
-						</span>
+						<StatusChip
+							message={ getPayoutStatusLabel( payout ) }
+							type={
+								PAYOUT_STATUS_CHIP_TYPES[ payout.status ] ??
+								'info'
+							}
+						/>
 					</td>
 					<td>
 						{ formatWooPaymentsAmount(
@@ -178,6 +200,38 @@ const RecentPayoutsList = ( {
 			) ) }
 		</tbody>
 	</table>
+);
+
+// Client 11.1.0 `components/overview-card`. The history keeps its place in every state, so its status region stays mounted from loading to loaded.
+const PayoutsCard = ( {
+	isLoading,
+	summary,
+	history,
+	footer,
+}: {
+	isLoading: boolean;
+	summary?: ReactNode;
+	history: ReactNode;
+	footer?: ReactNode;
+} ) => (
+	<Card
+		as="section"
+		className="woocommerce-woopayments-overview__payouts-card"
+		aria-labelledby={ PAYOUTS_HEADING_ID }
+		aria-busy={ isLoading }
+	>
+		<CardHeader>
+			<h2
+				id={ PAYOUTS_HEADING_ID }
+				className="woocommerce-woopayments-overview-card__title"
+			>
+				{ __( 'Payouts', 'woocommerce' ) }
+			</h2>
+		</CardHeader>
+		{ summary }
+		{ history }
+		{ footer }
+	</Card>
 );
 
 export const PayoutsOverviewCard = ( {
@@ -193,100 +247,94 @@ export const PayoutsOverviewCard = ( {
 	recentPayouts: WooPaymentsDeposit[];
 	selectedCurrency?: string;
 } ) => {
-	const headingId = 'woocommerce-woopayments-payouts-heading';
 	const historyUrl = getSettingsPaymentsProviderRouteUrl(
 		'/woopayments/payouts'
 	);
-	const hasRecentPayouts = recentPayouts.length > 0;
-	const historyStatusMessage =
-		errorMessage ||
-		( hasRecentPayouts
-			? __( 'Payout history loaded.', 'woocommerce' )
-			: __( 'No recent payouts.', 'woocommerce' ) );
-	const isHistoryStatusVisible = !! errorMessage || ! hasRecentPayouts;
-	let historyContent: ReactNode = null;
+	const hasRecentPayouts =
+		! isLoading && ! errorMessage && recentPayouts.length > 0;
+	let historyStatusMessage: string = __(
+		'No recent payouts.',
+		'woocommerce'
+	);
 
-	if ( ! errorMessage && hasRecentPayouts ) {
-		historyContent = (
-			<>
+	if ( isLoading ) {
+		historyStatusMessage = __( 'Loading payouts…', 'woocommerce' );
+	} else if ( errorMessage ) {
+		historyStatusMessage = errorMessage;
+	} else if ( hasRecentPayouts ) {
+		historyStatusMessage = __( 'Payout history loaded.', 'woocommerce' );
+	}
+
+	const history = (
+		<CardBody className="woocommerce-woopayments-overview__history">
+			<h3>{ __( 'Payout history', 'woocommerce' ) }</h3>
+			<p
+				className={
+					hasRecentPayouts
+						? 'screen-reader-text'
+						: 'woocommerce-woopayments-overview__status'
+				}
+				role={ errorMessage ? 'alert' : 'status' }
+				aria-live={ errorMessage ? 'assertive' : 'polite' }
+			>
+				{ historyStatusMessage }
+			</p>
+			{ hasRecentPayouts && (
 				<RecentPayoutsList payouts={ recentPayouts } />
-				<p>
-					<a
-						className="button button-secondary"
+			) }
+		</CardBody>
+	);
+	const renderFooter = ( canChangePayoutSchedule: boolean ) =>
+		( hasRecentPayouts || canChangePayoutSchedule ) && (
+			<CardFooter className="woocommerce-woopayments-overview__payouts-footer">
+				{ hasRecentPayouts && (
+					<Button
+						variant="secondary"
 						href={ historyUrl }
 						onClick={ () =>
 							recordEvent(
 								'wcpay_overview_deposits_view_history_click'
 							)
 						}
+						__next40pxDefaultSize
 					>
 						{ __( 'View full payout history', 'woocommerce' ) }
-					</a>
-				</p>
-			</>
+					</Button>
+				) }
+				{ canChangePayoutSchedule && (
+					<Button
+						variant="tertiary"
+						href={ `${ getSettingsPaymentsProviderRouteUrl(
+							'/woopayments/settings'
+						) }#payout-schedule` }
+						onClick={ () =>
+							recordEvent(
+								'wcpay_overview_deposits_change_schedule_click'
+							)
+						}
+						__next40pxDefaultSize
+					>
+						{ __( 'Change payout schedule', 'woocommerce' ) }
+					</Button>
+				) }
+			</CardFooter>
 		);
-	}
 
 	if ( isLoading ) {
-		return (
-			<section
-				className="woocommerce-woopayments-overview-card"
-				aria-labelledby={ headingId }
-				aria-busy
-			>
-				<div className="woocommerce-woopayments-overview-card__header">
-					<h2 id={ headingId }>{ __( 'Payouts', 'woocommerce' ) }</h2>
-				</div>
-				<div
-					key="payout-history"
-					className="woocommerce-woopayments-overview__history"
-				>
-					<h3>{ __( 'Payout history', 'woocommerce' ) }</h3>
-					<p
-						className="woocommerce-woopayments-overview__status"
-						role="status"
-						aria-live="polite"
-					>
-						{ __( 'Loading payouts…', 'woocommerce' ) }
-					</p>
-				</div>
-			</section>
-		);
+		return <PayoutsCard isLoading history={ history } />;
 	}
 
 	if ( ! overview ) {
-		if ( ! errorMessage && ! hasRecentPayouts ) {
+		if ( ! errorMessage && recentPayouts.length === 0 ) {
 			return null;
 		}
 
 		return (
-			<section
-				className="woocommerce-woopayments-overview-card"
-				aria-labelledby={ headingId }
-				aria-busy={ false }
-			>
-				<div className="woocommerce-woopayments-overview-card__header">
-					<h2 id={ headingId }>{ __( 'Payouts', 'woocommerce' ) }</h2>
-				</div>
-				<div
-					key="payout-history"
-					className="woocommerce-woopayments-overview__history"
-				>
-					<h3>{ __( 'Payout history', 'woocommerce' ) }</h3>
-					<p
-						className={
-							isHistoryStatusVisible
-								? 'woocommerce-woopayments-overview__status'
-								: 'screen-reader-text'
-						}
-						role={ errorMessage ? 'alert' : 'status' }
-						aria-live={ errorMessage ? 'assertive' : 'polite' }
-					>
-						{ historyStatusMessage }
-					</p>
-					{ historyContent }
-				</div>
-			</section>
+			<PayoutsCard
+				isLoading={ false }
+				history={ history }
+				footer={ renderFooter( false ) }
+			/>
 		);
 	}
 
@@ -329,181 +377,165 @@ export const PayoutsOverviewCard = ( {
 			: undefined;
 	const canChangePayoutSchedule =
 		! isPayoutsSuspended && hasCompletedWaitingPeriod;
-	const scheduleSettingsUrl = `${ getSettingsPaymentsProviderRouteUrl(
-		'/woopayments/settings'
-	) }#payout-schedule`;
+	const isAwaitingPendingFunds =
+		availableFunds === 0 && pendingFunds > 0 && hasCompletedWaitingPeriod;
+	const hasNotices =
+		isPayoutsSuspended ||
+		hasErroredExternalAccount ||
+		! hasCompletedWaitingPeriod ||
+		hasNegativeBalance ||
+		isBelowMinimumPayout ||
+		isAwaitingPendingFunds;
 
 	if (
 		! hasCompletedWaitingPeriod &&
 		availableFunds === 0 &&
 		pendingFunds === 0 &&
-		! hasRecentPayouts
+		recentPayouts.length === 0
 	) {
 		return null;
 	}
 
 	return (
-		<section
-			className="woocommerce-woopayments-overview-card"
-			aria-labelledby={ headingId }
-			aria-busy={ false }
-		>
-			<div className="woocommerce-woopayments-overview-card__header">
-				<h2 id={ headingId }>{ __( 'Payouts', 'woocommerce' ) }</h2>
-				<span className="woocommerce-woopayments-overview-card__amount">
-					{ formatWooPaymentsAmount( availableFunds, currency ) }
-				</span>
-			</div>
-
-			{ scheduleText && (
-				<div className="woocommerce-woopayments-overview__schedule">
-					<p>{ scheduleText }</p>
-					<p className="woocommerce-woopayments-overview__help">
-						{ __(
-							'The timing and amount of your payouts may vary due to several factors. Check out our',
-							'woocommerce'
-						) }{ ' ' }
-						<ExternalLink href={ PAYOUT_SCHEDULE_DOCS_URL }>
-							{ __( 'payout schedule guide', 'woocommerce' ) }
-						</ExternalLink>{ ' ' }
-						{ __( 'for details.', 'woocommerce' ) }
-					</p>
-				</div>
-			) }
-
-			<div className="woocommerce-woopayments-overview__notices">
-				{ isPayoutsSuspended && (
-					<PayoutNotice>
-						{ __(
-							'Your payouts are temporarily suspended.',
-							'woocommerce'
-						) }{ ' ' }
-						<ExternalLink href={ SUSPENDED_PAYOUTS_DOCS_URL }>
-							{ __( 'Learn more', 'woocommerce' ) }
-						</ExternalLink>
-					</PayoutNotice>
-				) }
-				{ hasErroredExternalAccount && (
-					<FailedPayoutNotice accountLink={ accountLink } />
-				) }
-				{ ! isPayoutsSuspended && (
-					<>
-						{ ! hasCompletedWaitingPeriod && (
-							<PayoutNotice>
-								{ __(
-									'Payout scheduling becomes available after the standard 7-day waiting period for new accounts is complete.',
+		<PayoutsCard
+			isLoading={ false }
+			history={ history }
+			footer={ renderFooter( canChangePayoutSchedule ) }
+			summary={
+				<>
+					{ scheduleText && (
+						<CardBody className="woocommerce-woopayments-overview__schedule">
+							{ /* Its own element: an interpolated fragment among siblings trips React's missing-key warning. */ }
+							<span>{ scheduleText }</span>
+							<HelpPopover
+								label={ __(
+									'Payout schedule tooltip',
 									'woocommerce'
-								) }{ ' ' }
-								<ExternalLink
-									href={ NEW_ACCOUNT_WAITING_PERIOD_DOCS_URL }
-								>
-									{ __( 'Learn more', 'woocommerce' ) }
-								</ExternalLink>
-							</PayoutNotice>
-						) }
-						{ hasNegativeBalance && (
-							<PayoutNotice>
-								{ sprintf(
-									/* translators: %s: WooPayments */
+								) }
+							>
+								{ createInterpolateElement(
 									__(
-										'Payouts may be interrupted while your %s balance remains negative.',
+										'The timing and amount of your payouts may vary due to several factors. Check out our <a>payout schedule guide</a> for details.',
 										'woocommerce'
 									),
-									'WooPayments'
-								) }{ ' ' }
-								<ExternalLink
-									href={ NEGATIVE_BALANCE_DOCS_URL }
-								>
-									{ __( 'Why?', 'woocommerce' ) }
-								</ExternalLink>
-							</PayoutNotice>
-						) }
-						{ isBelowMinimumPayout && (
-							<PayoutNotice>
-								{ sprintf(
-									/* translators: %s: formatted minimum payout amount. */
-									__(
-										'Payouts are paused while your available funds balance remains below %s.',
-										'woocommerce'
-									),
-									// Client 11.1.0 `components/deposits-overview/index.tsx:186`.
-									formatExplicitCurrency(
-										minimumPayoutAmount,
-										currency
-									)
-								) }{ ' ' }
-								<ExternalLink href={ MINIMUM_PAYOUT_DOCS_URL }>
-									{ __( 'Learn more', 'woocommerce' ) }
-								</ExternalLink>
-							</PayoutNotice>
-						) }
-						{ availableFunds === 0 &&
-							pendingFunds > 0 &&
-							hasCompletedWaitingPeriod && (
+									{
+										a: (
+											<ExternalLink
+												href={
+													PAYOUT_SCHEDULE_DOCS_URL
+												}
+											>
+												<></>
+											</ExternalLink>
+										),
+									}
+								) }
+							</HelpPopover>
+						</CardBody>
+					) }
+
+					{ hasNotices && (
+						<CardBody className="woocommerce-woopayments-overview__notices">
+							{ isPayoutsSuspended && (
 								<PayoutNotice>
 									{ __(
-										'You have no funds available.',
+										'Your payouts are temporarily suspended.',
 										'woocommerce'
 									) }{ ' ' }
 									<ExternalLink
-										href={ PENDING_FUNDS_DOCS_URL }
+										href={ SUSPENDED_PAYOUTS_DOCS_URL }
 									>
-										{ __( 'Why?', 'woocommerce' ) }
+										{ __( 'Learn more', 'woocommerce' ) }
 									</ExternalLink>
 								</PayoutNotice>
 							) }
-					</>
-				) }
-			</div>
-
-			<dl className="woocommerce-woopayments-overview__balance-grid">
-				<div>
-					<dt>{ __( 'Available', 'woocommerce' ) }</dt>
-					<dd>
-						{ formatWooPaymentsAmount( availableFunds, currency ) }
-					</dd>
-				</div>
-				<div>
-					<dt>{ __( 'Pending', 'woocommerce' ) }</dt>
-					<dd>
-						{ formatWooPaymentsAmount( pendingFunds, currency ) }
-					</dd>
-				</div>
-			</dl>
-
-			<div
-				key="payout-history"
-				className="woocommerce-woopayments-overview__history"
-			>
-				<h3>{ __( 'Payout history', 'woocommerce' ) }</h3>
-				<p
-					className={
-						isHistoryStatusVisible
-							? 'woocommerce-woopayments-overview__status'
-							: 'screen-reader-text'
-					}
-					role={ errorMessage ? 'alert' : 'status' }
-					aria-live={ errorMessage ? 'assertive' : 'polite' }
-				>
-					{ historyStatusMessage }
-				</p>
-				{ historyContent }
-				{ canChangePayoutSchedule && (
-					<p className="woocommerce-woopayments-overview__footer-actions">
-						<a
-							className="button button-link"
-							href={ scheduleSettingsUrl }
-							onClick={ () =>
-								recordEvent(
-									'wcpay_overview_deposits_change_schedule_click'
-								)
-							}
-						>
-							{ __( 'Change payout schedule', 'woocommerce' ) }
-						</a>
-					</p>
-				) }
-			</div>
-		</section>
+							{ hasErroredExternalAccount && (
+								<FailedPayoutNotice
+									accountLink={ accountLink }
+								/>
+							) }
+							{ ! isPayoutsSuspended && (
+								<>
+									{ ! hasCompletedWaitingPeriod && (
+										<PayoutNotice>
+											{ __(
+												'Payout scheduling becomes available after the standard 7-day waiting period for new accounts is complete.',
+												'woocommerce'
+											) }{ ' ' }
+											<ExternalLink
+												href={
+													NEW_ACCOUNT_WAITING_PERIOD_DOCS_URL
+												}
+											>
+												{ __(
+													'Learn more',
+													'woocommerce'
+												) }
+											</ExternalLink>
+										</PayoutNotice>
+									) }
+									{ hasNegativeBalance && (
+										<PayoutNotice>
+											{ sprintf(
+												/* translators: %s: WooPayments */
+												__(
+													'Payouts may be interrupted while your %s balance remains negative.',
+													'woocommerce'
+												),
+												'WooPayments'
+											) }{ ' ' }
+											<ExternalLink
+												href={
+													NEGATIVE_BALANCE_DOCS_URL
+												}
+											>
+												{ __( 'Why?', 'woocommerce' ) }
+											</ExternalLink>
+										</PayoutNotice>
+									) }
+									{ isBelowMinimumPayout && (
+										<PayoutNotice>
+											{ sprintf(
+												/* translators: %s: formatted minimum payout amount. */
+												__(
+													'Payouts are paused while your available funds balance remains below %s.',
+													'woocommerce'
+												),
+												// Client 11.1.0 `components/deposits-overview/index.tsx:186`.
+												formatExplicitCurrency(
+													minimumPayoutAmount,
+													currency
+												)
+											) }{ ' ' }
+											<ExternalLink
+												href={ MINIMUM_PAYOUT_DOCS_URL }
+											>
+												{ __(
+													'Learn more',
+													'woocommerce'
+												) }
+											</ExternalLink>
+										</PayoutNotice>
+									) }
+									{ isAwaitingPendingFunds && (
+										<PayoutNotice>
+											{ __(
+												'You have no funds available.',
+												'woocommerce'
+											) }{ ' ' }
+											<ExternalLink
+												href={ PENDING_FUNDS_DOCS_URL }
+											>
+												{ __( 'Why?', 'woocommerce' ) }
+											</ExternalLink>
+										</PayoutNotice>
+									) }
+								</>
+							) }
+						</CardBody>
+					) }
+				</>
+			}
+		/>
 	);
 };
