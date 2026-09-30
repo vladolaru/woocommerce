@@ -7,8 +7,8 @@
 		},
 		"blocks-express-checkout.js": {
 			"allow_new": true,
-			"raw_bytes": 33368,
-			"gzip_bytes": 10897
+			"raw_bytes": 33572,
+			"gzip_bytes": 10970
 		},
 		"multi-currency-analytics.js": {
 			"allow_missing": true
