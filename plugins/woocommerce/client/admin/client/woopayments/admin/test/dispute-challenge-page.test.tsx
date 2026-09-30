@@ -286,10 +286,14 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			} )
 		).toBeInTheDocument();
 		expect(
-			await screen.findByRole( 'combobox', { name: 'Product type' } )
+			await screen.findByRole( 'combobox', {
+				name: 'Product or service type',
+			} )
 		).toBeEnabled();
 		expect(
-			screen.getByRole( 'textbox', { name: 'Product description' } )
+			screen.getByRole( 'textbox', {
+				name: 'Product or service description',
+			} )
 		).toBeEnabled();
 		expect(
 			screen.queryByRole( 'textbox', { name: 'Additional evidence' } )
@@ -338,7 +342,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#challenge-or-accept'
 		);
 		const productTypeSelect = screen.getByRole( 'combobox', {
-			name: 'Product type',
+			name: 'Product or service type',
 		} );
 		expect(
 			Array.from( productTypeSelect.querySelectorAll( 'option' ) ).map(
@@ -383,7 +387,9 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		).not.toBeInTheDocument();
 
 		await userEvent.type(
-			screen.getByRole( 'textbox', { name: 'Product description' } ),
+			screen.getByRole( 'textbox', {
+				name: 'Product or service description',
+			} ),
 			'Custom roasted coffee beans.'
 		);
 		await clickButton( 'Next' );
@@ -532,7 +538,9 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			name: "Let's gather the basics",
 		} );
 		await userEvent.type(
-			screen.getByRole( 'textbox', { name: 'Product description' } ),
+			screen.getByRole( 'textbox', {
+				name: 'Product or service description',
+			} ),
 			'Downloaded software.'
 		);
 		await clickButton( 'Next' );
@@ -577,7 +585,9 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			} )
 		).toBeInTheDocument();
 		expect(
-			screen.queryByRole( 'combobox', { name: 'Product type' } )
+			screen.queryByRole( 'combobox', {
+				name: 'Product or service type',
+			} )
 		).not.toBeInTheDocument();
 		expect(
 			screen.getByLabelText( 'Upload evidence' )
@@ -710,7 +720,9 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			screen.queryByText( 'This dispute is read-only.' )
 		).not.toBeInTheDocument();
 		expect(
-			screen.getByRole( 'textbox', { name: 'Product description' } )
+			screen.getByRole( 'textbox', {
+				name: 'Product or service description',
+			} )
 		).toHaveAttribute( 'readonly' );
 		// Client 11.1.0 file-upload-control.tsx: a read-only dispute keeps the upload control, disabled.
 		expect(
@@ -924,13 +936,17 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		mockGetDispute.mockResolvedValue( makeDispute() );
 
 		renderChallengePage();
-		await screen.findByRole( 'combobox', { name: 'Product type' } );
+		await screen.findByRole( 'combobox', {
+			name: 'Product or service type',
+		} );
 		await userEvent.selectOptions(
-			screen.getByRole( 'combobox', { name: 'Product type' } ),
+			screen.getByRole( 'combobox', { name: 'Product or service type' } ),
 			'digital_product_or_service'
 		);
 		await userEvent.type(
-			screen.getByRole( 'textbox', { name: 'Product description' } ),
+			screen.getByRole( 'textbox', {
+				name: 'Product or service description',
+			} ),
 			'Downloaded software.'
 		);
 		await clickButton( 'Save for later' );
@@ -988,10 +1004,14 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		renderChallengePage();
 
 		expect(
-			await screen.findByRole( 'combobox', { name: 'Product type' } )
+			await screen.findByRole( 'combobox', {
+				name: 'Product or service type',
+			} )
 		).toHaveValue( 'digital_product_or_service' );
 		expect(
-			screen.getByRole( 'textbox', { name: 'Product description' } )
+			screen.getByRole( 'textbox', {
+				name: 'Product or service description',
+			} )
 		).toHaveValue( 'Downloaded software.' );
 	} );
 
@@ -1007,9 +1027,11 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		);
 
 		renderChallengePage();
-		await screen.findByRole( 'combobox', { name: 'Product type' } );
+		await screen.findByRole( 'combobox', {
+			name: 'Product or service type',
+		} );
 		await userEvent.selectOptions(
-			screen.getByRole( 'combobox', { name: 'Product type' } ),
+			screen.getByRole( 'combobox', { name: 'Product or service type' } ),
 			'digital_product_or_service'
 		);
 		await clickButton( 'Save for later' );

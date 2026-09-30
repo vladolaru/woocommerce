@@ -107,10 +107,16 @@ const getInitialEvidenceState = ( dispute: WooPaymentsDispute ) => {
 	return evidence;
 };
 
-const getInitialProductType = ( dispute: WooPaymentsDispute ) =>
-	dispute.metadata?.__product_type ||
-	dispute.order?.suggested_product_type ||
-	'physical_product';
+// Client 11.1.0 `new-evidence/resolve-product-type.ts`: with the additional evidence types (on by default),
+// a saved "multiple" reads as Other.
+const getInitialProductType = ( dispute: WooPaymentsDispute ) => {
+	const productType =
+		dispute.metadata?.__product_type ||
+		dispute.order?.suggested_product_type ||
+		'physical_product';
+
+	return productType === 'multiple' ? 'other' : productType;
+};
 
 const getStepLabel = ( step: EvidenceStep ) => {
 	switch ( step ) {
@@ -943,13 +949,19 @@ export const DisputeEvidenceForm = ( {
 										<fieldset className="woocommerce-woopayments-dispute-evidence__section">
 											<legend>
 												{ __(
-													'Product details',
+													'Product or service details',
 													'woocommerce'
 												) }
 											</legend>
+											<p className="woocommerce-woopayments-dispute-evidence__section-description">
+												{ __(
+													'Please ensure the product or service type and description have been entered accurately.',
+													'woocommerce'
+												) }
+											</p>
 											<SelectControl
 												label={ __(
-													'Product type',
+													'Product or service type',
 													'woocommerce'
 												) }
 												value={ productType }
@@ -963,7 +975,7 @@ export const DisputeEvidenceForm = ( {
 											/>
 											<TextareaControl
 												label={ __(
-													'Product description',
+													'Product or service description',
 													'woocommerce'
 												) }
 												value={

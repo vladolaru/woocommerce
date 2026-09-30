@@ -279,6 +279,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['isSubscriptionsActive'] = $this->is_subscriptions_plugin_active();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1040` localizes this for `formatExplicitCurrency()`.
 		$settings['woopaymentsSettings']['shouldUseExplicitPrice'] = MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price();
+		// Plugin 11.1.0 `class-wc-payments-admin.php:1074-1085` localizes this for the dispute cover letter.
+		$settings['woopaymentsSettings']['formattedStoreAddress'] = $this->get_formatted_store_address();
 
 		$provider_settings = $settings['woopaymentsSettings'];
 
@@ -315,6 +317,29 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings'] = $provider_settings;
 
 		return $settings;
+	}
+
+	/**
+	 * The store address as WooCommerce formats it on one line, like the plugin's `formattedStoreAddress`.
+	 *
+	 * @return string The formatted address, or an empty string when WooCommerce's countries are not loaded.
+	 */
+	private function get_formatted_store_address(): string {
+		if ( ! function_exists( 'WC' ) || ! WC()->countries instanceof \WC_Countries ) {
+			return '';
+		}
+
+		return WC()->countries->get_formatted_address(
+			array(
+				'address_1' => get_option( 'woocommerce_store_address', '' ),
+				'address_2' => get_option( 'woocommerce_store_address_2', '' ),
+				'city'      => get_option( 'woocommerce_store_city', '' ),
+				'state'     => WC()->countries->get_base_state(),
+				'postcode'  => get_option( 'woocommerce_store_postcode', '' ),
+				'country'   => WC()->countries->get_base_country(),
+			),
+			', '
+		);
 	}
 
 	/**

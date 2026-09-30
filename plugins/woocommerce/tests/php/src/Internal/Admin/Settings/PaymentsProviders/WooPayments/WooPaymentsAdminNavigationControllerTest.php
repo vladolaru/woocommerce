@@ -76,6 +76,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'wcpay_onboarding_test_mode' );
 		delete_option( 'wcpay_next_deposit_notice_dismissed' );
+		foreach ( array( 'woocommerce_store_address', 'woocommerce_store_address_2', 'woocommerce_store_city', 'woocommerce_store_postcode', 'woocommerce_default_country' ) as $store_option ) {
+			delete_option( $store_option );
+		}
 
 		parent::tearDown();
 	}
@@ -311,6 +314,30 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$settings = $sut->preload_shared_settings( array() );
 
 		$this->assertSame( $expected, $settings['woopaymentsSettings']['isNextDepositNoticeDismissed'] );
+	}
+
+	/**
+	 * @testdox Should preload the store address WooCommerce formats, for the dispute cover letter.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1074-1085` (`formattedStoreAddress`) and
+	 * `disputes/new-evidence/cover-letter-generator.ts:35-50`.
+	 */
+	public function test_preloads_formatted_store_address(): void {
+		update_option( 'woocommerce_store_address', '1 Market Street' );
+		update_option( 'woocommerce_store_address_2', 'Suite 2' );
+		update_option( 'woocommerce_store_city', 'San Francisco' );
+		update_option( 'woocommerce_store_postcode', '94105' );
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller( true );
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame(
+			'1 Market Street, Suite 2, San Francisco, CA 94105',
+			$settings['woopaymentsSettings']['formattedStoreAddress']
+		);
 	}
 
 	/**
