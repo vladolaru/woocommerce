@@ -1247,11 +1247,88 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 		$gateway_details = $this->sut->get_payment_gateway_details( $fake_gateway, 0, 'US' );
 
 		$this->assertArrayHasKey( '_incentive', $gateway_details );
-		$this->assertSame( $localized_suggestion['_incentive'], $gateway_details['_incentive'] );
+		$this->assertSame( $localized_suggestion['_incentive']['id'], $gateway_details['_incentive']['id'] );
 		$this->assertSame( 'Localized WooPayments suggestion', $gateway_details['title'] );
 		$this->assertSame( ExtensionSuggestions::WOOPAYMENTS, $gateway_details['_suggestion_id'] );
 		$this->assertSame( 'woocommerce', $gateway_details['plugin']['slug'] );
 		$this->assertSame( 'woocommerce/woocommerce', $gateway_details['plugin']['file'] );
+	}
+
+	/**
+	 * @testdox Should word the built-in WooPayments gateway incentive for the store's account state: $expected_cta_label.
+	 *
+	 * The platform's call to action is written around installing the extension, which the built-in runtime never needs (N-246).
+	 *
+	 * @testWith [true, true, "Activate payments"]
+	 *           [false, false, "Get started"]
+	 *
+	 * @param bool   $account_connected    Whether the gateway reports a connected account.
+	 * @param bool   $test_mode_onboarding Whether the account is a test (test-drive or sandbox) account.
+	 * @param string $expected_cta_label   The expected incentive call to action.
+	 */
+	public function test_get_payment_gateway_details_words_native_woopayments_incentive_for_account_state( bool $account_connected, bool $test_mode_onboarding, string $expected_cta_label ): void {
+		$this->mock_woopayments_suggestion_with_install_incentive();
+		$fake_gateway = new FakePaymentGateway(
+			'woocommerce_payments',
+			array(
+				'plugin_slug'          => 'woocommerce',
+				'plugin_file'          => 'woocommerce/woocommerce.php',
+				'account_connected'    => $account_connected,
+				'test_mode_onboarding' => $test_mode_onboarding,
+			),
+		);
+
+		$gateway_details = $this->sut->get_payment_gateway_details( $fake_gateway, 0, 'US' );
+
+		$this->assertSame( $expected_cta_label, $gateway_details['_incentive']['cta_label'] ?? null );
+		$this->assertSame( 'wcpay-promo-action__wc_settings_payments', $gateway_details['_incentive']['id'], 'The rest of the incentive must stay as the platform sent it.' );
+	}
+
+	/**
+	 * @testdox Should keep the platform's incentive wording for the WooPayments extension gateway.
+	 */
+	public function test_get_payment_gateway_details_keeps_extension_woopayments_incentive_wording(): void {
+		$this->mock_woopayments_suggestion_with_install_incentive();
+		$fake_gateway = new FakePaymentGateway(
+			'woocommerce_payments',
+			array(
+				'plugin_slug'          => 'woocommerce-payments',
+				'plugin_file'          => 'woocommerce-payments/woocommerce-payments.php',
+				'account_connected'    => true,
+				'test_mode_onboarding' => true,
+			),
+		);
+
+		$gateway_details = $this->sut->get_payment_gateway_details( $fake_gateway, 0, 'US' );
+
+		$this->assertSame( 'Install and save 10%', $gateway_details['_incentive']['cta_label'] ?? null );
+	}
+
+	/**
+	 * Mock the WooPayments suggestion lookups to carry an incentive worded around installing the extension.
+	 */
+	private function mock_woopayments_suggestion_with_install_incentive(): void {
+		$suggestion = array(
+			'id'         => ExtensionSuggestions::WOOPAYMENTS,
+			'_priority'  => 10,
+			'_type'      => ExtensionSuggestions::TYPE_PSP,
+			'plugin'     => array(
+				'_type' => ExtensionSuggestions::PLUGIN_TYPE_WPORG,
+				'slug'  => 'woocommerce-payments',
+			),
+			'_incentive' => array(
+				'id'        => 'wcpay-promo-action__wc_settings_payments',
+				'promo_id'  => 'wcpay-promo-action',
+				'cta_label' => 'Install and save 10%',
+			),
+		);
+
+		$this->mock_extension_suggestions
+			->method( 'get_by_plugin_slug' )
+			->willReturn( $suggestion );
+		$this->mock_extension_suggestions
+			->method( 'get_country_extensions' )
+			->willReturn( array( $suggestion ) );
 	}
 
 	/**

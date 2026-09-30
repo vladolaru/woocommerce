@@ -322,6 +322,25 @@ class WooPayments extends PaymentGateway {
 	}
 
 	/**
+	 * Get the incentive call to action for the built-in WooPayments gateway.
+	 *
+	 * The incentives API words it around installing the extension, which the built-in runtime never needs.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array $gateway_details The built-in WooPayments gateway details.
+	 *
+	 * @return string The call to action for the store's account state.
+	 */
+	public function get_native_incentive_cta_label( array $gateway_details ): string {
+		if ( ! empty( $gateway_details['state']['account_connected'] ) && ! empty( $gateway_details['onboarding']['state']['test_mode'] ) ) {
+			return __( 'Activate payments', 'woocommerce' );
+		}
+
+		return __( 'Get started', 'woocommerce' );
+	}
+
+	/**
 	 * Check if the payment gateway needs setup.
 	 *
 	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.

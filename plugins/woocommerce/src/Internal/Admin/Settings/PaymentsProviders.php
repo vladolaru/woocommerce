@@ -1519,6 +1519,13 @@ class PaymentsProviders {
 			if ( empty( $gateway_details['_incentive'] ) && ! empty( $suggestion['_incentive'] ) ) {
 				$gateway_details['_incentive'] = $suggestion['_incentive'];
 			}
+			// The built-in WooPayments gateway installs nothing, so its provider words the incentive call to action.
+			if ( is_array( $gateway_details['_incentive'] ?? null ) && $this->is_native_woopayments_gateway( $payment_gateway, $normalized_plugin_slug ) ) {
+				$provider = $this->get_payment_gateway_provider_instance( $payment_gateway->id );
+				if ( $provider instanceof WooPayments ) {
+					$gateway_details['_incentive']['cta_label'] = $provider->get_native_incentive_cta_label( $gateway_details );
+				}
+			}
 
 			// Attach the suggestion ID to the gateway details so we can reference it with precision.
 			$gateway_details['_suggestion_id'] = $suggestion['id'];
@@ -1597,14 +1604,22 @@ class PaymentsProviders {
 	 * @return string
 	 */
 	private function get_suggestion_plugin_slug_for_gateway( WC_Payment_Gateway $payment_gateway, string $normalized_plugin_slug ): string {
-		if (
-			WooPaymentsService::GATEWAY_ID === $payment_gateway->id &&
-			'woocommerce' === $normalized_plugin_slug
-		) {
+		if ( $this->is_native_woopayments_gateway( $payment_gateway, $normalized_plugin_slug ) ) {
 			return self::WOOPAYMENTS_EXTENSION_PLUGIN_SLUG;
 		}
 
 		return $normalized_plugin_slug;
+	}
+
+	/**
+	 * Check if a gateway is the WooPayments gateway built into WooCommerce, not the extension's.
+	 *
+	 * @param WC_Payment_Gateway $payment_gateway        The payment gateway object.
+	 * @param string             $normalized_plugin_slug The normalized gateway plugin slug.
+	 * @return bool
+	 */
+	private function is_native_woopayments_gateway( WC_Payment_Gateway $payment_gateway, string $normalized_plugin_slug ): bool {
+		return WooPaymentsService::GATEWAY_ID === $payment_gateway->id && 'woocommerce' === $normalized_plugin_slug;
 	}
 
 	/**
