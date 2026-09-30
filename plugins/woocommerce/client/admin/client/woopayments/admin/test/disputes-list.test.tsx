@@ -234,9 +234,13 @@ describe( 'WooPayments disputes list columns', () => {
 		const due = DUE.dispute_id;
 		expect( getCell( due, 'amount' ) ).toHaveTextContent( '$50.00' );
 		expect( getCell( due, 'currency' ) ).toHaveTextContent( 'usd' );
+		// Client 11.1.0 `components/dispute-status-chip`: "Response needed" in a red chip.
 		expect( getCell( due, 'status' ) ).toHaveTextContent(
-			'Needs response'
+			/^Response needed$/
 		);
+		expect(
+			within( getCell( due, 'status' ) ).getByText( 'Response needed' )
+		).toHaveClass( 'woocommerce-status-badge--error' );
 		expect( getCell( due, 'reason' ) ).toHaveTextContent(
 			'Transaction unauthorized'
 		);
@@ -269,6 +273,9 @@ describe( 'WooPayments disputes list columns', () => {
 		const won = WON.dispute_id;
 		expect( getCell( won, 'order' ) ).toHaveTextContent( '–' );
 		expect( getCell( won, 'status' ) ).toHaveTextContent( 'Won' );
+		expect(
+			within( getCell( won, 'status' ) ).getByText( 'Won' )
+		).toHaveClass( 'woocommerce-status-badge--success' );
 		expect( getCell( won, 'due_by' ) ).toHaveTextContent( /^$/ );
 	} );
 
@@ -353,9 +360,9 @@ describe( 'WooPayments disputes Show and currency filters', () => {
 				'awaiting_response'
 			)
 		).toEqual( { page: 1, search: AWAITING } );
-		expect( getDisputesApiQuery( { page: 1, search: 'Ada' }, 'all' ) ).toEqual(
-			{ page: 1, search: 'Ada' }
-		);
+		expect(
+			getDisputesApiQuery( { page: 1, search: 'Ada' }, 'all' )
+		).toEqual( { page: 1, search: 'Ada' } );
 		expect(
 			getDisputesApiQuery( { date_before: '2026-09-30' }, 'advanced' )
 				.date_before
@@ -465,11 +472,7 @@ describe( 'WooPayments disputes Show and currency filters', () => {
 			within( currency )
 				.getAllByRole( 'option' )
 				.map( ( option ) => option.textContent )
-		).toEqual( [
-			'All currencies',
-			'United States (US) dollar',
-			'Euro',
-		] );
+		).toEqual( [ 'All currencies', 'United States (US) dollar', 'Euro' ] );
 
 		fireEvent.change( currency, { target: { value: 'eur' } } );
 

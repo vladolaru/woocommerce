@@ -36,6 +36,7 @@ import {
 } from './query';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { ExportButton } from './table';
+import { StatusChip } from '../overview/components/status-chip';
 import {
 	formatDateTime,
 	formatExplicitCurrency,
@@ -336,10 +337,12 @@ export const WooPaymentsBlockedTransactions = () => {
 		enableHiding: key !== 'created',
 		enableSorting: sort,
 		render: ( { item }: { item: FraudOutcomeTransaction } ) =>
+			// Client 11.1.0 `transactions/blocked/columns.tsx:79-82`: a red "Payment blocked" pill.
 			key === 'status' ? (
-				<span className="woocommerce-woopayments-money-movement__status-chip">
-					{ __( 'Payment blocked', 'woocommerce' ) }
-				</span>
+				<StatusChip
+					type="error"
+					message={ __( 'Payment blocked', 'woocommerce' ) }
+				/>
 			) : (
 				<a
 					href={ getSettingsPaymentsProviderRouteUrl(

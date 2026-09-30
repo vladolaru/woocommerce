@@ -8,6 +8,7 @@ import { __ } from '@wordpress/i18n';
  */
 import type { WooPaymentsDeposit } from './overview/types';
 import { formatPayoutStatus } from './overview/utils';
+import type { StatusChipType } from './overview/components/status-chip';
 
 /**
  * Client 11.1.0 `deposits/strings.ts:24-32`. `deducted` is a paid withdrawal.
@@ -37,6 +38,24 @@ export const getPayoutStatusLabel = (
 
 	return payoutStatusLabels[ status ] || formatPayoutStatus( payout.status );
 };
+
+/**
+ * The payout status chip colour. Client 11.1.0 `components/deposit-status-chip/index.tsx:18-24`.
+ *
+ * @param payout The payout.
+ */
+export const getPayoutStatusChipType = (
+	payout: Pick< WooPaymentsDeposit, 'status' >
+): StatusChipType =>
+	(
+		( {
+			pending: 'warning',
+			in_transit: 'primary',
+			paid: 'success',
+			failed: 'error',
+			canceled: 'info',
+		} ) as Record< string, StatusChipType >
+	 )[ payout.status ] || 'primary';
 
 /**
  * The payouts list status filter options, client 11.1.0 `deposits/filters/config.js:12-23`:

@@ -56,7 +56,7 @@ jest.mock( '@woocommerce/csv-export', () => ( {
 } ) );
 
 jest.mock( '@woocommerce/components', () => ( {
-	// Markup stand-in: the real package index needs the `@wordpress/data` this file mocks.
+	// Markup stand-ins: the real package index needs the `@wordpress/data` this file mocks.
 	TableSummary: ( {
 		data,
 	}: {
@@ -71,6 +71,13 @@ jest.mock( '@woocommerce/components', () => ( {
 			) ) }
 		</ul>
 	),
+	Pill: ( {
+		children,
+		className,
+	}: {
+		children: ReactNode;
+		className?: string;
+	} ) => <span className={ className }>{ children }</span>,
 	Search: ( props: {
 		placeholder: string;
 		onChange: ( values: Array< { key: string; label: string } > ) => void;
@@ -289,6 +296,10 @@ describe( 'WooPayments Blocked transactions tab', () => {
 		);
 
 		const [ , adaRow, graceRow ] = screen.getAllByRole( 'row' );
+		// Client 11.1.0 `transactions/blocked/columns.tsx:79-82`: a red "Payment blocked" pill.
+		expect( within( adaRow ).getByText( 'Payment blocked' ) ).toHaveClass(
+			'woocommerce-status-badge--error'
+		);
 		expect(
 			within( adaRow )
 				.getAllByRole( 'cell' )

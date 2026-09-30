@@ -52,6 +52,10 @@ import { ExportButton, LiveStatusMessage, StatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import { formatCurrencyName } from '../currency';
+import {
+	StatusChip,
+	type StatusChipType,
+} from '../overview/components/status-chip';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 import '../style.scss';
@@ -164,6 +168,18 @@ const buildDisputesRoute = (
 	}filter=${ showFilter }`;
 };
 
+// Client 11.1.0 `components/dispute-status-chip`: colours per status, red for any awaiting a response.
+const DISPUTE_STATUS_CHIP_TYPES: Record< string, StatusChipType > = {
+	warning_needs_response: 'error',
+	warning_under_review: 'primary',
+	warning_closed: 'info',
+	needs_response: 'error',
+	under_review: 'primary',
+	charge_refunded: 'info',
+	won: 'success',
+	lost: 'info',
+};
+
 const DISPUTE_STATUS_FILTER_ELEMENTS = Object.entries(
 	DISPUTE_STATUS_LABELS
 ).map( ( [ value, label ] ) => ( { value, label } ) );
@@ -204,20 +220,23 @@ export const getDisputeRespondBy = (
 
 	if ( diffHours <= 72 ) {
 		return (
-			<span className="woocommerce-woopayments-money-movement__chip is-alert">
-				{ diffHours <= 24
-					? __( 'Last day today', 'woocommerce' )
-					: sprintf(
-							/* translators: %d: number of days left to respond to the dispute. */
-							_n(
-								'%d day left',
-								'%d days left',
-								diffDays,
-								'woocommerce'
-							),
-							diffDays
-					  ) }
-			</span>
+			<StatusChip
+				type="error"
+				message={
+					diffHours <= 24
+						? __( 'Last day today', 'woocommerce' )
+						: sprintf(
+								/* translators: %d: number of days left to respond to the dispute. */
+								_n(
+									'%d day left',
+									'%d days left',
+									diffDays,
+									'woocommerce'
+								),
+								diffDays
+						  )
+				}
+			/>
 		);
 	}
 
@@ -310,8 +329,18 @@ export const WooPaymentsDisputesPage = () => {
 							isPrimary: true,
 					  }
 					: ( false as const ),
-				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					formatLabel( item.status ),
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
+					<StatusChip
+						message={
+							DISPUTE_STATUS_LABELS[ item.status || '' ] ||
+							formatLabel( item.status )
+						}
+						type={
+							DISPUTE_STATUS_CHIP_TYPES[ item.status || '' ] ||
+							'info'
+						}
+					/>
+				),
 			},
 			{
 				id: 'reason',

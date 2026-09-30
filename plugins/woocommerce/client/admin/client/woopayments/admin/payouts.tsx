@@ -43,9 +43,11 @@ import type {
 } from './overview/types';
 import { formatPayoutDate } from './overview/utils';
 import {
+	getPayoutStatusChipType,
 	getPayoutStatusLabel,
 	PAYOUT_STATUS_FILTER_ELEMENTS,
 } from './payout-status';
+import { StatusChip } from './overview/components/status-chip';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 import { WooPaymentsTestModeNotice } from './test-mode-notice';
 import { SpotlightPromotion } from '../promotions/spotlight';
@@ -198,8 +200,13 @@ export const WooPaymentsPayouts = () => {
 				// Client 11.1.0 `deposits/filters/config.js:143-181`: "Is" and "Is not" one status.
 				elements: PAYOUT_STATUS_FILTER_ELEMENTS,
 				filterBy: { operators: [ 'is', 'isNot' ] as const },
-				render: ( { item }: { item: WooPaymentsDeposit } ) =>
-					getPayoutStatusLabel( item ),
+				// Client 11.1.0 `deposits/list/index.tsx:131` renders `DepositStatusChip`.
+				render: ( { item }: { item: WooPaymentsDeposit } ) => (
+					<StatusChip
+						message={ getPayoutStatusLabel( item ) }
+						type={ getPayoutStatusChipType( item ) }
+					/>
+				),
 			},
 			{
 				id: 'bankAccount',
