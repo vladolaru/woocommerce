@@ -78,13 +78,6 @@ class MultiCurrencyRuntimeArbiter {
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Core feature controller.
-	 *
-	 * @var FeaturesController
-	 */
-	private FeaturesController $features_controller;
-
-	/**
 	 * Multi-Currency feature definition controller.
 	 *
 	 * @var MultiCurrencyFeatureController
@@ -98,14 +91,12 @@ class MultiCurrencyRuntimeArbiter {
 	 *
 	 * @param NativePaymentsRuntimeArbiter   $payments_arbiter Payments runtime owner arbiter.
 	 * @param LegacyProxy                    $legacy_proxy Legacy proxy.
-	 * @param FeaturesController             $features_controller Core feature controller.
 	 * @param MultiCurrencyFeatureController $feature_controller Multi-Currency feature definition controller.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $payments_arbiter, LegacyProxy $legacy_proxy, FeaturesController $features_controller, MultiCurrencyFeatureController $feature_controller ): void {
-		$this->payments_arbiter    = $payments_arbiter;
-		$this->legacy_proxy        = $legacy_proxy;
-		$this->features_controller = $features_controller;
-		$this->feature_controller  = $feature_controller;
+	final public function init( NativePaymentsRuntimeArbiter $payments_arbiter, LegacyProxy $legacy_proxy, MultiCurrencyFeatureController $feature_controller ): void {
+		$this->payments_arbiter   = $payments_arbiter;
+		$this->legacy_proxy       = $legacy_proxy;
+		$this->feature_controller = $feature_controller;
 	}
 
 	/**
@@ -125,7 +116,8 @@ class MultiCurrencyRuntimeArbiter {
 	 * @return bool True when the core feature is enabled.
 	 */
 	public function feature_is_enabled(): bool {
-		return $this->features_controller->feature_is_enabled( self::FEATURE_ID );
+		// Ownership is decided before `init`; asking FeaturesController would build every feature definition and load translations too early.
+		return 'yes' === get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 	}
 
 	/**

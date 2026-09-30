@@ -5,8 +5,10 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Enums\FeaturePluginCompatibility;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
@@ -84,6 +86,30 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_core_multi_currency_is_disabled_by_default(): void {
 		$this->assertFalse( $this->sut->feature_is_enabled() );
+	}
+
+	/**
+	 * @testdox Should read the feature option without building the feature definitions, since ownership is decided before init.
+	 */
+	public function test_feature_check_does_not_build_feature_definitions(): void {
+		$features_controller = $this->createMock( FeaturesController::class );
+		$features_controller->expects( $this->never() )->method( 'feature_is_enabled' );
+		wc_get_container()->replace( FeaturesController::class, $features_controller );
+
+		try {
+			$sut = new MultiCurrencyRuntimeArbiter();
+			$sut->init(
+				$this->payments_arbiter,
+				wc_get_container()->get( LegacyProxy::class ),
+				wc_get_container()->get( MultiCurrencyFeatureController::class )
+			);
+
+			$this->assertFalse( $sut->feature_is_enabled() );
+			$this->enable_core_multi_currency();
+			$this->assertTrue( $sut->feature_is_enabled() );
+		} finally {
+			wc_get_container()->reset_replacement( FeaturesController::class );
+		}
 	}
 
 	/**
