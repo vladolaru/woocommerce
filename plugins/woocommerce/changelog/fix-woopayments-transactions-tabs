@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Transactions, Uncaptured and Blocked views now use tabs aligned with the page content, which assistive technology announces as tabs.

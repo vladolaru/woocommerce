@@ -1,7 +1,14 @@
 /**
  * External dependencies
  */
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
 import { downloadCSVFile } from '@woocommerce/csv-export';
@@ -307,8 +314,8 @@ describe( 'WooPayments Blocked transactions tab', () => {
 			screen.getByRole( 'heading', { name: 'Blocked transactions' } )
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'link', { name: 'Blocked' } )
-		).toHaveAttribute( 'aria-current', 'page' );
+			screen.getByRole( 'tab', { name: 'Blocked' } )
+		).toHaveAttribute( 'aria-selected', 'true' );
 
 		expect( mockGetFraudOutcomes ).toHaveBeenCalledWith( {
 			status: 'block',
@@ -461,22 +468,24 @@ describe( 'WooPayments Blocked transactions tab', () => {
 	it( 'keeps the Blocked tab on the transactions and uncaptured views', async () => {
 		const { unmount } = renderAt( '/woopayments/transactions' );
 
-		const blockedTab = await screen.findByRole( 'link', {
+		const blockedTab = await screen.findByRole( 'tab', {
 			name: 'Blocked',
 		} );
-		expect( blockedTab ).toHaveAttribute(
-			'href',
-			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&view=blocked'
-		);
-		expect( blockedTab ).not.toHaveAttribute( 'aria-current' );
+		expect( blockedTab ).toHaveAttribute( 'aria-selected', 'false' );
 		expect( mockGetFraudOutcomes ).not.toHaveBeenCalled();
 		expect( getPageViewPaths() ).toEqual( [ 'payments_transactions' ] );
+
+		// Client 11.1.0 `transactions/index.tsx:30-43`: choosing a tab routes to its list.
+		fireEvent.click( blockedTab );
+		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&view=blocked'
+		);
 		unmount();
 
 		renderAt( '/woopayments/transactions?view=uncaptured' );
 
 		expect(
-			await screen.findByRole( 'link', { name: 'Blocked' } )
+			await screen.findByRole( 'tab', { name: 'Blocked' } )
 		).toBeInTheDocument();
 	} );
 

@@ -1184,7 +1184,7 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByText( '0 transactions' )
 		).toBeInTheDocument();
 		expect(
-			await screen.findByRole( 'link', { name: 'Uncaptured (26)' } )
+			await screen.findByRole( 'tab', { name: 'Uncaptured (26)' } )
 		).toBeInTheDocument();
 		expect( mockGetAuthorizationsSummary ).toHaveBeenCalledWith( {} );
 	} );
@@ -1206,7 +1206,7 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByText( '0 transactions' )
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'link', { name: 'Uncaptured (…)' } )
+			screen.getByRole( 'tab', { name: 'Uncaptured (…)' } )
 		).toBeInTheDocument();
 	} );
 
@@ -2039,11 +2039,11 @@ describe( 'WooPayments money movement pages', () => {
 		);
 
 		expect(
-			screen.getByRole( 'link', { name: 'Transactions' } )
+			screen.getByRole( 'tab', { name: 'Transactions' } )
 		).toBeInTheDocument();
 		expect(
-			await screen.findByRole( 'link', { name: 'Uncaptured (1)' } )
-		).toHaveAttribute( 'aria-current', 'page' );
+			await screen.findByRole( 'tab', { name: 'Uncaptured (1)' } )
+		).toHaveAttribute( 'aria-selected', 'true' );
 
 		// Client 11.1.0 `transactions/uncaptured/index.tsx:43-108`: Email and
 		// Country are `visible: false` until the merchant shows them.
@@ -2363,7 +2363,7 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByText( '0 uncaptured transactions' )
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'link', { name: 'Uncaptured (0)' } )
+			screen.getByRole( 'tab', { name: 'Uncaptured (0)' } )
 		).toBeInTheDocument();
 		expect( screen.getByText( '$0.00' ) ).toBeInTheDocument();
 		expect(
@@ -2460,7 +2460,7 @@ describe( 'WooPayments money movement pages', () => {
 			await refreshedCountPromise;
 		} );
 		expect(
-			await screen.findByRole( 'link', { name: 'Uncaptured (0)' } )
+			await screen.findByRole( 'tab', { name: 'Uncaptured (0)' } )
 		).toBeInTheDocument();
 
 		await act( async () => {
@@ -2472,7 +2472,7 @@ describe( 'WooPayments money movement pages', () => {
 			await initialCountPromise;
 		} );
 		expect(
-			screen.getByRole( 'link', { name: 'Uncaptured (0)' } )
+			screen.getByRole( 'tab', { name: 'Uncaptured (0)' } )
 		).toBeInTheDocument();
 	} );
 
@@ -2526,7 +2526,7 @@ describe( 'WooPayments money movement pages', () => {
 		);
 
 		expect(
-			await screen.findByRole( 'link', { name: 'Uncaptured (1)' } )
+			await screen.findByRole( 'tab', { name: 'Uncaptured (1)' } )
 		).toBeInTheDocument();
 		await act( async () => {
 			await userEvent.click(
@@ -2540,7 +2540,7 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByText( '0 uncaptured transactions' )
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'link', { name: 'Uncaptured (…)' } )
+			screen.getByRole( 'tab', { name: 'Uncaptured (…)' } )
 		).toBeInTheDocument();
 	} );
 
@@ -2582,7 +2582,7 @@ describe( 'WooPayments money movement pages', () => {
 		);
 
 		expect(
-			await screen.findByRole( 'link', { name: 'Uncaptured (1)' } )
+			await screen.findByRole( 'tab', { name: 'Uncaptured (1)' } )
 		).toBeInTheDocument();
 		await userEvent.click(
 			screen.getByRole( 'button', {

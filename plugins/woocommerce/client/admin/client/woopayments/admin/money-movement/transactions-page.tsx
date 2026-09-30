@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { Button } from '@wordpress/components';
+import { Button, TabPanel } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import {
 	useCallback,
@@ -675,15 +675,14 @@ export const WooPaymentsTransactionsPage = () => {
 	const summaryCount = getSummaryCount( summary ) ?? totalCount;
 	const summaryTotal = getSummaryTotal( summary );
 	const summaryCurrency = getSummaryCurrency( summary );
-	const tabTransactionsUrl = getSettingsPaymentsProviderRouteUrl(
-		'/woopayments/transactions'
-	);
-	const tabUncapturedUrl = getSettingsPaymentsProviderRouteUrl(
-		'/woopayments/transactions?view=uncaptured'
-	);
-	const tabBlockedUrl = getSettingsPaymentsProviderRouteUrl(
-		'/woopayments/transactions?view=blocked'
-	);
+	let currentTab = 'transactions';
+
+	if ( isUncaptured ) {
+		currentTab = 'uncaptured';
+	} else if ( isBlocked ) {
+		currentTab = 'blocked';
+	}
+
 	const uncapturedTabLabel = sprintf(
 		/* translators: %1$s: number of uncaptured authorizations, or an ellipsis while loading. */
 		__( 'Uncaptured (%1$s)', 'woocommerce' ),
@@ -694,32 +693,39 @@ export const WooPaymentsTransactionsPage = () => {
 		__( '%d uncaptured transactions', 'woocommerce' ),
 		summaryCount
 	);
+	const handleTabSelect = ( tabName: string ) => {
+		if ( tabName === currentTab ) {
+			return;
+		}
 
-	// Client 11.1.0 `transactions/index.tsx:78-102`: the Blocked tab always shows.
-	const tabsNav = (
-		<nav
+		getHistory().push(
+			getSettingsPaymentsProviderAdminPath(
+				tabName === 'transactions'
+					? '/woopayments/transactions'
+					: `/woopayments/transactions?view=${ tabName }`
+			)
+		);
+	};
+
+	// Client 11.1.0 `transactions/index.tsx:78-127`: a `TabPanel` over the three lists; the Blocked tab always shows.
+	const renderTabs = ( content: JSX.Element ) => (
+		<TabPanel
+			key={ currentTab }
 			className="woocommerce-woopayments-money-movement__tabs"
-			aria-label={ __( 'Transaction views', 'woocommerce' ) }
+			activeClass="is-active"
+			initialTabName={ currentTab }
+			onSelect={ handleTabSelect }
+			tabs={ [
+				{
+					name: 'transactions',
+					title: __( 'Transactions', 'woocommerce' ),
+				},
+				{ name: 'uncaptured', title: uncapturedTabLabel },
+				{ name: 'blocked', title: __( 'Blocked', 'woocommerce' ) },
+			] }
 		>
-			<a
-				href={ tabTransactionsUrl }
-				aria-current={ isUncaptured || isBlocked ? undefined : 'page' }
-			>
-				{ __( 'Transactions', 'woocommerce' ) }
-			</a>
-			<a
-				href={ tabUncapturedUrl }
-				aria-current={ isUncaptured ? 'page' : undefined }
-			>
-				{ uncapturedTabLabel }
-			</a>
-			<a
-				href={ tabBlockedUrl }
-				aria-current={ isBlocked ? 'page' : undefined }
-			>
-				{ __( 'Blocked', 'woocommerce' ) }
-			</a>
-		</nav>
+			{ () => content }
+		</TabPanel>
 	);
 
 	if ( isBlocked ) {
@@ -728,10 +734,7 @@ export const WooPaymentsTransactionsPage = () => {
 				{ /* Client 11.1.0 transactions/index.tsx:105, above every tab. */ }
 				<WooPaymentsTestModeNotice currentPage="transactions" />
 				<SpotlightPromotion />
-				<section>
-					{ tabsNav }
-					<WooPaymentsBlockedTransactions />
-				</section>
+				{ renderTabs( <WooPaymentsBlockedTransactions /> ) }
 			</div>
 		);
 	}
@@ -741,13 +744,12 @@ export const WooPaymentsTransactionsPage = () => {
 			<div className="woocommerce-woopayments-money-movement">
 				<WooPaymentsTestModeNotice currentPage="transactions" />
 				<SpotlightPromotion />
-				<section>
-					{ tabsNav }
+				{ renderTabs(
 					<WooPaymentsTransactionsList
 						buildRoute={ buildTransactionsRoute }
 						title={ __( 'Transactions', 'woocommerce' ) }
 					/>
-				</section>
+				) }
 			</div>
 		);
 	}
@@ -756,47 +758,48 @@ export const WooPaymentsTransactionsPage = () => {
 		<div className="woocommerce-woopayments-money-movement">
 			<WooPaymentsTestModeNotice currentPage="transactions" />
 			<SpotlightPromotion />
-			<section aria-busy={ isLoading }>
-				{ tabsNav }
-				<LiveStatusMessage isError={ !! errorMessage }>
-					{ liveStatusMessage }
-				</LiveStatusMessage>
-				{ isLoading && (
-					<StatusMessage>{ loadingMessage }</StatusMessage>
-				) }
-				{ errorMessage && (
-					<StatusMessage isError>{ errorMessage }</StatusMessage>
-				) }
-				<div className="woocommerce-woopayments-money-movement__summary">
-					<span>{ summaryCountLabel }</span>
-					{ typeof summaryTotal === 'number' &&
-						shouldShowSummaryTotal( summary ) && (
-							<span>
-								{ formatExplicitCurrency(
-									summaryTotal,
-									summaryCurrency
-								) }
-							</span>
-						) }
-				</div>
-				<WooPaymentsMoneyMovementDataViews
-					fields={ isLoading ? [] : authorizationFields }
-					rows={ authorizations }
-					view={ view }
-					onChangeView={ handleViewChange }
-					total={ totalCount || authorizations.length }
-					isLoading={ isLoading }
-					// Client 11.1.0 `transactions/uncaptured/index.tsx:257-272`: no search on this card.
-					search={ false }
-					searchLabel={ __(
-						'Search uncaptured transactions',
-						'woocommerce'
+			{ renderTabs(
+				<section aria-busy={ isLoading }>
+					<LiveStatusMessage isError={ !! errorMessage }>
+						{ liveStatusMessage }
+					</LiveStatusMessage>
+					{ isLoading && (
+						<StatusMessage>{ loadingMessage }</StatusMessage>
 					) }
-					title={ __( 'Uncaptured transactions', 'woocommerce' ) }
-					empty={ emptyMessage }
-					getItemId={ getAuthorizationPaymentIntentId }
-				/>
-			</section>
+					{ errorMessage && (
+						<StatusMessage isError>{ errorMessage }</StatusMessage>
+					) }
+					<div className="woocommerce-woopayments-money-movement__summary">
+						<span>{ summaryCountLabel }</span>
+						{ typeof summaryTotal === 'number' &&
+							shouldShowSummaryTotal( summary ) && (
+								<span>
+									{ formatExplicitCurrency(
+										summaryTotal,
+										summaryCurrency
+									) }
+								</span>
+							) }
+					</div>
+					<WooPaymentsMoneyMovementDataViews
+						fields={ isLoading ? [] : authorizationFields }
+						rows={ authorizations }
+						view={ view }
+						onChangeView={ handleViewChange }
+						total={ totalCount || authorizations.length }
+						isLoading={ isLoading }
+						// Client 11.1.0 `transactions/uncaptured/index.tsx:257-272`: no search on this card.
+						search={ false }
+						searchLabel={ __(
+							'Search uncaptured transactions',
+							'woocommerce'
+						) }
+						title={ __( 'Uncaptured transactions', 'woocommerce' ) }
+						empty={ emptyMessage }
+						getItemId={ getAuthorizationPaymentIntentId }
+					/>
+				</section>
+			) }
 		</div>
 	);
 };
