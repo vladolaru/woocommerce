@@ -9,9 +9,12 @@ use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPayme
 use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiException;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
+use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -28,6 +31,7 @@ use Automattic\WooCommerce\Tests\Internal\Admin\Settings\Mocks\FakePaymentGatewa
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 use WP_Error;
+use WP_REST_Request;
 
 /**
  * WooPayments settings provider service test.
@@ -253,6 +257,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		delete_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
 		delete_transient( 'woopayments_referral_code' );
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
+		remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		$this->clear_rest_server();
 
 		parent::tearDown();
 	}
@@ -1063,6 +1071,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				'details_submitted' => true,
 				'account_id'        => 'acct_finalized_native',
 				'mode'              => 'live',
+				'params'            => array(
+					'promo'                    => '',
+					'from'                     => WooPaymentsService::FROM_NOX_IN_CONTEXT,
+					'source'                   => WooPaymentsService::SESSION_ENTRY_DEFAULT,
+					'wcpay-connection-success' => '1',
+				),
 			),
 			$first_response
 		);
@@ -1098,6 +1112,114 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'is_existing_stripe_account' => false ), get_option( '_wcpay_onboarding_stripe_connected' ) );
 		$this->assertOptionNotAutoloaded( '_wcpay_onboarding_stripe_connected' );
+	}
+
+	/**
+	 * Provider finalize responses for both embedded KYC modes.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:bool,2:string}>
+	 */
+	public function provide_native_finalize_modes(): array {
+		return array(
+			// Native's live finalize fixture, the default of arrange_native_finalize_projection().
+			'live mode' => array(
+				array(
+					'success'           => true,
+					'details_submitted' => true,
+					'account_id'        => 'acct_finalized_native',
+					'mode'              => 'live',
+				),
+				true,
+				'',
+			),
+			// Client 11.1.0 test_finalize_embedded_kyc() fixture (tests/unit/test-class-wc-payments-onboarding-service.php:236-242).
+			'test mode' => array(
+				array(
+					'success'           => true,
+					'account_id'        => 'acc_id',
+					'details_submitted' => true,
+					'mode'              => 'test',
+					'promotion_id'      => 'promotion_id',
+				),
+				false,
+				'promotion_id',
+			),
+		);
+	}
+
+	/**
+	 * Client 11.1.0 finalize_embedded_connection() (includes/class-wc-payments-account.php:2296-2345) enables the
+	 * gateway, sets its mode, stamps a live KYC submission once, and returns the connection-success redirect params.
+	 *
+	 * @testdox Native KYC finalization through the REST route enables the gateway in the finalized mode and activates the native tier, like client 11.1.0.
+	 * @dataProvider provide_native_finalize_modes
+	 *
+	 * @param array<string,mixed> $finalize_response Provider finalize response.
+	 * @param bool                $is_live           Whether the finalized account is live.
+	 * @param string              $promo             Expected promo redirect param.
+	 */
+	public function test_native_kyc_finalize_route_enables_gateway_like_client( array $finalize_response, bool $is_live, string $promo ): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		$state = wc_get_container()->get( NativePaymentsState::class );
+		$state->invalidate();
+		$this->assertTrue( $state->write_state( NativePaymentsState::CONNECTED ), 'The store starts native-owned and connected.' );
+		$this->arrange_native_finalize_projection(
+			array( $this->get_native_finalize_projection_account( array( 'is_live' => $is_live ) ) ),
+			array( 'card' => true ),
+			null,
+			$finalize_response
+		);
+		$controller = new WooPaymentsRestController();
+		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
+		$server  = $this->create_rest_server_with_routes(
+			array(
+				static function () use ( $controller ) {
+					$controller->register_routes( true );
+				},
+			),
+			true
+		);
+		$request = new WP_REST_Request( 'POST', '/wc-admin/settings/payments/woopayments/onboarding/step/' . WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session/finish' );
+		$request->set_param( 'location', 'US' );
+		$request->set_param( 'source', WooPaymentsService::SESSION_ENTRY_LYS );
+
+		$response = $server->dispatch( $request );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertTrue( $response->get_data()['success'] );
+		$this->assertSame( 'yes', $settings['enabled'] );
+		$this->assertSame( $is_live ? 'no' : 'yes', $settings['test_mode'] );
+		$this->assertSame( NativePaymentsState::ACTIVE, $state->get_state() );
+		$this->assertSame(
+			array(
+				'promo'                    => $promo,
+				'from'                     => WooPaymentsService::FROM_NOX_IN_CONTEXT,
+				'source'                   => WooPaymentsService::SESSION_ENTRY_LYS,
+				'wcpay-connection-success' => '1',
+			),
+			$response->get_data()['params']
+		);
+		$this->assertSame( $is_live ? self::TEST_EPOCH : false, get_option( 'wcpay_kyc_submitted_date', false ) );
+		if ( $is_live ) {
+			$this->assertOptionNotAutoloaded( 'wcpay_kyc_submitted_date' );
+		}
+	}
+
+	/**
+	 * @testdox Native live KYC finalization never overwrites an existing KYC submission date, like client 11.1.0.
+	 */
+	public function test_native_kyc_finalize_keeps_existing_kyc_submitted_date(): void {
+		update_option( 'wcpay_kyc_submitted_date', self::TEST_EPOCH - DAY_IN_SECONDS, false );
+		$this->arrange_native_finalize_projection(
+			array( $this->get_native_finalize_projection_account() ),
+			array( 'card' => true )
+		);
+
+		$this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertSame( self::TEST_EPOCH - DAY_IN_SECONDS, (int) get_option( 'wcpay_kyc_submitted_date' ) );
 	}
 
 	/**
@@ -1228,6 +1350,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				'details_submitted' => true,
 				'account_id'        => 'acct_finalized_native',
 				'mode'              => 'live',
+				'params'            => array(
+					'promo'                    => '',
+					'from'                     => WooPaymentsService::FROM_NOX_IN_CONTEXT,
+					'source'                   => WooPaymentsService::SESSION_ENTRY_DEFAULT,
+					'wcpay-connection-success' => '1',
+				),
 			),
 			$response
 		);
@@ -13432,20 +13560,29 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @param array<int,array<string,mixed>|\Throwable> $account_responses Account refresh results in request order.
 	 * @param array<string,mixed>                       $selected_methods  Persisted NOX payment-method selections.
 	 * @param WooPaymentsSettingsService|null           $settings_service  Optional settings service override.
+	 * @param array<string,mixed>|null                  $finalize_response Optional provider finalize response; defaults to a live-mode success.
 	 * @return array{api_client:WooPaymentsApiClient,account_service:WooPaymentsAccountService,settings_service:WooPaymentsSettingsService}
 	 */
 	private function arrange_native_finalize_projection(
 		array $account_responses,
 		array $selected_methods,
-		?WooPaymentsSettingsService $settings_service = null
+		?WooPaymentsSettingsService $settings_service = null,
+		?array $finalize_response = null
 	): array {
-		$api_client      = new class( $account_responses ) extends WooPaymentsApiClient {
+		$api_client      = new class( $account_responses, $finalize_response ) extends WooPaymentsApiClient {
 			/**
 			 * Account refresh results in request order.
 			 *
 			 * @var array<int,array<string,mixed>|\Throwable>
 			 */
 			private array $account_responses;
+
+			/**
+			 * Provider finalize response, or null for the default live-mode success.
+			 *
+			 * @var array<string,mixed>|null
+			 */
+			private ?array $finalize_response;
 
 			/**
 			 * Number of account refresh requests.
@@ -13465,9 +13602,11 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			 * Constructor.
 			 *
 			 * @param array<int,array<string,mixed>|\Throwable> $account_responses Account refresh results.
+			 * @param array<string,mixed>|null                  $finalize_response Provider finalize response.
 			 */
-			public function __construct( array $account_responses ) {
+			public function __construct( array $account_responses, ?array $finalize_response ) {
 				$this->account_responses = $account_responses;
+				$this->finalize_response = $finalize_response;
 			}
 
 			/**
@@ -13490,7 +13629,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			public function finalize_onboarding_embedded_kyc( string $locale, string $source, array $actioned_notes = array() ): array {
 				unset( $locale, $source, $actioned_notes );
 
-				return array(
+				return $this->finalize_response ?? array(
 					'success'           => true,
 					'details_submitted' => true,
 					'account_id'        => 'acct_finalized_native',

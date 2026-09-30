@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
@@ -109,6 +110,8 @@ class WooPaymentsService {
 	private const TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT = 'test_drive_account_settings_for_live_account';
 
 	private const REFERRAL_CODE_TRANSIENT = 'woopayments_referral_code';
+
+	private const KYC_SUBMITTED_DATE_OPTION = 'wcpay_kyc_submitted_date';
 
 	/**
 	 * The TTL for the onboarding lock.
@@ -3233,8 +3236,22 @@ class WooPaymentsService {
 				$this->get_native_account_service()->clear_cache();
 			}
 
+			$this->enable_native_gateway_after_kyc_finalization( $is_live );
+
 			// Flag the new connection for the Overview's wcpay_stripe_connected Tracks event, as the plugin's finalize_embedded_connection() does.
 			$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => false ), false );
+
+			// Stamp a live KYC submission once, for the post-KYC nudge clock (client 11.1.0 finalize_embedded_connection()).
+			if ( $is_live && ! $this->proxy->call_function( 'get_option', self::KYC_SUBMITTED_DATE_OPTION ) ) {
+				$this->proxy->call_function( 'update_option', self::KYC_SUBMITTED_DATE_OPTION, $this->proxy->call_function( 'time' ), false );
+			}
+
+			$response['params'] = array(
+				'promo'                    => isset( $response['promotion_id'] ) && is_scalar( $response['promotion_id'] ) ? (string) $response['promotion_id'] : '',
+				'from'                     => self::FROM_NOX_IN_CONTEXT,
+				'source'                   => $source,
+				'wcpay-connection-success' => '1',
+			);
 
 			if ( ! $this->persist_pending_payment_methods_projection( $location ) ) {
 				$this->payment_methods_projection_fallback_location = $location;
@@ -3244,6 +3261,22 @@ class WooPaymentsService {
 		}
 
 		return $response;
+	}
+
+	/**
+	 * Enable the gateway in the finalized account's mode, as client 11.1.0 finalize_embedded_connection() does.
+	 *
+	 * The canonical settings write projects split gateways and moves a connected native tier to active.
+	 *
+	 * @param bool $is_live Whether the finalized account is live.
+	 */
+	private function enable_native_gateway_after_kyc_finalization( bool $is_live ): void {
+		$settings              = $this->proxy->call_function( 'get_option', WooPaymentsSettingsService::SETTINGS_OPTION, array() );
+		$settings              = is_array( $settings ) ? $settings : array();
+		$settings['enabled']   = 'yes';
+		$settings['test_mode'] = $is_live ? 'no' : 'yes';
+
+		wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings );
 	}
 
 	/**
