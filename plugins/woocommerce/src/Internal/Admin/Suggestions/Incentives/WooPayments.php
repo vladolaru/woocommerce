@@ -7,6 +7,7 @@ defined( 'ABSPATH' ) || exit;
 
 use Automattic\WooCommerce\Admin\WCAdminHelper;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use WC_Abstract_Order;
@@ -75,12 +76,20 @@ class WooPayments extends Incentive {
 	private ?WooPaymentsLegacyRuntime $legacy_runtime;
 
 	/**
+	 * Payments runtime owner arbiter.
+	 *
+	 * @var NativePaymentsRuntimeArbiter|null
+	 */
+	private ?NativePaymentsRuntimeArbiter $arbiter;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param string                        $suggestion_id   The suggestion ID.
-	 * @param WooPaymentsLegacyRuntime|null $legacy_runtime  WooPayments legacy runtime.
+	 * @param string                            $suggestion_id  The suggestion ID.
+	 * @param WooPaymentsLegacyRuntime|null     $legacy_runtime WooPayments legacy runtime.
+	 * @param NativePaymentsRuntimeArbiter|null $arbiter        Payments runtime owner arbiter.
 	 */
-	public function __construct( string $suggestion_id, ?WooPaymentsLegacyRuntime $legacy_runtime = null ) {
+	public function __construct( string $suggestion_id, ?WooPaymentsLegacyRuntime $legacy_runtime = null, ?NativePaymentsRuntimeArbiter $arbiter = null ) {
 		parent::__construct( $suggestion_id );
 
 		$this->cache_transient_name                      = self::PREFIX . $suggestion_id . '_cache';
@@ -88,6 +97,7 @@ class WooPayments extends Incentive {
 		$this->store_had_woopayments_option_name         = self::PREFIX . $suggestion_id . '_store_had_woopayments';
 		$this->store_had_woopayments_version_option_name = $this->store_had_woopayments_option_name . '_version';
 		$this->legacy_runtime                            = $legacy_runtime;
+		$this->arbiter                                   = $arbiter;
 	}
 
 	/**
@@ -131,12 +141,16 @@ class WooPayments extends Incentive {
 	}
 
 	/**
-	 * Check if the extension plugin is active.
+	 * Check if WooPayments is active, either as the extension plugin or as the built-in runtime.
 	 *
-	 * @return boolean Whether the extension plugin is active.
+	 * @return boolean Whether WooPayments is active.
 	 */
 	protected function is_extension_active(): bool {
-		return null !== $this->legacy_runtime && $this->legacy_runtime->is_loaded();
+		if ( null !== $this->legacy_runtime && $this->legacy_runtime->is_loaded() ) {
+			return true;
+		}
+
+		return null !== $this->arbiter && $this->arbiter->should_native_register();
 	}
 
 	/**

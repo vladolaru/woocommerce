@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Suggestions\Incentives;
 
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\Incentive;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\WooPayments;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\LegacyRuntimeProxy;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -304,6 +305,50 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 		// Assert.
 		$this->assertFalse( $result );
+	}
+
+	/**
+	 * @testdox Should hide incentives when the built-in WooPayments runtime owns the site and has a live account.
+	 */
+	public function test_is_visible_with_native_runtime_and_has_account_data(): void {
+		// Arrange.
+		$this->legacy_runtime->method( 'is_loaded' )->willReturn( false );
+		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( true );
+		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$sut = new WooPayments( $this->suggestion_id, $this->legacy_runtime, $arbiter );
+
+		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
+
+		// Act.
+		$result = $sut->is_visible( 'incentive1', 'US' );
+
+		// Assert.
+		$this->assertFalse( $result );
+	}
+
+	/**
+	 * @testdox Should keep incentives visible when the built-in WooPayments runtime owns the site without a live account.
+	 */
+	public function test_is_visible_with_native_runtime_and_no_account_data(): void {
+		// Arrange.
+		$this->legacy_runtime->method( 'is_loaded' )->willReturn( false );
+		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( false );
+		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$sut = new WooPayments( $this->suggestion_id, $this->legacy_runtime, $arbiter );
+
+		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
+
+		// Act.
+		$result = $sut->is_visible( 'incentive1', 'US' );
+
+		// Assert.
+		$this->assertTrue( $result );
 	}
 
 	/**

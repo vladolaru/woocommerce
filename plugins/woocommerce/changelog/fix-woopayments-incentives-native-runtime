@@ -1,0 +1,5 @@
+Significance: patch
+Type: fix
+Comment: Matches the pre-native check in trunk src/Internal/Admin/Suggestions/Incentives/WooPayments.php, is_visible() line 99 with is_extension_active() lines 128-130 (class_exists WC_Payments), which hides incentives while WooPayments 11.1.0 is active and has live account data.
+
+Stores that run the built-in WooPayments with a live account no longer see WooPayments incentives, as when the WooPayments plugin is active.
