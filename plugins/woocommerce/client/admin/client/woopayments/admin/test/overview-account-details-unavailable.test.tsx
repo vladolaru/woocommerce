@@ -72,9 +72,7 @@ describe( 'WooPayments Overview account details without platform details', () =>
 		expect(
 			screen.getByText( 'Error loading account details.' )
 		).toBeInTheDocument();
-		expect(
-			screen.queryByRole( 'heading', { name: 'Account status' } )
-		).not.toBeInTheDocument();
+		expect( screen.queryByText( 'Payouts:' ) ).not.toBeInTheDocument();
 	} );
 
 	it( 'shows the error card for rejected accounts too, which keep the card', async () => {
@@ -99,9 +97,7 @@ describe( 'WooPayments Overview account details without platform details', () =>
 
 		render( <WooPaymentsOverviewPage /> );
 
-		expect(
-			await screen.findByRole( 'heading', { name: 'Account status' } )
-		).toBeInTheDocument();
+		expect( await screen.findByText( 'Payouts:' ) ).toBeInTheDocument();
 		expect(
 			screen.queryByText( 'Error loading account details.' )
 		).not.toBeInTheDocument();

@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { Button } from '@wordpress/components';
+import { Button, CardDivider } from '@wordpress/components';
 import { useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { addQueryArgs } from '@wordpress/url';
@@ -29,6 +29,7 @@ export const AccountTools = ( {
 
 	return (
 		<div className="woocommerce-woopayments-account-details__tools">
+			<CardDivider />
 			<h3>{ __( 'Account tools', 'woocommerce' ) }</h3>
 			<p>
 				{ __(

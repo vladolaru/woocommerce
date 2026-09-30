@@ -1,6 +1,7 @@
 /**
  * External dependencies
  */
+import { CardDivider } from '@wordpress/components';
 import { createInterpolateElement } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
@@ -273,6 +274,7 @@ export const AccountFees = ( {
 
 	return (
 		<div className="woocommerce-woopayments-account-details__fees">
+			<CardDivider />
 			<h3>{ __( 'Active discounts', 'woocommerce' ) }</h3>
 			{ activeDiscounts.map( ( accountFee ) => (
 				<AccountFee

@@ -142,7 +142,6 @@
 	padding: 10px 12px;
 }
 
-.woocommerce-woopayments-account-details__status-grid,
 .woocommerce-woopayments-active-loan__summary {
 	display: grid;
 	gap: 12px;
@@ -150,49 +149,68 @@
 	margin: 0;
 }
 
-.woocommerce-woopayments-account-details__status-grid > div,
 .woocommerce-woopayments-active-loan__summary > div {
 	background: #f6f7f7;
 	border-radius: 4px;
 	padding: 12px;
 }
 
-.woocommerce-woopayments-account-details__status-grid h3 {
-	color: #646970;
-	font-size: 12px;
-	margin-bottom: 4px;
-}
-
-.woocommerce-woopayments-account-details__status-grid p,
 .woocommerce-woopayments-active-loan__summary dd {
 	font-size: 16px;
 	font-weight: 600;
 	margin: 0;
 }
 
-.woocommerce-woopayments-account-details__banner {
-	background: #fcf9e8;
-	border-left: 4px solid #dba617;
-	margin-top: 16px;
-	padding: 12px;
+// Client 11.1.0 `components/account-details/style.scss`.
+.woocommerce-woopayments-overview-card__title {
+	font-size: 20px;
+	font-weight: 400;
+	line-height: 28px;
+	margin: 0;
 }
 
-.woocommerce-woopayments-account-details__banner p {
-	margin: 0 0 8px;
+.woocommerce-woopayments-account-details__header.components-card__header {
+	flex-wrap: wrap;
+	gap: 8px;
+	justify-content: flex-start;
+}
+
+.woocommerce-woopayments-account-details__edit.components-button.is-link {
+	margin-inline-start: auto;
+	text-decoration: none;
+}
+
+.woocommerce-woopayments-account-details__banner.woopayments-banner-notice {
+	flex-basis: 100%;
+	margin: 8px 0 0;
+}
+
+.woocommerce-woopayments-account-details__payouts {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0 12px;
+	min-height: 2em;
+
+	> span:first-child {
+		min-width: 130px;
+	}
 }
 
 .woocommerce-woopayments-account-details__fees,
 .woocommerce-woopayments-account-details__tools {
-	border-top: 1px solid #dcdcde;
-	margin-top: 16px;
 	padding-top: 16px;
+
+	h3 {
+		font-size: 13px;
+		margin: 16px 0 8px;
+	}
+
+	p {
+		margin: 0 0 12px;
+	}
 }
 
-.woocommerce-woopayments-account-details__tools p {
-	margin: 0 0 12px;
-}
-
-.woocommerce-woopayments-account-details__header,
 .woocommerce-woopayments-active-loan__section-header {
 	align-items: center;
 	display: flex;
@@ -201,7 +219,6 @@
 	margin-bottom: 12px;
 }
 
-.woocommerce-woopayments-account-details__header h2,
 .woocommerce-woopayments-active-loan__section-header h2 {
 	margin: 0;
 }
@@ -210,13 +227,7 @@
 	white-space: nowrap;
 }
 
-.woocommerce-woopayments-account-details__payout-status {
-	align-items: center;
-	display: flex;
-	gap: 4px;
-}
-
-.woocommerce-woopayments-account-details__payout-popover-content {
+.woocommerce-woopayments-overview__help-popover-content {
 	max-width: 300px;
 	padding: 12px;
 }
@@ -796,7 +807,6 @@
 @media screen and (max-width: 782px) {
 	.woocommerce-woopayments-overview__cards,
 	.woocommerce-woopayments-overview__balance-grid,
-	.woocommerce-woopayments-account-details__status-grid,
 	.woocommerce-woopayments-active-loan__summary {
 		grid-template-columns: 1fr;
 	}

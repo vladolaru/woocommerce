@@ -1,69 +1,108 @@
 /**
  * External dependencies
  */
-import { Button, Dropdown, ExternalLink } from '@wordpress/components';
+import {
+	Button,
+	Card,
+	CardBody,
+	CardHeader,
+	ExternalLink,
+} from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
-import { help } from '@wordpress/icons';
+import { caution, check, error, info, published } from '@wordpress/icons';
 import { addQueryArgs } from '@wordpress/url';
 import { recordEvent } from '@woocommerce/tracks';
+import type { ReactElement, ReactNode } from 'react';
 
 /**
  * Internal dependencies
  */
 import type {
 	WooPaymentsOverviewAccountDetails,
-	WooPaymentsOverviewAccountDetailsStatus,
+	WooPaymentsOverviewAccountDetailsBanner,
 	WooPaymentsOverviewAccountFee,
 } from '../types';
 import { AccountFees } from './account-fees';
 import { AccountTools } from './account-tools';
+import { HelpPopover } from './help-popover';
+import { getStatusChipTypeFromColor, StatusChip } from './status-chip';
+import BannerNotice from '~/settings-payments/onboarding/providers/woopayments/components/banner-notice';
 
 const ACCOUNT_DETAILS_SOURCE = {
 	from: 'WCPAY_ACCOUNT_DETAILS',
 	source: 'wcpay-account-details',
 };
 
-// Client 11.1.0 `components/account-details/payout-status-wrapper.tsx:19-86`.
-const PayoutStatusPopover = ( {
-	popover,
+// Client 11.1.0 `components/account-details/banner.tsx:22-37` and `utils.ts:36-48`.
+const BANNER_STATUS: Record<
+	string,
+	'success' | 'info' | 'warning' | 'error'
+> = {
+	green: 'success',
+	blue: 'info',
+	yellow: 'warning',
+	red: 'error',
+};
+const BANNER_ICONS: Record< string, ReactElement > = {
+	published,
+	caution,
+	error,
+	info,
+	check,
+};
+
+const AccountDetailsBanner = ( {
+	banner,
 }: {
-	popover: WooPaymentsOverviewAccountDetailsStatus[ 'popover' ];
+	banner?: WooPaymentsOverviewAccountDetailsBanner | null;
 } ) => {
-	if ( ! popover?.text ) {
+	if ( ! banner?.text ) {
 		return null;
 	}
 
 	return (
-		<Dropdown
-			className="woocommerce-woopayments-account-details__payout-popover"
-			renderToggle={ ( { isOpen, onToggle } ) => (
-				<Button
-					icon={ help }
-					size="small"
-					label={ __(
-						'More information about payout status',
-						'woocommerce'
-					) }
-					aria-expanded={ isOpen }
-					onClick={ onToggle }
-				/>
+		<BannerNotice
+			className="woocommerce-woopayments-account-details__banner"
+			status={
+				BANNER_STATUS[ String( banner.background_color ) ] ?? 'info'
+			}
+			icon={ BANNER_ICONS[ String( banner.icon ) ] ?? info }
+			isDismissible={ false }
+		>
+			{ banner.text }
+			{ banner.cta_text && banner.cta_link && (
+				<>
+					{ ' ' }
+					<ExternalLink href={ banner.cta_link }>
+						{ banner.cta_text }
+					</ExternalLink>
+				</>
 			) }
-			renderContent={ () => (
-				<div className="woocommerce-woopayments-account-details__payout-popover-content">
-					{ popover.text }
-					{ popover.cta_text && popover.cta_link && (
-						<>
-							{ ' ' }
-							<ExternalLink href={ popover.cta_link }>
-								{ popover.cta_text }
-							</ExternalLink>
-						</>
-					) }
-				</div>
-			) }
-		/>
+		</BannerNotice>
 	);
 };
+
+// Client 11.1.0 `components/account-details/index.tsx:32-43`.
+const AccountDetailsShell = ( {
+	header,
+	children,
+}: {
+	header?: ReactNode;
+	children: ReactNode;
+} ) => (
+	<Card className="woocommerce-woopayments-account-details">
+		<CardHeader className="woocommerce-woopayments-account-details__header">
+			<h2
+				className="woocommerce-woopayments-overview-card__title"
+				tabIndex={ -1 }
+			>
+				{ __( 'Account details', 'woocommerce' ) }
+			</h2>
+			{ header }
+		</CardHeader>
+		<CardBody>{ children }</CardBody>
+	</Card>
+);
 
 export const AccountDetailsCard = ( {
 	accountDetails,
@@ -81,14 +120,9 @@ export const AccountDetailsCard = ( {
 	// Client 11.1.0 `components/account-details/index.tsx:45-52,96-97`.
 	if ( ! accountDetails ) {
 		return (
-			<section className="woocommerce-woopayments-overview-card woocommerce-woopayments-account-details">
-				<div className="woocommerce-woopayments-account-details__header">
-					<h2 tabIndex={ -1 }>
-						{ __( 'Account details', 'woocommerce' ) }
-					</h2>
-				</div>
-				<p>{ __( 'Error loading account details.', 'woocommerce' ) }</p>
-			</section>
+			<AccountDetailsShell>
+				{ __( 'Error loading account details.', 'woocommerce' ) }
+			</AccountDetailsShell>
 		);
 	}
 
@@ -96,57 +130,78 @@ export const AccountDetailsCard = ( {
 	const editDetailsLink = accountLink
 		? addQueryArgs( accountLink, ACCOUNT_DETAILS_SOURCE )
 		: '';
+	const { account_status: accountStatus, payout_status: payoutStatus } =
+		accountDetails;
 
 	return (
-		<section className="woocommerce-woopayments-overview-card woocommerce-woopayments-account-details">
-			<div className="woocommerce-woopayments-account-details__header">
-				<h2 tabIndex={ -1 }>
-					{ __( 'Account details', 'woocommerce' ) }
-				</h2>
-				{ editDetailsLink && (
-					<ExternalLink
-						href={ editDetailsLink }
-						onClick={ () =>
-							recordEvent(
-								'wcpay_account_details_link_clicked',
-								ACCOUNT_DETAILS_SOURCE
-							)
-						}
+		<AccountDetailsShell
+			header={
+				<>
+					{ accountStatus.text && (
+						<StatusChip
+							message={ accountStatus.text }
+							type={ getStatusChipTypeFromColor(
+								accountStatus.background_color
+							) }
+						/>
+					) }
+					{ editDetailsLink && (
+						<Button
+							className="woocommerce-woopayments-account-details__edit"
+							variant="link"
+							href={ editDetailsLink }
+							target="_blank"
+							onClick={ () =>
+								recordEvent(
+									'wcpay_account_details_link_clicked',
+									ACCOUNT_DETAILS_SOURCE
+								)
+							}
+						>
+							{ __( 'Edit details', 'woocommerce' ) }
+						</Button>
+					) }
+					<AccountDetailsBanner banner={ accountDetails.banner } />
+				</>
+			}
+		>
+			{ /* Client 11.1.0 `components/account-details/payout-status-wrapper.tsx:19-86`. */ }
+			<div className="woocommerce-woopayments-account-details__payouts">
+				<span>{ __( 'Payouts:', 'woocommerce' ) }</span>
+				{ payoutStatus.text && (
+					<StatusChip
+						message={ payoutStatus.text }
+						type={ getStatusChipTypeFromColor(
+							payoutStatus.background_color
+						) }
+					/>
+				) }
+				{ payoutStatus.popover?.text && (
+					<HelpPopover
+						label={ __(
+							'More information about payout status',
+							'woocommerce'
+						) }
 					>
-						{ __( 'Edit details', 'woocommerce' ) }
-					</ExternalLink>
+						{ payoutStatus.popover.text }
+						{ payoutStatus.popover.cta_text &&
+							payoutStatus.popover.cta_link && (
+								<>
+									{ ' ' }
+									<ExternalLink
+										href={ payoutStatus.popover.cta_link }
+									>
+										{ payoutStatus.popover.cta_text }
+									</ExternalLink>
+								</>
+							) }
+					</HelpPopover>
 				) }
 			</div>
-			<div className="woocommerce-woopayments-account-details__status-grid">
-				<div>
-					<h3>{ __( 'Account status', 'woocommerce' ) }</h3>
-					<p>{ accountDetails.account_status.text || '-' }</p>
-				</div>
-				<div>
-					<h3>{ __( 'Payout status', 'woocommerce' ) }</h3>
-					<div className="woocommerce-woopayments-account-details__payout-status">
-						<p>{ accountDetails.payout_status.text || '-' }</p>
-						<PayoutStatusPopover
-							popover={ accountDetails.payout_status.popover }
-						/>
-					</div>
-				</div>
-			</div>
-			{ accountDetails.banner?.text && (
-				<div className="woocommerce-woopayments-account-details__banner">
-					<p>{ accountDetails.banner.text }</p>
-					{ accountDetails.banner.cta_link &&
-						accountDetails.banner.cta_text && (
-							<a href={ accountDetails.banner.cta_link }>
-								{ accountDetails.banner.cta_text }
-							</a>
-						) }
-				</div>
-			) }
 			{ isTestModeOnboarding && (
 				<AccountTools onboardingUrl={ onboardingUrl } />
 			) }
 			<AccountFees accountFees={ accountFees } />
-		</section>
+		</AccountDetailsShell>
 	);
 };

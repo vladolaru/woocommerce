@@ -83,6 +83,98 @@ describe( 'AccountDetailsCard', () => {
 		( recordEvent as jest.Mock ).mockClear();
 	} );
 
+	describe( 'status chips', () => {
+		it( 'shows the account status as a chip beside the title and one payouts row, with no repeated status labels', () => {
+			render(
+				<AccountDetailsCard accountDetails={ createAccountDetails() } />
+			);
+
+			const title = screen.getByRole( 'heading', {
+				name: 'Account details',
+			} );
+			const accountChip = screen.getByText( 'Connected' );
+
+			expect( title.parentElement ).toContainElement( accountChip );
+			expect( accountChip ).toHaveClass(
+				'woocommerce-status-badge--success'
+			);
+			expect( screen.getByText( 'Payouts:' ) ).toBeInTheDocument();
+			expect( screen.getByText( 'Active' ) ).toHaveClass(
+				'woocommerce-status-badge--success'
+			);
+			expect(
+				screen.queryByText( 'Account status' )
+			).not.toBeInTheDocument();
+			expect(
+				screen.queryByText( 'Payout status' )
+			).not.toBeInTheDocument();
+		} );
+
+		it.each( [
+			[ 'yellow', 'woocommerce-status-badge--warning' ],
+			[ 'red', 'woocommerce-status-badge--error' ],
+			[ 'gray', 'woocommerce-status-badge--info' ],
+			[ 'blue', 'woocommerce-status-badge--primary' ],
+		] )(
+			'colours the chips from the platform %s background, like client getChipTypeFromColor()',
+			( color, className ) => {
+				render(
+					<AccountDetailsCard
+						accountDetails={ createAccountDetails( {
+							account_status: {
+								text: 'Restricted soon',
+								background_color: color,
+							},
+							payout_status: {
+								text: 'Paused',
+								background_color: color,
+							},
+						} ) }
+					/>
+				);
+
+				expect( screen.getByText( 'Restricted soon' ) ).toHaveClass(
+					className
+				);
+				expect( screen.getByText( 'Paused' ) ).toHaveClass( className );
+			}
+		);
+	} );
+
+	describe( 'banner', () => {
+		it( 'shows the platform banner as a notice in the banner colour with its call to action inline', () => {
+			const { container } = render(
+				<AccountDetailsCard
+					accountDetails={ createAccountDetails( {
+						banner: {
+							text: 'Your account is under review.',
+							background_color: 'yellow',
+							icon: 'caution',
+							cta_text: 'Learn more',
+							cta_link:
+								'https://woocommerce.com/document/woopayments/',
+						},
+					} ) }
+				/>
+			);
+
+			const banner = container.querySelector(
+				'.woocommerce-woopayments-account-details__banner'
+			);
+
+			expect( banner ).toHaveClass( 'is-warning' );
+			expect( banner ).toHaveTextContent(
+				'Your account is under review. Learn more'
+			);
+			expect(
+				screen.getByRole( 'link', { name: /Learn more/ } )
+			).toHaveAttribute(
+				'href',
+				'https://woocommerce.com/document/woopayments/'
+			);
+		} );
+	} );
+
 	describe( 'Edit details link', () => {
 		it( 'links to the account link with the client source arguments and records the click', async () => {
 			render(

@@ -157,6 +157,7 @@ export interface WooPaymentsOverviewAccountDetailsStatus {
 export interface WooPaymentsOverviewAccountDetailsBanner {
 	text?: string;
 	background_color?: string;
+	icon?: string;
 	cta_text?: string;
 	cta_link?: string;
 	[ key: string ]: unknown;

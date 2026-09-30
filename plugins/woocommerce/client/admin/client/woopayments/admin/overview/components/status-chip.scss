@@ -1,0 +1,12 @@
+// Client 11.1.0 `components/chip/style.scss`: the colours core's status badge has no variant for.
+.woocommerce-status-badge {
+	&--error {
+		background: #fcf0f1;
+		color: #8a2424;
+	}
+
+	&--primary {
+		background: #f0f6fc;
+		color: #0a4b78;
+	}
+}
