@@ -182,7 +182,7 @@ fake_curl() {
 		esac
 		[[ "$state" == 'active_native' ]] && time_total=.105000
 		case "${PERF_FAKE_CASE:-}" in
-		query-fail) [[ "$state" != connected ]] || queries=102 ;;
+		query-fail) [[ "$state" != connected ]] || queries=203 ;;
 		memory-fail) [[ "$state" != available ]] || memory=1524289 ;;
 		hook-fail) [[ "$state" != disabled ]] || hooks=106 ;;
 		timing-fail) [[ "$kind" != timing || "$state" != active_native ]] || time_total=.105001 ;;
@@ -190,6 +190,8 @@ fake_curl() {
 		gateway-dormancy-fail) [[ "$state" != disabled ]] || gateway_first=4 ;;
 		gateway-native-fail) [[ "$state" != active_native ]] || gateway_first=8 ;;
 		gateway-native-boundary-pass) [[ "$state" != active_native ]] || gateway_first=7 ;;
+		gateway-connected-boundary-pass) [[ "$state" != connected ]] || gateway_first=8 ;;
+		gateway-connected-fail) [[ "$state" != connected ]] || gateway_first=9 ;;
 		intermittent-query-recovers) [[ "$state" != disabled || "$kind" != primary-capture || "$repeat" != 1 ]] || queries=$((queries + 6)) ;;
 		persistent-query-regression) [[ "$state" != disabled || "$kind" != primary-capture ]] || queries=$((queries + 6)) ;;
 		missing-header) headers='' ;;
@@ -508,6 +510,8 @@ awk '/^STATE/{if(last !~ /^DB_IMPORT/) exit 1} {last=$0}' "$local_root/events.lo
 awk '/^SAMPLE\tprimary-capture\tactive_plugin$/{if(++primary == 5) pending=1; next} /^SAMPLE\ttiming\tactive_plugin$/{pending=1; next} pending && /^DB_IMPORT/{pending=0; next} pending && /^(STATE|SAMPLE)/{exit 1} END{exit pending}' "$local_root/events.log" || fail 'A reference sample was not followed by a database reset.'
 grep -Fq $'disabled\tfront\t101\t1524288\t105\tbaseline_noop\t1\t524288\t5\tpass' "$local_output" || fail 'The exact no-op ceiling did not pass.'
 grep -Fq $'active_native\tfront\t202\t5097152\t163\tactive_plugin\t2\t2097152\t3\tpass' "$local_output" || fail 'The exact native/plugin ceiling did not pass.'
+grep -Fq $'connected\tfront\t101\t1524288\t105\tactive_plugin\t-99\t-1475712\t-55\tpass' "$local_output" || fail 'Connected was not gated against the reference plugin.'
+grep -Fq $'connected\tgateway\t3\t0\tNA\tactive_plugin\t-2\tNA\tNA\tpass' "$local_output" || fail 'The connected gateway row was not gated against the reference plugin.'
 grep -Fq $'active_native\tcheckout_median\tNA\tNA\tNA\tactive_plugin\tNA\tNA\tNA\t105.000,100.000,5.000,pass' "$local_output" || fail 'The exact timing ceiling did not pass.'
 grep -Fq $'baseline_noop\tgateway\t2\t0\tNA\tbaseline_noop\t0\tNA\tNA\tpass' "$local_output" || fail 'The exact baseline_noop gateway warm-zero row did not pass.'
 grep -Fq $'disabled\tgateway\t3\t0\tNA\tbaseline_noop\t1\tNA\tNA\tpass' "$local_output" || fail 'The exact disabled gateway dormancy ceiling did not pass.'
@@ -540,19 +544,26 @@ boundary_output="$TEST_ROOT/gateway-native-boundary-pass/output/result.tsv"
 grep -Fq $'active_native\tgateway\t7\t0\tNA\tactive_plugin\t2\tNA\tNA\tpass' "$boundary_output" || fail 'The active_native gateway tolerance did not pass at exactly qd=2.'
 assert_cleaned "$TEST_ROOT/gateway-native-boundary-pass"
 
+run_case gateway-connected-boundary-pass gateway-connected-boundary-pass 0 local
+connected_boundary_output="$TEST_ROOT/gateway-connected-boundary-pass/output/result.tsv"
+grep -Fq $'connected\tgateway\t8\t0\tNA\tactive_plugin\t3\tNA\tNA\tpass' "$connected_boundary_output" || fail 'The connected gateway tolerance did not pass at exactly qd=3.'
+assert_cleaned "$TEST_ROOT/gateway-connected-boundary-pass"
+
 run_case attribution-artifact-failure attribution-artifact-failure 1 local
 grep -Fq 'could not write required attribution artifacts' "$TEST_ROOT/attribution-artifact-failure/stderr" || fail 'Local attribution accepted a probe artifact-write failure.'
 assert_cleaned "$TEST_ROOT/attribution-artifact-failure"
 
-for failure in query-fail memory-fail hook-fail timing-fail gateway-warm-fail gateway-dormancy-fail gateway-native-fail; do
+for failure in query-fail memory-fail hook-fail timing-fail gateway-warm-fail gateway-dormancy-fail gateway-native-fail gateway-connected-fail; do
 	run_case "$failure" "$failure" 1 local
 	[[ "$(wc -l < "$TEST_ROOT/$failure/output/result.tsv" | tr -d ' ')" == 42 ]] || fail "$failure did not emit a complete deterministic TSV."
 	assert_cleaned "$TEST_ROOT/$failure"
 done
+grep -Fq $'connected\tfront\t203\t1524288\t105\tactive_plugin\t3\t-1475712\t-55\tfail' "$TEST_ROOT/query-fail/output/result.tsv" || fail 'Connected did not fail at exactly three queries over the reference plugin.'
 grep -Fq $'active_native\tcheckout_median\tNA\tNA\tNA\tactive_plugin\tNA\tNA\tNA\t105.001,100.000,5.001,fail' "$TEST_ROOT/timing-fail/output/result.tsv" || fail 'The 5.001% timing boundary did not fail.'
 grep -Fq $'active_native\tgateway\t6\t1\tNA\tactive_plugin\t1\tNA\tNA\tfail' "$TEST_ROOT/gateway-warm-fail/output/result.tsv" || fail 'A nonzero warm gateway call did not fail.'
 grep -Fq $'disabled\tgateway\t4\t0\tNA\tbaseline_noop\t2\tNA\tNA\tfail' "$TEST_ROOT/gateway-dormancy-fail/output/result.tsv" || fail 'The disabled gateway dormancy tolerance did not fail at exactly qd=2.'
 grep -Fq $'active_native\tgateway\t8\t0\tNA\tactive_plugin\t3\tNA\tNA\tfail' "$TEST_ROOT/gateway-native-fail/output/result.tsv" || fail 'The active_native gateway tolerance did not fail at exactly qd=3.'
+grep -Fq $'connected\tgateway\t9\t0\tNA\tactive_plugin\t4\tNA\tNA\tfail' "$TEST_ROOT/gateway-connected-fail/output/result.tsv" || fail 'The connected gateway tolerance did not fail at exactly qd=4.'
 
 for invalid in missing-header malformed-header invalid-files wrong-owner wrong-bootstrap outbound-http wrong-final-page http-failure; do
 	run_case "$invalid" "$invalid" 1 ci

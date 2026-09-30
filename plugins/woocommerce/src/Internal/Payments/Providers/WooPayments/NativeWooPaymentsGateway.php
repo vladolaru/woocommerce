@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -456,6 +457,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->ensure_current_blog_context();
 
 		if ( ! parent::is_available() || ! $this->payment_method_definition->should_publish_gateway() ) {
+			return false;
+		}
+		// Only the active tier wires the checkout, redirect-return and express handlers; a stale tier must not offer a half-wired checkout.
+		if ( NativePaymentsState::ACTIVE !== wc_get_container()->get( NativePaymentsState::class )->get_state() ) {
 			return false;
 		}
 		if ( 'card' !== $this->get_payment_method_id() && ! $this->get_account_service()->is_gateway_enabled() ) {
@@ -1115,11 +1120,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public function is_subscriptions_enabled(): bool {
-		if ( $this->is_subscriptions_plugin_active() ) {
-			return version_compare( (string) $this->get_subscriptions_plugin_version(), '2.2.0', '>=' );
-		}
-
-		return class_exists( 'WC_Subscriptions_Core_Plugin' );
+		return WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available();
 	}
 
 	/**
@@ -2525,7 +2526,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private function owns_subscription_renewal_hooks(): bool {
 		return OrderPaymentStore::GATEWAY_ID === $this->id
 			&& $this->is_subscriptions_enabled()
-			&& ! wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active();
+			&& wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register();
 	}
 
 	/**

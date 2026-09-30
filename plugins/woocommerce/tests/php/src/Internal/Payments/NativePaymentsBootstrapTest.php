@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayPreflightGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
@@ -50,6 +51,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Connected admin roots. */
 	private const CONNECTED_ADMIN = array(
+		NativePaymentsGatewayRegistry::class,
+		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsCutoverController',
 		WooPaymentsCutoverReconciliationJob::class,
 		self::ADMIN_NAVIGATION,
@@ -71,10 +74,14 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsUserPreferenceFields',
 		self::WCPAY . 'WooPaymentsHomeTasks',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		WooPaymentsTokenService::class,
+		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
 
 	/** Connected AJAX roots. */
 	private const CONNECTED_AJAX = array(
+		NativePaymentsGatewayRegistry::class,
+		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
 		self::WCPAY . 'WooPaymentsCustomerService',
@@ -87,10 +94,14 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		WooPaymentsTokenService::class,
+		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
 
 	/** Connected REST roots. */
 	private const CONNECTED_REST = array(
+		NativePaymentsGatewayRegistry::class,
+		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
 		WooPaymentsMerchantRestController::class,
@@ -118,10 +129,14 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsUserPreferenceFields',
 		self::WCPAY . 'WooPaymentsHomeTasks',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		WooPaymentsTokenService::class,
+		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
 
 	/** Connected cron and Action Scheduler roots. */
 	private const CONNECTED_CRON = array(
+		NativePaymentsGatewayRegistry::class,
+		WooPaymentsProvider::class,
 		WooPaymentsCutoverReconciliationJob::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
@@ -134,6 +149,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		WooPaymentsTokenService::class,
+		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
 
 	/** Active shopper roots. */
@@ -164,6 +181,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		WooPaymentsTokenService::class,
 	);
 
 	/** Active admin roots. */
@@ -192,6 +210,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsUserPreferenceFields',
 		self::WCPAY . 'WooPaymentsHomeTasks',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		WooPaymentsTokenService::class,
+		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
 
 	/** Active AJAX roots. */
@@ -220,6 +240,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsTokenClassMapController',
 		self::WCPAY . 'WooPaymentsFrontendTrackingController',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		WooPaymentsTokenService::class,
+		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
 
 	/** Active REST and Store API roots. */
@@ -263,6 +285,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsExpressCheckoutCurrencyGuard',
 		self::WCPAY . 'WooPaymentsTokenClassMapController',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		WooPaymentsTokenService::class,
+		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
 
 	/** Active cron and Action Scheduler roots. */
@@ -284,6 +308,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOrderStatusChangeController',
 		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		WooPaymentsTokenService::class,
+		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
 
 	/** @testdox Production composition supplies the provider root matrix through a lazy closure. */
@@ -398,6 +424,38 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WP-CLI gets the cron roots in every set-up tier, so Action Scheduler runs under WP-CLI reach their handlers.
+	 */
+	public function test_wp_cli_gets_the_cron_roots_in_every_set_up_tier(): void {
+		$sut       = $this->make_bootstrap();
+		$roots_for = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
+		$roots_for->setAccessible( true );
+
+		foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+			$cron_roots = $roots_for->invoke( $sut, $state, 'cron' );
+			$this->assertNotEmpty( $cron_roots, "The $state cron cell must not be empty." );
+			$this->assertSame( $cron_roots, $roots_for->invoke( $sut, $state, 'cli' ), "The $state WP-CLI request must register the cron roots." );
+		}
+		$this->assertSame( array(), $roots_for->invoke( $sut, NativePaymentsState::DISABLED, 'cli' ), 'A disabled tier registers nothing under WP-CLI.' );
+	}
+
+	/**
+	 * @testdox The gateway provider is resolved only when WooCommerce builds its gateway list.
+	 */
+	public function test_gateway_provider_is_resolved_only_by_the_gateway_list(): void {
+		$container = $this->make_container( NativePaymentsState::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$sut       = $this->make_bootstrap();
+
+		$sut->register( $container, '__return_false' );
+
+		$this->assertNotContains( WooPaymentsProvider::class, $container->resolved, 'Registering the gateway must not build the provider.' );
+		$resolvers = $container->get( NativePaymentsGatewayRegistry::class )->provider_resolvers;
+		$this->assertCount( 1, $resolvers );
+		$provider = $resolvers[0]();
+		$this->assertSame( WooPaymentsProvider::class, $provider->get_recorded_class_name(), 'The resolver must build the provider root that follows the registry.' );
+	}
+
+	/**
 	 * @testdox Keeps cutover normalization out of shopper roots while preserving maintenance ordering.
 	 */
 	public function test_active_provider_matrix_bounds_cutover_normalization_to_maintenance_roots(): void {
@@ -473,18 +531,19 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			'available no-op' => array( NativePaymentsState::AVAILABLE, 'front', array() ),
 			'available admin' => array( NativePaymentsState::AVAILABLE, 'admin', self::AVAILABLE_ADMIN ),
 			'available cron'  => array( NativePaymentsState::AVAILABLE, 'cron', self::AVAILABLE_CRON ),
-			'connected front' => array( NativePaymentsState::CONNECTED, 'front', array( WooPaymentsSubscriptionRenewalHooks::class ) ),
+			'available CLI'   => array( NativePaymentsState::AVAILABLE, 'cli', self::AVAILABLE_CRON ),
+			'connected front' => array( NativePaymentsState::CONNECTED, 'front', array( NativePaymentsGatewayRegistry::class, WooPaymentsProvider::class, WooPaymentsSubscriptionRenewalHooks::class, WooPaymentsTokenService::class ) ),
 			'connected admin' => array( NativePaymentsState::CONNECTED, 'admin', self::CONNECTED_ADMIN ),
 			'connected AJAX'  => array( NativePaymentsState::CONNECTED, 'ajax', self::CONNECTED_AJAX ),
 			'connected REST'  => array( NativePaymentsState::CONNECTED, 'rest', self::CONNECTED_REST ),
 			'connected cron'  => array( NativePaymentsState::CONNECTED, 'cron', self::CONNECTED_CRON ),
-			'connected CLI'   => array( NativePaymentsState::CONNECTED, 'cli', array( WooPaymentsSubscriptionRenewalHooks::class ) ),
+			'connected CLI'   => array( NativePaymentsState::CONNECTED, 'cli', self::CONNECTED_CRON ),
 			'active front'    => array( NativePaymentsState::ACTIVE, 'front', self::ACTIVE_FRONT ),
 			'active admin'    => array( NativePaymentsState::ACTIVE, 'admin', self::ACTIVE_ADMIN ),
 			'active AJAX'     => array( NativePaymentsState::ACTIVE, 'ajax', self::ACTIVE_AJAX ),
 			'active REST'     => array( NativePaymentsState::ACTIVE, 'rest', self::ACTIVE_REST ),
 			'active cron'     => array( NativePaymentsState::ACTIVE, 'cron', self::ACTIVE_CRON ),
-			'active CLI'      => array( NativePaymentsState::ACTIVE, 'cli', array( WooPaymentsSubscriptionRenewalHooks::class ) ),
+			'active CLI'      => array( NativePaymentsState::ACTIVE, 'cli', self::ACTIVE_CRON ),
 		);
 	}
 
@@ -658,9 +717,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			$root     = $roots[ $index ];
 			$events[] = 'get:' . $root;
 			if ( NativePaymentsGatewayRegistry::class === $root ) {
-				$provider = $roots[ ++$index ];
-				$events[] = 'get:' . $provider;
-				$events[] = 'provider:' . $provider;
+				++$index;
+				$events[] = 'provider-resolver:' . $root;
 				$events[] = 'register:' . $root;
 				continue;
 			}
@@ -828,13 +886,17 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 							return $this->state;
 						}
 
+						/** @var array<int,callable> Provider resolvers handed to the registry. */
+						public array $provider_resolvers = array();
+
 						/**
-						 * Record provider insertion.
+						 * Record a lazy provider without resolving it.
 						 *
-						 * @param object $provider Recording provider.
+						 * @param callable $resolver Provider resolver.
 						 */
-						public function register_provider( object $provider ): void {
-							$this->events[] = 'provider:' . $provider->get_recorded_class_name();
+						public function register_provider_resolver( callable $resolver ): void {
+							$this->provider_resolvers[] = $resolver;
+							$this->events[]             = 'provider-resolver:' . $this->class_name;
 						}
 
 						/** Record registration. */

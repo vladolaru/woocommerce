@@ -36,6 +36,29 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should resolve a lazy provider once, the first time the gateway list is built.
+	 */
+	public function test_resolves_a_lazy_provider_once_when_the_gateway_list_is_built(): void {
+		$gateway = $this->create_gateway( 'woocommerce_payments' );
+		$calls   = 0;
+		$sut     = new NativePaymentsGatewayRegistry();
+		$sut->init( new StaticNativeRuntimeArbiter( true ) );
+		$sut->register_provider_resolver(
+			static function () use ( &$calls, $gateway ): PaymentGatewayProviderContract {
+				++$calls;
+				return new StaticProvider( true, array( $gateway ) );
+			}
+		);
+
+		$sut->register();
+		$this->assertSame( 0, $calls, 'Registering the gateway hook must not build the provider.' );
+
+		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter() );
+		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter() );
+		$this->assertSame( 1, $calls, 'The provider must be built once.' );
+	}
+
+	/**
 	 * @testdox Should preserve gateway registration when the provider cannot currently process payments.
 	 */
 	public function test_registers_gateway_when_provider_cannot_process_payments(): void {

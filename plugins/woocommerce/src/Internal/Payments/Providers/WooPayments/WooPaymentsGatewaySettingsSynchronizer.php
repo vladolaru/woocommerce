@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
  * Persists canonical WooPayments settings and projects them to split gateways.
@@ -17,7 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-final class WooPaymentsGatewaySettingsSynchronizer {
+final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInterface {
 
 	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
 
@@ -167,6 +168,61 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 			'persisted'                     => empty( $failed_option_names ),
 			'failed_option_names'           => $failed_option_names,
 		);
+	}
+
+	/**
+	 * Keep the durable tier in step with the gateway's enabled setting, however the setting is written.
+	 *
+	 * The classic toggle and the payment gateways REST route write the option directly, without `persist()`.
+	 */
+	public function register(): void {
+		if ( null === $this->runtime_arbiter || ! $this->runtime_arbiter->should_native_register() ) {
+			return;
+		}
+
+		add_action( 'add_option_' . self::SETTINGS_OPTION, array( $this, 'handle_settings_added' ), 10, 2 );
+		add_action( 'update_option_' . self::SETTINGS_OPTION, array( $this, 'handle_settings_updated' ), 10, 2 );
+	}
+
+	/**
+	 * Recompute the tier when the gateway settings option is created.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $option Option name.
+	 * @param mixed $value  New settings.
+	 */
+	public function handle_settings_added( $option, $value ): void {
+		unset( $option );
+		$this->synchronize_after_direct_write( $value );
+	}
+
+	/**
+	 * Recompute the tier when the gateway settings option changes.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $old_value Previous settings.
+	 * @param mixed $value     New settings.
+	 */
+	public function handle_settings_updated( $old_value, $value ): void {
+		unset( $old_value );
+		$this->synchronize_after_direct_write( $value );
+	}
+
+	/**
+	 * Recompute the tier after a direct settings write, only while native owns payments.
+	 *
+	 * The plugin writes the same option, and the recompute writes `disabled` when native is off.
+	 *
+	 * @param mixed $value New settings.
+	 */
+	private function synchronize_after_direct_write( $value ): void {
+		if ( null === $this->runtime_arbiter || ! $this->runtime_arbiter->should_native_register() ) {
+			return;
+		}
+
+		$this->synchronize_native_payments_state( is_array( $value ) ? $value : array() );
 	}
 
 	/**

@@ -33,6 +33,13 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 	private array $providers = array();
 
 	/**
+	 * Provider resolvers, called the first time WooCommerce builds its gateway list.
+	 *
+	 * @var array<int,callable>
+	 */
+	private array $provider_resolvers = array();
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -52,6 +59,20 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 	 */
 	public function register_provider( PaymentGatewayProviderContract $provider ): void {
 		$this->providers[ $provider->get_id() ] = $provider;
+	}
+
+	/**
+	 * Register a provider that is resolved only when WooCommerce builds its gateway list.
+	 *
+	 * Most requests never build the gateway list, so they do not pay for the provider and its payment services.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param callable $resolver Returns the payment gateway provider.
+	 * @phpstan-param callable(): PaymentGatewayProviderContract $resolver
+	 */
+	public function register_provider_resolver( callable $resolver ): void {
+		$this->provider_resolvers[] = $resolver;
 	}
 
 	/**
@@ -76,6 +97,15 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 	public function register_gateway( array $gateways ): array {
 		if ( ! $this->arbiter->should_native_register() ) {
 			return $gateways;
+		}
+
+		$resolvers                = $this->provider_resolvers;
+		$this->provider_resolvers = array();
+		foreach ( $resolvers as $resolver ) {
+			$provider = $resolver();
+			if ( $provider instanceof PaymentGatewayProviderContract ) {
+				$this->register_provider( $provider );
+			}
 		}
 
 		foreach ( $this->providers as $provider ) {

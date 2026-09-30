@@ -158,7 +158,7 @@ final class NativePaymentsBootstrap {
 	}
 
 	/**
-	 * Resolve and register explicit roots once, preserving gateway-provider order.
+	 * Resolve and register explicit roots once. The gateway registry takes the next root as its provider, resolved only when WooCommerce builds its gateway list.
 	 *
 	 * @param Container|RuntimeContainer $container Runtime dependency container.
 	 * @param array<int,class-string>    $roots     Root class names.
@@ -175,13 +175,17 @@ final class NativePaymentsBootstrap {
 				 */
 				$registry      = $container->get( $root );
 				$provider_root = $roots[ ++$index ];
-				/**
-				 * Native payment gateway provider.
-				 *
-				 * @var PaymentGatewayProviderContract $provider
-				 */
-				$provider = $container->get( $provider_root );
-				$registry->register_provider( $provider );
+				$registry->register_provider_resolver(
+					static function () use ( $container, $provider_root ) {
+						/**
+						 * Native payment gateway provider.
+						 *
+						 * @var PaymentGatewayProviderContract $provider
+						 */
+						$provider = $container->get( $provider_root );
+						return $provider;
+					}
+				);
 				$registry->register();
 				continue;
 			}

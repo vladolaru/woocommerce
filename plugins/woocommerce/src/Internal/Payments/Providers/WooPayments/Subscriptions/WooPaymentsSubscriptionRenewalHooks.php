@@ -58,10 +58,31 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Attach the renewal hooks when native owns payments and Subscriptions is available.
+	 * Attach the renewal hooks on `plugins_loaded` priority 11 when native owns payments.
+	 *
+	 * That is when the client detects Subscriptions and attaches (client 11.1.0 `woocommerce-payments.php:214`), after
+	 * Subscriptions has loaded and before WooCommerce builds its emails.
 	 */
 	public function register(): void {
-		if ( ! $this->arbiter->should_native_register() || ! WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available() ) {
+		if ( ! $this->arbiter->should_native_register() ) {
+			return;
+		}
+
+		if ( did_action( 'plugins_loaded' ) ) {
+			$this->handle_plugins_loaded();
+			return;
+		}
+
+		add_action( 'plugins_loaded', array( $this, 'handle_plugins_loaded' ), 11 );
+	}
+
+	/**
+	 * Attach the renewal hooks when Subscriptions is available.
+	 *
+	 * @internal
+	 */
+	public function handle_plugins_loaded(): void {
+		if ( ! WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available() ) {
 			return;
 		}
 

@@ -185,13 +185,13 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsOrderAdminActionsController::class,
 			WooPaymentsTestModeOrderEmailService::class,
 		);
-		$active_prefix              = array(
+		$gateway_prefix             = array(
 			NativePaymentsGatewayRegistry::class,
 			self::class,
 		);
 		$active_maintenance_prefix  = array_merge(
 			array( WooPaymentsCutoverNormalizationRunner::class ),
-			$active_prefix
+			$gateway_prefix
 		);
 
 		$matrix = array(
@@ -200,14 +200,15 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				'cron'  => array( WooPaymentsCutoverReconciliationJob::class ),
 			),
 			NativePaymentsState::CONNECTED => array(
-				'admin' => $connected_admin,
-				'ajax'  => $connected_ajax,
-				'rest'  => $connected_rest,
-				'cron'  => $connected_cron,
+				'front' => $gateway_prefix,
+				'admin' => array_merge( $gateway_prefix, $connected_admin ),
+				'ajax'  => array_merge( $gateway_prefix, $connected_ajax ),
+				'rest'  => array_merge( $gateway_prefix, $connected_rest ),
+				'cron'  => array_merge( $gateway_prefix, $connected_cron ),
 			),
 			NativePaymentsState::ACTIVE    => array(
 				'front' => array_merge(
-					$active_prefix,
+					$gateway_prefix,
 					array(
 						WooPaymentsAccountService::class,
 						WooPaymentsWebhookReliabilityService::class,
@@ -236,7 +237,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				),
 				'admin' => array_merge( $active_maintenance_prefix, $connected_admin ),
 				'ajax'  => array_merge(
-					$active_prefix,
+					$gateway_prefix,
 					$connected_ajax,
 					array(
 						WooPaymentsCheckoutBridge::class,
@@ -252,7 +253,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 					)
 				),
 				'rest'  => array_merge(
-					$active_prefix,
+					$gateway_prefix,
 					$connected_rest,
 					array(
 						WooPaymentsWooPayPreflightGuard::class,
@@ -278,12 +279,22 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			),
 		);
 
-		// Renewals and their emails can run on any request of a native-owned store, WP-CLI included (Action Scheduler
-		// runners), with or without the gateway enabled, as in the client.
+		// WP-CLI runs Action Scheduler queues and cron on many hosts, so it gets the cron roots. The client attaches its
+		// scheduled-action handlers whenever it loads (client 11.1.0 `includes/class-wc-payments.php:603,657`).
+		foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+			$matrix[ $state ]['cli'] = $matrix[ $state ]['cron'];
+		}
+
+		// Renewals, their emails and saved-card hooks run on any request of a connected or active store, with or
+		// without the gateway enabled, as in the client (client 11.1.0 `includes/class-wc-payments.php:611,649`).
 		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-				$matrix[ $state ][ $request ]   = $matrix[ $state ][ $request ] ?? array();
 				$matrix[ $state ][ $request ][] = WooPaymentsSubscriptionRenewalHooks::class;
+				$matrix[ $state ][ $request ][] = WooPaymentsTokenService::class;
+				// The gateway settings can be written directly (classic toggle, REST, WP-CLI); keep the tier in step.
+				if ( 'front' !== $request ) {
+					$matrix[ $state ][ $request ][] = WooPaymentsGatewaySettingsSynchronizer::class;
+				}
 			}
 		}
 

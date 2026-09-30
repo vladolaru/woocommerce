@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -64,9 +65,29 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Make native the payments owner, which the renewal handlers require.
+	 */
+	private function make_native_own_payments(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+	}
+
+	/**
+	 * Make native the payments owner in the active tier, the only tier where the gateway is offered at checkout.
+	 */
+	private function activate_native_tier(): void {
+		$this->make_native_own_payments();
+		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::ACTIVE, true );
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 		remove_all_actions( 'woocommerce_checkout_subscription_created' );
 		remove_all_actions( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID );
 		remove_all_actions( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay' );
@@ -187,6 +208,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide the gateway when the account's customer-supported currencies exclude the store currency
 	 */
 	public function test_gateway_availability_follows_account_customer_supported_currencies(): void {
+		$this->activate_native_tier();
 		$supported_currencies = array( 'usd' );
 		$account_service      = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
@@ -285,6 +307,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		string $currency,
 		bool $expected
 	): void {
+		$this->activate_native_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
 		$this->assertNotNull( $definition );
 
@@ -344,6 +367,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide a split gateway when its definition does not support the checkout currency.
 	 */
 	public function test_split_gateway_availability_follows_payment_method_definition(): void {
+		$this->activate_native_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
 		$this->assertNotNull( $definition );
 
@@ -390,6 +414,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * WooPayments client 11.1.0 restricts Bancontact to EUR in `BancontactDefinition.php`, applied by `class-upe-payment-method.php::is_currency_valid()` and `is_enabled_at_checkout()`, while Card has no currency restriction.
 	 */
 	public function test_gateway_availability_recalculates_for_currency_and_payment_method_definition_changes(): void {
+		$this->activate_native_tier();
 		$registry              = new WooPaymentsPaymentMethodRegistry();
 		$card_definition       = $registry->get( 'card' );
 		$bancontact_definition = $registry->get( 'bancontact' );
@@ -469,6 +494,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		array $expected_shopper_countries,
 		string $account_default_currency = 'usd'
 	): void {
+		$this->activate_native_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
 		$this->assertNotNull( $definition );
 
@@ -632,6 +658,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should apply provider readiness and explicit account capability state at availability time.
 	 */
 	public function test_gateway_availability_requires_provider_and_capability_readiness(): void {
+		$this->activate_native_tier();
 		$account_data    = array(
 			'country'      => 'US',
 			'capabilities' => array( 'card_payments' => 'restricted' ),
@@ -708,6 +735,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should only place express gateways in the payment-method list when both placement controls are enabled.
 	 */
 	public function test_express_gateway_availability_requires_payment_method_list_placement(): void {
+		$this->activate_native_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'apple_pay' );
 		$this->assertNotNull( $definition );
 
@@ -767,6 +795,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should apply definition amount limits to split gateway availability.
 	 */
 	public function test_split_gateway_availability_respects_definition_amount_limits(): void {
+		$this->activate_native_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'affirm' );
 		$this->assertNotNull( $definition );
 
@@ -807,6 +836,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Live checkout requires HTTPS while test mode remains available over HTTP.
 	 */
 	public function test_gateway_availability_requires_https_only_in_live_mode(): void {
+		$this->activate_native_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
 		$this->assertNotNull( $definition );
 
@@ -865,6 +895,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox BNPL order-pay availability requires a usable address and Affirm shopper name.
 	 */
 	public function test_bnpl_order_pay_availability_validates_address_and_affirm_name(): void {
+		$this->activate_native_tier();
 		$registry            = new WooPaymentsPaymentMethodRegistry();
 		$affirm_definition   = $registry->get( 'affirm' );
 		$afterpay_definition = $registry->get( 'afterpay_clearpay' );
@@ -1083,6 +1114,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should register subscription renewal handlers when subscriptions are supported.
 	 */
 	public function test_subscription_support_registers_subscription_handlers(): void {
+		$this->make_native_own_payments();
 		$gateway = new class() extends NativeWooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
@@ -1258,6 +1290,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should attach base subscription renewal handlers once across gateway instances.
 	 */
 	public function test_subscription_handler_registration_is_idempotent_across_gateway_instances(): void {
+		$this->make_native_own_payments();
 		new class() extends NativeWooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
@@ -1300,6 +1333,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should process Amazon Pay scheduled subscription renewals through the native gateway handler.
 	 */
 	public function test_amazon_pay_scheduled_subscription_payment_hook_reaches_gateway_handler(): void {
+		$this->make_native_own_payments();
 		$user_id = self::factory()->user->create();
 		$order   = $this->create_order();
 		$order->set_customer_id( $user_id );
@@ -1492,6 +1526,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should register WooPayments failed-renewal authentication emails when subscriptions are supported.
 	 */
 	public function test_subscription_support_registers_failed_renewal_authentication_emails(): void {
+		$this->make_native_own_payments();
 		new class() extends NativeWooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
@@ -1527,6 +1562,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should register WooPayments failed-renewal authentication emails only once across gateway instances.
 	 */
 	public function test_subscription_email_registration_is_idempotent_across_gateway_instances(): void {
+		$this->make_native_own_payments();
 		new class() extends NativeWooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
@@ -1566,6 +1602,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should update retry rules for failed renewals that need authentication.
 	 */
 	public function test_failed_renewal_authentication_email_updates_retry_rules(): void {
+		$this->make_native_own_payments();
 		new class() extends NativeWooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.

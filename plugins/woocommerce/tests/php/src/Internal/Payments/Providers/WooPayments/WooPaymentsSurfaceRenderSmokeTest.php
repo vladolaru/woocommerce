@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Unit_Test_Case;
@@ -33,6 +34,7 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 		wp_set_current_user( 0 );
 
 		parent::tearDown();
@@ -129,6 +131,9 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	public function test_my_account_menu_offers_payment_methods_when_native_saved_cards_enabled(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
 
+		// The gateway is offered only in the active tier.
+		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::ACTIVE, true );
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 		$provider = $this->createMock( WooPaymentsProvider::class );
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		wc_get_container()->replace( WooPaymentsProvider::class, $provider );

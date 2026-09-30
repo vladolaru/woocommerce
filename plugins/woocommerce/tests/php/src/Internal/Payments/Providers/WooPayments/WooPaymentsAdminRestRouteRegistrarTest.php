@@ -227,6 +227,15 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 					/** Register a non-target route owner without side effects. */
 					public function register(): void {
 					}
+
+					/**
+					 * Accept the gateway registry's lazy provider without building it.
+					 *
+					 * @param callable $resolver Provider resolver.
+					 */
+					public function register_provider_resolver( callable $resolver ): void {
+						unset( $resolver );
+					}
 				};
 			}
 

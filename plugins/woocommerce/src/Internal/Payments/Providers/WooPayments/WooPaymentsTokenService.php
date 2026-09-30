@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use RuntimeException;
 use Throwable;
 use WC_Order;
@@ -27,7 +28,7 @@ use WC_Payment_Tokens;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsTokenService {
+class WooPaymentsTokenService implements RegisterHooksInterface {
 
 	/**
 	 * Preserved WooPayments cached payment-method user meta key.
@@ -122,6 +123,13 @@ class WooPaymentsTokenService {
 		$this->customer_service               = $customer_service;
 		$this->account_service                = $account_service;
 		$this->register_hooks();
+	}
+
+	/**
+	 * Bootstrap root entry point. Resolving the service already registered its hooks in `init()`; this makes the
+	 * bootstrap resolve it on every connected or active request instead of only when another service needs it.
+	 */
+	public function register(): void {
 	}
 
 	/**

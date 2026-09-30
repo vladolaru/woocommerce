@@ -386,12 +386,13 @@ write_rows() {
 			elif [[ "$MODE" == 'ci' && "$state" == 'active_native' ]]; then
 				reference='not_evaluated'; qd=NA; md=NA; hd=NA; verdict=not_evaluated
 			else
-				if [[ "$state" == 'active_native' ]]; then reference='active_plugin'; else reference='baseline_noop'; fi
+				# Connected registers the disabled gateway, as the plugin does, so it gets active_native's budget against the plugin.
+				if [[ "$state" == 'active_native' || "$state" == 'connected' ]]; then reference='active_plugin'; else reference='baseline_noop'; fi
 				reference_metrics="$TEMP_ROOT/$reference-$page-capture.metrics"
 				if [[ ! -f "$reference_metrics" ]]; then printf '%s\t%s\t%s\t%s\t%s\t%s\tNA\tNA\tNA\tfail\n' "$state" "$page" "$queries" "$memory" "$hooks" "$reference" >> "$OUTPUT"; GATE_FAILED=1; continue; fi
 				IFS=$'\t' read -r reference_queries reference_memory reference_hooks _ < "$reference_metrics"
 				qd=$((queries - reference_queries)); md=$((memory - reference_memory)); hd=$((hooks - reference_hooks))
-				if [[ "$state" == 'active_native' ]]; then
+				if [[ "$reference" == 'active_plugin' ]]; then
 					if [[ $qd -le 2 && $md -le 2097152 ]]; then verdict=pass; else verdict=fail; fi
 				else
 					if [[ $qd -le 1 && $md -le 524288 && $hd -le 5 ]]; then verdict=pass; else verdict=fail; fi
@@ -407,7 +408,8 @@ write_rows() {
 # counters. Column reuse (matching the existing 'checkout_median' timing row's convention):
 # queries = first-resolution query count, used_peak_bytes = second (warm) call query count.
 # Every native state is checked for a zero warm call; disabled/available/connected/active_native
-# are also checked against the first-resolution delta against their reference state (D11).
+# are also checked against the first-resolution delta against their reference state (D11): baseline_noop
+# for the dormant tiers, active_plugin for connected and active_native.
 write_gateway_rows() {
 	local state reference metrics gateway_first gateway_second reference_metrics reference_gateway_first qd verdict
 	local states=(baseline_noop disabled available connected active_native active_plugin)
@@ -438,7 +440,7 @@ write_gateway_rows() {
 		if [[ "$state" == 'baseline_noop' ]]; then
 			reference="$state"; qd=0
 		else
-			if [[ "$state" == 'active_native' ]]; then reference='active_plugin'; else reference='baseline_noop'; fi
+			if [[ "$state" == 'active_native' || "$state" == 'connected' ]]; then reference='active_plugin'; else reference='baseline_noop'; fi
 			reference_metrics="$TEMP_ROOT/$reference-checkout-capture.metrics"
 			if [[ ! -f "$reference_metrics" ]]; then printf '%s\tgateway\t%s\t%s\tNA\t%s\tNA\tNA\tNA\tfail\n' "$state" "$gateway_first" "$gateway_second" "$reference" >> "$OUTPUT"; GATE_FAILED=1; continue; fi
 			IFS=$'\t' read -r _ _ _ _ reference_gateway_first _ < "$reference_metrics"
@@ -446,7 +448,11 @@ write_gateway_rows() {
 		fi
 		verdict=pass
 		if [[ "$gateway_second" != '0' ]]; then verdict=fail; fi
-		if [[ "$state" == 'active_native' ]]; then
+		if [[ "$state" == 'connected' ]]; then
+			# Budget 3: WooPaymentsProvider::build_payment_gateway_map() primes the split-gateway settings in one batch, and the
+			# Amazon Pay decision reads _wcpay_feature_amazon_pay and wcpay_onboarding_test_mode, the options the client reads for it.
+			if [[ $qd -gt 3 ]]; then verdict=fail; fi
+		elif [[ "$reference" == 'active_plugin' ]]; then
 			if [[ $qd -gt 2 ]]; then verdict=fail; fi
 		elif [[ "$state" != 'baseline_noop' ]]; then
 			if [[ $qd -gt 1 ]]; then verdict=fail; fi
