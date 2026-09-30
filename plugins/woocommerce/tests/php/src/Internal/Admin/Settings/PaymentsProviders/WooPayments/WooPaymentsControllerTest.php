@@ -389,14 +389,20 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 		$onboarding_adapter->method( 'has_valid_account' )->willReturn( false );
 
 		$service = new WooPaymentsService();
-		$service->init(
-			$this->createMock( PaymentsProviders::class ),
-			$this->createMock( LegacyProxy::class ),
-			$onboarding_adapter,
-			$legacy_runtime,
-			$this->createMock( WooPaymentsApiClient::class ),
-			$this->createMock( WooPaymentsAccountService::class )
+		$service->init( $this->createMock( PaymentsProviders::class ), $this->createMock( LegacyProxy::class ) );
+
+		// The service resolves its native collaborators on first use; set the doubles on the instance.
+		$collaborators = array(
+			'onboarding_adapter' => $onboarding_adapter,
+			'legacy_runtime'     => $legacy_runtime,
+			'api_client'         => $this->createMock( WooPaymentsApiClient::class ),
+			'account_service'    => $this->createMock( WooPaymentsAccountService::class ),
 		);
+		foreach ( $collaborators as $property => $collaborator ) {
+			$reflection = new \ReflectionProperty( WooPaymentsService::class, $property );
+			$reflection->setAccessible( true );
+			$reflection->setValue( $service, $collaborator );
+		}
 
 		return $service;
 	}

@@ -164,30 +164,30 @@ class WooPaymentsService {
 	/**
 	 * The WooPayments onboarding adapter.
 	 *
-	 * @var WooPaymentsOnboardingAdapter
+	 * @var WooPaymentsOnboardingAdapter|null
 	 */
-	private WooPaymentsOnboardingAdapter $onboarding_adapter;
+	private ?WooPaymentsOnboardingAdapter $onboarding_adapter = null;
 
 	/**
 	 * The WooPayments legacy runtime.
 	 *
-	 * @var WooPaymentsLegacyRuntime
+	 * @var WooPaymentsLegacyRuntime|null
 	 */
-	private WooPaymentsLegacyRuntime $legacy_runtime;
+	private ?WooPaymentsLegacyRuntime $legacy_runtime = null;
 
 	/**
 	 * The native WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var WooPaymentsApiClient|null
 	 */
-	private WooPaymentsApiClient $api_client;
+	private ?WooPaymentsApiClient $api_client = null;
 
 	/**
 	 * The native WooPayments account service.
 	 *
-	 * @var WooPaymentsAccountService
+	 * @var WooPaymentsAccountService|null
 	 */
-	private WooPaymentsAccountService $account_service;
+	private ?WooPaymentsAccountService $account_service = null;
 
 	/**
 	 * Native WooPayments settings service.
@@ -206,24 +206,22 @@ class WooPaymentsService {
 	/**
 	 * Initialize the class instance.
 	 *
-	 * @param PaymentsProviders               $payment_providers  The PaymentsProviders instance.
-	 * @param LegacyProxy                     $proxy              The LegacyProxy instance.
-	 * @param WooPaymentsOnboardingAdapter    $onboarding_adapter The WooPayments onboarding adapter.
-	 * @param WooPaymentsLegacyRuntime        $legacy_runtime     The WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient            $api_client         The native WooPayments API client.
-	 * @param WooPaymentsAccountService       $account_service    The native WooPayments account service.
-	 * @param WooPaymentsSettingsService|null $settings_service   Optional native WooPayments settings service.
+	 * The native collaborators are resolved on first use: the trunk admin controllers resolve this service on every
+	 * request, and their dependency graphs must not load on requests that never call it.
+	 *
+	 * @param PaymentsProviders $payment_providers The PaymentsProviders instance.
+	 * @param LegacyProxy       $proxy             The LegacyProxy instance.
 	 *
 	 * @internal
 	 */
-	final public function init( PaymentsProviders $payment_providers, LegacyProxy $proxy, WooPaymentsOnboardingAdapter $onboarding_adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, ?WooPaymentsSettingsService $settings_service = null ): void {
+	final public function init( PaymentsProviders $payment_providers, LegacyProxy $proxy ): void {
 		$this->payments_providers = $payment_providers;
 		$this->proxy              = $proxy;
-		$this->onboarding_adapter = $onboarding_adapter;
-		$this->legacy_runtime     = $legacy_runtime;
-		$this->api_client         = $api_client;
-		$this->account_service    = $account_service;
-		$this->settings_service   = $settings_service;
+		$this->onboarding_adapter = null;
+		$this->legacy_runtime     = null;
+		$this->api_client         = null;
+		$this->account_service    = null;
+		$this->settings_service   = null;
 
 		if ( false === has_action( 'woocommerce_payments_account_refreshed', array( $this, 'maybe_project_pending_onboarding_payment_methods' ) ) ) {
 			add_action( 'woocommerce_payments_account_refreshed', array( $this, 'maybe_project_pending_onboarding_payment_methods' ), 10, 1 );
@@ -1897,7 +1895,7 @@ class WooPaymentsService {
 		$this->proxy->call_function( 'delete_option', self::NOX_PROFILE_OPTION_KEY );
 
 		// Make sure the onboarding mode is reset.
-		$this->legacy_runtime->reset_onboarding_test_mode_option();
+		$this->get_legacy_runtime()->reset_onboarding_test_mode_option();
 
 		if ( is_wp_error( $response ) ) {
 			throw new ApiException(
@@ -2033,7 +2031,7 @@ class WooPaymentsService {
 		}
 
 		// Make sure the onboarding mode is reset.
-		$this->legacy_runtime->reset_onboarding_test_mode_option();
+		$this->get_legacy_runtime()->reset_onboarding_test_mode_option();
 
 		// Track the failure to disable the test account.
 		if ( is_wp_error( $response ) || ! is_array( $response ) || empty( $response['success'] ) ) {
@@ -2170,7 +2168,7 @@ class WooPaymentsService {
 	 * @return string The URL to redirect to, or an empty string when the plugin handles the link.
 	 */
 	public function handle_onboarding_referral( string $referral_code ): string {
-		if ( $this->legacy_runtime->is_loaded() ) {
+		if ( $this->get_legacy_runtime()->is_loaded() ) {
 			return '';
 		}
 
@@ -2215,7 +2213,7 @@ class WooPaymentsService {
 		}
 
 		// If the WooPayments installed version is less than the minimum required version, we can't do anything.
-		if ( true === $this->legacy_runtime->is_extension_version_less_than( self::EXTENSION_MINIMUM_VERSION ) ) {
+		if ( true === $this->get_legacy_runtime()->is_extension_version_less_than( self::EXTENSION_MINIMUM_VERSION ) ) {
 			throw new ApiException(
 				'woocommerce_woopayments_onboarding_extension_version',
 				/* translators: %s: WooPayments. */
@@ -3564,6 +3562,10 @@ class WooPaymentsService {
 	 * @return WooPaymentsApiClient
 	 */
 	private function get_native_api_client(): WooPaymentsApiClient {
+		if ( null === $this->api_client ) {
+			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		}
+
 		return $this->api_client;
 	}
 
@@ -3573,6 +3575,10 @@ class WooPaymentsService {
 	 * @return WooPaymentsAccountService
 	 */
 	private function get_native_account_service(): WooPaymentsAccountService {
+		if ( null === $this->account_service ) {
+			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		}
+
 		return $this->account_service;
 	}
 
@@ -3971,10 +3977,10 @@ class WooPaymentsService {
 	private function get_onboarding_kyc_fields( string $location ): array {
 		$native_exception = null;
 		// While the plugin runtime is loaded, it owns the fields route (trunk's path) and the native client stays dormant.
-		if ( ! $this->legacy_runtime->is_loaded() && $this->can_use_native_api_client() ) {
+		if ( ! $this->get_legacy_runtime()->is_loaded() && $this->can_use_native_api_client() ) {
 			try {
 				return $this->prepare_onboarding_kyc_fields(
-					$this->api_client->get_onboarding_fields_data( $this->proxy->call_function( 'get_user_locale' ) ),
+					$this->get_native_api_client()->get_onboarding_fields_data( $this->proxy->call_function( 'get_user_locale' ) ),
 					$location
 				);
 			} catch ( Exception $e ) {
@@ -3982,7 +3988,7 @@ class WooPaymentsService {
 			}
 		}
 
-		if ( ! $this->legacy_runtime->is_loaded() && null !== $native_exception ) {
+		if ( ! $this->get_legacy_runtime()->is_loaded() && null !== $native_exception ) {
 			throw new Exception( esc_html( $native_exception->getMessage() ) );
 		}
 
@@ -4015,7 +4021,7 @@ class WooPaymentsService {
 			$fields['__locale'] = (string) $this->proxy->call_function( 'get_user_locale' );
 		}
 
-		$supported_countries = $this->legacy_runtime->get_supported_countries();
+		$supported_countries = $this->get_legacy_runtime()->get_supported_countries();
 		if ( ! isset( $fields['available_countries'] ) && null !== $supported_countries ) {
 			$fields['available_countries'] = $supported_countries;
 		}
@@ -4086,7 +4092,7 @@ class WooPaymentsService {
 	 * @return bool
 	 */
 	private function can_use_native_api_client(): bool {
-		return $this->api_client->is_available();
+		return $this->get_native_api_client()->is_available();
 	}
 
 	/**
@@ -4095,7 +4101,7 @@ class WooPaymentsService {
 	 * @return bool
 	 */
 	private function should_use_native_onboarding_action_api(): bool {
-		return $this->can_use_native_api_client() && ! $this->legacy_runtime->is_loaded() && $this->get_onboarding_adapter()->is_native_onboarding_available();
+		return $this->can_use_native_api_client() && ! $this->get_legacy_runtime()->is_loaded() && $this->get_onboarding_adapter()->is_native_onboarding_available();
 	}
 
 	/**
@@ -4143,7 +4149,24 @@ class WooPaymentsService {
 	 * @return WooPaymentsOnboardingAdapter
 	 */
 	private function get_onboarding_adapter(): WooPaymentsOnboardingAdapter {
+		if ( null === $this->onboarding_adapter ) {
+			$this->onboarding_adapter = wc_get_container()->get( WooPaymentsOnboardingAdapter::class );
+		}
+
 		return $this->onboarding_adapter;
+	}
+
+	/**
+	 * Get the WooPayments legacy runtime.
+	 *
+	 * @return WooPaymentsLegacyRuntime
+	 */
+	private function get_legacy_runtime(): WooPaymentsLegacyRuntime {
+		if ( null === $this->legacy_runtime ) {
+			$this->legacy_runtime = wc_get_container()->get( WooPaymentsLegacyRuntime::class );
+		}
+
+		return $this->legacy_runtime;
 	}
 
 	/**

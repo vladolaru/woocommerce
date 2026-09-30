@@ -234,7 +234,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->sut = new WooPaymentsService();
-		$this->sut->init(
+		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$this->create_onboarding_adapter(),
@@ -255,6 +255,37 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
 
 		parent::tearDown();
+	}
+
+	/**
+	 * Initialize the service under test with its native collaborators.
+	 *
+	 * The service resolves them on first use, so the test doubles are set on the instance after init, leaving other
+	 * container consumers untouched.
+	 *
+	 * @param PaymentsProviders               $providers          The providers service.
+	 * @param LegacyProxy                     $proxy              The legacy proxy.
+	 * @param WooPaymentsOnboardingAdapter    $onboarding_adapter The onboarding adapter.
+	 * @param WooPaymentsLegacyRuntime        $legacy_runtime     The legacy runtime.
+	 * @param WooPaymentsApiClient            $api_client         The native API client.
+	 * @param WooPaymentsAccountService       $account_service    The native account service.
+	 * @param WooPaymentsSettingsService|null $settings_service   Optional native settings service.
+	 */
+	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsOnboardingAdapter $onboarding_adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, ?WooPaymentsSettingsService $settings_service = null ): void {
+		$this->sut->init( $providers, $proxy );
+
+		$collaborators = array(
+			'onboarding_adapter' => $onboarding_adapter,
+			'legacy_runtime'     => $legacy_runtime,
+			'api_client'         => $api_client,
+			'account_service'    => $account_service,
+			'settings_service'   => $settings_service,
+		);
+		foreach ( $collaborators as $property => $collaborator ) {
+			$reflection = new \ReflectionProperty( WooPaymentsService::class, $property );
+			$reflection->setAccessible( true );
+			$reflection->setValue( $this->sut, $collaborator );
+		}
 	}
 
 	/**
@@ -438,7 +469,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			->willReturn( 'https://example.com/native-overview' );
 
 		$this->sut = new WooPaymentsService();
-		$this->sut->init( $this->mock_providers, $this->mockable_proxy, $onboarding_adapter, $this->create_legacy_runtime(), $this->create_unavailable_api_client(), $this->create_native_account_service() );
+		$this->init_sut( $this->mock_providers, $this->mockable_proxy, $onboarding_adapter, $this->create_legacy_runtime(), $this->create_unavailable_api_client(), $this->create_native_account_service() );
 
 		$result = $this->sut->get_onboarding_details( $location, '/some/path' );
 
@@ -579,7 +610,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut = new WooPaymentsService();
-			$this->sut->init(
+			$this->init_sut(
 				$this->mock_providers,
 				$this->mockable_proxy,
 				$adapter,
@@ -718,7 +749,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut = new WooPaymentsService();
-		$this->sut->init(
+		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
@@ -878,7 +909,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut = new WooPaymentsService();
-		$this->sut->init(
+		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
@@ -968,7 +999,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding' ), $this->sut->handle_onboarding_referral( '' ) );
 		$this->assertFalse( get_transient( 'woopayments_referral_code' ) );
 
-		$this->sut->init( $this->mock_providers, $this->mockable_proxy, $this->create_native_finalize_adapter(), $this->create_legacy_runtime(), $this->create_unavailable_api_client(), $this->create_native_account_service() );
+		$this->init_sut( $this->mock_providers, $this->mockable_proxy, $this->create_native_finalize_adapter(), $this->create_legacy_runtime(), $this->create_unavailable_api_client(), $this->create_native_account_service() );
 		$this->assertSame( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview' ), $this->sut->handle_onboarding_referral( 'partner-abc' ) );
 		$this->assertFalse( get_transient( 'woopayments_referral_code' ) );
 	}
@@ -1577,7 +1608,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut = new WooPaymentsService();
-		$this->sut->init(
+		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
@@ -1762,7 +1793,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut = new WooPaymentsService();
-		$this->sut->init(
+		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
@@ -1920,7 +1951,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut = new WooPaymentsService();
-		$this->sut->init(
+		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
@@ -2015,7 +2046,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut = new WooPaymentsService();
-		$this->sut->init(
+		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$this->create_native_finalize_adapter(),
@@ -2146,7 +2177,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut = new WooPaymentsService();
-		$this->sut->init(
+		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
@@ -2244,7 +2275,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut = new WooPaymentsService();
-		$this->sut->init(
+		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$this->create_onboarding_adapter( false ),
@@ -2322,17 +2353,17 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should receive the onboarding adapter through dependency injection.
+	 * @testdox Should resolve no native collaborator when initialized.
 	 */
-	public function test_onboarding_adapter_access_is_injected(): void {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for admin-service boundary regression coverage.
-		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsService.php' );
+	public function test_init_resolves_no_native_collaborator(): void {
+		$sut = new WooPaymentsService();
+		$sut->init( $this->mock_providers, $this->mockable_proxy );
 
-		$this->assertDoesNotMatchRegularExpression(
-			'/wc_get_container\(\)\s*->get\(\s*WooPaymentsOnboardingAdapter::class\s*\)/',
-			$source,
-			'WooPaymentsService should receive the onboarding adapter through init injection.'
-		);
+		foreach ( array( 'onboarding_adapter', 'legacy_runtime', 'api_client', 'account_service', 'settings_service' ) as $property ) {
+			$reflection = new \ReflectionProperty( WooPaymentsService::class, $property );
+			$reflection->setAccessible( true );
+			$this->assertNull( $reflection->getValue( $sut ), $property . ' must be resolved on first use, not when the service is initialized.' );
+		}
 	}
 
 	/**
@@ -13593,7 +13624,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		remove_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_project_pending_onboarding_payment_methods' ) );
 		$this->sut = new WooPaymentsService();
-		$this->sut->init(
+		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
