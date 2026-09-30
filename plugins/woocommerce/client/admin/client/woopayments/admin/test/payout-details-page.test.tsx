@@ -371,11 +371,17 @@ describe( 'WooPayments payout details admin surface', () => {
 		await act( async () => {
 			await userEvent.click( exportButton );
 		} );
+		// Monitor ruling N-243: a core success notice.
 		expect(
-			await screen.findByText(
-				'Your payouts export has started downloading.'
-			)
-		).toHaveAttribute( 'role', 'status' );
+			(
+				await screen.findByText(
+					'Your payouts export has started downloading.',
+					{
+						selector: '.components-notice__content',
+					}
+				)
+			).closest( '.components-notice' )
+		).toHaveClass( 'is-success' );
 
 		expect( mockRequestDepositsExport ).toHaveBeenCalledWith(
 			expect.objectContaining( {

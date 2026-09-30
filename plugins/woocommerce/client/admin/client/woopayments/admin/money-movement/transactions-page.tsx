@@ -48,7 +48,7 @@ import {
 	getErrorMessage,
 	getTransactionDetailsRoute,
 } from './utils';
-import { LiveStatusMessage, StatusMessage } from './table';
+import { ListNotice, LiveStatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import {
 	getSettingsPaymentsProviderAdminPath,
@@ -781,11 +781,10 @@ export const WooPaymentsTransactionsPage = () => {
 					<LiveStatusMessage isError={ !! errorMessage }>
 						{ liveStatusMessage }
 					</LiveStatusMessage>
-					{ isLoading && (
-						<StatusMessage>{ loadingMessage }</StatusMessage>
-					) }
 					{ errorMessage && (
-						<StatusMessage isError>{ errorMessage }</StatusMessage>
+						<ListNotice isError isSpoken={ false }>
+							{ errorMessage }
+						</ListNotice>
 					) }
 					<WooPaymentsMoneyMovementDataViews
 						fields={ isLoading ? [] : authorizationFields }

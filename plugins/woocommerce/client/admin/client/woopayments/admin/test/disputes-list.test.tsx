@@ -301,6 +301,26 @@ describe( 'WooPayments disputes list columns', () => {
 		).toEqual( [ '3disputes' ] );
 	} );
 
+	it( 'shows a load failure in a core error notice and no second loading line', async () => {
+		mockGetDisputes.mockRejectedValue(
+			new Error( 'Platform unavailable.' )
+		);
+		renderPage();
+
+		// While loading, only the screen reader region names the state; DataViews shows its spinner.
+		expect( screen.getAllByText( 'Loading disputes…' ) ).toHaveLength( 1 );
+		expect( screen.getByText( 'Loading disputes…' ) ).toHaveClass(
+			'screen-reader-text'
+		);
+
+		const message = await screen.findByText( 'Platform unavailable.', {
+			selector: '.components-notice__content',
+		} );
+		expect( message.closest( '.components-notice' ) ).toHaveClass(
+			'is-error'
+		);
+	} );
+
 	it( 'hides Export when there are no disputes, like the client', async () => {
 		mockGetDisputes.mockResolvedValue( { data: [], total_count: 0 } );
 		renderPage();

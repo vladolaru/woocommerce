@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { Button } from '@wordpress/components';
+import { Button, Notice } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import { download } from '@wordpress/icons';
 import type { HTMLAttributes, ReactNode } from 'react';
@@ -63,6 +63,32 @@ export const LiveStatusMessage = ( {
 	>
 		{ children }
 	</p>
+);
+
+/**
+ * A list's load error or export result on core's `Notice` (monitor ruling N-243).
+ *
+ * @param props          The notice props.
+ * @param props.isError  Whether it reports a failure.
+ * @param props.isSpoken Whether the notice announces itself; off where a live region already does.
+ * @param props.children The message.
+ */
+export const ListNotice = ( {
+	isError = false,
+	isSpoken = true,
+	children,
+}: {
+	isError?: boolean;
+	isSpoken?: boolean;
+	children: ReactNode;
+} ) => (
+	<Notice
+		status={ isError ? 'error' : 'success' }
+		isDismissible={ false }
+		{ ...( isSpoken ? {} : { spokenMessage: '' } ) }
+	>
+		{ children }
+	</Notice>
 );
 
 /**

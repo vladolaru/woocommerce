@@ -34,7 +34,7 @@ import {
 	getErrorMessage,
 	getResourceId,
 } from './utils';
-import { ExportButton, LiveStatusMessage, StatusMessage } from './table';
+import { ExportButton, ListNotice, LiveStatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import {
 	TRANSACTION_LIST_DEFAULT_HIDDEN_COLUMNS,
@@ -331,14 +331,15 @@ export const WooPaymentsTransactionsList = (
 			<LiveStatusMessage isError={ !! errorMessage }>
 				{ liveStatusMessage }
 			</LiveStatusMessage>
-			{ isLoading && <StatusMessage>{ loadingMessage }</StatusMessage> }
 			{ errorMessage && (
-				<StatusMessage isError>{ errorMessage }</StatusMessage>
+				<ListNotice isError isSpoken={ false }>
+					{ errorMessage }
+				</ListNotice>
 			) }
 			{ exportMessage && (
-				<StatusMessage isLive isError={ !! exportMessage.isError }>
+				<ListNotice isError={ !! exportMessage.isError }>
 					{ exportMessage.text }
-				</StatusMessage>
+				</ListNotice>
 			) }
 			<WooPaymentsMoneyMovementDataViews
 				fields={ fields }

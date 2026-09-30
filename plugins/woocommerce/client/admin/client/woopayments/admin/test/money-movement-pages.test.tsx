@@ -1912,11 +1912,17 @@ describe( 'WooPayments money movement pages', () => {
 		await act( async () => {
 			await userEvent.click( exportButton );
 		} );
+		// Monitor ruling N-243: a core success notice.
 		expect(
-			await screen.findByText(
-				'Your transactions export has started downloading.'
-			)
-		).toHaveAttribute( 'role', 'status' );
+			(
+				await screen.findByText(
+					'Your transactions export has started downloading.',
+					{
+						selector: '.components-notice__content',
+					}
+				)
+			).closest( '.components-notice' )
+		).toHaveClass( 'is-success' );
 
 		expect( mockRequestTransactionsExport ).toHaveBeenCalledWith(
 			expect.objectContaining( {
@@ -2837,11 +2843,17 @@ describe( 'WooPayments money movement pages', () => {
 		await act( async () => {
 			await userEvent.click( exportButton );
 		} );
+		// Monitor ruling N-243: a core success notice.
 		expect(
-			await screen.findByText(
-				'Your disputes export has started downloading.'
-			)
-		).toHaveAttribute( 'role', 'status' );
+			(
+				await screen.findByText(
+					'Your disputes export has started downloading.',
+					{
+						selector: '.components-notice__content',
+					}
+				)
+			).closest( '.components-notice' )
+		).toHaveClass( 'is-success' );
 
 		expect( mockRequestDisputesExport ).toHaveBeenCalledWith(
 			expect.objectContaining( {

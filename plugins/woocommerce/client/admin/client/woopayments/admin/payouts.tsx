@@ -27,8 +27,8 @@ import {
 import type { WooPaymentsMoneyMovementDataView } from './money-movement/types';
 import {
 	ExportButton,
+	ListNotice,
 	LiveStatusMessage,
-	StatusMessage,
 } from './money-movement/table';
 import {
 	formatCount,
@@ -367,18 +367,15 @@ export const WooPaymentsPayouts = () => {
 				<LiveStatusMessage isError={ !! errorMessage }>
 					{ liveStatusMessage }
 				</LiveStatusMessage>
-				{ isLoading && (
-					<StatusMessage>
-						{ __( 'Loading payouts…', 'woocommerce' ) }
-					</StatusMessage>
-				) }
 				{ errorMessage && (
-					<StatusMessage isError>{ errorMessage }</StatusMessage>
+					<ListNotice isError isSpoken={ false }>
+						{ errorMessage }
+					</ListNotice>
 				) }
 				{ exportMessage && (
-					<StatusMessage isLive isError={ !! exportMessage.isError }>
+					<ListNotice isError={ !! exportMessage.isError }>
 						{ exportMessage.text }
-					</StatusMessage>
+					</ListNotice>
 				) }
 				<WooPaymentsMoneyMovementDataViews
 					fields={ fields }

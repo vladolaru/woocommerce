@@ -48,7 +48,7 @@ import {
 	getTransactionSourceLabel,
 } from './utils';
 import { OrderLink } from './transactions-list-fields';
-import { ExportButton, LiveStatusMessage, StatusMessage } from './table';
+import { ExportButton, ListNotice, LiveStatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import { formatCurrencyName } from '../currency';
@@ -694,18 +694,15 @@ export const WooPaymentsDisputesPage = () => {
 				<LiveStatusMessage isError={ !! errorMessage }>
 					{ liveStatusMessage }
 				</LiveStatusMessage>
-				{ isLoading && (
-					<StatusMessage>
-						{ __( 'Loading disputes…', 'woocommerce' ) }
-					</StatusMessage>
-				) }
 				{ errorMessage && (
-					<StatusMessage isError>{ errorMessage }</StatusMessage>
+					<ListNotice isError isSpoken={ false }>
+						{ errorMessage }
+					</ListNotice>
 				) }
 				{ exportMessage && (
-					<StatusMessage isLive isError={ !! exportMessage.isError }>
+					<ListNotice isError={ !! exportMessage.isError }>
 						{ exportMessage.text }
-					</StatusMessage>
+					</ListNotice>
 				) }
 				<WooPaymentsMoneyMovementDataViews
 					fields={ fields }
