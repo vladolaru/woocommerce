@@ -740,5 +740,9 @@
 		color: $gray-700;
 		font-size: 13px;
 		line-height: 20px;
+
+		&.is-error {
+			color: $alert-red;
+		}
 	}
 }

@@ -4075,6 +4075,120 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toHaveAttribute( 'aria-disabled', 'true' );
 	} );
 
+	it( 'keeps Save inactive on a clean page and activates it after a real change', async () => {
+		mockUseSettings.mockReturnValue( {
+			isLoading: false,
+			isSaving: false,
+			isDirty: false,
+			saveSettings: mockSaveSettings,
+		} );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+		const save = screen.getByRole( 'button', { name: 'Save changes' } );
+
+		expect( save ).toHaveAttribute( 'aria-disabled', 'true' );
+		fireEvent.click( save );
+		expect( mockSaveSettings ).not.toHaveBeenCalled();
+
+		mockUseSettings.mockReturnValue( {
+			isLoading: false,
+			isSaving: false,
+			isDirty: true,
+			saveSettings: mockSaveSettings,
+		} );
+		rerender( <WooPaymentsSettingsPage /> );
+
+		expect( save ).not.toHaveAttribute( 'aria-disabled' );
+		await userEvent.click( save );
+		expect( mockSaveSettings ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'asks before leaving only while there are unsaved changes', () => {
+		const leavePage = () => {
+			const event = new Event( 'beforeunload', { cancelable: true } );
+			window.dispatchEvent( event );
+
+			return event.defaultPrevented;
+		};
+		const withDirtyState = ( isDirty: boolean ) =>
+			mockUseSettings.mockReturnValue( {
+				isLoading: false,
+				isSaving: false,
+				isDirty,
+				saveSettings: mockSaveSettings,
+			} );
+
+		withDirtyState( false );
+		const { rerender, unmount } = render( <WooPaymentsSettingsPage /> );
+		expect( leavePage() ).toBe( false );
+
+		// A real change.
+		withDirtyState( true );
+		rerender( <WooPaymentsSettingsPage /> );
+		expect( leavePage() ).toBe( true );
+
+		// The change is undone, so the store reads clean again.
+		withDirtyState( false );
+		rerender( <WooPaymentsSettingsPage /> );
+		expect( leavePage() ).toBe( false );
+
+		unmount();
+	} );
+
+	it( 'names the invalid field in the save bar status when validation blocks saving', () => {
+		mockUseAccountBusinessSupportPhone.mockImplementation( () =>
+			useState( '' )
+		);
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		).toHaveAccessibleDescription(
+			'A support phone number is required. Please enter a valid phone number.'
+		);
+		expect(
+			screen.queryByText( 'You have unsaved changes.' )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'moves focus to the first invalid field when save is activated while validation blocks it', async () => {
+		const scrollIntoView = jest.fn();
+		const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+		Element.prototype.scrollIntoView = scrollIntoView;
+		mockUseAccountBusinessSupportPhone.mockImplementation( () =>
+			useState( '' )
+		);
+		mockUseAccountCommunicationsEmail.mockImplementation( () =>
+			useState( 'owner@example.com' )
+		);
+
+		try {
+			render( <WooPaymentsSettingsPage /> );
+
+			const notificationsEmail = screen.getByRole( 'textbox', {
+				name: 'Email address',
+			} );
+			await userEvent.clear( notificationsEmail );
+			await userEvent.type( notificationsEmail, 'new@example.com' );
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+
+			expect(
+				screen.getByRole( 'textbox', {
+					name: 'Support phone number (required)',
+				} )
+			).toHaveFocus();
+			expect( scrollIntoView ).toHaveBeenCalled();
+			expect( mockSaveSettings ).not.toHaveBeenCalled();
+		} finally {
+			Element.prototype.scrollIntoView = originalScrollIntoView;
+		}
+	} );
+
 	it( 'shows the support phone server error before the local validation message', () => {
 		mockUseAccountBusinessSupportPhone.mockImplementation( () =>
 			useState( '' )

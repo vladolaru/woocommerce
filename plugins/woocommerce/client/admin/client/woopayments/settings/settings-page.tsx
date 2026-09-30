@@ -26,7 +26,9 @@ import {
 import { dispatch } from '@wordpress/data';
 import { __, _x, sprintf } from '@wordpress/i18n';
 import { PhoneNumberInput, validatePhoneNumber } from '@woocommerce/components';
+import { useConfirmUnsavedChanges } from '@woocommerce/navigation';
 import { recordEvent } from '@woocommerce/tracks';
+import clsx from 'clsx';
 
 /**
  * Internal dependencies
@@ -120,6 +122,8 @@ const NOTIFICATIONS_EMAIL_ERROR_ID = 'woopayments-notifications-email-error';
 const NOTIFICATIONS_EMAIL_CONFIRM_ERROR_ID =
 	'woopayments-notifications-email-confirm-error';
 const NOTIFICATIONS_EMAIL_INPUT_ID = 'account-communications-email-input';
+const NOTIFICATIONS_EMAIL_CONFIRM_INPUT_ID =
+	'woopayments-notifications-email-confirm-input';
 const SUPPORT_EMAIL_ERROR_ID = 'woopayments-support-email-error';
 const SUPPORT_PHONE_ERROR_ID = 'woopayments-support-phone-error';
 const ACCOUNT_STATEMENT_INPUT_ID = 'account-statement-descriptor-input';
@@ -129,6 +133,7 @@ const ACCOUNT_STATEMENT_KANA_INPUT_ID =
 	'account-statement-descriptor-kana-input';
 const SUPPORT_EMAIL_INPUT_ID = 'account-business-support-email-input';
 const SUPPORT_PHONE_INPUT_ID = 'account-business-support-phone-input';
+const SAVE_STATUS_ID = 'woopayments-settings-save-status';
 const FEEDBACK_THROTTLE_DAYS = 7;
 const MANUAL_CAPTURE_DOC_URL =
 	'https://woocommerce.com/document/woopayments/settings-guide/authorize-and-capture/';
@@ -154,7 +159,8 @@ const EMAIL_ADDRESS_PATTERN =
 type SettingsRecord = Record< string, unknown >;
 type StringSetter = ( value: string ) => void;
 type BooleanSetter = ( value: boolean ) => void;
-type ValidationSetter = ( isValid: boolean ) => void;
+type FieldValidationError = { inputId: string; message: string };
+type ValidationSetter = ( error: FieldValidationError | null ) => void;
 type StringArraySetter = ( value: string[] ) => void;
 type BooleanSetting = [ boolean, BooleanSetter ];
 type StringSetting = [ string, StringSetter ];
@@ -386,18 +392,8 @@ const getFieldInputId = ( settingKey: string ) => {
 	);
 };
 
-const focusFirstSavingErrorField = ( savingError: unknown ) => {
-	const details = getSavingErrorDetails( savingError );
-	const element = Object.keys( details )
-		.map( ( fieldKey ) =>
-			document.getElementById( getFieldInputId( fieldKey ) )
-		)
-		.find(
-			( field ): field is HTMLElement =>
-				!! field && typeof field.focus === 'function'
-		);
-
-	if ( ! element ) {
+const focusField = ( element: HTMLElement | null | undefined ) => {
+	if ( ! element || typeof element.focus !== 'function' ) {
 		return;
 	}
 
@@ -409,6 +405,18 @@ const focusFirstSavingErrorField = ( savingError: unknown ) => {
 		block: 'center',
 	} );
 	element.focus( { preventScroll: true } );
+};
+
+const focusFirstSavingErrorField = ( savingError: unknown ) => {
+	const details = getSavingErrorDetails( savingError );
+
+	focusField(
+		Object.keys( details )
+			.map( ( fieldKey ) =>
+				document.getElementById( getFieldInputId( fieldKey ) )
+			)
+			.find( Boolean )
+	);
 };
 
 const isValidEmailAddress = ( value: string ) =>
@@ -1602,9 +1610,39 @@ const TransactionsSettingsSection = ( {
 			  )
 			: '' );
 
+	const supportEmailValidationMessage =
+		supportEmailError ||
+		( supportEmailInvalidFormat
+			? __( 'Please enter a valid email address.', 'woocommerce' )
+			: '' );
+	const supportPhoneValidationMessage =
+		supportPhoneError ||
+		__(
+			'A support phone number is required. Please enter a valid phone number.',
+			'woocommerce'
+		);
+	let validationError: FieldValidationError | null = null;
+	if ( ! isSupportEmailValid ) {
+		validationError = {
+			inputId: SUPPORT_EMAIL_INPUT_ID,
+			message: supportEmailValidationMessage,
+		};
+	} else if ( ! isSupportPhoneValid ) {
+		validationError = {
+			inputId: SUPPORT_PHONE_INPUT_ID,
+			message: supportPhoneValidationMessage,
+		};
+	}
+	const validationInputId = validationError?.inputId;
+	const validationMessage = validationError?.message;
+
 	useEffect( () => {
-		onValidationChange?.( isSupportEmailValid && isSupportPhoneValid );
-	}, [ isSupportEmailValid, isSupportPhoneValid, onValidationChange ] );
+		onValidationChange?.(
+			validationInputId && validationMessage
+				? { inputId: validationInputId, message: validationMessage }
+				: null
+		);
+	}, [ validationInputId, validationMessage, onValidationChange ] );
 
 	return (
 		<SettingsSection
@@ -2088,9 +2126,31 @@ const NotificationsSettingsSection = ( {
 			  )
 			: '';
 
+	let validationError: FieldValidationError | null = null;
+	if ( ! isValidEmailAddress( email ) ) {
+		validationError = {
+			inputId: NOTIFICATIONS_EMAIL_INPUT_ID,
+			message: __( 'Please enter a valid email address.', 'woocommerce' ),
+		};
+	} else if ( ! isNotificationEmailValid ) {
+		validationError = {
+			inputId: NOTIFICATIONS_EMAIL_CONFIRM_INPUT_ID,
+			message: __(
+				'Email addresses do not match. Please re-enter your email address.',
+				'woocommerce'
+			),
+		};
+	}
+	const validationInputId = validationError?.inputId;
+	const validationMessage = validationError?.message;
+
 	useEffect( () => {
-		onValidationChange?.( isNotificationEmailValid );
-	}, [ isNotificationEmailValid, onValidationChange ] );
+		onValidationChange?.(
+			validationInputId && validationMessage
+				? { inputId: validationInputId, message: validationMessage }
+				: null
+		);
+	}, [ validationInputId, validationMessage, onValidationChange ] );
 
 	return (
 		<SettingsSection
@@ -2158,6 +2218,7 @@ const NotificationsSettingsSection = ( {
 							) }
 						</div>
 						<TextControl
+							id={ NOTIFICATIONS_EMAIL_CONFIRM_INPUT_ID }
 							label={ __(
 								'Confirm email address',
 								'woocommerce'
@@ -2328,7 +2389,13 @@ const AdvancedSettingsSection = () => {
 	);
 };
 
-const SaveSettingsSection = ( { disabled }: { disabled?: boolean } ) => {
+const SaveSettingsSection = ( {
+	disabled,
+	validationError,
+}: {
+	disabled?: boolean;
+	validationError?: FieldValidationError | null;
+} ) => {
 	const { saveSettings, isSaving, isLoading, isDirty } = useSettings();
 	const settings = asSettingsRecord( useGetSettings() );
 	const savingError = useGetSavingError();
@@ -2347,6 +2414,7 @@ const SaveSettingsSection = ( { disabled }: { disabled?: boolean } ) => {
 	const [ localWooPayLastDisableDate, setLocalWooPayLastDisableDate ] =
 		useState( asString( settings.woopay_last_disable_date ) );
 	const isDisabled = isSaving || isLoading || disabled || ! isDirty;
+	const isBlockedByValidation = isDirty && !! validationError;
 	const hasWooPayEnabledSetting = Object.prototype.hasOwnProperty.call(
 		settings,
 		'is_woopay_enabled'
@@ -2399,6 +2467,11 @@ const SaveSettingsSection = ( { disabled }: { disabled?: boolean } ) => {
 	}, [ savingError, shouldFocusSavingError ] );
 
 	const saveOnClick = async () => {
+		if ( isBlockedByValidation ) {
+			focusField( document.getElementById( validationError.inputId ) );
+			return;
+		}
+
 		if ( isDisabled ) {
 			return;
 		}
@@ -2451,20 +2524,30 @@ const SaveSettingsSection = ( { disabled }: { disabled?: boolean } ) => {
 			<Button
 				variant="primary"
 				isBusy={ isSaving }
-				disabled={ isDisabled }
+				// A validation block keeps the button clickable so it can lead to the invalid field.
+				disabled={ isDisabled && ! isBlockedByValidation }
+				aria-disabled={
+					isDisabled || isBlockedByValidation || undefined
+				}
 				accessibleWhenDisabled
+				aria-describedby={ SAVE_STATUS_ID }
 				onClick={ saveOnClick }
 			>
 				{ __( 'Save changes', 'woocommerce' ) }
 			</Button>
 			<p
+				id={ SAVE_STATUS_ID }
 				aria-live="polite"
-				className="woopayments-settings-save-bar__status"
+				className={ clsx( 'woopayments-settings-save-bar__status', {
+					'is-error': isBlockedByValidation,
+				} ) }
 			>
-				{ isDirty
-					? __( 'You have unsaved changes.', 'woocommerce' )
-					: statusMessage ||
-					  __( 'Settings are up to date.', 'woocommerce' ) }
+				{ isBlockedByValidation && validationError.message }
+				{ ! isBlockedByValidation &&
+					( isDirty
+						? __( 'You have unsaved changes.', 'woocommerce' )
+						: statusMessage ||
+						  __( 'Settings are up to date.', 'woocommerce' ) ) }
 			</p>
 			{ isWooPayDisableFeedbackOpen && (
 				<WooPayDisableFeedback
@@ -2481,11 +2564,11 @@ export const WooPaymentsSettingsPage = () => {
 	registerWooPaymentsSettingsStore();
 	getWooPaymentsSettingsBootstrap();
 
-	const { isLoading, isSaving } = useSettings();
-	const [ isTransactionInputsValid, setTransactionInputsValid ] =
-		useState( true );
-	const [ isNotificationEmailValid, setNotificationEmailValid ] =
-		useState( true );
+	const { isLoading, isSaving, isDirty } = useSettings();
+	const [ transactionsValidationError, setTransactionsValidationError ] =
+		useState< FieldValidationError | null >( null );
+	const [ notificationsValidationError, setNotificationsValidationError ] =
+		useState< FieldValidationError | null >( null );
 	const settings = asSettingsRecord( useGetSettings() );
 	const [ enabledPaymentMethodIds ] =
 		useEnabledPaymentMethodIds() as StringArraySetting;
@@ -2499,6 +2582,8 @@ export const WooPaymentsSettingsPage = () => {
 		} );
 	const hasHandledVatDetailsDeepLink = useRef( false );
 	const hasSettings = Object.keys( settings ).length > 0;
+
+	useConfirmUnsavedChanges( isDirty );
 
 	useEffect( () => {
 		if (
@@ -2617,11 +2702,11 @@ export const WooPaymentsSettingsPage = () => {
 					<BuyNowPayLaterSettingsSection />
 					<ExpressCheckoutSettingsSection />
 					<TransactionsSettingsSection
-						onValidationChange={ setTransactionInputsValid }
+						onValidationChange={ setTransactionsValidationError }
 					/>
 					<PayoutsSettingsSection />
 					<NotificationsSettingsSection
-						onValidationChange={ setNotificationEmailValid }
+						onValidationChange={ setNotificationsValidationError }
 					/>
 					<FraudProtectionSettingsSection />
 					<AdvancedSettingsSection />
@@ -2638,10 +2723,10 @@ export const WooPaymentsSettingsPage = () => {
 						</p>
 					) }
 					<SaveSettingsSection
-						disabled={
-							isSaving ||
-							! isTransactionInputsValid ||
-							! isNotificationEmailValid
+						disabled={ isSaving }
+						validationError={
+							transactionsValidationError ??
+							notificationsValidationError
 						}
 					/>
 					{ vatDetailsModalState.isOpen &&

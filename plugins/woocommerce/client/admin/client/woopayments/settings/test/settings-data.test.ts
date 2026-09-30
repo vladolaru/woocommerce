@@ -290,6 +290,83 @@ describe( 'WooPayments settings data store', () => {
 		} );
 	} );
 
+	it( 'is no longer dirty once edited settings are changed back to their saved values', async () => {
+		const { default: reducer } = await import( '../data/reducer' );
+		const loaded = reducer( undefined, {
+			type: 'SET_SETTINGS',
+			data: {
+				is_debug_log_enabled: false,
+				enabled_payment_method_ids: [ 'card', 'link' ],
+			},
+		} );
+
+		const toggled = reducer( loaded, {
+			type: 'SET_SETTINGS_VALUES',
+			payload: { is_debug_log_enabled: true },
+		} );
+		expect( toggled.isDirty ).toBe( true );
+
+		const toggledBack = reducer( toggled, {
+			type: 'SET_SETTINGS_VALUES',
+			payload: { is_debug_log_enabled: false },
+		} );
+		expect( toggledBack.isDirty ).toBe( false );
+
+		const unselected = reducer( toggledBack, {
+			type: 'SET_UNSELECTED_PAYMENT_METHOD',
+			id: 'card',
+		} );
+		expect( unselected.isDirty ).toBe( true );
+		expect(
+			reducer( unselected, {
+				type: 'SET_SELECTED_PAYMENT_METHOD',
+				id: 'card',
+			} ).isDirty
+		).toBe( false );
+	} );
+
+	it( 'treats reordered order-free lists as unchanged but keeps fraud rule order significant', async () => {
+		const { default: reducer } = await import( '../data/reducer' );
+		const rules = [ { key: 'avs_verification' }, { key: 'ip_address' } ];
+		const loaded = reducer( undefined, {
+			type: 'SET_SETTINGS',
+			data: {
+				enabled_payment_method_ids: [ 'card', 'link' ],
+				express_checkout_product_methods: [
+					'payment_request',
+					'woopay',
+				],
+				advanced_fraud_protection_settings: rules,
+			},
+		} );
+
+		expect(
+			reducer( loaded, {
+				type: 'SET_SETTINGS_VALUES',
+				payload: { enabled_payment_method_ids: [ 'link', 'card' ] },
+			} ).isDirty
+		).toBe( false );
+		expect(
+			reducer( loaded, {
+				type: 'SET_SETTINGS_VALUES',
+				payload: {
+					express_checkout_product_methods: [
+						'woopay',
+						'payment_request',
+					],
+				},
+			} ).isDirty
+		).toBe( false );
+		expect(
+			reducer( loaded, {
+				type: 'SET_SETTINGS_VALUES',
+				payload: {
+					advanced_fraud_protection_settings: [ ...rules ].reverse(),
+				},
+			} ).isDirty
+		).toBe( true );
+	} );
+
 	it( 'updates dismissed duplicate notices in the settings store', async () => {
 		const { updateDismissedDuplicatePaymentMethodNotices } = await import(
 			'../data/actions'
