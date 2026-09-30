@@ -167,11 +167,12 @@
 	padding-top: 0;
 }
 
+// Client 11.1.0 `disputes/new-evidence/style.scss`: name and description on the left, the upload button on the right.
 .woocommerce-woopayments-dispute-evidence-file {
-	align-items: center;
-	display: grid;
-	gap: 12px;
-	grid-template-columns: minmax(0, 1fr) minmax(220px, max-content);
+	align-items: flex-start;
+	display: flex;
+	gap: 16px;
+	justify-content: space-between;
 }
 
 .woocommerce-woopayments-dispute-evidence-file__main {
@@ -180,28 +181,53 @@
 	min-width: 0;
 }
 
-.woocommerce-woopayments-dispute-evidence-file__main label,
 .woocommerce-woopayments-dispute-evidence-file__label {
-	font-weight: 600;
+	color: #1e1e1e;
+	font-size: 13px;
 }
 
-.woocommerce-woopayments-dispute-evidence-file__name,
-.woocommerce-woopayments-dispute-evidence-file__empty,
-.woocommerce-woopayments-dispute-evidence-file__readonly {
-	color: #646970;
+.woocommerce-woopayments-dispute-evidence-file__chip {
+	align-items: center;
+	background: #f0f0f0;
+	border-radius: 2px;
+	display: inline-flex;
+	gap: 4px;
+	justify-self: start;
+	max-width: 100%;
+	padding-inline-start: 8px;
+}
+
+.woocommerce-woopayments-dispute-evidence-file__name {
+	color: #1e1e1e;
 	overflow-wrap: anywhere;
 }
 
 .woocommerce-woopayments-dispute-evidence-file__controls {
-	align-items: center;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	justify-content: flex-end;
+	flex-shrink: 0;
+	position: relative;
 }
 
-.woocommerce-woopayments-dispute-evidence-file__controls input[type="file"] {
-	max-width: 240px;
+// The file input stays focusable for the keyboard; its label is the visible button.
+.woocommerce-woopayments-dispute-evidence-file__input {
+	height: 1px;
+	opacity: 0;
+	overflow: hidden;
+	position: absolute;
+	width: 1px;
+}
+
+.woocommerce-woopayments-dispute-evidence-file__input:focus-visible {
+	+ .woocommerce-woopayments-dispute-evidence-file__upload {
+		box-shadow:
+			0 0 0 1px #fff,
+			0 0 0 3px var(--wp-admin-theme-color, #3858e9);
+	}
+}
+
+.woocommerce-woopayments-dispute-evidence-file__upload.is-disabled {
+	cursor: default;
+	opacity: 0.4;
+	pointer-events: none;
 }
 
 .woocommerce-woopayments-dispute-evidence__actions {
@@ -219,12 +245,7 @@
 	}
 }
 
-@media screen and (max-width: 782px) {
-	.woocommerce-woopayments-dispute-evidence-file {
-		grid-template-columns: 1fr;
-	}
-
-	.woocommerce-woopayments-dispute-evidence-file__controls,
+@media screen and (max-width: 660px) {
 	.woocommerce-woopayments-dispute-evidence__actions {
 		justify-content: flex-start;
 	}

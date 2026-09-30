@@ -641,6 +641,46 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( 'shows each document as its name, description and an upload button', async () => {
+		// Client 11.1.0 disputes/new-evidence/file-upload-control.tsx.
+		mockGetDispute.mockResolvedValue( makeDispute() );
+		mockUploadFile.mockResolvedValue( {
+			id: 'file_receipt',
+			filename: 'receipt.pdf',
+			size: 1000,
+		} );
+
+		renderChallengePage();
+
+		const input = await screen.findByLabelText( 'Upload order receipt' );
+		const row = input.closest(
+			'.woocommerce-woopayments-dispute-evidence-file'
+		) as HTMLElement;
+		expect(
+			row.querySelector(
+				'.woocommerce-woopayments-dispute-evidence-file__label'
+			)
+		).toHaveTextContent( /^Order receipt$/ );
+		expect(
+			within( row ).getByText(
+				"A copy of the customer's receipt, which can be found in the receipt history for this transaction."
+			)
+		).toBeInTheDocument();
+		expect(
+			row.querySelector( 'label[for="' + input.id + '"]' )
+		).toHaveClass( 'components-button', 'is-primary', 'has-icon' );
+		expect( within( row ).queryByText( 'No file selected' ) ).toBeNull();
+
+		await uploadFile( 'Upload order receipt' );
+
+		expect( await within( row ).findByText( 'receipt.pdf' ) ).toBeVisible();
+		expect(
+			within( row ).getByRole( 'button', {
+				name: 'Remove order receipt',
+			} )
+		).toBeInTheDocument();
+	} );
+
 	it( 'should render non-actionable disputes as read-only', async () => {
 		mockGetDispute.mockResolvedValue(
 			makeDispute( {
@@ -672,9 +712,10 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		expect(
 			screen.getByRole( 'textbox', { name: 'Product description' } )
 		).toHaveAttribute( 'readonly' );
+		// Client 11.1.0 file-upload-control.tsx: a read-only dispute keeps the upload control, disabled.
 		expect(
-			screen.queryByLabelText( 'Upload order receipt' )
-		).not.toBeInTheDocument();
+			screen.getByLabelText( 'Upload order receipt' )
+		).toBeDisabled();
 		expect(
 			screen.queryByRole( 'button', { name: 'Save for later' } )
 		).not.toBeInTheDocument();

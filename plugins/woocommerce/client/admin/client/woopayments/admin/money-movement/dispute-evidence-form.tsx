@@ -722,12 +722,8 @@ export const DisputeEvidenceForm = ( {
 							onRemove={ handleRemoveFile }
 							onError={ handleError }
 							onUploadStateChange={ updateUploadState }
+							description={ recommendedDocument?.description }
 						/>
-						{ recommendedDocument?.description && (
-							<p className="woocommerce-woopayments-dispute-evidence__document-description">
-								{ recommendedDocument.description }
-							</p>
-						) }
 					</div>
 				);
 			} ) }

@@ -2,11 +2,13 @@
  * External dependencies
  */
 import { speak } from '@wordpress/a11y';
-import { Button, Spinner } from '@wordpress/components';
+import { Button, Icon } from '@wordpress/components';
+import { closeSmall, cloudUpload } from '@wordpress/icons';
+import clsx from 'clsx';
 import { useEffect, useRef, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -25,6 +27,8 @@ import { getErrorMessage } from './utils';
 type DisputeEvidenceFileUploadProps = {
 	field: DocumentEvidenceField;
 	label: string;
+	/** The document's explanation, under its name. */
+	description?: ReactNode;
 	file?: WooPaymentsDisputeFile;
 	totalFileBytes: number;
 	disabled?: boolean;
@@ -44,6 +48,7 @@ type DisputeEvidenceFileUploadProps = {
 export const DisputeEvidenceFileUpload = ( {
 	field,
 	label,
+	description,
 	file,
 	totalFileBytes,
 	disabled = false,
@@ -192,57 +197,65 @@ export const DisputeEvidenceFileUpload = ( {
 		setTimeout( () => inputRef.current?.focus(), 0 );
 	};
 
+	// Client 11.1.0 `disputes/new-evidence/file-upload-control.tsx`: the document name and description, the
+	// uploaded file as a chip, and an upload icon button. The file input stays the accessible control; the
+	// button is its label, so a click opens the file dialog and the keyboard focuses the input.
 	return (
 		<div
 			ref={ rowRef }
 			className="woocommerce-woopayments-dispute-evidence-file"
 		>
 			<div className="woocommerce-woopayments-dispute-evidence-file__main">
-				{ disabled ? (
-					<span className="woocommerce-woopayments-dispute-evidence-file__label">
-						{ uploadLabel }
+				<span className="woocommerce-woopayments-dispute-evidence-file__label">
+					{ removeFieldLabel }
+				</span>
+				{ fileName && (
+					<span className="woocommerce-woopayments-dispute-evidence-file__chip">
+						<span className="woocommerce-woopayments-dispute-evidence-file__name">
+							{ fileName }
+						</span>
+						{ ! disabled && (
+							<Button
+								icon={ closeSmall }
+								size="small"
+								label={ removeLabel }
+								accessibleWhenDisabled
+								disabled={ isControlDisabled }
+								onClick={ handleRemove }
+							/>
+						) }
 					</span>
-				) : (
-					<label htmlFor={ inputId }>{ uploadLabel }</label>
 				) }
-				{ fileName ? (
-					<span className="woocommerce-woopayments-dispute-evidence-file__name">
-						{ fileName }
-					</span>
-				) : (
-					<span className="woocommerce-woopayments-dispute-evidence-file__empty">
-						{ __( 'No file selected', 'woocommerce' ) }
-					</span>
+				{ description && (
+					<p className="woocommerce-woopayments-dispute-evidence__document-description">
+						{ description }
+					</p>
 				) }
 			</div>
-			{ disabled ? (
-				<span className="woocommerce-woopayments-dispute-evidence-file__readonly">
-					{ __( 'Read-only', 'woocommerce' ) }
-				</span>
-			) : (
-				<div className="woocommerce-woopayments-dispute-evidence-file__controls">
-					<input
-						ref={ inputRef }
-						id={ inputId }
-						type="file"
-						accept={ EVIDENCE_FILE_ACCEPT_ATTRIBUTE }
-						disabled={ isControlDisabled }
-						onChange={ handleFileChange }
-					/>
-					{ isUploading && <Spinner /> }
-					{ fileName && (
-						<Button
-							variant="tertiary"
-							type="button"
-							accessibleWhenDisabled
-							disabled={ isControlDisabled }
-							onClick={ handleRemove }
-						>
-							{ removeLabel }
-						</Button>
+			<div className="woocommerce-woopayments-dispute-evidence-file__controls">
+				<input
+					ref={ inputRef }
+					id={ inputId }
+					className="woocommerce-woopayments-dispute-evidence-file__input"
+					type="file"
+					accept={ EVIDENCE_FILE_ACCEPT_ATTRIBUTE }
+					disabled={ isControlDisabled }
+					onChange={ handleFileChange }
+				/>
+				<label
+					htmlFor={ inputId }
+					className={ clsx(
+						'components-button is-primary has-icon woocommerce-woopayments-dispute-evidence-file__upload',
+						{
+							'is-busy': isUploading,
+							'is-disabled': isControlDisabled,
+						}
 					) }
-				</div>
-			) }
+				>
+					<Icon icon={ cloudUpload } size={ 24 } />
+					<span className="screen-reader-text">{ uploadLabel }</span>
+				</label>
+			</div>
 		</div>
 	);
 };
