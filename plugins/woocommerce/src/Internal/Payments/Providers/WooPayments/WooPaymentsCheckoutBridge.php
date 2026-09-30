@@ -938,6 +938,31 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Register the vendored FingerprintJS script, which sets `window.FingerprintJS`.
+	 *
+	 * Classic checkout and the Blocks card script both load it from this one handle
+	 * to compute the buyer device fingerprint the platform's risk rules score on.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return void
+	 */
+	public function register_fingerprint_script(): void {
+		if ( wp_script_is( self::FINGERPRINT_SCRIPT_HANDLE, 'registered' ) ) {
+			return;
+		}
+
+		// Pre-minified upstream UMD build, so there is no suffix variant.
+		wp_register_script(
+			self::FINGERPRINT_SCRIPT_HANDLE,
+			WC()->plugin_url() . '/assets/js/fingerprintjs/fp.umd.min.js',
+			array(),
+			WC_VERSION,
+			true
+		);
+	}
+
+	/**
 	 * Register the classic checkout assets.
 	 *
 	 * @return void
@@ -952,18 +977,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 
 		WooPaymentsFrontendAssets::register_appearance_script();
 
-		if ( ! wp_script_is( self::FINGERPRINT_SCRIPT_HANDLE, 'registered' ) ) {
-			// Vendored FingerprintJS UMD build (pre-minified upstream, no suffix
-			// variant): supplies the buyer device fingerprint the platform's
-			// risk rules score on.
-			wp_register_script(
-				self::FINGERPRINT_SCRIPT_HANDLE,
-				WC()->plugin_url() . '/assets/js/fingerprintjs/fp.umd.min.js',
-				array(),
-				WC_VERSION,
-				true
-			);
-		}
+		$this->register_fingerprint_script();
 
 		if ( ! wp_script_is( self::CLASSIC_SCRIPT_HANDLE, 'registered' ) ) {
 			wp_register_script(

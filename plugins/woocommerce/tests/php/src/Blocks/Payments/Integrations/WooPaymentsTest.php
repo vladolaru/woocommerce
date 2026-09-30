@@ -35,6 +35,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			wp_deregister_script( $handle );
 		}
 		wp_deregister_script( 'stripe' );
+		wp_deregister_script( 'wc-woopayments-fingerprintjs' );
 		wp_reset_postdata();
 		parent::tearDown();
 	}
@@ -142,6 +143,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	 */
 	public function test_get_payment_method_script_handles_registers_core_owned_woopayments_blocks_script(): void {
 		wp_deregister_script( 'stripe' );
+		wp_deregister_script( 'wc-woopayments-fingerprintjs' );
 
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
@@ -182,6 +184,9 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$this->assertSame( array( 'wc-payment-method-woopayments' ), $integration->get_payment_method_script_handles() );
 		$this->assertTrue( wp_script_is( 'stripe', 'registered' ) );
 		$this->assertSame( 'https://js.stripe.com/v3/', wp_scripts()->registered['stripe']->src );
+		// The card script loads FingerprintJS as an external from the vendored handle.
+		$this->assertTrue( wp_script_is( 'wc-woopayments-fingerprintjs', 'registered' ) );
+		$this->assertSame( WC()->plugin_url() . '/assets/js/fingerprintjs/fp.umd.min.js', wp_scripts()->registered['wc-woopayments-fingerprintjs']->src );
 	}
 
 	/**

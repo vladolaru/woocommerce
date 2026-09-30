@@ -158,6 +158,8 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 */
 	public function get_payment_method_script_handles() {
 		$this->register_stripe_script();
+		// The card script's asset file lists this handle: FingerprintJS is a build external.
+		$this->checkout_bridge->register_fingerprint_script();
 
 		$this->asset_api->register_script(
 			self::PAYMENT_METHOD_SCRIPT_HANDLE,
