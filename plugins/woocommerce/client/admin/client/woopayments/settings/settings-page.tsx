@@ -827,7 +827,6 @@ const GeneralSettingsSection = () => {
 					</p>
 				}
 			>
-				<AccountModeNotice isDevModeEnabled={ isDevModeEnabled } />
 				<CheckboxControl
 					checked={ isWCPayEnabled }
 					label={ sprintf(
@@ -2585,6 +2584,7 @@ export const WooPaymentsSettingsPage = () => {
 		} );
 	const hasHandledVatDetailsDeepLink = useRef( false );
 	const hasSettings = Object.keys( settings ).length > 0;
+	const isDevModeEnabled = Boolean( useDevMode() );
 
 	useConfirmUnsavedChanges( isDirty );
 
@@ -2699,6 +2699,7 @@ export const WooPaymentsSettingsPage = () => {
 				<SettingsLoadingSections />
 			) : (
 				<SettingsBusyState isBusy={ isSaving }>
+					<AccountModeNotice isDevModeEnabled={ isDevModeEnabled } />
 					<SpotlightPromotion />
 					<GeneralSettingsSection />
 					<PaymentMethodsSettingsSection />

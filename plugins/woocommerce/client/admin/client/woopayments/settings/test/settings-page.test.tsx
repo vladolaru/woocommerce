@@ -3210,6 +3210,10 @@ describe( 'WooPaymentsSettingsPage', () => {
 			.closest(
 				'.woopayments-settings-account-mode-notice'
 			) as HTMLElement;
+		// Like the client, the notice sits above the sections, not inside General.
+		expect( getSettingsSectionByName( 'General' ) ).not.toContainElement(
+			testAccountNotice
+		);
 		expect(
 			within( testAccountNotice ).getByRole( 'link', {
 				name: /^Learn more/,
