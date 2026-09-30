@@ -259,9 +259,10 @@ describe( 'explicit currency codes across admin surfaces', () => {
 			);
 
 			expect(
-				within( getSummary() ).getByText(
-					'Converted amount: $55.32 USD'
-				)
+				within( getSummary() ).getByText( '$55.32 USD', {
+					selector:
+						'.woocommerce-woopayments-payment-summary__settlement-currency',
+				} )
 			).toBeInTheDocument();
 			expect(
 				within( getSummary() ).getByText( 'Net: $53.52 USD' )

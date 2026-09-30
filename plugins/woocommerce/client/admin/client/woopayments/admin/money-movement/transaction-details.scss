@@ -1,0 +1,154 @@
+// Client 11.1.0 `payment-details/summary/style.scss`, `components/horizontal-list/style.scss` and `components/card-notice/styles.scss`.
+.woocommerce-woopayments-payment-summary {
+	&__main {
+		display: flex;
+		flex: 1;
+		gap: 16px;
+
+		@media screen and (max-width: 782px) {
+			flex-direction: column;
+		}
+	}
+
+	&__section {
+		flex-grow: 1;
+	}
+
+	&__amount-wrapper {
+		align-items: center;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	&__amount {
+		align-items: center;
+		display: flex;
+		font-size: 32px;
+		font-weight: 300;
+		line-height: 48px;
+		margin: 0;
+	}
+
+	&__amount-currency {
+		color: #50575e;
+		font-size: 16px;
+		margin: 0 8px;
+		text-transform: uppercase;
+	}
+
+	&__breakdown p {
+		color: #757575;
+		display: inline-flex;
+		font-size: 12px;
+		font-weight: 600;
+		margin: 4px 16px 0 0;
+		text-transform: uppercase;
+
+		&:last-child {
+			margin-inline-end: 0;
+		}
+	}
+
+	&__breakdown &__settlement-currency {
+		border-inline-end: 1px solid #e0e0e0;
+		padding-inline-end: 16px;
+	}
+
+	&__review-actions {
+		display: flex;
+		gap: 8px;
+		justify-content: flex-end;
+		margin-bottom: 8px;
+	}
+
+	&__id {
+		color: #787c82;
+		display: flex;
+		flex-direction: column;
+		margin-top: 8px;
+
+		@media screen and (min-width: 782px) {
+			align-items: flex-end;
+		}
+
+		> div {
+			white-space: nowrap;
+		}
+	}
+
+	&__id-value {
+		font-family: monospace;
+	}
+
+	// One row of labelled values, stacked on narrow screens.
+	&__list {
+		display: flex;
+		flex-direction: column;
+		margin: 0;
+
+		@media screen and (min-width: 801px) {
+			flex-direction: row;
+		}
+
+		> div {
+			border-bottom: 1px solid #f0f0f0;
+			padding: 12px 0;
+
+			@media screen and (min-width: 801px) {
+				border-bottom: 0;
+				border-inline-start: 1px solid #f0f0f0;
+				padding: 0 16px;
+
+				&:first-child {
+					border-inline-start: 0;
+					padding-inline-start: 0;
+				}
+
+				&:last-child {
+					padding-inline-end: 0;
+				}
+			}
+
+			&:last-child {
+				border-bottom: 0;
+			}
+		}
+
+		dt {
+			color: #757575;
+			font-size: 11px;
+			font-weight: 600;
+			line-height: 18px;
+			text-transform: uppercase;
+		}
+
+		dd {
+			align-items: center;
+			color: #2c3338;
+			display: flex;
+			font-size: 14px;
+			line-height: 20px;
+			margin: 0;
+		}
+	}
+
+	&__notice.components-card__footer {
+		background-color: #fff8ee;
+		gap: 10px;
+
+		@media screen and (max-width: 660px) {
+			align-items: flex-start;
+			flex-direction: column;
+		}
+	}
+}
+
+// Client 11.1.0 `payment-details/payment-details/index.tsx`: `<Page maxWidth={ 1032 }>`, 24px between cards.
+.woocommerce-woopayments-money-movement--details {
+	max-width: 1032px;
+
+	.woocommerce-woopayments-money-movement__detail-sections {
+		gap: 24px;
+	}
+}

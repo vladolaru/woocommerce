@@ -1,8 +1,18 @@
 /**
  * External dependencies
  */
-import { Button } from '@wordpress/components';
+import {
+	Button,
+	Card,
+	CardBody,
+	CardDivider,
+	CardFooter,
+	Flex,
+} from '@wordpress/components';
+import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { __, sprintf } from '@wordpress/i18n';
+import { addQueryArgs } from '@wordpress/url';
+import moment from 'moment';
 import type { MouseEvent, ReactNode } from 'react';
 
 /**
@@ -15,21 +25,31 @@ import {
 import type {
 	WooPaymentsBillingDetails,
 	WooPaymentsPaymentMethodDetails,
-	WooPaymentsPaymentOrder,
 	WooPaymentsTransaction,
 } from './types';
 import {
 	formatAmount,
-	formatDateTime,
 	formatExplicitCurrency,
 	formatLabel,
 	getChargeChannelLabel,
 } from './utils';
 import {
 	DISPUTE_STATUS_LABELS,
+	getChargeDisputes,
 	getDisputeBalanceAdjustments,
 	getPrimaryDispute,
+	isDisputeAwaitingResponse,
 } from './dispute-utils';
+import {
+	isWooPaymentsSubscriptionsActive,
+	OrderLink,
+} from './transactions-list-fields';
+import {
+	StatusChip,
+	type StatusChipType,
+} from '../overview/components/status-chip';
+import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import './transaction-details.scss';
 
 type CardDetails = NonNullable< WooPaymentsPaymentMethodDetails[ 'card' ] >;
 type CountryMap = Record< string, string >;
@@ -58,113 +78,47 @@ const Dash = () => (
 	</span>
 );
 
-const LinkedValue = ( {
-	href,
-	children,
-}: {
-	href?: string | null;
-	children: ReactNode;
-} ) => ( href ? <a href={ href }>{ children }</a> : <>{ children }</> );
-
-const getOrderNumber = ( order?: WooPaymentsPaymentOrder ) =>
-	order?.number || order?.id || '';
-
-// Client 11.1.0 `payment-details/summary/index.tsx:897` checks `! charge.order` on the raw platform shape. A deleted or
-// unknown order arrives as `order: []`, which is truthy, so only a null or absent order counts as missing.
+// Client 11.1.0 `payment-details/summary/missing-order-notice/index.tsx:25-66` and `summary/index.tsx:897`.
+// A deleted or unknown order arrives as `order: []`, which is truthy, so only a null or absent order counts as missing.
 export const isPaymentOrderMissing = ( transaction: WooPaymentsTransaction ) =>
 	! transaction.order;
 
-const getRecordReferenceLabel = (
-	recordType: string,
-	recordNumber: string | number
-) => {
-	const normalizedNumber = String( recordNumber ).replace( /^#/, '' );
-
-	return sprintf(
-		/* translators: 1: record type, such as "Order"; 2: record number. */
-		__( '%1$s #%2$s', 'woocommerce' ),
-		recordType,
-		normalizedNumber
-	);
-};
-
 const getCustomerName = ( transaction: WooPaymentsTransaction ) =>
+	transaction.billing_details?.name ||
 	transaction.order?.customer_name ||
 	transaction.customer_name ||
-	transaction.billing_details?.name ||
 	'';
 
 const getCustomerEmail = ( transaction: WooPaymentsTransaction ) =>
+	transaction.billing_details?.email ||
 	transaction.order?.customer_email ||
 	transaction.customer_email ||
-	transaction.billing_details?.email ||
 	'';
 
-const CustomerSummary = ( {
+// Client 11.1.0 `components/customer-link`: the name links to the transactions list searched for the customer.
+const CustomerLink = ( {
 	transaction,
 }: {
 	transaction: WooPaymentsTransaction;
 } ) => {
-	const customerName = getCustomerName( transaction );
-	const customerEmail = getCustomerEmail( transaction );
+	const name = getCustomerName( transaction );
 
-	if ( ! customerName && ! customerEmail ) {
-		return <Dash />;
+	if ( ! name ) {
+		return <>&ndash;</>;
 	}
 
+	const email = getCustomerEmail( transaction );
+
 	return (
-		<span className="woocommerce-woopayments-money-movement__stacked-value">
-			{ customerName && (
-				<LinkedValue href={ transaction.order?.customer_url }>
-					{ customerName }
-				</LinkedValue>
+		<a
+			href={ getSettingsPaymentsProviderRouteUrl(
+				addQueryArgs( '/woopayments/transactions', {
+					search: email ? `${ name } (${ email })` : name,
+				} )
 			) }
-			{ customerEmail && <span>{ customerEmail }</span> }
-		</span>
-	);
-};
-
-const OrderSummary = ( {
-	order,
-	recordType = __( 'Order', 'woocommerce' ),
-}: {
-	order?: WooPaymentsPaymentOrder;
-	recordType?: string;
-} ) => {
-	const orderNumber = getOrderNumber( order );
-
-	if ( ! orderNumber ) {
-		return <Dash />;
-	}
-
-	return (
-		<LinkedValue href={ order?.url }>
-			{ getRecordReferenceLabel( recordType, orderNumber ) }
-		</LinkedValue>
-	);
-};
-
-const SubscriptionsSummary = ( {
-	subscriptions,
-}: {
-	subscriptions?: WooPaymentsPaymentOrder[];
-} ) => {
-	if ( ! subscriptions?.length ) {
-		return null;
-	}
-
-	return (
-		<>
-			{ subscriptions.map( ( subscription, index ) => (
-				<span key={ `${ subscription.url || '' }-${ index }` }>
-					<OrderSummary
-						order={ subscription }
-						recordType={ __( 'Subscription', 'woocommerce' ) }
-					/>
-					{ index < subscriptions.length - 1 ? ', ' : '' }
-				</span>
-			) ) }
-		</>
+		>
+			{ name }
+		</a>
 	);
 };
 
@@ -572,51 +526,98 @@ const formatPaymentSummaryAmount = (
 		: formattedAmount;
 };
 
-const getDisputeStatusLabel = ( transaction: WooPaymentsTransaction ) => {
-	const disputeStatus = getPrimaryDispute( transaction )?.status || '';
+type SummaryStatus = { message: string; type: StatusChipType };
+
+// Client 11.1.0 `components/dispute-status-chip`: red while a response is due, whatever the time left.
+const getDisputeStatusChipType = ( status: string ): StatusChipType => {
+	if ( [ 'needs_response', 'warning_needs_response' ].includes( status ) ) {
+		return 'error';
+	}
+
+	if ( status === 'won' ) {
+		return 'success';
+	}
+
+	return [ 'under_review', 'warning_under_review' ].includes( status )
+		? 'primary'
+		: 'info';
+};
+
+// Client 11.1.0 `summary/index.tsx:293-301`: the status of the dispute awaiting a response, else the first one.
+const getDisputeSummaryStatus = (
+	transaction: WooPaymentsTransaction
+): SummaryStatus | null => {
+	const disputes = getChargeDisputes( transaction );
+	const dispute =
+		disputes.find( isDisputeAwaitingResponse ) ??
+		getPrimaryDispute( transaction );
+	const disputeStatus = dispute?.status || '';
+
+	if ( ! disputeStatus ) {
+		return null;
+	}
+
 	const disputeLabel =
 		DISPUTE_STATUS_LABELS[ disputeStatus ] || formatLabel( disputeStatus );
 
-	if ( disputeStatus.startsWith( 'warning_' ) ) {
-		return disputeLabel;
-	}
-
-	return sprintf(
-		/* translators: %s: dispute status, such as Response needed or Won. */
-		__( 'Disputed: %s', 'woocommerce' ),
-		disputeLabel
-	);
+	return {
+		message: disputeStatus.startsWith( 'warning_' )
+			? disputeLabel
+			: sprintf(
+					/* translators: %s: dispute status, such as Response needed or Won. */
+					__( 'Disputed: %s', 'woocommerce' ),
+					disputeLabel
+			  ),
+		type: getDisputeStatusChipType( disputeStatus ),
+	};
 };
 
-const getPaymentSummaryStatusLabel = (
+// Client 11.1.0 utils/charge/index.ts:52-71, 146-151 and payment-status-chip/mappings.ts: label and chip colour.
+const getPaymentSummaryStatus = (
 	transaction: WooPaymentsTransaction
-) => {
+): SummaryStatus => {
 	const fraudState = transaction.order?.fraud_meta_box_type || '';
 
 	if (
 		transaction.status === 'requires_capture' &&
 		fraudState === 'review'
 	) {
-		return __( 'Needs review', 'woocommerce' );
+		return {
+			message: __( 'Needs review', 'woocommerce' ),
+			type: 'warning',
+		};
 	}
 
 	if ( [ 'block', 'review_blocked' ].includes( fraudState ) ) {
-		return __( 'Payment blocked', 'woocommerce' );
+		return {
+			message: __( 'Payment blocked', 'woocommerce' ),
+			type: 'error',
+		};
 	}
 
-	// Client 11.1.0 utils/charge/index.ts:52-71, 146-151 and payment-status-chip/mappings.ts:57-64.
 	if ( transaction.status === 'failed' ) {
-		return transaction.outcome?.type === 'blocked'
-			? __( 'Payment blocked', 'woocommerce' )
-			: __( 'Payment failed', 'woocommerce' );
+		return {
+			message:
+				transaction.outcome?.type === 'blocked'
+					? __( 'Payment blocked', 'woocommerce' )
+					: __( 'Payment failed', 'woocommerce' ),
+			type: 'error',
+		};
 	}
 
-	if ( getPrimaryDispute( transaction )?.status ) {
-		return getDisputeStatusLabel( transaction );
+	const disputeStatus = getDisputeSummaryStatus( transaction );
+
+	if ( disputeStatus ) {
+		return disputeStatus;
 	}
+
+	const authorized = {
+		message: __( 'Payment authorized', 'woocommerce' ),
+		type: 'primary' as const,
+	};
 
 	if ( transaction.status === 'requires_capture' ) {
-		return __( 'Payment authorized', 'woocommerce' );
+		return authorized;
 	}
 
 	const refundedAmount = Number( transaction.amount_refunded );
@@ -627,13 +628,13 @@ const getPaymentSummaryStatusLabel = (
 	);
 
 	if ( ! isSuccessfulCharge ) {
-		return formatLabel( transaction.status );
+		return { message: formatLabel( transaction.status ), type: 'info' };
 	}
 
 	if ( ! hasRefundedAmount ) {
 		return transaction.captured === true
-			? __( 'Paid', 'woocommerce' )
-			: __( 'Payment authorized', 'woocommerce' );
+			? { message: __( 'Paid', 'woocommerce' ), type: 'success' }
+			: authorized;
 	}
 
 	const chargeAmount = Math.abs( Number( transaction.amount ) );
@@ -643,17 +644,139 @@ const getPaymentSummaryStatusLabel = (
 			chargeAmount > 0 &&
 			refundedAmount >= chargeAmount );
 
-	return isFullyRefunded
-		? __( 'Refunded', 'woocommerce' )
-		: __( 'Partial refund', 'woocommerce' );
+	return {
+		message: isFullyRefunded
+			? __( 'Refunded', 'woocommerce' )
+			: __( 'Partial refund', 'woocommerce' ),
+		type: 'info',
+	};
 };
 
+// Client 11.1.0 `utils/date-time.ts` `formatDateTimeFromTimestamp()`: site formats, read as UTC.
+const formatSummaryDate = (
+	value: string | number | undefined,
+	format: 'withTime' | 'dispute'
+) => {
+	if ( ! value ) {
+		return '–';
+	}
+
+	const date =
+		typeof value === 'number'
+			? moment.utc( value < 10000000000 ? value * 1000 : value )
+			: moment.utc( value );
+
+	if ( ! date.isValid() ) {
+		return '–';
+	}
+
+	const { formats } = getDateSettings();
+
+	return dateI18n(
+		format === 'dispute'
+			? 'F j, Y g:i A'
+			: `${ formats.date }, ${ formats.time }`,
+		date.toISOString(),
+		undefined
+	);
+};
+
+// Client 11.1.0 `components/risk-level/strings.ts`.
+const RISK_LEVEL_LABELS: Record< string, string > = {
+	normal: __( 'Normal', 'woocommerce' ),
+	elevated: __( 'Elevated', 'woocommerce' ),
+	highest: __( 'Highest', 'woocommerce' ),
+};
+
+type SummaryItem = { title: string; content: ReactNode };
+
+// Client 11.1.0 `summary/index.tsx:160-277`: `composePaymentSummaryItems()` and its dispute variant.
+const getSummaryItems = (
+	transaction: WooPaymentsTransaction
+): SummaryItem[] => {
+	const isDisputed = getChargeDisputes( transaction ).length > 0;
+	const subscriptions = transaction.order?.subscriptions || [];
+	const riskLevel = transaction.outcome?.risk_level || '';
+
+	return [
+		{
+			title: __( 'Date', 'woocommerce' ),
+			content: formatSummaryDate(
+				transaction.created || transaction.date,
+				isDisputed ? 'dispute' : 'withTime'
+			),
+		},
+		! isDisputed && {
+			title: __( 'Sales channel', 'woocommerce' ),
+			content: getChargeChannelLabel(
+				transaction.payment_method_details?.type,
+				transaction.metadata || {},
+				transaction.sales_channel
+			),
+		},
+		{
+			title: __( 'Customer', 'woocommerce' ),
+			content: <CustomerLink transaction={ transaction } />,
+		},
+		{
+			title: __( 'Order', 'woocommerce' ),
+			content: <OrderLink order={ transaction.order } />,
+		},
+		isWooPaymentsSubscriptionsActive() && {
+			title: __( 'Subscription', 'woocommerce' ),
+			content: subscriptions.length ? (
+				subscriptions.map( ( subscription, index ) => (
+					<span key={ `${ subscription.url || '' }-${ index }` }>
+						<OrderLink order={ subscription } />
+						{ index < subscriptions.length - 1 ? ', ' : '' }
+					</span>
+				) )
+			) : (
+				<OrderLink order={ null } />
+			),
+		},
+		{
+			title: __( 'Payment method', 'woocommerce' ),
+			content: getPaymentMethodLabel( transaction ) ? (
+				<PaymentMethodSummary transaction={ transaction } />
+			) : (
+				<>&ndash;</>
+			),
+		},
+		{
+			title: __( 'Risk evaluation', 'woocommerce' ),
+			content: RISK_LEVEL_LABELS[ riskLevel ] || '–',
+		},
+	].filter( Boolean ) as SummaryItem[];
+};
+
+/**
+ * The payment summary card: amount, status, money lines, IDs and actions, then one row of labelled values.
+ * Client 11.1.0 `payment-details/summary/index.tsx:448-1023`.
+ *
+ * @param props                 Component props.
+ * @param props.transaction     The payment.
+ * @param props.paymentIntentId Payment ID shown at the top right.
+ * @param props.chargeId        Charge ID shown at the top right.
+ * @param props.actions         The actions menu.
+ * @param props.reviewActions   The fraud review buttons.
+ * @param props.children        Dispute panes and notices at the foot of the card.
+ */
 export const WooPaymentsPaymentSummarySection = ( {
 	transaction,
+	paymentIntentId = '',
+	chargeId = '',
+	actions,
+	reviewActions,
+	children,
 }: {
 	transaction: WooPaymentsTransaction;
+	paymentIntentId?: string;
+	chargeId?: string;
+	actions?: ReactNode;
+	reviewActions?: ReactNode;
+	children?: ReactNode;
 } ) => {
-	const paymentMethodLabel = getPaymentMethodLabel( transaction );
 	const balanceTransaction =
 		transaction.balance_transaction &&
 		typeof transaction.balance_transaction === 'object' &&
@@ -696,178 +819,185 @@ export const WooPaymentsPaymentSummarySection = ( {
 		  __( 'Deducted: %s', 'woocommerce' )
 		: /* translators: %s: formatted withdrawn amount. */
 		  __( 'Refunded: %s', 'woocommerce' );
+	const status = hasDisplayValue( transaction.status )
+		? getPaymentSummaryStatus( transaction )
+		: null;
 
 	return (
-		<section
-			className="woocommerce-woopayments-overview-card woocommerce-woopayments-money-movement__summary-card"
-			aria-labelledby="woocommerce-woopayments-payment-summary-heading"
+		<Card
+			as="section"
+			className="woocommerce-woopayments-payment-summary"
+			aria-label={ __( 'Summary', 'woocommerce' ) }
 		>
-			<div className="woocommerce-woopayments-money-movement__summary-header">
-				<div>
-					<h3 id="woocommerce-woopayments-payment-summary-heading">
-						{ __( 'Summary', 'woocommerce' ) }
-					</h3>
-					<p className="woocommerce-woopayments-money-movement__summary-amount">
-						{ formatAmount(
-							transaction.amount,
-							transaction.currency
-						) }
-						{ transaction.currency && (
-							<span className="woocommerce-woopayments-money-movement__summary-currency">
-								{ transaction.currency.toUpperCase() }
-							</span>
-						) }
-					</p>
-				</div>
-				{ hasDisplayValue( transaction.status ) && (
-					<span className="woocommerce-woopayments-money-movement__status-chip">
-						{ getPaymentSummaryStatusLabel( transaction ) }
-					</span>
-				) }
-			</div>
-			<div className="woocommerce-woopayments-money-movement__summary-breakdown">
-				{ hasConvertedAmount && (
-					<span>
-						{ sprintf(
-							/* translators: %s: formatted converted settlement amount. */
-							__( 'Converted amount: %s', 'woocommerce' ),
-							formatPaymentSummaryAmount(
-								balanceTransaction.amount,
-								balanceCurrency,
-								true,
-								true
-							)
-						) }
-					</span>
-				) }
-				{ hasRefundedAmount && (
-					<span>
-						{ sprintf(
-							refundedAmountLabel,
-							formatExplicitCurrency(
-								-Math.abs(
-									Number( transaction.amount_refunded )
-								),
-								transaction.currency
-							)
-						) }
-					</span>
-				) }
-				{ hasDisplayValue( fee ) && (
-					<span>
-						{ sprintf(
-							/* translators: %s: formatted fee amount. */
-							__( 'Fees: %s', 'woocommerce' ),
-							formatPaymentSummaryAmount(
-								-Math.abs( Number( fee ) ),
-								feeCurrency,
-								feeFromBalance && hasDifferentBalanceCurrency
-							)
-						) }
-					</span>
-				) }
-				{ paydownAmount !== undefined && (
-					<span>
-						{ sprintf(
-							/* translators: %s: formatted loan repayment amount. */
-							__( 'Loan repayment: %s', 'woocommerce' ),
-							formatPaymentSummaryAmount(
-								paydownAmount,
-								balanceCurrency || transaction.currency,
-								hasDifferentBalanceCurrency,
-								true
-							)
-						) }
-					</span>
-				) }
-				{ hasDisplayValue( net ) && (
-					<span>
-						{ sprintf(
-							/* translators: %s: formatted net amount. */
-							__( 'Net: %s', 'woocommerce' ),
-							formatPaymentSummaryAmount(
-								net,
-								netCurrency,
-								netFromBalance && hasDifferentBalanceCurrency,
-								true
-							)
-						) }
-					</span>
-				) }
-			</div>
-			<dl className="woocommerce-woopayments-money-movement__summary-list">
-				<DetailRow
-					label={ __( 'Date', 'woocommerce' ) }
-					value={ formatDateTime(
-						transaction.date || transaction.created
+			<CardBody>
+				<Flex direction="row" align="start">
+					<div className="woocommerce-woopayments-payment-summary__main">
+						<div className="woocommerce-woopayments-payment-summary__section">
+							<div className="woocommerce-woopayments-payment-summary__amount-wrapper">
+								<p className="woocommerce-woopayments-payment-summary__amount">
+									{ formatAmount(
+										transaction.amount,
+										transaction.currency
+									) }
+									<span className="woocommerce-woopayments-payment-summary__amount-currency">
+										{ (
+											transaction.currency || 'USD'
+										).toUpperCase() }
+									</span>
+								</p>
+								{ status && (
+									<StatusChip
+										message={ status.message }
+										type={ status.type }
+									/>
+								) }
+							</div>
+							<div className="woocommerce-woopayments-payment-summary__breakdown">
+								{ hasConvertedAmount && (
+									<p className="woocommerce-woopayments-payment-summary__settlement-currency">
+										{ formatPaymentSummaryAmount(
+											balanceTransaction.amount,
+											balanceCurrency,
+											true,
+											true
+										) }
+									</p>
+								) }
+								{ hasRefundedAmount && (
+									<p>
+										{ sprintf(
+											refundedAmountLabel,
+											formatExplicitCurrency(
+												-Math.abs(
+													Number(
+														transaction.amount_refunded
+													)
+												),
+												transaction.currency
+											)
+										) }
+									</p>
+								) }
+								{ hasDisplayValue( fee ) && (
+									<p>
+										{ sprintf(
+											/* translators: %s: formatted fee amount. */
+											__( 'Fees: %s', 'woocommerce' ),
+											formatPaymentSummaryAmount(
+												-Math.abs( Number( fee ) ),
+												feeCurrency,
+												feeFromBalance &&
+													hasDifferentBalanceCurrency
+											)
+										) }
+									</p>
+								) }
+								{ paydownAmount !== undefined && (
+									<p>
+										{ sprintf(
+											/* translators: %s: formatted loan repayment amount. */
+											__(
+												'Loan repayment: %s',
+												'woocommerce'
+											),
+											formatPaymentSummaryAmount(
+												paydownAmount,
+												balanceCurrency ||
+													transaction.currency,
+												hasDifferentBalanceCurrency,
+												true
+											)
+										) }
+									</p>
+								) }
+								{ hasDisplayValue( net ) && (
+									<p>
+										{ sprintf(
+											/* translators: %s: formatted net amount. */
+											__( 'Net: %s', 'woocommerce' ),
+											formatPaymentSummaryAmount(
+												net,
+												netCurrency,
+												netFromBalance &&
+													hasDifferentBalanceCurrency,
+												true
+											)
+										) }
+									</p>
+								) }
+							</div>
+						</div>
+						<div className="woocommerce-woopayments-payment-summary__section">
+							{ reviewActions }
+							<div className="woocommerce-woopayments-payment-summary__id">
+								{ paymentIntentId && (
+									<div>
+										{ `${ __(
+											'Payment ID',
+											'woocommerce'
+										) }: ` }
+										<span className="woocommerce-woopayments-payment-summary__id-value">
+											{ paymentIntentId }
+										</span>
+									</div>
+								) }
+								{ chargeId && (
+									<div>
+										{ `${ __(
+											'Charge ID',
+											'woocommerce'
+										) }: ` }
+										<span className="woocommerce-woopayments-payment-summary__id-value">
+											{ chargeId }
+										</span>
+									</div>
+								) }
+							</div>
+						</div>
+					</div>
+					{ actions }
+				</Flex>
+			</CardBody>
+			<CardDivider />
+			<CardBody>
+				<dl className="woocommerce-woopayments-payment-summary__list">
+					{ getSummaryItems( transaction ).map(
+						( { title, content } ) => (
+							<div key={ title }>
+								<dt>{ title }</dt>
+								<dd>{ content }</dd>
+							</div>
+						)
 					) }
-				/>
-				<DetailRow
-					label={ __( 'Sales channel', 'woocommerce' ) }
-					value={ getChargeChannelLabel(
-						transaction.payment_method_details?.type,
-						transaction.metadata || {},
-						transaction.sales_channel
-					) }
-				/>
-				<DetailRow
-					label={ __( 'Customer', 'woocommerce' ) }
-					value={ <CustomerSummary transaction={ transaction } /> }
-				/>
-				<DetailRow
-					label={ __( 'Order', 'woocommerce' ) }
-					value={ <OrderSummary order={ transaction.order } /> }
-				/>
-				{ transaction.order?.subscriptions?.length ? (
-					<DetailRow
-						label={ __( 'Subscription', 'woocommerce' ) }
-						value={
-							<SubscriptionsSummary
-								subscriptions={
-									transaction.order.subscriptions
-								}
-							/>
-						}
-					/>
-				) : null }
-				{ paymentMethodLabel && (
-					<DetailRow
-						label={ __( 'Payment method', 'woocommerce' ) }
-						value={
-							<PaymentMethodSummary transaction={ transaction } />
-						}
-					/>
-				) }
-				{ transaction.outcome?.risk_level && (
-					<DetailRow
-						label={ __( 'Risk evaluation', 'woocommerce' ) }
-						value={ formatLabel( transaction.outcome.risk_level ) }
-					/>
-				) }
-				{ hasDisplayValue( fee ) && (
-					<DetailRow
-						label={ __( 'Fee', 'woocommerce' ) }
-						value={ formatPaymentSummaryAmount(
-							Number( fee ),
-							feeCurrency,
-							feeFromBalance && hasDifferentBalanceCurrency
-						) }
-					/>
-				) }
-				{ hasDisplayValue( net ) && (
-					<DetailRow
-						label={ __( 'Net amount', 'woocommerce' ) }
-						value={ formatPaymentSummaryAmount(
-							net,
-							netCurrency,
-							netFromBalance && hasDifferentBalanceCurrency
-						) }
-					/>
-				) }
-			</dl>
-		</section>
+				</dl>
+			</CardBody>
+			{ children }
+		</Card>
 	);
 };
+
+/**
+ * A notice at the foot of the summary card, text on the left and an action on the right.
+ * Client 11.1.0 `components/card-notice`.
+ *
+ * @param props          Component props.
+ * @param props.children The notice text.
+ * @param props.actions  The action button.
+ */
+export const WooPaymentsSummaryCardNotice = ( {
+	children,
+	actions,
+}: {
+	children: ReactNode;
+	actions?: ReactNode;
+} ) => (
+	<CardFooter className="woocommerce-woopayments-payment-summary__notice">
+		<p className="woocommerce-woopayments-payment-summary__notice-text">
+			{ children }
+		</p>
+		{ actions }
+	</CardFooter>
+);
 
 // Client 11.1.0 `payment-details/summary/missing-order-notice/index.tsx:25-66`: the notice offers a
 // Refund button until the charge is refunded, and then says it can no longer be disputed.
@@ -883,78 +1013,37 @@ export const WooPaymentsMissingOrderNotice = ( {
 	}
 
 	return (
-		<section className="woocommerce-woopayments-money-movement__notice-card woocommerce-woopayments-money-movement__notice-card--with-actions">
-			<p>
-				{ __(
-					'This transaction is not connected to order.',
-					'woocommerce'
-				) }{ ' ' }
-				{ transaction.refunded
-					? __(
-							'It has been refunded and is not a subject for disputes.',
-							'woocommerce'
-					  )
-					: __(
-							'Investigate this purchase and refund the transaction as needed.',
-							'woocommerce'
-					  ) }
-			</p>
-			{ ! transaction.refunded && (
-				<Button
-					variant="primary"
-					onClick={ ( event: MouseEvent< HTMLButtonElement > ) =>
-						onRefund( event.currentTarget )
-					}
-				>
-					{ __( 'Refund', 'woocommerce' ) }
-				</Button>
-			) }
-		</section>
+		<WooPaymentsSummaryCardNotice
+			actions={
+				! transaction.refunded && (
+					<Button
+						variant="primary"
+						__next40pxDefaultSize
+						onClick={ ( event: MouseEvent< HTMLButtonElement > ) =>
+							onRefund( event.currentTarget )
+						}
+					>
+						{ __( 'Refund', 'woocommerce' ) }
+					</Button>
+				)
+			}
+		>
+			{ __(
+				'This transaction is not connected to order.',
+				'woocommerce'
+			) }{ ' ' }
+			{ transaction.refunded
+				? __(
+						'It has been refunded and is not a subject for disputes.',
+						'woocommerce'
+				  )
+				: __(
+						'Investigate this purchase and refund the transaction as needed.',
+						'woocommerce'
+				  ) }
+		</WooPaymentsSummaryCardNotice>
 	);
 };
-
-export const WooPaymentsPaymentIdentifiersSection = ( {
-	paymentIntentId,
-	chargeId,
-	transactionResourceId,
-	type,
-}: {
-	paymentIntentId: string;
-	chargeId: string;
-	transactionResourceId: string;
-	type?: string;
-} ) => (
-	<section
-		className="woocommerce-woopayments-overview-card"
-		aria-labelledby="woocommerce-woopayments-payment-identifiers-heading"
-	>
-		<h3 id="woocommerce-woopayments-payment-identifiers-heading">
-			{ __( 'Identifiers', 'woocommerce' ) }
-		</h3>
-		<dl className="woocommerce-woopayments-money-movement__details woocommerce-woopayments-money-movement__details--plain">
-			{ paymentIntentId && (
-				<DetailRow
-					label={ __( 'Payment ID', 'woocommerce' ) }
-					value={ paymentIntentId }
-				/>
-			) }
-			{ chargeId && (
-				<DetailRow
-					label={ __( 'Charge ID', 'woocommerce' ) }
-					value={ chargeId }
-				/>
-			) }
-			<DetailRow
-				label={ __( 'Transaction ID', 'woocommerce' ) }
-				value={ transactionResourceId }
-			/>
-			<DetailRow
-				label={ __( 'Type', 'woocommerce' ) }
-				value={ formatLabel( type ) }
-			/>
-		</dl>
-	</section>
-);
 
 export const WooPaymentsPaymentMethodDetailsSection = ( {
 	transaction,

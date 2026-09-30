@@ -89,11 +89,7 @@ const getBaseCharge = (): WooPaymentsCharge => ( {
 	},
 } );
 
-const getSummary = () => {
-	const heading = screen.getByRole( 'heading', { name: 'Summary' } );
-
-	return heading.closest( 'section' ) as typeof heading;
-};
+const getSummary = () => screen.getByRole( 'region', { name: 'Summary' } );
 
 const renderDetailsPage = () =>
 	render(
@@ -145,7 +141,10 @@ const findCaptureNotice = async () => {
 			: false
 	);
 
-	return lead.closest( 'section' ) as typeof lead;
+	// Client 11.1.0 `components/card-notice`: the notice is a footer of the summary card.
+	return lead.closest(
+		'.woocommerce-woopayments-payment-summary__notice'
+	) as typeof lead;
 };
 
 describe( 'WooPayments payment details summary parity', () => {
@@ -268,6 +267,109 @@ describe( 'WooPayments payment details summary parity', () => {
 		} );
 	} );
 
+	describe( 'summary card (client summary/index.tsx:160-277, 448-800)', () => {
+		const getTerms = () =>
+			Array.from( getSummary().querySelectorAll( 'dt' ) ).map(
+				( term ) => term.textContent
+			);
+		const getValue = ( term: string ) =>
+			Array.from( getSummary().querySelectorAll( 'dt' ) ).find(
+				( candidate ) => candidate.textContent === term
+			)?.nextElementSibling;
+
+		it( 'shows the amount with its status, the IDs and one row of labelled values', () => {
+			render(
+				<WooPaymentsPaymentSummarySection
+					transaction={
+						getBaseCharge() as unknown as WooPaymentsTransaction
+					}
+					paymentIntentId="pi_abc"
+					chargeId="ch_38jdHA39KKA"
+				/>
+			);
+
+			const summary = getSummary();
+			expect( within( summary ).getByText( 'Paid' ) ).toHaveClass(
+				'woocommerce-status-badge--success'
+			);
+			expect(
+				within( summary ).getByText( 'pi_abc' ).parentElement
+			).toHaveTextContent( 'Payment ID: pi_abc' );
+			expect(
+				within( summary ).getByText( 'ch_38jdHA39KKA' ).parentElement
+			).toHaveTextContent( 'Charge ID: ch_38jdHA39KKA' );
+			expect( getTerms() ).toEqual( [
+				'Date',
+				'Sales channel',
+				'Customer',
+				'Order',
+				'Payment method',
+				'Risk evaluation',
+			] );
+			// `formatDateTimeFromTimestamp( created, { separator: ', ', includeTime: true } )`.
+			expect( getValue( 'Date' ) ).toHaveTextContent(
+				'Sep 19, 2019, 5:24pm'
+			);
+			expect( getValue( 'Order' ) ).toHaveTextContent( /^45981$/ );
+			expect(
+				within( getValue( 'Customer' ) as HTMLElement ).getByRole(
+					'link',
+					{ name: 'Customer name' }
+				)
+			).toHaveAttribute(
+				'href',
+				expect.stringContaining(
+					'path=%2Fwoopayments%2Ftransactions&search=Customer+name+%28mock%40example.com%29'
+				)
+			);
+			expect( getValue( 'Risk evaluation' ) ).toHaveTextContent( /^–$/ );
+		} );
+
+		it( 'drops the sales channel and dates to the minute for a disputed charge', () => {
+			render(
+				<WooPaymentsPaymentSummarySection
+					transaction={
+						{
+							...getBaseCharge(),
+							disputes: [ { id: 'dp_1', status: 'won' } ],
+						} as unknown as WooPaymentsTransaction
+					}
+				/>
+			);
+
+			expect( getTerms() ).toEqual( [
+				'Date',
+				'Customer',
+				'Order',
+				'Payment method',
+				'Risk evaluation',
+			] );
+			expect( getValue( 'Date' ) ).toHaveTextContent(
+				'September 19, 2019 5:24 PM'
+			);
+			expect(
+				within( getSummary() ).getByText( 'Disputed: Won' )
+			).toHaveClass( 'woocommerce-status-badge--success' );
+		} );
+
+		it( 'adds the subscription row when WooCommerce Subscriptions is active', () => {
+			window.wcSettings = {
+				...window.wcSettings,
+				admin: { woopaymentsSettings: { isSubscriptionsActive: true } },
+			} as unknown as typeof window.wcSettings;
+			render(
+				<WooPaymentsPaymentSummarySection
+					transaction={
+						getBaseCharge() as unknown as WooPaymentsTransaction
+					}
+				/>
+			);
+
+			expect( getTerms() ).toContain( 'Subscription' );
+			expect( getValue( 'Subscription' ) ).toHaveTextContent( /^–$/ );
+		} );
+	} );
+
 	describe( 'loan repayment (client summary/index.tsx:420-431,646-681)', () => {
 		it( 'shows the loan repayment and reduces the net by it', () => {
 			render(
@@ -288,10 +390,8 @@ describe( 'WooPayments payment details summary parity', () => {
 			expect(
 				within( summary ).getByText( 'Net: $16.30' )
 			).toBeInTheDocument();
-			expect( within( summary ).getByText( '$16.30' ) ).toHaveProperty(
-				'tagName',
-				'DD'
-			);
+			// The net shows once, in the line under the amount (client summary/index.tsx:652-676).
+			expect( within( summary ).queryByText( '$16.30' ) ).toBeNull();
 		} );
 
 		it( 'shows no loan repayment line without a paydown', () => {

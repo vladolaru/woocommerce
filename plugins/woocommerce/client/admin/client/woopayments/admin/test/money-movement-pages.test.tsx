@@ -668,9 +668,9 @@ describe( 'WooPayments money movement pages', () => {
 				<WooPaymentsPaymentSummarySection transaction={ transaction } />
 			);
 
-			const summary = screen
-				.getByRole( 'heading', { name: 'Summary' } )
-				.closest( 'section' ) as HTMLElement;
+			const summary = screen.getByRole( 'region', {
+				name: 'Summary',
+			} ) as HTMLElement;
 			expect(
 				within( summary ).getByText( expectedStatus )
 			).toBeInTheDocument();
@@ -695,9 +695,9 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect(
 			within( summary ).getByText( 'Custom brand ending in 4242' )
 		).toBeInTheDocument();
@@ -924,11 +924,14 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect(
-			within( summary ).getByText( 'Converted amount: $55.32 USD' )
+			within( summary ).getByText( '$55.32 USD', {
+				selector:
+					'.woocommerce-woopayments-payment-summary__settlement-currency',
+			} )
 		).toBeInTheDocument();
 		expect(
 			within( summary ).getByText( 'Fees: -$1.80 USD' )
@@ -958,11 +961,14 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect(
-			within( summary ).getByText( 'Converted amount: $55.32 USD' )
+			within( summary ).getByText( '$55.32 USD', {
+				selector:
+					'.woocommerce-woopayments-payment-summary__settlement-currency',
+			} )
 		).toBeInTheDocument();
 		expect(
 			within( summary ).getByText( 'Refunded: -€10.00' )
@@ -991,9 +997,9 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect(
 			within( summary ).getByText( 'Deducted: -$20.00' )
 		).toBeInTheDocument();
@@ -1017,9 +1023,9 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect(
 			within( summary ).getByText( 'Refunded: -$10.00' )
 		).toBeInTheDocument();
@@ -1047,9 +1053,9 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect(
 			within( summary ).getByText( 'Refunded: -$10.00' )
 		).toBeInTheDocument();
@@ -1078,12 +1084,14 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect(
-			within( summary ).queryByText( /Converted amount:/ )
-		).not.toBeInTheDocument();
+			summary.querySelector(
+				'.woocommerce-woopayments-payment-summary__settlement-currency'
+			)
+		).toBeNull();
 		expect(
 			within( summary ).getByText( 'Fees: -$1.80' )
 		).toBeInTheDocument();
@@ -1113,12 +1121,14 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect(
-			within( summary ).queryByText( /Converted amount:/ )
-		).not.toBeInTheDocument();
+			summary.querySelector(
+				'.woocommerce-woopayments-payment-summary__settlement-currency'
+			)
+		).toBeNull();
 		expect(
 			within( summary ).getByText( 'Fees: -€1.80' )
 		).toBeInTheDocument();
@@ -3173,13 +3183,16 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByRole( 'heading', { name: 'Payment details' } )
 		).toBeInTheDocument();
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect( within( summary ).getByText( '€12.34' ) ).toBeInTheDocument();
 		expect( within( summary ).getByText( 'EUR' ) ).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Converted amount: $14.15 USD' )
+			within( summary ).getByText( '$14.15 USD', {
+				selector:
+					'.woocommerce-woopayments-payment-summary__settlement-currency',
+			} )
 		).toBeInTheDocument();
 		expect(
 			within( summary ).getByText( 'Fees: -$0.86 USD' )
@@ -3225,14 +3238,16 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByRole( 'heading', { name: 'Payment details' } )
 		).toBeInTheDocument();
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect( within( summary ).getByText( '€50.00' ) ).toBeInTheDocument();
 		expect( within( summary ).getByText( 'EUR' ) ).toBeInTheDocument();
 		expect(
-			within( summary ).queryByText( /Converted amount:/ )
-		).not.toBeInTheDocument();
+			summary.querySelector(
+				'.woocommerce-woopayments-payment-summary__settlement-currency'
+			)
+		).toBeNull();
 		expect(
 			within( summary ).queryByText( /Fees:/ )
 		).not.toBeInTheDocument();
@@ -3242,6 +3257,10 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it( 'loads payment intent details when the route id is a payment intent', async () => {
+		window.wcSettings = {
+			...window.wcSettings,
+			admin: { woopaymentsSettings: { isSubscriptionsActive: true } },
+		} as unknown as typeof window.wcSettings;
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_test',
 			status: 'succeeded',
@@ -3332,9 +3351,9 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByRole( 'heading', { name: 'Payment details' } )
 		).toBeInTheDocument();
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect( summary ).toBeInTheDocument();
 		expect(
 			within( summary ).getByText( 'Partial refund' )
@@ -3348,21 +3367,25 @@ describe( 'WooPayments money movement pages', () => {
 		expect(
 			within( summary ).getByText( 'Online store' )
 		).toBeInTheDocument();
+		// Client 11.1.0 components/customer-link: the transactions list searched for "name (email)".
 		expect(
 			within( summary ).getByRole( 'link', { name: 'Ada Lovelace' } )
 		).toHaveAttribute(
 			'href',
-			'http://example.com/wp-admin/admin.php?page=wc-admin&path=/customers&filter=single_customer&customers=99'
+			expect.stringContaining(
+				'path=%2Fwoopayments%2Ftransactions&search=Ada+Lovelace+%28ada%40example.com%29'
+			)
 		);
+		// Client 11.1.0 components/order-link: the bare order and subscription numbers.
 		expect(
-			within( summary ).getByRole( 'link', { name: 'Order #123' } )
+			within( summary ).getByRole( 'link', { name: '123' } )
 		).toHaveAttribute(
 			'href',
 			'http://example.com/wp-admin/admin.php?page=wc-orders&action=edit&id=123'
 		);
 		expect(
 			within( summary ).getByRole( 'link', {
-				name: 'Subscription #456',
+				name: '456',
 			} )
 		).toHaveAttribute(
 			'href',
@@ -3386,8 +3409,19 @@ describe( 'WooPayments money movement pages', () => {
 		expect(
 			within( summary ).getByText( 'Refunded: -$10.00' )
 		).toBeInTheDocument();
-		expect( within( summary ).getByText( '$1.80' ) ).toBeInTheDocument();
-		expect( within( summary ).getByText( '$48.20' ) ).toBeInTheDocument();
+		// Client 11.1.0 summary/index.tsx:529-651: fees and net once, in the line under the amount.
+		expect(
+			within( summary ).getByText( 'Fees: -$1.80' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Net: $48.20' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).queryByText( 'Fee' )
+		).not.toBeInTheDocument();
+		expect(
+			within( summary ).queryByText( 'Net amount' )
+		).not.toBeInTheDocument();
 
 		const paymentMethod = screen
 			.getByRole( 'heading', { name: 'Payment method' } )
@@ -3430,12 +3464,13 @@ describe( 'WooPayments money movement pages', () => {
 			getDetailValue( paymentMethod, 'Postal code check' )
 		).toHaveTextContent( 'Failed' );
 
+		// Client 11.1.0 summary/index.tsx:765-797: Payment ID and Charge ID in the summary card, no separate card.
 		expect(
-			screen.getByRole( 'heading', { name: 'Identifiers' } )
-		).toBeInTheDocument();
-		expect( screen.getByText( 'pi_test' ) ).toBeInTheDocument();
-		expect( screen.getByText( 'ch_test' ) ).toBeInTheDocument();
-		expect( screen.getByText( 'txn_test' ) ).toBeInTheDocument();
+			screen.queryByRole( 'heading', { name: 'Identifiers' } )
+		).not.toBeInTheDocument();
+		expect( within( summary ).getByText( 'pi_test' ) ).toBeInTheDocument();
+		expect( within( summary ).getByText( 'ch_test' ) ).toBeInTheDocument();
+		expect( screen.queryByText( 'txn_test' ) ).not.toBeInTheDocument();
 		expect( getTimelineHeadlines() ).toContain(
 			'Payment status changed to Paid.'
 		);
@@ -3539,9 +3574,9 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		const summary = (
-			await screen.findByRole( 'heading', { name: 'Summary' } )
-		).closest( 'section' ) as HTMLElement;
+		const summary = ( await screen.findByRole( 'region', {
+			name: 'Summary',
+		} ) ) as HTMLElement;
 
 		expect( getDetailValue( summary, 'Sales channel' ) ).toHaveTextContent(
 			'In-person (POS)'
@@ -4926,9 +4961,9 @@ describe( 'WooPayments money movement pages', () => {
 		const captureButton = await screen.findByRole( 'button', {
 			name: 'Capture authorization for order #123',
 		} );
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		// Source: client 11.1.0 payment-status-chip/mappings.ts:49-52 ("Payment authorized").
 		expect(
 			within( summary ).getByText( 'Payment authorized' )
@@ -5804,9 +5839,9 @@ describe( 'WooPayments money movement pages', () => {
 			expect( document.getElementById( headingId || '' ) ).not.toBeNull();
 		} );
 
-		const summary = screen
-			.getByRole( 'heading', { name: 'Summary' } )
-			.closest( 'section' ) as HTMLElement;
+		const summary = screen.getByRole( 'region', {
+			name: 'Summary',
+		} ) as HTMLElement;
 		expect(
 			within( summary ).getByText( 'Disputed: Response needed' )
 		).toBeInTheDocument();
@@ -7611,7 +7646,11 @@ describe( 'WooPayments money movement pages', () => {
 			'Loading transaction details…'
 		);
 		expect( await screen.findByText( 'pi_test' ) ).toBeInTheDocument();
-		expect( screen.getByText( 'txn_test' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'ch_test' ) ).toBeInTheDocument();
+		// Client 11.1.0 timeline/index.js:39-45: the card keeps its title and says the timeline failed.
+		expect(
+			screen.getByText( 'Error while loading timeline' )
+		).toBeInTheDocument();
 		await waitFor( () =>
 			expect( statusRegion ).toHaveTextContent(
 				'Timeline provider failed.'
@@ -7652,7 +7691,7 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		expect( await screen.findByText( 'txn_test' ) ).toBeInTheDocument();
+		expect( await screen.findByText( 'ch_test' ) ).toBeInTheDocument();
 		expect( mockGetCharge ).toHaveBeenCalledWith( 'ch_test' );
 		expect( mockGetPaymentIntent ).toHaveBeenCalledWith( 'pi_test' );
 		expect( mockGetTransaction ).not.toHaveBeenCalled();

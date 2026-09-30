@@ -64,9 +64,9 @@ import { WooPaymentsTransactionDisputeDetails } from './transaction-dispute-deta
 import {
 	isPaymentOrderMissing,
 	WooPaymentsMissingOrderNotice,
-	WooPaymentsPaymentIdentifiersSection,
 	WooPaymentsPaymentMethodDetailsSection,
 	WooPaymentsPaymentSummarySection,
+	WooPaymentsSummaryCardNotice,
 } from './transaction-detail-sections';
 import { WooPaymentsCardReaderFeeDetails } from './transaction-card-reader-fee-details';
 import { LiveStatusMessage, StatusMessage } from './table';
@@ -102,7 +102,7 @@ type LoadTransactionOptions = {
 const CAPTURE_DOCUMENTATION_URL =
 	'https://woocommerce.com/document/woopayments/settings-guide/authorize-and-capture/#capturing-authorized-payments';
 const DETAIL_ACTION_FOCUS_SELECTOR =
-	'.woocommerce-woopayments-money-movement__authorization-actions, .woocommerce-woopayments-money-movement__authorization-notice, .woocommerce-woopayments-money-movement__refund-actions, .woocommerce-woopayments-money-movement__refund-modal, .woocommerce-woopayments-money-movement__dispute-response';
+	'.woocommerce-woopayments-payment-summary__review-actions, .woocommerce-woopayments-payment-summary__notice, .woocommerce-woopayments-money-movement__refund-actions, .woocommerce-woopayments-money-movement__refund-modal, .woocommerce-woopayments-money-movement__dispute-response';
 const REFUND_DIALOG_ID = 'woocommerce-woopayments-refund-dialog';
 
 const isPaymentIntentId = ( id: string ) => id.startsWith( 'pi_' );
@@ -893,8 +893,6 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		? getPaymentIntentId( transaction, id )
 		: '';
 	const chargeId = transaction?.charge_id || '';
-	const transactionResourceId =
-		transaction?.transaction_id || transaction?.id || transactionId || id;
 	const hasPaymentDetails = !! ( paymentIntentId || chargeId );
 	const hasDetailPaymentSurface = isCardReaderFeeRoute || hasPaymentDetails;
 	// The client's payment details route only takes payment ids, so it shows the notice while loading
@@ -1263,7 +1261,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 
 	return (
 		<section
-			className="woocommerce-woopayments-money-movement"
+			className="woocommerce-woopayments-money-movement woocommerce-woopayments-money-movement--details"
 			aria-busy={ isLoading }
 		>
 			{ /* Client 11.1.0 payment-details/payment-details/index.tsx:54,75 and readers/index.js:37,137: first on the page, error view included. */ }
@@ -1279,51 +1277,6 @@ export const WooPaymentsTransactionDetailsPage = () => {
 						? __( 'Payment details', 'woocommerce' )
 						: __( 'Transaction details', 'woocommerce' ) }
 				</h2>
-				{ showRefundActions && (
-					<div
-						ref={ refundActionsRef }
-						className="woocommerce-woopayments-money-movement__refund-actions"
-					>
-						<DropdownMenu
-							icon={ moreVertical }
-							label={ __( 'Transaction actions', 'woocommerce' ) }
-							popoverProps={ {
-								position: 'bottom left',
-							} }
-						>
-							{ ( { onClose } ) => (
-								<MenuGroup>
-									{ showFullRefundAction && (
-										<MenuItem
-											onClick={ () => {
-												handleRefundModalOpen();
-												onClose();
-											} }
-										>
-											{ __(
-												'Refund in full',
-												'woocommerce'
-											) }
-										</MenuItem>
-									) }
-									{ showPartialRefundAction && (
-										<MenuItem
-											onClick={ () => {
-												handlePartialRefund();
-												onClose();
-											} }
-										>
-											{ __(
-												'Partial refund',
-												'woocommerce'
-											) }
-										</MenuItem>
-									) }
-								</MenuGroup>
-							) }
-						</DropdownMenu>
-					</div>
-				) }
 			</div>
 			{ ! isCardReaderFeeRoute && (
 				<LiveStatusMessage
@@ -1350,114 +1303,197 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							{ authorizationErrorMessage }
 						</StatusMessage>
 					) }
-					{ showFraudReviewActions && (
-						<div className="woocommerce-woopayments-money-movement__authorization-actions">
-							<Button
-								variant="secondary"
-								isDestructive
-								isBusy={ pendingAction === 'cancel' }
-								disabled={ isAuthorizationActionPending }
-								accessibleWhenDisabled
-								onClick={
-									isAuthorizationActionPending
-										? undefined
-										: () =>
-												handleAuthorizationAction(
-													'cancel'
-												)
-								}
-								aria-label={
-									pendingAction === 'cancel'
-										? sprintf(
-												/* translators: %s: order ID. */
-												__(
-													'Blocking transaction for order #%s',
-													'woocommerce'
-												),
-												String( orderId )
-										  )
-										: undefined
-								}
-							>
-								{ __( 'Block transaction', 'woocommerce' ) }
-							</Button>
-							<Button
-								variant="primary"
-								isBusy={ pendingAction === 'capture' }
-								disabled={ isAuthorizationActionPending }
-								accessibleWhenDisabled
-								onClick={
-									isAuthorizationActionPending
-										? undefined
-										: () =>
-												handleAuthorizationAction(
-													'capture'
-												)
-								}
-								aria-label={
-									pendingAction === 'capture'
-										? sprintf(
-												/* translators: %s: order ID. */
-												__(
-													'Approving transaction for order #%s',
-													'woocommerce'
-												),
-												String( orderId )
-										  )
-										: undefined
-								}
-							>
-								{ __( 'Approve transaction', 'woocommerce' ) }
-							</Button>
-						</div>
-					) }
 					<div className="woocommerce-woopayments-money-movement__detail-sections">
 						<WooPaymentsPaymentSummarySection
 							transaction={ transaction }
-						/>
-						<WooPaymentsMissingOrderNotice
-							transaction={ transaction }
-							// Client 11.1.0 `payment-details/summary/index.tsx:897-903` opens the modal with no open event.
-							onRefund={ openRefundModal }
-						/>
-						<WooPaymentsPaymentIdentifiersSection
 							paymentIntentId={ paymentIntentId }
 							chargeId={ chargeId }
-							transactionResourceId={ transactionResourceId }
-							type={ transaction.type }
-						/>
-						{ disputeOrder.orderedDisputes.map(
-							( dispute, index ) => {
-								const disputeId = getDisputeId( dispute );
-
-								return (
-									<WooPaymentsTransactionDisputeDetails
-										key={ `${
-											disputeId || 'dispute'
-										}-${ index }` }
-										transaction={ transaction }
-										dispute={ dispute }
-										ordinal={
-											disputeOrder.orderById[
-												disputeId
-											] || index + 1
-										}
-										total={ disputeOrder.total }
-										onIssueRefund={
-											showFullRefundAction
-												? () =>
-														handleInquiryRefundModalOpen(
-															dispute
-														)
-												: undefined
-										}
-									/>
-								);
+							actions={
+								showRefundActions && (
+									<div
+										ref={ refundActionsRef }
+										className="woocommerce-woopayments-money-movement__refund-actions"
+									>
+										<DropdownMenu
+											icon={ moreVertical }
+											label={ __(
+												'Transaction actions',
+												'woocommerce'
+											) }
+											popoverProps={ {
+												position: 'bottom left',
+											} }
+										>
+											{ ( { onClose } ) => (
+												<MenuGroup>
+													{ showFullRefundAction && (
+														<MenuItem
+															onClick={ () => {
+																handleRefundModalOpen();
+																onClose();
+															} }
+														>
+															{ __(
+																'Refund in full',
+																'woocommerce'
+															) }
+														</MenuItem>
+													) }
+													{ showPartialRefundAction && (
+														<MenuItem
+															onClick={ () => {
+																handlePartialRefund();
+																onClose();
+															} }
+														>
+															{ __(
+																'Partial refund',
+																'woocommerce'
+															) }
+														</MenuItem>
+													) }
+												</MenuGroup>
+											) }
+										</DropdownMenu>
+									</div>
+								)
 							}
-						) }
-						{ showCaptureNotice && captureDeadline && (
-							<section className="woocommerce-woopayments-overview-card woocommerce-woopayments-money-movement__authorization-notice">
-								<p>
+							reviewActions={
+								showFraudReviewActions && (
+									<div className="woocommerce-woopayments-payment-summary__review-actions">
+										<Button
+											variant="secondary"
+											isDestructive
+											isBusy={
+												pendingAction === 'cancel'
+											}
+											disabled={
+												isAuthorizationActionPending
+											}
+											accessibleWhenDisabled
+											onClick={
+												isAuthorizationActionPending
+													? undefined
+													: () =>
+															handleAuthorizationAction(
+																'cancel'
+															)
+											}
+											aria-label={
+												pendingAction === 'cancel'
+													? sprintf(
+															/* translators: %s: order ID. */
+															__(
+																'Blocking transaction for order #%s',
+																'woocommerce'
+															),
+															String( orderId )
+													  )
+													: undefined
+											}
+										>
+											{ __(
+												'Block transaction',
+												'woocommerce'
+											) }
+										</Button>
+										<Button
+											variant="primary"
+											isBusy={
+												pendingAction === 'capture'
+											}
+											disabled={
+												isAuthorizationActionPending
+											}
+											accessibleWhenDisabled
+											onClick={
+												isAuthorizationActionPending
+													? undefined
+													: () =>
+															handleAuthorizationAction(
+																'capture'
+															)
+											}
+											aria-label={
+												pendingAction === 'capture'
+													? sprintf(
+															/* translators: %s: order ID. */
+															__(
+																'Approving transaction for order #%s',
+																'woocommerce'
+															),
+															String( orderId )
+													  )
+													: undefined
+											}
+										>
+											{ __(
+												'Approve transaction',
+												'woocommerce'
+											) }
+										</Button>
+									</div>
+								)
+							}
+						>
+							<WooPaymentsMissingOrderNotice
+								transaction={ transaction }
+								// Client 11.1.0 `payment-details/summary/index.tsx:897-903` opens the modal with no open event.
+								onRefund={ openRefundModal }
+							/>
+							{ showCaptureNotice && captureDeadline && (
+								<WooPaymentsSummaryCardNotice
+									actions={
+										! isFraudReview && (
+											<Button
+												variant="primary"
+												isBusy={
+													pendingAction === 'capture'
+												}
+												disabled={
+													isAuthorizationActionPending
+												}
+												accessibleWhenDisabled
+												onClick={
+													isAuthorizationActionPending
+														? undefined
+														: () =>
+																handleAuthorizationAction(
+																	'capture'
+																)
+												}
+												aria-label={
+													pendingAction === 'capture'
+														? sprintf(
+																/* translators: %s: order ID. */
+																__(
+																	'Capturing authorization for order #%s',
+																	'woocommerce'
+																),
+																String(
+																	orderId
+																)
+														  )
+														: sprintf(
+																/* translators: %s: order ID. */
+																__(
+																	'Capture authorization for order #%s',
+																	'woocommerce'
+																),
+																String(
+																	orderId
+																)
+														  )
+												}
+											>
+												{ __(
+													'Capture',
+													'woocommerce'
+												) }
+											</Button>
+										)
+									}
+								>
 									{ createInterpolateElement(
 										__(
 											'You must <a>capture</a> this charge within the next',
@@ -1491,52 +1527,38 @@ export const WooPaymentsTransactionDetailsPage = () => {
 											'Approving this transaction will capture the charge.',
 											'woocommerce'
 										) }` }
-								</p>
-								{ ! isFraudReview && (
-									<Button
-										variant="primary"
-										isBusy={ pendingAction === 'capture' }
-										disabled={
-											isAuthorizationActionPending
+								</WooPaymentsSummaryCardNotice>
+							) }
+						</WooPaymentsPaymentSummarySection>
+						{ disputeOrder.orderedDisputes.map(
+							( dispute, index ) => {
+								const disputeId = getDisputeId( dispute );
+
+								return (
+									<WooPaymentsTransactionDisputeDetails
+										key={ `${
+											disputeId || 'dispute'
+										}-${ index }` }
+										transaction={ transaction }
+										dispute={ dispute }
+										ordinal={
+											disputeOrder.orderById[
+												disputeId
+											] || index + 1
 										}
-										accessibleWhenDisabled
-										onClick={
-											isAuthorizationActionPending
-												? undefined
-												: () =>
-														handleAuthorizationAction(
-															'capture'
+										total={ disputeOrder.total }
+										onIssueRefund={
+											showFullRefundAction
+												? () =>
+														handleInquiryRefundModalOpen(
+															dispute
 														)
+												: undefined
 										}
-										aria-label={
-											pendingAction === 'capture'
-												? sprintf(
-														/* translators: %s: order ID. */
-														__(
-															'Capturing authorization for order #%s',
-															'woocommerce'
-														),
-														String( orderId )
-												  )
-												: sprintf(
-														/* translators: %s: order ID. */
-														__(
-															'Capture authorization for order #%s',
-															'woocommerce'
-														),
-														String( orderId )
-												  )
-										}
-									>
-										{ __( 'Capture', 'woocommerce' ) }
-									</Button>
-								) }
-							</section>
+									/>
+								);
+							}
 						) }
-						<WooPaymentsPaymentMethodDetailsSection
-							transaction={ transaction }
-							countries={ countries }
-						/>
 						<WooPaymentsTransactionTimeline
 							events={ timelineEvents }
 							hasError={ !! timelineErrorMessage }
@@ -1551,6 +1573,10 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							bankName={ getBankName(
 								transaction.payment_method_details
 							) }
+						/>
+						<WooPaymentsPaymentMethodDetailsSection
+							transaction={ transaction }
+							countries={ countries }
 						/>
 					</div>
 					{ isRefundModalOpen && (
