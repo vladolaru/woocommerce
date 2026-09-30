@@ -148,7 +148,7 @@ final class NativePaymentsBootstrap {
 	 * @return array<int,class-string> Root class names in registration order.
 	 */
 	private function roots_for( string $state, string $request ): array {
-		if ( 'cli' === $request || NativePaymentsState::DISABLED === $state ) {
+		if ( NativePaymentsState::DISABLED === $state ) {
 			return array();
 		}
 

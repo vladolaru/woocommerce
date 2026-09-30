@@ -31,6 +31,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
 use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
@@ -87,7 +88,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		remove_all_actions( 'wp_ajax_wcpay_get_user_payment_tokens' );
 		remove_all_actions( 'woocommerce_woocommerce_payments_payment_requires_action' );
 		remove_all_filters( 'woocommerce_woopayments_subscriptions_for_renewal_order' );
-		$subscription_handlers = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'has_attached_subscription_handlers' );
+		$subscription_handlers = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
 		$subscription_handlers->setAccessible( true );
 		$subscription_handlers->setValue( null, false );
 		remove_all_filters( 'woocommerce_email_classes' );

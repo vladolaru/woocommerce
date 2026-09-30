@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
@@ -193,7 +194,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			$active_prefix
 		);
 
-		return array(
+		$matrix = array(
 			NativePaymentsState::AVAILABLE => array(
 				'admin' => array( WooPaymentsCutoverController::class, WooPaymentsCutoverReconciliationJob::class ),
 				'cron'  => array( WooPaymentsCutoverReconciliationJob::class ),
@@ -276,6 +277,17 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				),
 			),
 		);
+
+		// Renewals and their emails can run on any request of a native-owned store, WP-CLI included (Action Scheduler
+		// runners), with or without the gateway enabled, as in the client.
+		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+				$matrix[ $state ][ $request ]   = $matrix[ $state ][ $request ] ?? array();
+				$matrix[ $state ][ $request ][] = WooPaymentsSubscriptionRenewalHooks::class;
+			}
+		}
+
+		return $matrix;
 	}
 
 	/**

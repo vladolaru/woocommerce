@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -23,6 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedRenewalAuthenticationEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Throwable;
 use WC_Order;
 use WC_Payment_Token;
@@ -119,13 +121,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Recommended payment methods cache TTL.
 	 */
 	private const RECOMMENDED_PAYMENT_METHODS_CACHE_TTL = DAY_IN_SECONDS;
-
-	/**
-	 * Whether the base gateway attached the shared subscription integration hooks for this request.
-	 *
-	 * @var bool
-	 */
-	private static bool $has_attached_subscription_handlers = false;
 
 	/**
 	 * Payment processing service.
@@ -2511,45 +2506,26 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return void
 	 */
 	private function register_subscription_handlers(): void {
-		if ( ! $this->owns_subscription_renewal_hooks() || self::$has_attached_subscription_handlers ) {
+		if ( ! $this->owns_subscription_renewal_hooks() ) {
 			return;
 		}
-		self::$has_attached_subscription_handlers = true;
 
-		if ( false === has_filter( 'woocommerce_email_classes', array( self::class, 'add_subscription_emails' ) ) ) {
-			add_filter( 'woocommerce_email_classes', array( self::class, 'add_subscription_emails' ), 20 );
-		}
-
-		if ( false === has_action( 'woocommerce_checkout_subscription_created', array( $this, 'maybe_force_subscription_to_manual' ) ) ) {
-			add_action( 'woocommerce_checkout_subscription_created', array( $this, 'maybe_force_subscription_to_manual' ), 10, 1 );
-		}
-
-		foreach ( WooPaymentsSubscriptionMethodPolicy::get_reusable_gateway_ids() as $gateway_id ) {
-			$scheduled_hook = 'woocommerce_scheduled_subscription_payment_' . $gateway_id;
-			$failing_hook   = 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id;
-
-			if ( false === has_action( $scheduled_hook, array( $this, 'scheduled_subscription_payment' ) ) ) {
-				add_action( $scheduled_hook, array( $this, 'scheduled_subscription_payment' ), 10, 2 );
-			}
-
-			if ( false === has_action( $failing_hook, array( $this, 'update_failing_payment_method' ) ) ) {
-				add_action( $failing_hook, array( $this, 'update_failing_payment_method' ), 10, 2 );
-			}
-		}
-
-		WooPaymentsSubscriptionAdminPaymentMethodHandler::instance()->register_hooks();
+		WooPaymentsSubscriptionRenewalHooks::attach( $this );
 	}
 
 	/**
 	 * Tell whether this gateway owns automatic subscription renewal handling.
 	 *
 	 * Link credentials remain attached to the base card gateway, and Amazon Pay renewals use a
-	 * preserved compatibility gateway ID handled by the same base gateway instance.
+	 * preserved compatibility gateway ID handled by the same base gateway instance. While the plugin owns
+	 * payments, its gateway renews: attaching the native handler too would charge each renewal twice.
 	 *
 	 * @return bool
 	 */
 	private function owns_subscription_renewal_hooks(): bool {
-		return OrderPaymentStore::GATEWAY_ID === $this->id && $this->is_subscriptions_enabled();
+		return OrderPaymentStore::GATEWAY_ID === $this->id
+			&& $this->is_subscriptions_enabled()
+			&& ! wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active();
 	}
 
 	/**

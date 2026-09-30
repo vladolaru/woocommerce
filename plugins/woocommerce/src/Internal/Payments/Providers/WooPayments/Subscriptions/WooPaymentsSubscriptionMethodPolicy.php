@@ -36,6 +36,21 @@ final class WooPaymentsSubscriptionMethodPolicy {
 	}
 
 	/**
+	 * Tell whether WooCommerce Subscriptions 2.2.0 or later, or the Subscriptions core library, is loaded.
+	 *
+	 * The same check as the card gateway's is_subscriptions_enabled(), usable before any gateway exists.
+	 *
+	 * @return bool
+	 */
+	public static function is_subscriptions_available(): bool {
+		if ( class_exists( 'WC_Subscriptions' ) ) {
+			return isset( \WC_Subscriptions::$version ) && version_compare( (string) \WC_Subscriptions::$version, '2.2.0', '>=' );
+		}
+
+		return class_exists( 'WC_Subscriptions_Core_Plugin' );
+	}
+
+	/**
 	 * Get gateway IDs that support reusable subscription payment methods.
 	 *
 	 * @return array<int,string>

@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayPreflightGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Shadow\NativePaymentsShadowMode;
 use ReflectionMethod;
@@ -69,6 +70,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsUserPreferenceFields',
 		self::WCPAY . 'WooPaymentsHomeTasks',
+		WooPaymentsSubscriptionRenewalHooks::class,
 	);
 
 	/** Connected AJAX roots. */
@@ -84,6 +86,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
+		WooPaymentsSubscriptionRenewalHooks::class,
 	);
 
 	/** Connected REST roots. */
@@ -114,6 +117,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsUserPreferenceFields',
 		self::WCPAY . 'WooPaymentsHomeTasks',
+		WooPaymentsSubscriptionRenewalHooks::class,
 	);
 
 	/** Connected cron and Action Scheduler roots. */
@@ -129,6 +133,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
 		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
+		WooPaymentsSubscriptionRenewalHooks::class,
 	);
 
 	/** Active shopper roots. */
@@ -158,6 +163,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
+		WooPaymentsSubscriptionRenewalHooks::class,
 	);
 
 	/** Active admin roots. */
@@ -185,6 +191,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsUserPreferenceFields',
 		self::WCPAY . 'WooPaymentsHomeTasks',
+		WooPaymentsSubscriptionRenewalHooks::class,
 	);
 
 	/** Active AJAX roots. */
@@ -212,6 +219,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsPaymentMethodMessaging',
 		self::WCPAY . 'WooPaymentsTokenClassMapController',
 		self::WCPAY . 'WooPaymentsFrontendTrackingController',
+		WooPaymentsSubscriptionRenewalHooks::class,
 	);
 
 	/** Active REST and Store API roots. */
@@ -254,6 +262,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension',
 		self::WCPAY . 'WooPaymentsExpressCheckoutCurrencyGuard',
 		self::WCPAY . 'WooPaymentsTokenClassMapController',
+		WooPaymentsSubscriptionRenewalHooks::class,
 	);
 
 	/** Active cron and Action Scheduler roots. */
@@ -274,6 +283,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsOrderStatusChangeController',
 		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
+		WooPaymentsSubscriptionRenewalHooks::class,
 	);
 
 	/** @testdox Production composition supplies the provider root matrix through a lazy closure. */
@@ -463,18 +473,18 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			'available no-op' => array( NativePaymentsState::AVAILABLE, 'front', array() ),
 			'available admin' => array( NativePaymentsState::AVAILABLE, 'admin', self::AVAILABLE_ADMIN ),
 			'available cron'  => array( NativePaymentsState::AVAILABLE, 'cron', self::AVAILABLE_CRON ),
-			'connected no-op' => array( NativePaymentsState::CONNECTED, 'front', array() ),
+			'connected front' => array( NativePaymentsState::CONNECTED, 'front', array( WooPaymentsSubscriptionRenewalHooks::class ) ),
 			'connected admin' => array( NativePaymentsState::CONNECTED, 'admin', self::CONNECTED_ADMIN ),
 			'connected AJAX'  => array( NativePaymentsState::CONNECTED, 'ajax', self::CONNECTED_AJAX ),
 			'connected REST'  => array( NativePaymentsState::CONNECTED, 'rest', self::CONNECTED_REST ),
 			'connected cron'  => array( NativePaymentsState::CONNECTED, 'cron', self::CONNECTED_CRON ),
-			'connected CLI'   => array( NativePaymentsState::CONNECTED, 'cli', array() ),
+			'connected CLI'   => array( NativePaymentsState::CONNECTED, 'cli', array( WooPaymentsSubscriptionRenewalHooks::class ) ),
 			'active front'    => array( NativePaymentsState::ACTIVE, 'front', self::ACTIVE_FRONT ),
 			'active admin'    => array( NativePaymentsState::ACTIVE, 'admin', self::ACTIVE_ADMIN ),
 			'active AJAX'     => array( NativePaymentsState::ACTIVE, 'ajax', self::ACTIVE_AJAX ),
 			'active REST'     => array( NativePaymentsState::ACTIVE, 'rest', self::ACTIVE_REST ),
 			'active cron'     => array( NativePaymentsState::ACTIVE, 'cron', self::ACTIVE_CRON ),
-			'active CLI'      => array( NativePaymentsState::ACTIVE, 'cli', array() ),
+			'active CLI'      => array( NativePaymentsState::ACTIVE, 'cli', array( WooPaymentsSubscriptionRenewalHooks::class ) ),
 		);
 	}
 
@@ -520,8 +530,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 				$this->assertNotContains( WooPaymentsWooPayPreflightGuard::class, $roots, $state . ' ' . $request_type . ' must not register the WooPay preflight guard.' );
 			}
-
-			$this->assertArrayNotHasKey( 'cli', $request_groups, $state . ' CLI requests must not register the WooPay preflight guard.' );
 		}
 	}
 
