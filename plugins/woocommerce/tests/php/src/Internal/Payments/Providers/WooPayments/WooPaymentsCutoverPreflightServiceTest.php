@@ -87,6 +87,20 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should build no check collaborator when initialized, so the cutover surfaces build no payment provider until a preflight runs.
+	 */
+	public function test_init_resolves_no_check_collaborator(): void {
+		$sut = new WooPaymentsCutoverPreflightService();
+		$sut->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ) );
+
+		foreach ( array( 'provider', 'legacy_subscriptions_guard', 'fee_remediation_service', 'platform_connection_service', 'native_rate_account', 'native_rate_api_client', 'admin_navigation_controller' ) as $property ) {
+			$reflection = new \ReflectionProperty( WooPaymentsCutoverPreflightService::class, $property );
+			$reflection->setAccessible( true );
+			$this->assertNull( $reflection->getValue( $sut ), $property . ' must be resolved when a preflight runs, not when the service is initialized.' );
+		}
+	}
+
+	/**
 	 * @testdox Reconciliation preflight keeps each invalid nested filter observable.
 	 */
 	public function test_reconciliation_failures_preserve_invalid_nested_filter_codes(): void {
@@ -457,7 +471,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->database;
 			}
 		};
-		$sut->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $provider, new WooPaymentsLegacySubscriptionsGuard(), $fee_remediation, $platform_connection, $rate_account, $rate_client, $navigation );
+		$this->init_preflight_service( $sut, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $provider, new WooPaymentsLegacySubscriptionsGuard(), $fee_remediation, $platform_connection, $rate_account, $rate_client, $navigation );
 		return $sut;
 	}
 
@@ -476,5 +490,40 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $post_id );
 		$this->assertGreaterThan( 0, $post_id );
 		update_post_meta( $post_id, '_wcpay_subscription_id', 'sub_legacy' );
+	}
+
+	/**
+	 * Initialize a preflight service with its check collaborators.
+	 *
+	 * The service resolves them when a preflight runs, so the test doubles are set on the instance after init.
+	 *
+	 * @param WooPaymentsCutoverPreflightService                    $service                     The preflight service.
+	 * @param NativePaymentsRuntimeArbiter                          $arbiter                     The runtime arbiter.
+	 * @param LegacyProxy                                           $legacy_proxy                The legacy proxy.
+	 * @param WooPaymentsProvider                                   $provider                    The native provider.
+	 * @param WooPaymentsLegacySubscriptionsGuard                   $legacy_subscriptions_guard  The legacy subscription data guard.
+	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service     The fee remediation owner.
+	 * @param WooPaymentsPlatformConnectionService                  $platform_connection_service The platform connection readiness service.
+	 * @param WooPaymentsNativeAccountAdapter                       $native_rate_account         The native rate account boundary.
+	 * @param WooPaymentsNativeApiClientAdapter                     $native_rate_api_client      The native rate API client boundary.
+	 * @param WooPaymentsAdminNavigationController                  $admin_navigation_controller The native admin navigation owner.
+	 */
+	private function init_preflight_service( WooPaymentsCutoverPreflightService $service, NativePaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, WooPaymentsPlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $native_rate_account, WooPaymentsNativeApiClientAdapter $native_rate_api_client, WooPaymentsAdminNavigationController $admin_navigation_controller ): void {
+		$service->init( $arbiter, $legacy_proxy );
+
+		$collaborators = array(
+			'provider'                    => $provider,
+			'legacy_subscriptions_guard'  => $legacy_subscriptions_guard,
+			'fee_remediation_service'     => $fee_remediation_service,
+			'platform_connection_service' => $platform_connection_service,
+			'native_rate_account'         => $native_rate_account,
+			'native_rate_api_client'      => $native_rate_api_client,
+			'admin_navigation_controller' => $admin_navigation_controller,
+		);
+		foreach ( $collaborators as $property => $collaborator ) {
+			$reflection = new \ReflectionProperty( WooPaymentsCutoverPreflightService::class, $property );
+			$reflection->setAccessible( true );
+			$reflection->setValue( $service, $collaborator );
+		}
 	}
 }

@@ -1666,7 +1666,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$arbiter           = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
 		$legacy_proxy      = wc_get_container()->get( LegacyProxy::class );
 		$preflight_service = new WooPaymentsCutoverPreflightService();
-		$preflight_service->init(
+		$this->init_preflight_service(
+			$preflight_service,
 			$arbiter,
 			$legacy_proxy,
 			$this->provider,
@@ -2216,5 +2217,40 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				};
 			}
 		);
+	}
+
+	/**
+	 * Initialize a preflight service with its check collaborators.
+	 *
+	 * The service resolves them when a preflight runs, so the test doubles are set on the instance after init.
+	 *
+	 * @param WooPaymentsCutoverPreflightService                    $service                     The preflight service.
+	 * @param NativePaymentsRuntimeArbiter                          $arbiter                     The runtime arbiter.
+	 * @param LegacyProxy                                           $legacy_proxy                The legacy proxy.
+	 * @param WooPaymentsProvider                                   $provider                    The native provider.
+	 * @param WooPaymentsLegacySubscriptionsGuard                   $legacy_subscriptions_guard  The legacy subscription data guard.
+	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service     The fee remediation owner.
+	 * @param WooPaymentsPlatformConnectionService                  $platform_connection_service The platform connection readiness service.
+	 * @param WooPaymentsNativeAccountAdapter                       $native_rate_account         The native rate account boundary.
+	 * @param WooPaymentsNativeApiClientAdapter                     $native_rate_api_client      The native rate API client boundary.
+	 * @param WooPaymentsAdminNavigationController                  $admin_navigation_controller The native admin navigation owner.
+	 */
+	private function init_preflight_service( WooPaymentsCutoverPreflightService $service, NativePaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, WooPaymentsPlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $native_rate_account, WooPaymentsNativeApiClientAdapter $native_rate_api_client, WooPaymentsAdminNavigationController $admin_navigation_controller ): void {
+		$service->init( $arbiter, $legacy_proxy );
+
+		$collaborators = array(
+			'provider'                    => $provider,
+			'legacy_subscriptions_guard'  => $legacy_subscriptions_guard,
+			'fee_remediation_service'     => $fee_remediation_service,
+			'platform_connection_service' => $platform_connection_service,
+			'native_rate_account'         => $native_rate_account,
+			'native_rate_api_client'      => $native_rate_api_client,
+			'admin_navigation_controller' => $admin_navigation_controller,
+		);
+		foreach ( $collaborators as $property => $collaborator ) {
+			$reflection = new \ReflectionProperty( WooPaymentsCutoverPreflightService::class, $property );
+			$reflection->setAccessible( true );
+			$reflection->setValue( $service, $collaborator );
+		}
 	}
 }

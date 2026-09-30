@@ -84,51 +84,51 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Native WooPayments provider.
 	 *
-	 * @var WooPaymentsProvider
+	 * @var WooPaymentsProvider|null
 	 */
-	private WooPaymentsProvider $provider;
+	private ?WooPaymentsProvider $provider = null;
 
 	/**
 	 * Legacy subscription data guard.
 	 *
-	 * @var WooPaymentsLegacySubscriptionsGuard
+	 * @var WooPaymentsLegacySubscriptionsGuard|null
 	 */
-	private WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard;
+	private ?WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard = null;
 
 	/**
 	 * Fee remediation owner.
 	 *
-	 * @var WooPaymentsCanceledAuthorizationFeeRemediationService
+	 * @var WooPaymentsCanceledAuthorizationFeeRemediationService|null
 	 */
-	private WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service;
+	private ?WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service = null;
 
 	/**
 	 * Platform connection readiness service.
 	 *
-	 * @var WooPaymentsPlatformConnectionService
+	 * @var WooPaymentsPlatformConnectionService|null
 	 */
-	private WooPaymentsPlatformConnectionService $platform_connection_service;
+	private ?WooPaymentsPlatformConnectionService $platform_connection_service = null;
 
 	/**
 	 * Native rate account boundary.
 	 *
-	 * @var WooPaymentsNativeAccountAdapter
+	 * @var WooPaymentsNativeAccountAdapter|null
 	 */
-	private WooPaymentsNativeAccountAdapter $native_rate_account;
+	private ?WooPaymentsNativeAccountAdapter $native_rate_account = null;
 
 	/**
 	 * Native rate API client boundary.
 	 *
-	 * @var WooPaymentsNativeApiClientAdapter
+	 * @var WooPaymentsNativeApiClientAdapter|null
 	 */
-	private WooPaymentsNativeApiClientAdapter $native_rate_api_client;
+	private ?WooPaymentsNativeApiClientAdapter $native_rate_api_client = null;
 
 	/**
 	 * Native admin navigation owner.
 	 *
-	 * @var WooPaymentsAdminNavigationController
+	 * @var WooPaymentsAdminNavigationController|null
 	 */
-	private WooPaymentsAdminNavigationController $admin_navigation_controller;
+	private ?WooPaymentsAdminNavigationController $admin_navigation_controller = null;
 
 	/**
 	 * Request-local reconciliation failures keyed by blog ID.
@@ -154,28 +154,16 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Initialize the service instance.
 	 *
+	 * The check collaborators are resolved when a preflight runs, so registering the cutover surfaces loads none of them.
+	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter                          $arbiter                    Runtime owner arbiter.
-	 * @param LegacyProxy                                           $legacy_proxy               Legacy proxy.
-	 * @param WooPaymentsProvider                                   $provider                   Native WooPayments provider.
-	 * @param WooPaymentsLegacySubscriptionsGuard                   $legacy_subscriptions_guard Legacy subscription data guard.
-	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service    Fee remediation owner.
-	 * @param WooPaymentsPlatformConnectionService                  $platform_connection_service Platform connection readiness service.
-	 * @param WooPaymentsNativeAccountAdapter                       $native_rate_account         Native rate account boundary.
-	 * @param WooPaymentsNativeApiClientAdapter                     $native_rate_api_client      Native rate API client boundary.
-	 * @param WooPaymentsAdminNavigationController                  $admin_navigation_controller Native admin navigation owner.
+	 * @param NativePaymentsRuntimeArbiter $arbiter      Runtime owner arbiter.
+	 * @param LegacyProxy                  $legacy_proxy Legacy proxy.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, WooPaymentsPlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $native_rate_account, WooPaymentsNativeApiClientAdapter $native_rate_api_client, WooPaymentsAdminNavigationController $admin_navigation_controller ): void {
-		$this->arbiter                     = $arbiter;
-		$this->legacy_proxy                = $legacy_proxy;
-		$this->provider                    = $provider;
-		$this->legacy_subscriptions_guard  = $legacy_subscriptions_guard;
-		$this->fee_remediation_service     = $fee_remediation_service;
-		$this->platform_connection_service = $platform_connection_service;
-		$this->native_rate_account         = $native_rate_account;
-		$this->native_rate_api_client      = $native_rate_api_client;
-		$this->admin_navigation_controller = $admin_navigation_controller;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy ): void {
+		$this->arbiter      = $arbiter;
+		$this->legacy_proxy = $legacy_proxy;
 	}
 
 	/**
@@ -217,7 +205,7 @@ class WooPaymentsCutoverPreflightService {
 	 * @return bool
 	 */
 	public function is_cutover_connection_owner_user_missing(): bool {
-		$status = $this->platform_connection_service->get_cutover_connection_owner_user_token_status();
+		$status = $this->get_platform_connection_service()->get_cutover_connection_owner_user_token_status();
 
 		return $status['owner_id'] > 0 && ! $status['owner_exists'];
 	}
@@ -255,7 +243,7 @@ class WooPaymentsCutoverPreflightService {
 			$raw_failures[]           = 'native_transport_unavailable';
 			$compatibility_failures[] = 'native_transport_unavailable';
 		}
-		$platform_failures      = $this->platform_connection_service->get_cutover_preflight_failures();
+		$platform_failures      = $this->get_platform_connection_service()->get_cutover_preflight_failures();
 		$raw_failures           = array_merge( $raw_failures, $platform_failures );
 		$compatibility_failures = array_merge( $compatibility_failures, $platform_failures );
 		$protected_failures     = array_merge( $protected_failures, $platform_failures );
@@ -275,7 +263,7 @@ class WooPaymentsCutoverPreflightService {
 		 * @since 11.0.0
 		 * @param bool $is_ready Whether native merchant admin surfaces are ready.
 		 */
-		if ( ! (bool) apply_filters( self::FILTER_NATIVE_ADMIN_SURFACES_READY, $this->admin_navigation_controller->are_all_available_routes_registered() ) ) {
+		if ( ! (bool) apply_filters( self::FILTER_NATIVE_ADMIN_SURFACES_READY, $this->get_admin_navigation_controller()->are_all_available_routes_registered() ) ) {
 			$raw_failures[]           = 'native_admin_surfaces_unavailable';
 			$compatibility_failures[] = 'native_admin_surfaces_unavailable';
 		}
@@ -289,11 +277,11 @@ class WooPaymentsCutoverPreflightService {
 			$raw_failures[]           = in_array( 'operational_queue_hooks_filter_invalid', $pending_operational_queue_hooks, true ) ? 'operational_queue_hooks_filter_invalid' : 'operational_queue_hooks_undispositioned';
 			$compatibility_failures[] = 'operational_queue_hooks_undispositioned';
 		}
-		if ( ! $this->fee_remediation_service->can_schedule_cutover_remediation() ) {
+		if ( ! $this->get_fee_remediation_service()->can_schedule_cutover_remediation() ) {
 			$raw_failures[]           = 'financial_migrations_unavailable';
 			$compatibility_failures[] = 'financial_migrations_unavailable';
 		}
-		if ( $this->legacy_subscriptions_guard->has_legacy_stripe_billing_subscription_markers() ) {
+		if ( $this->get_legacy_subscriptions_guard()->has_legacy_stripe_billing_subscription_markers() ) {
 			$raw_failures[] = 'legacy_stripe_billing_subscriptions_present';
 		}
 		$raw_failures           = self::normalize_string_list( $raw_failures );
@@ -508,7 +496,7 @@ class WooPaymentsCutoverPreflightService {
 		if ( ! function_exists( 'deactivate_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
-		if ( 'unavailable' === $this->fee_remediation_service->ensure_scheduled() ) {
+		if ( 'unavailable' === $this->get_fee_remediation_service()->ensure_scheduled() ) {
 			wc_get_logger()->error( 'WooPayments could not be deactivated because native WooPayments could not schedule canceled-authorization fee remediation.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
 			return false;
 		}
@@ -538,7 +526,7 @@ class WooPaymentsCutoverPreflightService {
 	 */
 	private function is_native_transport_ready(): bool {
 		try {
-			return $this->provider->can_process_payments();
+			return $this->get_provider()->can_process_payments();
 		} catch ( \Throwable $e ) {
 			return false;
 		}
@@ -554,7 +542,7 @@ class WooPaymentsCutoverPreflightService {
 			return false;
 		}
 		try {
-			return ! ( $this->native_rate_api_client->is_server_connected() && $this->native_rate_account->is_provider_connected() && ! $this->native_rate_account->is_account_rejected() );
+			return ! ( $this->get_native_rate_api_client()->is_server_connected() && $this->get_native_rate_account()->is_provider_connected() && ! $this->get_native_rate_account()->is_account_rejected() );
 		} catch ( \Throwable $e ) {
 			return true;
 		}
@@ -700,5 +688,96 @@ class WooPaymentsCutoverPreflightService {
 			}
 		}
 		return $normalized;
+	}
+
+	/**
+	 * Get the native WooPayments provider, resolving it on first use.
+	 *
+	 * @return WooPaymentsProvider
+	 */
+	private function get_provider(): WooPaymentsProvider {
+		if ( null === $this->provider ) {
+			$this->provider = wc_get_container()->get( WooPaymentsProvider::class );
+		}
+
+		return $this->provider;
+	}
+
+	/**
+	 * Get the legacy subscription data guard, resolving it on first use.
+	 *
+	 * @return WooPaymentsLegacySubscriptionsGuard
+	 */
+	private function get_legacy_subscriptions_guard(): WooPaymentsLegacySubscriptionsGuard {
+		if ( null === $this->legacy_subscriptions_guard ) {
+			$this->legacy_subscriptions_guard = wc_get_container()->get( WooPaymentsLegacySubscriptionsGuard::class );
+		}
+
+		return $this->legacy_subscriptions_guard;
+	}
+
+	/**
+	 * Get the fee remediation owner, resolving it on first use.
+	 *
+	 * @return WooPaymentsCanceledAuthorizationFeeRemediationService
+	 */
+	private function get_fee_remediation_service(): WooPaymentsCanceledAuthorizationFeeRemediationService {
+		if ( null === $this->fee_remediation_service ) {
+			$this->fee_remediation_service = wc_get_container()->get( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
+		}
+
+		return $this->fee_remediation_service;
+	}
+
+	/**
+	 * Get the platform connection readiness service, resolving it on first use.
+	 *
+	 * @return WooPaymentsPlatformConnectionService
+	 */
+	private function get_platform_connection_service(): WooPaymentsPlatformConnectionService {
+		if ( null === $this->platform_connection_service ) {
+			$this->platform_connection_service = wc_get_container()->get( WooPaymentsPlatformConnectionService::class );
+		}
+
+		return $this->platform_connection_service;
+	}
+
+	/**
+	 * Get the native rate account boundary, resolving it on first use.
+	 *
+	 * @return WooPaymentsNativeAccountAdapter
+	 */
+	private function get_native_rate_account(): WooPaymentsNativeAccountAdapter {
+		if ( null === $this->native_rate_account ) {
+			$this->native_rate_account = wc_get_container()->get( WooPaymentsNativeAccountAdapter::class );
+		}
+
+		return $this->native_rate_account;
+	}
+
+	/**
+	 * Get the native rate API client boundary, resolving it on first use.
+	 *
+	 * @return WooPaymentsNativeApiClientAdapter
+	 */
+	private function get_native_rate_api_client(): WooPaymentsNativeApiClientAdapter {
+		if ( null === $this->native_rate_api_client ) {
+			$this->native_rate_api_client = wc_get_container()->get( WooPaymentsNativeApiClientAdapter::class );
+		}
+
+		return $this->native_rate_api_client;
+	}
+
+	/**
+	 * Get the native admin navigation owner, resolving it on first use.
+	 *
+	 * @return WooPaymentsAdminNavigationController
+	 */
+	private function get_admin_navigation_controller(): WooPaymentsAdminNavigationController {
+		if ( null === $this->admin_navigation_controller ) {
+			$this->admin_navigation_controller = wc_get_container()->get( WooPaymentsAdminNavigationController::class );
+		}
+
+		return $this->admin_navigation_controller;
 	}
 }
