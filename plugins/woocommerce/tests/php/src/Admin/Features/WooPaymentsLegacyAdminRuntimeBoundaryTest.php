@@ -16,6 +16,29 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 	private static array $source_by_path = array();
 
 	/**
+	 * Removed classes restored as inert deprecated stubs for third-party references until
+	 * WooCommerce 12.0.0 (N-196). They must exist, and nothing in core may use them.
+	 *
+	 * @var string[]
+	 */
+	private const DEPRECATED_STUB_FILES = array(
+		'src/Internal/Admin/WcPayWelcomePage.php',
+		'src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php',
+		'src/Internal/Admin/WCPayPromotion/Init.php',
+	);
+
+	/**
+	 * @testdox Restored WooPayments classes should be deprecated stubs scheduled for removal in WooCommerce 12.0.0.
+	 */
+	public function test_restored_classes_are_deprecated_stubs(): void {
+		foreach ( self::DEPRECATED_STUB_FILES as $stub_file ) {
+			$source = $this->read_source_file( WC()->plugin_path() . '/' . $stub_file );
+
+			$this->assertStringContainsString( 'Scheduled for removal in WooCommerce 12.0.0.', $source, "{$stub_file} should be a deprecated stub with a removal version." );
+		}
+	}
+
+	/**
 	 * @testdox Legacy admin sources should route WooPayments runtime access through WooPaymentsLegacyRuntime.
 	 */
 	public function test_legacy_admin_sources_use_woopayments_legacy_runtime_boundary(): void {
@@ -58,7 +81,6 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 	 */
 	public function test_deprecated_wcpay_welcome_page_surface_is_removed(): void {
 		$removed_files = array(
-			'src/Internal/Admin/WcPayWelcomePage.php',
 			'src/Internal/Admin/Notes/PaymentsMoreInfoNeeded.php',
 			'src/Internal/Admin/Notes/PaymentsRemindMeLater.php',
 			'assets/client/admin/chunks/wcpay-payment-welcome-page.js',
@@ -70,6 +92,8 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 
 		$forbidden_strings = array(
 			'WcPayWelcomePage::instance()',
+			'WcPayWelcomePage::class',
+			'new WcPayWelcomePage',
 			'PaymentsMoreInfoNeeded::class',
 			'PaymentsRemindMeLater::class',
 			'admin.php?page=wc-admin&path=/wc-pay-welcome-page',
@@ -93,7 +117,6 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 	 */
 	public function test_deprecated_woopayments_onboarding_surface_is_removed(): void {
 		$removed_files = array(
-			'src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php',
 			'src/Internal/Admin/Notes/WooCommercePayments.php',
 			'client/admin/client/task-lists/fills/woocommerce-payments.tsx',
 			'client/admin/client/task-lists/setup-task-list/components/task-headers/woocommerce-payments.js',
@@ -120,6 +143,12 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 			}
 		}
 
+		$this->assertStringNotContainsString(
+			"'WooCommercePayments'",
+			$this->read_source_file( WC()->plugin_path() . '/src/Admin/Features/OnboardingTasks/TaskLists.php' ),
+			'TaskLists should not register the deprecated WooCommercePayments task stub.'
+		);
+
 		$forbidden_client_strings = array(
 			'woocommerce-admin-task-wcpay-page',
 			'wcpayWelcomePageIncentive',
@@ -143,7 +172,6 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 	 */
 	public function test_deprecated_woopayments_promotion_surface_is_removed(): void {
 		$removed_files = array(
-			'src/Internal/Admin/WCPayPromotion/Init.php',
 			'src/Internal/Admin/WCPayPromotion/WCPaymentGatewayPreInstallWCPayPromotion.php',
 			'src/Internal/Admin/WCPayPromotion/WCPayPromotionDataSourcePoller.php',
 			'src/Internal/Admin/WCPayPromotion/DefaultPromotions.php',
@@ -162,9 +190,13 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 			$this->assertFileDoesNotExist( WC()->plugin_path() . '/' . $removed_file, "{$removed_file} should be removed with the deprecated WooPayments promotion surface." );
 		}
 
+		// The class-alias map in Features names both classes as plain strings; these catch imports,
+		// static calls and `::class` registrations instead.
 		$forbidden_php_strings = array(
-			'Internal\\Admin\\WCPayPromotion\\Init',
-			'Admin\\Features\\WcPayPromotion\\Init',
+			'Internal\\Admin\\WCPayPromotion\\Init;',
+			'Internal\\Admin\\WCPayPromotion\\Init::',
+			'Admin\\Features\\WcPayPromotion\\Init;',
+			'Admin\\Features\\WcPayPromotion\\Init::',
 			'pre_install_woocommerce_payments_promotion',
 			'payment-method-promotions',
 		);

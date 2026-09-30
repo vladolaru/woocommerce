@@ -633,6 +633,7 @@ class Features {
 	private function register_internal_class_aliases() {
 		$aliases = array(
 			// new class => original class (this will be aliased).
+			'Automattic\WooCommerce\Internal\Admin\WCPayPromotion\Init' => 'Automattic\WooCommerce\Admin\Features\WcPayPromotion\Init',
 			'Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\Init' => 'Automattic\WooCommerce\Admin\Features\RemoteFreeExtensions\Init',
 			'Automattic\WooCommerce\Internal\Admin\ActivityPanels' => 'Automattic\WooCommerce\Admin\Features\ActivityPanels',
 			'Automattic\WooCommerce\Internal\Admin\Analytics' => 'Automattic\WooCommerce\Admin\Features\Analytics',
@@ -645,6 +646,7 @@ class Features {
 			'Automattic\WooCommerce\Internal\Admin\RemoteInboxNotifications' => 'Automattic\WooCommerce\Admin\Features\RemoteInboxNotifications',
 			'Automattic\WooCommerce\Internal\Admin\ShippingLabelBanner' => 'Automattic\WooCommerce\Admin\Features\ShippingLabelBanner',
 			'Automattic\WooCommerce\Internal\Admin\ShippingLabelBannerDisplayRules' => 'Automattic\WooCommerce\Admin\Features\ShippingLabelBannerDisplayRules',
+			'Automattic\WooCommerce\Internal\Admin\WcPayWelcomePage' => 'Automattic\WooCommerce\Admin\Features\WcPayWelcomePage',
 		);
 		foreach ( $aliases as $new_class => $orig_class ) {
 			class_alias( $new_class, $orig_class );
