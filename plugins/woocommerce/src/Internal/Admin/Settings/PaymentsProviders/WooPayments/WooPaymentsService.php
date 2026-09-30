@@ -194,13 +194,6 @@ class WooPaymentsService {
 	private ?WooPaymentsAccountService $account_service = null;
 
 	/**
-	 * Native WooPayments settings service.
-	 *
-	 * @var WooPaymentsSettingsService|null
-	 */
-	private ?WooPaymentsSettingsService $settings_service = null;
-
-	/**
 	 * Location used only while a fresh account refresh is in progress without a durable retry marker.
 	 *
 	 * @var string|null
@@ -225,7 +218,6 @@ class WooPaymentsService {
 		$this->legacy_runtime     = null;
 		$this->api_client         = null;
 		$this->account_service    = null;
-		$this->settings_service   = null;
 
 		if ( false === has_action( 'woocommerce_payments_account_refreshed', array( $this, 'maybe_project_pending_onboarding_payment_methods' ) ) ) {
 			add_action( 'woocommerce_payments_account_refreshed', array( $this, 'maybe_project_pending_onboarding_payment_methods' ), 10, 1 );
@@ -3313,29 +3305,42 @@ class WooPaymentsService {
 
 		$restored_ids = $this->get_test_drive_enabled_payment_method_ids();
 		if ( ! empty( $restored_ids ) ) {
-			$settings        = $this->proxy->call_function( 'get_option', WooPaymentsSettingsService::SETTINGS_OPTION, array() );
-			$settings        = is_array( $settings ) ? $settings : array();
-			$enabled_ids     = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array( 'card' );
-			$enabled_ids     = array_values( array_unique( array_merge( $enabled_ids, $restored_ids ) ) );
-			$disables_woopay = in_array( 'link', $enabled_ids, true ) && 'yes' === ( $settings['platform_checkout'] ?? 'no' );
-
-			$settings['upe_enabled_payment_method_ids'] = $enabled_ids;
-			if ( $disables_woopay ) {
-				$settings['platform_checkout']                   = 'no';
-				$settings['platform_checkout_last_disable_date'] = gmdate( 'Y-m-d' );
-			}
-
-			// The canonical write also enables each restored method's split gateway and syncs its duplicated list.
-			wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings );
-			if ( $disables_woopay ) {
-				wc_get_container()->get( WooPaymentsFrontendTrackingController::class )->record_admin_event(
-					'woopay_disabled',
-					array( 'test_mode' => $this->get_native_account_service()->is_test_mode_enabled() ? 1 : 0 )
-				);
-			}
+			$this->enable_native_payment_methods( $restored_ids );
 		}
 
 		$this->proxy->call_function( 'delete_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
+	}
+
+	/**
+	 * Add payment methods to the stored enabled set without capability or availability checks, as client 11.1.0
+	 * update_enabled_payment_methods_ids() and restore_test_drive_enabled_payment_methods() write the gateway option.
+	 *
+	 * @param string[] $payment_method_ids Payment method IDs to enable.
+	 * @return bool Whether the canonical settings and split gateways were persisted.
+	 */
+	private function enable_native_payment_methods( array $payment_method_ids ): bool {
+		$settings        = $this->proxy->call_function( 'get_option', WooPaymentsSettingsService::SETTINGS_OPTION, array() );
+		$settings        = is_array( $settings ) ? $settings : array();
+		$enabled_ids     = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array( 'card' );
+		$enabled_ids     = array_values( array_unique( array_merge( $enabled_ids, $payment_method_ids ) ) );
+		$disables_woopay = in_array( 'link', $enabled_ids, true ) && 'yes' === ( $settings['platform_checkout'] ?? 'no' );
+
+		$settings['upe_enabled_payment_method_ids'] = $enabled_ids;
+		if ( $disables_woopay ) {
+			$settings['platform_checkout']                   = 'no';
+			$settings['platform_checkout_last_disable_date'] = gmdate( 'Y-m-d' );
+		}
+
+		// The canonical write also enables each method's split gateway and syncs its duplicated list.
+		$projection = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings );
+		if ( $disables_woopay ) {
+			wc_get_container()->get( WooPaymentsFrontendTrackingController::class )->record_admin_event(
+				'woopay_disabled',
+				array( 'test_mode' => $this->get_native_account_service()->is_test_mode_enabled() ? 1 : 0 )
+			);
+		}
+
+		return $projection['persisted'];
 	}
 
 	/**
@@ -3383,13 +3388,13 @@ class WooPaymentsService {
 	}
 
 	/**
-	 * Enable selected NOX payment methods that are active for the refreshed account.
+	 * Enable the payment methods picked in NOX onboarding, like client 11.1.0 update_enabled_payment_methods_ids():
+	 * no capability or fee check, so a pending or not-yet-priced pick stays enabled.
 	 *
-	 * @param string              $location     Merchant country stored in the NOX profile.
-	 * @param array<string,mixed> $account_data Fresh account data.
+	 * @param string $location Merchant country stored in the NOX profile.
 	 * @return bool Whether the projection completed or deliberately had nothing to update.
 	 */
-	private function update_native_enabled_payment_methods_from_nox_profile( string $location, array $account_data ): bool {
+	private function update_native_enabled_payment_methods_from_nox_profile( string $location ): bool {
 		$selected_payment_methods = $this->get_nox_profile_onboarding_step_data_entry(
 			self::ONBOARDING_STEP_PAYMENT_METHODS,
 			$location,
@@ -3422,44 +3427,7 @@ class WooPaymentsService {
 			return true;
 		}
 
-		$capabilities              = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
-		$settings_service          = $this->get_native_settings_service();
-		$settings                  = $settings_service->get_settings();
-		$enabled_payment_methods   = is_array( $settings['enabled_payment_method_ids'] ?? null )
-			? $settings['enabled_payment_method_ids']
-			: array( 'card' );
-		$available_payment_methods = is_array( $settings['available_payment_method_ids'] ?? null )
-			? $settings['available_payment_method_ids']
-			: array();
-
-		// No availability means the account state cannot back a projection right now (e.g. an errored or empty account cache); bail so the durable marker retries after the next successful refresh instead of wiping the enabled methods.
-		if ( empty( $available_payment_methods ) ) {
-			return false;
-		}
-
-		foreach ( $selected_definitions as $definition ) {
-			$capability_key = $definition->get_account_capability_key();
-			if ( 'active' !== ( $capabilities[ $capability_key ] ?? null ) ) {
-				continue;
-			}
-
-			// Selected methods without fee-backed availability stay disabled: the settings save rejects unavailable methods outright, so the projection must pre-filter to the account's available set.
-			if ( ! in_array( $definition->get_id(), $available_payment_methods, true ) ) {
-				continue;
-			}
-
-			$enabled_payment_methods[] = $definition->get_id();
-		}
-
-		$enabled_payment_methods = array_values( array_unique( array_map( 'strval', $enabled_payment_methods ) ) );
-		$params                  = array( 'enabled_payment_method_ids' => $enabled_payment_methods );
-		if ( in_array( 'link', $enabled_payment_methods, true ) ) {
-			$params['is_woopay_enabled'] = false;
-		}
-
-		$result = $settings_service->update_settings( $params );
-
-		return ! is_wp_error( $result );
+		return $this->enable_native_payment_methods( array_keys( $selected_definitions ) );
 	}
 
 	/**
@@ -3561,7 +3529,7 @@ class WooPaymentsService {
 				return;
 			}
 
-			if ( ! $this->update_native_enabled_payment_methods_from_nox_profile( $location, $account_data ) ) {
+			if ( ! $this->update_native_enabled_payment_methods_from_nox_profile( $location ) ) {
 				if ( ! $has_durable_marker ) {
 					$this->log_payment_methods_projection_fallback_failure();
 				}
@@ -3656,19 +3624,6 @@ class WooPaymentsService {
 		}
 
 		return $this->account_service;
-	}
-
-	/**
-	 * Get the native WooPayments settings service.
-	 *
-	 * @return WooPaymentsSettingsService
-	 */
-	private function get_native_settings_service(): WooPaymentsSettingsService {
-		if ( null === $this->settings_service ) {
-			$this->settings_service = wc_get_container()->get( WooPaymentsSettingsService::class );
-		}
-
-		return $this->settings_service;
 	}
 
 	/**
