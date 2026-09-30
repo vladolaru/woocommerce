@@ -59,10 +59,6 @@ jest.mock( '@wordpress/data', () => {
 	};
 } );
 
-jest.mock( '~/woopayments/settings/account-settings', () => ( {
-	WooPaymentsAccountSettings: () => null,
-} ) );
-
 jest.mock( '../../promotions/spotlight', () => ( {
 	SpotlightPromotion: () => null,
 } ) );

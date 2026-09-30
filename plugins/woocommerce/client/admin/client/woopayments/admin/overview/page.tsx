@@ -19,7 +19,6 @@ import type { LoadError } from '@stripe/connect-js';
 /**
  * Internal dependencies
  */
-import { WooPaymentsAccountSettings } from '~/woopayments/settings/account-settings';
 import { getWooPaymentsSettingsBootstrap } from '~/woopayments/settings/bootstrap';
 import {
 	getWooPaymentsDepositsOverview,
@@ -497,7 +496,6 @@ export const WooPaymentsOverviewPage = () => {
 					isDismissed={ shell.is_connection_success_modal_dismissed }
 				/>
 			) }
-			<WooPaymentsAccountSettings headingLevel={ 2 } />
 			<SpotlightPromotion />
 		</div>
 	);

@@ -66,14 +66,6 @@ jest.mock( '@wordpress/data', () => {
 	};
 } );
 
-jest.mock( '~/woopayments/settings/account-settings', () => ( {
-	WooPaymentsAccountSettings: ( { headingLevel = 1 } ) => {
-		const HeadingTag = `h${ headingLevel }` as keyof JSX.IntrinsicElements;
-
-		return <HeadingTag tabIndex={ -1 }>WooPayments settings</HeadingTag>;
-	},
-} ) );
-
 jest.mock( '../../promotions/spotlight', () => ( {
 	SpotlightPromotion: () => <div>Spotlight promotion</div>,
 } ) );
@@ -387,13 +379,20 @@ describe( 'WooPaymentsOverviewPage', () => {
 		expect(
 			screen.getByRole( 'heading', { name: 'Overview', level: 1 } )
 		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'heading', {
-				name: 'WooPayments settings',
-				level: 2,
-			} )
-		).toBeInTheDocument();
 		await screen.findByRole( 'heading', { name: 'Balance' } );
+	} );
+
+	// Client 11.1.0 `overview/index.js` has no connected-account settings card.
+	it( 'does not mount the WooPayments settings account card', async () => {
+		render( <WooPaymentsOverviewPage /> );
+
+		await screen.findByRole( 'heading', { name: 'Balance' } );
+		expect(
+			screen.queryByRole( 'heading', { name: 'WooPayments settings' } )
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'heading', { name: 'Connected account' } )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'loads recent payout history when overview loading fails', async () => {
@@ -1324,7 +1323,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 			name: 'Dismiss dispute readiness',
 		} );
 		await userEvent.click( dismissButton );
-		screen.getByRole( 'heading', { name: 'WooPayments settings' } ).focus();
+		screen.getByRole( 'heading', { name: 'Account details' } ).focus();
 
 		await act( async () => {
 			dismissalRequest.resolve( {
@@ -1337,11 +1336,9 @@ describe( 'WooPaymentsOverviewPage', () => {
 		} );
 
 		expect(
-			screen.getByRole( 'heading', { name: 'WooPayments settings' } )
+			screen.getByRole( 'heading', { name: 'Account details' } )
 				.ownerDocument.activeElement
-		).toBe(
-			screen.getByRole( 'heading', { name: 'WooPayments settings' } )
-		);
+		).toBe( screen.getByRole( 'heading', { name: 'Account details' } ) );
 	} );
 
 	it( 'queries and renders WooPayments inbox notes from the notes store', async () => {
@@ -1689,10 +1686,10 @@ describe( 'WooPaymentsOverviewPage', () => {
 			screen.getByRole( 'button', { name: 'Cancel' } )
 		);
 
-		const settingsHeading = screen.getByRole( 'heading', {
-			name: 'WooPayments settings',
+		const accountDetailsHeading = screen.getByRole( 'heading', {
+			name: 'Account details',
 		} );
-		settingsHeading.focus();
+		accountDetailsHeading.focus();
 		mockUseSelect.mockReturnValue( {
 			isError: false,
 			isLoading: false,
@@ -1713,8 +1710,8 @@ describe( 'WooPaymentsOverviewPage', () => {
 				)
 		);
 
-		expect( settingsHeading.ownerDocument.activeElement ).toBe(
-			settingsHeading
+		expect( accountDetailsHeading.ownerDocument.activeElement ).toBe(
+			accountDetailsHeading
 		);
 	} );
 } );

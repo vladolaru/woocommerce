@@ -31,10 +31,6 @@ jest.mock( '@wordpress/data', () => ( {
 	useSelect: jest.fn(),
 } ) );
 
-jest.mock( '~/woopayments/settings/account-settings', () => ( {
-	WooPaymentsAccountSettings: () => null,
-} ) );
-
 jest.mock( '../../promotions/spotlight', () => ( {
 	SpotlightPromotion: () => null,
 } ) );
