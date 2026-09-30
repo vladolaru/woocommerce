@@ -268,7 +268,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Let your customers pay with major credit and debit cards without leaving your store.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/icons/credit-cards/visa.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/generic-card-black.svg' ),
 		stripeKey: 'card_payments',
 		currencies: CURRENCIES.all,
 		allowsManualCapture: true,
@@ -281,7 +281,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'A digital wallet for customers with mainland China Alipay accounts. Regional versions like AlipayHK are not supported.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/alipay.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/alipay-logo.svg' ),
 		stripeKey: 'alipay_payments',
 		currencies: getAlipayCurrencies(),
 		allowsManualCapture: false,
@@ -294,7 +294,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Bulk Electronic Clearing System — Accept secure bank transfer from Australia.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/sepa.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/bank-debit.svg' ),
 		stripeKey: 'au_becs_debit_payments',
 		currencies: CURRENCIES.aud,
 		allowsManualCapture: false,
@@ -346,7 +346,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'A popular digital wallet for cashless payments in Singapore.',
 			'woocommerce'
 		),
-		iconUrl: '',
+		iconUrl: assetUrl( 'images/payment-methods/grabpay.svg' ),
 		stripeKey: 'grabpay_payments',
 		currencies: CURRENCIES.sgd,
 		allowsManualCapture: false,
@@ -359,7 +359,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			"Expand your business with iDEAL | Wero — Netherlands's most popular payment method.",
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/ideal.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/ideal-wero.svg' ),
 		stripeKey: 'ideal_payments',
 		currencies: CURRENCIES.eur,
 		allowsManualCapture: false,
@@ -411,7 +411,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Reach 500 million customers and over 20 million businesses across the European Union.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/sepa.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/sepa-debit.svg' ),
 		stripeKey: 'sepa_debit_payments',
 		currencies: CURRENCIES.eur,
 		allowsManualCapture: false,
@@ -437,7 +437,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'A digital wallet for customers with mainland China WeChat Pay wallets. Regional versions like WeChat Pay HK are not supported.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/wechat.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/wechat-pay.svg' ),
 		stripeKey: 'wechat_pay_payments',
 		currencies: getWechatPayCurrencies(),
 		allowsManualCapture: false,
@@ -450,7 +450,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Allow customers to pay over time with Affirm.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment_methods/72x72/affirm.png' ),
+		iconUrl: assetUrl( 'images/payment-methods/affirm-badge.svg' ),
 		stripeKey: 'affirm_payments',
 		currencies: CURRENCIES.affirm,
 		allowsManualCapture: false,
@@ -463,7 +463,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Allow customers to pay over time or pay now with Klarna.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment_methods/72x72/klarna.png' ),
+		iconUrl: assetUrl( 'images/payment-methods/klarna.svg' ),
 		stripeKey: 'klarna_payments',
 		currencies: CURRENCIES.klarna,
 		allowsManualCapture: false,
