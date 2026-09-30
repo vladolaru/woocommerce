@@ -74,11 +74,17 @@
 
 		> div {
 			white-space: nowrap;
+
+			// The settings screen keeps 30px gutters on phones, so a whole ID no longer fits on one line there.
+			@media screen and (max-width: 600px) {
+				white-space: normal;
+			}
 		}
 	}
 
 	&__id-value {
 		font-family: monospace;
+		overflow-wrap: anywhere;
 	}
 
 	// One row of labelled values, stacked on narrow screens.
