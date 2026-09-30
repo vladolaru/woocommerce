@@ -147,6 +147,16 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_classic_toggle_keeps_the_tier_in_step_with_the_gateway(): void {
 		$this->arrange_native_owner( NativePaymentsState::CONNECTED );
+		// A connected store has an account that can take payments; without one the gateway needs setup and WooCommerce refuses the toggle, as for the client.
+		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+			array(
+				'account_id'        => 'acct_test123',
+				'status'            => 'complete',
+				'is_live'           => true,
+				'details_submitted' => true,
+				'payments_enabled'  => true,
+			)
+		);
 		// No settings yet: the first toggle creates the option (add_option), the second updates it.
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );

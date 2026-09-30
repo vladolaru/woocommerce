@@ -1146,6 +1146,49 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Tell whether a WooPayments account is connected, like client 11.1.0 WC_Payment_Gateway_WCPay::is_connected().
+	 *
+	 * The Payments settings providers list reads this for the account connected state.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function is_connected(): bool {
+		return array() !== $this->get_account_service()->get_cached_account_data();
+	}
+
+	/**
+	 * Tell whether the connected account has not submitted its details yet, like client 11.1.0 is_account_partially_onboarded().
+	 *
+	 * The Payments settings providers list reads this for the onboarding completed state.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function is_account_partially_onboarded(): bool {
+		return $this->is_connected() && ! $this->get_account_service()->is_details_submitted();
+	}
+
+	/**
+	 * Tell whether the gateway needs setup, like client 11.1.0 WC_Payment_Gateway_WCPay::needs_setup().
+	 *
+	 * Setup is needed without an account, when the account data lacks a status, or while payments are disabled.
+	 *
+	 * @return bool
+	 */
+	public function needs_setup() {
+		if ( ! $this->is_connected() ) {
+			return true;
+		}
+
+		$account_data = $this->get_account_service()->get_cached_account_data();
+
+		return parent::needs_setup() || ! isset( $account_data['status'], $account_data['payments_enabled'] ) || ! $account_data['payments_enabled'];
+	}
+
+	/**
 	 * Tell whether WooPayments is in test mode.
 	 *
 	 * @return bool

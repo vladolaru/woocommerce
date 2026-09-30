@@ -270,4 +270,82 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'data-gateway-id="woocommerce_payments_afterpay_clearpay"', $icon );
 		$this->assertSame( 1, $filter_calls );
 	}
+
+	/**
+	 * @testdox Should report a connected account only when account data is cached, like the client's is_connected().
+	 */
+	public function test_is_connected_follows_cached_account_data(): void {
+		$this->assertFalse( $this->gateway_with_account( array() )->is_connected(), 'No cached account data means no connected account.' );
+		$this->assertTrue( $this->gateway_with_account( $this->sandbox_account( false, false ) )->is_connected(), 'Cached account data means a connected account.' );
+	}
+
+	/**
+	 * @testdox Should report a partially onboarded account while a connected account has not submitted its details.
+	 */
+	public function test_is_account_partially_onboarded_matches_client(): void {
+		$this->assertTrue(
+			$this->gateway_with_account( $this->sandbox_account( false, false ) )->is_account_partially_onboarded(),
+			'A connected account without submitted details is partially onboarded.'
+		);
+		$this->assertFalse(
+			$this->gateway_with_account( $this->sandbox_account( true, true ) )->is_account_partially_onboarded(),
+			'A connected account with submitted details is fully onboarded.'
+		);
+		$this->assertFalse(
+			$this->gateway_with_account( array() )->is_account_partially_onboarded(),
+			'Without an account there is no partial onboarding.'
+		);
+	}
+
+	/**
+	 * @testdox Should need setup without an account, with incomplete account status, or while payments are disabled.
+	 */
+	public function test_needs_setup_matches_client(): void {
+		$without_status = $this->sandbox_account( true, true );
+		unset( $without_status['status'] );
+
+		$this->assertTrue( $this->gateway_with_account( array() )->needs_setup(), 'No account needs setup.' );
+		$this->assertTrue( $this->gateway_with_account( $this->sandbox_account( false, false ) )->needs_setup(), 'Disabled payments need setup.' );
+		$this->assertTrue( $this->gateway_with_account( $without_status )->needs_setup(), 'Account data without a status needs setup.' );
+		$this->assertFalse( $this->gateway_with_account( $this->sandbox_account( true, true ) )->needs_setup(), 'An account with payments enabled does not need setup.' );
+	}
+
+	/**
+	 * Build a card gateway that reads the given cached account data.
+	 *
+	 * @param array $account_data Cached account data.
+	 * @return NativeWooPaymentsGateway
+	 */
+	private function gateway_with_account( array $account_data ): NativeWooPaymentsGateway {
+		$sut             = new NativeWooPaymentsGateway();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
+
+		$property = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'account_service' );
+		$property->setAccessible( true );
+		$property->setValue( $sut, $account_service );
+
+		return $sut;
+	}
+
+	/**
+	 * Build cached data for a sandbox account.
+	 *
+	 * @param bool $details_submitted Whether the account details were submitted.
+	 * @param bool $payments_enabled  Whether the account can accept payments.
+	 * @return array
+	 */
+	private function sandbox_account( bool $details_submitted, bool $payments_enabled ): array {
+		return array(
+			'account_id'        => 'acct_test123',
+			'status'            => $payments_enabled ? 'complete' : 'restricted',
+			'is_live'           => false,
+			'is_test_drive'     => false,
+			'details_submitted' => $details_submitted,
+			'payments_enabled'  => $payments_enabled,
+		);
+	}
 }

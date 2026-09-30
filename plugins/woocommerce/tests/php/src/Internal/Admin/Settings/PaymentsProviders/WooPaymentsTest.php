@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\TestingContainer;
@@ -1879,6 +1880,79 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 				},
 			),
 		);
+	}
+
+	/**
+	 * @testdox Should report the built-in gateway's sandbox account without submitted details as started but not completed.
+	 */
+	public function test_native_gateway_account_without_submitted_details_is_not_onboarded(): void {
+		$gateway = $this->native_gateway_with_account(
+			array(
+				'account_id'        => 'acct_test123',
+				'status'            => 'restricted',
+				'is_live'           => false,
+				'is_test_drive'     => false,
+				'details_submitted' => false,
+				'payments_enabled'  => false,
+			)
+		);
+
+		$this->assertTrue( $this->sut->is_account_connected( $gateway ), 'The account is connected.' );
+		$this->assertTrue( $this->sut->is_onboarding_started( $gateway ), 'Onboarding started with the connected account.' );
+		$this->assertFalse( $this->sut->is_onboarding_completed( $gateway ), 'Onboarding is not completed until the details are submitted.' );
+		$this->assertTrue( $this->sut->needs_setup( $gateway ), 'An account with payments disabled needs setup.' );
+	}
+
+	/**
+	 * @testdox Should report the built-in gateway without an account as not connected and needing setup.
+	 */
+	public function test_native_gateway_without_account_is_not_connected(): void {
+		$gateway = $this->native_gateway_with_account( array() );
+
+		$this->assertFalse( $this->sut->is_account_connected( $gateway ), 'No cached account means no connected account.' );
+		$this->assertFalse( $this->sut->is_onboarding_started( $gateway ), 'Onboarding has not started without an account.' );
+		$this->assertFalse( $this->sut->is_onboarding_completed( $gateway ), 'Onboarding is not completed without an account.' );
+		$this->assertTrue( $this->sut->needs_setup( $gateway ), 'No account needs setup.' );
+	}
+
+	/**
+	 * @testdox Should report the built-in gateway's fully onboarded account as completed and set up.
+	 */
+	public function test_native_gateway_onboarded_account_is_completed(): void {
+		$gateway = $this->native_gateway_with_account(
+			array(
+				'account_id'        => 'acct_test123',
+				'status'            => 'complete',
+				'is_live'           => true,
+				'is_test_drive'     => false,
+				'details_submitted' => true,
+				'payments_enabled'  => true,
+			)
+		);
+
+		$this->assertTrue( $this->sut->is_onboarding_completed( $gateway ), 'Submitted details complete onboarding.' );
+		$this->assertFalse( $this->sut->needs_setup( $gateway ), 'An account with payments enabled does not need setup.' );
+	}
+
+	/**
+	 * Build the built-in card gateway reading the given cached account data.
+	 *
+	 * @param array $account_data Cached account data.
+	 * @return NativeWooPaymentsGateway
+	 */
+	private function native_gateway_with_account( array $account_data ): NativeWooPaymentsGateway {
+		$gateway         = new NativeWooPaymentsGateway();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
+
+		$property = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'account_service' );
+		$property->setAccessible( true );
+		$property->setValue( $gateway, $account_service );
+
+		return $gateway;
 	}
 
 	/**
