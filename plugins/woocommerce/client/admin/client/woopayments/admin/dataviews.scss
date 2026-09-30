@@ -19,6 +19,11 @@
 			display: contents;
 		}
 
+		// Without a search or filters, DataViews' search group is empty; it should not add a gap.
+		.dataviews__search:empty {
+			display: none;
+		}
+
 		// The "View options" menu, the client's column menu.
 		> :last-child > .components-dropdown {
 			order: 1;
@@ -44,6 +49,34 @@
 		// The transactions and blocked searches take the room left in the row, as in the client.
 		> :not(.components-button) {
 			flex: 1 1 240px;
+		}
+	}
+
+	// On a narrow card the title takes the free room, so the actions and the column menu sit at the
+	// end of its row. With a search, the client keeps the menu beside the title and wraps the search
+	// and actions onto the next row.
+	@container dataviews-wrapper (max-width: 430px) {
+		.dataviews__view-actions {
+			column-gap: 8px;
+		}
+
+		// A search takes its own row with the actions.
+		.woocommerce-woopayments-money-movement-dataviews__actions:has(> :not(.components-button)) {
+			flex-basis: 100%;
+		}
+
+		.woocommerce-woopayments-money-movement-dataviews__actions > :not(.components-button) {
+			flex-basis: 120px;
+		}
+
+		.woocommerce-woopayments-money-movement-dataviews__title {
+			flex: 1 1 0;
+			min-width: 0;
+			order: -2;
+		}
+
+		.dataviews__view-actions:has(.woocommerce-woopayments-money-movement-dataviews__actions > :not(.components-button)) > :last-child > .components-dropdown {
+			order: -1;
 		}
 	}
 
