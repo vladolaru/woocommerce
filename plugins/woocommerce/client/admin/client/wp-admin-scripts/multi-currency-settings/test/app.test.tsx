@@ -42,15 +42,18 @@ jest.mock( '../store-settings', () => ( {
 jest.mock( '../currency-settings-modal', () => ( {
 	CurrencySettingsModal: ( {
 		currency,
+		availableCurrency,
 		onClose,
 		onSaved,
 	}: {
 		currency: StoreCurrenciesResponse[ 'default' ];
+		availableCurrency: StoreCurrenciesResponse[ 'default' ];
 		onClose: () => void;
 		onSaved: ( currencyCode: string, manualRate: number | null ) => void;
 	} ) => (
 		<div>
 			<div>Currency settings modal for { currency.code }</div>
+			<div>Fetched rate { String( availableCurrency.rate ) }</div>
 			<button
 				type="button"
 				onClick={ () => {
@@ -404,6 +407,30 @@ describe( 'MultiCurrencySettingsApp', () => {
 		expect(
 			screen.getByText( 'Currency settings modal for EUR' )
 		).toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 single-currency/index.js:76 reads the currency from
+	// `currencies.available`, whose rate is the fetched one even when the
+	// enabled entry carries a manual rate.
+	it( 'gives the currency settings the fetched rate of the available currency', async () => {
+		mockApiFetch.mockReset();
+		mockApiFetch.mockResolvedValueOnce( {
+			...currenciesResponse,
+			enabled: {
+				USD: currenciesResponse.available.USD,
+				EUR: { ...currenciesResponse.available.EUR, rate: 0.95 },
+			},
+		} );
+
+		render( <MultiCurrencySettingsApp /> );
+
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Manage Euro settings',
+			} )
+		);
+
+		expect( screen.getByText( 'Fetched rate 0.92' ) ).toBeInTheDocument();
 	} );
 
 	it( 'renders inactive enabled currencies safely and restores Manage focus after closing', async () => {

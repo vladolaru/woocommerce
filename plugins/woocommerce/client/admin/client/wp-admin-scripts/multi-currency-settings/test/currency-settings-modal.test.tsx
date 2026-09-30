@@ -10,6 +10,7 @@ import {
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import apiFetch from '@wordpress/api-fetch';
+import { getSettings, setSettings } from '@wordpress/date';
 
 /**
  * Internal dependencies
@@ -108,6 +109,7 @@ const renderModal = ( props = {} ) => {
 	render(
 		<CurrencySettingsModal
 			currency={ euroCurrency }
+			availableCurrency={ euroCurrency }
 			defaultCurrency={ usdCurrency }
 			onClose={ onClose }
 			onSaved={ onSaved }
@@ -152,6 +154,64 @@ describe( 'CurrencySettingsModal', () => {
 		expect(
 			screen.queryByLabelText( 'Manual rate' )
 		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 single-currency/index.js:76, 157-165 and 256-273: the
+	// automatic option describes the fetched rate of `currencies.available`
+	// (not the enabled entry, which carries a manual rate when one is set) with
+	// its update time in the store's date and time formats, or an error when
+	// the rate has never been fetched.
+	describe( 'automatic rate description', () => {
+		const originalDateSettings = getSettings();
+
+		beforeEach( () => {
+			setSettings( {
+				...originalDateSettings,
+				formats: {
+					...originalDateSettings.formats,
+					date: 'F j, Y',
+					time: 'g:i a',
+				},
+				timezone: {
+					...originalDateSettings.timezone,
+					offset: 0,
+					string: 'UTC',
+				},
+			} );
+		} );
+
+		afterEach( () => {
+			setSettings( originalDateSettings );
+		} );
+
+		it( 'shows the fetched rate and when it was last updated', async () => {
+			mockApiFetch.mockResolvedValueOnce( manualSettingsResponse );
+
+			renderModal( {
+				currency: { ...euroCurrency, rate: 0.95, last_updated: null },
+				availableCurrency: euroCurrency,
+			} );
+
+			expect(
+				await screen.findByText(
+					'Current rate: 1 USD = 0.92 EUR (Last updated: March 9, 2024 4:00 pm)'
+				)
+			).toBeInTheDocument();
+		} );
+
+		it( 'says the rate could not be fetched when it has no update time', async () => {
+			mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+			renderModal( {
+				availableCurrency: { ...euroCurrency, last_updated: null },
+			} );
+
+			expect(
+				await screen.findByText(
+					'Error - Unable to fetch automatic rate for this currency'
+				)
+			).toBeInTheDocument();
+		} );
 	} );
 
 	it( 'omits the manual rate when saving automatic currency settings', async () => {

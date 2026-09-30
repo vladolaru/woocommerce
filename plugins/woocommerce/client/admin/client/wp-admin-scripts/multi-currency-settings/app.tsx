@@ -519,6 +519,10 @@ export function MultiCurrencySettingsApp() {
 			{ managedCurrency && currencies && (
 				<CurrencySettingsModal
 					currency={ managedCurrency }
+					availableCurrency={
+						currencies.available[ managedCurrency.code ] ??
+						managedCurrency
+					}
 					defaultCurrency={ currencies.default }
 					automaticRates={ currencies.automatic_rates }
 					onClose={ closeCurrencySettingsModal }

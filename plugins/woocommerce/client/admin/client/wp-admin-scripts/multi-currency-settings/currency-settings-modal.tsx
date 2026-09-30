@@ -11,6 +11,7 @@ import {
 	TextControl,
 } from '@wordpress/components';
 import { useDispatch } from '@wordpress/data';
+import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { useEffect, useMemo, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
@@ -73,6 +74,8 @@ const zeroDecimalCurrencyCharmOptions = {
 
 interface CurrencySettingsModalProps {
 	currency: MultiCurrencyCurrency;
+	// The `currencies.available` entry: its rate is the fetched one, while an enabled currency carries its manual rate.
+	availableCurrency: MultiCurrencyCurrency;
 	defaultCurrency: MultiCurrencyCurrency & { rate: number };
 	automaticRates: AutomaticRatesDescriptor;
 	onClose: () => void;
@@ -122,28 +125,42 @@ const getAutomaticRateUnavailableDescription = ( source: string ): string => {
 
 const getAutomaticRateDescription = (
 	automaticRates: AutomaticRatesDescriptor,
-	currency: MultiCurrencyCurrency,
+	availableCurrency: MultiCurrencyCurrency,
 	defaultCurrency: MultiCurrencyCurrency & { rate: number }
 ): string => {
 	if ( ! automaticRates.available && automaticRates.source !== null ) {
 		return getAutomaticRateUnavailableDescription( automaticRates.source );
 	}
 
-	if ( currency.rate === null ) {
-		return __( 'An automatic rate is not available yet.', 'woocommerce' );
+	// Client 11.1.0 single-currency/index.js:157-165 and 256-273.
+	if ( availableCurrency.rate === null || ! availableCurrency.last_updated ) {
+		return __(
+			'Error - Unable to fetch automatic rate for this currency',
+			'woocommerce'
+		);
 	}
 
+	const { formats } = getDateSettings();
+
 	return sprintf(
-		/* translators: 1: Default currency code, 2: Exchange rate, 3: Target currency code. */
-		__( 'Current rate: 1 %1$s = %2$s %3$s', 'woocommerce' ),
+		/* translators: 1: Default currency code, 2: Exchange rate, 3: Target currency code, 4: Date and time the rate was fetched. */
+		__(
+			'Current rate: 1 %1$s = %2$s %3$s (Last updated: %4$s)',
+			'woocommerce'
+		),
 		defaultCurrency.code,
-		String( currency.rate ),
-		currency.code
+		String( availableCurrency.rate ),
+		availableCurrency.code,
+		dateI18n(
+			`${ formats.date } ${ formats.time }`,
+			new Date( availableCurrency.last_updated * 1000 )
+		)
 	);
 };
 
 export function CurrencySettingsModal( {
 	currency,
+	availableCurrency,
 	defaultCurrency,
 	automaticRates,
 	onClose,
@@ -316,7 +333,7 @@ export function CurrencySettingsModal( {
 									value: 'automatic',
 									description: getAutomaticRateDescription(
 										automaticRates,
-										currency,
+										availableCurrency,
 										defaultCurrency
 									),
 								},
