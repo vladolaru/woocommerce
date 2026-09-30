@@ -254,6 +254,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		delete_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
 		delete_transient( 'woopayments_referral_code' );
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
+		remove_all_filters( 'wcpay_tracks_event_properties' );
 		remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( NativePaymentsState::class )->invalidate();
@@ -954,6 +955,133 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pk_live_native', $cached['data']['live_publishable_key'] );
 		$this->assertTrue( $cached['data']['is_live'] );
 		$this->assertFalse( $cached['data']['details_submitted'] );
+	}
+
+	/**
+	 * The NOX routes that apply the payment-method picks, like client 11.1.0 create_embedded_kyc_session()
+	 * (includes/class-wc-payments-onboarding-service.php:357-371) and init_test_drive_account() (:776-786).
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provide_nox_pick_routes(): array {
+		return array(
+			'embedded KYC session creation' => array( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session' ),
+			'test-drive account init'       => array( WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT . '/init' ),
+		);
+	}
+
+	/**
+	 * The NOX pick routes with the enabled methods stored when each calls the platform: session creation applies the picks
+	 * before the call (:369-371), test-drive init after the platform created the account (:776-786).
+	 *
+	 * @return array<string,array{0:string,1:string[]}>
+	 */
+	public function provide_nox_pick_routes_with_platform_call_state(): array {
+		return array(
+			'embedded KYC session creation' => array( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session', array( 'card', 'ideal' ) ),
+			'test-drive account init'       => array( WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT . '/init', array( 'card' ) ),
+		);
+	}
+
+	/**
+	 * Client 11.1.0 update_enabled_payment_methods_ids() (includes/class-wc-payments-onboarding-service.php:1515-1571) enables
+	 * the picked methods, turns WooPay on from the `woopay` pick (:1545-1548, update_is_woopay_enabled() records `woopay_enabled`)
+	 * and enables the Apple Pay and Google Pay gateways from the `apple_google` pick (:1553-1562).
+	 *
+	 * @testdox The NOX route applies the WooPay and Apple Pay / Google Pay picks turned on, like client 11.1.0.
+	 * @dataProvider provide_nox_pick_routes_with_platform_call_state
+	 *
+	 * @param string   $route_suffix             Route below the onboarding step base.
+	 * @param string[] $enabled_at_platform_call Enabled payment methods stored when the platform is called.
+	 */
+	public function test_nox_route_applies_woopay_and_wallet_picks_turned_on( string $route_suffix, array $enabled_at_platform_call ): void {
+		$fixture = $this->arrange_native_nox_picks(
+			array(
+				'card'         => true,
+				'ideal'        => true,
+				'woopay'       => true,
+				'apple_google' => true,
+			),
+			array(
+				'platform_checkout'              => 'no',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			),
+			'no'
+		);
+
+		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( $route_suffix ) );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'card', 'ideal' ), $settings['upe_enabled_payment_method_ids'], 'Placeholders are never stored as payment methods.' );
+		$this->assertSame( 'yes', $settings['platform_checkout'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )['enabled'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_google_pay_settings' )['enabled'] );
+		$this->assertContains( 'wcadmin_woopay_enabled', $fixture['recorder']->events );
+		$this->assertSame( $enabled_at_platform_call, $fixture['api_client']->enabled_at_platform_call, 'The picks are stored at the moment the client stores them.' );
+	}
+
+	/**
+	 * Client 11.1.0 update_enabled_payment_methods_ids() turns WooPay off when the `woopay` pick is off (:1549-1551; the disable
+	 * stamps `platform_checkout_last_disable_date` and records `woopay_disabled`, class-wc-payment-gateway-wcpay.php:3147-3165)
+	 * and disables the Apple Pay and Google Pay gateways when `apple_google` is off (:1563-1570).
+	 *
+	 * @testdox The NOX route applies the WooPay and Apple Pay / Google Pay picks turned off, like client 11.1.0.
+	 * @dataProvider provide_nox_pick_routes
+	 *
+	 * @param string $route_suffix Route below the onboarding step base.
+	 */
+	public function test_nox_route_applies_woopay_and_wallet_picks_turned_off( string $route_suffix ): void {
+		$fixture = $this->arrange_native_nox_picks(
+			array(
+				'card'         => true,
+				'woopay'       => false,
+				'apple_google' => false,
+			),
+			array(
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			),
+			'yes'
+		);
+
+		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( $route_suffix ) );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'no', $settings['platform_checkout'] );
+		$this->assertSame( gmdate( 'Y-m-d' ), $settings['platform_checkout_last_disable_date'] );
+		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )['enabled'] );
+		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_google_pay_settings' )['enabled'] );
+		$this->assertContains( 'wcadmin_woopay_disabled', $fixture['recorder']->events );
+	}
+
+	/**
+	 * Client 11.1.0 update_enabled_payment_methods_ids() keeps WooPay off when Link is enabled, even when WooPay is picked (:1540-1548).
+	 *
+	 * @testdox A NOX WooPay pick leaves WooPay off when Link is picked too, like client 11.1.0.
+	 */
+	public function test_nox_woopay_pick_leaves_woopay_off_when_link_is_picked(): void {
+		$fixture = $this->arrange_native_nox_picks(
+			array(
+				'card'   => true,
+				'link'   => true,
+				'woopay' => true,
+			),
+			array(
+				'platform_checkout'              => 'no',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			),
+			'no'
+		);
+
+		$fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session' ) );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'no', $settings['platform_checkout'] );
+		$this->assertNotContains( 'wcadmin_woopay_enabled', $fixture['recorder']->events );
 	}
 
 	/**
@@ -13729,6 +13857,203 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		}
 
 		return $projection_callbacks;
+	}
+
+	/**
+	 * Arrange the native NOX routes that create a KYC session or a test-drive account for a store without an account.
+	 *
+	 * @param array<string,mixed> $picks           Persisted NOX payment-method picks.
+	 * @param array<string,mixed> $settings        Stored gateway settings.
+	 * @param string              $wallets_enabled Stored Apple Pay and Google Pay gateway `enabled` value.
+	 * @return array{server:\WP_REST_Server,api_client:WooPaymentsApiClient,recorder:object}
+	 */
+	private function arrange_native_nox_picks( array $picks, array $settings, string $wallets_enabled ): array {
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Enabled payment method IDs stored when the platform was called.
+			 *
+			 * @var mixed
+			 */
+			public $enabled_at_platform_call = null;
+
+			/**
+			 * Constructor.
+			 */
+			public function __construct() {}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return a session for an account that is not created yet.
+			 *
+			 * @param bool        $live_account   Whether the session is for a live account.
+			 * @param array       $site_data      Site data.
+			 * @param array       $user_data      User data.
+			 * @param array       $account_data   Account data.
+			 * @param array       $actioned_notes Actioned notes.
+			 * @param string|null $referral_code  Referral code.
+			 * @return array
+			 */
+			public function initialize_onboarding_embedded_kyc( bool $live_account, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
+				unset( $live_account, $site_data, $user_data, $account_data, $actioned_notes, $referral_code );
+				$this->enabled_at_platform_call = get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
+
+				return array(
+					'clientSecret'   => 'accs_secret_native',
+					'expiresAt'      => 1234567999,
+					'accountId'      => 'acct_native',
+					'isLive'         => true,
+					'accountCreated' => false,
+					'publishableKey' => 'pk_live_native',
+				);
+			}
+
+			/**
+			 * Return a created test-drive account.
+			 *
+			 * @param bool        $live_account                Whether the account is live.
+			 * @param string      $return_url                  Return URL.
+			 * @param array       $site_data                   Site data.
+			 * @param array       $user_data                   User data.
+			 * @param array       $account_data                Account data.
+			 * @param array       $actioned_notes              Actioned notes.
+			 * @param bool        $collect_payout_requirements Whether to collect payout requirements.
+			 * @param string|null $referral_code               Referral code.
+			 * @return array
+			 */
+			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), bool $collect_payout_requirements = false, ?string $referral_code = null ): array {
+				unset( $live_account, $return_url, $site_data, $user_data, $account_data, $actioned_notes, $collect_payout_requirements, $referral_code );
+				$this->enabled_at_platform_call = get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
+
+				return array(
+					'url'               => false,
+					'account_id'        => 'acct_native_test',
+					'is_live'           => false,
+					'publishable_key'   => 'pk_test_native',
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+				);
+			}
+		};
+		$adapter    = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+				)
+			)
+			->getMock();
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		foreach ( array( 'has_account', 'has_valid_account', 'has_working_account', 'has_test_account', 'has_sandbox_account', 'has_live_account' ) as $method ) {
+			$adapter->method( $method )->willReturn( false );
+		}
+
+		$this->mock_provider->method( 'is_in_dev_mode' )->willReturn( false );
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					return ! $this->is_woopayments_class( $class_to_check );
+				},
+			)
+		);
+		update_option(
+			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+			array(
+				'onboarding' => array(
+					'US' => array(
+						'steps' => array(
+							WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array(
+								'data' => array( 'payment_methods' => $picks ),
+							),
+						),
+					),
+				),
+			)
+		);
+		update_option( WooPaymentsSettingsService::SETTINGS_OPTION, $settings );
+		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => $wallets_enabled ) );
+		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => $wallets_enabled ) );
+
+		$recorder = new class() {
+			/**
+			 * Recorded Tracks event names.
+			 *
+			 * @var string[]
+			 */
+			public array $events = array();
+
+			/**
+			 * Record the event name and pass the properties through.
+			 *
+			 * @param mixed  $properties Event properties.
+			 * @param string $event_name Event name.
+			 * @return mixed
+			 */
+			public function record( $properties, $event_name ) {
+				$this->events[] = $event_name;
+
+				return $properties;
+			}
+		};
+		add_filter( 'wcpay_tracks_event_properties', array( $recorder, 'record' ), 10, 2 );
+
+		$this->sut = new WooPaymentsService();
+		$this->init_sut(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$adapter,
+			$this->create_legacy_runtime(),
+			$api_client,
+			$this->create_native_account_service()
+		);
+		$controller = new WooPaymentsRestController();
+		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
+		$server = $this->create_rest_server_with_routes(
+			array(
+				static function () use ( $controller ) {
+					$controller->register_routes( true );
+				},
+			),
+			true
+		);
+
+		return array(
+			'server'     => $server,
+			'api_client' => $api_client,
+			'recorder'   => $recorder,
+		);
+	}
+
+	/**
+	 * Create a NOX onboarding step request for the US location.
+	 *
+	 * @param string $route_suffix Route below the onboarding step base.
+	 * @return WP_REST_Request
+	 */
+	private function create_nox_pick_request( string $route_suffix ): WP_REST_Request {
+		$request = new WP_REST_Request( 'POST', '/wc-admin/settings/payments/woopayments/onboarding/step/' . $route_suffix );
+		$request->set_param( 'location', 'US' );
+
+		return $request;
 	}
 
 	/**

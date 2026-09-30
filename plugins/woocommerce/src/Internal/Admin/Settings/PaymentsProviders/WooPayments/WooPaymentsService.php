@@ -3174,6 +3174,12 @@ class WooPaymentsService {
 	private function create_native_onboarding_kyc_session( array $self_assessment_data, array $capabilities ): array {
 		$setup_mode = $this->provider->is_in_dev_mode( $this->get_payment_gateway() ) ? 'test' : 'live';
 		$this->set_native_onboarding_test_mode( 'live' !== $setup_mode );
+
+		// Client 11.1.0 create_embedded_kyc_session() applies the picks before it calls the platform.
+		if ( ! empty( $capabilities ) ) {
+			$this->apply_native_onboarding_payment_method_picks( $capabilities );
+		}
+
 		if ( 'live' === $setup_mode ) {
 			$registry = new WooPaymentsPaymentMethodRegistry();
 			foreach ( $this->get_test_drive_enabled_payment_method_ids() as $payment_method_id ) {
@@ -3312,30 +3318,55 @@ class WooPaymentsService {
 	}
 
 	/**
+	 * Apply the NOX payment-method picks like client 11.1.0 update_enabled_payment_methods_ids(): enable the picked methods,
+	 * set WooPay from the `woopay` pick and the Apple Pay / Google Pay gateways from the `apple_google` pick.
+	 *
+	 * @param array<mixed> $picks NOX picks keyed by payment method ID.
+	 * @return bool Whether the canonical settings and split gateways were persisted.
+	 */
+	private function apply_native_onboarding_payment_method_picks( array $picks ): bool {
+		$wallets_picked = $this->is_native_onboarding_pick_selected( $picks['apple_google'] ?? false )
+			|| $this->is_native_onboarding_pick_selected( $picks['apple_pay'] ?? false )
+			|| $this->is_native_onboarding_pick_selected( $picks['google_pay'] ?? false );
+
+		return $this->enable_native_payment_methods(
+			$this->get_native_picked_payment_method_ids( $picks ),
+			$this->is_native_onboarding_pick_selected( $picks['woopay'] ?? false ),
+			$wallets_picked
+		);
+	}
+
+	/**
 	 * Add payment methods to the stored enabled set without capability or availability checks, as client 11.1.0
 	 * update_enabled_payment_methods_ids() and restore_test_drive_enabled_payment_methods() write the gateway option.
 	 *
-	 * @param string[] $payment_method_ids Payment method IDs to enable.
+	 * @param string[]  $payment_method_ids      Payment method IDs to enable.
+	 * @param bool|null $woopay_picked           WooPay pick, or null to keep the stored WooPay setting.
+	 * @param bool|null $payment_request_enabled Apple Pay / Google Pay pick, or null to keep the stored wallet state.
 	 * @return bool Whether the canonical settings and split gateways were persisted.
 	 */
-	private function enable_native_payment_methods( array $payment_method_ids ): bool {
-		$settings        = $this->proxy->call_function( 'get_option', WooPaymentsSettingsService::SETTINGS_OPTION, array() );
-		$settings        = is_array( $settings ) ? $settings : array();
-		$enabled_ids     = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array( 'card' );
-		$enabled_ids     = array_values( array_unique( array_merge( $enabled_ids, $payment_method_ids ) ) );
-		$disables_woopay = in_array( 'link', $enabled_ids, true ) && 'yes' === ( $settings['platform_checkout'] ?? 'no' );
+	private function enable_native_payment_methods( array $payment_method_ids, ?bool $woopay_picked = null, ?bool $payment_request_enabled = null ): bool {
+		$settings           = $this->proxy->call_function( 'get_option', WooPaymentsSettingsService::SETTINGS_OPTION, array() );
+		$settings           = is_array( $settings ) ? $settings : array();
+		$enabled_ids        = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array( 'card' );
+		$enabled_ids        = array_values( array_unique( array_merge( $enabled_ids, $payment_method_ids ) ) );
+		$was_woopay_enabled = 'yes' === ( $settings['platform_checkout'] ?? 'no' );
+		// WooPay and Link are mutually exclusive in the client, and Link wins.
+		$is_woopay_enabled = ( $woopay_picked ?? $was_woopay_enabled ) && ! in_array( 'link', $enabled_ids, true );
 
 		$settings['upe_enabled_payment_method_ids'] = $enabled_ids;
-		if ( $disables_woopay ) {
-			$settings['platform_checkout']                   = 'no';
-			$settings['platform_checkout_last_disable_date'] = gmdate( 'Y-m-d' );
+		if ( $is_woopay_enabled !== $was_woopay_enabled ) {
+			$settings['platform_checkout'] = $is_woopay_enabled ? 'yes' : 'no';
+			if ( ! $is_woopay_enabled ) {
+				$settings['platform_checkout_last_disable_date'] = gmdate( 'Y-m-d' );
+			}
 		}
 
 		// The canonical write also enables each method's split gateway and syncs its duplicated list.
-		$projection = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings );
-		if ( $disables_woopay ) {
+		$projection = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings, $payment_request_enabled );
+		if ( $is_woopay_enabled !== $was_woopay_enabled ) {
 			wc_get_container()->get( WooPaymentsFrontendTrackingController::class )->record_admin_event(
-				'woopay_disabled',
+				$is_woopay_enabled ? 'woopay_enabled' : 'woopay_disabled',
 				array( 'test_mode' => $this->get_native_account_service()->is_test_mode_enabled() ? 1 : 0 )
 			);
 		}
@@ -3391,6 +3422,9 @@ class WooPaymentsService {
 	 * Enable the payment methods picked in NOX onboarding, like client 11.1.0 update_enabled_payment_methods_ids():
 	 * no capability or fee check, so a pending or not-yet-priced pick stays enabled.
 	 *
+	 * The WooPay and Apple Pay / Google Pay picks are left alone: they were applied at session creation, and client
+	 * 11.1.0 finalize_embedded_connection() does not apply the picks again.
+	 *
 	 * @param string $location Merchant country stored in the NOX profile.
 	 * @return bool Whether the projection completed or deliberately had nothing to update.
 	 */
@@ -3401,17 +3435,26 @@ class WooPaymentsService {
 			'payment_methods',
 			array()
 		);
-		$selected_payment_methods = is_array( $selected_payment_methods ) ? $selected_payment_methods : array();
-		$registry                 = new WooPaymentsPaymentMethodRegistry();
-		$selected_definitions     = array();
+		$picked_ids               = $this->get_native_picked_payment_method_ids( is_array( $selected_payment_methods ) ? $selected_payment_methods : array() );
+		if ( empty( $picked_ids ) ) {
+			return true;
+		}
 
-		foreach ( $selected_payment_methods as $payment_method_id => $selected ) {
-			if ( ! is_string( $payment_method_id ) || ( ! is_bool( $selected ) && ! is_scalar( $selected ) ) ) {
-				continue;
-			}
+		return $this->enable_native_payment_methods( $picked_ids );
+	}
 
-			$selected = is_bool( $selected ) ? $selected : (string) $selected;
-			if ( ! wc_string_to_bool( $selected ) ) {
+	/**
+	 * Get the picked payment methods that have their own account capability, skipping the `woopay` and `apple_google` placeholders.
+	 *
+	 * @param array<mixed> $picks NOX picks keyed by payment method ID.
+	 * @return string[]
+	 */
+	private function get_native_picked_payment_method_ids( array $picks ): array {
+		$registry   = new WooPaymentsPaymentMethodRegistry();
+		$picked_ids = array();
+
+		foreach ( $picks as $payment_method_id => $selected ) {
+			if ( ! is_string( $payment_method_id ) || ! $this->is_native_onboarding_pick_selected( $selected ) ) {
 				continue;
 			}
 
@@ -3420,14 +3463,24 @@ class WooPaymentsService {
 				continue;
 			}
 
-			$selected_definitions[ $definition->get_id() ] = $definition;
+			$picked_ids[] = $definition->get_id();
 		}
 
-		if ( empty( $selected_definitions ) ) {
-			return true;
+		return array_values( array_unique( $picked_ids ) );
+	}
+
+	/**
+	 * Tell whether a stored NOX pick value is turned on.
+	 *
+	 * @param mixed $selected Stored pick value.
+	 * @return bool
+	 */
+	private function is_native_onboarding_pick_selected( $selected ): bool {
+		if ( is_bool( $selected ) ) {
+			return $selected;
 		}
 
-		return $this->enable_native_payment_methods( array_keys( $selected_definitions ) );
+		return is_scalar( $selected ) && wc_string_to_bool( (string) $selected );
 	}
 
 	/**
@@ -3936,19 +3989,14 @@ class WooPaymentsService {
 		$settings['enabled']   = 'yes';
 		$settings['test_mode'] = $this->get_native_response_bool( $response, array( 'is_live', 'isLive' ), false ) ? 'no' : 'yes';
 
-		$enabled_payment_methods = array();
-		foreach ( $capabilities as $payment_method_id => $enabled ) {
-			if ( is_string( $payment_method_id ) && true === $enabled ) {
-				$enabled_payment_methods[] = sanitize_key( $payment_method_id );
-			}
-		}
-
-		if ( ! empty( $enabled_payment_methods ) ) {
-			$settings['upe_enabled_payment_method_ids'] = array_values( array_unique( $enabled_payment_methods ) );
-		}
-
 		// Keep the gateway settings autoloaded: the gateway reads them on every front-end request via WC_Payment_Gateway::init_settings().
 		$this->proxy->call_function( 'update_option', 'woocommerce_woocommerce_payments_settings', $settings );
+
+		// Client 11.1.0 init_test_drive_account() applies the picks once the test-drive account exists.
+		if ( ! empty( $capabilities ) ) {
+			$this->apply_native_onboarding_payment_method_picks( $capabilities );
+		}
+
 		$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => true ), false );
 	}
 
