@@ -182,6 +182,23 @@ export function CurrencySettingsModal( {
 	);
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ isSaving, setIsSaving ] = useState( false );
+	const [ isDirty, setIsDirty ] = useState( false );
+
+	// Client 11.1.0 single-currency/index.js:138-151 warns before leaving with unsaved edits.
+	useEffect( () => {
+		if ( ! isDirty ) {
+			return;
+		}
+
+		const warnBeforeUnload = ( event: BeforeUnloadEvent ) => {
+			event.preventDefault();
+			event.returnValue = '';
+		};
+		window.addEventListener( 'beforeunload', warnBeforeUnload );
+
+		return () =>
+			window.removeEventListener( 'beforeunload', warnBeforeUnload );
+	}, [ isDirty ] );
 
 	useEffect( () => {
 		let isMounted = true;
@@ -241,7 +258,26 @@ export function CurrencySettingsModal( {
 		[ currency.is_zero_decimal ]
 	);
 
+	// Closing the dialog is the client's breadcrumb back to the list, which asks first when there are unsaved edits.
+	const requestClose = () => {
+		if (
+			isDirty &&
+			// eslint-disable-next-line no-alert -- The client asks with the browser's confirm dialog.
+			! window.confirm(
+				__(
+					'There are unsaved changes on this page. Are you sure you want to leave and discard the unsaved changes?',
+					'woocommerce'
+				)
+			)
+		) {
+			return;
+		}
+
+		onClose();
+	};
+
 	const updateSettings = ( values: Partial< CurrencySettingsState > ) => {
+		setIsDirty( true );
 		setSettings( ( currentSettings ) =>
 			currentSettings
 				? {
@@ -259,7 +295,7 @@ export function CurrencySettingsModal( {
 		settings?.exchangeRateType === 'manual' && ! hasValidManualRate;
 
 	const saveSettings = async () => {
-		if ( ! settings || isSaving || shouldRequireManualRate ) {
+		if ( ! settings || isSaving || ! isDirty || shouldRequireManualRate ) {
 			return;
 		}
 
@@ -313,7 +349,7 @@ export function CurrencySettingsModal( {
 	const automaticRateDescriptionId = `woocommerce-multi-currency-settings-${ currency.code }-automatic-description`;
 
 	return (
-		<Modal title={ modalTitle } onRequestClose={ onClose }>
+		<Modal title={ modalTitle } onRequestClose={ requestClose }>
 			{ isLoading && (
 				<p aria-live="polite">
 					<Spinner />
@@ -509,13 +545,15 @@ export function CurrencySettingsModal( {
 						charm={ settings.priceCharm }
 					/>
 					<div className="woocommerce-multi-currency-settings__modal-actions">
-						<Button variant="tertiary" onClick={ onClose }>
+						<Button variant="tertiary" onClick={ requestClose }>
 							{ __( 'Cancel', 'woocommerce' ) }
 						</Button>
 						<Button
 							variant="primary"
 							isBusy={ isSaving }
-							disabled={ isSaving || shouldRequireManualRate }
+							disabled={
+								isSaving || ! isDirty || shouldRequireManualRate
+							}
 							accessibleWhenDisabled
 							onClick={ saveSettings }
 						>

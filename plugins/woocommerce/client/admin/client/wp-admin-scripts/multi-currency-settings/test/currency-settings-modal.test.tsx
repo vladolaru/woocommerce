@@ -343,6 +343,87 @@ describe( 'CurrencySettingsModal', () => {
 		} );
 	} );
 
+	// Client 11.1.0 single-currency/index.js:66, 138-151 and 462: Save stays
+	// disabled until something changes, and leaving with unsaved changes (the
+	// breadcrumb back to the list, which is closing this dialog, or leaving the
+	// page) asks first, with the client's message.
+	describe( 'unsaved changes', () => {
+		const unsavedChangesMessage =
+			'There are unsaved changes on this page. Are you sure you want to leave and discard the unsaved changes?';
+		let confirmSpy: jest.SpyInstance;
+
+		beforeEach( () => {
+			confirmSpy = jest.spyOn( window, 'confirm' );
+		} );
+
+		afterEach( () => {
+			confirmSpy.mockRestore();
+		} );
+
+		const dispatchBeforeUnload = () => {
+			const event = new Event( 'beforeunload', { cancelable: true } );
+			window.dispatchEvent( event );
+
+			return event;
+		};
+
+		it( 'keeps Save disabled until a setting changes', async () => {
+			mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+			renderModal();
+
+			const saveButton = await screen.findByRole( 'button', {
+				name: 'Save changes',
+			} );
+			expect( saveButton ).toHaveAttribute( 'aria-disabled', 'true' );
+
+			fireEvent.change( screen.getByLabelText( 'Charm pricing' ), {
+				target: { value: '-0.05' },
+			} );
+
+			expect( saveButton ).not.toHaveAttribute( 'aria-disabled', 'true' );
+		} );
+
+		it( 'closes without asking when nothing changed', async () => {
+			mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+			const { onClose } = renderModal();
+
+			fireEvent.click(
+				await screen.findByRole( 'button', { name: 'Cancel' } )
+			);
+
+			expect( confirmSpy ).not.toHaveBeenCalled();
+			expect( onClose ).toHaveBeenCalledTimes( 1 );
+			expect( dispatchBeforeUnload().defaultPrevented ).toBe( false );
+		} );
+
+		it( 'asks before discarding unsaved changes', async () => {
+			mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+			const { onClose } = renderModal();
+
+			fireEvent.change( await screen.findByLabelText( 'Charm pricing' ), {
+				target: { value: '-0.05' },
+			} );
+
+			expect( dispatchBeforeUnload().defaultPrevented ).toBe( true );
+
+			confirmSpy.mockReturnValueOnce( false );
+			fireEvent.click( screen.getByRole( 'button', { name: 'Cancel' } ) );
+			expect( confirmSpy ).toHaveBeenCalledWith( unsavedChangesMessage );
+			expect( onClose ).not.toHaveBeenCalled();
+
+			confirmSpy.mockReturnValueOnce( true );
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Close' } )
+			);
+			// The dialog's own close button waits for its exit animation.
+			await waitFor( () =>
+				expect( confirmSpy ).toHaveBeenCalledTimes( 2 )
+			);
+			expect( onClose ).toHaveBeenCalledTimes( 1 );
+		} );
+	} );
+
 	it( 'omits the manual rate when saving automatic currency settings', async () => {
 		mockApiFetch
 			.mockResolvedValueOnce( automaticSettingsResponse )
