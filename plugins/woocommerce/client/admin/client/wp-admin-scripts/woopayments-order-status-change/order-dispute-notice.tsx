@@ -86,7 +86,8 @@ const NoticeAction = ( {
 	label: string;
 	countdownDays: number;
 } ) => (
-	<p>
+	// Core Notice's own actions row, so the button sits under the message as in the client.
+	<div className="components-notice__actions">
 		<a
 			className="components-button is-secondary"
 			href={ href }
@@ -98,7 +99,7 @@ const NoticeAction = ( {
 		>
 			{ label }
 		</a>
-	</p>
+	</div>
 );
 
 const LockedNotice = ( {

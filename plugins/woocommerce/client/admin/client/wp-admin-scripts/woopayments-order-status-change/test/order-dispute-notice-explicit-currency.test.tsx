@@ -112,8 +112,9 @@ describe( 'WooPayments order dispute notice explicit currency', () => {
 			global as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 		 ).IS_REACT_ACT_ENVIRONMENT = true;
 		const orderScreen = document.createElement( 'div' );
+		// Client 11.1.0 `order/index.js:128-150`: the notice renders into the payment details mount point.
 		orderScreen.innerHTML =
-			'<p class="form-field"><select id="order_status"><option value="wc-processing">Processing</option></select></p>';
+			'<div id="woocommerce-woopayments-order-payment-details"></div><p class="form-field"><select id="order_status"><option value="wc-processing">Processing</option></select></p>';
 		document.body.appendChild( orderScreen );
 		window.woocommerceWooPaymentsOrderStatusChange = {
 			order_status: 'wc-processing',

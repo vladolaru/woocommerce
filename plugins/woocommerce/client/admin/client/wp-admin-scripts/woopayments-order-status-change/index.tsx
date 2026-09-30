@@ -39,7 +39,6 @@ import { WooPaymentsOrderTestModeNotice } from './order-test-mode-notice';
 import type { WooPaymentsOrderStatusChangeConfig } from './types';
 
 const CONTAINER_CLASS_NAME = 'woocommerce-woopayments-order-status-change';
-const DISPUTE_CONTAINER_CLASS_NAME = `${ CONTAINER_CLASS_NAME }__dispute-notice`;
 const PAYMENT_DETAILS_CONTAINER_ID =
 	'woocommerce-woopayments-order-payment-details';
 let hasBoundEarlyFraudWarningRefundListener = false;
@@ -178,12 +177,9 @@ function bindManualRefundButton( disableManualRefunds: boolean ): void {
  *
  * @return The mount point.
  */
-function createContainer(
-	field: HTMLSelectElement,
-	className = CONTAINER_CLASS_NAME
-): HTMLDivElement {
+function createContainer( field: HTMLSelectElement ): HTMLDivElement {
 	const container = document.createElement( 'div' );
-	container.className = className;
+	container.className = CONTAINER_CLASS_NAME;
 
 	const anchor = field.closest( '.form-field' ) ?? field;
 	anchor.parentNode?.insertBefore( container, anchor.nextSibling );
@@ -263,14 +259,27 @@ function initialize(): void {
 	bindEarlyFraudWarningRefundListener();
 	bindManualRefundButton( config.disable_manual_refunds ?? false );
 
-	// Client 11.1.0 order/index.js:131-141: rendered into the mount point PHP prints after the payment
-	// info, and not at all when that mount point is missing.
+	// Client 11.1.0 order/index.js:128-150: the test-mode notice, then the dispute notice (which also
+	// locks refunds), in the mount point PHP prints after the payment info; nothing when it is missing.
 	const paymentDetailsContainer = document.getElementById(
 		PAYMENT_DETAILS_CONTAINER_ID
 	);
-	if ( config.test_mode && paymentDetailsContainer ) {
+	if ( paymentDetailsContainer && ( config.test_mode || config.charge_id ) ) {
 		createRoot( paymentDetailsContainer ).render(
-			<WooPaymentsOrderTestModeNotice />
+			<>
+				{ config.test_mode && <WooPaymentsOrderTestModeNotice /> }
+				{ config.charge_id && (
+					<WooPaymentsOrderDisputeNotice
+						chargeId={ config.charge_id }
+						onDisableOrderRefund={ ( status ) =>
+							disableOrderRefund( status, config )
+						}
+						shouldUseExplicitPrice={
+							config.should_use_explicit_price === true
+						}
+					/>
+				) }
+			</>
 		);
 	}
 
@@ -281,21 +290,6 @@ function initialize(): void {
 	}
 
 	const root = createRoot( createContainer( field ) );
-	if ( config.charge_id ) {
-		createRoot(
-			createContainer( field, DISPUTE_CONTAINER_CLASS_NAME )
-		).render(
-			<WooPaymentsOrderDisputeNotice
-				chargeId={ config.charge_id }
-				onDisableOrderRefund={ ( status ) =>
-					disableOrderRefund( status, config )
-				}
-				shouldUseExplicitPrice={
-					config.should_use_explicit_price === true
-				}
-			/>
-		);
-	}
 
 	const render = ( view: ReactNode ): void => {
 		root.render( view );

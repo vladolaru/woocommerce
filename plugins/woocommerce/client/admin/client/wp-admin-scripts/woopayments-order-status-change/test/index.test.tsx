@@ -471,7 +471,88 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 		} );
 	} );
 
+	// Client 11.1.0 `order/index.js:128-150`: the dispute notice and its refund lock live in the payment
+	// details mount point, below the test-mode notice.
+	const addPaymentDetailsMountPoint = () => {
+		const container = document.createElement( 'div' );
+		container.id = 'woocommerce-woopayments-order-payment-details';
+		orderScreen?.prepend( container );
+
+		return container;
+	};
+
+	it( 'renders the dispute notice below the test-mode notice in the payment details mount point', async () => {
+		const container = addPaymentDetailsMountPoint();
+		window.woocommerceWooPaymentsOrderStatusChange = {
+			order_status: 'wc-on-hold',
+			can_refund: true,
+			refund_amount: 42.5,
+			formatted_refund_amount: '$42.50',
+			refunded_amount: 0,
+			charge_id: 'ch_disputed',
+			has_open_authorization: false,
+			test_mode: true,
+		};
+		mockApiFetch.mockResolvedValue( {
+			disputes: [
+				{
+					id: 'dp_open',
+					status: 'needs_response',
+					reason: 'fraudulent',
+					amount: 4250,
+					currency: 'usd',
+					evidence_details: {
+						due_by: Math.floor( Date.now() / 1000 ) + 30 * 86400,
+					},
+				},
+			],
+		} );
+
+		bootEntry();
+
+		await waitFor( () =>
+			expect( container ).toHaveTextContent(
+				/This order has a payment dispute for/
+			)
+		);
+		expect(
+			( container.textContent as string ).indexOf( 'was in test mode' )
+		).toBeLessThan(
+			( container.textContent as string ).indexOf(
+				'This order has a payment dispute'
+			)
+		);
+		expect(
+			document.querySelector(
+				'.woocommerce-woopayments-order-status-change__dispute-notice'
+			)
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'shows no dispute notice without the payment details mount point', () => {
+		window.woocommerceWooPaymentsOrderStatusChange = {
+			order_status: 'wc-on-hold',
+			can_refund: true,
+			refund_amount: 42.5,
+			formatted_refund_amount: '$42.50',
+			refunded_amount: 0,
+			charge_id: 'ch_disputed',
+			has_open_authorization: false,
+		};
+		mockApiFetch.mockResolvedValue( {
+			disputes: [ { id: 'dp_lost', status: 'lost' } ],
+		} );
+
+		bootEntry();
+
+		expect( mockApiFetch ).not.toHaveBeenCalled();
+		expect(
+			orderScreenQueries().queryByText( /lost dispute/ )
+		).not.toBeInTheDocument();
+	} );
+
 	it( 'locks order refunds when any fetched dispute blocks them', async () => {
+		addPaymentDetailsMountPoint();
 		window.woocommerceWooPaymentsOrderStatusChange = {
 			order_status: 'wc-processing',
 			can_refund: true,
@@ -513,6 +594,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 	} );
 
 	it( 'uses a truthful accessible lock reason for an unknown dispute status', async () => {
+		addPaymentDetailsMountPoint();
 		window.woocommerceWooPaymentsOrderStatusChange = {
 			order_status: 'wc-processing',
 			can_refund: true,

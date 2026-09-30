@@ -276,14 +276,20 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the order screen styles for the WooPay line.
+	 * Get the order screen styles for the payment details notices and the WooPay line.
 	 *
-	 * Client 11.1.0 `assets/css/admin.css:193-202`: the WooPay line sits at the end of the totals.
+	 * Client 11.1.0 `dist/order.css` (the `InlineNotice` icon and spacing in the payment details
+	 * container) and `assets/css/admin.css:193-202` (the WooPay line at the end of the totals).
 	 *
 	 * @return string
 	 */
 	private function get_inline_styles(): string {
-		return '.wc-payment-gateway-method-name-woopay-wrapper{display:flex;justify-content:end;align-items:center}'
+		return '#' . self::PAYMENT_DETAILS_CONTAINER_ID . ' .components-notice{margin:24px 0 6px}'
+			. '.woocommerce-woopayments-order-notice__icon{align-self:flex-start;display:flex;margin-inline-end:5px}'
+			. '.woocommerce-woopayments-order-notice__icon svg{fill:#614200;height:22px;width:22px}'
+			. '#' . self::PAYMENT_DETAILS_CONTAINER_ID . ' .is-warning .components-notice__actions .components-button.is-secondary{border-color:transparent;box-shadow:inset 0 0 0 1px #614200;color:#614200}'
+			. '#' . self::PAYMENT_DETAILS_CONTAINER_ID . ' .is-error .components-notice__actions .components-button.is-secondary{border-color:transparent;box-shadow:inset 0 0 0 1px #8a2424;color:#8a2424}'
+			. '.wc-payment-gateway-method-name-woopay-wrapper{display:flex;justify-content:end;align-items:center}'
 			. '.wc-payment-gateway-method-name-woopay-wrapper img{margin:0 5px;padding-top:2px}';
 	}
 
