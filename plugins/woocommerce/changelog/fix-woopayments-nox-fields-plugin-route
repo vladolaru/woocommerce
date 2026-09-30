@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Stores that run the WooPayments plugin now load the onboarding business fields through the plugin again.

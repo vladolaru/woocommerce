@@ -3970,7 +3970,8 @@ class WooPaymentsService {
 	 */
 	private function get_onboarding_kyc_fields( string $location ): array {
 		$native_exception = null;
-		if ( $this->can_use_native_api_client() ) {
+		// While the plugin runtime is loaded, it owns the fields route (trunk's path) and the native client stays dormant.
+		if ( ! $this->legacy_runtime->is_loaded() && $this->can_use_native_api_client() ) {
 			try {
 				return $this->prepare_onboarding_kyc_fields(
 					$this->api_client->get_onboarding_fields_data( $this->proxy->call_function( 'get_user_locale' ) ),
