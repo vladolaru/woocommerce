@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 use Automattic\Jetpack\Connection\Manager as WPCOM_Connection_Manager;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
+use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiException;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
@@ -1242,6 +1243,158 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( $default_saved, (bool) get_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ) );
+	}
+
+	/**
+	 * Client 11.1.0 WC_Payments_Onboarding_Service::get_actioned_notes() (includes/class-wc-payments-onboarding-service.php:1019-1060)
+	 * feeds test-drive init (:760), the embedded session (:356) and finalize (includes/admin/class-wc-rest-payments-onboarding-controller.php:278).
+	 * The platform picks the accepted promotion only from these note names.
+	 *
+	 * @testdox The $call onboarding request sends only actioned, not-deleted wcpay-promo note names, like client 11.1.0.
+	 * @dataProvider provide_actioned_notes_onboarding_calls
+	 *
+	 * @param string $call API client method the route calls.
+	 */
+	public function test_onboarding_request_sends_actioned_promo_notes_like_client( string $call ): void {
+		$this->create_admin_note( 'wcpay-promo-accepted', Note::E_WC_ADMIN_NOTE_ACTIONED );
+		$this->create_admin_note( 'wcpay-promo-not-accepted', Note::E_WC_ADMIN_NOTE_UNACTIONED );
+		$this->create_admin_note( 'wcpay-promo-deleted', Note::E_WC_ADMIN_NOTE_ACTIONED, 0, true );
+		$this->create_admin_note( 'wcpay-other-actioned', Note::E_WC_ADMIN_NOTE_ACTIONED );
+		$this->create_admin_note( 'woocommerce-wcpay-promo-actioned', Note::E_WC_ADMIN_NOTE_ACTIONED );
+
+		$this->assertSame( array( 'wcpay-promo-accepted' ), $this->dispatch_onboarding_route_for_actioned_notes( $call ) );
+		$this->assertFalse( has_filter( 'woocommerce_note_where_clauses' ), 'The promo name clause does not leak into later note queries.' );
+	}
+
+	/**
+	 * Client 11.1.0 get_actioned_notes() asks the note store for 10 notes in its default order, newest `date_created` first.
+	 *
+	 * @testdox The onboarding request sends the 10 newest actioned wcpay-promo notes, newest first, like client 11.1.0.
+	 */
+	public function test_onboarding_request_sends_ten_newest_actioned_promo_notes_like_client(): void {
+		// Created out of date order, so the note ID order differs from the date order.
+		foreach ( array( 7, 2, 11, 0, 5, 9, 1, 10, 4, 8, 3, 6 ) as $hours_after_start ) {
+			$this->create_admin_note( sprintf( 'wcpay-promo-%02d', $hours_after_start ), Note::E_WC_ADMIN_NOTE_ACTIONED, $hours_after_start );
+		}
+
+		$this->assertSame(
+			array( 'wcpay-promo-11', 'wcpay-promo-10', 'wcpay-promo-09', 'wcpay-promo-08', 'wcpay-promo-07', 'wcpay-promo-06', 'wcpay-promo-05', 'wcpay-promo-04', 'wcpay-promo-03', 'wcpay-promo-02' ),
+			$this->dispatch_onboarding_route_for_actioned_notes( 'initialize_onboarding_embedded_kyc' )
+		);
+	}
+
+	/**
+	 * Client 11.1.0 get_actioned_notes() logs a note store failure and returns no notes, so onboarding goes on (:1027-1034).
+	 *
+	 * @testdox The $call onboarding request goes on with no notes and logs an error when the note store fails, like client 11.1.0.
+	 * @dataProvider provide_actioned_notes_onboarding_calls
+	 *
+	 * @param string $call API client method the route calls.
+	 */
+	public function test_onboarding_request_goes_on_without_notes_when_note_store_fails( string $call ): void {
+		$this->create_admin_note( 'wcpay-promo-accepted', Note::E_WC_ADMIN_NOTE_ACTIONED );
+		add_filter(
+			'woocommerce_data_stores',
+			static function ( $stores ) {
+				$stores['admin-note'] = 'WC_Missing_Admin_Note_Data_Store';
+				return $stores;
+			}
+		);
+		$log_calls = array();
+		$logger    = $this->mock_capturing_logger( $log_calls );
+
+		$this->assertSame( array(), $this->dispatch_onboarding_route_for_actioned_notes( $call, $logger ) );
+		$note_store_errors = array_filter(
+			$log_calls,
+			static function ( array $log_call ): bool {
+				return 'error' === $log_call['level'] && false !== strpos( $log_call['message'], 'Invalid data store.' );
+			}
+		);
+		$this->assertCount( 1, $note_store_errors, 'The note store failure is logged once.' );
+	}
+
+	/**
+	 * The onboarding routes that send actioned notes to the platform.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provide_actioned_notes_onboarding_calls(): array {
+		return array(
+			'test-drive init'       => array( 'initialize_onboarding' ),
+			'embedded KYC session'  => array( 'initialize_onboarding_embedded_kyc' ),
+			'embedded KYC finalize' => array( 'finalize_onboarding_embedded_kyc' ),
+		);
+	}
+
+	/**
+	 * Save an admin note.
+	 *
+	 * @param string $name              Note name.
+	 * @param string $status            Note status.
+	 * @param int    $hours_after_start Hours after a fixed start to set as the creation date.
+	 * @param bool   $is_deleted        Whether the note is soft-deleted.
+	 */
+	private function create_admin_note( string $name, string $status, int $hours_after_start = 0, bool $is_deleted = false ): void {
+		$note = new Note();
+		$note->set_name( $name );
+		$note->set_title( $name );
+		$note->set_content( $name );
+		$note->set_status( $status );
+		$note->set_is_deleted( $is_deleted );
+		$note->save();
+		// The note store stamps the current time on create, so the creation date is set on update.
+		$note->set_date_created( self::TEST_EPOCH - DAY_IN_SECONDS + $hours_after_start * HOUR_IN_SECONDS );
+		$note->save();
+	}
+
+	/**
+	 * Dispatch the real onboarding route that makes an API client call, and return the actioned notes the call received.
+	 *
+	 * @param string      $call   API client method: initialize_onboarding, initialize_onboarding_embedded_kyc or finalize_onboarding_embedded_kyc.
+	 * @param object|null $logger Optional logger returned by wc_get_logger().
+	 * @return array
+	 */
+	private function dispatch_onboarding_route_for_actioned_notes( string $call, ?object $logger = null ): array {
+		if ( 'finalize_onboarding_embedded_kyc' === $call ) {
+			$fixture    = $this->arrange_native_finalize_projection( array( $this->get_native_finalize_projection_account() ), array( 'card' => true ) );
+			$controller = new WooPaymentsRestController();
+			$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
+			$server  = $this->create_rest_server_with_routes(
+				array(
+					static function () use ( $controller ) {
+						$controller->register_routes( true );
+					},
+				),
+				true
+			);
+			$request = $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session/finish' );
+			$request->set_param( 'source', WooPaymentsService::SESSION_ENTRY_LYS );
+		} else {
+			$fixture = $this->arrange_native_nox_picks( array( 'card' => true ), array( 'upe_enabled_payment_method_ids' => array( 'card' ) ), 'no' );
+			$server  = $fixture['server'];
+			$request = $this->create_nox_pick_request(
+				'initialize_onboarding' === $call
+					? WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT . '/init'
+					: WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session'
+			);
+		}
+
+		if ( null !== $logger ) {
+			$this->mockable_proxy->register_function_mocks(
+				array(
+					'wc_get_logger' => static function () use ( $logger ) {
+						return $logger;
+					},
+				)
+			);
+		}
+
+		$response = $server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status(), 'The onboarding route succeeds.' );
+		$this->assertArrayHasKey( $call, $fixture['api_client']->actioned_notes_by_call, 'The route reaches the platform call.' );
+
+		return $fixture['api_client']->actioned_notes_by_call[ $call ];
 	}
 
 	/**
@@ -13981,6 +14134,13 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			public $enabled_at_platform_call = null;
 
 			/**
+			 * Actioned notes each platform call received, keyed by API client method.
+			 *
+			 * @var array<string,array>
+			 */
+			public array $actioned_notes_by_call = array();
+
+			/**
 			 * Extra fields the platform adds to its responses.
 			 *
 			 * @var array<string,mixed>
@@ -14017,8 +14177,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			 * @return array
 			 */
 			public function initialize_onboarding_embedded_kyc( bool $live_account, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
-				unset( $live_account, $site_data, $user_data, $account_data, $actioned_notes, $referral_code );
-				$this->enabled_at_platform_call = get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
+				unset( $live_account, $site_data, $user_data, $account_data, $referral_code );
+				$this->actioned_notes_by_call['initialize_onboarding_embedded_kyc'] = $actioned_notes;
+				$this->enabled_at_platform_call                                     = get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
 
 				return array_merge(
 					array(
@@ -14047,8 +14208,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			 * @return array
 			 */
 			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), bool $collect_payout_requirements = false, ?string $referral_code = null ): array {
-				unset( $live_account, $return_url, $site_data, $user_data, $account_data, $actioned_notes, $collect_payout_requirements, $referral_code );
-				$this->enabled_at_platform_call = get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
+				unset( $live_account, $return_url, $site_data, $user_data, $account_data, $collect_payout_requirements, $referral_code );
+				$this->actioned_notes_by_call['initialize_onboarding'] = $actioned_notes;
+				$this->enabled_at_platform_call                        = get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
 
 				return array_merge(
 					array(
@@ -14252,6 +14414,13 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			public int $account_requests = 0;
 
 			/**
+			 * Actioned notes each platform call received, keyed by API client method.
+			 *
+			 * @var array<string,array>
+			 */
+			public array $actioned_notes_by_call = array();
+
+			/**
 			 * Extra fields the platform adds to the embedded KYC session.
 			 *
 			 * @var array<string,mixed>
@@ -14316,7 +14485,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			 * @return array<string,mixed>
 			 */
 			public function finalize_onboarding_embedded_kyc( string $locale, string $source, array $actioned_notes = array() ): array {
-				unset( $locale, $source, $actioned_notes );
+				unset( $locale, $source );
+				$this->actioned_notes_by_call['finalize_onboarding_embedded_kyc'] = $actioned_notes;
 
 				return $this->finalize_response ?? array(
 					'success'           => true,

@@ -5,6 +5,8 @@ namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPa
 
 use Automattic\Jetpack\Connection\Manager as WPCOM_Connection_Manager;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
+use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
+use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiArgumentException;
 use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiException;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
@@ -3142,7 +3144,7 @@ class WooPaymentsService {
 			$this->get_native_onboarding_site_data(),
 			$this->array_filter_recursive( $this->get_native_onboarding_user_data() ),
 			$this->array_filter_recursive( $account_data ),
-			array()
+			$this->get_native_onboarding_actioned_notes()
 		);
 
 		// Client 11.1.0 init_test_drive_account() remembers the platform's WooPay default only when should_enable_woopay() agrees.
@@ -3200,7 +3202,7 @@ class WooPaymentsService {
 			$this->get_native_onboarding_site_data(),
 			$this->array_filter_recursive( $this->get_native_onboarding_user_data() ),
 			$this->array_filter_recursive( $this->get_native_onboarding_account_data( $setup_mode, $self_assessment_data, $capabilities ) ),
-			array(),
+			$this->get_native_onboarding_actioned_notes(),
 			empty( $referral_code ) ? null : (string) $referral_code
 		);
 
@@ -3234,7 +3236,7 @@ class WooPaymentsService {
 		$response = $this->get_native_api_client()->finalize_onboarding_embedded_kyc(
 			$this->proxy->call_function( 'get_user_locale' ),
 			$source,
-			array()
+			$this->get_native_onboarding_actioned_notes()
 		);
 
 		if ( ! isset( $response['success'] ) ) {
@@ -3752,6 +3754,66 @@ class WooPaymentsService {
 			'referer'           => isset( $_SERVER['HTTP_REFERER'] ) ? esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) ) : '',
 			'onboarding_source' => self::SESSION_ENTRY_DEFAULT,
 		);
+	}
+
+	/**
+	 * Get the names of the last 10 actioned WooPayments promotion notes, which the platform uses to pick the accepted promotion.
+	 *
+	 * Mirrors client 11.1.0 WC_Payments_Onboarding_Service::get_actioned_notes(), but reads each name from the query row instead
+	 * of loading every note again. A note store failure is logged and sends no notes, so onboarding is never blocked.
+	 *
+	 * @return string[]
+	 */
+	private function get_native_onboarding_actioned_notes(): array {
+		$add_like_clause = static function ( $where_clause ) {
+			return $where_clause . " AND name LIKE 'wcpay-promo-%'";
+		};
+
+		try {
+			/**
+			 * The admin note data store, which WC_Data_Store forwards calls to.
+			 *
+			 * @var NotesDataStore $data_store
+			 */
+			$data_store = \WC_Data_Store::load( 'admin-note' );
+
+			add_filter( 'woocommerce_note_where_clauses', $add_like_clause );
+			try {
+				$notes = $data_store->get_notes(
+					array(
+						'status'     => array( Note::E_WC_ADMIN_NOTE_ACTIONED ),
+						'is_deleted' => false,
+						'per_page'   => 10,
+					)
+				);
+			} finally {
+				remove_filter( 'woocommerce_note_where_clauses', $add_like_clause );
+			}
+		} catch ( \Throwable $e ) {
+			try {
+				$this->proxy->call_function( 'wc_get_logger' )->error(
+					'Native WooPayments could not read the actioned promotion notes for onboarding: ' . $e->getMessage(),
+					array( 'source' => 'woocommerce-woopayments-onboarding' )
+				);
+			} catch ( \Throwable $logging_error ) {
+				unset( $logging_error );
+			}
+
+			return array();
+		}
+
+		if ( ! is_array( $notes ) ) {
+			return array();
+		}
+
+		$note_names = array();
+		foreach ( $notes as $note ) {
+			if ( isset( $note->name ) && is_string( $note->name ) ) {
+				$note_names[] = $note->name;
+			}
+		}
+
+		return $note_names;
 	}
 
 	/**
