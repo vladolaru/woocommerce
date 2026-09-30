@@ -1176,7 +1176,10 @@ describe( 'WooPayments money movement pages', () => {
 	it( 'projects the global uncaptured count on the ordinary transactions view', async () => {
 		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
 		mockGetTransactionsSummary.mockResolvedValue( { count: 0, total: 0 } );
-		mockGetAuthorizationsSummary.mockResolvedValue( { count: 26 } );
+		mockGetAuthorizationsSummary.mockResolvedValue( {
+			count: 26,
+			total: 26000,
+		} );
 
 		render(
 			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
@@ -1193,7 +1196,59 @@ describe( 'WooPayments money movement pages', () => {
 		expect( mockGetAuthorizationsSummary ).toHaveBeenCalledWith( {} );
 	} );
 
+	it.each( [
+		[ 'hides', false, { count: 0, total: 0 }, false ],
+		[ 'shows', true, { count: 0, total: 0 }, true ],
+		[ 'shows', false, { count: 1, total: 1000 }, true ],
+	] )(
+		// Client 11.1.0 `transactions/index.tsx:63-72`.
+		'%s the Uncaptured tab with manual capture %p and summary %p',
+		async ( _verb, isManualCaptureEnabled, authorizations, isShown ) => {
+			window.wcSettings = {
+				...window.wcSettings,
+				admin: { woopaymentsSettings: { isManualCaptureEnabled } },
+			} as typeof window.wcSettings;
+			mockGetTransactions.mockResolvedValue( {
+				data: [],
+				total_count: 0,
+			} );
+			mockGetTransactionsSummary.mockResolvedValue( {
+				count: 0,
+				total: 0,
+			} );
+			mockGetAuthorizationsSummary.mockResolvedValue( authorizations );
+
+			render(
+				<MemoryRouter
+					initialEntries={ [ '/woopayments/transactions' ] }
+				>
+					<WooPaymentsTransactionsPage />
+				</MemoryRouter>
+			);
+
+			await screen.findByText( summaryItem( '0 transactions' ) );
+			await waitFor( () =>
+				expect( mockGetAuthorizationsSummary ).toHaveBeenCalled()
+			);
+			expect(
+				screen
+					.getAllByRole( 'tab' )
+					.map(
+						( tab ) => tab.textContent?.replace( / \(.*\)$/, '' )
+					)
+			).toEqual(
+				isShown
+					? [ 'Transactions', 'Uncaptured', 'Blocked' ]
+					: [ 'Transactions', 'Blocked' ]
+			);
+		}
+	);
+
 	it( 'keeps transactions usable when the uncaptured count fails', async () => {
+		window.wcSettings = {
+			...window.wcSettings,
+			admin: { woopaymentsSettings: { isManualCaptureEnabled: true } },
+		} as typeof window.wcSettings;
 		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
 		mockGetTransactionsSummary.mockResolvedValue( { count: 0, total: 0 } );
 		mockGetAuthorizationsSummary.mockRejectedValue(

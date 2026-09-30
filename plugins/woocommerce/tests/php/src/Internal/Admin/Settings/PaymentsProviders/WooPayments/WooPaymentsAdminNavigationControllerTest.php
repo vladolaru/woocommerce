@@ -267,6 +267,26 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preload whether manual capture is on, which shows the Uncaptured transactions tab.
+	 *
+	 * Source: plugin 11.1.0 `client/transactions/index.tsx:63-72` (`getIsManualCaptureEnabled`).
+	 *
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $manual_capture Whether manual capture is on.
+	 */
+	public function test_preloads_manual_capture_flag( bool $manual_capture ): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller( true, array(), array( 'manual_capture' => (int) $manual_capture ) );
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame( $manual_capture, $settings['woopaymentsSettings']['isManualCaptureEnabled'] );
+	}
+
+	/**
 	 * @testdox Should preload that WooCommerce Subscriptions is inactive for the transactions list's Subscription # column.
 	 *
 	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1021` (`isSubscriptionsActive` in `wcpaySettings`).
@@ -2275,7 +2295,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a native badge service test double.
 	 *
-	 * @param array<string,int> $overrides Badge count overrides.
+	 * @param array<string,int> $overrides Badge count overrides, and `manual_capture` as 1 or 0.
 	 * @return WooPaymentsAdminMenuBadgeService&MockObject
 	 */
 	private function create_badge_service( array $overrides = array() ): WooPaymentsAdminMenuBadgeService {
@@ -2283,17 +2303,19 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			array(
 				'disputes_awaiting_response' => 0,
 				'uncaptured_transactions'    => 0,
+				'manual_capture'             => 0,
 			),
 			$overrides
 		);
 
 		$badge_service = $this->getMockBuilder( WooPaymentsAdminMenuBadgeService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_disputes_awaiting_response_count', 'get_uncaptured_transactions_count' ) )
+			->onlyMethods( array( 'get_disputes_awaiting_response_count', 'get_uncaptured_transactions_count', 'is_manual_capture_enabled' ) )
 			->getMock();
 
 		$badge_service->method( 'get_disputes_awaiting_response_count' )->willReturn( $counts['disputes_awaiting_response'] );
 		$badge_service->method( 'get_uncaptured_transactions_count' )->willReturn( $counts['uncaptured_transactions'] );
+		$badge_service->method( 'is_manual_capture_enabled' )->willReturn( 1 === $counts['manual_capture'] );
 
 		return $badge_service;
 	}

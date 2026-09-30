@@ -260,6 +260,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		// Plugin 11.1.0 `WC_Payments_Admin` localizes this for `maybeTrackStripeConnected()`.
 		$track_stripe_connected                                  = get_option( '_wcpay_onboarding_stripe_connected' );
 		$settings['woopaymentsSettings']['trackStripeConnected'] = $track_stripe_connected ? $track_stripe_connected : '';
+		// Plugin 11.1.0 shows the Uncaptured transactions tab when manual capture is on (`transactions/index.tsx:63-72`).
+		$settings['woopaymentsSettings']['isManualCaptureEnabled'] = $this->badge_service->is_manual_capture_enabled();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1021` localizes this for the transactions list's Subscription # column.
 		$settings['woopaymentsSettings']['isSubscriptionsActive'] = $this->is_subscriptions_plugin_active();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1040` localizes this for `formatExplicitCurrency()`.

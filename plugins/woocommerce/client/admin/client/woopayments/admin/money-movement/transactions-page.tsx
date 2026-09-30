@@ -57,6 +57,7 @@ import {
 	getSettingsPaymentsProviderRouteUrl,
 } from '../utils';
 import { SpotlightPromotion } from '../../promotions/spotlight';
+import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 import '../style.scss';
 
 type MoneyMovementSummary = WooPaymentsAuthorizationsSummary;
@@ -195,6 +196,7 @@ export const WooPaymentsTransactionsPage = () => {
 	const [ uncapturedCount, setUncapturedCount ] = useState< number | null >(
 		null
 	);
+	const [ uncapturedTotal, setUncapturedTotal ] = useState( 0 );
 	const isMountedRef = useRef( false );
 	const uncapturedCountRequestIdRef = useRef( 0 );
 	const [ isLoading, setIsLoading ] = useState( true );
@@ -252,6 +254,7 @@ export const WooPaymentsTransactionsPage = () => {
 				setUncapturedCount(
 					typeof nextCount === 'number' ? nextCount : null
 				);
+				setUncapturedTotal( getSummaryTotal( nextSummary ) ?? 0 );
 			}
 		} catch {
 			if (
@@ -711,6 +714,12 @@ export const WooPaymentsTransactionsPage = () => {
 		__( 'Uncaptured (%1$s)', 'woocommerce' ),
 		uncapturedCount === null ? '…' : String( uncapturedCount )
 	);
+	// Client 11.1.0 `transactions/index.tsx:63-72`: the Uncaptured tab shows with manual capture on
+	// or authorizations to capture; it also stays while it is the open view.
+	const showUncapturedTab =
+		getWooPaymentsSettingsBootstrap().isManualCaptureEnabled === true ||
+		uncapturedTotal > 0 ||
+		isUncaptured;
 	const handleTabSelect = ( tabName: string ) => {
 		if ( tabName === currentTab ) {
 			return;
@@ -738,7 +747,9 @@ export const WooPaymentsTransactionsPage = () => {
 					name: 'transactions',
 					title: __( 'Transactions', 'woocommerce' ),
 				},
-				{ name: 'uncaptured', title: uncapturedTabLabel },
+				...( showUncapturedTab
+					? [ { name: 'uncaptured', title: uncapturedTabLabel } ]
+					: [] ),
 				{ name: 'blocked', title: __( 'Blocked', 'woocommerce' ) },
 			] }
 		>
