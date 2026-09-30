@@ -377,6 +377,14 @@ const jsConfig = {
 					chunks: 'async',
 					enforce: true,
 				},
+				// WooPayments onboarding and Overview both load Stripe Connect.
+				// Keep one copy in a shared async chunk.
+				stripeConnect: {
+					test: /[\\/]node_modules[\\/]@stripe[\\/](react-)?connect-js[\\/]/,
+					name: 'stripe-connect',
+					chunks: 'async',
+					enforce: true,
+				},
 			},
 		},
 	},
