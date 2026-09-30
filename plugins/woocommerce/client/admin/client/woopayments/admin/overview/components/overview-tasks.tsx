@@ -186,7 +186,7 @@ const buildUpdateBusinessDetailsTask = ( {
 		return { ...task, onClick: () => onOpenUpdateBusinessDetails( shell ) };
 	}
 
-	// Like the client, an empty link (test-drive accounts) still opens a blank tab.
+	// Test-drive accounts have no account link; the client still opens a blank tab there, native opens nothing (N-194).
 	const accountLink = accountStatus.account_link;
 	const accountLinkWithSource = accountLink
 		? addQueryArgs( accountLink, {
@@ -201,7 +201,9 @@ const buildUpdateBusinessDetailsTask = ( {
 			recordEvent( 'wcpay_account_details_link_clicked', {
 				source: 'wcpay-update-business-details-task',
 			} );
-			window.open( accountLinkWithSource, '_blank' );
+			if ( accountLinkWithSource ) {
+				window.open( accountLinkWithSource, '_blank' );
+			}
 		},
 	};
 };

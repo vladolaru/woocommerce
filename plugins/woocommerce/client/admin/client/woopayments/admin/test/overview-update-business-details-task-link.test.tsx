@@ -91,6 +91,24 @@ describe( 'WooPayments Overview update-business-details task click', () => {
 		}
 	);
 
+	// N-194: a test-drive account has no account link; the client opens a blank tab, native opens nothing.
+	it( 'records the click but opens no tab when the account link is empty', () => {
+		const { task, onOpenUpdateBusinessDetails } = buildTask( {
+			status: 'restricted',
+			past_due: true,
+			account_link: '',
+		} );
+
+		task.onClick?.();
+
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_account_details_link_clicked',
+			{ source: 'wcpay-update-business-details-task' }
+		);
+		expect( openSpy ).not.toHaveBeenCalled();
+		expect( onOpenUpdateBusinessDetails ).not.toHaveBeenCalled();
+	} );
+
 	it.each( [
 		[ 'submitted', true ],
 		[ 'unsubmitted', false ],

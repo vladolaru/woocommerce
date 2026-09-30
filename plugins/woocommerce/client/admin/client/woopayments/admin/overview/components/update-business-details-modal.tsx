@@ -3,7 +3,6 @@
  */
 import { Button, Modal, Notice } from '@wordpress/components';
 import { __, sprintf } from '@wordpress/i18n';
-import { addQueryArgs } from '@wordpress/url';
 import { recordEvent } from '@woocommerce/tracks';
 
 /**
@@ -22,13 +21,9 @@ export const UpdateBusinessDetailsModal = ( {
 	shell: WooPaymentsOverviewShell;
 	onClose: () => void;
 } ) => {
+	// Client 11.1.0 `overview/modal/update-business-details/index.tsx` opens the bare account link; native adds
+	// noopener,noreferrer (N-194).
 	const accountLink = shell.account_status.account_link;
-	const accountLinkWithSource = accountLink
-		? addQueryArgs( accountLink, {
-				from: 'WCPAY_OVERVIEW',
-				source: 'wcpay-update-business-details-task',
-		  } )
-		: '';
 	const { status, current_deadline: currentDeadline } = shell.account_status;
 	const errorMessages = getRequirementErrorMessages(
 		shell.account_status.requirements?.errors
@@ -38,12 +33,8 @@ export const UpdateBusinessDetailsModal = ( {
 		recordEvent( 'wcpay_account_details_link_clicked', {
 			source: 'wcpay-update-business-details-task',
 		} );
-		if ( accountLinkWithSource ) {
-			window.open(
-				accountLinkWithSource,
-				'_blank',
-				'noopener,noreferrer'
-			);
+		if ( accountLink ) {
+			window.open( accountLink, '_blank', 'noopener,noreferrer' );
 		}
 	};
 
@@ -89,7 +80,7 @@ export const UpdateBusinessDetailsModal = ( {
 				<Button
 					variant="primary"
 					onClick={ openAccountLink }
-					disabled={ ! accountLinkWithSource }
+					disabled={ ! accountLink }
 				>
 					{ __( 'Update business details', 'woocommerce' ) }
 				</Button>
