@@ -1537,13 +1537,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							transaction={ transaction }
 							countries={ countries }
 						/>
-						{ timelineErrorMessage && (
-							<StatusMessage isError>
-								{ timelineErrorMessage }
-							</StatusMessage>
-						) }
 						<WooPaymentsTransactionTimeline
 							events={ timelineEvents }
+							hasError={ !! timelineErrorMessage }
 							disputeOrder={ disputeOrder }
 							onRefund={
 								showFullRefundAction

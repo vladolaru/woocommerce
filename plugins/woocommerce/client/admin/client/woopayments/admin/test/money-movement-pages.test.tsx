@@ -52,6 +52,14 @@ import {
 	setMockUserPreferences,
 } from './helpers/user-preferences';
 
+// Headlines of core `Timeline` items, newest first.
+const getTimelineHeadlines = () =>
+	Array.from(
+		document.querySelectorAll(
+			'.woocommerce-timeline-item__headline > span'
+		)
+	).map( ( headline ) => headline.textContent );
+
 const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
 const mockHistoryPush = jest.fn();
@@ -3428,7 +3436,9 @@ describe( 'WooPayments money movement pages', () => {
 		expect( screen.getByText( 'pi_test' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'ch_test' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'txn_test' ) ).toBeInTheDocument();
-		expect( screen.getByText( 'Payment captured.' ) ).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toContain(
+			'Payment status changed to Paid.'
+		);
 		expect( mockGetPaymentIntent ).toHaveBeenCalledWith( 'pi_test' );
 		expect( mockGetTimeline ).toHaveBeenCalledWith( 'pi_test' );
 		expect( mockGetTransaction ).not.toHaveBeenCalled();
@@ -5739,10 +5749,8 @@ describe( 'WooPayments money movement pages', () => {
 		mockGetTimeline.mockResolvedValue( {
 			data: [
 				{
-					type: 'dispute.created',
+					type: 'dispute_in_review',
 					dispute_id: 'dp_older',
-					amount: 3000,
-					currency: 'usd',
 					created: 1000,
 				},
 				{
@@ -5814,11 +5822,9 @@ describe( 'WooPayments money movement pages', () => {
 		expect(
 			screen.queryByRole( 'button', { name: 'Transaction actions' } )
 		).not.toBeInTheDocument();
-		expect(
-			screen.getByText(
-				'A dispute was opened for $30.00. · Dispute 1 of 2'
-			)
-		).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toContain(
+			'Challenge evidence submitted. · Dispute 1 of 2'
+		);
 		expect(
 			screen.getByText( 'A payment of $50.00 was successfully charged.' )
 		).toBeInTheDocument();
@@ -6786,18 +6792,13 @@ describe( 'WooPayments money movement pages', () => {
 				/>
 			);
 
-			expect(
-				screen.getByText(
-					'Payment status changed to Early fraud warning.'
-				)
-			).toBeInTheDocument();
+			expect( getTimelineHeadlines() ).toContain(
+				'Payment status changed to Early fraud warning.'
+			);
 			expect(
 				screen.getByText( 'Payment received an early fraud warning' )
 			).toBeInTheDocument();
-			expect(
-				screen.getByRole( 'heading', { name: 'Timeline' } )
-					.nextElementSibling?.children
-			).toHaveLength( 2 );
+			expect( getTimelineHeadlines() ).toHaveLength( 2 );
 			expect(
 				screen.getByText(
 					'The card issuer flagged this payment as likely fraudulent.'
@@ -6928,20 +6929,15 @@ describe( 'WooPayments money movement pages', () => {
 					/>
 				);
 
-				expect(
-					screen.getByText(
-						'Payment status changed to Early fraud warning resolved.'
-					)
-				).toBeInTheDocument();
+				expect( getTimelineHeadlines() ).toContain(
+					'Payment status changed to Early fraud warning resolved.'
+				);
 				expect(
 					screen.getByText(
 						'This early fraud warning is no longer actionable.'
 					)
 				).toBeInTheDocument();
-				expect(
-					screen.getByRole( 'heading', { name: 'Timeline' } )
-						.nextElementSibling?.children
-				).toHaveLength( 2 );
+				expect( getTimelineHeadlines() ).toHaveLength( 2 );
 				expect(
 					screen.getByText(
 						'The payment was refunded or disputed, so no further action is needed to avoid a dispute.'
@@ -7114,13 +7110,8 @@ describe( 'WooPayments money movement pages', () => {
 
 	it( 'renders reference-shaped timeline event details with datetime values', async () => {
 		const eventDatetime = 1781712200;
-		const expectedEventDate = new Date(
-			eventDatetime * 1000
-		).toLocaleDateString( undefined, {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric',
-		} );
+		// 2026-06-17 16:03:20 UTC in the default UTC site timezone and `F j, Y` date format.
+		const expectedEventDate = 'June 17, 2026';
 
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_test',
@@ -7179,8 +7170,13 @@ describe( 'WooPayments money movement pages', () => {
 		);
 
 		expect(
-			await screen.findByText( 'Payment status changed to Paid.' )
+			await screen.findByText(
+				'A payment of $50.00 was successfully charged.'
+			)
 		).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toContain(
+			'Payment status changed to Paid.'
+		);
 		expect(
 			screen.getByText( 'A payment of $50.00 was successfully charged.' )
 		).toBeInTheDocument();
@@ -7197,15 +7193,21 @@ describe( 'WooPayments money movement pages', () => {
 		expect(
 			screen.getByText( 'Acquirer Reference Number (ARN) arn_refund_123' )
 		).toBeInTheDocument();
+		// Client 11.1.0 map-events.js:1397-1398: `dispute.created` is not a timeline type, so no line.
 		expect(
-			screen.getByText( 'A dispute was opened for $15.00.' )
-		).toBeInTheDocument();
+			screen.queryByText( /A dispute was opened/ )
+		).not.toBeInTheDocument();
 		expect(
 			screen.getByText( 'Payment was approved by admin' )
 		).toBeInTheDocument();
+		// One day group titled with the site date format (timeline/index.js:46, `timezone="site"`).
 		expect(
-			screen.getAllByText( expectedEventDate ).length
-		).toBeGreaterThan( 0 );
+			Array.from(
+				document.querySelectorAll(
+					'.woocommerce-timeline-group__title'
+				)
+			).map( ( title ) => title.textContent )
+		).toEqual( [ expectedEventDate ] );
 		expect( mockGetTimeline ).toHaveBeenCalledWith( 'pi_test' );
 	} );
 
@@ -7278,9 +7280,9 @@ describe( 'WooPayments money movement pages', () => {
 				'A payment of $10.99 was successfully refunded.'
 			)
 		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Payment status changed to Refunded.' )
-		).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toContain(
+			'Payment status changed to Refunded.'
+		);
 		expect(
 			screen.getByText( '$10.99 will be deducted from a future payout.' )
 		).toBeInTheDocument();
@@ -7295,23 +7297,23 @@ describe( 'WooPayments money movement pages', () => {
 				'Reason: REC-5a free-text reason: customer returned the item unopened'
 			)
 		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Payment status changed to Paid.' )
-		).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toContain(
+			'Payment status changed to Paid.'
+		);
 		expect(
 			screen.getByText( 'A payment of $10.99 was successfully charged.' )
 		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Payment status changed to Authorized.' )
-		).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toContain(
+			'Payment status changed to Authorized.'
+		);
 		expect(
 			screen.getByText(
 				'A payment of $10.99 was successfully authorized.'
 			)
 		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Payment status changed to Started.' )
-		).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toContain(
+			'Payment status changed to Started.'
+		);
 	} );
 
 	/**
@@ -7357,9 +7359,9 @@ describe( 'WooPayments money movement pages', () => {
 		expect(
 			screen.getByText( 'Reason: Requested by customer' )
 		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Payment status changed to Refunded.' )
-		).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toContain(
+			'Payment status changed to Refunded.'
+		);
 		expect(
 			screen.getByText( '$14.07 will be deducted from a future payout.' )
 		).toBeInTheDocument();
@@ -7403,9 +7405,9 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		expect(
-			screen.getByText( 'Payment status changed to Partial refund.' )
-		).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toContain(
+			'Payment status changed to Partial refund.'
+		);
 		expect(
 			screen.queryByText( /Acquirer Reference Number/ )
 		).not.toBeInTheDocument();
@@ -7424,28 +7426,18 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it( 'qualifies only known multi-dispute timeline events', () => {
+		// Source: client 11.1.0 map-events.js:793-821 withDisputeQualifier.
+		const inReview = ( disputeId: string ) => ( {
+			type: 'dispute_in_review',
+			dispute_id: disputeId,
+			datetime: 1781712200,
+		} );
 		const { rerender } = render(
 			<WooPaymentsTransactionTimeline
 				events={ [
-					{
-						type: 'dispute.created',
-						dispute_id: 'dp_first',
-						amount: 1000,
-						currency: 'usd',
-					},
-					{
-						type: 'dispute.created',
-						dispute_id: 'dp_second',
-						amount: 2000,
-						currency: 'usd',
-					},
-					{
-						type: 'dispute.created',
-						dispute_id: 'dp_unknown',
-						amount: 3000,
-						currency: 'usd',
-					},
-					{ type: 'captured', amount: 4000, currency: 'usd' },
+					inReview( 'dp_first' ),
+					inReview( 'dp_second' ),
+					inReview( 'dp_unknown' ),
 				] }
 				disputeOrder={ {
 					orderById: { dp_first: 1, dp_second: 2 },
@@ -7455,33 +7447,18 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		expect(
-			screen.getByText(
-				'A dispute was opened for $10.00. · Dispute 1 of 2'
-			)
-		).toBeInTheDocument();
-		expect(
-			screen.getByText(
-				'A dispute was opened for $20.00. · Dispute 2 of 2'
-			)
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'A dispute was opened for $30.00.' )
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'A payment of $40.00 was successfully charged.' )
-		).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toEqual( [
+			'Payment status changed to Disputed: In review. · Dispute 1 of 2',
+			'Challenge evidence submitted. · Dispute 1 of 2',
+			'Payment status changed to Disputed: In review. · Dispute 2 of 2',
+			'Challenge evidence submitted. · Dispute 2 of 2',
+			'Payment status changed to Disputed: In review.',
+			'Challenge evidence submitted.',
+		] );
 
 		rerender(
 			<WooPaymentsTransactionTimeline
-				events={ [
-					{
-						type: 'dispute.created',
-						dispute_id: 'dp_first',
-						amount: 1000,
-						currency: 'usd',
-					},
-				] }
+				events={ [ inReview( 'dp_first' ) ] }
 				disputeOrder={ {
 					orderById: { dp_first: 1 },
 					orderedDisputes: [],
@@ -7489,26 +7466,16 @@ describe( 'WooPayments money movement pages', () => {
 				} }
 			/>
 		);
-		expect(
-			screen.getByText( 'A dispute was opened for $10.00.' )
-		).toBeInTheDocument();
-		expect( screen.queryByText( /· Dispute/ ) ).not.toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toEqual( [
+			'Payment status changed to Disputed: In review.',
+			'Challenge evidence submitted.',
+		] );
 
 		rerender(
 			<WooPaymentsTransactionTimeline
-				events={ [
-					{
-						type: 'dispute.created',
-						dispute_id: 'dp_first',
-						amount: 1000,
-						currency: 'usd',
-					},
-				] }
+				events={ [ inReview( 'dp_first' ) ] }
 			/>
 		);
-		expect(
-			screen.getByText( 'A dispute was opened for $10.00.' )
-		).toBeInTheDocument();
 		expect( screen.queryByText( /· Dispute/ ) ).not.toBeInTheDocument();
 	} );
 
@@ -7541,7 +7508,7 @@ describe( 'WooPayments money movement pages', () => {
 						amount: null,
 					},
 					{ type: 'captured', amount: 4000, currency: 'usd' },
-				] }
+				].map( ( event ) => ( { datetime: 1781712200, ...event } ) ) }
 				disputeOrder={ {
 					orderById: { dp_first: 1, dp_second: 2 },
 					orderedDisputes: [],
@@ -7550,14 +7517,7 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		const lines = Array.from(
-			screen
-				.getByRole( 'heading', { name: 'Timeline' } )
-				.nextElementSibling?.querySelectorAll( ':scope > li > span' ) ??
-				[]
-		).map( ( line ) => line.textContent );
-
-		expect( lines ).toEqual( [
+		expect( getTimelineHeadlines() ).toEqual( [
 			'Payment status changed to Disputed: Needs response. · Dispute 1 of 2',
 			'No funds have been withdrawn yet.',
 			'Payment disputed as Transaction unauthorized. · Dispute 1 of 2',
@@ -7606,19 +7566,15 @@ describe( 'WooPayments money movement pages', () => {
 			/>
 		);
 
-		expect(
-			screen.getByText(
-				'Payment status changed to Disputed: Needs response. · Dispute 1 of 2'
-			)
-		).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toContain(
+			'Payment status changed to Disputed: Needs response. · Dispute 1 of 2'
+		);
 		expect(
 			screen.getByText( '$25.00 will be deducted from a future payout.' )
 		).toBeInTheDocument();
-		expect(
-			screen.getByText(
-				'Payment status changed to Disputed: Won. · Dispute 2 of 2'
-			)
-		).toBeInTheDocument();
+		expect( getTimelineHeadlines() ).toContain(
+			'Payment status changed to Disputed: Won. · Dispute 2 of 2'
+		);
 		expect(
 			screen.getByText( '$35.00 will be added to a future payout.' )
 		).toBeInTheDocument();
@@ -7703,23 +7659,13 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it( 'uses the WordPress site timezone and locale for timeline dates', () => {
+		// Client 11.1.0 timeline/index.js:46: `<Timeline items={ items } timezone="site" />`.
 		const originalSettings = getSettings();
 		const originalResolvedOptions =
 			Intl.DateTimeFormat.prototype.resolvedOptions;
-		const monthsShort = [ ...originalSettings.l10n.monthsShort ];
-		monthsShort[ 5 ] = 'SiteJune';
+		const months = [ ...originalSettings.l10n.months ];
+		months[ 5 ] = 'SiteJune';
 		const browserZone = 'America/Los_Angeles';
-		const browserFormatter = new Intl.DateTimeFormat( 'en-US', {
-			timeZone: browserZone,
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric',
-		} );
-		const browserDateSpy = jest
-			.spyOn( Date.prototype, 'toLocaleDateString' )
-			.mockImplementation( function () {
-				return browserFormatter.format( this );
-			} );
 		const browserZoneSpy = jest
 			.spyOn( Intl.DateTimeFormat.prototype, 'resolvedOptions' )
 			.mockImplementation( function () {
@@ -7739,44 +7685,35 @@ describe( 'WooPayments money movement pages', () => {
 				l10n: {
 					...originalSettings.l10n,
 					locale: 'row34-site-locale',
-					monthsShort,
+					months,
 				},
 			} );
-			expect( browserDateSpy.getMockImplementation() ).toBeDefined();
-			expect( new Date( 1780266600 * 1000 ).toLocaleDateString() ).toBe(
-				'May 31, 2026'
-			);
-			expect( new Intl.DateTimeFormat().resolvedOptions().timeZone ).toBe(
-				browserZone
-			);
 
+			// 2026-05-31 22:30 UTC is May 31 in the browser zone and June 1 01:30 on the site.
 			render(
 				<WooPaymentsTransactionTimeline
 					events={ [
-						{
-							type: 'captured',
-							message: 'Payment captured.',
-							datetime: 1780273800,
-						},
-						{
-							type: 'unknown',
-							message: 'Site midnight boundary.',
-							datetime: 1780266600,
-						},
-						{
-							type: 'unknown',
-							message: 'Same-day seconds control.',
-							datetime: 1780290000,
-						},
+						{ type: 'started', datetime: 1780266600 },
+						{ type: 'started', datetime: 1780290000 },
 					] }
 				/>
 			);
 
-			expect( screen.getAllByText( 'SiteJune 1, 2026' ) ).toHaveLength(
-				4
-			);
+			expect(
+				Array.from(
+					document.querySelectorAll(
+						'.woocommerce-timeline-group__title'
+					)
+				).map( ( title ) => title.textContent )
+			).toEqual( [ 'SiteJune 1, 2026' ] );
+			expect(
+				Array.from(
+					document.querySelectorAll(
+						'.woocommerce-timeline-item__timestamp'
+					)
+				).map( ( time ) => time.textContent )
+			).toEqual( [ '8:00am', '1:30am' ] );
 		} finally {
-			browserDateSpy.mockRestore();
 			browserZoneSpy.mockRestore();
 			setSettings( originalSettings );
 		}
@@ -7797,47 +7734,37 @@ describe( 'WooPayments money movement pages', () => {
 			render(
 				<WooPaymentsTransactionTimeline
 					events={ [
-						{
-							type: 'unknown',
-							message: 'Created.',
-							created: 1780266600,
-						},
-						{
-							type: 'unknown',
-							message: 'Datetime wins.',
-							datetime: 1780266600,
-							created: 1,
-						},
+						{ type: 'started', created: 1780266600 },
+						{ type: 'started', datetime: 1780266600, created: 1 },
 					] }
 				/>
 			);
-			expect( screen.getAllByText( 'Jun 1, 2026' ) ).toHaveLength( 2 );
+			expect(
+				Array.from(
+					document.querySelectorAll(
+						'.woocommerce-timeline-group__title'
+					)
+				).map( ( title ) => title.textContent )
+			).toEqual( [ 'June 1, 2026' ] );
 		} finally {
 			setSettings( originalSettings );
 		}
 	} );
 
-	it( 'renders invalid dates but omits missing and falsy timeline dates', () => {
+	it( 'keeps lines whose event dates are missing or invalid', () => {
+		// Client 11.1.0 map-events.js builds every date as `new Date( event.datetime * 1000 )`.
 		render(
 			<WooPaymentsTransactionTimeline
 				events={ [
-					{
-						type: 'unknown',
-						message: 'Invalid.',
-						datetime: 'invalid',
-					},
-					{ type: 'unknown', message: 'Missing.' },
-					{
-						type: 'unknown',
-						message: 'Falsy.',
-						datetime: 0,
-						created: 0,
-					},
+					{ type: 'started', datetime: 'invalid' },
+					{ type: 'started' },
 				] }
 			/>
 		);
 
-		expect( screen.getAllByText( '-' ) ).toHaveLength( 1 );
-		expect( document.querySelectorAll( 'time' ) ).toHaveLength( 1 );
+		expect( getTimelineHeadlines() ).toEqual( [
+			'Payment status changed to Started.',
+			'Payment status changed to Started.',
+		] );
 	} );
 } );

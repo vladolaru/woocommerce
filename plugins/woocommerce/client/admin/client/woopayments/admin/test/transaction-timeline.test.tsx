@@ -34,22 +34,21 @@ const renderTimeline = (
 ) =>
 	render( <WooPaymentsTransactionTimeline events={ events } { ...props } /> );
 
-const getChildren = ( element: Element | null | undefined, tag: string ) =>
-	Array.from( element?.children ?? [] ).filter(
-		( child ) => child.tagName === tag
-	);
-
+// Reads core's `Timeline` markup: one `.woocommerce-timeline-item` per line, newest first.
 const getRows = () =>
-	getChildren(
-		screen.getByRole( 'heading', { name: 'Timeline' } ).nextElementSibling,
-		'LI'
-	).map( ( row ) => ( {
-		element: row as HTMLElement,
-		message: getChildren( row, 'SPAN' )[ 0 ]?.textContent,
-		body: getChildren( getChildren( row, 'UL' )[ 0 ], 'LI' ).map(
-			( line ) => line.textContent
-		),
-	} ) );
+	Array.from( document.querySelectorAll( '.woocommerce-timeline-item' ) ).map(
+		( row ) => ( {
+			element: row as HTMLElement,
+			message: row.querySelector(
+				'.woocommerce-timeline-item__headline > span'
+			)?.textContent,
+			body: Array.from(
+				row.querySelectorAll(
+					'.woocommerce-timeline-item__body > span'
+				)
+			).map( ( line ) => line.textContent ),
+		} )
+	);
 
 const getMessages = () => getRows().map( ( row ) => row.message );
 
@@ -198,15 +197,17 @@ describe( 'WooPaymentsTransactionTimeline fraud outcomes', () => {
 		);
 	} );
 
-	it( 'renders nothing for the allowed screenings the platform records', () => {
-		// The client has no case for fraud_outcome_allow (map-events.js:1397 default returns []).
+	it( 'renders no line for the allowed screenings the platform records', () => {
+		// The client has no case for fraud_outcome_allow (map-events.js:1397 default returns []), so its
+		// Timeline card shows the component's empty text (timeline/index.js:46).
 		const [ allowEvent ] = recordedEurCapture.response.data.filter(
 			( event ) => event.type === 'fraud_outcome_allow'
 		);
 
-		const { container } = renderTimeline( [ allowEvent ] );
+		renderTimeline( [ allowEvent ] );
 
-		expect( container ).toBeEmptyDOMElement();
+		expect( getRows() ).toEqual( [] );
+		expect( screen.getByText( 'No data to display' ) ).toBeInTheDocument();
 	} );
 } );
 
@@ -274,11 +275,11 @@ describe( 'WooPaymentsTransactionTimeline captured payments', () => {
 
 		expect( getMessages() ).toEqual( [
 			'Payment status changed to Paid.',
-			'$59.50 was added to your Apr 2, 2020 payout.',
+			'$59.50 was added to your April 2, 2020 payout.',
 			'A payment of $63.00 was successfully charged.',
 		] );
 		expect(
-			screen.getByRole( 'link', { name: 'Apr 2, 2020 payout' } )
+			screen.getByRole( 'link', { name: 'April 2, 2020 payout' } )
 		).toHaveAttribute(
 			'href',
 			expect.stringContaining(
@@ -436,7 +437,7 @@ describe( 'WooPaymentsTransactionTimeline captured payments', () => {
 			'Tap to pay transaction fee: 0% + $0.10',
 		] );
 		expect( getMessages() ).toContain(
-			'$19.19 was added to your Apr 2, 2020 payout.'
+			'$19.19 was added to your April 2, 2020 payout.'
 		);
 	} );
 
@@ -481,7 +482,7 @@ describe( 'WooPaymentsTransactionTimeline captured payments', () => {
 
 		expect( getMessages() ).toEqual( [
 			'Payment status changed to Paid.',
-			'$20.97 was added to your Apr 2, 2020 payout.',
+			'$20.97 was added to your April 2, 2020 payout.',
 			'A payment of €18.00 was successfully charged.',
 		] );
 		expect(
@@ -809,7 +810,7 @@ describe( 'WooPaymentsTransactionTimeline disputes', () => {
 
 		expect( getMessages() ).toEqual( [
 			'Payment status changed to Disputed: Needs response.',
-			'$112.00 was deducted from your Apr 5, 2020 payout.',
+			'$112.00 was deducted from your April 5, 2020 payout.',
 			'Payment disputed',
 		] );
 	} );
@@ -844,14 +845,14 @@ describe( 'WooPaymentsTransactionTimeline disputes', () => {
 
 		expect( getMessages() ).toEqual( [
 			'Payment status changed to Disputed: Won.',
-			'$115.00 was added to your Apr 5, 2020 payout.',
+			'$115.00 was added to your April 5, 2020 payout.',
 			'Dispute won! The bank ruled in your favor.',
 		] );
 		expect(
-			getRow( '$115.00 was added to your Apr 5, 2020 payout.' ).body
+			getRow( '$115.00 was added to your April 5, 2020 payout.' ).body
 		).toEqual( [ 'Dispute reversal: $100.00', 'Fee refund: $15.00' ] );
 		expect(
-			screen.getByRole( 'link', { name: 'Apr 5, 2020 payout' } )
+			screen.getByRole( 'link', { name: 'April 5, 2020 payout' } )
 		).toHaveAttribute(
 			'href',
 			expect.stringContaining( 'id=dummy_po_5eaada696b2d3' )
@@ -921,7 +922,7 @@ describe( 'WooPaymentsTransactionTimeline disputes', () => {
 
 		expect( getRows()[ 0 ] ).toMatchObject( {
 			// 1586141770 is Apr 6 in the UTC test site timezone; the client snapshot ran in a US timezone.
-			message: '$5.00 was deducted from your Apr 6, 2020 payout.',
+			message: '$5.00 was deducted from your April 6, 2020 payout.',
 			body: [ 'Network cost for the dispute.' ],
 		} );
 		expect( getMessages()[ 1 ] ).toBe(
@@ -942,7 +943,7 @@ describe( 'WooPaymentsTransactionTimeline disputes', () => {
 		);
 		expect( getRows()[ 0 ] ).toMatchObject( {
 			message:
-				'$5.00 in your account currency was deducted from your Apr 6, 2020 payout.',
+				'$5.00 in your account currency was deducted from your April 6, 2020 payout.',
 			body: [
 				'Network costs associated with resolving Visa compliance disputes.',
 			],
@@ -1004,7 +1005,7 @@ describe( 'WooPaymentsTransactionTimeline financing paydowns', () => {
 			/>
 		);
 		expect( getMessages() ).toEqual( [
-			'$110.00 was subtracted from your Feb 2, 2022 payout.',
+			'$110.00 was subtracted from your February 2, 2022 payout.',
 		] );
 	} );
 } );

@@ -1,12 +1,23 @@
 /**
  * External dependencies
  */
-import { Button } from '@wordpress/components';
-import { dateI18n } from '@wordpress/date';
+import { Button, Card, CardBody, CardHeader } from '@wordpress/components';
 import { createInterpolateElement } from '@wordpress/element';
 import { __, sprintf, TranslatableText } from '@wordpress/i18n';
 import { addQueryArgs } from '@wordpress/url';
-import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import CheckmarkIcon from 'gridicons/dist/checkmark';
+import CrossIcon from 'gridicons/dist/cross';
+import InfoOutlineIcon from 'gridicons/dist/info-outline';
+import MinusIcon from 'gridicons/dist/minus';
+import NoticeOutlineIcon from 'gridicons/dist/notice-outline';
+import PlusIcon from 'gridicons/dist/plus';
+import SyncIcon from 'gridicons/dist/sync';
+import type {
+	ElementType,
+	MouseEvent as ReactMouseEvent,
+	ReactElement,
+	ReactNode,
+} from 'react';
 
 /**
  * Internal dependencies
@@ -17,7 +28,7 @@ import {
 	formatAmount,
 	formatDisputeReasonLabel,
 	formatExplicitCurrency,
-	formatLabel,
+	formatSiteDateTime,
 } from './utils';
 import {
 	composeFxString,
@@ -31,14 +42,16 @@ import {
 	getTransactionDetails,
 	isFxEvent,
 } from './transaction-timeline-fees';
+import {
+	WooPaymentsTimelineList,
+	type WooPaymentsTimelineItem,
+} from './transaction-timeline-list';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
+import './transaction-timeline.scss';
 
-type TimelineDisplayEvent = {
-	message: ReactNode;
-	body?: ReactNode[];
-	date?: string | number;
-};
+// Maps platform timeline events to core `Timeline` items the way client 11.1.0
+// `payment-details/timeline/map-events.js` does: icons, headlines with the status in bold, and detail lines.
 
 const earlyFraudWarningFraudTypeLabels: Record< string, string > = {
 	card_never_received: __( 'Card never received', 'woocommerce' ),
@@ -54,24 +67,6 @@ const earlyFraudWarningFraudTypeLabels: Record< string, string > = {
 	made_with_stolen_card: __( 'Made with stolen card', 'woocommerce' ),
 	misc: __( 'Other', 'woocommerce' ),
 	unauthorized_use_of_card: __( 'Unauthorized use of card', 'woocommerce' ),
-};
-
-const hasDisplayValue = ( value: unknown ) =>
-	value !== undefined && value !== null && value !== '';
-
-const getEventDate = ( event: WooPaymentsTimelineEvent ) =>
-	event.datetime || event.created;
-
-const formatTimelineDate = ( value: string | number ) => {
-	const timestamp =
-		typeof value === 'number' && value < 10000000000 ? value * 1000 : value;
-	const date = new Date( timestamp );
-
-	if ( Number.isNaN( date.getTime() ) ) {
-		return '-';
-	}
-
-	return dateI18n( 'M j, Y', date );
 };
 
 // Client 11.1.0 timeline/mappings.ts paymentFailureMapping.
@@ -180,6 +175,41 @@ const knownDisputeReasons = new Set( [
 	'noncompliant',
 ] );
 
+// Gridicons take a class name (the client's `is-success`, `is-warning` and `is-error` colours); the shared typings omit it.
+const timelineIcon = ( Icon: ElementType, className?: string ) => {
+	const Component = Icon as ElementType< { className?: string } >;
+
+	return <Component className={ className } />;
+};
+
+// Client 11.1.0 `icons/shield-icon.tsx`, the automatic fraud review icon.
+const ShieldIcon = ( { className }: { className?: string } ) => (
+	<svg
+		className={ className }
+		xmlns="http://www.w3.org/2000/svg"
+		width="18"
+		height="18"
+		viewBox="0 0 18 18"
+		fill="none"
+		aria-hidden="true"
+	>
+		<path
+			fillRule="evenodd"
+			clipRule="evenodd"
+			d="M9 0.175781L15.75 3.24396V7.81781C15.75 11.7168 13.2458 15.4084 9.7147 16.573C9.25069 16.726 8.74931 16.726 8.2853 16.573C4.75416 15.4084 2.25 11.7168 2.25 7.81781V3.24396L9 0.175781ZM3.75 4.20983V7.81781C3.75 11.1307 5.89514 14.2052 8.75512 15.1485C8.914 15.2009 9.086 15.2009 9.24488 15.1485C12.1049 14.2052 14.25 11.1307 14.25 7.81781V4.20983L9 1.82347L3.75 4.20983Z"
+			fill="white"
+		/>
+	</svg>
+);
+
+const getEventDate = ( event: WooPaymentsTimelineEvent ) => {
+	const value = event.datetime ?? event.created;
+	const timestamp =
+		typeof value === 'number' && value < 10000000000 ? value * 1000 : value;
+
+	return new Date( timestamp ?? NaN );
+};
+
 const getAmount = ( event: WooPaymentsTimelineEvent, ...keys: string[] ) => {
 	for ( const key of keys ) {
 		const value = getNumber( event, key );
@@ -195,24 +225,26 @@ const getAmount = ( event: WooPaymentsTimelineEvent, ...keys: string[] ) => {
 const getCurrency = ( event: WooPaymentsTimelineEvent ) =>
 	getString( event, 'currency' ) || 'usd';
 
-const qualifyDisputeMessage = (
-	message: ReactNode,
+// Client `withDisputeQualifier()`: "Dispute N of M" when the charge has more than one dispute.
+const withDisputeQualifier = (
+	item: WooPaymentsTimelineItem,
 	event: WooPaymentsTimelineEvent,
 	disputeOrder?: WooPaymentsDisputeOrder
-) => {
+): WooPaymentsTimelineItem => {
 	const disputeId = getString( event, 'dispute_id' );
 	const ordinal = disputeId
 		? disputeOrder?.orderById[ disputeId ]
 		: undefined;
 
 	if ( ! ordinal || ! disputeOrder || disputeOrder.total <= 1 ) {
-		return message;
+		return item;
 	}
 
-	if ( typeof message !== 'string' ) {
-		return (
+	return {
+		...item,
+		headline: (
 			<>
-				{ message }
+				{ item.headline }
 				{ ` · ${ sprintf(
 					/* translators: 1: dispute position, 2: total disputes on the charge. */
 					__( 'Dispute %1$d of %2$d', 'woocommerce' ),
@@ -220,23 +252,33 @@ const qualifyDisputeMessage = (
 					disputeOrder.total
 				) }` }
 			</>
-		);
-	}
-
-	return sprintf(
-		/* translators: 1: timeline message, 2: dispute position, 3: total disputes on the charge. */
-		__( '%1$s · Dispute %2$d of %3$d', 'woocommerce' ),
-		message,
-		ordinal,
-		disputeOrder.total
-	);
+		),
+	};
 };
 
-const getStatusChangeMessage = ( status: string ) =>
-	sprintf(
-		/* translators: %s: new payment status. */
-		__( 'Payment status changed to %s.', 'woocommerce' ),
-		status
+const mainItem = (
+	date: Date,
+	headline: ReactNode,
+	icon: ReactElement,
+	body: ReactNode[] = []
+): WooPaymentsTimelineItem => ( { date, headline, icon, body } );
+
+// Client `getStatusChangeTimelineItem()`.
+const statusItem = ( date: Date, status: string ) =>
+	mainItem(
+		date,
+		createInterpolateElement(
+			sprintf(
+				/* translators: %s: new payment status, such as Authorized or Refunded. */
+				__(
+					'Payment status changed to <strong>%s</strong>.',
+					'woocommerce'
+				),
+				status
+			),
+			{ strong: <strong /> }
+		),
+		timelineIcon( SyncIcon )
 	);
 
 type PayoutDirection = 'added' | 'deducted' | 'subtracted';
@@ -302,7 +344,7 @@ const getPayoutMessage = (
 		sprintf(
 			getLinkedPayoutTemplate( direction ),
 			amount,
-			formatTimelineDate( arrivalDate )
+			formatSiteDateTime( arrivalDate, false )
 		),
 		{
 			a: (
@@ -319,32 +361,39 @@ const getPayoutMessage = (
 	);
 };
 
-const getTimelineUserName = ( event: WooPaymentsTimelineEvent ) =>
-	typeof event.user?.username === 'string' ? event.user.username : '';
+// Client getDepositTimelineItem(): plus when the amount is added, minus when it is taken.
+const payoutItem = (
+	event: WooPaymentsTimelineEvent,
+	date: Date,
+	amount: string,
+	direction: PayoutDirection,
+	body: ReactNode[] = []
+) =>
+	mainItem(
+		date,
+		getPayoutMessage( event, amount, direction ),
+		direction === 'added'
+			? timelineIcon( PlusIcon )
+			: timelineIcon( MinusIcon ),
+		body
+	);
 
-const getFallbackMessage = ( event: WooPaymentsTimelineEvent ) => {
-	if ( event.message ) {
-		return event.message;
-	}
-
-	const userName = getTimelineUserName( event );
+// Client getManualFraudOutcomeTimelineItem(): the user name links to their profile.
+const getManualFraudOutcomeHeadline = ( event: WooPaymentsTimelineEvent ) => {
+	const isBlock = event.type === 'fraud_outcome_manual_block';
+	const userName =
+		typeof event.user?.username === 'string' ? event.user.username : '';
 	const userId = event.user?.id;
-	const isManualFraudOutcome =
-		event.type === 'fraud_outcome_manual_approve' ||
-		event.type === 'fraud_outcome_manual_block';
 
-	// Client getManualFraudOutcomeTimelineItem(): the user name links to their profile.
 	if (
-		isManualFraudOutcome &&
 		userName &&
 		( typeof userId === 'number' || typeof userId === 'string' )
 	) {
-		const template =
-			event.type === 'fraud_outcome_manual_block'
-				? /* translators: %s: user name, <a>: link to the user. */
-				  __( 'Payment was blocked by <a>%s</a>', 'woocommerce' )
-				: /* translators: %s: user name, <a>: link to the user. */
-				  __( 'Payment was approved by <a>%s</a>', 'woocommerce' );
+		const template = isBlock
+			? /* translators: %s: user name, <a>: link to the user. */
+			  __( 'Payment was blocked by <a>%s</a>', 'woocommerce' )
+			: /* translators: %s: user name, <a>: link to the user. */
+			  __( 'Payment was approved by <a>%s</a>', 'woocommerce' );
 
 		return createInterpolateElement( sprintf( template, userName ), {
 			a: (
@@ -358,31 +407,27 @@ const getFallbackMessage = ( event: WooPaymentsTimelineEvent ) => {
 		} );
 	}
 
-	if ( event.type === 'fraud_outcome_manual_approve' ) {
-		return userName
-			? sprintf(
-					/* translators: %s: user display name. */
-					__( 'Payment was approved by %s', 'woocommerce' ),
-					userName
-			  )
-			: __( 'Payment was approved.', 'woocommerce' );
-	}
-
-	if ( event.type === 'fraud_outcome_manual_block' ) {
-		return userName
+	if ( userName ) {
+		return isBlock
 			? sprintf(
 					/* translators: %s: user display name. */
 					__( 'Payment was blocked by %s', 'woocommerce' ),
 					userName
 			  )
-			: __( 'Payment was blocked.', 'woocommerce' );
+			: sprintf(
+					/* translators: %s: user display name. */
+					__( 'Payment was approved by %s', 'woocommerce' ),
+					userName
+			  );
 	}
 
-	return formatLabel( event.type );
+	return isBlock
+		? __( 'Payment was blocked.', 'woocommerce' )
+		: __( 'Payment was approved.', 'woocommerce' );
 };
 
 const createBodyLine = ( label: string, value: string ) =>
-	hasDisplayValue( value )
+	value
 		? sprintf(
 				/* translators: 1: detail label, 2: detail value. */
 				__( '%1$s: %2$s', 'woocommerce' ),
@@ -390,6 +435,28 @@ const createBodyLine = ( label: string, value: string ) =>
 				value
 		  )
 		: null;
+
+// Client `getRefundFailureReason()`: the failure reasons the client puts into words.
+const refundFailureReasons: Record< string, string > = {
+	expired_or_canceled_card: __(
+		'the card being expired or canceled.',
+		'woocommerce'
+	),
+	lost_or_stolen_card: __( 'the card being lost or stolen.', 'woocommerce' ),
+	unknown: __( 'the card being lost or stolen.', 'woocommerce' ),
+};
+
+const getRefundTrackingLine = ( event: WooPaymentsTimelineEvent ) => {
+	const arn = getString( event, 'acquirer_reference_number' );
+
+	return arn && event.acquirer_reference_number_status === 'available'
+		? sprintf(
+				/* translators: %s: acquirer reference number. */
+				__( 'Acquirer Reference Number (ARN) %s', 'woocommerce' ),
+				arn
+		  )
+		: null;
+};
 
 const refundReasonLabels: Record< string, string > = {
 	duplicate: __( 'Duplicate', 'woocommerce' ),
@@ -434,17 +501,10 @@ const getRefundFx = ( event: WooPaymentsTimelineEvent ) => {
 
 const getRefundBody = ( event: WooPaymentsTimelineEvent ) => {
 	const reason = getString( event, 'reason' );
-	const arn = getString( event, 'acquirer_reference_number' );
 
 	return [
 		getRefundFx( event )?.line,
-		arn && event.acquirer_reference_number_status === 'available'
-			? sprintf(
-					/* translators: %s: acquirer reference number. */
-					__( 'Acquirer Reference Number (ARN) %s', 'woocommerce' ),
-					arn
-			  )
-			: null,
+		getRefundTrackingLine( event ),
 		reason
 			? createBodyLine(
 					__( 'Reason', 'woocommerce' ),
@@ -454,18 +514,14 @@ const getRefundBody = ( event: WooPaymentsTimelineEvent ) => {
 	].filter( Boolean );
 };
 
-const getRefundPayoutMessage = ( event: WooPaymentsTimelineEvent ) => {
+const getRefundPayoutAmount = ( event: WooPaymentsTimelineEvent ) => {
 	const refunded = getAmount( event, 'amount_refunded', 'amount' );
 	const amount =
 		getRefundFx( event )?.payout ??
 		( refunded !== undefined &&
 			formatExplicitCurrency( refunded, getCurrency( event ) ) );
 
-	if ( ! amount ) {
-		return null;
-	}
-
-	return getPayoutMessage( event, amount, 'deducted' );
+	return amount || undefined;
 };
 
 // Client buildAutomaticFraudOutcomeRuleset(): one line per rule that did not allow the payment.
@@ -529,10 +585,10 @@ const getDisputeLostHeadline = (
 	return createInterpolateElement( headline, { strong: <strong /> } );
 };
 
-const getNetworkCostRow = (
+const getNetworkCostItem = (
 	event: WooPaymentsTimelineEvent,
-	date?: string | number
-): TimelineDisplayEvent | undefined => {
+	date: Date
+): WooPaymentsTimelineItem | undefined => {
 	const networkCost = getRecord( event.network_cost );
 	const amount = getNumber( networkCost, 'amount' );
 	const currency = getString( networkCost, 'currency' );
@@ -541,34 +597,32 @@ const getNetworkCostRow = (
 		return undefined;
 	}
 
-	// Client 11.1.0 `map-events.js:1169-1176`.
+	// Client 11.1.0 `map-events.js:1169-1205`.
 	const formattedAmount = formatExplicitMoney( amount, currency );
 	const isCrossCurrency =
 		getString( event, 'currency' )?.toLowerCase() !==
 		currency.toLowerCase();
 
-	return {
-		message: getPayoutMessage(
-			event,
-			isCrossCurrency
-				? sprintf(
-						/* translators: %s: formatted network cost amount. */
-						__( '%s in your account currency', 'woocommerce' ),
-						formattedAmount
-				  )
-				: formattedAmount,
-			'deducted'
-		),
-		body: [
+	return payoutItem(
+		event,
+		date,
+		isCrossCurrency
+			? sprintf(
+					/* translators: %s: formatted network cost amount. */
+					__( '%s in your account currency', 'woocommerce' ),
+					formattedAmount
+			  )
+			: formattedAmount,
+		'deducted',
+		[
 			event.reason === 'noncompliant'
 				? __(
 						'Network costs associated with resolving Visa compliance disputes.',
 						'woocommerce'
 				  )
 				: __( 'Network cost for the dispute.', 'woocommerce' ),
-		],
-		date,
-	};
+		]
+	);
 };
 
 // `isExplicit` follows the client's `stringWithAmount( ..., true )` and `formatExplicitCurrency()` headlines.
@@ -596,21 +650,15 @@ const mapTimelineEvent = (
 	refundDialogId?: string,
 	isRefundDialogOpen = false,
 	bankName?: string
-): TimelineDisplayEvent[] => {
+): WooPaymentsTimelineItem[] => {
 	const date = getEventDate( event );
 	const type = event.type || '';
+	const qualify = ( item: WooPaymentsTimelineItem ) =>
+		withDisputeQualifier( item, event, disputeOrder );
 
 	switch ( type ) {
 		case 'started':
-			return [
-				{
-					message: __(
-						'Payment status changed to Started.',
-						'woocommerce'
-					),
-					date,
-				},
-			];
+			return [ statusItem( date, __( 'Started', 'woocommerce' ) ) ];
 		case 'authorized': {
 			const message = createAmountMessage(
 				/* translators: %s: formatted amount. */
@@ -624,14 +672,16 @@ const mapTimelineEvent = (
 			);
 
 			return [
-				{
-					message: __(
-						'Payment status changed to Authorized.',
-						'woocommerce'
-					),
-					date,
-				},
-				...( message ? [ { message, date } ] : [] ),
+				statusItem( date, __( 'Authorized', 'woocommerce' ) ),
+				...( message
+					? [
+							mainItem(
+								date,
+								message,
+								timelineIcon( CheckmarkIcon, 'is-warning' )
+							),
+					  ]
+					: [] ),
 			];
 		}
 		case 'authorization_voided':
@@ -649,19 +699,26 @@ const mapTimelineEvent = (
 			);
 
 			return [
-				{
-					message: isExpired
-						? __(
-								'Payment status changed to Authorization expired.',
-								'woocommerce'
-						  )
-						: __(
-								'Payment status changed to Authorization voided.',
-								'woocommerce'
-						  ),
+				statusItem(
 					date,
-				},
-				...( message ? [ { message, date } ] : [] ),
+					isExpired
+						? __( 'Authorization expired', 'woocommerce' )
+						: __( 'Authorization voided', 'woocommerce' )
+				),
+				...( message
+					? [
+							mainItem(
+								date,
+								message,
+								isExpired
+									? timelineIcon( CrossIcon, 'is-error' )
+									: timelineIcon(
+											CheckmarkIcon,
+											'is-warning'
+									  )
+							),
+					  ]
+					: [] ),
 			];
 		}
 		case 'captured': {
@@ -678,30 +735,16 @@ const mapTimelineEvent = (
 			const captured = getCapturedDetails( event );
 
 			return [
-				{
-					message: __(
-						'Payment status changed to Paid.',
-						'woocommerce'
-					),
-					date,
-				},
+				statusItem( date, __( 'Paid', 'woocommerce' ) ),
 				...( captured.net
-					? [
-							{
-								message: getPayoutMessage(
-									event,
-									captured.net,
-									'added'
-								),
-								date,
-							},
-					  ]
+					? [ payoutItem( event, date, captured.net, 'added' ) ]
 					: [] ),
-				{
-					message: message || getFallbackMessage( event ),
-					body: captured.body,
+				mainItem(
 					date,
-				},
+					message || __( 'Payment was charged.', 'woocommerce' ),
+					timelineIcon( CheckmarkIcon, 'is-success' ),
+					captured.body
+				),
 			];
 		}
 		case 'partial_refund':
@@ -716,59 +759,75 @@ const mapTimelineEvent = (
 				[ 'amount_refunded', 'amount' ],
 				true
 			);
-			const payoutMessage = getRefundPayoutMessage( event );
+			const payoutAmount = getRefundPayoutAmount( event );
 
 			return [
-				{
-					message: sprintf(
-						/* translators: %s: new payment status. */
-						__( 'Payment status changed to %s.', 'woocommerce' ),
-						type === 'full_refund'
-							? __( 'Refunded', 'woocommerce' )
-							: __( 'Partial refund', 'woocommerce' )
-					),
+				statusItem(
 					date,
-				},
-				...( payoutMessage
-					? [ { message: payoutMessage, date } ]
+					type === 'full_refund'
+						? __( 'Refunded', 'woocommerce' )
+						: __( 'Partial refund', 'woocommerce' )
+				),
+				...( payoutAmount
+					? [ payoutItem( event, date, payoutAmount, 'deducted' ) ]
 					: [] ),
-				{
-					message:
-						message ||
+				mainItem(
+					date,
+					message ||
 						( type === 'full_refund'
 							? __( 'Payment was refunded.', 'woocommerce' )
 							: __(
 									'Payment was partially refunded.',
 									'woocommerce'
 							  ) ),
-					body: getRefundBody( event ),
-					date,
-				},
+					timelineIcon( CheckmarkIcon, 'is-success' ),
+					getRefundBody( event )
+				),
 			];
 		}
 		case 'refund_failed': {
-			const message = createAmountMessage(
-				/* translators: %s: formatted amount. */
-				__( 'A refund of %s failed.', 'woocommerce' ),
-				event,
-				[ 'amount_refunded', 'amount' ],
-				true
-			);
-			const failureReason = getString( event, 'failure_reason' );
+			const failureReason = getString( event, 'failure_reason' ) || '';
+			const reasonText = refundFailureReasons[ failureReason ];
+			const amount = getAmount( event, 'amount_refunded', 'amount' );
+			const formattedAmount =
+				amount === undefined
+					? undefined
+					: formatExplicitCurrency( amount, getCurrency( event ) );
+			// The client words three failure reasons; other reasons keep the plain failure line and the reason.
+			const headline =
+				reasonText && formattedAmount
+					? sprintf(
+							/* translators: 1: formatted amount, 2: why the refund failed. */
+							__(
+								'%1$s refund was attempted but failed due to %2$s',
+								'woocommerce'
+							),
+							formattedAmount,
+							reasonText
+					  )
+					: createAmountMessage(
+							/* translators: %s: formatted amount. */
+							__( 'A refund of %s failed.', 'woocommerce' ),
+							event,
+							[ 'amount_refunded', 'amount' ],
+							true
+					  ) || __( 'Refund failed.', 'woocommerce' );
 
 			return [
-				{
-					message: message || __( 'Refund failed.', 'woocommerce' ),
-					body: failureReason
-						? [
-								createBodyLine(
+				mainItem(
+					date,
+					headline,
+					timelineIcon( NoticeOutlineIcon, 'is-error' ),
+					[
+						getRefundTrackingLine( event ),
+						reasonText
+							? null
+							: createBodyLine(
 									__( 'Reason', 'woocommerce' ),
 									failureReason
-								),
-						  ].filter( Boolean )
-						: undefined,
-					date,
-				},
+							  ),
+					].filter( Boolean )
+				),
 			];
 		}
 		case 'failed': {
@@ -784,56 +843,25 @@ const mapTimelineEvent = (
 			const amount = getAmount( event, 'amount' );
 
 			return [
-				{
-					message: getStatusChangeMessage(
-						__( 'Failed', 'woocommerce' )
-					),
+				statusItem( date, __( 'Failed', 'woocommerce' ) ),
+				mainItem(
 					date,
-				},
-				{
-					message:
-						amount === undefined
-							? __( 'Payment failed.', 'woocommerce' )
-							: sprintf(
-									/* translators: 1: payment amount, 2: failure reason message. */
-									__(
-										'A payment of %1$s failed: %2$s.',
-										'woocommerce'
-									),
-									formatExplicitMoney(
-										amount,
-										getCurrency( event )
-									),
-									failureMessage
-							  ),
-					date,
-				},
-			];
-		}
-		case 'dispute.created':
-		case 'dispute_closed':
-		case 'dispute.closed':
-		case 'dispute.funds_withdrawn':
-		case 'dispute.funds_reinstated': {
-			const disputedAmount = createAmountMessage(
-				type === 'dispute.created'
-					? /* translators: %s: formatted amount. */
-					  __( 'A dispute was opened for %s.', 'woocommerce' )
-					: /* translators: %s: formatted amount. */
-					  __( 'Dispute amount: %s', 'woocommerce' ),
-				event,
-				[ 'amount' ]
-			);
-
-			return [
-				{
-					message: qualifyDisputeMessage(
-						disputedAmount || getFallbackMessage( event ),
-						event,
-						disputeOrder
-					),
-					date,
-				},
+					amount === undefined
+						? __( 'Payment failed.', 'woocommerce' )
+						: sprintf(
+								/* translators: 1: payment amount, 2: failure reason message. */
+								__(
+									'A payment of %1$s failed: %2$s.',
+									'woocommerce'
+								),
+								formatExplicitMoney(
+									amount,
+									getCurrency( event )
+								),
+								failureMessage
+						  ),
+					timelineIcon( CrossIcon, 'is-error' )
+				),
 			];
 		}
 		case 'dispute_needs_response': {
@@ -855,28 +883,28 @@ const mapTimelineEvent = (
 						getString( details, 'customer_currency' )
 				  )
 				: formatMoney( amount ?? 0, getCurrency( event ) );
-			const payoutRow: TimelineDisplayEvent =
+			const payoutLine =
 				amount === undefined
-					? {
-							message: __(
+					? mainItem(
+							date,
+							__(
 								'No funds have been withdrawn yet.',
 								'woocommerce'
 							),
-							body: [
+							timelineIcon( InfoOutlineIcon ),
+							[
 								__(
 									"The cardholder's bank is requesting more information to decide whether to return these funds to the cardholder.",
 									'woocommerce'
 								),
-							],
+							]
+					  )
+					: payoutItem(
+							event,
 							date,
-					  }
-					: {
-							message: getPayoutMessage(
-								event,
-								getDisputeDepositImpact( event ) ?? '',
-								'deducted'
-							),
-							body: [
+							getDisputeDepositImpact( event ) ?? '',
+							'deducted',
+							[
 								sprintf(
 									/* translators: %s: disputed amount. */
 									__( 'Disputed amount: %s', 'woocommerce' ),
@@ -893,185 +921,141 @@ const mapTimelineEvent = (
 												getCurrency( event )
 											)
 									  ),
-							].filter( Boolean ),
-							date,
-					  };
+							].filter( Boolean )
+					  );
 
 			return [
-				{
-					message: qualifyDisputeMessage(
-						getStatusChangeMessage(
-							__( 'Disputed: Needs response', 'woocommerce' )
-						),
-						event,
-						disputeOrder
-					),
-					date,
-				},
-				payoutRow,
-				{
-					message: qualifyDisputeMessage(
+				qualify(
+					statusItem(
+						date,
+						__( 'Disputed: Needs response', 'woocommerce' )
+					)
+				),
+				payoutLine,
+				qualify(
+					mainItem(
+						date,
 						reasonHeadline,
-						event,
-						disputeOrder
-					),
-					date,
-				},
+						timelineIcon( CrossIcon, 'is-error' )
+					)
+				),
 			];
 		}
 		case 'dispute_in_review':
 			return [
-				{
-					message: qualifyDisputeMessage(
-						getStatusChangeMessage(
-							__( 'Disputed: In review', 'woocommerce' )
-						),
-						event,
-						disputeOrder
-					),
-					date,
-				},
-				{
-					message: qualifyDisputeMessage(
+				qualify(
+					statusItem(
+						date,
+						__( 'Disputed: In review', 'woocommerce' )
+					)
+				),
+				qualify(
+					mainItem(
+						date,
 						__( 'Challenge evidence submitted.', 'woocommerce' ),
-						event,
-						disputeOrder
-					),
-					date,
-				},
+						timelineIcon( CheckmarkIcon, 'is-success' )
+					)
+				),
 			];
 		case 'dispute_won': {
 			const amount = getNumber( event, 'amount' );
 			const depositImpact = getDisputeDepositImpact( event );
 
 			return [
-				{
-					message: qualifyDisputeMessage(
-						getStatusChangeMessage(
-							__( 'Disputed: Won', 'woocommerce' )
-						),
-						event,
-						disputeOrder
-					),
-					date,
-				},
+				qualify(
+					statusItem( date, __( 'Disputed: Won', 'woocommerce' ) )
+				),
 				...( amount !== undefined && depositImpact
 					? [
-							{
-								message: getPayoutMessage(
-									event,
-									depositImpact,
-									'added'
+							payoutItem( event, date, depositImpact, 'added', [
+								sprintf(
+									/* translators: %s: reversed dispute amount. */
+									__( 'Dispute reversal: %s', 'woocommerce' ),
+									formatMoney( amount, getCurrency( event ) )
 								),
-								body: [
-									sprintf(
-										/* translators: %s: reversed dispute amount. */
-										__(
-											'Dispute reversal: %s',
-											'woocommerce'
+								sprintf(
+									/* translators: %s: refunded dispute fee. */
+									__( 'Fee refund: %s', 'woocommerce' ),
+									formatMoney(
+										Math.abs(
+											getNumber( event, 'fee' ) ?? 0
 										),
-										formatMoney(
-											amount,
-											getCurrency( event )
-										)
-									),
-									sprintf(
-										/* translators: %s: refunded dispute fee. */
-										__( 'Fee refund: %s', 'woocommerce' ),
-										formatMoney(
-											Math.abs(
-												getNumber( event, 'fee' ) ?? 0
-											),
-											getCurrency( event )
-										)
-									),
-								],
-								date,
-							},
+										getCurrency( event )
+									)
+								),
+							] ),
 					  ]
 					: [] ),
-				{
-					message: qualifyDisputeMessage(
+				qualify(
+					mainItem(
+						date,
 						__(
 							'Dispute won! The bank ruled in your favor.',
 							'woocommerce'
 						),
-						event,
-						disputeOrder
-					),
-					date,
-				},
+						timelineIcon( NoticeOutlineIcon, 'is-success' )
+					)
+				),
 			];
 		}
 		case 'dispute_lost': {
-			const networkCostRow = getNetworkCostRow( event, date );
+			const networkCostItem = getNetworkCostItem( event, date );
 
 			return [
-				...( networkCostRow ? [ networkCostRow ] : [] ),
-				{
-					message: qualifyDisputeMessage(
-						getStatusChangeMessage(
-							__( 'Disputed: Lost', 'woocommerce' )
-						),
-						event,
-						disputeOrder
-					),
-					date,
-				},
-				{
-					message: qualifyDisputeMessage(
+				...( networkCostItem ? [ networkCostItem ] : [] ),
+				qualify(
+					statusItem( date, __( 'Disputed: Lost', 'woocommerce' ) )
+				),
+				qualify(
+					mainItem(
+						date,
 						getDisputeLostHeadline( event, bankName ),
-						event,
-						disputeOrder
-					),
-					date,
-				},
+						timelineIcon( CrossIcon, 'is-error' )
+					)
+				),
 			];
 		}
 		case 'dispute_warning_closed':
 			return [
-				{
-					message: qualifyDisputeMessage(
+				qualify(
+					mainItem(
+						date,
 						__(
 							'Dispute inquiry closed. The bank chose not to pursue this dispute.',
 							'woocommerce'
 						),
-						event,
-						disputeOrder
-					),
-					date,
-				},
+						timelineIcon( NoticeOutlineIcon, 'is-success' )
+					)
+				),
 			];
 		case 'dispute_charge_refunded':
 			return [
-				{
-					message: qualifyDisputeMessage(
+				qualify(
+					mainItem(
+						date,
 						__(
 							'The disputed charge has been refunded.',
 							'woocommerce'
 						),
-						event,
-						disputeOrder
-					),
-					date,
-				},
+						timelineIcon( NoticeOutlineIcon, 'is-success' )
+					)
+				),
 			];
 		case 'financing_paydown': {
 			const amount = getNumber( event, 'amount' );
 			const loanId = getString( event, 'loan_id' );
 
 			if ( amount === undefined ) {
-				return [ { message: getFallbackMessage( event ), date } ];
+				return [];
 			}
 
 			return [
-				{
-					message: getPayoutMessage(
-						event,
-						formatMoney( Math.abs( amount ), getCurrency( event ) ),
-						'subtracted'
-					),
-					body: loanId
+				payoutItem(
+					event,
+					date,
+					formatMoney( Math.abs( amount ), getCurrency( event ) ),
+					'subtracted',
+					loanId
 						? [
 								createInterpolateElement(
 									sprintf(
@@ -1096,9 +1080,8 @@ const mapTimelineEvent = (
 									}
 								),
 						  ]
-						: undefined,
-					date,
-				},
+						: []
+				),
 			];
 		}
 		case 'early_fraud_warning': {
@@ -1121,27 +1104,25 @@ const mapTimelineEvent = (
 
 			if ( event.efw_actionable !== true ) {
 				return [
-					{
-						message: __(
-							'Payment status changed to Early fraud warning resolved.',
-							'woocommerce'
-						),
+					statusItem(
 						date,
-					},
-					{
-						message: __(
+						__( 'Early fraud warning resolved', 'woocommerce' )
+					),
+					mainItem(
+						date,
+						__(
 							'This early fraud warning is no longer actionable.',
 							'woocommerce'
 						),
-						body: [
+						timelineIcon( NoticeOutlineIcon ),
+						[
 							__(
 								'The payment was refunded or disputed, so no further action is needed to avoid a dispute.',
 								'woocommerce'
 							),
 							reportedReason,
-						].filter( Boolean ),
-						date,
-					},
+						].filter( Boolean )
+					),
 				];
 			}
 
@@ -1175,60 +1156,68 @@ const mapTimelineEvent = (
 				  );
 
 			return [
-				{
-					message: __(
-						'Payment status changed to Early fraud warning.',
-						'woocommerce'
-					),
+				statusItem( date, __( 'Early fraud warning', 'woocommerce' ) ),
+				mainItem(
 					date,
-				},
-				{
-					message: __(
+					__(
 						'Payment received an early fraud warning',
 						'woocommerce'
 					),
-					body: [
+					timelineIcon( NoticeOutlineIcon, 'is-warning' ),
+					[
 						__(
 							'The card issuer flagged this payment as likely fraudulent.',
 							'woocommerce'
 						),
 						reportedReason,
 						refundGuidance,
-					].filter( Boolean ),
-					date,
-				},
+					].filter( Boolean )
+				),
 			];
 		}
 		case 'fraud_outcome_manual_approve':
+			return [
+				mainItem(
+					date,
+					getManualFraudOutcomeHeadline( event ),
+					timelineIcon( CheckmarkIcon, 'is-success' )
+				),
+			];
 		case 'fraud_outcome_manual_block':
-			return [ { message: getFallbackMessage( event ), date } ];
+			return [
+				mainItem(
+					date,
+					getManualFraudOutcomeHeadline( event ),
+					timelineIcon( CrossIcon, 'is-error' )
+				),
+			];
 		case 'fraud_outcome_review':
 			return [
-				{
-					message: __(
+				mainItem(
+					date,
+					__(
 						'Payment was screened by your fraud filters and placed in review.',
 						'woocommerce'
 					),
-					body: getFraudOutcomeRulesetLines( event ),
-					date,
-				},
+					<ShieldIcon className="is-fraud-outcome-review" />,
+					getFraudOutcomeRulesetLines( event )
+				),
 			];
 		case 'fraud_outcome_block':
 			return [
-				{
-					message: __(
+				mainItem(
+					date,
+					__(
 						'Payment was screened by your fraud filters and blocked.',
 						'woocommerce'
 					),
-					body: getFraudOutcomeRulesetLines( event ),
-					date,
-				},
+					timelineIcon( CrossIcon, 'is-error' ),
+					getFraudOutcomeRulesetLines( event )
+				),
 			];
-		// The platform records allowed screenings too; the client timeline has no line for them.
-		case 'fraud_outcome_allow':
-			return [];
+		// Client 11.1.0 `map-events.js:1397-1398`: other event types, the allowed screenings included, show no line.
 		default:
-			return [ { message: getFallbackMessage( event ), date } ];
+			return [];
 	}
 };
 
@@ -1239,6 +1228,7 @@ export const WooPaymentsTransactionTimeline = ( {
 	refundDialogId,
 	isRefundDialogOpen = false,
 	bankName,
+	hasError = false,
 }: {
 	events: WooPaymentsTimelineEvent[];
 	disputeOrder?: WooPaymentsDisputeOrder;
@@ -1247,8 +1237,10 @@ export const WooPaymentsTransactionTimeline = ( {
 	isRefundDialogOpen?: boolean;
 	/** Customer's bank, named in the lost dispute headline. */
 	bankName?: string;
+	/** Whether the timeline failed to load. */
+	hasError?: boolean;
 } ) => {
-	const rows = events.flatMap( ( event ) =>
+	const items = events.flatMap( ( event ) =>
 		mapTimelineEvent(
 			event,
 			disputeOrder,
@@ -1259,30 +1251,21 @@ export const WooPaymentsTransactionTimeline = ( {
 		)
 	);
 
-	if ( ! rows.length ) {
-		return null;
-	}
-
+	// Client 11.1.0 `payment-details/timeline/index.js:34-58`.
 	return (
-		<section className="woocommerce-woopayments-overview-card">
-			<h3>{ __( 'Timeline', 'woocommerce' ) }</h3>
-			<ol className="woocommerce-woopayments-money-movement__timeline">
-				{ rows.map( ( row, index ) => (
-					<li key={ index }>
-						<span>{ row.message }</span>
-						{ !! row.body?.length && (
-							<ul>
-								{ row.body.map( ( line, bodyIndex ) => (
-									<li key={ bodyIndex }>{ line }</li>
-								) ) }
-							</ul>
-						) }
-						{ row.date && (
-							<time>{ formatTimelineDate( row.date ) }</time>
-						) }
-					</li>
-				) ) }
-			</ol>
-		</section>
+		<Card size="large">
+			<CardHeader>
+				<h2 className="woocommerce-woopayments-overview-card__title">
+					{ __( 'Timeline', 'woocommerce' ) }
+				</h2>
+			</CardHeader>
+			<CardBody>
+				{ hasError ? (
+					__( 'Error while loading timeline', 'woocommerce' )
+				) : (
+					<WooPaymentsTimelineList items={ items } />
+				) }
+			</CardBody>
+		</Card>
 	);
 };
