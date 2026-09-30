@@ -297,7 +297,10 @@ export const getTransactionListFields = (
 			type: 'date' as const,
 			enableHiding: false,
 			filterBy: includeFilters
-				? { operators: [ 'before', 'after', 'between' ] as const }
+				? {
+						operators: [ 'before', 'after', 'between' ] as const,
+						isPrimary: true,
+				  }
 				: ( false as const ),
 			getValue: ( { item }: FieldRenderProps ) =>
 				item.date || item.created || '',
@@ -312,7 +315,7 @@ export const getTransactionListFields = (
 			enableSorting: false,
 			elements: TRANSACTION_TYPE_FILTER_ELEMENTS,
 			filterBy: includeFilters
-				? { operators: [ 'is' ] as const }
+				? { operators: [ 'is' ] as const, isPrimary: true }
 				: ( false as const ),
 			getValue: ( { item }: FieldRenderProps ) =>
 				getTransactionListType( item ),

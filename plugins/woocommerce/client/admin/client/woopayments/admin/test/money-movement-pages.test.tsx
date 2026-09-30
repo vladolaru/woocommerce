@@ -1468,8 +1468,11 @@ describe( 'WooPayments money movement pages', () => {
 
 		try {
 			render(
+				// Client 11.1.0 offers the Date and Type filters under Show: Advanced filters.
 				<MemoryRouter
-					initialEntries={ [ '/woopayments/transactions' ] }
+					initialEntries={ [
+						'/woopayments/transactions?filter=advanced',
+					] }
 				>
 					<WooPaymentsTransactionsPage />
 				</MemoryRouter>

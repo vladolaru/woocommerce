@@ -33,7 +33,13 @@ import {
 	normalizeDateFiltersForApi,
 	parseMoneyMovementQuery,
 } from './query';
-import { WooPaymentsListFilters } from './list-filters';
+import {
+	getListShowFilter,
+	getQueryForShowFilter,
+	withListShowFilter,
+	WooPaymentsListFilters,
+	type WooPaymentsListShowFilter,
+} from './list-filters';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { runWooPaymentsExport } from './export';
 import {
@@ -98,38 +104,13 @@ const DISPUTE_DEFAULT_HIDDEN_COLUMNS = [
 ];
 const HOUR_IN_MS = 60 * 60 * 1000;
 
-/**
- * The "Show" choices. Client 11.1.0 `disputes/filters/config.ts:78-99`.
- */
-export type DisputesShowFilter = 'awaiting_response' | 'all' | 'advanced';
-const DISPUTES_SHOW_FILTERS: DisputesShowFilter[] = [
+// The "Show" choices. Client 11.1.0 `disputes/filters/config.ts:78-99`.
+const DISPUTES_SHOW_FILTERS: WooPaymentsListShowFilter[] = [
 	'awaiting_response',
 	'all',
 	'advanced',
 ];
-// The "Show" choice that resets the advanced filters. Client 11.1.0 FilterPicker `update()`.
-const ADVANCED_FILTER_PARAMS = [
-	'status_is',
-	'status_is_not',
-	'date_after',
-	'date_before',
-	'date_between',
-] as const;
 const ALL_CURRENCIES = '---';
-
-/**
- * Reads the `filter` argument the menu badge and the dispute tasks link with.
- * Anything else shows all disputes, the client's default choice.
- *
- * @param search The route's query string.
- */
-export const getDisputesShowFilter = ( search: string ): DisputesShowFilter => {
-	const value = new URLSearchParams( search ).get( 'filter' );
-
-	return (
-		DISPUTES_SHOW_FILTERS.find( ( filter ) => filter === value ) || 'all'
-	);
-};
 
 /**
  * The disputes API query: day boundaries for the date filters, and "Needs
@@ -141,7 +122,7 @@ export const getDisputesShowFilter = ( search: string ): DisputesShowFilter => {
  */
 export const getDisputesApiQuery = (
 	query: WooPaymentsMoneyMovementQuery,
-	showFilter: DisputesShowFilter
+	showFilter: WooPaymentsListShowFilter
 ): WooPaymentsMoneyMovementQuery => {
 	const apiQuery = normalizeDateFiltersForApi( query );
 
@@ -154,18 +135,12 @@ export const getDisputesApiQuery = (
 
 const buildDisputesRoute = (
 	query: WooPaymentsMoneyMovementQuery,
-	showFilter: DisputesShowFilter
-) => {
-	const route = buildMoneyMovementRoutePath( '/woopayments/disputes', query );
-
-	if ( showFilter === 'all' ) {
-		return route;
-	}
-
-	return `${ route }${
-		route.includes( '?' ) ? '&' : '?'
-	}filter=${ showFilter }`;
-};
+	showFilter: WooPaymentsListShowFilter
+) =>
+	withListShowFilter(
+		buildMoneyMovementRoutePath( '/woopayments/disputes', query ),
+		showFilter
+	);
 
 // Client 11.1.0 `components/dispute-status-chip`: colours per status, red for any awaiting a response.
 const DISPUTE_STATUS_CHIP_TYPES: Record< string, StatusChipType > = {
@@ -282,7 +257,10 @@ export const WooPaymentsDisputesPage = () => {
 			} ),
 		[ location.search ]
 	);
-	const showFilter = getDisputesShowFilter( location.search );
+	const showFilter = getListShowFilter(
+		location.search,
+		DISPUTES_SHOW_FILTERS
+	);
 	const isAdvanced = showFilter === 'advanced';
 	const apiQuery = useMemo(
 		() => getDisputesApiQuery( query, showFilter ),
@@ -554,16 +532,17 @@ export const WooPaymentsDisputesPage = () => {
 	// Client 11.1.0 FilterPicker `update()`: another "Show" choice keeps the page, sort, search
 	// and currency, and anything but "Advanced filters" drops the advanced filters.
 	const handleShowFilterChange = ( value: string ) => {
-		const nextFilter = getDisputesShowFilter( `filter=${ value }` );
-		const nextQuery = { ...query };
+		const nextFilter = getListShowFilter(
+			`filter=${ value }`,
+			DISPUTES_SHOW_FILTERS
+		);
 
-		if ( nextFilter !== 'advanced' ) {
-			ADVANCED_FILTER_PARAMS.forEach( ( param ) => {
-				delete nextQuery[ param ];
-			} );
-		}
-
-		navigate( buildDisputesRoute( nextQuery, nextFilter ) );
+		navigate(
+			buildDisputesRoute(
+				getQueryForShowFilter( query, nextFilter ),
+				nextFilter
+			)
+		);
 	};
 	const handleCurrencyChange = ( value: string ) => {
 		const nextQuery = { ...query };

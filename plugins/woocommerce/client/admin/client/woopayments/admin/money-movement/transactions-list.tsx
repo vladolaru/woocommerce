@@ -43,6 +43,21 @@ import {
 	type WooPaymentsTransactionListRow,
 } from './transactions-list-fields';
 import { getSettingsPaymentsProviderAdminPath } from '../utils';
+import { formatCurrencyName } from '../currency';
+import {
+	getListShowFilter,
+	getQueryForShowFilter,
+	withListShowFilter,
+	WooPaymentsListFilters,
+	type WooPaymentsListFilter,
+	type WooPaymentsListShowFilter,
+} from './list-filters';
+
+const TRANSACTIONS_SHOW_FILTERS: WooPaymentsListShowFilter[] = [
+	'all',
+	'advanced',
+];
+const ALL_CURRENCIES = '---';
 
 type TransactionsSummary = Record< string, unknown >;
 type ExportMessage = {
@@ -95,14 +110,19 @@ export const WooPaymentsTransactionsList = (
 		useState< ExportMessage | null >( null );
 	const [ isExporting, setIsExporting ] = useState( false );
 	const [ workingView, setWorkingView ] = useState< WorkingView >( null );
+	// Client 11.1.0 `transactions/filters/config.ts:103-127`: "Show" all or the advanced filters; payout details have none.
+	const showFilter = depositId
+		? 'all'
+		: getListShowFilter( location.search, TRANSACTIONS_SHOW_FILTERS );
+	const isAdvanced = showFilter === 'advanced';
 	const fields = useMemo(
 		() =>
 			getTransactionListFields( {
 				includeDeposit: ! depositId,
 				includeSubscription: isWooPaymentsSubscriptionsActive(),
-				includeFilters: ! depositId,
+				includeFilters: isAdvanced,
 			} ),
-		[ depositId ]
+		[ depositId, isAdvanced ]
 	);
 	const fieldIds = useMemo(
 		() => fields.map( ( field ) => field.id ),
@@ -200,6 +220,15 @@ export const WooPaymentsTransactionsList = (
 		};
 	}, [ loadTransactions ] );
 
+	const pushRoute = (
+		nextQuery: WooPaymentsMoneyMovementQuery,
+		nextShowFilter = showFilter
+	) =>
+		getHistory().push(
+			getSettingsPaymentsProviderAdminPath(
+				withListShowFilter( buildRoute( nextQuery ), nextShowFilter )
+			)
+		);
 	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
 		saveFields( nextView.fields );
 		setWorkingView( {
@@ -213,13 +242,7 @@ export const WooPaymentsTransactionsList = (
 			return;
 		}
 
-		getHistory().push(
-			getSettingsPaymentsProviderAdminPath(
-				buildRoute(
-					dataViewsViewToMoneyMovementQuery( nextView, query )
-				)
-			)
-		);
+		pushRoute( dataViewsViewToMoneyMovementQuery( nextView, query ) );
 	};
 	const handleSearchChange = ( search: string ) => {
 		handleViewChange( {
@@ -326,8 +349,79 @@ export const WooPaymentsTransactionsList = (
 		? query.search[ 0 ] || ''
 		: query.search || '';
 
+	const currencyFilter =
+		typeof query.store_currency_is === 'string'
+			? query.store_currency_is
+			: undefined;
+	// Client 11.1.0 `transactions/list/index.tsx:770-773`: the currencies to choose from.
+	const currencyChoices =
+		storeCurrencies.length || ! currencyFilter
+			? storeCurrencies.map( String )
+			: [ currencyFilter ];
+	const listFilters: WooPaymentsListFilter[] = [
+		{
+			id: 'show',
+			label: __( 'Show', 'woocommerce' ),
+			value: showFilter,
+			options: [
+				{
+					label: __( 'All transactions', 'woocommerce' ),
+					value: 'all',
+				},
+				{
+					label: __( 'Advanced filters', 'woocommerce' ),
+					value: 'advanced',
+				},
+			],
+			onChange: ( value ) => {
+				const nextFilter = getListShowFilter(
+					`filter=${ value }`,
+					TRANSACTIONS_SHOW_FILTERS
+				);
+
+				pushRoute(
+					getQueryForShowFilter( urlQuery, nextFilter ),
+					nextFilter
+				);
+			},
+		},
+	];
+
+	// Client 11.1.0 `transactions/filters/index.tsx`: the currency select shows for more than one currency.
+	if ( currencyChoices.length > 1 ) {
+		listFilters.unshift( {
+			id: 'currency',
+			label: __( 'Deposit currency', 'woocommerce' ),
+			value: currencyFilter || ALL_CURRENCIES,
+			options: [
+				{
+					label: __( 'All currencies', 'woocommerce' ),
+					value: ALL_CURRENCIES,
+				},
+				...currencyChoices.map( ( currency ) => ( {
+					label: formatCurrencyName( currency ),
+					value: currency,
+				} ) ),
+			],
+			onChange: ( value ) => {
+				const nextQuery = { ...urlQuery };
+
+				if ( value === ALL_CURRENCIES ) {
+					delete nextQuery.store_currency_is;
+				} else {
+					nextQuery.store_currency_is = value;
+				}
+
+				pushRoute( nextQuery );
+			},
+		} );
+	}
+
 	return (
 		<div aria-busy={ isLoading }>
+			{ ! depositId && (
+				<WooPaymentsListFilters filters={ listFilters } />
+			) }
 			<LiveStatusMessage isError={ !! errorMessage }>
 				{ liveStatusMessage }
 			</LiveStatusMessage>

@@ -3,7 +3,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -38,6 +38,7 @@ type MockField = {
 	enableSorting?: boolean;
 	filterBy?: false | { operators: string[] };
 	render?: ( props: { item: Record< string, unknown > } ) => ReactNode;
+	filterBy?: false | Record< string, unknown >;
 };
 
 jest.mock( '@woocommerce/data', () => ( {
@@ -87,6 +88,10 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 			<div
 				data-testid="transactions-dataviews"
 				data-visible-fields={ ( view.fields || [] ).join( ',' ) }
+				data-filterable-fields={ fields
+					.filter( ( field ) => field.filterBy )
+					.map( ( field ) => field.id )
+					.join( ',' ) }
 			>
 				{ header }
 				<button
@@ -552,5 +557,76 @@ describe( 'WooPayments transactions list columns', () => {
 		expect(
 			fields.filter( ( field ) => field.filterBy !== false )
 		).toEqual( [] );
+	} );
+} );
+
+describe( 'WooPayments transactions list Show and currency filters', () => {
+	beforeEach( () => {
+		setMockUserPreferences( {} );
+		setSubscriptionsActive( false );
+		mockHistoryPush.mockReset();
+		mockGetTransactions.mockReset();
+		mockGetSummary.mockReset();
+		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetSummary.mockResolvedValue( {
+			count: 0,
+			total: 0,
+			store_currencies: [ 'usd', 'eur' ],
+		} );
+	} );
+
+	it( "offers the client's Show choices and the advanced filters only under Advanced filters", async () => {
+		const { unmount } = renderList();
+		await screen.findByText( 'No transactions found.' );
+
+		const show = screen.getByLabelText( 'Show' );
+		expect( show ).toHaveValue( 'all' );
+		expect(
+			within( show )
+				.getAllByRole( 'option' )
+				.map( ( option ) => option.textContent )
+		).toEqual( [ 'All transactions', 'Advanced filters' ] );
+		expect(
+			screen.getByTestId( 'transactions-dataviews' )
+		).toHaveAttribute( 'data-filterable-fields', '' );
+
+		fireEvent.change( show, { target: { value: 'advanced' } } );
+		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
+			expect.stringMatching( /&filter=advanced$/ )
+		);
+		unmount();
+
+		renderList( undefined, '?filter=advanced&type_is=refund' );
+		await screen.findByText( 'No transactions found.' );
+		expect(
+			screen.getByTestId( 'transactions-dataviews' )
+		).toHaveAttribute( 'data-filterable-fields', 'date,type' );
+
+		// Leaving Advanced filters drops them, as the client's FilterPicker does.
+		fireEvent.change( screen.getByLabelText( 'Show' ), {
+			target: { value: 'all' },
+		} );
+		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
+			expect.not.stringMatching( /type_is|filter=/ )
+		);
+	} );
+
+	it( 'shows the Deposit currency select for more than one store currency', async () => {
+		renderList();
+		await screen.findByText( 'No transactions found.' );
+
+		fireEvent.change( screen.getByLabelText( 'Deposit currency' ), {
+			target: { value: 'eur' },
+		} );
+		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
+			expect.stringContaining( 'store_currency_is=eur' )
+		);
+	} );
+
+	it( 'has no filters on a payout’s transactions', async () => {
+		renderList( 'po_test' );
+		await screen.findByText( 'No transactions found.' );
+
+		expect( screen.queryByLabelText( 'Show' ) ).not.toBeInTheDocument();
 	} );
 } );

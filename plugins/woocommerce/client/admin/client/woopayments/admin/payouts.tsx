@@ -24,7 +24,19 @@ import {
 	moneyMovementQueryToDataViewsView,
 	parseMoneyMovementQuery,
 } from './money-movement/query';
-import type { WooPaymentsMoneyMovementDataView } from './money-movement/types';
+import type {
+	WooPaymentsMoneyMovementDataView,
+	WooPaymentsMoneyMovementQuery,
+} from './money-movement/types';
+import {
+	getListShowFilter,
+	getQueryForShowFilter,
+	withListShowFilter,
+	WooPaymentsListFilters,
+	type WooPaymentsListFilter,
+	type WooPaymentsListShowFilter,
+} from './money-movement/list-filters';
+import { formatCurrencyName } from './currency';
 import {
 	ExportButton,
 	ListNotice,
@@ -54,6 +66,10 @@ import { SpotlightPromotion } from '../promotions/spotlight';
 import './style.scss';
 
 type PayoutsSummary = WooPaymentsDepositsSummary;
+
+// Client 11.1.0 `deposits/filters/config.js:52-73`: "Show" all payouts or the advanced filters.
+const PAYOUTS_SHOW_FILTERS: WooPaymentsListShowFilter[] = [ 'all', 'advanced' ];
+const ALL_CURRENCIES = '---';
 
 // Client 11.1.0 `deposits/list/index.tsx:41-94`, in order; its info-button `details` column is the date link here.
 const PAYOUT_FIELDS = [
@@ -136,6 +152,11 @@ export const WooPaymentsPayouts = () => {
 			} ),
 		[ location.search ]
 	);
+	const showFilter = getListShowFilter(
+		location.search,
+		PAYOUTS_SHOW_FILTERS
+	);
+	const isAdvanced = showFilter === 'advanced';
 	const view = useMemo(
 		() =>
 			moneyMovementQueryToDataViewsView( query, {
@@ -199,7 +220,12 @@ export const WooPaymentsPayouts = () => {
 				enableSorting: false,
 				// Client 11.1.0 `deposits/filters/config.js:143-181`: "Is" and "Is not" one status.
 				elements: PAYOUT_STATUS_FILTER_ELEMENTS,
-				filterBy: { operators: [ 'is', 'isNot' ] as const },
+				filterBy: isAdvanced
+					? {
+							operators: [ 'is', 'isNot' ] as const,
+							isPrimary: true,
+					  }
+					: ( false as const ),
 				// Client 11.1.0 `deposits/list/index.tsx:131` renders `DepositStatusChip`.
 				render: ( { item }: { item: WooPaymentsDeposit } ) => (
 					<StatusChip
@@ -223,7 +249,7 @@ export const WooPaymentsPayouts = () => {
 					item.bank_reference_key ?? __( 'N/A', 'woocommerce' ),
 			},
 		],
-		[]
+		[ isAdvanced ]
 	);
 
 	useEffect( () => {
@@ -273,14 +299,30 @@ export const WooPaymentsPayouts = () => {
 		};
 	}, [ query ] );
 
-	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
-		saveFields( nextView.fields );
+	const navigateTo = (
+		nextQuery: WooPaymentsMoneyMovementQuery,
+		nextShowFilter = showFilter
+	) =>
 		navigate(
-			buildMoneyMovementRoutePath(
-				'/woopayments/payouts',
-				dataViewsViewToMoneyMovementQuery( nextView, query )
+			withListShowFilter(
+				buildMoneyMovementRoutePath(
+					'/woopayments/payouts',
+					nextQuery
+				),
+				nextShowFilter
 			)
 		);
+	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
+		saveFields( nextView.fields );
+
+		// DataViews adds a filter without a value first; wait for the value.
+		if (
+			nextView.filters?.some( ( filter ) => filter.value === undefined )
+		) {
+			return;
+		}
+
+		navigateTo( dataViewsViewToMoneyMovementQuery( nextView, query ) );
 	};
 	const handleExport = async () => {
 		setIsExporting( true );
@@ -358,11 +400,78 @@ export const WooPaymentsPayouts = () => {
 		} );
 	}
 
+	const currencyFilter =
+		typeof query.store_currency_is === 'string'
+			? query.store_currency_is
+			: undefined;
+	let storeCurrencies: string[] = [];
+
+	// Client 11.1.0 `deposits/list/index.tsx:207-209`: the currencies to choose from.
+	if ( Array.isArray( summary.store_currencies ) ) {
+		storeCurrencies = summary.store_currencies.map( String );
+	} else if ( currencyFilter ) {
+		storeCurrencies = [ currencyFilter ];
+	}
+
+	const listFilters: WooPaymentsListFilter[] = [
+		{
+			id: 'show',
+			label: __( 'Show', 'woocommerce' ),
+			value: showFilter,
+			options: [
+				{ label: __( 'All payouts', 'woocommerce' ), value: 'all' },
+				{
+					label: __( 'Advanced filters', 'woocommerce' ),
+					value: 'advanced',
+				},
+			],
+			onChange: ( value ) => {
+				const nextFilter = getListShowFilter(
+					`filter=${ value }`,
+					PAYOUTS_SHOW_FILTERS
+				);
+
+				navigateTo(
+					getQueryForShowFilter( query, nextFilter ),
+					nextFilter
+				);
+			},
+		},
+	];
+
+	// Client 11.1.0 `deposits/filters/index.js`: the currency select shows for more than one currency.
+	if ( storeCurrencies.length > 1 ) {
+		listFilters.unshift( {
+			id: 'currency',
+			label: __( 'Payout currency', 'woocommerce' ),
+			value: currencyFilter || ALL_CURRENCIES,
+			options: [
+				{ label: __( 'All', 'woocommerce' ), value: ALL_CURRENCIES },
+				...storeCurrencies.map( ( currency ) => ( {
+					label: formatCurrencyName( currency ),
+					value: currency,
+				} ) ),
+			],
+			onChange: ( value ) => {
+				const nextQuery = { ...query };
+
+				if ( value === ALL_CURRENCIES ) {
+					delete nextQuery.store_currency_is;
+				} else {
+					nextQuery.store_currency_is = value;
+				}
+
+				navigateTo( nextQuery );
+			},
+		} );
+	}
+
 	return (
 		<div className="woocommerce-woopayments-payouts">
 			{ /* Client 11.1.0 deposits/index.tsx:153. */ }
 			<WooPaymentsTestModeNotice currentPage="deposits" />
 			<SpotlightPromotion />
+			<WooPaymentsListFilters filters={ listFilters } />
 			<section aria-busy={ isLoading }>
 				<LiveStatusMessage isError={ !! errorMessage }>
 					{ liveStatusMessage }

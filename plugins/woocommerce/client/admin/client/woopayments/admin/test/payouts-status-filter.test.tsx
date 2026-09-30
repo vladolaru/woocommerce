@@ -1,7 +1,13 @@
 /**
  * External dependencies
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -124,7 +130,8 @@ describe( 'WooPayments payouts status filter', () => {
 	} );
 
 	it( 'offers the client status options, with paid shown as "Completed"', async () => {
-		renderPayouts();
+		// Client 11.1.0 `deposits/filters/config.js:52-73`: the status filter sits under Show: Advanced filters.
+		renderPayouts( '/woopayments/payouts?filter=advanced' );
 
 		await waitFor( () => expect( mockGetDeposits ).toHaveBeenCalled() );
 
@@ -282,4 +289,47 @@ describe( 'PayoutsOverviewCard status copy', () => {
 			);
 		}
 	);
+} );
+
+describe( 'WooPayments payouts Show and currency filters', () => {
+	beforeEach( () => {
+		setMockUserPreferences( {} );
+		window.wcSettings = {
+			adminUrl: 'https://example.com/wp-admin/',
+		} as typeof window.wcSettings;
+		mockGetDeposits.mockReset();
+		mockGetDeposits.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetSummary.mockReset();
+		mockGetSummary.mockResolvedValue( {
+			count: 0,
+			total: 0,
+			store_currencies: [ 'usd', 'eur' ],
+		} );
+	} );
+
+	it( "offers the client's Show choices and the status filter only under Advanced filters", async () => {
+		renderPayouts();
+		await waitFor( () => expect( mockGetDeposits ).toHaveBeenCalled() );
+
+		const show = await screen.findByLabelText( 'Show' );
+		expect(
+			within( show )
+				.getAllByRole( 'option' )
+				.map( ( option ) => option.textContent )
+		).toEqual( [ 'All payouts', 'Advanced filters' ] );
+		expect(
+			screen.getByTestId( 'status-filter-operators' )
+		).toHaveTextContent( /^none$/ );
+		expect(
+			within( await screen.findByLabelText( 'Payout currency' ) )
+				.getAllByRole( 'option' )
+				.map( ( option ) => option.textContent )
+		).toEqual( [ 'All', 'United States (US) dollar', 'Euro' ] );
+
+		fireEvent.change( show, { target: { value: 'advanced' } } );
+
+		expect(
+			await screen.findByTestId( 'status-filter-operators' )
+		).toHaveTextContent( /^is,isNot$/ );
+	} );
 } );
