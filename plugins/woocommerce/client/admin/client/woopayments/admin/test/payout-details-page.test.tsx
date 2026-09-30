@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { speak } from '@wordpress/a11y';
 import {
 	getSettings as getDateSettings,
@@ -448,12 +448,20 @@ describe( 'WooPayments payout details admin surface', () => {
 		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
 			'Loading payout details…'
 		);
+		// Client 11.1.0 deposits/details/index.tsx:245-305: the details card is titled "Payout details"
+		// and lists the bank account and reference in one row, without the payout ID.
+		const detailsCard = (
+			await screen.findByRole( 'heading', { name: 'Payout details' } )
+		).closest( '.components-card' ) as HTMLElement;
 		expect(
-			screen.getByRole( 'heading', { name: 'Payout details' } )
-		).toBeInTheDocument();
+			Array.from( detailsCard.querySelectorAll( 'dt' ) ).map(
+				( term ) => term.textContent
+			)
+		).toEqual( [ 'Bank account', 'Bank reference ID' ] );
 		expect(
-			await screen.findByText( 'STRIPE TEST BANK **** 6789' )
+			within( detailsCard ).getByText( 'STRIPE TEST BANK **** 6789' )
 		).toBeInTheDocument();
+		expect( screen.queryByText( 'po_test' ) ).not.toBeInTheDocument();
 		expect( mockGetDeposit ).toHaveBeenCalledWith( 'po_test' );
 		expect( mockGetTransactionsSummary ).toHaveBeenCalledWith(
 			expect.objectContaining( {
@@ -707,7 +715,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'links to all transactions for a normal payout', async () => {
+	it( 'adds no navigation links the client does not have', async () => {
 		mockGetDeposit.mockResolvedValue( {
 			id: 'po_test',
 			date: '2026-06-18',
@@ -738,20 +746,18 @@ describe( 'WooPayments payout details admin surface', () => {
 			</MemoryRouter>
 		);
 
-		const allTransactionsLink = await screen.findByRole( 'link', {
-			name: 'View all transactions in this payout',
-		} );
-
-		expect( allTransactionsLink ).toHaveAttribute(
-			'href',
-			expect.stringContaining(
-				'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions'
-			)
-		);
-		expect( allTransactionsLink ).toHaveAttribute(
-			'href',
-			expect.stringContaining( 'deposit_id=po_test' )
-		);
+		// Client 11.1.0 deposits/details/index.tsx: no back link and no link to all the payout's transactions.
+		expect(
+			await screen.findByRole( 'heading', { name: 'Payout details' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'link', { name: 'Back to payout history' } )
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'link', {
+				name: 'View all transactions in this payout',
+			} )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'does not render embedded transaction history for instant payouts', async () => {
@@ -797,12 +803,17 @@ describe( 'WooPayments payout details admin surface', () => {
 		expect(
 			await screen.findByText(
 				( _, element ) =>
-					element?.textContent ===
-					"We're unable to show transaction history on instant payouts. Learn more"
+					element?.classList.contains( 'components-card__body' ) &&
+					!! element.textContent?.startsWith(
+						"We're unable to show transaction history on instant payouts. Learn more"
+					)
 			)
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'link', { name: 'Learn more' } )
+			screen.getByRole( 'link', {
+				name: ( accessibleName: string ) =>
+					accessibleName.startsWith( 'Learn more' ),
+			} )
 		).toHaveAttribute(
 			'href',
 			'https://woocommerce.com/document/woopayments/payouts/instant-payouts/#request-an-instant-payout'
@@ -813,11 +824,6 @@ describe( 'WooPayments payout details admin surface', () => {
 		expect(
 			screen.queryByRole( 'link', {
 				name: 'View transaction details for Charge transaction txn_payout',
-			} )
-		).not.toBeInTheDocument();
-		expect(
-			screen.queryByRole( 'link', {
-				name: 'View all transactions in this payout',
 			} )
 		).not.toBeInTheDocument();
 	} );
@@ -856,12 +862,11 @@ describe( 'WooPayments payout details admin surface', () => {
 		expect(
 			await screen.findByRole( 'heading', { name: 'Withdrawal details' } )
 		).toBeInTheDocument();
-		expect( screen.getByText( 'Withdrawal ID' ) ).toBeInTheDocument();
+		// Client 11.1.0 transactions/list/index.tsx:590: the list keeps its "Transactions" title.
+		expect( await screen.findByText( 'Transactions' ) ).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'link', {
-				name: 'View all transactions in this withdrawal',
-			} )
-		).toBeInTheDocument();
+			screen.queryByText( 'Withdrawal transactions' )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'announces payout detail errors', async () => {
@@ -993,6 +998,12 @@ describe( 'WooPayments payout details admin surface', () => {
 			expect(
 				getOverviewItem( 'Payout date: Jan 2, 2020' )
 			).toHaveTextContent( 'Completed (paid)' );
+			// Client 11.1.0 deposits/details/index.tsx:48-66: core's OrderStatus dot, not a chip.
+			expect(
+				getOverviewItem( 'Payout date: Jan 2, 2020' )?.querySelector(
+					'.woocommerce-order-status .woocommerce-order-status__indicator.is-paid'
+				)
+			).not.toBeNull();
 			expect( screen.getByText( '$20.00' ) ).toBeInTheDocument();
 			expect( screen.queryByText( 'Payout amount' ) ).toBeNull();
 			expect( screen.queryByText( /service fee/ ) ).toBeNull();
@@ -1239,6 +1250,12 @@ describe( 'WooPayments payout details admin surface', () => {
 			expect(
 				screen.getByText( 'Failure reason:' ).parentElement
 			).toHaveTextContent( 'Failure reason: Unknown' );
+			// Client 11.1.0 deposits/details/index.tsx:228-243: an error notice.
+			expect(
+				screen
+					.getByText( 'Failure reason:' )
+					.closest( '.components-notice' )
+			).toHaveClass( 'is-error' );
 		} );
 
 		it( 'shows the failure reason only for failed payouts', async () => {

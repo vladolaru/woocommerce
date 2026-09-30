@@ -1,12 +1,21 @@
 /**
  * External dependencies
  */
-import { Button } from '@wordpress/components';
+import {
+	Button,
+	Card,
+	CardBody,
+	CardHeader,
+	ExternalLink,
+	Notice,
+} from '@wordpress/components';
 import { useCallback, useEffect, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { speak } from '@wordpress/a11y';
+import { OrderStatus } from '@woocommerce/components';
+import { copy } from '@wordpress/icons';
 import clsx from 'clsx';
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 
 /**
@@ -18,7 +27,6 @@ import type { WooPaymentsDeposit } from './overview/types';
 import {
 	formatPayoutSiteDate,
 	formatWooPaymentsAmount,
-	getPayoutStatusClassName,
 } from './overview/utils';
 import { getPayoutStatusLabel } from './payout-status';
 import type { WooPaymentsMoneyMovementQuery } from './money-movement/types';
@@ -28,10 +36,16 @@ import {
 	getErrorMessage,
 } from './money-movement/utils';
 import { WooPaymentsTransactionsList } from './money-movement/transactions-list';
-import { getSettingsPaymentsProviderRouteUrl } from './utils';
 import { WooPaymentsTestModeNotice } from './test-mode-notice';
 import './style.scss';
 import './payout-details.scss';
+
+// The component's generated types declare an `Object` return, which JSX rejects.
+const StatusIndicator = OrderStatus as unknown as ComponentType< {
+	className?: string;
+	order: { status: string };
+	orderStatusMap: Record< string, string >;
+} >;
 
 const INSTANT_PAYOUTS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/instant-payouts/#request-an-instant-payout';
@@ -182,14 +196,14 @@ const PayoutDateItem = ( { payout }: { payout: WooPaymentsDeposit } ) => {
 		<OverviewItem
 			label={ `${ label }: ${ formatPayoutSiteDate( payout ) }` }
 			value={
-				<span
-					className={ clsx(
-						'woocommerce-woopayments-overview__status-chip',
-						getPayoutStatusClassName( payout.status )
-					) }
-				>
-					{ getPayoutStatusLabel( payout ) }
-				</span>
+				// Client 11.1.0 `deposits/details/index.tsx:48-66`: core's status indicator dot and label.
+				<StatusIndicator
+					className="woocommerce-woopayments-payout-overview__status"
+					order={ { status: payout.status } }
+					orderStatusMap={ {
+						[ payout.status ]: getPayoutStatusLabel( payout ),
+					} }
+				/>
 			}
 		/>
 	);
@@ -268,27 +282,14 @@ const PayoutOverview = ( { payout }: { payout: WooPaymentsDeposit } ) => {
 				</ul>
 			) }
 			{ payout.status === 'failed' && (
-				<p className="woocommerce-woopayments-money-movement__notice woocommerce-woopayments-payout-overview__failure">
+				<Notice status="error" isDismissible={ false }>
 					<strong>{ __( 'Failure reason:', 'woocommerce' ) }</strong>{ ' ' }
 					{ failureReason }
-				</p>
+				</Notice>
 			) }
 		</>
 	);
 };
-
-const SummaryRow = ( {
-	label,
-	value,
-}: {
-	label: string;
-	value: ReactNode;
-} ) => (
-	<div>
-		<dt>{ label }</dt>
-		<dd>{ value }</dd>
-	</div>
-);
 
 export const WooPaymentsPayoutDetailsPage = () => {
 	const [ payout, setPayout ] = useState< WooPaymentsDeposit | null >( null );
@@ -401,25 +402,12 @@ export const WooPaymentsPayoutDetailsPage = () => {
 
 	const isWithdrawal = payout?.type === 'withdrawal';
 	const isInstantPayout = payout?.automatic === false;
-	const payoutLabel = isWithdrawal
-		? __( 'withdrawal', 'woocommerce' )
-		: __( 'payout', 'woocommerce' );
 	const payoutTitle = isWithdrawal
 		? __( 'Withdrawal details', 'woocommerce' )
 		: __( 'Payout details', 'woocommerce' );
-	const payoutIdLabel = isWithdrawal
-		? __( 'Withdrawal ID', 'woocommerce' )
-		: __( 'Payout ID', 'woocommerce' );
 	const payoutTransactionsTitle = isWithdrawal
 		? __( 'Withdrawal transactions', 'woocommerce' )
 		: __( 'Payout transactions', 'woocommerce' );
-	const allTransactionsUrl =
-		payout &&
-		getSettingsPaymentsProviderRouteUrl(
-			`/woopayments/transactions?deposit_id=${ encodeURIComponent(
-				payout.id
-			) }`
-		);
 	const bankReferenceId = payout?.bank_reference_key;
 
 	return (
@@ -429,14 +417,6 @@ export const WooPaymentsPayoutDetailsPage = () => {
 		>
 			{ /* Client 11.1.0 deposits/details/index.tsx:317. */ }
 			<WooPaymentsTestModeNotice currentPage="deposits" isDetailsView />
-			<a
-				href={ getSettingsPaymentsProviderRouteUrl(
-					'/woopayments/payouts'
-				) }
-			>
-				{ __( 'Back to payout history', 'woocommerce' ) }
-			</a>
-			<h2>{ payoutTitle }</h2>
 			<p
 				className="screen-reader-text"
 				role={ errorMessage ? 'alert' : 'status' }
@@ -457,77 +437,85 @@ export const WooPaymentsPayoutDetailsPage = () => {
 			{ payout && ! errorMessage && (
 				<>
 					<PayoutOverview payout={ payout } />
-					<dl className="woocommerce-woopayments-money-movement__details">
-						<SummaryRow
-							label={ payoutIdLabel }
-							value={ payout.id }
-						/>
-						<SummaryRow
-							label={ __( 'Bank account', 'woocommerce' ) }
-							value={
-								payout.bankAccount ||
-								__( 'Not available', 'woocommerce' )
-							}
-						/>
-						<SummaryRow
-							label={ __( 'Bank reference ID', 'woocommerce' ) }
-							value={
-								bankReferenceId ? (
-									<span className="woocommerce-woopayments-money-movement__copyable-value">
-										<span>{ bankReferenceId }</span>
-										<Button
-											variant="secondary"
-											onClick={ copyBankReferenceId }
-											aria-label={ __(
-												'Copy bank reference ID to clipboard',
+					{ /* Client 11.1.0 deposits/details/index.tsx:245-305: a titled card, the bank account and reference in one row. */ }
+					<Card>
+						<CardHeader>
+							<h2 className="woocommerce-woopayments-payout-details__title">
+								{ payoutTitle }
+							</h2>
+						</CardHeader>
+						<CardBody>
+							<dl className="woocommerce-woopayments-payout-details">
+								<div className="woocommerce-woopayments-payout-details__item">
+									<dt>
+										{ __( 'Bank account', 'woocommerce' ) }
+									</dt>
+									<dd>
+										{ payout.bankAccount ||
+											__(
+												'Not available',
 												'woocommerce'
 											) }
-										>
-											{ __( 'Copy', 'woocommerce' ) }
-										</Button>
-									</span>
-								) : (
-									__( 'Not available', 'woocommerce' )
-								)
-							}
-						/>
-					</dl>
+									</dd>
+								</div>
+								<div className="woocommerce-woopayments-payout-details__item">
+									<dt>
+										{ __(
+											'Bank reference ID',
+											'woocommerce'
+										) }
+									</dt>
+									<dd>
+										{ bankReferenceId ? (
+											<>
+												<span className="woocommerce-woopayments-payout-details__reference">
+													{ bankReferenceId }
+												</span>
+												<Button
+													icon={ copy }
+													size="small"
+													onClick={
+														copyBankReferenceId
+													}
+													label={ __(
+														'Copy bank reference ID to clipboard',
+														'woocommerce'
+													) }
+												/>
+											</>
+										) : (
+											__( 'Not available', 'woocommerce' )
+										) }
+									</dd>
+								</div>
+							</dl>
+						</CardBody>
+					</Card>
 					{ isInstantPayout ? (
-						<section className="woocommerce-woopayments-overview-card">
-							<h3>{ payoutTransactionsTitle }</h3>
-							<p className="woocommerce-woopayments-money-movement__notice">
+						<Card>
+							<CardHeader>
+								<h2 className="woocommerce-woopayments-payout-details__title">
+									{ payoutTransactionsTitle }
+								</h2>
+							</CardHeader>
+							<CardBody>
 								{ __(
 									"We're unable to show transaction history on instant payouts.",
 									'woocommerce'
 								) }{ ' ' }
-								<a href={ INSTANT_PAYOUTS_DOCS_URL }>
+								<ExternalLink href={ INSTANT_PAYOUTS_DOCS_URL }>
 									{ __( 'Learn more', 'woocommerce' ) }
-								</a>
-							</p>
-						</section>
+								</ExternalLink>
+							</CardBody>
+						</Card>
 					) : (
-						<>
-							{ /* Client 11.1.0 deposits/details/index.tsx:356: the transactions list card, scoped to the payout, not inside another card. */ }
-							<WooPaymentsTransactionsList
-								depositId={ payout.id }
-								buildRoute={ buildPayoutTransactionsRoute }
-								title={ payoutTransactionsTitle }
-							/>
-							{ allTransactionsUrl && (
-								<p className="woocommerce-woopayments-money-movement__footer-actions">
-									<a href={ allTransactionsUrl }>
-										{ sprintf(
-											/* translators: %s: payout or withdrawal. */
-											__(
-												'View all transactions in this %s',
-												'woocommerce'
-											),
-											payoutLabel
-										) }
-									</a>
-								</p>
-							) }
-						</>
+						// Client 11.1.0 deposits/details/index.tsx:356 and transactions/list/index.tsx:590: the
+						// transactions list card, scoped to the payout and titled "Transactions".
+						<WooPaymentsTransactionsList
+							depositId={ payout.id }
+							buildRoute={ buildPayoutTransactionsRoute }
+							title={ __( 'Transactions', 'woocommerce' ) }
+						/>
 					) }
 				</>
 			) }
