@@ -41,37 +41,37 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * WooPayments account service.
 	 *
-	 * @var WooPaymentsAccountService
+	 * @var WooPaymentsAccountService|null
 	 */
-	private WooPaymentsAccountService $account_service;
+	private ?WooPaymentsAccountService $account_service = null;
 
 	/**
 	 * Frontend styles service.
 	 *
-	 * @var WooPaymentsFrontendStylesService
+	 * @var WooPaymentsFrontendStylesService|null
 	 */
-	private WooPaymentsFrontendStylesService $frontend_styles_service;
+	private ?WooPaymentsFrontendStylesService $frontend_styles_service = null;
 
 	/**
 	 * Canceled-authorization fee remediation service.
 	 *
-	 * @var WooPaymentsCanceledAuthorizationFeeRemediationService
+	 * @var WooPaymentsCanceledAuthorizationFeeRemediationService|null
 	 */
-	private WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service;
+	private ?WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service = null;
 
 	/**
 	 * Cutover controller.
 	 *
-	 * @var WooPaymentsCutoverController
+	 * @var WooPaymentsCutoverController|null
 	 */
-	private WooPaymentsCutoverController $cutover_controller;
+	private ?WooPaymentsCutoverController $cutover_controller = null;
 
 	/**
 	 * Rate provider registry factory.
 	 *
-	 * @var CurrencyRateProviderRegistryFactory
+	 * @var CurrencyRateProviderRegistryFactory|null
 	 */
-	private CurrencyRateProviderRegistryFactory $provider_registry_factory;
+	private ?CurrencyRateProviderRegistryFactory $provider_registry_factory = null;
 
 	/**
 	 * Native payments state store.
@@ -83,42 +83,24 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Cutover state store.
 	 *
-	 * @var WooPaymentsCutoverStateStore
+	 * @var WooPaymentsCutoverStateStore|null
 	 */
-	private WooPaymentsCutoverStateStore $cutover_state_store;
+	private ?WooPaymentsCutoverStateStore $cutover_state_store = null;
 
 	/**
 	 * Initialize the class instance.
 	 *
+	 * The diagnostic collaborators are resolved on first use: this class registers on every store, and their
+	 * dependency graphs must not load on requests that never render a diagnostic surface.
+	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter                          $arbiter                 Runtime owner arbiter.
-	 * @param WooPaymentsAccountService                             $account_service         Account service.
-	 * @param WooPaymentsFrontendStylesService                      $frontend_styles_service Frontend styles service.
-	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service Fee remediation service.
-	 * @param WooPaymentsCutoverController                          $cutover_controller      Cutover controller.
-	 * @param CurrencyRateProviderRegistryFactory                   $provider_registry_factory Rate provider registry factory.
-	 * @param NativePaymentsState                                   $native_payments_state   Native payments state store.
-	 * @param WooPaymentsCutoverStateStore                          $cutover_state_store     Cutover state store.
+	 * @param NativePaymentsRuntimeArbiter $arbiter               Runtime owner arbiter.
+	 * @param NativePaymentsState          $native_payments_state Native payments state store.
 	 */
-	final public function init(
-		NativePaymentsRuntimeArbiter $arbiter,
-		WooPaymentsAccountService $account_service,
-		WooPaymentsFrontendStylesService $frontend_styles_service,
-		WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service,
-		WooPaymentsCutoverController $cutover_controller,
-		CurrencyRateProviderRegistryFactory $provider_registry_factory,
-		NativePaymentsState $native_payments_state,
-		WooPaymentsCutoverStateStore $cutover_state_store
-	): void {
-		$this->arbiter                   = $arbiter;
-		$this->account_service           = $account_service;
-		$this->frontend_styles_service   = $frontend_styles_service;
-		$this->fee_remediation_service   = $fee_remediation_service;
-		$this->cutover_controller        = $cutover_controller;
-		$this->provider_registry_factory = $provider_registry_factory;
-		$this->native_payments_state     = $native_payments_state;
-		$this->cutover_state_store       = $cutover_state_store;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, NativePaymentsState $native_payments_state ): void {
+		$this->arbiter               = $arbiter;
+		$this->native_payments_state = $native_payments_state;
 	}
 
 	/**
@@ -151,7 +133,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		return in_array( $this->native_payments_state->get_stored_state(), array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true )
 			|| $this->arbiter->is_plugin_runtime_active()
 			|| (bool) get_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, false )
-			|| null !== $this->cutover_state_store->get_record();
+			|| null !== $this->get_cutover_state_store()->get_record();
 	}
 
 	/**
@@ -192,7 +174,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	public function run_cutover_site_health_test(): array {
 		$runtime_owner = $this->arbiter->get_runtime_owner();
-		$failures      = $this->cutover_controller->get_preflight_failures();
+		$failures      = $this->get_cutover_controller()->get_preflight_failures();
 		$is_ready      = array() === $failures;
 
 		if ( $is_ready ) {
@@ -231,7 +213,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	public function get_status_data(): array {
-		$account_connected         = $this->account_service->has_account();
+		$account_connected         = $this->get_account_service()->has_account();
 		$enabled_payment_methods   = $this->get_enabled_payment_methods();
 		$payment_request_locations = $this->get_express_checkout_method_locations( 'payment_request' );
 		$woopay_locations          = $this->get_express_checkout_method_locations( 'woopay' );
@@ -244,10 +226,10 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'native_enabled_filter'   => NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
 			'native_enabled_note'     => $this->get_native_enabled_note(),
 			'preflight_failures'      => $this->get_preflight_failures(),
-			'account_id'              => $this->account_service->get_account_id(),
+			'account_id'              => $this->get_account_service()->get_account_id(),
 			'account_connected'       => $account_connected,
-			'gateway_enabled'         => $this->account_service->is_gateway_enabled(),
-			'test_mode'               => $this->account_service->is_test_mode_enabled(),
+			'gateway_enabled'         => $this->get_account_service()->is_gateway_enabled(),
+			'test_mode'               => $this->get_account_service()->is_test_mode_enabled(),
 			'enabled_payment_methods' => $enabled_payment_methods,
 			'woopay'                  => array(
 				'enabled'                 => $this->is_setting_enabled( 'platform_checkout' ),
@@ -329,7 +311,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			),
 			'payment_request'              => array(
 				'label' => __( 'Apple Pay / Google Pay express checkout', 'woocommerce' ),
-				'value' => $this->format_express_checkout_status( $this->account_service->is_payment_request_enabled(), $data['express_checkout']['payment_request'] ),
+				'value' => $this->format_express_checkout_status( $this->get_account_service()->is_payment_request_enabled(), $data['express_checkout']['payment_request'] ),
 			),
 			'multi_currency'               => array(
 				'label' => __( 'Multi-currency', 'woocommerce' ),
@@ -465,7 +447,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return __( 'You do not have permission to run this tool.', 'woocommerce' );
 		}
 
-		$this->account_service->clear_cache();
+		$this->get_account_service()->clear_cache();
 
 		return __( 'WooPayments account cache cleared.', 'woocommerce' );
 	}
@@ -536,7 +518,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return __( 'You do not have permission to run this tool.', 'woocommerce' );
 		}
 
-		$this->frontend_styles_service->invalidate_styles_cache_version();
+		$this->get_frontend_styles_service()->invalidate_styles_cache_version();
 
 		return __( 'WooPayments styles cache cleared.', 'woocommerce' );
 	}
@@ -551,7 +533,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return __( 'You do not have permission to run this tool.', 'woocommerce' );
 		}
 
-		if ( $this->fee_remediation_service->is_complete() ) {
+		if ( $this->get_fee_remediation_service()->is_complete() ) {
 			return __( 'Remediation has already been completed.', 'woocommerce' );
 		}
 
@@ -559,7 +541,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return __( 'Remediation is already in progress. Check the Action Scheduler for status.', 'woocommerce' );
 		}
 
-		$this->fee_remediation_service->schedule_remediation();
+		$this->get_fee_remediation_service()->schedule_remediation();
 
 		return __( 'Remediation has been scheduled and will run in the background.', 'woocommerce' );
 	}
@@ -574,7 +556,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return __( 'You do not have permission to run this tool.', 'woocommerce' );
 		}
 
-		if ( $this->fee_remediation_service->is_complete() ) {
+		if ( $this->get_fee_remediation_service()->is_complete() ) {
 			return __( 'Remediation has already been completed.', 'woocommerce' );
 		}
 
@@ -582,7 +564,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return __( 'Remediation is already in progress. Check the Action Scheduler for status.', 'woocommerce' );
 		}
 
-		$this->fee_remediation_service->schedule_dry_run();
+		$this->get_fee_remediation_service()->schedule_dry_run();
 
 		return __( 'Dry run has been scheduled and will run in the background.', 'woocommerce' );
 	}
@@ -593,7 +575,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return string[]
 	 */
 	private function get_enabled_payment_methods(): array {
-		$methods = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
+		$methods = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
 
 		return $this->sanitize_string_list( is_array( $methods ) ? $methods : array( 'card' ) );
 	}
@@ -608,7 +590,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		$locations = array();
 
 		foreach ( array( 'product', 'cart', 'checkout' ) as $location ) {
-			$setting = $this->account_service->get_gateway_setting( 'express_checkout_' . $location . '_methods', array() );
+			$setting = $this->get_account_service()->get_gateway_setting( 'express_checkout_' . $location . '_methods', array() );
 			$methods = $this->sanitize_string_list( is_array( $setting ) ? $setting : array() );
 			if ( in_array( $method_id, $methods, true ) ) {
 				$locations[] = $location;
@@ -625,7 +607,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private function get_preflight_failures(): array {
 		try {
-			return $this->sanitize_string_list( $this->cutover_controller->get_preflight_failures() );
+			return $this->sanitize_string_list( $this->get_cutover_controller()->get_preflight_failures() );
 		} catch ( Throwable $exception ) {
 			return array( 'preflight_unavailable' );
 		}
@@ -639,7 +621,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private function is_rate_provider_available( string $provider_id ): bool {
 		try {
-			$provider = $this->provider_registry_factory->create()->get_provider( $provider_id );
+			$provider = $this->get_provider_registry_factory()->create()->get_provider( $provider_id );
 
 			return null !== $provider && $provider->is_available();
 		} catch ( Throwable $exception ) {
@@ -678,7 +660,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_setting_enabled( string $key, bool $default_enabled = false ): bool {
-		$value = $this->account_service->get_gateway_setting( $key, $default_enabled ? 'yes' : 'no' );
+		$value = $this->get_account_service()->get_gateway_setting( $key, $default_enabled ? 'yes' : 'no' );
 
 		return 'yes' === (string) $value || true === $value || '1' === (string) $value;
 	}
@@ -791,7 +773,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_dry_run_button_text(): string {
-		if ( $this->fee_remediation_service->is_complete() ) {
+		if ( $this->get_fee_remediation_service()->is_complete() ) {
 			return __( 'Completed', 'woocommerce' );
 		}
 
@@ -808,7 +790,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_remediation_button_text(): string {
-		if ( $this->fee_remediation_service->is_complete() ) {
+		if ( $this->get_fee_remediation_service()->is_complete() ) {
 			return __( 'Completed', 'woocommerce' );
 		}
 
@@ -825,9 +807,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_remediation_description(): string {
-		$stats = $this->fee_remediation_service->get_stats();
+		$stats = $this->get_fee_remediation_service()->get_stats();
 
-		if ( $this->fee_remediation_service->is_complete() ) {
+		if ( $this->get_fee_remediation_service()->is_complete() ) {
 			return sprintf(
 				/* translators: 1: processed count, 2: remediated count. */
 				__( 'Remediation is complete. Processed %1$d orders and remediated %2$d.', 'woocommerce' ),
@@ -853,7 +835,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_remediation_running_or_complete(): bool {
-		return $this->fee_remediation_service->is_complete()
+		return $this->get_fee_remediation_service()->is_complete()
 			|| 'running' === get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY, '' )
 			|| $this->is_remediation_action_scheduled();
 	}
@@ -870,5 +852,83 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 		return false !== as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID )
 			|| false !== as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
+	}
+
+	/**
+	 * Get the account service, resolving it on first use.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function get_account_service(): WooPaymentsAccountService {
+		if ( null === $this->account_service ) {
+			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		}
+
+		return $this->account_service;
+	}
+
+	/**
+	 * Get the frontend styles service, resolving it on first use.
+	 *
+	 * @return WooPaymentsFrontendStylesService
+	 */
+	private function get_frontend_styles_service(): WooPaymentsFrontendStylesService {
+		if ( null === $this->frontend_styles_service ) {
+			$this->frontend_styles_service = wc_get_container()->get( WooPaymentsFrontendStylesService::class );
+		}
+
+		return $this->frontend_styles_service;
+	}
+
+	/**
+	 * Get the fee remediation service, resolving it on first use.
+	 *
+	 * @return WooPaymentsCanceledAuthorizationFeeRemediationService
+	 */
+	private function get_fee_remediation_service(): WooPaymentsCanceledAuthorizationFeeRemediationService {
+		if ( null === $this->fee_remediation_service ) {
+			$this->fee_remediation_service = wc_get_container()->get( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
+		}
+
+		return $this->fee_remediation_service;
+	}
+
+	/**
+	 * Get the cutover controller, resolving it on first use.
+	 *
+	 * @return WooPaymentsCutoverController
+	 */
+	private function get_cutover_controller(): WooPaymentsCutoverController {
+		if ( null === $this->cutover_controller ) {
+			$this->cutover_controller = wc_get_container()->get( WooPaymentsCutoverController::class );
+		}
+
+		return $this->cutover_controller;
+	}
+
+	/**
+	 * Get the provider registry factory, resolving it on first use.
+	 *
+	 * @return CurrencyRateProviderRegistryFactory
+	 */
+	private function get_provider_registry_factory(): CurrencyRateProviderRegistryFactory {
+		if ( null === $this->provider_registry_factory ) {
+			$this->provider_registry_factory = wc_get_container()->get( CurrencyRateProviderRegistryFactory::class );
+		}
+
+		return $this->provider_registry_factory;
+	}
+
+	/**
+	 * Get the cutover state store, resolving it on first use.
+	 *
+	 * @return WooPaymentsCutoverStateStore
+	 */
+	private function get_cutover_state_store(): WooPaymentsCutoverStateStore {
+		if ( null === $this->cutover_state_store ) {
+			$this->cutover_state_store = wc_get_container()->get( WooPaymentsCutoverStateStore::class );
+		}
+
+		return $this->cutover_state_store;
 	}
 }

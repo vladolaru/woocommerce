@@ -66,6 +66,20 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should build no diagnostic collaborator when initialized, so registering the report builds no payment code.
+	 */
+	public function test_init_resolves_no_diagnostic_collaborator(): void {
+		$sut = new WooPaymentsStatusReport();
+		$sut->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), wc_get_container()->get( NativePaymentsState::class ) );
+
+		foreach ( array( 'account_service', 'frontend_styles_service', 'fee_remediation_service', 'cutover_controller', 'provider_registry_factory', 'cutover_state_store' ) as $property ) {
+			$reflection = new \ReflectionProperty( WooPaymentsStatusReport::class, $property );
+			$reflection->setAccessible( true );
+			$this->assertNull( $reflection->getValue( $sut ), $property . ' must be resolved when a diagnostic runs, not when the report is initialized.' );
+		}
+	}
+
+	/**
 	 * @testdox Supportability hooks are registered even when the plugin owns runtime.
 	 */
 	public function test_registers_supportability_hooks_even_when_plugin_owns_runtime(): void {
