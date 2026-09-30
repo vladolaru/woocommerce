@@ -279,4 +279,6 @@ export interface WooPaymentsOverviewTask {
 	isDismissable?: boolean;
 	isDeletable?: boolean;
 	allowSnooze?: boolean;
+	/** Client 11.1.0 `dispute-task.tsx` `data-urgent`: a dispute is due within 72 hours. */
+	isUrgent?: boolean;
 }

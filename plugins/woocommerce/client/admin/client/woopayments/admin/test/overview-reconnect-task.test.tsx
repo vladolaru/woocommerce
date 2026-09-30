@@ -76,8 +76,8 @@ describe( 'WooPayments Overview reconnect task', () => {
 		render( <WooPaymentsOverviewPage /> );
 
 		const task = (
-			await screen.findByRole( 'heading', {
-				name: 'Reconnect WooPayments',
+			await screen.findByText( 'Reconnect WooPayments', {
+				selector: '.woocommerce-task-list__item-title',
 			} )
 		).closest( 'li' );
 		if ( ! task ) {
@@ -89,8 +89,29 @@ describe( 'WooPayments Overview reconnect task', () => {
 			)
 		).toBeInTheDocument();
 
-		const link = within( task ).getByRole( 'link', { name: 'Reconnect' } );
-		const href = new URL( link.getAttribute( 'href' ) ?? '' );
+		// Client 11.1.0 `reconnect-task.tsx:20-27`: the action button sends the merchant to the reconnect URL.
+		const originalLocation = window.location;
+		const mockAssign = jest.fn();
+		Object.defineProperty( window, 'location', {
+			configurable: true,
+			value: {
+				href: originalLocation.href,
+				search: '',
+				assign: mockAssign,
+			},
+		} );
+		try {
+			fireEvent.click(
+				within( task ).getByRole( 'button', { name: 'Reconnect' } )
+			);
+		} finally {
+			Object.defineProperty( window, 'location', {
+				configurable: true,
+				value: originalLocation,
+			} );
+		}
+
+		const href = new URL( mockAssign.mock.calls[ 0 ][ 0 ] );
 		expect( href.pathname ).toBe( '/wp-admin/admin.php' );
 		expect( Object.fromEntries( href.searchParams ) ).toEqual( {
 			'wcpay-reconnect-wpcom': '1',
@@ -98,9 +119,6 @@ describe( 'WooPayments Overview reconnect task', () => {
 			from: 'WCPAY_OVERVIEW',
 			source: 'wcpay-reconnect-wpcom-user-task',
 		} );
-
-		link.addEventListener( 'click', ( event ) => event.preventDefault() );
-		fireEvent.click( link );
 		expect( recordEvent ).toHaveBeenCalledWith(
 			'wcpay_overview_task_click',
 			{
@@ -119,7 +137,7 @@ describe( 'WooPayments Overview reconnect task', () => {
 
 		await screen.findByRole( 'heading', { name: 'Account details' } );
 		expect(
-			screen.queryByRole( 'heading', { name: 'Reconnect WooPayments' } )
+			screen.queryByText( 'Reconnect WooPayments' )
 		).not.toBeInTheDocument();
 	} );
 } );

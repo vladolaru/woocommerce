@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
 
@@ -61,6 +61,21 @@ const createTask = ( key: string, title: string, overrides = {} ) => ( {
 	...overrides,
 } );
 
+// Client 11.1.0 `overview/task-list/index.js:176-212`: TaskItem keeps dismiss, snooze and delete in its "Task Options" menu.
+const chooseTaskOption = async ( title: string, option: string ) => {
+	const row = screen
+		.getByText( title, { selector: '.woocommerce-task-list__item-title' } )
+		.closest( 'li' );
+	if ( ! row ) {
+		throw new Error( `No task row for "${ title }".` );
+	}
+
+	await userEvent.click(
+		within( row ).getByRole( 'button', { name: 'Task Options' } )
+	);
+	await userEvent.click( screen.getByRole( 'button', { name: option } ) );
+};
+
 describe( 'OverviewTaskList', () => {
 	beforeEach( () => {
 		jest.spyOn( Date, 'now' ).mockReturnValue( NOW );
@@ -103,7 +118,7 @@ describe( 'OverviewTaskList', () => {
 		expect( screen.queryByText( 'Snoozed task' ) ).not.toBeInTheDocument();
 	} );
 
-	it( 'records the client 11.1.0 dispute task click when the task link is followed', async () => {
+	it( 'records the client 11.1.0 dispute task click and opens the disputes list', async () => {
 		// Expected properties: client `overview/task-list/tasks/dispute-task.tsx:52-56`.
 		const dispute = { dispute_id: 'dp_1', amount: 1000, currency: 'usd' };
 		const tasks = buildOverviewTasks( {
@@ -124,10 +139,28 @@ describe( 'OverviewTaskList', () => {
 			/>
 		);
 
-		await userEvent.click(
-			screen.getByRole( 'link', { name: 'See disputes' } )
-		);
+		const originalLocation = window.location;
+		const mockAssign = jest.fn();
+		Object.defineProperty( window, 'location', {
+			configurable: true,
+			value: { assign: mockAssign },
+		} );
+		try {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'See disputes' } )
+			);
+		} finally {
+			Object.defineProperty( window, 'location', {
+				configurable: true,
+				value: originalLocation,
+			} );
+		}
 
+		expect( mockAssign ).toHaveBeenCalledWith(
+			expect.stringContaining(
+				'path=%2Fwoopayments%2Fdisputes&filter=awaiting_response'
+			)
+		);
 		expect( recordEvent ).toHaveBeenCalledWith(
 			'wcpay_overview_task_click',
 			{ task: 'dispute-resolution-task', active_dispute_count: 2 }
@@ -142,9 +175,7 @@ describe( 'OverviewTaskList', () => {
 			/>
 		);
 
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Dismiss Task A' } )
-		);
+		await chooseTaskOption( 'Task A', 'Dismiss' );
 
 		expect( mockSaveOption ).toHaveBeenCalledWith(
 			'woocommerce_dismissed_todo_tasks',
@@ -174,39 +205,40 @@ describe( 'OverviewTaskList', () => {
 			/>
 		);
 
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Dismiss Task A' } )
-		);
+		await chooseTaskOption( 'Task A', 'Dismiss' );
 
 		const nextAction = screen.getByRole( 'button', {
 			name: 'Task B action',
 		} );
 
 		await waitFor( () => expect( nextAction ).toHaveFocus() );
-		expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument();
+		await waitFor( () =>
+			expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument()
+		);
 	} );
 
 	it( 'moves focus to the next task action after deleting a task', async () => {
 		render(
 			<OverviewTaskList
 				tasks={ [
-					createTask( 'task-a', 'Task A' ),
+					// Client 11.1.0 `overview/task-list/index.js:198-202`: only completed tasks can be deleted.
+					createTask( 'task-a', 'Task A', { completed: true } ),
 					createTask( 'task-b', 'Task B' ),
 				] }
 				visibility={ createVisibility() }
 			/>
 		);
 
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Delete Task A' } )
-		);
+		await chooseTaskOption( 'Task A', 'Delete' );
 
 		const nextAction = screen.getByRole( 'button', {
 			name: 'Task B action',
 		} );
 
 		await waitFor( () => expect( nextAction ).toHaveFocus() );
-		expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument();
+		await waitFor( () =>
+			expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument()
+		);
 	} );
 
 	it( 'moves focus to the next task action after snoozing a task', async () => {
@@ -220,16 +252,16 @@ describe( 'OverviewTaskList', () => {
 			/>
 		);
 
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Remind me later Task A' } )
-		);
+		await chooseTaskOption( 'Task A', 'Remind me later' );
 
 		const nextAction = screen.getByRole( 'button', {
 			name: 'Task B action',
 		} );
 
 		await waitFor( () => expect( nextAction ).toHaveFocus() );
-		expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument();
+		await waitFor( () =>
+			expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument()
+		);
 	} );
 
 	it( 'moves focus to the heading and keeps the live status after dismissing the last task', async () => {
@@ -240,9 +272,7 @@ describe( 'OverviewTaskList', () => {
 			/>
 		);
 
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Dismiss Task A' } )
-		);
+		await chooseTaskOption( 'Task A', 'Dismiss' );
 
 		const heading = screen.getByRole( 'heading', {
 			name: 'Things to do',
@@ -251,20 +281,22 @@ describe( 'OverviewTaskList', () => {
 
 		await waitFor( () => expect( heading ).toHaveFocus() );
 		expect( status ).toHaveTextContent( 'Task dismissed.' );
-		expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument();
+		await waitFor( () =>
+			expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument()
+		);
 	} );
 
 	it( 'persists deleted tasks separately from dismissed tasks', async () => {
 		render(
 			<OverviewTaskList
-				tasks={ [ createTask( 'task-a', 'Task A' ) ] }
+				tasks={ [
+					createTask( 'task-a', 'Task A', { completed: true } ),
+				] }
 				visibility={ createVisibility() }
 			/>
 		);
 
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Delete Task A' } )
-		);
+		await chooseTaskOption( 'Task A', 'Delete' );
 
 		expect( mockSaveOption ).toHaveBeenCalledWith(
 			'woocommerce_deleted_todo_tasks',
@@ -278,7 +310,9 @@ describe( 'OverviewTaskList', () => {
 
 		await waitFor( () => expect( heading ).toHaveFocus() );
 		expect( status ).toHaveTextContent( 'Task deleted.' );
-		expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument();
+		await waitFor( () =>
+			expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument()
+		);
 	} );
 
 	it( 'persists snoozed tasks until tomorrow and can undo the snooze', async () => {
@@ -289,9 +323,7 @@ describe( 'OverviewTaskList', () => {
 			/>
 		);
 
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Remind me later Task A' } )
-		);
+		await chooseTaskOption( 'Task A', 'Remind me later' );
 
 		expect( mockSaveOption ).toHaveBeenCalledWith(
 			'woocommerce_remind_me_later_todo_tasks',
@@ -307,7 +339,9 @@ describe( 'OverviewTaskList', () => {
 
 		await waitFor( () => expect( heading ).toHaveFocus() );
 		expect( status ).toHaveTextContent( 'Task postponed until tomorrow.' );
-		expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument();
+		await waitFor( () =>
+			expect( screen.queryByText( 'Task A' ) ).not.toBeInTheDocument()
+		);
 
 		act( () => {
 			mockCreateSuccessNotice.mock.calls[ 0 ][ 1 ].actions[ 0 ].onClick();

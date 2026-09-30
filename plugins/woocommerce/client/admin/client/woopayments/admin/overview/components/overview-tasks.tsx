@@ -271,6 +271,10 @@ const buildDisputeTask = (
 		return null;
 	}
 
+	// Client 11.1.0 `overview/task-list/tasks/dispute-task.tsx:83-86,110-112`: red within 72 hours, yellow before.
+	const isUrgent = urgentDisputes.some( ( dispute ) =>
+		isDisputeDueWithinDays( dispute, 3 )
+	);
 	// Client 11.1.0 `overview/task-list/tasks/dispute-task.tsx:52-56`.
 	const onClick = () =>
 		recordEvent( 'wcpay_overview_task_click', {
@@ -303,6 +307,7 @@ const buildDisputeTask = (
 			),
 			onClick,
 			showActionButton: true,
+			isUrgent,
 		};
 	}
 
@@ -364,6 +369,7 @@ const buildDisputeTask = (
 		),
 		onClick,
 		showActionButton: true,
+		isUrgent,
 	};
 };
 

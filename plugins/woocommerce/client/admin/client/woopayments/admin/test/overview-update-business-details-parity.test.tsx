@@ -144,8 +144,11 @@ const renderWithAccountStatus = async (
 };
 
 const getTask = async ( title = TITLE ) => {
+	// Client 11.1.0 `overview/task-list`: each task is a TaskItem row titled in its title span.
 	const task = (
-		await screen.findByRole( 'heading', { name: title } )
+		await screen.findByText( title, {
+			selector: '.woocommerce-task-list__item-title',
+		} )
 	).closest( 'li' );
 	if ( ! task ) {
 		throw new Error( `No task item for "${ title }".` );
@@ -302,7 +305,7 @@ describe( 'WooPayments Overview update-business-details parity', () => {
 				)
 			).toBeInTheDocument();
 			expect(
-				within( task ).getByRole( 'link', { name: 'Finish setup' } )
+				within( task ).getByRole( 'button', { name: 'Finish setup' } )
 			).toBeInTheDocument();
 		} );
 
@@ -319,22 +322,25 @@ describe( 'WooPayments Overview update-business-details parity', () => {
 
 				const task = await getTask();
 
+				// Only the action button sits under the title.
 				expect(
 					task.querySelector(
-						'.woocommerce-woopayments-overview-task__body'
+						'.woocommerce-task-list__item-expandable-content'
 					)
-				).toHaveTextContent( /^Update WooPayments business details$/ );
+				).toHaveTextContent( /^Update$/ );
 			}
 		);
 
-		it( 'labels the action Update, not View details, for a complete account', async () => {
+		// Client 11.1.0 `@woocommerce/experimental` TaskItem shows a completed task as done, with no action button.
+		it( 'shows the task as done, with no Update or View details action, for a complete account', async () => {
 			await renderWithAccountStatus( { status: 'complete' } );
 
 			const task = await getTask();
 
+			expect( task ).toHaveClass( 'complete' );
 			expect(
-				within( task ).getByRole( 'button', { name: 'Update' } )
-			).toBeInTheDocument();
+				within( task ).queryByRole( 'button', { name: 'Update' } )
+			).not.toBeInTheDocument();
 			expect(
 				within( task ).queryByRole( 'button', { name: 'View details' } )
 			).not.toBeInTheDocument();

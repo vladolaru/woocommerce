@@ -438,63 +438,21 @@
 	gap: 12px;
 }
 
-.woocommerce-woopayments-overview__tasks {
-	background: #fff;
-	border: 1px solid #dcdcde;
-	border-radius: 4px;
-	padding: 20px;
-}
+// Client 11.1.0 `overview/style.scss:10-33`: dispute tasks are yellow until one is due within 72 hours.
+.woocommerce-woopayments-overview__task-list .woocommerce-task-list__item[data-key^="dispute-resolution-task"] {
+	.components-popover {
+		display: none;
+	}
 
-.woocommerce-woopayments-overview__tasks h2 {
-	margin: 0 0 16px;
-}
+	&:not([data-urgent="true"]) {
+		.gridicons-notice-outline {
+			fill: #f0b849;
+		}
 
-.woocommerce-woopayments-overview__task-list {
-	display: grid;
-	gap: 12px;
-	list-style: none;
-	margin: 0;
-	padding: 0;
-}
-
-.woocommerce-woopayments-overview-task {
-	border: 1px solid #dcdcde;
-	border-radius: 4px;
-	display: grid;
-	gap: 16px;
-	grid-template-columns: minmax(0, 1fr) auto;
-	margin: 0;
-	padding: 16px;
-}
-
-.woocommerce-woopayments-overview-task__body {
-	min-width: 0;
-}
-
-.woocommerce-woopayments-overview-task__body h3 {
-	font-size: 14px;
-	line-height: 1.4;
-	margin: 0 0 8px;
-}
-
-.woocommerce-woopayments-overview-task__body p {
-	color: #50575e;
-	margin: 0;
-	overflow-wrap: anywhere;
-}
-
-.woocommerce-woopayments-overview-task__actions {
-	align-items: center;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	justify-content: flex-end;
-}
-
-.woocommerce-woopayments-overview-task__actions .button-link,
-.woocommerce-woopayments-overview-task__actions .button-link-delete {
-	min-height: 32px;
-	padding: 0;
+		&::before {
+			background-color: #f0b849;
+		}
+	}
 }
 
 .woocommerce-woopayments-update-business-details-modal__errors {
@@ -901,14 +859,6 @@
 	.woocommerce-woopayments-overview__currency-selector {
 		align-items: flex-start;
 		flex-direction: column;
-	}
-
-	.woocommerce-woopayments-overview-task {
-		grid-template-columns: 1fr;
-	}
-
-	.woocommerce-woopayments-overview-task__actions {
-		justify-content: flex-start;
 	}
 
 	.woocommerce-woopayments-money-movement__details div {

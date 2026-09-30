@@ -253,6 +253,30 @@ describe( 'overview task builders', () => {
 		expect( task.href ).toContain( 'filter=awaiting_response' );
 	} );
 
+	// Client 11.1.0 `overview/task-list/tasks/dispute-task.tsx:83-86,110-112`: red within 72 hours, yellow before.
+	it.each( [
+		[ 'one day', DAY_IN_MS, true ],
+		[ 'five days', 5 * DAY_IN_MS, false ],
+	] )(
+		'marks the dispute task urgent only when a dispute is due within 72 hours (due in %s)',
+		( _label, dueIn, isUrgent ) => {
+			const task = buildOverviewTasks( {
+				showUpdateDetailsTask: false,
+				shell: createShell(),
+				disputes: [
+					createDispute( { evidence_due_by: NOW + dueIn } ),
+					createDispute( {
+						dispute_id: 'dp_later',
+						evidence_due_by: NOW + 6 * DAY_IN_MS,
+					} ),
+				],
+				onOpenUpdateBusinessDetails: jest.fn(),
+			} )[ 0 ];
+
+			expect( task.isUrgent ).toBe( isUrgent );
+		}
+	);
+
 	// Client 11.1.0 `overview/index.js:105` calls getTasks() without showGoLiveTask: the go-live task is a WC Home task only.
 	it( 'never builds the go-live task, even for a connected test-mode account', () => {
 		const tasks = buildOverviewTasks( {

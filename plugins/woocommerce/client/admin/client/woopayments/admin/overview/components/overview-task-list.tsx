@@ -1,9 +1,11 @@
 /**
  * External dependencies
  */
+import { Card } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import { useEffect, useMemo, useRef, useState } from '@wordpress/element';
-import { __, sprintf } from '@wordpress/i18n';
+import { __ } from '@wordpress/i18n';
+import { List, TaskItem } from '@woocommerce/experimental';
 
 /**
  * Internal dependencies
@@ -53,12 +55,22 @@ export const OverviewTaskList = ( {
 
 		shouldMoveFocusRef.current = false;
 
-		const focusTarget =
-			sectionRef.current?.querySelector< HTMLElement >(
-				'.woocommerce-woopayments-overview-task__actions a[href], .woocommerce-woopayments-overview-task__actions button:not([disabled])'
-			) ?? headingRef.current;
+		// After the task menu closes and hands focus back, and skipping the task that is animating out.
+		const view = sectionRef.current?.ownerDocument.defaultView;
+		const frame = view?.requestAnimationFrame( () => {
+			const focusTarget =
+				sectionRef.current?.querySelector< HTMLElement >(
+					'.woocommerce-task-list__item:not(.woocommerce-list__item-exit) .woocommerce-task-list__item-action:not([disabled])'
+				) ?? headingRef.current;
 
-		focusTarget?.focus();
+			focusTarget?.focus();
+		} );
+
+		return () => {
+			if ( frame !== undefined ) {
+				view?.cancelAnimationFrame( frame );
+			}
+		};
 	}, [ visibleTasks ] );
 
 	const createUndoNotice = ( message: string, undo: () => void ) => {
@@ -133,14 +145,17 @@ export const OverviewTaskList = ( {
 		return null;
 	}
 
+	// Client 11.1.0 `overview/task-list/index.js:167-213` and `overview/index.js:346-357`: no visible heading.
 	return (
-		<section
+		<Card
+			as="section"
 			ref={ sectionRef }
 			className="woocommerce-woopayments-overview__tasks"
 			aria-labelledby="woocommerce-woopayments-overview-tasks-heading"
 		>
 			<h2
 				id="woocommerce-woopayments-overview-tasks-heading"
+				className="screen-reader-text"
 				ref={ headingRef }
 				tabIndex={ -1 }
 			>
@@ -150,74 +165,37 @@ export const OverviewTaskList = ( {
 				{ announcement }
 			</p>
 			{ visibleTasks.length > 0 && (
-				<ul className="woocommerce-woopayments-overview__task-list">
+				// The client's CollapsibleList folds after five tasks; the Overview builds at most three.
+				<List className="woocommerce-woopayments-overview__task-list">
 					{ visibleTasks.map( ( task ) => (
-						<li
+						<TaskItem
 							key={ task.key }
-							className="woocommerce-woopayments-overview-task"
-						>
-							<div className="woocommerce-woopayments-overview-task__body">
-								<h3>{ task.title }</h3>
-								{ task.content && <p>{ task.content }</p> }
-								{ task.additionalInfo && (
-									<p>{ task.additionalInfo }</p>
-								) }
-							</div>
-							<div className="woocommerce-woopayments-overview-task__actions">
-								{ task.actionLabel &&
-									task.showActionButton !== false &&
-									( task.href ? (
-										<a
-											className="button button-primary"
-											href={ task.href }
-											onClick={ task.onClick }
-										>
-											{ task.actionLabel }
-										</a>
-									) : (
-										<button
-											type="button"
-											className="button button-primary"
-											onClick={ task.onClick }
-										>
-											{ task.actionLabel }
-										</button>
-									) ) }
-								{ task.showActionButton === false &&
-									task.onClick && (
-										<button
-											type="button"
-											className="button button-secondary"
-											onClick={ task.onClick }
-										>
-											{ task.title }
-										</button>
-									) }
-								{ task.allowSnooze && (
-									<button
-										type="button"
-										className="button button-link"
-										onClick={ () => snoozeTask( task ) }
-										aria-label={ sprintf(
-											/* translators: %s: Task title. */
-											__(
-												'Remind me later %s',
-												'woocommerce'
-											),
-											task.title
-										) }
-									>
-										{ __(
-											'Remind me later',
-											'woocommerce'
-										) }
-									</button>
-								) }
-								{ task.isDismissable && (
-									<button
-										type="button"
-										className="button button-link"
-										onClick={ () =>
+							data-key={ task.key }
+							data-urgent={ task.isUrgent ? 'true' : undefined }
+							title={ task.title }
+							// TaskItem renders its content as a node, though its type says string.
+							content={ task.content as string }
+							additionalInfo={
+								typeof task.additionalInfo === 'string'
+									? task.additionalInfo
+									: undefined
+							}
+							actionLabel={ task.actionLabel }
+							completed={ !! task.completed }
+							inProgress={ false }
+							inProgressLabel=""
+							level={ ( task.level ?? 3 ) as 1 | 2 | 3 }
+							expanded
+							showActionButton={ task.showActionButton !== false }
+							action={ () => {
+								task.onClick?.();
+								if ( task.href ) {
+									window.location.assign( task.href );
+								}
+							} }
+							onDismiss={
+								task.isDismissable
+									? () =>
 											dismissTask(
 												task,
 												'dismissed_todo_tasks',
@@ -227,21 +205,16 @@ export const OverviewTaskList = ( {
 													'woocommerce'
 												)
 											)
-										}
-										aria-label={ sprintf(
-											/* translators: %s: Task title. */
-											__( 'Dismiss %s', 'woocommerce' ),
-											task.title
-										) }
-									>
-										{ __( 'Dismiss', 'woocommerce' ) }
-									</button>
-								) }
-								{ task.isDeletable && (
-									<button
-										type="button"
-										className="button button-link-delete"
-										onClick={ () =>
+									: undefined
+							}
+							onSnooze={
+								task.allowSnooze
+									? () => snoozeTask( task )
+									: undefined
+							}
+							onDelete={
+								task.isDeletable && task.completed
+									? () =>
 											dismissTask(
 												task,
 												'deleted_todo_tasks',
@@ -251,21 +224,12 @@ export const OverviewTaskList = ( {
 													'woocommerce'
 												)
 											)
-										}
-										aria-label={ sprintf(
-											/* translators: %s: Task title. */
-											__( 'Delete %s', 'woocommerce' ),
-											task.title
-										) }
-									>
-										{ __( 'Delete', 'woocommerce' ) }
-									</button>
-								) }
-							</div>
-						</li>
+									: undefined
+							}
+						/>
 					) ) }
-				</ul>
+				</List>
 			) }
-		</section>
+		</Card>
 	);
 };
