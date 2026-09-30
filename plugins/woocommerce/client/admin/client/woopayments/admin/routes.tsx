@@ -10,10 +10,12 @@ import { __, sprintf } from '@wordpress/i18n';
 import { registerSettingsPaymentsProviderRoute } from '~/settings-payments/provider-routes';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 
+// Share the chunk name with the Payments settings tab in `settings-payments/index.tsx`
+// so the settings page ships once instead of in two identical chunks.
 const WooPaymentsSettingsChunk = lazy(
 	() =>
 		import(
-			/* webpackChunkName: "settings-payments-woopayments-settings" */ '../settings'
+			/* webpackChunkName: "settings-payments-woopayments" */ '../settings'
 		)
 );
 

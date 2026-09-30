@@ -237,14 +237,23 @@ describe( 'WooPayments Settings Payments routes', () => {
 		);
 	} );
 
-	it( 'loads the settings route from a dedicated settings chunk', () => {
-		const source = fs.readFileSync(
+	it( 'loads the settings route from the same chunk as the Payments settings tab', () => {
+		const chunkName = 'webpackChunkName: "settings-payments-woopayments"';
+		const routesSource = fs.readFileSync(
 			path.resolve( __dirname, '../routes.tsx' ),
 			'utf8'
 		);
+		const settingsPaymentsSource = fs.readFileSync(
+			path.resolve( __dirname, '../../../settings-payments/index.tsx' ),
+			'utf8'
+		);
 
-		expect( source ).toContain(
-			'webpackChunkName: "settings-payments-woopayments-settings"'
+		expect( routesSource ).toContain( `${ chunkName } */ '../settings'` );
+		expect( settingsPaymentsSource ).toContain(
+			`${ chunkName } */ './settings-payments-woopayments'`
+		);
+		expect( routesSource ).not.toContain(
+			'settings-payments-woopayments-settings"'
 		);
 	} );
 
