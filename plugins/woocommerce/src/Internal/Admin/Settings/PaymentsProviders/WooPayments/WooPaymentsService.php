@@ -199,13 +199,6 @@ class WooPaymentsService {
 	private ?WooPaymentsAccountService $account_service = null;
 
 	/**
-	 * Location used only while a fresh account refresh is in progress without a durable retry marker.
-	 *
-	 * @var string|null
-	 */
-	private ?string $payment_methods_projection_fallback_location = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * The native collaborators are resolved on first use: the trunk admin controllers resolve this service on every
@@ -1567,7 +1560,7 @@ class WooPaymentsService {
 
 		try {
 			if ( $this->should_use_native_onboarding_action_api() ) {
-				$response = $this->create_native_onboarding_kyc_session( $self_assessment, (array) $selected_payment_methods );
+				$response = $this->create_native_onboarding_kyc_session( $location, $self_assessment, (array) $selected_payment_methods );
 			} else {
 				// Call the WooPayments API to get the KYC session.
 				$response = $this->proxy->call_static(
@@ -1684,7 +1677,7 @@ class WooPaymentsService {
 
 		try {
 			if ( $this->should_use_native_onboarding_action_api() ) {
-				$response = $this->finalize_native_onboarding_kyc_session( $location, $source );
+				$response = $this->finalize_native_onboarding_kyc_session( $source );
 			} else {
 				// Call the WooPayments API to finalize the KYC session.
 				$response = $this->proxy->call_static(
@@ -3177,17 +3170,18 @@ class WooPaymentsService {
 	/**
 	 * Create a native embedded KYC session.
 	 *
-	 * @param array $self_assessment_data Self assessment data.
-	 * @param array $capabilities         Requested payment method capabilities.
+	 * @param string $location             Merchant country stored in the NOX profile.
+	 * @param array  $self_assessment_data Self assessment data.
+	 * @param array  $capabilities         Requested payment method capabilities.
 	 * @return array
 	 */
-	private function create_native_onboarding_kyc_session( array $self_assessment_data, array $capabilities ): array {
+	private function create_native_onboarding_kyc_session( string $location, array $self_assessment_data, array $capabilities ): array {
 		$setup_mode = $this->provider->is_in_dev_mode( $this->get_payment_gateway() ) ? 'test' : 'live';
 		$this->set_native_onboarding_test_mode( 'live' !== $setup_mode );
 
 		// Client 11.1.0 create_embedded_kyc_session() applies the picks before it calls the platform.
 		if ( ! empty( $capabilities ) ) {
-			$this->apply_native_onboarding_payment_method_picks( $capabilities );
+			$this->track_native_onboarding_picks_write( $location, $this->apply_native_onboarding_payment_method_picks( $capabilities ) );
 		}
 
 		if ( 'live' === $setup_mode ) {
@@ -3229,13 +3223,14 @@ class WooPaymentsService {
 	}
 
 	/**
-	 * Finalize a native embedded KYC session.
+	 * Finalize a native embedded KYC session, like client 11.1.0 finalize_embedded_connection(), which applies no NOX picks.
 	 *
-	 * @param string $location Merchant country stored in the NOX profile.
-	 * @param string $source   Onboarding source.
+	 * The account refresh applies them again only to heal a session-time write that did not persist.
+	 *
+	 * @param string $source Onboarding source.
 	 * @return array
 	 */
-	private function finalize_native_onboarding_kyc_session( string $location, string $source ): array {
+	private function finalize_native_onboarding_kyc_session( string $source ): array {
 		$response = $this->get_native_api_client()->finalize_onboarding_embedded_kyc(
 			$this->proxy->call_function( 'get_user_locale' ),
 			$source,
@@ -3262,11 +3257,7 @@ class WooPaymentsService {
 				'wcpay-connection-success' => '1',
 			);
 
-			if ( ! $this->persist_pending_payment_methods_projection( $location ) ) {
-				$this->payment_methods_projection_fallback_location = $location;
-			}
 			$this->refresh_native_account_after_finalization();
-			$this->payment_methods_projection_fallback_location = null;
 		}
 
 		return $response;
@@ -3425,7 +3416,27 @@ class WooPaymentsService {
 	}
 
 	/**
-	 * Persist the location of the pending payment-method projection without invalidating finalization.
+	 * Keep a heal marker only while the session-time write of the NOX picks did not persist.
+	 *
+	 * Client 11.1.0 applies the picks once, at session creation, so finalization and account refreshes apply them again only to heal
+	 * that failed write, never over a change the merchant made since.
+	 *
+	 * @param string $location  Merchant country stored in the NOX profile.
+	 * @param bool   $persisted Whether the session-time write persisted.
+	 */
+	private function track_native_onboarding_picks_write( string $location, bool $persisted ): void {
+		if ( $persisted ) {
+			$this->proxy->call_function( 'delete_option', self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
+			return;
+		}
+
+		if ( ! $this->persist_pending_payment_methods_projection( $location ) ) {
+			$this->log_payment_methods_projection_fallback_failure();
+		}
+	}
+
+	/**
+	 * Persist the location of the pending payment-method heal.
 	 *
 	 * @param string $location Merchant country stored in the NOX profile.
 	 * @return bool Whether the marker can be read back from persistent option storage.
@@ -3469,30 +3480,24 @@ class WooPaymentsService {
 	}
 
 	/**
-	 * Enable the payment methods picked in NOX onboarding, like client 11.1.0 update_enabled_payment_methods_ids():
-	 * no capability or fee check, so a pending or not-yet-priced pick stays enabled.
-	 *
-	 * The WooPay and Apple Pay / Google Pay picks are left alone: they were applied at session creation, and client
-	 * 11.1.0 finalize_embedded_connection() does not apply the picks again.
+	 * Apply the NOX picks again, to heal a session-time write that did not persist.
 	 *
 	 * @param string $location Merchant country stored in the NOX profile.
-	 * @return bool Whether the projection completed or deliberately had nothing to update.
+	 * @return bool Whether the picks persisted or there was nothing to apply.
 	 */
-	private function update_native_enabled_payment_methods_from_nox_profile( string $location ): bool {
-		$selected_payment_methods = $this->get_nox_profile_onboarding_step_data_entry(
+	private function heal_native_onboarding_payment_method_picks( string $location ): bool {
+		$picks = $this->get_nox_profile_onboarding_step_data_entry(
 			self::ONBOARDING_STEP_PAYMENT_METHODS,
 			$location,
 			'payment_methods',
 			array()
 		);
-		$picked_ids               = $this->get_native_picked_payment_method_ids( is_array( $selected_payment_methods ) ? $selected_payment_methods : array() );
-		if ( empty( $picked_ids ) ) {
+		if ( ! is_array( $picks ) || empty( $picks ) ) {
 			return true;
 		}
 
-		return $this->enable_native_payment_methods( $picked_ids );
+		return $this->apply_native_onboarding_payment_method_picks( $picks );
 	}
-
 	/**
 	 * Get the picked payment methods that have their own account capability, skipping the `woopay` and `apple_google` placeholders.
 	 *
@@ -3614,46 +3619,27 @@ class WooPaymentsService {
 	}
 
 	/**
-	 * Retry a pending onboarding payment-method projection after a successful account refresh.
+	 * Heal a session-time NOX pick write that did not persist, after a successful account refresh.
 	 *
 	 * @since 11.0.0
 	 * @param mixed $account_data Refreshed WooPayments account data.
 	 */
 	public function maybe_project_pending_onboarding_payment_methods( $account_data ): void {
-		$has_durable_marker = false;
 		try {
-			$location = $this->payment_methods_projection_fallback_location;
-			if ( null === $location ) {
-				$location           = $this->get_pending_payment_methods_projection_location();
-				$has_durable_marker = '' !== $location;
-			}
-
+			$location = $this->get_pending_payment_methods_projection_location();
 			if ( '' === $location || ! is_array( $account_data ) ) {
 				return;
 			}
 
-			if ( ! $this->update_native_enabled_payment_methods_from_nox_profile( $location ) ) {
-				if ( ! $has_durable_marker ) {
-					$this->log_payment_methods_projection_fallback_failure();
-				}
-
-				return;
-			}
-
-			if ( $has_durable_marker ) {
+			if ( $this->heal_native_onboarding_payment_method_picks( $location ) ) {
 				$this->proxy->call_function( 'delete_option', self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
 			}
 		} catch ( \Throwable $e ) {
-			if ( ! $has_durable_marker ) {
-				$this->log_payment_methods_projection_fallback_failure();
-			}
-
 			return;
 		}
 	}
-
 	/**
-	 * Log a projection failure that cannot rely on a durable retry marker.
+	 * Log a session-time pick write that did not persist and has no durable heal marker.
 	 */
 	private function log_payment_methods_projection_fallback_failure(): void {
 		try {
@@ -3663,14 +3649,13 @@ class WooPaymentsService {
 			}
 
 			$logger->error(
-				'Native WooPayments could not project selected payment methods after finalization, and no durable retry marker is available.',
+				'Native WooPayments could not save the payment methods picked in onboarding, and no durable retry marker is available.',
 				array( 'source' => 'woocommerce-woopayments-onboarding' )
 			);
 		} catch ( \Throwable $e ) {
 			return;
 		}
 	}
-
 	/**
 	 * Delete a native connected account.
 	 *

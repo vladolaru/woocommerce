@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -1308,39 +1309,19 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.1.0 update_enabled_payment_methods_ids() (includes/class-wc-payments-onboarding-service.php:1515-1537) enables
-	 * every NOX pick and skips only the `woopay` and `apple_google` placeholders (:1613-1623).
+	 * Client 11.1.0 finalize_embedded_connection() (includes/class-wc-payments-account.php:2296-2345) applies no NOX picks:
+	 * create_embedded_kyc_session() already applied them (includes/class-wc-payments-onboarding-service.php:357-371).
 	 *
-	 * @testdox Native KYC finalization enables the NOX-picked payment methods through canonical settings idempotently.
+	 * @testdox Native KYC finalization applies no NOX picks and returns the same response each time, like client 11.1.0.
 	 */
-	public function test_finish_native_onboarding_kyc_session_enables_picked_payment_methods_idempotently(): void {
-		$fresh_account  = array(
-			'account_id'        => 'acct_finalized_native',
-			'is_live'           => true,
-			'payments_enabled'  => true,
-			'details_submitted' => true,
-			'capabilities'      => array(
-				'card_payments'       => 'active',
-				'ideal_payments'      => 'active',
-				'bancontact_payments' => 'active',
-				'alipay_payments'     => 'active',
-				'eps_payments'        => 'inactive',
-			),
-			'fees'              => array(
-				'card'       => array(),
-				'ideal'      => array(),
-				'bancontact' => array(),
-				'eps'        => array(),
-			),
-		);
+	public function test_finish_native_onboarding_kyc_session_applies_no_picks_like_client(): void {
+		$fresh_account  = $this->get_native_finalize_projection_account();
 		$fixture        = $this->arrange_native_finalize_projection(
 			array( $fresh_account, $fresh_account ),
 			array(
 				'card'         => true,
 				'ideal'        => true,
-				'bancontact'   => true,
-				'alipay'       => true,
-				'eps'          => true,
+				'woopay'       => true,
 				'apple_google' => true,
 			)
 		);
@@ -1349,7 +1330,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->sut->finish_onboarding_kyc_session( 'US' );
 		$second_settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
 
-		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_project_pending_onboarding_payment_methods' ) ) );
 		$this->assertSame(
 			array(
 				'success'           => true,
@@ -1366,13 +1346,119 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			$first_response
 		);
 		$this->assertSame( 2, $fixture['api_client']->account_requests );
-		$this->assertIsArray( $first_settings );
-		$this->assertSame( array( 'card', 'ideal', 'bancontact', 'alipay', 'eps' ), $first_settings['upe_enabled_payment_method_ids'], 'Picks are enabled whatever their capability status or fee entry.' );
-		$this->assertNotContains( 'apple_pay', $first_settings['upe_enabled_payment_method_ids'] );
-		$this->assertNotContains( 'google_pay', $first_settings['upe_enabled_payment_method_ids'] );
-		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
-		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_bancontact_settings' )['enabled'] );
+		$this->assertSame( array( 'card' ), $first_settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'no', $first_settings['platform_checkout'] ?? 'no' );
+		$this->assertFalse( get_option( 'woocommerce_woocommerce_payments_ideal_settings', false ) );
 		$this->assertSame( $first_settings, $second_settings );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * Finalize and later account refresh outcomes, with or without a heal marker left by an earlier session.
+	 *
+	 * @return array<string,array{0:array<int,array<string,mixed>|\Throwable>,1:bool}>
+	 */
+	public function provide_finalize_refresh_outcomes(): array {
+		$account = $this->get_native_finalize_projection_account();
+
+		return array(
+			'finalize refresh succeeds'                 => array( array( $account, $account ), false ),
+			'finalize refresh fails'                    => array( array( new \RuntimeException( 'Temporary account refresh failure.' ), $account ), false ),
+			'earlier session left a heal marker'        => array( array( $account, $account ), true ),
+			'earlier marker and finalize refresh fails' => array( array( new \RuntimeException( 'Temporary account refresh failure.' ), $account ), true ),
+		);
+	}
+
+	/**
+	 * Client 11.1.0 applies the NOX picks when the embedded session is created (includes/class-wc-payments-onboarding-service.php:357-371)
+	 * and finalize_embedded_connection() applies none (includes/class-wc-payments-account.php:2296-2345), so a picked method the
+	 * merchant turns off in between stays off.
+	 *
+	 * @testdox A picked method the merchant turns off after session creation stays off through finalization and a later account refresh, like client 11.1.0.
+	 * @dataProvider provide_finalize_refresh_outcomes
+	 *
+	 * @param array<int,array<string,mixed>|\Throwable> $account_responses Account refresh results in request order.
+	 * @param bool                                      $stale_marker      Whether an earlier session left a heal marker.
+	 */
+	public function test_merchant_change_after_session_creation_survives_finalize_and_refresh( array $account_responses, bool $stale_marker ): void {
+		$fixture = $this->arrange_native_finalize_projection(
+			$account_responses,
+			array(
+				'card'  => true,
+				'ideal' => true,
+			)
+		);
+		if ( $stale_marker ) {
+			update_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, 'US', false );
+		}
+
+		$this->sut->get_onboarding_kyc_session( 'US' );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$this->assertSame( array( 'card', 'ideal' ), $settings['upe_enabled_payment_method_ids'], 'Session creation applies the picks.' );
+
+		// The merchant turns iDEAL off; a settings save ends in this canonical write.
+		$settings['upe_enabled_payment_method_ids'] = array( 'card' );
+		$this->assertTrue( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings )['persisted'] );
+
+		$this->assertTrue( $this->sut->finish_onboarding_kyc_session( 'US' )['success'] );
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'], 'Finalization keeps the change.' );
+
+		$fixture['account_service']->refresh_account_data();
+
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'], 'A later account refresh keeps the change.' );
+		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * Whether the heal runs in the finalization refresh or in the next account refresh.
+	 *
+	 * @return array<string,array{0:array<int,array<string,mixed>|\Throwable>,1:bool}>
+	 */
+	public function provide_heal_moments(): array {
+		$account = $this->get_native_finalize_projection_account();
+
+		return array(
+			'finalize refresh succeeds' => array( array( $account, $account ), true ),
+			'finalize refresh fails'    => array( array( new \RuntimeException( 'Temporary account refresh failure.' ), $account ), false ),
+		);
+	}
+
+	/**
+	 * The one silent failure of the session-time write: persist() reports the canonical write as not persisted and session
+	 * creation still succeeds. Only then are the picks applied again, at finalization or at the next account refresh.
+	 *
+	 * @testdox A session-time pick write that did not persist is applied at finalization or at the next account refresh.
+	 * @dataProvider provide_heal_moments
+	 *
+	 * @param array<int,array<string,mixed>|\Throwable> $account_responses  Account refresh results in request order.
+	 * @param bool                                      $healed_at_finalize Whether the finalization refresh heals the write.
+	 */
+	public function test_refused_session_pick_write_is_healed_at_finalize_or_next_refresh( array $account_responses, bool $healed_at_finalize ): void {
+		$fixture  = $this->arrange_native_finalize_projection(
+			$account_responses,
+			array(
+				'card'  => true,
+				'ideal' => true,
+			)
+		);
+		$attempts = $this->refuse_native_settings_writes_enabling( 'ideal', 1 );
+
+		$session = $this->sut->get_onboarding_kyc_session( 'US' );
+
+		$this->assertSame( 'accs_secret_finalized_native', $session['clientSecret'], 'Session creation does not surface the refused write.' );
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
+		$this->assertOptionNotAutoloaded( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
+
+		$this->sut->finish_onboarding_kyc_session( 'US' );
+		$this->assertSame( $healed_at_finalize ? array( 'card', 'ideal' ) : array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+
+		$fixture['account_service']->refresh_account_data();
+
+		$this->assertSame( 2, $attempts->count );
+		$this->assertSame( array( 'card', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
 		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
 	}
 
@@ -1419,14 +1505,14 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Client 11.1.0 update_enabled_payment_methods_ids() (includes/class-wc-payments-onboarding-service.php:1515-1537) enables
-	 * every method picked in NOX onboarding without checking capabilities or fees.
+	 * every pick without checking capabilities or fees, so the heal of a refused session-time write does not check them either.
 	 *
-	 * @testdox Native KYC finalization enables a picked method that is not active and fee-backed, like client 11.1.0.
+	 * @testdox The heal of a refused session-time pick write enables a picked method that is not active and fee-backed, like client 11.1.0.
 	 * @dataProvider provide_accounts_without_active_fee_backed_ideal
 	 *
 	 * @param array<string,mixed> $fresh_account Fresh account data.
 	 */
-	public function test_finish_native_onboarding_kyc_session_enables_picked_methods_without_capability_or_fee_check( array $fresh_account ): void {
+	public function test_heal_enables_picked_methods_without_capability_or_fee_check( array $fresh_account ): void {
 		$this->arrange_native_finalize_projection(
 			array( $fresh_account ),
 			array(
@@ -1434,46 +1520,19 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				'ideal' => true,
 			)
 		);
+		$this->refuse_native_settings_writes_enabling( 'ideal', 1 );
+		$this->sut->get_onboarding_kyc_session( 'US' );
 
-		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
-
-		$this->assertTrue( $response['success'] );
-		$this->assertSame( array( 'card', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
-		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
-		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox A deferred projection on account refresh enables a picked method that is not active and fee-backed, like client 11.1.0.
-	 * @dataProvider provide_accounts_without_active_fee_backed_ideal
-	 *
-	 * @param array<string,mixed> $fresh_account Fresh account data.
-	 */
-	public function test_account_refresh_enables_picked_methods_without_capability_or_fee_check( array $fresh_account ): void {
-		$fixture = $this->arrange_native_finalize_projection(
-			array(
-				new \RuntimeException( 'Temporary account refresh failure.' ),
-				$fresh_account,
-			),
-			array(
-				'card'  => true,
-				'ideal' => true,
-			)
-		);
 		$this->sut->finish_onboarding_kyc_session( 'US' );
-		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
-
-		$fixture['account_service']->refresh_account_data();
 
 		$this->assertSame( array( 'card', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
 		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
 	}
-
 	/**
 	 * Client 11.1.0 finalize_embedded_connection() restores the test-drive methods and runs no settings save that could drop them.
 	 *
-	 * @testdox Native KYC finalization keeps a restored test-drive method without a fee entry while projecting the NOX picks.
+	 * @testdox Native KYC finalization keeps a restored test-drive method without a fee entry next to the picks applied at session creation.
 	 */
 	public function test_finish_native_onboarding_kyc_session_keeps_restored_test_drive_method_without_fee_entry(): void {
 		$fresh_account = array(
@@ -1506,11 +1565,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			HOUR_IN_SECONDS
 		);
+		$this->sut->get_onboarding_kyc_session( 'US' );
 
 		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
 
 		$this->assertTrue( $response['success'] );
-		$this->assertSame( array( 'card', 'link', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( array( 'card', 'ideal', 'link' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
 		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 	}
@@ -1801,54 +1861,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native KYC finalization survives account refresh failure and retries payment-method projection after a later refresh.
-	 */
-	public function test_finish_native_onboarding_kyc_session_defers_payment_method_projection_after_refresh_failure(): void {
-		$fresh_account = $this->get_native_finalize_projection_account();
-		$fixture       = $this->arrange_native_finalize_projection(
-			array(
-				new \RuntimeException( 'Temporary account refresh failure.' ),
-				$fresh_account,
-			),
-			array(
-				'card'  => true,
-				'ideal' => true,
-			)
-		);
-
-		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
-
-		$this->assertSame(
-			array(
-				'success'           => true,
-				'details_submitted' => true,
-				'account_id'        => 'acct_finalized_native',
-				'mode'              => 'live',
-				'params'            => array(
-					'promo'                    => '',
-					'from'                     => WooPaymentsService::FROM_NOX_IN_CONTEXT,
-					'source'                   => WooPaymentsService::SESSION_ENTRY_DEFAULT,
-					'wcpay-connection-success' => '1',
-				),
-			),
-			$response
-		);
-		$business_verification_statuses = get_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY )['onboarding']['US']['steps'][ WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION ]['statuses'];
-		$this->assertArrayHasKey( WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, $business_verification_statuses );
-		$this->assertArrayNotHasKey( WooPaymentsService::ONBOARDING_STEP_STATUS_FAILED, $business_verification_statuses );
-		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
-		$this->assertTrue( $fixture['api_client']->pending_marker_seen, 'The pending marker must exist before the account refresh starts.' );
-		$this->assertOptionNotAutoloaded( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
-		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
-
-		$fixture['account_service']->refresh_account_data();
-
-		$this->assertSame( array( 'card', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
-		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
-		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
-	}
-
-	/**
 	 * Client 11.1.0 finalize_embedded_connection() restores the test-drive methods before, and independently of, any account refresh.
 	 *
 	 * @testdox Native KYC finalization restores test-drive methods even when the account refresh fails.
@@ -1893,7 +1905,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
 
 		$this->assertTrue( $response['success'] );
-		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
 		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
 		$this->assertSame( 'no', $settings['platform_checkout'] );
@@ -1905,36 +1917,14 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native KYC finalization projects selected methods directly when the retry marker cannot be persisted.
+	 * @testdox A refused session-time pick write is logged when no heal marker can be stored either.
 	 */
-	public function test_finish_native_onboarding_kyc_session_projects_payment_methods_when_marker_write_fails(): void {
-		$fixture = $this->arrange_native_finalize_projection(
-			array( $this->get_native_finalize_projection_account() ),
-			array(
-				'card'  => true,
-				'ideal' => true,
-			)
-		);
-		$this->mock_native_projection_marker_write_failure();
-
-		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
-
-		$this->assertTrue( $response['success'] );
-		$this->assertFalse( $fixture['api_client']->pending_marker_seen );
-		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
-		$this->assertSame( array( 'card', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
-		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
-	}
-
-	/**
-	 * @testdox Native KYC finalization logs fallback projection failure when no retry marker is durable.
-	 */
-	public function test_finish_native_onboarding_kyc_session_logs_projection_failure_without_durable_marker(): void {
+	public function test_refused_session_pick_write_is_logged_without_durable_marker(): void {
 		$logger = $this->getMockBuilder( \WC_Logger_Interface::class )->getMock();
 		$logger->expects( $this->once() )
 			->method( 'error' )
 			->with(
-				$this->stringContains( 'could not project selected payment methods' ),
+				$this->stringContains( 'could not save the payment methods picked in onboarding' ),
 				array( 'source' => 'woocommerce-woopayments-onboarding' )
 			);
 		$this->arrange_native_finalize_projection(
@@ -1947,13 +1937,13 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->mock_native_projection_marker_write_failure( $logger );
 		$this->refuse_native_settings_writes_enabling( 'ideal' );
 
+		$this->sut->get_onboarding_kyc_session( 'US' );
 		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
 
 		$this->assertTrue( $response['success'] );
 		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
 		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 	}
-
 	/**
 	 * @testdox Native KYC finalization ignores malformed NOX selections without updating settings.
 	 */
@@ -1972,52 +1962,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertFalse( get_option( 'woocommerce_woocommerce_payments_ideal_settings', false ) );
 		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox A settings failure preserves pending native payment-method projection without breaking refresh callers.
-	 * @dataProvider settings_projection_failure_provider
-	 *
-	 * @param \Throwable|null $failure Exception thrown by the first projection write, or null when the write is refused.
-	 */
-	public function test_native_payment_method_projection_retries_after_settings_failure( ?\Throwable $failure ): void {
-		$fixture         = $this->arrange_native_finalize_projection(
-			array(
-				$this->get_native_finalize_projection_account(),
-				$this->get_native_finalize_projection_account(),
-			),
-			array(
-				'card'  => true,
-				'ideal' => true,
-			)
-		);
-		$update_attempts = $this->refuse_native_settings_writes_enabling( 'ideal', 1, $failure );
-		$callbacks       = $this->get_refresh_projection_callbacks();
-		$this->assertCount( 1, $callbacks );
-		$this->assertSame( $this->sut, $callbacks[0]['callback'][0] );
-
-		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
-		$this->assertTrue( $response['success'] );
-		$this->assertSame( 1, $update_attempts->count, 'The finalization refresh should make one projection attempt.' );
-		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
-
-		$fixture['account_service']->refresh_account_data();
-
-		$this->assertSame( 2, $update_attempts->count );
-		$this->assertSame( array( 'card', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
-		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
-	}
-
-	/**
-	 * Provide settings projection failures.
-	 *
-	 * @return array<string,array{\Throwable|null}>
-	 */
-	public function settings_projection_failure_provider(): array {
-		return array(
-			'refused write' => array( null ),
-			'exception'     => array( new \RuntimeException( 'Temporary settings failure.' ) ),
-		);
 	}
 
 	/**
@@ -14308,13 +14252,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			public int $account_requests = 0;
 
 			/**
-			 * Whether the pending projection marker existed before an account request.
-			 *
-			 * @var bool
-			 */
-			public bool $pending_marker_seen = false;
-
-			/**
 			 * Extra fields the platform adds to the embedded KYC session.
 			 *
 			 * @var array<string,mixed>
@@ -14399,8 +14336,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			public function get_account( string $woocommerce_store_id = '' ): array {
 				unset( $woocommerce_store_id );
 				++$this->account_requests;
-				$this->pending_marker_seen = false !== get_option( 'woocommerce_woopayments_pending_payment_method_projection', false );
-				$response                  = array_shift( $this->account_responses );
+				$response = array_shift( $this->account_responses );
 
 				if ( $response instanceof \Throwable ) {
 					throw $response;
