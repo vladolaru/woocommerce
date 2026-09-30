@@ -357,7 +357,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			'historical front' => array( false, true, 'front', array() ),
 			'historical ajax'  => array( false, true, 'ajax', array() ),
 			'historical cli'   => array( false, true, 'cli', array() ),
-			'empty admin'      => array( false, false, 'admin', array( $settings ) ),
+			'empty admin'      => array( false, false, 'admin', array( $settings, self::CORE_ROOTS[25] ) ),
 			'empty rest'       => array( false, false, 'rest', array( $rest ) ),
 			'empty front'      => array( false, false, 'front', array() ),
 			'empty ajax'       => array( false, false, 'ajax', array() ),

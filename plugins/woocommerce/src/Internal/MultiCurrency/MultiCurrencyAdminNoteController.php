@@ -175,11 +175,14 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_admin_init(): void {
+		$is_ajax            = $this->is_ajax_request();
+		$provider_connected = ! $is_ajax && $this->is_provider_connected();
+		// Like the client, look up the stored note only for a connected provider (NoteMultiCurrencyAvailable.php:64-72).
 		$add_note_manifest = MultiCurrencyAdminNoteProjectionService::get_add_note_manifest(
-			$this->is_ajax_request(),
+			$is_ajax,
 			$this->get_wc_version(),
-			$this->is_provider_connected(),
-			$this->can_note_be_added()
+			$provider_connected,
+			$provider_connected && $this->can_note_be_added()
 		);
 
 		if ( ! $add_note_manifest['should_add'] || ! is_array( $add_note_manifest['note'] ) ) {

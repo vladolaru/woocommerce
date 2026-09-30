@@ -120,6 +120,27 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not look up the stored note when the provider is disconnected.
+	 */
+	public function test_does_not_look_up_stored_note_when_provider_is_disconnected(): void {
+		$lookups = 0;
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$sut->set_ajax_request_resolver( static fn(): bool => false );
+		$sut->set_wc_version_resolver( static fn(): string => '11.0.0' );
+		$sut->set_provider_connected_resolver( static fn(): bool => false );
+		$sut->set_note_can_be_added_resolver(
+			static function () use ( &$lookups ): bool {
+				++$lookups;
+				return true;
+			}
+		);
+
+		$sut->handle_admin_init();
+
+		$this->assertSame( 0, $lookups );
+	}
+
+	/**
 	 * @testdox Should use provider-neutral account resolver when no test override is set.
 	 */
 	public function test_uses_provider_account_resolver_when_no_override_is_set(): void {

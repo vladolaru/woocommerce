@@ -268,7 +268,8 @@ final class MultiCurrencyBootstrap {
 				'cron'  => array_merge( self::BASE, self::HISTORY ),
 			),
 			'empty'      => array(
-				'admin' => array( self::MANAGEMENT[0] ),
+				// The availability note targets stores without currencies yet (client 11.1.0 `MultiCurrency.php:380,1135-1145`).
+				'admin' => array( self::MANAGEMENT[0], MultiCurrencyAdminNoteController::class ),
 				'rest'  => array( self::MANAGEMENT[1] ),
 			),
 		);
