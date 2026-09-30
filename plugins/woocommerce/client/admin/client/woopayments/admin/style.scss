@@ -564,31 +564,6 @@
 	gap: 16px;
 }
 
-.woocommerce-woopayments-money-movement__payment-method-grid {
-	display: grid;
-	gap: 12px;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	margin: 0;
-}
-
-.woocommerce-woopayments-money-movement__payment-method-grid > div {
-	background: #f6f7f7;
-	border-radius: 4px;
-	padding: 12px;
-}
-
-.woocommerce-woopayments-money-movement__payment-method-grid dt {
-	color: #646970;
-	font-size: 12px;
-	font-weight: 600;
-	margin-bottom: 4px;
-}
-
-.woocommerce-woopayments-money-movement__payment-method-grid dd {
-	margin: 0;
-	overflow-wrap: anywhere;
-}
-
 .woocommerce-woopayments-money-movement__card-summary {
 	align-items: center;
 	display: inline-flex;
@@ -641,11 +616,6 @@
 	display: grid;
 	gap: 0;
 	margin: 0;
-}
-
-.woocommerce-woopayments-money-movement__details--plain {
-	background: transparent;
-	border: 0;
 }
 
 .woocommerce-woopayments-money-movement__details div {
@@ -755,10 +725,6 @@
 	}
 
 	.woocommerce-woopayments-money-movement__details div {
-		grid-template-columns: 1fr;
-	}
-
-	.woocommerce-woopayments-money-movement__payment-method-grid {
 		grid-template-columns: 1fr;
 	}
 

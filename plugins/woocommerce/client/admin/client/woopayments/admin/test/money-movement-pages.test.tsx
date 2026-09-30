@@ -3425,8 +3425,28 @@ describe( 'WooPayments money movement pages', () => {
 
 		const paymentMethod = screen
 			.getByRole( 'heading', { name: 'Payment method' } )
-			.closest( 'section' ) as HTMLElement;
+			.closest( '.components-card' ) as HTMLElement;
 		expect( paymentMethod ).toBeInTheDocument();
+		// Client 11.1.0 payment-method/card/index.js:107-215: two columns.
+		expect(
+			Array.from( paymentMethod.querySelectorAll( 'dl' ) ).map(
+				( column ) =>
+					Array.from( column.querySelectorAll( 'dt' ) ).map(
+						( term ) => term.textContent
+					)
+			)
+		).toEqual( [
+			[ 'Number', 'Expires', 'Type', 'ID' ],
+			[
+				'Owner',
+				'Owner email',
+				'Address',
+				'Origin',
+				'CVC check',
+				'Street check',
+				'Postal code check',
+			],
+		] );
 		expect(
 			within( paymentMethod ).getByText( '•••• 4242' )
 		).toBeInTheDocument();
@@ -3522,7 +3542,12 @@ describe( 'WooPayments money movement pages', () => {
 
 		const paymentMethod = (
 			await screen.findByRole( 'heading', { name: 'Payment method' } )
-		).closest( 'section' ) as HTMLElement;
+		).closest( '.components-card' ) as HTMLElement;
+
+		// Client 11.1.0 payment-method/card/check.js: a check the card did not run reads "Not checked".
+		expect(
+			getDetailValue( paymentMethod, 'CVC check' )
+		).toHaveTextContent( /^Not checked$/ );
 
 		// The placeholder is discoverable by role with an accessible name,
 		// which a bare aria-labelled <span> would not expose.
@@ -3590,7 +3615,7 @@ describe( 'WooPayments money movement pages', () => {
 		).toHaveAttribute( 'aria-hidden', 'true' );
 	} );
 
-	it( 'renders generic payment method details for non-card payment methods', async () => {
+	it( 'renders the base details the client shows for other supported payment methods', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_link',
 			status: 'succeeded',
@@ -3612,7 +3637,7 @@ describe( 'WooPayments money movement pages', () => {
 					name: 'Ada Lovelace',
 				},
 				payment_method_details: {
-					type: 'link',
+					type: 'affirm',
 				},
 			},
 		} );
@@ -3632,11 +3657,17 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByRole( 'heading', {
 				name: 'Payment method',
 			} )
-		).closest( 'section' ) as HTMLElement;
+		).closest( '.components-card' ) as HTMLElement;
 
-		expect( getDetailValue( paymentMethod, 'Type' ) ).toHaveTextContent(
-			'Link'
-		);
+		// Client 11.1.0 payment-method/base-payment-method-details: ID, then the owner column; no Type row.
+		expect(
+			Array.from( paymentMethod.querySelectorAll( 'dl' ) ).map(
+				( column ) =>
+					Array.from( column.querySelectorAll( 'dt' ) ).map(
+						( term ) => term.textContent
+					)
+			)
+		).toEqual( [ [ 'ID' ], [ 'Owner', 'Owner email', 'Address' ] ] );
 		expect( getDetailValue( paymentMethod, 'ID' ) ).toHaveTextContent(
 			'pm_link'
 		);
@@ -3657,6 +3688,46 @@ describe( 'WooPayments money movement pages', () => {
 		).not.toBeInTheDocument();
 		expect(
 			within( paymentMethod ).queryByText( 'CVC check' )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'shows no payment method card for a type the client does not list', async () => {
+		// Client 11.1.0 payment-method/index.js:61-71: unrecognized types render nothing.
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_link',
+			status: 'succeeded',
+			amount: 5000,
+			currency: 'usd',
+			created: 1781712000,
+			charge: {
+				id: 'ch_link',
+				payment_intent: 'pi_link',
+				balance_transaction: 'txn_link',
+				type: 'charge',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				payment_method: 'pm_link',
+				payment_method_details: { type: 'link' },
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_link&transaction_id=txn_link',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByRole( 'region', { name: 'Summary' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'heading', { name: 'Payment method' } )
 		).not.toBeInTheDocument();
 	} );
 
@@ -3708,8 +3779,20 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByRole( 'heading', {
 				name: 'Payment method',
 			} )
-		).closest( 'section' ) as HTMLElement;
+		).closest( '.components-card' ) as HTMLElement;
 
+		// Client 11.1.0 payment-method/ideal/index.js:83-140.
+		expect(
+			Array.from( paymentMethod.querySelectorAll( 'dl' ) ).map(
+				( column ) =>
+					Array.from( column.querySelectorAll( 'dt' ) ).map(
+						( term ) => term.textContent
+					)
+			)
+		).toEqual( [
+			[ 'ID', 'Bank name', 'BIC', 'IBAN' ],
+			[ 'Verified name', 'Owner', 'Owner email', 'Address' ],
+		] );
 		expect(
 			getDetailValue( paymentMethod, 'Bank name' )
 		).toHaveTextContent( 'ING' );

@@ -152,3 +152,42 @@
 		gap: 24px;
 	}
 }
+
+// Client 11.1.0 `client/style.scss:95-138`: two columns of label and value.
+.woocommerce-woopayments-payment-method-details {
+	align-items: flex-start;
+	display: flex;
+
+	@media screen and (max-width: 1023px) {
+		display: block;
+	}
+
+	&__column {
+		flex: 0 0 50%;
+		margin: 0;
+
+		> div {
+			align-items: flex-start;
+			display: flex;
+			font-size: 14px;
+			line-height: 20px;
+		}
+
+		dt {
+			color: #50575e;
+			flex: 0 0 36%;
+			padding: 4px 0;
+
+			@media screen and (max-width: 470px) {
+				flex-basis: 40%;
+			}
+		}
+
+		dd {
+			color: #2c3338;
+			margin: 0;
+			overflow-wrap: anywhere;
+			padding: 4px 0;
+		}
+	}
+}

@@ -7,6 +7,7 @@ import {
 	CardBody,
 	CardDivider,
 	CardFooter,
+	CardHeader,
 	Flex,
 } from '@wordpress/components';
 import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
@@ -444,16 +445,18 @@ const getPaymentMethodTypeLabel = ( card?: CardDetails ) => {
 	);
 };
 
+// Client 11.1.0 `payment-details/payment-method/card/check.js`.
 const getCheckLabel = ( check?: string ) => {
-	if ( check === 'pass' ) {
-		return __( 'Passed', 'woocommerce' );
+	switch ( check ) {
+		case 'pass':
+			return __( 'Passed', 'woocommerce' );
+		case 'fail':
+			return __( 'Failed', 'woocommerce' );
+		case 'unavailable':
+			return __( 'Unavailable', 'woocommerce' );
+		default:
+			return __( 'Not checked', 'woocommerce' );
 	}
-
-	if ( check === 'fail' ) {
-		return __( 'Failed', 'woocommerce' );
-	}
-
-	return __( 'Unavailable', 'woocommerce' );
 };
 
 const stripTags = ( value: string ) => value.replace( /<[^>]*>/g, '' );
@@ -1045,6 +1048,75 @@ export const WooPaymentsMissingOrderNotice = ( {
 	);
 };
 
+type PaymentMethodRow = { label: string; value: ReactNode };
+
+const PaymentMethodColumns = ( {
+	columns,
+}: {
+	columns: PaymentMethodRow[][];
+} ) => (
+	<div className="woocommerce-woopayments-payment-method-details">
+		{ columns.map( ( rows, index ) => (
+			<dl
+				key={ index }
+				className="woocommerce-woopayments-payment-method-details__column"
+			>
+				{ rows.map( ( { label, value } ) => (
+					<DetailRow key={ label } label={ label } value={ value } />
+				) ) }
+			</dl>
+		) ) }
+	</div>
+);
+
+// Client 11.1.0 `payment-details/payment-method/index.js:73-93`: a large card titled "Payment method".
+const PaymentMethodCard = ( { children }: { children: ReactNode } ) => (
+	<Card size="large">
+		<CardHeader>
+			<h2 className="woocommerce-woopayments-overview-card__title">
+				{ __( 'Payment method', 'woocommerce' ) }
+			</h2>
+		</CardHeader>
+		<CardBody>{ children }</CardBody>
+	</Card>
+);
+
+// Client 11.1.0 `payment-details/payment-method/*/index.js`: each method's two columns, `id` and `owner` standing
+// for the ID row and the Owner, Owner email and Address rows. Types missing here get no card, as in the client.
+const PAYMENT_METHOD_LAYOUTS: Record< string, [ string[], string[] ] > = {
+	affirm: [ [ 'id' ], [ 'owner' ] ],
+	afterpay_clearpay: [ [ 'id' ], [ 'owner' ] ],
+	alipay: [ [ 'id' ], [ 'owner' ] ],
+	amazon_pay: [ [ 'transaction_id', 'id' ], [ 'owner' ] ],
+	au_becs_debit: [ [ 'bsb_number', 'last4', 'id' ], [ 'owner' ] ],
+	bancontact: [
+		[ 'bank_name', 'bic', 'id' ],
+		[ 'verified_name', 'owner' ],
+	],
+	eps: [ [ 'bank', 'id', 'verified_name' ], [ 'owner' ] ],
+	giropay: [ [ 'bank_name', 'bic', 'id' ], [ 'owner' ] ],
+	grabpay: [ [ 'id' ], [ 'owner' ] ],
+	ideal: [
+		[ 'id', 'bank', 'bic', 'iban_last4' ],
+		[ 'verified_name', 'owner' ],
+	],
+	klarna: [
+		[ 'id', 'payment_method_category', 'preferred_locale' ],
+		[ 'owner' ],
+	],
+	multibanco: [ [ 'id' ], [ 'owner' ] ],
+	p24: [ [ 'bank', 'reference', 'id', 'verified_name' ], [ 'owner' ] ],
+	sepa_debit: [
+		[ 'last4', 'id' ],
+		[ 'owner', 'country' ],
+	],
+	sofort: [
+		[ 'id', 'bank_code', 'bank_name', 'bic', 'iban_last4' ],
+		[ 'verified_name', 'owner', 'country' ],
+	],
+	wechat_pay: [ [ 'id' ], [ 'owner' ] ],
+};
+
 export const WooPaymentsPaymentMethodDetailsSection = ( {
 	transaction,
 	countries = {},
@@ -1059,137 +1131,151 @@ export const WooPaymentsPaymentMethodDetailsSection = ( {
 		return null;
 	}
 
-	if ( ! isCardPaymentMethodType( method.type ) ) {
-		const methodSpecificFields =
-			nonCardPaymentMethodDetailFields[ method.type ] || [];
+	const owner: PaymentMethodRow[] = [
+		{
+			label: __( 'Owner', 'woocommerce' ),
+			value: getCustomerName( transaction ) || <Dash />,
+		},
+		{
+			label: __( 'Owner email', 'woocommerce' ),
+			value: getCustomerEmail( transaction ) || <Dash />,
+		},
+		{
+			label: __( 'Address', 'woocommerce' ),
+			value: (
+				<StackedLines
+					lines={ getAddressLines(
+						transaction.billing_details,
+						countries
+					) }
+				/>
+			),
+		},
+	];
+	const id: PaymentMethodRow = {
+		label: __( 'ID', 'woocommerce' ),
+		value: transaction.payment_method || <Dash />,
+	};
+
+	const layout = PAYMENT_METHOD_LAYOUTS[ method.type ];
+
+	if ( layout ) {
 		const methodDetails = getPaymentMethodTypedDetails( method );
+		const fields = nonCardPaymentMethodDetailFields[ method.type ] || [];
+		const toRows = ( keys: string[] ) =>
+			keys.flatMap( ( key ): PaymentMethodRow[] => {
+				if ( key === 'id' ) {
+					return [ id ];
+				}
+
+				if ( key === 'owner' ) {
+					return owner;
+				}
+
+				const field = fields.find(
+					( candidate ) => candidate.field === key
+				);
+
+				return field
+					? [
+							{
+								label: field.label,
+								value: getPaymentMethodDetailValue(
+									methodDetails,
+									field.field,
+									countries,
+									field.format
+								),
+							},
+					  ]
+					: [];
+			} );
 
 		return (
-			<section
-				className="woocommerce-woopayments-overview-card woocommerce-woopayments-money-movement__payment-method-card"
-				aria-labelledby="woocommerce-woopayments-payment-method-heading"
-			>
-				<h3 id="woocommerce-woopayments-payment-method-heading">
-					{ __( 'Payment method', 'woocommerce' ) }
-				</h3>
-				<dl className="woocommerce-woopayments-money-movement__details woocommerce-woopayments-money-movement__details--plain">
-					<DetailRow
-						label={ __( 'Type', 'woocommerce' ) }
-						value={ formatLabel( method.type ) }
-					/>
-					<DetailRow
-						label={ __( 'ID', 'woocommerce' ) }
-						value={ transaction.payment_method || <Dash /> }
-					/>
-					{ methodSpecificFields.map(
-						( { label, field, format } ) => (
-							<DetailRow
-								key={ field }
-								label={ label }
-								value={ getPaymentMethodDetailValue(
-									methodDetails,
-									field,
-									countries,
-									format
-								) }
-							/>
-						)
-					) }
-					<DetailRow
-						label={ __( 'Owner', 'woocommerce' ) }
-						value={ getCustomerName( transaction ) || <Dash /> }
-					/>
-					<DetailRow
-						label={ __( 'Owner email', 'woocommerce' ) }
-						value={ getCustomerEmail( transaction ) || <Dash /> }
-					/>
-					<DetailRow
-						label={ __( 'Address', 'woocommerce' ) }
-						value={
-							<StackedLines
-								lines={ getAddressLines(
-									transaction.billing_details,
-									countries
-								) }
-							/>
-						}
-					/>
-				</dl>
-			</section>
+			<PaymentMethodCard>
+				<PaymentMethodColumns
+					columns={ [ toRows( layout[ 0 ] ), toRows( layout[ 1 ] ) ] }
+				/>
+			</PaymentMethodCard>
 		);
 	}
 
+	if ( method.type !== 'card' && method.type !== 'card_present' ) {
+		return null;
+	}
+
+	const isCardPresent = method.type === 'card_present';
+
+	// Client 11.1.0 `payment-details/payment-method/card/index.js:107-215`.
 	return (
-		<section
-			className="woocommerce-woopayments-overview-card woocommerce-woopayments-money-movement__payment-method-card"
-			aria-labelledby="woocommerce-woopayments-payment-method-heading"
-		>
-			<h3 id="woocommerce-woopayments-payment-method-heading">
-				{ __( 'Payment method', 'woocommerce' ) }
-			</h3>
-			<dl className="woocommerce-woopayments-money-movement__payment-method-grid">
-				<DetailRow
-					label={ __( 'Number', 'woocommerce' ) }
-					value={ card?.last4 ? `•••• ${ card.last4 }` : <Dash /> }
-				/>
-				<DetailRow
-					label={ __( 'Expires', 'woocommerce' ) }
-					value={
-						card?.exp_month && card.exp_year ? (
-							`${ card.exp_month } / ${ card.exp_year }`
-						) : (
-							<Dash />
-						)
-					}
-				/>
-				<DetailRow
-					label={ __( 'Type', 'woocommerce' ) }
-					value={ getPaymentMethodTypeLabel( card ) }
-				/>
-				<DetailRow
-					label={ __( 'ID', 'woocommerce' ) }
-					value={ transaction.payment_method || <Dash /> }
-				/>
-				<DetailRow
-					label={ __( 'Owner', 'woocommerce' ) }
-					value={ getCustomerName( transaction ) || <Dash /> }
-				/>
-				<DetailRow
-					label={ __( 'Owner email', 'woocommerce' ) }
-					value={ getCustomerEmail( transaction ) || <Dash /> }
-				/>
-				<DetailRow
-					label={ __( 'Address', 'woocommerce' ) }
-					value={
-						<StackedLines
-							lines={ getAddressLines(
-								transaction.billing_details,
+		<PaymentMethodCard>
+			<PaymentMethodColumns
+				columns={ [
+					[
+						{
+							label: __( 'Number', 'woocommerce' ),
+							value: card?.last4 ? (
+								`•••• ${ card.last4 }`
+							) : (
+								<Dash />
+							),
+						},
+						{
+							label: __( 'Expires', 'woocommerce' ),
+							value:
+								card?.exp_month && card.exp_year ? (
+									`${ card.exp_month } / ${ card.exp_year }`
+								) : (
+									<Dash />
+								),
+						},
+						{
+							label: __( 'Type', 'woocommerce' ),
+							value: getPaymentMethodTypeLabel( card ),
+						},
+						id,
+					],
+					[
+						...owner,
+						{
+							label: __( 'Origin', 'woocommerce' ),
+							value: getCountryName(
+								card?.country,
 								countries
-							) }
-						/>
-					}
-				/>
-				<DetailRow
-					label={ __( 'Origin', 'woocommerce' ) }
-					value={
-						getCountryName( card?.country, countries ) || <Dash />
-					}
-				/>
-				<DetailRow
-					label={ __( 'CVC check', 'woocommerce' ) }
-					value={ getCheckLabel( card?.checks?.cvc_check ) }
-				/>
-				<DetailRow
-					label={ __( 'Street check', 'woocommerce' ) }
-					value={ getCheckLabel( card?.checks?.address_line1_check ) }
-				/>
-				<DetailRow
-					label={ __( 'Postal code check', 'woocommerce' ) }
-					value={ getCheckLabel(
-						card?.checks?.address_postal_code_check
-					) }
-				/>
-			</dl>
-		</section>
+							) || <Dash />,
+						},
+						...( isCardPresent
+							? []
+							: [
+									{
+										label: __( 'CVC check', 'woocommerce' ),
+										value: getCheckLabel(
+											card?.checks?.cvc_check
+										),
+									},
+									{
+										label: __(
+											'Street check',
+											'woocommerce'
+										),
+										value: getCheckLabel(
+											card?.checks?.address_line1_check
+										),
+									},
+									{
+										label: __(
+											'Postal code check',
+											'woocommerce'
+										),
+										value: getCheckLabel(
+											card?.checks
+												?.address_postal_code_check
+										),
+									},
+							  ] ),
+					],
+				] }
+			/>
+		</PaymentMethodCard>
 	);
 };
