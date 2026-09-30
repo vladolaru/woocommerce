@@ -236,8 +236,41 @@ class WooPaymentsExpressCheckoutService {
 	 *
 	 * @return bool
 	 */
-	private function is_payment_request_enabled(): bool {
+	public function is_payment_request_enabled(): bool {
 		return $this->account_service->is_payment_request_enabled();
+	}
+
+	/**
+	 * Tell whether Amazon Pay is enabled at any express checkout location and usable for a currency.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $currency Optional cart currency; the store currency when empty.
+	 * @return bool
+	 */
+	public function can_use_amazon_pay( string $currency = '' ): bool {
+		foreach ( array( 'product', 'cart', 'checkout' ) as $context ) {
+			if ( in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY, $this->get_enabled_methods_for_context( $context, $currency ), true ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Tell whether express checkout is available, using the guards WooPayments checks before
+	 * registering its express checkout Store API hooks: payments enabled on the account, the
+	 * gateway enabled, and Apple Pay/Google Pay or Amazon Pay usable.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function is_express_checkout_available(): bool {
+		return $this->account_service->is_gateway_enabled()
+			&& $this->account_service->has_working_account()
+			&& ( $this->is_payment_request_enabled() || $this->can_use_amazon_pay() );
 	}
 
 	/**

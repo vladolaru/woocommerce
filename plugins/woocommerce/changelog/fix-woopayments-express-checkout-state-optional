@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: Make the state optional for the 26 countries WooPayments 11.1.0 lists on native WooPayments express checkout Store API requests, with the plugin's request and registration checks.
+

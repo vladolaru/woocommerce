@@ -22,6 +22,11 @@ jest.mock( '@woocommerce/block-data', () => ( {
 	cartStore: 'wc/store/cart',
 } ) );
 
+const mockExtensionCartUpdate = jest.fn();
+jest.mock( '@woocommerce/blocks-checkout', () => ( {
+	extensionCartUpdate: ( ...args ) => mockExtensionCartUpdate( ...args ),
+} ) );
+
 const mockGetPaymentMethodData = jest.fn();
 jest.mock( '@woocommerce/settings', () => ( {
 	getPaymentMethodData: ( ...args ) => mockGetPaymentMethodData( ...args ),
@@ -1016,7 +1021,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		);
 	} );
 
-	it( 'refreshes Blocks cart data when a mutated wallet flow is canceled', async () => {
+	it( 'refreshes the Blocks UI through the refresh-ui cart update when a mutated wallet flow is canceled', async () => {
+		mockExtensionCartUpdate.mockResolvedValueOnce( {} );
 		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
 			totals: {
 				...blocksCart.totals,
@@ -1056,10 +1062,96 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			} );
 		} );
 
-		expressHandlers.cancel();
+		await act( async () => {
+			expressHandlers.cancel();
+		} );
 
 		expect( onClose ).toHaveBeenCalled();
-		expect( mockInvalidateResolutionForStore ).toHaveBeenCalled();
+		expect( mockExtensionCartUpdate ).toHaveBeenCalledTimes( 1 );
+		expect( mockExtensionCartUpdate ).toHaveBeenCalledWith( {
+			namespace: 'woopayments/express-checkout/refresh-ui',
+			data: {},
+		} );
+		expect( mockInvalidateResolutionForStore ).not.toHaveBeenCalled();
+	} );
+
+	it( 'falls back to refetching Blocks cart data when the refresh-ui cart update fails', async () => {
+		mockExtensionCartUpdate.mockRejectedValueOnce(
+			new Error( 'Unknown namespace' )
+		);
+		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
+			totals: {
+				...blocksCart.totals,
+				total_price: '5700',
+			},
+		} );
+		apiFetch.mockResolvedValueOnce( updatedCart );
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const onClose = jest.fn();
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+			onClose,
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingaddresschange ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.shippingaddresschange( {
+				name: 'Ada Lovelace',
+				address: {
+					line1: '2 Wallet Way',
+					city: 'New York',
+					state: 'NY',
+					postal_code: '10001',
+					country: 'US',
+				},
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+		} );
+
+		await act( async () => {
+			expressHandlers.cancel();
+		} );
+
+		await waitFor( () => {
+			expect( mockInvalidateResolutionForStore ).toHaveBeenCalled();
+		} );
+		expect( mockExtensionCartUpdate ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'does not send the refresh-ui cart update when a wallet flow is canceled without cart changes', async () => {
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const onClose = jest.fn();
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+			onClose,
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.cancel ).toBeDefined();
+		} );
+
+		await act( async () => {
+			expressHandlers.cancel();
+		} );
+
+		expect( onClose ).toHaveBeenCalled();
+		expect( mockExtensionCartUpdate ).not.toHaveBeenCalled();
 	} );
 
 	it( 'places the Blocks order with a confirmation token through Store API', async () => {

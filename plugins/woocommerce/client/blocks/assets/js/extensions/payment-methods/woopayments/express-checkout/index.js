@@ -4,6 +4,7 @@
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 import { getPaymentMethodData } from '@woocommerce/settings';
 import { cartStore } from '@woocommerce/block-data';
+import { extensionCartUpdate } from '@woocommerce/blocks-checkout';
 import { decodeEntities } from '@wordpress/html-entities';
 import { dispatch } from '@wordpress/data';
 import { applyFilters } from '@wordpress/hooks';
@@ -22,6 +23,7 @@ import enqueueFraudScripts from '../fraud-scripts';
 const PAYMENT_METHOD_NAME = 'woocommerce_payments';
 const EXPRESS_CHECKOUT_PAYMENT_METHOD_NAME =
 	'woocommerce_payments_express_checkout';
+const REFRESH_UI_NAMESPACE = 'woopayments/express-checkout/refresh-ui';
 const settings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
 const params = settings?.expressCheckoutParams || {};
 
@@ -990,6 +992,13 @@ const refreshBlocksCartData = () => {
 	dispatch( cartStore )?.invalidateResolutionForStore?.();
 };
 
+// Same Store API cart update WooPayments sends when a wallet flow is canceled.
+const refreshBlocksCartUi = () =>
+	extensionCartUpdate( {
+		namespace: REFRESH_UI_NAMESPACE,
+		data: {},
+	} ).catch( refreshBlocksCartData );
+
 const ExpressCheckoutContent = ( {
 	method,
 	api,
@@ -1013,15 +1022,18 @@ const ExpressCheckoutContent = ( {
 		walletMutatedCartRef.current = true;
 	}, [] );
 
-	const refreshCartAfterWalletMutation = useCallback( () => {
-		if ( ! walletMutatedCartRef.current ) {
-			return;
-		}
+	const refreshCartAfterWalletMutation = useCallback(
+		( refreshCart = refreshBlocksCartData ) => {
+			if ( ! walletMutatedCartRef.current ) {
+				return;
+			}
 
-		walletMutatedCartRef.current = false;
-		latestCartDataRef.current = null;
-		refreshBlocksCartData();
-	}, [] );
+			walletMutatedCartRef.current = false;
+			latestCartDataRef.current = null;
+			refreshCart();
+		},
+		[]
+	);
 
 	cartDataRef.current = cartData;
 
@@ -1129,7 +1141,7 @@ const ExpressCheckoutContent = ( {
 		} );
 
 		expressElementRef.current.on( 'cancel', () => {
-			refreshCartAfterWalletMutation();
+			refreshCartAfterWalletMutation( refreshBlocksCartUi );
 			onClose?.();
 		} );
 

@@ -1073,6 +1073,81 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should tell Amazon Pay usable when any express checkout location enables it and the account is eligible.
+	 */
+	public function test_can_use_amazon_pay_checks_every_location_and_eligibility(): void {
+		$eligible = array( 'ece_confirmation_tokens_disabled' => false );
+
+		$only_product = $this->create_service(
+			array(
+				'express_checkout_product_methods'  => array( 'amazon_pay' ),
+				'express_checkout_cart_methods'     => array( 'payment_request' ),
+				'express_checkout_checkout_methods' => array( 'payment_request' ),
+			),
+			true,
+			$eligible
+		);
+		$no_location  = $this->create_service( array(), true, $eligible );
+		$unavailable  = $this->create_service(
+			array(
+				'express_checkout_checkout_methods' => array( 'amazon_pay' ),
+				'upe_available_payment_methods'     => array( 'card' ),
+			),
+			true,
+			$eligible
+		);
+
+		$this->assertTrue( $only_product->can_use_amazon_pay( 'USD' ) );
+		$this->assertFalse( $only_product->can_use_amazon_pay( 'EUR' ) );
+		$this->assertFalse( $no_location->can_use_amazon_pay( 'USD' ) );
+		$this->assertFalse( $unavailable->can_use_amazon_pay( 'USD' ) );
+	}
+
+	/**
+	 * @testdox Should tell express checkout available only when the client's express checkout registration guards hold.
+	 *
+	 * @dataProvider provider_express_checkout_availability
+	 *
+	 * @param array<string,mixed> $settings     Gateway settings.
+	 * @param array<string,mixed> $account_data Account data.
+	 * @param bool                $expected     Expected availability.
+	 */
+	public function test_is_express_checkout_available( array $settings, array $account_data, bool $expected ): void {
+		$sut = $this->create_service( $settings, true, array_merge( array( 'ece_confirmation_tokens_disabled' => false ), $account_data ) );
+
+		$this->assertSame( $expected, $sut->is_express_checkout_available() );
+	}
+
+	/**
+	 * Data provider for express checkout availability.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:array<string,mixed>,2:bool}>
+	 */
+	public function provider_express_checkout_availability(): array {
+		$amazon_only = array(
+			'enabled'                           => 'yes',
+			'payment_request'                   => 'no',
+			'express_checkout_checkout_methods' => array( 'amazon_pay' ),
+		);
+
+		return array(
+			'payment request enabled'          => array( array( 'enabled' => 'yes' ), array(), true ),
+			'amazon pay usable'                => array( $amazon_only, array(), true ),
+			'gateway disabled'                 => array( array( 'enabled' => 'no' ), array(), false ),
+			'payments disabled on the account' => array( array( 'enabled' => 'yes' ), array( 'payments_enabled' => false ), false ),
+			'no usable express method'         => array(
+				array(
+					'enabled'         => 'yes',
+					'payment_request' => 'no',
+				),
+				array(),
+				false,
+			),
+			'amazon pay not eligible'          => array( $amazon_only, array( 'capabilities' => array() ), false ),
+		);
+	}
+
+	/**
 	 * @testdox Should fail closed when Amazon Pay is configured but not available on the connected account.
 	 */
 	public function test_allowed_payment_method_types_exclude_unavailable_amazon_pay(): void {
