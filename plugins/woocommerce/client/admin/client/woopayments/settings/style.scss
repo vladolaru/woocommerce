@@ -64,7 +64,6 @@
 	grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
 	gap: 24px;
 	padding: 24px 0;
-	border-top: 1px solid $gray-200;
 
 	@include breakpoint("<782px") {
 		grid-template-columns: 1fr;
@@ -95,8 +94,6 @@
 		box-sizing: border-box;
 		width: 100%;
 		padding: 24px;
-		border-radius: 2px;
-		box-shadow: none;
 	}
 }
 
