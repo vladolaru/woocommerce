@@ -26,7 +26,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		unset( $_GET['woopayments-ref'], $_GET['page'], $_GET['tab'], $_GET['path'] );
+		unset( $_GET['woopayments-ref'], $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['wcpay-connection-success'] );
 		delete_transient( 'woopayments_referral_code' );
 		delete_option( NativePaymentsState::OPTION_NAME );
 		remove_all_filters( 'wp_redirect' );
@@ -98,7 +98,33 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 
 		remove_action( 'admin_init', array( $sut, 'handle_returns_from_wpcom' ) );
 		remove_action( 'admin_init', array( $sut, 'handle_referral_link' ), 13 );
+		remove_action( 'admin_init', array( $sut, 'maybe_activate_woopay' ) );
 		remove_action( 'load-woocommerce_page_wc-settings', array( $sut, 'maybe_redirect_to_onboarding' ) );
+	}
+
+	/**
+	 * Client 11.1.0 hooks maybe_activate_woopay() on admin_init at the default priority and acts only on a page that
+	 * carries `wcpay-connection-success` (includes/class-wc-payments-account.php:121, 2231-2234).
+	 *
+	 * @testdox Should check the platform's WooPay default on admin_init only on the page that carries the connection success flag.
+	 */
+	public function test_checks_platform_woopay_default_only_on_the_connection_success_page(): void {
+		$service = $this->createMock( WooPaymentsService::class );
+		$service->expects( $this->once() )->method( 'maybe_activate_woopay_enabled_by_default' );
+		$sut = $this->create_controller( $service );
+
+		$sut->register();
+		$registered_priority = has_action( 'admin_init', array( $sut, 'maybe_activate_woopay' ) );
+		remove_action( 'admin_init', array( $sut, 'handle_returns_from_wpcom' ) );
+		remove_action( 'admin_init', array( $sut, 'handle_referral_link' ), 13 );
+		remove_action( 'admin_init', array( $sut, 'maybe_activate_woopay' ) );
+		remove_action( 'load-woocommerce_page_wc-settings', array( $sut, 'maybe_redirect_to_onboarding' ) );
+
+		$sut->maybe_activate_woopay();
+		$_GET['wcpay-connection-success'] = '1';
+		$sut->maybe_activate_woopay();
+
+		$this->assertSame( 10, $registered_priority );
 	}
 
 	/**

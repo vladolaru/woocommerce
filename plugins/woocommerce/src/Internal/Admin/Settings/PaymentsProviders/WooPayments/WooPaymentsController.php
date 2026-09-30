@@ -36,6 +36,7 @@ class WooPaymentsController {
 	public function register() {
 		add_action( 'admin_init', array( $this, 'handle_returns_from_wpcom' ) );
 		add_action( 'admin_init', array( $this, 'handle_referral_link' ), 13 );
+		add_action( 'admin_init', array( $this, 'maybe_activate_woopay' ) );
 		// Fires only when the Settings page loads, before any output.
 		add_action( 'load-woocommerce_page_wc-settings', array( $this, 'maybe_redirect_to_onboarding' ) );
 	}
@@ -79,6 +80,22 @@ class WooPaymentsController {
 	 */
 	protected function get_onboarding_redirect(): WooPaymentsOnboardingRedirect {
 		return wc_get_container()->get( WooPaymentsOnboardingRedirect::class );
+	}
+
+	/**
+	 * Turn WooPay on when the merchant lands after KYC, like client 11.1.0 WC_Payments_Account::maybe_activate_woopay().
+	 *
+	 * @since 11.2.0
+	 *
+	 * @internal
+	 */
+	public function maybe_activate_woopay(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only marks the landing page, like the plugin; the stored platform answer decides.
+		if ( ! isset( $_GET['wcpay-connection-success'] ) ) {
+			return;
+		}
+
+		$this->woopayments->maybe_activate_woopay_enabled_by_default();
 	}
 
 	/**

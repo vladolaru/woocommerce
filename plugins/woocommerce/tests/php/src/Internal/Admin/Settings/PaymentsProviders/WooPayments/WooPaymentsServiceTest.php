@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiException;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
@@ -88,6 +89,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	private const PENDING_PAYMENT_METHODS_PROJECTION_OPTION = 'woocommerce_woopayments_pending_payment_method_projection';
 
 	private const TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT = 'test_drive_account_settings_for_live_account';
+
+	private const WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT = 'woopay_enabled_by_default';
 
 	/**
 	 * Set up test.
@@ -253,6 +256,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		delete_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
 		delete_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
 		delete_transient( 'woopayments_referral_code' );
+		delete_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
+		unset( $_GET['wcpay-connection-success'] );
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
 		remove_all_filters( 'wcpay_tracks_event_properties' );
 		remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
@@ -1082,6 +1087,160 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
 		$this->assertSame( 'no', $settings['platform_checkout'] );
 		$this->assertNotContains( 'wcadmin_woopay_enabled', $fixture['recorder']->events );
+	}
+
+	/**
+	 * Platform `woopay_enabled_by_default` answers and the WooPay state the merchant lands on after KYC.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:string}>
+	 */
+	public function provide_platform_woopay_defaults(): array {
+		return array(
+			'platform asks for WooPay'         => array( array( 'woopay_enabled_by_default' => true ), 'yes' ),
+			'platform does not ask for WooPay' => array( array( 'woopay_enabled_by_default' => false ), 'no' ),
+			'platform sends no flag'           => array( array(), 'no' ),
+		);
+	}
+
+	/**
+	 * Client 11.1.0 create_embedded_kyc_session() stores the platform's `woopay_enabled_by_default` answer for a day
+	 * (includes/class-wc-payments-onboarding-service.php:396-401). finalize_embedded_connection() leaves WooPay alone
+	 * (includes/class-wc-payments-account.php:2296-2345). maybe_activate_woopay() runs on admin_init (:121) and, on the
+	 * page that carries `wcpay-connection-success`, turns WooPay on through update_is_woopay_enabled() and forgets the
+	 * answer (:2231-2247).
+	 *
+	 * @testdox The platform's WooPay default turns WooPay on when the merchant lands after KYC, like client 11.1.0.
+	 * @dataProvider provide_platform_woopay_defaults
+	 *
+	 * @param array<string,mixed> $session_extras Platform session fields.
+	 * @param string              $landed_woopay  Stored WooPay setting after the landing page.
+	 */
+	public function test_platform_woopay_default_turns_woopay_on_after_kyc_like_client( array $session_extras, string $landed_woopay ): void {
+		$this->arrange_native_finalize_projection(
+			array( $this->get_native_finalize_projection_account() ),
+			array( 'card' => true ),
+			null,
+			$session_extras
+		);
+		$recorder   = $this->record_wcpay_tracks_event_names();
+		$controller = new WooPaymentsController();
+		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
+
+		$this->sut->get_onboarding_kyc_session( 'US' );
+		$this->assertSame( 'yes' === $landed_woopay, (bool) get_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ), 'Session creation stores the platform answer.' );
+
+		$this->sut->finish_onboarding_kyc_session( 'US' );
+		$this->run_woopayments_controller_admin_init( $controller );
+		$this->assertSame( 'no', get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['platform_checkout'] ?? 'no', 'Neither finalization nor a page without the success flag turns WooPay on.' );
+
+		$_GET['wcpay-connection-success'] = '1';
+		$this->run_woopayments_controller_admin_init( $controller );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( $landed_woopay, $settings['platform_checkout'] ?? 'no' );
+		$this->assertSame( array( 'card' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertFalse( (bool) get_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ), 'A used answer is forgotten; a negative one stays falsy, as in the client.' );
+		$this->assertSame( 'yes' === $landed_woopay, in_array( 'wcadmin_woopay_enabled', $recorder->events, true ) );
+	}
+
+	/**
+	 * Client 11.1.0 maybe_activate_woopay() keeps WooPay off when Link is enabled and still forgets the answer
+	 * (includes/class-wc-payments-account.php:2238-2245; client test test_maybe_activate_woopay_does_not_enable_when_link_is_enabled).
+	 *
+	 * @testdox The platform's WooPay default leaves WooPay off when Link is enabled, like client 11.1.0.
+	 */
+	public function test_platform_woopay_default_leaves_woopay_off_when_link_is_enabled(): void {
+		$this->arrange_native_finalize_projection( array( $this->get_native_finalize_projection_account() ), array( 'card' => true ) );
+		$recorder   = $this->record_wcpay_tracks_event_names();
+		$controller = new WooPaymentsController();
+		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
+		update_option(
+			WooPaymentsSettingsService::SETTINGS_OPTION,
+			array(
+				'platform_checkout'              => 'no',
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+			)
+		);
+		set_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT, true, DAY_IN_SECONDS );
+		$_GET['wcpay-connection-success'] = '1';
+
+		$this->run_woopayments_controller_admin_init( $controller );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( 'no', $settings['platform_checkout'] );
+		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertFalse( get_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ) );
+		$this->assertNotContains( 'wcadmin_woopay_enabled', $recorder->events );
+	}
+
+	/**
+	 * While the WooPayments plugin owns the runtime, its own maybe_activate_woopay() reads the answer, so native leaves it alone.
+	 *
+	 * @testdox The platform's WooPay default is left to the WooPayments plugin while native does not own onboarding.
+	 */
+	public function test_platform_woopay_default_is_left_to_the_plugin_when_native_does_not_own_onboarding(): void {
+		$controller = new WooPaymentsController();
+		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
+		update_option(
+			WooPaymentsSettingsService::SETTINGS_OPTION,
+			array(
+				'platform_checkout'              => 'no',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+		set_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT, true, DAY_IN_SECONDS );
+		$_GET['wcpay-connection-success'] = '1';
+
+		$this->run_woopayments_controller_admin_init( $controller );
+
+		$this->assertSame( 'no', get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['platform_checkout'] );
+		$this->assertTrue( (bool) get_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ) );
+	}
+
+	/**
+	 * NOX picks at test-drive init and whether the platform's WooPay default is stored.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:bool}>
+	 */
+	public function provide_test_drive_picks_for_woopay_default(): array {
+		return array(
+			'no picks'  => array( array(), true ),
+			'NOX picks' => array(
+				array(
+					'card'   => true,
+					'woopay' => true,
+				),
+				false,
+			),
+		);
+	}
+
+	/**
+	 * Client 11.1.0 init_test_drive_account() stores the platform's WooPay default only when should_enable_woopay() agrees
+	 * (includes/class-wc-payments-onboarding-service.php:763-772). That helper returns the platform answer when no picks
+	 * were sent, and otherwise reads only a `woopay_payments` pick (:291-302), which NOX picks never carry.
+	 *
+	 * @testdox Test-drive init stores the platform's WooPay default only when no picks were sent, like client 11.1.0.
+	 * @dataProvider provide_test_drive_picks_for_woopay_default
+	 *
+	 * @param array<string,mixed> $picks         Persisted NOX payment-method picks.
+	 * @param bool                $default_saved Whether the platform answer is stored.
+	 */
+	public function test_test_drive_init_stores_platform_woopay_default_like_client( array $picks, bool $default_saved ): void {
+		$fixture = $this->arrange_native_nox_picks(
+			$picks,
+			array(
+				'platform_checkout'              => 'no',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			),
+			'no',
+			array( 'woopay_enabled_by_default' => true )
+		);
+
+		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT . '/init' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $default_saved, (bool) get_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ) );
 	}
 
 	/**
@@ -13862,13 +14021,14 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Arrange the native NOX routes that create a KYC session or a test-drive account for a store without an account.
 	 *
-	 * @param array<string,mixed> $picks           Persisted NOX payment-method picks.
-	 * @param array<string,mixed> $settings        Stored gateway settings.
-	 * @param string              $wallets_enabled Stored Apple Pay and Google Pay gateway `enabled` value.
+	 * @param array<string,mixed> $picks             Persisted NOX payment-method picks.
+	 * @param array<string,mixed> $settings          Stored gateway settings.
+	 * @param string              $wallets_enabled   Stored Apple Pay and Google Pay gateway `enabled` value.
+	 * @param array<string,mixed> $platform_response Extra fields the platform adds to its session and test-drive responses.
 	 * @return array{server:\WP_REST_Server,api_client:WooPaymentsApiClient,recorder:object}
 	 */
-	private function arrange_native_nox_picks( array $picks, array $settings, string $wallets_enabled ): array {
-		$api_client = new class() extends WooPaymentsApiClient {
+	private function arrange_native_nox_picks( array $picks, array $settings, string $wallets_enabled, array $platform_response = array() ): array {
+		$api_client = new class( $platform_response ) extends WooPaymentsApiClient {
 			/**
 			 * Enabled payment method IDs stored when the platform was called.
 			 *
@@ -13877,9 +14037,20 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			public $enabled_at_platform_call = null;
 
 			/**
-			 * Constructor.
+			 * Extra fields the platform adds to its responses.
+			 *
+			 * @var array<string,mixed>
 			 */
-			public function __construct() {}
+			private array $platform_response;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $platform_response Extra response fields.
+			 */
+			public function __construct( array $platform_response ) {
+				$this->platform_response = $platform_response;
+			}
 
 			/**
 			 * Tell whether the fake client is available.
@@ -13905,13 +14076,16 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				unset( $live_account, $site_data, $user_data, $account_data, $actioned_notes, $referral_code );
 				$this->enabled_at_platform_call = get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
 
-				return array(
-					'clientSecret'   => 'accs_secret_native',
-					'expiresAt'      => 1234567999,
-					'accountId'      => 'acct_native',
-					'isLive'         => true,
-					'accountCreated' => false,
-					'publishableKey' => 'pk_live_native',
+				return array_merge(
+					array(
+						'clientSecret'   => 'accs_secret_native',
+						'expiresAt'      => 1234567999,
+						'accountId'      => 'acct_native',
+						'isLive'         => true,
+						'accountCreated' => false,
+						'publishableKey' => 'pk_live_native',
+					),
+					$this->platform_response
 				);
 			}
 
@@ -13932,13 +14106,16 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				unset( $live_account, $return_url, $site_data, $user_data, $account_data, $actioned_notes, $collect_payout_requirements, $referral_code );
 				$this->enabled_at_platform_call = get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
 
-				return array(
-					'url'               => false,
-					'account_id'        => 'acct_native_test',
-					'is_live'           => false,
-					'publishable_key'   => 'pk_test_native',
-					'payments_enabled'  => true,
-					'details_submitted' => true,
+				return array_merge(
+					array(
+						'url'               => false,
+						'account_id'        => 'acct_native_test',
+						'is_live'           => false,
+						'publishable_key'   => 'pk_test_native',
+						'payments_enabled'  => true,
+						'details_submitted' => true,
+					),
+					$this->platform_response
 				);
 			}
 		};
@@ -13993,28 +14170,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => $wallets_enabled ) );
 		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => $wallets_enabled ) );
 
-		$recorder = new class() {
-			/**
-			 * Recorded Tracks event names.
-			 *
-			 * @var string[]
-			 */
-			public array $events = array();
-
-			/**
-			 * Record the event name and pass the properties through.
-			 *
-			 * @param mixed  $properties Event properties.
-			 * @param string $event_name Event name.
-			 * @return mixed
-			 */
-			public function record( $properties, $event_name ) {
-				$this->events[] = $event_name;
-
-				return $properties;
-			}
-		};
-		add_filter( 'wcpay_tracks_event_properties', array( $recorder, 'record' ), 10, 2 );
+		$recorder = $this->record_wcpay_tracks_event_names();
 
 		$this->sut = new WooPaymentsService();
 		$this->init_sut(
@@ -14044,6 +14200,64 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Run the admin_init callbacks the WooPayments settings controller registers, as an admin page load does.
+	 *
+	 * @param WooPaymentsController $controller Controller under test.
+	 */
+	private function run_woopayments_controller_admin_init( WooPaymentsController $controller ): void {
+		global $wp_filter;
+
+		$controller->register();
+		remove_action( 'load-woocommerce_page_wc-settings', array( $controller, 'maybe_redirect_to_onboarding' ) );
+		$callbacks = array();
+		foreach ( $wp_filter['admin_init']->callbacks as $priority => $registered_callbacks ) {
+			foreach ( $registered_callbacks as $registered_callback ) {
+				$callback = $registered_callback['function'];
+				if ( is_array( $callback ) && $controller === $callback[0] ) {
+					$callbacks[] = $callback;
+					remove_action( 'admin_init', $callback, $priority );
+				}
+			}
+		}
+
+		foreach ( $callbacks as $callback ) {
+			call_user_func( $callback );
+		}
+	}
+
+	/**
+	 * Record the names of the WooPayments Tracks events sent through the WooPay recorder.
+	 *
+	 * @return object Recorder with the event names in its `events` property.
+	 */
+	private function record_wcpay_tracks_event_names(): object {
+		$recorder = new class() {
+			/**
+			 * Recorded Tracks event names.
+			 *
+			 * @var string[]
+			 */
+			public array $events = array();
+
+			/**
+			 * Record the event name and pass the properties through.
+			 *
+			 * @param mixed  $properties Event properties.
+			 * @param string $event_name Event name.
+			 * @return mixed
+			 */
+			public function record( $properties, $event_name ) {
+				$this->events[] = $event_name;
+
+				return $properties;
+			}
+		};
+		add_filter( 'wcpay_tracks_event_properties', array( $recorder, 'record' ), 10, 2 );
+
+		return $recorder;
+	}
+
+	/**
 	 * Create a NOX onboarding step request for the US location.
 	 *
 	 * @param string $route_suffix Route below the onboarding step base.
@@ -14062,14 +14276,16 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @param array<int,array<string,mixed>|\Throwable> $account_responses Account refresh results in request order.
 	 * @param array<string,mixed>                       $selected_methods  Persisted NOX payment-method selections.
 	 * @param array<string,mixed>|null                  $finalize_response Optional provider finalize response; defaults to a live-mode success.
+	 * @param array<string,mixed>                       $session_extras    Extra fields the platform adds to the embedded KYC session.
 	 * @return array{api_client:WooPaymentsApiClient,account_service:WooPaymentsAccountService}
 	 */
 	private function arrange_native_finalize_projection(
 		array $account_responses,
 		array $selected_methods,
-		?array $finalize_response = null
+		?array $finalize_response = null,
+		array $session_extras = array()
 	): array {
-		$api_client      = new class( $account_responses, $finalize_response ) extends WooPaymentsApiClient {
+		$api_client      = new class( $account_responses, $finalize_response, $session_extras ) extends WooPaymentsApiClient {
 			/**
 			 * Account refresh results in request order.
 			 *
@@ -14099,14 +14315,50 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			public bool $pending_marker_seen = false;
 
 			/**
+			 * Extra fields the platform adds to the embedded KYC session.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $session_extras;
+
+			/**
 			 * Constructor.
 			 *
 			 * @param array<int,array<string,mixed>|\Throwable> $account_responses Account refresh results.
 			 * @param array<string,mixed>|null                  $finalize_response Provider finalize response.
+			 * @param array<string,mixed>                       $session_extras    Extra embedded KYC session fields.
 			 */
-			public function __construct( array $account_responses, ?array $finalize_response ) {
+			public function __construct( array $account_responses, ?array $finalize_response, array $session_extras ) {
 				$this->account_responses = $account_responses;
 				$this->finalize_response = $finalize_response;
+				$this->session_extras    = $session_extras;
+			}
+
+			/**
+			 * Return an embedded KYC session for the existing account.
+			 *
+			 * @param bool        $live_account   Whether the session is for a live account.
+			 * @param array       $site_data      Site data.
+			 * @param array       $user_data      User data.
+			 * @param array       $account_data   Account data.
+			 * @param array       $actioned_notes Actioned notes.
+			 * @param string|null $referral_code  Referral code.
+			 * @return array
+			 */
+			public function initialize_onboarding_embedded_kyc( bool $live_account, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
+				unset( $live_account, $site_data, $user_data, $account_data, $actioned_notes, $referral_code );
+
+				return array_merge(
+					array(
+						'clientSecret'   => 'accs_secret_finalized_native',
+						'expiresAt'      => 1234567999,
+						'accountId'      => 'acct_finalized_native',
+						'isLive'         => true,
+						'accountCreated' => false,
+						'publishableKey' => 'pk_live_finalized_native',
+					),
+					$this->session_extras
+				);
 			}
 
 			/**

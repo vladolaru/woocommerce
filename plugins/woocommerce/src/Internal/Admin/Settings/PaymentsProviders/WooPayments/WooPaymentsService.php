@@ -115,6 +115,11 @@ class WooPaymentsService {
 	private const KYC_SUBMITTED_DATE_OPTION = 'wcpay_kyc_submitted_date';
 
 	/**
+	 * The plugin's `WC_Payments_Account::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT`: the platform asked to turn WooPay on after KYC.
+	 */
+	private const WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT = 'woopay_enabled_by_default';
+
+	/**
 	 * The TTL for the onboarding lock.
 	 * This is to prevent the onboarding from being locked indefinitely in case of uncaught errors.
 	 * If the lock timestamp is older than this, we consider the lock expired and allow onboarding actions again.
@@ -3147,6 +3152,11 @@ class WooPaymentsService {
 			array()
 		);
 
+		// Client 11.1.0 init_test_drive_account() remembers the platform's WooPay default only when should_enable_woopay() agrees.
+		if ( $this->should_enable_woopay_by_default( filter_var( $response['woopay_enabled_by_default'] ?? false, FILTER_VALIDATE_BOOLEAN ), $capabilities ) ) {
+			$this->proxy->call_function( 'set_transient', self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT, true, DAY_IN_SECONDS );
+		}
+
 		$success = ! empty( $response['success'] ) || ( array_key_exists( 'url', $response ) && false === $response['url'] );
 		if ( $success ) {
 			$this->update_native_gateway_settings_after_test_account_init( $capabilities, $response );
@@ -3198,6 +3208,14 @@ class WooPaymentsService {
 			$this->array_filter_recursive( $this->get_native_onboarding_account_data( $setup_mode, $self_assessment_data, $capabilities ) ),
 			array(),
 			empty( $referral_code ) ? null : (string) $referral_code
+		);
+
+		// Client 11.1.0 create_embedded_kyc_session() remembers whether the platform wants WooPay on after KYC.
+		$this->proxy->call_function(
+			'set_transient',
+			self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT,
+			filter_var( $session['woopay_enabled_by_default'] ?? false, FILTER_VALIDATE_BOOLEAN ),
+			DAY_IN_SECONDS
 		);
 
 		if ( $this->native_response_account_created( $session ) ) {
@@ -3372,6 +3390,38 @@ class WooPaymentsService {
 		}
 
 		return $projection['persisted'];
+	}
+
+	/**
+	 * Turn WooPay on when the platform asked for it during onboarding, like client 11.1.0 WC_Payments_Account::maybe_activate_woopay().
+	 *
+	 * Runs on the admin page the merchant lands on after KYC. Link wins, so WooPay stays off when Link is enabled.
+	 *
+	 * @since 11.2.0
+	 */
+	public function maybe_activate_woopay_enabled_by_default(): void {
+		if ( ! $this->proxy->call_function( 'get_transient', self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ) || ! $this->should_use_native_onboarding_action_api() ) {
+			return;
+		}
+
+		$this->enable_native_payment_methods( array(), true );
+		$this->proxy->call_function( 'delete_transient', self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
+	}
+
+	/**
+	 * Tell whether to remember the platform's WooPay default, like client 11.1.0 should_enable_woopay(): the platform
+	 * answer when no picks were sent, otherwise the `woopay_payments` pick.
+	 *
+	 * @param bool         $default_value The platform's `woopay_enabled_by_default` answer.
+	 * @param array<mixed> $capabilities  NOX picks keyed by payment method ID.
+	 * @return bool
+	 */
+	private function should_enable_woopay_by_default( bool $default_value, array $capabilities ): bool {
+		if ( empty( $capabilities ) ) {
+			return $default_value;
+		}
+
+		return ! empty( $capabilities['woopay_payments'] );
 	}
 
 	/**
