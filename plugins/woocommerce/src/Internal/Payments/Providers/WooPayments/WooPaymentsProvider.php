@@ -137,6 +137,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsTestModeOrderEmailService::class,
 			WooPaymentsUserPreferenceFields::class,
 			WooPaymentsHomeTasks::class,
+			WooPaymentsAdminNotesController::class,
 		);
 		$connected_ajax             = array(
 			WooPaymentsAccountService::class,
