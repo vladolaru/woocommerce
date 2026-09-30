@@ -658,6 +658,11 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		$_GET             = $query; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$current_section  = isset( $query['section'] ) ? (string) $query['section'] : '';
 
+		// Core fires the settings notices only while native owns payments.
+		$arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$arbiter->invalidate();
+
 		$buffer_level = ob_get_level();
 		try {
 			$page = new \WC_Settings_Payment_Gateways();
@@ -669,6 +674,8 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 			while ( ob_get_level() > $buffer_level ) {
 				ob_end_clean();
 			}
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			$arbiter->invalidate();
 			$_GET            = $previous_get;
 			$current_section = $previous_section;
 		}

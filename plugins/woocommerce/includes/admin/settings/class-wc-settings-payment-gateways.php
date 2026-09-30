@@ -295,14 +295,27 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 		global $hide_save_button;
 		$hide_save_button = true;
 		if ( self::WOOPAYMENTS_SECTION_NAME === $section || ( self::MAIN_SECTION_NAME === $section && $this->is_woopayments_settings_route() ) ) {
-			/**
-			 * Fires WooPayments notices inside its React settings section.
-			 *
-			 * @since 11.0.0
-			 */
-			do_action( 'woocommerce_woocommerce_payments_admin_notices' );
+			$this->maybe_fire_woopayments_admin_notices();
 		}
 		echo '<div id="experimental_wc_settings_payments_' . esc_attr( $section ) . '"></div>';
+	}
+
+	/**
+	 * Fire the WooPayments settings notices above the native settings UI, as the client's admin_options() does.
+	 *
+	 * Only while native owns payments: the plugin fires this action from its own gateway settings screen.
+	 */
+	private function maybe_fire_woopayments_admin_notices(): void {
+		if ( ! wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register() ) {
+			return;
+		}
+
+		/**
+		 * Fires so notices can be added to the WooPayments settings page.
+		 *
+		 * @since 11.0.0
+		 */
+		do_action( 'woocommerce_woocommerce_payments_admin_notices' );
 	}
 
 	/**
@@ -332,6 +345,9 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 					if ( $enabled ) {
 						$gateway->settings['enabled'] = wc_string_to_bool( $enabled ) ? 'no' : 'yes';
 					}
+				}
+				if ( self::WOOPAYMENTS_SECTION_NAME === $gateway->id ) {
+					$this->maybe_fire_woopayments_admin_notices();
 				}
 				$this->run_gateway_admin_options( $gateway );
 				break;

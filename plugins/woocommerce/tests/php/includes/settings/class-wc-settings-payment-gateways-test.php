@@ -231,6 +231,138 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not fire the WooPayments settings notices on the settings route while the plugin owns payments.
+	 */
+	public function test_woopayments_settings_route_does_not_fire_admin_notices_while_plugin_owns_runtime() {
+		$this->set_runtime_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+
+		$output = $this->render_with_woopayments_notice_counter( '', array( 'path' => '/woopayments/settings' ), $fired );
+
+		$this->assertSame( 0, $fired, 'The plugin fires its own notices from its gateway settings screen, never on the core Payments page.' );
+		$this->assertStringNotContainsString( 'id="woopayments-settings-notice"', $output );
+	}
+
+	/**
+	 * @testdox Should fire the WooPayments settings notices once on the native settings route.
+	 */
+	public function test_woopayments_settings_route_fires_admin_notices_once_when_native_owns_runtime() {
+		$this->set_runtime_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+
+		$output = $this->render_with_woopayments_notice_counter( '', array( 'path' => '/woopayments/settings' ), $fired );
+
+		$this->assertSame( 1, $fired );
+		$this->assertLessThan( strpos( $output, 'id="experimental_wc_settings_payments_main"' ), strpos( $output, 'id="woopayments-settings-notice"' ), 'Notices render above the settings UI, as in the client.' );
+	}
+
+	/**
+	 * @testdox Should fire the WooPayments settings notices before the classic native settings form, as the client's admin_options() does.
+	 */
+	public function test_classic_native_woopayments_settings_fire_admin_notices_before_the_form() {
+		$this->set_runtime_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$filter_callback = static function ( $fields ) {
+			$fields['custom_extension_field'] = array(
+				'title' => 'Custom extension field',
+				'type'  => 'text',
+			);
+
+			return $fields;
+		};
+		add_filter( 'woocommerce_settings_api_form_fields_woocommerce_payments', $filter_callback );
+
+		try {
+			$output = $this->render_with_woopayments_notice_counter( WC_Settings_Payment_Gateways::WOOPAYMENTS_SECTION_NAME, array(), $fired, $this->create_woopayments_gateway_stub() );
+		} finally {
+			remove_filter( 'woocommerce_settings_api_form_fields_woocommerce_payments', $filter_callback );
+		}
+
+		$this->assertSame( 1, $fired );
+		$this->assertStringContainsString( 'id="woopayments-gateway-admin-options"', $output );
+		$this->assertLessThan( strpos( $output, 'id="woopayments-gateway-admin-options"' ), strpos( $output, 'id="woopayments-settings-notice"' ), 'Notices render above the settings form, as in the client.' );
+	}
+
+	/**
+	 * @testdox Should leave the WooPayments settings notices to the plugin's own gateway screen while the plugin owns payments.
+	 */
+	public function test_classic_plugin_woopayments_settings_do_not_fire_admin_notices_from_core() {
+		$this->set_runtime_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+
+		$output = $this->render_with_woopayments_notice_counter( WC_Settings_Payment_Gateways::WOOPAYMENTS_SECTION_NAME, array(), $fired, $this->create_woopayments_gateway_stub() );
+
+		$this->assertStringContainsString( 'id="woopayments-gateway-admin-options"', $output );
+		$this->assertSame( 0, $fired, 'The plugin gateway fires the action itself; core must not fire it a second time.' );
+	}
+
+	/**
+	 * Render the Payments settings page with a counting WooPayments notices callback attached.
+	 *
+	 * @param string                  $section Current section.
+	 * @param array<string,string>    $query   Request query args.
+	 * @param int|null                $fired   Receives the number of times the action fired.
+	 * @param WC_Payment_Gateway|null $gateway Optional gateway to expose as the only loaded gateway.
+	 * @return string
+	 */
+	private function render_with_woopayments_notice_counter( string $section, array $query, ?int &$fired, ?WC_Payment_Gateway $gateway = null ): string {
+		global $current_section;
+
+		$fired            = 0;
+		$notice_callback  = static function () use ( &$fired ) {
+			++$fired;
+			echo '<div id="woopayments-settings-notice">Notice</div>';
+		};
+		$previous_get     = $_GET; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$previous_section = $current_section;
+		$gateways         = WC()->payment_gateways();
+		$loaded_gateways  = $gateways->payment_gateways;
+		$buffer_level     = ob_get_level();
+
+		$_GET            = $query; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$current_section = $section;
+		if ( null !== $gateway ) {
+			$gateways->payment_gateways = array( $gateway );
+		}
+		add_action( 'woocommerce_woocommerce_payments_admin_notices', $notice_callback );
+
+		try {
+			$sut = new WC_Settings_Payment_Gateways();
+			ob_start();
+			$sut->output();
+
+			return (string) ob_get_clean();
+		} finally {
+			while ( ob_get_level() > $buffer_level ) {
+				ob_end_clean();
+			}
+			remove_action( 'woocommerce_woocommerce_payments_admin_notices', $notice_callback );
+			$gateways->payment_gateways = $loaded_gateways;
+			$_GET                       = $previous_get;
+			$current_section            = $previous_section;
+		}
+	}
+
+	/**
+	 * Create a WooPayments gateway stub whose settings screen marks where it renders.
+	 *
+	 * @return WC_Payment_Gateway
+	 */
+	private function create_woopayments_gateway_stub(): WC_Payment_Gateway {
+		return new class() extends WC_Payment_Gateway {
+			/**
+			 * Constructor.
+			 */
+			public function __construct() {
+				$this->id = WC_Settings_Payment_Gateways::WOOPAYMENTS_SECTION_NAME;
+			}
+
+			/**
+			 * Output a marker instead of the settings form.
+			 */
+			public function admin_options() {
+				echo '<div id="woopayments-gateway-admin-options"></div>';
+			}
+		};
+	}
+
+	/**
 	 * @testdox Should preserve classic WooPayments settings field extensions.
 	 */
 	public function test_woopayments_section_preserves_classic_settings_field_extensions() {
