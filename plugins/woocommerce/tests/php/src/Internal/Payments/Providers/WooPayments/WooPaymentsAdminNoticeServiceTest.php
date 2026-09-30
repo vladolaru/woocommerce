@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
@@ -153,6 +154,46 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'onboard', $notice['primary']['kind'] );
 			$this->assertSame( Utils::wc_payments_settings_url( '/woopayments/onboarding' ), $notice['primary']['href'] );
 		} finally {
+			delete_option( 'wcpay_test_mode_enabled_date' );
+			delete_transient( 'wcpay_test_to_live_eligible' );
+		}
+	}
+
+	/**
+	 * @testdox While the WooPayments plugin owns payments, the native notice neither shows nor touches admin notes.
+	 */
+	public function test_notice_stays_off_while_the_plugin_owns_payments(): void {
+		$now = 1700000000;
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		update_option( 'wcpay_test_mode_enabled_date', $now - 7 * DAY_IN_SECONDS, false );
+		set_transient( 'wcpay_test_to_live_eligible', '1', HOUR_IN_SECONDS );
+		$note = new Note();
+		$note->set_name( 'wc-payments-notes-test-to-live' );
+		$note->set_title( 'Existing note' );
+		$note->set_content( 'Existing note content' );
+		$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
+		$note->save();
+		$active_plugins = get_option( 'active_plugins', array() );
+		update_option( 'active_plugins', array_merge( (array) $active_plugins, array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
+		$arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$arbiter->invalidate();
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->expects( $this->never() )->method( $this->anything() );
+		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
+		$sut->init( $account );
+		$data_store = Notes::load_data_store();
+		$notes      = count( $data_store->get_notes( array( 'per_page' => 100 ) ) );
+
+		try {
+			$this->assertTrue( $arbiter->is_plugin_runtime_active() );
+			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertInstanceOf( \WP_Error::class, $sut->record_action( 'test_to_live', 'dismiss' ) );
+			$this->assertCount( 1, $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ), 'No native note may be deleted while the plugin owns payments.' );
+			$this->assertSame( $notes, count( $data_store->get_notes( array( 'per_page' => 100 ) ) ), 'No native note may be created while the plugin owns payments.' );
+		} finally {
+			update_option( 'active_plugins', $active_plugins );
+			$arbiter->invalidate();
+			Notes::delete_notes_with_name( 'wc-payments-notes-test-to-live' );
 			delete_option( 'wcpay_test_mode_enabled_date' );
 			delete_transient( 'wcpay_test_to_live_eligible' );
 		}

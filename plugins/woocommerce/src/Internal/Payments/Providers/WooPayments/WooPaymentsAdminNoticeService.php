@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use WP_Error;
 
@@ -130,7 +131,7 @@ class WooPaymentsAdminNoticeService {
 	public function get_notice_for_current_user(): ?array {
 		$this->one_and_done_live_order_ids = null;
 		$user_id                           = get_current_user_id();
-		if ( 0 === $user_id ) {
+		if ( 0 === $user_id || $this->is_plugin_owner() ) {
 			return null;
 		}
 		Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
@@ -429,6 +430,9 @@ class WooPaymentsAdminNoticeService {
 		if ( 0 === $user_id ) {
 			return new WP_Error( 'woocommerce_woopayments_notice_user_required', __( 'Sign in to change this notice.', 'woocommerce' ) );
 		}
+		if ( $this->is_plugin_owner() ) {
+			return new WP_Error( 'woocommerce_woopayments_notice_plugin_owned', __( 'The WooPayments plugin manages this notice.', 'woocommerce' ) );
+		}
 		if ( 'test_to_live' === $notice_id && 'cta' === $action ) {
 			// Client 11.1.0 test-to-live handle_cta() records without a dismissal marker: the notice clears once live.
 			\WC_Tracks::record_event( 'wcpay_test_to_live_notice_cta_clicked', array( 'path' => $this->account_service->has_live_account() ? 'switch_mode' : 'onboarding' ) );
@@ -516,5 +520,14 @@ class WooPaymentsAdminNoticeService {
 				\WC_Tracks::record_event( 'wcpay_post_kyc_activation_notice_cta_clicked', $stage_properties );
 				break;
 		}
+	}
+
+	/**
+	 * Tell whether the WooPayments plugin owns payments; it then shows its own notices, so the native ones stay off.
+	 *
+	 * @return bool
+	 */
+	private function is_plugin_owner(): bool {
+		return wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active();
 	}
 }
