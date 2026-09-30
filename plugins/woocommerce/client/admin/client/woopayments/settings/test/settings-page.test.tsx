@@ -584,7 +584,9 @@ describe( 'WooPaymentsSettingsPage', () => {
 			screen.getByRole( 'heading', { name: 'Express checkouts' } )
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'heading', { name: 'WooPay' } )
+			screen.getByText( 'WooPay', {
+				selector: '.woopayments-settings-payment-method-item__label',
+			} )
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'heading', { name: 'Transactions' } )
@@ -1879,11 +1881,19 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		const expressCheckoutsSection =
 			getSettingsSectionByName( 'Express checkouts' );
-		const headings = within( expressCheckoutsSection )
-			.getAllByRole( 'heading', { level: 4 } )
-			.map( ( heading ) => heading.textContent );
+		const labels = Array.from(
+			expressCheckoutsSection.querySelectorAll(
+				'.woopayments-settings-payment-method-item__label'
+			)
+		).map( ( label ) => label.textContent );
 
-		expect( headings ).toEqual( [
+		// Wallet names are plain labels, like the client's, not headings.
+		expect(
+			within( expressCheckoutsSection ).queryAllByRole( 'heading', {
+				level: 4,
+			} )
+		).toHaveLength( 0 );
+		expect( labels ).toEqual( [
 			'WooPay',
 			'Apple Pay',
 			'Google Pay',
@@ -1908,7 +1918,9 @@ describe( 'WooPaymentsSettingsPage', () => {
 			.getByRole( 'checkbox', { name: 'Apple Pay / Google Pay' } )
 			.closest( 'li' ) as HTMLElement;
 		expect(
-			within( paymentRequestRow ).getAllByRole( 'heading', { level: 4 } )
+			paymentRequestRow.querySelectorAll(
+				'.woopayments-settings-payment-method-item__label'
+			)
 		).toHaveLength( 2 );
 		expect(
 			within( paymentRequestRow ).getAllByRole( 'link', {

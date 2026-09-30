@@ -121,19 +121,20 @@
 	padding: 0;
 	list-style: none;
 	border-top: 1px solid $gray-100;
+
+	// The card edge closes the list, like the client's cards, so the last row has no rule of its own.
+	> .woopayments-settings-payment-method-item:last-child {
+		padding-bottom: 0;
+		border-bottom: 0;
+	}
 }
 
-// The express checkouts card has no list heading, so it drops the outer rules like the client's express checkouts card.
-.woopayments-settings-express-checkout-list {
+// A list that opens its card has no heading above it, so it also drops the top rule.
+.woopayments-settings-payment-methods-list:first-child {
 	border-top: 0;
 
 	> .woopayments-settings-payment-method-item:first-child {
 		padding-top: 0;
-	}
-
-	> .woopayments-settings-payment-method-item:last-child {
-		padding-bottom: 0;
-		border-bottom: 0;
 	}
 }
 
@@ -144,11 +145,11 @@
 
 	&__main {
 		display: grid;
-		grid-template-columns: 32px 72px minmax(0, 1fr) auto;
+		grid-template-columns: 32px 64px minmax(0, 1fr) auto;
 		gap: 16px;
 		align-items: center;
 
-		@include breakpoint("<782px") {
+		@include breakpoint("<660px") {
 			grid-template-columns: 32px minmax(0, 1fr);
 			gap: 12px;
 		}
@@ -169,7 +170,7 @@
 			grid-column: 4;
 			grid-row: 1 / span 2;
 
-			@include breakpoint("<782px") {
+			@include breakpoint("<660px") {
 				grid-column: 2;
 				grid-row: auto;
 			}
@@ -201,14 +202,14 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 48px;
-		height: 32px;
+		width: 64px;
+		height: 40px;
 		border: 1px solid $gray-200;
 		border-radius: 4px;
 		object-fit: contain;
 		background: $white;
 
-		@include breakpoint("<782px") {
+		@include breakpoint("<660px") {
 			grid-column: 2;
 			grid-row: 1;
 		}
@@ -224,7 +225,7 @@
 	&__body {
 		min-width: 0;
 
-		@include breakpoint("<782px") {
+		@include breakpoint("<660px") {
 			grid-column: 2;
 		}
 
@@ -243,7 +244,7 @@
 		min-width: max-content;
 		margin-left: 16px;
 
-		@include breakpoint("<782px") {
+		@include breakpoint("<660px") {
 			grid-column: 2;
 			justify-content: flex-start;
 			margin-top: 8px;
@@ -256,14 +257,13 @@
 		align-items: center;
 		flex-wrap: wrap;
 		gap: 6px;
+	}
 
-		h4 {
-			margin: 0;
-			color: $gray-900;
-			font-size: 14px;
-			line-height: 20px;
-			font-weight: 600;
-		}
+	&__label {
+		color: $gray-900;
+		font-size: 14px;
+		line-height: 20px;
+		font-weight: 600;
 	}
 
 	&__required {
@@ -482,7 +482,7 @@
 	&__duplicate-notice.components-notice {
 		margin: 12px 0 0 48px;
 
-		@include breakpoint("<782px") {
+		@include breakpoint("<660px") {
 			margin-left: 0;
 		}
 	}

@@ -1120,31 +1120,29 @@ const BuyNowPayLaterSettingsSection = () => {
 				</>
 			}
 		>
-			<FieldGroup title={ __( 'Installment options', 'woocommerce' ) }>
-				<WooPaymentsPaymentMethodsList
-					methodIds={ availableBuyNowPayLaterMethodIds }
-					enabledMethodIds={ enabledMethodIds }
-					statuses={
-						statuses as Record<
-							string,
-							PaymentMethodStatus | undefined
-						>
-					}
-					accountFees={ accountFees }
-					pmPromotions={ pmPromotions }
-					duplicatedPaymentMethodIds={ duplicatedPaymentMethodIds }
-					dismissedDuplicatePaymentMethodNotices={
-						dismissedDuplicatePaymentMethodNotices
-					}
-					isManualCaptureEnabled={ Boolean( isManualCaptureEnabled ) }
-					isMultiCurrencyEnabled={ isMultiCurrencyEnabled }
-					storeCurrency={ storeCurrency }
-					accountCountry={ accountCountry }
-					onEnable={ addPaymentMethod }
-					onDisable={ removePaymentMethod }
-					onDismissDuplicateNotice={ onDismissDuplicateNotice }
-				/>
-			</FieldGroup>
+			<WooPaymentsPaymentMethodsList
+				methodIds={ availableBuyNowPayLaterMethodIds }
+				enabledMethodIds={ enabledMethodIds }
+				statuses={
+					statuses as Record<
+						string,
+						PaymentMethodStatus | undefined
+					>
+				}
+				accountFees={ accountFees }
+				pmPromotions={ pmPromotions }
+				duplicatedPaymentMethodIds={ duplicatedPaymentMethodIds }
+				dismissedDuplicatePaymentMethodNotices={
+					dismissedDuplicatePaymentMethodNotices
+				}
+				isManualCaptureEnabled={ Boolean( isManualCaptureEnabled ) }
+				isMultiCurrencyEnabled={ isMultiCurrencyEnabled }
+				storeCurrency={ storeCurrency }
+				accountCountry={ accountCountry }
+				onEnable={ addPaymentMethod }
+				onDisable={ removePaymentMethod }
+				onDismissDuplicateNotice={ onDismissDuplicateNotice }
+			/>
 		</SettingsSection>
 	);
 };
@@ -1446,7 +1444,9 @@ const ExpressCheckoutSettingsSection = () => {
 									/>
 									<div className="woopayments-settings-payment-method-item__body">
 										<div className="woopayments-settings-payment-method-item__heading">
-											<h4>{ item.label }</h4>
+											<span className="woopayments-settings-payment-method-item__label">
+												{ item.label }
+											</span>
 										</div>
 										<p>{ item.description }</p>
 									</div>

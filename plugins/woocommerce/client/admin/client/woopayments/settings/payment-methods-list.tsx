@@ -1358,7 +1358,9 @@ const PaymentMethodRow = ( {
 				<PaymentMethodIcon definition={ definition } />
 				<div className="woopayments-settings-payment-method-item__body">
 					<div className="woopayments-settings-payment-method-item__heading">
-						<h4>{ definition.label }</h4>
+						<span className="woopayments-settings-payment-method-item__label">
+							{ definition.label }
+						</span>
 						{ isLocked && (
 							<span className="woopayments-settings-payment-method-item__required">
 								{ __( '(Required)', 'woocommerce' ) }
