@@ -779,8 +779,9 @@ class WooPaymentsProviderGatewayAdapter {
 			$result,
 			$is_recurring,
 			array(
+				// Plugin 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
 				'_wcpay_intent_currency' => (string) $order->get_currency(),
-				'_wcpay_mode'            => $this->account_service->get_mode(),
+				'_wcpay_mode'            => $this->account_service->get_order_mode(),
 			)
 		);
 
@@ -990,7 +991,7 @@ class WooPaymentsProviderGatewayAdapter {
 				PaymentOutcome::DATA_META             => WooPaymentsOrderEffects::completed_capture_meta(
 					$result,
 					(string) $order->get_currency(),
-					$this->account_service->get_mode(),
+					$this->account_service->get_order_mode(),
 					$settlement_meta,
 					'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true )
 				),

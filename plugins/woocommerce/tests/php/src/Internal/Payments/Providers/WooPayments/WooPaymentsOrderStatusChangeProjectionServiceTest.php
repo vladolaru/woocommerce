@@ -218,13 +218,14 @@ class WooPaymentsOrderStatusChangeProjectionServiceTest extends WC_Unit_Test_Cas
 	 */
 	public function charge_projection_mode_provider(): array {
 		return array(
-			'legacy order in live mode'      => array( null, false, 'ch_mode_matched' ),
-			'legacy order in test mode'      => array( null, true, 'ch_mode_matched' ),
-			'live order in live mode'        => array( 'live', false, 'ch_mode_matched' ),
-			'plugin live order in live mode' => array( 'prod', false, 'ch_mode_matched' ),
-			'test order in test mode'        => array( 'test', true, 'ch_mode_matched' ),
-			'test order in live mode'        => array( 'test', false, '' ),
-			'live order in test mode'        => array( 'live', true, '' ),
+			'legacy order in live mode' => array( null, false, 'ch_mode_matched' ),
+			'legacy order in test mode' => array( null, true, 'ch_mode_matched' ),
+			'live order in live mode'   => array( 'prod', false, 'ch_mode_matched' ),
+			'test order in test mode'   => array( 'test', true, 'ch_mode_matched' ),
+			'test order in live mode'   => array( 'test', false, '' ),
+			'live order in test mode'   => array( 'prod', true, '' ),
+			// Plugin 11.1.0 `orderTestModeMatch` accepts only `Order_Mode` values (class-wc-payments-admin.php:855-866).
+			'account-mode live value'   => array( 'live', false, '' ),
 		);
 	}
 

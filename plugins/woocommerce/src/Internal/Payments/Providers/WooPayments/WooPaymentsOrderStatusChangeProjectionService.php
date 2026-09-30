@@ -126,7 +126,7 @@ class WooPaymentsOrderStatusChangeProjectionService {
 			'refunded_amount'           => (float) $order->get_total_refunded(),
 			'charge_id'                 => $this->get_charge_id_for_active_mode( $order ),
 			'has_open_authorization'    => 'requires_capture' === $order->get_meta( '_intention_status', true ),
-			'test_mode'                 => 'test' === $order->get_meta( '_wcpay_mode', true ),
+			'test_mode'                 => WooPaymentsOrderMode::TEST === $order->get_meta( '_wcpay_mode', true ),
 			'disable_manual_refunds'    => 'failed' !== $order->get_meta( '_wcpay_refund_status', true ),
 			// Plugin 11.1.0 localizes `shouldUseExplicitPrice` for the disputed order notice's amount.
 			'should_use_explicit_price' => MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price(),
@@ -136,7 +136,7 @@ class WooPaymentsOrderStatusChangeProjectionService {
 	/**
 	 * Get the provider charge ID when the order belongs to the active account mode.
 	 *
-	 * Orders created before WooPayments persisted `_wcpay_mode` are treated as compatible, matching the legacy client. The plugin's historical `prod` value maps to native `live`; malformed metadata and explicit cross-mode orders fail closed so the browser never reads or displays a charge from the wrong account mode.
+	 * Orders created before WooPayments persisted `_wcpay_mode` are treated as compatible, matching the legacy client. Otherwise the stored value must equal the current order mode, as plugin 11.1.0 computes `orderTestModeMatch` (class-wc-payments-admin.php:855-866); malformed metadata and explicit cross-mode orders fail closed so the browser never reads or displays a charge from the wrong account mode.
 	 *
 	 * @param WC_Order $order Order being edited.
 	 * @return string Provider charge ID, or an empty string when it must not be read.
@@ -151,11 +151,8 @@ class WooPaymentsOrderStatusChangeProjectionService {
 
 		$charge_id  = trim( (string) $charge_id );
 		$order_mode = trim( (string) $order_mode );
-		if ( 'prod' === $order_mode ) {
-			$order_mode = 'live';
-		}
 
-		if ( '' === $charge_id || ( '' !== $order_mode && $order_mode !== $this->account_service->get_mode() ) ) {
+		if ( '' === $charge_id || ( '' !== $order_mode && $order_mode !== $this->account_service->get_order_mode() ) ) {
 			return '';
 		}
 

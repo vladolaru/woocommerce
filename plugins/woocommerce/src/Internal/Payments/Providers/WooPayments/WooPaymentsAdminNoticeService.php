@@ -171,7 +171,7 @@ class WooPaymentsAdminNoticeService {
 					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 					'meta_key'       => '_wcpay_mode',
 					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-					'meta_value'     => 'test',
+					'meta_value'     => WooPaymentsOrderMode::TEST,
 				)
 			);
 			if ( empty( $orders ) ) {
@@ -311,6 +311,8 @@ class WooPaymentsAdminNoticeService {
 	/**
 	 * Query a bounded set of paid live WooPayments order IDs.
 	 *
+	 * Plugin 11.1.0 one-and-done notice Q1 matches `_wcpay_mode = Order_Mode::PRODUCTION` (admin/attach-rate/class-wc-payments-one-and-done-notice.php:169-180).
+	 *
 	 * @param int $limit Maximum IDs to return.
 	 * @return int[]
 	 */
@@ -330,7 +332,7 @@ class WooPaymentsAdminNoticeService {
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 				'meta_key'       => '_wcpay_mode',
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-				'meta_value'     => 'production',
+				'meta_value'     => WooPaymentsOrderMode::PRODUCTION,
 			)
 		);
 
@@ -375,45 +377,10 @@ class WooPaymentsAdminNoticeService {
 
 		if ( false === get_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT ) ) {
 			$share_one_and_done_query = false === get_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT ) && $this->can_consider_one_and_done( $user_id, $now );
-			/**
-			 * Order IDs returned by the ID-only query.
-			 *
-			 * @var int[] $orders
-			 */
-			$orders = $share_one_and_done_query
-				? $this->query_live_woopayments_order_ids( 2 )
-				: wc_get_orders(
-					array(
-						'payment_method' => OrderPaymentStore::GATEWAY_ID,
-						'limit'          => 1,
-						'orderby'        => 'none',
-						'return'         => 'ids',
-						'status'         => array( OrderInternalStatus::COMPLETED, OrderInternalStatus::PROCESSING ),
-						// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-						'meta_key'       => '_wcpay_mode',
-						// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-						'meta_value'     => array( 'production', 'prod', 'live' ),
-						'meta_compare'   => 'IN',
-					)
-				);
+			// Plugin 11.1.0 `WC_Payments_Order_Service::has_live_sale()` (class-wc-payments-order-service.php:361-381), read by the post-KYC notice (class-wc-payments-post-kyc-activation-notice.php:206).
+			$orders = $this->query_live_woopayments_order_ids( $share_one_and_done_query ? 2 : 1 );
 			if ( $share_one_and_done_query ) {
 				$this->one_and_done_live_order_ids = $orders;
-				if ( empty( $orders ) ) {
-					$orders = wc_get_orders(
-						array(
-							'payment_method' => OrderPaymentStore::GATEWAY_ID,
-							'limit'          => 1,
-							'orderby'        => 'none',
-							'return'         => 'ids',
-							'status'         => array( OrderInternalStatus::COMPLETED, OrderInternalStatus::PROCESSING ),
-							// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-							'meta_key'       => '_wcpay_mode',
-							// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-							'meta_value'     => array( 'prod', 'live' ),
-							'meta_compare'   => 'IN',
-						)
-					);
-				}
 			}
 			if ( ! empty( $orders ) ) {
 				update_option( 'wcpay_has_live_sale', '1', true );

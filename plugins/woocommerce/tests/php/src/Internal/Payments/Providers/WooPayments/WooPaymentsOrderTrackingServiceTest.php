@@ -401,23 +401,22 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should accept plugin and native production mode values while tracking live orders.
+	 * @testdox Should track a live order and send the client's `prod` order mode to the platform.
 	 *
-	 * @dataProvider production_mode_provider
-	 *
-	 * @param string $order_mode Persisted order mode.
+	 * Plugin 11.1.0 posts the stored `_wcpay_mode` after matching it with `Order_Mode::PRODUCTION` (class-wc-payments-action-scheduler-service.php:171-190).
 	 */
-	public function test_track_order_accepts_production_mode_aliases( string $order_mode ): void {
+	public function test_track_order_sends_prod_mode_for_live_orders(): void {
 		$order      = $this->create_order(
 			OrderPaymentStore::GATEWAY_ID,
 			array(
 				'_payment_method_id' => 'pm_123',
-				'_wcpay_mode'        => $order_mode,
+				'_wcpay_mode'        => 'prod',
 			)
 		);
 		$api_client = $this->create_api_client();
 		$api_client->expects( $this->once() )
 			->method( 'track_order' )
+			->with( $this->callback( static fn( array $order_data ): bool => 'prod' === $order_data['_wcpay_mode'] ) )
 			->willReturn( array( 'result' => 'success' ) );
 		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
 
@@ -425,15 +424,23 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide production order mode aliases.
+	 * @testdox Should skip a live-mode order stored with the account-mode `live` slug, like the client.
 	 *
-	 * @return array<string,array{string}>
+	 * Plugin 11.1.0 treats any value other than the current `Order_Mode` as a mode mismatch (class-wc-payments-action-scheduler-service.php:173-179).
 	 */
-	public function production_mode_provider(): array {
-		return array(
-			'plugin production mode' => array( 'prod' ),
-			'native live mode'       => array( 'live' ),
+	public function test_track_order_skips_account_mode_live_value(): void {
+		$order      = $this->create_order(
+			OrderPaymentStore::GATEWAY_ID,
+			array(
+				'_payment_method_id' => 'pm_123',
+				'_wcpay_mode'        => 'live',
+			)
 		);
+		$api_client = $this->create_api_client();
+		$api_client->expects( $this->never() )->method( 'track_order' );
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
+
+		$this->assertFalse( $service->track_new_order_action( $order->get_id() ) );
 	}
 
 	/**

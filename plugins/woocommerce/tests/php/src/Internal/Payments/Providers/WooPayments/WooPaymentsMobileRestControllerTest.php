@@ -1035,6 +1035,42 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( $order->get_meta( '_wcpay_payment_method_details', true ), $order->get_meta( '_wcpay_raw_payment_method_details', true ) );
 		$this->assertStringContainsString( '/wc/v3/payments/readers/receipts/pi_terminal', (string) $order->get_meta( 'receipt_url', true ) );
+		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
+		// Plugin 11.1.0 stores the intent model's uppercased currency (class-wc-rest-payments-orders-controller.php:215, class-wc-payments-api-payment-intention.php:93).
+		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ) );
+	}
+
+	/**
+	 * @testdox Terminal capture on a live account stores the client's live order mode.
+	 *
+	 * Plugin 11.1.0 stores `Order_Mode::PRODUCTION` (`prod`), not the account mode `live` (class-order-mode.php:21).
+	 */
+	public function test_capture_terminal_payment_on_live_account_stores_prod_order_mode(): void {
+		$this->sut                                    = $this->create_controller( true, false );
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal_live',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_live' ) ) ),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal_live',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_live' ) ) ),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_live' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 'prod', $order->get_meta( '_wcpay_mode', true ) );
 	}
 
 	/**
@@ -1571,9 +1607,10 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Create a native mobile REST controller.
 	 *
 	 * @param bool $native_register Whether native should own route registration.
+	 * @param bool $test_mode       Whether the account runs in test mode.
 	 * @return WooPaymentsMobileRestController
 	 */
-	private function create_controller( bool $native_register ): WooPaymentsMobileRestController {
+	private function create_controller( bool $native_register, bool $test_mode = true ): WooPaymentsMobileRestController {
 		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_native_register' ) )
@@ -1584,7 +1621,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'refresh_account_data' ) )
 			->getMock();
-		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account_service->method( 'refresh_account_data' )->willReturnCallback(
 			function (): array {
 				++$this->account_refresh_calls;
@@ -1592,7 +1629,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 				return array();
 			}
 		);
-		$account_service->method( 'get_mode' )->willReturn( 'test' );
+		$account_service->method( 'get_mode' )->willReturn( $test_mode ? 'test' : 'live' );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			function ( string $key, $fallback = null ) {
 				return array_key_exists( $key, $this->gateway_settings ) ? $this->gateway_settings[ $key ] : $fallback;

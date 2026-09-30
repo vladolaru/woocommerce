@@ -196,20 +196,21 @@ class WooPaymentsOrderEffects {
 	 *
 	 * @param array<string,mixed>  $intent              Native PaymentIntent response.
 	 * @param string               $order_currency      Order currency.
-	 * @param string               $account_mode        WooPayments account mode.
+	 * @param string               $order_mode          `_wcpay_mode` value, one of WooPaymentsOrderMode.
 	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
 	 * @param bool                 $was_held_for_review Whether the order was held for fraud review before completing.
 	 * @return array<string,string>
 	 */
-	public static function payment_intent_meta( array $intent, string $order_currency, string $account_mode, array $settlement_meta = array(), bool $was_held_for_review = false ): array {
+	public static function payment_intent_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false ): array {
 		$status                 = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 		$charge                 = self::latest_charge( $intent );
 		$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
 		$balance_transaction_id = self::balance_transaction_id( $charge['balance_transaction'] ?? null );
 		$intent_currency        = isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency;
 		$meta                   = array(
+			// Plugin 11.1.0 stores the intent model's currency, which its constructor uppercases (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361,1414).
 			'_wcpay_intent_currency'        => strtoupper( $intent_currency ),
-			'_wcpay_mode'                   => $account_mode,
+			'_wcpay_mode'                   => $order_mode,
 			'_wcpay_payment_transaction_id' => $balance_transaction_id,
 		);
 
@@ -342,14 +343,17 @@ class WooPaymentsOrderEffects {
 	/**
 	 * Get legacy-compatible order metadata for a started PaymentIntent.
 	 *
+	 * Plugin 11.1.0 stores the payment intent's own currency, uppercased by its intent model, before the payment succeeds (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361).
+	 * The order currency is only a fallback.
+	 *
 	 * @param array<string,mixed> $intent         Native PaymentIntent response.
-	 * @param string              $order_currency Order currency.
+	 * @param string              $order_currency Order currency, used when the intent carries none.
 	 * @return array<string,string>
 	 */
 	public static function started_payment_meta( array $intent, string $order_currency ): array {
 		return array(
 			'_intention_status'             => isset( $intent['status'] ) ? (string) $intent['status'] : 'requires_action',
-			'_wcpay_intent_currency'        => $order_currency,
+			'_wcpay_intent_currency'        => strtoupper( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
 			'_wcpay_payment_transaction_id' => '',
 			'_wcpay_fraud_meta_box_type'    => self::is_card_intent( $intent ) ? 'payment_started' : 'not_card',
 		);
@@ -360,20 +364,21 @@ class WooPaymentsOrderEffects {
 	 *
 	 * @param array<string,mixed>  $intent              Native PaymentIntent response.
 	 * @param string               $order_currency      Order currency.
-	 * @param string               $account_mode        WooPayments account mode.
+	 * @param string               $order_mode          `_wcpay_mode` value, one of WooPaymentsOrderMode.
 	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
 	 * @param bool                 $was_held_for_review Whether the order's stored fraud outcome is review.
 	 * @return array<string,string>
 	 */
-	public static function completed_capture_meta( array $intent, string $order_currency, string $account_mode, array $settlement_meta = array(), bool $was_held_for_review = false ): array {
+	public static function completed_capture_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false ): array {
 		$charge = self::latest_charge( $intent );
 		if ( empty( $charge ) ) {
 			return array();
 		}
 
 		$meta      = array(
-			'_wcpay_intent_currency' => strtolower( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
-			'_wcpay_mode'            => $account_mode,
+			// Plugin 11.1.0 capture keeps the uppercase value its authorization stored (class-wc-payments-api-payment-intention.php:93); only the webhook writes Stripe's lowercase.
+			'_wcpay_intent_currency' => strtoupper( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
+			'_wcpay_mode'            => $order_mode,
 		);
 		$charge_id = isset( $charge['id'] ) ? (string) $charge['id'] : '';
 		if ( '' !== $charge_id ) {

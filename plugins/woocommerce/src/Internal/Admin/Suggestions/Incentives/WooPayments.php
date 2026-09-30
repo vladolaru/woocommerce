@@ -8,6 +8,7 @@ defined( 'ABSPATH' ) || exit;
 use Automattic\WooCommerce\Admin\WCAdminHelper;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use WC_Abstract_Order;
 
 /**
@@ -321,7 +322,7 @@ class WooPayments extends Incentive {
 					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 					'meta_key'       => '_wcpay_mode',
 					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-					'meta_value'     => 'prod',
+					'meta_value'     => WooPaymentsOrderMode::PRODUCTION,
 				)
 			)
 		) ) {

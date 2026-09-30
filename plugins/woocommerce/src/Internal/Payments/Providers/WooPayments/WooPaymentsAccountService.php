@@ -1245,6 +1245,17 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the `_wcpay_mode` order meta value for the current mode.
+	 *
+	 * Plugin 11.1.0 writes `Order_Mode::TEST` or `Order_Mode::PRODUCTION` (`prod`), not the account mode (class-wc-payment-gateway-wcpay.php:1677).
+	 *
+	 * @return string One of the WooPaymentsOrderMode values.
+	 */
+	public function get_order_mode(): string {
+		return 'test' === $this->get_mode() ? WooPaymentsOrderMode::TEST : WooPaymentsOrderMode::PRODUCTION;
+	}
+
+	/**
 	 * Get a persisted WooPayments gateway setting.
 	 *
 	 * @param string $key      Setting key.

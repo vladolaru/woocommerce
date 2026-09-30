@@ -350,7 +350,7 @@ async function expectConnectedNativeStore(
 async function createWooPaymentsOrder(
 	restApi: ApiClient,
 	runId: string,
-	mode: 'test' | 'live' | null
+	mode: 'test' | 'prod' | null
 ): Promise< number > {
 	const metaData = [ { key: RUN_META_KEY, value: runId } ];
 	if ( mode ) {
@@ -417,7 +417,7 @@ async function withRoutedPaymentsReads(
  */
 async function withRunOwnedOrders(
 	restApi: ApiClient,
-	modes: Array< 'test' | 'live' | null >,
+	modes: Array< 'test' | 'prod' | null >,
 	exercise: ( orderIds: number[] ) => Promise< void >
 ): Promise< void > {
 	const runId = randomUUID();
@@ -487,7 +487,7 @@ test(
 		await test.step( 'Order edit screen', async () => {
 			await withRunOwnedOrders(
 				restApi,
-				[ 'test', 'live', null ],
+				[ 'test', 'prod', null ],
 				async ( [ testOrderId, liveOrderId, unmarkedOrderId ] ) => {
 					const testMount = await openOrderEditScreen(
 						page,

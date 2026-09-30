@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -281,7 +282,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		}
 
 		try {
-			$intent = $this->api_client->get_payment_intention_for_mode( $intent_id, 'test' === $order_mode );
+			$intent = $this->api_client->get_payment_intention_for_mode( $intent_id, WooPaymentsOrderMode::TEST === $order_mode );
 		} catch ( Throwable $exception ) {
 			return null;
 		}
@@ -316,7 +317,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function should_read_provider_intent( WC_Order $order, string $order_mode ): bool {
-		if ( 'test' === $order_mode ) {
+		if ( WooPaymentsOrderMode::TEST === $order_mode ) {
 			return true;
 		}
 
@@ -338,18 +339,15 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * Get the provider mode preserved on an order.
 	 *
 	 * @param WC_Order $order Order object.
-	 * @return string `test` or `live`.
+	 * @return string A WooPaymentsOrderMode value; the current mode when the order has none.
 	 */
 	private function get_order_mode( WC_Order $order ): string {
 		$mode = strtolower( trim( (string) $order->get_meta( '_wcpay_mode', true ) ) );
-		if ( 'test' === $mode ) {
-			return 'test';
-		}
-		if ( in_array( $mode, array( 'live', 'prod' ), true ) ) {
-			return 'live';
+		if ( in_array( $mode, array( WooPaymentsOrderMode::TEST, WooPaymentsOrderMode::PRODUCTION ), true ) ) {
+			return $mode;
 		}
 
-		return $this->account_service->get_mode();
+		return $this->account_service->get_order_mode();
 	}
 
 	/**

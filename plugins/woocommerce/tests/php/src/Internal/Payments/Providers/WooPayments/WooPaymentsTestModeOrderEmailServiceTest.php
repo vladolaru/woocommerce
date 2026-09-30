@@ -52,7 +52,7 @@ class WooPaymentsTestModeOrderEmailServiceTest extends WC_Unit_Test_Case {
 	public function test_leaves_ineligible_email_values_unchanged(): void {
 		$live_order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $live_order );
-		$live_order->update_meta_data( '_wcpay_mode', 'live' );
+		$live_order->update_meta_data( '_wcpay_mode', 'prod' );
 		$live_order->save();
 		$sut = new WooPaymentsTestModeOrderEmailService();
 

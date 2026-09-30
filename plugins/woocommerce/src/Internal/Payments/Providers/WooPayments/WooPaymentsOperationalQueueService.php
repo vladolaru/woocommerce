@@ -337,7 +337,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			} else {
 				$mode        = $order->get_meta( '_wcpay_mode', true );
 				$mode_loaded = true;
-				if ( 'test' !== $mode ) {
+				if ( WooPaymentsOrderMode::TEST !== $mode ) {
 					delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
 				}
 			}
@@ -351,7 +351,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			$mode = $order->get_meta( '_wcpay_mode', true );
 		}
 
-		if ( ! is_string( $mode ) || ! in_array( $mode, array( 'production', 'prod', 'live' ), true ) ) {
+		if ( WooPaymentsOrderMode::PRODUCTION !== $mode ) {
 			return;
 		}
 
@@ -1030,8 +1030,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 				'meta_key'       => '_wcpay_mode',
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-				'meta_value'     => array( 'production', 'prod', 'live' ),
-				'meta_compare'   => 'IN',
+				'meta_value'     => WooPaymentsOrderMode::PRODUCTION,
 			)
 		);
 

@@ -286,8 +286,8 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$cases = array(
-			'explicit live'  => array( 'test', 'live' ),
-			'persisted live' => array( 'live', null ),
+			'explicit live'  => array( 'test', 'prod' ),
+			'persisted live' => array( 'prod', null ),
 			'missing mode'   => array( '', null ),
 			'unknown mode'   => array( 'unknown', null ),
 		);
@@ -318,7 +318,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_currency( 'USD' );
 		$order->set_total( '25.00' );
-		$order->update_meta_data( '_wcpay_mode', 'live' );
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
 		$this->install_test_translations(
 			array(

@@ -168,7 +168,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( 'pm_123', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		// Plugin 11.1.0 stores the webhook intent's currency as sent (class-wc-payments-webhook-processing-service.php:497,514).
 		$this->assertSame( 'usd', $order->get_meta( '_wcpay_intent_currency', true ) );
+		// A live account stores plugin 11.1.0 `Order_Mode::PRODUCTION` (class-order-mode.php:21).
+		$this->assertSame( 'prod', $order->get_meta( '_wcpay_mode', true ) );
 		$this->assertSame( 'mandate_123', $order->get_meta( '_stripe_mandate_id', true ) );
 		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ) );
 		$this->assertSame( '11.11', $order->get_meta( '_wcpay_net', true ) );

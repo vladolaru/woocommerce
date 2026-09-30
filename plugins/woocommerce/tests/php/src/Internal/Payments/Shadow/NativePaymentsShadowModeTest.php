@@ -656,7 +656,7 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 		);
 
 		$order = $this->create_projected_woopayments_order( 'requires_capture', 'on-hold' );
-		$order->update_meta_data( '_wcpay_mode', 'live' );
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
 		$api_client = $this->create_recording_api_client( $this->create_payment_intent_response( 'succeeded' ) );
 		$sut        = $this->create_shadow_mode( $api_client, null, false );

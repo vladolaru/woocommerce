@@ -136,7 +136,8 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
-		$order->update_meta_data( '_wcpay_mode', 'live' );
+		// Plugin 11.1.0 `maybe_record_first_live_sale()` matches `Order_Mode::PRODUCTION` (class-wc-payments-order-service.php:305).
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
 		set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
 
@@ -179,7 +180,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public static function provide_one_and_done_cache_invalidations(): array {
 		return array(
-			'second live WooPayments order with positive cache' => array( OrderPaymentStore::GATEWAY_ID, 'production', '1' ),
+			'second live WooPayments order with positive cache' => array( OrderPaymentStore::GATEWAY_ID, 'prod', '1' ),
 			'alternate gateway order with negative cache' => array( 'cod', '', '0' ),
 		);
 	}
@@ -270,9 +271,11 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	public static function provide_ineligible_order_status_transitions(): array {
 		return array(
 			'test-mode WooPayments order' => array( OrderPaymentStore::GATEWAY_ID, 'test', OrderStatus::PROCESSING, true ),
-			'wrong payment gateway'       => array( 'cod', 'live', OrderStatus::PROCESSING, true ),
-			'unpaid order status'         => array( OrderPaymentStore::GATEWAY_ID, 'live', OrderStatus::PENDING, true ),
-			'invalid order object'        => array( OrderPaymentStore::GATEWAY_ID, 'live', OrderStatus::PROCESSING, false ),
+			// The account-mode slug is not an order mode; plugin 11.1.0 matches only `prod`.
+			'account-mode live value'     => array( OrderPaymentStore::GATEWAY_ID, 'live', OrderStatus::PROCESSING, true ),
+			'wrong payment gateway'       => array( 'cod', 'prod', OrderStatus::PROCESSING, true ),
+			'unpaid order status'         => array( OrderPaymentStore::GATEWAY_ID, 'prod', OrderStatus::PENDING, true ),
+			'invalid order object'        => array( OrderPaymentStore::GATEWAY_ID, 'prod', OrderStatus::PROCESSING, false ),
 		);
 	}
 
@@ -1291,7 +1294,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( 'woocommerce_payments' );
 		$order->set_status( 'completed' );
-		$order->update_meta_data( '_wcpay_mode', 'production' );
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
 
 		$account_service = $this->create_account_service(

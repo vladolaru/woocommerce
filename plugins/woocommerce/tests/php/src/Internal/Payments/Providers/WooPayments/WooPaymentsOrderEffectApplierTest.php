@@ -448,7 +448,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$meta    = $data[ PaymentOutcome::DATA_META ];
 
 		$this->assertSame( 'USD', $meta['_wcpay_intent_currency'] );
-		$this->assertSame( 'live', $meta['_wcpay_mode'] );
+		// A live account stores plugin 11.1.0 `Order_Mode::PRODUCTION` (class-wc-payment-gateway-wcpay.php:1677).
+		$this->assertSame( 'prod', $meta['_wcpay_mode'] );
 		$this->assertSame( 'ch_neutral', $meta['_charge_id'] );
 		$this->assertSame( 'txn_neutral', $meta['_wcpay_payment_transaction_id'] );
 		$this->assertStringContainsString( 'successfully charged', $data[ PaymentOutcome::DATA_NOTE ] );
@@ -1244,7 +1245,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( '_wcpay_payment_transaction_id', $result->get_data()[ PaymentOutcome::DATA_META ] );
 		$this->assertSame( '1.75', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_transaction_fee'] );
 		$this->assertSame( '48.25', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_net'] );
-		$this->assertSame( 'live', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'] );
+		$this->assertSame( 'prod', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'], 'A live capture stores plugin 11.1.0 Order_Mode::PRODUCTION.' );
 		$this->assertSame( '1.33127', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_multi_currency_stripe_exchange_rate'] );
 		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
 		$this->assertContains( $result->get_data()[ PaymentOutcome::DATA_NOTE ], $result->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );

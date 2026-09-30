@@ -1038,7 +1038,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$order->set_transaction_id( $intent_id );
 		$order->update_meta_data( '_intent_id', $intent_id );
 		$order->update_meta_data( '_intention_status', $status );
-		$order->update_meta_data( '_wcpay_mode', $this->account_service->get_mode() );
+		$order->update_meta_data( '_wcpay_mode', $this->account_service->get_order_mode() );
 		$order->update_meta_data( 'receipt_url', get_rest_url( null, self::NAMESPACE . '/payments/readers/receipts/' . $intent_id ) );
 		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'terminal_payment' );
 
@@ -1048,7 +1048,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		if ( isset( $intent['currency'] ) ) {
-			$order->update_meta_data( '_wcpay_intent_currency', (string) $intent['currency'] );
+			// Plugin 11.1.0 stores the intent model's uppercased currency (class-wc-rest-payments-orders-controller.php:215, class-wc-payments-api-payment-intention.php:93).
+			$order->update_meta_data( '_wcpay_intent_currency', strtoupper( (string) $intent['currency'] ) );
 		}
 
 		$payment_method_id = $this->get_result_payment_method_id( $intent, $charge );

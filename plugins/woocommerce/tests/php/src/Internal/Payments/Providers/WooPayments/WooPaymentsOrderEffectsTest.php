@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use WC_Unit_Test_Case;
 
 /**
@@ -119,12 +120,32 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 				'payment_method_types' => array( 'wechat_pay' ),
 			),
 			'USD',
-			'live'
+			WooPaymentsOrderMode::PRODUCTION
 		);
 
 		$this->assertSame( 'requires_action', $meta['_intention_status'] );
 		$this->assertSame( '', $meta['_wcpay_payment_transaction_id'] );
 		$this->assertSame( 'not_card', $meta['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
+	 * @testdox Started PaymentIntent metadata stores the intent's uppercased currency and falls back to the order currency.
+	 *
+	 * Plugin 11.1.0 stores `$intent->get_currency()`, which its intent model uppercases (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361).
+	 */
+	public function test_payment_intent_meta_stores_started_intent_currency_uppercased(): void {
+		$started = WooPaymentsOrderEffects::payment_intent_meta(
+			array(
+				'status'   => 'requires_action',
+				'currency' => 'eur',
+			),
+			'USD',
+			WooPaymentsOrderMode::TEST
+		);
+		$this->assertSame( 'EUR', $started['_wcpay_intent_currency'] );
+
+		$without_currency = WooPaymentsOrderEffects::started_payment_meta( array( 'status' => 'requires_action' ), 'EUR' );
+		$this->assertSame( 'EUR', $without_currency['_wcpay_intent_currency'] );
 	}
 
 	/**
@@ -162,12 +183,14 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 		$meta = WooPaymentsOrderEffects::completed_capture_meta(
 			$intent,
 			'USD',
-			'live',
+			WooPaymentsOrderMode::PRODUCTION,
 			array( '_wcpay_multi_currency_stripe_exchange_rate' => '1.25' )
 		);
 
-		$this->assertSame( 'usd', $meta['_wcpay_intent_currency'] );
-		$this->assertSame( 'live', $meta['_wcpay_mode'] );
+		// Plugin 11.1.0 capture keeps the authorization's uppercase intent currency (class-wc-payments-api-payment-intention.php:93).
+		$this->assertSame( 'USD', $meta['_wcpay_intent_currency'] );
+		// Plugin 11.1.0 stores `Order_Mode::PRODUCTION` for live payments (class-order-mode.php:21).
+		$this->assertSame( 'prod', $meta['_wcpay_mode'] );
 		$this->assertSame( 'ch_capture', $meta['_charge_id'] );
 		$this->assertArrayNotHasKey( '_wcpay_payment_transaction_id', $meta );
 		$this->assertSame( '1.75', $meta['_wcpay_transaction_fee'] );
@@ -216,10 +239,10 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$meta = WooPaymentsOrderEffects::completed_capture_meta( $intent, 'USD', 'live', array(), true );
+		$meta = WooPaymentsOrderEffects::completed_capture_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION, array(), true );
 		$this->assertSame( 'review_allowed', $meta['_wcpay_fraud_meta_box_type'] );
 
-		$plain_meta = WooPaymentsOrderEffects::completed_capture_meta( $intent, 'USD', 'live' );
+		$plain_meta = WooPaymentsOrderEffects::completed_capture_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION );
 		$this->assertSame( 'allow', $plain_meta['_wcpay_fraud_meta_box_type'] );
 	}
 
@@ -242,7 +265,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', 'live' );
+		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION );
 
 		$this->assertSame( 'review', $meta['_wcpay_fraud_outcome_status'] );
 		$this->assertSame( 'review', $meta['_wcpay_fraud_meta_box_type'] );
@@ -268,7 +291,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', 'live' );
+		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION );
 
 		$this->assertSame( '{"avs_verification":"review","new_platform_rule":"block"}', $meta['_wcpay_fraud_ruleset_results'] );
 	}
@@ -292,7 +315,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', 'live' );
+		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION );
 
 		$this->assertSame( 'allow', $meta['_wcpay_fraud_meta_box_type'] );
 	}
@@ -316,7 +339,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', 'live' );
+		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION );
 
 		$this->assertSame( 'allow', $meta['_wcpay_fraud_meta_box_type'] );
 	}

@@ -312,15 +312,15 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	/**
 	 * Tell whether the order mode matches the current WooPayments mode.
 	 *
+	 * Plugin 11.1.0 compares the stored value with `Order_Mode::TEST` or `Order_Mode::PRODUCTION` (class-wc-payments-action-scheduler-service.php:173-179).
+	 *
 	 * @param string $order_mode Persisted order mode.
 	 * @return bool
 	 */
 	private function is_order_mode_compatible( string $order_mode ): bool {
-		if ( $this->account_service->is_test_mode_enabled() ) {
-			return 'test' === $order_mode;
-		}
+		$current_mode = $this->account_service->is_test_mode_enabled() ? WooPaymentsOrderMode::TEST : WooPaymentsOrderMode::PRODUCTION;
 
-		return in_array( $order_mode, array( 'prod', 'live' ), true );
+		return $current_mode === $order_mode;
 	}
 
 	/**

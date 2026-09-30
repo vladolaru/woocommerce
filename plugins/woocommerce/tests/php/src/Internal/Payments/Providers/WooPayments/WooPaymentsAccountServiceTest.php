@@ -97,12 +97,15 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'acct_123', $sut->get_account_id() );
 		$this->assertSame( 'pk_live_123', $sut->get_publishable_key() );
 		$this->assertSame( 'live', $sut->get_mode() );
+		// Plugin 11.1.0 `Order_Mode::PRODUCTION` is `prod`, not the account mode `live` (class-order-mode.php:21).
+		$this->assertSame( 'prod', $sut->get_order_mode() );
 		$this->assertTrue( $sut->can_process_payments() );
 
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
 		$this->assertSame( 'pk_test_123', $sut->get_publishable_key() );
 		$this->assertSame( 'test', $sut->get_mode() );
+		$this->assertSame( 'test', $sut->get_order_mode() );
 		$this->assertTrue( $sut->is_test_mode_enabled() );
 	}
 

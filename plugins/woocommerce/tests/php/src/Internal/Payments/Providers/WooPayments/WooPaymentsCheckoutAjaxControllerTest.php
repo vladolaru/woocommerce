@@ -162,6 +162,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $recorded['body']['id'], $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( $recorded['body']['payment_method'], $order->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( $recorded['body']['customer'], $order->get_meta( '_stripe_customer_id', true ) );
+		// A live account stores plugin 11.1.0 `Order_Mode::PRODUCTION` (class-wc-payment-gateway-wcpay.php:1677).
+		$this->assertSame( 'prod', $order->get_meta( '_wcpay_mode', true ) );
+		// Plugin 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
+		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ) );
 		$this->assert_order_has_no_note_containing( $order, 'A payment of' );
 		$this->assert_order_has_no_note_containing( $order, 'A test payment of' );
 	}

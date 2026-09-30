@@ -4274,7 +4274,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT, $outcome->get_effect_plan()->get_type() );
-		$this->assertSame( 'live', $outcome->get_effect_plan()->get_setup_meta()['_wcpay_mode'] );
+		// Plugin 11.1.0 stores `Order_Mode::PRODUCTION` for a live account (class-wc-payment-gateway-wcpay.php:1677).
+		$this->assertSame( 'prod', $outcome->get_effect_plan()->get_setup_meta()['_wcpay_mode'] );
+		// Plugin 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
+		$this->assertSame( 'USD', $outcome->get_effect_plan()->get_setup_meta()['_wcpay_intent_currency'] );
 	}
 
 	/**
@@ -5293,6 +5296,32 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$outcome->get_data()[ PaymentOutcome::DATA_NOTE ],
 			$outcome->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
 		);
+	}
+
+	/**
+	 * @testdox Legacy capture on a live account stores the client's live order mode.
+	 *
+	 * Plugin 11.1.0 stores `Order_Mode::PRODUCTION` (`prod`), not the account mode `live` (class-order-mode.php:21).
+	 */
+	public function test_legacy_capture_on_live_account_stores_prod_order_mode(): void {
+		$order   = $this->create_woopayments_order();
+		$gateway = new RecordingLegacyGateway(
+			array( 'result' => 'success' ),
+			true,
+			array(
+				'status'   => 'succeeded',
+				'id'       => 'pi_captured_live',
+				'currency' => 'usd',
+				'charges'  => array( 'data' => array( array( 'id' => 'ch_captured_live' ) ) ),
+			)
+		);
+		$sut     = $this->create_adapter( $gateway, null, null, null, $this->create_account_service( false ) );
+
+		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture_live' );
+
+		$this->assertSame( 'prod', $outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'] );
+		// Plugin 11.1.0 capture keeps the authorization's uppercase intent currency (class-wc-payments-api-payment-intention.php:93).
+		$this->assertSame( 'USD', $outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_intent_currency'] );
 	}
 
 	/**

@@ -289,7 +289,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$order = \WC_Helper_Order::create_order();
 		$order->set_payment_method( 'woocommerce_payments' );
 		$order->set_status( 'completed' );
-		$order->update_meta_data( '_wcpay_mode', 'live' );
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
 		$account = $this->createMock( WooPaymentsAccountService::class );
 		$account->method( 'has_working_account' )->willReturn( true );
@@ -784,7 +784,8 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'ids', $queries[0]['return'] );
 			$this->assertSame( array( 'wc-completed', 'wc-processing' ), $queries[0]['status'] );
 			$this->assertSame( '_wcpay_mode', $queries[0]['meta_key'] );
-			$this->assertSame( 'production', $queries[0]['meta_value'] );
+			// Plugin 11.1.0 one-and-done Q1 matches `Order_Mode::PRODUCTION` (admin/attach-rate/class-wc-payments-one-and-done-notice.php:169-180).
+			$this->assertSame( 'prod', $queries[0]['meta_value'] );
 			if ( $expected_notice ) {
 				$this->assertIsArray( $notice );
 				$this->assertSame( 'one_and_done', $notice['id'] );
@@ -818,9 +819,10 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	public static function provide_one_and_done_order_cohorts(): array {
 		return array(
 			'zero orders'               => array( array(), false, '0' ),
-			'one order before boundary' => array( array( array( OrderPaymentStore::GATEWAY_ID, 'production', 6 ) ), false, '0' ),
-			'one order at boundary'     => array( array( array( OrderPaymentStore::GATEWAY_ID, 'production', 7 ) ), true, '1' ),
+			'one order before boundary' => array( array( array( OrderPaymentStore::GATEWAY_ID, 'prod', 6 ) ), false, '0' ),
+			'one order at boundary'     => array( array( array( OrderPaymentStore::GATEWAY_ID, 'prod', 7 ) ), true, '1' ),
 			'test order at boundary'    => array( array( array( OrderPaymentStore::GATEWAY_ID, 'test', 7 ) ), false, '0' ),
+			'account-mode live value'   => array( array( array( OrderPaymentStore::GATEWAY_ID, 'live', 7 ) ), false, '0' ),
 		);
 	}
 
@@ -830,8 +832,8 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	public function test_one_and_done_two_live_orders_set_permanent_ineligibility(): void {
 		$now = 1700000000;
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - 8 * DAY_IN_SECONDS );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - DAY_IN_SECONDS );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - 8 * DAY_IN_SECONDS );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - DAY_IN_SECONDS );
 		$sut          = $this->create_live_notice_service( $now );
 		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
@@ -864,7 +866,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	public function test_one_and_done_registered_gateway_limitation( string $gateway_id, bool $expected_notice, bool $expected_permanent ): void {
 		$now = 1700000000;
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - 7 * DAY_IN_SECONDS );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
 		$this->create_paid_order( $gateway_id, '', $now - DAY_IN_SECONDS );
 		$sut          = $this->create_live_notice_service( $now );
 		$queries      = array();
@@ -913,7 +915,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $user_id );
 		update_user_meta( $user_id, $meta_key, $now - $marker_offset );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - 7 * DAY_IN_SECONDS );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
 		$sut          = $this->create_live_notice_service( $now );
 		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
@@ -1155,7 +1157,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$order = \WC_Helper_Order::create_order();
 		$order->set_payment_method( 'woocommerce_payments' );
 		$order->set_status( 'completed' );
-		$order->update_meta_data( '_wcpay_mode', 'live' );
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
 		$account = $this->createMock( WooPaymentsAccountService::class );
 		$account->method( 'has_working_account' )->willReturn( true );
@@ -1183,8 +1185,8 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'ids', $queries[0]['return'] );
 			$this->assertSame( array( 'wc-completed', 'wc-processing' ), $queries[0]['status'] );
 			$this->assertSame( '_wcpay_mode', $queries[0]['meta_key'] );
-			$this->assertSame( array( 'production', 'prod', 'live' ), $queries[0]['meta_value'] );
-			$this->assertSame( 'IN', $queries[0]['meta_compare'] );
+			// Plugin 11.1.0 `has_live_sale()` matches `Order_Mode::PRODUCTION` (class-wc-payments-order-service.php:361-381).
+			$this->assertSame( 'prod', $queries[0]['meta_value'] );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
 			delete_option( 'wcpay_kyc_completion_date' );
@@ -1205,7 +1207,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_one_and_done_permanently_ineligible' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		delete_transient( 'wcpay_one_and_done_eligible' );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - 7 * DAY_IN_SECONDS );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
 		$sut          = $this->create_live_notice_service( $now );
 		$queries      = array();
 		$record_query = static function ( array $args ) use ( &$queries ): array {
@@ -1232,9 +1234,11 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Shared cold-cache selection still recognizes historical live-mode values for post-KYC.
+	 * @testdox Shared cold-cache selection counts only the client's `prod` order mode as a live sale.
+	 *
+	 * Plugin 11.1.0 `has_live_sale()` matches `_wcpay_mode = Order_Mode::PRODUCTION` only (class-wc-payments-order-service.php:361-381).
 	 */
-	public function test_shared_cold_cache_selection_preserves_historical_live_modes(): void {
+	public function test_shared_cold_cache_selection_ignores_account_mode_live_value(): void {
 		$now = 1700000000;
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		update_option( 'wcpay_kyc_completion_date', $now - 7 * DAY_IN_SECONDS, false );
@@ -1251,11 +1255,12 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$this->assertNull( $sut->get_notice_for_current_user(), 'A historical live sale must still suppress post-KYC.' );
-			$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
-			$this->assertCount( 2, $queries );
+			$notice = $sut->get_notice_for_current_user();
+			$this->assertIsArray( $notice );
+			$this->assertSame( 'post_kyc_activation', $notice['id'] );
+			$this->assertFalse( get_option( 'wcpay_has_live_sale' ) );
 			$this->assertSame( 2, $queries[0]['limit'] );
-			$this->assertSame( array( 'prod', 'live' ), $queries[1]['meta_value'] );
+			$this->assertSame( 'prod', $queries[0]['meta_value'] );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
 			delete_option( 'wcpay_kyc_completion_date' );
@@ -1293,7 +1298,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertNotNull( $sut->get_notice_for_current_user() );
 			$this->assertNotNull( $sut->get_notice_for_current_user() );
-			$this->assertSame( 2, $queries, 'Cold combined selection should check current production mode and bounded historical aliases once.' );
+			$this->assertSame( 1, $queries, 'Cold combined selection should run the shared live-order query once.' );
 			$this->assertSame( '1', get_transient( 'wcpay_post_kyc_activation_eligible' ) );
 			$this->assertFalse( get_option( 'wcpay_has_live_sale' ) );
 			$this->assertGreaterThan( time(), (int) get_option( '_transient_timeout_wcpay_post_kyc_activation_eligible' ) );
@@ -1338,7 +1343,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
 		$order->set_status( OrderStatus::COMPLETED );
-		$order->update_meta_data( '_wcpay_mode', 'live' );
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
 		delete_option( 'wcpay_has_live_sale' );
 
@@ -1355,6 +1360,8 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			set_transient( 'wcpay_post_kyc_activation_eligible', 'main-blog-cache', HOUR_IN_SECONDS );
 			$main_admin_url = admin_url( 'admin.php?page=wc-admin&path=/marketing' );
 			$main_rest_url  = rest_url( 'wc-admin/settings/payments/woopayments/admin-notices/post_kyc_activation/shown' );
+			// Creating the secondary blog's tables commits the test transaction; drop the live order first so it cannot reach later tests.
+			$order->delete( true );
 
 			remove_filter( 'woocommerce_order_query_args', $record_query );
 			switch_to_blog( $secondary_blog_id );
@@ -1411,7 +1418,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_has_live_sale' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		delete_transient( 'wcpay_one_and_done_eligible' );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'production', $now - 7 * DAY_IN_SECONDS );
+		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
 		$sut              = $this->create_live_notice_service( $now );
 		$queried_blog_ids = array();
 		$record_query     = static function ( array $args ) use ( &$queried_blog_ids ): array {

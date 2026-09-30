@@ -487,7 +487,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 					'meta_key'   => '_wcpay_mode',
 					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-					'meta_value' => 'test',
+					'meta_value' => WooPaymentsOrderMode::TEST,
 					'return'     => 'objects',
 				)
 			);

@@ -649,9 +649,10 @@ class WooPaymentsEventIngestor {
 						'_charge_id'             => $this->get_charge_id_from_intent( $event_object ),
 						'_payment_method_id'     => $this->get_payment_method_id_from_intent( $event_object ),
 						'_intention_status'      => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
+						// Plugin 11.1.0 stores the webhook's raw, lowercase currency (class-wc-payments-webhook-processing-service.php:497,514).
 						'_wcpay_intent_currency' => isset( $event_object['currency'] ) ? (string) $event_object['currency'] : '',
 						'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $event_object ),
-						'_wcpay_mode'            => $this->get_account_service()->get_mode(),
+						'_wcpay_mode'            => $this->get_account_service()->get_order_mode(),
 						'_wcpay_ipp_channel'     => $this->get_ipp_channel_from_intent( $event_object ),
 					)
 				);
