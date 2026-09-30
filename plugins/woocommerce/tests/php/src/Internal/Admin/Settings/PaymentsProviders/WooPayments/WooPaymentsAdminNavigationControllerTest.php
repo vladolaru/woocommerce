@@ -1219,6 +1219,56 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should redirect a registered split payment method section to native settings, as the client redirects every woocommerce_payments_ section.
+	 */
+	public function test_redirects_registered_split_method_section_to_native_settings(): void {
+		$sut                                       = $this->create_controller( true );
+		WC()->payment_gateways()->payment_gateways = array( 0 => $this->create_native_gateway( 'woocommerce_payments_klarna' ) );
+
+		$url = $sut->get_legacy_payment_path_redirect_url(
+			array(
+				'page'    => 'wc-settings',
+				'tab'     => 'checkout',
+				'section' => 'woocommerce_payments_klarna',
+			)
+		);
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertArrayHasKey( 'woocommerce_payments_klarna', WC()->payment_gateways()->payment_gateways() );
+		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
+		$this->assertSame( '/woopayments/settings', $query['path'] ?? null );
+	}
+
+	/**
+	 * @testdox Should not redirect legacy WooPayments settings URLs during AJAX requests, as the client does not.
+	 */
+	public function test_does_not_redirect_legacy_paths_during_ajax_requests(): void {
+		$sut = $this->create_controller( true );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$_GET = array(
+			'page'    => 'wc-settings',
+			'tab'     => 'checkout',
+			'section' => 'woocommerce_payments_sofort',
+		);
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter(
+			'wp_redirect',
+			static function () {
+				throw new \RuntimeException( 'redirected' );
+			}
+		);
+
+		try {
+			$sut->redirect_legacy_payment_paths();
+			$this->assertTrue( wp_doing_ajax() );
+		} finally {
+			remove_all_filters( 'wp_doing_ajax' );
+			remove_all_filters( 'wp_redirect' );
+			$_GET = array();
+		}
+	}
+
+	/**
 	 * @testdox Should map legacy WooPayments WC Admin Card Readers URLs to the native route when Card Readers are available.
 	 */
 	public function test_maps_legacy_payment_card_readers_url_to_native_route_when_card_readers_are_available(): void {

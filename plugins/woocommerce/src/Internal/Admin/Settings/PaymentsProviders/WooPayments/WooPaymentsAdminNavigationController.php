@@ -385,7 +385,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @return void
 	 */
 	public function redirect_legacy_payment_paths(): void {
-		if ( ! current_user_can( self::CAPABILITY ) || ! $this->arbiter->should_native_register() ) {
+		if ( wp_doing_ajax() || ! current_user_can( self::CAPABILITY ) || ! $this->arbiter->should_native_register() ) {
 			return;
 		}
 
@@ -515,7 +515,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the native redirect URL for unknown legacy WooPayments gateway sections.
+	 * Get the native settings redirect URL for legacy WooPayments payment method sections.
 	 *
 	 * @param array<string,mixed> $request Query request.
 	 * @return string
@@ -530,31 +530,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 			return '';
 		}
 
-		if ( $this->is_registered_payment_gateway_section( $section ) ) {
-			return '';
-		}
-
+		// Client 11.1.0 WC_Payments_Admin_Settings::maybe_redirect_payment_method_settings() redirects every woocommerce_payments_ section.
 		return Utils::wc_payments_settings_url( self::PATH_SETTINGS );
-	}
-
-	/**
-	 * Tell whether a legacy gateway section still maps to a registered gateway.
-	 *
-	 * @param string $section Gateway section ID.
-	 * @return bool
-	 */
-	private function is_registered_payment_gateway_section( string $section ): bool {
-		if ( ! function_exists( 'WC' ) || ! WC()->payment_gateways() ) {
-			return false;
-		}
-
-		try {
-			$gateways = WC()->payment_gateways()->payment_gateways();
-		} catch ( \Throwable $e ) {
-			return false;
-		}
-
-		return is_array( $gateways ) && isset( $gateways[ $section ] );
 	}
 
 	/**
