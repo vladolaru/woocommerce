@@ -86,6 +86,29 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	private const STRIPE_SCRIPT_HANDLE = 'stripe';
 
 	/**
+	 * Payment fields config keys left out of the Blocks payment method data.
+	 *
+	 * The client's Blocks data (class-wc-payments-blocks-payment-method.php:88-104) does not carry them and the
+	 * native Blocks bundle does not need them; the classic checkout config keeps them.
+	 */
+	private const BLOCKS_OMITTED_CONFIG_KEYS = array(
+		'confirmationErrorMessage',
+		'customerData',
+		'isCoreNativeCheckoutBridge',
+		'paymentListWalletsConfig',
+		'updateOrderStatusNonce',
+		'usesLegacyOrderStatusBridge',
+		'usesLegacySetupIntentBridge',
+		'usesNativeOrderStatusBridge',
+		'usesNativeSetupIntentBridge',
+		'woopayButtonLabels',
+		'woopayAdditionalInfoText',
+		'woopayAgreementText',
+		'woopayTermsOfServiceLabel',
+		'woopayPrivacyPolicyLabel',
+	);
+
+	/**
 	 * Country-specific Stripe test card numbers used by WooPayments checkout.
 	 *
 	 * @var array<string,string>
@@ -582,14 +605,19 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 *
 	 * @param array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string} $base                      Config base.
 	 * @param WooPaymentsPaymentMethodDefinition|null                                    $payment_method_definition Optional payment method definition.
+	 * @param bool                                                                       $for_blocks                Whether to leave out the keys only the classic checkout uses.
 	 * @return array<string,mixed>
 	 */
-	private function complete_payment_fields_js_config( array $base, ?WooPaymentsPaymentMethodDefinition $payment_method_definition ): array {
-		$config                             = $base['config'];
-		$config['gatewayId']                = $this->get_gateway_id_for_payment_method_definition( $payment_method_definition );
-		$config['paymentMethodsConfig']     = $this->get_payment_methods_config( $base['saved_cards_enabled'], $payment_method_definition, $base['currency'] );
-		$config['paymentListWalletsConfig'] = $this->get_payment_list_wallets_config( $base['saved_cards_enabled'], $payment_method_definition, $base['currency'] );
-		$config['paymentMethodTypes']       = $this->get_payment_method_types_for_definition( $payment_method_definition, $config['paymentMethodsConfig'] );
+	private function complete_payment_fields_js_config( array $base, ?WooPaymentsPaymentMethodDefinition $payment_method_definition, bool $for_blocks = false ): array {
+		$config = $base['config'];
+		if ( $for_blocks ) {
+			$config = array_diff_key( $config, array_flip( self::BLOCKS_OMITTED_CONFIG_KEYS ) );
+		} else {
+			$config['paymentListWalletsConfig'] = $this->get_payment_list_wallets_config( $base['saved_cards_enabled'], $payment_method_definition, $base['currency'] );
+		}
+		$config['gatewayId']            = $this->get_gateway_id_for_payment_method_definition( $payment_method_definition );
+		$config['paymentMethodsConfig'] = $this->get_payment_methods_config( $base['saved_cards_enabled'], $payment_method_definition, $base['currency'] );
+		$config['paymentMethodTypes']   = $this->get_payment_method_types_for_definition( $payment_method_definition, $config['paymentMethodsConfig'] );
 		if ( ! empty( $config['isChangingPayment'] ) ) {
 			return $config;
 		}
@@ -655,7 +683,8 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		if ( null !== $shared && ! isset( $shared['base'] ) ) {
 			$shared['base'] = $this->get_payment_fields_js_config_base();
 		}
-		$data = null === $shared ? $this->get_payment_fields_js_config( $payment_method_definition ) : $this->complete_payment_fields_js_config( $shared['base'], $payment_method_definition );
+		$base = null === $shared ? $this->get_payment_fields_js_config_base() : $shared['base'];
+		$data = $this->complete_payment_fields_js_config( $base, $payment_method_definition, true );
 
 		// Sanitize the shopper-facing testing instructions after the wcpay_payment_fields_js_config
 		// filter has run. The Blocks checkout script renders this value via dangerouslySetInnerHTML,
@@ -678,6 +707,8 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			array(
 				'title'       => $this->get_blocks_payment_method_title( $payment_method_definition ),
 				'description' => $this->get_blocks_payment_method_description( $payment_method_definition ),
+				// Client 11.1.0 class-wc-payments-blocks-payment-method.php:102, for the payment method preview in wp-admin.
+				'is_admin'    => is_admin(),
 				'supports'    => $this->get_blocks_supports(),
 			)
 		);

@@ -120,7 +120,6 @@ jest.mock( '@woocommerce/settings', () => {
 				isReusable: false,
 			},
 		},
-		usesLegacyOrderStatusBridge: false,
 		ajaxUrl: 'https://example.test/wp-admin/admin-ajax.php',
 	};
 

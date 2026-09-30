@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -1522,6 +1523,192 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $data['isWooPayEnabled'] );
 		$this->assertTrue( $data['shouldShowWooPayButton'] );
+	}
+
+	/**
+	 * Top-level keys of the client 11.1.0 Blocks payment method data on a checkout page with WooPay enabled.
+	 *
+	 * Sources: class-wc-payments-blocks-payment-method.php:88-104 (title, description, is_admin, woopayHost),
+	 * class-wc-payments-checkout.php:183-274 (payment fields config), class-wc-payments-woopay-button-handler.php:144-160
+	 * (WooPay button keys) and class-woopay-tracker.php:660-662 (isShopperTrackingEnabled).
+	 */
+	private const CLIENT_BLOCKS_DATA_KEYS = array(
+		'title',
+		'description',
+		'is_admin',
+		'woopayHost',
+		'publishableKey',
+		'testMode',
+		'accountId',
+		'ajaxUrl',
+		'wcAjaxUrl',
+		'createSetupIntentNonce',
+		'initWooPayNonce',
+		'genericErrorMessage',
+		'fraudServices',
+		'features',
+		'forceNetworkSavedCards',
+		'locale',
+		'isPreview',
+		'isSavedCardsEnabled',
+		'isWooPayEnabled',
+		'isWoopayExpressCheckoutEnabled',
+		'isWoopayFirstPartyAuthEnabled',
+		'isWooPayEmailInputEnabled',
+		'isWooPayDirectCheckoutEnabled',
+		'isWooPayGlobalThemeSupportEnabled',
+		'isShortcodeCheckout',
+		'platformTrackerNonce',
+		'accountIdForIntentConfirmation',
+		'wcpayVersionNumber',
+		'woopaySignatureNonce',
+		'woopaySessionNonce',
+		'woopayMerchantId',
+		'icon',
+		'woopayMinimumSessionData',
+		'gatewayId',
+		'isCheckout',
+		'paymentMethodsConfig',
+		'cartContainsSubscription',
+		'currency',
+		'stylesCacheVersion',
+		'cartTotal',
+		'enabledBillingFields',
+		'storeCountry',
+		'isExpressCheckoutInPaymentMethodsEnabled',
+		'isShopperTrackingEnabled',
+		'woopayButton',
+		'woopayButtonNonce',
+		'addToCartNonce',
+		'shouldShowWooPayButton',
+		'woopaySessionEmail',
+		'woopayIsCountryAvailable',
+		'woopayAppearance',
+		'woopayFontRules',
+	);
+
+	/**
+	 * Native-only Blocks data keys that the native Blocks bundle reads (client/blocks/assets/js/extensions/payment-methods/woopayments).
+	 */
+	private const NATIVE_BLOCKS_DATA_KEYS_WITH_CONSUMERS = array(
+		'fraudPreventionToken',            // index.js:113-116, the only token source on Blocks pages.
+		'isCoreNativeCheckoutAvailable',   // index.js:1040,1268 and woopay/index.js:736,748.
+		'paymentMethodTypes',              // index.js:517-521, the split gateway's own Stripe method type.
+		'supports',                        // index.js:1277, woopay/index.js:18.
+		'PRE_CHECK_SAVE_MY_INFO',          // index.js:706 (the client localizes it as woopayCheckout).
+		'woopayOtpIframeTitle',            // woopay/email-input-iframe.js:269, woopay/express-checkout-iframe.js:98.
+		'woopayUnavailableMessage',        // woopay/email-input-iframe.js:409.
+		'woopayExpressUnavailableMessage', // woopay/express-checkout-iframe.js:231.
+		'woopaySaveUserLabel',             // index.js:714.
+		'woopayPhoneLabel',                // index.js:720.
+		'is_shopper_tracking_enabled',     // tracks.js:16.
+	);
+
+	/**
+	 * Keys the Blocks data must not carry: the client never sends them and the native Blocks bundle does not need them.
+	 */
+	private const DROPPED_BLOCKS_DATA_KEYS = array(
+		'confirmationErrorMessage',
+		'customerData',
+		'isCoreNativeCheckoutBridge',
+		'paymentListWalletsConfig',
+		'updateOrderStatusNonce',
+		'usesLegacyOrderStatusBridge',
+		'usesLegacySetupIntentBridge',
+		'usesNativeOrderStatusBridge',
+		'usesNativeSetupIntentBridge',
+		'woopayButtonLabels',
+		'woopayAdditionalInfoText',
+		'woopayAgreementText',
+		'woopayTermsOfServiceLabel',
+		'woopayPrivacyPolicyLabel',
+	);
+
+	/**
+	 * Build a checkout bridge whose WooPay config carries every key the real WooPay session service emits.
+	 *
+	 * @return WooPaymentsCheckoutBridge
+	 */
+	private function create_bridge_with_full_woopay_config(): WooPaymentsCheckoutBridge {
+		$real_account_service = new WooPaymentsAccountService();
+		$real_account_service->init( new LegacyProxy() );
+		$real_woopay_service = new WooPaymentsWooPaySessionService();
+		$real_woopay_service->init( $real_account_service, new WooPaymentsFrontendStylesService(), $this->create_frontend_tracking_controller_for_bridge() );
+		$woopay_config = array_merge(
+			array_fill_keys( array_keys( $real_woopay_service->get_woopay_frontend_config( 'checkout' ) ), '' ),
+			array(
+				'isWooPayEnabled'        => true,
+				'shouldShowWooPayButton' => true,
+				'forceNetworkSavedCards' => false,
+			)
+		);
+
+		$woopay_service = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_woopay_enabled', 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
+			->getMock();
+		$woopay_service->method( 'is_woopay_enabled' )->willReturn( true );
+		$woopay_service->method( 'get_woopay_frontend_config' )->willReturn( $woopay_config );
+		$woopay_service->method( 'get_save_user_checkout_data' )->willReturn( array( 'PRE_CHECK_SAVE_MY_INFO' => true ) );
+
+		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $this->create_account_service_for_bridge( true ), $woopay_service, $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		return $bridge;
+	}
+
+	/**
+	 * @testdox Blocks payment method data carries exactly the client's keys plus the native keys the Blocks bundle reads.
+	 */
+	public function test_get_blocks_payment_method_data_has_the_client_key_set_plus_consumed_native_keys(): void {
+		$data = $this->create_bridge_with_full_woopay_config()->get_blocks_payment_method_data();
+
+		$expected = array_merge( self::CLIENT_BLOCKS_DATA_KEYS, self::NATIVE_BLOCKS_DATA_KEYS_WITH_CONSUMERS );
+		sort( $expected );
+		$actual = array_keys( $data );
+		sort( $actual );
+
+		$this->assertSame( $expected, $actual );
+	}
+
+	/**
+	 * @testdox Blocks payment method data never carries the dropped native-only keys, while the classic config keeps them.
+	 */
+	public function test_get_blocks_payment_method_data_omits_dropped_native_keys(): void {
+		$bridge = $this->create_bridge_with_full_woopay_config();
+		$data   = $bridge->get_blocks_payment_method_data();
+		$shared = new \ArrayObject();
+		$split  = $bridge->get_blocks_payment_method_data( ( new WooPaymentsPaymentMethodRegistry() )->get( 'klarna' ), $shared );
+
+		foreach ( self::DROPPED_BLOCKS_DATA_KEYS as $key ) {
+			$this->assertArrayNotHasKey( $key, $data, "Blocks data must not carry {$key}." );
+			$this->assertArrayNotHasKey( $key, $split, "Split-gateway Blocks data must not carry {$key}." );
+		}
+
+		$classic = $bridge->get_payment_fields_js_config();
+		$this->assertArrayHasKey( 'customerData', $classic );
+		$this->assertArrayHasKey( 'paymentListWalletsConfig', $classic );
+		$this->assertArrayHasKey( 'woopayAgreementText', $classic );
+	}
+
+	/**
+	 * @testdox Blocks payment method data reports is_admin like the client: false on the storefront, true in wp-admin.
+	 */
+	public function test_get_blocks_payment_method_data_reports_is_admin(): void {
+		$bridge = $this->create_bridge_with_full_woopay_config();
+
+		$this->assertFalse( $bridge->get_blocks_payment_method_data()['is_admin'] );
+
+		set_current_screen( 'edit-post' );
+		try {
+			$this->assertTrue( $bridge->get_blocks_payment_method_data()['is_admin'] );
+		} finally {
+			set_current_screen( 'front' );
+		}
 	}
 
 	/**
