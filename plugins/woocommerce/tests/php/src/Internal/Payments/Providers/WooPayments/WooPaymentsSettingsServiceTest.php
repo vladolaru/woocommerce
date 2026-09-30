@@ -272,26 +272,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array( 'card', 'link' ), $settings['enabled_payment_method_ids'] );
-		$this->assertSame(
-			array(
-				'card',
-				'link',
-				'sepa_debit',
-				'ideal',
-				'bancontact',
-				'klarna',
-				'affirm',
-				'afterpay_clearpay',
-				'eps',
-				'p24',
-				'multibanco',
-				'au_becs_debit',
-				'grabpay',
-				'wechat_pay',
-				'alipay',
-			),
-			$settings['natively_chargeable_payment_method_ids']
-		);
 		$this->assertContains( 'card', $settings['available_payment_method_ids'] );
 		$this->assertContains( 'affirm', $settings['available_payment_method_ids'] );
 		$this->assertContains( 'ideal', $settings['available_payment_method_ids'] );
@@ -2612,6 +2592,53 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A merchant can turn on Apple Pay, Google Pay and Amazon Pay, and the saved settings read back with nothing held back.
+	 */
+	public function test_update_settings_round_trips_apple_pay_google_pay_and_amazon_pay(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array( 'upe_enabled_payment_method_ids' => array( 'card' ) )
+		);
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'   => 'acct_native_test',
+					'is_live'      => true,
+					'capabilities' => array(
+						'card_payments'       => 'active',
+						'amazon_pay_payments' => 'active',
+					),
+					'fees'         => array(
+						'card'       => array(),
+						'amazon_pay' => array(),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+
+		$saved = $this->sut->update_settings(
+			array(
+				'is_payment_request_enabled'        => true,
+				'enabled_payment_method_ids'        => array( 'card', 'amazon_pay' ),
+				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
+			)
+		);
+		$this->assertIsArray( $saved );
+		$settings = $this->sut->get_settings();
+
+		$this->assertTrue( $settings['is_payment_request_enabled'], 'Apple Pay and Google Pay must save as enabled.' );
+		$this->assertSame( array( 'card', 'amazon_pay' ), $settings['enabled_payment_method_ids'] );
+		$this->assertSame( array( 'payment_request', 'amazon_pay' ), $settings['express_checkout_checkout_methods'] );
+		foreach ( array( 'apple_pay', 'google_pay', 'amazon_pay' ) as $payment_method_id ) {
+			$this->assertContains( $payment_method_id, $settings['available_payment_method_ids'], "{$payment_method_id} must be offered to the merchant." );
+		}
+		$this->assertArrayNotHasKey( 'natively_chargeable_payment_method_ids', $settings, 'The settings page must not receive a list that holds wallets back.' );
+	}
+
+	/**
 	 * @testdox Should not write account settings when posted account fields match the cached account.
 	 */
 	public function test_update_settings_diffs_account_fields_against_cached_account_data(): void {
@@ -2959,7 +2986,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'enabled_payment_method_ids',
 			'available_payment_method_ids',
-			'natively_chargeable_payment_method_ids',
 			'payment_method_statuses',
 			'duplicated_payment_method_ids',
 			'dismissed_duplicate_payment_method_notices',

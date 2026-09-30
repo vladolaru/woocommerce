@@ -317,32 +317,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registry exposes the staged native-chargeable set.
-	 */
-	public function test_registry_exposes_staged_natively_chargeable_ids(): void {
-		$this->assertSame(
-			array(
-				'card',
-				'link',
-				'sepa_debit',
-				'ideal',
-				'bancontact',
-				'klarna',
-				'affirm',
-				'afterpay_clearpay',
-				'eps',
-				'p24',
-				'multibanco',
-				'au_becs_debit',
-				'grabpay',
-				'wechat_pay',
-				'alipay',
-			),
-			$this->registry->get_natively_chargeable_ids()
-		);
-	}
-
-	/**
 	 * @testdox Definitions expose extension amount limits.
 	 */
 	public function test_definitions_expose_extension_amount_limits(): void {

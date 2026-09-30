@@ -262,15 +262,6 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Get payment method IDs the native WooPayments gateway can charge today.
-	 *
-	 * @return string[]
-	 */
-	public static function get_natively_chargeable_payment_method_ids(): array {
-		return ( new WooPaymentsPaymentMethodRegistry() )->get_natively_chargeable_ids();
-	}
-
-	/**
 	 * Get express checkout method IDs accepted by the settings REST contract.
 	 *
 	 * @return string[]
@@ -310,7 +301,6 @@ class WooPaymentsSettingsService {
 		return array(
 			'enabled_payment_method_ids'                 => $enabled_payment_method_ids,
 			'available_payment_method_ids'               => $available_payment_method_ids,
-			'natively_chargeable_payment_method_ids'     => self::get_natively_chargeable_payment_method_ids(),
 			'payment_method_statuses'                    => $this->get_payment_method_statuses(),
 			'duplicated_payment_method_ids'              => $this->get_duplicated_payment_method_ids(),
 			'dismissed_duplicate_payment_method_notices' => $this->get_dismissed_duplicate_payment_method_notices(),

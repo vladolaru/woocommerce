@@ -462,9 +462,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The completion notices stay on every admin page for a store manager until the manager dismisses each one.
+	 * @testdox The completion notice stays on every admin page for a store manager until the manager dismisses it.
 	 */
-	public function test_completion_notices_stay_until_a_manager_dismisses_them(): void {
+	public function test_completion_notice_stays_until_a_manager_dismisses_it(): void {
 		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
 		$job        = $this->create_completed_notice_job();
@@ -482,7 +482,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			for ( $page = 0; $page < 2; $page++ ) {
 				$notices = $this->render_admin_notices( $controller );
 				$this->assertStringContainsString( 'WooPayments is now fully native in WooCommerce.', $notices );
-				$this->assertStringContainsString( 'were disabled during the switch', $notices );
 			}
 			$this->assertSame( array(), $job->dismissed, 'Rendering must not use up a notice, since the screen may not show it.' );
 
@@ -501,7 +500,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ), $job->dismissed );
 		$this->assertSame( array( '/wp-admin/admin.php?page=wc-settings' ), $redirects, 'The dismissal returns to the same page without the action.' );
 		$this->assertStringNotContainsString( 'fully native', $notices );
-		$this->assertStringContainsString( 'were disabled during the switch', $notices, 'The other notice stays until it is dismissed too.' );
 	}
 
 	/**
@@ -1237,74 +1235,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight blocks while unsupported payment methods are enabled in legacy settings.
-	 */
-	public function test_preflight_blocks_when_unsupported_payment_methods_are_enabled(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'upe_enabled_payment_method_ids' => array( 'card', 'future_lpm' ),
-			)
-		);
-
-		$this->assertContains( 'unsupported_payment_methods_enabled', $this->sut->get_preflight_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight allows the currently natively chargeable payment methods.
-	 */
-	public function test_preflight_allows_currently_natively_chargeable_payment_methods(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'upe_enabled_payment_method_ids' => array(
-					'card',
-					'link',
-					'sepa_debit',
-					'ideal',
-					'bancontact',
-					'klarna',
-					'affirm',
-					'afterpay_clearpay',
-					'eps',
-					'p24',
-					'multibanco',
-					'au_becs_debit',
-					'grabpay',
-					'wechat_pay',
-					'alipay',
-				),
-			)
-		);
-
-		$this->assertNotContains( 'unsupported_payment_methods_enabled', $this->sut->get_preflight_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight filters cannot remove unsupported payment method blockers.
-	 */
-	public function test_preflight_filter_cannot_remove_unsupported_payment_method_blocker(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'upe_enabled_payment_method_ids' => array( 'card', 'future_lpm' ),
-			)
-		);
-		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
-
-		$this->assertContains( 'unsupported_payment_methods_enabled', $this->sut->get_preflight_failures() );
-	}
-
-	/**
 	 * @testdox Cutover preflight blocks when automatic multi-currency rates have no provider.
 	 */
 	public function test_preflight_blocks_when_multi_currency_automatic_rates_have_no_provider(): void {
@@ -1805,15 +1735,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			/** @var string[] Dismissed notices, in order. */
 			public array $dismissed = array();
 
-			/** @var array<string,mixed> Completed record with an unsupported payment method outcome. */
+			/** @var array<string,mixed> Completed record. */
 			private array $record = array(
 				'state'                  => WooPaymentsCutoverState::DONE,
-				'informational_outcomes' => array(
-					array(
-						'code'               => 'unsupported_payment_methods_disabled',
-						'payment_method_ids' => array( 'giropay' ),
-					),
-				),
+				'informational_outcomes' => array(),
 			);
 
 			/** @return array<string,mixed>|null */

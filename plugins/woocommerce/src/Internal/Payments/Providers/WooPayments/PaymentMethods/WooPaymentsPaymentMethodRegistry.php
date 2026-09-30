@@ -34,24 +34,6 @@ class WooPaymentsPaymentMethodRegistry {
 
 	private const EXPRESS_CHECKOUT = 'express_checkout';
 
-	private const NATIVELY_CHARGEABLE_PAYMENT_METHOD_IDS = array(
-		'card',
-		'link',
-		'sepa_debit',
-		'ideal',
-		'bancontact',
-		'klarna',
-		'affirm',
-		'afterpay_clearpay',
-		'eps',
-		'p24',
-		'multibanco',
-		'au_becs_debit',
-		'grabpay',
-		'wechat_pay',
-		'alipay',
-	);
-
 	/**
 	 * Payment method definitions keyed by payment method ID.
 	 *
@@ -109,15 +91,6 @@ class WooPaymentsPaymentMethodRegistry {
 		$payment_method_id = strtolower( $payment_method_id );
 
 		return $this->definitions[ $payment_method_id ] ?? null;
-	}
-
-	/**
-	 * Get the payment methods the staged native WooPayments gateway can charge today.
-	 *
-	 * @return string[]
-	 */
-	public function get_natively_chargeable_ids(): array {
-		return self::NATIVELY_CHARGEABLE_PAYMENT_METHOD_IDS;
 	}
 
 	/**

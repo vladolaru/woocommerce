@@ -30,9 +30,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Completion notice: the switch finished. */
 	public const NOTICE_SUCCESS = 'success';
 
-	/** Completion notice: payment methods native does not support were turned off. */
-	public const NOTICE_DISABLED_PAYMENT_METHODS = 'disabled_payment_methods';
-
 	/** Reconciliation action hook. */
 	public const ACTION_HOOK = WooPaymentsCutoverActionScheduler::ACTION_HOOK;
 
@@ -548,7 +545,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	public function is_completion_notice_due( ?array $record, string $notice ): bool {
 		return is_array( $record )
 			&& WooPaymentsCutoverState::DONE === ( $record['state'] ?? null )
-			&& in_array( $notice, array( self::NOTICE_SUCCESS, self::NOTICE_DISABLED_PAYMENT_METHODS ), true )
+			&& self::NOTICE_SUCCESS === $notice
 			&& is_array( $record['informational_outcomes'] ?? null )
 			&& ! $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => $notice . '_notice_dismissed' ) );
 	}
@@ -913,16 +910,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$outcomes = array();
 			if ( in_array( 'wpcom_connection_owner_user_token_unavailable', $failures, true ) && $this->preflight_service->is_cutover_connection_owner_user_missing() ) {
 				$outcomes[] = array( 'code' => 'reconnect_required' );
-			}
-
-			if ( in_array( 'unsupported_payment_methods_enabled', $failures, true ) ) {
-				$removed_payment_method_ids = $this->preflight_service->remove_unsupported_enabled_payment_method_ids();
-				if ( array() !== $removed_payment_method_ids ) {
-					$outcomes[] = array(
-						'code'               => 'unsupported_payment_methods_disabled',
-						'payment_method_ids' => $removed_payment_method_ids,
-					);
-				}
 			}
 
 			$plugin_update_succeeded = false;

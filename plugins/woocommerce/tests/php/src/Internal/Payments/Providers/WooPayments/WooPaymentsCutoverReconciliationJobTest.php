@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
@@ -408,6 +409,37 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( NativePaymentsState::ACTIVE, get_option( NativePaymentsState::OPTION_NAME ) );
 		$this->assert_next_front_request_registers_native_gateway();
+	}
+
+	/**
+	 * @testdox A store with Amazon Pay enabled in the plugin's settings keeps it enabled after the switch.
+	 */
+	public function test_switch_keeps_amazon_pay_enabled(): void {
+		$this->arrange_plugin_era_store();
+		$enabled_payment_method_ids = array( 'card', 'amazon_pay' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'upe_enabled_payment_method_ids' => $enabled_payment_method_ids,
+			)
+		);
+		$preflight = $this->create_settings_reading_preflight();
+		$origin    = $this->create_state_writing_job( true, $preflight );
+
+		$this->assertTrue( $origin->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$origin->handle_reconcile( $pending['generation'], 1 );
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		$this->assertSame( 'verify_native_ownership', $verification['current_step'] );
+		$this->run_ownership_verification_in_a_fresh_request( $verification, $preflight );
+
+		$settings = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertIsArray( $settings );
+		$this->assertSame( $enabled_payment_method_ids, $settings['upe_enabled_payment_method_ids'] ?? null, 'The switch must leave the merchant\'s enabled payment methods as they were.' );
 	}
 
 	/**
@@ -1040,9 +1072,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A completed cutover keeps each completion notice until a manager dismisses it, and records the dismissal on the durable record.
+	 * @testdox A completed cutover keeps the completion notice until a manager dismisses it, and records the dismissal on the durable record.
 	 */
-	public function test_completion_notices_stay_until_dismissed(): void {
+	public function test_completion_notice_stays_until_dismissed(): void {
 		$sut   = $this->create_job( true );
 		$store = $this->require_state_store();
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
@@ -1055,21 +1087,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$done['action_id']              = 0;
 		$done['current_step']           = 'done';
 		$done['next_attempt_at']        = null;
-		$done['informational_outcomes'] = array(
-			array(
-				'code'               => 'unsupported_payment_methods_disabled',
-				'payment_method_ids' => array( 'giropay' ),
-			),
-		);
+		$done['informational_outcomes'] = array();
 		$this->assertTrue( $store->compare_and_set_record( $pending, $done ) );
-		$success  = WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS;
-		$disabled = WooPaymentsCutoverReconciliationJob::NOTICE_DISABLED_PAYMENT_METHODS;
+		$success = WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS;
 
 		for ( $page = 0; $page < 2; $page++ ) {
 			$this->assertTrue( $sut->is_completion_notice_due( $store->get_record(), $success ) );
-			$this->assertTrue( $sut->is_completion_notice_due( $store->get_record(), $disabled ) );
 		}
-		$this->assertSame( $done, $store->get_record(), 'Showing the notices must not change the record.' );
+		$this->assertSame( $done, $store->get_record(), 'Showing the notice must not change the record.' );
 		$this->assertFalse( $sut->dismiss_completion_notice( 'unknown' ) );
 		$this->assertSame( $done, $store->get_record(), 'An unknown notice must not change the record.' );
 
@@ -1081,10 +1106,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( $done['revision'] + 1, $dismissed['revision'] );
 		$this->assertContains( array( 'code' => 'success_notice_dismissed' ), $dismissed['informational_outcomes'] );
 		$this->assertFalse( $sut->is_completion_notice_due( $dismissed, $success ) );
-		$this->assertTrue( $sut->is_completion_notice_due( $dismissed, $disabled ), 'Each notice is dismissed on its own.' );
-
-		$this->assertTrue( $sut->dismiss_completion_notice( $disabled ) );
-		$this->assertFalse( $sut->is_completion_notice_due( $store->get_record(), $disabled ) );
 	}
 
 	/**
@@ -1461,7 +1482,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		return array(
 			'native runtime disabled'                    => array( 'native_runtime_disabled', 'none' ),
 			'unsupported WooPayments version'            => array( 'woopayments_plugin_version_unsupported', WooPaymentsCutoverState::DEFERRED ),
-			'unsupported payment methods'                => array( 'unsupported_payment_methods_enabled', WooPaymentsCutoverState::DEFERRED ),
 			'operational queue hooks'                    => array( 'operational_queue_hooks_undispositioned', WooPaymentsCutoverState::DEFERRED ),
 			'legacy Stripe Billing subscriptions'        => array( 'legacy_stripe_billing_subscriptions_present', WooPaymentsCutoverState::EXCLUDED ),
 			'native transport unavailable'               => array( 'native_transport_unavailable', WooPaymentsCutoverState::DEFERRED ),
@@ -3062,25 +3082,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A replay does not normalize the same unsupported payment methods twice.
-	 */
-	public function test_replayed_unsupported_payment_method_resolution_does_not_repeat_the_mutation(): void {
-		$preflight = $this->create_preflight_with_failures( array( 'unsupported_payment_methods_enabled' ) );
-		$sut       = $this->create_job_with_preflight( true, $preflight );
-		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-
-		$sut->handle_reconcile( $pending['generation'], 1 );
-		$first = $this->require_state_store()->get_record();
-		$this->assertIsArray( $first );
-		$sut->handle_reconcile( $first['generation'], 2 );
-
-		$this->assertSame( 1, $preflight->get_remove_unsupported_payment_method_call_count() );
-	}
-
-	/**
 	 * @testdox An unknown prefixed action remains queued and defers reconciliation.
 	 */
 	public function test_unknown_prefixed_operational_action_defers_without_cancellation(): void {
@@ -4293,6 +4294,48 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Create preflight facts that read the store's payment settings for real and clear only the environment facts this suite cannot provide.
+	 *
+	 * @return WooPaymentsCutoverPreflightService
+	 */
+	private function create_settings_reading_preflight(): WooPaymentsCutoverPreflightService {
+		$preflight = new class() extends WooPaymentsCutoverPreflightService {
+			/** Environment failures a unit test store always reports: no plugin files, no platform connection, no provider transport. */
+			private const ENVIRONMENT_FAILURES = array(
+				'woopayments_plugin_version_unsupported',
+				'native_transport_unavailable',
+				'wpcom_blog_id_unavailable',
+				'wpcom_connection_unavailable',
+				'wpcom_connection_owner_unavailable',
+			);
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array_values( array_diff( parent::get_reconciliation_failures(), self::ENVIRONMENT_FAILURES ) );
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Deactivate the plugin in the active-plugins option. */
+			public function deactivate_woopayments_plugin(): bool {
+				update_option( 'active_plugins', array() );
+				return true;
+			}
+
+			/** Report a site-local activation. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+		};
+		$preflight->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ) );
+
+		return $preflight;
+	}
+
+	/**
 	 * Create a job that finalizes cleanly and writes state through the container's account service.
 	 *
 	 * @param bool                               $plugin_active Whether the job's arbiter reports plugin ownership.
@@ -4537,9 +4580,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** @var bool */
 			private bool $derive_operational_queue_failure;
 
-			/** @var int */
-			private int $remove_unsupported_payment_method_call_count = 0;
-
 			/**
 			 * Initialize the controlled failures.
 			 *
@@ -4603,26 +4643,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 */
 			public function is_cutover_connection_owner_user_missing(): bool {
 				return $this->owner_missing;
-			}
-
-			/**
-			 * Remove the unsupported-method condition once normalized.
-			 *
-			 * @return string[]
-			 */
-			public function remove_unsupported_enabled_payment_method_ids(): array {
-				++$this->remove_unsupported_payment_method_call_count;
-				$this->failures = array_values( array_diff( $this->failures, array( 'unsupported_payment_methods_enabled' ) ) );
-				return array( 'bancontact' );
-			}
-
-			/**
-			 * Get the number of unsupported-method normalization attempts.
-			 *
-			 * @return int
-			 */
-			public function get_remove_unsupported_payment_method_call_count(): int {
-				return $this->remove_unsupported_payment_method_call_count;
 			}
 
 			/**

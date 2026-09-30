@@ -245,9 +245,6 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 			const before = await readCutoverStatus( migratorActionId );
 			expect( before.plugin_version ).toBe( '10.5.0' );
 			expect( before.plugin_active ).toBe( true );
-			expect( before.preflight_failures ).toContain(
-				'unsupported_payment_methods_enabled'
-			);
 			expect( before.migrator_action?.status ).toBe( 'pending' );
 			expect(
 				before.native_state,
@@ -798,9 +795,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 		process.env.E2E_WP_ENV_CONFIG ??=
 			'tests/e2e/test-plugins/woopayments-transition-seed/wp-env.json';
 		await wpCLI( [ 'wp', 'woopayments-e2e-transition', 'reset' ] );
-		// The 11.1.0 card-only profile. The `cutover` profile's unsupported
-		// `future_lpm` would make the job disable a method, a deliberate
-		// settings change this case must not mix with the rollback rule.
+		// The 11.1.0 card-only profile.
 		const identity = JSON.parse(
 			(
 				await wpCLI( [

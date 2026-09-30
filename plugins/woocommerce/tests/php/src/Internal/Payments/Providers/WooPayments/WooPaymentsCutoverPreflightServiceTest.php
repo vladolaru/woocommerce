@@ -153,9 +153,9 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The induced reconciliation vocabulary is exactly the 17 planned conditions.
+	 * @testdox The induced reconciliation vocabulary is exactly the 16 planned conditions.
 	 */
-	public function test_induced_reconciliation_vocabulary_is_exactly_the_planned_seventeen_conditions(): void {
+	public function test_induced_reconciliation_vocabulary_is_exactly_the_planned_sixteen_conditions(): void {
 		$codes = array();
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
@@ -171,7 +171,6 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		$this->navigation_ready      = false;
 		$this->rate_client_connected = false;
 		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
-		update_option( WooPaymentsSettingsService::SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card', 'unknown_method' ) ) );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		$this->create_legacy_stripe_billing_subscription_marker();
 		as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), 'test', true );
@@ -188,8 +187,8 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 
 		$unique_codes = array_values( array_unique( $codes ) );
 
-		$this->assertSame( array( 'native_runtime_disabled', 'woopayments_plugin_version_unsupported', 'native_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'wpcom_connection_owner_user_token_unavailable', 'unsupported_payment_methods_enabled', 'multi_currency_rates_unavailable', 'native_admin_surfaces_unavailable', 'provider_events_undispositioned', 'operational_queue_hooks_undispositioned', 'financial_migrations_unavailable', 'legacy_stripe_billing_subscriptions_present', 'provider_events_filter_invalid', 'operational_queue_hooks_filter_invalid', 'preflight_filter_invalid' ), $unique_codes );
-		$this->assertCount( 17, $unique_codes );
+		$this->assertSame( array( 'native_runtime_disabled', 'woopayments_plugin_version_unsupported', 'native_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'wpcom_connection_owner_user_token_unavailable', 'multi_currency_rates_unavailable', 'native_admin_surfaces_unavailable', 'provider_events_undispositioned', 'operational_queue_hooks_undispositioned', 'financial_migrations_unavailable', 'legacy_stripe_billing_subscriptions_present', 'provider_events_filter_invalid', 'operational_queue_hooks_filter_invalid', 'preflight_filter_invalid' ), $unique_codes );
+		$this->assertCount( 16, $unique_codes );
 	}
 
 	/**
@@ -261,30 +260,6 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 
 		$sut->invalidate_current_blog_memoization();
 		$this->assertNotContains( 'native_transport_unavailable', $sut->get_reconciliation_failures() );
-	}
-
-	/**
-	 * @testdox Removing unsupported methods preserves unrelated canonical settings.
-	 */
-	public function test_removing_unsupported_methods_preserves_unrelated_settings(): void {
-		update_option(
-			WooPaymentsSettingsService::SETTINGS_OPTION,
-			array(
-				'upe_enabled_payment_method_ids' => array( 'card', 'unknown_method' ),
-				'platform_checkout'              => 'yes',
-			)
-		);
-		$sut = $this->create_sut();
-
-		$this->assertSame( array( 'unknown_method' ), $sut->get_unsupported_enabled_payment_method_ids() );
-		$this->assertSame( array( 'unknown_method' ), $sut->remove_unsupported_enabled_payment_method_ids() );
-		$this->assertSame(
-			array(
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-				'platform_checkout'              => 'yes',
-			),
-			get_option( WooPaymentsSettingsService::SETTINGS_OPTION )
-		);
 	}
 
 	/**

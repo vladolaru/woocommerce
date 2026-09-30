@@ -640,9 +640,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 					if ( $this->reconciliation_job->is_completion_notice_due( $record, WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ) ) {
 						$this->output_success_notice();
 					}
-					if ( $this->reconciliation_job->is_completion_notice_due( $record, WooPaymentsCutoverReconciliationJob::NOTICE_DISABLED_PAYMENT_METHODS ) ) {
-						$this->output_disabled_payment_methods_notice( $record['informational_outcomes'] ?? array() );
-					}
 				}
 				return;
 			}
@@ -660,23 +657,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 */
 	private function is_start_eligible(): bool {
 		return $this->account_service->is_native_eligible() && $this->is_soft_cutover_enabled() && $this->arbiter->is_plugin_runtime_active() && $this->current_user_can_cutover();
-	}
-
-	/**
-	 * Render the payment methods disabled during reconciliation.
-	 *
-	 * @param array<int,mixed> $outcomes Persisted informational outcomes.
-	 */
-	private function output_disabled_payment_methods_notice( array $outcomes ): void {
-		foreach ( $outcomes as $outcome ) {
-			if ( ! is_array( $outcome ) || 'unsupported_payment_methods_disabled' !== ( $outcome['code'] ?? null ) || ! is_array( $outcome['payment_method_ids'] ?? null ) ) {
-				continue;
-			}
-			?>
-			<div class="notice notice-info" style="position:relative;"><?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_DISABLED_PAYMENT_METHODS ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?><p><?php esc_html_e( 'Some payment methods that are not supported by native WooPayments were disabled during the switch.', 'woocommerce' ); ?></p></div>
-			<?php
-			return;
-		}
 	}
 
 	/**

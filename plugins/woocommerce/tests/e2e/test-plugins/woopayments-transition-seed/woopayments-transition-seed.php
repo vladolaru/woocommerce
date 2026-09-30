@@ -120,9 +120,6 @@ final class WooPayments_Transition_Seed_CLI {
 			'test_mode'                      => 'yes',
 			'upe_enabled_payment_method_ids' => array( 'card' ),
 		);
-		if ( 'cutover' === $profile ) {
-			$settings['upe_enabled_payment_method_ids'] = array( 'card', 'future_lpm' );
-		}
 		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
 		$account = $donor['account_data'];
 		if ( ! is_array( $account ) || empty( $account ) || ( $account['account_id'] ?? null ) !== $donor['account_id'] || false !== ( $account['is_live'] ?? null ) ) {

@@ -247,11 +247,6 @@ class WooPaymentsCutoverPreflightService {
 		$raw_failures           = array_merge( $raw_failures, $platform_failures );
 		$compatibility_failures = array_merge( $compatibility_failures, $platform_failures );
 		$protected_failures     = array_merge( $protected_failures, $platform_failures );
-		if ( array() !== $this->get_unsupported_enabled_payment_method_ids() ) {
-			$raw_failures[]           = 'unsupported_payment_methods_enabled';
-			$compatibility_failures[] = 'unsupported_payment_methods_enabled';
-			$protected_failures[]     = 'unsupported_payment_methods_enabled';
-		}
 		if ( $this->has_unavailable_multi_currency_rate_provider() ) {
 			$raw_failures[]           = 'multi_currency_rates_unavailable';
 			$compatibility_failures[] = 'multi_currency_rates_unavailable';
@@ -353,35 +348,6 @@ class WooPaymentsCutoverPreflightService {
 
 		$this->network_preflight_failing_site_ids_memo = $failing_site_ids;
 		return $this->network_preflight_failing_site_ids_memo;
-	}
-
-	/**
-	 * Get enabled payment methods that native WooPayments cannot charge.
-	 *
-	 * @return string[] Payment method IDs.
-	 */
-	public function get_unsupported_enabled_payment_method_ids(): array {
-		return array_values( array_diff( $this->get_enabled_legacy_payment_method_ids(), WooPaymentsSettingsService::get_natively_chargeable_payment_method_ids() ) );
-	}
-
-	/**
-	 * Remove only enabled payment methods that native WooPayments cannot charge.
-	 *
-	 * @return string[] Removed payment method IDs.
-	 */
-	public function remove_unsupported_enabled_payment_method_ids(): array {
-		$unsupported_ids = $this->get_unsupported_enabled_payment_method_ids();
-		if ( array() === $unsupported_ids ) {
-			return array();
-		}
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION, array() );
-		if ( ! is_array( $settings ) ) {
-			return array();
-		}
-		$settings['upe_enabled_payment_method_ids'] = array_values( array_diff( $this->get_enabled_legacy_payment_method_ids(), $unsupported_ids ) );
-		update_option( WooPaymentsSettingsService::SETTINGS_OPTION, $settings );
-		$this->invalidate_current_blog_memoization();
-		return $unsupported_ids;
 	}
 
 	/**
@@ -572,19 +538,6 @@ class WooPaymentsCutoverPreflightService {
 			}
 		}
 		return false;
-	}
-
-	/**
-	 * Get enabled legacy payment method identifiers.
-	 *
-	 * @return string[]
-	 */
-	private function get_enabled_legacy_payment_method_ids(): array {
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION, array() );
-		if ( ! is_array( $settings ) || ! is_array( $settings['upe_enabled_payment_method_ids'] ?? array( 'card' ) ) ) {
-			return array();
-		}
-		return self::normalize_string_list( $settings['upe_enabled_payment_method_ids'] ?? array( 'card' ) );
 	}
 
 	/**
