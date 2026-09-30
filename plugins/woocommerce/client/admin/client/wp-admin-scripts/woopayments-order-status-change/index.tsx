@@ -20,10 +20,11 @@
 /**
  * External dependencies
  */
-import { Notice } from '@wordpress/components';
+import { dispatch } from '@wordpress/data';
 import domReady from '@wordpress/dom-ready';
 import { createRoot } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
+import { store as noticesStore } from '@wordpress/notices';
 import type { ReactNode } from 'react';
 
 /**
@@ -168,10 +169,7 @@ function bindManualRefundButton( disableManualRefunds: boolean ): void {
 }
 
 /**
- * Create the mount point for this entry's UI.
- *
- * Placed next to the status dropdown so that the error notice lands where the
- * merchant is already looking. Modals portal themselves to `<body>` regardless.
+ * Create the mount point for the confirmation modals, next to the status dropdown.
  *
  * @param field The order status dropdown.
  *
@@ -299,14 +297,11 @@ function initialize(): void {
 		render( null );
 	};
 
-	// `Notice` speaks its own content assertively for the error status, so the
-	// failure is announced as well as shown.
+	// Client 11.1.0 order-status-change-strategies/index.tsx:204-213 and refund-confirm-modal/index.js:76:
+	// an error in the admin notices store, which the WooCommerce admin shows as a snackbar.
 	const showError = ( message: string ): void => {
-		render(
-			<Notice status="error" onRemove={ dismiss }>
-				{ message }
-			</Notice>
-		);
+		dismiss();
+		void dispatch( noticesStore ).createErrorNotice( message );
 	};
 
 	onStatusChange( field, () => {

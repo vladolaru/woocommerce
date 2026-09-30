@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Order status changes that WooPayments cannot refund now report the error in a snackbar instead of a notice under the status field.

@@ -13,6 +13,12 @@ const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
+const mockCreateErrorNotice = jest.fn();
+jest.mock( '@wordpress/data', () => ( {
+	...jest.requireActual( '@wordpress/data' ),
+	dispatch: () => ( { createErrorNotice: mockCreateErrorNotice } ),
+} ) );
+
 jest.mock( '@wordpress/dom-ready', () => ( callback: () => void ) => {
 	mockReadyCallback = callback;
 } );
@@ -274,7 +280,9 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 		} );
 	} );
 
-	it( 'shows and announces why a refund is refused', () => {
+	it( 'reports why a refund is refused through the admin notices store', () => {
+		// Client 11.1.0 `order/order-status-change-strategies/index.tsx:204-213`: an error notice in
+		// `core/notices`, which the WooCommerce admin shows as a snackbar, not a notice in the order box.
 		window.woocommerceWooPaymentsOrderStatusChange = {
 			order_status: 'wc-processing',
 			can_refund: false,
@@ -288,14 +296,12 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 		bootEntry();
 		selectStatus( 'wc-refunded' );
 
+		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+			'Order cannot be refunded'
+		);
 		expect(
-			orderScreenQueries().getByText( 'Order cannot be refunded' )
-		).toBeInTheDocument();
-		// `Notice` announces error content assertively through @wordpress/a11y,
-		// so the refusal reaches screen readers as well as the screen.
-		expect(
-			document.getElementById( 'a11y-speak-assertive' )?.textContent
-		).toContain( 'Order cannot be refunded' );
+			orderScreenQueries().queryByText( 'Order cannot be refunded' )
+		).not.toBeInTheDocument();
 	} );
 
 	// Client 11.1.0 order/index.js:62-92 and class-wc-payments-admin.php:873-874.
@@ -588,9 +594,9 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 		);
 
 		selectStatus( 'wc-refunded' );
-		expect(
-			orderScreenQueries().getByText( 'Order cannot be refunded' )
-		).toBeInTheDocument();
+		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+			'Order cannot be refunded'
+		);
 	} );
 
 	it( 'uses a truthful accessible lock reason for an unknown dispute status', async () => {
