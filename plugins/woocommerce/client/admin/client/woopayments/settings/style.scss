@@ -229,6 +229,20 @@
 	border-top: 1px solid $gray-100;
 }
 
+// The express checkouts card has no list heading, so it drops the outer rules like the client's express checkouts card.
+.woopayments-settings-express-checkout-list {
+	border-top: 0;
+
+	> .woopayments-settings-payment-method-item:first-child {
+		padding-top: 0;
+	}
+
+	> .woopayments-settings-payment-method-item:last-child {
+		padding-bottom: 0;
+		border-bottom: 0;
+	}
+}
+
 .woopayments-settings-payment-method-item {
 	margin: 0;
 	padding: 24px 0;
@@ -243,6 +257,28 @@
 		@include breakpoint("<782px") {
 			grid-template-columns: 32px minmax(0, 1fr);
 			gap: 12px;
+		}
+	}
+
+	// Apple Pay and Google Pay share one checkbox and one action, like the client's grouped express checkout row.
+	&--grouped {
+		.components-checkbox-control {
+			grid-row: 1 / span 2;
+		}
+
+		.woopayments-settings-payment-method-item__icon {
+			grid-column: 2;
+			grid-row: auto;
+		}
+
+		.woopayments-settings-payment-method-item__actions {
+			grid-column: 4;
+			grid-row: 1 / span 2;
+
+			@include breakpoint("<782px") {
+				grid-column: 2;
+				grid-row: auto;
+			}
 		}
 	}
 

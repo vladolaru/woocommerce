@@ -1262,7 +1262,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).not.toBeInTheDocument();
 		expect(
 			within( paymentMethodsGroup ).queryByRole( 'checkbox', {
-				name: 'Link by Stripe',
+				name: 'Link',
 			} )
 		).not.toBeInTheDocument();
 		expect(
@@ -1272,7 +1272,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeInTheDocument();
 		expect(
 			within( expressCheckoutsSection ).getByRole( 'checkbox', {
-				name: 'Link by Stripe',
+				name: 'Link',
 			} )
 		).toBeDisabled();
 	} );
@@ -1336,7 +1336,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		expect(
 			within( expressCheckoutsSection ).queryByRole( 'checkbox', {
-				name: 'Link by Stripe',
+				name: 'Link',
 			} )
 		).not.toBeInTheDocument();
 	} );
@@ -1874,6 +1874,49 @@ describe( 'WooPaymentsSettingsPage', () => {
 		);
 	} );
 
+	it( 'shows one row per express checkout with its logo and name, and Apple Pay and Google Pay under one checkbox', () => {
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+		const headings = within( expressCheckoutsSection )
+			.getAllByRole( 'heading', { level: 4 } )
+			.map( ( heading ) => heading.textContent );
+
+		expect( headings ).toEqual( [
+			'WooPay',
+			'Apple Pay',
+			'Google Pay',
+			'Link',
+			'Amazon Pay',
+		] );
+		expect(
+			within( expressCheckoutsSection ).getAllByRole( 'checkbox' )
+		).toHaveLength( 4 );
+		expect(
+			within( expressCheckoutsSection )
+				.getAllByRole( 'img' )
+				.map( ( image ) => image.getAttribute( 'alt' ) )
+		).toEqual( [
+			'WooPay logo',
+			'Apple Pay logo',
+			'Google Pay logo',
+			'Link logo',
+			'Amazon Pay logo',
+		] );
+		const paymentRequestRow = within( expressCheckoutsSection )
+			.getByRole( 'checkbox', { name: 'Apple Pay / Google Pay' } )
+			.closest( 'li' ) as HTMLElement;
+		expect(
+			within( paymentRequestRow ).getAllByRole( 'heading', { level: 4 } )
+		).toHaveLength( 2 );
+		expect(
+			within( paymentRequestRow ).getAllByRole( 'link', {
+				name: 'Customize Apple Pay / Google Pay',
+			} )
+		).toHaveLength( 1 );
+	} );
+
 	it( 'lets the merchant enable Apple Pay, Google Pay and Amazon Pay and save them', async () => {
 		const setIsPaymentRequestEnabled = jest.fn();
 		const setIsAmazonPayEnabled = jest.fn();
@@ -1987,7 +2030,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		const linkCheckbox = within( expressCheckoutsSection ).getByRole(
 			'checkbox',
 			{
-				name: 'Link by Stripe',
+				name: 'Link',
 			}
 		);
 
@@ -2054,7 +2097,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		const linkCheckbox = within( expressCheckoutsSection ).getByRole(
 			'checkbox',
 			{
-				name: 'Link by Stripe',
+				name: 'Link',
 			}
 		);
 

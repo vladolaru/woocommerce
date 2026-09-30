@@ -15,6 +15,7 @@ import {
 import {
 	Children,
 	createInterpolateElement,
+	Fragment,
 	lazy,
 	Suspense,
 	useEffect,
@@ -54,6 +55,7 @@ import {
 	isAmazonPayExpressCheckoutAvailable,
 	isWooPayExpressCheckoutAvailable,
 } from './express-checkout/settings-utils';
+import { EXPRESS_CHECKOUT_METHOD_ICONS } from './express-checkout/method-icons';
 import type { PmPromotion } from '../promotions/types';
 import { SpotlightPromotion } from '../promotions/spotlight';
 import {
@@ -175,13 +177,18 @@ type CustomizableExpressCheckoutMethod =
 	| 'payment_request'
 	| 'amazon_pay';
 type ExpressCheckoutOverviewMethod = CustomizableExpressCheckoutMethod | 'link';
+type ExpressCheckoutOverviewItem = {
+	label: string;
+	iconSrc: string;
+	description: React.ReactNode;
+};
 type ExpressCheckoutOverviewRow = {
 	id: ExpressCheckoutOverviewMethod;
-	title: string;
+	label: string;
 	checked: boolean;
 	disabled?: boolean;
 	onChange: ( value: boolean ) => void;
-	description: React.ReactNode;
+	items: ExpressCheckoutOverviewItem[];
 	notice?: React.ReactNode;
 	noticeStatus?: 'info' | 'warning' | 'error';
 	action?: React.ReactNode;
@@ -1202,101 +1209,137 @@ const ExpressCheckoutSettingsSection = () => {
 
 	const expressRows: ExpressCheckoutOverviewRow[] = [];
 
+	// Rows, logos and copy follow client 11.1.0 client/settings/express-checkout/*-item.tsx.
 	if ( isWooPayExpressCheckoutAvailableForStore ) {
 		expressRows.push( {
 			id: 'woopay',
-			title: __( 'WooPay', 'woocommerce' ),
+			label: __( 'WooPay', 'woocommerce' ),
 			checked: isWooPayEnabled,
 			disabled: isLinkEnabled,
 			onChange: setIsWooPayEnabled,
-			description: isWooPayEnabled
-				? __(
-						'Boost conversion and customer loyalty by offering a single click, secure way to pay.',
-						'woocommerce'
-				  )
-				: createInterpolateElement(
-						__(
-							'Boost conversion and customer loyalty by offering a single click, secure way to pay. In order to use <wooPayLink>WooPay</wooPayLink>, you must agree to our <termsLink>WooCommerce Terms of Service</termsLink> and <privacyLink>Privacy Policy</privacyLink>. <trackingLink>Click here</trackingLink> to learn more about the data you will be sharing and opt-out options.',
-							'woocommerce'
-						),
-						{
-							wooPayLink: createTermsLink(
-								'https://woocommerce.com/document/woopay-merchant-documentation/'
-							),
-							termsLink: createTermsLink(
-								'https://wordpress.com/tos/'
-							),
-							privacyLink: createTermsLink(
-								'https://automattic.com/privacy/'
-							),
-							trackingLink: createTermsLink(
-								'https://woocommerce.com/usage-tracking/'
-							),
-						}
-				  ),
+			items: [
+				{
+					label: __( 'WooPay', 'woocommerce' ),
+					iconSrc: EXPRESS_CHECKOUT_METHOD_ICONS.woopay[ 0 ].src,
+					description: isWooPayEnabled
+						? __(
+								'Boost conversion and customer loyalty by offering a single click, secure way to pay.',
+								'woocommerce'
+						  )
+						: createInterpolateElement(
+								__(
+									'Boost conversion and customer loyalty by offering a single click, secure way to pay. In order to use <wooPayLink>WooPay</wooPayLink>, you must agree to our <termsLink>WooCommerce Terms of Service</termsLink> and <privacyLink>Privacy Policy</privacyLink>. <trackingLink>Click here</trackingLink> to learn more about the data you will be sharing and opt-out options.',
+									'woocommerce'
+								),
+								{
+									wooPayLink: createTermsLink(
+										'https://woocommerce.com/document/woopay-merchant-documentation/'
+									),
+									termsLink: createTermsLink(
+										'https://wordpress.com/tos/'
+									),
+									privacyLink: createTermsLink(
+										'https://automattic.com/privacy/'
+									),
+									trackingLink: createTermsLink(
+										'https://woocommerce.com/usage-tracking/'
+									),
+								}
+						  ),
+				},
+			],
 			notice: wooPayNotice,
 		} );
 	}
 
 	expressRows.push( {
 		id: 'payment_request',
-		title: __( 'Apple Pay / Google Pay', 'woocommerce' ),
+		label: __( 'Apple Pay / Google Pay', 'woocommerce' ),
 		checked: isPaymentRequestEnabled,
 		onChange: setIsPaymentRequestEnabled,
-		description: isPaymentRequestEnabled
-			? __(
-					'Allow customers to make payments using Apple Pay and Google Pay.',
-					'woocommerce'
-			  )
-			: createInterpolateElement(
-					__(
-						"Allow customers to make payments using Apple Pay and Google Pay. By enabling this feature, you agree to <appleStripeLink>Stripe</appleStripeLink> and <appleLink>Apple</appleLink>'s terms of use. By enabling this feature, you agree to <googleStripeLink>Stripe</googleStripeLink>, and <googleLink>Google</googleLink>'s terms of use.",
-						'woocommerce'
-					),
-					{
-						appleStripeLink: createTermsLink(
-							'https://stripe.com/apple-pay/legal'
-						),
-						appleLink: createTermsLink(
-							'https://developer.apple.com/apple-pay/acceptable-use-guidelines-for-websites/'
-						),
-						googleStripeLink: createTermsLink(
-							'https://stripe.com/apple-pay/legal'
-						),
-						googleLink: createTermsLink(
-							'https://androidpay.developers.google.com/terms/sellertos'
-						),
-					}
-			  ),
+		items: [
+			{
+				label: __( 'Apple Pay', 'woocommerce' ),
+				iconSrc: EXPRESS_CHECKOUT_METHOD_ICONS.payment_request[ 0 ].src,
+				description: isPaymentRequestEnabled
+					? __(
+							'Apple Pay is an easy and secure way for customers to pay on your store.',
+							'woocommerce'
+					  )
+					: createInterpolateElement(
+							__(
+								"Apple Pay is an easy and secure way for customers to pay on your store. By enabling this feature, you agree to <stripeLink>Stripe</stripeLink> and <appleLink>Apple</appleLink>'s terms of use.",
+								'woocommerce'
+							),
+							{
+								stripeLink: createTermsLink(
+									'https://stripe.com/apple-pay/legal'
+								),
+								appleLink: createTermsLink(
+									'https://developer.apple.com/apple-pay/acceptable-use-guidelines-for-websites/'
+								),
+							}
+					  ),
+			},
+			{
+				label: __( 'Google Pay', 'woocommerce' ),
+				iconSrc: EXPRESS_CHECKOUT_METHOD_ICONS.payment_request[ 1 ].src,
+				description: isPaymentRequestEnabled
+					? __(
+							'Offer customers a fast, secure checkout experience with Google Pay.',
+							'woocommerce'
+					  )
+					: createInterpolateElement(
+							__(
+								"Offer customers a fast, secure checkout experience with Google Pay. By enabling this feature, you agree to <stripeLink>Stripe</stripeLink>, and <googleLink>Google</googleLink>'s terms of use.",
+								'woocommerce'
+							),
+							{
+								stripeLink: createTermsLink(
+									'https://stripe.com/apple-pay/legal'
+								),
+								googleLink: createTermsLink(
+									'https://androidpay.developers.google.com/terms/sellertos'
+								),
+							}
+					  ),
+			},
+		],
 		duplicatePaymentMethodId: 'apple_pay_google_pay',
 	} );
 
 	if ( isLinkAvailable ) {
 		expressRows.push( {
 			id: 'link',
-			title: __( 'Link by Stripe', 'woocommerce' ),
+			label: __( 'Link', 'woocommerce' ),
 			checked: isLinkEnabled,
 			disabled: isWooPayBlockingLink,
 			onChange: setIsLinkEnabled,
-			description: isLinkEnabled
-				? __(
-						'Let customers use Link for faster checkout.',
-						'woocommerce'
-				  )
-				: createInterpolateElement(
-						__(
-							'Let customers use Link for faster checkout. By enabling this feature, you agree to the <termsLink>Link by Stripe terms</termsLink>, and <privacyLink>Privacy Policy</privacyLink>.',
-							'woocommerce'
-						),
-						{
-							termsLink: createTermsLink(
-								'https://link.com/terms'
-							),
-							privacyLink: createTermsLink(
-								'https://link.com/privacy'
-							),
-						}
-				  ),
+			items: [
+				{
+					label: __( 'Link', 'woocommerce' ),
+					iconSrc: EXPRESS_CHECKOUT_METHOD_ICONS.link[ 0 ].src,
+					description: isLinkEnabled
+						? __(
+								"Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.",
+								'woocommerce'
+						  )
+						: createInterpolateElement(
+								__(
+									"Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience. By enabling this feature, you agree to the <termsLink>Link by Stripe terms</termsLink>, and <privacyLink>Privacy Policy</privacyLink>.",
+									'woocommerce'
+								),
+								{
+									termsLink: createTermsLink(
+										'https://link.com/terms'
+									),
+									privacyLink: createTermsLink(
+										'https://link.com/privacy'
+									),
+								}
+						  ),
+				},
+			],
 			notice: linkNotice,
 			action: (
 				<Button
@@ -1314,24 +1357,30 @@ const ExpressCheckoutSettingsSection = () => {
 	if ( isAmazonPayAvailable ) {
 		expressRows.push( {
 			id: 'amazon_pay',
-			title: __( 'Amazon Pay', 'woocommerce' ),
+			label: __( 'Amazon Pay', 'woocommerce' ),
 			checked: isAmazonPayEnabled,
 			disabled: ! amazonPayAvailability.isActionable,
 			onChange: setIsAmazonPayEnabled,
-			description: createInterpolateElement(
-				__(
-					"Allow customers to make payments using Amazon Pay. By activating this feature, you accept <stripeLink>Stripe</stripeLink> and <amazonLink>Amazon</amazonLink>'s terms of use.",
-					'woocommerce'
-				),
+			items: [
 				{
-					stripeLink: createTermsLink(
-						'https://stripe.com/legal/ssa'
+					label: __( 'Amazon Pay', 'woocommerce' ),
+					iconSrc: EXPRESS_CHECKOUT_METHOD_ICONS.amazon_pay[ 0 ].src,
+					description: createInterpolateElement(
+						__(
+							"Offer customers a fast, secure checkout experience with Amazon Pay. By activating this feature, you accept <stripeLink>Stripe</stripeLink> and <amazonLink>Amazon</amazonLink>'s terms of use.",
+							'woocommerce'
+						),
+						{
+							stripeLink: createTermsLink(
+								'https://stripe.com/legal/ssa'
+							),
+							amazonLink: createTermsLink(
+								'https://stripe.com/legal/amazon-pay'
+							),
+						}
 					),
-					amazonLink: createTermsLink(
-						'https://stripe.com/legal/amazon-pay'
-					),
-				}
-			),
+				},
+			],
 			notice: amazonPayAvailability.notice || '',
 			noticeStatus: amazonPayAvailability.noticeStatus,
 		} );
@@ -1345,7 +1394,7 @@ const ExpressCheckoutSettingsSection = () => {
 				<>
 					<p>
 						{ __(
-							'Let customers use digital wallets and express payment methods across your store.',
+							'Let your customers use their favorite express payment methods and digital wallets for faster, more secure checkouts across different parts of your store.',
 							'woocommerce'
 						) }
 					</p>
@@ -1355,50 +1404,74 @@ const ExpressCheckoutSettingsSection = () => {
 				</>
 			}
 		>
-			<ul className="woopayments-settings-express-checkout-list">
+			<ul className="woopayments-settings-payment-methods-list woopayments-settings-express-checkout-list">
 				{ expressRows.map( ( row ) => (
 					<li
 						key={ row.id }
-						className="woopayments-settings-express-checkout-list__item"
+						className={
+							row.items.length > 1
+								? 'woopayments-settings-payment-method-item woopayments-settings-payment-method-item--grouped'
+								: 'woopayments-settings-payment-method-item'
+						}
 					>
-						<div className="woopayments-settings-express-checkout-list__main">
+						<div className="woopayments-settings-payment-method-item__main">
 							<CheckboxControl
 								id={ getExpressCheckoutCheckboxId( row.id ) }
 								checked={ row.checked }
 								disabled={ row.disabled }
-								label={ row.title }
+								label={ row.label }
 								onChange={ ( value ) =>
 									row.onChange( Boolean( value ) )
 								}
 								__nextHasNoMarginBottom
 							/>
-							<div className="woopayments-settings-express-checkout-list__body">
-								<h3>{ row.title }</h3>
-								<p>{ row.description }</p>
-								{ row.notice && (
-									<Notice
-										status={ row.noticeStatus || 'warning' }
-										isDismissible={ false }
+							{ row.items.map( ( item ) => (
+								<Fragment key={ item.label }>
+									<img
+										className="woopayments-settings-payment-method-item__icon"
+										src={ item.iconSrc }
+										alt={ sprintf(
+											/* translators: %s: Payment method label. */
+											__( '%s logo', 'woocommerce' ),
+											item.label
+										) }
+									/>
+									<div className="woopayments-settings-payment-method-item__body">
+										<div className="woopayments-settings-payment-method-item__heading">
+											<h4>{ item.label }</h4>
+										</div>
+										<p>{ item.description }</p>
+									</div>
+								</Fragment>
+							) ) }
+							<div className="woopayments-settings-payment-method-item__actions">
+								{ isCustomizableExpressCheckoutMethod(
+									row.id
+								) && (
+									<Button
+										variant="secondary"
+										href={ getCustomizeUrl( row.id ) }
+										aria-label={ sprintf(
+											/* translators: %s: Express checkout payment method name. */
+											__( 'Customize %s', 'woocommerce' ),
+											row.label
+										) }
 									>
-										{ row.notice }
-									</Notice>
+										{ __( 'Customize', 'woocommerce' ) }
+									</Button>
 								) }
+								{ row.action }
 							</div>
-							{ isCustomizableExpressCheckoutMethod( row.id ) && (
-								<Button
-									variant="secondary"
-									href={ getCustomizeUrl( row.id ) }
-									aria-label={ sprintf(
-										/* translators: %s: Express checkout payment method name. */
-										__( 'Customize %s', 'woocommerce' ),
-										row.title
-									) }
-								>
-									{ __( 'Customize', 'woocommerce' ) }
-								</Button>
-							) }
-							{ row.action }
 						</div>
+						{ row.notice && (
+							<Notice
+								status={ row.noticeStatus || 'warning' }
+								isDismissible={ false }
+								className="woopayments-settings-payment-method-item__notice"
+							>
+								{ row.notice }
+							</Notice>
+						) }
 						{ row.duplicatePaymentMethodId &&
 							duplicatedPaymentMethodIds[
 								row.duplicatePaymentMethodId
