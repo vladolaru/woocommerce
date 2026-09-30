@@ -3,7 +3,13 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { render, screen, within } from '@testing-library/react';
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -13,6 +19,7 @@ import { MemoryRouter } from 'react-router-dom';
 import {
 	WooPaymentsDisputesPage,
 	getDisputeRespondBy,
+	getDisputesApiQuery,
 } from '../money-movement/disputes-page';
 import {
 	getWooPaymentsDisputes,
@@ -25,6 +32,8 @@ type MockField = {
 	label?: ReactNode;
 	enableHiding?: boolean;
 	enableSorting?: boolean;
+	filterBy?: false | { operators: string[]; isPrimary?: boolean };
+	elements?: Array< { value: string; label: string } >;
 	render?: ( props: { item: Record< string, unknown > } ) => ReactNode;
 };
 
@@ -147,9 +156,9 @@ const REQUIRED = [
 // The client's `isSortable` columns.
 const SORTABLE = [ 'amount', 'created', 'due_by' ];
 
-const renderPage = () =>
+const renderPage = ( entry = '/woopayments/disputes' ) =>
 	render(
-		<MemoryRouter initialEntries={ [ '/woopayments/disputes' ] }>
+		<MemoryRouter initialEntries={ [ entry ] }>
 			<WooPaymentsDisputesPage />
 		</MemoryRouter>
 	);
@@ -279,5 +288,158 @@ describe( 'WooPayments disputes list columns', () => {
 		expect( respondBy( -1 ) ).toBe( '' );
 		expect( respondBy( 20, { ...DUE, status: 'won' } ) ).toBe( '' );
 		expect( respondBy( 80 ) ).toMatch( /2026/ );
+	} );
+} );
+
+describe( 'WooPayments disputes Show and currency filters', () => {
+	const AWAITING = [ 'needs_response', 'warning_needs_response' ];
+	const lastQuery = ( mock: jest.Mock ) =>
+		mock.mock.calls[ mock.mock.calls.length - 1 ][ 0 ];
+
+	beforeEach( () => {
+		setMockUserPreferences( {} );
+		window.wcSettings = { adminUrl: 'http://example.com/wp-admin/' };
+		mockGetDisputes.mockReset();
+		mockGetSummary.mockReset();
+		mockGetDisputes.mockResolvedValue( {
+			data: RECORDED as never,
+			total_count: 3,
+		} );
+		mockGetSummary.mockResolvedValue( { count: 3, currencies: [ 'usd' ] } );
+	} );
+
+	it( "turns filter=awaiting_response into the client's search for the two needs-response statuses", () => {
+		expect(
+			getDisputesApiQuery(
+				{ page: 1, search: 'Ada' },
+				'awaiting_response'
+			)
+		).toEqual( { page: 1, search: AWAITING } );
+		expect( getDisputesApiQuery( { page: 1, search: 'Ada' }, 'all' ) ).toEqual(
+			{ page: 1, search: 'Ada' }
+		);
+		expect(
+			getDisputesApiQuery( { date_before: '2026-09-30' }, 'advanced' )
+				.date_before
+		).toMatch( /^2026-(09-30|10-01) \d{2}:59:59$/ );
+	} );
+
+	it( 'requests only the disputes awaiting a response when the badge link opens the list', async () => {
+		renderPage( '/woopayments/disputes?filter=awaiting_response' );
+		await screen.findByText( 'Disputes loaded.' );
+
+		expect( lastQuery( mockGetDisputes ).search ).toEqual( AWAITING );
+		expect( lastQuery( mockGetSummary ).search ).toEqual( AWAITING );
+		expect( screen.getByLabelText( 'Show' ) ).toHaveValue(
+			'awaiting_response'
+		);
+	} );
+
+	it( "offers the client's Show choices and requests all disputes by default", async () => {
+		renderPage();
+		await screen.findByText( 'Disputes loaded.' );
+
+		const show = screen.getByLabelText( 'Show' );
+		expect( show ).toHaveValue( 'all' );
+		expect(
+			within( show )
+				.getAllByRole( 'option' )
+				.map( ( option ) => option.textContent )
+		).toEqual( [ 'Needs response', 'All disputes', 'Advanced filters' ] );
+		expect( lastQuery( mockGetDisputes ).search ).toBeUndefined();
+		expect(
+			screen.queryByLabelText( 'Dispute currency' )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'drops the advanced filters when Show leaves Advanced filters', async () => {
+		renderPage(
+			'/woopayments/disputes?status_is=won&search=Ada&filter=advanced'
+		);
+		await screen.findByText( 'Disputes loaded.' );
+		expect( lastQuery( mockGetDisputes ) ).toMatchObject( {
+			status_is: 'won',
+			search: 'Ada',
+		} );
+
+		fireEvent.change( screen.getByLabelText( 'Show' ), {
+			target: { value: 'awaiting_response' },
+		} );
+
+		await waitFor( () =>
+			expect( lastQuery( mockGetDisputes ).search ).toEqual( AWAITING )
+		);
+		expect( lastQuery( mockGetDisputes ).status_is ).toBeUndefined();
+	} );
+
+	it( 'adds the Status and Disputed on filters only for Advanced filters', async () => {
+		const filterable = () =>
+			mockFields
+				.filter( ( field ) => field.filterBy )
+				.map( ( field ) => [ field.id, field.filterBy ] );
+
+		renderPage();
+		await screen.findByText( 'Disputes loaded.' );
+		expect( filterable() ).toEqual( [] );
+
+		fireEvent.change( screen.getByLabelText( 'Show' ), {
+			target: { value: 'advanced' },
+		} );
+
+		await waitFor( () =>
+			expect( filterable() ).toEqual( [
+				[ 'status', { operators: [ 'is', 'isNot' ], isPrimary: true } ],
+				[
+					'created',
+					{
+						operators: [ 'before', 'after', 'between' ],
+						isPrimary: true,
+					},
+				],
+			] )
+		);
+		expect(
+			mockFields
+				.find( ( field ) => field.id === 'status' )
+				?.elements?.map( ( element ) => element.label )
+		).toEqual( [
+			'Inquiry: Response needed',
+			'Inquiry: Under review',
+			'Inquiry: Closed',
+			'Response needed',
+			'Under review',
+			'Charge refunded',
+			'Won',
+			'Lost',
+		] );
+	} );
+
+	it( 'shows the currency select for more than one currency and filters by the chosen one', async () => {
+		mockGetSummary.mockResolvedValue( {
+			count: 3,
+			currencies: [ 'usd', 'eur' ],
+		} );
+		renderPage( '/woopayments/disputes?filter=awaiting_response' );
+		await screen.findByText( 'Disputes loaded.' );
+
+		const currency = screen.getByLabelText( 'Dispute currency' );
+		expect(
+			within( currency )
+				.getAllByRole( 'option' )
+				.map( ( option ) => option.textContent )
+		).toEqual( [
+			'All currencies',
+			'United States (US) dollar',
+			'Euro',
+		] );
+
+		fireEvent.change( currency, { target: { value: 'eur' } } );
+
+		await waitFor( () =>
+			expect( lastQuery( mockGetDisputes ).store_currency_is ).toBe(
+				'eur'
+			)
+		);
+		expect( lastQuery( mockGetDisputes ).search ).toEqual( AWAITING );
 	} );
 } );

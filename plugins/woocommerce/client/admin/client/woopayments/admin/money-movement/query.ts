@@ -202,7 +202,13 @@ const getUserTimezone = () => {
 	) }:${ String( absoluteOffset % 60 ).padStart( 2, '0' ) }`;
 };
 
-const normalizeSettledTransactionsApiQuery = (
+/**
+ * Turns the list's local calendar-day date filters into the platform's UTC
+ * `Y-m-d H:i:s` day boundaries, like the client's `formatDateValue()`.
+ *
+ * @param query The list query.
+ */
+export const normalizeDateFiltersForApi = (
 	query: WooPaymentsMoneyMovementQuery
 ): WooPaymentsMoneyMovementQuery => {
 	const normalizedQuery = { ...query };
@@ -244,10 +250,15 @@ const normalizeSettledTransactionsApiQuery = (
 		];
 	}
 
-	normalizedQuery.user_timezone = getUserTimezone();
-
 	return normalizedQuery;
 };
+
+const normalizeSettledTransactionsApiQuery = (
+	query: WooPaymentsMoneyMovementQuery
+): WooPaymentsMoneyMovementQuery => ( {
+	...normalizeDateFiltersForApi( query ),
+	user_timezone: getUserTimezone(),
+} );
 
 export const buildSettledTransactionsApiPath = (
 	path: string,
@@ -374,9 +385,10 @@ const getFilterOperator = (
 };
 
 const getFilterParamForDataViewFilter = (
-	filter: WooPaymentsMoneyMovementDataViewFilter
+	filter: WooPaymentsMoneyMovementDataViewFilter,
+	dateField = 'date'
 ): WooPaymentsMoneyMovementQueryFilterParam | undefined => {
-	if ( filter.field === 'date' ) {
+	if ( filter.field === dateField ) {
 		if ( filter.operator === 'after' ) {
 			return 'date_after';
 		}
@@ -551,6 +563,8 @@ export const moneyMovementQueryToDataViewsView = (
 		titleField?: string;
 		showTitle?: boolean;
 		layout?: Record< string, unknown >;
+		/** The field the date filters belong to, when it is not `date`. */
+		dateField?: string;
 	} = {}
 ): WooPaymentsMoneyMovementDataView => {
 	const normalizedQuery = {
@@ -570,7 +584,10 @@ export const moneyMovementQueryToDataViewsView = (
 			( Array.isArray( value ) && value.length > 0 )
 		) {
 			result.push( {
-				field: FILTER_PARAM_TO_FIELD[ param ] || param,
+				field:
+					isDateFilterParam( param ) && options.dateField
+						? options.dateField
+						: FILTER_PARAM_TO_FIELD[ param ] || param,
 				operator: getFilterOperator( param, value ),
 				value,
 			} );
@@ -617,7 +634,8 @@ export const moneyMovementQueryToDataViewsView = (
 
 export const dataViewsViewToMoneyMovementQuery = (
 	view: WooPaymentsMoneyMovementDataView,
-	currentQuery: WooPaymentsMoneyMovementQuery = {}
+	currentQuery: WooPaymentsMoneyMovementQuery = {},
+	dateField = 'date'
 ): WooPaymentsMoneyMovementQuery => {
 	const query: WooPaymentsMoneyMovementQuery = {
 		...currentQuery,
@@ -650,7 +668,7 @@ export const dataViewsViewToMoneyMovementQuery = (
 	} );
 
 	view.filters?.forEach( ( filter ) => {
-		const param = getFilterParamForDataViewFilter( filter );
+		const param = getFilterParamForDataViewFilter( filter, dateField );
 		let value: string | string[] | undefined;
 
 		if ( param ) {

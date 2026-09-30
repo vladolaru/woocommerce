@@ -488,6 +488,18 @@
 	margin: 0;
 }
 
+// Client 11.1.0 `ReportFilters` pickers: labelled selects in one row above the list.
+.woocommerce-woopayments-money-movement__filters {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 16px;
+
+	> * {
+		flex: 0 1 320px;
+		min-width: 0;
+	}
+}
+
 .woocommerce-woopayments-money-movement__tabs {
 	border-bottom: 1px solid #dcdcde;
 	display: flex;

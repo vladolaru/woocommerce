@@ -19,15 +19,22 @@ import {
 import type {
 	WooPaymentsDispute,
 	WooPaymentsMoneyMovementDataView,
+	WooPaymentsMoneyMovementQuery,
 	WooPaymentsPaymentOrder,
 } from './types';
-import { isDisputeActionable } from './dispute-evidence-fields';
+import {
+	ACTIONABLE_DISPUTE_STATUSES,
+	isDisputeActionable,
+} from './dispute-evidence-fields';
+import { DISPUTE_STATUS_LABELS } from './dispute-utils';
 import {
 	buildMoneyMovementRoutePath,
 	dataViewsViewToMoneyMovementQuery,
 	moneyMovementQueryToDataViewsView,
+	normalizeDateFiltersForApi,
 	parseMoneyMovementQuery,
 } from './query';
+import { WooPaymentsListFilters } from './list-filters';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { runWooPaymentsExport } from './export';
 import {
@@ -45,6 +52,7 @@ import { OrderLink } from './transactions-list-fields';
 import { LiveStatusMessage, StatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import { formatCurrencyName } from '../currency';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 import '../style.scss';
@@ -87,6 +95,75 @@ const DISPUTE_DEFAULT_HIDDEN_COLUMNS = [
 	'created',
 ];
 const HOUR_IN_MS = 60 * 60 * 1000;
+
+/**
+ * The "Show" choices. Client 11.1.0 `disputes/filters/config.ts:78-99`.
+ */
+export type DisputesShowFilter = 'awaiting_response' | 'all' | 'advanced';
+const DISPUTES_SHOW_FILTERS: DisputesShowFilter[] = [
+	'awaiting_response',
+	'all',
+	'advanced',
+];
+// The "Show" choice that resets the advanced filters. Client 11.1.0 FilterPicker `update()`.
+const ADVANCED_FILTER_PARAMS = [
+	'status_is',
+	'status_is_not',
+	'date_after',
+	'date_before',
+	'date_between',
+] as const;
+const ALL_CURRENCIES = '---';
+
+/**
+ * Reads the `filter` argument the menu badge and the dispute tasks link with.
+ * Anything else shows all disputes, the client's default choice.
+ *
+ * @param search The route's query string.
+ */
+export const getDisputesShowFilter = ( search: string ): DisputesShowFilter => {
+	const value = new URLSearchParams( search ).get( 'filter' );
+
+	return DISPUTES_SHOW_FILTERS.find( ( filter ) => filter === value ) || 'all';
+};
+
+/**
+ * The disputes API query: day boundaries for the date filters, and "Needs
+ * response" as a search for the two statuses awaiting a response.
+ * Client 11.1.0 `data/disputes/resolvers.js:25-41` `formatQueryFilters()`.
+ *
+ * @param query      The list query.
+ * @param showFilter The "Show" choice.
+ */
+export const getDisputesApiQuery = (
+	query: WooPaymentsMoneyMovementQuery,
+	showFilter: DisputesShowFilter
+): WooPaymentsMoneyMovementQuery => {
+	const apiQuery = normalizeDateFiltersForApi( query );
+
+	if ( showFilter === 'awaiting_response' ) {
+		apiQuery.search = [ ...ACTIONABLE_DISPUTE_STATUSES ];
+	}
+
+	return apiQuery;
+};
+
+const buildDisputesRoute = (
+	query: WooPaymentsMoneyMovementQuery,
+	showFilter: DisputesShowFilter
+) => {
+	const route = buildMoneyMovementRoutePath( '/woopayments/disputes', query );
+
+	if ( showFilter === 'all' ) {
+		return route;
+	}
+
+	return `${ route }${ route.includes( '?' ) ? '&' : '?' }filter=${ showFilter }`;
+};
+
+const DISPUTE_STATUS_FILTER_ELEMENTS = Object.entries(
+	DISPUTE_STATUS_LABELS
+).map( ( [ value, label ] ) => ( { value, label } ) );
 
 // The cache stores UTC `Y-m-d H:i:s` strings, as the client's `moment.utc()` reads them.
 const parseUtcDate = ( value: string ) =>
@@ -193,12 +270,19 @@ export const WooPaymentsDisputesPage = () => {
 			} ),
 		[ location.search ]
 	);
+	const showFilter = getDisputesShowFilter( location.search );
+	const isAdvanced = showFilter === 'advanced';
+	const apiQuery = useMemo(
+		() => getDisputesApiQuery( query, showFilter ),
+		[ query, showFilter ]
+	);
 	const view = useMemo(
 		() =>
 			moneyMovementQueryToDataViewsView( query, {
 				fields: visibleFields,
 				titleField: 'reason',
 				showTitle: false,
+				dateField: 'created',
 			} ),
 		[ query, visibleFields ]
 	);
@@ -224,6 +308,14 @@ export const WooPaymentsDisputesPage = () => {
 				label: __( 'Status', 'woocommerce' ),
 				enableHiding: false,
 				enableSorting: false,
+				// Client 11.1.0 `disputes/filters/config.ts:176-217`: "Is" and "Is not" one status.
+				elements: DISPUTE_STATUS_FILTER_ELEMENTS,
+				filterBy: isAdvanced
+					? {
+							operators: [ 'is', 'isNot' ] as const,
+							isPrimary: true,
+					  }
+					: ( false as const ),
 				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
 					formatLabel( item.status ),
 			},
@@ -285,6 +377,14 @@ export const WooPaymentsDisputesPage = () => {
 			{
 				id: 'created',
 				label: __( 'Disputed on', 'woocommerce' ),
+				type: 'date' as const,
+				// Client 11.1.0 `disputes/filters/config.ts:130-175`: before, after or between dates.
+				filterBy: isAdvanced
+					? {
+							operators: [ 'before', 'after', 'between' ] as const,
+							isPrimary: true,
+					  }
+					: ( false as const ),
 				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
 					formatDateTime( item.created || item.date ),
 			},
@@ -352,7 +452,7 @@ export const WooPaymentsDisputesPage = () => {
 				},
 			},
 		],
-		[]
+		[ isAdvanced ]
 	);
 
 	useEffect( () => {
@@ -369,8 +469,8 @@ export const WooPaymentsDisputesPage = () => {
 
 			try {
 				const [ response, nextSummary ] = await Promise.all( [
-					getWooPaymentsDisputes( query ),
-					getWooPaymentsDisputesSummary( query ),
+					getWooPaymentsDisputes( apiQuery ),
+					getWooPaymentsDisputesSummary( apiQuery ),
 				] );
 
 				if ( isMounted ) {
@@ -403,16 +503,49 @@ export const WooPaymentsDisputesPage = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [ query ] );
+	}, [ apiQuery ] );
 
 	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
 		saveFields( nextView.fields );
+
+		// DataViews adds a filter without a value first; wait for the value.
+		if (
+			nextView.filters?.some( ( filter ) => filter.value === undefined )
+		) {
+			return;
+		}
+
 		navigate(
-			buildMoneyMovementRoutePath(
-				'/woopayments/disputes',
-				dataViewsViewToMoneyMovementQuery( nextView, query )
+			buildDisputesRoute(
+				dataViewsViewToMoneyMovementQuery( nextView, query, 'created' ),
+				showFilter
 			)
 		);
+	};
+	// Client 11.1.0 FilterPicker `update()`: another "Show" choice keeps the page, sort, search
+	// and currency, and anything but "Advanced filters" drops the advanced filters.
+	const handleShowFilterChange = ( value: string ) => {
+		const nextFilter = getDisputesShowFilter( `filter=${ value }` );
+		const nextQuery = { ...query };
+
+		if ( nextFilter !== 'advanced' ) {
+			ADVANCED_FILTER_PARAMS.forEach( ( param ) => {
+				delete nextQuery[ param ];
+			} );
+		}
+
+		navigate( buildDisputesRoute( nextQuery, nextFilter ) );
+	};
+	const handleCurrencyChange = ( value: string ) => {
+		const nextQuery = { ...query };
+
+		if ( value === ALL_CURRENCIES ) {
+			delete nextQuery.store_currency_is;
+		} else {
+			nextQuery.store_currency_is = value;
+		}
+
+		navigate( buildDisputesRoute( nextQuery, showFilter ) );
 	};
 	const handleExport = async () => {
 		setIsExporting( true );
@@ -420,7 +553,8 @@ export const WooPaymentsDisputesPage = () => {
 
 		try {
 			await runWooPaymentsExport( {
-				requestExport: () => requestWooPaymentsDisputesExport( query ),
+				requestExport: () =>
+					requestWooPaymentsDisputesExport( apiQuery ),
 				getExportUrl: getWooPaymentsDisputesExportUrl,
 			} );
 			setExportMessage( {
@@ -457,12 +591,65 @@ export const WooPaymentsDisputesPage = () => {
 	const summaryCount = getSummaryCount( summary ) ?? totalCount;
 	const summaryTotal = getSummaryTotal( summary );
 	const summaryCurrency = getSummaryCurrency( summary );
+	const currencyFilter =
+		typeof query.store_currency_is === 'string'
+			? query.store_currency_is
+			: undefined;
+	// Client 11.1.0 `disputes/index.tsx:519-523` and `disputes/filters/index.tsx:22-40`:
+	// the currency select shows when the summary lists more than one currency.
+	let storeCurrencies: string[] = [];
+
+	if ( Array.isArray( summary.currencies ) ) {
+		storeCurrencies = summary.currencies.map( String );
+	} else if ( currencyFilter ) {
+		storeCurrencies = [ currencyFilter ];
+	}
+
+	const listFilters = [
+		{
+			id: 'show',
+			label: __( 'Show', 'woocommerce' ),
+			value: showFilter,
+			options: [
+				{
+					label: __( 'Needs response', 'woocommerce' ),
+					value: 'awaiting_response',
+				},
+				{ label: __( 'All disputes', 'woocommerce' ), value: 'all' },
+				{
+					label: __( 'Advanced filters', 'woocommerce' ),
+					value: 'advanced',
+				},
+			],
+			onChange: handleShowFilterChange,
+		},
+	];
+
+	if ( storeCurrencies.length > 1 ) {
+		listFilters.unshift( {
+			id: 'currency',
+			label: __( 'Dispute currency', 'woocommerce' ),
+			value: currencyFilter || ALL_CURRENCIES,
+			options: [
+				{
+					label: __( 'All currencies', 'woocommerce' ),
+					value: ALL_CURRENCIES,
+				},
+				...storeCurrencies.map( ( currency ) => ( {
+					label: formatCurrencyName( currency ),
+					value: currency,
+				} ) ),
+			],
+			onChange: handleCurrencyChange,
+		} );
+	}
 
 	return (
 		<div className="woocommerce-woopayments-money-movement">
 			{ /* Client 11.1.0 disputes/index.tsx:451. */ }
 			<WooPaymentsTestModeNotice currentPage="disputes" />
 			<SpotlightPromotion />
+			<WooPaymentsListFilters filters={ listFilters } />
 			<section aria-busy={ isLoading }>
 				<h2>{ __( 'Disputes', 'woocommerce' ) }</h2>
 				<LiveStatusMessage isError={ !! errorMessage }>

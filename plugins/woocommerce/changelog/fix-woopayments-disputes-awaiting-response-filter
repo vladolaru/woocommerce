@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments disputes list now honors the "Needs response" link from the menu badge and dispute tasks, and offers the Show, advanced and currency filters.

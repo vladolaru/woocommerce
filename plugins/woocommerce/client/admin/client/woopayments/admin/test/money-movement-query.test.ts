@@ -377,4 +377,30 @@ describe( 'WooPayments money movement query helpers', () => {
 		expect( query ).not.toHaveProperty( 'fields' );
 		expect( query ).not.toHaveProperty( 'layout' );
 	} );
+
+	it( 'keeps date filters on a list whose date column is not `date`', () => {
+		const view = moneyMovementQueryToDataViewsView(
+			{ date_between: [ '2026-06-01', '2026-06-19' ], status_is: 'won' },
+			{ dateField: 'created' }
+		);
+
+		expect( view.filters ).toEqual( [
+			{ field: 'status', operator: 'is', value: 'won' },
+			{
+				field: 'created',
+				operator: 'between',
+				value: [ '2026-06-01', '2026-06-19' ],
+			},
+		] );
+		expect(
+			dataViewsViewToMoneyMovementQuery( view, {}, 'created' )
+		).toMatchObject( {
+			status_is: 'won',
+			date_between: [ '2026-06-01', '2026-06-19' ],
+		} );
+		// Without the option the `created` filter is not a date filter.
+		expect(
+			dataViewsViewToMoneyMovementQuery( view, {} )
+		).not.toHaveProperty( 'date_between' );
+	} );
 } );

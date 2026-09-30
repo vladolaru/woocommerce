@@ -26,6 +26,7 @@ import {
 	getChargeChannelLabel,
 } from './utils';
 import {
+	DISPUTE_STATUS_LABELS,
 	getDisputeBalanceAdjustments,
 	getPrimaryDispute,
 } from './dispute-utils';
@@ -571,21 +572,10 @@ const formatPaymentSummaryAmount = (
 		: formattedAmount;
 };
 
-const disputeStatusLabels: Record< string, string > = {
-	warning_needs_response: __( 'Inquiry: Response needed', 'woocommerce' ),
-	warning_under_review: __( 'Inquiry: Under review', 'woocommerce' ),
-	warning_closed: __( 'Inquiry: Closed', 'woocommerce' ),
-	needs_response: __( 'Response needed', 'woocommerce' ),
-	under_review: __( 'Under review', 'woocommerce' ),
-	charge_refunded: __( 'Charge refunded', 'woocommerce' ),
-	won: __( 'Won', 'woocommerce' ),
-	lost: __( 'Lost', 'woocommerce' ),
-};
-
 const getDisputeStatusLabel = ( transaction: WooPaymentsTransaction ) => {
 	const disputeStatus = getPrimaryDispute( transaction )?.status || '';
 	const disputeLabel =
-		disputeStatusLabels[ disputeStatus ] || formatLabel( disputeStatus );
+		DISPUTE_STATUS_LABELS[ disputeStatus ] || formatLabel( disputeStatus );
 
 	if ( disputeStatus.startsWith( 'warning_' ) ) {
 		return disputeLabel;

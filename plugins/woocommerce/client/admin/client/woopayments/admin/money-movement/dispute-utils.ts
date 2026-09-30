@@ -3,10 +3,30 @@
  */
 
 /**
+ * External dependencies
+ */
+import { __ } from '@wordpress/i18n';
+
+/**
  * Internal dependencies
  */
 import type { WooPaymentsDispute, WooPaymentsTransaction } from './types';
 import { getDisputeId } from './utils';
+
+/**
+ * The dispute status labels, in the client's order.
+ * Client 11.1.0 `disputes/strings.ts` `displayStatus`.
+ */
+export const DISPUTE_STATUS_LABELS: Record< string, string > = {
+	warning_needs_response: __( 'Inquiry: Response needed', 'woocommerce' ),
+	warning_under_review: __( 'Inquiry: Under review', 'woocommerce' ),
+	warning_closed: __( 'Inquiry: Closed', 'woocommerce' ),
+	needs_response: __( 'Response needed', 'woocommerce' ),
+	under_review: __( 'Under review', 'woocommerce' ),
+	charge_refunded: __( 'Charge refunded', 'woocommerce' ),
+	won: __( 'Won', 'woocommerce' ),
+	lost: __( 'Lost', 'woocommerce' ),
+};
 
 export type WooPaymentsDisputeSource = Pick<
 	WooPaymentsTransaction,

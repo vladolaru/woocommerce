@@ -1,4 +1,9 @@
 /**
+ * External dependencies
+ */
+import { __ } from '@wordpress/i18n';
+
+/**
  * Internal dependencies
  */
 import {
@@ -6,6 +11,28 @@ import {
 	normalizeCurrencyCode,
 } from './overview/utils';
 import { getWooPaymentsSettingsBootstrap } from '../settings/bootstrap';
+
+const CURRENCY_NAMES: Record< string, string > = {
+	aud: __( 'Australian dollar', 'woocommerce' ),
+	cad: __( 'Canadian dollar', 'woocommerce' ),
+	chf: __( 'Swiss franc', 'woocommerce' ),
+	dkk: __( 'Danish krone', 'woocommerce' ),
+	eur: __( 'Euro', 'woocommerce' ),
+	gbp: __( 'Pound sterling', 'woocommerce' ),
+	nok: __( 'Norwegian krone', 'woocommerce' ),
+	nzd: __( 'New Zealand dollar', 'woocommerce' ),
+	sek: __( 'Swedish krona', 'woocommerce' ),
+	usd: __( 'United States (US) dollar', 'woocommerce' ),
+};
+
+/**
+ * The currency's name, or its upper-case code when the client has no name for it.
+ * Client 11.1.0 `includes/multi-currency/client/utils/currency/index.js:8-29` `formatCurrencyName()`.
+ *
+ * @param currencyCode Currency code.
+ */
+export const formatCurrencyName = ( currencyCode: string ) =>
+	CURRENCY_NAMES[ currencyCode.toLowerCase() ] || currencyCode.toUpperCase();
 
 export const formatAmount = ( amount?: number, currency?: string ) =>
 	typeof amount === 'number'
