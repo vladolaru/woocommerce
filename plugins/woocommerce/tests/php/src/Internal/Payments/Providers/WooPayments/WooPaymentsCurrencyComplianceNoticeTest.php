@@ -84,6 +84,8 @@ class WooPaymentsCurrencyComplianceNoticeTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'wcpay-unsupported-currency-notice', $this->render_notice( $service ) );
 		$this->assertStringContainsString( 'does not accept decimals', $this->render_notice( $service ) );
+		// Client 11.1.0 `class-wc-payments-admin.php:299`: the bold label carries no currency code; the sentence names the currency.
+		$this->assertMatchesRegularExpression( '#<b>\s*Unsupported currency:\s*</b>#', $this->render_notice( $service ) );
 
 		update_option( 'woocommerce_price_num_decimals', 0 );
 

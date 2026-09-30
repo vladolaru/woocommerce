@@ -97,10 +97,7 @@ class WooPaymentsCurrencyComplianceNotice implements RegisterHooksInterface {
 	 * The provider treats ISK as a two-decimal minor-unit currency that only
 	 * accepts whole-krona amounts, so a store left at WooCommerce's default
 	 * two price decimals mints amounts the provider rejects on every charge.
-	 *
-	 * One deviation from the reference client: it calls esc_html() on the
-	 * currency code without echoing it (a dropped echo), so its bold prefix
-	 * renders without the code; native echoes it.
+	 * Like the client, the bold label carries no currency code: the sentence names the currency.
 	 *
 	 * @internal
 	 */
@@ -115,10 +112,7 @@ class WooPaymentsCurrencyComplianceNotice implements RegisterHooksInterface {
 			?>
 			<div id="wcpay-unsupported-currency-notice" class="notice notice-error">
 				<p>
-					<b>
-						<?php esc_html_e( 'Unsupported currency:', 'woocommerce' ); ?>
-						<?php echo esc_html( ' ' . get_woocommerce_currency() ); ?>
-					</b>
+					<b><?php esc_html_e( 'Unsupported currency:', 'woocommerce' ); ?></b>
 					<?php
 						echo wp_kses_post(
 							sprintf(
