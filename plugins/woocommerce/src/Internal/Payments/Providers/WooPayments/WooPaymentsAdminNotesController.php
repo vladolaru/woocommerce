@@ -36,16 +36,25 @@ class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 	private WooPaymentsSetHttpsForCheckoutNote $https_note;
 
 	/**
+	 * Link by Stripe note.
+	 *
+	 * @var WooPaymentsSetUpLinkNote
+	 */
+	private WooPaymentsSetUpLinkNote $link_note;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param NativePaymentsRuntimeArbiter       $arbiter    Runtime owner arbiter.
 	 * @param WooPaymentsSetHttpsForCheckoutNote $https_note Secure checkout note.
+	 * @param WooPaymentsSetUpLinkNote           $link_note  Link by Stripe note.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsSetHttpsForCheckoutNote $https_note ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsSetHttpsForCheckoutNote $https_note, WooPaymentsSetUpLinkNote $link_note ): void {
 		$this->arbiter    = $arbiter;
 		$this->https_note = $https_note;
+		$this->link_note  = $link_note;
 	}
 
 	/**
@@ -71,10 +80,12 @@ class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 			return;
 		}
 
-		try {
-			$this->https_note->possibly_add_note();
-		} catch ( Throwable $exception ) {
-			$this->log_exception( $exception );
+		foreach ( array( $this->https_note, $this->link_note ) as $note ) {
+			try {
+				$note->possibly_add_note();
+			} catch ( Throwable $exception ) {
+				$this->log_exception( $exception );
+			}
 		}
 	}
 
