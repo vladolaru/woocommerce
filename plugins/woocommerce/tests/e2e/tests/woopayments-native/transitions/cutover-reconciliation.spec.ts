@@ -624,3 +624,324 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 		}
 	);
 } );
+
+/**
+ * Plugin-era state the rollback case compares. Settings and split
+ * per-method options are flattened into one path per leaf (lists stay whole),
+ * so a key added inside an option reads as an added path and never hides a
+ * changed sibling. Multi-currency caches (`*cached*`) are left out: both
+ * runtimes refresh them from the platform, and they hold no merchant choice.
+ */
+const ROLLBACK_SNAPSHOT_PHP = String.raw`
+global $wpdb;
+$snapshot = array();
+$flatten = static function ( string $path, $value ) use ( &$flatten, &$snapshot ): void {
+	if ( is_array( $value ) && array() !== $value && array_values( $value ) !== $value ) {
+		foreach ( $value as $key => $child ) {
+			$flatten( $path . '.' . $key, $child );
+		}
+		return;
+	}
+	$snapshot[ $path ] = wp_json_encode( $value );
+};
+$option_names = $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name = 'woocommerce_woocommerce_payments_settings' OR option_name LIKE 'woocommerce\\_woocommerce\\_payments\\_%\\_settings' OR ( option_name LIKE 'wcpay\\_multi\\_currency\\_%' AND option_name NOT LIKE '%cached%' ) ORDER BY option_name" );
+foreach ( $option_names as $option_name ) {
+	$flatten( 'option:' . $option_name, get_option( $option_name ) );
+}
+$tokens = $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}woocommerce_payment_tokens WHERE gateway_id LIKE 'woocommerce\\_payments%' ORDER BY token_id", ARRAY_A );
+foreach ( $tokens as $row ) {
+	foreach ( $row as $column => $value ) {
+		$snapshot[ 'token:' . $row['token_id'] . '.' . $column ] = wp_json_encode( $value );
+	}
+	$meta = $wpdb->get_results( $wpdb->prepare( "SELECT meta_key, meta_value FROM {$wpdb->prefix}woocommerce_payment_tokenmeta WHERE payment_token_id = %d", $row['token_id'] ), ARRAY_A );
+	foreach ( $meta as $entry ) {
+		$snapshot[ 'token:' . $row['token_id'] . '.meta.' . $entry['meta_key'] ] = wp_json_encode( $entry['meta_value'] );
+	}
+}
+$order = wc_get_order( (int) getenv( 'E2E_ROLLBACK_ORDER_ID' ) );
+if ( ! $order ) {
+	throw new RuntimeException( 'The rollback fixture order is missing.' );
+}
+$snapshot['order:payment_method'] = wp_json_encode( $order->get_payment_method() );
+$snapshot['order:status'] = wp_json_encode( $order->get_status() );
+foreach ( array( '_wcpay_mode', '_wcpay_intent_currency', '_intent_id', '_charge_id', '_payment_method_id' ) as $meta_key ) {
+	$snapshot[ 'order:' . $meta_key ] = wp_json_encode( $order->get_meta( $meta_key ) );
+}
+return $snapshot;
+`;
+
+/**
+ * Seeds, with the 11.1.0 plugin active, the plugin-era records a rollback
+ * must find again: two saved tokens, multi-currency settings and one
+ * live-mode order. All are local rows written in the plugin's own shapes;
+ * nothing reaches the provider.
+ */
+const ROLLBACK_SEED_PHP = String.raw`
+$customer = get_user_by( 'login', 'customer' );
+if ( ! $customer || ! class_exists( 'WC_Payment_Token_WCPay_SEPA' ) ) {
+	throw new RuntimeException( 'The 11.1.0 profile customer or the plugin token classes are missing.' );
+}
+$card = new WC_Payment_Token_CC();
+$card->set_token( 'pm_rollback_fixture_card' );
+$card->set_gateway_id( 'woocommerce_payments' );
+$card->set_card_type( 'visa' );
+$card->set_last4( '4242' );
+$card->set_expiry_month( '12' );
+$card->set_expiry_year( '2034' );
+$card->set_user_id( $customer->ID );
+$card->set_default( true );
+$card->save();
+// Client 11.1.0 class-wc-payment-token-wcpay-sepa.php:26 type 'wcpay_sepa'.
+$sepa = new WC_Payment_Token_WCPay_SEPA();
+$sepa->set_token( 'pm_rollback_fixture_sepa' );
+$sepa->set_gateway_id( 'woocommerce_payments_sepa_debit' );
+$sepa->set_last4( '3000' );
+$sepa->set_user_id( $customer->ID );
+$sepa->save();
+// Shapes from client 11.1.0 MultiCurrency.php:669-691 and :767-783.
+update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+update_option( 'wcpay_multi_currency_price_rounding_eur', 1.0 );
+update_option( 'wcpay_multi_currency_price_charm_eur', -0.01 );
+update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+update_option( 'wcpay_multi_currency_manual_rate_eur', 0.9 );
+update_option( 'wcpay_multi_currency_stored_customer_currencies', array( 'EUR' ) );
+// A live-mode order as client 11.1.0 stores it: Order_Mode::PRODUCTION
+// ('prod', includes/constants/class-order-mode.php:21) and the uppercased
+// intention currency (class-wc-payments-api-payment-intention.php:93).
+$order = wc_create_order( array( 'customer_id' => $customer->ID ) );
+$order->set_payment_method( 'woocommerce_payments' );
+$order->set_total( '10.99' );
+$order->update_meta_data( '_wcpay_mode', 'prod' );
+$order->update_meta_data( '_wcpay_intent_currency', 'USD' );
+$order->update_meta_data( '_intent_id', 'pi_rollback_fixture' );
+$order->update_meta_data( '_charge_id', 'ch_rollback_fixture' );
+$order->update_meta_data( '_payment_method_id', 'pm_rollback_fixture_card' );
+$order->set_status( 'processing' );
+$order->save();
+return $order->get_id();
+`;
+
+type RollbackSnapshot = Record< string, string >;
+
+async function readRollbackSnapshot(
+	orderId: number
+): Promise< RollbackSnapshot > {
+	return wpEvalJson< RollbackSnapshot >( ROLLBACK_SNAPSHOT_PHP, [
+		`E2E_ROLLBACK_ORDER_ID=${ orderId }`,
+	] );
+}
+
+interface SnapshotDiff {
+	removed: string[];
+	changed: Array< { path: string; before: string; after: string } >;
+	added: string[];
+}
+
+function diffSnapshots(
+	before: RollbackSnapshot,
+	after: RollbackSnapshot
+): SnapshotDiff {
+	return {
+		removed: Object.keys( before ).filter(
+			( path ) => ! ( path in after )
+		),
+		changed: Object.keys( before )
+			.filter(
+				( path ) => path in after && after[ path ] !== before[ path ]
+			)
+			.map( ( path ) => ( {
+				path,
+				before: before[ path ],
+				after: after[ path ],
+			} ) ),
+		added: Object.keys( after ).filter( ( path ) => ! ( path in before ) ),
+	};
+}
+
+/**
+ * Asserts the rollback rule: every pre-cutover path is still there with the
+ * same value, so the only allowed difference is an added path.
+ */
+async function expectOnlyAddedPaths(
+	before: RollbackSnapshot,
+	after: RollbackSnapshot,
+	stage: string
+): Promise< void > {
+	const diff = diffSnapshots( before, after );
+	await test.info().attach( `rollback-snapshot-diff-${ stage }`, {
+		body: JSON.stringify( diff, null, 2 ),
+		contentType: 'application/json',
+	} );
+	expect(
+		diff.removed,
+		`${ stage }: plugin-era paths must survive the round trip`
+	).toEqual( [] );
+	expect(
+		diff.changed,
+		`${ stage }: plugin-era values must be identical after the round trip`
+	).toEqual( [] );
+}
+
+async function readWooPaymentsGatewayClass(): Promise< string > {
+	return wpEvalJson< string >( `
+		$gateway = WC()->payment_gateways()->payment_gateways()['woocommerce_payments'] ?? null;
+		return $gateway ? get_class( $gateway ) : '';
+	` );
+}
+
+test.describe( 'WooPayments transition: rollback round trip', () => {
+	test.describe.configure( { timeout: 10 * 60_000 } );
+
+	let orderId: number;
+
+	test.beforeAll( async () => {
+		process.env.E2E_WP_ENV_CONFIG ??=
+			'tests/e2e/test-plugins/woopayments-transition-seed/wp-env.json';
+		await wpCLI( [ 'wp', 'woopayments-e2e-transition', 'reset' ] );
+		// The 11.1.0 card-only profile. The `cutover` profile's unsupported
+		// `future_lpm` would make the job disable a method, a deliberate
+		// settings change this case must not mix with the rollback rule.
+		const identity = JSON.parse(
+			(
+				await wpCLI( [
+					'wp',
+					'woopayments-e2e-transition',
+					'seed',
+					'historical-tokens',
+					'--version=11.1.0',
+				] )
+			).stdout
+				.trim()
+				.split( '\n' )
+				.pop()!
+		);
+		expect( identity.plugin_version ).toBe( '11.1.0' );
+		expect( identity.plugin_active ).toBe( true );
+		expect( identity.is_live ).toBe( false );
+		expect( identity.native_state ).toBe( 'available' );
+		orderId = await wpEvalJson< number >( ROLLBACK_SEED_PHP );
+	} );
+
+	test.afterAll( async () => {
+		await wpCLI( [ 'wp', 'woopayments-e2e-transition', 'reset' ] );
+	} );
+
+	/**
+	 * Inbox N-073: plugin re-activation is the rollback lever (Decision 9),
+	 * so an unchanged cutover followed by re-activation, and then by a second
+	 * deactivation, must leave every plugin-era setting, token and order
+	 * record as the plugin wrote it. Provider-free: no payment, capture or
+	 * refund runs.
+	 */
+	test(
+		'plugin re-activation after an unchanged cutover keeps every plugin-era setting, token and order record',
+		{
+			tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_TRANSITION ],
+		},
+		async ( { page, restApi, baseURL } ) => {
+			expect( await readRuntimeOwner( restApi ) ).toBe( 'plugin' );
+			const before = await readRollbackSnapshot( orderId );
+			expect(
+				Object.keys( before ).filter( ( path ) =>
+					/^token:\d+\.token$/.test( path )
+				),
+				'the fixture must hold both plugin-era tokens'
+			).toHaveLength( 2 );
+			expect( before[ 'order:_wcpay_mode' ] ).toBe( '"prod"' );
+			expect( before[ 'order:_wcpay_intent_currency' ] ).toBe( '"USD"' );
+			expect(
+				before[ 'option:wcpay_multi_currency_enabled_currencies' ]
+			).toBe( '["USD","EUR"]' );
+			expect(
+				before[
+					'option:woocommerce_woocommerce_payments_apple_pay_settings.enabled'
+				],
+				'the fixture must hold split per-method options'
+			).toBeDefined();
+
+			// Cutover: the merchant's one click, then the product's own
+			// retry cycle driven without its real cadence (the same test-time
+			// shortcut as the 10.4.0 case above).
+			await page.goto( 'wp-login.php' );
+			await logIn( page, admin.username, admin.password, false );
+			await page.goto( 'wp-admin/' );
+			const link = page.getByRole( 'link', {
+				name: 'Start the switch',
+				exact: true,
+			} );
+			const href = await link.getAttribute( 'href', { timeout: 30_000 } );
+			validateCutoverActionURL( href ?? '', baseURL! );
+			await link.click( { timeout: 30_000 } );
+			let status = await readCutoverStatus( 0 );
+			await expect
+				.poll(
+					async () => {
+						await rescheduleReconciliationActionsToNow();
+						await triggerActionSchedulerQueue( baseURL! );
+						status = await readCutoverStatus( 0 );
+						return status.record?.state ?? null;
+					},
+					{ timeout: 3 * 60_000, intervals: [ 1000, 3000, 5000 ] }
+				)
+				.toBe( 'done' );
+			expect( status.plugin_active ).toBe( false );
+			await expect
+				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
+				.toBe( 'native' );
+			await expectNativeGatewayActive( restApi, status );
+			const native = await readRollbackSnapshot( orderId );
+			await test.info().attach( 'rollback-snapshot-diff-native', {
+				body: JSON.stringify(
+					diffSnapshots( before, native ),
+					null,
+					2
+				),
+				contentType: 'application/json',
+			} );
+
+			// Rollback: re-activate the plugin, changing nothing else.
+			await wpCLI( [
+				'wp',
+				'plugin',
+				'activate',
+				'woocommerce-payments',
+			] );
+			await expect
+				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
+				.toBe( 'plugin' );
+			const gateway = (
+				await restApi.get(
+					'wc/v3/payment_gateways/woocommerce_payments'
+				)
+			).data as { enabled: boolean };
+			expect(
+				gateway.enabled,
+				"the plugin's gateway must be enabled after re-activation"
+			).toBe( true );
+			expect( await readWooPaymentsGatewayClass() ).toBe(
+				'WC_Payment_Gateway_WCPay'
+			);
+			await expectOnlyAddedPaths(
+				before,
+				await readRollbackSnapshot( orderId ),
+				'plugin-reactivated'
+			);
+
+			// And forward again: deactivating the plugin hands back to native.
+			await wpCLI( [
+				'wp',
+				'plugin',
+				'deactivate',
+				'woocommerce-payments',
+			] );
+			await expect
+				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
+				.toBe( 'native' );
+			await expectOnlyAddedPaths(
+				before,
+				await readRollbackSnapshot( orderId ),
+				'plugin-deactivated'
+			);
+		}
+	);
+} );
