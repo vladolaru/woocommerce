@@ -1762,6 +1762,7 @@ const TransactionsSettingsSection = ( {
 				) }
 				<TextControl
 					id={ ACCOUNT_STATEMENT_INPUT_ID }
+					className="woopayments-settings-field-narrow"
 					label={ __( 'Customer bank statement', 'woocommerce' ) }
 					value={ accountStatementDescriptor }
 					maxLength={ ACCOUNT_STATEMENT_MAX_LENGTH }
@@ -1813,7 +1814,7 @@ const TransactionsSettingsSection = ( {
 						'woocommerce'
 					) }
 				</p>
-				<div className="woopayments-settings-control-grid">
+				<div className="woopayments-settings-control-grid woopayments-settings-control-grid--stacked">
 					<div>
 						<div id={ SUPPORT_EMAIL_ERROR_ID }>
 							{ supportEmailError && (
@@ -2011,7 +2012,7 @@ const PayoutsSettingsSection = () => {
 					</Notice>
 				) }
 				{ ! isScheduleRestricted && ! isWaitingPeriodIncomplete && (
-					<div className="woopayments-settings-control-grid">
+					<div className="woopayments-settings-control-grid woopayments-settings-control-grid--inline">
 						<SelectControl
 							label={ __( 'Frequency', 'woocommerce' ) }
 							value={ payoutInterval }
@@ -2193,6 +2194,7 @@ const NotificationsSettingsSection = ( {
 				</div>
 				<TextControl
 					id={ NOTIFICATIONS_EMAIL_INPUT_ID }
+					className="woopayments-settings-field-narrow"
 					label={ __( 'Email address', 'woocommerce' ) }
 					type="email"
 					value={ email }
@@ -2216,6 +2218,7 @@ const NotificationsSettingsSection = ( {
 						</div>
 						<TextControl
 							id={ NOTIFICATIONS_EMAIL_CONFIRM_INPUT_ID }
+							className="woopayments-settings-field-narrow"
 							label={ __(
 								'Confirm email address',
 								'woocommerce'

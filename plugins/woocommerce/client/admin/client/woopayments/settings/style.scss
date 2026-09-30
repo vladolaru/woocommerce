@@ -533,6 +533,20 @@
 	@include breakpoint("<782px") {
 		grid-template-columns: 1fr;
 	}
+
+	&--stacked {
+		grid-template-columns: 1fr;
+		max-width: 500px;
+	}
+
+	&--inline {
+		display: flex;
+		flex-wrap: wrap;
+	}
+}
+
+.woopayments-settings-field-narrow {
+	max-width: 500px;
 }
 
 .woopayments-settings-location-grid {
