@@ -349,7 +349,11 @@ export function CurrencySettingsModal( {
 	const automaticRateDescriptionId = `woocommerce-multi-currency-settings-${ currency.code }-automatic-description`;
 
 	return (
-		<Modal title={ modalTitle } onRequestClose={ requestClose }>
+		<Modal
+			title={ modalTitle }
+			size="medium"
+			onRequestClose={ requestClose }
+		>
 			{ isLoading && (
 				<p aria-live="polite">
 					<Spinner />

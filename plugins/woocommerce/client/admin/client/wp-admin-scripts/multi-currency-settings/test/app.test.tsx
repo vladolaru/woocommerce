@@ -281,6 +281,35 @@ describe( 'MultiCurrencySettingsApp', () => {
 
 	// Client 11.1.0 list-item.js:58 omits the code when it equals the symbol;
 	// the client REST payload decodes the symbol (Currency.php:272).
+	// Client 11.1.0 settings/multi-currency/index.js:17-18 (enabled currencies
+	// above the store settings), enabled-currencies-list/index.js:104-113
+	// (Add/remove below the list) and delete-button.js:130-145 (a trash icon).
+	it( 'lays out the page in the client order', async () => {
+		render( <MultiCurrencySettingsApp /> );
+
+		const enabledHeading = await screen.findByRole( 'heading', {
+			name: 'Enabled currencies',
+		} );
+		const storeSettings = screen.getByText( 'Store settings component' );
+		expect( enabledHeading.compareDocumentPosition( storeSettings ) ).toBe(
+			window.Node.DOCUMENT_POSITION_FOLLOWING
+		);
+
+		const table = screen.getByRole( 'table' );
+		const addButton = screen.getByRole( 'button', {
+			name: 'Add/remove currencies',
+		} );
+		expect( table.compareDocumentPosition( addButton ) ).toBe(
+			window.Node.DOCUMENT_POSITION_FOLLOWING
+		);
+
+		const removeButton = screen.getByRole( 'button', {
+			name: 'Remove Euro as an enabled currency',
+		} );
+		expect( removeButton ).toHaveTextContent( '' );
+		expect( removeButton.querySelector( 'svg' ) ).not.toBeNull();
+	} );
+
 	// Client 11.1.0 enabled-currencies-list/index.js:26-46.
 	it( 'explains enabled currencies with a Learn more link', async () => {
 		render( <MultiCurrencySettingsApp /> );

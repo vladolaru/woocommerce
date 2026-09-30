@@ -4,6 +4,7 @@
 import apiFetch from '@wordpress/api-fetch';
 import {
 	Button,
+	CardBody,
 	CheckboxControl,
 	ExternalLink,
 	Icon,
@@ -22,10 +23,12 @@ import {
 import { __ } from '@wordpress/i18n';
 import { info } from '@wordpress/icons';
 import { getSetting } from '@woocommerce/settings';
+import type { ReactNode } from 'react';
 
 /**
  * Internal dependencies
  */
+import { SettingsSection } from './settings-section';
 import type {
 	RenderingMode,
 	StoreSettingsBoolean,
@@ -95,6 +98,29 @@ const areSettingsEqual = (
 			draftSettings.cacheRecommendationDismissed
 	);
 };
+
+const StoreSettingsSection = ( { children }: { children: ReactNode } ) => (
+	<SettingsSection
+		title={ __( 'Store settings', 'woocommerce' ) }
+		description={ createInterpolateElement(
+			__(
+				'Store settings allow your customers to choose which currency they would like to use when shopping at your store. <learnMoreLink>Learn more</learnMoreLink>',
+				'woocommerce'
+			),
+			{
+				learnMoreLink: (
+					<ExternalLink href="https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/#store-settings">
+						<></>
+					</ExternalLink>
+				),
+			}
+		) }
+	>
+		<CardBody className="woocommerce-multi-currency-settings__store-settings">
+			{ children }
+		</CardBody>
+	</SettingsSection>
+);
 
 export function StoreLevelSettings() {
 	const { createSuccessNotice, createErrorNotice } =
@@ -215,149 +241,150 @@ export function StoreLevelSettings() {
 
 	if ( isLoading ) {
 		return (
-			<section className="woocommerce-multi-currency-settings__store-settings">
+			<StoreSettingsSection>
 				<p aria-live="polite">
 					<Spinner />
 					{ __( 'Loading store settings…', 'woocommerce' ) }
 				</p>
-			</section>
+			</StoreSettingsSection>
 		);
 	}
 
 	if ( ! draftSettings ) {
 		return (
-			<section className="woocommerce-multi-currency-settings__store-settings">
+			<StoreSettingsSection>
 				<p role="alert">
 					{ __( 'Unable to load store settings.', 'woocommerce' ) }
 				</p>
-			</section>
+			</StoreSettingsSection>
 		);
 	}
 
+	// Client 11.1.0 store-settings/index.js:84-237: the controls in one card in the client's order, Save below it.
 	return (
-		<section className="woocommerce-multi-currency-settings__store-settings">
-			<h2>{ __( 'Store settings', 'woocommerce' ) }</h2>
-			<p>
-				{ createInterpolateElement(
-					__(
-						'Store settings allow your customers to choose which currency they would like to use when shopping at your store. <learnMoreLink>Learn more</learnMoreLink>',
-						'woocommerce'
-					),
-					{
-						learnMoreLink: (
-							<ExternalLink href="https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/#store-settings">
-								<></>
-							</ExternalLink>
-						),
-					}
-				) }
-			</p>
-			<CheckboxControl
-				__nextHasNoMarginBottom
-				checked={ draftSettings.enableAutoCurrency }
-				label={ __(
-					'Automatically switch customers to their local currency if it has been enabled',
-					'woocommerce'
-				) }
-				help={ createInterpolateElement(
-					__(
-						'Customers will be notified via store alert banner. <previewLink>Preview</previewLink>',
-						'woocommerce'
-					),
-					{
-						previewLink: (
-							<Button
-								variant="link"
-								onClick={ () => setIsPreviewOpen( true ) }
-							/>
-						),
-					}
-				) }
-				onChange={ ( checked ) =>
-					updateDraftSettings( {
-						enableAutoCurrency: Boolean( checked ),
-					} )
-				}
-			/>
-			{ draftSettings.siteTheme === 'Storefront' && (
+		<>
+			<StoreSettingsSection>
 				<CheckboxControl
 					__nextHasNoMarginBottom
-					checked={ draftSettings.enableStorefrontSwitcher }
+					checked={ draftSettings.enableAutoCurrency }
 					label={ __(
-						'Add a currency switcher to the Storefront theme on breadcrumb section.',
+						'Automatically switch customers to their local currency if it has been enabled',
 						'woocommerce'
 					) }
 					help={ createInterpolateElement(
 						__(
-							'A currency switcher is also available in your widgets. <linkToWidgets>Configure now</linkToWidgets>',
+							'Customers will be notified via store alert banner. <previewLink>Preview</previewLink>',
 							'woocommerce'
 						),
 						{
-							// eslint-disable-next-line jsx-a11y/anchor-has-content -- The link text comes from the interpolated string.
-							linkToWidgets: <a href="widgets.php" />,
+							previewLink: (
+								<Button
+									variant="link"
+									onClick={ () => setIsPreviewOpen( true ) }
+								/>
+							),
 						}
 					) }
 					onChange={ ( checked ) =>
 						updateDraftSettings( {
-							enableStorefrontSwitcher: Boolean( checked ),
+							enableAutoCurrency: Boolean( checked ),
 						} )
 					}
 				/>
-			) }
-			{ draftSettings.isCacheOptimizedFeatureEnabled && (
-				<RadioControl
-					label={ __( 'Price rendering mode', 'woocommerce' ) }
-					help={ __(
-						'Choose how multi-currency prices are rendered. "Optimized for caching" outputs identical HTML for all visitors and converts prices client-side, allowing hosting providers to cache pages effectively.',
-						'woocommerce'
-					) }
-					selected={ draftSettings.renderingMode }
-					options={ [
-						{
-							label: __(
-								'Optimized for speed (default)',
+				{ draftSettings.shouldRecommendCacheMode && (
+					<Notice
+						status="info"
+						politeness="polite"
+						onRemove={ dismissCacheRecommendation }
+					>
+						<div className="woocommerce-multi-currency-settings__cache-recommendation-content">
+							<Icon icon={ info } aria-hidden="true" />
+							<p>
+								{ __(
+									'We detected that your store uses page caching. Switching Multi-Currency to the caching-optimized rendering mode lets your host cache pages effectively.',
+									'woocommerce'
+								) }
+							</p>
+						</div>
+						<Button
+							variant="secondary"
+							isBusy={ isSaving }
+							disabled={ isSaving }
+							accessibleWhenDisabled
+							onClick={ useCacheRenderingMode }
+						>
+							{ __( 'Use caching mode', 'woocommerce' ) }
+						</Button>
+					</Notice>
+				) }
+				{ draftSettings.isCacheOptimizedFeatureEnabled && (
+					<RadioControl
+						label={ __( 'Price rendering mode', 'woocommerce' ) }
+						help={ __(
+							'Choose how multi-currency prices are rendered. "Optimized for caching" outputs identical HTML for all visitors and converts prices client-side, allowing hosting providers to cache pages effectively.',
+							'woocommerce'
+						) }
+						selected={ draftSettings.renderingMode }
+						options={ [
+							{
+								label: __(
+									'Optimized for speed (default)',
+									'woocommerce'
+								),
+								value: 'speed',
+							},
+							{
+								label: __(
+									'Optimized for caching',
+									'woocommerce'
+								),
+								value: 'cache',
+							},
+						] }
+						onChange={ ( value ) =>
+							updateDraftSettings( {
+								renderingMode: value as RenderingMode,
+							} )
+						}
+					/>
+				) }
+				{ draftSettings.siteTheme === 'Storefront' && (
+					<CheckboxControl
+						__nextHasNoMarginBottom
+						checked={ draftSettings.enableStorefrontSwitcher }
+						label={ __(
+							'Add a currency switcher to the Storefront theme on breadcrumb section.',
+							'woocommerce'
+						) }
+						help={ createInterpolateElement(
+							__(
+								'A currency switcher is also available in your widgets. <linkToWidgets>Configure now</linkToWidgets>',
 								'woocommerce'
 							),
-							value: 'speed',
-						},
-						{
-							label: __( 'Optimized for caching', 'woocommerce' ),
-							value: 'cache',
-						},
-					] }
-					onChange={ ( value ) =>
-						updateDraftSettings( {
-							renderingMode: value as RenderingMode,
-						} )
-					}
-				/>
-			) }
-			{ draftSettings.shouldRecommendCacheMode && (
-				<Notice
-					status="info"
-					politeness="polite"
-					onRemove={ dismissCacheRecommendation }
+							{
+								// eslint-disable-next-line jsx-a11y/anchor-has-content -- The link text comes from the interpolated string.
+								linkToWidgets: <a href="widgets.php" />,
+							}
+						) }
+						onChange={ ( checked ) =>
+							updateDraftSettings( {
+								enableStorefrontSwitcher: Boolean( checked ),
+							} )
+						}
+					/>
+				) }
+			</StoreSettingsSection>
+			<div className="woocommerce-multi-currency-settings__save">
+				<Button
+					variant="primary"
+					isBusy={ isSaving }
+					disabled={ isSaving || ! isDirty }
+					accessibleWhenDisabled
+					onClick={ () => void saveSettings() }
 				>
-					<div className="woocommerce-multi-currency-settings__cache-recommendation-content">
-						<Icon icon={ info } aria-hidden="true" />
-						<p>
-							{ __(
-								'We detected that your store uses page caching. Switching Multi-Currency to the caching-optimized rendering mode lets your host cache pages effectively.',
-								'woocommerce'
-							) }
-						</p>
-					</div>
-					<Button
-						variant="secondary"
-						isBusy={ isSaving }
-						disabled={ isSaving }
-						accessibleWhenDisabled
-						onClick={ useCacheRenderingMode }
-					>
-						{ __( 'Use caching mode', 'woocommerce' ) }
-					</Button>
-				</Notice>
-			) }
+					{ __( 'Save changes', 'woocommerce' ) }
+				</Button>
+			</div>
 			{ isPreviewOpen && (
 				<Modal
 					title={ __( 'Preview', 'woocommerce' ) }
@@ -372,15 +399,6 @@ export function StoreLevelSettings() {
 					/>
 				</Modal>
 			) }
-			<Button
-				variant="primary"
-				isBusy={ isSaving }
-				disabled={ isSaving || ! isDirty }
-				accessibleWhenDisabled
-				onClick={ () => void saveSettings() }
-			>
-				{ __( 'Save changes', 'woocommerce' ) }
-			</Button>
-		</section>
+		</>
 	);
 }

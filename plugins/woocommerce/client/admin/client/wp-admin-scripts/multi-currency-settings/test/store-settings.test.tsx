@@ -168,6 +168,38 @@ describe( 'StoreLevelSettings', () => {
 		).toHaveAttribute( 'aria-disabled', 'true' );
 	} );
 
+	// Client 11.1.0 store-settings/index.js:87-216: automatic switch, the
+	// caching recommendation, the rendering mode, then the Storefront switcher.
+	it( 'orders the store settings like the client', async () => {
+		mockApiFetch.mockResolvedValueOnce( {
+			...storeSettingsResponse,
+			should_recommend_cache_mode: true,
+		} );
+
+		render( <StoreLevelSettings /> );
+
+		const inOrder = [
+			await screen.findByRole( 'checkbox', {
+				name: /Automatically switch customers/i,
+			} ),
+			screen.getByText( /We detected that your store uses page caching/, {
+				selector: 'p',
+			} ),
+			screen.getByRole( 'radio', {
+				name: 'Optimized for speed (default)',
+			} ),
+			screen.getByRole( 'checkbox', {
+				name: /Add a currency switcher to the Storefront theme/i,
+			} ),
+			screen.getByRole( 'button', { name: 'Save changes' } ),
+		];
+		inOrder.slice( 1 ).forEach( ( element, index ) => {
+			expect( inOrder[ index ].compareDocumentPosition( element ) ).toBe(
+				window.Node.DOCUMENT_POSITION_FOLLOWING
+			);
+		} );
+	} );
+
 	it( 'saves store settings with preserved REST option keys', async () => {
 		const save = createDeferred< typeof storeSettingsResponse >();
 		mockApiFetch

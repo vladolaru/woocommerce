@@ -1,27 +1,31 @@
 .woocommerce-multi-currency-settings {
-	display: grid;
-	gap: 24px;
-	max-width: 960px;
-	margin-top: 16px;
+	max-width: 1032px;
+	margin-top: 24px;
 
-	&__store-settings {
+	> .components-notice {
+		margin: 0 0 24px;
+	}
+
+	// The shell's section spacing, plus the client's 32px under the enabled currencies.
+	.settings-section {
+		margin-bottom: 32px;
+	}
+
+	&__card.components-card {
+		box-shadow: none;
+		border: 1px solid #e0e0e0;
+	}
+
+	// Client 11.1.0 multi-currency/style.scss: 24px card padding, controls spaced like its store settings card.
+	&__store-settings.components-card__body {
 		display: grid;
-		gap: 16px;
-		padding-bottom: 24px;
-		border-bottom: 1px solid #dcdcde;
+		gap: 24px;
+		padding: 24px;
+	}
 
-		h2 {
-			margin: 0;
-		}
-
-		.components-base-control,
-		.components-radio-control {
-			max-width: 680px;
-		}
-
-		.components-button {
-			justify-self: start;
-		}
+	&__save {
+		display: flex;
+		justify-content: flex-end;
 	}
 
 	&__cache-recommendation-content {
@@ -45,41 +49,79 @@
 
 	&__currency-flag {
 		display: inline-block;
-		min-width: 2em;
+		min-width: 1.5em;
+		margin-inline-end: 4px;
+		font-size: 20px;
+		vertical-align: middle;
 	}
 
-	&__actions {
-		display: flex;
-		gap: 12px;
-		align-items: center;
-		justify-content: space-between;
-
-		h2 {
-			margin: 0;
-		}
-	}
-
-	.widefat {
+	// Client 11.1.0 enabled-currencies-list/style.scss:9-110: header row, then one row per currency;
+	// the store currency row is shaded, rates and codes are grey, actions sit on the right.
+	&__currencies.widefat {
 		table-layout: fixed;
+		border: 0;
+		box-shadow: none;
 
 		th,
 		td {
+			padding: 16px 12px;
 			vertical-align: middle;
 			overflow-wrap: anywhere;
 		}
 
-		th:first-child {
-			width: 40%;
+		tr > :first-child {
+			padding-inline-start: 24px;
 		}
 
-		th:nth-child(2),
-		th:nth-child(3) {
+		tr > :last-child {
+			padding-inline-end: 24px;
+		}
+
+		thead th {
+			border-bottom: 1px solid #e0e0e0;
+		}
+
+		tbody th {
+			font-weight: 400;
+		}
+
+		tbody tr + tr > * {
+			border-top: 1px solid #e0e0e0;
+		}
+
+		tbody tr.is-default > * {
+			background: #f6f7f7;
+		}
+
+		thead th:nth-child(1) {
+			width: 50%;
+		}
+
+		thead th:nth-child(2) {
+			width: 30%;
+		}
+
+		thead th:nth-child(3) {
 			width: 20%;
 		}
 
-		th:last-child {
-			width: 20%;
+		td:nth-child(2),
+		.woocommerce-multi-currency-settings__currency-code {
+			color: #757575;
 		}
+	}
+
+	&__currency-actions {
+		display: flex;
+		gap: 12px;
+		align-items: center;
+		justify-content: flex-end;
+	}
+
+	&__currencies-footer.components-card__body {
+		padding: 16px 24px;
+		border-top: 1px solid #e0e0e0;
+		border-radius: 0;
 	}
 
 	&__currency-settings {
@@ -129,13 +171,17 @@
 		}
 	}
 
+	// The actions stay in view at the bottom of a long dialog, like the client's dialog footers.
 	&__modal-actions {
+		position: sticky;
+		bottom: -32px;
 		display: flex;
 		gap: 8px;
 		justify-content: flex-end;
-		margin-top: 8px;
-		padding-top: 16px;
+		margin: 8px 0 -32px;
+		padding: 16px 0 32px;
 		border-top: 1px solid #dcdcde;
+		background: #fff;
 	}
 
 	.components-spinner {
@@ -174,7 +220,6 @@
 
 @media screen and (max-width: 782px) {
 	.woocommerce-multi-currency-settings {
-		&__actions,
 		&__modal-actions {
 			align-items: stretch;
 			flex-direction: column;
