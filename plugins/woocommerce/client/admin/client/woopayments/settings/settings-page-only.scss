@@ -1,18 +1,23 @@
 .woopayments-settings-account-mode-notice.components-notice {
 	margin: 0 0 20px;
-	background: #fcf9e8;
-	border-left: 0;
 
 	p {
 		margin: 0 0 12px;
-		color: $gray-900;
 		font-size: 13px;
 		line-height: 20px;
+
+		&:last-child {
+			margin-bottom: 0;
+		}
 	}
 
 	.components-notice__content {
 		margin: 0;
 	}
+}
+
+.woopayments-settings-notifications-email-warning.components-notice {
+	margin: 12px 0 16px;
 }
 
 .woopayments-settings-payout-bank-account {
