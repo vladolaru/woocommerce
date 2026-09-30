@@ -2,9 +2,20 @@
  * External dependencies
  */
 import { useEffect, useRef, useState } from '@wordpress/element';
-import { Button, Modal } from '@wordpress/components';
+import {
+	Button,
+	Card,
+	CardHeader,
+	DropdownMenu,
+	ExternalLink,
+	MenuGroup,
+	MenuItem,
+	Modal,
+} from '@wordpress/components';
 import { __, sprintf } from '@wordpress/i18n';
+import { moreVertical } from '@wordpress/icons';
 import { recordEvent } from '@woocommerce/tracks';
+import { List, TaskItem } from '@woocommerce/experimental';
 
 /**
  * Internal dependencies
@@ -18,6 +29,13 @@ import type {
 	WooPaymentsDisputeReadinessPayload,
 	WooPaymentsDisputeReadinessSignal,
 } from '../types';
+
+// Client 11.1.0 `overview/dispute-readiness/index.tsx:36-37`.
+const LEARN_MORE_URL =
+	'https://woocommerce.com/document/woopayments/fraud-and-disputes/preventing-disputes/';
+
+const ACTIONS_POPOVER_CLASS =
+	'woocommerce-woopayments-dispute-readiness__actions-popover';
 
 const isVisiblePayload = ( payload: WooPaymentsDisputeReadinessPayload ) =>
 	!! payload.overview?.enabled && ! payload.overview.isDismissed;
@@ -100,10 +118,12 @@ export const DisputeReadinessCard = ( {
 		const nextPayload = await dismissWooPaymentsDisputeReadinessCard();
 		const ownerDocument = sectionRef.current?.ownerDocument;
 		const activeElement = ownerDocument?.activeElement;
+		// The card's actions menu renders in a popover outside the card.
 		const shouldRestoreFocus =
 			!! focusAfterDismissId &&
 			!! activeElement &&
-			!! sectionRef.current?.contains( activeElement );
+			( !! sectionRef.current?.contains( activeElement ) ||
+				!! activeElement.closest( `.${ ACTIONS_POPOVER_CLASS }` ) );
 		setPayload( nextPayload );
 		setAnnouncement( __( 'Dispute readiness dismissed.', 'woocommerce' ) );
 
@@ -151,80 +171,100 @@ export const DisputeReadinessCard = ( {
 				{ announcement }
 			</div>
 			{ enabled && payload && isVisiblePayload( payload ) && (
-				<section
+				// Client 11.1.0 `overview/dispute-readiness/index.tsx:136-226`.
+				<Card
+					as="section"
 					ref={ sectionRef }
-					className="woocommerce-woopayments-overview-card woocommerce-woopayments-dispute-readiness"
+					className="woocommerce-woopayments-dispute-readiness"
 				>
-					<div className="woocommerce-woopayments-dispute-readiness__header">
-						<h2 ref={ headingRef } tabIndex={ -1 }>
-							{ __( 'Dispute readiness', 'woocommerce' ) }
-						</h2>
-						<Button
-							variant="tertiary"
-							onClick={ dismiss }
-							aria-label={ __(
-								'Dismiss dispute readiness',
+					<CardHeader className="woocommerce-woopayments-dispute-readiness__header">
+						<div className="woocommerce-woopayments-dispute-readiness__header-text">
+							<h2
+								ref={ headingRef }
+								tabIndex={ -1 }
+								className="woocommerce-woopayments-overview-card__title"
+							>
+								{ __( 'Dispute readiness', 'woocommerce' ) }
+							</h2>
+							<p className="woocommerce-woopayments-dispute-readiness__description">
+								{ sprintf(
+									/* translators: %d: total number of dispute readiness steps. */
+									__(
+										'These %d steps help customers recognize charges, understand your policies, and contact you before opening a dispute.',
+										'woocommerce'
+									),
+									payload.overview?.total ?? signals.length
+								) }{ ' ' }
+								<ExternalLink href={ LEARN_MORE_URL }>
+									{ __( 'Learn more', 'woocommerce' ) }
+								</ExternalLink>
+							</p>
+						</div>
+						<DropdownMenu
+							icon={ moreVertical }
+							label={ __(
+								'Dispute readiness actions',
 								'woocommerce'
 							) }
+							popoverProps={ {
+								placement: 'bottom-end',
+								className: ACTIONS_POPOVER_CLASS,
+							} }
 						>
-							{ __( 'Dismiss', 'woocommerce' ) }
-						</Button>
-					</div>
-					<p>
-						{ sprintf(
-							/* translators: 1: complete steps, 2: total steps. */
-							__( '%1$d of %2$d steps complete.', 'woocommerce' ),
-							payload.overview?.score ?? 0,
-							payload.overview?.total ?? signals.length
-						) }
-					</p>
-					<ul className="woocommerce-woopayments-dispute-readiness__signals">
+							{ ( { onClose } ) => (
+								<MenuGroup>
+									<MenuItem
+										onClick={ () => {
+											void dismiss();
+											onClose();
+										} }
+									>
+										{ __( 'Dismiss', 'woocommerce' ) }
+									</MenuItem>
+								</MenuGroup>
+							) }
+						</DropdownMenu>
+					</CardHeader>
+					<List className="woocommerce-woopayments-dispute-readiness__signals">
 						{ signals.map( ( signal ) => {
 							const isComplete = signal.status === 'complete';
-							const hasReview = !! signal.reviewPrompt;
 
 							return (
-								<li key={ signal.id }>
-									<div>
-										<strong>{ signal.label }</strong>
-										{ signal.description && (
-											<p>{ signal.description }</p>
-										) }
-									</div>
-									{ ! isComplete && hasReview && (
-										<Button
-											variant="secondary"
-											onClick={ () => {
-												recordCtaClick( signal );
-												setReviewSignal( signal );
-											} }
-										>
-											{ signal.actionLabel ||
-												__( 'Review', 'woocommerce' ) }
-										</Button>
-									) }
-									{ ! isComplete &&
-										! hasReview &&
-										signal.actionUrl && (
-											<Button
-												variant="secondary"
-												href={ signal.actionUrl }
-												onClick={ () =>
-													recordCtaClick( signal )
-												}
-											>
-												{ signal.actionLabel ||
-													__(
-														'Fix it',
-														'woocommerce'
-													) }
-											</Button>
-										) }
-								</li>
+								<TaskItem
+									key={ signal.id }
+									data-status={ signal.status }
+									title={ signal.label }
+									completed={ isComplete }
+									inProgress={ false }
+									inProgressLabel=""
+									content={ signal.description || '' }
+									expanded
+									showActionButton={
+										! isComplete &&
+										( !! signal.reviewPrompt ||
+											!! signal.actionUrl )
+									}
+									level={ 3 }
+									action={ () => {
+										recordCtaClick( signal );
+
+										if ( signal.reviewPrompt ) {
+											setReviewSignal( signal );
+										} else if ( signal.actionUrl ) {
+											window.location.assign(
+												signal.actionUrl
+											);
+										}
+									} }
+									actionLabel={
+										signal.actionLabel ||
+										__( 'Fix it', 'woocommerce' )
+									}
+								/>
 							);
 						} ) }
-					</ul>
-				</section>
+					</List>
+				</Card>
 			) }
 			{ reviewSignal?.reviewPrompt && (
 				<Modal

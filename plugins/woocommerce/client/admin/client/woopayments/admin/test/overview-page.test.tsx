@@ -1121,8 +1121,26 @@ describe( 'WooPaymentsOverviewPage', () => {
 		expect(
 			screen.getByText( 'Recognizable statement descriptor' )
 		).toBeInTheDocument();
+		// Client 11.1.0 `overview/dispute-readiness/index.tsx:136-186`: a description with a guide link, Dismiss in the actions menu.
 		expect(
-			screen.getByRole( 'button', { name: 'Dismiss dispute readiness' } )
+			screen.getByText(
+				/These 4 steps help customers recognize charges, understand your policies, and contact you before opening a dispute\./
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: /Learn more/ } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/fraud-and-disputes/preventing-disputes/'
+		);
+		expect(
+			screen.queryByText( /steps complete/ )
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Dispute readiness actions' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Add terms' } )
 		).toBeInTheDocument();
 	} );
 
@@ -1204,15 +1222,16 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 		render( <WooPaymentsOverviewPage /> );
 
-		const dismissButton = await screen.findByRole( 'button', {
-			name: 'Dismiss dispute readiness',
-		} );
-		await act( async () => {
-			dismissButton.focus();
-		} );
+		await userEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Dispute readiness actions',
+			} )
+		);
 
 		await act( async () => {
-			await userEvent.click( dismissButton );
+			await userEvent.click(
+				screen.getByRole( 'menuitem', { name: 'Dismiss' } )
+			);
 		} );
 
 		expect( mockDismissDisputeReadiness ).toHaveBeenCalledTimes( 1 );
@@ -1319,10 +1338,14 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 		render( <WooPaymentsOverviewPage /> );
 
-		const dismissButton = await screen.findByRole( 'button', {
-			name: 'Dismiss dispute readiness',
-		} );
-		await userEvent.click( dismissButton );
+		await userEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Dispute readiness actions',
+			} )
+		);
+		await userEvent.click(
+			screen.getByRole( 'menuitem', { name: 'Dismiss' } )
+		);
 		screen.getByRole( 'heading', { name: 'Account details' } ).focus();
 
 		await act( async () => {
