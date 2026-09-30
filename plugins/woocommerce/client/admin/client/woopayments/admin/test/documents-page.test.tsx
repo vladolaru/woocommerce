@@ -32,6 +32,17 @@ import {
 	getTestModeNoticeText,
 	mockAccountMode,
 } from './helpers/test-mode-account';
+import {
+	SettingsShellHistoryBridge,
+	shellHistory,
+} from './helpers/settings-shell-history';
+
+// The settings shell's history: pages move between routes through admin.php URLs.
+jest.mock( '@woocommerce/navigation', () => ( {
+	...jest.requireActual( '@woocommerce/navigation' ),
+	getHistory: () =>
+		jest.requireActual( './helpers/settings-shell-history' ).shellHistory,
+} ) );
 
 jest.mock( '@woocommerce/data', () => ( {
 	useUserPreferences: () =>
@@ -182,6 +193,7 @@ const enabledAccount = {
 const renderDocumentsPage = ( initialEntries = [ '/woopayments/documents' ] ) =>
 	render(
 		<MemoryRouter initialEntries={ initialEntries }>
+			<SettingsShellHistoryBridge />
 			<WooPaymentsDocumentsPage />
 		</MemoryRouter>
 	);
@@ -335,6 +347,23 @@ describe( 'WooPaymentsDocumentsPage', () => {
 		);
 		expect( mockGetDocumentsSummary ).toHaveBeenLastCalledWith(
 			expect.objectContaining( { match: 'any' } )
+		);
+		expect( shellHistory.push ).toHaveBeenLastCalledWith(
+			expect.stringMatching(
+				/^admin\.php\?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdocuments&.*match=any/
+			)
+		);
+	} );
+
+	it( 'reads the list page from `paged`, since `page` names the admin screen', async () => {
+		renderDocumentsPage( [
+			'/woopayments/documents?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdocuments&paged=3',
+		] );
+
+		await waitFor( () =>
+			expect( mockGetDocuments ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { page: 3 } )
+			)
 		);
 	} );
 

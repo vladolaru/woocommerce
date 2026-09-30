@@ -25,6 +25,10 @@ import type {
 	WooPaymentsDepositsOverview,
 } from '../overview/types';
 import { setMockUserPreferences } from './helpers/user-preferences';
+import {
+	SettingsShellHistoryBridge,
+	shellHistory,
+} from './helpers/settings-shell-history';
 
 type MockField = {
 	id: string;
@@ -35,6 +39,13 @@ type MockField = {
 type MockView = Record< string, unknown > & {
 	filters?: Array< { field: string; operator: string; value?: unknown } >;
 };
+
+// The settings shell's history: pages move between routes through admin.php URLs.
+jest.mock( '@woocommerce/navigation', () => ( {
+	...jest.requireActual( '@woocommerce/navigation' ),
+	getHistory: () =>
+		jest.requireActual( './helpers/settings-shell-history' ).shellHistory,
+} ) );
 
 jest.mock( '../overview/data', () => ( {
 	getWooPaymentsDeposits: jest.fn(),
@@ -116,6 +127,7 @@ const mockGetSummary = getWooPaymentsDepositsSummary as jest.MockedFunction<
 const renderPayouts = ( path = '/woopayments/payouts' ) =>
 	render(
 		<MemoryRouter initialEntries={ [ path ] }>
+			<SettingsShellHistoryBridge />
 			<WooPaymentsPayouts />
 		</MemoryRouter>
 	);
@@ -334,5 +346,10 @@ describe( 'WooPayments payouts Show and currency filters', () => {
 		expect(
 			await screen.findByTestId( 'status-filter-operators' )
 		).toHaveTextContent( /^is,isNot$/ );
+		expect( shellHistory.push ).toHaveBeenLastCalledWith(
+			expect.stringMatching(
+				/^admin\.php\?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts&.*filter=advanced/
+			)
+		);
 	} );
 } );

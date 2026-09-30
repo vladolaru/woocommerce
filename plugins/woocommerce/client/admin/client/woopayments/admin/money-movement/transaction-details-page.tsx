@@ -23,7 +23,7 @@ import { moreVertical } from '@wordpress/icons';
 import { __, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
 import moment from 'moment';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 
 /**
  * Internal dependencies
@@ -61,6 +61,7 @@ import {
 	isDisputeRefundable,
 } from './dispute-utils';
 import { WooPaymentsDisputeOutcome } from './dispute-recommendations';
+import { navigateToSettingsPaymentsProviderRoute } from '../utils';
 import { WooPaymentsTransactionDisputeDetails } from './transaction-dispute-details';
 import {
 	isPaymentOrderMissing,
@@ -626,7 +627,6 @@ export const WooPaymentsTransactionDetailsPage = () => {
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
 	const location = useLocation();
-	const navigate = useNavigate();
 	const query = new URLSearchParams( location.search );
 	const id = query.get( 'id' ) || '';
 	const transactionId = query.get( 'transaction_id' ) || '';
@@ -746,16 +746,12 @@ export const WooPaymentsTransactionDetailsPage = () => {
 						transactionId
 					);
 
+					// Client 11.1.0 payment-details/charge-details/index.tsx:47-61: the payment's own URL.
 					if ( charge.payment_intent ) {
-						const nextQuery = new URLSearchParams(
-							location.search
-						);
-						nextQuery.set( 'id', charge.payment_intent );
-						navigate(
-							{
-								pathname: location.pathname,
-								search: `?${ nextQuery.toString() }`,
-							},
+						navigateToSettingsPaymentsProviderRoute(
+							`/woopayments/transactions/details?id=${ encodeURIComponent(
+								charge.payment_intent
+							) }`,
 							{ replace: true }
 						);
 					}
@@ -846,7 +842,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 				}
 			}
 		},
-		[ id, location.pathname, location.search, navigate, transactionId ]
+		[ id, transactionId ]
 	);
 
 	useEffect( () => {

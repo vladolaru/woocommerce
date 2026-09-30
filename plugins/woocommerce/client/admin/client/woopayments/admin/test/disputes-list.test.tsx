@@ -27,6 +27,10 @@ import {
 	requestWooPaymentsDisputesExport,
 } from '../money-movement/data';
 import { setMockUserPreferences } from './helpers/user-preferences';
+import {
+	SettingsShellHistoryBridge,
+	shellHistory,
+} from './helpers/settings-shell-history';
 
 type MockField = {
 	id: string;
@@ -37,6 +41,13 @@ type MockField = {
 	elements?: Array< { value: string; label: string } >;
 	render?: ( props: { item: Record< string, unknown > } ) => ReactNode;
 };
+
+// The settings shell's history: pages move between routes through admin.php URLs.
+jest.mock( '@woocommerce/navigation', () => ( {
+	...jest.requireActual( '@woocommerce/navigation' ),
+	getHistory: () =>
+		jest.requireActual( './helpers/settings-shell-history' ).shellHistory,
+} ) );
 
 jest.mock( '@woocommerce/data', () => ( {
 	useUserPreferences: () =>
@@ -166,6 +177,7 @@ const SORTABLE = [ 'amount', 'created', 'due_by' ];
 const renderPage = ( entry = '/woopayments/disputes' ) =>
 	render(
 		<MemoryRouter initialEntries={ [ entry ] }>
+			<SettingsShellHistoryBridge />
 			<WooPaymentsDisputesPage />
 		</MemoryRouter>
 	);
@@ -441,6 +453,13 @@ describe( 'WooPayments disputes Show and currency filters', () => {
 			expect( lastQuery( mockGetDisputes ).search ).toEqual( AWAITING )
 		);
 		expect( lastQuery( mockGetDisputes ).status_is ).toBeUndefined();
+		// Client 11.1.0 FilterPicker `update()` goes through `getHistory()` with an admin.php URL, so the
+		// address bar stays on the admin page, under a subdirectory install too.
+		expect( shellHistory.push ).toHaveBeenLastCalledWith(
+			expect.stringMatching(
+				/^admin\.php\?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes&.*filter=awaiting_response/
+			)
+		);
 	} );
 
 	it( 'adds the Status and Disputed on filters only for Advanced filters', async () => {

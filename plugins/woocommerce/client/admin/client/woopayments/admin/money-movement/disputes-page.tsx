@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 
 /**
  * Internal dependencies
@@ -59,7 +59,10 @@ import {
 import { OrderLink, PaymentSource } from './transactions-list-fields';
 import { ExportButton, ListNotice, LiveStatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	navigateToSettingsPaymentsProviderRoute,
+} from '../utils';
 import { formatCurrencyName } from '../currency';
 import {
 	StatusChip,
@@ -257,7 +260,6 @@ export const WooPaymentsDisputesPage = () => {
 		DISPUTE_DEFAULT_HIDDEN_COLUMNS
 	);
 	const location = useLocation();
-	const navigate = useNavigate();
 	const query = useMemo(
 		() =>
 			parseMoneyMovementQuery( location.search, {
@@ -534,7 +536,7 @@ export const WooPaymentsDisputesPage = () => {
 			return;
 		}
 
-		navigate(
+		navigateToSettingsPaymentsProviderRoute(
 			buildDisputesRoute(
 				dataViewsViewToMoneyMovementQuery( nextView, query, 'created' ),
 				showFilter,
@@ -550,7 +552,7 @@ export const WooPaymentsDisputesPage = () => {
 			DISPUTES_SHOW_FILTERS
 		);
 
-		navigate(
+		navigateToSettingsPaymentsProviderRoute(
 			buildDisputesRoute(
 				getQueryForShowFilter( query, nextFilter ),
 				nextFilter
@@ -566,7 +568,9 @@ export const WooPaymentsDisputesPage = () => {
 			nextQuery.store_currency_is = value;
 		}
 
-		navigate( buildDisputesRoute( nextQuery, showFilter, match ) );
+		navigateToSettingsPaymentsProviderRoute(
+			buildDisputesRoute( nextQuery, showFilter, match )
+		);
 	};
 	const handleExport = async () => {
 		setIsExporting( true );
@@ -665,7 +669,7 @@ export const WooPaymentsDisputesPage = () => {
 				__( 'Disputes match', 'woocommerce' ),
 				match,
 				( value ) =>
-					navigate(
+					navigateToSettingsPaymentsProviderRoute(
 						buildDisputesRoute(
 							query,
 							showFilter,

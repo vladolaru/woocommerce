@@ -176,9 +176,13 @@ export const parseDocumentsQuery = (
 	locationOrSearch: string
 ): WooPaymentsDocumentsQuery => {
 	const params = getSearchParams( locationOrSearch );
+	// Inside the settings shell, `page` names the admin screen and the list page travels as `paged`.
 	const page = normalizePositiveInteger(
-		params.get( 'page' ),
-		DEFAULT_DOCUMENTS_QUERY.page
+		params.get( 'paged' ),
+		normalizePositiveInteger(
+			params.get( 'page' ),
+			DEFAULT_DOCUMENTS_QUERY.page
+		)
 	);
 	const pagesize = normalizePositiveInteger(
 		params.get( 'pagesize' ) ||

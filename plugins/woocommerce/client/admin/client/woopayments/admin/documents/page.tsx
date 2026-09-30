@@ -10,7 +10,7 @@ import {
 	useState,
 } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 
 // @ts-expect-error - Use the WordPress-bundled DataViews entry in wp-admin builds.
 import type { Field } from '@wordpress/dataviews/wp';
@@ -39,6 +39,7 @@ import type {
 } from './types';
 import { WooPaymentsVatModal } from './vat-modal';
 import { formatSiteDateTime } from '../money-movement/utils';
+import { navigateToSettingsPaymentsProviderRoute } from '../utils';
 import { usePersistedHiddenFields } from '../money-movement/view-preferences';
 import { WooPaymentsMoneyMovementDataViews } from '../money-movement/dataviews';
 import {
@@ -170,7 +171,6 @@ const getDirectDownloadDocument = (
 
 export const WooPaymentsDocumentsPage = () => {
 	const location = useLocation();
-	const navigate = useNavigate();
 	const showFilter = getListShowFilter(
 		location.search || '',
 		DOCUMENTS_SHOW_FILTERS
@@ -392,7 +392,7 @@ export const WooPaymentsDocumentsPage = () => {
 		nextQuery: typeof query,
 		nextShowFilter = showFilter
 	) =>
-		navigate(
+		navigateToSettingsPaymentsProviderRoute(
 			withListShowFilter(
 				buildDocumentsRoutePath( '/woopayments/documents', nextQuery ),
 				nextShowFilter

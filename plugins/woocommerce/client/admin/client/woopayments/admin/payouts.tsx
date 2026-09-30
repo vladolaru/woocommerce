@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 
 /**
  * Internal dependencies
@@ -63,7 +63,10 @@ import {
 	PAYOUT_STATUS_FILTER_ELEMENTS,
 } from './payout-status';
 import { StatusChip } from './overview/components/status-chip';
-import { getSettingsPaymentsProviderRouteUrl } from './utils';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	navigateToSettingsPaymentsProviderRoute,
+} from './utils';
 import { WooPaymentsTestModeNotice } from './test-mode-notice';
 import { WooPaymentsPayoutsNotices } from './payouts-notices';
 import { SpotlightPromotion } from '../promotions/spotlight';
@@ -147,7 +150,6 @@ export const WooPaymentsPayouts = () => {
 		PAYOUT_FIELDS
 	);
 	const location = useLocation();
-	const navigate = useNavigate();
 	const query = useMemo(
 		() =>
 			parseMoneyMovementQuery( location.search, {
@@ -311,7 +313,7 @@ export const WooPaymentsPayouts = () => {
 		nextShowFilter = showFilter,
 		nextMatch: WooPaymentsListMatch = match
 	) =>
-		navigate(
+		navigateToSettingsPaymentsProviderRoute(
 			withListShowFilter(
 				buildMoneyMovementRoutePath(
 					'/woopayments/payouts',
