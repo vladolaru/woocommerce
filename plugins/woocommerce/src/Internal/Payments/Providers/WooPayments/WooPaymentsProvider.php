@@ -188,6 +188,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 		$gateway_prefix             = array(
 			NativePaymentsGatewayRegistry::class,
 			self::class,
+			WooPaymentsGatewayListController::class,
 		);
 		$active_maintenance_prefix  = array_merge(
 			array( WooPaymentsCutoverNormalizationRunner::class ),

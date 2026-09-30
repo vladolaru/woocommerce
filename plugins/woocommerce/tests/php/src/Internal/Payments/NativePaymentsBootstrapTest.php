@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewayListController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayPreflightGuard;
@@ -53,6 +54,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	private const CONNECTED_ADMIN = array(
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
+		WooPaymentsGatewayListController::class,
 		self::WCPAY . 'WooPaymentsCutoverController',
 		WooPaymentsCutoverReconciliationJob::class,
 		self::ADMIN_NAVIGATION,
@@ -82,6 +84,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	private const CONNECTED_AJAX = array(
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
+		WooPaymentsGatewayListController::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
 		self::WCPAY . 'WooPaymentsCustomerService',
@@ -102,6 +105,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	private const CONNECTED_REST = array(
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
+		WooPaymentsGatewayListController::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
 		WooPaymentsMerchantRestController::class,
@@ -137,6 +141,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	private const CONNECTED_CRON = array(
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
+		WooPaymentsGatewayListController::class,
 		WooPaymentsCutoverReconciliationJob::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
@@ -157,6 +162,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	private const ACTIVE_FRONT = array(
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
+		WooPaymentsGatewayListController::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
 		self::WCPAY . 'WooPaymentsFrontendStylesService',
@@ -189,6 +195,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
+		WooPaymentsGatewayListController::class,
 		self::WCPAY . 'WooPaymentsCutoverController',
 		WooPaymentsCutoverReconciliationJob::class,
 		self::ADMIN_NAVIGATION,
@@ -218,6 +225,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	private const ACTIVE_AJAX = array(
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
+		WooPaymentsGatewayListController::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
 		self::WCPAY . 'WooPaymentsCustomerService',
@@ -248,6 +256,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	private const ACTIVE_REST = array(
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
+		WooPaymentsGatewayListController::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
 		WooPaymentsMerchantRestController::class,
@@ -294,6 +303,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
+		WooPaymentsGatewayListController::class,
 		WooPaymentsCutoverReconciliationJob::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
@@ -532,7 +542,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			'available admin' => array( NativePaymentsState::AVAILABLE, 'admin', self::AVAILABLE_ADMIN ),
 			'available cron'  => array( NativePaymentsState::AVAILABLE, 'cron', self::AVAILABLE_CRON ),
 			'available CLI'   => array( NativePaymentsState::AVAILABLE, 'cli', self::AVAILABLE_CRON ),
-			'connected front' => array( NativePaymentsState::CONNECTED, 'front', array( NativePaymentsGatewayRegistry::class, WooPaymentsProvider::class, WooPaymentsSubscriptionRenewalHooks::class, WooPaymentsTokenService::class ) ),
+			'connected front' => array( NativePaymentsState::CONNECTED, 'front', array( NativePaymentsGatewayRegistry::class, WooPaymentsProvider::class, WooPaymentsGatewayListController::class, WooPaymentsSubscriptionRenewalHooks::class, WooPaymentsTokenService::class ) ),
 			'connected admin' => array( NativePaymentsState::CONNECTED, 'admin', self::CONNECTED_ADMIN ),
 			'connected AJAX'  => array( NativePaymentsState::CONNECTED, 'ajax', self::CONNECTED_AJAX ),
 			'connected REST'  => array( NativePaymentsState::CONNECTED, 'rest', self::CONNECTED_REST ),
