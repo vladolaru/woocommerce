@@ -1687,7 +1687,7 @@ const TransactionsSettingsSection = ( {
 							{ Children.toArray(
 								createInterpolateElement(
 									__(
-										'Authorize charges first and capture funds later. <learnMoreLink>Learn more</learnMoreLink>.',
+										'Issue an authorization on checkout and capture later. <learnMoreLink>Learn more</learnMoreLink>.',
 										'woocommerce'
 									),
 									{
@@ -1727,10 +1727,7 @@ const TransactionsSettingsSection = ( {
 							) }
 						</>
 					}
-					label={ __(
-						'Issue an authorization on checkout and capture later',
-						'woocommerce'
-					) }
+					label={ __( 'Enable manual capture', 'woocommerce' ) }
 					onChange={ ( value ) => {
 						if ( ! value ) {
 							setIsManualCaptureEnabled( false );
@@ -1752,7 +1749,7 @@ const TransactionsSettingsSection = ( {
 				) }
 			</FieldGroup>
 			<FieldGroup title={ __( 'Customer statements', 'woocommerce' ) }>
-				<p>
+				<p className="woopayments-settings-muted">
 					{ __(
 						"Edit the way your store name appears on your customers' bank statements.",
 						'woocommerce'
@@ -1810,7 +1807,7 @@ const TransactionsSettingsSection = ( {
 				) }
 			</FieldGroup>
 			<FieldGroup title={ __( 'Customer support', 'woocommerce' ) }>
-				<p>
+				<p className="woopayments-settings-muted">
 					{ __(
 						'Provide contact information where customers can reach you for support.',
 						'woocommerce'
@@ -1968,7 +1965,7 @@ const PayoutsSettingsSection = () => {
 						{ sprintf(
 							/* translators: %s: Number of business days. */
 							__(
-								'Funds are available for payout %s business days after they are received.',
+								'Funds are available for payout %s business days after they’re received.',
 								'woocommerce'
 							),
 							String( depositDelayDays )

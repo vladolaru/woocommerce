@@ -3093,7 +3093,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		await userEvent.click(
 			screen.getByRole( 'checkbox', {
-				name: 'Issue an authorization on checkout and capture later',
+				name: 'Enable manual capture',
 			} )
 		);
 
@@ -3129,7 +3129,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		await userEvent.click(
 			screen.getByRole( 'checkbox', {
-				name: 'Issue an authorization on checkout and capture later',
+				name: 'Enable manual capture',
 			} )
 		);
 
@@ -3146,7 +3146,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		render( <WooPaymentsSettingsPage /> );
 
 		const toggle = screen.getByRole( 'checkbox', {
-			name: 'Issue an authorization on checkout and capture later',
+			name: 'Enable manual capture',
 		} );
 		await userEvent.click( toggle );
 		const dialog = screen.getByRole( 'dialog', {
