@@ -615,15 +615,33 @@ describe( 'MultiCurrencySettingsApp', () => {
 		await waitFor( () => expect( manageButton ).toHaveFocus() );
 	} );
 
+	// Owner ruling N-251 R1: the client shows no rate-source notice, so native
+	// shows one only for the outage and no-provider states.
 	it.each( [
-		[
-			{ available: true, source: 'woopayments' },
-			'Automatic rates are provided by WooPayments.',
-		],
-		[
-			{ available: true, source: 'custom-provider' },
-			'Automatic rates are provided by custom-provider.',
-		],
+		{ available: true, source: 'woopayments' },
+		{ available: true, source: 'custom-provider' },
+	] )(
+		'shows no rate-source notice while automatic rates are available %s',
+		async ( automaticRates ) => {
+			mockApiFetch.mockReset();
+			mockApiFetch.mockResolvedValueOnce( {
+				...currenciesResponse,
+				automatic_rates: automaticRates,
+			} );
+
+			const { container } = render( <MultiCurrencySettingsApp /> );
+
+			await screen.findByRole( 'rowheader', { name: 'Euro (€ EUR)' } );
+			expect(
+				screen.queryByText( /Automatic rates are provided by/ )
+			).not.toBeInTheDocument();
+			expect(
+				container.querySelector( '.components-notice' )
+			).toBeNull();
+		}
+	);
+
+	it.each( [
 		[
 			{ available: false, source: null },
 			'No automatic-rate provider is available. Set manual rates for enabled currencies.',

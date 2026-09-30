@@ -116,9 +116,10 @@ const formatExchangeRate = (
 	}`;
 };
 
+// Only the outage and no-provider states get a notice: the client shows no rate-source notice (owner ruling N-251 R1).
 const getAutomaticRatesNotice = (
 	automaticRates: AutomaticRatesDescriptor
-): string => {
+): string | null => {
 	if ( automaticRates.source === null ) {
 		return __(
 			'No automatic-rate provider is available. Set manual rates for enabled currencies.',
@@ -127,13 +128,7 @@ const getAutomaticRatesNotice = (
 	}
 
 	if ( automaticRates.available ) {
-		return sprintf(
-			/* translators: %s: Automatic-rate provider name or ID. */
-			__( 'Automatic rates are provided by %s.', 'woocommerce' ),
-			automaticRates.source === 'woopayments'
-				? 'WooPayments'
-				: automaticRates.source
-		);
+		return null;
 	}
 
 	if ( automaticRates.source === 'woopayments' ) {
@@ -442,11 +437,17 @@ export function MultiCurrencySettingsApp() {
 		);
 	}
 
+	const automaticRatesNotice = getAutomaticRatesNotice(
+		currencies.automatic_rates
+	);
+
 	return (
 		<div className="woocommerce-multi-currency-settings">
-			<Notice status="info" isDismissible={ false }>
-				{ getAutomaticRatesNotice( currencies.automatic_rates ) }
-			</Notice>
+			{ automaticRatesNotice && (
+				<Notice status="info" isDismissible={ false }>
+					{ automaticRatesNotice }
+				</Notice>
+			) }
 
 			<SettingsSection
 				title={ __( 'Enabled currencies', 'woocommerce' ) }
