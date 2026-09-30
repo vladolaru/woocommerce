@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
@@ -3237,6 +3238,7 @@ class WooPaymentsService {
 			}
 
 			$this->enable_native_gateway_after_kyc_finalization( $is_live );
+			$this->restore_native_test_drive_payment_methods();
 
 			// Flag the new connection for the Overview's wcpay_stripe_connected Tracks event, as the plugin's finalize_embedded_connection() does.
 			$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => false ), false );
@@ -3277,6 +3279,43 @@ class WooPaymentsService {
 		$settings['test_mode'] = $is_live ? 'no' : 'yes';
 
 		wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings );
+	}
+
+	/**
+	 * Merge the saved test-drive payment methods back into the enabled set, like client 11.1.0
+	 * restore_test_drive_enabled_payment_methods(): no capability or availability check, and a restored Link turns WooPay off.
+	 */
+	private function restore_native_test_drive_payment_methods(): void {
+		$test_drive_settings = $this->proxy->call_function( 'get_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
+		if ( ! is_array( $test_drive_settings ) || empty( $test_drive_settings['enabled_payment_methods'] ) || ! is_array( $test_drive_settings['enabled_payment_methods'] ) ) {
+			return;
+		}
+
+		$restored_ids = $this->get_test_drive_enabled_payment_method_ids();
+		if ( ! empty( $restored_ids ) ) {
+			$settings        = $this->proxy->call_function( 'get_option', WooPaymentsSettingsService::SETTINGS_OPTION, array() );
+			$settings        = is_array( $settings ) ? $settings : array();
+			$enabled_ids     = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array( 'card' );
+			$enabled_ids     = array_values( array_unique( array_merge( $enabled_ids, $restored_ids ) ) );
+			$disables_woopay = in_array( 'link', $enabled_ids, true ) && 'yes' === ( $settings['platform_checkout'] ?? 'no' );
+
+			$settings['upe_enabled_payment_method_ids'] = $enabled_ids;
+			if ( $disables_woopay ) {
+				$settings['platform_checkout']                   = 'no';
+				$settings['platform_checkout_last_disable_date'] = gmdate( 'Y-m-d' );
+			}
+
+			// The canonical write also enables each restored method's split gateway and syncs its duplicated list.
+			wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings );
+			if ( $disables_woopay ) {
+				wc_get_container()->get( WooPaymentsFrontendTrackingController::class )->record_admin_event(
+					'woopay_disabled',
+					array( 'test_mode' => $this->get_native_account_service()->is_test_mode_enabled() ? 1 : 0 )
+				);
+			}
+		}
+
+		$this->proxy->call_function( 'delete_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
 	}
 
 	/**
@@ -3331,8 +3370,6 @@ class WooPaymentsService {
 	 * @return bool Whether the projection completed or deliberately had nothing to update.
 	 */
 	private function update_native_enabled_payment_methods_from_nox_profile( string $location, array $account_data ): bool {
-		$test_drive_settings      = $this->proxy->call_function( 'get_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
-		$has_test_drive_settings  = false !== $test_drive_settings;
 		$selected_payment_methods = $this->get_nox_profile_onboarding_step_data_entry(
 			self::ONBOARDING_STEP_PAYMENT_METHODS,
 			$location,
@@ -3361,18 +3398,7 @@ class WooPaymentsService {
 			$selected_definitions[ $definition->get_id() ] = $definition;
 		}
 
-		foreach ( $this->get_test_drive_enabled_payment_method_ids() as $payment_method_id ) {
-			$definition = $registry->get( $payment_method_id );
-			if ( null !== $definition ) {
-				$selected_definitions[ $definition->get_id() ] = $definition;
-			}
-		}
-
 		if ( empty( $selected_definitions ) ) {
-			if ( $has_test_drive_settings ) {
-				$this->proxy->call_function( 'delete_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
-			}
-
 			return true;
 		}
 
@@ -3412,9 +3438,6 @@ class WooPaymentsService {
 		}
 
 		$result = $settings_service->update_settings( $params );
-		if ( ! is_wp_error( $result ) && $has_test_drive_settings ) {
-			$this->proxy->call_function( 'delete_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
-		}
 
 		return ! is_wp_error( $result );
 	}

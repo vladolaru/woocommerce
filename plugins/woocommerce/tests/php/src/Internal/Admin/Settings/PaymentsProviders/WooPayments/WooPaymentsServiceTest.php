@@ -1268,6 +1268,59 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 restore_test_drive_enabled_payment_methods() (includes/class-wc-payments-account.php:2258-2289) merges
+	 * the saved test-drive methods back without checking the new live account's capabilities.
+	 *
+	 * @testdox Native KYC finalization restores test-drive payment methods whose live capabilities are still pending, like client 11.1.0.
+	 */
+	public function test_finish_native_onboarding_kyc_session_restores_test_drive_payment_methods_with_pending_capabilities(): void {
+		$fresh_account = $this->get_native_finalize_projection_account(
+			array(
+				'capabilities' => array(
+					'card_payments'  => 'active',
+					'ideal_payments' => 'pending',
+					'link_payments'  => 'pending',
+				),
+				'fees'         => array(
+					'card'  => array(),
+					'ideal' => array(),
+					'link'  => array(),
+				),
+			)
+		);
+		$this->arrange_native_finalize_projection( array( $fresh_account ), array( 'card' => true ) );
+		set_transient(
+			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
+			array(
+				'capabilities'            => array(
+					'card_payments'  => array( 'requested' => 'true' ),
+					'ideal_payments' => array( 'requested' => 'true' ),
+					'link_payments'  => array( 'requested' => 'true' ),
+				),
+				'enabled_payment_methods' => array( 'card', 'ideal', 'link' ),
+			),
+			HOUR_IN_SECONDS
+		);
+		update_option(
+			WooPaymentsSettingsService::SETTINGS_OPTION,
+			array(
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertTrue( $response['success'] );
+		$this->assertSame( array( 'card', 'ideal', 'link' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
+		$this->assertSame( array( 'card', 'ideal', 'link' ), get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'no', $settings['platform_checkout'] );
+		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
+	}
+
+	/**
 	 * @testdox Native KYC finalization leaves WooPay enabled when no restored method conflicts with it.
 	 */
 	public function test_finish_native_onboarding_kyc_session_preserves_woopay_without_link(): void {
@@ -1375,9 +1428,11 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native KYC finalization preserves test-drive methods across a failed refresh and restores them on retry.
+	 * Client 11.1.0 finalize_embedded_connection() restores the test-drive methods before, and independently of, any account refresh.
+	 *
+	 * @testdox Native KYC finalization restores test-drive methods even when the account refresh fails.
 	 */
-	public function test_finish_native_onboarding_kyc_session_retries_test_drive_payment_method_restore(): void {
+	public function test_finish_native_onboarding_kyc_session_restores_test_drive_payment_methods_despite_refresh_failure(): void {
 		$fresh_account = $this->get_native_finalize_projection_account(
 			array(
 				'capabilities' => array(
@@ -1414,18 +1469,17 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
 
 		$this->assertTrue( $response['success'] );
 		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
-		$this->assertNotFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
-		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
-
-		$fixture['account_service']->refresh_account_data();
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
-
+		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
 		$this->assertSame( 'no', $settings['platform_checkout'] );
-		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
+
+		$fixture['account_service']->refresh_account_data();
+
+		$this->assertSame( array( 'card', 'link' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
 	}
 
@@ -1544,7 +1598,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 					return array( 'enabled_payment_method_ids' => array( 'card', 'ideal' ) );
 				}
 			);
-		$fixture = $this->arrange_native_finalize_projection(
+		$fixture   = $this->arrange_native_finalize_projection(
 			array(
 				$this->get_native_finalize_projection_account(),
 				$this->get_native_finalize_projection_account(),
@@ -1555,14 +1609,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			$settings_service
 		);
-		set_transient(
-			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
-			array(
-				'capabilities'            => array( 'card_payments' => array( 'requested' => 'true' ) ),
-				'enabled_payment_methods' => array( 'card' ),
-			),
-			HOUR_IN_SECONDS
-		);
 		$callbacks = $this->get_refresh_projection_callbacks();
 		$this->assertCount( 1, $callbacks );
 		$this->assertSame( $this->sut, $callbacks[0]['callback'][0] );
@@ -1571,12 +1617,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $response['success'] );
 		$this->assertSame( 1, $update_attempts, 'The finalization refresh should make one projection attempt.' );
 		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
-		$this->assertNotFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 
 		$fixture['account_service']->refresh_account_data();
 
 		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
-		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 	}
 
 	/**
