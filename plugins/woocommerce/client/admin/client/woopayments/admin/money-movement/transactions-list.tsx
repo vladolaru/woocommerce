@@ -351,6 +351,8 @@ export const WooPaymentsTransactionsList = (
 				searchLabel={ __( 'Search transactions', 'woocommerce' ) }
 				title={ title }
 				summary={ summaryItems }
+				// Client 11.1.0 `transactions/list/index.tsx:173-222`: the `isNumeric` columns.
+				numericFields={ [ 'customer_amount', 'amount', 'fees', 'net' ] }
 				empty={ emptyMessage }
 				getItemId={ getResourceId }
 				toolbarActions={

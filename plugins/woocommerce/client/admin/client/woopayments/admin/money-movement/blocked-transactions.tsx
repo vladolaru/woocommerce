@@ -390,6 +390,8 @@ export const WooPaymentsBlockedTransactions = () => {
 				searchLabel={ title }
 				title={ title }
 				summary={ summaryItems }
+				// Client 11.1.0 `transactions/blocked/columns.tsx:42-47`.
+				numericFields={ [ 'amount' ] }
 				// Client 11.1.0 uses TableCard, whose empty text this is.
 				empty={ __( 'No data to display', 'woocommerce' ) }
 				getItemId={ ( item ) =>

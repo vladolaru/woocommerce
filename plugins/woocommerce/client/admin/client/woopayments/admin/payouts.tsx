@@ -385,6 +385,8 @@ export const WooPaymentsPayouts = () => {
 					searchLabel={ __( 'Search payouts', 'woocommerce' ) }
 					title={ __( 'Payout history', 'woocommerce' ) }
 					summary={ summaryItems }
+					// Client 11.1.0 `deposits/list/index.tsx:67-72`.
+					numericFields={ [ 'amount' ] }
 					empty={ __( 'No payouts found.', 'woocommerce' ) }
 					getItemId={ ( payout ) => payout.id }
 					toolbarActions={

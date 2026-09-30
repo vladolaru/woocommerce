@@ -802,6 +802,8 @@ export const WooPaymentsTransactionsPage = () => {
 						) }
 						title={ __( 'Uncaptured transactions', 'woocommerce' ) }
 						summary={ summaryItems }
+						// Client 11.1.0 `transactions/uncaptured/index.tsx:81-86`.
+						numericFields={ [ 'amount' ] }
 						empty={ emptyMessage }
 						getItemId={ getAuthorizationPaymentIntentId }
 					/>

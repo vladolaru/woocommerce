@@ -28,6 +28,8 @@ export type WooPaymentsMoneyMovementDataViewsProps<
 	title?: string;
 	/** The card footer's summary, like the client's `TableCard` `summary`. */
 	summary?: Array< { label: string; value: string } >;
+	/** Fields aligned to the end, like the client's `isNumeric` columns. */
+	numericFields?: string[];
 	toolbarActions?: ReactNode;
 	empty?: ReactNode;
 	loadingMessage?: ReactNode;
@@ -51,12 +53,30 @@ export function WooPaymentsMoneyMovementDataViews<
 	searchLabel,
 	title,
 	summary,
+	numericFields,
 	toolbarActions,
 	empty,
 	loadingMessage,
 	getItemId,
 }: WooPaymentsMoneyMovementDataViewsProps< Item > ) {
 	const perPage = view.perPage || 25;
+	const tableView = numericFields?.length
+		? {
+				...view,
+				layout: {
+					...view.layout,
+					styles: {
+						...view.layout?.styles,
+						...Object.fromEntries(
+							numericFields.map( ( field ) => [
+								field,
+								{ align: 'end' },
+							] )
+						),
+					},
+				},
+		  }
+		: view;
 	const headerContent =
 		title || toolbarActions ? (
 			<div className="woocommerce-woopayments-money-movement-dataviews__header">
@@ -90,7 +110,7 @@ export function WooPaymentsMoneyMovementDataViews<
 			) }
 			<CardBody>
 				<DataViews
-					view={ view }
+					view={ tableView }
 					onChangeView={ onChangeView }
 					fields={ fields }
 					data={ rows }
