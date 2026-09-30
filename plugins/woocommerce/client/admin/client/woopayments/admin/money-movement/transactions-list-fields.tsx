@@ -321,8 +321,10 @@ export const getTransactionListFields = (
 					getTransactionListType( item )
 				);
 
+				// Client 11.1.0 `components/clickable-cell`: the cell opens the details but reads as plain text.
 				return (
 					<a
+						className="woocommerce-woopayments-money-movement__clickable-cell"
 						href={ getSettingsPaymentsProviderRouteUrl(
 							getTransactionDetailsRoute( item )
 						) }

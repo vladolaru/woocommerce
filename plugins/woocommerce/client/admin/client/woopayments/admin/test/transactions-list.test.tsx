@@ -353,6 +353,12 @@ describe( 'WooPayments transactions list columns', () => {
 			'txn_3UI4HnBzWlxcwgpP0JarqoHY'
 		);
 		expect( getCell( charge, 'type' ) ).toHaveTextContent( 'Charge' );
+		// Client 11.1.0 `components/clickable-cell`: the type opens the details but reads as plain text.
+		expect(
+			within( getCell( charge, 'type' ) ).getByRole( 'link' )
+		).toHaveClass(
+			'woocommerce-woopayments-money-movement__clickable-cell'
+		);
 		expect( getCell( charge, 'channel' ) ).toHaveTextContent(
 			'Online store'
 		);

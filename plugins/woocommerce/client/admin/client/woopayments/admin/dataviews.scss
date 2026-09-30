@@ -57,3 +57,13 @@
 .woocommerce-woopayments-money-movement-dataviews > .components-card__footer {
 	justify-content: center;
 }
+
+// Client 11.1.0 `components/clickable-cell/style.scss`: a details link that reads as the cell's text.
+.woocommerce-woopayments-money-movement__clickable-cell {
+	color: inherit;
+	text-decoration: none;
+
+	&:hover {
+		color: var(--wp-admin-theme-color);
+	}
+}
