@@ -1761,6 +1761,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Blocks data carries the client's express checkout switches for the checkout page's own location settings.
+	 *
+	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_blocks_data_express_switches_follow_the_checkout_location(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
@@ -1794,6 +1799,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Blocks data outside the product, cart and checkout pages reports the switches without a location, as the client does.
+	 *
+	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_blocks_data_express_switches_ignore_locations_without_a_page_context(): void {
 		$data = $this->create_bridge_for_express_handlers(
