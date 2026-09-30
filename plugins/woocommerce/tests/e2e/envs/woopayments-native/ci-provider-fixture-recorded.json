@@ -1,0 +1,966 @@
+{
+	"GET intentions/pi_3ULNAtBzWlxcwgpP1j0Vug6y": {
+		"id": "pi_3ULNAtBzWlxcwgpP1j0Vug6y",
+		"object": "payment_intent",
+		"allowed_payment_method_types": null,
+		"amount": 2468,
+		"amount_capturable": 0,
+		"amount_details": {
+			"tip": []
+		},
+		"amount_received": 2468,
+		"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+		"application_fee_amount": 102,
+		"automatic_payment_methods": null,
+		"canceled_at": null,
+		"cancellation_reason": null,
+		"capture_method": "automatic",
+		"charges": {
+			"object": "list",
+			"data": [
+				{
+					"id": "ch_3ULNAtBzWlxcwgpP1mD5qOrD",
+					"object": "charge",
+					"amount": 2468,
+					"amount_captured": 2468,
+					"amount_refunded": 0,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee": "fee_1ULNAuBzWlxcwgpPDkypIOfN",
+					"application_fee_amount": 102,
+					"balance_transaction": {
+						"id": "txn_3ULNAtBzWlxcwgpP1cwWz1KT",
+						"object": "balance_transaction",
+						"amount": 2468,
+						"available_on": 1790899200,
+						"balance_type": "payments",
+						"created": 1790773435,
+						"currency": "usd",
+						"description": "Online Payment for Order #5618 for store8889.localhost:8889 blog_id 4",
+						"exchange_rate": null,
+						"fee": 102,
+						"fee_details": [
+							{
+								"amount": 102,
+								"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+								"currency": "usd",
+								"description": "DEV Shared Account WCPay application fee",
+								"type": "application_fee"
+							}
+						],
+						"net": 2366,
+						"reporting_category": "charge",
+						"source": "ch_3ULNAtBzWlxcwgpP1mD5qOrD",
+						"status": "pending",
+						"type": "charge"
+					},
+					"billing_details": {
+						"address": {
+							"city": "San Francisco",
+							"country": "US",
+							"line1": "60 29th Street",
+							"line2": null,
+							"postal_code": "94110",
+							"state": "CA"
+						},
+						"email": "customer@example.com",
+						"name": "Test Shopper",
+						"phone": null,
+						"tax_id": null
+					},
+					"calculated_statement_descriptor": "WOOCOMMERCE",
+					"captured": true,
+					"created": 1790773435,
+					"currency": "usd",
+					"customer": "cus_VLniUXy2K2R9QA",
+					"description": "Online Payment for Order #5618 for store8889.localhost:8889 blog_id 4",
+					"destination": null,
+					"dispute": null,
+					"disputed": false,
+					"failure_balance_transaction": null,
+					"failure_code": null,
+					"failure_message": null,
+					"fraud_details": [],
+					"invoice": null,
+					"level3": {
+						"customer_reference": "5618",
+						"line_items": [
+							{
+								"discount_amount": 0,
+								"product_code": "5615",
+								"product_description": "N-231 wallet proof",
+								"quantity": 2,
+								"tax_amount": 0,
+								"unit_cost": 1234
+							}
+						],
+						"merchant_reference": "5618",
+						"shipping_address_zip": "94110",
+						"shipping_amount": 0,
+						"shipping_from_zip": "94107"
+					},
+					"livemode": false,
+					"metadata": {
+						"checkout_type": "store-api",
+						"client_version": "11.1.0",
+						"customer_email": "customer@example.com",
+						"customer_name": "Test Shopper",
+						"fraud_outcome": "allow",
+						"fraud_prevention_data_available": "1",
+						"fraud_prevention_data_cart_contents": "2",
+						"fraud_prevention_data_ip_country": "US",
+						"fraud_prevention_data_shopper_ip_hash": "scrubbed",
+						"order_id": "5618",
+						"order_key": "wc_order_scrubbed",
+						"order_number": "5618",
+						"payment_type": "single",
+						"site_url": "http://store8889.localhost:8889",
+						"subscription_payment": "no"
+					},
+					"on_behalf_of": null,
+					"outcome": {
+						"advice_code": null,
+						"network_advice_code": null,
+						"network_decline_code": null,
+						"network_status": "approved_by_network",
+						"reason": null,
+						"risk_level": "normal",
+						"risk_score": 22,
+						"seller_message": "Payment complete.",
+						"type": "authorized"
+					},
+					"paid": true,
+					"payment_intent": "pi_3ULNAtBzWlxcwgpP1j0Vug6y",
+					"payment_method": "pm_1ULNAqBzWlxcwgpP36wcSRtb",
+					"payment_method_details": {
+						"card": {
+							"amount_authorized": 2468,
+							"authorization_code": "645065",
+							"brand": "visa",
+							"checks": {
+								"address_line1_check": "pass",
+								"address_postal_code_check": "pass",
+								"cvc_check": "pass"
+							},
+							"country": "US",
+							"description": "Visa Classic",
+							"electronic_commerce_indicator": "07",
+							"exp_month": 12,
+							"exp_year": 2034,
+							"extended_authorization": {
+								"status": "disabled"
+							},
+							"fingerprint": "scrubbed",
+							"funding": "credit",
+							"iin": "424242",
+							"incremental_authorization": {
+								"status": "unavailable"
+							},
+							"installments": null,
+							"issuer": "Stripe Payments UK Limited",
+							"last4": "4242",
+							"mandate": null,
+							"moto": null,
+							"multicapture": {
+								"status": "unavailable"
+							},
+							"network": "visa",
+							"network_token": {
+								"used": false
+							},
+							"network_transaction_id": "scrubbed",
+							"overcapture": {
+								"maximum_amount_capturable": 2468,
+								"status": "unavailable"
+							},
+							"regulated_status": "unregulated",
+							"three_d_secure": null,
+							"transaction_link_id": null,
+							"wallet": null
+						},
+						"type": "card"
+					},
+					"radar_options": [],
+					"receipt_email": null,
+					"receipt_number": null,
+					"receipt_url": "https://pay.stripe.com/receipts/payment/scrubbed",
+					"refunded": false,
+					"refunds": {
+						"object": "list",
+						"data": [],
+						"has_more": false,
+						"total_count": 0,
+						"url": "/v1/charges/ch_3ULNAtBzWlxcwgpP1mD5qOrD/refunds"
+					},
+					"review": null,
+					"shipping": null,
+					"source": null,
+					"source_transfer": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "succeeded",
+					"transfer_data": null,
+					"transfer_group": null,
+					"fee_breakdown_v1": {
+						"rows": [
+							{
+								"key": "base",
+								"kind": "fee",
+								"label": null,
+								"amount": 102,
+								"display_amount": -102,
+								"currency": "usd",
+								"rate": null,
+								"meta": null
+							}
+						],
+						"totals": {
+							"fee": {
+								"key": null,
+								"amount": 102,
+								"display_amount": -102,
+								"currency": "usd",
+								"rate": null
+							},
+							"tax": {
+								"amount": 0,
+								"display_amount": 0,
+								"currency": "usd"
+							},
+							"net": {
+								"amount": 2366,
+								"currency": "usd"
+							},
+							"capture_net": {
+								"amount": 2366,
+								"currency": "usd"
+							},
+							"gross": {
+								"amount": 2468,
+								"currency": "usd"
+							},
+							"fee_plus_tax": {
+								"amount": 102,
+								"currency": "usd"
+							}
+						},
+						"notes": [],
+						"sources": {
+							"balance_transaction_exchange_rate": 0,
+							"refunded_fee_amount_store": 0
+						}
+					}
+				}
+			],
+			"has_more": false,
+			"total_count": 1,
+			"url": "/v1/charges?payment_intent=pi_3ULNAtBzWlxcwgpP1j0Vug6y"
+		},
+		"client_secret": "pi_3ULNAtBzWlxcwgpP1j0Vug6y_secret_scrubbed",
+		"confirmation_method": "automatic",
+		"created": 1790773435,
+		"currency": "usd",
+		"customer": "cus_VLniUXy2K2R9QA",
+		"customer_account": null,
+		"description": "Online Payment for Order #5618 for store8889.localhost:8889 blog_id 4",
+		"excluded_payment_method_types": null,
+		"invoice": null,
+		"last_payment_error": null,
+		"latest_charge": "ch_3ULNAtBzWlxcwgpP1mD5qOrD",
+		"level3": {
+			"customer_reference": "5618",
+			"line_items": [
+				{
+					"discount_amount": 0,
+					"product_code": "5615",
+					"product_description": "N-231 wallet proof",
+					"quantity": 2,
+					"tax_amount": 0,
+					"unit_cost": 1234
+				}
+			],
+			"merchant_reference": "5618",
+			"shipping_address_zip": "94110",
+			"shipping_amount": 0,
+			"shipping_from_zip": "94107"
+		},
+		"livemode": false,
+		"managed_payments": {
+			"enabled": false
+		},
+		"metadata": {
+			"checkout_type": "store-api",
+			"client_version": "11.1.0",
+			"customer_email": "customer@example.com",
+			"customer_name": "Test Shopper",
+			"fraud_outcome": "allow",
+			"fraud_prevention_data_available": "1",
+			"fraud_prevention_data_cart_contents": "2",
+			"fraud_prevention_data_ip_country": "US",
+			"fraud_prevention_data_shopper_ip_hash": "scrubbed",
+			"order_id": "5618",
+			"order_key": "wc_order_scrubbed",
+			"order_number": "5618",
+			"payment_type": "single",
+			"site_url": "http://store8889.localhost:8889",
+			"subscription_payment": "no"
+		},
+		"next_action": null,
+		"on_behalf_of": null,
+		"payment_method": "pm_1ULNAqBzWlxcwgpP36wcSRtb",
+		"payment_method_configuration_details": null,
+		"payment_method_options": {
+			"amazon_pay": {
+				"express_checkout_element_session_id": null
+			},
+			"card": {
+				"installments": null,
+				"mandate_options": null,
+				"network": null,
+				"request_three_d_secure": "automatic"
+			}
+		},
+		"payment_method_types": [ "card", "amazon_pay" ],
+		"payment_record": null,
+		"processing": null,
+		"receipt_email": null,
+		"review": null,
+		"setup_future_usage": null,
+		"shared_payment_granted_token": null,
+		"shipping": null,
+		"source": null,
+		"statement_descriptor": null,
+		"statement_descriptor_suffix": null,
+		"status": "succeeded",
+		"transfer_data": null,
+		"transfer_group": null
+	},
+	"GET timeline/pi_3ULNAtBzWlxcwgpP1j0Vug6y": {
+		"data": [
+			{
+				"type": "captured",
+				"amount": 2468,
+				"amount_captured": 2468,
+				"fee": 102,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					],
+					"tax": null,
+					"before_tax": null,
+					"fee_exchange_rate": null
+				},
+				"currency": "USD",
+				"datetime": 1790773435,
+				"deposit": null,
+				"transaction_id": "txn_3ULNAtBzWlxcwgpP1cwWz1KT",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 2468,
+					"customer_amount_captured": 2468,
+					"customer_fee": 102,
+					"store_currency": "USD",
+					"store_amount": 2468,
+					"store_amount_captured": 2468,
+					"store_fee": 102
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 102,
+							"display_amount": -102,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							},
+							"meta": {
+								"fee_id": "base-us-card-fee"
+							}
+						}
+					],
+					"totals": {
+						"fee": {
+							"key": null,
+							"amount": 102,
+							"display_amount": -102,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd"
+						},
+						"net": {
+							"amount": 2366,
+							"currency": "usd"
+						},
+						"capture_net": {
+							"amount": 2366,
+							"currency": "usd"
+						},
+						"gross": {
+							"amount": 2468,
+							"currency": "usd"
+						},
+						"fee_plus_tax": {
+							"amount": 102,
+							"currency": "usd"
+						}
+					},
+					"notes": [],
+					"sources": {
+						"balance_transaction_exchange_rate": 0,
+						"refunded_fee_amount_store": 0,
+						"effective_total_store": 102
+					}
+				}
+			},
+			{
+				"type": "authorized",
+				"datetime": 1790773435,
+				"amount": 2468,
+				"currency": "USD"
+			},
+			{
+				"type": "started",
+				"datetime": 1790773435,
+				"amount": 2468,
+				"currency": "USD"
+			},
+			{
+				"type": "fraud_outcome_allow",
+				"datetime": 1790773435,
+				"ruleset_results": []
+			}
+		]
+	},
+	"GET charges/ch_3ULNAtBzWlxcwgpP1mD5qOrD": {
+		"id": "ch_3ULNAtBzWlxcwgpP1mD5qOrD",
+		"object": "charge",
+		"amount": 2468,
+		"amount_captured": 2468,
+		"amount_refunded": 0,
+		"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+		"application_fee": "fee_1ULNAuBzWlxcwgpPDkypIOfN",
+		"application_fee_amount": 102,
+		"balance_transaction": {
+			"id": "txn_3ULNAtBzWlxcwgpP1cwWz1KT",
+			"object": "balance_transaction",
+			"amount": 2468,
+			"available_on": 1790899200,
+			"balance_type": "payments",
+			"created": 1790773435,
+			"currency": "usd",
+			"description": "Online Payment for Order #5618 for store8889.localhost:8889 blog_id 4",
+			"exchange_rate": null,
+			"fee": 102,
+			"fee_details": [
+				{
+					"amount": 102,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"currency": "usd",
+					"description": "DEV Shared Account WCPay application fee",
+					"type": "application_fee"
+				}
+			],
+			"net": 2366,
+			"reporting_category": "charge",
+			"source": "ch_3ULNAtBzWlxcwgpP1mD5qOrD",
+			"status": "pending",
+			"type": "charge"
+		},
+		"billing_details": {
+			"address": {
+				"city": "San Francisco",
+				"country": "US",
+				"line1": "60 29th Street",
+				"line2": null,
+				"postal_code": "94110",
+				"state": "CA"
+			},
+			"email": "customer@example.com",
+			"name": "Test Shopper",
+			"phone": null,
+			"tax_id": null
+		},
+		"calculated_statement_descriptor": "WOOCOMMERCE",
+		"captured": true,
+		"created": 1790773435,
+		"currency": "usd",
+		"customer": "cus_VLniUXy2K2R9QA",
+		"description": "Online Payment for Order #5618 for store8889.localhost:8889 blog_id 4",
+		"destination": null,
+		"dispute": null,
+		"disputed": false,
+		"failure_balance_transaction": null,
+		"failure_code": null,
+		"failure_message": null,
+		"fraud_details": [],
+		"invoice": null,
+		"level3": {
+			"customer_reference": "5618",
+			"line_items": [
+				{
+					"discount_amount": 0,
+					"product_code": "5615",
+					"product_description": "N-231 wallet proof",
+					"quantity": 2,
+					"tax_amount": 0,
+					"unit_cost": 1234
+				}
+			],
+			"merchant_reference": "5618",
+			"shipping_address_zip": "94110",
+			"shipping_amount": 0,
+			"shipping_from_zip": "94107"
+		},
+		"livemode": false,
+		"metadata": {
+			"checkout_type": "store-api",
+			"client_version": "11.1.0",
+			"customer_email": "customer@example.com",
+			"customer_name": "Test Shopper",
+			"fraud_outcome": "allow",
+			"fraud_prevention_data_available": "1",
+			"fraud_prevention_data_cart_contents": "2",
+			"fraud_prevention_data_ip_country": "US",
+			"fraud_prevention_data_shopper_ip_hash": "scrubbed",
+			"order_id": "5618",
+			"order_key": "wc_order_scrubbed",
+			"order_number": "5618",
+			"payment_type": "single",
+			"site_url": "http://store8889.localhost:8889",
+			"subscription_payment": "no"
+		},
+		"on_behalf_of": null,
+		"outcome": {
+			"advice_code": null,
+			"network_advice_code": null,
+			"network_decline_code": null,
+			"network_status": "approved_by_network",
+			"reason": null,
+			"risk_level": "normal",
+			"risk_score": 22,
+			"seller_message": "Payment complete.",
+			"type": "authorized"
+		},
+		"paid": true,
+		"payment_intent": "pi_3ULNAtBzWlxcwgpP1j0Vug6y",
+		"payment_method": "pm_1ULNAqBzWlxcwgpP36wcSRtb",
+		"payment_method_details": {
+			"card": {
+				"amount_authorized": 2468,
+				"authorization_code": "645065",
+				"brand": "visa",
+				"checks": {
+					"address_line1_check": "pass",
+					"address_postal_code_check": "pass",
+					"cvc_check": "pass"
+				},
+				"country": "US",
+				"description": "Visa Classic",
+				"electronic_commerce_indicator": "07",
+				"exp_month": 12,
+				"exp_year": 2034,
+				"extended_authorization": {
+					"status": "disabled"
+				},
+				"fingerprint": "scrubbed",
+				"funding": "credit",
+				"iin": "424242",
+				"incremental_authorization": {
+					"status": "unavailable"
+				},
+				"installments": null,
+				"issuer": "Stripe Payments UK Limited",
+				"last4": "4242",
+				"mandate": null,
+				"moto": null,
+				"multicapture": {
+					"status": "unavailable"
+				},
+				"network": "visa",
+				"network_token": {
+					"used": false
+				},
+				"network_transaction_id": "scrubbed",
+				"overcapture": {
+					"maximum_amount_capturable": 2468,
+					"status": "unavailable"
+				},
+				"regulated_status": "unregulated",
+				"three_d_secure": null,
+				"transaction_link_id": null,
+				"wallet": null
+			},
+			"type": "card"
+		},
+		"radar_options": [],
+		"receipt_email": null,
+		"receipt_number": null,
+		"receipt_url": "https://pay.stripe.com/receipts/payment/scrubbed",
+		"refunded": false,
+		"refunds": {
+			"object": "list",
+			"data": [],
+			"has_more": false,
+			"total_count": 0,
+			"url": "/v1/charges/ch_3ULNAtBzWlxcwgpP1mD5qOrD/refunds"
+		},
+		"review": null,
+		"shipping": null,
+		"source": null,
+		"source_transfer": null,
+		"statement_descriptor": null,
+		"statement_descriptor_suffix": null,
+		"status": "succeeded",
+		"transfer_data": null,
+		"transfer_group": null,
+		"fee_breakdown_v1": {
+			"rows": [
+				{
+					"key": "base",
+					"kind": "fee",
+					"label": null,
+					"amount": 102,
+					"display_amount": -102,
+					"currency": "usd",
+					"rate": null,
+					"meta": null
+				}
+			],
+			"totals": {
+				"fee": {
+					"key": null,
+					"amount": 102,
+					"display_amount": -102,
+					"currency": "usd",
+					"rate": null
+				},
+				"tax": {
+					"amount": 0,
+					"display_amount": 0,
+					"currency": "usd"
+				},
+				"net": {
+					"amount": 2366,
+					"currency": "usd"
+				},
+				"capture_net": {
+					"amount": 2366,
+					"currency": "usd"
+				},
+				"gross": {
+					"amount": 2468,
+					"currency": "usd"
+				},
+				"fee_plus_tax": {
+					"amount": 102,
+					"currency": "usd"
+				}
+			},
+			"notes": [],
+			"sources": {
+				"balance_transaction_exchange_rate": 0,
+				"refunded_fee_amount_store": 0
+			}
+		}
+	},
+	"GET deposits/po_1TrYnABzWlxcwgpPhhdCrkEZ": {
+		"id": "po_1TrYnABzWlxcwgpPhhdCrkEZ",
+		"date": 1783641600000,
+		"type": "deposit",
+		"amount": 4825,
+		"status": "paid",
+		"bankAccount": "STRIPE TEST BANK •••• 6789 (USD)",
+		"currency": "usd",
+		"automatic": false,
+		"fee": 0,
+		"fee_percentage": 0,
+		"created": 1783668252,
+		"bank_reference_key": "7UF6L35cg5xG4LS8997Ds6ch6t65M06x24UU78v1S",
+		"failure_code": null,
+		"failure_message": null
+	},
+	"GET disputes/du_1UL1U2BzWlxcwgpPk8EypRUa": {
+		"id": "du_1UL1U2BzWlxcwgpPk8EypRUa",
+		"object": "dispute",
+		"amount": 5000,
+		"balance_transaction": "txn_1UL1U3BzWlxcwgpPzUgiUiIa",
+		"balance_transactions": [
+			{
+				"id": "txn_1UL1U3BzWlxcwgpPzUgiUiIa",
+				"object": "balance_transaction",
+				"amount": -5000,
+				"available_on": 1790812800,
+				"balance_type": "payments",
+				"created": 1790690055,
+				"currency": "usd",
+				"description": "Chargeback withdrawal for ch_3UL1U0BzWlxcwgpP143mCpEa",
+				"exchange_rate": null,
+				"fee": 1500,
+				"fee_details": [
+					{
+						"amount": 1500,
+						"application": null,
+						"currency": "usd",
+						"description": "Dispute fee",
+						"type": "stripe_fee"
+					}
+				],
+				"net": -6500,
+				"reporting_category": "dispute",
+				"source": "du_1UL1U2BzWlxcwgpPk8EypRUa",
+				"status": "pending",
+				"type": "adjustment"
+			}
+		],
+		"charge": {
+			"id": "ch_3UL1U0BzWlxcwgpP143mCpEa",
+			"object": "charge",
+			"amount": 5000,
+			"amount_captured": 5000,
+			"amount_refunded": 0,
+			"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+			"application_fee": "fee_1UL1U0BzWlxcwgpPcwB5vsDu",
+			"application_fee_amount": 175,
+			"balance_transaction": "txn_3UL1U0BzWlxcwgpP1HXGgb9g",
+			"billing_details": {
+				"address": {
+					"city": "San Francisco",
+					"country": "US",
+					"line1": "123 Test Street",
+					"line2": "",
+					"postal_code": "94107",
+					"state": "CA"
+				},
+				"email": "customer@example.com",
+				"name": "E2E WooPayments",
+				"phone": "5555550100",
+				"tax_id": null
+			},
+			"calculated_statement_descriptor": "WOOCOMMERCE",
+			"captured": true,
+			"created": 1790690052,
+			"currency": "usd",
+			"customer": "cus_VLivPrka1rmeC8",
+			"description": "Online Payment for Order #5506 for store8889.localhost:8889 blog_id 4",
+			"destination": null,
+			"dispute": "du_1UL1U2BzWlxcwgpPk8EypRUa",
+			"disputed": true,
+			"failure_balance_transaction": null,
+			"failure_code": null,
+			"failure_message": null,
+			"fraud_details": [],
+			"invoice": null,
+			"level3": {
+				"customer_reference": "5506",
+				"line_items": [
+					{
+						"discount_amount": 0,
+						"product_code": "5505",
+						"product_description": "WooPayments dispute fideli",
+						"quantity": 1,
+						"tax_amount": 0,
+						"unit_cost": 5000
+					}
+				],
+				"merchant_reference": "5506",
+				"shipping_address_zip": "94107",
+				"shipping_amount": 0,
+				"shipping_from_zip": "94107"
+			},
+			"livemode": false,
+			"metadata": {
+				"checkout_type": "store-api",
+				"client_version": "11.1.0",
+				"customer_email": "customer@example.com",
+				"customer_name": "E2E WooPayments",
+				"fraud_outcome": "allow",
+				"fraud_prevention_data_available": "1",
+				"fraud_prevention_data_cart_contents": "1",
+				"fraud_prevention_data_ip_country": "US",
+				"fraud_prevention_data_shopper_ip_hash": "scrubbed",
+				"fraud_prevention_data_shopper_ua_hash": "scrubbed",
+				"order_id": "5506",
+				"order_key": "wc_order_scrubbed",
+				"order_number": "5506",
+				"payment_type": "single",
+				"site_url": "http://store8889.localhost:8889",
+				"subscription_payment": "no"
+			},
+			"on_behalf_of": null,
+			"order": null,
+			"outcome": {
+				"advice_code": null,
+				"network_advice_code": null,
+				"network_decline_code": null,
+				"network_status": "approved_by_network",
+				"reason": null,
+				"risk_level": "normal",
+				"risk_score": 51,
+				"seller_message": "Payment complete.",
+				"type": "authorized"
+			},
+			"paid": true,
+			"payment_intent": "pi_3UL1U0BzWlxcwgpP1mc2TtL0",
+			"payment_method": "pm_1UL1TvBzWlxcwgpPSubJ9Fzn",
+			"payment_method_details": {
+				"card": {
+					"amount_authorized": 5000,
+					"authorization_code": "133560",
+					"brand": "visa",
+					"checks": {
+						"address_line1_check": "pass",
+						"address_postal_code_check": "pass",
+						"cvc_check": "pass"
+					},
+					"country": "US",
+					"description": null,
+					"electronic_commerce_indicator": "07",
+					"exp_month": 2,
+					"exp_year": 2045,
+					"extended_authorization": {
+						"status": "disabled"
+					},
+					"fingerprint": "scrubbed",
+					"funding": "credit",
+					"iin": "400000",
+					"incremental_authorization": {
+						"status": "unavailable"
+					},
+					"installments": null,
+					"issuer": "Stripe Test (multi-country)",
+					"last4": "0259",
+					"mandate": null,
+					"moto": null,
+					"multicapture": {
+						"status": "unavailable"
+					},
+					"network": "visa",
+					"network_token": {
+						"used": false
+					},
+					"network_transaction_id": "scrubbed",
+					"overcapture": {
+						"maximum_amount_capturable": 5000,
+						"status": "unavailable"
+					},
+					"regulated_status": "unregulated",
+					"three_d_secure": null,
+					"transaction_link_id": null,
+					"wallet": null
+				},
+				"type": "card"
+			},
+			"radar_options": [],
+			"receipt_email": null,
+			"receipt_number": null,
+			"receipt_url": "https://pay.stripe.com/receipts/payment/scrubbed",
+			"refunded": false,
+			"refunds": {
+				"object": "list",
+				"data": [],
+				"has_more": false,
+				"total_count": 0,
+				"url": "/v1/charges/ch_3UL1U0BzWlxcwgpP143mCpEa/refunds"
+			},
+			"review": null,
+			"shipping": null,
+			"source": null,
+			"source_transfer": null,
+			"statement_descriptor": null,
+			"statement_descriptor_suffix": null,
+			"status": "succeeded",
+			"transfer_data": null,
+			"transfer_group": null
+		},
+		"created": 1790690054,
+		"currency": "usd",
+		"enhanced_eligibility_types": [],
+		"evidence": {
+			"access_activity_log": null,
+			"billing_address": "123 Test Street\nSan Francisco, CA, 94107, US",
+			"cancellation_policy": null,
+			"cancellation_policy_disclosure": null,
+			"cancellation_rebuttal": null,
+			"customer_communication": null,
+			"customer_email_address": "customer@example.com",
+			"customer_name": "E2E WooPayments",
+			"customer_purchase_ip": "192.0.2.10",
+			"customer_signature": null,
+			"duplicate_charge_documentation": null,
+			"duplicate_charge_explanation": null,
+			"duplicate_charge_id": null,
+			"enhanced_evidence": [],
+			"product_description": "Online Payment for Order #5506 for store8889.localhost:8889 blog_id 4",
+			"receipt": null,
+			"refund_policy": null,
+			"refund_policy_disclosure": null,
+			"refund_refusal_explanation": null,
+			"service_date": null,
+			"service_documentation": null,
+			"shipping_address": null,
+			"shipping_carrier": null,
+			"shipping_date": null,
+			"shipping_documentation": null,
+			"shipping_tracking_number": null,
+			"uncategorized_file": null,
+			"uncategorized_text": null
+		},
+		"evidence_details": {
+			"due_by": 1791417599,
+			"enhanced_eligibility": [],
+			"has_evidence": false,
+			"past_due": false,
+			"submission_count": 0
+		},
+		"is_charge_refundable": false,
+		"issuer_evidence": [
+			{
+				"evidence_type": "chargeback",
+				"file_evidence": [],
+				"text_evidence": "The Issuer/Cardholder disputes this transaction as fraudulent. The authorization request did not include Card Identification Data and/or Address Verification. Provide proof of an approved Authorization containing full match on Address Verification and Card Identification Data. Also provide proof of delivery."
+			}
+		],
+		"livemode": false,
+		"metadata": [],
+		"payment_intent": "pi_3UL1U0BzWlxcwgpP1mc2TtL0",
+		"payment_method_details": {
+			"card": {
+				"brand": "visa",
+				"case_type": "chargeback",
+				"network": "visa",
+				"network_reason_code": "10.4"
+			},
+			"type": "card"
+		},
+		"reason": "fraudulent",
+		"status": "needs_response",
+		"effective_fee": {
+			"amount": 1500,
+			"currency": "usd"
+		}
+	}
+}

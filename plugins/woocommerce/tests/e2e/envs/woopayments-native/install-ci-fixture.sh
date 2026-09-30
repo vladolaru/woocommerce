@@ -20,6 +20,7 @@ readonly source_dir='wp-content/plugins/woocommerce/tests/e2e/envs/woopayments-n
 "${WP_ENV[@]}" wp eval "$TRANSPORT_ASSERT_CODE"
 "${WP_ENV[@]}" mkdir -p wp-content/mu-plugins
 install_file "$source_dir/ci-provider-fixture.php" wp-content/mu-plugins/ci-provider-fixture.php
+install_file "$source_dir/ci-provider-fixture-recorded.json" wp-content/mu-plugins/ci-provider-fixture-recorded.json
 install_file "$source_dir/stripe-messaging-adapter.js" wp-content/mu-plugins/stripe-messaging-adapter.js
 install_file "$source_dir/../../test-plugins/woopayments-native-runtime/woopayments-native-runtime.php" wp-content/mu-plugins/woopayments-native-runtime.php
 "${WP_ENV[@]}" wp eval "$INITIALIZE_FIXTURE_STATE_CODE"

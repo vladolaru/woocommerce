@@ -17,6 +17,9 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	/** @var self|null */
 	private static $registered_instance;
 
+	/** @var array<string,array<int|string,mixed>>|null */
+	private static $recorded_responses;
+
 	private const STATE_OPTION                            = 'e2e_woopayments_native_provider_state';
 	private const REQUEST_LOG_OPTION                      = 'e2e_woopayments_native_request_log';
 	private const FAILURE_LOG_OPTION                      = 'e2e_woopayments_native_failure_log';
@@ -33,6 +36,12 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		'GET disputes',
 		'POST accounts',
 	);
+
+	/**
+	 * Platform responses keyed by "METHOD route", recorded with read-only GETs from a
+	 * connected test-mode store and scrubbed of personal data and store-side additions.
+	 */
+	private const RECORDED_RESPONSES_FILE = 'ci-provider-fixture-recorded.json';
 
 	/**
 	 * Registers the identity, transport, and Stripe adapter test seams.
@@ -456,6 +465,12 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 						'total' => 0,
 					)
 				);
+			case 'GET authorizations':
+				// The platform's list envelope, empty to match the summary above.
+				return $this->response( array( 'data' => array() ) );
+			case 'GET fraud_outcomes/status/block':
+				// The platform answers a bare list; a recorded store without blocked payments answered an empty one.
+				return $this->response( array() );
 			case 'GET deposits/overview-all':
 				return $this->response( $state['overview'] );
 			case 'GET deposits':
@@ -492,6 +507,11 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				$state['fraud_ruleset'] = $payload;
 				update_option( self::STATE_OPTION, $state );
 				return $this->response( $payload );
+		}
+
+		$recorded = $this->recorded_response( "$method $route" );
+		if ( null !== $recorded ) {
+			return $this->response( $recorded );
 		}
 
 		return $this->failure( 'unknown_request', "Unrecognized WooPayments fixture request: $method $route" );
@@ -930,6 +950,8 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'GET transactions',
 			'GET transactions/summary',
 			'GET authorizations/summary',
+			'GET authorizations',
+			'GET fraud_outcomes/status/block',
 			'GET deposits/overview-all',
 			'GET deposits',
 			'GET deposits/summary',
@@ -951,7 +973,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'POST compatibility',
 			'POST fraud_ruleset',
 		);
-		if ( ! in_array( $key, $known, true ) ) {
+		if ( ! in_array( $key, $known, true ) && null === $this->recorded_response( $key ) ) {
 			return $this->failure( 'unknown_request', "Unrecognized WooPayments fixture request: $method $route" );
 		}
 
@@ -1556,6 +1578,26 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			ksort( $value );
 		}
 		return $value;
+	}
+
+	/**
+	 * Returns the recorded platform response for a route, or null when none was recorded.
+	 *
+	 * @param string $key "METHOD route" key.
+	 * @return array<int|string,mixed>|null
+	 * @throws RuntimeException When the recorded responses file is missing or malformed.
+	 */
+	private function recorded_response( string $key ): ?array {
+		if ( null === self::$recorded_responses ) {
+			$contents = file_get_contents( __DIR__ . '/' . self::RECORDED_RESPONSES_FILE ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local fixture data file.
+			$decoded  = false === $contents ? null : json_decode( $contents, true );
+			if ( ! is_array( $decoded ) ) {
+				throw new RuntimeException( 'The WooPayments fixture recorded responses are unavailable.' );
+			}
+			self::$recorded_responses = $decoded;
+		}
+
+		return self::$recorded_responses[ $key ] ?? null;
 	}
 
 	/**
