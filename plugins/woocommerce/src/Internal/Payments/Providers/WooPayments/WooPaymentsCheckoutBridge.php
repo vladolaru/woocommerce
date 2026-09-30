@@ -106,6 +106,26 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		'woopayAgreementText',
 		'woopayTermsOfServiceLabel',
 		'woopayPrivacyPolicyLabel',
+		// The Blocks readers fall back to the same text (index.js WooPaySaveUserSection) or read isShopperTrackingEnabled (tracks.js).
+		'woopaySaveUserLabel',
+		'woopayPhoneLabel',
+		'is_shopper_tracking_enabled',
+	);
+
+	/**
+	 * WooPay button config keys, which the client adds only while its WooPay button handler runs.
+	 *
+	 * Client 11.1.0 class-wc-payments-woopay-button-handler.php:144-160.
+	 */
+	private const WOOPAY_BUTTON_CONFIG_KEYS = array(
+		'woopayButton',
+		'woopayButtonNonce',
+		'addToCartNonce',
+		'shouldShowWooPayButton',
+		'woopaySessionEmail',
+		'woopayIsCountryAvailable',
+		'woopayAppearance',
+		'woopayFontRules',
 	);
 
 	/**
@@ -274,6 +294,13 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @var WooPaymentsPaymentMethodRegistry|null
 	 */
 	private ?WooPaymentsPaymentMethodRegistry $payment_method_registry = null;
+
+	/**
+	 * Express checkout service.
+	 *
+	 * @var WooPaymentsExpressCheckoutService|null
+	 */
+	private ?WooPaymentsExpressCheckoutService $express_checkout_service = null;
 
 	/**
 	 * Runtime owner arbiter.
@@ -610,9 +637,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	private function complete_payment_fields_js_config( array $base, ?WooPaymentsPaymentMethodDefinition $payment_method_definition, bool $for_blocks = false ): array {
 		$config = $base['config'];
-		if ( $for_blocks ) {
-			$config = array_diff_key( $config, array_flip( self::BLOCKS_OMITTED_CONFIG_KEYS ) );
-		} else {
+		if ( ! $for_blocks ) {
 			$config['paymentListWalletsConfig'] = $this->get_payment_list_wallets_config( $base['saved_cards_enabled'], $payment_method_definition, $base['currency'] );
 		}
 		$config['gatewayId']            = $this->get_gateway_id_for_payment_method_definition( $payment_method_definition );
@@ -681,9 +706,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	public function get_blocks_payment_method_data( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null, ?\ArrayObject $shared = null ): array {
 		if ( null !== $shared && ! isset( $shared['base'] ) ) {
-			$shared['base'] = $this->get_payment_fields_js_config_base();
+			$shared['base'] = $this->get_blocks_payment_fields_js_config_base();
 		}
-		$base = null === $shared ? $this->get_payment_fields_js_config_base() : $shared['base'];
+		$base = null === $shared ? $this->get_blocks_payment_fields_js_config_base() : $shared['base'];
 		$data = $this->complete_payment_fields_js_config( $base, $payment_method_definition, true );
 
 		// Sanitize the shopper-facing testing instructions after the wcpay_payment_fields_js_config
@@ -712,6 +737,161 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 				'supports'    => $this->get_blocks_supports(),
 			)
 		);
+	}
+
+	/**
+	 * Build the config base for the Blocks payment method data, with the client's Blocks key set.
+	 *
+	 * Before the config filter, the client's own filter callbacks add the WooPay button keys, the express checkout
+	 * switches and the order-pay keys only while their handlers run; a subscription payment method change skips them all.
+	 *
+	 * @return array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}
+	 */
+	private function get_blocks_payment_fields_js_config_base(): array {
+		$base   = $this->get_payment_fields_js_config_base();
+		$config = array_diff_key( $base['config'], array_flip( self::BLOCKS_OMITTED_CONFIG_KEYS ) );
+
+		if ( ! $this->is_woopay_button_handler_active() ) {
+			$config = array_diff_key( $config, array_flip( self::WOOPAY_BUTTON_CONFIG_KEYS ) );
+		}
+
+		if ( empty( $config['isChangingPayment'] ) && $this->are_express_checkout_handlers_loaded() ) {
+			$config = array_merge( $config, $this->get_express_checkout_enabled_config( $base['currency'] ), $this->get_pay_for_order_config() );
+		}
+
+		$base['config'] = $config;
+
+		return $base;
+	}
+
+	/**
+	 * Tell whether the client loads its express checkout handlers on this request: payments enabled on the account,
+	 * and not a cron or XML-RPC request (client 11.1.0 class-wc-payments.php:1858-1871).
+	 *
+	 * @return bool
+	 */
+	private function are_express_checkout_handlers_loaded(): bool {
+		return ! wp_doing_cron()
+			&& ! ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST )
+			&& $this->get_account_service()->has_working_account();
+	}
+
+	/**
+	 * Tell whether a client express button handler registers its config filter on this request: the WooPayments
+	 * gateway is enabled and the page is not a subscription's change payment method page.
+	 *
+	 * Client 11.1.0 class-wc-payments-woopay-button-handler.php:107-126 and class-wc-payments-express-checkout-button-handler.php:74-89.
+	 *
+	 * @return bool
+	 */
+	private function is_express_button_handler_request(): bool {
+		return $this->are_express_checkout_handlers_loaded()
+			&& $this->get_account_service()->is_gateway_enabled()
+			&& ! isset( $_GET['change_payment_method'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request flag, as in the client.
+	}
+
+	/**
+	 * Tell whether the client's WooPay button handler adds its config keys on this request.
+	 *
+	 * @return bool
+	 */
+	private function is_woopay_button_handler_active(): bool {
+		return $this->is_express_button_handler_request() && $this->get_woopay_session_service()->is_woopay_button_enabled();
+	}
+
+	/**
+	 * Get the client's Apple Pay/Google Pay and Amazon Pay switches for the current page.
+	 *
+	 * Client 11.1.0 `WC_Payments_Express_Checkout_Button_Handler::payment_fields_js_config()`
+	 * (class-wc-payments-express-checkout-button-handler.php:112-124), added while that handler runs.
+	 *
+	 * @param string $currency Checkout or order-pay currency.
+	 * @return array<string,bool>
+	 */
+	private function get_express_checkout_enabled_config( string $currency ): array {
+		$express_service = $this->get_express_checkout_service();
+		$payment_request = $express_service->is_payment_request_enabled();
+		if ( ! $this->is_express_button_handler_request() || ! ( $payment_request || $express_service->is_amazon_pay_usable() ) ) {
+			return array();
+		}
+
+		$context = $this->get_express_button_context();
+		if ( '' === $context ) {
+			return array(
+				'isPaymentRequestEnabled' => $payment_request,
+				'isAmazonPayEnabled'      => $express_service->is_amazon_pay_usable( 'checkout', $currency ),
+			);
+		}
+
+		$enabled_methods = $express_service->get_enabled_methods_for_context( $context, $currency );
+
+		return array(
+			'isPaymentRequestEnabled' => $payment_request && in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST, $enabled_methods, true ),
+			'isAmazonPayEnabled'      => in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY, $enabled_methods, true ),
+		);
+	}
+
+	/**
+	 * Get the express checkout page context like the client's `get_button_context()`, or '' on other pages.
+	 *
+	 * Client 11.1.0 class-wc-payments-express-checkout-button-helper.php:255-286,450-468.
+	 *
+	 * @return string
+	 */
+	private function get_express_button_context(): string {
+		$post = get_post();
+		if ( ( function_exists( 'is_product' ) && is_product() ) || ( $post instanceof \WP_Post && has_shortcode( $post->post_content, 'product_page' ) ) ) {
+			return 'product';
+		}
+
+		if ( ( function_exists( 'is_cart' ) && is_cart() ) || has_block( 'woocommerce/cart' ) ) {
+			return 'cart';
+		}
+
+		$is_checkout = function_exists( 'is_checkout' ) && is_checkout();
+		if ( $is_checkout && isset( $_GET['pay_for_order'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request flag, as in the client.
+			return 'pay_for_order';
+		}
+
+		return $is_checkout || has_block( 'woocommerce/checkout' ) ? 'checkout' : '';
+	}
+
+	/**
+	 * Get the client's order-pay keys for a pay-for-order link opened by someone allowed to pay the order.
+	 *
+	 * Client 11.1.0 `add_pay_for_order_params_to_js_config()` (class-wc-payments-express-checkout-button-display-handler.php:183-224).
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_pay_for_order_config(): array {
+		global $wp;
+
+		$order_id = is_object( $wp ) ? ( $wp->query_vars['order-pay'] ?? null ) : null;
+		// phpcs:disable WordPress.Security.NonceVerification -- Read-only order-pay link values, as in the client.
+		if ( ! $order_id || ! isset( $_GET['pay_for_order'], $_GET['key'] ) || ! current_user_can( 'pay_for_order', $order_id ) ) {
+			return array();
+		}
+
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof \WC_Order ) {
+			return array();
+		}
+
+		$session       = function_exists( 'WC' ) && WC() ? WC()->session : null;
+		$customer      = $session instanceof \WC_Session ? $session->get( 'customer' ) : null;
+		$session_email = is_array( $customer ) && isset( $customer['email'] ) ? (string) $customer['email'] : '';
+		$user_email    = isset( $_POST['email'] ) && is_string( $_POST['email'] ) ? sanitize_email( wp_unslash( $_POST['email'] ) ) : $session_email;
+		$can_see_order = current_user_can( 'read_private_shop_orders' ) || ( 0 !== get_current_user_id() && $order->get_customer_id() === get_current_user_id() );
+
+		$config = array(
+			'order_id'      => $order->get_id(),
+			'pay_for_order' => sanitize_text_field( wp_unslash( $_GET['pay_for_order'] ) ),
+			'key'           => sanitize_text_field( wp_unslash( $_GET['key'] ) ),
+			'billing_email' => $can_see_order ? $order->get_billing_email() : $user_email,
+		);
+		// phpcs:enable WordPress.Security.NonceVerification
+
+		return $config;
 	}
 
 	/**
@@ -1580,6 +1760,19 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		return $this->frontend_styles_service;
+	}
+
+	/**
+	 * Get the express checkout service.
+	 *
+	 * @return WooPaymentsExpressCheckoutService
+	 */
+	private function get_express_checkout_service(): WooPaymentsExpressCheckoutService {
+		if ( null === $this->express_checkout_service ) {
+			$this->express_checkout_service = wc_get_container()->get( WooPaymentsExpressCheckoutService::class );
+		}
+
+		return $this->express_checkout_service;
 	}
 
 	/**

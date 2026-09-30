@@ -154,6 +154,29 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Tell whether WooPay and its express button are enabled, like the client's WooPay button handler.
+	 *
+	 * Client 11.1.0 `WC_Payments_WooPay_Button_Handler::is_woopay_enabled()` (class-wc-payments-woopay-button-handler.php:94-102).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function is_woopay_button_enabled(): bool {
+		/**
+		 * Allows third parties to programmatically show or hide the WooPay button.
+		 *
+		 * @since 9.5.0
+		 *
+		 * @param bool $is_woopay_enabled Whether WooPay and its express button are enabled.
+		 */
+		return (bool) apply_filters(
+			'wcpay_woopay_enabled',
+			$this->is_woopay_enabled() && '1' === get_option( '_wcpay_feature_woopay_express_checkout', '1' )
+		);
+	}
+
+	/**
 	 * Get the WooPay host URL.
 	 *
 	 * @return string

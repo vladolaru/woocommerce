@@ -13,6 +13,7 @@ export const recordWooPaymentsUserEvent = (
 	if (
 		! eventName ||
 		paymentSettings?.isShopperTrackingEnabled === false ||
+		// Only the express checkout params carry the snake_case key, as the client's do.
 		paymentSettings?.is_shopper_tracking_enabled === false ||
 		! window.fetch
 	) {

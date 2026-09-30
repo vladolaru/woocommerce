@@ -710,15 +710,13 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 	);
 	const [ phone, setPhone ] = useState( getWooPayInitialPhone );
 	const hasPhoneForMobileEnter = useRef( false );
-	const saveUserLabel =
-		paymentSettings.woopaySaveUserLabel ||
-		__(
-			'Securely save my information for 1-click checkout',
-			'woocommerce'
-		);
-	const phoneLabel =
-		paymentSettings.woopayPhoneLabel ||
-		__( 'Mobile phone number', 'woocommerce' );
+	// The former fallbacks for woopaySaveUserLabel and woopayPhoneLabel, which carried the same
+	// text (WooPaymentsWooPaySessionService::get_woopay_frontend_config()); the Blocks data drops them.
+	const saveUserLabel = __(
+		'Securely save my information for 1-click checkout',
+		'woocommerce'
+	);
+	const phoneLabel = __( 'Mobile phone number', 'woocommerce' );
 
 	useEffect( () => {
 		recordWooPaymentsUserEvent(

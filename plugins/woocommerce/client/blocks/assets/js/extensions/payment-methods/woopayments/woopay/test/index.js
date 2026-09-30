@@ -66,8 +66,6 @@ jest.mock( '@woocommerce/settings', () => {
 		woopayExpressUnavailableMessage:
 			'WooPay is unavailable at this time. Sorry for the inconvenience.',
 		woopaySessionNonce: 'session-nonce',
-		woopayPhoneLabel: 'WooPay phone number',
-		woopaySaveUserLabel: 'Save to WooPay',
 		PRE_CHECK_SAVE_MY_INFO: true,
 	};
 
@@ -356,8 +354,12 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 
 		render( createElement( expressRegistration.content.type ) );
 
-		expect( screen.queryByLabelText( 'WooPay phone number' ) ).toBeNull();
-		expect( screen.queryByLabelText( 'Save to WooPay' ) ).toBeNull();
+		expect( screen.queryByLabelText( 'Mobile phone number' ) ).toBeNull();
+		expect(
+			screen.queryByLabelText(
+				'Securely save my information for 1-click checkout'
+			)
+		).toBeNull();
 		expect(
 			document.querySelector( '.wcpay-core-woopay-save-user' )
 		).toBeNull();

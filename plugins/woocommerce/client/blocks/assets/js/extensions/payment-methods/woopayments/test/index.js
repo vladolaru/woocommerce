@@ -73,8 +73,6 @@ jest.mock( '@woocommerce/settings', () => {
 			},
 		],
 		woopaySessionNonce: 'session-nonce',
-		woopayPhoneLabel: 'WooPay phone number',
-		woopaySaveUserLabel: 'Save to WooPay',
 		PRE_CHECK_SAVE_MY_INFO: true,
 		paymentMethodsConfig: {
 			card: {
@@ -518,7 +516,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		).toHaveClass( 'wp-block-woocommerce-checkout-payment-block' );
 		expect(
 			screen.getByRole( 'checkbox', {
-				name: 'Save to WooPay',
+				name: 'Securely save my information for 1-click checkout',
 			} )
 		).toBeChecked();
 		expect(
@@ -529,6 +527,9 @@ describe( 'wc-payment-method-woopayments', () => {
 				'input[name="woopay_user_phone_field[full]"]'
 			)
 		).toHaveValue( '5551234567' );
+		expect( screen.getByLabelText( 'Mobile phone number' ) ).toHaveValue(
+			'5551234567'
+		);
 	} );
 
 	it( 'records WooPay save-info offer and checkbox events', async () => {
@@ -566,15 +567,21 @@ describe( 'wc-payment-method-woopayments', () => {
 
 		await waitFor( () => {
 			expect(
-				screen.getByRole( 'checkbox', { name: 'Save to WooPay' } )
+				screen.getByRole( 'checkbox', {
+					name: 'Securely save my information for 1-click checkout',
+				} )
 			).toBeChecked();
 		} );
 
 		fireEvent.click(
-			screen.getByRole( 'checkbox', { name: 'Save to WooPay' } )
+			screen.getByRole( 'checkbox', {
+				name: 'Securely save my information for 1-click checkout',
+			} )
 		);
 		fireEvent.click(
-			screen.getByRole( 'checkbox', { name: 'Save to WooPay' } )
+			screen.getByRole( 'checkbox', {
+				name: 'Securely save my information for 1-click checkout',
+			} )
 		);
 
 		await waitFor( () => {
@@ -693,7 +700,9 @@ describe( 'wc-payment-method-woopayments', () => {
 		);
 
 		fireEvent.click(
-			screen.getByRole( 'checkbox', { name: 'Save to WooPay' } )
+			screen.getByRole( 'checkbox', {
+				name: 'Securely save my information for 1-click checkout',
+			} )
 		);
 
 		await waitFor( () => {
@@ -760,7 +769,9 @@ describe( 'wc-payment-method-woopayments', () => {
 		] );
 
 		fireEvent.click(
-			screen.getByRole( 'checkbox', { name: 'Save to WooPay' } )
+			screen.getByRole( 'checkbox', {
+				name: 'Securely save my information for 1-click checkout',
+			} )
 		);
 
 		await waitFor( () => {

@@ -18,6 +18,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Unit_Test_Case;
 
 /**
@@ -617,7 +619,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		$this->reset_frontend_surface_state();
-		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
+		unset( $_GET['change_payment_method'], $_GET['pay_for_order'], $_GET['key'], $_POST['email'], $GLOBALS['wcpay_test_subscription_ids'] );
+		delete_option( '_wcpay_feature_woopay_express_checkout' );
+		remove_all_filters( 'wcpay_woopay_enabled' );
 		delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
 		remove_all_filters( 'wcpay_payment_fields_js_config' );
 		remove_all_filters( 'pre_http_request' );
@@ -1512,7 +1516,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_blocks_payment_method_data_exposes_woopay_express_gate_flags(): void {
 		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
-		$account_service = $this->create_account_service_for_bridge( true );
+		$account_service = $this->create_account_service_for_bridge( true, self::EXPRESS_ACCOUNT_DATA, self::EXPRESS_GATEWAY_SETTINGS );
 		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
 		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
 
@@ -1585,6 +1589,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		'woopayIsCountryAvailable',
 		'woopayAppearance',
 		'woopayFontRules',
+		'isPaymentRequestEnabled',
+		'isAmazonPayEnabled',
 	);
 
 	/**
@@ -1599,9 +1605,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		'woopayOtpIframeTitle',            // woopay/email-input-iframe.js:269, woopay/express-checkout-iframe.js:98.
 		'woopayUnavailableMessage',        // woopay/email-input-iframe.js:409.
 		'woopayExpressUnavailableMessage', // woopay/express-checkout-iframe.js:231.
-		'woopaySaveUserLabel',             // index.js:714.
-		'woopayPhoneLabel',                // index.js:720.
-		'is_shopper_tracking_enabled',     // tracks.js:16.
 	);
 
 	/**
@@ -1622,6 +1625,23 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		'woopayAgreementText',
 		'woopayTermsOfServiceLabel',
 		'woopayPrivacyPolicyLabel',
+		'woopaySaveUserLabel',
+		'woopayPhoneLabel',
+		'is_shopper_tracking_enabled',
+	);
+
+	/**
+	 * WooPay button keys the client adds only while its WooPay button handler runs (class-wc-payments-woopay-button-handler.php:144-160).
+	 */
+	private const WOOPAY_BUTTON_KEYS = array(
+		'woopayButton',
+		'woopayButtonNonce',
+		'addToCartNonce',
+		'shouldShowWooPayButton',
+		'woopaySessionEmail',
+		'woopayIsCountryAvailable',
+		'woopayAppearance',
+		'woopayFontRules',
 	);
 
 	/**
@@ -1655,8 +1675,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
 		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $legacy_runtime, $this->create_account_service_for_bridge( true ), $woopay_service, $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$account_service = $this->create_account_service_for_bridge( true, self::EXPRESS_ACCOUNT_DATA, self::EXPRESS_GATEWAY_SETTINGS );
+		$bridge          = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $woopay_service, $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$this->inject_express_checkout_service( $bridge, $account_service );
 
 		return $bridge;
 	}
@@ -1709,6 +1731,271 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		} finally {
 			set_current_screen( 'front' );
 		}
+	}
+
+	/**
+	 * Account data under which the client runs its express checkout handlers and can use Amazon Pay.
+	 */
+	private const EXPRESS_ACCOUNT_DATA = array(
+		'country'          => 'US',
+		'payments_enabled' => true,
+		'capabilities'     => array( 'amazon_pay_payments' => 'active' ),
+		'fees'             => array( 'amazon_pay' => array( 'base' => array( 'currency' => 'usd' ) ) ),
+	);
+
+	/**
+	 * Gateway settings with the gateway enabled, Apple Pay/Google Pay on and Amazon Pay switched on and listed at checkout.
+	 */
+	private const EXPRESS_GATEWAY_SETTINGS = array(
+		'enabled'                           => 'yes',
+		'payment_request'                   => 'yes',
+		'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
+		'express_checkout_product_methods'  => array( 'payment_request' ),
+		'express_checkout_cart_methods'     => array( 'payment_request' ),
+		'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
+	);
+
+	/**
+	 * @testdox Blocks data carries the client's express checkout switches for the checkout page's own location settings.
+	 */
+	public function test_blocks_data_express_switches_follow_the_checkout_location(): void {
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+
+		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data();
+		$this->assertTrue( $data['isPaymentRequestEnabled'] );
+		$this->assertTrue( $data['isAmazonPayEnabled'] );
+
+		$data = $this->create_bridge_for_express_handlers( array( 'express_checkout_checkout_methods' => array( 'amazon_pay' ) ) )->get_blocks_payment_method_data();
+		$this->assertFalse( $data['isPaymentRequestEnabled'], 'Apple Pay/Google Pay is not listed at checkout.' );
+		$this->assertTrue( $data['isAmazonPayEnabled'] );
+
+		$data = $this->create_bridge_for_express_handlers( array( 'express_checkout_checkout_methods' => array( 'payment_request' ) ) )->get_blocks_payment_method_data();
+		$this->assertTrue( $data['isPaymentRequestEnabled'] );
+		$this->assertFalse( $data['isAmazonPayEnabled'], 'Amazon Pay is not listed at checkout.' );
+	}
+
+	/**
+	 * @testdox Blocks data reports Amazon Pay off once the merchant switched it off or the account cannot use it.
+	 */
+	public function test_blocks_data_amazon_pay_switch_uses_native_amazon_pay_availability(): void {
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+
+		$toggled_off = $this->create_bridge_for_express_handlers( array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) )->get_blocks_payment_method_data();
+		$ineligible  = $this->create_bridge_for_express_handlers( array(), array( 'capabilities' => array() ) )->get_blocks_payment_method_data();
+
+		$this->assertTrue( $toggled_off['isPaymentRequestEnabled'] );
+		$this->assertFalse( $toggled_off['isAmazonPayEnabled'] );
+		$this->assertFalse( $ineligible['isAmazonPayEnabled'] );
+	}
+
+	/**
+	 * @testdox Blocks data outside the product, cart and checkout pages reports the switches without a location, as the client does.
+	 */
+	public function test_blocks_data_express_switches_ignore_locations_without_a_page_context(): void {
+		$data = $this->create_bridge_for_express_handlers(
+			array(
+				'express_checkout_checkout_methods' => array(),
+				'express_checkout_cart_methods'     => array(),
+				'express_checkout_product_methods'  => array(),
+			)
+		)->get_blocks_payment_method_data();
+
+		$this->assertTrue( $data['isPaymentRequestEnabled'] );
+		$this->assertTrue( $data['isAmazonPayEnabled'] );
+	}
+
+	/**
+	 * @testdox Blocks data leaves out the express checkout switches while the client's express checkout handler does not run.
+	 *
+	 * @dataProvider provider_express_handler_off
+	 *
+	 * @param array<string,mixed> $settings     Gateway setting overrides.
+	 * @param array<string,mixed> $account_data Account data overrides.
+	 * @param bool                $change_page  Whether the request is a change payment method page.
+	 */
+	public function test_blocks_data_omits_express_switches_while_the_client_handler_is_off( array $settings, array $account_data, bool $change_page ): void {
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		if ( $change_page ) {
+			$_GET['change_payment_method'] = '123';
+		}
+
+		$data = $this->create_bridge_for_express_handlers( $settings, $account_data )->get_blocks_payment_method_data();
+
+		$this->assertArrayNotHasKey( 'isPaymentRequestEnabled', $data );
+		$this->assertArrayNotHasKey( 'isAmazonPayEnabled', $data );
+	}
+
+	/**
+	 * Cases where the client's express checkout button handler does not add its config.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:array<string,mixed>,2:bool}>
+	 */
+	public function provider_express_handler_off(): array {
+		return array(
+			'gateway disabled'                  => array( array( 'enabled' => 'no' ), array(), false ),
+			'payments not enabled on account'   => array( array(), array( 'payments_enabled' => false ), false ),
+			'no express checkout method usable' => array(
+				array(
+					'payment_request'                => 'no',
+					'upe_enabled_payment_method_ids' => array( 'card' ),
+				),
+				array(),
+				false,
+			),
+			'change payment method page'        => array( array(), array(), true ),
+		);
+	}
+
+	/**
+	 * @testdox Blocks data carries the client's order-pay keys on a pay-for-order link, with the order's email for its own customer.
+	 */
+	public function test_blocks_data_carries_the_client_order_pay_keys(): void {
+		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order       = \WC_Helper_Order::create_order( $customer_id );
+		$order->set_billing_email( 'order@example.com' );
+		$order->save();
+		wp_set_current_user( $customer_id );
+		$this->go_to_pay_for_order_link( $order );
+
+		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data();
+
+		$this->assertSame( $order->get_id(), $data['order_id'] );
+		$this->assertSame( 'true', $data['pay_for_order'] );
+		$this->assertSame( $order->get_order_key(), $data['key'] );
+		$this->assertSame( 'order@example.com', $data['billing_email'] );
+	}
+
+	/**
+	 * @testdox Blocks data gives a shopper who cannot see the order the email they typed, not the order's.
+	 */
+	public function test_blocks_data_order_pay_email_hides_the_order_email_from_other_payers(): void {
+		$order = \WC_Helper_Order::create_order( 0 );
+		$order->set_billing_email( 'order@example.com' );
+		$order->save();
+		$this->go_to_pay_for_order_link( $order );
+		$_POST['email'] = 'typed@example.com';
+
+		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data();
+
+		$this->assertSame( $order->get_id(), $data['order_id'] );
+		$this->assertSame( 'typed@example.com', $data['billing_email'] );
+	}
+
+	/**
+	 * @testdox Blocks data leaves out the order-pay keys without the order key, for a user who cannot pay the order, or without payments enabled.
+	 */
+	public function test_blocks_data_omits_order_pay_keys_outside_an_authorized_pay_for_order_link(): void {
+		$order_keys  = array( 'order_id', 'pay_for_order', 'key', 'billing_email' );
+		$owner_id    = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$other_id    = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order       = \WC_Helper_Order::create_order( $owner_id );
+		$assert_none = function ( array $data, string $message ) use ( $order_keys ): void {
+			foreach ( $order_keys as $key ) {
+				$this->assertArrayNotHasKey( $key, $data, $message );
+			}
+		};
+
+		wp_set_current_user( $owner_id );
+		$this->go_to_pay_for_order_link( $order );
+		unset( $_GET['key'] );
+		$assert_none( $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data(), 'Missing order key.' );
+
+		$this->go_to_pay_for_order_link( $order );
+		wp_set_current_user( $other_id );
+		$assert_none( $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data(), 'Another customer cannot pay the order.' );
+
+		wp_set_current_user( $owner_id );
+		$assert_none( $this->create_bridge_for_express_handlers( array(), array( 'payments_enabled' => false ) )->get_blocks_payment_method_data(), 'Payments are not enabled.' );
+	}
+
+	/**
+	 * @testdox Blocks data leaves out the order-pay keys on a subscription's change payment method page, where the client skips its config filters.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_blocks_data_omits_order_pay_keys_while_changing_a_subscription_payment_method(): void {
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its availability marker.
+		eval( 'namespace { class WC_Subscriptions_Core_Plugin {} }' );
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public detector.
+		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { return in_array( $subscription_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
+
+		$order = \WC_Helper_Order::create_order( 0 );
+		$this->go_to_pay_for_order_link( $order );
+		$GLOBALS['wcpay_test_subscription_ids'] = array( '123' );
+		$_GET['change_payment_method']          = '123';
+
+		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data();
+
+		$this->assertTrue( $data['isChangingPayment'] );
+		$this->assertArrayNotHasKey( 'order_id', $data );
+		$this->assertArrayNotHasKey( 'billing_email', $data );
+	}
+
+	/**
+	 * Simulate opening an order's pay-for-order link.
+	 *
+	 * @param \WC_Order $order Order.
+	 */
+	private function go_to_pay_for_order_link( \WC_Order $order ): void {
+		global $wp;
+
+		$_GET['pay_for_order']       = 'true';
+		$_GET['key']                 = $order->get_order_key();
+		$wp->query_vars['order-pay'] = (string) $order->get_id();
+	}
+
+	/**
+	 * @testdox Blocks data carries the client's WooPay button keys while WooPay and its express button are enabled.
+	 */
+	public function test_blocks_data_carries_woopay_button_keys_while_woopay_is_enabled(): void {
+		$data = $this->create_bridge_for_express_handlers( array(), array(), true )->get_blocks_payment_method_data();
+
+		foreach ( self::WOOPAY_BUTTON_KEYS as $key ) {
+			$this->assertArrayHasKey( $key, $data );
+		}
+	}
+
+	/**
+	 * @testdox Blocks data leaves out the WooPay button keys while the client's WooPay button handler does not run.
+	 *
+	 * @dataProvider provider_woopay_button_handler_off
+	 *
+	 * @param string $scenario Scenario.
+	 */
+	public function test_blocks_data_omits_woopay_button_keys_while_woopay_is_off( string $scenario ): void {
+		$woopay   = 'woopay disabled' !== $scenario;
+		$settings = 'gateway disabled' === $scenario ? array( 'enabled' => 'no' ) : array();
+		if ( 'express button flag off' === $scenario ) {
+			update_option( '_wcpay_feature_woopay_express_checkout', '0' );
+		}
+		if ( 'filtered off' === $scenario ) {
+			add_filter( 'wcpay_woopay_enabled', '__return_false' );
+		}
+		if ( 'change payment method page' === $scenario ) {
+			$_GET['change_payment_method'] = '123';
+		}
+
+		$data = $this->create_bridge_for_express_handlers( $settings, array(), $woopay )->get_blocks_payment_method_data();
+
+		foreach ( self::WOOPAY_BUTTON_KEYS as $key ) {
+			$this->assertArrayNotHasKey( $key, $data, "{$scenario}: {$key}" );
+		}
+		$this->assertArrayHasKey( 'isWooPayEnabled', $data );
+	}
+
+	/**
+	 * Cases where the client's WooPay button handler does not add its config.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provider_woopay_button_handler_off(): array {
+		return array(
+			'woopay disabled'            => array( 'woopay disabled' ),
+			'express button flag off'    => array( 'express button flag off' ),
+			'filtered off'               => array( 'filtered off' ),
+			'gateway disabled'           => array( 'gateway disabled' ),
+			'change payment method page' => array( 'change payment method page' ),
+		);
 	}
 
 	/**
@@ -1975,8 +2262,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	private function create_account_service_for_bridge( bool $can_process_payments, array $account_data = array( 'country' => 'RO' ), array $gateway_settings = array() ) {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_publishable_key', 'get_account_id', 'get_cached_account_data', 'get_gateway_setting', 'is_payment_request_method_enabled', 'can_process_payments', 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'get_publishable_key', 'get_account_id', 'get_cached_account_data', 'get_gateway_setting', 'is_payment_request_method_enabled', 'is_payment_request_enabled', 'can_process_payments', 'is_test_mode_enabled' ) )
 			->getMock();
+		$account_service
+			->method( 'is_payment_request_enabled' )
+			->willReturn( 'yes' === ( $gateway_settings['payment_request'] ?? 'no' ) );
 
 		$account_service
 			->method( 'get_publishable_key' )
@@ -2011,6 +2301,52 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			->willReturn( true );
 
 		return $account_service;
+	}
+
+	/**
+	 * Give the bridge a real express checkout service backed by the bridge's account service.
+	 *
+	 * @param WooPaymentsCheckoutBridge $bridge          Checkout bridge.
+	 * @param WooPaymentsAccountService $account_service Account service mock.
+	 */
+	private function inject_express_checkout_service( WooPaymentsCheckoutBridge $bridge, WooPaymentsAccountService $account_service ): void {
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+
+		$service = new WooPaymentsExpressCheckoutService();
+		$service->init( $account_service, $provider, $this->create_frontend_tracking_controller_for_bridge() );
+
+		$property = new \ReflectionProperty( WooPaymentsCheckoutBridge::class, 'express_checkout_service' );
+		$property->setAccessible( true );
+		$property->setValue( $bridge, $service );
+	}
+
+	/**
+	 * Build a bridge whose account can run the client's express checkout handlers.
+	 *
+	 * @param array<string,mixed> $settings     Gateway setting overrides.
+	 * @param array<string,mixed> $account_data Account data overrides.
+	 * @param bool                $woopay       Whether the WooPay session service reports WooPay enabled.
+	 * @return WooPaymentsCheckoutBridge
+	 */
+	private function create_bridge_for_express_handlers( array $settings = array(), array $account_data = array(), bool $woopay = false ): WooPaymentsCheckoutBridge {
+		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+		$account_service = $this->create_account_service_for_bridge(
+			true,
+			array_merge( self::EXPRESS_ACCOUNT_DATA, $account_data ),
+			array_merge( self::EXPRESS_GATEWAY_SETTINGS, $settings )
+		);
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( $woopay ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$this->inject_express_checkout_service( $bridge, $account_service );
+
+		return $bridge;
 	}
 
 	/**

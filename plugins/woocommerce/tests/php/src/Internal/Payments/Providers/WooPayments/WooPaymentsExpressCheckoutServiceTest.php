@@ -1085,6 +1085,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( $expected, $sut->can_use_amazon_pay( 'USD' ), 'Store API extension data' );
+		$this->assertSame( $expected, $sut->is_amazon_pay_usable( 'checkout', 'USD' ), 'Location-independent usability' );
 		$this->assertSame( $expected ? array( 'payment_request', 'amazon_pay' ) : array( 'payment_request' ), $sut->get_enabled_methods_for_context( 'checkout' ), 'Button enabled methods' );
 		$this->assertSame( $expected ? array( 'card', 'amazon_pay' ) : array( 'card' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ), 'Button payment method types' );
 	}
@@ -1178,6 +1179,19 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $only_product->can_use_amazon_pay( 'EUR' ) );
 		$this->assertFalse( $no_location->can_use_amazon_pay( 'USD' ) );
 		$this->assertFalse( $unavailable->can_use_amazon_pay( 'USD' ) );
+	}
+
+	/**
+	 * @testdox Should tell Amazon Pay usable whichever locations list it, like the client's can_use_amazon_pay().
+	 */
+	public function test_is_amazon_pay_usable_ignores_location_settings(): void {
+		$eligible    = array( 'ece_confirmation_tokens_disabled' => false );
+		$no_location = $this->create_service( array(), true, $eligible );
+		$unavailable = $this->create_service( array( 'upe_available_payment_methods' => array( 'card' ) ), true, $eligible );
+
+		$this->assertTrue( $no_location->is_amazon_pay_usable( 'checkout', 'USD' ) );
+		$this->assertFalse( $no_location->is_amazon_pay_usable( 'checkout', 'EUR' ) );
+		$this->assertFalse( $unavailable->is_amazon_pay_usable( 'checkout', 'USD' ) );
 	}
 
 	/**
