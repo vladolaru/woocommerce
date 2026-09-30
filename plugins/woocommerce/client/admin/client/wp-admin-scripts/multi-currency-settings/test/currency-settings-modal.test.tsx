@@ -214,6 +214,51 @@ describe( 'CurrencySettingsModal', () => {
 		} );
 	} );
 
+	// Client 11.1.0 single-currency/index.js:280-290 (manual option
+	// description) and 305-307 (manual rate help).
+	it( 'describes the manual exchange rate option and field', async () => {
+		mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+		renderModal();
+
+		expect(
+			await screen.findByText( 'Enter your fixed rate of exchange' )
+		).toBeInTheDocument();
+
+		fireEvent.click( screen.getByRole( 'radio', { name: 'Manual' } ) );
+
+		expect(
+			screen.getByLabelText( 'Manual rate' )
+		).toHaveAccessibleDescription(
+			'Enter the manual rate you would like to use. Must be a positive number.'
+		);
+	} );
+
+	// Client 11.1.0 single-currency/index.js:347-364 and 395-412.
+	it( 'explains price rounding and charm pricing with Learn more links', async () => {
+		mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+		renderModal();
+
+		const roundingSelect = await screen.findByLabelText( 'Price rounding' );
+		expect( roundingSelect ).toHaveAccessibleDescription(
+			/^Make your EUR prices consistent by rounding them up after they're converted\. Learn more/
+		);
+		expect(
+			screen.getByLabelText( 'Charm pricing' )
+		).toHaveAccessibleDescription(
+			/^Reduce the converted price for a specific amount\. Learn more/
+		);
+		expect(
+			screen
+				.getAllByRole( 'link', { name: /Learn more/ } )
+				.map( ( link ) => link.getAttribute( 'href' ) )
+		).toEqual( [
+			'https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/#price-rounding',
+			'https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/#charm-pricing',
+		] );
+	} );
+
 	it( 'omits the manual rate when saving automatic currency settings', async () => {
 		mockApiFetch
 			.mockResolvedValueOnce( automaticSettingsResponse )
@@ -283,7 +328,9 @@ describe( 'CurrencySettingsModal', () => {
 		} );
 		expect( saveButton ).toHaveAttribute( 'aria-disabled', 'true' );
 		expect(
-			screen.getByText( 'Enter a positive exchange rate.' )
+			screen.getByText(
+				'Enter the manual rate you would like to use. Must be a positive number.'
+			)
 		).toBeInTheDocument();
 
 		fireEvent.change( screen.getByLabelText( 'Manual rate' ), {
@@ -320,7 +367,7 @@ describe( 'CurrencySettingsModal', () => {
 
 		expect( manualRateInput ).toHaveAttribute( 'aria-invalid', 'true' );
 		expect( manualRateInput ).toHaveAccessibleDescription(
-			'Enter a positive exchange rate.'
+			'Enter the manual rate you would like to use. Must be a positive number.'
 		);
 		const saveButton = screen.getByRole( 'button', {
 			name: 'Save changes',

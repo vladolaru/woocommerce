@@ -4,6 +4,7 @@
 import apiFetch from '@wordpress/api-fetch';
 import {
 	Button,
+	ExternalLink,
 	Modal,
 	RadioControl,
 	SelectControl,
@@ -12,7 +13,12 @@ import {
 } from '@wordpress/components';
 import { useDispatch } from '@wordpress/data';
 import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
-import { useEffect, useMemo, useState } from '@wordpress/element';
+import {
+	createInterpolateElement,
+	useEffect,
+	useMemo,
+	useState,
+} from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
 /**
@@ -27,6 +33,8 @@ import type {
 } from './types';
 
 const REST_BASE = '/wc/v3/payments/multi-currency';
+const SETUP_DOC_URL =
+	'https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/';
 
 const decimalCurrencyRoundingOptions = {
 	'0': __( 'None', 'woocommerce' ),
@@ -340,6 +348,10 @@ export function CurrencySettingsModal( {
 								{
 									label: __( 'Manual', 'woocommerce' ),
 									value: 'manual',
+									description: __(
+										'Enter your fixed rate of exchange',
+										'woocommerce'
+									),
 								},
 							] }
 							onChange={ ( value ) =>
@@ -419,7 +431,7 @@ export function CurrencySettingsModal( {
 							label={ __( 'Manual rate', 'woocommerce' ) }
 							value={ settings.manualRate }
 							help={ __(
-								'Enter a positive exchange rate.',
+								'Enter the manual rate you would like to use. Must be a positive number.',
 								'woocommerce'
 							) }
 							aria-invalid={ shouldRequireManualRate }
@@ -434,6 +446,25 @@ export function CurrencySettingsModal( {
 						__nextHasNoMarginBottom
 						__next40pxDefaultSize
 						label={ __( 'Price rounding', 'woocommerce' ) }
+						help={ createInterpolateElement(
+							sprintf(
+								/* translators: %s: Currency code, for example EUR. */
+								__(
+									"Make your %s prices consistent by rounding them up after they're converted. <learnMoreLink>Learn more</learnMoreLink>",
+									'woocommerce'
+								),
+								currency.code
+							),
+							{
+								learnMoreLink: (
+									<ExternalLink
+										href={ `${ SETUP_DOC_URL }#price-rounding` }
+									>
+										<></>
+									</ExternalLink>
+								),
+							}
+						) }
 						value={ settings.priceRounding }
 						options={ roundingOptions }
 						onChange={ ( value ) =>
@@ -444,6 +475,21 @@ export function CurrencySettingsModal( {
 						__nextHasNoMarginBottom
 						__next40pxDefaultSize
 						label={ __( 'Charm pricing', 'woocommerce' ) }
+						help={ createInterpolateElement(
+							__(
+								'Reduce the converted price for a specific amount. <learnMoreLink>Learn more</learnMoreLink>',
+								'woocommerce'
+							),
+							{
+								learnMoreLink: (
+									<ExternalLink
+										href={ `${ SETUP_DOC_URL }#charm-pricing` }
+									>
+										<></>
+									</ExternalLink>
+								),
+							}
+						) }
 						value={ settings.priceCharm }
 						options={ charmOptions }
 						onChange={ ( value ) =>
