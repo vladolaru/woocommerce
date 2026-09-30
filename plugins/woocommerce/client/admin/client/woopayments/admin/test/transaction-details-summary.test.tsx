@@ -183,6 +183,30 @@ describe( 'WooPayments payment details summary parity', () => {
 		setSettings( originalDateSettings );
 	} );
 
+	// Client 11.1.0 payment-details/summary/index.tsx:480-866 and timeline/index.js:33-58: the summary and
+	// timeline cards with placeholders while loading, under the "Payment details" title.
+	it( 'shows the summary and timeline placeholders while the payment loads', async () => {
+		mockGetPaymentIntent.mockReturnValue( new Promise( () => {} ) );
+
+		const { container } = renderDetailsPage();
+
+		expect(
+			await screen.findByRole( 'heading', { name: 'Payment details' } )
+		).toBeInTheDocument();
+		const placeholders = container.querySelectorAll(
+			'.woocommerce-woopayments-payment-details-placeholder'
+		);
+		expect( placeholders ).toHaveLength( 2 );
+		placeholders.forEach( ( placeholder ) =>
+			expect( placeholder ).toHaveAttribute( 'aria-hidden', 'true' )
+		);
+		expect(
+			screen.queryByText( 'Loading transaction details…', {
+				selector: '.woocommerce-woopayments-money-movement__status',
+			} )
+		).not.toBeInTheDocument();
+	} );
+
 	describe( 'capture countdown (client summary/index.tsx:904-967)', () => {
 		beforeEach( () => {
 			jest.useFakeTimers( { now: new Date( NOW ) } );

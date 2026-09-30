@@ -366,3 +366,8 @@
 		gap: 8px;
 	}
 }
+
+// Client 11.1.0 `disputes/new-evidence/index.tsx:780-806`: the loading spinner, centred.
+.woocommerce-woopayments-dispute-challenge__loading {
+	padding: 16px 0;
+}

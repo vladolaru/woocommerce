@@ -539,3 +539,57 @@
 		fill: #f0b849;
 	}
 }
+
+// Client 11.1.0 `components/loadable`: grey blocks in the shape of the summary and timeline cards.
+.woocommerce-woopayments-payment-details-placeholder {
+	&__row {
+		align-items: flex-start;
+		display: flex;
+		gap: 16px;
+		justify-content: space-between;
+
+		&.is-start {
+			justify-content: flex-start;
+		}
+	}
+
+	&__block {
+		@include placeholder();
+		border-radius: 2px;
+		display: block;
+		height: 18px;
+
+		&.is-amount {
+			height: 48px;
+			margin-bottom: 4px;
+			max-width: 100%;
+			width: 272px;
+		}
+
+		&.is-short {
+			width: 80px;
+		}
+
+		&.is-wide {
+			max-width: 40%;
+			width: 256px;
+		}
+
+		&.is-tall {
+			height: 52px;
+		}
+
+		&.is-title {
+			width: 74px;
+		}
+
+		&.is-line {
+			height: 40px;
+		}
+	}
+
+	&__lines {
+		display: grid;
+		gap: 12px;
+	}
+}

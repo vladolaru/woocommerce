@@ -1330,6 +1330,25 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		);
 	} );
 
+	// Client 11.1.0 disputes/new-evidence/index.tsx:780-806: a centred spinner, before the test-mode notice.
+	it( 'shows a spinner and no test-mode notice while the dispute loads', async () => {
+		mockAccountMode( true );
+		mockGetDispute.mockReturnValue( new Promise( () => {} ) );
+
+		const { container } = renderChallengePage();
+
+		expect( await getTestModeNoticeText() ).toBeNull();
+		const loading = container.querySelector(
+			'.woocommerce-woopayments-dispute-challenge__loading'
+		);
+		expect( loading ).not.toBeNull();
+		expect( loading ).toHaveAttribute( 'aria-busy', 'true' );
+		expect(
+			loading?.querySelector( '.components-spinner' )
+		).not.toBeNull();
+		expect( loading ).toHaveTextContent( 'Loading dispute…' );
+	} );
+
 	// Client 11.1.0 disputes/new-evidence/index.tsx:1540.
 	it.each( [ true, false ] )(
 		'shows the dispute challenge test-mode notice only in test mode (test mode: %s)',

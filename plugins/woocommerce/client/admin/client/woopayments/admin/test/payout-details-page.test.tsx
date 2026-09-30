@@ -94,6 +94,21 @@ jest.mock( '@wordpress/a11y', () => ( {
 	speak: jest.fn(),
 } ) );
 
+const mockCreateErrorNotice = jest.fn();
+
+jest.mock( '@wordpress/data', () => {
+	const actual = jest.requireActual( '@wordpress/data' );
+
+	return {
+		...actual,
+		dispatch: jest.fn( ( storeName ) =>
+			storeName === 'core/notices'
+				? { createErrorNotice: mockCreateErrorNotice }
+				: actual.dispatch( storeName )
+		),
+	};
+} );
+
 jest.mock( '../../promotions/spotlight', () => ( {
 	SpotlightPromotion: () => <div>Spotlight promotion</div>,
 } ) );
@@ -883,6 +898,57 @@ describe( 'WooPayments payout details admin surface', () => {
 
 		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
 			'Payout unavailable.'
+		);
+	} );
+
+	// Client 11.1.0 deposits/details/index.tsx:319-323: the core summary placeholder while loading.
+	it( 'shows the summary placeholder while the payout loads', async () => {
+		mockGetDeposit.mockReturnValue( new Promise( () => {} ) );
+
+		const { container } = render(
+			<MemoryRouter
+				initialEntries={ [ '/woopayments/payouts/details?id=po_test' ] }
+			>
+				<WooPaymentsPayoutDetailsPage />
+			</MemoryRouter>
+		);
+
+		const placeholder = container.querySelector(
+			'.woocommerce-summary.is-placeholder'
+		);
+		expect( placeholder ).not.toBeNull();
+		expect(
+			placeholder?.querySelectorAll( '.woocommerce-summary__item' )
+		).toHaveLength( 2 );
+		expect(
+			screen.queryByText( 'Loading payout details…', {
+				selector: '.woocommerce-woopayments-money-movement__status',
+			} )
+		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 deposits/details/index.tsx:135-144 and data/deposits/resolvers.js:44-51.
+	it( 'shows the client not-found notice and snackbar when the payout fails to load', async () => {
+		mockCreateErrorNotice.mockClear();
+		mockGetDeposit.mockRejectedValue( new Error( 'Payout unavailable.' ) );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [ '/woopayments/payouts/details?id=po_test' ] }
+			>
+				<WooPaymentsPayoutDetailsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			(
+				await screen.findByText(
+					'The deposit you are looking for cannot be found.'
+				)
+			).closest( '.components-notice' )
+		).toHaveClass( 'is-error' );
+		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+			'Error retrieving payout.'
 		);
 	} );
 

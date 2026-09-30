@@ -1,6 +1,7 @@
 /**
  * External dependencies
  */
+import { Flex, FlexItem, Spinner } from '@wordpress/components';
 import { useEffect, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { useLocation } from 'react-router-dom';
@@ -185,14 +186,33 @@ export const WooPaymentsDisputeChallengePage = () => {
 			className="woocommerce-woopayments-money-movement"
 			aria-busy={ isLoading }
 		>
-			{ /* Client 11.1.0 disputes/new-evidence/index.tsx:1540. */ }
-			<WooPaymentsTestModeNotice currentPage="disputes" isDetailsView />
+			{ /* Client 11.1.0 disputes/new-evidence/index.tsx:1540, once the dispute has loaded. */ }
+			{ ! isLoading && (
+				<WooPaymentsTestModeNotice
+					currentPage="disputes"
+					isDetailsView
+				/>
+			) }
 			<LiveStatusMessage
 				isError={ !! errorMessage || !! fileDetailsWarning }
 			>
 				{ liveStatusMessage }
 			</LiveStatusMessage>
-			{ isLoading && <StatusMessage>{ loadingMessage }</StatusMessage> }
+			{ /* Client 11.1.0 disputes/new-evidence/index.tsx:780-806: a centred spinner. */ }
+			{ isLoading && (
+				<Flex
+					direction="column"
+					align="center"
+					justify="center"
+					className="woocommerce-woopayments-dispute-challenge__loading"
+					aria-busy="true"
+				>
+					<FlexItem>
+						<Spinner />
+					</FlexItem>
+					<FlexItem>{ loadingMessage }</FlexItem>
+				</Flex>
+			) }
 			{ errorMessage && (
 				<StatusMessage isError>{ errorMessage }</StatusMessage>
 			) }

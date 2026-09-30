@@ -12,10 +12,12 @@ import {
 import { useCallback, useEffect, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { speak } from '@wordpress/a11y';
-import { OrderStatus } from '@woocommerce/components';
+import { OrderStatus, SummaryListPlaceholder } from '@woocommerce/components';
+import { dispatch } from '@wordpress/data';
 import { copy } from '@wordpress/icons';
 import clsx from 'clsx';
-import type { ComponentType, ReactNode } from 'react';
+import NoticeOutlineIcon from 'gridicons/dist/notice-outline';
+import type { ComponentType, ElementType, ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 
 /**
@@ -39,6 +41,9 @@ import { WooPaymentsTransactionsList } from './money-movement/transactions-list'
 import { WooPaymentsTestModeNotice } from './test-mode-notice';
 import './style.scss';
 import './payout-details.scss';
+
+// Client 11.1.0 `components/inline-notice`: the notice-outline gridicon; the shared typings omit its class name.
+const ErrorIcon = NoticeOutlineIcon as ElementType< { className?: string } >;
 
 // The component's generated types declare an `Object` return, which JSX rejects.
 const StatusIndicator = OrderStatus as unknown as ComponentType< {
@@ -344,6 +349,14 @@ export const WooPaymentsPayoutDetailsPage = () => {
 							)
 						)
 					);
+					// Client 11.1.0 data/deposits/resolvers.js:44-51.
+					(
+						dispatch( 'core/notices' ) as unknown as {
+							createErrorNotice: ( message: string ) => void;
+						}
+					 ).createErrorNotice(
+						__( 'Error retrieving payout.', 'woocommerce' )
+					);
 				}
 			} finally {
 				if ( isMounted ) {
@@ -424,15 +437,24 @@ export const WooPaymentsPayoutDetailsPage = () => {
 			>
 				{ liveStatusMessage }
 			</p>
-			{ isLoading && (
-				<p className="woocommerce-woopayments-money-movement__status">
-					{ loadingMessage }
-				</p>
-			) }
+			{ /* Client 11.1.0 deposits/details/index.tsx:319-323. */ }
+			{ isLoading && <SummaryListPlaceholder numberOfItems={ 2 } /> }
+			{ /* Client 11.1.0 deposits/details/index.tsx:135-144; the live region above carries the reason. */ }
 			{ errorMessage && (
-				<p className="woocommerce-woopayments-money-movement__status">
-					{ errorMessage }
-				</p>
+				<Notice
+					status="error"
+					isDismissible={ false }
+					spokenMessage={ null }
+					className="woocommerce-woopayments-payout-details-error"
+				>
+					<ErrorIcon className="woocommerce-woopayments-payout-details-error__icon" />
+					<span>
+						{ __(
+							'The deposit you are looking for cannot be found.',
+							'woocommerce'
+						) }
+					</span>
+				</Notice>
 			) }
 			{ payout && ! errorMessage && (
 				<>

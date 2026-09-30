@@ -767,6 +767,54 @@ const getSummaryItems = (
  * @param props.reviewActions   The fraud review buttons.
  * @param props.children        Dispute panes and notices at the foot of the card.
  */
+const PLACEHOLDER = 'woocommerce-woopayments-payment-details-placeholder';
+
+/**
+ * The summary and timeline cards while the payment loads.
+ * Client 11.1.0 `payment-details/summary/index.tsx:480-866` and `timeline/index.js:33-58`.
+ */
+export const WooPaymentsPaymentDetailsPlaceholder = () => (
+	<>
+		<Card className={ PLACEHOLDER } aria-hidden="true">
+			<CardBody>
+				<div className={ `${ PLACEHOLDER }__row` }>
+					<div>
+						<span
+							className={ `${ PLACEHOLDER }__block is-amount` }
+						/>
+						<div className={ `${ PLACEHOLDER }__row is-start` }>
+							<span
+								className={ `${ PLACEHOLDER }__block is-short` }
+							/>
+							<span
+								className={ `${ PLACEHOLDER }__block is-short` }
+							/>
+						</div>
+					</div>
+					<span className={ `${ PLACEHOLDER }__block is-wide` } />
+				</div>
+			</CardBody>
+			<CardDivider />
+			<CardBody>
+				<span className={ `${ PLACEHOLDER }__block is-tall` } />
+			</CardBody>
+		</Card>
+		<Card className={ PLACEHOLDER } aria-hidden="true">
+			<CardHeader>
+				<span className={ `${ PLACEHOLDER }__block is-title` } />
+			</CardHeader>
+			<CardBody className={ `${ PLACEHOLDER }__lines` }>
+				{ [ 0, 1, 2, 3 ].map( ( line ) => (
+					<span
+						key={ line }
+						className={ `${ PLACEHOLDER }__block is-line` }
+					/>
+				) ) }
+			</CardBody>
+		</Card>
+	</>
+);
+
 export const WooPaymentsPaymentSummarySection = ( {
 	transaction,
 	paymentIntentId = '',

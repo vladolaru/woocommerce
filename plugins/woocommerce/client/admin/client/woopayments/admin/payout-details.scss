@@ -155,3 +155,21 @@
 		text-align: start;
 	}
 }
+
+// Client 11.1.0 `components/inline-notice/styles.scss`: the error notice with its icon.
+.woocommerce-woopayments-payout-details-error.components-notice {
+	margin: 0;
+
+	.components-notice__content {
+		align-items: center;
+		display: flex;
+		gap: 12px;
+	}
+}
+
+.woocommerce-woopayments-payout-details-error__icon {
+	fill: #cc1818;
+	flex-shrink: 0;
+	height: 24px;
+	width: 24px;
+}
