@@ -244,7 +244,12 @@ describe( 'WooPayments disputes list columns', () => {
 		expect( getCell( due, 'reason' ) ).toHaveTextContent(
 			'Transaction unauthorized'
 		);
-		expect( getCell( due, 'source' ) ).toHaveTextContent( 'Visa' );
+		// Client 11.1.0 `disputes/index.tsx:280-290`: the card brand logo.
+		expect(
+			within( getCell( due, 'source' ) ).getByRole( 'img', {
+				name: 'Visa',
+			} )
+		).toBeInTheDocument();
 		expect(
 			within( getCell( due, 'order' ) ).getByRole( 'link', {
 				name: '5506',

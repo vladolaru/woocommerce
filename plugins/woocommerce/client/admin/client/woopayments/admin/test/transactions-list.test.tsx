@@ -368,8 +368,14 @@ describe( 'WooPayments transactions list columns', () => {
 				name: '3175',
 			} )
 		).toHaveAttribute( 'href', order.subscriptions[ 0 ].url );
+		// Client 11.1.0 `transactions/list/index.tsx:473-497`: the brand logo, then the last four.
+		expect(
+			within( getCell( charge, 'source' ) ).getByRole( 'img', {
+				name: 'Visa',
+			} )
+		).toBeInTheDocument();
 		expect( getCell( charge, 'source' ) ).toHaveTextContent(
-			'Visa •••• 4242'
+			/^•••• 4242$/
 		);
 		expect(
 			within( getCell( charge, 'customer_name' ) ).getByRole( 'link', {

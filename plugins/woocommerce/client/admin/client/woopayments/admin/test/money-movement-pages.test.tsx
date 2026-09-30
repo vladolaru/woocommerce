@@ -1468,8 +1468,12 @@ describe( 'WooPayments money movement pages', () => {
 			expect(
 				within( cardRow ).getByText( '$23.97' )
 			).toBeInTheDocument();
+			// Client 11.1.0 `transactions/list/index.tsx:473-497`: the brand logo, then the last four.
 			expect(
-				within( cardRow ).getByText( 'Visa •••• 4242' )
+				within( cardRow ).getByRole( 'img', { name: 'Visa' } )
+			).toBeInTheDocument();
+			expect(
+				within( cardRow ).getByText( '•••• 4242' )
 			).toBeInTheDocument();
 
 			expect(
@@ -1488,15 +1492,22 @@ describe( 'WooPayments money movement pages', () => {
 			).toBeInTheDocument();
 
 			expect(
-				screen.getByText( 'Giropay DE89370400440532013000' )
+				screen.getByRole( 'img', { name: 'Giropay' } )
 			).toBeInTheDocument();
 			expect(
-				screen.getByText( 'Przelewy24 (P24) ING' )
+				screen.getByText( 'DE89370400440532013000' )
 			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'img', { name: 'Przelewy24 (P24)' } )
+			).toBeInTheDocument();
+			expect( screen.getByText( 'ING' ) ).toBeInTheDocument();
+			// No logo for an unknown method: the text stays.
 			expect(
 				screen.getByText( 'Custom method bank-42' )
 			).toBeInTheDocument();
-			expect( screen.getByText( 'Afterpay' ) ).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'img', { name: 'Afterpay' } )
+			).toBeInTheDocument();
 		} finally {
 			toLocaleStringSpy.mockRestore();
 		}

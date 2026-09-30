@@ -19,7 +19,10 @@ import {
 	getTransactionListAmount,
 	getTransactionListFees,
 	getTransactionListPaymentMethod,
+	getTransactionListPaymentMethodDetail,
 	getTransactionListType,
+	getTransactionSourceIconUrl,
+	getTransactionSourceLabel,
 	getTransactionTypeLabel,
 } from './utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
@@ -152,6 +155,43 @@ export const OrderLink = ( {
 	}
 
 	return <a href={ order.url }>{ String( order.number ) }</a>;
+};
+
+/**
+ * A source's logo, then its detail, such as "•••• 4242". Without a logo, the text label.
+ * Client 11.1.0 `transactions/list/index.tsx:473-497` and `disputes/index.tsx:280-290`.
+ *
+ * @param props        The component props.
+ * @param props.source The source, such as `visa` or `sepa_debit`.
+ * @param props.detail The text after the logo.
+ * @param props.text   The text to show when there is no logo.
+ */
+export const PaymentSource = ( {
+	source,
+	detail = '',
+	text,
+}: {
+	source: string;
+	detail?: string;
+	text?: string;
+} ) => {
+	const iconUrl = getTransactionSourceIconUrl( source );
+	const label = getTransactionSourceLabel( source );
+
+	if ( ! iconUrl ) {
+		return <>{ text || label }</>;
+	}
+
+	return (
+		<span className="woocommerce-woopayments-money-movement__card-summary">
+			<img
+				className="woocommerce-woopayments-money-movement__card-brand"
+				src={ iconUrl }
+				alt={ label }
+			/>
+			{ detail && <span>{ detail }</span> }
+		</span>
+	);
 };
 
 const CustomerLink = ( {
@@ -421,8 +461,19 @@ export const getTransactionListFields = (
 			filterBy: false as const,
 			getValue: ( { item }: FieldRenderProps ) =>
 				getTransactionListPaymentMethod( item ),
-			render: ( { item }: FieldRenderProps ) =>
-				getTransactionListPaymentMethod( item ),
+			render: ( { item }: FieldRenderProps ) => {
+				const text = getTransactionListPaymentMethod( item );
+
+				return item.source && text !== '-' ? (
+					<PaymentSource
+						source={ item.source }
+						detail={ getTransactionListPaymentMethodDetail( item ) }
+						text={ text }
+					/>
+				) : (
+					text
+				);
+			},
 		},
 		{
 			id: 'customer_name',

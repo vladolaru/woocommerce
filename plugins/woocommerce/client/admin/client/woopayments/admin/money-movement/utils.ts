@@ -7,7 +7,10 @@ import { numberFormat } from '@woocommerce/number';
 /**
  * Internal dependencies
  */
-import { getPaymentMethodDefinition } from '../../settings/payment-method-definitions';
+import {
+	CARD_BRANDS,
+	getPaymentMethodDefinition,
+} from '../../settings/payment-method-definitions';
 export {
 	formatAmount,
 	formatExplicitCurrency,
@@ -340,6 +343,38 @@ export const getTransactionSourceLabel = ( source: string ) =>
 	TRANSACTION_SOURCE_LABELS[ source ] ||
 	getPaymentMethodDefinition( source )?.label ||
 	formatLabel( source );
+
+/**
+ * The logo for a transaction or dispute source, the card brand or the payment method,
+ * standing in for the client's `payment-method__brand--{source}` sprite.
+ *
+ * @param source The source, such as `visa` or `sepa_debit`.
+ */
+export const getTransactionSourceIconUrl = ( source: string ) =>
+	CARD_BRANDS.find( ( brand ) => brand.id === source )?.iconUrl ||
+	getPaymentMethodDefinition( source )?.iconUrl;
+
+/**
+ * The text the client shows after the source logo in the transactions list.
+ * Client 11.1.0 `transactions/list/index.tsx:86-115` `getPaymentSourceDetails()`.
+ *
+ * @param transaction The transaction.
+ */
+export const getTransactionListPaymentMethodDetail = (
+	transaction: WooPaymentsTransaction
+) => {
+	const { source, source_identifier: identifier } = transaction;
+
+	if ( ! source || ! identifier ) {
+		return '';
+	}
+
+	if ( source === 'p24' ) {
+		return P24_BANK_LABELS[ identifier ] || '';
+	}
+
+	return source === 'giropay' ? identifier : `•••• ${ identifier }`;
+};
 
 export const getTransactionListPaymentMethod = (
 	transaction: WooPaymentsTransaction

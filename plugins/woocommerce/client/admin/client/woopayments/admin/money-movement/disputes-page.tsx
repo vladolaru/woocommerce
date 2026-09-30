@@ -45,9 +45,8 @@ import {
 	getDisputeId,
 	getErrorMessage,
 	getTransactionDetailsRoute,
-	getTransactionSourceLabel,
 } from './utils';
-import { OrderLink } from './transactions-list-fields';
+import { OrderLink, PaymentSource } from './transactions-list-fields';
 import { ExportButton, ListNotice, LiveStatusMessage } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
@@ -355,10 +354,13 @@ export const WooPaymentsDisputesPage = () => {
 				label: __( 'Source', 'woocommerce' ),
 				enableHiding: false,
 				enableSorting: false,
+				// Client 11.1.0 `disputes/index.tsx:280-290`: the card brand logo.
 				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					item.source
-						? getTransactionSourceLabel( item.source )
-						: '-',
+					item.source ? (
+						<PaymentSource source={ item.source } />
+					) : (
+						'-'
+					),
 			},
 			{
 				id: 'order',
