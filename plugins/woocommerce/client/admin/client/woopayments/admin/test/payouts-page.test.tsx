@@ -1,6 +1,8 @@
 /**
  * External dependencies
  */
+import fs from 'fs';
+import path from 'path';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
@@ -13,7 +15,9 @@ import { summaryItem } from './helpers/table-summary';
 import { WooPaymentsPayouts } from '../payouts';
 import {
 	getWooPaymentsDeposits,
+	getWooPaymentsDepositsOverview,
 	getWooPaymentsDepositsSummary,
+	getWooPaymentsOverviewShell,
 } from '../overview/data';
 import type { WooPaymentsDeposit } from '../overview/types';
 import {
@@ -28,6 +32,9 @@ import {
 jest.mock( '../overview/data', () => ( {
 	getWooPaymentsDeposits: jest.fn(),
 	getWooPaymentsDepositsSummary: jest.fn(),
+	// The payouts page notices' requests; left pending, so no notice shows.
+	getWooPaymentsDepositsOverview: jest.fn( () => new Promise( () => {} ) ),
+	getWooPaymentsOverviewShell: jest.fn( () => new Promise( () => {} ) ),
 } ) );
 
 jest.mock( '../../promotions/spotlight', () => ( {
@@ -271,4 +278,36 @@ describe( 'WooPaymentsPayouts', () => {
 			);
 		}
 	);
+	// Client 11.1.0 `deposits/index.tsx:61-97,154`: the schedule notice sits above the payouts list.
+	it( 'shows the payout schedule notice from the recorded account data', async () => {
+		const readRecordedResponse = ( file: string ) =>
+			JSON.parse(
+				fs.readFileSync(
+					path.join( __dirname, 'fixtures', file ),
+					'utf8'
+				)
+			).response;
+		( getWooPaymentsDepositsOverview as jest.Mock ).mockResolvedValue(
+			readRecordedResponse( 'recorded-deposits-overview-all.json' )
+		);
+		( getWooPaymentsOverviewShell as jest.Mock ).mockResolvedValue(
+			readRecordedResponse( 'recorded-overview-shell.json' )
+		);
+		mockGetDeposits.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetDepositsSummary.mockResolvedValue( { count: 0 } );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/payouts' ] }>
+				<WooPaymentsPayouts />
+			</MemoryRouter>
+		);
+
+		expect(
+			( await screen.findByText( 'every day' ) ).closest(
+				'.components-notice'
+			)
+		).toHaveTextContent(
+			'Available funds are automatically dispatched every day.'
+		);
+	} );
 } );

@@ -28,6 +28,9 @@ type MockField = {
 jest.mock( '../overview/data', () => ( {
 	getWooPaymentsDeposits: jest.fn(),
 	getWooPaymentsDepositsSummary: jest.fn(),
+	// The payouts page notices' requests; left pending, so no notice shows.
+	getWooPaymentsDepositsOverview: jest.fn( () => new Promise( () => {} ) ),
+	getWooPaymentsOverviewShell: jest.fn( () => new Promise( () => {} ) ),
 } ) );
 
 jest.mock( '@woocommerce/tracks', () => ( {

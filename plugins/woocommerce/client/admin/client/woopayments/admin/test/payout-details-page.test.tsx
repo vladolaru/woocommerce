@@ -56,6 +56,9 @@ jest.mock( '../overview/data', () => ( {
 	getWooPaymentsDepositsSummary: jest.fn(),
 	getWooPaymentsDepositsExportUrl: jest.fn(),
 	requestWooPaymentsDepositsExport: jest.fn(),
+	// The payouts page notices' requests; left pending, so no notice shows.
+	getWooPaymentsDepositsOverview: jest.fn( () => new Promise( () => {} ) ),
+	getWooPaymentsOverviewShell: jest.fn( () => new Promise( () => {} ) ),
 } ) );
 
 jest.mock( '../money-movement/data', () => ( {

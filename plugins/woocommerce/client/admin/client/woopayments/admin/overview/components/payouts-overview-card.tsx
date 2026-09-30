@@ -11,12 +11,10 @@ import {
 	Icon,
 	Notice,
 } from '@wordpress/components';
-import { createInterpolateElement } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { calendar } from '@wordpress/icons';
 import { addQueryArgs } from '@wordpress/url';
 import { recordEvent } from '@woocommerce/tracks';
-import moment from 'moment';
 import type { ReactNode } from 'react';
 
 /**
@@ -31,17 +29,14 @@ import {
 	formatPayoutSiteDate,
 	formatWooPaymentsAmount,
 	getAmountForCurrency,
-	getMonthlyAnchorLabel,
 	getSelectedBalanceCurrency,
 } from '../utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
 import { getPayoutStatusLabel } from '../../payout-status';
 import { formatExplicitCurrency } from '../../currency';
-import { HelpPopover } from './help-popover';
+import { getPayoutScheduleText, PayoutSchedule } from './payout-schedule';
 import { StatusChip, type StatusChipType } from './status-chip';
 
-const PAYOUT_SCHEDULE_DOCS_URL =
-	'https://woocommerce.com/document/woopayments/payouts/payout-schedule/';
 const SUSPENDED_PAYOUTS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/why-payouts-suspended/';
 const NEW_ACCOUNT_WAITING_PERIOD_DOCS_URL =
@@ -53,60 +48,6 @@ const MINIMUM_PAYOUT_DOCS_URL =
 const PAYOUTS_HEADING_ID = 'woocommerce-woopayments-payouts-heading';
 const PENDING_FUNDS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/payout-schedule/#pending-funds';
-
-// Client 11.1.0 `components/deposits-overview/deposit-schedule.tsx:47-51`: the English anchor names the day, moment's current locale (the site's, from WordPress) names it on screen.
-const formatScheduleAnchor = ( weeklyAnchor: string ) =>
-	moment()
-		.locale( 'en' )
-		.day( weeklyAnchor )
-		.locale( moment.locale() )
-		.format( 'dddd' );
-
-// Client 11.1.0 `components/deposits-overview/deposit-schedule.tsx:29-104`.
-const getScheduleText = ( overview: WooPaymentsDepositsOverview ) => {
-	const schedule = overview.account.deposits_schedule;
-	const interval = schedule?.interval;
-	let message = '';
-
-	if ( ! interval || interval === 'manual' ) {
-		return null;
-	}
-
-	if ( interval === 'daily' ) {
-		message = __(
-			'Available funds are automatically dispatched <strong>every day</strong>.',
-			'woocommerce'
-		);
-	} else if ( interval === 'weekly' && schedule.weekly_anchor ) {
-		message = sprintf(
-			/* translators: %s: Day of the week. */
-			__(
-				'Available funds are automatically dispatched <strong>every %s</strong>.',
-				'woocommerce'
-			),
-			formatScheduleAnchor( schedule.weekly_anchor )
-		);
-	} else if ( interval === 'monthly' && schedule.monthly_anchor ) {
-		message =
-			schedule.monthly_anchor === 31
-				? __(
-						'Available funds are automatically dispatched <strong>on the last day of every month</strong>.',
-						'woocommerce'
-				  )
-				: sprintf(
-						/* translators: %s: Day of the month. */
-						__(
-							'Available funds are automatically dispatched <strong>on the %s of every month</strong>.',
-							'woocommerce'
-						),
-						getMonthlyAnchorLabel( schedule.monthly_anchor )
-				  );
-	}
-
-	return message
-		? createInterpolateElement( message, { strong: <strong /> } )
-		: null;
-};
 
 const PayoutNotice = ( { children }: { children: ReactNode } ) => (
 	<Notice status="warning" isDismissible={ false }>
@@ -379,9 +320,9 @@ export const PayoutsOverviewCard = ( {
 	const isBelowMinimumPayout =
 		availableFunds > 0 && availableFunds < minimumPayoutAmount;
 	const hasNegativeBalance = totalFunds < 0;
-	const scheduleText = isPayoutsUnrestricted
-		? getScheduleText( overview )
-		: null;
+	const hasScheduleText =
+		isPayoutsUnrestricted &&
+		!! getPayoutScheduleText( overview.account.deposits_schedule );
 	const hasErroredExternalAccount =
 		overview.account.default_external_accounts?.some(
 			( externalAccount ) =>
@@ -417,34 +358,13 @@ export const PayoutsOverviewCard = ( {
 			footer={ renderFooter( canChangePayoutSchedule ) }
 			summary={
 				<>
-					{ scheduleText && (
+					{ hasScheduleText && (
 						<CardBody className="woocommerce-woopayments-overview__schedule">
-							{ /* Its own element: an interpolated fragment among siblings trips React's missing-key warning. */ }
-							<span>{ scheduleText }</span>
-							<HelpPopover
-								label={ __(
-									'Payout schedule tooltip',
-									'woocommerce'
-								) }
-							>
-								{ createInterpolateElement(
-									__(
-										'The timing and amount of your payouts may vary due to several factors. Check out our <a>payout schedule guide</a> for details.',
-										'woocommerce'
-									),
-									{
-										a: (
-											<ExternalLink
-												href={
-													PAYOUT_SCHEDULE_DOCS_URL
-												}
-											>
-												<></>
-											</ExternalLink>
-										),
-									}
-								) }
-							</HelpPopover>
+							<PayoutSchedule
+								depositsSchedule={
+									overview.account.deposits_schedule
+								}
+							/>
 						</CardBody>
 					) }
 

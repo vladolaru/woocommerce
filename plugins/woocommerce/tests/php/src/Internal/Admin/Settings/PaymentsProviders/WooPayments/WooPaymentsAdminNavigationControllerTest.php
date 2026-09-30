@@ -75,6 +75,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['woopayments-vat-details-redirect'], $_GET['from'], $_SERVER['HTTP_REFERER'] );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'wcpay_onboarding_test_mode' );
+		delete_option( 'wcpay_next_deposit_notice_dismissed' );
 
 		parent::tearDown();
 	}
@@ -284,6 +285,32 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$settings = $sut->preload_shared_settings( array() );
 
 		$this->assertSame( $manual_capture, $settings['woopaymentsSettings']['isManualCaptureEnabled'] );
+	}
+
+	/**
+	 * @testdox Should preload whether the payouts page schedule notice is dismissed (stored "$stored").
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1060` (`isNextDepositNoticeDismissed`) and
+	 * `class-wc-payments-features.php:391`, which reads `'1' === get_option( 'wcpay_next_deposit_notice_dismissed', '0' )`.
+	 *
+	 * @testWith ["1", true]
+	 *           ["0", false]
+	 *           [null, false]
+	 *
+	 * @param string|null $stored   Stored option value, or null when the option is absent.
+	 * @param bool        $expected Expected preloaded flag.
+	 */
+	public function test_preloads_next_payout_notice_dismissal( ?string $stored, bool $expected ): void {
+		if ( null !== $stored ) {
+			update_option( 'wcpay_next_deposit_notice_dismissed', $stored );
+		}
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller( true );
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame( $expected, $settings['woopaymentsSettings']['isNextDepositNoticeDismissed'] );
 	}
 
 	/**

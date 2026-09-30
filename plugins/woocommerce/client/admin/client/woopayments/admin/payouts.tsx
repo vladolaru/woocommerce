@@ -65,6 +65,7 @@ import {
 import { StatusChip } from './overview/components/status-chip';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 import { WooPaymentsTestModeNotice } from './test-mode-notice';
+import { WooPaymentsPayoutsNotices } from './payouts-notices';
 import { SpotlightPromotion } from '../promotions/spotlight';
 import './style.scss';
 
@@ -493,6 +494,8 @@ export const WooPaymentsPayouts = () => {
 		<div className="woocommerce-woopayments-payouts">
 			{ /* Client 11.1.0 deposits/index.tsx:153. */ }
 			<WooPaymentsTestModeNotice currentPage="deposits" />
+			{ /* Client 11.1.0 deposits/index.tsx:154-155. */ }
+			<WooPaymentsPayoutsNotices />
 			<SpotlightPromotion />
 			<WooPaymentsListFilters filters={ listFilters } />
 			<section aria-busy={ isLoading }>
