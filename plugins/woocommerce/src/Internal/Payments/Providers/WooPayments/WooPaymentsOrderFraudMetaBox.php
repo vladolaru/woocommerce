@@ -394,11 +394,12 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 			? __( 'The card issuer flagged this payment as likely fraudulent. Refunding it now can prevent a dispute.', 'woocommerce' )
 			: __( 'This payment was refunded or disputed, so the warning is no longer actionable.', 'woocommerce' );
 
-		echo '<div class="wcpay-early-fraud-warning wcpay-early-fraud-warning--' . esc_attr( $actionable ? 'actionable' : 'resolved' ) . '">';
-		echo '<p class="wcpay-early-fraud-warning__status"><span class="wcpay-fraud-risk-meta-icon wcpay-fraud-risk-meta-icon--' . esc_attr( $actionable ? 'review' : 'allow' ) . '" aria-hidden="true"></span> ' . esc_html( $status ) . '</p>';
+		// Client 11.1.0 `class-order-fraud-and-risk-meta-box.php:327-338`: shield while actionable, check once resolved.
+		echo '<div class="wcpay-fraud-risk-efw wcpay-fraud-risk-efw--' . esc_attr( $actionable ? 'actionable' : 'resolved' ) . '">';
+		echo '<p class="wcpay-fraud-risk-efw__title">' . $this->get_status_icon( $actionable ? 'wcpay-fraud-risk-meta-icon--review' : 'wcpay-fraud-risk-meta-icon--allow' ) . ' ' . esc_html( $status ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Fixed icon markup.
 		if ( '' !== $reason ) {
 			printf(
-				'<p>%s</p>',
+				'<p class="wcpay-fraud-risk-efw__reason">%s</p>',
 				esc_html(
 					sprintf(
 						/* translators: %s: early fraud warning reason. */
@@ -456,8 +457,23 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	 * @param string $description  Description text.
 	 */
 	private function print_status_with_description( string $status_class, string $icon_class, string $status, string $description ): void {
-		echo '<p class="' . esc_attr( $status_class ) . '"><span class="wcpay-fraud-risk-meta-icon ' . esc_attr( $icon_class ) . '" aria-hidden="true"></span> ' . esc_html( $status ) . '</p>';
+		echo '<p class="' . esc_attr( $status_class ) . '">' . $this->get_status_icon( $icon_class ) . ' ' . esc_html( $status ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Fixed icon markup.
 		echo '<p>' . esc_html( $description ) . '</p>';
+	}
+
+	/**
+	 * Get the status icon: the client's green check for passed outcomes and its shield for held or blocked ones.
+	 *
+	 * Client 11.1.0 draws them from its own SVGs (`assets/images/icons/check-green.svg`, `shield-stroke-*.svg`);
+	 * native uses the matching WordPress admin dashicons.
+	 *
+	 * @param string $icon_class Status icon class.
+	 * @return string
+	 */
+	private function get_status_icon( string $icon_class ): string {
+		$dashicon = 'wcpay-fraud-risk-meta-icon--allow' === $icon_class ? 'dashicons-yes' : 'dashicons-shield-alt';
+
+		return '<span class="dashicons ' . esc_attr( $dashicon ) . ' wcpay-fraud-risk-meta-icon ' . esc_attr( $icon_class ) . '" aria-hidden="true"></span>';
 	}
 
 	/**
@@ -576,28 +592,32 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	padding: 8px 12px;
 }
 
-.wcpay-early-fraud-warning {
+.wcpay-fraud-risk-efw {
 	border-bottom: 1px solid #ddd;
 	padding: 8px 12px;
 }
 
-.wcpay-early-fraud-warning > p {
+.wcpay-fraud-risk-efw > p {
 	margin: 0 0 6px;
 }
 
-.wcpay-early-fraud-warning > p:last-child {
+.wcpay-fraud-risk-efw > p:last-child {
 	margin-bottom: 0;
 }
 
-.wcpay-early-fraud-warning__status {
+.wcpay-fraud-risk-efw__title {
 	font-weight: 600;
 }
 
-.wcpay-early-fraud-warning--actionable .wcpay-early-fraud-warning__status {
-	color: #b16202;
+.wcpay-fraud-risk-efw__reason {
+	color: #50575e;
 }
 
-.wcpay-early-fraud-warning--resolved .wcpay-early-fraud-warning__status {
+.wcpay-fraud-risk-efw--actionable .wcpay-fraud-risk-efw__title {
+	color: #b26200;
+}
+
+.wcpay-fraud-risk-efw--resolved .wcpay-fraud-risk-efw__title {
 	color: #008a20;
 }
 
@@ -637,9 +657,12 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	background-color: #008a20;
 }
 
-.wcpay-fraud-risk-level--elevated .wcpay-fraud-risk-level__title,
-.wcpay-fraud-risk-meta-review {
+.wcpay-fraud-risk-level--elevated .wcpay-fraud-risk-level__title {
 	color: #b16202;
+}
+
+.wcpay-fraud-risk-meta-review {
+	color: #b26200;
 }
 
 .wcpay-fraud-risk-level--elevated .wcpay-fraud-risk-level__bar {
@@ -687,21 +710,12 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	font-weight: 600;
 }
 
-.wcpay-fraud-risk-meta-icon {
-	background: currentColor;
-	border-radius: 50%;
-	display: inline-block;
-	height: 11px;
-	margin-right: 5px;
-	vertical-align: -1px;
-	width: 11px;
-}
-
-.wcpay-fraud-risk-meta-icon--review {
-	background: transparent;
-	border: 2px solid currentColor;
-	height: 9px;
-	width: 9px;
+.wcpay-fraud-risk-meta-icon.dashicons {
+	font-size: 16px;
+	height: 16px;
+	margin-inline-end: 3px;
+	vertical-align: text-bottom;
+	width: 16px;
 }
 ';
 	}
