@@ -7,8 +7,9 @@
  */
 import apiFetch from '@wordpress/api-fetch';
 import { Notice } from '@wordpress/components';
+import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { useEffect, useState } from '@wordpress/element';
-import { __, sprintf } from '@wordpress/i18n';
+import { __, _n, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
 
 /**
@@ -25,7 +26,6 @@ import {
 	isDisputeRefundable,
 } from '../../woopayments/admin/money-movement/dispute-utils';
 import {
-	formatDate,
 	formatExplicitCurrency,
 	formatDisputeReasonLabel,
 	getTransactionDetailsRoute,
@@ -71,6 +71,29 @@ const getBlockingDispute = ( disputes: WooPaymentsDispute[] ) => {
 		).find( Boolean ) || blockers[ 0 ]
 	);
 };
+
+// Client 11.1.0 `utils/date-time.ts` `formatDateTimeFromString()`: the site's date format and timezone.
+const formatDueDate = ( dueBy: number ) =>
+	dateI18n(
+		getDateSettings().formats.date,
+		new Date( dueBy * 1000 ).toISOString(),
+		undefined
+	);
+
+// Client 11.1.0 `components/disputed-order-notice/index.js:209-218,440-452`.
+const getDaysLeft = ( countdownDays: number ) =>
+	countdownDays < 1
+		? __( '(Last day today)', 'woocommerce' )
+		: sprintf(
+				/* translators: %s: number of days left to respond to the dispute. */
+				_n(
+					'(%s day left)',
+					'(%s days left)',
+					countdownDays,
+					'woocommerce'
+				),
+				String( countdownDays )
+		  );
 
 const getDetailsUrl = ( chargeId: string ) =>
 	getSettingsPaymentsProviderRouteUrl(
@@ -134,7 +157,8 @@ const AwaitingResponseNotice = ( {
 		countdownDays < 1
 			? __( 'Respond today', 'woocommerce' )
 			: __( 'Respond now', 'woocommerce' );
-	const formattedDueBy = formatDate( earliestDueBy );
+	const formattedDueBy = formatDueDate( earliestDueBy );
+	const isUrgent = countdownDays < 7;
 	const status = countdownDays < 3 ? 'error' : 'warning';
 	const isSingle = disputes.length === 1;
 
@@ -160,6 +184,46 @@ const AwaitingResponseNotice = ( {
 			shouldUseExplicitPrice
 		);
 		const reason = formatDisputeReasonLabel( dispute.reason );
+
+		// Client 11.1.0 `components/disputed-order-notice/index.js:185-228,297-306`.
+		if ( isUrgent ) {
+			const urgentMessage = isInquiry
+				? sprintf(
+						/* translators: 1: disputed amount, 2: dispute reason, 3: response due date. */
+						__(
+							"Please resolve the inquiry on this order of %1$s labeled '%2$s' by %3$s.",
+							'woocommerce'
+						),
+						formattedAmount,
+						reason,
+						formattedDueBy
+				  )
+				: sprintf(
+						/* translators: 1: disputed amount, 2: dispute reason, 3: response due date. */
+						__(
+							"Please resolve the dispute on this order of %1$s labeled '%2$s' by %3$s.",
+							'woocommerce'
+						),
+						formattedAmount,
+						reason,
+						formattedDueBy
+				  );
+
+			return (
+				<Notice status={ status } isDismissible={ false }>
+					<div>
+						<strong>{ urgentMessage }</strong>{ ' ' }
+						{ getDaysLeft( countdownDays ) }
+						<NoticeAction
+							href={ detailsUrl }
+							label={ actionLabel }
+							countdownDays={ countdownDays }
+						/>
+					</div>
+				</Notice>
+			);
+		}
+
 		const message = isInquiry
 			? sprintf(
 					/* translators: 1: disputed amount, 2: dispute reason. */
@@ -244,6 +308,7 @@ const AwaitingResponseNotice = ( {
 					__( 'Please respond before %s.', 'woocommerce' ),
 					formattedDueBy
 				) }
+				{ isUrgent ? ` ${ getDaysLeft( countdownDays ) }` : '' }
 				<NoticeAction
 					href={ detailsUrl }
 					label={ actionLabel }

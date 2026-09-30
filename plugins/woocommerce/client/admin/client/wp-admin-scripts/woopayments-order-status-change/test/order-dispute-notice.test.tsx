@@ -62,7 +62,8 @@ describe( 'WooPayments order dispute notice', () => {
 			)
 		).toBeInTheDocument();
 		expect(
-			screen.getAllByText( /Please respond before Oct 28, 2023/ ).length
+			screen.getAllByText( /Please respond before October 28, 2023/ )
+				.length
 		).toBeGreaterThan( 0 );
 		expect(
 			screen.getByRole( 'link', { name: 'Respond now' } )
@@ -189,7 +190,7 @@ describe( 'WooPayments order dispute notice', () => {
 		expect(
 			(
 				await screen.findAllByText(
-					/Please respond before Oct 30, 2023/
+					/Please respond before October 30, 2023/
 				)
 			).length
 		).toBeGreaterThan( 0 );
@@ -294,7 +295,8 @@ describe( 'WooPayments order dispute notice', () => {
 			)
 		).toBeInTheDocument();
 		expect(
-			screen.getAllByText( /Please respond before Oct 28, 2023/ ).length
+			screen.getAllByText( /Please respond before October 28, 2023/ )
+				.length
 		).toBeGreaterThan( 0 );
 	} );
 
@@ -348,5 +350,107 @@ describe( 'WooPayments order dispute notice', () => {
 			expect( mockApiFetch ).toHaveBeenCalledTimes( 1 )
 		);
 		expect( container ).toBeEmptyDOMElement();
+	} );
+	// Client 11.1.0 `components/disputed-order-notice/index.js:147-152,228-276,297-306`: under seven days
+	// left the single-dispute notice switches to the urgent wording with a days-left countdown.
+	describe( 'when the response deadline is less than a week away', () => {
+		const renderSingle = ( status: string, dueBy: number ) => {
+			mockApiFetch.mockResolvedValue( {
+				disputes: [
+					{
+						id: 'dp_urgent',
+						status,
+						reason: 'fraudulent',
+						amount: 1000,
+						currency: 'usd',
+						evidence_details: { due_by: dueBy },
+					},
+				],
+			} );
+
+			render(
+				<WooPaymentsOrderDisputeNotice
+					chargeId="ch_urgent"
+					onDisableOrderRefund={ jest.fn() }
+				/>
+			);
+		};
+
+		it( 'asks to resolve the dispute by its deadline and counts the days left', async () => {
+			// 2023-10-25T12:00:00Z, 5.5 days after "now".
+			renderSingle( 'needs_response', 1698235200 );
+
+			const message = await screen.findByText(
+				"Please resolve the dispute on this order of $10.00 labeled 'Transaction unauthorized' by October 25, 2023."
+			);
+			expect( message.tagName ).toBe( 'STRONG' );
+			expect( message.parentElement ).toHaveTextContent(
+				"Please resolve the dispute on this order of $10.00 labeled 'Transaction unauthorized' by October 25, 2023. (5 days left)"
+			);
+			expect(
+				screen.getByRole( 'link', { name: 'Respond now' } )
+			).toBeInTheDocument();
+		} );
+
+		it( 'uses the inquiry wording and the singular day', async () => {
+			// 2023-10-21T12:00:00Z, 1.5 days after "now".
+			renderSingle( 'warning_needs_response', 1697889600 );
+
+			const message = await screen.findByText(
+				"Please resolve the inquiry on this order of $10.00 labeled 'Transaction unauthorized' by October 21, 2023."
+			);
+			expect( message.parentElement ).toHaveTextContent( '(1 day left)' );
+		} );
+
+		it( 'says it is the last day when less than a day is left', async () => {
+			// 2023-10-20T12:00:00Z, half a day after "now".
+			renderSingle( 'needs_response', 1697803200 );
+
+			const message = await screen.findByText(
+				"Please resolve the dispute on this order of $10.00 labeled 'Transaction unauthorized' by October 20, 2023."
+			);
+			expect( message.parentElement ).toHaveTextContent(
+				'(Last day today)'
+			);
+			expect(
+				screen.getByRole( 'link', { name: 'Respond today' } )
+			).toBeInTheDocument();
+		} );
+
+		it( 'adds the countdown to the consolidated notice', async () => {
+			// Client `index.js:437-455`.
+			mockApiFetch.mockResolvedValue( {
+				disputes: [
+					{
+						id: 'dp_first',
+						status: 'needs_response',
+						amount: 1000,
+						currency: 'usd',
+						evidence_details: { due_by: 1698235200 },
+					},
+					{
+						id: 'dp_second',
+						status: 'needs_response',
+						amount: 500,
+						currency: 'usd',
+						evidence_details: { due_by: 1698672000 },
+					},
+				],
+			} );
+
+			render(
+				<WooPaymentsOrderDisputeNotice
+					chargeId="ch_urgent_many"
+					onDisableOrderRefund={ jest.fn() }
+				/>
+			);
+
+			const message = await screen.findByText(
+				'This order has 2 payment disputes totaling $15.00.'
+			);
+			expect( message.parentElement ).toHaveTextContent(
+				'This order has 2 payment disputes totaling $15.00. Please respond before October 25, 2023. (5 days left)'
+			);
+		} );
 	} );
 } );
