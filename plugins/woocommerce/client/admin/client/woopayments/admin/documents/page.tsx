@@ -42,6 +42,7 @@ import { formatDate } from '../money-movement/utils';
 import { usePersistedHiddenFields } from '../money-movement/view-preferences';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
+import '../dataviews.scss';
 
 type DocumentsAccountState = {
 	enabled: boolean;

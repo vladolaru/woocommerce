@@ -6,6 +6,11 @@ import type { ReactNode } from 'react';
 // @ts-expect-error - Use the WordPress-bundled DataViews entry in wp-admin builds.
 import { DataViews, type Field, type View } from '@wordpress/dataviews/wp';
 
+/**
+ * Internal dependencies
+ */
+import '../dataviews.scss';
+
 export type WooPaymentsMoneyMovementDataViewsProps<
 	Item extends { id?: string },
 > = {

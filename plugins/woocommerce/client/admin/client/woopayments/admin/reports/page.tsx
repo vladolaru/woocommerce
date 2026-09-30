@@ -48,6 +48,7 @@ import type {
 	ReportsFeesSummary,
 	ReportsTab,
 } from './types';
+import '../dataviews.scss';
 import './style.scss';
 import {
 	formatExplicitCurrency,
