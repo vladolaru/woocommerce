@@ -646,7 +646,8 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		).toBeInTheDocument();
 		expect(
 			screen.getByText(
-				/The outcome of this dispute will be determined by Visa./
+				'The outcome of this dispute will be determined by Visa.',
+				{ selector: '.components-notice__content strong' }
 			)
 		).toBeInTheDocument();
 	} );
@@ -1217,6 +1218,56 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 				name: 'Thanks for sharing your response!',
 			} )
 		).toBeInTheDocument();
+		// Client 11.1.0 new-evidence/confirmation-screen.tsx.
+		expect(
+			screen.getByRole( 'img', {
+				name: 'Evidence submitted successfully',
+			} )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"Your evidence has been sent to the cardholder's bank for review."
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'What’s next?' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'The cardholder’s bank will review your response. Please be patient — this usually takes a few weeks, but in some cases it can take up to 3 months.'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: 'Disputes area' } )
+		).toHaveAttribute(
+			'href',
+			expect.stringContaining( 'path=%2Fwoopayments%2Fdisputes' )
+		);
+		expect(
+			screen.getByRole( 'heading', { name: 'Useful resources' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', {
+				name: /^following the advice in our guide/,
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/fraud-and-disputes/preventing-disputes/'
+		);
+		expect(
+			screen.getByRole( 'link', { name: /^our resources/ } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#how-they-work'
+		);
+		expect(
+			screen.getByRole( 'link', { name: 'View submitted dispute' } )
+		).toHaveAttribute(
+			'href',
+			expect.stringContaining(
+				'path=%2Fwoopayments%2Fdisputes%2Fchallenge&id=dp_test'
+			)
+		);
 		expect( mockRecordEvent ).toHaveBeenCalledWith(
 			'wcpay_dispute_submit_evidence_clicked',
 			expect.objectContaining( {

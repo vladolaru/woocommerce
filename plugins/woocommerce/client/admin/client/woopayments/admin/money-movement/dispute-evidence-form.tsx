@@ -63,6 +63,7 @@ import {
 	getDisputeId,
 	getErrorMessage,
 } from './utils';
+import { WC_ASSET_URL } from '~/utils/admin-settings';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import { useGetSettings } from '../../settings/data/hooks';
 import { OrderLink } from './transactions-list-fields';
@@ -210,6 +211,32 @@ const getStepLabel = ( step: EvidenceStep ) => {
 
 // Client 11.1.0 `components/inline-notice`: the info-outline gridicon; the shared typings omit its class name.
 const OutcomeIcon = InfoOutlineIcon as ElementType< { className?: string } >;
+
+// Client 11.1.0 new-evidence/index.tsx:1035-1073 and confirmation-screen.tsx:168-196: who decides the outcome.
+const getOutcomeNoticeText = (
+	isVisaCompliance: boolean,
+	bankName?: string | null
+) => {
+	if ( isVisaCompliance ) {
+		return __(
+			'<strong>The outcome of this dispute will be determined by Visa.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.',
+			'woocommerce'
+		);
+	}
+	return bankName
+		? sprintf(
+				/* translators: %s: the customer's bank. */
+				__(
+					'<strong>The outcome of this dispute will be determined by %s.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.',
+					'woocommerce'
+				),
+				bankName
+		  )
+		: __(
+				"<strong>The outcome of this dispute will be determined by the cardholder's bank.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.",
+				'woocommerce'
+		  );
+};
 
 // Client 11.1.0 new-evidence/index.tsx:473-479: the stepper labels.
 const getStepTabLabel = ( step: EvidenceStep ) => {
@@ -859,75 +886,145 @@ export const DisputeEvidenceForm = ( {
 				</div>
 			) }
 			{ currentStep === 'confirmation' ? (
+				// Client 11.1.0 `new-evidence/confirmation-screen.tsx`.
 				<div className="woocommerce-woopayments-dispute-evidence__confirmation">
-					<h3 ref={ stepHeadingRef } tabIndex={ -1 }>
-						{ getStepLabel( 'confirmation' ) }
-					</h3>
-					<p>
-						{ isVisaCompliance
-							? __(
-									'Your response has been submitted under Visa’s compliance process.',
-									'woocommerce'
-							  )
-							: getStepDescription( 'confirmation' ) }
-					</p>
-					<h4>{ __( 'What’s next?', 'woocommerce' ) }</h4>
-					{ isVisaCompliance ? (
-						<>
-							<ul>
-								<li>
-									{ __(
-										'Visa will review your submission under its network rules and determine the outcome of the dispute.',
+					<div className="woocommerce-woopayments-dispute-evidence__confirmation-content">
+						<img
+							className="woocommerce-woopayments-dispute-evidence__confirmation-image"
+							src={ `${
+								WC_ASSET_URL || ''
+							}images/settings-payments/dispute-evidence-submitted.svg` }
+							alt={ __(
+								'Evidence submitted successfully',
+								'woocommerce'
+							) }
+						/>
+						<h2 ref={ stepHeadingRef } tabIndex={ -1 }>
+							{ getStepLabel( 'confirmation' ) }
+						</h2>
+						<p className="woocommerce-woopayments-dispute-evidence__confirmation-subtitle">
+							{ isVisaCompliance
+								? __(
+										'Your response has been submitted under Visa’s compliance process.',
 										'woocommerce'
-									) }
-								</li>
+								  )
+								: __(
+										"Your evidence has been sent to the cardholder's bank for review.",
+										'woocommerce'
+								  ) }
+						</p>
+						<h3>{ __( 'What’s next?', 'woocommerce' ) }</h3>
+						<ul>
+							<li>
+								{ isVisaCompliance
+									? __(
+											'Visa will review your submission under its network rules and determine the outcome of the dispute.',
+											'woocommerce'
+									  )
+									: __(
+											'The cardholder’s bank will review your response. Please be patient — this usually takes a few weeks, but in some cases it can take up to 3 months.',
+											'woocommerce'
+									  ) }
+							</li>
+							{ isVisaCompliance && (
 								<li>
 									{ __(
 										'This review typically takes several weeks, but in some cases may take up to 3 months.',
 										'woocommerce'
 									) }
 								</li>
-							</ul>
-							<p className="woocommerce-woopayments-dispute-evidence__notice is-info">
-								<strong>
-									{ __(
-										'The outcome of this dispute will be determined by Visa.',
+							) }
+							<li>
+								{ createInterpolateElement(
+									__(
+										"You'll be informed of any updates via email, or you can check the status of your case at any time in your <disputesPageLink>Disputes area</disputesPageLink>.",
 										'woocommerce'
-									) }
-								</strong>{ ' ' }
+									),
+									{
+										disputesPageLink: (
+											// eslint-disable-next-line jsx-a11y/anchor-has-content -- Content is interpolated.
+											<a
+												href={ getSettingsPaymentsProviderRouteUrl(
+													'/woopayments/disputes'
+												) }
+											/>
+										),
+									}
+								) }
+							</li>
+						</ul>
+						<h3>{ __( 'Useful resources', 'woocommerce' ) }</h3>
+						<ul>
+							<li>
+								{ createInterpolateElement(
+									__(
+										'Help prevent any further disputes by <learnMoreLink>following the advice in our guide</learnMoreLink>',
+										'woocommerce'
+									),
+									{
+										learnMoreLink: (
+											<ExternalLink href="https://woocommerce.com/document/woopayments/fraud-and-disputes/preventing-disputes/">
+												{ '' }
+											</ExternalLink>
+										),
+									}
+								) }
+							</li>
+							<li>
+								{ createInterpolateElement(
+									__(
+										'Learn more about the dispute process using <learnMoreLink>our resources</learnMoreLink>',
+										'woocommerce'
+									),
+									{
+										learnMoreLink: (
+											<ExternalLink href="https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/#how-they-work">
+												{ '' }
+											</ExternalLink>
+										),
+									}
+								) }
+							</li>
+						</ul>
+						<Notice
+							status="info"
+							isDismissible={ false }
+							className="woocommerce-woopayments-dispute-evidence__outcome"
+						>
+							<OutcomeIcon className="woocommerce-woopayments-dispute-evidence__outcome-icon" />
+							<span>
+								{ createInterpolateElement(
+									getOutcomeNoticeText(
+										isVisaCompliance,
+										bankName
+									),
+									{ strong: <strong /> }
+								) }
+							</span>
+						</Notice>
+						<div className="woocommerce-woopayments-dispute-evidence__actions">
+							<Button
+								variant="secondary"
+								href={ getSettingsPaymentsProviderRouteUrl(
+									'/woopayments/disputes'
+								) }
+							>
+								{ __( 'Return to disputes', 'woocommerce' ) }
+							</Button>
+							<Button
+								variant="primary"
+								href={ getSettingsPaymentsProviderRouteUrl(
+									`/woopayments/disputes/challenge?id=${ encodeURIComponent(
+										disputeId
+									) }`
+								) }
+							>
 								{ __(
-									'WooPayments has no influence over the decision and is not liable for any chargebacks.',
+									'View submitted dispute',
 									'woocommerce'
 								) }
-							</p>
-						</>
-					) : (
-						<p>
-							{ __(
-								'The bank determines the dispute outcome after reviewing the submitted evidence.',
-								'woocommerce'
-							) }
-						</p>
-					) }
-					<div className="woocommerce-woopayments-dispute-evidence__actions">
-						<Button
-							variant="secondary"
-							href={ getSettingsPaymentsProviderRouteUrl(
-								'/woopayments/disputes'
-							) }
-						>
-							{ __( 'Return to disputes', 'woocommerce' ) }
-						</Button>
-						<Button
-							variant="primary"
-							href={ getSettingsPaymentsProviderRouteUrl(
-								`/woopayments/disputes/details?id=${ encodeURIComponent(
-									disputeId
-								) }`
-							) }
-						>
-							{ __( 'View submitted dispute', 'woocommerce' ) }
-						</Button>
+							</Button>
+						</div>
 					</div>
 				</div>
 			) : (
@@ -1286,19 +1383,10 @@ export const DisputeEvidenceForm = ( {
 									<OutcomeIcon className="woocommerce-woopayments-dispute-evidence__outcome-icon" />
 									<span>
 										{ createInterpolateElement(
-											bankName
-												? sprintf(
-														/* translators: %s: the customer's bank. */
-														__(
-															'<strong>The outcome of this dispute will be determined by %s.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.',
-															'woocommerce'
-														),
-														bankName
-												  )
-												: __(
-														"<strong>The outcome of this dispute will be determined by the cardholder's bank.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.",
-														'woocommerce'
-												  ),
+											getOutcomeNoticeText(
+												false,
+												bankName
+											),
 											{ strong: <strong /> }
 										) }
 									</span>
