@@ -138,6 +138,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsUserPreferenceFields::class,
 			WooPaymentsHomeTasks::class,
 			WooPaymentsAdminNotesController::class,
+			WooPaymentsLoanApprovedNote::class,
 		);
 		$connected_ajax             = array(
 			WooPaymentsAccountService::class,
@@ -151,6 +152,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsOrderTrackingService::class,
 			WooPaymentsOperationalQueueService::class,
 			WooPaymentsTestModeOrderEmailService::class,
+			WooPaymentsLoanApprovedNote::class,
 		);
 		$connected_rest             = array_merge(
 			array(
@@ -171,6 +173,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				WooPaymentsTestModeOrderEmailService::class,
 				WooPaymentsUserPreferenceFields::class,
 				WooPaymentsHomeTasks::class,
+				WooPaymentsLoanApprovedNote::class,
 			)
 		);
 		$connected_cron             = array(
@@ -185,6 +188,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsCanceledAuthorizationFeeRemediationService::class,
 			WooPaymentsOrderAdminActionsController::class,
 			WooPaymentsTestModeOrderEmailService::class,
+			WooPaymentsLoanApprovedNote::class,
 		);
 		$gateway_prefix             = array(
 			NativePaymentsGatewayRegistry::class,
