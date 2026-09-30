@@ -209,7 +209,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 		$mode             = sanitize_text_field( wp_unslash( $_GET['wcpay-mode'] ) );
 		$connection_error = ! empty( $_GET['wcpay-connection-error'] );
 		$params           = array(
-			'from'   => isset( $_GET['from'] ) ? sanitize_text_field( wp_unslash( $_GET['from'] ) ) : '',
+			'from'   => WooPaymentsOnboardingSource::get_from(),
 			'source' => WooPaymentsOnboardingSource::get_source(),
 		);
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended

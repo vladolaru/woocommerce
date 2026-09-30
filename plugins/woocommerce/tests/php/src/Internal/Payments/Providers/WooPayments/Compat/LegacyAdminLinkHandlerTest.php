@@ -117,7 +117,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wp_redirect' );
 		remove_all_filters( 'wp_doing_ajax' );
 		delete_transient( 'wcpay_stripe_onboarding_state' );
-		unset( $_GET['wcpay-loan-offer'], $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'], $_GET['wcpay-login'], $_GET['wcpay-reconnect-wpcom'], $_GET['_wpnonce'], $_REQUEST['_wpnonce'], $_GET['from'], $_GET['wcpay-state'], $_GET['wcpay-mode'], $_GET['wcpay-account-id'], $_GET['wcpay-connection-error'] );
+		unset( $_GET['wcpay-loan-offer'], $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'], $_GET['wcpay-login'], $_GET['wcpay-reconnect-wpcom'], $_GET['_wpnonce'], $_REQUEST['_wpnonce'], $_GET['from'], $_GET['wcpay-state'], $_GET['wcpay-mode'], $_GET['wcpay-account-id'], $_GET['wcpay-connection-error'], $_SERVER['HTTP_REFERER'] );
 
 		parent::tearDown();
 	}
@@ -861,6 +861,55 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		);
 		$this->assertSame( array( 'enabled' => 'no' ), get_option( 'woocommerce_woocommerce_payments_settings' ) );
 		$this->assertSame( 'state_kyc', get_transient( 'wcpay_stripe_onboarding_state' ) );
+	}
+
+	/**
+	 * Referers for a hosted KYC return, with the `from` plugin 11.1.0 `WC_Payments_Onboarding_Service::get_from()` derives.
+	 *
+	 * The referer rows are the client's own (tests/unit/test-class-wc-payments-onboarding-service.php:671-680).
+	 *
+	 * @return array<string,array{0:string,1:string,2:array<string,string>}>
+	 */
+	public function provide_hosted_kyc_return_referers(): array {
+		return array(
+			'Stripe referer'          => array( 'STRIPE', 'http://something.stripe.com/something', array() ),
+			'WordPress.com referer'   => array( 'WPCOM', 'http://public-api.wordpress.com/something', array() ),
+			'from param wins over it' => array( 'WCPAY_OVERVIEW', 'http://something.stripe.com/something', array( 'from' => 'WCPAY_OVERVIEW' ) ),
+			'unrecognized referer'    => array( '', 'https://example.org/elsewhere', array() ),
+		);
+	}
+
+	/**
+	 * Plugin 11.1.0 `maybe_handle_onboarding()` (class-wc-payments-account.php:1267) takes `from` from `get_from()`, which falls
+	 * back to the referer (class-wc-payments-onboarding-service.php:1203-1240), and `finalize_connection()` carries it to the
+	 * connect page when the state is unknown (:2358-2366).
+	 *
+	 * @testdox A hosted KYC return with an unknown state carries the referer-derived from to onboarding, like plugin 11.1.0.
+	 * @dataProvider provide_hosted_kyc_return_referers
+	 *
+	 * @param string               $expected_from Expected `from` on the landing.
+	 * @param string               $referer       Request referer.
+	 * @param array<string,string> $extra_query   Extra query arguments.
+	 */
+	public function test_hosted_kyc_return_with_unknown_state_derives_from_like_the_client( string $expected_from, string $referer, array $extra_query ): void {
+		set_transient( 'wcpay_stripe_onboarding_state', 'state_kyc', DAY_IN_SECONDS );
+		$_GET                    = $extra_query + $this->get_hosted_kyc_return_query( 'state_forged', 'live' );
+		$_SERVER['HTTP_REFERER'] = $referer;
+		$this->sut->register();
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+
+		$location = $this->run_and_get_redirect( fn() => $this->run_admin_init() );
+
+		$this->assertSame(
+			Utils::wc_payments_settings_url(
+				'/woopayments/onboarding',
+				array(
+					'from'   => $expected_from,
+					'source' => 'unknown',
+				)
+			),
+			$location
+		);
 	}
 
 	/**

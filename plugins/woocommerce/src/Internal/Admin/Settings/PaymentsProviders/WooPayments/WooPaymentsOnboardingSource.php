@@ -10,9 +10,9 @@ namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPa
 defined( 'ABSPATH' ) || exit;
 
 /**
- * WooPayments onboarding `from` and `source` vocabulary, and the referrer-based source detection.
+ * WooPayments onboarding `from` and `source` vocabulary, and their referrer-based detection.
  *
- * Ports client 11.1.0 `WC_Payments_Onboarding_Service` constants and `get_source()`. The source is a tracking value.
+ * Ports client 11.1.0 `WC_Payments_Onboarding_Service` constants, `get_from()` and `get_source()`. Both are tracking values.
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.
@@ -45,10 +45,31 @@ final class WooPaymentsOnboardingSource {
 	public const FROM_CONNECT_PAGE              = 'WCPAY_CONNECT';
 	public const FROM_OVERVIEW_PAGE             = 'WCPAY_OVERVIEW';
 	public const FROM_ACCOUNT_DETAILS           = 'WCPAY_ACCOUNT_DETAILS';
+	public const FROM_ONBOARDING_WIZARD         = 'WCPAY_ONBOARDING_WIZARD';
 	public const FROM_SETTINGS                  = 'WCPAY_SETTINGS';
 	public const FROM_PAYOUTS                   = 'WCPAY_PAYOUTS';
+	public const FROM_TEST_TO_LIVE              = 'WCPAY_TEST_TO_LIVE';
 	public const FROM_GO_LIVE_TASK              = 'WCPAY_GO_LIVE_TASK';
+	public const FROM_RESET_ACCOUNT             = 'WCPAY_RESET_ACCOUNT';
+	public const FROM_WPCOM                     = 'WPCOM';
+	public const FROM_WPCOM_CONNECTION          = 'WPCOM_CONNECTION';
 	public const FROM_STRIPE                    = 'STRIPE';
+
+	private const VALID_WCPAY_CONNECT_FROMS = array(
+		self::FROM_WCADMIN_PAYMENTS_TASK,
+		self::FROM_WCADMIN_PAYMENTS_SETTINGS,
+		self::FROM_WCADMIN_NOX_IN_CONTEXT,
+		self::FROM_WCADMIN_INCENTIVE,
+		self::FROM_CONNECT_PAGE,
+		self::FROM_OVERVIEW_PAGE,
+		self::FROM_ACCOUNT_DETAILS,
+		self::FROM_ONBOARDING_WIZARD,
+		self::FROM_TEST_TO_LIVE,
+		self::FROM_RESET_ACCOUNT,
+		self::FROM_WPCOM,
+		self::FROM_WPCOM_CONNECTION,
+		self::FROM_STRIPE,
+	);
 
 	private const VALID_SOURCES = array(
 		self::SOURCE_WCADMIN_PAYMENT_TASK,
@@ -69,6 +90,83 @@ final class WooPaymentsOnboardingSource {
 		self::SOURCE_WCPAY_PAYOUT_FAILURE_NOTICE,
 		self::SOURCE_WCPAY_ACCOUNT_DETAILS,
 	);
+
+	/**
+	 * Determine the immediately previous onboarding step from the URL params, falling back to the referer.
+	 *
+	 * Client 11.1.0 `WC_Payments_Onboarding_Service::get_from()` (class-wc-payments-onboarding-service.php:1143-1241), with the
+	 * native Overview and Payouts pages recognized before the generic Settings > Payments referer, as get_source() does.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string|null              $referer    Optional. The referer URL. Defaults to wp_get_raw_referer().
+	 * @param array<string,mixed>|null $get_params Optional. GET params. Defaults to $_GET.
+	 * @return string The from value, or an empty string when it is unknown.
+	 */
+	public static function get_from( ?string $referer = null, ?array $get_params = null ): string {
+		$referer    = $referer ?? wp_get_raw_referer();
+		$referer    = urldecode( is_string( $referer ) ? $referer : '' );
+		$get_params = $get_params ?? $_GET; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+		$from_param = isset( $get_params['from'] ) && is_scalar( $get_params['from'] ) ? sanitize_text_field( wp_unslash( (string) $get_params['from'] ) ) : '';
+		if ( ! empty( $from_param ) ) {
+			return $from_param;
+		}
+
+		// Action-type params have priority over the `wcpay-connect` and referer clues.
+		if ( isset( $get_params['wcpay-disable-onboarding-test-mode'] ) && 'true' === $get_params['wcpay-disable-onboarding-test-mode'] ) {
+			return self::FROM_TEST_TO_LIVE;
+		}
+		if ( isset( $get_params['wcpay-reset-account'] ) && 'true' === $get_params['wcpay-reset-account'] ) {
+			return self::FROM_RESET_ACCOUNT;
+		}
+
+		$wcpay_connect_param = isset( $get_params['wcpay-connect'] ) && is_scalar( $get_params['wcpay-connect'] ) ? sanitize_text_field( wp_unslash( (string) $get_params['wcpay-connect'] ) ) : '';
+		if ( in_array( $wcpay_connect_param, self::VALID_WCPAY_CONNECT_FROMS, true ) ) {
+			return $wcpay_connect_param;
+		}
+
+		if ( false !== strpos( $referer, 'page=wc-admin&task=payments' ) ) {
+			return self::FROM_WCADMIN_PAYMENTS_TASK;
+		}
+		if ( false !== strpos( $referer, 'page=wc-settings&tab=checkout' ) ) {
+			if ( false !== strpos( $referer, 'path=/woopayments/onboarding' ) ) {
+				return self::FROM_WCADMIN_NOX_IN_CONTEXT;
+			}
+			// Native Overview and Payouts; the client matches `page=wc-admin&path=/payments/overview` and `/payments/payouts`.
+			if ( false !== strpos( $referer, 'path=/woopayments/overview' ) ) {
+				return self::FROM_OVERVIEW_PAGE;
+			}
+			if ( false !== strpos( $referer, 'path=/woopayments/payouts' ) ) {
+				return self::FROM_PAYOUTS;
+			}
+
+			return self::FROM_WCADMIN_PAYMENTS_SETTINGS;
+		}
+		if ( false !== strpos( $referer, 'path=/wc-pay-welcome-page' ) ) {
+			return self::FROM_WCADMIN_INCENTIVE;
+		}
+		if ( false !== strpos( $referer, 'path=/payments/connect' ) ) {
+			return self::FROM_CONNECT_PAGE;
+		}
+		if ( false !== strpos( $referer, 'path=/payments/overview' ) ) {
+			return self::FROM_OVERVIEW_PAGE;
+		}
+		if ( false !== strpos( $referer, 'path=/payments/onboarding' ) ) {
+			return self::FROM_ONBOARDING_WIZARD;
+		}
+		if ( false !== strpos( $referer, 'path=/payments/deposits' ) || false !== strpos( $referer, 'path=/payments/payouts' ) ) {
+			return self::FROM_PAYOUTS;
+		}
+		if ( false !== strpos( $referer, 'wordpress.com' ) ) {
+			return self::FROM_WPCOM;
+		}
+		if ( false !== strpos( $referer, 'stripe.com' ) ) {
+			return self::FROM_STRIPE;
+		}
+
+		return '';
+	}
 
 	/**
 	 * Determine the initial onboarding source from the referer and URL params.

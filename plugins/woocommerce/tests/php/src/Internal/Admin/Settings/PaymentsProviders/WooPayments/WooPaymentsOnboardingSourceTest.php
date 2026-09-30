@@ -21,6 +21,187 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should resolve the previous onboarding step like client 11.1.0 get_from().
+	 * @dataProvider provider_client_get_from_cases
+	 *
+	 * @param string              $expected   Expected from value.
+	 * @param string              $referer    Referer URL.
+	 * @param array<string,mixed> $get_params GET params.
+	 */
+	public function test_get_from_matches_client( string $expected, string $referer, array $get_params ): void {
+		$this->assertSame( $expected, WooPaymentsOnboardingSource::get_from( $referer, $get_params ) );
+	}
+
+	/**
+	 * Client 11.1.0 `WC_Payments_Onboarding_Service_Test::data_get_from()` cases (tests/unit/test-class-wc-payments-onboarding-service.php:529-682), unchanged.
+	 *
+	 * @return array<string,array{0:string,1:string,2:array<string,string>}>
+	 */
+	public function provider_client_get_from_cases(): array {
+		return array(
+			'Unknown from'                                 => array(
+				'',
+				'',
+				array(),
+			),
+			'Non-empty from GET param trumps everything'   => array(
+				'WCADMIN_PAYMENT_INCENTIVE',
+				'/wp-admin/admin.php?page=wc-settings&tab=checkout',
+				array(
+					'source'                             => 'wcpay-connect-page',
+					'wcpay-connect'                      => 'WCADMIN_PAYMENT_TASK',
+					'wcpay-disable-onboarding-test-mode' => 'true',
+					'from'                               => 'WCADMIN_PAYMENT_INCENTIVE',
+				),
+			),
+			'Empty from GET param is ignored'              => array(
+				'WCADMIN_PAYMENT_TASK',
+				'',
+				array(
+					'from'          => '',
+					'wcpay-connect' => 'WCADMIN_PAYMENT_TASK',
+				),
+			),
+			'Via test to live param'                       => array(
+				'WCPAY_TEST_TO_LIVE',
+				'any',
+				array(
+					'wcpay-connect'                      => '1',
+					'wcpay-disable-onboarding-test-mode' => 'true',
+				),
+			),
+			'test to live param takes precedence'          => array(
+				'WCPAY_TEST_TO_LIVE',
+				'/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Fconnect',
+				array(
+					'wcpay-connect'                      => 'WCADMIN_PAYMENT_TASK',
+					'wcpay-disable-onboarding-test-mode' => 'true',
+				),
+			),
+			'Via reset account param'                      => array(
+				'WCPAY_RESET_ACCOUNT',
+				'any',
+				array(
+					'wcpay-connect'       => '1',
+					'wcpay-reset-account' => 'true',
+				),
+			),
+			'reset account param takes precedence'         => array(
+				'WCPAY_RESET_ACCOUNT',
+				'/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Fconnect',
+				array(
+					'wcpay-connect'       => 'WCADMIN_PAYMENT_TASK',
+					'wcpay-reset-account' => 'true',
+				),
+			),
+			'Via the wcpay-connect value - takes precedence over referer' => array(
+				'WCADMIN_PAYMENT_TASK',
+				'/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Fconnect',
+				array( 'wcpay-connect' => 'WCADMIN_PAYMENT_TASK' ),
+			),
+			'Via the wcpay-connect value - Payments task'  => array(
+				'WCADMIN_PAYMENT_TASK',
+				'any',
+				array( 'wcpay-connect' => 'WCADMIN_PAYMENT_TASK' ),
+			),
+			'Via the wcpay-connect value - Payments Settings' => array(
+				'WCADMIN_PAYMENT_SETTINGS',
+				'any',
+				array( 'wcpay-connect' => 'WCADMIN_PAYMENT_SETTINGS' ),
+			),
+			'Via the wcpay-connect value - Incentive page' => array(
+				'WCADMIN_PAYMENT_INCENTIVE',
+				'any',
+				array( 'wcpay-connect' => 'WCADMIN_PAYMENT_INCENTIVE' ),
+			),
+			'Via the wcpay-connect value - Connect page'   => array(
+				'WCPAY_CONNECT',
+				'any',
+				array( 'wcpay-connect' => 'WCPAY_CONNECT' ),
+			),
+			'Via the wcpay-connect value - Onboarding wizard' => array(
+				'WCPAY_ONBOARDING_WIZARD',
+				'any',
+				array( 'wcpay-connect' => 'WCPAY_ONBOARDING_WIZARD' ),
+			),
+			'Via the wcpay-connect value - Test to live'   => array(
+				'WCPAY_TEST_TO_LIVE',
+				'any',
+				array( 'wcpay-connect' => 'WCPAY_TEST_TO_LIVE' ),
+			),
+			'Via the wcpay-connect value - Reset account'  => array(
+				'WCPAY_RESET_ACCOUNT',
+				'any',
+				array( 'wcpay-connect' => 'WCPAY_RESET_ACCOUNT' ),
+			),
+			'Via the wcpay-connect value - WPCOM'          => array(
+				'WPCOM',
+				'any',
+				array( 'wcpay-connect' => 'WPCOM' ),
+			),
+			'Via the wcpay-connect value - Stripe'         => array(
+				'STRIPE',
+				'any',
+				array( 'wcpay-connect' => 'STRIPE' ),
+			),
+			'Invalid wcpay-connect value is ignored'       => array(
+				'',
+				'any',
+				array( 'wcpay-connect' => 'something' ),
+			),
+			'Via the referer URL - payments task'          => array(
+				'WCADMIN_PAYMENT_TASK',
+				'/wp-admin/admin.php?page=wc-admin&task=payments',
+				array( 'wcpay-connect' => '1' ),
+			),
+			'Via the referer URL - settings page'          => array(
+				'WCADMIN_PAYMENT_SETTINGS',
+				'/wp-admin/admin.php?page=wc-settings&tab=checkout',
+				array( 'wcpay-connect' => '1' ),
+			),
+			'Via the referer URL - NOX in-context'         => array(
+				'WCADMIN_NOX_IN_CONTEXT',
+				'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding',
+				array( 'wcpay-connect' => '1' ),
+			),
+			'Via the referer URL - incentive page'         => array(
+				'WCADMIN_PAYMENT_INCENTIVE',
+				'/wp-admin/admin.php?page=wc-admin&path=%2Fwc-pay-welcome-page',
+				array( 'wcpay-connect' => '1' ),
+			),
+			'Via the referer URL - Connect page'           => array(
+				'WCPAY_CONNECT',
+				'/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Fconnect',
+				array( 'wcpay-connect' => '1' ),
+			),
+			'Via the referer URL - Onboarding wizard'      => array(
+				'WCPAY_ONBOARDING_WIZARD',
+				'/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Fonboarding',
+				array( 'wcpay-connect' => '1' ),
+			),
+			'Via the referer URL - WPCOM'                  => array(
+				'WPCOM',
+				'http://public-api.wordpress.com/something',
+				array( 'wcpay-connect' => '1' ),
+			),
+			'Via the referer URL - Stripe'                 => array(
+				'STRIPE',
+				'http://something.stripe.com/something',
+				array( 'wcpay-connect' => '1' ),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should map the native Overview and Payouts referers to the client's from values.
+	 */
+	public function test_get_from_maps_native_referers(): void {
+		$this->assertSame( WooPaymentsOnboardingSource::FROM_OVERVIEW_PAGE, WooPaymentsOnboardingSource::get_from( '/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Foverview', array() ) );
+		$this->assertSame( WooPaymentsOnboardingSource::FROM_PAYOUTS, WooPaymentsOnboardingSource::get_from( '/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/payouts', array() ) );
+		$this->assertSame( WooPaymentsOnboardingSource::FROM_WCADMIN_PAYMENTS_SETTINGS, WooPaymentsOnboardingSource::get_from( '/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings', array() ) );
+	}
+
+	/**
 	 * @testdox Should resolve the onboarding source like client 11.1.0 get_source().
 	 * @dataProvider provider_client_get_source_cases
 	 *
