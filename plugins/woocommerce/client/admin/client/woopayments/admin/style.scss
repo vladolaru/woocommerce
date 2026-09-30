@@ -280,8 +280,7 @@
 	margin: 0;
 }
 
-.woocommerce-woopayments-account-details__fees ul,
-.woocommerce-woopayments-inbox-notifications__list {
+.woocommerce-woopayments-account-details__fees ul {
 	display: grid;
 	gap: 12px;
 	list-style: none;
@@ -289,8 +288,7 @@
 	padding: 0;
 }
 
-.woocommerce-woopayments-account-details__fees li,
-.woocommerce-woopayments-inbox-notifications__list li {
+.woocommerce-woopayments-account-details__fees li {
 	border: 1px solid #dcdcde;
 	border-radius: 4px;
 	padding: 12px;
@@ -354,10 +352,6 @@
 	}
 }
 
-.woocommerce-woopayments-inbox-notifications__list p {
-	color: #646970;
-	margin: 4px 0 0;
-}
 
 .woocommerce-woopayments-dispute-readiness__modal-actions {
 	display: flex;

@@ -230,11 +230,14 @@ export const InboxNotifications = () => {
 	if ( isLoading ) {
 		return (
 			<section
-				className="woocommerce-woopayments-overview-card woocommerce-woopayments-inbox-notifications"
+				className="woocommerce-woopayments-inbox-notifications"
 				aria-busy
 				aria-labelledby="woocommerce-woopayments-inbox-heading"
 			>
-				<h2 id="woocommerce-woopayments-inbox-heading">
+				<h2
+					id="woocommerce-woopayments-inbox-heading"
+					className="screen-reader-text"
+				>
 					{ __( 'Inbox', 'woocommerce' ) }
 				</h2>
 				<p className="screen-reader-text" role="status">
@@ -248,10 +251,13 @@ export const InboxNotifications = () => {
 	if ( isError ) {
 		return (
 			<section
-				className="woocommerce-woopayments-overview-card woocommerce-woopayments-inbox-notifications"
+				className="woocommerce-woopayments-inbox-notifications"
 				aria-labelledby="woocommerce-woopayments-inbox-heading"
 			>
-				<h2 id="woocommerce-woopayments-inbox-heading">
+				<h2
+					id="woocommerce-woopayments-inbox-heading"
+					className="screen-reader-text"
+				>
 					{ __( 'Inbox', 'woocommerce' ) }
 				</h2>
 				<p role="status">
@@ -271,11 +277,13 @@ export const InboxNotifications = () => {
 	return (
 		<>
 			<section
-				className="woocommerce-woopayments-overview-card woocommerce-woopayments-inbox-notifications"
+				className="woocommerce-woopayments-inbox-notifications"
 				aria-labelledby="woocommerce-woopayments-inbox-heading"
 			>
+				{ /* Client 11.1.0 `overview/inbox-notifications/index.js:282-309` shows the notes without a heading; this one names the region and takes focus after a dismissal. */ }
 				<h2
 					id="woocommerce-woopayments-inbox-heading"
+					className="screen-reader-text"
 					ref={ headingRef }
 					tabIndex={ -1 }
 				>
@@ -287,59 +295,48 @@ export const InboxNotifications = () => {
 					</p>
 				) : (
 					<Section component={ false }>
-						<div className="woocommerce-woopayments-inbox-notifications__list">
-							{ visibleNotes.map( ( note ) => {
-								const inboxNote = getInboxNote( note );
+						{ visibleNotes.map( ( note ) => {
+							const inboxNote = getInboxNote( note );
 
-								return (
-									<InboxNoteCard
-										key={ inboxNote.id }
-										note={ inboxNote }
-										onDismiss={ openDismissConfirmation }
-										onNoteActionClick={ (
-											selectedNote,
-											action
-										) =>
-											getNotesDispatch().triggerNoteAction(
-												selectedNote.id,
-												action.id
-											)
-										}
-										onBodyLinkClick={ (
-											selectedNote,
-											innerLink
-										) =>
-											recordEvent(
-												'wcpay_inbox_action_click',
-												{
-													note_name:
-														selectedNote.name,
-													note_title:
-														selectedNote.title,
-													note_content_inner_link:
-														innerLink,
-												}
-											)
-										}
-										onNoteVisible={ ( selectedNote ) =>
-											recordEvent(
-												'wcpay_inbox_note_view',
-												{
-													note_content:
-														selectedNote.content,
-													note_name:
-														selectedNote.name,
-													note_title:
-														selectedNote.title,
-													note_type:
-														selectedNote.type,
-												}
-											)
-										}
-									/>
-								);
-							} ) }
-						</div>
+							return (
+								<InboxNoteCard
+									key={ inboxNote.id }
+									note={ inboxNote }
+									onDismiss={ openDismissConfirmation }
+									onNoteActionClick={ (
+										selectedNote,
+										action
+									) =>
+										getNotesDispatch().triggerNoteAction(
+											selectedNote.id,
+											action.id
+										)
+									}
+									onBodyLinkClick={ (
+										selectedNote,
+										innerLink
+									) =>
+										recordEvent(
+											'wcpay_inbox_action_click',
+											{
+												note_name: selectedNote.name,
+												note_title: selectedNote.title,
+												note_content_inner_link:
+													innerLink,
+											}
+										)
+									}
+									onNoteVisible={ ( selectedNote ) =>
+										recordEvent( 'wcpay_inbox_note_view', {
+											note_content: selectedNote.content,
+											note_name: selectedNote.name,
+											note_title: selectedNote.title,
+											note_type: selectedNote.type,
+										} )
+									}
+								/>
+							);
+						} ) }
 					</Section>
 				) }
 			</section>

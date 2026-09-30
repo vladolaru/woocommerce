@@ -1404,9 +1404,14 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 		render( <WooPaymentsOverviewPage /> );
 
-		expect(
-			await screen.findByRole( 'heading', { name: 'Inbox' } )
-		).toBeInTheDocument();
+		// Client 11.1.0 `overview/inbox-notifications/index.js:282-309`: the notes sit on the page, with no visible heading or card around them.
+		const inboxHeading = await screen.findByRole( 'heading', {
+			name: 'Inbox',
+		} );
+		expect( inboxHeading ).toHaveClass( 'screen-reader-text' );
+		expect( inboxHeading.parentElement ).not.toHaveClass(
+			'woocommerce-woopayments-overview-card'
+		);
 		expect(
 			screen.getByText( 'Review your WooPayments account' )
 		).toBeInTheDocument();
