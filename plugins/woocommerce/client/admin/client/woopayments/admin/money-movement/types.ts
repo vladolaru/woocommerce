@@ -124,6 +124,7 @@ export interface WooPaymentsDispute {
 		suggested_product_type?: string;
 		customer_name?: string;
 		customer_email?: string;
+		ip_address?: string;
 	};
 	customer_name?: string;
 	customer_email?: string;
@@ -200,6 +201,7 @@ export interface WooPaymentsBillingDetails {
 	email?: string;
 	formatted_address?: string;
 	name?: string;
+	phone?: string;
 	address?: {
 		city?: string;
 		country?: string;

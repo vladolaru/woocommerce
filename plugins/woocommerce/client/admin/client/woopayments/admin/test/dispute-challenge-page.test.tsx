@@ -932,6 +932,80 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		);
 	} );
 
+	it( 'shows the client customer details and sends the order IP address', async () => {
+		// Client 11.1.0 new-evidence/customer-details.tsx and index.tsx:584.
+		window.wcSettings = {
+			...window.wcSettings,
+			adminUrl: 'https://example.com/wp-admin/',
+		} as typeof window.wcSettings;
+		mockGetDispute.mockResolvedValue(
+			makeDispute( {
+				charge: {
+					id: 'ch_test',
+					billing_details: {
+						name: 'Ada Lovelace',
+						email: 'ada@example.com',
+						phone: '+1 555 0100',
+					},
+				},
+				order: {
+					id: 123,
+					number: '123',
+					ip_address: '203.0.113.9',
+					suggested_product_type: 'physical_product',
+				},
+			} )
+		);
+
+		renderChallengePage();
+
+		const details = (
+			await screen.findByRole( 'heading', { name: 'Customer details' } )
+		).closest( 'section' ) as HTMLElement;
+		expect(
+			Array.from(
+				details.querySelectorAll(
+					'.woocommerce-woopayments-dispute-evidence-customer__label'
+				)
+			).map( ( label ) => label.textContent )
+		).toEqual( [
+			'NAME',
+			'PHONE',
+			'EMAIL',
+			'IP ADDRESS',
+			'BILLING ADDRESS',
+		] );
+		expect(
+			within( details ).getByRole( 'link', { name: 'Ada Lovelace' } )
+		).toHaveAttribute(
+			'href',
+			expect.stringContaining(
+				'path=%2Fwoopayments%2Ftransactions&search=Ada+Lovelace+%28ada%40example.com%29'
+			)
+		);
+		expect(
+			within( details ).getByRole( 'link', { name: 'ada@example.com' } )
+		).toHaveAttribute( 'href', 'mailto:ada@example.com' );
+		expect( within( details ).getByText( '+1 555 0100' ) ).toBeVisible();
+		expect( within( details ).getByText( '203.0.113.9' ) ).toBeVisible();
+		expect(
+			screen.queryByRole( 'textbox', { name: 'Customer purchase IP' } )
+		).not.toBeInTheDocument();
+
+		await clickButton( 'Save for later' );
+
+		await waitFor( () =>
+			expect( mockUpdateDispute ).toHaveBeenCalledWith(
+				'dp_test',
+				expect.objectContaining( {
+					evidence: expect.objectContaining( {
+						customer_purchase_ip: '203.0.113.9',
+					} ),
+				} )
+			)
+		);
+	} );
+
 	it( 'should save drafts with submit=false and product metadata', async () => {
 		mockGetDispute.mockResolvedValue( makeDispute() );
 

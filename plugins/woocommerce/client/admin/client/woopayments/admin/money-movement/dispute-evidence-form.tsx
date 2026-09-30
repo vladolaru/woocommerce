@@ -24,10 +24,11 @@ import {
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { chevronRight } from '@wordpress/icons';
+import { addQueryArgs } from '@wordpress/url';
 import { Stepper } from '@woocommerce/components';
 import InfoOutlineIcon from 'gridicons/dist/info-outline';
 import { recordEvent } from '@woocommerce/tracks';
-import type { ElementType } from 'react';
+import type { ElementType, ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -103,8 +104,84 @@ const getInitialEvidenceState = ( dispute: WooPaymentsDispute ) => {
 	].forEach( ( field ) => {
 		evidence[ field ] = getStringEvidenceValue( dispute, field );
 	} );
+	// Client 11.1.0 `new-evidence/index.tsx:584`: the order's IP address is sent as the purchase IP.
+	evidence.customer_purchase_ip =
+		dispute.order?.ip_address || evidence.customer_purchase_ip;
 
 	return evidence;
+};
+
+// Client 11.1.0 `new-evidence/customer-details.tsx`: who bought, read-only.
+const CustomerDetails = ( { dispute }: { dispute: WooPaymentsDispute } ) => {
+	const charge =
+		typeof dispute.charge === 'object' ? dispute.charge : undefined;
+	const billing = charge?.billing_details;
+	const name = billing?.name || dispute.order?.customer_name || '';
+	const email = billing?.email || dispute.order?.customer_email || '';
+	const address = ( billing?.formatted_address || '' )
+		.split( /<br\s*\/?>/i )
+		.map( ( line ) => line.replace( /<[^>]*>/g, '' ).trim() )
+		.filter( Boolean );
+	const item = ( label: string, value: ReactNode ) => (
+		<div>
+			<div className="woocommerce-woopayments-dispute-evidence-customer__label">
+				{ label }
+			</div>
+			{ value }
+		</div>
+	);
+
+	return (
+		<section className="woocommerce-woopayments-dispute-evidence-customer">
+			<h3>{ __( 'Customer details', 'woocommerce' ) }</h3>
+			<div className="woocommerce-woopayments-dispute-evidence-customer__row">
+				{ item(
+					__( 'NAME', 'woocommerce' ),
+					name ? (
+						<a
+							href={ getSettingsPaymentsProviderRouteUrl(
+								addQueryArgs( '/woopayments/transactions', {
+									search: email
+										? `${ name } (${ email })`
+										: name,
+								} )
+							) }
+						>
+							{ name }
+						</a>
+					) : (
+						<span>-</span>
+					)
+				) }
+				{ item(
+					__( 'PHONE', 'woocommerce' ),
+					<span>{ billing?.phone || '-' }</span>
+				) }
+				{ item(
+					__( 'EMAIL', 'woocommerce' ),
+					email ? (
+						<a href={ `mailto:${ email }` }>{ email }</a>
+					) : (
+						<span>-</span>
+					)
+				) }
+				{ item(
+					__( 'IP ADDRESS', 'woocommerce' ),
+					<span>{ dispute.order?.ip_address || '-' }</span>
+				) }
+			</div>
+			{ item(
+				__( 'BILLING ADDRESS', 'woocommerce' ),
+				<div className="woocommerce-woopayments-dispute-evidence-customer__address">
+					{ address.length
+						? address.map( ( line ) => (
+								<div key={ line }>{ line }</div>
+						  ) )
+						: '-' }
+				</div>
+			) }
+		</section>
+	);
 };
 
 // Client 11.1.0 `new-evidence/resolve-product-type.ts`: with the additional evidence types (on by default),
@@ -946,6 +1023,7 @@ export const DisputeEvidenceForm = ( {
 							{ ! isVisaCompliance &&
 								currentStep === 'basics' && (
 									<>
+										<CustomerDetails dispute={ dispute } />
 										<fieldset className="woocommerce-woopayments-dispute-evidence__section">
 											<legend>
 												{ __(
@@ -986,24 +1064,6 @@ export const DisputeEvidenceForm = ( {
 												onChange={ ( value ) =>
 													updateEvidenceField(
 														'product_description',
-														value
-													)
-												}
-											/>
-											<TextControl
-												label={ __(
-													'Customer purchase IP',
-													'woocommerce'
-												) }
-												value={
-													evidence.customer_purchase_ip
-												}
-												readOnly={ formLocked }
-												__next40pxDefaultSize
-												__nextHasNoMarginBottom
-												onChange={ ( value ) =>
-													updateEvidenceField(
-														'customer_purchase_ip',
 														value
 													)
 												}
