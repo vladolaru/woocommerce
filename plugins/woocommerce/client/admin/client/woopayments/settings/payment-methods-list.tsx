@@ -60,7 +60,6 @@ type DuplicatePaymentMethodNotices = Record< string, string[] | undefined >;
 type PaymentMethodsListProps = {
 	methodIds: string[];
 	enabledMethodIds: string[];
-	nativelyChargeableMethodIds: string[];
 	statuses: Record< string, PaymentMethodStatus | undefined >;
 	accountFees?: Record< string, FeeStructure | undefined >;
 	pmPromotions?: PmPromotion[];
@@ -86,27 +85,10 @@ type Availability = {
 
 type PaymentMethodAvailabilityOptions = {
 	enabledMethodIds?: string[];
-	nativelyChargeableMethodIds?: string[];
 	isMultiCurrencyEnabled?: boolean;
 	overviewUrl?: string;
 	storeCurrency?: string;
 };
-
-export const getNativelyUnsupportedPaymentMethodAvailability =
-	(): Availability => {
-		const notice = __(
-			'Not yet available in the built-in WooPayments - keep the WooPayments extension active to offer this method.',
-			'woocommerce'
-		);
-
-		return {
-			isActionable: false,
-			chip: __( 'Not yet available', 'woocommerce' ),
-			notice,
-			noticeSpokenMessage: notice,
-			noticeStatus: 'warning',
-		};
-	};
 
 const REQUIREMENTS_LABELS: Record< string, string > = {
 	'business_profile.mcc': __( 'Business category', 'woocommerce' ),
@@ -1018,16 +1000,6 @@ export const getPaymentMethodAvailability = (
 		getSettingsPaymentsProviderRouteUrl( '/woopayments/overview' );
 	const needsDelayedApprovalGuidance =
 		definition.id === 'alipay' || definition.id === 'wechat_pay';
-	const nativelyChargeableMethodIds =
-		options.nativelyChargeableMethodIds || [];
-
-	if (
-		nativelyChargeableMethodIds.length > 0 &&
-		! nativelyChargeableMethodIds.includes( definition.id )
-	) {
-		return getNativelyUnsupportedPaymentMethodAvailability();
-	}
-
 	switch ( status.status ) {
 		case 'inactive':
 			return {
@@ -1264,7 +1236,6 @@ const PaymentMethodActivationModal = ( {
 const PaymentMethodRow = ( {
 	definition,
 	enabledMethodIds,
-	nativelyChargeableMethodIds,
 	statuses,
 	accountFees,
 	pmPromotions,
@@ -1280,7 +1251,6 @@ const PaymentMethodRow = ( {
 }: {
 	definition: WooPaymentsPaymentMethodDefinition;
 	enabledMethodIds: string[];
-	nativelyChargeableMethodIds: string[];
 	statuses: Record< string, PaymentMethodStatus | undefined >;
 	accountFees?: Record< string, FeeStructure | undefined >;
 	pmPromotions?: PmPromotion[];
@@ -1307,7 +1277,6 @@ const PaymentMethodRow = ( {
 		isManualCaptureEnabled,
 		{
 			enabledMethodIds,
-			nativelyChargeableMethodIds,
 			isMultiCurrencyEnabled,
 			storeCurrency,
 		}
@@ -1466,7 +1435,6 @@ const PaymentMethodRow = ( {
 export const WooPaymentsPaymentMethodsList = ( {
 	methodIds,
 	enabledMethodIds,
-	nativelyChargeableMethodIds,
 	statuses,
 	accountFees,
 	pmPromotions,
@@ -1516,7 +1484,6 @@ export const WooPaymentsPaymentMethodsList = ( {
 					key={ definition.id }
 					definition={ definition }
 					enabledMethodIds={ enabledMethodIds }
-					nativelyChargeableMethodIds={ nativelyChargeableMethodIds }
 					statuses={ statuses }
 					accountFees={ accountFees }
 					pmPromotions={ pmPromotions }

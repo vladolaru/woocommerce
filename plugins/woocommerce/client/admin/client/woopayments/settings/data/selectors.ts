@@ -53,14 +53,6 @@ export const getAvailablePaymentMethodIds = ( state: SettingsRootState ) => {
 	return getSettings( state ).available_payment_method_ids || EMPTY_ARR;
 };
 
-export const getNativelyChargeablePaymentMethodIds = (
-	state: SettingsRootState
-) => {
-	return (
-		getSettings( state ).natively_chargeable_payment_method_ids || EMPTY_ARR
-	);
-};
-
 export const getPaymentMethodStatuses = ( state: SettingsRootState ) => {
 	return getSettings( state ).payment_method_statuses || EMPTY_OBJ;
 };
