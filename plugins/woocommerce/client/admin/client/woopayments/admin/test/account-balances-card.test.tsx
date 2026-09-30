@@ -184,7 +184,7 @@ describe( 'AccountBalancesCard', () => {
 		expect( screen.getByText( '€25.00' ) ).toBeInTheDocument();
 	} );
 
-	it( 'preserves the reference balance help copy', () => {
+	it( 'preserves the reference balance help copy', async () => {
 		render(
 			<AccountBalancesCard
 				isLoading={ false }
@@ -195,16 +195,67 @@ describe( 'AccountBalancesCard', () => {
 			/>
 		);
 
+		// Client 11.1.0 `balance-tooltip.tsx`: the explanations sit behind help icons, not under the amounts.
+		expect(
+			screen.queryByText( /combines both pending funds/ )
+		).not.toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Total balance tooltip' } )
+		);
 		expect(
 			screen.getByText(
-				/Total balance combines both pending funds \(transactions under processing\) and available funds \(ready for payout\)\./
+				/combines both pending funds \(transactions under processing\) and available funds \(ready for payout\)\./
 			)
-		).toBeInTheDocument();
+		).toHaveTextContent( /^Total balance combines both/ );
 		expect(
 			screen.getByText(
-				/Available funds have completed processing and are ready to be dispatched to your bank account\./
+				'Total balance = Available funds + Pending funds'
 			)
 		).toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Available funds tooltip' } )
+		);
+		expect(
+			screen.getByText(
+				/have completed processing and are ready to be dispatched to your bank account\./
+			)
+		).toHaveTextContent( /^Available funds have completed processing/ );
+		expect(
+			screen.getAllByRole( 'link', { name: /Learn more/ } )[ 0 ]
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/payouts/payout-schedule/'
+		);
+	} );
+
+	it( 'points a negative balance to the negative balance guide', async () => {
+		render(
+			<AccountBalancesCard
+				isLoading={ false }
+				errorMessage={ null }
+				overview={ createOverview( {
+					balance: {
+						available: [ { amount: -500, currency: 'usd' } ],
+						pending: [ { amount: 0, currency: 'usd' } ],
+						instant: [],
+					},
+				} ) }
+				selectedCurrency="usd"
+				onCurrencyChange={ jest.fn() }
+			/>
+		);
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Total balance tooltip' } )
+		);
+		expect(
+			screen.getByRole( 'link', { name: /Discover why/ } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/fees/account-showing-negative-balance/'
+		);
 	} );
 
 	it( 'opens the instant payout modal and submits the native action', async () => {

@@ -442,7 +442,7 @@ export const WooPaymentsOverviewPage = () => {
 				/>
 			) }
 			{ showBalanceAndPayouts && (
-				<div className="woocommerce-woopayments-overview__cards">
+				<>
 					<AccountBalancesCard
 						isLoading={ isLoading }
 						errorMessage={ overviewErrorMessage }
@@ -461,7 +461,7 @@ export const WooPaymentsOverviewPage = () => {
 						recentPayouts={ recentPayouts }
 						selectedCurrency={ selectedCurrency || undefined }
 					/>
-				</div>
+				</>
 			) }
 			{ shell && (
 				<>

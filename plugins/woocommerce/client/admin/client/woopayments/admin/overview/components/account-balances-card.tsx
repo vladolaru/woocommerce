@@ -1,11 +1,20 @@
 /**
  * External dependencies
  */
-import { Button, ExternalLink, Modal, Notice } from '@wordpress/components';
+import {
+	Button,
+	Card,
+	CardBody,
+	CardHeader,
+	ExternalLink,
+	Modal,
+	Notice,
+} from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import { createInterpolateElement, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
+import type { ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -24,9 +33,63 @@ import {
 } from '../utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
 import { formatExplicitCurrency } from '../../currency';
+import { HelpPopover } from './help-popover';
 
 const INSTANT_PAYOUTS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/instant-payouts/';
+// Client 11.1.0 `components/account-balances/strings.ts:11-16`.
+const PAYOUT_SCHEDULE_DOCS_URL =
+	'https://woocommerce.com/document/woopayments/payouts/payout-schedule/';
+const NEGATIVE_BALANCE_DOCS_URL =
+	'https://woocommerce.com/document/woopayments/fees/account-showing-negative-balance/';
+
+const docsLink = ( href: string ) => (
+	<ExternalLink href={ href }>
+		<></>
+	</ExternalLink>
+);
+
+const NegativeBalanceHint = () =>
+	createInterpolateElement(
+		__( 'Negative account balance? <a>Discover why.</a>', 'woocommerce' ),
+		{ a: docsLink( NEGATIVE_BALANCE_DOCS_URL ) }
+	);
+
+// Client 11.1.0 `components/account-balances/balance-block.tsx` with its `balance-tooltip.tsx` help.
+const BalanceBlock = ( {
+	id,
+	title,
+	amount,
+	currency,
+	help,
+}: {
+	id: string;
+	title: string;
+	amount: number;
+	currency: string;
+	help: ReactNode;
+} ) => (
+	<div className="woocommerce-woopayments-overview__balance">
+		<div className="woocommerce-woopayments-overview__balance-title">
+			<span id={ id }>{ title }</span>
+			<HelpPopover
+				label={ sprintf(
+					/* translators: %s: Balance name, like "Total balance". */
+					__( '%s tooltip', 'woocommerce' ),
+					title
+				) }
+			>
+				{ help }
+			</HelpPopover>
+		</div>
+		<p
+			className="woocommerce-woopayments-overview__balance-amount"
+			aria-labelledby={ id }
+		>
+			{ formatWooPaymentsAmount( amount, currency ) }
+		</p>
+	</div>
+);
 
 const InstantPayoutModal = ( {
 	instantBalance,
@@ -225,13 +288,18 @@ export const AccountBalancesCard = ( {
 	};
 
 	return (
-		<section
-			className="woocommerce-woopayments-overview-card"
+		<Card
+			as="section"
+			className="woocommerce-woopayments-overview__balances-card"
 			aria-labelledby={ headingId }
 			aria-busy={ isLoading }
 		>
-			<div className="woocommerce-woopayments-overview-card__header">
-				<h2 id={ headingId } tabIndex={ -1 }>
+			<CardHeader>
+				<h2
+					id={ headingId }
+					className="woocommerce-woopayments-overview-card__title"
+					tabIndex={ -1 }
+				>
 					{ __( 'Balance', 'woocommerce' ) }
 				</h2>
 				{ hasBalanceData && currencyOptions.length > 1 && (
@@ -265,7 +333,7 @@ export const AccountBalancesCard = ( {
 						</select>
 					</div>
 				) }
-			</div>
+			</CardHeader>
 			<p
 				className={
 					hasBalanceData
@@ -279,47 +347,74 @@ export const AccountBalancesCard = ( {
 			</p>
 			{ hasBalanceData && (
 				<>
-					<dl className="woocommerce-woopayments-overview__balance-grid woocommerce-woopayments-overview__balance-grid--summary">
-						<div>
-							<dt>{ __( 'Total balance', 'woocommerce' ) }</dt>
-							<dd
-								aria-label={ __(
-									'Total balance',
-									'woocommerce'
-								) }
-							>
-								{ formatWooPaymentsAmount( total, currency ) }
-							</dd>
-							<dd className="woocommerce-woopayments-overview__help">
-								{ __(
-									'Total balance combines both pending funds (transactions under processing) and available funds (ready for payout).',
-									'woocommerce'
-								) }
-							</dd>
-						</div>
-						<div>
-							<dt>{ __( 'Available funds', 'woocommerce' ) }</dt>
-							<dd
-								aria-label={ __(
-									'Available funds',
-									'woocommerce'
-								) }
-							>
-								{ formatWooPaymentsAmount(
-									available,
-									currency
-								) }
-							</dd>
-							<dd className="woocommerce-woopayments-overview__help">
-								{ __(
-									'Available funds have completed processing and are ready to be dispatched to your bank account.',
-									'woocommerce'
-								) }
-							</dd>
-						</div>
-					</dl>
+					<CardBody className="woocommerce-woopayments-overview__balances">
+						<BalanceBlock
+							id={ `woocommerce-woopayments-balance-${ currency }-total` }
+							title={ __( 'Total balance', 'woocommerce' ) }
+							amount={ total }
+							currency={ currency }
+							help={
+								<>
+									<p>
+										{ createInterpolateElement(
+											__(
+												'<b>Total balance</b> combines both pending funds (transactions under processing) and available funds (ready for payout). <a>Learn more</a>',
+												'woocommerce'
+											),
+											{
+												b: <b />,
+												a: docsLink(
+													PAYOUT_SCHEDULE_DOCS_URL
+												),
+											}
+										) }
+									</p>
+									<p className="woocommerce-woopayments-overview__balance-formula">
+										{ __(
+											'Total balance = Available funds + Pending funds',
+											'woocommerce'
+										) }
+									</p>
+									{ total < 0 && (
+										<p>
+											<NegativeBalanceHint />
+										</p>
+									) }
+								</>
+							}
+						/>
+						<BalanceBlock
+							id={ `woocommerce-woopayments-balance-${ currency }-available` }
+							title={ __( 'Available funds', 'woocommerce' ) }
+							amount={ available }
+							currency={ currency }
+							help={
+								<>
+									<p>
+										{ createInterpolateElement(
+											__(
+												'<b>Available funds</b> have completed processing and are ready to be dispatched to your bank account. <a>Learn more</a>',
+												'woocommerce'
+											),
+											{
+												b: <b />,
+												a: docsLink(
+													PAYOUT_SCHEDULE_DOCS_URL
+												),
+											}
+										) }
+									</p>
+									{ available < 0 && (
+										<p>
+											<NegativeBalanceHint />
+										</p>
+									) }
+								</>
+							}
+						/>
+					</CardBody>
 					{ hasInstantBalance && (
-						<div className="woocommerce-woopayments-overview__instant-payout">
+						<CardBody className="woocommerce-woopayments-overview__instant-payout">
 							<p>
 								{ sprintf(
 									/* translators: 1: Available instant payout amount, 2: Instant payout fee percentage. */
@@ -351,7 +446,7 @@ export const AccountBalancesCard = ( {
 									)
 								) }
 							</Button>
-						</div>
+						</CardBody>
 					) }
 					{ /* Client 11.1.0 `components/account-balances/index.tsx:226-251`. */ }
 					{ instantDepositsPreviouslyEligible &&
@@ -392,6 +487,6 @@ export const AccountBalancesCard = ( {
 					) }
 				</>
 			) }
-		</section>
+		</Card>
 	);
 };
