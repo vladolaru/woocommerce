@@ -7,6 +7,7 @@ import {
 	CheckboxControl,
 	ExternalLink,
 	Icon,
+	Modal,
 	Notice,
 	RadioControl,
 	Spinner,
@@ -20,6 +21,7 @@ import {
 } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { info } from '@wordpress/icons';
+import { getSetting } from '@woocommerce/settings';
 
 /**
  * Internal dependencies
@@ -50,7 +52,17 @@ const normalizeStoreSettings = (
 	cacheRecommendationDismissed: response.cache_recommendation_dismissed,
 	isCacheOptimizedFeatureEnabled: response.is_cache_optimized_feature_enabled,
 	siteTheme: response.site_theme,
+	storeUrl: response.store_url,
 } );
+
+// Client 11.1.0 components/preview-modal/index.js:37-44 opens the shop page in the simulation that shows the switch banner.
+// It builds the URL from the domain root; native starts from the home URL so subdirectory installs work.
+const getPreviewUrl = ( storeUrl: string ): string =>
+	`${ String( getSetting( 'homeUrl', '' ) ).replace(
+		/\/$/,
+		''
+	) }/${ storeUrl }` +
+	'?is_mc_onboarding_simulation=1&enable_storefront_switcher=false&enable_auto_currency=true';
 
 const serializeStoreSettings = ( settings: StoreSettingsState ) => ( {
 	wcpay_multi_currency_enable_auto_currency: settings.enableAutoCurrency
@@ -93,6 +105,7 @@ export function StoreLevelSettings() {
 		useState< StoreSettingsState | null >( null );
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ isSaving, setIsSaving ] = useState( false );
+	const [ isPreviewOpen, setIsPreviewOpen ] = useState( false );
 
 	useEffect( () => {
 		let isMounted = true;
@@ -246,6 +259,20 @@ export function StoreLevelSettings() {
 					'Automatically switch customers to their local currency if it has been enabled',
 					'woocommerce'
 				) }
+				help={ createInterpolateElement(
+					__(
+						'Customers will be notified via store alert banner. <previewLink>Preview</previewLink>',
+						'woocommerce'
+					),
+					{
+						previewLink: (
+							<Button
+								variant="link"
+								onClick={ () => setIsPreviewOpen( true ) }
+							/>
+						),
+					}
+				) }
 				onChange={ ( checked ) =>
 					updateDraftSettings( {
 						enableAutoCurrency: Boolean( checked ),
@@ -330,6 +357,20 @@ export function StoreLevelSettings() {
 						{ __( 'Use caching mode', 'woocommerce' ) }
 					</Button>
 				</Notice>
+			) }
+			{ isPreviewOpen && (
+				<Modal
+					title={ __( 'Preview', 'woocommerce' ) }
+					className="woocommerce-multi-currency-settings__preview-modal"
+					shouldCloseOnClickOutside={ false }
+					onRequestClose={ () => setIsPreviewOpen( false ) }
+				>
+					<iframe
+						title={ __( 'Preview', 'woocommerce' ) }
+						className="woocommerce-multi-currency-settings__preview-frame"
+						src={ getPreviewUrl( draftSettings.storeUrl ) }
+					/>
+				</Modal>
 			) }
 			<Button
 				variant="primary"

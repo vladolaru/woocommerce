@@ -99,8 +99,15 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			$_GET['max_price'],
 			$_GET['rest_route'],
 			$_GET['pay_for_order'],
+			$_GET['is_mc_onboarding_simulation'],
+			$_GET['enable_auto_currency'],
+			$_GET['enable_storefront_switcher'],
+			$_SERVER['HTTP_REFERER'],
 			$_POST['wcpay_selected_currency']
 		);
+		remove_all_filters( 'wcpay_multi_currency_override_notice_country' );
+		remove_all_filters( 'wcpay_multi_currency_override_notice_currency_name' );
+		update_option( 'woocommerce_currency', 'USD' );
 		delete_option( 'wcpay_multi_currency_enable_auto_currency' );
 		delete_option( 'wcpay_multi_currency_rendering_mode' );
 		delete_option( '_wcpay_feature_mc_cache_optimized' );
@@ -634,6 +641,120 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$markup = (string) ob_get_clean();
 
 		$this->assertSame( '', $markup );
+	}
+
+	/**
+	 * @testdox Should show the automatic-switch banner in the settings Preview simulation.
+	 *
+	 * Client 11.1.0 MultiCurrency.php:1466-1476 and 1970-2012: with
+	 * is_mc_onboarding_simulation and enable_auto_currency in the query, a USD store
+	 * pretends the visitor is in the United Kingdom (any other store: the United
+	 * States) and always prints the notice, even with automatic switching off and
+	 * the store currency selected.
+	 */
+	public function test_simulation_shows_auto_switch_notice(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		$_GET['is_mc_onboarding_simulation'] = '1';
+		$_GET['enable_storefront_switcher']  = 'false';
+		$_GET['enable_auto_currency']        = 'true';
+		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service( true, 'USD' ) );
+		$sut->set_geolocation_service( $this->create_geolocation_service( 'USD', 'US' ) );
+
+		$sut->handle_simulation_init();
+
+		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+
+		ob_start();
+		$sut->handle_wp_footer();
+		$markup = (string) ob_get_clean();
+
+		$this->assertStringContainsString( "We noticed you're visiting from United Kingdom (UK). We've updated our prices to Pound sterling for your shopping convenience.", $markup );
+		$this->assertStringContainsString( 'Use United States (US) dollar instead.', $markup );
+	}
+
+	/**
+	 * @testdox Should simulate a United States visitor for a store that does not sell in USD.
+	 */
+	public function test_simulation_uses_usd_for_non_usd_store(): void {
+		update_option( 'woocommerce_currency', 'EUR' );
+		$_GET['is_mc_onboarding_simulation'] = '1';
+		$_GET['enable_auto_currency']        = 'true';
+		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service( true, 'EUR' ) );
+		$sut->set_geolocation_service( $this->create_geolocation_service( 'EUR', 'FR' ) );
+
+		$sut->handle_simulation_init();
+		ob_start();
+		$sut->handle_wp_footer();
+		$markup = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'visiting from United States (US).', $markup );
+		$this->assertStringContainsString( 'updated our prices to United States (US) dollar', $markup );
+	}
+
+	/**
+	 * @testdox Should carry the simulation through links and reshow the store notice.
+	 *
+	 * Client 11.1.0 MultiCurrency.php:2020-2051.
+	 */
+	public function test_simulation_prints_link_script(): void {
+		$_GET['is_mc_onboarding_simulation'] = '1';
+		$_GET['enable_auto_currency']        = 'true';
+		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service() );
+
+		$sut->handle_simulation_init();
+
+		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'handle_simulation_wp_footer' ) ) );
+
+		ob_start();
+		$sut->handle_simulation_wp_footer();
+		$markup = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'id="wcpay_multi_currency-simulation-script"', $markup );
+		$this->assertStringContainsString( "searchParams.set( 'is_mc_onboarding_simulation', true )", $markup );
+		$this->assertStringContainsString( "searchParams.set( 'enable_auto_currency', true )", $markup );
+		$this->assertStringContainsString( "searchParams.set( 'enable_storefront_switcher', false )", $markup );
+		$this->assertStringContainsString( "'store_notice' + ", $markup );
+	}
+
+	/**
+	 * @testdox Should read the simulation from the referring page when the query has none.
+	 *
+	 * Client 11.1.0 MultiCurrency.php:1491-1505.
+	 */
+	public function test_simulation_reads_referer(): void {
+		$_SERVER['HTTP_REFERER'] = 'http://example.org/shop/?is_mc_onboarding_simulation=1&enable_auto_currency=true';
+		$sut                     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service( true, 'USD' ) );
+
+		$sut->handle_simulation_init();
+
+		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+	}
+
+	/**
+	 * @testdox Should leave the store alone without a simulation, and skip the banner when the simulation turns it off.
+	 */
+	public function test_no_simulation_banner_without_flag_or_auto_currency(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service() );
+		$sut->handle_simulation_init();
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_simulation_wp_footer' ) ) );
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+
+		$_GET['is_mc_onboarding_simulation'] = '1';
+		$_GET['enable_auto_currency']        = 'false';
+		$sut->handle_simulation_init();
+		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'handle_simulation_wp_footer' ) ) );
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+	}
+
+	/**
+	 * @testdox Should register the simulation on frontend requests after geolocation.
+	 */
+	public function test_registers_simulation_hook(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service(), $this->create_request_context( true, false ) );
+
+		$sut->register();
+
+		$this->assertSame( 13, has_action( 'init', array( $sut, 'handle_simulation_init' ) ) );
 	}
 
 	/**

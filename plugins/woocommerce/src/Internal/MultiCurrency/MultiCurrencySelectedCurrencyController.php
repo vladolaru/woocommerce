@@ -33,6 +33,8 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	private const FILTER_OVERRIDE_NOTICE_COUNTRY       = 'wcpay_multi_currency_override_notice_country';
 	private const FILTER_OVERRIDE_NOTICE_CURRENCY_NAME = 'wcpay_multi_currency_override_notice_currency_name';
 
+	private const SIMULATION_FLAG = 'is_mc_onboarding_simulation';
+
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -74,6 +76,13 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * @var bool
 	 */
 	private bool $selected_currency_state_is_session_ready = false;
+
+	/**
+	 * Settings preview simulation parameters; empty outside a simulation.
+	 *
+	 * @var array<string,bool>
+	 */
+	private array $simulation_params = array();
 
 	/**
 	 * Runtime service factory.
@@ -158,6 +167,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 
 			$this->add_action_once( 'init', array( $this, 'handle_init' ), 11 );
 			$this->add_action_once( 'init', array( $this, 'handle_geolocation_init' ), 12 );
+			$this->add_action_once( 'init', array( $this, 'handle_simulation_init' ), 13 );
 			$this->add_action_once( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) );
 		}
 
@@ -253,10 +263,14 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		$store_currency_code      = strtoupper( get_woocommerce_currency() );
 		$geolocated_currency_code = $this->get_geolocation_service()->get_currency_by_customer_location();
 
+		// The settings Preview always shows the notice, like client 11.1.0 MultiCurrency.php:1070-1081.
 		if (
-			$store_currency_code === $current_currency_code
-			|| ! is_string( $geolocated_currency_code )
-			|| strtoupper( $geolocated_currency_code ) !== $current_currency_code
+			empty( $this->simulation_params )
+			&& (
+				$store_currency_code === $current_currency_code
+				|| ! is_string( $geolocated_currency_code )
+				|| strtoupper( $geolocated_currency_code ) !== $current_currency_code
+			)
 		) {
 			return;
 		}
@@ -301,6 +315,84 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		echo '<p class="woocommerce-store-notice demo_store" data-notice-id="' . esc_attr( $notice_id . 2 ) . '" style="display:none;">';
 		echo wp_kses_post( $message );
 		echo ' <a href="#" class="woocommerce-store-notice__dismiss-link">' . esc_html__( 'Dismiss', 'woocommerce' ) . '</a></p>';
+	}
+
+	/**
+	 * Start the multi-currency settings Preview simulation when the request asks for it.
+	 *
+	 * Client 11.1.0 MultiCurrency::possible_simulation_activation() and simulate_client_currency():
+	 * the Preview shows the automatic-switch notice as a USD store's UK visitor (any other store's US visitor) would see it.
+	 *
+	 * @internal
+	 */
+	public function handle_simulation_init(): void {
+		$this->simulation_params = $this->get_simulation_params();
+		if ( empty( $this->simulation_params ) ) {
+			return;
+		}
+
+		$this->add_action_once( 'wp_footer', array( $this, 'handle_simulation_wp_footer' ) );
+
+		if ( ! $this->simulation_params['enable_auto_currency'] ) {
+			return;
+		}
+
+		$simulation_currency = 'USD' === strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) ) ? 'GBP' : 'USD';
+		$countries           = function_exists( 'WC' ) && is_object( WC()->countries ) ? WC()->countries->get_countries() : array();
+		$country_code        = 'GBP' === $simulation_currency ? 'GB' : 'US';
+		$country_name        = (string) ( $countries[ $country_code ] ?? $country_code );
+		$currency_name       = (string) ( get_woocommerce_currencies()[ $simulation_currency ] ?? $simulation_currency );
+
+		add_filter(
+			self::FILTER_OVERRIDE_NOTICE_CURRENCY_NAME,
+			static function () use ( $currency_name ) {
+				return $currency_name;
+			}
+		);
+		add_filter(
+			self::FILTER_OVERRIDE_NOTICE_COUNTRY,
+			static function () use ( $country_name ) {
+				return $country_name;
+			}
+		);
+
+		$this->add_action_once( 'wp_footer', array( $this, 'handle_wp_footer' ) );
+	}
+
+	/**
+	 * Carry the Preview simulation through the page links and show the store notice again.
+	 *
+	 * Client 11.1.0 MultiCurrency::add_simulation_params_to_preview_urls().
+	 *
+	 * @internal
+	 */
+	public function handle_simulation_wp_footer(): void {
+		if ( empty( $this->simulation_params ) ) {
+			return;
+		}
+
+		$enable_auto_currency       = $this->simulation_params['enable_auto_currency'] ? 'true' : 'false';
+		$enable_storefront_switcher = $this->simulation_params['enable_storefront_switcher'] ? 'true' : 'false';
+		$script                     = "document.querySelectorAll( 'a' ).forEach( ( link ) => {
+	if ( ! link.href ) {
+		return;
+	}
+	const parsedURL = new URL( link.href );
+	if ( false === parsedURL.searchParams.has( 'is_mc_onboarding_simulation' ) ) {
+		parsedURL.searchParams.set( 'is_mc_onboarding_simulation', true );
+		parsedURL.searchParams.set( 'enable_auto_currency', {$enable_auto_currency} );
+		parsedURL.searchParams.set( 'enable_storefront_switcher', {$enable_storefront_switcher} );
+		link.href = parsedURL.toString();
+	}
+} );
+document.addEventListener( 'DOMContentLoaded', () => {
+	const noticeElement = document.querySelector( '.woocommerce-store-notice.demo_store' );
+	if ( noticeElement && window.cookieStore ) {
+		window.cookieStore.delete( 'store_notice' + noticeElement.getAttribute( 'data-notice-id' ) );
+	}
+} );";
+
+		wp_print_inline_script_tag( $script, array( 'id' => 'wcpay_multi_currency-simulation-script' ) );
 	}
 
 	/**
@@ -461,6 +553,36 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		}
 
 		return $this->request_context;
+	}
+
+	/**
+	 * Get the Preview simulation parameters from the query string, or from the referring page.
+	 *
+	 * Client 11.1.0 MultiCurrency::get_multi_currency_onboarding_simulation_variables().
+	 *
+	 * @return array<string,bool> Empty when the request is not a simulation.
+	 */
+	private function get_simulation_params(): array {
+		$parameters = wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$parameters = is_array( $parameters ) ? $parameters : array();
+
+		if ( ! wp_validate_boolean( $parameters[ self::SIMULATION_FLAG ] ?? false ) ) {
+			$referer = isset( $_SERVER['HTTP_REFERER'] ) ? esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) ) : '';
+			if ( false === strpos( $referer, self::SIMULATION_FLAG ) ) {
+				return array();
+			}
+
+			$parameters = array();
+			wp_parse_str( (string) wp_parse_url( $referer, PHP_URL_QUERY ), $parameters );
+			if ( ! wp_validate_boolean( $parameters[ self::SIMULATION_FLAG ] ?? false ) ) {
+				return array();
+			}
+		}
+
+		return array(
+			'enable_storefront_switcher' => wp_validate_boolean( $parameters['enable_storefront_switcher'] ?? false ),
+			'enable_auto_currency'       => wp_validate_boolean( $parameters['enable_auto_currency'] ?? false ),
+		);
 	}
 
 	/**

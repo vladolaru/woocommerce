@@ -49,6 +49,7 @@ export interface StoreSettingsState {
 	cacheRecommendationDismissed: boolean;
 	isCacheOptimizedFeatureEnabled: boolean;
 	siteTheme: string;
+	storeUrl: string;
 }
 
 export type ExchangeRateType = 'automatic' | 'manual';

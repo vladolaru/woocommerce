@@ -14,6 +14,10 @@ const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
+jest.mock( '@woocommerce/settings', () => ( {
+	getSetting: ( name: string, fallback?: unknown ) =>
+		name === 'homeUrl' ? 'https://example.com/store' : fallback,
+} ) );
 jest.mock( '@wordpress/data', () => {
 	const actual = jest.requireActual( '@wordpress/data' );
 
@@ -130,6 +134,38 @@ describe( 'StoreLevelSettings', () => {
 		expect(
 			screen.getByRole( 'link', { name: 'Configure now' } )
 		).toHaveAttribute( 'href', 'widgets.php' );
+	} );
+
+	// Client 11.1.0 store-settings/index.js:101-118 and
+	// components/preview-modal/index.js:25-46: the help under the automatic
+	// switch opens a Preview dialog with the store page in the simulation that
+	// shows the banner. Native derives the page from the home URL rather than
+	// the domain root, so subdirectory installs work (AGENTS.md, install layout).
+	it( 'previews the automatic currency switch banner', async () => {
+		mockApiFetch.mockResolvedValueOnce( storeSettingsResponse );
+
+		render( <StoreLevelSettings /> );
+
+		const autoSwitch = await screen.findByRole( 'checkbox', {
+			name: /Automatically switch customers to their local currency/i,
+		} );
+		expect( autoSwitch ).toHaveAccessibleDescription(
+			'Customers will be notified via store alert banner. Preview'
+		);
+
+		await click( screen.getByRole( 'button', { name: 'Preview' } ) );
+
+		const dialog = screen.getByRole( 'dialog', { name: 'Preview' } );
+		expect( dialog ).toBeInTheDocument();
+		expect( screen.getByTitle( 'Preview' ) ).toHaveAttribute(
+			'src',
+			'https://example.com/store/shop?is_mc_onboarding_simulation=1&enable_storefront_switcher=false&enable_auto_currency=true'
+		);
+		// Opening the preview is not a settings change.
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+		expect(
+			screen.getByRole( 'button', { name: 'Save changes', hidden: true } )
+		).toHaveAttribute( 'aria-disabled', 'true' );
 	} );
 
 	it( 'saves store settings with preserved REST option keys', async () => {
