@@ -357,24 +357,28 @@ export const WooPaymentsBlockedTransactions = () => {
 			),
 	} ) );
 
+	// Client 11.1.0 `transactions/blocked/index.tsx:67-94`: the footer summary, once loaded.
+	const summaryItems: Array< { label: string; value: string } > = summary
+		? [
+				{
+					label: __( 'transactions(s)', 'woocommerce' ),
+					value: String( totalRows ),
+				},
+		  ]
+		: [];
+
+	if ( summary && totalRows > 0 && summary.currencies?.length === 1 ) {
+		summaryItems.push( {
+			label: __( 'blocked', 'woocommerce' ),
+			value: formatExplicitCurrency(
+				summary.total,
+				summary.currencies[ 0 ]
+			),
+		} );
+	}
+
 	return (
 		<>
-			{ summary && (
-				<div className="woocommerce-woopayments-money-movement__summary">
-					<span>
-						{ totalRows } { __( 'transactions(s)', 'woocommerce' ) }
-					</span>
-					{ totalRows > 0 && summary.currencies?.length === 1 && (
-						<span>
-							{ formatExplicitCurrency(
-								summary.total,
-								summary.currencies[ 0 ]
-							) }{ ' ' }
-							{ __( 'blocked', 'woocommerce' ) }
-						</span>
-					) }
-				</div>
-			) }
 			<WooPaymentsMoneyMovementDataViews
 				fields={ fields }
 				rows={ rows }
@@ -385,6 +389,7 @@ export const WooPaymentsBlockedTransactions = () => {
 				search={ false }
 				searchLabel={ title }
 				title={ title }
+				summary={ summaryItems }
 				// Client 11.1.0 uses TableCard, whose empty text this is.
 				empty={ __( 'No data to display', 'woocommerce' ) }
 				getItemId={ ( item ) =>

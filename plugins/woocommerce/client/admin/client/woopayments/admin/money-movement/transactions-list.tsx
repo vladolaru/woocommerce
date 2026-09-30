@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { useCallback, useEffect, useMemo, useState } from '@wordpress/element';
-import { __, sprintf } from '@wordpress/i18n';
+import { __, _n } from '@wordpress/i18n';
 import { getHistory } from '@woocommerce/navigation';
 import { useLocation } from 'react-router-dom';
 
@@ -29,6 +29,7 @@ import { WooPaymentsTransactionSearch } from './transaction-search';
 import { runWooPaymentsExport } from './export';
 import {
 	formatAmount,
+	formatCount,
 	formatExplicitCurrency,
 	getErrorMessage,
 	getResourceId,
@@ -283,37 +284,42 @@ export const WooPaymentsTransactionsList = (
 		summaryCount > 0 &&
 		( storeCurrencies.length < 2 || !! query.store_currency_is );
 	const summaryTotal = getSummaryNumber( summary, 'total' );
-	const summaryFees = getSummaryNumber( summary, 'fees' );
-	const summaryNet = getSummaryNumber( summary, 'net' );
-	const summaryAmounts: string[] = [];
+	// Client 11.1.0 `transactions/list/index.tsx:716-768`: the footer summary, once loaded.
+	const summaryItems: Array< { label: string; value: string } > =
+		! isLoading && summaryTotal !== undefined
+			? [
+					{
+						label: _n(
+							'transaction',
+							'transactions',
+							summaryCount,
+							'woocommerce'
+						),
+						value: formatCount( summaryCount ),
+					},
+			  ]
+			: [];
 
-	if ( showSummaryAmounts && summaryTotal !== undefined ) {
-		summaryAmounts.push(
-			sprintf(
-				/* translators: %s: total amount of the listed transactions. */
-				__( '%s total', 'woocommerce' ),
-				formatExplicitCurrency( summaryTotal, summaryCurrency )
-			)
-		);
-	}
-
-	if ( showSummaryAmounts && summaryFees !== undefined ) {
-		summaryAmounts.push(
-			sprintf(
-				/* translators: %s: total fees of the listed transactions. */
-				__( '%s fees', 'woocommerce' ),
-				formatAmount( summaryFees, summaryCurrency )
-			)
-		);
-	}
-
-	if ( showSummaryAmounts && summaryNet !== undefined ) {
-		summaryAmounts.push(
-			sprintf(
-				/* translators: %s: net amount of the listed transactions. */
-				__( '%s net', 'woocommerce' ),
-				formatExplicitCurrency( summaryNet, summaryCurrency )
-			)
+	if ( summaryItems.length && showSummaryAmounts ) {
+		summaryItems.push(
+			{
+				label: __( 'total', 'woocommerce' ),
+				value: formatExplicitCurrency( summaryTotal, summaryCurrency ),
+			},
+			{
+				label: __( 'fees', 'woocommerce' ),
+				value: formatAmount(
+					getSummaryNumber( summary, 'fees' ) ?? 0,
+					summaryCurrency
+				),
+			},
+			{
+				label: __( 'net', 'woocommerce' ),
+				value: formatExplicitCurrency(
+					getSummaryNumber( summary, 'net' ) ?? 0,
+					summaryCurrency
+				),
+			}
 		);
 	}
 	const searchValue = Array.isArray( query.search )
@@ -329,18 +335,6 @@ export const WooPaymentsTransactionsList = (
 			{ errorMessage && (
 				<StatusMessage isError>{ errorMessage }</StatusMessage>
 			) }
-			<div className="woocommerce-woopayments-money-movement__summary">
-				<span>
-					{ sprintf(
-						/* translators: %d: transactions count. */
-						__( '%d transactions', 'woocommerce' ),
-						summaryCount
-					) }
-				</span>
-				{ summaryAmounts.map( ( text ) => (
-					<span key={ text }>{ text }</span>
-				) ) }
-			</div>
 			{ exportMessage && (
 				<StatusMessage isLive isError={ !! exportMessage.isError }>
 					{ exportMessage.text }
@@ -356,6 +350,7 @@ export const WooPaymentsTransactionsList = (
 				search={ false }
 				searchLabel={ __( 'Search transactions', 'woocommerce' ) }
 				title={ title }
+				summary={ summaryItems }
 				empty={ emptyMessage }
 				getItemId={ getResourceId }
 				toolbarActions={

@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { useEffect, useMemo, useState } from '@wordpress/element';
-import { __, sprintf } from '@wordpress/i18n';
+import { __, _n, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -31,6 +31,7 @@ import {
 	StatusMessage,
 } from './money-movement/table';
 import {
+	formatCount,
 	formatExplicitCurrency,
 	getErrorMessage,
 } from './money-movement/utils';
@@ -317,9 +318,38 @@ export const WooPaymentsPayouts = () => {
 		liveStatusMessage = __( 'No payouts found.', 'woocommerce' );
 	}
 
-	const summaryCount = getSummaryCount( summary ) ?? totalCount;
+	const summaryCount = getSummaryCount( summary );
 	const summaryTotal = getSummaryTotal( summary );
-	const summaryCurrency = getSummaryCurrency( summary );
+	// Client 11.1.0 `deposits/list/index.tsx:172-205`: the footer summary once loaded, with the
+	// total for one currency or a currency filter.
+	const summaryItems: Array< { label: string; value: string } > =
+		! isLoading && summaryCount !== undefined && summaryTotal !== undefined
+			? [
+					{
+						label: _n(
+							'payout',
+							'payouts',
+							summaryCount,
+							'woocommerce'
+						),
+						value: formatCount( summaryCount ),
+					},
+			  ]
+			: [];
+
+	if (
+		summaryItems.length &&
+		( ( summary.store_currencies || [] ).length < 2 ||
+			typeof query.store_currency_is === 'string' )
+	) {
+		summaryItems.push( {
+			label: __( 'total', 'woocommerce' ),
+			value: formatExplicitCurrency(
+				summaryTotal,
+				getSummaryCurrency( summary )
+			),
+		} );
+	}
 
 	return (
 		<div className="woocommerce-woopayments-payouts">
@@ -338,23 +368,6 @@ export const WooPaymentsPayouts = () => {
 				{ errorMessage && (
 					<StatusMessage isError>{ errorMessage }</StatusMessage>
 				) }
-				<div className="woocommerce-woopayments-money-movement__summary">
-					<span>
-						{ sprintf(
-							/* translators: %d: payouts count. */
-							__( '%d payouts', 'woocommerce' ),
-							summaryCount
-						) }
-					</span>
-					{ typeof summaryTotal === 'number' && (
-						<span>
-							{ formatExplicitCurrency(
-								summaryTotal,
-								summaryCurrency
-							) }
-						</span>
-					) }
-				</div>
 				{ exportMessage && (
 					<StatusMessage isLive isError={ !! exportMessage.isError }>
 						{ exportMessage.text }
@@ -371,6 +384,7 @@ export const WooPaymentsPayouts = () => {
 					search={ false }
 					searchLabel={ __( 'Search payouts', 'woocommerce' ) }
 					title={ __( 'Payout history', 'woocommerce' ) }
+					summary={ summaryItems }
 					empty={ __( 'No payouts found.', 'woocommerce' ) }
 					getItemId={ ( payout ) => payout.id }
 					toolbarActions={

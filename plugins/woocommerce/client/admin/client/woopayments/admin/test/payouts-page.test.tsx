@@ -9,6 +9,7 @@ import { MemoryRouter } from 'react-router-dom';
 /**
  * Internal dependencies
  */
+import { summaryItem } from './helpers/table-summary';
 import { WooPaymentsPayouts } from '../payouts';
 import {
 	getWooPaymentsDeposits,
@@ -139,7 +140,9 @@ describe( 'WooPaymentsPayouts', () => {
 			within( row ).getByText( 'Completed (paid)' )
 		).toBeInTheDocument();
 		expect( within( row ).getByText( '$25.00' ) ).toBeInTheDocument();
-		expect( screen.getByText( '1 payouts' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( summaryItem( '1 payout' ) )
+		).toBeInTheDocument();
 		expect(
 			screen.getByText( '$25.00', { selector: 'span' } )
 		).toBeInTheDocument();
@@ -235,7 +238,9 @@ describe( 'WooPaymentsPayouts', () => {
 		}
 		expect( within( row ).getByText( 'Pending' ) ).toBeInTheDocument();
 		expect( within( row ).getByText( '$7.00' ) ).toBeInTheDocument();
-		expect( screen.getByText( '1 payouts' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( summaryItem( '1 payout' ) )
+		).toBeInTheDocument();
 		expect( screen.queryByText( 'po_paid' ) ).not.toBeInTheDocument();
 		expect( mockGetDeposits ).toHaveBeenCalledWith(
 			expect.objectContaining( { status_is: 'pending' } )

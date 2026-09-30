@@ -37,7 +37,7 @@ import { WooPaymentsListFilters } from './list-filters';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { runWooPaymentsExport } from './export';
 import {
-	formatAmount,
+	formatCount,
 	formatDateTime,
 	formatExplicitCurrency,
 	formatDisputeReasonLabel,
@@ -123,7 +123,9 @@ const ALL_CURRENCIES = '---';
 export const getDisputesShowFilter = ( search: string ): DisputesShowFilter => {
 	const value = new URLSearchParams( search ).get( 'filter' );
 
-	return DISPUTES_SHOW_FILTERS.find( ( filter ) => filter === value ) || 'all';
+	return (
+		DISPUTES_SHOW_FILTERS.find( ( filter ) => filter === value ) || 'all'
+	);
 };
 
 /**
@@ -157,7 +159,9 @@ const buildDisputesRoute = (
 		return route;
 	}
 
-	return `${ route }${ route.includes( '?' ) ? '&' : '?' }filter=${ showFilter }`;
+	return `${ route }${
+		route.includes( '?' ) ? '&' : '?'
+	}filter=${ showFilter }`;
 };
 
 const DISPUTE_STATUS_FILTER_ELEMENTS = Object.entries(
@@ -230,15 +234,6 @@ const getSummaryCount = ( summary: DisputesSummary ) => {
 
 	return typeof count === 'number' ? count : undefined;
 };
-
-const getSummaryTotal = ( summary: DisputesSummary ) => {
-	const total = summary.total || summary.gross;
-
-	return typeof total === 'number' ? total : undefined;
-};
-
-const getSummaryCurrency = ( summary: DisputesSummary ) =>
-	typeof summary.currency === 'string' ? summary.currency : undefined;
 
 export const WooPaymentsDisputesPage = () => {
 	const [ disputes, setDisputes ] = useState< WooPaymentsDisputeListRow[] >(
@@ -380,7 +375,11 @@ export const WooPaymentsDisputesPage = () => {
 				// Client 11.1.0 `disputes/filters/config.ts:130-175`: before, after or between dates.
 				filterBy: isAdvanced
 					? {
-							operators: [ 'before', 'after', 'between' ] as const,
+							operators: [
+								'before',
+								'after',
+								'between',
+							] as const,
 							isPrimary: true,
 					  }
 					: ( false as const ),
@@ -587,9 +586,22 @@ export const WooPaymentsDisputesPage = () => {
 		liveStatusMessage = __( 'No disputes found.', 'woocommerce' );
 	}
 
-	const summaryCount = getSummaryCount( summary ) ?? totalCount;
-	const summaryTotal = getSummaryTotal( summary );
-	const summaryCurrency = getSummaryCurrency( summary );
+	const summaryCount = getSummaryCount( summary );
+	// Client 11.1.0 `disputes/index.tsx:497-517`: the footer summary is the count, once loaded.
+	const summaryItems: Array< { label: string; value: string } > =
+		! isLoading && summaryCount !== undefined
+			? [
+					{
+						label: _n(
+							'dispute',
+							'disputes',
+							summaryCount,
+							'woocommerce'
+						),
+						value: formatCount( summaryCount ),
+					},
+			  ]
+			: [];
 	const currencyFilter =
 		typeof query.store_currency_is === 'string'
 			? query.store_currency_is
@@ -661,20 +673,6 @@ export const WooPaymentsDisputesPage = () => {
 				{ errorMessage && (
 					<StatusMessage isError>{ errorMessage }</StatusMessage>
 				) }
-				<div className="woocommerce-woopayments-money-movement__summary">
-					<span>
-						{ sprintf(
-							/* translators: %d: disputes count. */
-							__( '%d disputes', 'woocommerce' ),
-							summaryCount
-						) }
-					</span>
-					{ typeof summaryTotal === 'number' && (
-						<span>
-							{ formatAmount( summaryTotal, summaryCurrency ) }
-						</span>
-					) }
-				</div>
 				{ exportMessage && (
 					<StatusMessage isLive isError={ !! exportMessage.isError }>
 						{ exportMessage.text }
@@ -691,6 +689,7 @@ export const WooPaymentsDisputesPage = () => {
 					search={ false }
 					searchLabel={ __( 'Search disputes', 'woocommerce' ) }
 					title={ __( 'Disputes', 'woocommerce' ) }
+					summary={ summaryItems }
 					empty={ __( 'No disputes found.', 'woocommerce' ) }
 					getItemId={ getDisputeId }
 					toolbarActions={

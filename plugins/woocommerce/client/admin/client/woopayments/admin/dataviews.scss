@@ -52,3 +52,8 @@
 		background-color: #f8f9fa;
 	}
 }
+
+// Client 11.1.0 `TableCard` footer: the summary centered under the table.
+.woocommerce-woopayments-money-movement-dataviews > .components-card__footer {
+	justify-content: center;
+}

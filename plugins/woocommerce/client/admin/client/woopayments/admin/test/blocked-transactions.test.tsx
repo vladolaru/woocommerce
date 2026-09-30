@@ -19,6 +19,7 @@ import { MemoryRouter, useNavigate } from 'react-router-dom';
 /**
  * Internal dependencies
  */
+import { summaryItem } from './helpers/table-summary';
 import { WooPaymentsTransactionsPage } from '../money-movement/transactions-page';
 import {
 	getWooPaymentsAuthorizations,
@@ -55,6 +56,21 @@ jest.mock( '@woocommerce/csv-export', () => ( {
 } ) );
 
 jest.mock( '@woocommerce/components', () => ( {
+	// Markup stand-in: the real package index needs the `@wordpress/data` this file mocks.
+	TableSummary: ( {
+		data,
+	}: {
+		data: Array< { label: string; value: string } >;
+	} ) => (
+		<ul className="woocommerce-table__summary">
+			{ data.map( ( { label, value } ) => (
+				<li className="woocommerce-table__summary-item" key={ label }>
+					<span>{ value }</span>
+					<span>{ label }</span>
+				</li>
+			) ) }
+		</ul>
+	),
 	Search: ( props: {
 		placeholder: string;
 		onChange: ( values: Array< { key: string; label: string } > ) => void;
@@ -267,9 +283,10 @@ describe( 'WooPayments Blocked transactions tab', () => {
 				.map( ( header ) => header.textContent )
 		).toEqual( [ 'Date / Time', 'Amount', 'Customer', 'Status' ] );
 		// DataViews would add its own title column, a second "Date / Time".
-		expect(
-			document.querySelector( '[data-show-title]' )
-		).toHaveAttribute( 'data-show-title', 'false' );
+		expect( document.querySelector( '[data-show-title]' ) ).toHaveAttribute(
+			'data-show-title',
+			'false'
+		);
 
 		const [ , adaRow, graceRow ] = screen.getAllByRole( 'row' );
 		expect(
@@ -306,9 +323,13 @@ describe( 'WooPayments Blocked transactions tab', () => {
 			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=1521'
 		);
 
-		expect( screen.getByText( '2 transactions(s)' ) ).toBeInTheDocument();
 		expect(
-			screen.getByText( `${ formatAmount( 6250, 'usd' ) } blocked` )
+			screen.getByText( summaryItem( '2 transactions(s)' ) )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				summaryItem( `${ formatAmount( 6250, 'usd' ) } blocked` )
+			)
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'heading', { name: 'Blocked transactions' } )
@@ -342,7 +363,7 @@ describe( 'WooPayments Blocked transactions tab', () => {
 		} );
 		renderAt( '/woopayments/transactions?view=blocked' );
 
-		await screen.findByText( '2 transactions(s)' );
+		await screen.findByText( summaryItem( '2 transactions(s)' ) );
 		expect(
 			screen
 				.getAllByRole( 'columnheader' )
@@ -399,10 +420,12 @@ describe( 'WooPayments Blocked transactions tab', () => {
 		renderAt( '/woopayments/transactions?view=blocked' );
 
 		expect(
-			await screen.findByText( '2 transactions(s)' )
+			await screen.findByText( summaryItem( '2 transactions(s)' ) )
 		).toBeInTheDocument();
 		expect(
-			screen.queryByText( `${ formatAmount( 6250, 'usd' ) } blocked` )
+			screen.queryByText(
+				summaryItem( `${ formatAmount( 6250, 'usd' ) } blocked` )
+			)
 		).not.toBeInTheDocument();
 	} );
 
@@ -414,7 +437,7 @@ describe( 'WooPayments Blocked transactions tab', () => {
 		renderAt( '/woopayments/transactions?view=blocked' );
 
 		expect(
-			await screen.findByText( '0 transactions(s)' )
+			await screen.findByText( summaryItem( '0 transactions(s)' ) )
 		).toBeInTheDocument();
 		expect(
 			screen.queryByRole( 'button', { name: 'Export' } )
@@ -449,7 +472,7 @@ describe( 'WooPayments Blocked transactions tab', () => {
 	it( 'hides the summary while it reloads for a new search, like the client', async () => {
 		renderAt( '/woopayments/transactions?view=blocked' );
 		expect(
-			await screen.findByText( '2 transactions(s)' )
+			await screen.findByText( summaryItem( '2 transactions(s)' ) )
 		).toBeInTheDocument();
 
 		mockGetFraudOutcomesSummary.mockReturnValue( new Promise( () => {} ) );

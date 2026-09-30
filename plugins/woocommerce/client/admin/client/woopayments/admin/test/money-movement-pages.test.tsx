@@ -13,6 +13,7 @@ import { getSettings, setSettings } from '@wordpress/date';
 /**
  * Internal dependencies
  */
+import { summaryItem } from './helpers/table-summary';
 import { WooPaymentsDisputesPage } from '../money-movement/disputes-page';
 import { WooPaymentsPaymentSummarySection } from '../money-movement/transaction-detail-sections';
 import { WooPaymentsTransactionTimeline } from '../money-movement/transaction-timeline';
@@ -1171,7 +1172,7 @@ describe( 'WooPayments money movement pages', () => {
 
 	it( 'projects the global uncaptured count on the ordinary transactions view', async () => {
 		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
-		mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+		mockGetTransactionsSummary.mockResolvedValue( { count: 0, total: 0 } );
 		mockGetAuthorizationsSummary.mockResolvedValue( { count: 26 } );
 
 		render(
@@ -1181,7 +1182,7 @@ describe( 'WooPayments money movement pages', () => {
 		);
 
 		expect(
-			await screen.findByText( '0 transactions' )
+			await screen.findByText( summaryItem( '0 transactions' ) )
 		).toBeInTheDocument();
 		expect(
 			await screen.findByRole( 'tab', { name: 'Uncaptured (26)' } )
@@ -1191,7 +1192,7 @@ describe( 'WooPayments money movement pages', () => {
 
 	it( 'keeps transactions usable when the uncaptured count fails', async () => {
 		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
-		mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+		mockGetTransactionsSummary.mockResolvedValue( { count: 0, total: 0 } );
 		mockGetAuthorizationsSummary.mockRejectedValue(
 			new Error( 'Authorization summary unavailable.' )
 		);
@@ -1203,7 +1204,7 @@ describe( 'WooPayments money movement pages', () => {
 		);
 
 		expect(
-			await screen.findByText( '0 transactions' )
+			await screen.findByText( summaryItem( '0 transactions' ) )
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'tab', { name: 'Uncaptured (…)' } )
@@ -1214,7 +1215,7 @@ describe( 'WooPayments money movement pages', () => {
 		[
 			'summary count when the list omits its total',
 			{ data: [] },
-			{ count: 641 },
+			{ count: 641, total: 0 },
 			'641',
 			'26',
 		],
@@ -1232,7 +1233,7 @@ describe( 'WooPayments money movement pages', () => {
 				],
 				total_count: 0,
 			},
-			{ count: 641 },
+			{ count: 641, total: 0 },
 			'0',
 			'0',
 		],
@@ -1250,7 +1251,7 @@ describe( 'WooPayments money movement pages', () => {
 				</MemoryRouter>
 			);
 
-			await screen.findByText( '641 transactions' );
+			await screen.findByText( summaryItem( '641 transactions' ) );
 			expect(
 				screen.getByTestId( 'money-movement-dataviews' )
 			).toHaveAttribute( 'data-total-items', totalItems );
@@ -1503,7 +1504,7 @@ describe( 'WooPayments money movement pages', () => {
 
 	it( 'retains an incomplete Type filter until Refund commits, then clears and follows router history', async () => {
 		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
-		mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+		mockGetTransactionsSummary.mockResolvedValue( { count: 0, total: 0 } );
 
 		render(
 			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
@@ -1512,7 +1513,7 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		await screen.findByText( '0 transactions' );
+		await screen.findByText( summaryItem( '0 transactions' ) );
 		const initialRequestCount = mockGetTransactions.mock.calls.length;
 		const dataViews = screen.getByTestId( 'money-movement-dataviews' );
 
@@ -1572,7 +1573,7 @@ describe( 'WooPayments money movement pages', () => {
 
 	it( 'keeps the applied Date URL while a between range is incomplete and commits the complete range once', async () => {
 		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
-		mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+		mockGetTransactionsSummary.mockResolvedValue( { count: 0, total: 0 } );
 
 		render(
 			<MemoryRouter
@@ -1585,7 +1586,7 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		await screen.findByText( '0 transactions' );
+		await screen.findByText( summaryItem( '0 transactions' ) );
 		mockHistoryPush.mockClear();
 		const initialRequestCount = mockGetTransactions.mock.calls.length;
 
@@ -1646,9 +1647,12 @@ describe( 'WooPayments money movement pages', () => {
 			],
 		} );
 		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
-		mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+		mockGetTransactionsSummary.mockResolvedValue( { count: 0, total: 0 } );
 		mockGetAuthorizations.mockResolvedValue( { data: [], total_count: 0 } );
-		mockGetAuthorizationsSummary.mockResolvedValue( { count: 0 } );
+		mockGetAuthorizationsSummary.mockResolvedValue( {
+			count: 0,
+			total: 0,
+		} );
 
 		render(
 			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
@@ -1657,7 +1661,7 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		await screen.findByText( '0 transactions' );
+		await screen.findByText( summaryItem( '0 transactions' ) );
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Mock add Type filter' } )
 		);
@@ -1667,7 +1671,7 @@ describe( 'WooPayments money movement pages', () => {
 			} )
 		);
 
-		await screen.findByText( '0 uncaptured transactions' );
+		await screen.findByText( summaryItem( '0 authorization(s)' ) );
 		await waitFor( () => {
 			expect(
 				screen.getByTestId( 'money-movement-dataviews' )
@@ -1772,7 +1776,9 @@ describe( 'WooPayments money movement pages', () => {
 				name: 'View transaction details for Charge transaction txn_loan',
 			} )
 		).toBeInTheDocument();
-		expect( screen.getByText( '42 transactions' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( summaryItem( '42 transactions' ) )
+		).toBeInTheDocument();
 		expect( mockGetTransactions ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				page: 2,
@@ -1806,7 +1812,7 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		await screen.findByText( '50 transactions' );
+		await screen.findByText( summaryItem( '50 transactions' ) );
 		await userEvent.click(
 			screen.getByRole( 'button', {
 				name: 'Mock change transaction page and search',
@@ -2343,7 +2349,7 @@ describe( 'WooPayments money movement pages', () => {
 		);
 
 		expect(
-			await screen.findByText( '1 uncaptured transactions' )
+			await screen.findByText( summaryItem( '1 authorization(s)' ) )
 		).toBeInTheDocument();
 		expect( screen.getAllByText( '$50.00' ) ).not.toHaveLength( 0 );
 
@@ -2360,12 +2366,15 @@ describe( 'WooPayments money movement pages', () => {
 			expect( mockGetAuthorizationsSummary ).toHaveBeenCalledTimes( 4 );
 		} );
 		expect(
-			await screen.findByText( '0 uncaptured transactions' )
+			await screen.findByText( summaryItem( '0 authorization(s)' ) )
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'tab', { name: 'Uncaptured (0)' } )
 		).toBeInTheDocument();
-		expect( screen.getByText( '$0.00' ) ).toBeInTheDocument();
+		// Client 11.1.0 `transactions/uncaptured/index.tsx:231-245`: no total without authorizations.
+		expect(
+			screen.queryByText( summaryItem( '$0.00 total' ) )
+		).not.toBeInTheDocument();
 		expect(
 			screen.queryByRole( 'button', {
 				name: 'Capture authorization for order #123',
@@ -2537,7 +2546,7 @@ describe( 'WooPayments money movement pages', () => {
 		} );
 
 		expect(
-			await screen.findByText( '0 uncaptured transactions' )
+			await screen.findByText( summaryItem( '0 authorization(s)' ) )
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'tab', { name: 'Uncaptured (…)' } )
@@ -4009,7 +4018,10 @@ describe( 'WooPayments money movement pages', () => {
 				data: [],
 				total_count: 0,
 			} );
-			mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+			mockGetTransactionsSummary.mockResolvedValue( {
+				count: 0,
+				total: 0,
+			} );
 
 			render(
 				<MemoryRouter initialEntries={ [ route ] }>

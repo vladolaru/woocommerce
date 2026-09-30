@@ -186,7 +186,7 @@ describe( 'WooPayments disputes list columns', () => {
 			data: RECORDED as never,
 			total_count: 3,
 		} );
-		mockGetSummary.mockResolvedValue( { count: 3 } );
+		mockGetSummary.mockResolvedValue( { count: 3, total: 15000 } );
 	} );
 
 	afterEach( () => {
@@ -286,6 +286,12 @@ describe( 'WooPayments disputes list columns', () => {
 			'data-search',
 			'false'
 		);
+		// Client 11.1.0 `disputes/index.tsx:497-517`: the footer shows the count only.
+		expect(
+			Array.from(
+				document.querySelectorAll( '.woocommerce-table__summary-item' )
+			).map( ( item ) => item.textContent )
+		).toEqual( [ '3disputes' ] );
 	} );
 
 	it( 'hides Export when there are no disputes, like the client', async () => {

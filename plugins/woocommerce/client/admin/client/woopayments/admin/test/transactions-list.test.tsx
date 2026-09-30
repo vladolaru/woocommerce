@@ -11,6 +11,7 @@ import { MemoryRouter } from 'react-router-dom';
 /**
  * Internal dependencies
  */
+import { summaryItem } from './helpers/table-summary';
 import { WooPaymentsTransactionsList } from '../money-movement/transactions-list';
 import {
 	getRiskLevelLabel,
@@ -462,11 +463,17 @@ describe( 'WooPayments transactions list columns', () => {
 		renderList();
 
 		expect(
-			await screen.findByText( '3 transactions' )
+			await screen.findByText( summaryItem( '3 transactions' ) )
 		).toBeInTheDocument();
-		expect( screen.getByText( '$18.38 total' ) ).toBeInTheDocument();
-		expect( screen.getByText( '$1.66 fees' ) ).toBeInTheDocument();
-		expect( screen.getByText( '$16.72 net' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( summaryItem( '$18.38 total' ) )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( summaryItem( '$1.66 fees' ) )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( summaryItem( '$16.72 net' ) )
+		).toBeInTheDocument();
 	} );
 
 	it( 'leaves amounts out of the summary across store currencies', async () => {
@@ -478,7 +485,7 @@ describe( 'WooPayments transactions list columns', () => {
 		} );
 		renderList();
 
-		await screen.findByText( '3 transactions' );
+		await screen.findByText( summaryItem( '3 transactions' ) );
 		expect( screen.queryByText( /total$/ ) ).not.toBeInTheDocument();
 	} );
 

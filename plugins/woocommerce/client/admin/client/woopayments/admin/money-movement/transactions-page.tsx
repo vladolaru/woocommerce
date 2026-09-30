@@ -120,12 +120,11 @@ const getSummaryCurrency = ( summary: MoneyMovementSummary ) =>
 		? summary.currency
 		: undefined;
 
+// Client 11.1.0 `transactions/uncaptured/index.tsx:231-236`: the total only for one currency.
 const shouldShowSummaryTotal = ( summary: MoneyMovementSummary ) =>
-	! (
-		'all_currencies' in summary &&
-		Array.isArray( summary.all_currencies ) &&
-		summary.all_currencies.length > 1
-	);
+	'all_currencies' in summary &&
+	Array.isArray( summary.all_currencies ) &&
+	summary.all_currencies.length === 1;
 
 const getAuthorizationPaymentIntentId = ( item: WooPaymentsAuthorization ) =>
 	item.payment_intent_id || item.id || '';
@@ -672,9 +671,33 @@ export const WooPaymentsTransactionsPage = () => {
 		liveStatusMessage = emptyMessage;
 	}
 
-	const summaryCount = getSummaryCount( summary ) ?? totalCount;
+	const summaryCount = getSummaryCount( summary );
 	const summaryTotal = getSummaryTotal( summary );
-	const summaryCurrency = getSummaryCurrency( summary );
+	// Client 11.1.0 `transactions/uncaptured/index.tsx:214-245`: the footer summary, once loaded.
+	const summaryItems: Array< { label: string; value: string } > =
+		! isLoading && summaryCount !== undefined && summaryTotal !== undefined
+			? [
+					{
+						label: __( 'authorization(s)', 'woocommerce' ),
+						value: String( summaryCount ),
+					},
+			  ]
+			: [];
+
+	if (
+		summaryItems.length &&
+		summaryCount &&
+		summaryCount > 0 &&
+		shouldShowSummaryTotal( summary )
+	) {
+		summaryItems.push( {
+			label: __( 'total', 'woocommerce' ),
+			value: formatExplicitCurrency(
+				summaryTotal,
+				getSummaryCurrency( summary )
+			),
+		} );
+	}
 	let currentTab = 'transactions';
 
 	if ( isUncaptured ) {
@@ -687,11 +710,6 @@ export const WooPaymentsTransactionsPage = () => {
 		/* translators: %1$s: number of uncaptured authorizations, or an ellipsis while loading. */
 		__( 'Uncaptured (%1$s)', 'woocommerce' ),
 		uncapturedCount === null ? '…' : String( uncapturedCount )
-	);
-	const summaryCountLabel = sprintf(
-		/* translators: %d: uncaptured transactions count. */
-		__( '%d uncaptured transactions', 'woocommerce' ),
-		summaryCount
 	);
 	const handleTabSelect = ( tabName: string ) => {
 		if ( tabName === currentTab ) {
@@ -769,18 +787,6 @@ export const WooPaymentsTransactionsPage = () => {
 					{ errorMessage && (
 						<StatusMessage isError>{ errorMessage }</StatusMessage>
 					) }
-					<div className="woocommerce-woopayments-money-movement__summary">
-						<span>{ summaryCountLabel }</span>
-						{ typeof summaryTotal === 'number' &&
-							shouldShowSummaryTotal( summary ) && (
-								<span>
-									{ formatExplicitCurrency(
-										summaryTotal,
-										summaryCurrency
-									) }
-								</span>
-							) }
-					</div>
 					<WooPaymentsMoneyMovementDataViews
 						fields={ isLoading ? [] : authorizationFields }
 						rows={ authorizations }
@@ -795,6 +801,7 @@ export const WooPaymentsTransactionsPage = () => {
 							'woocommerce'
 						) }
 						title={ __( 'Uncaptured transactions', 'woocommerce' ) }
+						summary={ summaryItems }
 						empty={ emptyMessage }
 						getItemId={ getAuthorizationPaymentIntentId }
 					/>

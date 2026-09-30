@@ -1,7 +1,8 @@
 /**
  * External dependencies
  */
-import { Card, CardBody } from '@wordpress/components';
+import { Card, CardBody, CardFooter } from '@wordpress/components';
+import { TableSummary } from '@woocommerce/components';
 import type { ReactNode } from 'react';
 
 // @ts-expect-error - Use the WordPress-bundled DataViews entry in wp-admin builds.
@@ -25,6 +26,8 @@ export type WooPaymentsMoneyMovementDataViewsProps<
 	searchLabel: string;
 	/** The card title, like the client's `TableCard` `title`. */
 	title?: string;
+	/** The card footer's summary, like the client's `TableCard` `summary`. */
+	summary?: Array< { label: string; value: string } >;
 	toolbarActions?: ReactNode;
 	empty?: ReactNode;
 	loadingMessage?: ReactNode;
@@ -47,6 +50,7 @@ export function WooPaymentsMoneyMovementDataViews<
 	search = true,
 	searchLabel,
 	title,
+	summary,
 	toolbarActions,
 	empty,
 	loadingMessage,
@@ -105,6 +109,11 @@ export function WooPaymentsMoneyMovementDataViews<
 					empty={ empty }
 				/>
 			</CardBody>
+			{ summary && summary.length > 0 && (
+				<CardFooter>
+					<TableSummary data={ summary } />
+				</CardFooter>
+			) }
 		</Card>
 	);
 }

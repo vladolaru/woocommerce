@@ -14,6 +14,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 /**
  * Internal dependencies
  */
+import { summaryItem } from './helpers/table-summary';
 import { WooPaymentsPayouts } from '../payouts';
 import { WooPaymentsPayoutDetailsPage } from '../payout-details';
 import {
@@ -455,12 +456,21 @@ describe( 'WooPayments payout details admin surface', () => {
 		).toBeInTheDocument();
 		expect( screen.getByText( 'REF123' ) ).toBeInTheDocument();
 		// The payout amount and the transaction's amount.
-		expect( screen.getAllByText( '$125.00' ) ).toHaveLength( 2 );
+		// The overview amount, the row and the summary's net.
+		expect( screen.getAllByText( '$125.00' ) ).toHaveLength( 3 );
 		// The transactions list summary, like the client's TableCard summary.
-		expect( screen.getByText( '3 transactions' ) ).toBeInTheDocument();
-		expect( screen.getByText( '$140.00 total' ) ).toBeInTheDocument();
-		expect( screen.getByText( '$15.00 fees' ) ).toBeInTheDocument();
-		expect( screen.getByText( '$125.00 net' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( summaryItem( '3 transactions' ) )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( summaryItem( '$140.00 total' ) )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( summaryItem( '$15.00 fees' ) )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( summaryItem( '$125.00 net' ) )
+		).toBeInTheDocument();
 		expect( screen.getByText( 'Payout details loaded.' ) ).toHaveAttribute(
 			'role',
 			'status'

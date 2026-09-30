@@ -2,6 +2,7 @@
  * External dependencies
  */
 import { __, sprintf } from '@wordpress/i18n';
+import { numberFormat } from '@woocommerce/number';
 
 /**
  * Internal dependencies
@@ -17,6 +18,31 @@ import type {
 	WooPaymentsPaymentMethodDetails,
 	WooPaymentsTransaction,
 } from './types';
+
+/**
+ * A list count with the site language's thousand separator.
+ * Client 11.1.0 `utils/index.js:264-284` `applyThousandSeparator()`.
+ *
+ * @param count The count.
+ */
+export const formatCount = ( count: number ) => {
+	const siteLang = document.documentElement.lang || '';
+	let thousandSeparator = ',';
+
+	if ( [ 'fr', 'pl' ].some( ( lang ) => siteLang.startsWith( lang ) ) ) {
+		thousandSeparator = ' ';
+	} else if ( siteLang === 'de-CH' ) {
+		thousandSeparator = "'";
+	} else if (
+		[ 'de', 'nl', 'it', 'es', 'pt' ].some( ( lang ) =>
+			siteLang.startsWith( lang )
+		)
+	) {
+		thousandSeparator = '.';
+	}
+
+	return numberFormat( { thousandSeparator }, count );
+};
 
 export const getErrorMessage = ( error: unknown, fallback: string ): string => {
 	if ( error instanceof Error && error.message ) {
