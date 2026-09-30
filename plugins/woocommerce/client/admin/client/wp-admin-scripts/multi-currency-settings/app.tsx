@@ -62,7 +62,11 @@ const formatSymbolAndCode = ( currency: MultiCurrencyCurrency ): string => {
 	return symbol === currency.code ? symbol : `${ symbol } ${ currency.code }`;
 };
 
-const formatExchangeRate = ( currency: MultiCurrencyCurrency ): string => {
+// Client 11.1.0 enabled-currencies-list/list-item.js:30-42: "1 USD → 0.88 EUR", or per 1,000 units of a zero-decimal store currency.
+const formatExchangeRate = (
+	currency: MultiCurrencyCurrency,
+	defaultCurrency: MultiCurrencyCurrency
+): string => {
 	if ( currency.is_default ) {
 		return __( 'Default currency', 'woocommerce' );
 	}
@@ -71,9 +75,15 @@ const formatExchangeRate = ( currency: MultiCurrencyCurrency ): string => {
 		return __( 'Manual rate required', 'woocommerce' );
 	}
 
-	return currency.rate.toLocaleString( undefined, {
-		maximumFractionDigits: 6,
-	} );
+	if ( defaultCurrency.is_zero_decimal ) {
+		return `1,000 ${ defaultCurrency.code } → ${ (
+			currency.rate * 1000
+		).toFixed( 2 ) } ${ currency.code }`;
+	}
+
+	return `1 ${ defaultCurrency.code } → ${ currency.rate.toFixed( 2 ) } ${
+		currency.code
+	}`;
 };
 
 const getAutomaticRatesNotice = (
@@ -433,7 +443,12 @@ export function MultiCurrencySettingsApp() {
 									({ formatSymbolAndCode( currency ) })
 								</span>
 							</th>
-							<td>{ formatExchangeRate( currency ) }</td>
+							<td>
+								{ formatExchangeRate(
+									currency,
+									currencies.default
+								) }
+							</td>
 							<td>
 								{ /* Client 11.1.0 list-item.js:64-94 and index.js:88-90: no actions on the default row. */ }
 								{ ! currency.is_default && (

@@ -299,6 +299,45 @@ describe( 'MultiCurrencySettingsApp', () => {
 		).toBeInTheDocument();
 	} );
 
+	// Client 11.1.0 enabled-currencies-list/list-item.js:30-42: the rate reads
+	// "1 USD → 0.92 EUR" with two decimals, and per 1,000 units of a
+	// zero-decimal store currency.
+	it( 'presents exchange rates the way the client does', async () => {
+		render( <MultiCurrencySettingsApp /> );
+
+		const euroRow = (
+			await screen.findByRole( 'rowheader', { name: 'Euro (€ EUR)' } )
+		).closest( 'tr' ) as HTMLElement;
+		expect(
+			within( euroRow ).getByText( '1 USD → 0.92 EUR' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'presents rates per 1,000 units of a zero-decimal store currency', async () => {
+		mockApiFetch.mockReset();
+		const yen = {
+			...currenciesResponse.available.USD,
+			id: 'jpy',
+			code: 'JPY',
+			name: 'Japanese yen',
+			symbol: '¥',
+			is_zero_decimal: true,
+		};
+		const euro = { ...currenciesResponse.available.EUR, rate: 0.006123 };
+		mockApiFetch.mockResolvedValueOnce( {
+			...currenciesResponse,
+			available: { JPY: yen, EUR: euro },
+			enabled: { JPY: yen, EUR: euro },
+			default: yen,
+		} );
+
+		render( <MultiCurrencySettingsApp /> );
+
+		expect(
+			await screen.findByText( '1,000 JPY → 6.12 EUR' )
+		).toBeInTheDocument();
+	} );
+
 	it( 'removes a non-default enabled currency', async () => {
 		mockApiFetch.mockResolvedValueOnce( removedCurrencyResponse );
 
@@ -447,7 +486,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 			screen.getByRole( 'button', { name: 'Save EUR manual rate' } )
 		);
 
-		expect( screen.getByText( '0.95' ) ).toBeInTheDocument();
+		expect( screen.getByText( '1 USD → 0.95 EUR' ) ).toBeInTheDocument();
 		expect(
 			screen.queryByText( 'Currency settings modal for EUR' )
 		).not.toBeInTheDocument();
