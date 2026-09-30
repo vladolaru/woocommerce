@@ -34,23 +34,23 @@ class WooPaymentsOnboardingAdapter {
 	/**
 	 * WooPayments provider.
 	 *
-	 * @var WooPaymentsProvider
+	 * @var WooPaymentsProvider|null
 	 */
-	private WooPaymentsProvider $provider;
+	private ?WooPaymentsProvider $provider = null;
 
 	/**
 	 * Native WooPayments gateway.
 	 *
-	 * @var NativeWooPaymentsGateway
+	 * @var NativeWooPaymentsGateway|null
 	 */
-	private NativeWooPaymentsGateway $native_gateway;
+	private ?NativeWooPaymentsGateway $native_gateway = null;
 
 	/**
 	 * Native WooPayments account service.
 	 *
-	 * @var WooPaymentsAccountService
+	 * @var WooPaymentsAccountService|null
 	 */
-	private WooPaymentsAccountService $account_service;
+	private ?WooPaymentsAccountService $account_service = null;
 
 	/**
 	 * Runtime ownership arbiter.
@@ -62,20 +62,16 @@ class WooPaymentsOnboardingAdapter {
 	/**
 	 * Initialize the class instance.
 	 *
+	 * The native collaborators are resolved on first use, so a plugin-owned store's onboarding surfaces load only the plugin path.
+	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime     $legacy_runtime  WooPayments legacy runtime.
-	 * @param WooPaymentsProvider          $provider        WooPayments provider.
-	 * @param NativeWooPaymentsGateway     $native_gateway  Native WooPayments gateway.
-	 * @param WooPaymentsAccountService    $account_service Native WooPayments account service.
-	 * @param NativePaymentsRuntimeArbiter $arbiter         Runtime ownership arbiter.
+	 * @param WooPaymentsLegacyRuntime     $legacy_runtime WooPayments legacy runtime.
+	 * @param NativePaymentsRuntimeArbiter $arbiter        Runtime ownership arbiter.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, NativeWooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, NativePaymentsRuntimeArbiter $arbiter ): void {
-		$this->legacy_runtime  = $legacy_runtime;
-		$this->provider        = $provider;
-		$this->native_gateway  = $native_gateway;
-		$this->account_service = $account_service;
-		$this->arbiter         = $arbiter;
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, NativePaymentsRuntimeArbiter $arbiter ): void {
+		$this->legacy_runtime = $legacy_runtime;
+		$this->arbiter        = $arbiter;
 	}
 
 	/**
@@ -142,7 +138,7 @@ class WooPaymentsOnboardingAdapter {
 		}
 
 		if ( $this->is_native_onboarding_available() ) {
-			return $this->native_gateway;
+			return $this->get_native_gateway();
 		}
 
 		throw new \RuntimeException( 'WooPayments gateway is not available.' );
@@ -358,6 +354,10 @@ class WooPaymentsOnboardingAdapter {
 	 * @return WooPaymentsAccountService
 	 */
 	private function get_native_account_service(): WooPaymentsAccountService {
+		if ( null === $this->account_service ) {
+			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		}
+
 		return $this->account_service;
 	}
 
@@ -367,6 +367,23 @@ class WooPaymentsOnboardingAdapter {
 	 * @return WooPaymentsProvider
 	 */
 	private function get_provider(): WooPaymentsProvider {
+		if ( null === $this->provider ) {
+			$this->provider = wc_get_container()->get( WooPaymentsProvider::class );
+		}
+
 		return $this->provider;
+	}
+
+	/**
+	 * Get the native WooPayments gateway.
+	 *
+	 * @return NativeWooPaymentsGateway
+	 */
+	private function get_native_gateway(): NativeWooPaymentsGateway {
+		if ( null === $this->native_gateway ) {
+			$this->native_gateway = wc_get_container()->get( NativeWooPaymentsGateway::class );
+		}
+
+		return $this->native_gateway;
 	}
 }

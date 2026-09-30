@@ -121,7 +121,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$legacy_runtime->init( $this->legacy_proxy );
 
 		$this->adapter = new WooPaymentsOnboardingAdapter();
-		$this->adapter->init( $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $this->adapter, $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
 	}
 
 	/**
@@ -355,7 +355,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$legacy_runtime       = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( $legacy_runtime_proxy );
 		$adapter = new WooPaymentsOnboardingAdapter();
-		$adapter->init( $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $adapter, $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
 
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 
@@ -385,7 +385,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		);
 
 		$adapter = new WooPaymentsOnboardingAdapter();
-		$adapter->init( $runtime, $this->provider, new NativeWooPaymentsGateway(), $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $adapter, $runtime, $this->provider, new NativeWooPaymentsGateway(), $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
 
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
 		$this->account_service
@@ -411,18 +411,45 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Onboarding adapter should receive runtime collaborators through dependency injection.
+	 * @testdox Onboarding adapter should resolve no native collaborator when initialized.
 	 */
-	public function test_onboarding_runtime_collaborators_are_injected(): void {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for provider-boundary regression coverage.
-		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Payments/Providers/WooPayments/WooPaymentsOnboardingAdapter.php' );
+	public function test_init_resolves_no_native_collaborator(): void {
+		$legacy_runtime = new WooPaymentsLegacyRuntime();
+		$legacy_runtime->init( $this->legacy_proxy );
+		$adapter = new WooPaymentsOnboardingAdapter();
+		$adapter->init( $legacy_runtime, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
 
-		foreach ( array( 'NativePaymentsRuntimeArbiter', 'NativeWooPaymentsGateway', 'WooPaymentsAccountService', 'WooPaymentsLegacyRuntime', 'WooPaymentsProvider' ) as $dependency ) {
-			$this->assertDoesNotMatchRegularExpression(
-				'/wc_get_container\(\)\s*->get\(\s*' . $dependency . '::class\s*\)/',
-				$source,
-				"{$dependency} should be supplied through init injection."
-			);
+		foreach ( array( 'provider', 'native_gateway', 'account_service' ) as $property ) {
+			$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, $property );
+			$reflection->setAccessible( true );
+			$this->assertNull( $reflection->getValue( $adapter ), $property . ' must be resolved on first use, not when the adapter is initialized.' );
+		}
+	}
+
+	/**
+	 * Initialize an onboarding adapter with its native collaborators.
+	 *
+	 * The adapter resolves them on first use, so the test doubles are set on the instance after init.
+	 *
+	 * @param WooPaymentsOnboardingAdapter $adapter         The adapter.
+	 * @param WooPaymentsLegacyRuntime     $legacy_runtime  The legacy runtime.
+	 * @param WooPaymentsProvider          $provider        The native provider.
+	 * @param NativeWooPaymentsGateway     $native_gateway  The native gateway.
+	 * @param WooPaymentsAccountService    $account_service The native account service.
+	 * @param NativePaymentsRuntimeArbiter $arbiter         The runtime arbiter.
+	 */
+	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, NativeWooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, NativePaymentsRuntimeArbiter $arbiter ): void {
+		$adapter->init( $legacy_runtime, $arbiter );
+
+		$collaborators = array(
+			'provider'        => $provider,
+			'native_gateway'  => $native_gateway,
+			'account_service' => $account_service,
+		);
+		foreach ( $collaborators as $property => $collaborator ) {
+			$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, $property );
+			$reflection->setAccessible( true );
+			$reflection->setValue( $adapter, $collaborator );
 		}
 	}
 }

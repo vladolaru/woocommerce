@@ -2218,7 +2218,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$adapter         = new WooPaymentsOnboardingAdapter();
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( $this->mockable_proxy );
-		$adapter->init( $this->create_legacy_runtime(), $provider, new NativeWooPaymentsGateway(), $account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $adapter, $this->create_legacy_runtime(), $provider, new NativeWooPaymentsGateway(), $account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
 
 		return $adapter;
 	}
@@ -13910,5 +13910,32 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
+	}
+
+	/**
+	 * Initialize an onboarding adapter with its native collaborators.
+	 *
+	 * The adapter resolves them on first use, so the test doubles are set on the instance after init.
+	 *
+	 * @param WooPaymentsOnboardingAdapter $adapter         The adapter.
+	 * @param WooPaymentsLegacyRuntime     $legacy_runtime  The legacy runtime.
+	 * @param WooPaymentsProvider          $provider        The native provider.
+	 * @param NativeWooPaymentsGateway     $native_gateway  The native gateway.
+	 * @param WooPaymentsAccountService    $account_service The native account service.
+	 * @param NativePaymentsRuntimeArbiter $arbiter         The runtime arbiter.
+	 */
+	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, NativeWooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, NativePaymentsRuntimeArbiter $arbiter ): void {
+		$adapter->init( $legacy_runtime, $arbiter );
+
+		$collaborators = array(
+			'provider'        => $provider,
+			'native_gateway'  => $native_gateway,
+			'account_service' => $account_service,
+		);
+		foreach ( $collaborators as $property => $collaborator ) {
+			$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, $property );
+			$reflection->setAccessible( true );
+			$reflection->setValue( $adapter, $collaborator );
+		}
 	}
 }
