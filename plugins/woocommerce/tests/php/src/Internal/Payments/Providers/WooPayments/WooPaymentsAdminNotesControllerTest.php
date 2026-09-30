@@ -8,6 +8,8 @@ use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNotesController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthRemediationNote;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetHttpsForCheckoutNote;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetUpLinkNote;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
@@ -17,7 +19,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsAdminNotesController class and the notes it adds on admin_init.
  *
  * Expectations come from client 11.1.0 `includes/notes/class-wc-payments-notes-set-https-for-checkout.php`,
- * `includes/notes/class-wc-payments-notes-set-up-stripelink.php`, their client unit tests, and the note rows
+ * `includes/notes/class-wc-payments-notes-set-up-stripelink.php`,
+ * `includes/notes/class-wc-payments-notes-canceled-auth-remediation.php`, their client unit tests, and the note rows
  * the client wrote on a fresh test-drive store.
  */
 class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
@@ -37,6 +40,9 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 
 		$this->delete_notes( WooPaymentsSetHttpsForCheckoutNote::NOTE_NAME );
 		$this->delete_notes( WooPaymentsSetUpLinkNote::NOTE_NAME );
+		$this->delete_notes( WooPaymentsCanceledAuthRemediationNote::NOTE_NAME );
+		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY );
+		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'no_affected_orders', true );
 		update_option( 'woocommerce_currency', 'USD' );
 		add_filter( 'pre_option_home', array( $this, 'get_http_home_url' ) );
 		delete_option( 'woocommerce_force_ssl_checkout' );
@@ -211,6 +217,76 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Adds the remediation note with the client's name, copy and action once the check found affected orders.
+	 */
+	public function test_adds_canceled_auth_note_when_check_found_affected_orders(): void {
+		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
+
+		$this->sut->add_woo_admin_notes();
+
+		$note = $this->get_single_note( WooPaymentsCanceledAuthRemediationNote::NOTE_NAME );
+		$this->assertSame( 'WooPayments: Fix incorrect order data', $note->get_title() );
+		$this->assertSame( 'Some orders with canceled payment authorizations have incorrect data that may cause negative values in your WooCommerce Analytics. This affects stores using manual capture (authorize and capture separately). Run the fix tool to correct this.', $note->get_content() );
+		$this->assertSame( Note::E_WC_ADMIN_NOTE_WARNING, $note->get_type() );
+		$this->assertSame( 'woocommerce-payments', $note->get_source() );
+
+		$actions = $note->get_actions();
+		$this->assertCount( 1, $actions );
+		$this->assertSame( 'run-remediation-tool', $actions[0]->name );
+		$this->assertSame( 'Go to Tools page', $actions[0]->label );
+		$this->assertSame( admin_url( 'admin.php?page=wc-status&tab=tools' ), $actions[0]->query );
+		$this->assertSame( Note::E_WC_ADMIN_NOTE_ACTIONED, $actions[0]->status );
+	}
+
+	/**
+	 * @testdox Schedules the affected-orders check on the first admin page load instead of adding the note.
+	 */
+	public function test_schedules_affected_orders_check_before_adding_canceled_auth_note(): void {
+		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
+
+		$this->sut->add_woo_admin_notes();
+
+		$this->assertSame( array(), Notes::load_data_store()->get_notes_with_name( WooPaymentsCanceledAuthRemediationNote::NOTE_NAME ) );
+		$this->assertSame( 'scheduled', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ) );
+		$this->assertTrue( as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK, array(), 'woocommerce-payments' ) );
+	}
+
+	/**
+	 * @testdox Does not add the remediation note in the cases the client rules out.
+	 * @dataProvider provide_canceled_auth_note_rejections
+	 *
+	 * @param string $check_state       Affected-orders check state.
+	 * @param string $remediation_state Remediation status option value.
+	 * @param bool   $running           Whether a live remediation batch is scheduled.
+	 */
+	public function test_does_not_add_canceled_auth_note_when_client_rules_it_out( string $check_state, string $remediation_state, bool $running ): void {
+		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, $check_state, true );
+		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY, $remediation_state );
+		if ( $running ) {
+			as_schedule_single_action( time() + HOUR_IN_SECONDS, WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, array(), 'woocommerce-payments' );
+		}
+
+		$this->sut->add_woo_admin_notes();
+
+		$this->assertSame( array(), Notes::load_data_store()->get_notes_with_name( WooPaymentsCanceledAuthRemediationNote::NOTE_NAME ) );
+		$this->assertFalse( as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK ), 'A recorded check state must not schedule another check.' );
+	}
+
+	/**
+	 * Cases where the client does not add the remediation note.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public function provide_canceled_auth_note_rejections(): array {
+		return array(
+			'remediation completed' => array( 'has_affected_orders', 'completed', false ),
+			'remediation running'   => array( 'has_affected_orders', 'running', true ),
+			'check still scheduled' => array( 'scheduled', '', false ),
+			'no affected orders'    => array( 'no_affected_orders', '', false ),
+		);
+	}
+
+	/**
 	 * Account data with card and Link fees and active capabilities.
 	 *
 	 * The fee shape follows client 11.1.0 `tests/unit/payment-methods/test-class-upe-payment-gateway.php:210-214`.
@@ -271,8 +347,13 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 		$link_note = new WooPaymentsSetUpLinkNote();
 		$link_note->init( $account_service, new WooPaymentsPaymentMethodRegistry() );
 
+		$remediation_service = new WooPaymentsCanceledAuthorizationFeeRemediationService();
+		$remediation_service->init( new StaticNativeRuntimeArbiter( $native_owns_runtime ) );
+		$canceled_auth_remediation_note = new WooPaymentsCanceledAuthRemediationNote();
+		$canceled_auth_remediation_note->init( $remediation_service );
+
 		$sut = new WooPaymentsAdminNotesController();
-		$sut->init( new StaticNativeRuntimeArbiter( $native_owns_runtime ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note );
+		$sut->init( new StaticNativeRuntimeArbiter( $native_owns_runtime ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
 
 		return $sut;
 	}

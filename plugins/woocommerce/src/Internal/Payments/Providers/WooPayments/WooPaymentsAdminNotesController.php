@@ -43,18 +43,32 @@ class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 	private WooPaymentsSetUpLinkNote $link_note;
 
 	/**
+	 * Canceled-authorization fee remediation note.
+	 *
+	 * @var WooPaymentsCanceledAuthRemediationNote
+	 */
+	private WooPaymentsCanceledAuthRemediationNote $canceled_auth_remediation_note;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter       $arbiter    Runtime owner arbiter.
-	 * @param WooPaymentsSetHttpsForCheckoutNote $https_note Secure checkout note.
-	 * @param WooPaymentsSetUpLinkNote           $link_note  Link by Stripe note.
+	 * @param NativePaymentsRuntimeArbiter           $arbiter                        Runtime owner arbiter.
+	 * @param WooPaymentsSetHttpsForCheckoutNote     $https_note                     Secure checkout note.
+	 * @param WooPaymentsSetUpLinkNote               $link_note                      Link by Stripe note.
+	 * @param WooPaymentsCanceledAuthRemediationNote $canceled_auth_remediation_note Canceled-authorization fee remediation note.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsSetHttpsForCheckoutNote $https_note, WooPaymentsSetUpLinkNote $link_note ): void {
-		$this->arbiter    = $arbiter;
-		$this->https_note = $https_note;
-		$this->link_note  = $link_note;
+	final public function init(
+		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsSetHttpsForCheckoutNote $https_note,
+		WooPaymentsSetUpLinkNote $link_note,
+		WooPaymentsCanceledAuthRemediationNote $canceled_auth_remediation_note
+	): void {
+		$this->arbiter                        = $arbiter;
+		$this->https_note                     = $https_note;
+		$this->link_note                      = $link_note;
+		$this->canceled_auth_remediation_note = $canceled_auth_remediation_note;
 	}
 
 	/**
@@ -80,7 +94,7 @@ class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 			return;
 		}
 
-		foreach ( array( $this->https_note, $this->link_note ) as $note ) {
+		foreach ( array( $this->https_note, $this->link_note, $this->canceled_auth_remediation_note ) as $note ) {
 			try {
 				$note->possibly_add_note();
 			} catch ( Throwable $exception ) {

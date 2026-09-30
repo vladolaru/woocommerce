@@ -592,6 +592,36 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	}
 
 	/**
+	 * Tell whether a live remediation batch is scheduled.
+	 *
+	 * Client 11.1.0 `WC_Payments_Notes_Canceled_Auth_Remediation::is_remediation_running()` checks the live hook in
+	 * any group and ignores dry runs.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool True when a live remediation batch is scheduled.
+	 */
+	public function is_remediation_running(): bool {
+		return function_exists( 'as_has_scheduled_action' ) && false !== as_has_scheduled_action( self::ACTION_HOOK );
+	}
+
+	/**
+	 * Schedule the background affected-orders check, so the query never runs on the request that asks.
+	 *
+	 * Client 11.1.0 `WC_Payments_Notes_Canceled_Auth_Remediation::schedule_check()`.
+	 *
+	 * @since 11.2.0
+	 */
+	public function schedule_affected_orders_check(): void {
+		if ( ! function_exists( 'as_schedule_single_action' ) ) {
+			return;
+		}
+
+		update_option( self::CHECK_STATE_OPTION_KEY, 'scheduled', true );
+		as_schedule_single_action( time() + 10, self::CHECK_AFFECTED_ORDERS_HOOK, array(), self::ACTION_SCHEDULER_GROUP_ID );
+	}
+
+	/**
 	 * Run the affected-orders query and cache the result.
 	 */
 	public function check_and_cache_affected_orders(): void {
