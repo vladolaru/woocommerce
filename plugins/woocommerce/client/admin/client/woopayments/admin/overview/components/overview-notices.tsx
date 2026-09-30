@@ -11,6 +11,7 @@ import { recordEvent } from '@woocommerce/tracks';
  * Internal dependencies
  */
 import { SetupLivePaymentsModal } from '~/woopayments/settings/account-mode-notice';
+import BannerNotice from '~/settings-payments/onboarding/providers/woopayments/components/banner-notice';
 import type { WooPaymentsOverviewAccount } from '../types';
 
 const TEST_ACCOUNTS_URL =
@@ -150,14 +151,13 @@ const SandboxModeNotice = ( {
 	}[ isDevMode ? `${ accountType }Dev` : accountType ] as string[];
 	return (
 		<>
-			<Notice
+			{ /* Client 11.1.0 `components/sandbox-mode-switch-to-live-notice`: a banner notice with the help icon at its end. */ }
+			<BannerNotice
 				className="woocommerce-woopayments-overview-mode-notice"
 				status="warning"
 				isDismissible={ false }
 			>
-				{ /* One child, and the interpolated message in its own element: WordPress's
-				Notice passes its children on as a list, and bare siblings or a bare
-				interpolated fragment there trip React's missing-key warning. */ }
+				{ /* The interpolated message in its own element: a bare interpolated fragment among siblings trips React's missing-key warning. */ }
 				<>
 					<span>
 						{ createInterpolateElement( message, {
@@ -186,6 +186,7 @@ const SandboxModeNotice = ( {
 						renderToggle={ ( { isOpen, onToggle } ) => (
 							<Button
 								icon={ help }
+								size="small"
 								label={ helpLabel }
 								aria-expanded={ isOpen }
 								onClick={ onToggle }
@@ -209,7 +210,7 @@ const SandboxModeNotice = ( {
 						}
 					/>
 				</>
-			</Notice>
+			</BannerNotice>
 			{ isModalVisible && (
 				<SetupLivePaymentsModal
 					from="WCPAY_OVERVIEW"
@@ -246,7 +247,7 @@ export const OverviewModeNotice = ( {
 	}
 
 	return (
-		<Notice status="warning" isDismissible={ false }>
+		<BannerNotice status="warning" isDismissible={ false }>
 			{ createInterpolateElement(
 				sprintf(
 					/* translators: %1$s: WooPayments */
@@ -265,6 +266,6 @@ export const OverviewModeNotice = ( {
 					),
 				}
 			) }
-		</Notice>
+		</BannerNotice>
 	);
 };

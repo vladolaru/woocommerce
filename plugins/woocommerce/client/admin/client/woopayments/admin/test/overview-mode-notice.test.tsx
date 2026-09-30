@@ -125,6 +125,16 @@ describe( 'OverviewModeNotice', () => {
 			expect(
 				screen.queryByText( 'WooPayments is in test mode.' )
 			).toBeNull();
+			// Client 11.1.0 `sandbox-mode-switch-to-live-notice`: a warning banner notice that ends with its help icon.
+			const content = screen
+				.getByText( heading )
+				.closest( '.woopayments-banner-notice__content' );
+			expect(
+				content?.closest( '.woopayments-banner-notice' )
+			).toHaveClass( 'is-warning' );
+			expect( content?.lastElementChild ).toContainElement(
+				screen.getByRole( 'button', { name: helpLabel } )
+			);
 
 			await userEvent.click(
 				screen.getByRole( 'button', { name: helpLabel } )

@@ -18,6 +18,19 @@
 	margin: 0;
 }
 
+// The content grid spaces the notices, as it does the cards.
+.woocommerce-woopayments-overview__content > .woopayments-banner-notice {
+	margin: 0;
+}
+
+// Client 11.1.0 `components/sandbox-mode-switch-to-live-notice/style.scss`: the help icon ends the message line.
+.woocommerce-woopayments-overview-mode-notice .woopayments-banner-notice__content {
+	align-items: flex-start;
+	display: flex;
+	gap: 8px;
+	justify-content: space-between;
+}
+
 .woocommerce-woopayments-overview-card {
 	background: #fff;
 	border: 1px solid #dcdcde;
@@ -351,7 +364,6 @@
 		max-width: 449px;
 	}
 }
-
 
 .woocommerce-woopayments-dispute-readiness__modal-actions {
 	display: flex;
