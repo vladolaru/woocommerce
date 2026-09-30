@@ -9,7 +9,7 @@ const EXPECTED_SETTINGS_ICONS: Record< string, string > = {
 	alipay: 'images/payment-methods/alipay-logo.svg',
 	au_becs_debit: 'images/payment-methods/bank-debit.svg',
 	bancontact: 'images/payment-methods/bancontact.svg',
-	eps: 'images/payment-methods/eps.svg',
+	eps: 'images/payment-methods/eps-color.svg',
 	grabpay: 'images/payment-methods/grabpay.svg',
 	ideal: 'images/payment-methods/ideal-wero.svg',
 	multibanco: 'images/payment-methods/multibanco.svg',

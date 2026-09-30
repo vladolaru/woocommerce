@@ -381,7 +381,8 @@ class WooPaymentsPaymentMethodRegistry {
 				'currencies'                 => array( 'EUR' ),
 				'countries'                  => array( 'AT' ),
 				'capabilities'               => array( self::REFUNDS ),
-				'icon'                       => 'assets/images/payment-methods/eps.svg',
+				// Client 11.1.0 EpsDefinition uses its coloured EPS mark at checkout, in dark mode and in settings; core ships it as eps-color.svg (eps.svg stays for the Blocks icon list).
+				'icon'                       => 'assets/images/payment-methods/eps-color.svg',
 			),
 			array(
 				'id'                         => 'grabpay',

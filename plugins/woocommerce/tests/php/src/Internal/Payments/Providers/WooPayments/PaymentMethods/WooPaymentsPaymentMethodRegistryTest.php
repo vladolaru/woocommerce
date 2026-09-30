@@ -453,9 +453,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array( 'EUR' ),
 					'countries'                  => array( 'AT' ),
 					'capabilities'               => array( 'refunds' ),
-					'icon'                       => 'assets/images/payment-methods/eps.svg',
-					'dark_icon'                  => 'assets/images/payment-methods/eps.svg',
-					'settings_icon'              => 'assets/images/payment-methods/eps.svg',
+					'icon'                       => 'assets/images/payment-methods/eps-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/eps-color.svg',
+					'settings_icon'              => 'assets/images/payment-methods/eps-color.svg',
 				),
 			),
 			'grabpay'           => array(

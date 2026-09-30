@@ -320,7 +320,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Accept your payment with EPS — a common payment method in Austria.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/eps.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/eps-color.svg' ),
 		stripeKey: 'eps_payments',
 		currencies: CURRENCIES.eur,
 		allowsManualCapture: false,
