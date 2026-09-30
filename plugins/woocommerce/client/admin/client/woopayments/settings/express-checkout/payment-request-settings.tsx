@@ -78,9 +78,6 @@ export const PaymentRequestSettings = () => {
 				description={
 					<>
 						<ExpressCheckoutMethodIcons methodId="payment_request" />
-						<h2>
-							{ __( 'Apple Pay / Google Pay', 'woocommerce' ) }
-						</h2>
 						<p>
 							{ __(
 								'Allow your customers to collect payments via Apple Pay and Google Pay.',

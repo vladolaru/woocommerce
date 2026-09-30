@@ -1204,7 +1204,9 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		expect(
 			screen.getByLabelText( 'Checkout policies' )
 		).toBeInTheDocument();
-		expect( screen.getByLabelText( 'Checkout logo' ) ).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Upload custom logo' } )
+		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'checkbox', {
 				name: /Enable global theme support/,
@@ -1261,7 +1263,7 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 
 		await act( async () => {
 			await userEvent.upload(
-				await screen.findByLabelText( 'Checkout logo' ),
+				await screen.findByTestId( 'form-file-upload-input' ),
 				logoFile
 			);
 		} );
@@ -1298,7 +1300,7 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 
 		await act( async () => {
 			await userEvent.upload(
-				await screen.findByLabelText( 'Checkout logo' ),
+				await screen.findByTestId( 'form-file-upload-input' ),
 				logoFile
 			);
 		} );
@@ -1321,7 +1323,7 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		render( <WooPaymentsExpressCheckoutSettings methodId="woopay" /> );
 
 		expect(
-			await screen.findByLabelText( 'Checkout logo' )
+			await screen.findByTestId( 'form-file-upload-input' )
 		).toHaveAttribute( 'accept', 'image/png,image/jpeg' );
 	} );
 } );

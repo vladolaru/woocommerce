@@ -2,7 +2,6 @@
  * Internal dependencies
  */
 import { WC_ASSET_URL } from '~/utils/admin-settings';
-import WooPayLogoImage from './assets/woopay-preview-logo.svg';
 
 type ExpressCheckoutMethod = 'woopay' | 'payment_request' | 'amazon_pay';
 type ExpressCheckoutIconMethod = ExpressCheckoutMethod | 'link';
@@ -13,7 +12,12 @@ export const EXPRESS_CHECKOUT_METHOD_ICONS: Record<
 	ExpressCheckoutIconMethod,
 	Array< { alt: string; src: string } >
 > = {
-	woopay: [ { alt: 'WooPay', src: WooPayLogoImage } ],
+	woopay: [
+		{
+			alt: 'WooPay',
+			src: assetUrl( 'images/payment-methods/woopay.svg' ),
+		},
+	],
 	payment_request: [
 		{
 			alt: 'Apple Pay',

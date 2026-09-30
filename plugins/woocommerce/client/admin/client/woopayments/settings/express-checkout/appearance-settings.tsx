@@ -62,14 +62,26 @@ const buttonThemeOptions = [
 	{
 		label: __( 'Dark', 'woocommerce' ),
 		value: 'dark',
+		description: __(
+			'Recommended for white or light-colored backgrounds with high contrast.',
+			'woocommerce'
+		),
 	},
 	{
 		label: __( 'Light', 'woocommerce' ),
 		value: 'light',
+		description: __(
+			'Recommended for dark or colored backgrounds with high contrast.',
+			'woocommerce'
+		),
 	},
 	{
 		label: __( 'Outline', 'woocommerce' ),
 		value: 'light-outline',
+		description: __(
+			'Recommended for white or light-colored backgrounds with insufficient contrast.',
+			'woocommerce'
+		),
 	},
 ];
 

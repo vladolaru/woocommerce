@@ -60,7 +60,6 @@ export const AmazonPaySettings = () => {
 				description={
 					<>
 						<ExpressCheckoutMethodIcons methodId="amazon_pay" />
-						<h2>{ __( 'Amazon Pay', 'woocommerce' ) }</h2>
 						<p>
 							{ __(
 								'Allow your customers to collect payments via Amazon Pay.',

@@ -7,12 +7,14 @@ import {
 	Button,
 	CheckboxControl,
 	ExternalLink,
+	FormFileUpload,
 	Notice,
 	Spinner,
 	TextareaControl,
 } from '@wordpress/components';
 import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
+import { image } from '@wordpress/icons';
 import { recordEvent } from '@woocommerce/tracks';
 import type { ChangeEvent } from 'react';
 
@@ -156,20 +158,31 @@ const WooPayLogoUpload = ( {
 	return (
 		<BaseControl
 			id="woopayments-express-checkout-woopay-logo"
-			label={ __( 'Checkout logo', 'woocommerce' ) }
 			help={ __(
 				'Upload a custom logo. Upload a horizontal image with a white or transparent background for best results. Use a PNG or JPG image format. Recommended width: 512 pixels minimum.',
 				'woocommerce'
 			) }
 			__nextHasNoMarginBottom
 		>
+			<BaseControl.VisualLabel>
+				{ __( 'Checkout logo', 'woocommerce' ) }
+			</BaseControl.VisualLabel>
 			<div className="woopayments-express-checkout-settings__logo-upload">
-				<input
-					id="woopayments-express-checkout-woopay-logo"
-					type="file"
+				<FormFileUpload
 					accept="image/png,image/jpeg"
-					disabled={ isUploading }
 					onChange={ handleUpload }
+					render={ ( { openFileDialog } ) => (
+						<Button
+							variant="secondary"
+							icon={ image }
+							disabled={ isUploading }
+							aria-describedby="woopayments-express-checkout-woopay-logo__help"
+							onClick={ openFileDialog }
+							__next40pxDefaultSize
+						>
+							{ __( 'Upload custom logo', 'woocommerce' ) }
+						</Button>
+					) }
 				/>
 				{ isUploading && (
 					<p
@@ -281,7 +294,6 @@ export const WooPaySettings = () => {
 				description={
 					<>
 						<ExpressCheckoutMethodIcons methodId="woopay" />
-						<h2>{ __( 'WooPay', 'woocommerce' ) }</h2>
 						<p>
 							{ __(
 								'Allow your customers to collect payments via WooPay.',
