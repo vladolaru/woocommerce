@@ -178,14 +178,13 @@ const buildTransactionsRoute = ( query: WooPaymentsMoneyMovementQuery ) =>
 
 export const WooPaymentsTransactionsPage = () => {
 	const location = useLocation();
-	const isUncaptured = useMemo( () => {
-		const params = new URLSearchParams( location.search );
-
-		return (
-			params.get( 'tab' ) === 'uncaptured' ||
-			params.get( 'view' ) === 'uncaptured'
-		);
-	}, [ location.search ] );
+	// In the settings shell `tab` is always `checkout`; the view travels as `view`.
+	const isUncaptured = useMemo(
+		() =>
+			new URLSearchParams( location.search ).get( 'view' ) ===
+			'uncaptured',
+		[ location.search ]
+	);
 	const isBlocked =
 		new URLSearchParams( location.search ).get( 'view' ) === 'blocked';
 	const [ authorizations, setAuthorizations ] = useState<

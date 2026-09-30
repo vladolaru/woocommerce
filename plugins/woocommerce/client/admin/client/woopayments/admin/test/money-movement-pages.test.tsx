@@ -2144,7 +2144,7 @@ describe( 'WooPayments money movement pages', () => {
 		render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/transactions?tab=uncaptured',
+					'/woopayments/transactions?view=uncaptured',
 				] }
 			>
 				<WooPaymentsTransactionsPage />
@@ -2282,7 +2282,7 @@ describe( 'WooPayments money movement pages', () => {
 		render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/transactions?tab=uncaptured&search=Ada&loan_id_is=loan_test',
+					'/woopayments/transactions?view=uncaptured&search=Ada&loan_id_is=loan_test',
 				] }
 			>
 				<WooPaymentsTransactionsPage />
@@ -2361,7 +2361,7 @@ describe( 'WooPayments money movement pages', () => {
 		render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/transactions?tab=uncaptured',
+					'/woopayments/transactions?view=uncaptured',
 				] }
 			>
 				<WooPaymentsTransactionsPage />
@@ -2448,7 +2448,7 @@ describe( 'WooPayments money movement pages', () => {
 		render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/transactions?tab=uncaptured',
+					'/woopayments/transactions?view=uncaptured',
 				] }
 			>
 				<WooPaymentsTransactionsPage />
@@ -2550,7 +2550,7 @@ describe( 'WooPayments money movement pages', () => {
 		render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/transactions?tab=uncaptured',
+					'/woopayments/transactions?view=uncaptured',
 				] }
 			>
 				<WooPaymentsTransactionsPage />
@@ -2634,7 +2634,7 @@ describe( 'WooPayments money movement pages', () => {
 		render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/transactions?tab=uncaptured',
+					'/woopayments/transactions?view=uncaptured',
 				] }
 			>
 				<WooPaymentsTransactionsPage />
@@ -2690,7 +2690,7 @@ describe( 'WooPayments money movement pages', () => {
 		const mountedPage = render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/transactions?tab=uncaptured',
+					'/woopayments/transactions?view=uncaptured',
 				] }
 			>
 				<WooPaymentsTransactionsPage />
@@ -2741,7 +2741,7 @@ describe( 'WooPayments money movement pages', () => {
 		render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/transactions?tab=uncaptured',
+					'/woopayments/transactions?view=uncaptured',
 				] }
 			>
 				<WooPaymentsTransactionsPage />
