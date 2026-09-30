@@ -8,9 +8,9 @@ import { MemoryRouter } from 'react-router-dom';
 /**
  * Internal dependencies
  */
+import { setSiteDateFormats } from './helpers/site-date-formats';
 import { WooPaymentsTransactionsPage } from '../money-movement/transactions-page';
 import { getRiskLevelLabel } from '../money-movement/transactions-list-fields';
-import { formatDateTime } from '../money-movement/utils';
 import {
 	getWooPaymentsAuthorizations,
 	getWooPaymentsAuthorizationsSummary,
@@ -26,6 +26,8 @@ type MockField = {
 };
 
 let mockLastFields: MockField[] = [];
+
+beforeAll( setSiteDateFormats );
 
 jest.mock( '@woocommerce/navigation', () => ( {
 	...jest.requireActual( '@woocommerce/navigation' ),
@@ -250,14 +252,12 @@ describe( 'WooPayments uncaptured transactions list', () => {
 	it( 'shows the authorized and capture-by dates with their time', async () => {
 		await renderUncaptured();
 
-		const created = new Date( AUTHORIZATION.created ).getTime();
-		const sevenDays = 7 * 24 * 60 * 60 * 1000;
-
+		// Client 11.1.0 `transactions/uncaptured/index.tsx:141-161`: site formats, capture by seven days later.
 		expect( renderCell( 'created', AUTHORIZATION ) ).toBe(
-			formatDateTime( created / 1000 )
+			'January 2, 2020 / 5:46 pm'
 		);
 		expect( renderCell( 'capture_by', AUTHORIZATION ) ).toBe(
-			formatDateTime( ( created + sevenDays ) / 1000 )
+			'January 9, 2020 / 5:46 pm'
 		);
 	} );
 } );

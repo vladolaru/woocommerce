@@ -19,6 +19,7 @@ import { MemoryRouter, useNavigate } from 'react-router-dom';
 /**
  * Internal dependencies
  */
+import { setSiteDateFormats } from './helpers/site-date-formats';
 import { summaryItem } from './helpers/table-summary';
 import { WooPaymentsTransactionsPage } from '../money-movement/transactions-page';
 import {
@@ -31,7 +32,7 @@ import {
 	getWooPaymentsTransactions,
 	getWooPaymentsTransactionsSummary,
 } from '../money-movement/data';
-import { formatAmount, formatDateTime } from '../money-movement/utils';
+import { formatAmount, formatSiteDateTime } from '../money-movement/utils';
 import { setMockUserPreferences } from './helpers/user-preferences';
 
 // Client 11.1.0 references: client/transactions/index.tsx:57-61,93-102 (tab),
@@ -42,6 +43,8 @@ import { setMockUserPreferences } from './helpers/user-preferences';
 const mockHistoryPush = jest.fn();
 const mockCreateErrorNotice = jest.fn();
 const mockSearch = jest.fn();
+
+beforeAll( setSiteDateFormats );
 
 jest.mock( '@woocommerce/navigation', () => ( {
 	getHistory: () => ( { push: mockHistoryPush } ),
@@ -300,12 +303,16 @@ describe( 'WooPayments Blocked transactions tab', () => {
 		expect( within( adaRow ).getByText( 'Payment blocked' ) ).toHaveClass(
 			'woocommerce-status-badge--error'
 		);
+		// Client 11.1.0 `transactions/blocked/columns.tsx:70-72`: site formats, read as UTC.
+		expect( formatSiteDateTime( ADA.created ) ).toBe(
+			'September 20, 2026 / 10:15 am'
+		);
 		expect(
 			within( adaRow )
 				.getAllByRole( 'cell' )
 				.map( ( cell ) => cell.textContent )
 		).toEqual( [
-			formatDateTime( ADA.created ),
+			formatSiteDateTime( ADA.created ),
 			formatAmount( 5000, 'usd' ),
 			'Ada Lovelace',
 			'Payment blocked',
@@ -315,7 +322,7 @@ describe( 'WooPayments Blocked transactions tab', () => {
 				.getAllByRole( 'cell' )
 				.map( ( cell ) => cell.textContent )
 		).toEqual( [
-			formatDateTime( GRACE.created ),
+			formatSiteDateTime( GRACE.created ),
 			formatAmount( 1250, 'usd' ),
 			'Grace Hopper',
 			'Payment blocked',
@@ -646,13 +653,13 @@ describe( 'WooPayments Blocked transactions tab', () => {
 		expect( csv ).toBe(
 			[
 				'"Date / Time",Amount,Customer,Status',
-				`"${ formatDateTime(
+				`"${ formatSiteDateTime(
 					ADA.created
 				) }",5000,"Ada Lovelace",block`,
-				`"${ formatDateTime(
+				`"${ formatSiteDateTime(
 					GRACE.created
 				) }",1250,"Grace Hopper",block`,
-				`"${ formatDateTime(
+				`"${ formatSiteDateTime(
 					REVIEW_ROW.created
 				) }",700,"Katherine Johnson",review`,
 			].join( '\n' )

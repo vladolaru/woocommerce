@@ -13,6 +13,8 @@ import {
 import { __, sprintf } from '@wordpress/i18n';
 import { getHistory } from '@woocommerce/navigation';
 import { recordEvent } from '@woocommerce/tracks';
+import moment from 'moment';
+import type { ReactElement } from 'react';
 import { useLocation } from 'react-router-dom';
 
 /**
@@ -43,8 +45,8 @@ import { WooPaymentsTransactionsList } from './transactions-list';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import { getRiskLevelLabel } from './transactions-list-fields';
 import {
-	formatDateTime,
 	formatExplicitCurrency,
+	formatSiteDateTime,
 	getErrorMessage,
 	getTransactionDetailsRoute,
 } from './utils';
@@ -137,22 +139,20 @@ const getAuthorizationOrderId = ( item: WooPaymentsAuthorization ) => {
 		: '';
 };
 
+// Client 11.1.0 `transactions/uncaptured/index.tsx:150-161`: seven days after the authorization, read as UTC.
 const getAuthorizationCaptureBy = ( value?: string | number ) => {
 	if ( ! value ) {
 		return '-';
 	}
 
-	const timestamp =
-		typeof value === 'number' && value < 10000000000 ? value * 1000 : value;
-	const date = new Date( timestamp );
+	const created =
+		typeof value === 'number'
+			? moment.utc( value < 10000000000 ? value * 1000 : value )
+			: moment.utc( value );
 
-	if ( Number.isNaN( date.getTime() ) ) {
-		return '-';
-	}
-
-	date.setUTCDate( date.getUTCDate() + 7 );
-
-	return formatDateTime( date.toISOString() );
+	return created.isValid()
+		? formatSiteDateTime( created.add( 7, 'd' ).toISOString() )
+		: '-';
 };
 
 const getNotices = () =>
@@ -485,7 +485,7 @@ export const WooPaymentsTransactionsPage = () => {
 			label: __( 'Authorized on', 'woocommerce' ),
 			enableHiding: false,
 			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
-				formatDateTime( item.created ),
+				formatSiteDateTime( item.created ),
 		},
 		{
 			id: 'capture_by',
@@ -726,7 +726,7 @@ export const WooPaymentsTransactionsPage = () => {
 	};
 
 	// Client 11.1.0 `transactions/index.tsx:78-127`: a `TabPanel` over the three lists; the Blocked tab always shows.
-	const renderTabs = ( content: JSX.Element ) => (
+	const renderTabs = ( content: ReactElement ) => (
 		<TabPanel
 			key={ currentTab }
 			className="woocommerce-woopayments-money-movement__tabs"

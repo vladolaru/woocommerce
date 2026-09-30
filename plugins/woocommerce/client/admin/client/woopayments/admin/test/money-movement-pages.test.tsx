@@ -13,6 +13,7 @@ import { getSettings, setSettings } from '@wordpress/date';
 /**
  * Internal dependencies
  */
+import { setSiteDateFormats } from './helpers/site-date-formats';
 import { summaryItem } from './helpers/table-summary';
 import { WooPaymentsDisputesPage } from '../money-movement/disputes-page';
 import { WooPaymentsPaymentSummarySection } from '../money-movement/transaction-detail-sections';
@@ -58,6 +59,8 @@ const mockRecordEvent = recordEvent as jest.MockedFunction<
 	typeof recordEvent
 >;
 let mockHistoryNavigate: ( ( to: string ) => void ) | null = null;
+
+beforeAll( setSiteDateFormats );
 
 jest.mock( '@woocommerce/navigation', () => ( {
 	...jest.requireActual( '@woocommerce/navigation' ),
@@ -1456,8 +1459,9 @@ describe( 'WooPayments money movement pages', () => {
 				'charge:Charge|payment:Payment|payment_failure_refund:Payment failure refund|payment_refund:Payment refund|refund:Refund|refund_failure:Refund failure|dispute:Dispute|dispute_reversal:Dispute reversal|card_reader_fee:Reader fee|financing_payout:Loan disbursement|financing_paydown:Loan repayment|fee_refund:Fee refund|network_costs:Network costs'
 			);
 
+			// Client 11.1.0 `formatDateTimeFromString( date, { includeTime: true } )`: site formats, read as UTC.
 			expect(
-				within( cardRow ).getByText( 'Jul 20, 2026, 10:30 AM' )
+				within( cardRow ).getByText( 'July 20, 2026 / 10:30 am' )
 			).toBeInTheDocument();
 			expect(
 				within( cardRow ).getByText( '$25.00' )

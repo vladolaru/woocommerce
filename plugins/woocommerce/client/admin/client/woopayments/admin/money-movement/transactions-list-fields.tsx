@@ -11,9 +11,8 @@ import { update } from '@wordpress/icons';
 import type { WooPaymentsTransaction } from './types';
 import {
 	formatAmount,
-	formatDate,
 	formatExplicitCurrency,
-	formatDateTime,
+	formatSiteDateTime,
 	getResourceId,
 	getTransactionDetailsRoute,
 	getTransactionListAmount,
@@ -263,7 +262,7 @@ const PayoutDate = ( { item }: FieldRenderProps ) => {
 					) }`
 				) }
 			>
-				{ formatDate( item.available_on ) }
+				{ formatSiteDateTime( item.available_on, false ) }
 			</a>
 		);
 	}
@@ -303,7 +302,8 @@ export const getTransactionListFields = (
 			getValue: ( { item }: FieldRenderProps ) =>
 				item.date || item.created || '',
 			render: ( { item }: FieldRenderProps ) =>
-				formatDateTime( item.date || item.created ),
+				// Client 11.1.0 `transactions/list/index.tsx:453`: site date and time formats.
+				formatSiteDateTime( item.date || item.created ),
 		},
 		{
 			id: 'type',

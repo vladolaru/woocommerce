@@ -14,6 +14,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 /**
  * Internal dependencies
  */
+import { setSiteDateFormats } from './helpers/site-date-formats';
 import { summaryItem } from './helpers/table-summary';
 import { WooPaymentsPayouts } from '../payouts';
 import { WooPaymentsPayoutDetailsPage } from '../payout-details';
@@ -38,6 +39,9 @@ import {
 	getTestModeNoticeText,
 	mockAccountMode,
 } from './helpers/test-mode-account';
+
+// Client 11.1.0 `deposits/list/index.tsx:133`: the payout date in the site date format.
+beforeAll( setSiteDateFormats );
 
 jest.mock( '@woocommerce/data', () => ( {
 	useUserPreferences: () =>
@@ -274,7 +278,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		expect( screen.getByText( 'Spotlight promotion' ) ).toBeInTheDocument();
 
 		const detailsLink = await screen.findByRole( 'link', {
-			name: 'Jun 18, 2026 - view payout details for po_test',
+			name: 'June 18, 2026 - view payout details for po_test',
 		} );
 		expect( detailsLink ).toHaveAttribute(
 			'href',
@@ -314,7 +318,7 @@ describe( 'WooPayments payout details admin surface', () => {
 
 		expect(
 			await screen.findByRole( 'link', {
-				name: 'Jun 18, 2026 - view payout details for po_test',
+				name: 'June 18, 2026 - view payout details for po_test',
 			} )
 		).toBeInTheDocument();
 		expect( mockGetDeposits ).toHaveBeenCalledWith(

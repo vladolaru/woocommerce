@@ -38,10 +38,10 @@ import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { runWooPaymentsExport } from './export';
 import {
 	formatCount,
-	formatDateTime,
-	formatExplicitCurrency,
 	formatDisputeReasonLabel,
+	formatExplicitCurrency,
 	formatLabel,
+	formatSiteDateTime,
 	getDisputeId,
 	getErrorMessage,
 	getTransactionDetailsRoute,
@@ -239,7 +239,7 @@ export const getDisputeRespondBy = (
 		);
 	}
 
-	return formatDateTime( dueBy.toISOString() );
+	return formatSiteDateTime( dueBy.toISOString() );
 };
 
 type ExportMessage = {
@@ -415,7 +415,7 @@ export const WooPaymentsDisputesPage = () => {
 					  }
 					: ( false as const ),
 				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					formatDateTime( item.created || item.date ),
+					formatSiteDateTime( item.created || item.date ),
 			},
 			{
 				id: 'due_by',

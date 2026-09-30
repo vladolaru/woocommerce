@@ -41,7 +41,7 @@ import type {
 	WooPaymentsDepositsQuery,
 	WooPaymentsDepositsSummary,
 } from './overview/types';
-import { formatPayoutDate } from './overview/utils';
+import { formatPayoutSiteDate } from './overview/utils';
 import {
 	getPayoutStatusChipType,
 	getPayoutStatusLabel,
@@ -163,7 +163,7 @@ export const WooPaymentsPayouts = () => {
 							recordEvent( 'wcpay_deposits_row_click' )
 						}
 					>
-						{ formatPayoutDate( item ) }
+						{ formatPayoutSiteDate( item ) }
 						<span className="screen-reader-text">
 							{ sprintf(
 								/* translators: %s: payout ID. */

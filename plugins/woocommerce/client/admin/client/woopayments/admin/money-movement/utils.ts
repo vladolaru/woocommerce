@@ -1,8 +1,10 @@
 /**
  * External dependencies
  */
+import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { __, sprintf } from '@wordpress/i18n';
 import { numberFormat } from '@woocommerce/number';
+import moment from 'moment';
 
 /**
  * Internal dependencies
@@ -162,6 +164,39 @@ export const getTransactionDetailsRoute = ( item: {
 				: undefined,
 		transaction_type: transactionType,
 	} );
+};
+
+/**
+ * A list date in the site's date format, with the site's time format after " / " when asked, read as UTC.
+ * Client 11.1.0 `utils/date-time.ts` `formatDateTimeFromString()` and `formatDateTimeFromTimestamp()`.
+ *
+ * @param value       A `Y-m-d H:i:s` UTC string, an ISO string, or a Unix timestamp in seconds or milliseconds.
+ * @param includeTime Whether to add the time.
+ */
+export const formatSiteDateTime = (
+	value?: string | number | null,
+	includeTime = true
+) => {
+	if ( ! value ) {
+		return '-';
+	}
+
+	const date =
+		typeof value === 'number'
+			? moment.utc( value < 10000000000 ? value * 1000 : value )
+			: moment.utc( value );
+
+	if ( ! date.isValid() ) {
+		return '-';
+	}
+
+	const { formats } = getDateSettings();
+
+	return dateI18n(
+		includeTime ? `${ formats.date } / ${ formats.time }` : formats.date,
+		date.toISOString(),
+		undefined
+	);
 };
 
 export const formatDate = ( value?: string | number ) => {

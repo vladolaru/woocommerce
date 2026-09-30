@@ -38,8 +38,8 @@ import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { ExportButton } from './table';
 import { StatusChip } from '../overview/components/status-chip';
 import {
-	formatDateTime,
 	formatExplicitCurrency,
+	formatSiteDateTime,
 	getTransactionDetailsRoute,
 } from './utils';
 import { usePersistedHiddenFields } from './view-preferences';
@@ -86,7 +86,7 @@ const COLUMN_KEYS = COLUMNS.map( ( { key } ) => key );
 // Client 11.1.0 `transactions/blocked/columns.tsx:62-101`: each cell's CSV value.
 const getCsvValue = ( item: FraudOutcomeTransaction, key: string ) =>
 	( {
-		created: formatDateTime( item.created ),
+		created: formatSiteDateTime( item.created ),
 		amount: item.amount,
 		customer: item.customer_name,
 		status: item.status,
