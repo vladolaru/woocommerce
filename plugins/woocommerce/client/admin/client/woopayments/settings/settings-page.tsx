@@ -2303,8 +2303,9 @@ const AdvancedSettingsSection = () => {
 			}
 		>
 			<CheckboxControl
+				className="woopayments-settings-advanced-option"
 				checked={ isMultiCurrencyEnabled }
-				label={ __( 'Enable multi-currency', 'woocommerce' ) }
+				label={ __( 'Enable Multi-Currency', 'woocommerce' ) }
 				help={
 					<>
 						{ __(
@@ -2365,26 +2366,28 @@ const AdvancedSettingsSection = () => {
 				} }
 				__nextHasNoMarginBottom
 			/>
-			<CheckboxControl
-				checked={ isDevModeEnabled || isDebugLogEnabled }
-				disabled={ isDevModeEnabled }
-				help={ __(
-					'When enabled, payment error logs will be saved to WooCommerce > Status > Logs.',
-					'woocommerce'
-				) }
-				label={
-					isDevModeEnabled
-						? __(
-								'Log error messages (defaulted on for test accounts)',
-								'woocommerce'
-						  )
-						: __( 'Log error messages', 'woocommerce' )
-				}
-				onChange={ ( value ) =>
-					setIsDebugLogEnabled( Boolean( value ) )
-				}
-				__nextHasNoMarginBottom
-			/>
+			<FieldGroup title={ __( 'Debug mode', 'woocommerce' ) }>
+				<CheckboxControl
+					checked={ isDevModeEnabled || isDebugLogEnabled }
+					disabled={ isDevModeEnabled }
+					help={ __(
+						'When enabled, payment error logs will be saved to WooCommerce > Status > Logs.',
+						'woocommerce'
+					) }
+					label={
+						isDevModeEnabled
+							? __(
+									'Log error messages (defaulted on for test accounts)',
+									'woocommerce'
+							  )
+							: __( 'Log error messages', 'woocommerce' )
+					}
+					onChange={ ( value ) =>
+						setIsDebugLogEnabled( Boolean( value ) )
+					}
+					__nextHasNoMarginBottom
+				/>
+			</FieldGroup>
 		</SettingsSection>
 	);
 };
