@@ -1,6 +1,7 @@
 /**
  * Internal dependencies
  */
+import '../../settings-payments/settings-payments-body.scss';
 import { WooPaymentsOverviewPage } from './overview/page';
 import './style.scss';
 

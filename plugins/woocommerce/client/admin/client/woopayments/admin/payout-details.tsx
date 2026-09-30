@@ -14,6 +14,7 @@ import { useLocation } from 'react-router-dom';
 /**
  * Internal dependencies
  */
+import '../../settings-payments/settings-payments-body.scss';
 import { getWooPaymentsDeposit } from './overview/data';
 import type { WooPaymentsDeposit } from './overview/types';
 import {

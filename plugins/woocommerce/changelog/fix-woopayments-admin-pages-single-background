@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Overview, Payouts and other WooPayments admin pages now have the same white background whether they are opened directly or from the Payments list.

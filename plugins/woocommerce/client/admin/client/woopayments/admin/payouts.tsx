@@ -10,6 +10,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 /**
  * Internal dependencies
  */
+import '../../settings-payments/settings-payments-body.scss';
 import {
 	getWooPaymentsDeposits,
 	getWooPaymentsDepositsExportUrl,
