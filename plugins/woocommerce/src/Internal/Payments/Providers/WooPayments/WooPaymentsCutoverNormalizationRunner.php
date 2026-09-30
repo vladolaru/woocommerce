@@ -73,7 +73,84 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 		'link',
 	);
 
-	private const APPEARANCE_TRANSIENTS = array(
+	/**
+	 * Shared settings keys normalization may remove or reshape, with the WooPayments plugin version that stopped reading each.
+	 *
+	 * Re-activating the plugin is the rollback lever, so native never removes or reshapes a shared setting that the cutover
+	 * floor (WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION) still reads; raising the floor is the only way
+	 * to widen this list. Each version is the first plugin release tag with no read outside its own migrations. The split
+	 * per-method options have no retired keys.
+	 *
+	 * @var array<string,string>
+	 */
+	public const RETIRED_SETTINGS_KEYS = array(
+		'payment_request'                     => '10.4.0',
+		// Client 11.1.0 still declares the form field (class-wc-payment-gateway-wcpay.php:471), but nothing reads it.
+		'payment_request_button_locations'    => '10.4.0',
+		'platform_checkout_button_locations'  => '10.4.0',
+		'payment_request_button_branded_type' => '2.9.0',
+	);
+
+	/**
+	 * Options normalization deletes, with the plugin version that stopped reading each (same floor rule as RETIRED_SETTINGS_KEYS).
+	 *
+	 * The plugin's own Erase_Deprecated_Flags_And_Options migration deletes the same list for installs older than 9.8.0.
+	 *
+	 * @var array<string,string>
+	 */
+	public const RETIRED_OPTIONS = array(
+		'_wcpay_feature_auth_and_capture'              => '9.8.0',
+		'_wcpay_feature_progressive_onboarding'        => '6.9.0',
+		'_wcpay_feature_client_secret_encryption'      => '7.7.0',
+		'_wcpay_feature_allow_subscription_migrations' => '8.1.0',
+		'_wcpay_feature_custom_deposit_schedules'      => '5.8.0',
+		'_wcpay_feature_account_overview_task_list'    => '6.2.0',
+		'_wcpay_feature_account_overview'              => '2.5.0',
+		'_wcpay_feature_sepa'                          => '3.4.0',
+		'_wcpay_feature_sofort'                        => '3.4.0',
+		'_wcpay_feature_giropay'                       => '3.4.0',
+		'_wcpay_feature_grouped_settings'              => '2.9.0',
+		'_wcpay_feature_upe_settings_preview'          => '7.0.0',
+		'_wcpay_feature_upe'                           => '7.0.0',
+		'_wcpay_feature_upe_split'                     => '7.0.0',
+		'_wcpay_feature_upe_deferred_intent'           => '7.0.0',
+		'_wcpay_feature_dispute_on_transaction_page'   => '6.7.0',
+		'_wcpay_feature_streamline_refunds'            => '8.1.0',
+		'wcpay_fraud_protection_settings_active'       => '5.9.0',
+		'_wcpay_feature_mc_order_meta_helper'          => '6.4.0',
+		'_wcpay_feature_pay_for_order_flow'            => '7.6.0',
+		'_wcpay_feature_simplify_deposits_ui'          => '5.9.0',
+		// No release ever read it; the plugin's erase migration has deleted it since 8.1.0.
+		'_wcpay_fraud_protection_settings_enabled'     => '8.1.0',
+		'_wcpay_feature_platform_checkout_subscriptions_enabled' => '4.8.0',
+		// 4.0.3 is the first tagged 4.0 release.
+		'_wcpay_feature_platform_checkout'             => '4.0.3',
+		'_wcpay_feature_capital'                       => '3.8.0',
+		'wcpay_capability_request_dismissed_notices'   => '9.3.0',
+		// Client 11.1.0 still lists it in its generic settings-option REST route (class-wc-rest-payments-settings-option-controller.php:27), but no client code reads it since 9.8.0.
+		'wcpay_onboarding_eligibility_modal_dismissed' => '9.8.0',
+	);
+
+	/**
+	 * Transients normalization deletes, with the plugin version that stopped reading each (same floor rule).
+	 *
+	 * The BNPL announcement user meta `_wcpay_bnpl_april15_viewed` retired with it.
+	 *
+	 * @var array<string,string>
+	 */
+	public const RETIRED_TRANSIENTS = array(
+		'wcpay_bnpl_april15_successful_purchases_count' => '8.1.0',
+	);
+
+	/**
+	 * UPE appearance caches normalization deletes.
+	 *
+	 * Plugin 10.5.x still reads them, but only as day-long caches it rebuilds and clears itself (10.5.0
+	 * class-wc-payment-gateway-wcpay.php:4281-4282, :4303-4312), so deleting them loses no merchant setting.
+	 *
+	 * @var string[]
+	 */
+	public const APPEARANCE_TRANSIENTS = array(
 		'wcpay_upe_appearance',
 		'wcpay_upe_add_payment_method_appearance',
 		'wcpay_wc_blocks_upe_appearance',
@@ -86,36 +163,6 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 		'wcpay_upe_bnpl_product_page_appearance_theme',
 		'wcpay_upe_bnpl_classic_cart_appearance_theme',
 		'wcpay_upe_bnpl_cart_block_appearance_theme',
-	);
-
-	private const DEPRECATED_OPTIONS = array(
-		'_wcpay_feature_auth_and_capture',
-		'_wcpay_feature_progressive_onboarding',
-		'_wcpay_feature_client_secret_encryption',
-		'_wcpay_feature_allow_subscription_migrations',
-		'_wcpay_feature_custom_deposit_schedules',
-		'_wcpay_feature_account_overview_task_list',
-		'_wcpay_feature_account_overview',
-		'_wcpay_feature_sepa',
-		'_wcpay_feature_sofort',
-		'_wcpay_feature_giropay',
-		'_wcpay_feature_grouped_settings',
-		'_wcpay_feature_upe_settings_preview',
-		'_wcpay_feature_upe',
-		'_wcpay_feature_upe_split',
-		'_wcpay_feature_upe_deferred_intent',
-		'_wcpay_feature_dispute_on_transaction_page',
-		'_wcpay_feature_streamline_refunds',
-		'wcpay_fraud_protection_settings_active',
-		'_wcpay_feature_mc_order_meta_helper',
-		'_wcpay_feature_pay_for_order_flow',
-		'_wcpay_feature_simplify_deposits_ui',
-		'_wcpay_fraud_protection_settings_enabled',
-		'_wcpay_feature_platform_checkout_subscriptions_enabled',
-		'_wcpay_feature_platform_checkout',
-		'_wcpay_feature_capital',
-		'wcpay_capability_request_dismissed_notices',
-		'wcpay_onboarding_eligibility_modal_dismissed',
 	);
 
 	/**
@@ -395,7 +442,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			$settings[ "express_checkout_{$location}_methods" ] = $methods;
 		}
 
-		unset( $settings['payment_request_button_locations'], $settings['platform_checkout_button_locations'] );
+		$this->remove_retired_settings( $settings, 'payment_request_button_locations', 'platform_checkout_button_locations' );
 
 		return true;
 	}
@@ -467,7 +514,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 		if ( null !== $mapped_type ) {
 			$settings['payment_request_button_type'] = $mapped_type;
 		}
-		unset( $settings['payment_request_button_branded_type'] );
+		$this->remove_retired_settings( $settings, 'payment_request_button_branded_type' );
 
 		return $changed;
 	}
@@ -553,6 +600,23 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Remove retired keys from the shared settings; a key outside RETIRED_SETTINGS_KEYS is kept.
+	 *
+	 * @param array<string,mixed> $settings Gateway settings.
+	 * @param string              ...$keys  Retired settings keys.
+	 */
+	private function remove_retired_settings( array &$settings, string ...$keys ): void {
+		foreach ( $keys as $key ) {
+			if ( ! array_key_exists( $key, self::RETIRED_SETTINGS_KEYS ) ) {
+				wc_doing_it_wrong( __METHOD__, sprintf( 'Cutover normalization must not remove the shared WooPayments setting "%s": the cutover plugin floor may still read it.', $key ), '11.2.0' );
+				continue;
+			}
+
+			unset( $settings[ $key ] );
+		}
+	}
+
+	/**
 	 * Delete stale UPE appearance transients.
 	 *
 	 * @return bool
@@ -575,7 +639,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	private function delete_deprecated_options(): bool {
 		$deleted = false;
 
-		foreach ( self::DEPRECATED_OPTIONS as $option ) {
+		foreach ( array_keys( self::RETIRED_OPTIONS ) as $option ) {
 			$deleted = delete_option( $option ) || $deleted;
 		}
 
@@ -590,19 +654,22 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	private function delete_bnpl_announcement_state(): bool {
 		global $wpdb;
 
-		$deleted_transient = delete_transient( 'wcpay_bnpl_april15_successful_purchases_count' );
-			$deleted_meta  = $wpdb->delete(
-				$wpdb->usermeta,
-				array(
-					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Intentional cleanup of a known legacy WooPayments user meta key.
-					'meta_key' => '_wcpay_bnpl_april15_viewed',
-				),
-				array(
-					'%s',
-				)
-			);
+		$deleted_transient = false;
+		foreach ( array_keys( self::RETIRED_TRANSIENTS ) as $transient ) {
+			$deleted_transient = delete_transient( $transient ) || $deleted_transient;
+		}
+		$deleted_meta = $wpdb->delete(
+			$wpdb->usermeta,
+			array(
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Intentional cleanup of a known legacy WooPayments user meta key.
+				'meta_key' => '_wcpay_bnpl_april15_viewed',
+			),
+			array(
+				'%s',
+			)
+		);
 
-			return $deleted_transient || ( false !== $deleted_meta && $deleted_meta > 0 );
+		return $deleted_transient || ( false !== $deleted_meta && $deleted_meta > 0 );
 	}
 
 	/**

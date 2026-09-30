@@ -4,7 +4,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use WC_Unit_Test_Case;
 
 /**
@@ -17,6 +19,46 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	private const VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
 	private const NORMALIZED_OPTION = 'woocommerce_native_woopayments_cutover_normalization_version';
+
+	/**
+	 * Shared settings keys native does not know, one per value shape; normalization must keep them as they are.
+	 */
+	private const UNKNOWN_SETTINGS = array(
+		'future_string_key' => 'kept',
+		'future_int_key'    => 7,
+		'future_bool_key'   => true,
+		'future_float_key'  => 1.5,
+		'future_null_key'   => null,
+		'future_list_key'   => array( 'a', 'b' ),
+		'future_map_key'    => array(
+			'nested' => array( 'deep' => 'value' ),
+		),
+	);
+
+	/**
+	 * Split per-method options with keys native never writes.
+	 */
+	private const SPLIT_SETTINGS = array(
+		'woocommerce_woocommerce_payments_apple_pay_settings' => array(
+			'enabled'     => 'yes',
+			'button_type' => 'plain',
+			'future_key'  => array( 'nested' => true ),
+		),
+		'woocommerce_woocommerce_payments_ideal_settings' => array(
+			'enabled'    => 'yes',
+			'title'      => 'iDEAL',
+			'future_key' => 7,
+		),
+	);
+
+	/**
+	 * Options WooPayments 10.5.0 and 11.1.0 both read, which normalization must never delete.
+	 */
+	private const PLUGIN_READ_OPTIONS = array(
+		'wcpay_multi_currency_enabled_currencies'         => array( 'USD', 'EUR' ),
+		'wcpay_multi_currency_stored_customer_currencies' => array( 'EUR' ),
+		'_wcpay_feature_woopay_express_checkout'          => '1',
+	);
 
 	/**
 	 * System under test.
@@ -609,6 +651,207 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_cache_autodetect_done' );
 		$this->assertFalse( $method->invoke( $runner, '11.0.0' ) );
 		$this->assertFalse( $method->invoke( $runner, '11.0.1' ) );
+	}
+
+	/**
+	 * @testdox Every retired name normalization may remove was last read by a plugin version below the cutover floor.
+	 */
+	public function test_retired_allowlists_stay_at_or_below_the_cutover_plugin_floor(): void {
+		$allowlists = array(
+			'RETIRED_SETTINGS_KEYS' => WooPaymentsCutoverNormalizationRunner::RETIRED_SETTINGS_KEYS,
+			'RETIRED_OPTIONS'       => WooPaymentsCutoverNormalizationRunner::RETIRED_OPTIONS,
+			'RETIRED_TRANSIENTS'    => WooPaymentsCutoverNormalizationRunner::RETIRED_TRANSIENTS,
+		);
+		$floors     = array(
+			WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION,
+			WooPaymentsCutoverController::MINIMUM_CUTOVER_PLUGIN_VERSION,
+		);
+
+		foreach ( $allowlists as $allowlist_name => $allowlist ) {
+			$this->assertNotEmpty( $allowlist, "{$allowlist_name} must not be empty." );
+			foreach ( $allowlist as $name => $stopped_reading_version ) {
+				$this->assertMatchesRegularExpression( '/^\d+\.\d+\.\d+$/D', $stopped_reading_version, "{$allowlist_name}[{$name}] must name a plugin release version." );
+				foreach ( $floors as $floor ) {
+					$this->assertTrue(
+						version_compare( $stopped_reading_version, $floor, '<=' ),
+						"{$allowlist_name}[{$name}] was read until {$stopped_reading_version}, above the cutover floor {$floor}: a plugin re-activated after rollback could still read it."
+					);
+				}
+			}
+		}
+	}
+
+	/**
+	 * @testdox Normalization removes or reshapes only allowlisted shared settings keys ($fixture_name).
+	 * @dataProvider shared_settings_contract_provider
+	 *
+	 * @param string              $fixture_name     Fixture label.
+	 * @param string              $previous_version Last active plugin version.
+	 * @param array<string,mixed> $settings         Settings before normalization, without the unknown keys.
+	 * @param bool                $expects_removal  Whether the fixture holds retired keys that must go.
+	 */
+	public function test_run_removes_or_reshapes_only_allowlisted_shared_settings( string $fixture_name, string $previous_version, array $settings, bool $expects_removal ): void {
+		unset( $fixture_name );
+		$settings = array_merge( $settings, self::UNKNOWN_SETTINGS );
+		update_option( self::VERSION_OPTION, $previous_version );
+		update_option( self::SETTINGS_OPTION, $settings );
+		foreach ( self::SPLIT_SETTINGS as $option_name => $split_settings ) {
+			update_option( $option_name, $split_settings );
+		}
+		$retired_keys = array_keys( WooPaymentsCutoverNormalizationRunner::RETIRED_SETTINGS_KEYS );
+
+		$summary = $this->create_runner()->run();
+		$stored  = get_option( self::SETTINGS_OPTION );
+
+		$this->assertTrue( $summary['ran'] );
+		$this->assertIsArray( $stored );
+		$removed = array_keys( array_diff_key( $settings, $stored ) );
+		$this->assertSame( array(), array_values( array_diff( $removed, $retired_keys ) ), 'Normalization removed shared settings keys that are not on the retired allowlist.' );
+		if ( $expects_removal ) {
+			$this->assertNotEmpty( $removed, 'The legacy fixture must exercise at least one retired-key removal.' );
+		} else {
+			$this->assertSame( array(), $removed, 'A store at the cutover floor holds no retired key, so nothing may be removed.' );
+		}
+		foreach ( self::UNKNOWN_SETTINGS as $key => $value ) {
+			$this->assertArrayHasKey( $key, $stored, "Unknown shared setting {$key} must survive normalization." );
+			$this->assertSame( $value, $stored[ $key ], "Unknown shared setting {$key} must keep its value." );
+		}
+		foreach ( array_intersect_key( $settings, $stored ) as $key => $value ) {
+			if ( in_array( $key, $retired_keys, true ) ) {
+				continue;
+			}
+			$this->assertSame( $this->value_shape( $value ), $this->value_shape( $stored[ $key ] ), "Normalization reshaped the shared setting {$key}, which is not on the retired allowlist." );
+		}
+		foreach ( self::SPLIT_SETTINGS as $option_name => $split_settings ) {
+			$stored_split = get_option( $option_name );
+			$this->assertIsArray( $stored_split, "{$option_name} must stay an array." );
+			foreach ( $split_settings as $key => $value ) {
+				$this->assertArrayHasKey( $key, $stored_split, "Normalization removed {$key} from {$option_name}; split options have no retired keys." );
+				$this->assertSame( $this->value_shape( $value ), $this->value_shape( $stored_split[ $key ] ), "Normalization reshaped {$key} in {$option_name}." );
+			}
+		}
+	}
+
+	/**
+	 * Shared settings contract fixtures.
+	 *
+	 * @return array<string,array{string,string,array<string,mixed>,bool}>
+	 */
+	public function shared_settings_contract_provider(): array {
+		return array(
+			'legacy plugin 2.5.0 shapes'  => array(
+				'legacy plugin 2.5.0 shapes',
+				'2.5.0',
+				array(
+					'enabled'                             => 'yes',
+					'payment_request'                     => 'yes',
+					'payment_request_button_locations'    => array( 'product', 'checkout' ),
+					'platform_checkout_button_locations'  => array( 'cart' ),
+					'payment_request_button_size'         => 'default',
+					'payment_request_button_type'         => 'branded',
+					'payment_request_button_branded_type' => 'long',
+					'manual_capture'                      => 'yes',
+					'platform_checkout'                   => 'yes',
+					'upe_enabled_payment_method_ids'      => array( 'card', 'link', 'sepa_debit', 'amazon_pay', 'ideal', 'sofort' ),
+				),
+				true,
+			),
+			'plugin at the cutover floor' => array(
+				'plugin at the cutover floor',
+				WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION,
+				array(
+					'enabled'                           => 'yes',
+					'test_mode'                         => 'yes',
+					'manual_capture'                    => 'yes',
+					'saved_cards'                       => 'yes',
+					'platform_checkout'                 => 'yes',
+					'upe_enabled_payment_method_ids'    => array( 'card', 'link', 'ideal' ),
+					'express_checkout_product_methods'  => array( 'payment_request', 'link' ),
+					'express_checkout_cart_methods'     => array( 'woopay' ),
+					'express_checkout_checkout_methods' => array(),
+					'payment_request_button_type'       => 'buy',
+					'payment_request_button_size'       => 'small',
+				),
+				false,
+			),
+		);
+	}
+
+	/**
+	 * @testdox Normalization deletes only allowlisted options and transients and keeps every other plugin option.
+	 */
+	public function test_run_deletes_only_allowlisted_options_and_transients(): void {
+		$this->seed_legacy_options();
+		foreach ( array_keys( WooPaymentsCutoverNormalizationRunner::RETIRED_OPTIONS ) as $option_name ) {
+			update_option( $option_name, '1' );
+		}
+		foreach ( self::PLUGIN_READ_OPTIONS as $option_name => $value ) {
+			update_option( $option_name, $value );
+		}
+		$transients = array_merge( WooPaymentsCutoverNormalizationRunner::APPEARANCE_TRANSIENTS, array_keys( WooPaymentsCutoverNormalizationRunner::RETIRED_TRANSIENTS ) );
+		foreach ( $transients as $transient ) {
+			set_transient( $transient, 'stale', HOUR_IN_SECONDS );
+		}
+		set_transient( 'wcpay_fraud_protection_settings', array( 'kept' => true ), HOUR_IN_SECONDS );
+		$deletable = array_keys( WooPaymentsCutoverNormalizationRunner::RETIRED_OPTIONS );
+		foreach ( $transients as $transient ) {
+			$deletable[] = '_transient_' . $transient;
+			$deletable[] = '_transient_timeout_' . $transient;
+		}
+		$before = $this->get_plugin_option_names();
+
+		$this->create_runner()->run();
+		$deleted = array_values( array_diff( $before, $this->get_plugin_option_names() ) );
+
+		$this->assertNotEmpty( $deleted, 'The fixture must exercise option deletion.' );
+		$this->assertSame( array(), array_values( array_diff( $deleted, $deletable ) ), 'Normalization deleted plugin options that are not on an allowlist.' );
+		foreach ( self::PLUGIN_READ_OPTIONS as $option_name => $value ) {
+			$this->assertSame( $value, get_option( $option_name ), "Plugin-read option {$option_name} must survive normalization unchanged." );
+		}
+		$this->assertSame( array( 'kept' => true ), get_transient( 'wcpay_fraud_protection_settings' ) );
+	}
+
+	/**
+	 * @testdox Refuses to remove a shared settings key that is not on the retired allowlist.
+	 */
+	public function test_remove_retired_settings_refuses_a_key_outside_the_allowlist(): void {
+		$runner   = $this->create_runner();
+		$method   = new \ReflectionMethod( $runner, 'remove_retired_settings' );
+		$settings = array(
+			'saved_cards'     => 'yes',
+			'payment_request' => 'yes',
+		);
+		$method->setAccessible( true );
+		$this->setExpectedIncorrectUsage( WooPaymentsCutoverNormalizationRunner::class . '::remove_retired_settings' );
+
+		$method->invokeArgs( $runner, array( &$settings, 'saved_cards', 'payment_request' ) );
+
+		$this->assertSame( array( 'saved_cards' => 'yes' ), $settings );
+	}
+
+	/**
+	 * Describe a value's shape: its PHP type, and for arrays whether it is a list or a map.
+	 *
+	 * @param mixed $value Setting value.
+	 * @return string
+	 */
+	private function value_shape( $value ): string {
+		if ( ! is_array( $value ) ) {
+			return gettype( $value );
+		}
+
+		return array_values( $value ) === $value ? 'list' : 'map';
+	}
+
+	/**
+	 * Read every stored option name that belongs to the plugin or to native WooPayments.
+	 *
+	 * @return string[]
+	 */
+	private function get_plugin_option_names(): array {
+		global $wpdb;
+
+		return $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE '%wcpay%' OR option_name LIKE '%woocommerce_payments%' OR option_name LIKE '%woopayments%'" );
 	}
 
 	/**
