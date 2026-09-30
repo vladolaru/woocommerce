@@ -174,6 +174,144 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Checkout lists every WooPayments gateway at the saved position of the card gateway, in the provider's order, as the client does.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_checkout_places_the_woopayments_block_at_the_saved_card_gateway_position(): void {
+		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+		$this->run_bootstrap( '__return_false' );
+		update_option(
+			'woocommerce_gateway_order',
+			array(
+				'bacs'                        => 0,
+				OrderPaymentStore::GATEWAY_ID => 1,
+				'cheque'                      => 2,
+			)
+		);
+
+		$this->reload_payment_gateways();
+
+		$block = $this->get_provider_gateway_ids();
+		$ids   = array_keys( WC()->payment_gateways()->payment_gateways() );
+		$this->assertSame( 'bacs', $ids[0] );
+		$this->assertSame( $block, array_slice( $ids, 1, count( $block ) ), 'Every WooPayments gateway must follow the card gateway, in the provider order.' );
+		$this->assertSame( 'cheque', $ids[ 1 + count( $block ) ] );
+	}
+
+	/**
+	 * @testdox Checkout lists the WooPayments gateways first when no gateway order is saved, as the client does.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_checkout_lists_the_woopayments_block_first_without_a_saved_order(): void {
+		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+		$this->run_bootstrap( '__return_false' );
+		delete_option( 'woocommerce_gateway_order' );
+
+		$this->reload_payment_gateways();
+
+		$block = $this->get_provider_gateway_ids();
+		$ids   = array_keys( WC()->payment_gateways()->payment_gateways() );
+		$this->assertSame( $block, array_slice( $ids, 0, count( $block ) ) );
+		$this->assertContains( 'bacs', array_slice( $ids, count( $block ) ), 'Other gateways must follow the WooPayments block.' );
+	}
+
+	/**
+	 * @testdox Checkout lists the WooPayments gateways before the saved gateways when the saved order lacks the card gateway, as the client does.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_checkout_lists_the_woopayments_block_first_when_the_saved_order_lacks_the_card_gateway(): void {
+		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+		$this->run_bootstrap( '__return_false' );
+		update_option(
+			'woocommerce_gateway_order',
+			array(
+				'bacs'   => 0,
+				'cheque' => 1,
+			)
+		);
+
+		$this->reload_payment_gateways();
+
+		$block = $this->get_provider_gateway_ids();
+		$ids   = array_keys( WC()->payment_gateways()->payment_gateways() );
+		$this->assertSame( array_merge( $block, array( 'bacs', 'cheque' ) ), array_slice( $ids, 0, count( $block ) + 2 ) );
+	}
+
+	/**
+	 * @testdox Orders the WooPayments gateways as the client's order_woopayments_gateways() does.
+	 * @testWith [{"bacs": 0, "cheque": 1}, {"woocommerce_payments": 0, "woocommerce_payments_klarna": 1, "woocommerce_payments_ideal": 2, "bacs": 3, "cheque": 4}]
+	 *           [{"bacs": 0, "woocommerce_payments": 1, "cheque": 2}, {"bacs": 0, "woocommerce_payments": 1, "woocommerce_payments_klarna": 2, "woocommerce_payments_ideal": 3, "cheque": 4}]
+	 *           [[], {"woocommerce_payments": 0, "woocommerce_payments_klarna": 1, "woocommerce_payments_ideal": 2}]
+	 *           [{"woocommerce_payments_klarna": 0, "bacs": 1, "woocommerce_payments": 2, "cheque": 3, "woocommerce_payments_ideal": 4}, {"woocommerce_payments_klarna": 0, "bacs": 1, "woocommerce_payments": 2, "woocommerce_payments_ideal": 3, "cheque": 4}]
+	 *           [{"bacs": 0, "woocommerce_payments_ideal": 1}, {"woocommerce_payments": 0, "woocommerce_payments_klarna": 1, "woocommerce_payments_ideal": 2, "bacs": 3}]
+	 *           [{"cheque": 2, "woocommerce_payments": 1, "bacs": 0}, {"bacs": 0, "woocommerce_payments": 1, "woocommerce_payments_klarna": 2, "woocommerce_payments_ideal": 3, "cheque": 4}]
+	 *           [{"bacs": 1, "woocommerce_payments": 1, "cheque": 2}, {"woocommerce_payments": 0, "woocommerce_payments_klarna": 1, "woocommerce_payments_ideal": 2, "cheque": 3}]
+	 *           [false, {"woocommerce_payments": 0, "woocommerce_payments_klarna": 1, "woocommerce_payments_ideal": 2, "0": 3}]
+	 *
+	 * @param mixed             $ordering Saved or default gateway order.
+	 * @param array<string,int> $expected Expected gateway order.
+	 */
+	public function test_orders_woopayments_gateways_like_the_client( $ordering, array $expected ): void {
+		$result = WooPaymentsGatewayListController::order_woopayments_gateways(
+			$ordering,
+			array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_ideal' )
+		);
+
+		$this->assertSame( $expected, $result );
+	}
+
+	/**
+	 * @testdox Should attach the gateway order filters at the client's priorities only when native owns payments.
+	 */
+	public function test_registers_the_gateway_order_filters_only_when_native_owns_payments(): void {
+		$sut   = $this->create_controller( true );
+		$other = $this->create_controller( false );
+
+		$sut->register();
+		$other->register();
+
+		$this->assertSame( 2, has_filter( 'option_woocommerce_gateway_order', array( $sut, 'handle_gateway_order_option' ) ) );
+		$this->assertSame( 3, has_filter( 'default_option_woocommerce_gateway_order', array( $sut, 'handle_gateway_order_option' ) ) );
+		$this->assertFalse( has_filter( 'option_woocommerce_gateway_order', array( $other, 'handle_gateway_order_option' ) ) );
+		$this->assertFalse( has_filter( 'default_option_woocommerce_gateway_order', array( $other, 'handle_gateway_order_option' ) ) );
+	}
+
+	/**
+	 * @testdox Should return the gateway order unchanged when native does not own payments or the provider publishes no gateways.
+	 */
+	public function test_returns_the_gateway_order_unchanged_without_native_ownership_or_provider_gateways(): void {
+		$ordering = array(
+			'bacs'   => 0,
+			'cheque' => 1,
+		);
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )->onlyMethods( array( 'get_payment_gateways' ) )->getMock();
+		$provider->method( 'get_payment_gateways' )->willReturn( array() );
+		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
+
+		$this->assertSame( $ordering, $this->create_controller( false )->handle_gateway_order_option( $ordering ) );
+		$this->assertSame( $ordering, $this->create_controller( true )->handle_gateway_order_option( $ordering ) );
+	}
+
+	/**
+	 * Get the gateway IDs the WooPayments provider publishes, in its order.
+	 *
+	 * @return array<int,string>
+	 */
+	private function get_provider_gateway_ids(): array {
+		$ids = array_map(
+			static fn( WC_Payment_Gateway $gateway ): string => $gateway->id,
+			wc_get_container()->get( WooPaymentsProvider::class )->get_payment_gateways()
+		);
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $ids[0] ?? null, 'The provider must publish the card gateway first.' );
+		$this->assertGreaterThan( 1, count( $ids ), 'The provider must publish split gateways, or the order tests prove nothing.' );
+
+		return $ids;
+	}
+
+	/**
 	 * Keep only WooPayments split gateway IDs.
 	 *
 	 * @param array<int,mixed> $ids Gateway or provider IDs.
