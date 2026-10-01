@@ -215,6 +215,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		if ( false === has_filter( 'allowed_redirect_hosts', array( $this, 'allowed_redirect_hosts' ) ) ) {
 			add_filter( 'allowed_redirect_hosts', array( $this, 'allowed_redirect_hosts' ) );
 		}
+
+		// Like client 11.1.0, drop the account cache when the WordPress.com connection is made or removed.
+		foreach ( array( 'jetpack_site_registered', 'jetpack_site_disconnected' ) as $hook_name ) {
+			if ( false === has_action( $hook_name, array( $this, 'clear_cache' ) ) ) {
+				add_action( $hook_name, array( $this, 'clear_cache' ) );
+			}
+		}
 	}
 
 	/**
@@ -245,10 +252,16 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Get normalized WooPayments account cache data.
 	 *
+	 * Without a platform connection this returns no account and leaves the cache alone, like the client.
+	 *
 	 * @param bool $force_refresh Whether to force a live account refresh.
 	 * @return array<string,mixed>
 	 */
 	public function get_cached_account_data( bool $force_refresh = false ): array {
+		if ( ! $this->is_platform_connected() ) {
+			return array();
+		}
+
 		$cache_contents = $this->get_account_cache();
 		$data           = null;
 		$old_data       = null;
@@ -849,7 +862,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function is_native_eligible(): bool {
-		return $this->is_native_eligible_account_data( $this->get_cached_account_data() );
+		return $this->is_native_eligible_account_data( $this->get_native_payments_account_data() );
 	}
 
 	/**
@@ -859,13 +872,25 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_native_cohort(): string {
-		$account_data    = $this->get_cached_account_data();
+		$account_data    = $this->get_native_payments_account_data();
 		$native_payments = $account_data['native_payments'] ?? null;
 		if ( ! is_array( $native_payments ) || ! is_string( $native_payments['cohort'] ?? null ) ) {
 			return '';
 		}
 
 		return $native_payments['cohort'];
+	}
+
+	/**
+	 * Get the account data that native eligibility and cohort read.
+	 *
+	 * These flags have no client counterpart. Without a platform connection they keep the cached platform decision,
+	 * because the account read then returns no account, which would read as eligible.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_native_payments_account_data(): array {
+		return $this->is_platform_connected() ? $this->get_cached_account_data() : $this->get_preserved_account_data_snapshot();
 	}
 
 	/**
@@ -961,13 +986,19 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Tell whether an account exists or its connection state cannot be determined after a refresh failure.
 	 *
-	 * Address-token cache cleanup must not treat a transient account refresh failure as a confirmed disconnect.
+	 * Address-token cache cleanup must not treat a transient account refresh failure as a confirmed disconnect. Without a
+	 * platform connection the state is known, like the client's `is_stripe_connected( true )`, so an errored entry left
+	 * from that time does not count.
 	 *
 	 * @since 11.2.0
 	 *
 	 * @return bool
 	 */
 	public function has_account_or_is_connection_indeterminate(): bool {
+		if ( ! $this->is_platform_connected() ) {
+			return false;
+		}
+
 		if ( $this->has_account() ) {
 			return true;
 		}

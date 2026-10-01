@@ -52,6 +52,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		$this->reset_container_replacements();
 		remove_all_actions( 'wp_ajax_update_order_status' );
 		remove_all_actions( 'wp_ajax_nopriv_update_order_status' );
 		remove_all_actions( 'wp_ajax_create_setup_intent' );
@@ -3406,6 +3407,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $user_id );
 		WC()->initialize_session();
 
+		// A connected store: without a connection the account read returns no account, like the client.
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 		// Seed through the container's account service: it memoizes the account
 		// cache per instance, and the controller's fraud service reads through
 		// that same shared instance.

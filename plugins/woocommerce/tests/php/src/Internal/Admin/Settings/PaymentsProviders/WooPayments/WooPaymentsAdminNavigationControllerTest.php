@@ -2626,6 +2626,8 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->method( 'is_available' )->willReturn( $connected );
+		// The account read needs the same connection: without one it returns no account, like the client.
+		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 
 		$controller          = new WooPaymentsAdminNavigationController();
 		$onboarding_redirect = new WooPaymentsOnboardingRedirect();

@@ -26,6 +26,18 @@ use WP_REST_Request;
 class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		try {
+			// The container's API client, which some tests replace to model a connected store.
+			$this->reset_container_replacements();
+		} finally {
+			parent::tearDown();
+		}
+	}
+
+	/**
 	 * @testdox Charge failure ambiguity should distinguish transport uncertainty from definitive provider responses.
 	 * @dataProvider charge_failure_ambiguity_provider
 	 *
@@ -5151,6 +5163,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * @testdox A platform fraud-flagged decline rotates the card-testing prevention token; ordinary declines leave it alone.
 	 */
 	public function test_platform_fraud_decline_rotates_the_fraud_prevention_token(): void {
+		// A connected store: without a connection the account read returns no account, like the client.
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 		WC()->initialize_session();
 		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
 			array(

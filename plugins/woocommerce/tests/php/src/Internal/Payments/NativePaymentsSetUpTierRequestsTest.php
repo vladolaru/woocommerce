@@ -122,6 +122,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		// Only the WPCOM connection is stubbed; the account readiness comes from the real account service and cache.
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 		$account_service = wc_get_container()->get( WooPaymentsAccountService::class );
 		$account_service->cache_account_data(
 			array(
@@ -198,6 +199,9 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	public function test_classic_toggle_keeps_the_tier_in_step_with_the_gateway(): void {
 		$this->arrange_native_owner( NativePaymentsState::CONNECTED );
 		// A connected store has an account that can take payments; without one the gateway needs setup and WooCommerce refuses the toggle, as for the client.
+		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
 			array(
 				'account_id'        => 'acct_test123',

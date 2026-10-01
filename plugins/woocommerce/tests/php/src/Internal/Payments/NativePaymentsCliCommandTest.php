@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsCliCommand;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsCliAdapter;
@@ -28,6 +29,7 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		$this->reset_container_replacements();
 		delete_option( 'woocommerce_native_payments_killswitch' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_account_data' );
@@ -118,6 +120,10 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 		$this->assertTrue( defined( WooPaymentsWebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ), 'Webhook reliability should expose its last-fetch option key.' );
 		$this->assertSame( self::EXPECTED_LAST_FETCH_OPTION, constant( WooPaymentsWebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ) );
 
+		// A connected store: without a connection the account read returns no account, like the client.
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
 			array(

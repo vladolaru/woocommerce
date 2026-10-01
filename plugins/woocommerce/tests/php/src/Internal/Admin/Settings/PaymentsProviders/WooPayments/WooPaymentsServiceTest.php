@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
@@ -254,6 +255,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * Tear down test.
 	 */
 	public function tearDown(): void {
+		$this->reset_container_replacements();
 		remove_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_project_pending_onboarding_payment_methods' ) );
 		delete_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
 		delete_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
@@ -331,6 +333,11 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		// A connected store whose account fetch fails, so the summary reads the seeded cache.
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		$connected_api_client->method( 'get_account' )->willThrowException( new WooPaymentsApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 
 		$summary = $this->sut->get_account_summary();
 
@@ -2410,6 +2417,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
+		// The account read needs the same connection: without one it returns no account, like the client.
+		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 		$this->sut = new WooPaymentsService();
 		$this->init_sut(
 			$this->mock_providers,
@@ -2595,6 +2604,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
+		// The account read needs the same connection: without one it returns no account, like the client.
+		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 		$this->sut = new WooPaymentsService();
 		$this->init_sut(
 			$this->mock_providers,

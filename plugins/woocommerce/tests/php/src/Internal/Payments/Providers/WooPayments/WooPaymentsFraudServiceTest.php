@@ -37,6 +37,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_woopayments_fraud_services_config' );
 		remove_all_filters( 'woocommerce_woopayments_fraud_service_config' );
 		wp_set_current_user( 0 );
+		$this->reset_container_replacements();
 		parent::tearDown();
 	}
 
@@ -394,6 +395,11 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsFraudService
 	 */
 	private function make_sut(): WooPaymentsFraudService {
+		// A connected store: without a connection the account read returns no account, like the client.
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( new LegacyProxy() );
 

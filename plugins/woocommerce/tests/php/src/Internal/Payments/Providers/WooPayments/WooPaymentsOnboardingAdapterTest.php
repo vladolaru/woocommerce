@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
@@ -128,6 +129,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	 * Reset proxy mocks after each test.
 	 */
 	public function tearDown(): void {
+		$this->reset_container_replacements();
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_onboarding_test_mode' );
@@ -328,7 +330,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		update_option(
 			'wcpay_account_data',
 			array(
-				'data' => array(
+				'data'    => array(
 					'account_id'           => 'acct_123',
 					'test_publishable_key' => 'pk_test_123',
 					'is_live'              => false,
@@ -336,8 +338,14 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 					'payments_enabled'     => true,
 					'details_submitted'    => true,
 				),
+				'fetched' => time(),
+				'errored' => false,
 			)
 		);
+		// A connected store: without a connection the account read returns no account, like the client.
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 
 		self::assertTrue( $this->adapter->has_account( $this->payment_gateway_provider ) );
 		self::assertTrue( $this->adapter->has_valid_account( $this->payment_gateway_provider ) );

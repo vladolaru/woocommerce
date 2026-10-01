@@ -1615,6 +1615,94 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should return no account without fetching or touching the cache when the platform is not connected.
+	 * @dataProvider provide_disconnected_account_caches
+	 *
+	 * @param array<string,mixed>|null $cached_data       Cached account data.
+	 * @param bool                     $errored           Whether the cached entry is errored.
+	 * @param bool                     $expected_eligible Expected native eligibility.
+	 */
+	public function test_get_cached_account_data_returns_no_account_without_a_platform_connection( ?array $cached_data, bool $errored, bool $expected_eligible ): void {
+		set_current_screen( 'dashboard' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $cached_data,
+				'fetched'            => time() - DAY_IN_SECONDS,
+				'errored'            => $errored,
+				'consecutive_errors' => $errored ? 1 : 0,
+			)
+		);
+		$cache_before = get_option( 'wcpay_account_data' );
+		$api_client   = $this->create_counting_account_api_client( $this->get_valid_live_account_payload(), false );
+		$sut          = $this->create_service_with_api_client( $api_client );
+
+		$this->assertSame( array(), $sut->get_cached_account_data(), 'Client 11.1.0 returns [] before any cache read when the server is not connected (class-wc-payments-account.php:2442-2444).' );
+		$this->assertSame( array(), $sut->refresh_account_data(), 'A forced refresh returns [] the same way.' );
+		$this->assertSame( 0, $api_client->calls );
+		$this->assertSame( $cache_before, get_option( 'wcpay_account_data' ), 'No errored entry may replace the cache.' );
+		$this->assertFalse( $sut->has_account_or_is_connection_indeterminate(), 'Without a connection the state is known: not connected, like the client is_stripe_connected( true ).' );
+		$this->assertSame( $expected_eligible, $sut->is_native_eligible(), 'Native eligibility keeps the cached platform decision while disconnected.' );
+	}
+
+	/**
+	 * Account caches a disconnected store can hold.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|null,1:bool,2:bool}>
+	 */
+	public function provide_disconnected_account_caches(): array {
+		return array(
+			'account the platform keeps off native' => array(
+				array(
+					'account_id'           => 'acct_stale',
+					'live_publishable_key' => 'pk_live_stale',
+					'is_live'              => true,
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+					'native_payments'      => array( 'eligible' => false ),
+				),
+				false,
+				false,
+			),
+			'errored entry from the old read'       => array( null, true, true ),
+		);
+	}
+
+	/**
+	 * @testdox Should drop the cached account when the site registers with or disconnects from WordPress.com, so the next connected read fetches.
+	 * @testWith ["jetpack_site_registered"]
+	 *           ["jetpack_site_disconnected"]
+	 *
+	 * @param string $hook_name Jetpack connection hook.
+	 */
+	public function test_connection_change_drops_the_cached_account_so_the_next_read_fetches( string $hook_name ): void {
+		set_current_screen( 'dashboard' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => null,
+				'fetched'            => time(),
+				'errored'            => true,
+				'consecutive_errors' => 1,
+			)
+		);
+		$fresh_account = $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fresh' ) );
+		$api_client    = $this->create_counting_account_api_client( $fresh_account );
+		$sut           = $this->create_service_with_api_client( $api_client );
+		$sut->register();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( $hook_name );
+
+		$this->assertFalse( get_option( 'wcpay_account_data' ), 'Client 11.1.0 clears the account cache on both hooks (class-wc-payments-account.php:140-141).' );
+		$this->assertSame( $fresh_account, $sut->get_cached_account_data() );
+		$this->assertSame( 1, $api_client->calls, 'The errored entry left by the old disconnected read must not hold back the first read after a reconnect.' );
+		$cached = get_option( 'wcpay_account_data' );
+		$this->assertSame( $fresh_account, $cached['data'] );
+		$this->assertFalse( $cached['errored'] );
+	}
+
+	/**
 	 * @testdox Should not refresh expired account data while Action Scheduler jobs are running.
 	 */
 	public function test_get_cached_account_data_does_not_refresh_during_action_scheduler_jobs(): void {
@@ -1758,15 +1846,12 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create the service under test.
+	 * Create the service under test for a connected store whose account fetches fail, so reads serve the seeded cache.
 	 *
 	 * @return WooPaymentsAccountService
 	 */
 	private function create_service(): WooPaymentsAccountService {
-		$sut = new WooPaymentsAccountService();
-		$sut->init( new LegacyProxy() );
-
-		return $sut;
+		return $this->create_service_with_api_client( $this->create_recorded_account_api_client( array(), true ) );
 	}
 
 	/**
@@ -1907,16 +1992,24 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * Create a fake account API client that counts account fetches.
 	 *
 	 * @param array<string,mixed> $account_data Account payload.
+	 * @param bool                $available    Whether the site has a platform connection.
 	 * @return WooPaymentsApiClient
 	 */
-	private function create_counting_account_api_client( array $account_data ): WooPaymentsApiClient {
-		return new class( $account_data ) extends WooPaymentsApiClient {
+	private function create_counting_account_api_client( array $account_data, bool $available = true ): WooPaymentsApiClient {
+		return new class( $account_data, $available ) extends WooPaymentsApiClient {
 			/**
 			 * Account payload.
 			 *
 			 * @var array<string,mixed>
 			 */
 			private array $account_data;
+
+			/**
+			 * Whether the site has a platform connection.
+			 *
+			 * @var bool
+			 */
+			private bool $available;
 
 			/**
 			 * Number of account fetches.
@@ -1929,9 +2022,11 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			 * Constructor.
 			 *
 			 * @param array<string,mixed> $account_data Account payload.
+			 * @param bool                $available    Whether the site has a platform connection.
 			 */
-			public function __construct( array $account_data ) {
+			public function __construct( array $account_data, bool $available ) {
 				$this->account_data = $account_data;
+				$this->available    = $available;
 			}
 
 			/**
@@ -1940,7 +2035,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function is_available(): bool {
-				return true;
+				return $this->available;
 			}
 
 			/**

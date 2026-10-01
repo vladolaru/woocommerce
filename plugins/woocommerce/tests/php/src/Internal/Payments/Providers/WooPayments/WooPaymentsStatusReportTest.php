@@ -278,6 +278,10 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_status_data_uses_native_services_and_runtime_filter_resolution(): void {
 		$this->fake_plugin( false );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		// A connected store: without a connection the account read returns no account, like the client.
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 		$this->seed_connected_store();
 
 		$data = $this->get_sut()->get_status_data();
@@ -316,6 +320,10 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_status_data_reports_rate_provider_unavailable_from_registry_state(): void {
 		$this->fake_plugin( false );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		// A connected store: without a connection the account read returns no account, like the client.
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 		$this->seed_connected_store();
 		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
 
@@ -516,6 +524,10 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_site_health_debug_info_exposes_status_values(): void {
 		$this->fake_plugin( false );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		// A connected store: without a connection the account read returns no account, like the client.
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 		$this->seed_connected_store();
 
 		$info = $this->get_sut()->add_site_health_debug_info( array() );

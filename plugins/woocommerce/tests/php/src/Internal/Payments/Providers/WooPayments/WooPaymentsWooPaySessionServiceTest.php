@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -177,6 +178,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		$this->reset_container_replacements();
 		WC()->session = $this->original_session;
 		if ( null === $this->original_direct_checkout_option ) {
 			delete_option( '_wcpay_feature_woopay_direct_checkout' );
@@ -2552,6 +2554,10 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @return TestableWooPaySessionService
 	 */
 	private function create_service_with_real_account_service(): TestableWooPaySessionService {
+		// A connected store: without a connection the account read returns no account, like the client.
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( new LegacyProxy() );
 		$tracking_controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )

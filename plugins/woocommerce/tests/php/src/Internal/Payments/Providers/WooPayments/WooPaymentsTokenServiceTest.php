@@ -47,6 +47,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		$this->reset_container_replacements();
 		foreach ( $this->created_services as $service ) {
 			remove_action( 'woocommerce_payment_token_deleted', array( $service, 'handle_woocommerce_payment_token_deleted' ), 10 );
 			remove_action( 'woocommerce_payment_token_set_default', array( $service, 'handle_woocommerce_payment_token_set_default' ), 10 );
@@ -1806,6 +1807,10 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 
+		// A connected store: without a connection the account read returns no account, like the client.
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( new LegacyProxy() );
 		$customer_service = new WooPaymentsCustomerService();
