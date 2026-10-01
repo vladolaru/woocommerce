@@ -1016,13 +1016,14 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertLogged(
 			'warning',
-			'lock contention',
+			'order payment lock refused: order ',
 			array(
 				'source'            => 'native-payments-webhook',
 				'order_id'          => $order->get_id(),
 				'payment_reference' => 'pi_webhook',
 				'event_type'        => PaymentLifecycleEvent::STATUS_COMPLETED,
 				'reason'            => 'order_locked',
+				'refused_operation' => 'payment status update',
 			)
 		);
 
@@ -1048,7 +1049,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$warnings = array_filter(
 			$this->captured_logs,
-			static fn( $log ) => 'warning' === $log['level'] && str_contains( $log['message'], 'lock contention' )
+			static fn( $log ) => 'warning' === $log['level'] && str_contains( $log['message'], 'order payment lock refused' )
 		);
 		$this->assertCount( 0, $warnings, 'A successfully applied lifecycle event must not emit a lock-contention warning.' );
 	}

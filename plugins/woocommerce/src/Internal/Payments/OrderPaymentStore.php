@@ -232,8 +232,10 @@ class OrderPaymentStore {
 	 * @param WC_Order                      $order               Order whose lock refused the operation.
 	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 	 * @param string                        $refused_operation   Operation the lock refused, such as 'refund'.
+	 * @param string|null                   $source              Log source, when the caller logs to its own file.
+	 * @param array<string,mixed>           $extra_context       Caller-specific context added to the line.
 	 */
-	public function log_order_payment_lock_refusal( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, string $refused_operation ): void {
+	public function log_order_payment_lock_refusal( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, string $refused_operation, ?string $source = null, array $extra_context = array() ): void {
 		try {
 			if ( ! function_exists( 'wc_get_logger' ) ) {
 				return;
@@ -259,13 +261,16 @@ class OrderPaymentStore {
 					$holder_operation ?? 'an unknown operation',
 					null === $lock_age_seconds ? 'an unknown time' : $lock_age_seconds . 's'
 				),
-				array(
-					'source'            => self::LOCK_REFUSAL_LOG_SOURCE,
-					'order_id'          => $order->get_id(),
-					'refused_operation' => $refused_operation,
-					'holder_operation'  => $holder_operation,
-					'lock_age_seconds'  => $lock_age_seconds,
-					'lock_value'        => false === $lock_value ? null : (string) $lock_value,
+				array_merge(
+					$extra_context,
+					array(
+						'source'            => $source ?? self::LOCK_REFUSAL_LOG_SOURCE,
+						'order_id'          => $order->get_id(),
+						'refused_operation' => $refused_operation,
+						'holder_operation'  => $holder_operation,
+						'lock_age_seconds'  => $lock_age_seconds,
+						'lock_value'        => false === $lock_value ? null : (string) $lock_value,
+					)
 				)
 			);
 		} catch ( Throwable $exception ) {

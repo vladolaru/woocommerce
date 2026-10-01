@@ -61,7 +61,7 @@ class OrderPaymentLifecycleService {
 
 		if ( null !== $payment_reference ) {
 			if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $payment_reference, 'payment status update' ) ) {
-				$this->log_skipped_locked_event( $order, $event, $payment_reference );
+				$this->log_skipped_locked_event( $order, $event, $payment_reference, $persistence_profile );
 				return;
 			}
 
@@ -116,20 +116,19 @@ class OrderPaymentLifecycleService {
 	 * leaves the order in a stale state with no diagnostic trail until the reliability service
 	 * recovers it. Emit a structured warning so the skip is observable.
 	 *
-	 * @param WC_Order              $order             Order object.
-	 * @param PaymentLifecycleEvent $event             Lifecycle event being skipped.
-	 * @param string                $payment_reference Provider payment reference for the event.
+	 * @param WC_Order                      $order               Order object.
+	 * @param PaymentLifecycleEvent         $event               Lifecycle event being skipped.
+	 * @param string                        $payment_reference   Provider payment reference for the event.
+	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 	 */
-	private function log_skipped_locked_event( WC_Order $order, PaymentLifecycleEvent $event, string $payment_reference ): void {
-		if ( ! function_exists( 'wc_get_logger' ) ) {
-			return;
-		}
-
-		wc_get_logger()->warning(
-			'Native WooPayments lifecycle event skipped due to order payment lock contention.',
+	private function log_skipped_locked_event( WC_Order $order, PaymentLifecycleEvent $event, string $payment_reference, ProviderPersistenceVocabulary $persistence_profile ): void {
+		// Same line as every other lock refusal, so one search finds them all (inbox N-270).
+		$this->order_payment_store->log_order_payment_lock_refusal(
+			$order,
+			$persistence_profile,
+			'payment status update',
+			'native-payments-webhook',
 			array(
-				'source'            => 'native-payments-webhook',
-				'order_id'          => $order->get_id(),
 				'payment_reference' => $payment_reference,
 				'event_type'        => $event->get_status(),
 				'reason'            => 'order_locked',
