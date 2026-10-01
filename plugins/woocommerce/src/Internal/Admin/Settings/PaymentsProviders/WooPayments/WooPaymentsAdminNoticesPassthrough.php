@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoticesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyComplianceNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -28,11 +27,11 @@ class WooPaymentsAdminNoticesPassthrough implements RegisterHooksInterface {
 	 * Classes whose `admin_notices` callbacks are kept on native WooPayments routes.
 	 *
 	 * The cutover notices (switch in progress, reconnect, completed) have no client counterpart; they are kept
-	 * on these pages by monitor ruling N-261.
+	 * on these pages by monitor ruling N-261. The multi-currency notices, which the client also shows here, follow
+	 * core's stripping by owner decision N-285; they still show on the Multi-currency tab and other admin pages.
 	 */
 	private const KEPT_NOTICE_CLASSES = array(
 		WooPaymentsCurrencyComplianceNotice::class,
-		MultiCurrencyAdminNoticesController::class,
 		WooPaymentsCutoverController::class,
 	);
 

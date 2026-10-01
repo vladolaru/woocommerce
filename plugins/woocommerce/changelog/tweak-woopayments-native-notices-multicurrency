@@ -1,0 +1,4 @@
+Significance: patch
+Type: tweak
+
+Show multi-currency notices on the Multi-currency settings tab and other admin pages, not on the native WooPayments pages of the Payments settings tab.

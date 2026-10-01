@@ -91,7 +91,7 @@ class WooPaymentsAdminNoticesPassthroughTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep WooPayments' own admin notices on a native WooPayments route of the Payments tab.
+	 * @testdox Should keep WooPayments' own admin notices, but not the multi-currency ones, on a native WooPayments route of the Payments tab.
 	 *
 	 * @testWith ["/woopayments/settings"]
 	 *           ["/woopayments/settings/fraud-protection"]
@@ -109,7 +109,7 @@ class WooPaymentsAdminNoticesPassthroughTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 9999, has_action( 'admin_notices', array( $this->currency_notice, 'display_not_supported_currency_notice' ) ), 'The unsupported currency notice should keep its priority.' );
 		$this->assertSame( 10, has_action( 'admin_notices', array( $this->currency_notice, 'display_isk_decimal_notice' ) ), 'The ISK decimal notice should be kept.' );
-		$this->assertSame( 10, has_action( 'admin_notices', array( $this->multi_currency_notices, 'handle_admin_notices' ) ), 'The multi-currency notices should be kept.' );
+		$this->assertFalse( has_action( 'admin_notices', array( $this->multi_currency_notices, 'handle_admin_notices' ) ), 'The multi-currency notices should follow core\'s stripping (owner decision N-285).' );
 		$this->assertSame( 10, has_action( 'admin_notices', array( $this->cutover_notices, 'output_admin_notices' ) ), 'The cutover notices should be kept.' );
 		$this->assertFalse( has_action( 'admin_notices', $foreign_notice ), 'Other plugins\' notices should still be stripped.' );
 	}
