@@ -49,8 +49,10 @@ const TRANSACTIONS_TERMINAL =
 const DISPUTES_TERMINAL = /^(Disputes loaded\.|No disputes found\.)$/;
 
 // Client 11.1.0 `disputes/index.tsx:50-148`: the columns without `visible:
-// false`, in order, without the info-button column native folds into the row.
+// false`, in order. The first is the client's untitled info-button column
+// (`label: ''`); native titles it for screen readers only.
 const DISPUTE_COLUMNS = [
+	'Details',
 	'Amount',
 	'Status',
 	'Reason',

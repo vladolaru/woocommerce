@@ -27,7 +27,10 @@ const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
 const DEPOSITS_API = 'wc/v3/payments/deposits';
 
 // Client 11.1.0 `deposits/list/index.tsx:41-94`: every column shows by default.
+// The first is the client's untitled info-button column (`label: ''`); native
+// titles it for screen readers only.
 const PAYOUT_COLUMNS = [
+	'Details',
 	'Date',
 	'Type',
 	'Amount',
