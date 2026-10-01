@@ -283,6 +283,16 @@ const expectPlainLink = ( href: string, target?: string ) => {
 };
 
 describe( 'WooPaymentsExpressCheckoutSettings', () => {
+	// Load the lazily imported method settings once, so the first test to
+	// render one does not spend its find timeout on module transforms (CI).
+	beforeAll( async () => {
+		await Promise.all( [
+			import( '../express-checkout/woopay-settings' ),
+			import( '../express-checkout/payment-request-settings' ),
+			import( '../express-checkout/amazon-pay-settings' ),
+		] );
+	} );
+
 	beforeEach( () => {
 		jest.clearAllMocks();
 		mockApiFetch.mockResolvedValue( { id: 'file_logo' } );
