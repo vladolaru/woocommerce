@@ -534,7 +534,8 @@ class WooPaymentsRefundEventHandler {
 	 */
 	private function claim_refund_lock( WC_Order $order, string $refund_id ): void {
 		$reference = 'refund_webhook_' . $refund_id;
-		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $this->persistence_profile, $reference ) ) {
+		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, $reference, 'refund webhook' ) ) {
+			$this->order_payment_store->log_order_payment_lock_refusal( $order, $this->persistence_profile, 'refund webhook' );
 			throw new RuntimeException( esc_html( sprintf( 'Could not claim WooPayments refund webhook lock for order %1$d and refund %2$s.', $order->get_id(), $refund_id ) ) );
 		}
 	}

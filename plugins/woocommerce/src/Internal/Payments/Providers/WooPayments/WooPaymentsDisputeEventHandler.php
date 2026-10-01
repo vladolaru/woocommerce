@@ -718,7 +718,8 @@ class WooPaymentsDisputeEventHandler {
 	 */
 	private function claim_dispute_lock( WC_Order $order, string $dispute_id ): void {
 		$reference = 'dispute_webhook_' . $dispute_id;
-		if ( ! $this->get_order_payment_store()->claim_order_payment_lock( $order, $this->get_persistence_profile(), $reference ) ) {
+		if ( ! $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_profile(), $reference, 'dispute webhook' ) ) {
+			$this->get_order_payment_store()->log_order_payment_lock_refusal( $order, $this->get_persistence_profile(), 'dispute webhook' );
 			throw new RuntimeException( esc_html( sprintf( 'Could not claim WooPayments dispute webhook lock for order %1$d and dispute %2$s.', $order->get_id(), $dispute_id ) ) );
 		}
 	}

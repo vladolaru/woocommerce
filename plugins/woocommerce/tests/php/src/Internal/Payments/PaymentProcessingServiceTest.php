@@ -2448,6 +2448,61 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A refund refused by the order payment lock should log one warning naming the holder; a free lock logs nothing.
+	 *
+	 * WooPayments 11.1.0 takes no lock on refunds (WC_Payments_Utils::is_order_locked() guards only
+	 * intent-driven status updates), so this refusal is native-only and must be visible in the logs.
+	 */
+	public function test_refund_refused_by_the_order_payment_lock_logs_one_warning(): void {
+		$order  = $this->create_woopayments_order( '10.00' );
+		$logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $logger ) {
+				return $logger;
+			}
+		);
+
+		$refused_refund  = null;
+		$refusal_entries = array();
+		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_lock_refusal' ) ) extends RecordingProvider {
+			/** @var callable|null */
+			public $during_capture = null;
+
+			public function capture( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				if ( null !== $this->during_capture ) {
+					( $this->during_capture )();
+				}
+
+				return parent::capture( $context, $idempotency_key );
+			}
+		};
+		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		$provider->during_capture = function () use ( &$refused_refund, &$refusal_entries, $order, $provider, $logger ) {
+			$logged_before   = count( $logger->entries );
+			$refused_refund  = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 1.00, 'Requested during capture' ), $provider );
+			$refusal_entries = array_slice( $logger->entries, $logged_before );
+		};
+
+		$free_refund      = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
+		$logged_when_free = $logger->entries;
+		$this->sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), $provider );
+
+		$this->assertTrue( $free_refund );
+		$this->assertSame( array(), $logged_when_free, 'A refund that claims a free lock must log nothing.' );
+		$this->assertWPError( $refused_refund );
+		$this->assertSame( 'native_payment_refund_locked', $refused_refund->get_error_code() );
+		$this->assertSame( 1, $provider->refund_calls, 'The refused refund must not reach the provider.' );
+		$this->assertCount( 1, $refusal_entries, 'The refused refund must write exactly one log line.' );
+		$this->assertSame( 'warning', $refusal_entries[0]['level'] );
+		$this->assertMatchesRegularExpression(
+			'/^order payment lock refused: order ' . $order->get_id() . ', refused refund, held by capture for \d+s$/',
+			$refusal_entries[0]['message']
+		);
+	}
+
+	/**
 	 * @testdox Capture idempotency should include the context amount when present.
 	 */
 	public function test_capture_idempotency_uses_context_amount(): void {
@@ -3757,53 +3812,61 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a fake WC logger that records error calls, injected via the woocommerce_logging_class filter.
+	 * Create a fake WC logger that records every entry, and error calls separately, injected via the woocommerce_logging_class filter.
 	 *
-	 * @return object Fake logger that tracks error calls.
+	 * @return object Fake logger that tracks log entries and error calls.
 	 */
 	private function create_fake_logger(): object {
 		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
 		return new class() implements \WC_Logger_Interface {
 			public array $error_calls = array();
 
+			public array $entries = array();
+
 			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
-				unset( $handle, $message, $level ); // Avoid parameter not used PHPCS errors.
+				unset( $handle ); // Avoid parameter not used PHPCS errors.
+				$this->log( $level, $message );
 				return true;
 			}
 
 			public function log( $level, $message, $context = array() ) {
-				unset( $level, $message, $context ); // Avoid parameter not used PHPCS errors.
+				$this->entries[] = array(
+					'level'   => $level,
+					'message' => $message,
+					'context' => $context,
+				);
 			}
 
 			public function emergency( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+				$this->log( \WC_Log_Levels::EMERGENCY, $message, $context );
 			}
 
 			public function alert( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+				$this->log( \WC_Log_Levels::ALERT, $message, $context );
 			}
 
 			public function critical( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+				$this->log( \WC_Log_Levels::CRITICAL, $message, $context );
 			}
 
 			public function notice( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+				$this->log( \WC_Log_Levels::NOTICE, $message, $context );
 			}
 
 			public function debug( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+				$this->log( \WC_Log_Levels::DEBUG, $message, $context );
 			}
 
 			public function info( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+				$this->log( \WC_Log_Levels::INFO, $message, $context );
 			}
 
 			public function warning( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+				$this->log( \WC_Log_Levels::WARNING, $message, $context );
 			}
 
 			public function error( $message, $context = array() ) {
+				$this->log( \WC_Log_Levels::ERROR, $message, $context );
 				$this->error_calls[] = array(
 					'message' => $message,
 					'context' => $context,

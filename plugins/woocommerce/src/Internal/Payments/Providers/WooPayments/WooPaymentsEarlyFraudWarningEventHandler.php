@@ -97,7 +97,8 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 		}
 
 		$reference = 'early_fraud_warning_' . $warning['id'];
-		if ( ! $this->get_order_payment_store()->claim_order_payment_lock( $order, $this->get_persistence_profile(), $reference ) ) {
+		if ( ! $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_profile(), $reference, 'early fraud warning webhook' ) ) {
+			$this->get_order_payment_store()->log_order_payment_lock_refusal( $order, $this->get_persistence_profile(), 'early fraud warning webhook' );
 			throw new RuntimeException( esc_html( sprintf( 'Could not lock the WooPayments order for early fraud warning ID: %s', $warning['id'] ) ) );
 		}
 

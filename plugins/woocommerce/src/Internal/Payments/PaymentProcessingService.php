@@ -122,7 +122,8 @@ class PaymentProcessingService {
 		$idempotency_key = $this->idempotency->mint_attempt_key();
 		$profile         = $provider->get_persistence_profile();
 
-		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $profile, $idempotency_key ) ) {
+		// WooPayments locks checkout too, so this refusal is not logged as a native-only one.
+		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, 'checkout' ) ) {
 			return new PaymentOutcome(
 				PaymentOutcome::STATUS_FAILED,
 				'',
@@ -276,7 +277,8 @@ class PaymentProcessingService {
 		// under the lock lets each refund link its row before the next one resolves, so distinct
 		// refunds resolve to distinct instances.
 		$refund_scope_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund-scope', $amount, (string) $order->get_currency(), $reason );
-		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $profile, $refund_scope_key ) ) {
+		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $refund_scope_key, 'refund' ) ) {
+			$this->order_payment_store->log_order_payment_lock_refusal( $order, $profile, 'refund' );
 			return new WP_Error( 'native_payment_refund_locked', __( 'A refund is already in progress for this order.', 'woocommerce' ) );
 		}
 
@@ -723,7 +725,8 @@ class PaymentProcessingService {
 		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
 		$profile         = $provider->get_persistence_profile();
 
-		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $profile, $idempotency_key ) ) {
+		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, $operation ) ) {
+			$this->order_payment_store->log_order_payment_lock_refusal( $order, $profile, $operation );
 			return new PaymentOutcome(
 				PaymentOutcome::STATUS_FAILED,
 				'',

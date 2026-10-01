@@ -60,7 +60,7 @@ class OrderPaymentLifecycleService {
 		$locked_by_service = false;
 
 		if ( null !== $payment_reference ) {
-			if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $persistence_profile, $payment_reference ) ) {
+			if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $payment_reference, 'payment status update' ) ) {
 				$this->log_skipped_locked_event( $order, $event, $payment_reference );
 				return;
 			}
