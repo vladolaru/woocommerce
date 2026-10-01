@@ -98,6 +98,7 @@ class PaymentProcessingService {
 	 * @param PaymentContext   $context  Payment context.
 	 * @param ProviderContract $provider Provider.
 	 * @return array<string,string>
+	 * @throws PaymentOutcomeApplyException When applying a referenced or successful charge outcome fails.
 	 */
 	public function process_checkout( PaymentContext $context, ProviderContract $provider ): array {
 		$outcome = $this->process_checkout_outcome( $context, $provider );
@@ -113,6 +114,7 @@ class PaymentProcessingService {
 	 * @param PaymentContext   $context  Payment context.
 	 * @param ProviderContract $provider Provider.
 	 * @return PaymentOutcome
+	 * @throws PaymentOutcomeApplyException When applying a referenced or successful charge outcome fails.
 	 * @throws Throwable When applying an unreferenced unsuccessful charge outcome fails.
 	 */
 	public function process_checkout_outcome( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
@@ -151,11 +153,12 @@ class PaymentProcessingService {
 					throw $apply_exception;
 				}
 
-				// The provider already returned a durable result. Downgrading it to an ID-less failure
-				// would risk a duplicate operation on retry, so keep the result reconcilable.
-				$outcome                  = $provider_outcome;
+				// The provider already returned a durable result. Persist its reference first, so a retry
+				// finds it instead of paying again, then hand the failure back for the caller to settle.
 				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $provider );
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'charge', $apply_exception, $reconciliation_persisted );
+
+				throw new PaymentOutcomeApplyException( $provider_outcome, $apply_exception );
 			}
 
 			return $outcome;

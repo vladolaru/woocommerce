@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -137,6 +138,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @var WooPaymentsProvider
 	 */
 	private WooPaymentsProvider $provider;
+
+	/**
+	 * Whether the current checkout got as far as the payment attempt.
+	 *
+	 * @var bool
+	 */
+	private bool $checkout_payment_started = false;
 
 	/**
 	 * WooPayments checkout bridge.
@@ -751,19 +759,24 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$renewal_order->save_meta_data();
 		}
 
-		$outcome = $this->get_processing_service()->process_checkout_outcome(
-			PaymentContext::for_checkout(
-				$renewal_order,
-				$this->id,
-				'',
-				array(
-					'payment_token'       => (string) $token->get_id(),
-					'save_payment_method' => false,
+		try {
+			$outcome = $this->get_processing_service()->process_checkout_outcome(
+				PaymentContext::for_checkout(
+					$renewal_order,
+					$this->id,
+					'',
+					array(
+						'payment_token'       => (string) $token->get_id(),
+						'save_payment_method' => false,
+					),
+					$provider_data
 				),
-				$provider_data
-			),
-			$this->get_provider()
-		);
+				$this->get_provider()
+			);
+		} catch ( PaymentOutcomeApplyException $exception ) {
+			// The processing service already kept the renewal reconcilable and logged the failure.
+			$outcome = $exception->get_outcome();
+		}
 
 		$this->maybe_handle_subscription_customer_action_required( $renewal_order, $outcome );
 	}
@@ -1564,7 +1577,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * @param int $order_id Order ID.
 	 * @return array<string,string>
-	 * @throws Exception When processing fails and the order's intent has not succeeded.
 	 */
 	public function process_payment( $order_id ) {
 		$this->ensure_current_blog_context();
@@ -1585,14 +1597,17 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
+		$this->checkout_payment_started = false;
+
 		try {
 			return $this->process_order_payment( $order );
 		} catch ( Exception $exception ) {
-			if ( ! $this->has_succeeded_intent( $order ) ) {
-				throw $exception;
+			$failure = $exception instanceof PaymentOutcomeApplyException ? $exception->get_failure() : $exception;
+			if ( $this->has_succeeded_intent( $order ) || $this->is_succeeded_intent_outcome( $exception ) ) {
+				return $this->keep_succeeded_intent_order( $order, $failure->getMessage(), get_class( $failure ) );
 			}
 
-			return $this->keep_succeeded_intent_order( $order, $exception->getMessage(), get_class( $exception ) );
+			return $this->fail_checkout_after_exception( $order, $failure );
 		}
 	}
 
@@ -1679,6 +1694,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				return $this->keep_succeeded_intent_order( $order, $existing_intent_result->get_error_message(), (string) $existing_intent_result->get_error_code() );
 			}
 
+			// The plugin fails the order with the mismatch as the note (client 11.1.0 `gw:1324-1325`).
+			if ( 'duplicate_payment_amount_mismatch' === $existing_intent_result->get_error_code() ) {
+				$order->update_status( OrderStatus::FAILED, $existing_intent_result->get_error_message() );
+			}
+
 			wc_add_notice( $existing_intent_result->get_error_message(), 'error', array( 'icon' => 'error' ) );
 
 			return array(
@@ -1716,14 +1736,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $client_error_result;
 		}
 
-		$context = PaymentContext::for_checkout(
+		$context                        = PaymentContext::for_checkout(
 			$order,
 			$this->id,
 			$this->get_request_payment_method_id(),
 			$this->get_checkout_payment_data( $is_subscription_change ),
 			$this->get_checkout_provider_data( $is_subscription_change, $is_subscription_payment_method_change )
 		);
-		$outcome = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
+		$this->checkout_payment_started = true;
+		$outcome                        = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
 		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
 		self::maybe_add_failed_checkout_notice( $outcome );
 		$this->maybe_store_paid_intent_in_session( $outcome );
@@ -2684,6 +2705,63 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		return array(
 			'result'   => 'success',
 			'redirect' => $this->get_return_url( $order ),
+		);
+	}
+
+	/**
+	 * Tell whether a handed-back outcome reached a succeeded intent.
+	 *
+	 * The order may not carry the intent status yet when applying the outcome failed before it was saved.
+	 *
+	 * @param Exception $exception Exception caught by process_payment().
+	 * @return bool
+	 */
+	private function is_succeeded_intent_outcome( Exception $exception ): bool {
+		if ( ! $exception instanceof PaymentOutcomeApplyException ) {
+			return false;
+		}
+
+		return 'succeeded' === ( $this->get_provider()->get_outcome_meta( $exception->get_outcome() )['_intention_status'] ?? '' );
+	}
+
+	/**
+	 * Fail checkout after an exception when the order's intent has not succeeded.
+	 *
+	 * Client 11.1.0 `gw:1305-1439`: the order fails, except on a subscription payment-method change
+	 * (`:1326`); a payment that was attempted gets the failure note (`:1354-1401`); the shopper gets
+	 * the error as a notice and checkout returns a failure (`:1425`, `:1436-1439`).
+	 *
+	 * @param WC_Order  $order   Order being paid.
+	 * @param Throwable $failure Failure raised while processing the payment.
+	 * @return array<string,string>
+	 */
+	private function fail_checkout_after_exception( WC_Order $order, Throwable $failure ): array {
+		wc_get_logger()->error(
+			'Error occurred during the payment process. Exception: ' . $failure->getMessage(),
+			array(
+				'source'    => 'woopayments',
+				'order_id'  => $order->get_id(),
+				'exception' => get_class( $failure ),
+			)
+		);
+
+		if ( ! $this->is_subscription_payment_method_change_request( $order ) ) {
+			$order->update_status( OrderStatus::FAILED );
+		}
+
+		if ( $this->checkout_payment_started ) {
+			$note_candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_checkout_payment_failed_note_candidates( $order, $failure->getMessage(), '', '', '' );
+			$order->add_order_note( $note_candidates[0] );
+		}
+
+		// The plugin's catch only ever sees an Exception; a PHP error's message is not shopper copy.
+		$message = $failure instanceof Exception ? wp_strip_all_tags( $failure->getMessage() ) : WooPaymentsErrorMessages::get_generic_message();
+		wc_add_notice( $message, 'error', array( 'icon' => 'error' ) );
+
+		return array(
+			'result'         => 'failure',
+			'redirect'       => '',
+			'payment_method' => '',
 		);
 	}
 

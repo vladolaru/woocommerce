@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsErrorMessages;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedTransactionRateLimiter;
@@ -3360,7 +3361,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * (`class-wc-payment-gateway-wcpay.php:1206-1233`, `class-duplicate-payment-prevention-service.php:131-139`).
 	 * The catch checks the intention status first (`gw:1283`); when it is `succeeded` it adds the
 	 * downstream-error note, logs a warning and returns success with the return URL (`gw:1284-1304`),
-	 * before the failed status (`gw:1326-1327`), the rate-limiter note (`gw:1403-1421`) and the notice (`gw:1426`).
+	 * before the failed status (`gw:1326-1327`), the rate-limiter note (`gw:1403-1421`) and the notice (`gw:1425`).
 	 *
 	 * @dataProvider refused_checkout_with_succeeded_intent_provider
 	 *
@@ -3510,12 +3511,108 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not add the succeeded-intent note when post-payment processing throws before the intent succeeded.
+	 * @testdox Should keep a paid order and return success when a step after the payment throws.
 	 *
-	 * Oracle: WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4594`: without a
-	 * succeeded intent the guard (`class-wc-payment-gateway-wcpay.php:1283`) does not fire.
+	 * Oracle: WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4531` (WOOPMNT-6145):
+	 * when the payment step throws after the intent succeeded, the catch (`class-wc-payment-gateway-wcpay.php:1283-1304`)
+	 * keeps the order status, adds the downstream-error note, logs a warning and returns success with get_return_url().
+	 * Native runs the real processing service here: the provider's post-lifecycle step throws after the order is paid.
 	 */
-	public function test_process_payment_downstream_exception_without_succeeded_intent_skips_defense(): void {
+	public function test_process_payment_post_lifecycle_failure_after_payment_keeps_order_and_returns_success(): void {
+		$order      = $this->create_order();
+		$logger     = $this->capture_logs();
+		$return_url = $this->filter_return_url( $order );
+		$provider   = $this->create_provider_failing_after_charge(
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_downstream', '', 'pm_card_visa' ),
+			'post_lifecycle_effects',
+			new \RuntimeException( 'Auth credentials missing' )
+		);
+		$gateway    = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( $return_url, $result['redirect'] ?? '' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'completed', $order->get_status(), 'The paid order must keep its status.' );
+		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertContains( 'Payment succeeded, but a downstream error occurred during post-payment processing: Auth credentials missing. Order status preserved.', $notes );
+		$this->assertSame(
+			array( sprintf( 'Payment intent already succeeded; downstream RuntimeException on order #%d suppressed to preserve order status.', $order->get_id() ) ),
+			$logger->warning_messages()
+		);
+		$this->assertSame( 0, wc_notice_count( 'error' ), 'The shopper must not see an error notice.' );
+	}
+
+	/**
+	 * @testdox Should keep a charged order and return success when applying the charge fails before the order records it.
+	 *
+	 * Oracle: WooPayments 11.1.0 attaches the succeeded intent to the order before any later step can throw
+	 * (`class-wc-payments-order-service.php:1230-1249`), so its catch (`class-wc-payment-gateway-wcpay.php:1283-1304`)
+	 * always sees the succeeded status. Native records it while applying the outcome; when that fails first, the
+	 * handed-back outcome must still count as a succeeded intent.
+	 */
+	public function test_process_payment_effect_failure_before_order_records_charge_keeps_order_and_returns_success(): void {
+		$order      = $this->create_order();
+		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$logger     = $this->capture_logs();
+		$return_url = $this->filter_return_url( $order );
+		$provider   = $this->create_provider_failing_after_charge(
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_unrecorded', '', 'pm_card_visa' ),
+			'operation_effects',
+			new \RuntimeException( 'Provider effect write failed' )
+		);
+		$gateway    = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, 'Provider effect write failed', 'RuntimeException', $logger, 'pending' );
+		$this->assertSame( 'pi_unrecorded', wc_get_order( $order->get_id() )->get_transaction_id(), 'The charge must stay reconcilable.' );
+	}
+
+	/**
+	 * @testdox Should keep a renewal's provider outcome when applying it fails.
+	 *
+	 * Scheduled renewals have no checkout to answer, so the handed-back failure must not escape into Action Scheduler.
+	 */
+	public function test_scheduled_subscription_payment_keeps_outcome_when_applying_it_fails(): void {
+		$user_id = self::factory()->user->create();
+		$order   = $this->create_order();
+		$token   = $this->create_card_token( $user_id, 'pm_renewal_card' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->add_payment_token( $token );
+		$order->save();
+		$provider = $this->create_provider_failing_after_charge(
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_renewal_downstream', '', 'pm_renewal_card' ),
+			'post_lifecycle_effects',
+			new \RuntimeException( 'Renewal display details failed' )
+		);
+		$gateway  = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+
+		$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( 'pi_renewal_downstream', $order->get_transaction_id() );
+	}
+
+	/**
+	 * @testdox Should fail the order, add the failure note and return failure when post-payment processing throws before the intent succeeded.
+	 *
+	 * Oracle: WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4594`: without a succeeded intent
+	 * the guard (`class-wc-payment-gateway-wcpay.php:1283`) does not fire; the catch fails the order (`:1326-1327`), adds
+	 * the failed-payment note because the payment was attempted (`:1354-1401`), shows the message as an error notice
+	 * (`:1425`) and returns a failure (`:1436-1439`).
+	 */
+	public function test_process_payment_exception_without_succeeded_intent_fails_order_with_note_and_notice(): void {
 		$order = $this->create_order();
 		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
 		$order->save();
@@ -3527,19 +3624,199 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway->init( $service, new WooPaymentsProvider() );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 
-		$thrown = null;
-		try {
-			$gateway->process_payment( $order->get_id() );
-		} catch ( \Exception $exception ) {
-			$thrown = $exception;
-		}
+		$result = $gateway->process_payment( $order->get_id() );
 
-		$this->assertSame( $service->checkout_exception, $thrown, 'Without a succeeded intent the exception keeps its existing path.' );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( '', $result['redirect'] ?? null );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
 		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertContains(
+			sprintf(
+				'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.',
+				wc_price( 12.00, array( 'currency' => $order->get_currency() ) ),
+				'Genuine payment failure'
+			),
+			$notes
+		);
 		foreach ( $notes as $note ) {
 			$this->assertStringNotContainsString( 'Payment succeeded, but a downstream error occurred', $note );
 		}
+		$this->assertSame( array( 'Genuine payment failure' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
 		$this->assertSame( array(), $logger->warning_messages() );
+		$error_messages = array_column( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ), 'message' );
+		$this->assertContains( 'Error occurred during the payment process. Exception: Genuine payment failure', $error_messages );
+	}
+
+	/**
+	 * @testdox Should fail the order without the failure note when checkout throws before the payment is attempted.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1326-1327` fails the order when the payment
+	 * information was never prepared, and adds the failed-payment note only when it was (`:1354`); the notice
+	 * (`:1425`) and the failure return (`:1436-1439`) are the same.
+	 */
+	public function test_process_payment_exception_before_payment_fails_order_without_failure_note(): void {
+		$order      = $this->create_order();
+		$session    = $this->create_session();
+		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$duplicate_payment_prevention_service = $this->getMockBuilder( WooPaymentsDuplicatePaymentPreventionService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'check_against_session_processing_order' ) )
+			->getMock();
+		$duplicate_payment_prevention_service
+			->method( 'check_against_session_processing_order' )
+			->willThrowException( new \RuntimeException( 'Session storage is unavailable.' ) );
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session ),
+			$duplicate_payment_prevention_service
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertNull( $service->last_checkout_context, 'The payment must not have been attempted.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( $note_count + 1, $notes, 'Only the status-change note may be added.' );
+		foreach ( $notes as $note ) {
+			$this->assertStringNotContainsString( 'to complete with the following message', $note );
+		}
+		$this->assertSame( array( 'Session storage is unavailable.' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
+	 * @testdox Should keep a subscription's status but add the failure note when its payment-method change throws before the intent succeeded.
+	 *
+	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1326` does not fail a subscription whose
+	 * payment method is being changed; the failed-payment note (`:1354-1401`), the notice (`:1425`) and the
+	 * failure return (`:1436-1439`) still apply.
+	 */
+	public function test_process_payment_exception_on_subscription_payment_method_change_keeps_status(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$subscription = $this->create_order();
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $subscription->get_id() );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $subscription->get_id();
+
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$service                     = new RecordingPaymentProcessingService();
+		$service->checkout_exception = new \RuntimeException( 'Subscription hook failed' );
+		$gateway                     = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$result = $gateway->process_payment( $subscription->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'The request must run as a validated subscription payment-method change.' );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( 'pending', $subscription->get_status() );
+		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) );
+		$this->assertContains(
+			sprintf(
+				'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.',
+				wc_price( 12.00, array( 'currency' => $subscription->get_currency() ) ),
+				'Subscription hook failed'
+			),
+			$notes
+		);
+		$this->assertSame( array( 'Subscription hook failed' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
+	 * @testdox Should fail the order with the mismatch as its note when the attached intent's amount no longer matches.
+	 *
+	 * Oracle: WooPayments 11.1.0 throws the mismatch (`class-duplicate-payment-prevention-service.php:131-139`);
+	 * without a succeeded intent on the order, the catch fails the order with the message as the status note
+	 * (`class-wc-payment-gateway-wcpay.php:1324-1325`), shows it as a notice (`:1425`) and returns a failure.
+	 */
+	public function test_process_payment_amount_mismatch_without_succeeded_intent_fails_order(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$session    = $this->create_session();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->willReturn( $this->create_intent_response( $order, 'succeeded', 1000 ) );
+		$message = sprintf(
+			'This order was already paid for %1$s, but the order total has since changed to %2$s, so we prevented an overpayment. Please create a new order for any additional items.',
+			wc_price( 10.00, array( 'currency' => $order->get_currency() ) ),
+			wc_price( 12.00, array( 'currency' => $order->get_currency() ) )
+		);
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session ),
+			$this->create_duplicate_payment_prevention_service( $session, $api_client )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertNull( $service->last_checkout_context );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertNotEmpty( array_filter( $notes, static fn( string $note ): bool => str_starts_with( $note, $message ) ), 'The status note must carry the mismatch message.' );
+		$this->assertSame( array( $message ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
+	 * @testdox Should fail checkout with the generic notice when applying an unsucceeded outcome raises a PHP error.
+	 *
+	 * The plugin's catch takes only exceptions (`class-wc-payment-gateway-wcpay.php:1272`), so it has no rule for
+	 * a PHP error; native fails the order like the plugin does for an exception, but keeps the error's text out of
+	 * the shopper notice.
+	 */
+	public function test_process_payment_php_error_without_succeeded_intent_shows_generic_notice(): void {
+		$order    = $this->create_order();
+		$provider = $this->create_provider_failing_after_charge(
+			new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_authorized', '', 'pm_card_visa' ),
+			'post_lifecycle_effects',
+			new \TypeError( 'Argument #1 must be of type array, null given, called in /var/www/html/wp-content/plugins/example/example.php on line 12' )
+		);
+		$gateway  = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( array( WooPaymentsErrorMessages::get_generic_message() ), array_column( wc_get_notices( 'error' ), 'notice' ) );
 	}
 
 	/**
@@ -5333,6 +5610,98 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$logger->warning_messages()
 		);
 		$this->assertSame( 0, wc_notice_count( 'error' ), 'The shopper must not see an error notice.' );
+	}
+
+	/**
+	 * Create a WooPayments provider whose charge returns a fixed outcome and whose effects can throw.
+	 *
+	 * @param PaymentOutcome $outcome Outcome the charge returns.
+	 * @param string         $stage   Where to throw: `operation_effects` (before the lifecycle) or `post_lifecycle_effects` (after it).
+	 * @param \Throwable     $failure What to throw.
+	 * @return WooPaymentsProvider
+	 */
+	private function create_provider_failing_after_charge( PaymentOutcome $outcome, string $stage, \Throwable $failure ): WooPaymentsProvider {
+		return new class( $outcome, $stage, $failure ) extends WooPaymentsProvider {
+			/**
+			 * Outcome the charge returns.
+			 *
+			 * @var PaymentOutcome
+			 */
+			private PaymentOutcome $outcome;
+
+			/**
+			 * Where to throw.
+			 *
+			 * @var string
+			 */
+			private string $stage;
+
+			/**
+			 * What to throw.
+			 *
+			 * @var \Throwable
+			 */
+			private \Throwable $failure;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param PaymentOutcome $outcome Outcome the charge returns.
+			 * @param string         $stage   Where to throw.
+			 * @param \Throwable     $failure What to throw.
+			 */
+			public function __construct( PaymentOutcome $outcome, string $stage, \Throwable $failure ) {
+				$this->outcome = $outcome;
+				$this->stage   = $stage;
+				$this->failure = $failure;
+			}
+
+			/**
+			 * Return the fixed charge outcome.
+			 *
+			 * @param PaymentContext $context         Payment context.
+			 * @param string         $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+
+				return $this->outcome;
+			}
+
+			/**
+			 * Throw before the lifecycle when asked to.
+			 *
+			 * @param PaymentContext $context   Payment context.
+			 * @param PaymentOutcome $outcome   Provider outcome.
+			 * @param string         $operation Operation name.
+			 * @return PaymentOutcome
+			 * @throws \Throwable When the stage is `operation_effects`.
+			 */
+			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+				unset( $context, $operation );
+				if ( 'operation_effects' === $this->stage ) {
+					throw $this->failure;
+				}
+
+				return $outcome;
+			}
+
+			/**
+			 * Throw after the lifecycle when asked to.
+			 *
+			 * @param PaymentContext $context   Payment context.
+			 * @param PaymentOutcome $outcome   Applied provider outcome.
+			 * @param string         $operation Operation name.
+			 * @throws \Throwable When the stage is `post_lifecycle_effects`.
+			 */
+			public function apply_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): void {
+				unset( $context, $outcome, $operation );
+				if ( 'post_lifecycle_effects' === $this->stage ) {
+					throw $this->failure;
+				}
+			}
+		};
 	}
 
 	/**

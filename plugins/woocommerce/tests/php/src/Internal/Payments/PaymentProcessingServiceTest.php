@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentExceptionPolicy;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationIdempotency;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
@@ -807,7 +808,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A successful charge whose lifecycle application throws must stay successful, persist the payment reference, and log.
+	 * @testdox A successful charge whose lifecycle application throws must persist the payment reference, log, and hand the failure back with the outcome.
 	 */
 	public function test_process_checkout_outcome_keeps_order_reconcilable_when_apply_throws(): void {
 		$order   = $this->create_woopayments_order( '10.00' );
@@ -829,15 +830,17 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$result = $sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_post_charge' ), $provider );
+		$exception = $this->expect_outcome_apply_exception(
+			static fn() => $sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_post_charge' ), $provider )
+		);
 
 		remove_all_filters( 'woocommerce_logging_class' );
 
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( $outcome, $result, 'A post-charge apply failure must not downgrade a successful outcome.' );
-		$this->assertTrue( $result->is_successful(), 'A successful charge must remain successful even when lifecycle application fails.' );
+		$this->assertSame( $outcome, $exception->get_outcome(), 'A post-charge apply failure must hand back the successful outcome, not a downgraded one.' );
+		$this->assertSame( 'Simulated lifecycle failure after a successful charge.', $exception->get_failure()->getMessage() );
 		$this->assertSame( 'pi_post_charge', $order->get_transaction_id(), 'The provider payment reference must be persisted so the charge stays reconcilable.' );
 
 		$this->assertCount( 1, $fake_logger->error_calls, 'A post-charge apply failure must be logged at error level.' );
@@ -882,11 +885,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$sut      = $this->build_sut_with_lifecycle( $this->create_throwing_lifecycle_service() );
 		$provider = new RecordingProvider( $outcome );
 
-		$result = $sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_post_charge' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$exception = $this->expect_outcome_apply_exception(
+			static fn() => $sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_post_charge' ), $provider )
+		);
+		$order     = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertTrue( $result->is_successful() );
+		$this->assertSame( $outcome, $exception->get_outcome() );
 		$this->assertSame( 'pi_existing_reference', $order->get_transaction_id(), 'An existing transaction reference must be preserved.' );
 	}
 
@@ -1263,7 +1268,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Successful charges stay reconcilable when provider effect application throws.
+	 * @testdox Successful charges stay reconcilable and are handed back when provider effect application throws.
 	 */
 	public function test_process_checkout_outcome_keeps_provider_success_when_effect_application_throws(): void {
 		$order    = $this->create_woopayments_order( '10.00' );
@@ -1286,16 +1291,20 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 		};
 
-		$result = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_effect_failure' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$exception = $this->expect_outcome_apply_exception(
+			fn() => $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_effect_failure' ), $provider )
+		);
+		$order     = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( $outcome, $result );
+		$this->assertSame( $outcome, $exception->get_outcome() );
+		$this->assertSame( 'Provider effect write failed.', $exception->get_failure()->getMessage() );
 		$this->assertSame( 'pi_effect_failure', $order->get_transaction_id() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ), 'The reconciliation context must reach the stored order before the failure is handed back.' );
 	}
 
 	/**
-	 * @testdox Referenced customer-action outcomes stay reconcilable when provider effect application throws.
+	 * @testdox Referenced customer-action outcomes stay reconcilable and are handed back when provider effect application throws.
 	 */
 	public function test_process_checkout_outcome_keeps_referenced_customer_action_when_effect_application_throws(): void {
 		$order    = $this->create_woopayments_order( '10.00' );
@@ -1323,11 +1332,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 		};
 
-		$result = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_action_effect_failure' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$exception = $this->expect_outcome_apply_exception(
+			fn() => $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_action_effect_failure' ), $provider )
+		);
+		$order     = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( $outcome, $result );
+		$this->assertSame( $outcome, $exception->get_outcome() );
 		$this->assertSame( 'pi_action_effect_failure', $order->get_transaction_id() );
 		$this->assertSame( 'pi_action_effect_failure', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'pm_action_effect_failure', $order->get_meta( '_payment_method_id', true ) );
@@ -1407,9 +1418,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 		};
 
-		$result = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_profile_recovery_failure' ), $provider );
+		$exception = $this->expect_outcome_apply_exception(
+			fn() => $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_profile_recovery_failure' ), $provider )
+		);
 
-		$this->assertSame( $outcome, $result );
+		$this->assertSame( $outcome, $exception->get_outcome() );
+		$this->assertSame( 'Provider effect write failed.', $exception->get_failure()->getMessage(), 'The recovery failure must not replace the original failure.' );
 		$this->assertSame( 1, $profile->outcome_meta_calls );
 	}
 
@@ -1445,12 +1459,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 
 		try {
-			$result = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_logger_recovery_failure' ), $provider );
+			$exception = $this->expect_outcome_apply_exception(
+				fn() => $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_logger_recovery_failure' ), $provider )
+			);
 		} finally {
 			remove_all_filters( 'woocommerce_logging_class' );
 		}
 
-		$this->assertSame( $outcome, $result );
+		$this->assertSame( $outcome, $exception->get_outcome() );
+		$this->assertSame( 'Provider effect write failed.', $exception->get_failure()->getMessage(), 'The logging failure must not replace the original failure.' );
 	}
 
 	/**
@@ -3720,6 +3737,25 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 
 		return $sut;
+	}
+
+	/**
+	 * Run a checkout whose outcome cannot be applied and return the failure it hands back.
+	 *
+	 * @param callable $checkout Checkout to run.
+	 * @return PaymentOutcomeApplyException
+	 */
+	private function expect_outcome_apply_exception( callable $checkout ): PaymentOutcomeApplyException {
+		$thrown = null;
+		try {
+			$checkout();
+		} catch ( PaymentOutcomeApplyException $exception ) {
+			$thrown = $exception;
+		}
+
+		$this->assertInstanceOf( PaymentOutcomeApplyException::class, $thrown, 'A durable provider outcome that cannot be applied must be handed back with the failure.' );
+
+		return $thrown;
 	}
 
 	/**
