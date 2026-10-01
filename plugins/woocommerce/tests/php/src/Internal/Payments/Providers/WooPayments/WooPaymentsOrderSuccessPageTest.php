@@ -372,7 +372,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_is_order_received_page', '__return_true' );
 		}
 
-		$this->assertStringContainsString( '/assets/images/payment-methods-cards/visa.svg', $title );
+		$this->assertStringContainsString( '/assets/images/payment-methods/visa-card-color.svg', $title );
 		$this->assertStringContainsString( '4242', $title );
 	}
 

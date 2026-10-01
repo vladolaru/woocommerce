@@ -62,6 +62,26 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	private ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null;
 
 	/**
+	 * Card brand logos for the order received page.
+	 *
+	 * Client 11.1.0 (class-wc-payments-order-success-page.php, show_card_payment_method_name) draws `assets/images/cards/{brand}.svg`; core ships each under a `-color` name.
+	 *
+	 * @var array<string,string>
+	 */
+	private const CARD_LOGO_ASSETS = array(
+		'amex'             => 'payment-methods/amex-card-color.svg',
+		'cartes_bancaires' => 'payment-methods/cartes_bancaires-color.svg',
+		'diners'           => 'payment-methods/diners-color.svg',
+		'discover'         => 'payment-methods/discover-card-color.svg',
+		'eftpos_au'        => 'payment-methods/eftpos_au-color.svg',
+		'jcb'              => 'payment-methods/jcb-color.svg',
+		'mastercard'       => 'payment-methods/mastercard-card-color.svg',
+		'unionpay'         => 'payment-methods/unionpay-color.svg',
+		'unknown'          => 'payment-methods/unknown-color.svg',
+		'visa'             => 'payment-methods/visa-card-color.svg',
+	);
+
+	/**
 	 * Payment methods that complete through a provider redirect, whose still-pending
 	 * orders get a live intent re-check on the thank-you page.
 	 *
@@ -598,8 +618,8 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			return $payment_method_title;
 		}
 
-		$relative_path = 'assets/images/payment-methods-cards/' . $card_brand . '.svg';
-		if ( ! is_file( WC_ABSPATH . $relative_path ) ) {
+		$relative_path = isset( self::CARD_LOGO_ASSETS[ $card_brand ] ) ? 'assets/images/' . self::CARD_LOGO_ASSETS[ $card_brand ] : '';
+		if ( '' === $relative_path || ! is_file( WC_ABSPATH . $relative_path ) ) {
 			return $payment_method_title;
 		}
 

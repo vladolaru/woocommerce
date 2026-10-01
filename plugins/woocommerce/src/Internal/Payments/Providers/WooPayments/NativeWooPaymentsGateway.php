@@ -1271,7 +1271,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			foreach ( $brands as $brand => $label ) {
 				$icons[] = sprintf(
 					'<img src="%1$s" alt="%2$s" width="38" height="24" />',
-					esc_url( \WC_HTTPS::force_https_url( WC()->plugin_url() . '/assets/images/payment-methods/' . $brand . '.svg' ) ),
+					esc_url( \WC_HTTPS::force_https_url( WC()->plugin_url() . '/assets/images/' . ( WooPaymentsCheckoutBridge::CARD_BRAND_ICON_ASSETS[ $brand ] ?? 'payment-methods/' . $brand . '.svg' ) ) ),
 					esc_attr( $label )
 				);
 			}

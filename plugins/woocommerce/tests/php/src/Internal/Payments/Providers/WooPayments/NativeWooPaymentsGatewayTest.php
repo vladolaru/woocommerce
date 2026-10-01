@@ -266,7 +266,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( '/assets/images/payment-methods/afterpay-cashapp-logo.svg', $icon );
 		$this->assertStringContainsString( 'alt="Cash App Afterpay"', $icon );
-		$this->assertStringNotContainsString( '/assets/images/payment-methods/visa.svg', $icon );
+		$this->assertStringNotContainsString( '/assets/images/payment-methods/visa-color.svg', $icon );
 		$this->assertStringContainsString( 'data-gateway-id="woocommerce_payments_afterpay_clearpay"', $icon );
 		$this->assertSame( 1, $filter_calls );
 	}

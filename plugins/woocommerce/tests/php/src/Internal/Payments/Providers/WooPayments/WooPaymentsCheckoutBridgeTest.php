@@ -1385,7 +1385,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'FR', $config['storeCountry'] );
 		$this->assertContains( 'cartes_bancaires', array_column( $icons, 'id' ) );
 		$this->assertContains( 'Cartes Bancaires', array_column( $icons, 'alt' ) );
-		$this->assertStringContainsString( '/assets/images/payment-methods/jcb-icon-color.svg', $icons[4]['src'] );
+		$this->assertStringContainsString( '/assets/images/payment-methods/jcb-color.svg', $icons[4]['src'] );
 		$this->assertStringContainsString( '/assets/images/payment-methods/unionpay-color.svg', $icons[5]['src'] );
 		$this->assertStringContainsString( '/assets/images/payment-methods/cartes_bancaires-color.svg', $icons[6]['src'] );
 	}

@@ -159,9 +159,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				$this->assertSame( OrderPaymentStore::GATEWAY_ID, $gateway->id );
 				$this->assertSame( 'woocommerce_woocommerce_payments_settings', $gateway->get_option_key() );
 				$this->assertSame( 'Card', $gateway->title );
-				$this->assertStringContainsString( '/assets/images/payment-methods/visa.svg', $gateway->get_icon() );
+				$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $gateway->get_icon() );
 				$this->assertStringContainsString( 'alt="Visa"', $gateway->get_icon() );
-				$this->assertStringContainsString( '/assets/images/payment-methods/mastercard.svg', $gateway->get_icon() );
+				$this->assertStringContainsString( '/assets/images/payment-methods/mastercard-color.svg', $gateway->get_icon() );
 				$this->assertStringContainsString( '+ 3', $gateway->get_icon() );
 				$this->assertContains( 'products', $gateway->supports );
 				$this->assertContains( 'refunds', $gateway->supports );
@@ -1017,7 +1017,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			function (): void {
 				$gateway = new NativeWooPaymentsGateway();
 
-				$this->assertStringContainsString( '/assets/images/payment-methods/visa.svg', $gateway->get_icon() );
+				$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $gateway->get_icon() );
 				$this->assertStringContainsString( 'test-mode badge', $gateway->get_icon() );
 				$this->assertStringContainsString( 'background-color:#fff2d7', $gateway->get_icon() );
 				$this->assertStringContainsString( 'Test Mode', $gateway->get_icon() );
@@ -1034,7 +1034,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			function (): void {
 				$gateway = new NativeWooPaymentsGateway();
 
-				$this->assertStringContainsString( '/assets/images/payment-methods/visa.svg', $gateway->get_icon() );
+				$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $gateway->get_icon() );
 				$this->assertStringNotContainsString( 'test-mode badge', $gateway->get_icon() );
 				$this->assertStringNotContainsString( 'Test Mode', $gateway->get_icon() );
 			}

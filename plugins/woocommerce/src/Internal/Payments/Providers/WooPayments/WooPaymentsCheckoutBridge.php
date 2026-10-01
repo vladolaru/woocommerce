@@ -220,14 +220,16 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Shopper-facing card brand icon asset paths.
 	 *
+	 * Client 11.1.0 draws the checkout card strip from getCardBrands() (client/utils/card-brands.ts): payment-method-icons/{visa,mastercard,amex,discover}, cards/{jcb,unionpay,cartes_bancaires}.
+	 *
 	 * @var array<string,string>
 	 */
-	private const CARD_BRAND_ICON_ASSETS = array(
+	public const CARD_BRAND_ICON_ASSETS = array(
 		'visa'             => 'payment-methods/visa-color.svg',
 		'mastercard'       => 'payment-methods/mastercard-color.svg',
 		'amex'             => 'payment-methods/amex-color.svg',
 		'discover'         => 'payment-methods/discover-color.svg',
-		'jcb'              => 'payment-methods/jcb-icon-color.svg',
+		'jcb'              => 'payment-methods/jcb-color.svg',
 		'unionpay'         => 'payment-methods/unionpay-color.svg',
 		'cartes_bancaires' => 'payment-methods/cartes_bancaires-color.svg',
 	);
