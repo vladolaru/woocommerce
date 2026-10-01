@@ -123,6 +123,27 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should register the WooPay frontend and AJAX hooks on init when registered while plugins load.
+	 */
+	public function test_registers_woopay_hooks_on_init_when_registered_while_plugins_load(): void {
+		global $wp_actions;
+		$service   = new RecordingWooPaySessionService();
+		$this->sut = $this->create_controller( true, false, $service );
+		remove_all_actions( 'init' );
+		unset( $wp_actions['init'] );
+
+		$this->sut->register();
+		// While plugins load, Jetpack cannot confirm the connection owner yet, so WooPay reads as disabled.
+		$service->woopay_enabled = true;
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'init' );
+
+		foreach ( array_merge( $this->get_expected_ajax_hooks(), $this->get_expected_frontend_hooks() ) as $hook => $method ) {
+			$this->assertNotFalse( has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered once init runs." );
+		}
+	}
+
+	/**
 	 * @testdox Should keep controller registration enabled when the button filter hides WooPay buttons.
 	 */
 	public function test_button_filter_does_not_disable_controller_registration(): void {

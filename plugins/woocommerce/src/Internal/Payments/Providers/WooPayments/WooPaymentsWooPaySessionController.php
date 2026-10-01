@@ -101,6 +101,22 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 		}
 
+		// WooCommerce registers this controller while plugins load, before Jetpack can confirm the connection
+		// owner, so WooPay would read as disabled. Decide on init instead, like client 11.1.0
+		// (class-wc-payments.php:685 on plugins_loaded and :694 on init).
+		if ( did_action( 'init' ) ) {
+			$this->register_woopay_hooks();
+		} elseif ( false === has_action( 'init', array( $this, 'register_woopay_hooks' ) ) ) {
+			add_action( 'init', array( $this, 'register_woopay_hooks' ), 15 );
+		}
+	}
+
+	/**
+	 * Register the WooPay AJAX, frontend and checkout hooks when WooPay is enabled.
+	 *
+	 * @internal
+	 */
+	public function register_woopay_hooks(): void {
 		if ( ! $this->session_service->is_woopay_enabled() ) {
 			return;
 		}
