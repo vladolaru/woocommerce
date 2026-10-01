@@ -747,6 +747,7 @@ describe( 'WooPayments payment details summary parity', () => {
 			] );
 		} );
 
+		// Client 11.1.0 `summary/index.tsx:559-566`: the fees use `formatCurrency()`, so they carry no currency code.
 		it( 'shows a multi-currency refund in the settlement currency', () => {
 			renderSummary( {
 				...getClientCharge(),
@@ -762,7 +763,7 @@ describe( 'WooPayments payment details summary parity', () => {
 			expect( getBreakdown() ).toEqual( [
 				'€14.82 EUR',
 				'Refunded: -€15.00',
-				'Fees: -€0.68 EUR',
+				'Fees: -€0.68',
 				'Net: -€0.86 EUR',
 			] );
 		} );
@@ -1027,8 +1028,8 @@ describe( 'WooPayments payment details summary parity', () => {
 	} );
 	// Monitor N-259: native opens payment details from any dispute reference, so a reference the platform cannot find
 	// (or a malformed id) must land on the page's error state, not a blank page. Error bodies recorded read-only from
-	// the :8889 routes (`wc/v3/payments/charges|payment_intents|transactions/{id}`); the charge route escapes its quotes
-	// as `&#039;`, which the page shows decoded, as text.
+	// the :8889 routes (`wc/v3/payments/charges|payment_intents|transactions/{id}`); the page shows the client's copy
+	// (`payment-details/payment-details/index.tsx:50-64`), not the server's message.
 	describe( 'unresolvable references', () => {
 		const notFound = ( code: string, message: string ) => ( {
 			code,
@@ -1051,7 +1052,7 @@ describe( 'WooPayments payment details summary parity', () => {
 							'Error: No such charge: &#039;ch_3ZZZZZZZZZZZZZZZZZZZZZZZ&#039;'
 						)
 					),
-				"Error: No such charge: 'ch_3ZZZZZZZZZZZZZZZZZZZZZZZ'",
+				'Payment details not loaded',
 				'Payment details',
 			],
 			[
@@ -1064,7 +1065,7 @@ describe( 'WooPayments payment details summary parity', () => {
 							"Error: No such payment_intent: 'pi_3ZZZZZZZZZZZZZZZZZZZZZZZ'"
 						)
 					),
-				"Error: No such payment_intent: 'pi_3ZZZZZZZZZZZZZZZZZZZZZZZ'",
+				'Payment details not loaded',
 				'Payment details',
 			],
 			[
@@ -1079,7 +1080,7 @@ describe( 'WooPayments payment details summary parity', () => {
 							"Error: No such balance transaction: 'bogus_reference'"
 						)
 					),
-				"Error: No such balance transaction: 'bogus_reference'",
+				'Payment details not loaded',
 				// Not a payment id, so the page keeps its transaction title.
 				'Transaction details',
 			],
@@ -1143,7 +1144,7 @@ describe( 'WooPayments payment details summary parity', () => {
 
 			await waitFor( () =>
 				expect( getVisibleError() ).toHaveTextContent(
-					"Error: No such charge: 'ch_3ZZZZZZZZZZZZZZZZZZZZZZZ'"
+					'Payment details not loaded'
 				)
 			);
 			expect(

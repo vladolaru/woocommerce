@@ -784,14 +784,12 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			)
 		).toBeInTheDocument();
 		expect(
-			within( delivery )
-				.getAllByRole( 'textbox' )
-				.map(
-					( field ) =>
-						field
-							.closest( '.components-base-control' )
-							?.querySelector( 'label' )?.textContent
-				)
+			Array.from( delivery.querySelectorAll( 'input' ) ).map(
+				( field ) =>
+					field
+						.closest( '.components-base-control' )
+						?.querySelector( 'label' )?.textContent
+			)
 		).toEqual( [
 			'Shipping carrier',
 			'Shipping date',
@@ -804,6 +802,38 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 
 		const back = screen.getByRole( 'button', { name: 'Back' } );
 		expect( back.firstElementChild?.tagName.toLowerCase() ).toBe( 'svg' );
+	} );
+
+	// Client 11.1.0 `new-evidence/shipping-details.tsx:57-70`: a date field showing the saved date, or today when none is saved.
+	it( 'asks for the shipping date with a date field prefilled with the saved date or today', async () => {
+		const today = new Date().toISOString().split( 'T' )[ 0 ];
+		mockGetDispute.mockResolvedValue( makeDispute() );
+
+		const { unmount } = renderChallengePage();
+		await screen.findByRole( 'button', { name: 'Next' } );
+		await clickButton( 'Next' );
+		await screen.findByRole( 'heading', {
+			name: 'Add your shipping details',
+		} );
+
+		const emptyDate = screen.getByLabelText( 'Shipping date' );
+		expect( emptyDate ).toHaveAttribute( 'type', 'date' );
+		expect( emptyDate ).toHaveValue( today );
+		unmount();
+
+		mockGetDispute.mockResolvedValue(
+			makeDispute( { evidence: { shipping_date: '2026-02-03' } } )
+		);
+		renderChallengePage();
+		await screen.findByRole( 'button', { name: 'Next' } );
+		await clickButton( 'Next' );
+		await screen.findByRole( 'heading', {
+			name: 'Add your shipping details',
+		} );
+
+		expect( screen.getByLabelText( 'Shipping date' ) ).toHaveValue(
+			'2026-02-03'
+		);
 	} );
 
 	it( 'should render the Visa compliance single-panel evidence flow', async () => {
@@ -1522,6 +1552,22 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 				dispute_id: 'dp_test',
 			} )
 		);
+	} );
+
+	// Client 11.1.0 `new-evidence/index.tsx:291-292` prints `String( error )` ("[object Object]"); native keeps its own copy, never the server's message.
+	it( 'shows its own copy, not the server message, when the dispute fails to load', async () => {
+		mockGetDispute.mockRejectedValue(
+			new Error( 'Internal Server Error' )
+		);
+
+		renderChallengePage();
+
+		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
+			'Unable to load WooPayments dispute details.'
+		);
+		expect(
+			screen.queryByText( 'Internal Server Error' )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'should surface update failures in an alert', async () => {

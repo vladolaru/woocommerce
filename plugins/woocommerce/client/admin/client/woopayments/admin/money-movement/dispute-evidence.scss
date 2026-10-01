@@ -11,8 +11,18 @@
 		font-size: 13px;
 	}
 
+	// Client 11.1.0 `new-evidence/index.tsx:1554-1569` and `components/inline-notice/styles.scss:1-12`: the notice keeps
+	// the core Notice spacing and sits 24px above the summary, unlike the payment details pane.
 	.woocommerce-woopayments-dispute-pane__notice.components-notice {
-		margin: 0;
+		margin: 0 0 24px;
+
+		.components-notice__content {
+			margin: 4px 25px 4px 0;
+		}
+	}
+
+	.woocommerce-woopayments-dispute-pane__summary {
+		margin-top: 0;
 	}
 }
 

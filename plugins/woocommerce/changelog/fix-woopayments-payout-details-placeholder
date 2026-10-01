@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments payout details loading placeholder matches the size of the loaded summary.

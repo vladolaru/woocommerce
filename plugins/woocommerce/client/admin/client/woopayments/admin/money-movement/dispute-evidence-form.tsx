@@ -133,6 +133,20 @@ const getShippingFieldLabel = ( field: string ) => {
 };
 
 /**
+ * The shipping date as a date field value: the saved date, or today when none is saved.
+ * Client 11.1.0 `new-evidence/shipping-details.tsx:62-68`; today is only shown, it is saved once the merchant picks a date.
+ *
+ * @param shippingDate The saved shipping date.
+ */
+const getShippingDateFieldValue = ( shippingDate: string ) => {
+	const date = shippingDate ? new Date( shippingDate ) : new Date();
+
+	return Number.isNaN( date.getTime() )
+		? ''
+		: date.toISOString().split( 'T' )[ 0 ];
+};
+
+/**
  * Opens the cover letter in a new window, ready to print.
  * Client 11.1.0 `new-evidence/cover-letter.tsx:18-111` `handleViewCoverLetter()`.
  *
@@ -1442,8 +1456,23 @@ export const DisputeEvidenceForm = ( {
 														label={ getShippingFieldLabel(
 															field
 														) }
+														type={
+															field ===
+															'shipping_date'
+																? 'date'
+																: 'text'
+														}
 														value={
-															evidence[ field ]
+															field ===
+															'shipping_date'
+																? getShippingDateFieldValue(
+																		evidence[
+																			field
+																		]
+																  )
+																: evidence[
+																		field
+																  ]
 														}
 														readOnly={ formLocked }
 														__next40pxDefaultSize

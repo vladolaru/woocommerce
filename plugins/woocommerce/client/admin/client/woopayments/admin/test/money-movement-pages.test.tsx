@@ -946,7 +946,7 @@ describe( 'WooPayments money movement pages', () => {
 			} )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Fees: -$1.80 USD' )
+			within( summary ).getByText( 'Fees: -$1.80' )
 		).toBeInTheDocument();
 		expect(
 			within( summary ).getByText( 'Net: $53.52 USD' )
@@ -996,7 +996,7 @@ describe( 'WooPayments money movement pages', () => {
 			within( summary ).getByText( 'Refunded: -$11.16' )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Fees: -$1.80 USD' )
+			within( summary ).getByText( 'Fees: -$1.80' )
 		).toBeInTheDocument();
 		expect(
 			within( summary ).getByText( 'Net: $42.36 USD' )
@@ -3000,8 +3000,11 @@ describe( 'WooPayments money movement pages', () => {
 		);
 	} );
 
+	// Client 11.1.0 `payment-details/payment-details/index.tsx:50-64`: the client's copy, never the server's message.
 	it( 'announces transaction detail errors from a stable alert region', async () => {
-		mockGetTransaction.mockRejectedValue( new Error( 'Provider failed' ) );
+		mockGetTransaction.mockRejectedValue(
+			new Error( 'Internal Server Error' )
+		);
 
 		render(
 			<MemoryRouter
@@ -3014,8 +3017,11 @@ describe( 'WooPayments money movement pages', () => {
 		);
 
 		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
-			'Provider failed'
+			'Payment details not loaded'
 		);
+		expect(
+			screen.queryByText( 'Internal Server Error' )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'renders card reader fee details from the reader charge summary route', async () => {
@@ -3221,7 +3227,7 @@ describe( 'WooPayments money movement pages', () => {
 			} )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Fees: -$0.86 USD' )
+			within( summary ).getByText( 'Fees: -$0.86' )
 		).toBeInTheDocument();
 		expect(
 			within( summary ).getByText( 'Net: $13.29 USD' )
@@ -5593,11 +5599,15 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
+		// Client 11.1.0 `data/authorizations/resolvers.ts:90-98`: the client's copy, never the server's message.
 		expect(
-			await screen.findByText( 'Auth API down.', {
+			await screen.findByText( 'Error retrieving authorization.', {
 				selector: '.woocommerce-woopayments-money-movement__status',
 			} )
 		).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'Auth API down.' )
+		).not.toBeInTheDocument();
 		expect(
 			screen.queryByRole( 'button', {
 				name: 'Capture authorization for order #123',

@@ -19,8 +19,32 @@
 	padding: 24px;
 }
 
-.woocommerce-woopayments-payout-overview--instant > li + li {
-	border-inline-start: 1px solid #dcdcde;
+// Client 11.1.0 `deposits/details/index.tsx:163-228`: the instant payout tiles share one row, and stack below
+// the `SummaryList` dropdown breakpoint (`< large`, 960px), each tile as tall as its content.
+.woocommerce-woopayments-payout-overview--instant {
+	flex-wrap: nowrap;
+
+	> .woocommerce-woopayments-payout-overview__item {
+		flex: 1 1 0;
+		min-width: 0;
+	}
+
+	> li + li {
+		border-inline-start: 1px solid #dcdcde;
+	}
+
+	@media (max-width: 959px) {
+		flex-direction: column;
+
+		> .woocommerce-woopayments-payout-overview__item {
+			flex: none;
+		}
+
+		> li + li {
+			border-inline-start: 0;
+			border-block-start: 1px solid #dcdcde;
+		}
+	}
 }
 
 .woocommerce-woopayments-payout-overview__label {
@@ -92,6 +116,13 @@
 	}
 }
 
+// Client 11.1.0 renders the payout placeholder on a border-box WC Admin page; its fixed 117px item height assumes it.
+.woocommerce-woopayments-money-movement
+	.woocommerce-summary.is-placeholder
+	.woocommerce-summary__item {
+	box-sizing: border-box;
+}
+
 // Client 11.1.0 `deposits/details/style.scss:62-100`: the payout details card.
 .woocommerce-woopayments-payout-details__title {
 	font-size: 16px;
@@ -146,11 +177,6 @@
 @media (max-width: 659px) {
 	.woocommerce-woopayments-payout-overview {
 		flex-direction: column;
-	}
-
-	.woocommerce-woopayments-payout-overview--instant > li + li {
-		border-inline-start: 0;
-		border-block-start: 1px solid #dcdcde;
 	}
 
 	.woocommerce-woopayments-payout-overview__amount {

@@ -626,13 +626,10 @@ const getFiniteNumber = ( value: unknown ) =>
 const formatPaymentSummaryAmount = (
 	amount: number | undefined,
 	currency: string | undefined,
-	showCurrencyCode: boolean,
-	isExplicit = false
+	showCurrencyCode: boolean
 ) => {
 	// Client 11.1.0 `payment-details/summary/index.tsx` uses `formatExplicitCurrency()` for all but the fees.
-	const formattedAmount = isExplicit
-		? formatExplicitCurrency( amount, currency )
-		: formatAmount( amount, currency );
+	const formattedAmount = formatExplicitCurrency( amount, currency );
 
 	return showCurrencyCode &&
 		currency &&
@@ -1018,7 +1015,6 @@ export const WooPaymentsPaymentSummarySection = ( {
 										{ formatPaymentSummaryAmount(
 											balance.amount,
 											balance.currency,
-											true,
 											true
 										) }
 									</div>
@@ -1038,10 +1034,10 @@ export const WooPaymentsPaymentSummarySection = ( {
 									{ sprintf(
 										/* translators: %s: formatted fee amount. */
 										__( 'Fees: %s', 'woocommerce' ),
-										formatPaymentSummaryAmount(
+										// Client 11.1.0 `summary/index.tsx:559-566`: `formatCurrency()`, so no currency code.
+										formatAmount(
 											-balance.fee,
-											balance.currency,
-											hasDifferentBalanceCurrency
+											balance.currency
 										)
 									) }
 									{ disputeFees.length > 0 && (
@@ -1115,8 +1111,7 @@ export const WooPaymentsPaymentSummarySection = ( {
 											formatPaymentSummaryAmount(
 												paydownAmount,
 												balance.currency,
-												hasDifferentBalanceCurrency,
-												true
+												hasDifferentBalanceCurrency
 											)
 										) }
 									</div>
@@ -1128,8 +1123,7 @@ export const WooPaymentsPaymentSummarySection = ( {
 										formatPaymentSummaryAmount(
 											net,
 											balance.currency,
-											hasDifferentBalanceCurrency,
-											true
+											hasDifferentBalanceCurrency
 										)
 									) }
 								</div>

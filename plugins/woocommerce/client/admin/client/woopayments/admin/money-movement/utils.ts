@@ -10,10 +10,12 @@ import moment from 'moment';
 /**
  * Internal dependencies
  */
+import { WC_ASSET_URL } from '~/utils/admin-settings';
 import {
 	CARD_BRANDS,
 	getPaymentMethodDefinition,
 } from '../../settings/payment-method-definitions';
+import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 export {
 	formatAmount,
 	formatExplicitCurrency,
@@ -292,7 +294,8 @@ const TRANSACTION_SOURCE_LABELS: Record< string, string > = {
 	mastercard: __( 'Mastercard', 'woocommerce' ),
 	p24: __( 'Przelewy24 (P24)', 'woocommerce' ),
 	stripe_account: __( 'Stripe account', 'woocommerce' ),
-	unionpay: __( 'UnionPay', 'woocommerce' ),
+	// Client 11.1.0 `constants/payment-method.ts:63`.
+	unionpay: __( 'Union Pay', 'woocommerce' ),
 	visa: __( 'Visa', 'woocommerce' ),
 };
 
@@ -396,6 +399,34 @@ export const getTransactionSourceLabel = ( source: string ) =>
 export const getP24BankLabel = ( bank?: string ) =>
 	( bank && P24_BANK_LABELS[ bank ] ) || '';
 
+const AFTERPAY_COUNTRY_ICONS: Record< string, string > = {
+	GB: 'clearpay-icon.svg',
+	US: 'afterpay-cashapp-icon.svg',
+};
+
+/**
+ * The client's framed icon for Affirm and Afterpay, which the settings wordmarks cannot stand in for at this size.
+ * Afterpay follows the account country. Client 11.1.0 `assets/css/admin.css:148-162`.
+ *
+ * @param source The source, such as `affirm`.
+ */
+const getPayLaterSourceIconUrl = ( source: string ) => {
+	let icon = '';
+
+	if ( source === 'affirm' ) {
+		icon = 'affirm-icon.svg';
+	} else if ( source === 'afterpay_clearpay' ) {
+		const country = String(
+			getWooPaymentsSettingsBootstrap().accountCountry || ''
+		).toUpperCase();
+		icon = AFTERPAY_COUNTRY_ICONS[ country ] || 'afterpay-icon.svg';
+	}
+
+	return icon
+		? `${ WC_ASSET_URL || '' }images/payment-methods/${ icon }`
+		: undefined;
+};
+
 /**
  * The logo for a transaction or dispute source, the card brand or the payment method,
  * standing in for the client's `payment-method__brand--{source}` sprite.
@@ -403,6 +434,7 @@ export const getP24BankLabel = ( bank?: string ) =>
  * @param source The source, such as `visa` or `sepa_debit`.
  */
 export const getTransactionSourceIconUrl = ( source: string ) =>
+	getPayLaterSourceIconUrl( source ) ||
 	CARD_BRANDS.find( ( brand ) => brand.id === source )?.iconUrl ||
 	getPaymentMethodDefinition( source )?.iconUrl;
 

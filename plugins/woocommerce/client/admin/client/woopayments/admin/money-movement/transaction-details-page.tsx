@@ -704,13 +704,11 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							: loadedAuthorization;
 					} catch ( authorizationError ) {
 						nextAuthorization = null;
+						// Client 11.1.0 `data/authorizations/resolvers.ts:90-98`: its own copy, not the server's message.
 						if ( ! isNotFoundError( authorizationError ) ) {
-							nextAuthorizationErrorMessage = getErrorMessage(
-								authorizationError,
-								__(
-									'Unable to load WooPayments authorization details.',
-									'woocommerce'
-								)
+							nextAuthorizationErrorMessage = __(
+								'Error retrieving authorization.',
+								'woocommerce'
 							);
 						}
 					}
@@ -743,20 +741,15 @@ export const WooPaymentsTransactionDetailsPage = () => {
 					setTimelineErrorMessage( nextTimelineErrorMessage );
 					setErrorMessage( null );
 				}
-			} catch ( error ) {
+			} catch {
 				if ( shouldUpdate() ) {
 					setAuthorization( null );
 					setAuthorizationErrorMessage( null );
 					setTimelineEvents( [] );
 					setTimelineErrorMessage( null );
+					// Client 11.1.0 `payment-details/payment-details/index.tsx:50-64`: its own copy, not the server's message.
 					setErrorMessage(
-						getErrorMessage(
-							error,
-							__(
-								'Unable to load WooPayments transaction details.',
-								'woocommerce'
-							)
-						)
+						__( 'Payment details not loaded', 'woocommerce' )
 					);
 				}
 			} finally {
