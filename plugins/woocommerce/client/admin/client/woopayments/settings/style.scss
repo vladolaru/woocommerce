@@ -689,12 +689,16 @@
 	}
 }
 
-// The fee and promotion details open in a core Popover, outside the payment method row; this lays out their rows.
+// The fee and promotion details open in a core Popover, outside the payment method row; like core's badge
+// popovers (settings-payments-main.scss), the Popover's class sets the width, wide enough for one line per fee row.
+.woopayments-settings-payment-method-item__popover .woopayments-settings-payment-method-item__details-popover {
+	box-sizing: border-box;
+	width: 320px;
+}
+
 .woopayments-settings-payment-method-item__details-popover {
 	display: grid;
 	gap: 8px;
-	min-width: 240px;
-	max-width: 320px;
 	padding: 12px;
 	font-size: 12px;
 	line-height: 18px;
@@ -703,6 +707,7 @@
 		display: flex;
 		justify-content: space-between;
 		gap: 16px;
+		white-space: nowrap;
 	}
 
 	p {

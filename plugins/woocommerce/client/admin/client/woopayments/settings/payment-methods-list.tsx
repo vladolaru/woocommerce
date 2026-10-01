@@ -631,9 +631,12 @@ const PillDetailsPopover = ( {
 			</button>
 			{ isOpen && (
 				// The Popover also closes when focus leaves it.
+				// Placement, offset and a className-driven width follow core's status and official badges.
 				<Popover
+					className="woopayments-settings-payment-method-item__popover"
 					anchor={ triggerElement }
-					placement="top"
+					placement="top-start"
+					offset={ 4 }
 					focusOnMount={ false }
 					onClose={ () =>
 						close(
