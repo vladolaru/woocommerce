@@ -342,7 +342,11 @@ const PaymentMethodSummary = ( {
 		<span className="woocommerce-woopayments-money-movement__card-summary">
 			<img
 				className="woocommerce-woopayments-money-movement__card-brand"
-				src={ cardBrand.iconUrl }
+				// Client 11.1.0 draws this with the same `payment-method__brand--{brand}` sprite as the lists.
+				src={
+					getTransactionSourceIconUrl( cardBrand.id ) ||
+					cardBrand.iconUrl
+				}
 				alt={ cardBrand.label }
 			/>
 			<span aria-hidden="true">{ `•••• ${ card.last4 }` }</span>

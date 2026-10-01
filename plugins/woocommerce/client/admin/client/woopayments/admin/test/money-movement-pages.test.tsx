@@ -3437,7 +3437,7 @@ describe( 'WooPayments money movement pages', () => {
 		);
 		const visaLogo = within( summary ).getByRole( 'img', { name: 'Visa' } );
 		expect( visaLogo.getAttribute( 'src' ) ).toContain(
-			'images/payment-methods-cards/visa.svg'
+			'images/payment-methods/visa-card-color.svg'
 		);
 		expect( within( summary ).getByText( '•••• 4242' ) ).toHaveAttribute(
 			'aria-hidden',
