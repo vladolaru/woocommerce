@@ -165,6 +165,7 @@ const FRAUD_TOUR_DISMISSAL_PATH =
 
 const mockSaveSettings = jest.fn();
 const mockUseSettings = jest.fn();
+const mockUseGetSavedSettings = jest.fn();
 const mockUseGetSettings = jest.fn();
 const mockUseSavedCards = jest.fn();
 const mockUseCardPresentEligible = jest.fn();
@@ -221,6 +222,7 @@ const mockUseGetSavingError = jest.fn();
 jest.mock( '../data/hooks', () => ( {
 	useSettings: () => mockUseSettings(),
 	useGetSettings: () => mockUseGetSettings(),
+	useGetSavedSettings: () => mockUseGetSavedSettings(),
 	useSavedCards: () => mockUseSavedCards(),
 	useCardPresentEligible: () => mockUseCardPresentEligible(),
 	useEnabledPaymentMethodIds: () => mockUseEnabledPaymentMethodIds(),
@@ -428,7 +430,21 @@ const getSectionLinkByHref = ( section: HTMLElement, href: string ) =>
 		.getAllByRole( 'link' )
 		.find( ( link ) => link.getAttribute( 'href' ) === href );
 
+const queryWooPayTermsLink = () =>
+	screen.queryByRole( 'link', { name: 'WooCommerce Terms of Service' } );
+
 const setHookDefaults = () => {
+	// The saved snapshot starts as the first value each enabled hook reports.
+	mockUseGetSavedSettings.mockImplementation( () => ( {
+		is_woopay_enabled: mockUseWooPayEnabledSettings()[ 0 ],
+		is_payment_request_enabled: mockUsePaymentRequestEnabledSettings()[ 0 ],
+		enabled_payment_method_ids: [
+			...( mockUseLinkEnabledSettings()[ 0 ] ? [ 'link' ] : [] ),
+			...( mockUseAmazonPayEnabledSettings()[ 0 ]
+				? [ 'amazon_pay' ]
+				: [] ),
+		],
+	} ) );
 	mockUseSettings.mockReturnValue( {
 		isLoading: false,
 		isSaving: false,
@@ -3445,6 +3461,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 				noop,
 				false,
 			] );
+			mockUseAmazonPayEnabledSettings.mockReturnValue( [ false, noop ] );
 
 			render( <WooPaymentsSettingsPage /> );
 
@@ -4804,6 +4821,36 @@ describe( 'WooPaymentsSettingsPage', () => {
 			'src',
 			'https://woocommerce.survey.fm/woopay-disabled-merchants-feedback-triggered'
 		);
+	} );
+
+	// Owner decision N-280, a recorded improvement over client 11.1.0: the terms text goes only after a save.
+	it( 'keeps an express method description until the change is saved', async () => {
+		let isWooPayEnabled = false;
+		let savedSettings = { is_woopay_enabled: false };
+		mockUseWooPayEnabledSettings.mockImplementation( () => [
+			isWooPayEnabled,
+			( value: boolean ) => {
+				isWooPayEnabled = value;
+			},
+		] );
+		mockUseGetSavedSettings.mockImplementation( () => savedSettings );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+		expect( queryWooPayTermsLink() ).toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'WooPay' } )
+		);
+		rerender( <WooPaymentsSettingsPage /> );
+		expect(
+			screen.getByRole( 'checkbox', { name: 'WooPay' } )
+		).toBeChecked();
+		expect( queryWooPayTermsLink() ).toBeInTheDocument();
+
+		// The save succeeds, so the store's saved snapshot now has WooPay on.
+		savedSettings = { is_woopay_enabled: true };
+		rerender( <WooPaymentsSettingsPage /> );
+		expect( queryWooPayTermsLink() ).not.toBeInTheDocument();
 	} );
 
 	it( 'does not open disable feedback after a successful WooPay enable save', async () => {

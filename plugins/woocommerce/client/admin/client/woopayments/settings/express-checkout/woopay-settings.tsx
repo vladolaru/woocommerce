@@ -36,6 +36,7 @@ import {
 } from './settings-utils';
 import {
 	useEnabledPaymentMethodIds,
+	useGetSavedSettings,
 	useGetSettings,
 	useWooPayCustomMessage,
 	useWooPayEnabledSettings,
@@ -242,6 +243,9 @@ export const WooPaySettings = () => {
 	const [ enabledMethodIds ] = useEnabledPaymentMethodIds() as [ string[] ];
 	const [ isWooPayEnabled, setIsWooPayEnabled ] =
 		useWooPayEnabledSettings() as [ boolean, ( value: boolean ) => void ];
+	const isWooPaySaved = Boolean(
+		asSettingsRecord( useGetSavedSettings() ).is_woopay_enabled
+	);
 	const [ wooPayLocations, updateWooPayLocation ] = useWooPayLocations() as [
 		string[],
 		( location: 'product' | 'cart' | 'checkout', value: boolean ) => void,
@@ -326,8 +330,9 @@ export const WooPaySettings = () => {
 					checked={ isWooPayEnabled }
 					disabled={ isStripeLinkEnabled }
 					label={ __( 'Enable WooPay', 'woocommerce' ) }
+					// Owner decision N-280: the terms text follows the saved state, not the unsaved toggle.
 					help={
-						isWooPayEnabled ? (
+						isWooPaySaved ? (
 							__(
 								'When enabled, customers will be able to checkout using WooPay.',
 								'woocommerce'

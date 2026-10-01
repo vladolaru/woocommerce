@@ -28,6 +28,7 @@ const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
 const mockDispatch = dispatch as jest.MockedFunction< typeof dispatch >;
 let mockSettingsBootstrap: Record< string, unknown > = {};
 const mockUseSettings = jest.fn();
+const mockUseGetSavedSettings = jest.fn();
 const mockUseGetSettings = jest.fn();
 const mockUseEnabledPaymentMethodIds = jest.fn();
 const mockUsePaymentRequestEnabledSettings = jest.fn();
@@ -86,6 +87,7 @@ jest.mock( '../data/hooks', () => ( {
 		mockUseGetAvailablePaymentMethodIds(),
 	useDevMode: () => mockUseDevMode(),
 	useGetSavingError: () => null,
+	useGetSavedSettings: () => mockUseGetSavedSettings(),
 } ) );
 
 jest.mock( '../bootstrap', () => ( {
@@ -146,6 +148,10 @@ const installStripeMock = () => {
 };
 
 const setHookDefaults = () => {
+	// The saved snapshot starts as the first value the WooPay hook reports.
+	mockUseGetSavedSettings.mockImplementation( () => ( {
+		is_woopay_enabled: mockUseWooPayEnabledSettings()[ 0 ],
+	} ) );
 	mockSettingsBootstrap = {
 		isExpressCheckoutInPaymentMethodsListEnabled: true,
 		isWooPayGlobalThemeSupportEligible: true,

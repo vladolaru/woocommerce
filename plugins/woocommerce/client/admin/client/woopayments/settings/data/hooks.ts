@@ -253,6 +253,11 @@ export const useGetAccountFees = () =>
 export const useGetSettings = () =>
 	useRegisteredSelect( ( select ) => select( STORE_NAME ).getSettings() );
 
+export const useGetSavedSettings = () =>
+	useRegisteredSelect( ( select ) =>
+		select( STORE_NAME ).getSavedSettings()
+	);
+
 export const useSettings = () => {
 	const { saveSettings } = useRegisteredDispatch();
 	const isSaving = useRegisteredSelect( ( select ) =>

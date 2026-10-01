@@ -96,6 +96,7 @@ import {
 	useGetAvailablePaymentMethodIds,
 	useGetDuplicatedPaymentMethodIds,
 	useGetPaymentMethodStatuses,
+	useGetSavedSettings,
 	useGetSavingError,
 	useGetSettings,
 	useIsWCPayEnabled,
@@ -1069,6 +1070,18 @@ const ExpressCheckoutSettingsSection = () => {
 		useEnabledPaymentMethodIds() as StringArraySetting;
 	const [ isAmazonPayEnabled, setIsAmazonPayEnabled ] =
 		useAmazonPayEnabledSettings() as BooleanSetting;
+	// Owner decision N-280, a recorded improvement over client 11.1.0: each description follows the saved state,
+	// so toggling a checkbox never moves the row; the terms text goes only after a successful save.
+	const savedSettings = asSettingsRecord( useGetSavedSettings() );
+	const savedEnabledMethodIds = asStringArray(
+		savedSettings.enabled_payment_method_ids
+	);
+	const isWooPaySaved = Boolean( savedSettings.is_woopay_enabled );
+	const isPaymentRequestSaved = Boolean(
+		savedSettings.is_payment_request_enabled
+	);
+	const isLinkSaved = savedEnabledMethodIds.includes( 'link' );
+	const isAmazonPaySaved = savedEnabledMethodIds.includes( 'amazon_pay' );
 	const availablePaymentMethodIds = asStringArray(
 		useGetAvailablePaymentMethodIds()
 	);
@@ -1128,7 +1141,7 @@ const ExpressCheckoutSettingsSection = () => {
 				{
 					label: __( 'WooPay', 'woocommerce' ),
 					iconSrc: EXPRESS_CHECKOUT_METHOD_ICONS.woopay[ 0 ].src,
-					description: isWooPayEnabled
+					description: isWooPaySaved
 						? __(
 								'Boost conversion and customer loyalty by offering a single click, secure way to pay.',
 								'woocommerce'
@@ -1168,7 +1181,7 @@ const ExpressCheckoutSettingsSection = () => {
 			{
 				label: __( 'Apple Pay', 'woocommerce' ),
 				iconSrc: EXPRESS_CHECKOUT_METHOD_ICONS.payment_request[ 0 ].src,
-				description: isPaymentRequestEnabled
+				description: isPaymentRequestSaved
 					? __(
 							'Apple Pay is an easy and secure way for customers to pay on your store.',
 							'woocommerce'
@@ -1191,7 +1204,7 @@ const ExpressCheckoutSettingsSection = () => {
 			{
 				label: __( 'Google Pay', 'woocommerce' ),
 				iconSrc: EXPRESS_CHECKOUT_METHOD_ICONS.payment_request[ 1 ].src,
-				description: isPaymentRequestEnabled
+				description: isPaymentRequestSaved
 					? __(
 							'Offer customers a fast, secure checkout experience with Google Pay.',
 							'woocommerce'
@@ -1226,7 +1239,7 @@ const ExpressCheckoutSettingsSection = () => {
 				{
 					label: __( 'Link', 'woocommerce' ),
 					iconSrc: EXPRESS_CHECKOUT_METHOD_ICONS.link[ 0 ].src,
-					description: isLinkEnabled
+					description: isLinkSaved
 						? __(
 								"Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.",
 								'woocommerce'
@@ -1272,20 +1285,26 @@ const ExpressCheckoutSettingsSection = () => {
 				{
 					label: __( 'Amazon Pay', 'woocommerce' ),
 					iconSrc: EXPRESS_CHECKOUT_METHOD_ICONS.amazon_pay[ 0 ].src,
-					description: createInterpolateElement(
-						__(
-							"Offer customers a fast, secure checkout experience with Amazon Pay. By activating this feature, you accept <stripeLink>Stripe</stripeLink> and <amazonLink>Amazon</amazonLink>'s terms of use.",
-							'woocommerce'
-						),
-						{
-							stripeLink: createTermsLink(
-								'https://stripe.com/legal/ssa'
-							),
-							amazonLink: createTermsLink(
-								'https://stripe.com/legal/amazon-pay'
-							),
-						}
-					),
+					// The short description is new copy: client 11.1.0 always shows the terms text.
+					description: isAmazonPaySaved
+						? __(
+								'Offer customers a fast, secure checkout experience with Amazon Pay.',
+								'woocommerce'
+						  )
+						: createInterpolateElement(
+								__(
+									"Offer customers a fast, secure checkout experience with Amazon Pay. By activating this feature, you accept <stripeLink>Stripe</stripeLink> and <amazonLink>Amazon</amazonLink>'s terms of use.",
+									'woocommerce'
+								),
+								{
+									stripeLink: createTermsLink(
+										'https://stripe.com/legal/ssa'
+									),
+									amazonLink: createTermsLink(
+										'https://stripe.com/legal/amazon-pay'
+									),
+								}
+						  ),
 				},
 			],
 			notice: amazonPayAvailability.notice || '',

@@ -1,6 +1,7 @@
 type SettingsRootState = {
 	settings?: {
 		data?: Record< string, unknown >;
+		savedData?: Record< string, unknown >;
 		isSaving?: boolean;
 		isDirty?: boolean;
 		savingError?: unknown;
@@ -22,6 +23,11 @@ const getSettingsState = ( state?: SettingsRootState ): SettingsSliceState => {
 
 export const getSettings = ( state: SettingsRootState ) => {
 	return getSettingsState( state ).data || EMPTY_OBJ;
+};
+
+// The settings as last loaded or saved, before any unsaved edit.
+export const getSavedSettings = ( state: SettingsRootState ) => {
+	return getSettingsState( state ).savedData || EMPTY_OBJ;
 };
 
 export const getDuplicatedPaymentMethodIds = ( state: SettingsRootState ) => {
