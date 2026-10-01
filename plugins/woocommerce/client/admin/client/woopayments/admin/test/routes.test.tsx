@@ -1,7 +1,10 @@
 /**
  * External dependencies
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { getHistory } from '@woocommerce/navigation';
+import { MemoryRouter } from 'react-router-dom';
 import apiFetch from '@wordpress/api-fetch';
 
 /**
@@ -11,7 +14,7 @@ import {
 	getSettingsPaymentsProviderRoutes,
 	resetSettingsPaymentsProviderRoutesForTesting,
 } from '~/settings-payments/provider-routes';
-import { SettingsPaymentsWoopayments } from '~/settings-payments/settings-payments-woopayments';
+import { SettingsPaymentsWooPaymentsWrapper } from '~/settings-payments';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 jest.mock( '../overview', () => () => 'Overview route loaded' );
@@ -20,20 +23,17 @@ jest.mock(
 	() => () => 'Transactions route loaded'
 );
 jest.mock( '../money-movement/disputes', () => () => 'Disputes route loaded' );
-jest.mock( '../../settings', () => {
+jest.mock( '../../settings', () => () => 'Settings route loaded' );
+jest.mock( '../../settings/settings-page', () => {
 	const React = jest.requireActual( 'react' );
-	const WooPaymentsSettingsPage = () =>
-		React.createElement(
-			'section',
-			{ 'aria-label': 'WooPayments settings' },
-			React.createElement( 'h1', null, 'WooPayments settings' ),
-			React.createElement( 'p', null, 'Loading WooPayments settings' )
-		);
 
 	return {
-		__esModule: true,
-		default: () => 'Settings route loaded',
-		WooPaymentsSettingsPage,
+		WooPaymentsSettingsPage: () =>
+			React.createElement(
+				'section',
+				{ 'aria-labelledby': 'woopayments-settings-page-heading' },
+				'Settings page loaded'
+			),
 	};
 } );
 jest.mock(
@@ -561,24 +561,34 @@ describe( 'WooPayments Settings Payments routes', () => {
 		);
 	} );
 
-	it( 'renders the native settings page from the legacy WooPayments settings shell', () => {
-		render( <SettingsPaymentsWoopayments /> );
+	it( 'renders the native settings page under the Payments settings header', async () => {
+		const push = jest
+			.spyOn( getHistory(), 'push' )
+			.mockImplementation( () => undefined );
 
-		expect(
-			screen.getByRole( 'heading', {
-				name: 'WooPayments settings',
-			} )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'region', {
-				name: 'WooPayments settings',
-			} )
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( /Loading WooPayments settings/ )
-		).toBeInTheDocument();
-		expect(
-			screen.queryByText( /Native settings placeholder/ )
-		).not.toBeInTheDocument();
+		try {
+			render(
+				<MemoryRouter>
+					<SettingsPaymentsWooPaymentsWrapper />
+				</MemoryRouter>
+			);
+
+			const heading = screen.getByRole( 'heading', {
+				level: 1,
+				name: 'WooPayments',
+			} );
+			expect(
+				await screen.findByRole( 'region', { name: 'WooPayments' } )
+			).toBeInTheDocument();
+
+			await userEvent.click(
+				within( heading ).getByRole( 'button', { name: 'WooPayments' } )
+			);
+			expect( push ).toHaveBeenCalledWith(
+				'admin.php?page=wc-settings&tab=checkout'
+			);
+		} finally {
+			push.mockRestore();
+		}
 	} );
 } );

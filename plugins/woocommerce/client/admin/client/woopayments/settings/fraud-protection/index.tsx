@@ -11,7 +11,10 @@ import type { MouseEvent } from 'react';
 /**
  * Internal dependencies
  */
-import { getSettingsPaymentsProviderRouteUrl } from '../../admin/utils';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
+} from '../../admin/utils';
 import {
 	useAdvancedFraudProtectionSettings,
 	useCurrentProtectionLevel,
@@ -171,9 +174,10 @@ export const FraudProtectionSettings = () => {
 		typeof window.IntersectionObserver !== 'undefined';
 	const normalizedProtectionLevel =
 		normalizeProtectionLevel( protectionLevel );
-	const advancedSettingsUrl = getSettingsPaymentsProviderRouteUrl(
-		'/woopayments/settings/fraud-protection?from=woopayments-settings'
-	);
+	const advancedSettingsPath =
+		'/woopayments/settings/fraud-protection?from=woopayments-settings';
+	const advancedSettingsUrl =
+		getSettingsPaymentsProviderRouteUrl( advancedSettingsPath );
 	const isAdvancedSettingsConfigured =
 		Array.isArray( advancedFraudProtectionSettings ) &&
 		advancedFraudProtectionSettings.length > 0;
@@ -192,7 +196,12 @@ export const FraudProtectionSettings = () => {
 	) => {
 		if ( ! isAdvancedSelected || hasFraudProtectionSettingsError ) {
 			event.preventDefault();
+			return;
 		}
+
+		handleSettingsPaymentsProviderRouteClick( advancedSettingsPath )(
+			event
+		);
 	};
 
 	return (

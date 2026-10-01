@@ -36,18 +36,3 @@
 	font-size: 13px;
 	line-height: 20px;
 }
-
-.woopayments-settings-busy-state {
-	&__status {
-		display: block;
-	}
-
-	&__content {
-		transition: opacity 120ms ease;
-	}
-
-	&.is-busy &__content {
-		cursor: progress;
-		opacity: 0.55;
-	}
-}

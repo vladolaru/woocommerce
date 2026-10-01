@@ -4,10 +4,12 @@
 import { Gridicon } from '@automattic/components';
 import { Button, Placeholder, SelectControl } from '@wordpress/components';
 import React, { lazy, Suspense, useEffect } from '@wordpress/element';
+import type { ReactNode } from 'react';
 import {
 	unstable_HistoryRouter as HistoryRouter,
 	Route,
 	Routes,
+	useInRouterContext,
 	useLocation,
 } from 'react-router-dom';
 import { getHistory, getNewPath } from '@woocommerce/navigation';
@@ -20,6 +22,7 @@ import { Header } from './components/header/header';
 import { BackButton } from './components/buttons/back-button';
 import { ListPlaceholder } from '~/settings-payments/components/list-placeholder';
 import { getSettingsPaymentsProviderRoutes } from '~/settings-payments/provider-routes';
+import { WOOPAYMENTS_SETTINGS_HEADING_ID } from '~/settings-payments/constants';
 import './settings-payments-main.scss';
 
 /**
@@ -246,26 +249,76 @@ export const SettingsPaymentsOfflineWrapper = () => {
 	);
 };
 
+interface SettingsPaymentsWooPaymentsWrapperProps {
+	/**
+	 * The page body. Defaults to the lazy-loaded WooPayments settings chunk.
+	 */
+	children?: ReactNode;
+}
+
 /**
- * Wraps the WooPayments settings page.
+ * Wraps the WooPayments settings page under the same header as the offline payments page.
  */
-export const SettingsPaymentsWooPaymentsWrapper = () => {
+export const SettingsPaymentsWooPaymentsWrapper = ( {
+	children,
+}: SettingsPaymentsWooPaymentsWrapperProps ) => {
+	// The `section` URL renders this outside the Payments router, where a pushed route would not render.
+	const isInRouter = useInRouterContext();
+
+	useEffect( () => {
+		// A section link (`anchor` or hash) is scrolled to by the page itself once settings load.
+		if (
+			! window.location.hash &&
+			! new URLSearchParams( window.location.search ).has( 'anchor' )
+		) {
+			window.scrollTo( 0, 0 );
+		}
+	}, [] );
+
 	return (
 		<>
 			<Header title={ __( 'Settings', 'woocommerce' ) } />
-			<Suspense
-				fallback={
-					<div>
-						{ sprintf(
-							/* translators: %s: WooPayments */
-							__( 'Loading %s settings…', 'woocommerce' ),
-							'WooPayments'
-						) }
-					</div>
-				}
-			>
-				<SettingsPaymentsWooPaymentsChunk />
-			</Suspense>
+			<div className="settings-payments-offline__container">
+				<div className="settings-payments-offline__header">
+					<h1
+						id={ WOOPAYMENTS_SETTINGS_HEADING_ID }
+						className="components-truncate components-text woocommerce-layout__header-heading woocommerce-layout__header-left-align"
+					>
+						<BackButton
+							href={ getNewPath(
+								{ page: 'wc-settings', tab: 'checkout' },
+								'/',
+								{}
+							) }
+							tooltipText={ __(
+								'Return to payments settings',
+								'woocommerce'
+							) }
+							isRoute={ isInRouter }
+							from={ 'woopayments_settings' }
+						>
+							<span className="woocommerce-settings-payments-header__title">
+								WooPayments
+							</span>
+						</BackButton>
+					</h1>
+				</div>
+				{ children ?? (
+					<Suspense
+						fallback={
+							<div>
+								{ sprintf(
+									/* translators: %s: WooPayments */
+									__( 'Loading %s settings…', 'woocommerce' ),
+									'WooPayments'
+								) }
+							</div>
+						}
+					>
+						<SettingsPaymentsWooPaymentsChunk />
+					</Suspense>
+				) }
+			</div>
 		</>
 	);
 };

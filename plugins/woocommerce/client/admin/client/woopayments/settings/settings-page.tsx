@@ -4,7 +4,6 @@
 import {
 	BaseControl,
 	Button,
-	Card,
 	CheckboxControl,
 	ExternalLink,
 	Modal,
@@ -27,14 +26,16 @@ import {
 import { dispatch } from '@wordpress/data';
 import { __, _x, sprintf } from '@wordpress/i18n';
 import { PhoneNumberInput, validatePhoneNumber } from '@woocommerce/components';
-import { useConfirmUnsavedChanges } from '@woocommerce/navigation';
 import { recordEvent } from '@woocommerce/tracks';
-import clsx from 'clsx';
 
 /**
  * Internal dependencies
  */
-import { getSettingsPaymentsProviderRouteUrl } from '../admin/utils';
+import { WOOPAYMENTS_SETTINGS_HEADING_ID } from '~/settings-payments/constants';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
+} from '../admin/utils';
 import { AccountModeNotice } from './account-mode-notice';
 import { ApplePayDomainErrorNotice } from './apple-pay-domain-error-notice';
 import { getWooPaymentsSettingsBootstrap } from './bootstrap';
@@ -50,8 +51,17 @@ import {
 } from './payment-methods-list';
 import { PayoutBankAccount } from './payout-bank-account';
 import { SettingsBusyState } from './settings-busy-state';
+import {
+	ACCOUNT_STATEMENT_INPUT_ID,
+	ACCOUNT_STATEMENT_KANA_INPUT_ID,
+	ACCOUNT_STATEMENT_KANJI_INPUT_ID,
+	NOTIFICATIONS_EMAIL_INPUT_ID,
+	SaveSettingsSection,
+	SUPPORT_EMAIL_INPUT_ID,
+	SUPPORT_PHONE_INPUT_ID,
+} from './save-settings-section';
+import { SettingsSection, type FieldValidationError } from './settings-shell';
 import { TextLink } from './text-link';
-import { WooPayDisableFeedback } from './woopay-disable-feedback';
 import { WooPaymentsDisableConfirmationModal } from './disable-woopayments-modal';
 import { useWooPaymentsAffectedCheckoutMethods } from './affected-payment-methods';
 import { AMAZON_PAY_DEFINITION } from './amazon-pay-definition';
@@ -116,27 +126,16 @@ const WooPaymentsVatModal = lazy( () =>
 		/* webpackChunkName: "settings-payments-woopayments-vat-modal" */ '../admin/documents/vat-modal'
 	).then( ( module ) => ( { default: module.WooPaymentsVatModal } ) )
 );
-const HEADING_ID = 'woopayments-settings-page-heading';
 const ACCOUNT_STATEMENT_MAX_LENGTH = 22;
 const ACCOUNT_STATEMENT_MAX_LENGTH_KANJI = 17;
 const ACCOUNT_STATEMENT_MAX_LENGTH_KANA = 22;
 const NOTIFICATIONS_EMAIL_ERROR_ID = 'woopayments-notifications-email-error';
 const NOTIFICATIONS_EMAIL_CONFIRM_ERROR_ID =
 	'woopayments-notifications-email-confirm-error';
-const NOTIFICATIONS_EMAIL_INPUT_ID = 'account-communications-email-input';
 const NOTIFICATIONS_EMAIL_CONFIRM_INPUT_ID =
 	'woopayments-notifications-email-confirm-input';
 const SUPPORT_EMAIL_ERROR_ID = 'woopayments-support-email-error';
 const SUPPORT_PHONE_ERROR_ID = 'woopayments-support-phone-error';
-const ACCOUNT_STATEMENT_INPUT_ID = 'account-statement-descriptor-input';
-const ACCOUNT_STATEMENT_KANJI_INPUT_ID =
-	'account-statement-descriptor-kanji-input';
-const ACCOUNT_STATEMENT_KANA_INPUT_ID =
-	'account-statement-descriptor-kana-input';
-const SUPPORT_EMAIL_INPUT_ID = 'account-business-support-email-input';
-const SUPPORT_PHONE_INPUT_ID = 'account-business-support-phone-input';
-const SAVE_STATUS_ID = 'woopayments-settings-save-status';
-const FEEDBACK_THROTTLE_DAYS = 7;
 const MANUAL_CAPTURE_DOC_URL =
 	'https://woocommerce.com/document/woopayments/settings-guide/authorize-and-capture/';
 const BNPL_DOC_URL =
@@ -161,7 +160,6 @@ const EMAIL_ADDRESS_PATTERN =
 type SettingsRecord = Record< string, unknown >;
 type StringSetter = ( value: string ) => void;
 type BooleanSetter = ( value: boolean ) => void;
-type FieldValidationError = { inputId: string; message: string };
 type ValidationSetter = ( error: FieldValidationError | null ) => void;
 type StringArraySetter = ( value: string[] ) => void;
 type BooleanSetting = [ boolean, BooleanSetter ];
@@ -248,21 +246,6 @@ const removeVatDetailsModalQueryParam = () => {
 		`${ url.pathname }${ url.search }${ url.hash }`
 	);
 };
-
-const getDaysSinceDate = ( date: string, now = new Date() ) => {
-	const parsedDate = new Date( date );
-
-	if ( Number.isNaN( parsedDate.getTime() ) ) {
-		return Number.POSITIVE_INFINITY;
-	}
-
-	const diffTime = Math.abs( now.getTime() - parsedDate.getTime() );
-
-	return Math.ceil( diffTime / ( 1000 * 60 * 60 * 24 ) );
-};
-
-const isWooPayDisableFeedbackThrottled = ( date: string ) =>
-	date !== '' && getDaysSinceDate( date ) < FEEDBACK_THROTTLE_DAYS;
 
 const asStringArray = ( value: unknown ) =>
 	Array.isArray( value )
@@ -367,59 +350,12 @@ const getSavingErrorDetailMessage = ( value: unknown, key: string ) => {
 	return asString( detail.message );
 };
 
-const getSavingErrorDetails = ( value: unknown ) => {
-	const error = asSettingsRecord( value );
-	const data = asSettingsRecord( error.data );
-
-	return asSettingsRecord( data.details );
-};
-
-const getFieldInputId = ( settingKey: string ) => {
-	const fieldInputIds: Record< string, string > = {
-		account_statement_descriptor: ACCOUNT_STATEMENT_INPUT_ID,
-		account_statement_descriptor_kanji: ACCOUNT_STATEMENT_KANJI_INPUT_ID,
-		account_statement_descriptor_kana: ACCOUNT_STATEMENT_KANA_INPUT_ID,
-		account_communications_email: NOTIFICATIONS_EMAIL_INPUT_ID,
-		account_business_support_email: SUPPORT_EMAIL_INPUT_ID,
-		account_business_support_phone: SUPPORT_PHONE_INPUT_ID,
-	};
-
-	return (
-		fieldInputIds[ settingKey ] ||
-		`${ settingKey.replace( /_/g, '-' ) }-input`
-	);
-};
-
-const focusField = ( element: HTMLElement | null | undefined ) => {
-	if ( ! element || typeof element.focus !== 'function' ) {
-		return;
-	}
-
-	const reduceMotion =
-		typeof window.matchMedia === 'function' &&
-		window.matchMedia( '(prefers-reduced-motion: reduce)' ).matches;
-	element.scrollIntoView?.( {
-		behavior: reduceMotion ? 'auto' : 'smooth',
-		block: 'center',
-	} );
-	element.focus( { preventScroll: true } );
-};
-
-const focusFirstSavingErrorField = ( savingError: unknown ) => {
-	const details = getSavingErrorDetails( savingError );
-
-	focusField(
-		Object.keys( details )
-			.map( ( fieldKey ) =>
-				document.getElementById( getFieldInputId( fieldKey ) )
-			)
-			.find( Boolean )
-	);
-};
-
 const isValidEmailAddress = ( value: string ) =>
 	value === '' ||
 	( value.length <= 254 && EMAIL_ADDRESS_PATTERN.test( value ) );
+
+const getCustomizePath = ( methodId: CustomizableExpressCheckoutMethod ) =>
+	`/woopayments/settings/express-checkout/${ methodId }?from=woopayments-settings`;
 
 const isCustomizableExpressCheckoutMethod = (
 	methodId: ExpressCheckoutOverviewMethod
@@ -428,34 +364,6 @@ const isCustomizableExpressCheckoutMethod = (
 const getExpressCheckoutCheckboxId = (
 	methodId: ExpressCheckoutOverviewMethod
 ) => `woopayments-express-checkout-${ methodId }-input`;
-
-const SettingsSection = ( {
-	id,
-	title,
-	description,
-	children,
-}: {
-	id: string;
-	title: string;
-	description: React.ReactNode;
-	children: React.ReactNode;
-} ) => (
-	<section
-		className="woopayments-settings-section"
-		id={ id }
-		aria-labelledby={ `${ id }__heading` }
-	>
-		<div className="woopayments-settings-section__details">
-			<h2 id={ `${ id }__heading` }>{ title }</h2>
-			<div className="woopayments-settings-section__description">
-				{ description }
-			</div>
-		</div>
-		<Card className="woopayments-settings-section__controls">
-			{ children }
-		</Card>
-	</section>
-);
 
 const FieldGroup = ( {
 	id,
@@ -1206,11 +1114,6 @@ const ExpressCheckoutSettingsSection = () => {
 		  )
 		: '';
 
-	const getCustomizeUrl = ( methodId: CustomizableExpressCheckoutMethod ) =>
-		getSettingsPaymentsProviderRouteUrl(
-			`/woopayments/settings/express-checkout/${ methodId }?from=woopayments-settings`
-		);
-
 	const expressRows: ExpressCheckoutOverviewRow[] = [];
 
 	// Rows, logos and copy follow client 11.1.0 client/settings/express-checkout/*-item.tsx.
@@ -1444,7 +1347,12 @@ const ExpressCheckoutSettingsSection = () => {
 								) && (
 									<Button
 										variant="secondary"
-										href={ getCustomizeUrl( row.id ) }
+										href={ getSettingsPaymentsProviderRouteUrl(
+											getCustomizePath( row.id )
+										) }
+										onClick={ handleSettingsPaymentsProviderRouteClick(
+											getCustomizePath( row.id )
+										) }
 										aria-label={ sprintf(
 											/* translators: %s: Express checkout payment method name. */
 											__( 'Customize %s', 'woocommerce' ),
@@ -2370,175 +2278,11 @@ const AdvancedSettingsSection = () => {
 	);
 };
 
-const SaveSettingsSection = ( {
-	disabled,
-	validationError,
-}: {
-	disabled?: boolean;
-	validationError?: FieldValidationError | null;
-} ) => {
-	const { saveSettings, isSaving, isLoading, isDirty } = useSettings();
-	const settings = asSettingsRecord( useGetSettings() );
-	const savingError = useGetSavingError();
-	const [ initialIsWooPayEnabled, setInitialIsWooPayEnabled ] = useState<
-		boolean | null
-	>( null );
-	const [
-		initialIsPaymentRequestEnabled,
-		setInitialIsPaymentRequestEnabled,
-	] = useState< boolean | null >( null );
-	const [ isWooPayDisableFeedbackOpen, setWooPayDisableFeedbackOpen ] =
-		useState( false );
-	const [ shouldFocusSavingError, setShouldFocusSavingError ] =
-		useState( false );
-	const [ localWooPayLastDisableDate, setLocalWooPayLastDisableDate ] =
-		useState( asString( settings.woopay_last_disable_date ) );
-	const isDisabled = isSaving || isLoading || disabled || ! isDirty;
-	const isBlockedByValidation = isDirty && !! validationError;
-	const hasWooPayEnabledSetting = Object.prototype.hasOwnProperty.call(
-		settings,
-		'is_woopay_enabled'
-	);
-	const hasPaymentRequestEnabledSetting =
-		Object.prototype.hasOwnProperty.call(
-			settings,
-			'is_payment_request_enabled'
-		);
-	const isWooPayEnabled = Boolean( settings.is_woopay_enabled );
-	const isPaymentRequestEnabled = Boolean(
-		settings.is_payment_request_enabled
-	);
-	const wooPayLastDisableDate = asString( settings.woopay_last_disable_date );
-
-	useEffect( () => {
-		if ( initialIsWooPayEnabled !== null || ! hasWooPayEnabledSetting ) {
-			return;
-		}
-
-		setInitialIsWooPayEnabled( isWooPayEnabled );
-	}, [ hasWooPayEnabledSetting, initialIsWooPayEnabled, isWooPayEnabled ] );
-
-	useEffect( () => {
-		if (
-			initialIsPaymentRequestEnabled !== null ||
-			! hasPaymentRequestEnabledSetting
-		) {
-			return;
-		}
-
-		setInitialIsPaymentRequestEnabled( isPaymentRequestEnabled );
-	}, [
-		hasPaymentRequestEnabledSetting,
-		initialIsPaymentRequestEnabled,
-		isPaymentRequestEnabled,
-	] );
-
-	useEffect( () => {
-		setLocalWooPayLastDisableDate( wooPayLastDisableDate );
-	}, [ wooPayLastDisableDate ] );
-
-	useEffect( () => {
-		if ( ! shouldFocusSavingError ) {
-			return;
-		}
-
-		focusFirstSavingErrorField( savingError );
-		setShouldFocusSavingError( false );
-	}, [ savingError, shouldFocusSavingError ] );
-
-	const saveOnClick = async () => {
-		if ( isBlockedByValidation ) {
-			focusField( document.getElementById( validationError.inputId ) );
-			return;
-		}
-
-		if ( isDisabled ) {
-			return;
-		}
-
-		// The save outcome is announced by the snackbar only, as in the client.
-		const isSuccess = await saveSettings();
-
-		if ( ! isSuccess ) {
-			setShouldFocusSavingError( true );
-			return;
-		}
-
-		if (
-			initialIsWooPayEnabled &&
-			! isWooPayEnabled &&
-			! isWooPayDisableFeedbackThrottled( localWooPayLastDisableDate )
-		) {
-			setWooPayDisableFeedbackOpen( true );
-			setLocalWooPayLastDisableDate(
-				new Date().toISOString().slice( 0, 10 )
-			);
-		}
-
-		if ( hasWooPayEnabledSetting ) {
-			setInitialIsWooPayEnabled( isWooPayEnabled );
-		}
-
-		if (
-			hasPaymentRequestEnabledSetting &&
-			initialIsPaymentRequestEnabled !== null &&
-			initialIsPaymentRequestEnabled !== isPaymentRequestEnabled
-		) {
-			recordEvent( 'wcpay_payment_request_settings_change', {
-				enabled: isPaymentRequestEnabled ? 'yes' : 'no',
-			} );
-		}
-
-		if ( hasPaymentRequestEnabledSetting ) {
-			setInitialIsPaymentRequestEnabled( isPaymentRequestEnabled );
-		}
-	};
-
-	return (
-		<div className="woopayments-settings-save-bar">
-			<Button
-				variant="primary"
-				isBusy={ isSaving }
-				// A validation block keeps the button clickable so it can lead to the invalid field.
-				disabled={ isDisabled && ! isBlockedByValidation }
-				aria-disabled={
-					isDisabled || isBlockedByValidation || undefined
-				}
-				accessibleWhenDisabled
-				aria-describedby={ SAVE_STATUS_ID }
-				onClick={ saveOnClick }
-			>
-				{ __( 'Save changes', 'woocommerce' ) }
-			</Button>
-			<p
-				id={ SAVE_STATUS_ID }
-				aria-live="polite"
-				className={ clsx( 'woopayments-settings-save-bar__status', {
-					'is-error': isBlockedByValidation,
-				} ) }
-			>
-				{ isBlockedByValidation && validationError.message }
-				{ ! isBlockedByValidation &&
-					( isDirty
-						? __( 'You have unsaved changes.', 'woocommerce' )
-						: __( 'Settings are up to date.', 'woocommerce' ) ) }
-			</p>
-			{ isWooPayDisableFeedbackOpen && (
-				<WooPayDisableFeedback
-					onRequestClose={ () =>
-						setWooPayDisableFeedbackOpen( false )
-					}
-				/>
-			) }
-		</div>
-	);
-};
-
 export const WooPaymentsSettingsPage = () => {
 	registerWooPaymentsSettingsStore();
 	getWooPaymentsSettingsBootstrap();
 
-	const { isLoading, isSaving, isDirty } = useSettings();
+	const { isLoading, isSaving } = useSettings();
 	const [ transactionsValidationError, setTransactionsValidationError ] =
 		useState< FieldValidationError | null >( null );
 	const [ notificationsValidationError, setNotificationsValidationError ] =
@@ -2558,8 +2302,6 @@ export const WooPaymentsSettingsPage = () => {
 	const hasSettings = Object.keys( settings ).length > 0;
 	const isDevModeEnabled = Boolean( useDevMode() );
 	const isShowingSettings = ! ( isLoading && ! hasSettings );
-
-	useConfirmUnsavedChanges( isDirty );
 
 	// Client 11.1.0 settings/settings-manager/index.js:174-198: once settings have loaded, scroll to the
 	// section named by the `anchor` query argument or the URL hash, clear of the admin header.
@@ -2685,24 +2427,8 @@ export const WooPaymentsSettingsPage = () => {
 	return (
 		<section
 			className="woopayments-settings-page"
-			aria-labelledby={ HEADING_ID }
+			aria-labelledby={ WOOPAYMENTS_SETTINGS_HEADING_ID }
 		>
-			<header className="woopayments-settings-page__header">
-				<h1 id={ HEADING_ID }>
-					{ sprintf(
-						/* translators: %s: Payment provider name. */
-						__( '%s settings', 'woocommerce' ),
-						PROVIDER_NAME
-					) }
-				</h1>
-				<p>
-					{ __(
-						'Manage WooPayments payment methods, express checkouts, payouts, notifications, fraud protection, and advanced settings.',
-						'woocommerce'
-					) }
-				</p>
-			</header>
-
 			<ApplePayDomainErrorNotice />
 			<AccountModeNotice isDevModeEnabled={ isDevModeEnabled } />
 

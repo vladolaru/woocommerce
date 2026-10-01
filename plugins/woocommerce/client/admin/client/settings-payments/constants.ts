@@ -8,3 +8,7 @@ export const wooPaymentsOnboardingSessionEntrySettings = 'settings_payments';
 export const wooPaymentsOnboardingSessionEntryLYS = 'lys';
 
 export const WC_SETTINGS_PAYMENTS_NAMESPACE = '/wc-admin/settings/payments';
+
+// The WooPayments settings page heading, rendered by the Payments settings shell and naming the page's section.
+export const WOOPAYMENTS_SETTINGS_HEADING_ID =
+	'woopayments-settings-page-heading';

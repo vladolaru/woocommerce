@@ -605,9 +605,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 	it( 'renders the native settings manager sections', () => {
 		render( <WooPaymentsSettingsPage /> );
 
-		expect(
-			screen.getByRole( 'heading', { name: 'WooPayments settings' } )
-		).toBeInTheDocument();
 		expect( screen.getByText( 'Spotlight promotion' ) ).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'heading', { name: 'General' } )
@@ -4577,74 +4574,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toHaveAttribute( 'aria-disabled', 'true' );
 	} );
 
-	it( 'keeps Save inactive on a clean page and activates it after a real change', async () => {
-		mockUseSettings.mockReturnValue( {
-			isLoading: false,
-			isSaving: false,
-			isDirty: false,
-			saveSettings: mockSaveSettings,
-		} );
-
-		const { rerender } = render( <WooPaymentsSettingsPage /> );
-		const save = screen.getByRole( 'button', { name: 'Save changes' } );
-
-		expect( save ).toHaveAttribute( 'aria-disabled', 'true' );
-		fireEvent.click( save );
-		expect( mockSaveSettings ).not.toHaveBeenCalled();
-
-		mockUseSettings.mockReturnValue( {
-			isLoading: false,
-			isSaving: false,
-			isDirty: true,
-			saveSettings: mockSaveSettings,
-		} );
-		rerender( <WooPaymentsSettingsPage /> );
-
-		expect( save ).not.toHaveAttribute( 'aria-disabled' );
-		await userEvent.click( save );
-		expect( mockSaveSettings ).toHaveBeenCalledTimes( 1 );
-	} );
-
-	// Client 11.1.0 data/settings/actions.js:190-208 reports the save outcome
-	// in a snackbar only; the save bar must not repeat it.
-	it.each( [
-		[ 'succeeds', true, 'Settings saved.' ],
-		[ 'fails', false, 'Error saving settings.' ],
-	] )(
-		'does not repeat the save snackbar in the save bar when the save %s',
-		async ( _outcome, isSuccess, snackbarText ) => {
-			let isDirty = true;
-			mockUseSettings.mockImplementation( () => ( {
-				isLoading: false,
-				isSaving: false,
-				isDirty,
-				saveSettings: mockSaveSettings,
-			} ) );
-			mockSaveSettings.mockImplementation( async () => {
-				isDirty = ! isSuccess;
-				return isSuccess;
-			} );
-
-			const { rerender } = render( <WooPaymentsSettingsPage /> );
-			const save = screen.getByRole( 'button', { name: 'Save changes' } );
-
-			await act( async () => {
-				await userEvent.click( save );
-			} );
-			rerender( <WooPaymentsSettingsPage /> );
-
-			expect( mockSaveSettings ).toHaveBeenCalledTimes( 1 );
-			expect(
-				screen.queryByText( snackbarText )
-			).not.toBeInTheDocument();
-			expect( save ).toHaveAccessibleDescription(
-				isSuccess
-					? 'Settings are up to date.'
-					: 'You have unsaved changes.'
-			);
-		}
-	);
-
 	// Client 11.1.0 settings/settings-manager/index.js:174-198 scrolls to the section named by the
 	// `anchor` query argument or the URL hash once settings have loaded, below the admin header.
 	it.each( [
@@ -4703,38 +4632,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 			}
 		}
 	);
-
-	it( 'asks before leaving only while there are unsaved changes', () => {
-		const leavePage = () => {
-			const event = new Event( 'beforeunload', { cancelable: true } );
-			window.dispatchEvent( event );
-
-			return event.defaultPrevented;
-		};
-		const withDirtyState = ( isDirty: boolean ) =>
-			mockUseSettings.mockReturnValue( {
-				isLoading: false,
-				isSaving: false,
-				isDirty,
-				saveSettings: mockSaveSettings,
-			} );
-
-		withDirtyState( false );
-		const { rerender, unmount } = render( <WooPaymentsSettingsPage /> );
-		expect( leavePage() ).toBe( false );
-
-		// A real change.
-		withDirtyState( true );
-		rerender( <WooPaymentsSettingsPage /> );
-		expect( leavePage() ).toBe( true );
-
-		// The change is undone, so the store reads clean again.
-		withDirtyState( false );
-		rerender( <WooPaymentsSettingsPage /> );
-		expect( leavePage() ).toBe( false );
-
-		unmount();
-	} );
 
 	it( 'names the invalid field in the save bar status when validation blocks saving', () => {
 		mockUseAccountBusinessSupportPhone.mockImplementation( () =>

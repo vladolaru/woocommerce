@@ -1,9 +1,15 @@
 /**
+ * External dependencies
+ */
+import { getHistory } from '@woocommerce/navigation';
+
+/**
  * Internal dependencies
  */
 import {
 	getSettingsPaymentsProviderAdminPath,
 	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
 } from '../utils';
 import {
 	formatDisputeReasonLabel,
@@ -122,6 +128,46 @@ describe( 'getSettingsPaymentsProviderRouteUrl', () => {
 		expect( url.searchParams.get( 'paged' ) ).toBe( '2' );
 		expect( url.searchParams.get( 'pagesize' ) ).toBe( '25' );
 		expect( url.searchParams.get( 'search' ) ).toBe( 'Order #1520' );
+	} );
+} );
+
+describe( 'handleSettingsPaymentsProviderRouteClick', () => {
+	it( 'moves a plain click on a settings subpage link through the shell history instead of reloading', () => {
+		const push = jest
+			.spyOn( getHistory(), 'push' )
+			.mockImplementation( () => undefined );
+		const link = document.createElement( 'a' );
+		const onClick = handleSettingsPaymentsProviderRouteClick(
+			'/woopayments/settings/express-checkout/woopay?from=woopayments-settings'
+		);
+		link.addEventListener( 'click', ( event ) =>
+			onClick( event as unknown as Parameters< typeof onClick >[ 0 ] )
+		);
+
+		try {
+			const plainClick = new window.MouseEvent( 'click', {
+				cancelable: true,
+			} );
+			link.dispatchEvent( plainClick );
+
+			expect( plainClick.defaultPrevented ).toBe( true );
+			expect( push ).toHaveBeenCalledWith(
+				'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay&from=woopayments-settings'
+			);
+
+			// Opening the link in a new tab keeps the browser's own handling.
+			push.mockClear();
+			const newTabClick = new window.MouseEvent( 'click', {
+				cancelable: true,
+				metaKey: true,
+			} );
+			link.dispatchEvent( newTabClick );
+
+			expect( newTabClick.defaultPrevented ).toBe( false );
+			expect( push ).not.toHaveBeenCalled();
+		} finally {
+			push.mockRestore();
+		}
 	} );
 } );
 

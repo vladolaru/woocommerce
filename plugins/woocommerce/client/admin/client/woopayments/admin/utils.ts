@@ -2,6 +2,7 @@
  * External dependencies
  */
 import { getHistory } from '@woocommerce/navigation';
+import type { MouseEvent } from 'react';
 
 export const getSettingsPaymentsProviderAdminPath = ( path: string ) => {
 	const queryIndex = path.indexOf( '?' );
@@ -50,3 +51,27 @@ export const navigateToSettingsPaymentsProviderRoute = (
 		getHistory().push( adminPath );
 	}
 };
+
+/**
+ * Click handler for a link to another settings-shell route: a plain click moves through the shell's history, as
+ * core's BackButton does with `isRoute`, so the page does not reload. Modified or non-primary clicks, and clicks a
+ * caller already prevented, keep the browser's own handling of the link's href.
+ *
+ * @param path The route path, with its query.
+ */
+export const handleSettingsPaymentsProviderRouteClick =
+	( path: string ) => ( event: MouseEvent< HTMLElement > ) => {
+		if (
+			event.defaultPrevented ||
+			event.button !== 0 ||
+			event.metaKey ||
+			event.ctrlKey ||
+			event.shiftKey ||
+			event.altKey
+		) {
+			return;
+		}
+
+		event.preventDefault();
+		navigateToSettingsPaymentsProviderRoute( path );
+	};

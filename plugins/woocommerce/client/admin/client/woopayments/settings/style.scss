@@ -1,26 +1,8 @@
+// The page sits under core's offline payments header (settings-payments/index.tsx), so it takes that header's inset.
 .woopayments-settings-page {
 	max-width: 1120px;
-	margin: 32px 12px 16px;
+	margin: 24px 48px 16px;
 	color: $gray-900;
-
-	&__header {
-		max-width: 760px;
-		margin-bottom: 24px;
-
-		h1 {
-			margin: 0;
-			font-size: 24px;
-			line-height: 32px;
-			font-weight: 600;
-		}
-
-		p {
-			margin: 8px 0 0;
-			color: $gray-700;
-			font-size: 13px;
-			line-height: 20px;
-		}
-	}
 
 	.woopayments-settings-loadable-placeholder-group {
 		display: grid;
@@ -85,6 +67,10 @@
 		font-size: 13px;
 		line-height: 20px;
 
+		&:first-child {
+			margin-top: 0;
+		}
+
 		p {
 			margin: 0 0 8px;
 		}
@@ -94,6 +80,13 @@
 		box-sizing: border-box;
 		width: 100%;
 		padding: 24px;
+	}
+
+	// Controls that bring their own cards stack them.
+	&__controls:not(.components-card) {
+		display: grid;
+		gap: 16px;
+		align-content: start;
 	}
 }
 
@@ -768,5 +761,41 @@
 		&.is-error {
 			color: $alert-red;
 		}
+	}
+}
+
+.woopayments-settings-busy-state {
+	&__status {
+		display: block;
+	}
+
+	&__content {
+		transition: opacity 120ms ease;
+	}
+
+	&.is-busy &__content {
+		cursor: progress;
+		opacity: 0.55;
+	}
+}
+
+// The fee and promotion details open in a core Popover, outside the payment method row; this lays out their rows.
+.woopayments-settings-payment-method-item__details-popover {
+	display: grid;
+	gap: 8px;
+	min-width: 240px;
+	max-width: 320px;
+	padding: 12px;
+	font-size: 12px;
+	line-height: 18px;
+
+	> span {
+		display: flex;
+		justify-content: space-between;
+		gap: 16px;
+	}
+
+	p {
+		margin: 0;
 	}
 }
