@@ -81,7 +81,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'window.multiCurrencyPaymentMethodsMap = {"EUR":{"bancontact":"Bancontact"}};', $markup );
 		// The client's dialog shows each method's settings icon (payment-methods-map.tsx:21-33, from get_settings_icon_url()).
 		$this->assertStringContainsString(
-			'window.multiCurrencyPaymentMethodIcons = ' . wp_json_encode( array( 'bancontact' => WC()->plugin_url() . '/assets/images/payment-methods/bancontact.svg' ) ) . ';',
+			'window.multiCurrencyPaymentMethodIcons = ' . wp_json_encode( array( 'bancontact' => WC()->plugin_url() . '/assets/images/payment-methods/bancontact-color.svg' ) ) . ';',
 			$markup
 		);
 	}
