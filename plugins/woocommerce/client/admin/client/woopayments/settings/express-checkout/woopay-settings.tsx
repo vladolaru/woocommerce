@@ -25,8 +25,8 @@ import { ExpressCheckoutAppearanceSettings } from './appearance-settings';
 import {
 	ExpressCheckoutInlineNotice,
 	ExpressCheckoutLocationCheckboxes,
-	ExpressCheckoutSettingsSection,
 } from './components';
+import { SettingsSection } from '../settings-shell';
 import { ExpressCheckoutMethodIcons } from './method-icons';
 import { TextLink } from '../text-link';
 import {
@@ -290,9 +290,10 @@ export const WooPaySettings = () => {
 
 	return (
 		<>
-			<ExpressCheckoutSettingsSection
+			<SettingsSection
 				className="woopayments-express-checkout-settings__enable"
 				title={ __( 'WooPay', 'woocommerce' ) }
+				hideTitle
 				description={
 					<>
 						<ExpressCheckoutMethodIcons methodId="woopay" />
@@ -375,13 +376,10 @@ export const WooPaySettings = () => {
 					isMethodEnabled={ isWooPayEnabled }
 					onChange={ updateWooPayLocation }
 				/>
-			</ExpressCheckoutSettingsSection>
-			<ExpressCheckoutSettingsSection
+			</SettingsSection>
+			<SettingsSection
 				className="woopayments-express-checkout-settings__appearance-card"
 				title={ __( 'Checkout appearance', 'woocommerce' ) }
-				description={
-					<h2>{ __( 'Checkout appearance', 'woocommerce' ) }</h2>
-				}
 			>
 				<WooPayLogoUpload
 					logoId={ wooPayStoreLogo }
@@ -471,14 +469,13 @@ export const WooPaySettings = () => {
 						/>
 					</div>
 				</BaseControl>
-			</ExpressCheckoutSettingsSection>
+			</SettingsSection>
 			{ featureFlags.woopayExpressCheckout && (
-				<ExpressCheckoutSettingsSection
+				<SettingsSection
 					className="woopayments-express-checkout-settings__general"
 					title={ __( 'Settings', 'woocommerce' ) }
 					description={
 						<>
-							<h2>{ __( 'Settings', 'woocommerce' ) }</h2>
 							<p>
 								{ __(
 									'Configure the display of WooPay buttons on your store.',
@@ -489,7 +486,7 @@ export const WooPaySettings = () => {
 					}
 				>
 					<ExpressCheckoutAppearanceSettings currentMethod="woopay" />
-				</ExpressCheckoutSettingsSection>
+				</SettingsSection>
 			) }
 		</>
 	);

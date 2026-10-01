@@ -1,29 +1,4 @@
 .woopayments-express-checkout-settings {
-	max-width: 1120px;
-	margin: 32px 12px 16px;
-	color: $gray-900;
-
-	// Like the client's settings layout, no side inset below 961px, so the checkout preview keeps its width at 360px.
-	@media (max-width: 960px) {
-		margin-inline: 0;
-	}
-
-	&__header {
-		max-width: 760px;
-		margin-bottom: 24px;
-
-		// The client's back arrow and title, at the size core's offline payments header uses.
-		h1 {
-			display: flex;
-			align-items: center;
-			margin: 0;
-			padding: 0;
-			font-size: 16px;
-			line-height: 24px;
-			font-weight: 600;
-		}
-	}
-
 	// Client 11.1.0 express-checkout-settings/index.scss:25-39 and the `payment-method__icon` ring in client/style.scss.
 	&__icons {
 		display: flex;
@@ -50,48 +25,12 @@
 		}
 	}
 
-	&__section {
-		display: grid;
-		grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-		gap: 24px;
-		padding: 24px 0;
-
-		@include breakpoint("<782px") {
-			grid-template-columns: minmax(0, 1fr);
-			gap: 12px;
-		}
+	.woopayments-settings-section__controls .components-base-control {
+		margin-bottom: 16px;
 	}
 
-	&__section-description {
-		h2 {
-			margin: 0;
-			font-size: 16px;
-			line-height: 24px;
-			font-weight: 600;
-		}
-
-		p {
-			margin: 8px 0 0;
-			color: $gray-700;
-			font-size: 13px;
-			line-height: 20px;
-		}
-	}
-
-	&__section-controls.components-card {
-		box-sizing: border-box;
-		width: 100%;
-		padding: 24px;
-
-		.components-base-control {
-			margin-bottom: 16px;
-		}
-
-		.woopayments-express-checkout-settings__locations {
-			.components-base-control {
-				margin-bottom: 0;
-			}
-		}
+	&__locations .components-base-control {
+		margin-bottom: 0;
 	}
 
 	&__locations {
@@ -569,24 +508,5 @@
 		color: $gray-900;
 		font-size: 12px;
 		line-height: 18px;
-	}
-
-	&__busy-state {
-		position: relative;
-	}
-
-	&__busy-overlay {
-		position: sticky;
-		top: 0;
-		z-index: 2;
-		display: inline-flex;
-		align-items: center;
-		gap: 8px;
-		margin-bottom: 16px;
-		padding: 8px 12px;
-		border: 1px solid $gray-200;
-		border-radius: 2px;
-		background: $white;
-		color: $gray-700;
 	}
 }

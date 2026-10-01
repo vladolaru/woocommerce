@@ -5,6 +5,7 @@ import { dispatch } from '@wordpress/data';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
+import { getHistory } from '@woocommerce/navigation';
 
 /**
  * Internal dependencies
@@ -171,6 +172,13 @@ const setHookDefaults = () => {
 	} );
 };
 
+const leavePage = () => {
+	const event = new Event( 'beforeunload', { cancelable: true } );
+	window.dispatchEvent( event );
+
+	return event.defaultPrevented;
+};
+
 describe( 'fraud protection advanced ruleset utilities', () => {
 	it( 'reads and writes provider fraud rulesets', () => {
 		const uiSettings = readRuleset(
@@ -326,12 +334,10 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 
 		render( <FraudProtectionAdvancedSettingsPage /> );
 
-		expect(
-			document.querySelector( '.woopayments-fraud-protection-advanced' )
-		).toHaveAttribute( 'aria-busy', 'true' );
+		expect( screen.getByText( 'Saving…' ) ).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'button', { name: 'Save changes' } )
-		).toBeDisabled();
+		).toHaveAttribute( 'aria-disabled', 'true' );
 	} );
 
 	it( 'renders the advanced fraud protection rule configuration page', async () => {
@@ -348,25 +354,20 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 				name: 'Back to WooPayments settings',
 			} )
 		).not.toBeInTheDocument();
-		const originalLocation = window.location;
-		Object.defineProperty( window, 'location', {
-			configurable: true,
-			value: { href: '' },
-		} );
+		const push = jest
+			.spyOn( getHistory(), 'push' )
+			.mockImplementation( () => undefined );
 		try {
 			await userEvent.click(
 				within( pageTitle ).getByRole( 'button', {
 					name: 'Advanced fraud protection',
 				} )
 			);
-			expect( window.location.href ).toContain(
-				'path=%2Fwoopayments%2Fsettings'
+			expect( push ).toHaveBeenCalledWith(
+				'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings'
 			);
 		} finally {
-			Object.defineProperty( window, 'location', {
-				configurable: true,
-				value: originalLocation,
-			} );
+			push.mockRestore();
 		}
 		expect(
 			screen.getByRole( 'heading', { name: 'Filter configuration' } )
@@ -898,7 +899,7 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 		await waitFor( () =>
 			expect(
 				screen.getByRole( 'button', { name: 'Save changes' } )
-			).toBeDisabled()
+			).toHaveAttribute( 'aria-disabled', 'true' )
 		);
 	} );
 
@@ -1037,24 +1038,17 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 		expect( mockSaveSettings ).not.toHaveBeenCalled();
 	} );
 
-	it( 'does not clobber existing beforeunload handlers while tracking dirty state', async () => {
-		const existingBeforeUnloadHandler = jest.fn();
-		window.onbeforeunload = existingBeforeUnloadHandler;
-
+	it( 'asks before leaving while filter changes are unsaved', async () => {
 		const { unmount } = render( <FraudProtectionAdvancedSettingsPage /> );
+		expect( leavePage() ).toBe( false );
 
 		await userEvent.click(
 			screen.getByRole( 'checkbox', {
 				name: 'Enable AVS Mismatch filter',
 			} )
 		);
-
-		expect( window.onbeforeunload ).toBe( existingBeforeUnloadHandler );
+		expect( leavePage() ).toBe( true );
 
 		unmount();
-
-		expect( window.onbeforeunload ).toBe( existingBeforeUnloadHandler );
-
-		window.onbeforeunload = null;
 	} );
 } );

@@ -2,7 +2,6 @@
  * External dependencies
  */
 import {
-	Button,
 	Card,
 	ExternalLink,
 	Notice,
@@ -26,9 +25,10 @@ import type { KeyboardEvent, ReactNode } from 'react';
 /**
  * Internal dependencies
  */
-import { BackButton } from '~/settings-payments/components/buttons/back-button';
-import { getSettingsPaymentsProviderRouteUrl } from '../../../admin/utils';
 import '../../../../settings-payments/settings-payments-body.scss';
+import { SettingsBusyState } from '../../settings-busy-state';
+import { SettingsSaveBar, SettingsSection } from '../../settings-shell';
+import { SettingsSubpage } from '../../settings-subpage';
 import {
 	useAdvancedFraudProtectionSettings,
 	useCurrentProtectionLevel,
@@ -649,34 +649,48 @@ const ThresholdControls = ( {
 	);
 };
 
-const AdvancedFraudSettingsDescription = () => (
-	<>
-		<h2>{ __( 'Filter configuration', 'woocommerce' ) }</h2>
-		<p>
-			{ __(
-				'Set up advanced fraud filters. Enable at least one filter to activate advanced protection.',
-				'woocommerce'
-			) }
-		</p>
-	</>
+const ADVANCED_FRAUD_HEADING_ID =
+	'woopayments-fraud-protection-advanced-heading';
+
+// Client 11.1.0 advanced-settings/index.tsx:74-100 puts a back arrow before the page title.
+const AdvancedFraudProtectionSubpage = ( {
+	isBusy,
+	children,
+}: {
+	isBusy?: boolean;
+	children: ReactNode;
+} ) => (
+	<SettingsSubpage
+		headingId={ ADVANCED_FRAUD_HEADING_ID }
+		title={ __( 'Advanced fraud protection', 'woocommerce' ) }
+		backPath="/woopayments/settings"
+		from="woopayments_fraud_protection_settings"
+		className="woopayments-fraud-protection-advanced"
+		isBusy={ isBusy }
+	>
+		{ children }
+	</SettingsSubpage>
 );
 
-// Client 11.1.0 puts a back arrow before the page title (advanced-settings/index.tsx:74-100).
-const AdvancedFraudProtectionTitle = () => (
-	<h1>
-		<BackButton
-			href={ getSettingsPaymentsProviderRouteUrl(
-				'/woopayments/settings'
-			) }
-			tooltipText={ __(
-				'Return to WooPayments settings',
-				'woocommerce'
-			) }
-			from="woopayments_fraud_protection_settings"
-		>
-			{ __( 'Advanced fraud protection', 'woocommerce' ) }
-		</BackButton>
-	</h1>
+const AdvancedFraudSettingsSection = ( {
+	children,
+}: {
+	children: ReactNode;
+} ) => (
+	<SettingsSection
+		title={ __( 'Filter configuration', 'woocommerce' ) }
+		description={
+			<p>
+				{ __(
+					'Set up advanced fraud filters. Enable at least one filter to activate advanced protection.',
+					'woocommerce'
+				) }
+			</p>
+		}
+		hasCard={ false }
+	>
+		{ children }
+	</SettingsSection>
 );
 
 export const FraudProtectionAdvancedSettingsPage = () => {
@@ -709,29 +723,6 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 
 		setProtectionSettingsUI( readRuleset( ruleset, environment ) );
 	}, [ advancedFraudProtectionSettings, environment ] );
-
-	useEffect( () => {
-		if ( ! isDirty ) {
-			return;
-		}
-
-		const handleBeforeUnload = ( event: BeforeUnloadEvent ) => {
-			const message = __(
-				'There are unsaved changes on this page. Are you sure you want to leave and discard the unsaved changes?',
-				'woocommerce'
-			);
-			event.preventDefault();
-			event.returnValue = message;
-
-			return message;
-		};
-
-		window.addEventListener( 'beforeunload', handleBeforeUnload );
-
-		return () => {
-			window.removeEventListener( 'beforeunload', handleBeforeUnload );
-		};
-	}, [ isDirty ] );
 
 	useEffect( () => {
 		if ( ! validationError ) {
@@ -830,29 +821,27 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 
 	if ( isLoading ) {
 		return (
-			<section
-				className="woopayments-fraud-protection-advanced"
-				aria-busy="true"
-			>
-				<AdvancedFraudProtectionTitle />
-				<div className="woopayments-fraud-protection-advanced__description">
-					<AdvancedFraudSettingsDescription />
-				</div>
-				<div
-					className="screen-reader-text"
-					role="status"
-					aria-live="polite"
-				>
-					{ __( 'Loading fraud protection rules', 'woocommerce' ) }
-				</div>
-				<div className="woopayments-fraud-protection-advanced__rules">
-					{ Object.keys( ADVANCED_RULE_CARD_VIEW_EVENTS ).map(
-						( cardId ) => (
-							<LoadingRuleCard key={ cardId } id={ cardId } />
-						)
-					) }
-				</div>
-			</section>
+			<AdvancedFraudProtectionSubpage isBusy>
+				<AdvancedFraudSettingsSection>
+					<div
+						className="screen-reader-text"
+						role="status"
+						aria-live="polite"
+					>
+						{ __(
+							'Loading fraud protection rules',
+							'woocommerce'
+						) }
+					</div>
+					<div className="woopayments-fraud-protection-advanced__rules">
+						{ Object.keys( ADVANCED_RULE_CARD_VIEW_EVENTS ).map(
+							( cardId ) => (
+								<LoadingRuleCard key={ cardId } id={ cardId } />
+							)
+						) }
+					</div>
+				</AdvancedFraudSettingsSection>
+			</AdvancedFraudProtectionSubpage>
 		);
 	}
 
@@ -866,373 +855,409 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 		Object.keys( settings ).length === 0;
 
 	return (
-		<section
-			className="woopayments-fraud-protection-advanced"
-			aria-busy={ isSaving ? 'true' : undefined }
-		>
-			<AdvancedFraudProtectionTitle />
-			<div className="woopayments-fraud-protection-advanced__description">
-				<AdvancedFraudSettingsDescription />
-			</div>
-			{ validationError && (
-				<div
-					className="woopayments-fraud-protection-advanced__error"
-					ref={ validationErrorRef }
-					tabIndex={ -1 }
-				>
-					<Notice status="error" isDismissible={ false }>
-						{ sprintf(
-							/* translators: %s: Advanced fraud rule validation error. */
-							__( 'Settings were not saved. %s', 'woocommerce' ),
-							validationError
-						) }
-					</Notice>
-				</div>
-			) }
-			{ hasAdvancedFraudProtectionSettingsError ? (
-				<Notice status="error" isDismissible={ false }>
-					{ __(
-						'There was an error retrieving your fraud protection settings. Please refresh the page to try again.',
-						'woocommerce'
-					) }
-				</Notice>
-			) : (
-				<>
-					<div className="woopayments-fraud-protection-advanced__rules">
-						<RuleCard
-							id="avs-mismatch-card"
-							title={ __( 'AVS Mismatch', 'woocommerce' ) }
+		<AdvancedFraudProtectionSubpage>
+			<SettingsBusyState isBusy={ Boolean( isSaving ) }>
+				<AdvancedFraudSettingsSection>
+					{ validationError && (
+						<div
+							className="woopayments-fraud-protection-advanced__error"
+							ref={ validationErrorRef }
+							tabIndex={ -1 }
 						>
-							{ ! isSellingToSupportedAvsLocations && (
-								<Notice
-									status="warning"
-									isDismissible={ false }
-								>
-									{ createInterpolateElement(
-										__(
-											'AVS checks are commonly supported only for cards issued in the United States, Canada, and the United Kingdom. None of your <a>selling locations</a> support AVS, so this filter is unlikely to block any payments.',
-											'woocommerce'
-										),
-										{
-											a: (
-												// eslint-disable-next-line jsx-a11y/anchor-has-content
-												<a
-													href={ getWooCommerceGeneralSettingsUrl() }
-												/>
-											),
-										}
-									) }
-								</Notice>
-							) }
-							<RuleToggle
-								setting={ Rules.RULE_AVS_VERIFICATION }
-								ruleTitle={ __(
-									'AVS Mismatch',
-									'woocommerce'
+							<Notice status="error" isDismissible={ false }>
+								{ sprintf(
+									/* translators: %s: Advanced fraud rule validation error. */
+									__(
+										'Settings were not saved. %s',
+										'woocommerce'
+									),
+									validationError
 								) }
-								label={ __(
-									'Enable AVS Mismatch filter',
-									'woocommerce'
-								) }
-								description={ __(
-									'This filter compares the post code submitted by the customer against the post code on file with the card issuer. The payment will be blocked if the two post codes do not match. AVS checks are not supported by every country or card issuer, so this filter will not block all payments with a mismatched post code.',
-									'woocommerce'
-								) }
-								settings={ protectionSettingsUI }
-								onSettingsChange={ updateProtectionSettingsUI }
-								isReviewFeatureActive={
-									environment.isReviewFeatureActive
-								}
-							/>
-							<RuleDescription>
-								{ __(
-									'Buyers who can provide correct post code on file with the issuing bank are more likely to be the actual account holder.',
-									'woocommerce'
-								) }
-							</RuleDescription>
-						</RuleCard>
-						<RuleCard
-							id="international-ip-address-card"
-							title={ __(
-								'International IP Address',
+							</Notice>
+						</div>
+					) }
+					{ hasAdvancedFraudProtectionSettingsError ? (
+						<Notice status="error" isDismissible={ false }>
+							{ __(
+								'There was an error retrieving your fraud protection settings. Please refresh the page to try again.',
 								'woocommerce'
 							) }
-						>
-							{ supportsAllCountries ? (
-								<Notice
-									status="warning"
-									isDismissible={ false }
-								>
-									{ __(
-										"This filter is disabled because you're currently selling to all countries.",
+						</Notice>
+					) : (
+						<>
+							<div className="woopayments-fraud-protection-advanced__rules">
+								<RuleCard
+									id="avs-mismatch-card"
+									title={ __(
+										'AVS Mismatch',
 										'woocommerce'
 									) }
-								</Notice>
-							) : (
-								<RuleToggle
-									setting={
-										Rules.RULE_INTERNATIONAL_IP_ADDRESS
-									}
-									ruleTitle={ __(
+								>
+									{ ! isSellingToSupportedAvsLocations && (
+										<Notice
+											status="warning"
+											isDismissible={ false }
+										>
+											{ createInterpolateElement(
+												__(
+													'AVS checks are commonly supported only for cards issued in the United States, Canada, and the United Kingdom. None of your <a>selling locations</a> support AVS, so this filter is unlikely to block any payments.',
+													'woocommerce'
+												),
+												{
+													a: (
+														// eslint-disable-next-line jsx-a11y/anchor-has-content
+														<a
+															href={ getWooCommerceGeneralSettingsUrl() }
+														/>
+													),
+												}
+											) }
+										</Notice>
+									) }
+									<RuleToggle
+										setting={ Rules.RULE_AVS_VERIFICATION }
+										ruleTitle={ __(
+											'AVS Mismatch',
+											'woocommerce'
+										) }
+										label={ __(
+											'Enable AVS Mismatch filter',
+											'woocommerce'
+										) }
+										description={ __(
+											'This filter compares the post code submitted by the customer against the post code on file with the card issuer. The payment will be blocked if the two post codes do not match. AVS checks are not supported by every country or card issuer, so this filter will not block all payments with a mismatched post code.',
+											'woocommerce'
+										) }
+										settings={ protectionSettingsUI }
+										onSettingsChange={
+											updateProtectionSettingsUI
+										}
+										isReviewFeatureActive={
+											environment.isReviewFeatureActive
+										}
+									/>
+									<RuleDescription>
+										{ __(
+											'Buyers who can provide correct post code on file with the issuing bank are more likely to be the actual account holder.',
+											'woocommerce'
+										) }
+									</RuleDescription>
+								</RuleCard>
+								<RuleCard
+									id="international-ip-address-card"
+									title={ __(
 										'International IP Address',
 										'woocommerce'
 									) }
-									label={ __(
-										'Enable International IP Address filter',
-										'woocommerce'
-									) }
-									description={ createInterpolateElement(
-										__(
-											'This filter screens for <ipAddressLink>IP addresses</ipAddressLink> outside of your <supportedCountriesLink>supported countries</supportedCountriesLink>. When enabled the payment will be blocked.',
-											'woocommerce'
-										),
-										{
-											ipAddressLink: (
-												<ExternalLink
-													href={ IP_ADDRESS_DOC_URL }
-												>
-													{ null }
-												</ExternalLink>
-											),
-											supportedCountriesLink: (
-												// eslint-disable-next-line jsx-a11y/anchor-has-content
-												<a
-													href={ getWooCommerceGeneralSettingsUrl() }
-												/>
-											),
-										}
-									) }
-									settings={ protectionSettingsUI }
-									onSettingsChange={
-										updateProtectionSettingsUI
-									}
-									isReviewFeatureActive={
-										environment.isReviewFeatureActive
-									}
-								/>
-							) }
-							{ ! supportsAllCountries && (
-								<AllowedCountriesNotice
-									environment={ environment }
-									settings={ protectionSettingsUI }
-								/>
-							) }
-							<RuleDescription>
-								{ __(
-									'You should be especially wary when a customer has an international IP address but uses domestic billing and shipping information. Fraudsters often pretend to live in one location, but live and shop from another.',
-									'woocommerce'
-								) }
-							</RuleDescription>
-						</RuleCard>
-						<RuleCard
-							id="ip-address-mismatch-card"
-							title={ __( 'IP Address Mismatch', 'woocommerce' ) }
-						>
-							<RuleToggle
-								setting={ Rules.RULE_IP_ADDRESS_MISMATCH }
-								ruleTitle={ __(
-									'IP Address Mismatch',
-									'woocommerce'
-								) }
-								label={ __(
-									'Enable IP Address Mismatch filter',
-									'woocommerce'
-								) }
-								description={ createInterpolateElement(
-									__(
-										"This filter screens for customer's <a>IP address</a> to see if it is in a different country than indicated in their billing address. When enabled the payment will be blocked.",
-										'woocommerce'
-									),
-									{
-										a: (
-											<ExternalLink
-												href={ IP_ADDRESS_DOC_URL }
-											>
-												{ null }
-											</ExternalLink>
-										),
-									}
-								) }
-								settings={ protectionSettingsUI }
-								onSettingsChange={ updateProtectionSettingsUI }
-								isReviewFeatureActive={
-									environment.isReviewFeatureActive
-								}
-							/>
-							<RuleDescription>
-								{ __(
-									'Fraudulent transactions often use fake addresses to place orders. If the IP address seems to be in one country, but the billing address is in another, that could signal potential fraud.',
-									'woocommerce'
-								) }
-							</RuleDescription>
-						</RuleCard>
-						<RuleCard
-							id="address-mismatch-card"
-							title={ __( 'Address Mismatch', 'woocommerce' ) }
-						>
-							<RuleToggle
-								setting={ Rules.RULE_ADDRESS_MISMATCH }
-								ruleTitle={ __(
-									'Address Mismatch',
-									'woocommerce'
-								) }
-								label={ __(
-									'Enable Address Mismatch filter',
-									'woocommerce'
-								) }
-								description={ __(
-									'This filter screens for differences between the shipping information and the billing information (country). When enabled the payment will be blocked.',
-									'woocommerce'
-								) }
-								settings={ protectionSettingsUI }
-								onSettingsChange={ updateProtectionSettingsUI }
-								isReviewFeatureActive={
-									environment.isReviewFeatureActive
-								}
-							/>
-							<RuleDescription>
-								{ __(
-									'There are legitimate reasons for a billing/shipping mismatch with a customer purchase, but a mismatch could also indicate that someone is using a stolen identity to complete a purchase.',
-									'woocommerce'
-								) }
-							</RuleDescription>
-						</RuleCard>
-						<RuleCard
-							id="purchase-price-threshold-card"
-							title={ __(
-								'Purchase Price Threshold',
-								'woocommerce'
-							) }
-						>
-							<RuleToggle
-								setting={ Rules.RULE_PURCHASE_PRICE_THRESHOLD }
-								ruleTitle={ __(
-									'Purchase Price Threshold',
-									'woocommerce'
-								) }
-								label={ __(
-									'Enable Purchase Price Threshold filter',
-									'woocommerce'
-								) }
-								description={ __(
-									'This filter compares the purchase price of an order to the minimum and maximum purchase amounts that you specify. When enabled the payment will be blocked.',
-									'woocommerce'
-								) }
-								settings={ protectionSettingsUI }
-								onSettingsChange={ updateProtectionSettingsUI }
-								isReviewFeatureActive={
-									environment.isReviewFeatureActive
-								}
-							>
-								<ThresholdControls
-									setting={
-										Rules.RULE_PURCHASE_PRICE_THRESHOLD
-									}
-									settings={ protectionSettingsUI }
-									onSettingsChange={
-										updateProtectionSettingsUI
-									}
-									environment={ environment }
-								/>
-							</RuleToggle>
-							<RuleDescription>
-								{ __(
-									'An unusually high purchase amount, compared to the average for your business, can indicate potential fraudulent activity.',
-									'woocommerce'
-								) }
-							</RuleDescription>
-						</RuleCard>
-						<RuleCard
-							id="order-items-threshold-card"
-							title={ __(
-								'Order Items Threshold',
-								'woocommerce'
-							) }
-						>
-							<RuleToggle
-								setting={ Rules.RULE_ORDER_ITEMS_THRESHOLD }
-								ruleTitle={ __(
-									'Order Items Threshold',
-									'woocommerce'
-								) }
-								label={ __(
-									'Enable Order Items Threshold filter',
-									'woocommerce'
-								) }
-								description={ __(
-									'This filter compares the amount of items in an order to the minimum and maximum counts that you specify. When enabled the payment will be blocked.',
-									'woocommerce'
-								) }
-								settings={ protectionSettingsUI }
-								onSettingsChange={ updateProtectionSettingsUI }
-								isReviewFeatureActive={
-									environment.isReviewFeatureActive
-								}
-							>
-								<ThresholdControls
-									setting={ Rules.RULE_ORDER_ITEMS_THRESHOLD }
-									settings={ protectionSettingsUI }
-									onSettingsChange={
-										updateProtectionSettingsUI
-									}
-									environment={ environment }
-								/>
-							</RuleToggle>
-							<RuleDescription>
-								{ __(
-									'An unusually high item count, compared to the average for your business, can indicate potential fraudulent activity.',
-									'woocommerce'
-								) }
-							</RuleDescription>
-						</RuleCard>
-						<RuleCard
-							id="cvc-verification-card"
-							title={ __( 'CVC Verification', 'woocommerce' ) }
-						>
-							<Notice status="warning" isDismissible={ false }>
-								{ environment.isCvcFailureDeclineEnabled ? (
-									<>
-										{ __(
-											'For security, this filter is enabled and cannot be modified. Payments failing CVC verification will be blocked.',
-											'woocommerce'
-										) }{ ' ' }
-										<ExternalLink
-											href={ CVC_VERIFICATION_DOC_URL }
+								>
+									{ supportsAllCountries ? (
+										<Notice
+											status="warning"
+											isDismissible={ false }
 										>
 											{ __(
-												'Learn more',
+												"This filter is disabled because you're currently selling to all countries.",
 												'woocommerce'
 											) }
-										</ExternalLink>
-									</>
-								) : (
-									__(
-										'This filter is disabled, and cannot be modified.',
+										</Notice>
+									) : (
+										<RuleToggle
+											setting={
+												Rules.RULE_INTERNATIONAL_IP_ADDRESS
+											}
+											ruleTitle={ __(
+												'International IP Address',
+												'woocommerce'
+											) }
+											label={ __(
+												'Enable International IP Address filter',
+												'woocommerce'
+											) }
+											description={ createInterpolateElement(
+												__(
+													'This filter screens for <ipAddressLink>IP addresses</ipAddressLink> outside of your <supportedCountriesLink>supported countries</supportedCountriesLink>. When enabled the payment will be blocked.',
+													'woocommerce'
+												),
+												{
+													ipAddressLink: (
+														<ExternalLink
+															href={
+																IP_ADDRESS_DOC_URL
+															}
+														>
+															{ null }
+														</ExternalLink>
+													),
+													supportedCountriesLink: (
+														// eslint-disable-next-line jsx-a11y/anchor-has-content
+														<a
+															href={ getWooCommerceGeneralSettingsUrl() }
+														/>
+													),
+												}
+											) }
+											settings={ protectionSettingsUI }
+											onSettingsChange={
+												updateProtectionSettingsUI
+											}
+											isReviewFeatureActive={
+												environment.isReviewFeatureActive
+											}
+										/>
+									) }
+									{ ! supportsAllCountries && (
+										<AllowedCountriesNotice
+											environment={ environment }
+											settings={ protectionSettingsUI }
+										/>
+									) }
+									<RuleDescription>
+										{ __(
+											'You should be especially wary when a customer has an international IP address but uses domestic billing and shipping information. Fraudsters often pretend to live in one location, but live and shop from another.',
+											'woocommerce'
+										) }
+									</RuleDescription>
+								</RuleCard>
+								<RuleCard
+									id="ip-address-mismatch-card"
+									title={ __(
+										'IP Address Mismatch',
 										'woocommerce'
-									)
-								) }
-							</Notice>
-							<RuleDescription>
-								{ __(
-									'Because the card security code appears only on the card and not on receipts or statements, the card security code provides some assurance that the physical card is in the possession of the buyer.',
-									'woocommerce'
-								) }
-							</RuleDescription>
-						</RuleCard>
-					</div>
-					<div className="woopayments-fraud-protection-advanced__footer">
-						<Button
-							variant="primary"
-							isBusy={ isSaving }
-							disabled={ isSaving || ! isDirty }
-							onClick={ handleSaveSettings }
-						>
-							{ __( 'Save changes', 'woocommerce' ) }
-						</Button>
-					</div>
-				</>
-			) }
-		</section>
+									) }
+								>
+									<RuleToggle
+										setting={
+											Rules.RULE_IP_ADDRESS_MISMATCH
+										}
+										ruleTitle={ __(
+											'IP Address Mismatch',
+											'woocommerce'
+										) }
+										label={ __(
+											'Enable IP Address Mismatch filter',
+											'woocommerce'
+										) }
+										description={ createInterpolateElement(
+											__(
+												"This filter screens for customer's <a>IP address</a> to see if it is in a different country than indicated in their billing address. When enabled the payment will be blocked.",
+												'woocommerce'
+											),
+											{
+												a: (
+													<ExternalLink
+														href={
+															IP_ADDRESS_DOC_URL
+														}
+													>
+														{ null }
+													</ExternalLink>
+												),
+											}
+										) }
+										settings={ protectionSettingsUI }
+										onSettingsChange={
+											updateProtectionSettingsUI
+										}
+										isReviewFeatureActive={
+											environment.isReviewFeatureActive
+										}
+									/>
+									<RuleDescription>
+										{ __(
+											'Fraudulent transactions often use fake addresses to place orders. If the IP address seems to be in one country, but the billing address is in another, that could signal potential fraud.',
+											'woocommerce'
+										) }
+									</RuleDescription>
+								</RuleCard>
+								<RuleCard
+									id="address-mismatch-card"
+									title={ __(
+										'Address Mismatch',
+										'woocommerce'
+									) }
+								>
+									<RuleToggle
+										setting={ Rules.RULE_ADDRESS_MISMATCH }
+										ruleTitle={ __(
+											'Address Mismatch',
+											'woocommerce'
+										) }
+										label={ __(
+											'Enable Address Mismatch filter',
+											'woocommerce'
+										) }
+										description={ __(
+											'This filter screens for differences between the shipping information and the billing information (country). When enabled the payment will be blocked.',
+											'woocommerce'
+										) }
+										settings={ protectionSettingsUI }
+										onSettingsChange={
+											updateProtectionSettingsUI
+										}
+										isReviewFeatureActive={
+											environment.isReviewFeatureActive
+										}
+									/>
+									<RuleDescription>
+										{ __(
+											'There are legitimate reasons for a billing/shipping mismatch with a customer purchase, but a mismatch could also indicate that someone is using a stolen identity to complete a purchase.',
+											'woocommerce'
+										) }
+									</RuleDescription>
+								</RuleCard>
+								<RuleCard
+									id="purchase-price-threshold-card"
+									title={ __(
+										'Purchase Price Threshold',
+										'woocommerce'
+									) }
+								>
+									<RuleToggle
+										setting={
+											Rules.RULE_PURCHASE_PRICE_THRESHOLD
+										}
+										ruleTitle={ __(
+											'Purchase Price Threshold',
+											'woocommerce'
+										) }
+										label={ __(
+											'Enable Purchase Price Threshold filter',
+											'woocommerce'
+										) }
+										description={ __(
+											'This filter compares the purchase price of an order to the minimum and maximum purchase amounts that you specify. When enabled the payment will be blocked.',
+											'woocommerce'
+										) }
+										settings={ protectionSettingsUI }
+										onSettingsChange={
+											updateProtectionSettingsUI
+										}
+										isReviewFeatureActive={
+											environment.isReviewFeatureActive
+										}
+									>
+										<ThresholdControls
+											setting={
+												Rules.RULE_PURCHASE_PRICE_THRESHOLD
+											}
+											settings={ protectionSettingsUI }
+											onSettingsChange={
+												updateProtectionSettingsUI
+											}
+											environment={ environment }
+										/>
+									</RuleToggle>
+									<RuleDescription>
+										{ __(
+											'An unusually high purchase amount, compared to the average for your business, can indicate potential fraudulent activity.',
+											'woocommerce'
+										) }
+									</RuleDescription>
+								</RuleCard>
+								<RuleCard
+									id="order-items-threshold-card"
+									title={ __(
+										'Order Items Threshold',
+										'woocommerce'
+									) }
+								>
+									<RuleToggle
+										setting={
+											Rules.RULE_ORDER_ITEMS_THRESHOLD
+										}
+										ruleTitle={ __(
+											'Order Items Threshold',
+											'woocommerce'
+										) }
+										label={ __(
+											'Enable Order Items Threshold filter',
+											'woocommerce'
+										) }
+										description={ __(
+											'This filter compares the amount of items in an order to the minimum and maximum counts that you specify. When enabled the payment will be blocked.',
+											'woocommerce'
+										) }
+										settings={ protectionSettingsUI }
+										onSettingsChange={
+											updateProtectionSettingsUI
+										}
+										isReviewFeatureActive={
+											environment.isReviewFeatureActive
+										}
+									>
+										<ThresholdControls
+											setting={
+												Rules.RULE_ORDER_ITEMS_THRESHOLD
+											}
+											settings={ protectionSettingsUI }
+											onSettingsChange={
+												updateProtectionSettingsUI
+											}
+											environment={ environment }
+										/>
+									</RuleToggle>
+									<RuleDescription>
+										{ __(
+											'An unusually high item count, compared to the average for your business, can indicate potential fraudulent activity.',
+											'woocommerce'
+										) }
+									</RuleDescription>
+								</RuleCard>
+								<RuleCard
+									id="cvc-verification-card"
+									title={ __(
+										'CVC Verification',
+										'woocommerce'
+									) }
+								>
+									<Notice
+										status="warning"
+										isDismissible={ false }
+									>
+										{ environment.isCvcFailureDeclineEnabled ? (
+											<>
+												{ __(
+													'For security, this filter is enabled and cannot be modified. Payments failing CVC verification will be blocked.',
+													'woocommerce'
+												) }{ ' ' }
+												<ExternalLink
+													href={
+														CVC_VERIFICATION_DOC_URL
+													}
+												>
+													{ __(
+														'Learn more',
+														'woocommerce'
+													) }
+												</ExternalLink>
+											</>
+										) : (
+											__(
+												'This filter is disabled, and cannot be modified.',
+												'woocommerce'
+											)
+										) }
+									</Notice>
+									<RuleDescription>
+										{ __(
+											'Because the card security code appears only on the card and not on receipts or statements, the card security code provides some assurance that the physical card is in the possession of the buyer.',
+											'woocommerce'
+										) }
+									</RuleDescription>
+								</RuleCard>
+							</div>
+						</>
+					) }
+				</AdvancedFraudSettingsSection>
+				{ ! hasAdvancedFraudProtectionSettingsError && (
+					<SettingsSaveBar
+						isDirty={ isDirty }
+						isSaving={ Boolean( isSaving ) }
+						onSave={ handleSaveSettings }
+					/>
+				) }
+			</SettingsBusyState>
+		</AdvancedFraudProtectionSubpage>
 	);
 };
 

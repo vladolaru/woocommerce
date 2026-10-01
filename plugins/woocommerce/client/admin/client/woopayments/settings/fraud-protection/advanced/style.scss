@@ -1,72 +1,6 @@
-.woopayments-fraud-protection-advanced {
-	display: grid;
-	grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-	align-items: start;
-	column-gap: 24px;
-	max-width: 1120px;
-	margin: 32px 12px 16px;
-	color: $gray-900;
-
-	> * {
-		grid-column: 2;
-	}
-
-	> h1 {
-		grid-column: 1 / -1;
-	}
-
-	// The client's back arrow and title, at the size core's offline payments header uses.
-	> h1 {
-		display: flex;
-		align-items: center;
-		margin: 0 0 24px;
-		padding: 0;
-		font-size: 16px;
-		line-height: 24px;
-		font-weight: 600;
-	}
-
-	> .woopayments-fraud-protection-advanced__description {
-		grid-column: 1;
-		grid-row: span 5;
-	}
-
-	@include breakpoint("<782px") {
-		grid-template-columns: 1fr;
-
-		> *,
-		> .woopayments-fraud-protection-advanced__description {
-			grid-column: 1;
-			grid-row: auto;
-		}
-	}
-}
-
-.woopayments-fraud-protection-advanced__description {
-	margin: 0 0 24px;
-
-	h2 {
-		margin: 0;
-		font-size: 16px;
-		line-height: 24px;
-		font-weight: 600;
-	}
-
-	p {
-		margin: 8px 0 0;
-		color: $gray-700;
-		font-size: 13px;
-		line-height: 20px;
-	}
-}
-
 .woopayments-fraud-protection-advanced__rules {
 	display: grid;
 	gap: 16px;
-
-	[role="status"] + & {
-		margin-top: 16px;
-	}
 }
 
 .woopayments-fraud-protection-rule {
@@ -212,11 +146,4 @@
 		outline: 2px solid Highlight;
 		outline-offset: 2px;
 	}
-}
-
-.woopayments-fraud-protection-advanced__footer {
-	display: flex;
-	justify-content: flex-end;
-	margin-top: 24px;
-	padding: 16px 0;
 }

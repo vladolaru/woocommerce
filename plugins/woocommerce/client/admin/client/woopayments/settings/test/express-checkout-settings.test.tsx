@@ -5,6 +5,7 @@ import apiFetch from '@wordpress/api-fetch';
 import { dispatch } from '@wordpress/data';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { getHistory } from '@woocommerce/navigation';
 
 /**
  * Internal dependencies
@@ -84,6 +85,7 @@ jest.mock( '../data/hooks', () => ( {
 	useGetAvailablePaymentMethodIds: () =>
 		mockUseGetAvailablePaymentMethodIds(),
 	useDevMode: () => mockUseDevMode(),
+	useGetSavingError: () => null,
 } ) );
 
 jest.mock( '../bootstrap', () => ( {
@@ -321,54 +323,6 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		}
 	} );
 
-	// Client 11.1.0 data/settings/actions.js:190-208 reports the save outcome
-	// in a snackbar only; the save bar must not repeat it.
-	it.each( [
-		[ 'succeeds', true, 'Settings saved.' ],
-		[ 'fails', false, 'Error saving settings.' ],
-	] )(
-		'does not repeat the save snackbar in the save bar when the save %s',
-		async ( _outcome, isSuccess, snackbarText ) => {
-			let isDirty = true;
-			mockUseSettings.mockImplementation( () => ( {
-				isLoading: false,
-				isSaving: false,
-				isDirty,
-				saveSettings: mockSaveSettings,
-			} ) );
-			mockSaveSettings.mockImplementation( async () => {
-				isDirty = ! isSuccess;
-				return isSuccess;
-			} );
-
-			const { rerender } = render(
-				<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
-			);
-			const save = await screen.findByRole( 'button', {
-				name: 'Save changes',
-			} );
-
-			await act( async () => {
-				await userEvent.click( save );
-			} );
-			rerender(
-				<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
-			);
-
-			expect( mockSaveSettings ).toHaveBeenCalledTimes( 1 );
-			expect(
-				screen.queryByText( snackbarText )
-			).not.toBeInTheDocument();
-			expect(
-				screen.getByText(
-					isSuccess
-						? 'Settings are up to date.'
-						: 'You have unsaved changes.'
-				)
-			).toBeInTheDocument();
-		}
-	);
-
 	it( 'fails closed for invalid express checkout method IDs', () => {
 		render( <WooPaymentsExpressCheckoutSettings methodId="invalid" /> );
 
@@ -566,7 +520,7 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		);
 
 		// Client 11.1.0 puts one back arrow before the subpage title; core's
-		// shell ships BackButton for it.
+		// shell ships BackButton for it, and it returns through the shell's history.
 		const heading = await screen.findByRole( 'heading', {
 			level: 1,
 			name: 'Apple Pay / Google Pay',
@@ -574,14 +528,21 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		expect(
 			screen.queryByRole( 'link', { name: 'Return to payments' } )
 		).not.toBeInTheDocument();
-		await userEvent.click(
-			within( heading ).getByRole( 'button', {
-				name: 'Apple Pay / Google Pay',
-			} )
-		);
-		expect( window.location.href ).toContain(
-			'path=%2Fwoopayments%2Fsettings'
-		);
+		const push = jest
+			.spyOn( getHistory(), 'push' )
+			.mockImplementation( () => undefined );
+		try {
+			await userEvent.click(
+				within( heading ).getByRole( 'button', {
+					name: 'Apple Pay / Google Pay',
+				} )
+			);
+			expect( push ).toHaveBeenCalledWith(
+				'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings&from=woopayments-settings'
+			);
+		} finally {
+			push.mockRestore();
+		}
 		expect(
 			await screen.findByRole( 'img', { name: 'Apple Pay' } )
 		).toBeInTheDocument();
@@ -1200,9 +1161,9 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		render( <WooPaymentsExpressCheckoutSettings methodId="woopay" /> );
 
 		await screen.findByRole( 'heading', { level: 1, name: 'WooPay' } );
-		const settingsPage = screen
-			.getByRole( 'heading', { level: 1, name: 'WooPay' } )
-			.closest( '.woopayments-express-checkout-settings' ) as HTMLElement;
+		const settingsPage = document.querySelector(
+			'.woopayments-express-checkout-settings'
+		) as HTMLElement;
 
 		expect(
 			within( settingsPage ).getByText(
@@ -1255,9 +1216,9 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		render( <WooPaymentsExpressCheckoutSettings methodId="amazon_pay" /> );
 
 		await screen.findByRole( 'heading', { level: 1, name: 'Amazon Pay' } );
-		const settingsPage = screen
-			.getByRole( 'heading', { level: 1, name: 'Amazon Pay' } )
-			.closest( '.woopayments-express-checkout-settings' ) as HTMLElement;
+		const settingsPage = document.querySelector(
+			'.woopayments-express-checkout-settings'
+		) as HTMLElement;
 
 		expect(
 			within( settingsPage ).getByText(
@@ -1284,9 +1245,9 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		render( <WooPaymentsExpressCheckoutSettings methodId="amazon_pay" /> );
 
 		await screen.findByRole( 'heading', { level: 1, name: 'Amazon Pay' } );
-		const settingsPage = screen
-			.getByRole( 'heading', { level: 1, name: 'Amazon Pay' } )
-			.closest( '.woopayments-express-checkout-settings' ) as HTMLElement;
+		const settingsPage = document.querySelector(
+			'.woopayments-express-checkout-settings'
+		) as HTMLElement;
 
 		expect(
 			within( settingsPage ).getByText(

@@ -8,10 +8,8 @@ import { __ } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { ExpressCheckoutAppearanceSettings } from './appearance-settings';
-import {
-	ExpressCheckoutLocationCheckboxes,
-	ExpressCheckoutSettingsSection,
-} from './components';
+import { ExpressCheckoutLocationCheckboxes } from './components';
+import { SettingsSection } from '../settings-shell';
 import { ExpressCheckoutMethodIcons } from './method-icons';
 import {
 	asSettingsRecord,
@@ -72,9 +70,10 @@ export const PaymentRequestSettings = () => {
 
 	return (
 		<>
-			<ExpressCheckoutSettingsSection
+			<SettingsSection
 				className="woopayments-express-checkout-settings__enable"
 				title={ __( 'Apple Pay / Google Pay', 'woocommerce' ) }
+				hideTitle
 				description={
 					<>
 						<ExpressCheckoutMethodIcons methodId="payment_request" />
@@ -124,13 +123,12 @@ export const PaymentRequestSettings = () => {
 					isPaymentMethodsListMode={ isPaymentMethodsListMode }
 					onChange={ updatePaymentRequestLocation }
 				/>
-			</ExpressCheckoutSettingsSection>
-			<ExpressCheckoutSettingsSection
+			</SettingsSection>
+			<SettingsSection
 				className="woopayments-express-checkout-settings__general"
 				title={ __( 'Settings', 'woocommerce' ) }
 				description={
 					<>
-						<h2>{ __( 'Settings', 'woocommerce' ) }</h2>
 						<p>
 							{ __(
 								'Configure the display of Apple Pay and Google Pay buttons on your store.',
@@ -141,7 +139,7 @@ export const PaymentRequestSettings = () => {
 				}
 			>
 				<ExpressCheckoutAppearanceSettings currentMethod="payment_request" />
-			</ExpressCheckoutSettingsSection>
+			</SettingsSection>
 		</>
 	);
 };

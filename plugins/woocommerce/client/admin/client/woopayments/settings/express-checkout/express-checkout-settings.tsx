@@ -8,11 +8,11 @@ import { __ } from '@wordpress/i18n';
 /**
  * Internal dependencies
  */
-import { BackButton } from '~/settings-payments/components/buttons/back-button';
-import { getSettingsPaymentsProviderRouteUrl } from '../../admin/utils';
 import { AccountModeNotice } from '../account-mode-notice';
 import { ApplePayDomainErrorNotice } from '../apple-pay-domain-error-notice';
-import { ExpressCheckoutBusyState, ExpressCheckoutSaveBar } from './components';
+import { SaveSettingsSection } from '../save-settings-section';
+import { SettingsBusyState } from '../settings-busy-state';
+import { SettingsSubpage } from '../settings-subpage';
 import {
 	asSettingsRecord,
 	isAmazonPayExpressCheckoutAvailable,
@@ -127,7 +127,7 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 		);
 	} else {
 		content = (
-			<ExpressCheckoutBusyState isBusy={ Boolean( isSaving ) }>
+			<SettingsBusyState isBusy={ Boolean( isSaving ) }>
 				<Suspense
 					fallback={
 						<p
@@ -143,38 +143,25 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 					}
 				>
 					<MethodSettings />
-					<ExpressCheckoutSaveBar />
+					<SaveSettingsSection />
 				</Suspense>
-			</ExpressCheckoutBusyState>
+			</SettingsBusyState>
 		);
 	}
 
 	return (
-		<section
+		<SettingsSubpage
+			headingId={ headingId }
+			title={ title }
+			backPath="/woopayments/settings?from=woopayments-settings"
+			from="woopayments_express_checkout_settings"
 			className="woopayments-express-checkout-settings"
-			aria-labelledby={ headingId }
 		>
-			<header className="woopayments-express-checkout-settings__header">
-				<h1 id={ headingId }>
-					<BackButton
-						href={ getSettingsPaymentsProviderRouteUrl(
-							'/woopayments/settings?from=woopayments-settings'
-						) }
-						tooltipText={ __(
-							'Return to WooPayments settings',
-							'woocommerce'
-						) }
-						from="woopayments_express_checkout_settings"
-					>
-						{ title }
-					</BackButton>
-				</h1>
-			</header>
 			<ApplePayDomainErrorNotice />
 			{ ! isLoading && (
 				<AccountModeNotice isDevModeEnabled={ isDevModeEnabled } />
 			) }
 			{ content }
-		</section>
+		</SettingsSubpage>
 	);
 };
