@@ -1140,6 +1140,8 @@ const ExpressCheckoutContent = ( {
 			} );
 		} );
 
+		// Client 11.1.0 refreshes on cancel only after an address pick (event-handlers.js:319-325); native also does after a
+		// rate pick, which the server cart already holds. Accepted improvement, inbox N-266.
 		expressElementRef.current.on( 'cancel', () => {
 			refreshCartAfterWalletMutation( refreshBlocksCartUi );
 			onClose?.();

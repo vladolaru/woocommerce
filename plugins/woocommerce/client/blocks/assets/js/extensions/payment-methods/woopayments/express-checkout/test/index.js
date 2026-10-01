@@ -1075,6 +1075,46 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( mockInvalidateResolutionForStore ).not.toHaveBeenCalled();
 	} );
 
+	// Native-only (inbox N-266): a rate pick with no address change also leaves the server cart changed.
+	it( 'refreshes the Blocks UI when a wallet flow that only changed the shipping rate is canceled', async () => {
+		mockExtensionCartUpdate.mockResolvedValueOnce( {} );
+		apiFetch.mockResolvedValueOnce(
+			cartWithExpressMethods( [ 'payment_request' ] )
+		);
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+			onClose: jest.fn(),
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingratechange ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.shippingratechange( {
+				shippingRate: { id: 'flat_rate:1' },
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+		} );
+
+		await act( async () => {
+			expressHandlers.cancel();
+		} );
+
+		expect( mockExtensionCartUpdate ).toHaveBeenCalledWith( {
+			namespace: 'woopayments/express-checkout/refresh-ui',
+			data: {},
+		} );
+	} );
+
 	it( 'falls back to refetching Blocks cart data when the refresh-ui cart update fails', async () => {
 		mockExtensionCartUpdate.mockRejectedValueOnce(
 			new Error( 'Unknown namespace' )
