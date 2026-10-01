@@ -59,12 +59,14 @@
 	}
 }
 
-// Client 11.1.0 `deposits/details/style.scss:2-28`: the status dot colours.
+// Client 11.1.0 `deposits/details/style.scss:2-28`: the status dot size and colours.
 .woocommerce-woopayments-payout-overview__status {
 	margin-bottom: 4px;
 	white-space: nowrap;
 
 	.woocommerce-order-status__indicator {
+		// The client's WC Admin page is border-box, so its ring sits inside the 0.85em dot (17px at 20px).
+		box-sizing: border-box;
 		height: 0.85em;
 		width: 0.85em;
 
