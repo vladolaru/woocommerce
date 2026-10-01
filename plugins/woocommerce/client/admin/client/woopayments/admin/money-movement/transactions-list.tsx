@@ -468,7 +468,10 @@ export const WooPaymentsTransactionsList = (
 	}
 
 	return (
-		<div aria-busy={ isLoading }>
+		<div
+			className="woocommerce-woopayments-money-movement__list"
+			aria-busy={ isLoading }
+		>
 			{ ! depositId && (
 				<WooPaymentsListFilters filters={ listFilters } />
 			) }
