@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
 
@@ -11,6 +11,7 @@ import { recordEvent } from '@woocommerce/tracks';
 import { SpotlightPromotion } from '../spotlight';
 import { usePmPromotionActions, usePmPromotions } from '../data/hooks';
 import type { PmPromotion } from '../types';
+import { hasStyleRule } from '../../admin/test/helpers/style-rules';
 
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
@@ -53,8 +54,24 @@ const spotlightPromotion: PmPromotion = {
 	image: 'https://example.com/promo.png',
 };
 
+const viewEvents = () =>
+	mockRecordEvent.mock.calls.filter(
+		( [ eventName ] ) => eventName === 'wcpay_payment_method_promotion_view'
+	);
+
+// Client 11.1.0 `components/spotlight/index.tsx:66-101`: the card appears 4 seconds after the page renders.
+const showSpotlight = async () => {
+	await act( async () => {
+		jest.advanceTimersByTime( 4000 );
+	} );
+	await act( async () => {
+		jest.runOnlyPendingTimers();
+	} );
+};
+
 describe( 'SpotlightPromotion', () => {
 	beforeEach( () => {
+		jest.useFakeTimers();
 		mockRecordEvent.mockClear();
 		activatePmPromotion.mockReset();
 		dismissPmPromotion.mockReset();
@@ -73,61 +90,179 @@ describe( 'SpotlightPromotion', () => {
 		);
 	} );
 
-	it( 'renders nothing while PM promotions are still loading', () => {
+	afterEach( () => {
+		jest.useRealTimers();
+	} );
+
+	it( 'renders nothing while PM promotions are still loading', async () => {
 		mockUsePmPromotions.mockReturnValue( {
 			pmPromotions: [],
 			isLoading: true,
 		} );
 
 		const { container } = render( <SpotlightPromotion /> );
+		await showSpotlight();
 
 		expect( container ).toBeEmptyDOMElement();
 	} );
 
-	it( 'renders the first spotlight promotion and records a view with the native route source', async () => {
+	it( 'shows the spotlight dialog only after 4 seconds and records the view then', async () => {
 		render( <SpotlightPromotion /> );
 
-		expect(
-			screen.getByRole( 'heading', { name: 'Offer Affirm and save' } )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'button', { name: 'Activate Affirm' } )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'button', { name: 'Dismiss promotion' } )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'link', { name: /Promotion terms/ } )
-		).toHaveAttribute( 'href', 'https://example.com/terms' );
-		expect( screen.getByAltText( '' ) ).toHaveAttribute(
-			'src',
-			'https://example.com/promo.png'
-		);
+		await act( async () => {
+			jest.advanceTimersByTime( 3999 );
+		} );
+		expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
+		expect( viewEvents() ).toHaveLength( 0 );
 
-		await waitFor( () => {
-			expect( mockRecordEvent ).toHaveBeenCalledWith(
+		await showSpotlight();
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Offer Affirm and save',
+		} );
+		expect( dialog ).toHaveAttribute( 'aria-modal', 'true' );
+		expect( dialog ).toHaveFocus();
+		expect( viewEvents() ).toEqual( [
+			[
 				'wcpay_payment_method_promotion_view',
-				expect.objectContaining( {
+				{
 					promo_id: 'affirm_2026',
 					payment_method: 'affirm',
 					display_context: 'spotlight',
 					source: 'wcpay-overview',
-				} )
-			);
-		} );
-		const viewEventProperties = mockRecordEvent.mock.calls.find(
-			( [ eventName ] ) =>
-				eventName === 'wcpay_payment_method_promotion_view'
-		)?.[ 1 ];
-		expect( viewEventProperties ).not.toHaveProperty( 'path' );
+				},
+			],
+		] );
+		expect( screen.getByText( 'Limited time' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Enable Affirm for eligible customers.' )
+		).toBeInTheDocument();
+		expect( screen.getByText( 'Terms apply.' ) ).toBeInTheDocument();
+		expect( dialog.querySelector( 'img' ) ).toHaveAttribute(
+			'src',
+			'https://example.com/promo.png'
+		);
 	} );
 
-	it( 'activates the spotlight promotion and records the CTA click', async () => {
+	// Client 11.1.0 `components/spotlight/style.scss:3-37`: fixed at the bottom right, full width at 782px and below.
+	it( 'floats the card at the bottom right of the window', async () => {
 		render( <SpotlightPromotion /> );
+		await showSpotlight();
+
+		const floating = screen.getByRole( 'dialog' ).parentElement;
+		if ( ! floating ) {
+			throw new Error( 'The dialog has no floating wrapper.' );
+		}
+
+		expect(
+			hasStyleRule(
+				floating,
+				'../promotions/style.scss',
+				'position',
+				'fixed'
+			)
+		).toBe( true );
+		expect(
+			hasStyleRule(
+				floating,
+				'../promotions/style.scss',
+				'bottom',
+				'24px'
+			)
+		).toBe( true );
+		expect(
+			hasStyleRule(
+				floating,
+				'../promotions/style.scss',
+				'inset-inline-end',
+				'24px'
+			)
+		).toBe( true );
+		expect(
+			hasStyleRule(
+				floating,
+				'../promotions/style.scss',
+				'width',
+				'100%',
+				'max-width: 782px'
+			)
+		).toBe( true );
+	} );
+
+	// Client 11.1.0 `components/spotlight/index.tsx:225-233,376-388` and `promotions/spotlight/index.tsx:91-115`.
+	it( 'puts the terms button before the CTA and opens the terms in a new window', async () => {
+		const openSpy = jest
+			.spyOn( window, 'open' )
+			.mockImplementation( () => null );
+		render( <SpotlightPromotion /> );
+		await showSpotlight();
+
+		const footerButtons = Array.from(
+			screen
+				.getByRole( 'dialog' )
+				.querySelectorAll( '.components-card__footer button' )
+		).map( ( button ) => button.textContent );
+		expect( footerButtons ).toEqual( [
+			'Promotion terms',
+			'Activate Affirm',
+		] );
+		expect(
+			screen.queryByRole( 'link', { name: /Promotion terms/ } )
+		).not.toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Promotion terms' } )
+		);
+
+		expect( openSpy ).toHaveBeenCalledWith(
+			'https://example.com/terms',
+			'_blank',
+			'noopener,noreferrer'
+		);
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_payment_method_promotion_link_click',
+			expect.objectContaining( {
+				promo_id: 'affirm_2026',
+				link_type: 'terms',
+			} )
+		);
+		openSpy.mockRestore();
+	} );
+
+	it( 'does not open an unsafe terms URL', async () => {
+		const openSpy = jest
+			.spyOn( window, 'open' )
+			.mockImplementation( () => null );
+		mockUsePmPromotions.mockReturnValue( {
+			pmPromotions: [
+				{
+					...spotlightPromotion,
+					tc_url: 'javascript:alert(1)',
+				},
+			],
+			isLoading: false,
+		} );
+		render( <SpotlightPromotion /> );
+		await showSpotlight();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Promotion terms' } )
+		);
+
+		expect( openSpy ).not.toHaveBeenCalled();
+		openSpy.mockRestore();
+	} );
+
+	it( 'activates the promotion and closes without dismissing it', async () => {
+		render( <SpotlightPromotion /> );
+		await showSpotlight();
 
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Activate Affirm' } )
 		);
+		await act( async () => {
+			jest.advanceTimersByTime( 300 );
+		} );
 
 		expect( activatePmPromotion ).toHaveBeenCalledWith(
 			'affirm-spotlight'
@@ -139,74 +274,64 @@ describe( 'SpotlightPromotion', () => {
 				source: 'wcpay-overview',
 			} )
 		);
+		expect( dismissPmPromotion ).not.toHaveBeenCalled();
+		expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
 	} );
 
-	it( 'restores focus when the focused spotlight action removes the card', async () => {
-		let currentPromotions: PmPromotion[] = [ spotlightPromotion ];
-		mockUsePmPromotions.mockImplementation( () => ( {
-			pmPromotions: currentPromotions,
-			isLoading: false,
-		} ) );
-
-		const view = render(
+	it( 'dismisses the promotion from the Close button and returns focus', async () => {
+		render(
 			<>
+				<button type="button">Page action</button>
 				<SpotlightPromotion />
-				<button type="button">Stable target</button>
 			</>
 		);
-		activatePmPromotion.mockImplementation( () => {
-			currentPromotions = [];
-			view.rerender(
-				<>
-					<SpotlightPromotion />
-					<button type="button">Stable target</button>
-				</>
-			);
-		} );
+		screen.getByRole( 'button', { name: 'Page action' } ).focus();
+		await showSpotlight();
+
+		expect( screen.getByRole( 'dialog' ) ).toHaveFocus();
 
 		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Activate Affirm' } )
+			screen.getByRole( 'button', { name: 'Close' } )
 		);
-
-		await waitFor( () => {
-			expect(
-				screen.getByRole( 'button', { name: 'Stable target' } )
-			).toHaveFocus();
-		} );
-	} );
-
-	it( 'dismisses the spotlight promotion and records the dismiss click', async () => {
-		render( <SpotlightPromotion /> );
-
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Dismiss promotion' } )
-		);
-
-		expect( dismissPmPromotion ).toHaveBeenCalledWith( 'affirm-spotlight' );
 		expect( mockRecordEvent ).toHaveBeenCalledWith(
 			'wcpay_payment_method_promotion_dismiss_click',
-			expect.objectContaining( {
-				promo_id: 'affirm_2026',
-				source: 'wcpay-overview',
-			} )
+			expect.objectContaining( { promo_id: 'affirm_2026' } )
 		);
-	} );
-
-	it( 'omits unsafe terms URLs', () => {
-		mockUsePmPromotions.mockReturnValue( {
-			pmPromotions: [
-				{
-					...spotlightPromotion,
-					tc_url: 'javascript:alert(1)',
-				},
-			],
-			isLoading: false,
+		await act( async () => {
+			jest.advanceTimersByTime( 300 );
 		} );
 
-		render( <SpotlightPromotion /> );
-
+		expect( dismissPmPromotion ).toHaveBeenCalledWith( 'affirm-spotlight' );
+		expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
 		expect(
-			screen.queryByRole( 'link', { name: 'Promotion terms' } )
-		).not.toBeInTheDocument();
+			screen.getByRole( 'button', { name: 'Page action' } )
+		).toHaveFocus();
+	} );
+
+	it( 'dismisses the promotion on Escape', async () => {
+		render( <SpotlightPromotion /> );
+		await showSpotlight();
+
+		await userEvent.keyboard( '{Escape}' );
+		await act( async () => {
+			jest.advanceTimersByTime( 300 );
+		} );
+
+		expect( dismissPmPromotion ).toHaveBeenCalledWith( 'affirm-spotlight' );
+		expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
+	} );
+
+	it( 'keeps Tab within the dialog', async () => {
+		render( <SpotlightPromotion /> );
+		await showSpotlight();
+
+		screen.getByRole( 'button', { name: 'Activate Affirm' } ).focus();
+		await userEvent.tab();
+		expect( screen.getByRole( 'button', { name: 'Close' } ) ).toHaveFocus();
+
+		await userEvent.tab( { shift: true } );
+		expect(
+			screen.getByRole( 'button', { name: 'Activate Affirm' } )
+		).toHaveFocus();
 	} );
 } );

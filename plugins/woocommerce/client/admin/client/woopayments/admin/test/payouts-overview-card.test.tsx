@@ -102,11 +102,11 @@ describe( 'PayoutsOverviewCard', () => {
 		} );
 	} );
 
-	it( 'renders the loading state', () => {
+	// Client 11.1.0 `components/deposits-overview/index.tsx:32-73`: placeholders for the schedule, the history and the footer.
+	it( 'shows the payout placeholders while loading', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ null }
 				recentPayouts={ [] }
@@ -116,8 +116,19 @@ describe( 'PayoutsOverviewCard', () => {
 		expect(
 			screen.getByRole( 'heading', { name: 'Payouts' } )
 		).toBeInTheDocument();
+		expect(
+			inCard().getByRole( 'heading', { name: 'Payout history' } )
+		).toBeVisible();
+		expect(
+			document.querySelectorAll(
+				'.woocommerce-woopayments-overview__placeholder'
+			)
+		).toHaveLength( 4 );
 		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
 			'Loading payouts…'
+		);
+		expect( screen.getByRole( 'status' ) ).toHaveClass(
+			'screen-reader-text'
 		);
 		expect( screen.getByRole( 'region' ) ).toHaveAttribute(
 			'aria-busy',
@@ -130,7 +141,6 @@ describe( 'PayoutsOverviewCard', () => {
 		const { container } = render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus( {
 					completed_waiting_period: false,
 				} ) }
@@ -152,7 +162,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus( {
 					completed_waiting_period: false,
 				} ) }
@@ -184,7 +193,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					account: {
@@ -210,7 +218,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus(
 					{},
 					'https://example.com/account-link'
@@ -252,7 +259,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					account: {
@@ -276,7 +282,6 @@ describe( 'PayoutsOverviewCard', () => {
 		const { rerender } = render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					balance: {
@@ -300,7 +305,6 @@ describe( 'PayoutsOverviewCard', () => {
 		rerender(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					balance: {
@@ -322,7 +326,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus(
 					{},
 					'https://example.com/account-link'
@@ -369,11 +372,12 @@ describe( 'PayoutsOverviewCard', () => {
 		);
 	} );
 
-	it( 'keeps overview-derived payout details visible when the recent-payout list fails', () => {
+	// Client 11.1.0 `components/deposits-overview/index.tsx:118,201-210`: a failed list leaves no history section; the page raises the snackbar.
+	it( 'keeps overview-derived payout details and drops the history when the recent-payout list fails', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage="Unable to load recent payouts."
+				hasError
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [] }
@@ -383,16 +387,19 @@ describe( 'PayoutsOverviewCard', () => {
 		expect( getScheduleSummary() ).toHaveTextContent(
 			'Available funds are automatically dispatched every Monday.'
 		);
-		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
-			'Unable to load recent payouts.'
-		);
+		expect( screen.queryByRole( 'alert' ) ).not.toBeInTheDocument();
+		expect(
+			inCard().queryByRole( 'heading', { name: 'Payout history' } )
+		).not.toBeInTheDocument();
+		expect(
+			inCard().queryByText( 'No recent payouts.' )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'announces when there are no recent payouts', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [] }
@@ -408,7 +415,6 @@ describe( 'PayoutsOverviewCard', () => {
 		const { rerender } = render(
 			<PayoutsOverviewCard
 				isLoading
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ null }
 				recentPayouts={ [] }
@@ -419,7 +425,6 @@ describe( 'PayoutsOverviewCard', () => {
 		rerender(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [] }
@@ -434,7 +439,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ null }
 				recentPayouts={ [ createDeposit() ] }
@@ -452,7 +456,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [ createDeposit() ] }
@@ -468,13 +471,9 @@ describe( 'PayoutsOverviewCard', () => {
 			'woocommerce-status-badge',
 			'woocommerce-status-badge--success'
 		);
-		// Client 11.1.0 `recent-deposits-list.tsx:48` shows the date in the site format.
+		// Client 11.1.0 `recent-deposits-list.tsx:48-50`: the link is named by the date it shows, in the site format (WCAG 2.5.3).
 		expect(
-			screen.getByRole( 'link', { name: 'View payout po_test details' } )
-		).toHaveTextContent( 'June 18, 2026' );
-
-		expect(
-			screen.getByRole( 'link', { name: 'View payout po_test details' } )
+			screen.getByRole( 'link', { name: 'June 18, 2026' } )
 		).toHaveAttribute(
 			'href',
 			'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts%2Fdetails&id=po_test'
@@ -499,7 +498,6 @@ describe( 'PayoutsOverviewCard', () => {
 		const { rerender } = render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					account: {
@@ -522,7 +520,6 @@ describe( 'PayoutsOverviewCard', () => {
 		rerender(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [] }
@@ -538,7 +535,6 @@ describe( 'PayoutsOverviewCard', () => {
 		const { rerender } = render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					account: {
@@ -560,7 +556,6 @@ describe( 'PayoutsOverviewCard', () => {
 		rerender(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					account: {
@@ -584,7 +579,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [] }
@@ -616,7 +610,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview( {
 					balance: {
@@ -642,7 +635,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus() }
 				overview={ createOverview() }
 				recentPayouts={ [ createDeposit() ] }
@@ -670,7 +662,6 @@ describe( 'PayoutsOverviewCard', () => {
 			render(
 				<PayoutsOverviewCard
 					isLoading={ false }
-					errorMessage={ null }
 					accountStatus={ createAccountStatus( { restrictions } ) }
 					overview={ createOverview() }
 					recentPayouts={ [] }
@@ -686,7 +677,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				overview={ createOverview() }
 				recentPayouts={ [] }
 			/>
@@ -702,7 +692,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus( {
 					completed_waiting_period: false,
 					minimum_scheduled_deposit_amounts: {},
@@ -742,7 +731,6 @@ describe( 'PayoutsOverviewCard', () => {
 		render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				accountStatus={ createAccountStatus(
 					{},
 					'https://example.com/account-link'

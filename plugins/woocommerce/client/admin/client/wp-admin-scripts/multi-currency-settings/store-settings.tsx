@@ -99,7 +99,7 @@ const areSettingsEqual = (
 	);
 };
 
-const StoreSettingsSection = ( { children }: { children: ReactNode } ) => (
+const StoreSettingsSection = ( { children }: { children?: ReactNode } ) => (
 	<SettingsSection
 		title={ __( 'Store settings', 'woocommerce' ) }
 		description={ createInterpolateElement(
@@ -116,9 +116,11 @@ const StoreSettingsSection = ( { children }: { children: ReactNode } ) => (
 			}
 		) }
 	>
-		<CardBody className="woocommerce-multi-currency-settings__store-settings">
-			{ children }
-		</CardBody>
+		{ children && (
+			<CardBody className="woocommerce-multi-currency-settings__store-settings">
+				{ children }
+			</CardBody>
+		) }
 	</SettingsSection>
 );
 
@@ -153,8 +155,9 @@ export function StoreLevelSettings() {
 					return;
 				}
 
+				// Client 11.1.0 `multi-currency/client/data/resolvers.js:59-68`: the snackbar alone reports it.
 				createErrorNotice(
-					__( 'Error loading store settings.', 'woocommerce' )
+					__( 'Error retrieving store settings.', 'woocommerce' )
 				);
 			} )
 			.finally( () => {
@@ -250,14 +253,9 @@ export function StoreLevelSettings() {
 		);
 	}
 
+	// No controls without the stored values, so a save cannot overwrite settings the page never read.
 	if ( ! draftSettings ) {
-		return (
-			<StoreSettingsSection>
-				<p role="alert">
-					{ __( 'Unable to load store settings.', 'woocommerce' ) }
-				</p>
-			</StoreSettingsSection>
-		);
+		return <StoreSettingsSection />;
 	}
 
 	// Client 11.1.0 store-settings/index.js:84-237: the controls in one card in the client's order, Save below it.

@@ -36,6 +36,7 @@ import { getPayoutStatusLabel } from '../../payout-status';
 import { formatExplicitCurrency } from '../../currency';
 import { getPayoutScheduleText, PayoutSchedule } from './payout-schedule';
 import { StatusChip, type StatusChipType } from './status-chip';
+import { LoadablePlaceholder } from './loadable-placeholder';
 
 const SUSPENDED_PAYOUTS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/why-payouts-suspended/';
@@ -117,21 +118,19 @@ const RecentPayoutsList = ( {
 			{ payouts.map( ( payout ) => (
 				<tr key={ payout.id }>
 					<td>
-						<Icon icon={ calendar } size={ 17 } />
-						<a
-							href={ getSettingsPaymentsProviderRouteUrl(
-								`/woopayments/payouts/details?id=${ encodeURIComponent(
-									payout.id
-								) }`
-							) }
-							aria-label={ sprintf(
-								/* translators: %s: Payout ID. */
-								__( 'View payout %s details', 'woocommerce' ),
-								payout.id
-							) }
-						>
-							{ formatPayoutSiteDate( payout ) }
-						</a>
+						{ /* Client 11.1.0 `recent-deposits-list.tsx:46-51`: the icon and the date share one flex row. */ }
+						<span className="woocommerce-woopayments-overview__payout-date">
+							<Icon icon={ calendar } size={ 17 } />
+							<a
+								href={ getSettingsPaymentsProviderRouteUrl(
+									`/woopayments/payouts/details?id=${ encodeURIComponent(
+										payout.id
+									) }`
+								) }
+							>
+								{ formatPayoutSiteDate( payout ) }
+							</a>
+						</span>
 					</td>
 					<td>
 						<StatusChip
@@ -188,14 +187,15 @@ const PayoutsCard = ( {
 
 export const PayoutsOverviewCard = ( {
 	isLoading,
-	errorMessage,
+	hasError = false,
 	overview,
 	recentPayouts,
 	selectedCurrency,
 	accountStatus,
 }: {
 	isLoading: boolean;
-	errorMessage: string | null;
+	/** The recent payouts read failed; the page raised the snackbar, so the history section stays out, as in the client. */
+	hasError?: boolean;
 	overview: WooPaymentsDepositsOverview | null;
 	recentPayouts: WooPaymentsDeposit[];
 	selectedCurrency?: string;
@@ -209,7 +209,7 @@ export const PayoutsOverviewCard = ( {
 		'/woopayments/payouts'
 	);
 	const hasRecentPayouts =
-		! isLoading && ! errorMessage && recentPayouts.length > 0;
+		! isLoading && ! hasError && recentPayouts.length > 0;
 	let historyStatusMessage: string = __(
 		'No recent payouts.',
 		'woocommerce'
@@ -217,26 +217,29 @@ export const PayoutsOverviewCard = ( {
 
 	if ( isLoading ) {
 		historyStatusMessage = __( 'Loading payouts…', 'woocommerce' );
-	} else if ( errorMessage ) {
-		historyStatusMessage = errorMessage;
 	} else if ( hasRecentPayouts ) {
 		historyStatusMessage = __( 'Payout history loaded.', 'woocommerce' );
 	}
 
-	const history = (
+	const history = hasError ? null : (
 		<CardBody className="woocommerce-woopayments-overview__history">
 			<h3>{ __( 'Payout history', 'woocommerce' ) }</h3>
 			<p
 				className={
-					hasRecentPayouts
+					hasRecentPayouts || isLoading
 						? 'screen-reader-text'
 						: 'woocommerce-woopayments-overview__status'
 				}
-				role={ errorMessage ? 'alert' : 'status' }
-				aria-live={ errorMessage ? 'assertive' : 'polite' }
+				role="status"
+				aria-live="polite"
 			>
 				{ historyStatusMessage }
 			</p>
+			{ isLoading && (
+				<LoadablePlaceholder isBlock>
+					Block placeholder
+				</LoadablePlaceholder>
+			) }
 			{ hasRecentPayouts && (
 				<RecentPayoutsList payouts={ recentPayouts } />
 			) }
@@ -278,12 +281,38 @@ export const PayoutsOverviewCard = ( {
 			</CardFooter>
 		);
 
+	// Client 11.1.0 `components/deposits-overview/index.tsx:32-73`.
 	if ( isLoading ) {
-		return <PayoutsCard isLoading history={ history } />;
+		return (
+			<PayoutsCard
+				isLoading
+				summary={
+					<CardBody className="woocommerce-woopayments-overview__schedule">
+						<LoadablePlaceholder>
+							{ __(
+								'Available funds are automatically dispatched every day.',
+								'woocommerce'
+							) }
+						</LoadablePlaceholder>
+					</CardBody>
+				}
+				history={ history }
+				footer={
+					<CardFooter className="woocommerce-woopayments-overview__payouts-footer">
+						<LoadablePlaceholder>
+							{ __( 'View full payout history', 'woocommerce' ) }
+						</LoadablePlaceholder>
+						<LoadablePlaceholder>
+							{ __( 'Change payout schedule', 'woocommerce' ) }
+						</LoadablePlaceholder>
+					</CardFooter>
+				}
+			/>
+		);
 	}
 
 	if ( ! overview ) {
-		if ( ! errorMessage && recentPayouts.length === 0 ) {
+		if ( ! hasError && recentPayouts.length === 0 ) {
 			return null;
 		}
 

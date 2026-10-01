@@ -84,7 +84,6 @@ describe( 'overview payout schedule weekday', () => {
 		const { container } = render(
 			<PayoutsOverviewCard
 				isLoading={ false }
-				errorMessage={ null }
 				overview={ createOverview( 'friday' ) }
 				accountStatus={ RECORDED_ACCOUNT_STATUS }
 				recentPayouts={ [] }

@@ -448,13 +448,39 @@ describe( 'WooPaymentsOverviewPage', () => {
 		expect( screen.getByText( 'Spotlight promotion' ) ).toBeInTheDocument();
 
 		expect(
-			await screen.findByText( 'Overview failed.' )
-		).toBeInTheDocument();
-		expect(
 			await screen.findByText( 'Dispatch date' )
 		).toBeInTheDocument();
 		expect( mockGetRecent ).toHaveBeenCalledWith( '' );
 		expect( screen.getAllByText( '$10.00' ).length ).toBeGreaterThan( 0 );
+		// Client 11.1.0 `data/deposits/resolvers.js:61-71`: one snackbar, never the server's own message.
+		expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
+		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+			"Error retrieving all payouts' overviews."
+		);
+		expect(
+			screen.queryByText( 'Overview failed.' )
+		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 `data/deposits/resolvers.js:130-136`.
+	it( 'raises the client snackbar and prints no server message when the recent payouts read fails', async () => {
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockRejectedValue( new Error( 'Internal Server Error' ) );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		await waitFor( () =>
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'Error retrieving payouts.'
+			)
+		);
+		expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
+		expect(
+			screen.queryByText( 'Internal Server Error' )
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Balance' } )
+		).toBeInTheDocument();
 	} );
 
 	it( 'reloads recent payouts when the selected balance currency changes', async () => {
@@ -549,7 +575,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 		expect(
 			await screen.findByRole( 'link', {
-				name: 'View payout po_eur details',
+				name: 'June 18, 2026',
 			} )
 		).toBeInTheDocument();
 		expect( mockGetRecent ).toHaveBeenCalledWith( 'eur' );
@@ -636,7 +662,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 		expect( mockSubmitInstantPayout ).toHaveBeenCalledWith( 'usd' );
 		await screen.findByRole( 'link', {
-			name: 'View payout po_instant details',
+			name: 'June 18, 2026',
 		} );
 		expect( mockGetOverview ).toHaveBeenCalledTimes( 2 );
 		expect( mockGetRecent ).toHaveBeenCalledTimes( 2 );
@@ -1069,9 +1095,10 @@ describe( 'WooPaymentsOverviewPage', () => {
 			} )
 		).toBeInTheDocument();
 		expect( mockGetActiveLoanSummary ).toHaveBeenCalledTimes( 1 );
+		// The repaid amount is its own large figure, so read the whole value.
 		expect(
-			screen.getByText( '$200.00 of $1,100.00' )
-		).toBeInTheDocument();
+			screen.getByText( 'Total repaid' ).nextElementSibling
+		).toHaveTextContent( '$200.00 of $1,100.00' );
 	} );
 
 	it( 'does not fetch the active loan summary without an active loan', async () => {

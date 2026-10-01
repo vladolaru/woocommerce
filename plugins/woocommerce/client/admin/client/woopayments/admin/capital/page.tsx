@@ -52,17 +52,15 @@ const CapitalActiveLoanSummary = ( {
 		return null;
 	}
 
+	// Client 11.1.0 `capital/index.tsx` places the Overview's loan card on the page as it is.
 	return (
-		<section className="woocommerce-woopayments-capital__section">
-			<ActiveLoanSummary
-				details={ summary.details }
-				activeLoanId={
-					loans.find( ( loan ) => ! loan.fully_paid_at )
-						?.stripe_loan_id
-				}
-				baseClassName="woocommerce-woopayments-capital"
-			/>
-		</section>
+		<ActiveLoanSummary
+			details={ summary.details }
+			activeLoanId={
+				loans.find( ( loan ) => ! loan.fully_paid_at )?.stripe_loan_id
+			}
+			baseClassName="woocommerce-woopayments-capital__active-loan"
+		/>
 	);
 };
 

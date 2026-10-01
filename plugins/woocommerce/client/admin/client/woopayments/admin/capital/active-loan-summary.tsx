@@ -1,7 +1,18 @@
 /**
  * External dependencies
  */
+import {
+	Button,
+	Card,
+	CardBody,
+	CardHeader,
+	Flex,
+	FlexBlock,
+} from '@wordpress/components';
+import { useInstanceId } from '@wordpress/compose';
+import { createInterpolateElement } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
+import type { ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -9,6 +20,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import type { WooPaymentsCapitalSummary } from './types';
 import { formatExplicitCurrency } from '../money-movement/utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import './active-loan-summary.scss';
 
 const getDateValue = ( value: string | number ): string | number => {
 	if ( typeof value === 'number' ) {
@@ -80,67 +92,111 @@ export const getActiveCapitalLoanId = ( loans: string[] = [] ) => {
 	return '';
 };
 
+// Client 11.1.0 `components/active-loan-summary/index.tsx:27-38`: a title over its value; the page lists them as terms.
+const Block = ( {
+	title,
+	children,
+}: {
+	title: ReactNode;
+	children: ReactNode;
+} ) => (
+	<FlexBlock className="woocommerce-woopayments-loan-summary__block">
+		<dt>{ title }</dt>
+		<dd>{ children }</dd>
+	</FlexBlock>
+);
+
+// Client 11.1.0 `<big>%s</big> of %s`: the repaid amount is the large figure.
+const withBigAmount = ( text: string ) =>
+	createInterpolateElement( text, {
+		big: <span className="is-big" />,
+	} );
+
 /**
- * The active loan header and its seven summary fields, shared by Overview and Capital Loans.
+ * The active loan card, shared by Overview and Capital Loans.
  *
- * Client 11.1.0 `components/active-loan-summary/index.tsx:125-277`.
+ * Client 11.1.0 `components/active-loan-summary/index.tsx:125-277`: a header with the title and the transactions link,
+ * then the two repaid figures in one row and the five loan facts in another.
  *
  * @param props               Component props.
  * @param props.details       Active loan summary details.
  * @param props.activeLoanId  Active loan ID; links the loan's transactions when set.
- * @param props.headingLevel  Heading level for the section title.
- * @param props.baseClassName BEM block the header and summary classes hang off.
+ * @param props.headingLevel  Heading level for the card title.
+ * @param props.baseClassName Extra class for the card, naming the page it sits on.
  */
 export const ActiveLoanSummary = ( {
 	details,
 	activeLoanId = '',
 	headingLevel = 3,
-	baseClassName,
+	baseClassName = '',
 }: {
 	details: NonNullable< WooPaymentsCapitalSummary[ 'details' ] >;
 	activeLoanId?: string;
 	headingLevel?: 2 | 3;
-	baseClassName: string;
+	baseClassName?: string;
 } ) => {
 	const Heading = headingLevel === 2 ? 'h2' : 'h3';
+	const headingId = useInstanceId(
+		ActiveLoanSummary,
+		'woocommerce-woopayments-loan-summary-heading'
+	);
 	const totalDue = details.advance_amount + details.fee_amount;
 	const periodDue =
 		details.current_repayment_interval.paid_amount +
 		details.current_repayment_interval.remaining_amount;
 
 	return (
-		<>
-			<div className={ `${ baseClassName }__section-header` }>
-				<Heading>
+		<Card
+			as="section"
+			className={ [
+				'woocommerce-woopayments-loan-summary',
+				baseClassName,
+			]
+				.filter( Boolean )
+				.join( ' ' ) }
+			aria-labelledby={ headingId }
+		>
+			<CardHeader className="woocommerce-woopayments-loan-summary__header">
+				<Heading
+					id={ headingId }
+					className="woocommerce-woopayments-overview-card__title"
+				>
 					{ __( 'Active loan overview', 'woocommerce' ) }
 				</Heading>
 				{ activeLoanId && (
-					<a
-						className={ `${ baseClassName }__view-transactions` }
+					<Button
+						variant="link"
 						href={ getCapitalLoanTransactionsUrl( activeLoanId ) }
+						__next40pxDefaultSize
 					>
 						{ __( 'View transactions', 'woocommerce' ) }
-					</a>
+					</Button>
 				) }
-			</div>
-			<dl className={ `${ baseClassName }__summary` }>
-				<div>
-					<dt>{ __( 'Total repaid', 'woocommerce' ) }</dt>
-					<dd>
-						{ sprintf(
-							/* translators: 1: paid amount, 2: total amount. */
-							__( '%1$s of %2$s', 'woocommerce' ),
-							formatExplicitCurrency(
-								details.paid_amount,
-								details.currency
-							),
-							formatExplicitCurrency( totalDue, details.currency )
+			</CardHeader>
+			<CardBody className="woocommerce-woopayments-loan-summary__body">
+				<Flex
+					as="dl"
+					align="normal"
+					className="woocommerce-woopayments-loan-summary__row"
+				>
+					<Block title={ __( 'Total repaid', 'woocommerce' ) }>
+						{ withBigAmount(
+							sprintf(
+								/* translators: 1: paid amount, 2: total amount. */
+								__( '<big>%1$s</big> of %2$s', 'woocommerce' ),
+								formatExplicitCurrency(
+									details.paid_amount,
+									details.currency
+								),
+								formatExplicitCurrency(
+									totalDue,
+									details.currency
+								)
+							)
 						) }
-					</dd>
-				</div>
-				<div>
-					<dt>
-						{ sprintf(
+					</Block>
+					<Block
+						title={ sprintf(
 							/* translators: %s: repayment period due date. */
 							__(
 								'Repaid this period (until %s)',
@@ -150,57 +206,55 @@ export const ActiveLoanSummary = ( {
 								details.current_repayment_interval.due_at
 							)
 						) }
-					</dt>
-					<dd>
-						{ sprintf(
-							/* translators: 1: paid amount, 2: total period amount. */
-							__( '%1$s of %2$s minimum', 'woocommerce' ),
-							formatExplicitCurrency(
-								details.current_repayment_interval.paid_amount,
-								details.currency
-							),
-							formatExplicitCurrency(
-								periodDue,
-								details.currency
+					>
+						{ withBigAmount(
+							sprintf(
+								/* translators: 1: paid amount, 2: total period amount. */
+								__(
+									'<big>%1$s</big> of %2$s minimum',
+									'woocommerce'
+								),
+								formatExplicitCurrency(
+									details.current_repayment_interval
+										.paid_amount,
+									details.currency
+								),
+								formatExplicitCurrency(
+									periodDue,
+									details.currency
+								)
 							)
 						) }
-					</dd>
-				</div>
-				<div>
-					<dt>{ __( 'Loan disbursed', 'woocommerce' ) }</dt>
-					<dd>
+					</Block>
+				</Flex>
+				<Flex
+					as="dl"
+					align="normal"
+					className="woocommerce-woopayments-loan-summary__row is-bottom-row"
+				>
+					<Block title={ __( 'Loan disbursed', 'woocommerce' ) }>
 						{ formatCapitalDate( details.advance_paid_out_at ) }
-					</dd>
-				</div>
-				<div>
-					<dt>{ __( 'Loan amount', 'woocommerce' ) }</dt>
-					<dd>
+					</Block>
+					<Block title={ __( 'Loan amount', 'woocommerce' ) }>
 						{ formatExplicitCurrency(
 							details.advance_amount,
 							details.currency
 						) }
-					</dd>
-				</div>
-				<div>
-					<dt>{ __( 'Fixed fee', 'woocommerce' ) }</dt>
-					<dd>
+					</Block>
+					<Block title={ __( 'Fixed fee', 'woocommerce' ) }>
 						{ formatExplicitCurrency(
 							details.fee_amount,
 							details.currency
 						) }
-					</dd>
-				</div>
-				<div>
-					<dt>{ __( 'Withhold rate', 'woocommerce' ) }</dt>
-					<dd>{ formatCapitalPercent( details.withhold_rate ) }</dd>
-				</div>
-				<div>
-					<dt>{ __( 'First paydown', 'woocommerce' ) }</dt>
-					<dd>
+					</Block>
+					<Block title={ __( 'Withhold rate', 'woocommerce' ) }>
+						{ formatCapitalPercent( details.withhold_rate ) }
+					</Block>
+					<Block title={ __( 'First paydown', 'woocommerce' ) }>
 						{ formatCapitalDate( details.repayments_begin_at ) }
-					</dd>
-				</div>
-			</dl>
-		</>
+					</Block>
+				</Flex>
+			</CardBody>
+		</Card>
 	);
 };

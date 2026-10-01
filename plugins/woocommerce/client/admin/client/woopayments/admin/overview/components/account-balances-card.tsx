@@ -34,6 +34,7 @@ import {
 import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
 import { formatExplicitCurrency } from '../../currency';
 import { HelpPopover } from './help-popover';
+import { LoadablePlaceholder } from './loadable-placeholder';
 
 const INSTANT_PAYOUTS_DOCS_URL =
 	'https://woocommerce.com/document/woopayments/payouts/instant-payouts/';
@@ -55,38 +56,46 @@ const NegativeBalanceHint = () =>
 		{ a: docsLink( NEGATIVE_BALANCE_DOCS_URL ) }
 	);
 
-// Client 11.1.0 `components/account-balances/balance-block.tsx` with its `balance-tooltip.tsx` help.
+// Client 11.1.0 `components/account-balances/balance-block.tsx` with its `balance-tooltip.tsx` help; while loading, no help and a placeholder amount.
 const BalanceBlock = ( {
 	id,
 	title,
-	amount,
-	currency,
+	amount = 0,
+	currency = '',
 	help,
+	isLoading = false,
 }: {
 	id: string;
 	title: string;
-	amount: number;
-	currency: string;
-	help: ReactNode;
+	amount?: number;
+	currency?: string;
+	help?: ReactNode;
+	isLoading?: boolean;
 } ) => (
 	<div className="woocommerce-woopayments-overview__balance">
 		<div className="woocommerce-woopayments-overview__balance-title">
 			<span id={ id }>{ title }</span>
-			<HelpPopover
-				label={ sprintf(
-					/* translators: %s: Balance name, like "Total balance". */
-					__( '%s tooltip', 'woocommerce' ),
-					title
-				) }
-			>
-				{ help }
-			</HelpPopover>
+			{ ! isLoading && (
+				<HelpPopover
+					label={ sprintf(
+						/* translators: %s: Balance name, like "Total balance". */
+						__( '%s tooltip', 'woocommerce' ),
+						title
+					) }
+				>
+					{ help }
+				</HelpPopover>
+			) }
 		</div>
 		<p
 			className="woocommerce-woopayments-overview__balance-amount"
 			aria-labelledby={ id }
 		>
-			{ formatWooPaymentsAmount( amount, currency ) }
+			{ isLoading ? (
+				<LoadablePlaceholder>loading amount</LoadablePlaceholder>
+			) : (
+				formatWooPaymentsAmount( amount, currency )
+			) }
 		</p>
 	</div>
 );
@@ -192,7 +201,7 @@ const InstantPayoutModal = ( {
 
 export const AccountBalancesCard = ( {
 	isLoading,
-	errorMessage,
+	hasError = false,
 	overview,
 	selectedCurrency,
 	onCurrencyChange,
@@ -200,7 +209,8 @@ export const AccountBalancesCard = ( {
 	instantDepositsPreviouslyEligible = false,
 }: {
 	isLoading: boolean;
-	errorMessage: string | null;
+	/** The balance read failed; the page raised the snackbar, so the card keeps only its frame. */
+	hasError?: boolean;
 	overview: WooPaymentsDepositsOverview | null;
 	selectedCurrency?: string;
 	onCurrencyChange?: ( currency: string ) => void;
@@ -215,12 +225,7 @@ export const AccountBalancesCard = ( {
 		useState( false );
 	const headingId = 'woocommerce-woopayments-balance-heading';
 	const currencySelectId = 'woocommerce-woopayments-balance-currency';
-	const statusMessage =
-		( isLoading && __( 'Loading balance…', 'woocommerce' ) ) ||
-		errorMessage ||
-		'';
-
-	if ( ! isLoading && ! errorMessage && ! overview ) {
+	if ( ! isLoading && ! hasError && ! overview ) {
 		return null;
 	}
 
@@ -237,7 +242,7 @@ export const AccountBalancesCard = ( {
 		? getAmountForCurrency( overview.balance?.pending, currency )
 		: 0;
 	const total = available + pending;
-	const hasBalanceData = ! isLoading && ! errorMessage && !! overview;
+	const hasBalanceData = ! isLoading && ! hasError && !! overview;
 	const instantBalance = hasBalanceData
 		? getInstantBalanceForCurrency( overview, currency )
 		: null;
@@ -334,17 +339,24 @@ export const AccountBalancesCard = ( {
 					</div>
 				) }
 			</CardHeader>
-			<p
-				className={
-					hasBalanceData
-						? 'screen-reader-text'
-						: 'woocommerce-woopayments-overview__status'
-				}
-				role={ errorMessage ? 'alert' : 'status' }
-				aria-live={ errorMessage ? 'assertive' : 'polite' }
-			>
-				{ statusMessage }
+			<p className="screen-reader-text" role="status" aria-live="polite">
+				{ isLoading ? __( 'Loading balance…', 'woocommerce' ) : '' }
 			</p>
+			{ /* Client 11.1.0 `components/account-balances/index.tsx:47-66`. */ }
+			{ isLoading && (
+				<CardBody className="woocommerce-woopayments-overview__balances">
+					<BalanceBlock
+						id="woocommerce-woopayments-balance-loading-total"
+						title={ __( 'Total balance', 'woocommerce' ) }
+						isLoading
+					/>
+					<BalanceBlock
+						id="woocommerce-woopayments-balance-loading-available"
+						title={ __( 'Available funds', 'woocommerce' ) }
+						isLoading
+					/>
+				</CardBody>
+			) }
 			{ hasBalanceData && (
 				<>
 					<CardBody className="woocommerce-woopayments-overview__balances">
@@ -451,29 +463,31 @@ export const AccountBalancesCard = ( {
 					{ /* Client 11.1.0 `components/account-balances/index.tsx:226-251`. */ }
 					{ instantDepositsPreviouslyEligible &&
 						( ! instantBalance || instantBalance.amount === 0 ) && (
-							<Notice
-								className="woocommerce-woopayments-overview__instant-payout-unavailable"
-								status="warning"
-								isDismissible={ false }
-							>
-								{ createInterpolateElement(
-									__(
-										'Instant payouts are currently unavailable for your account. <a>Learn about eligibility requirements</a>',
-										'woocommerce'
-									),
-									{
-										a: (
-											<ExternalLink
-												href={
-													INSTANT_PAYOUTS_DOCS_URL
-												}
-											>
-												<></>
-											</ExternalLink>
+							// Core's bordered notice (N-243) sits inside the padded body, clear of the card's edge.
+							<CardBody className="woocommerce-woopayments-overview__instant-payout-unavailable">
+								<Notice
+									status="warning"
+									isDismissible={ false }
+								>
+									{ createInterpolateElement(
+										__(
+											'Instant payouts are currently unavailable for your account. <a>Learn about eligibility requirements</a>',
+											'woocommerce'
 										),
-									}
-								) }
-							</Notice>
+										{
+											a: (
+												<ExternalLink
+													href={
+														INSTANT_PAYOUTS_DOCS_URL
+													}
+												>
+													<></>
+												</ExternalLink>
+											),
+										}
+									) }
+								</Notice>
+							</CardBody>
 						) }
 					{ isInstantPayoutModalOpen && instantBalance && (
 						<InstantPayoutModal

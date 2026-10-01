@@ -55,13 +55,11 @@ export const ActiveLoanSummaryCard = ( {
 	}
 
 	return (
-		<section className="woocommerce-woopayments-overview-card woocommerce-woopayments-active-loan">
-			<ActiveLoanSummary
-				details={ summary.details }
-				activeLoanId={ getActiveCapitalLoanId( loans ) }
-				headingLevel={ 2 }
-				baseClassName="woocommerce-woopayments-active-loan"
-			/>
-		</section>
+		<ActiveLoanSummary
+			details={ summary.details }
+			activeLoanId={ getActiveCapitalLoanId( loans ) }
+			headingLevel={ 2 }
+			baseClassName="woocommerce-woopayments-active-loan"
+		/>
 	);
 };

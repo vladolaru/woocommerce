@@ -128,9 +128,10 @@ describe( 'WooPaymentsCapitalPage', () => {
 			path: '/wc/v3/payments/capital/loans',
 			method: 'GET',
 		} );
+		// The repaid amount is its own large figure, so read the whole value.
 		expect(
-			screen.getByText( '$200.00 of $1,100.00' )
-		).toBeInTheDocument();
+			screen.getByText( 'Total repaid' ).nextElementSibling
+		).toHaveTextContent( '$200.00 of $1,100.00' );
 		expect( screen.getAllByText( '15%' ) ).toHaveLength( 2 );
 		expect(
 			screen.getByRole( 'link', {
@@ -167,8 +168,8 @@ describe( 'WooPaymentsCapitalPage', () => {
 			screen.getByText( /Repaid this period \(until / )
 		).toBeInTheDocument();
 		expect(
-			screen.getByText( '$200.00 of $500.00 minimum' )
-		).toBeInTheDocument();
+			screen.getByText( /Repaid this period \(until / ).nextElementSibling
+		).toHaveTextContent( '$200.00 of $500.00 minimum' );
 		expect( screen.getByText( '2 loans' ) ).toBeInTheDocument();
 		expect( screen.getByText( '$1,500.00 total' ) ).toBeInTheDocument();
 		expect( screen.getByText( '$150.00 fixed fees' ) ).toBeInTheDocument();

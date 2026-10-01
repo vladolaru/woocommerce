@@ -103,9 +103,26 @@
 	margin: 10px 0;
 }
 
-.components-card > .woocommerce-woopayments-overview__status {
-	margin: 0;
-	padding: 16px 24px;
+// Client 11.1.0 `components/loadable/style.scss`: a grey bar the width of its transparent text.
+.woocommerce-woopayments-overview__placeholder {
+	animation: loading-fade 1.6s ease-in-out infinite;
+	background-color: #e0e0e0;
+	color: transparent;
+	display: inline-block;
+
+	&.is-block {
+		display: block;
+		line-height: 4;
+	}
+
+	@media screen and (prefers-reduced-motion: reduce) {
+		animation: none;
+	}
+}
+
+// Client 11.1.0 `components/deposits-overview/style.scss:21-26`: the schedule placeholder keeps 24px under it.
+.woocommerce-woopayments-overview__schedule .woocommerce-woopayments-overview__placeholder {
+	margin-bottom: 24px;
 }
 
 .woocommerce-woopayments-overview__instant-payout.components-card__body {
@@ -170,25 +187,6 @@
 	}
 }
 
-.woocommerce-woopayments-active-loan__summary {
-	display: grid;
-	gap: 12px;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	margin: 0;
-}
-
-.woocommerce-woopayments-active-loan__summary > div {
-	background: #f6f7f7;
-	border-radius: 4px;
-	padding: 12px;
-}
-
-.woocommerce-woopayments-active-loan__summary dd {
-	font-size: 16px;
-	font-weight: 600;
-	margin: 0;
-}
-
 // Client 11.1.0 `components/account-details/style.scss`.
 .woocommerce-woopayments-overview-card__title {
 	font-size: 20px;
@@ -239,22 +237,6 @@
 	}
 }
 
-.woocommerce-woopayments-active-loan__section-header {
-	align-items: center;
-	display: flex;
-	gap: 16px;
-	justify-content: space-between;
-	margin-bottom: 12px;
-}
-
-.woocommerce-woopayments-active-loan__section-header h2 {
-	margin: 0;
-}
-
-.woocommerce-woopayments-active-loan__view-transactions {
-	white-space: nowrap;
-}
-
 .woocommerce-woopayments-overview__help-popover-content {
 	max-width: 300px;
 	padding: 12px;
@@ -289,8 +271,12 @@
 	text-align: end;
 }
 
-.woocommerce-woopayments-overview__instant-payout-unavailable.components-notice {
-	margin: 0;
+.woocommerce-woopayments-overview__instant-payout-unavailable.components-card__body {
+	padding-top: 0;
+
+	.components-notice {
+		margin: 0;
+	}
 }
 
 .woocommerce-woopayments-account-details__fees ul {
@@ -391,14 +377,25 @@
 		width: 35%;
 	}
 
-	td:first-child svg {
-		margin-inline-end: 24px;
-		vertical-align: middle;
-	}
-
 	th:last-child,
 	td:last-child {
 		text-align: end;
+	}
+
+	@media screen and (max-width: 605px) {
+		th:first-child {
+			width: 45%;
+		}
+	}
+}
+
+.woocommerce-woopayments-overview__payout-date {
+	align-items: center;
+	display: flex;
+
+	svg {
+		flex-shrink: 0;
+		margin-inline-end: 24px;
 	}
 }
 
@@ -707,10 +704,6 @@
 }
 
 @media screen and (max-width: 782px) {
-	.woocommerce-woopayments-active-loan__summary {
-		grid-template-columns: 1fr;
-	}
-
 	.woocommerce-woopayments-overview-card__header,
 	.woocommerce-woopayments-overview__currency-selector {
 		align-items: flex-start;

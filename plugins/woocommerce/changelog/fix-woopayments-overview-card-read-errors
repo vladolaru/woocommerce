@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show placeholder rows while the WooPayments Overview balance and payouts load, and report a failed read in a snackbar instead of printing the server message in the card.

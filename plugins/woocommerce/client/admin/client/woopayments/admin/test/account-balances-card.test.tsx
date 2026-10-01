@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 /**
@@ -70,20 +70,28 @@ describe( 'AccountBalancesCard', () => {
 		} );
 	} );
 
-	it( 'announces loading state from a stable status region', () => {
-		render(
-			<AccountBalancesCard
-				isLoading
-				errorMessage={ null }
-				overview={ null }
-			/>
+	// Client 11.1.0 `components/account-balances/index.tsx:47-66`: both balance blocks with placeholder amounts.
+	it( 'shows the balance blocks with placeholder amounts while loading', () => {
+		render( <AccountBalancesCard isLoading overview={ null } /> );
+
+		const card = within(
+			screen.getByRole( 'region', { name: 'Balance' } )
 		);
 
+		expect( card.getByText( 'Total balance' ) ).toBeVisible();
+		expect( card.getByText( 'Available funds' ) ).toBeVisible();
 		expect(
-			screen.getByRole( 'heading', { name: 'Balance' } )
-		).toBeInTheDocument();
+			document.querySelectorAll(
+				'.woocommerce-woopayments-overview__placeholder'
+			)
+		).toHaveLength( 2 );
+		expect( card.queryByText( /\$/ ) ).not.toBeInTheDocument();
+		// The loading announcement stays for screen readers only.
 		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
 			'Loading balance…'
+		);
+		expect( screen.getByRole( 'status' ) ).toHaveClass(
+			'screen-reader-text'
 		);
 		expect( screen.getByRole( 'region' ) ).toHaveAttribute(
 			'aria-busy',
@@ -91,29 +99,27 @@ describe( 'AccountBalancesCard', () => {
 		);
 	} );
 
-	it( 'announces errors from a stable alert region', () => {
+	// The page raises the client's snackbar (`data/deposits/resolvers.js:68`); the card keeps its frame and prints no server text.
+	it( 'keeps only the card frame when the balance read fails', () => {
 		render(
 			<AccountBalancesCard
 				isLoading={ false }
-				errorMessage="Unable to load balance."
+				hasError
 				overview={ null }
 			/>
 		);
 
-		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
-			'Unable to load balance.'
-		);
-		expect( screen.getByRole( 'region' ) ).toHaveAttribute(
-			'aria-busy',
-			'false'
-		);
+		const region = screen.getByRole( 'region', { name: 'Balance' } );
+
+		expect( region ).toHaveAttribute( 'aria-busy', 'false' );
+		expect( screen.queryByRole( 'alert' ) ).not.toBeInTheDocument();
+		expect( region.textContent ).toBe( 'Balance' );
 	} );
 
 	it( 'renders balance totals when overview data is available', () => {
 		render(
 			<AccountBalancesCard
 				isLoading={ false }
-				errorMessage={ null }
 				overview={ createOverview() }
 				selectedCurrency="usd"
 				onCurrencyChange={ jest.fn() }
@@ -151,7 +157,6 @@ describe( 'AccountBalancesCard', () => {
 		const { rerender } = render(
 			<AccountBalancesCard
 				isLoading={ false }
-				errorMessage={ null }
 				overview={ overview }
 				selectedCurrency="usd"
 				onCurrencyChange={ onCurrencyChange }
@@ -173,7 +178,6 @@ describe( 'AccountBalancesCard', () => {
 		rerender(
 			<AccountBalancesCard
 				isLoading={ false }
-				errorMessage={ null }
 				overview={ overview }
 				selectedCurrency="eur"
 				onCurrencyChange={ onCurrencyChange }
@@ -188,7 +192,6 @@ describe( 'AccountBalancesCard', () => {
 		render(
 			<AccountBalancesCard
 				isLoading={ false }
-				errorMessage={ null }
 				overview={ createOverview() }
 				selectedCurrency="usd"
 				onCurrencyChange={ jest.fn() }
@@ -234,7 +237,6 @@ describe( 'AccountBalancesCard', () => {
 		render(
 			<AccountBalancesCard
 				isLoading={ false }
-				errorMessage={ null }
 				overview={ createOverview( {
 					balance: {
 						available: [ { amount: -500, currency: 'usd' } ],
@@ -270,7 +272,6 @@ describe( 'AccountBalancesCard', () => {
 		render(
 			<AccountBalancesCard
 				isLoading={ false }
-				errorMessage={ null }
 				overview={ createOverview( {
 					balance: {
 						available: [ { amount: 1000, currency: 'usd' } ],
@@ -358,7 +359,6 @@ describe( 'AccountBalancesCard', () => {
 			render(
 				<AccountBalancesCard
 					isLoading={ false }
-					errorMessage={ null }
 					overview={ createOverview( {
 						balance: {
 							available: [ { amount: 1000, currency: 'usd' } ],
@@ -385,6 +385,12 @@ describe( 'AccountBalancesCard', () => {
 				renderCard( true, instant );
 
 				expect( queryWarning() ).toBeInTheDocument();
+				// Core's bordered notice sits inside the card's padded body, so its border never lies on the card's edge.
+				const notice = queryWarning()?.closest( '.components-notice' );
+				expect( notice?.parentElement ).toHaveClass(
+					'components-card__body',
+					'woocommerce-woopayments-overview__instant-payout-unavailable'
+				);
 				expect(
 					screen.getByRole( 'link', {
 						name: /Learn about eligibility requirements/,

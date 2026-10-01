@@ -542,6 +542,29 @@ describe( 'StoreLevelSettings', () => {
 		} );
 	} );
 
+	// Client 11.1.0 `multi-currency/client/data/resolvers.js:59-68`: one snackbar in the client's words, nothing repeated in the card.
+	it( 'reports a failed store settings read once, in the client wording', async () => {
+		mockApiFetch.mockRejectedValueOnce(
+			new Error( 'Internal Server Error' )
+		);
+
+		render( <StoreLevelSettings /> );
+
+		await waitFor( () => {
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'Error retrieving store settings.'
+			);
+		} );
+		expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
+		expect(
+			screen.getByRole( 'heading', { name: 'Store settings' } )
+		).toBeInTheDocument();
+		expect( screen.queryByRole( 'alert' ) ).not.toBeInTheDocument();
+		expect(
+			screen.queryByText( /Unable to load store settings/ )
+		).not.toBeInTheDocument();
+	} );
+
 	it( 'shows an error notice when saving store settings fails', async () => {
 		const save = createDeferred< typeof storeSettingsResponse >();
 		mockApiFetch

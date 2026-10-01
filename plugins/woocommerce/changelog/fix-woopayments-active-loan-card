@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments active loan as the WooPayments plugin card, with a header and divided rows, on Overview and Capital Loans.

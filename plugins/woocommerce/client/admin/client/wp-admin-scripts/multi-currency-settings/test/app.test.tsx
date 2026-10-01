@@ -284,6 +284,43 @@ describe( 'MultiCurrencySettingsApp', () => {
 	// Client 11.1.0 settings/multi-currency/index.js:17-18 (enabled currencies
 	// above the store settings), enabled-currencies-list/index.js:104-113
 	// (Add/remove below the list) and delete-button.js:130-145 (a trash icon).
+	// Client 11.1.0 `multi-currency/client/data/resolvers.js:23-33` and `settings/multi-currency/index.js:14-22`: the page
+	// keeps its sections, the empty table and Add/remove, and the failure is one snackbar in the client's words.
+	it( 'keeps the page frame and reports a failed currencies read once', async () => {
+		mockApiFetch.mockReset();
+		mockApiFetch.mockRejectedValueOnce(
+			new Error( 'Internal Server Error' )
+		);
+
+		render( <MultiCurrencySettingsApp /> );
+
+		await waitFor( () => {
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'Error retrieving currencies.'
+			);
+		} );
+		expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
+		expect(
+			screen.getByRole( 'heading', { name: 'Enabled currencies' } )
+		).toBeInTheDocument();
+		expect(
+			screen
+				.getAllByRole( 'columnheader' )
+				.map( ( th ) => th.textContent )
+		).toEqual( [ 'Name', 'Exchange rate', 'Actions' ] );
+		expect( screen.getAllByRole( 'row' ) ).toHaveLength( 1 );
+		expect(
+			screen.getByRole( 'button', { name: 'Add/remove currencies' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Store settings component' )
+		).toBeInTheDocument();
+		expect( screen.queryByRole( 'alert' ) ).not.toBeInTheDocument();
+		expect(
+			screen.queryByText( /Unable to load multi-currency settings/ )
+		).not.toBeInTheDocument();
+	} );
+
 	it( 'lays out the page in the client order', async () => {
 		render( <MultiCurrencySettingsApp /> );
 

@@ -65,23 +65,6 @@ const StripeNotificationsBanner = lazy(
 	() => import( './components/stripe-notifications-banner' )
 );
 
-const getErrorMessage = ( error: unknown ) => {
-	if ( error instanceof Error && error.message ) {
-		return error.message;
-	}
-
-	if (
-		error &&
-		typeof error === 'object' &&
-		'message' in error &&
-		typeof error.message === 'string'
-	) {
-		return error.message;
-	}
-
-	return __( 'Unable to load WooPayments payout data.', 'woocommerce' );
-};
-
 export const WooPaymentsOverviewPage = () => {
 	const [ overview, setOverview ] =
 		useState< WooPaymentsDepositsOverview | null >( null );
@@ -93,12 +76,8 @@ export const WooPaymentsOverviewPage = () => {
 	);
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ isPayoutsLoading, setIsPayoutsLoading ] = useState( false );
-	const [ overviewErrorMessage, setOverviewErrorMessage ] = useState<
-		string | null
-	>( null );
-	const [ payoutsErrorMessage, setPayoutsErrorMessage ] = useState<
-		string | null
-	>( null );
+	const [ hasOverviewError, setOverviewError ] = useState( false );
+	const [ hasPayoutsError, setPayoutsError ] = useState( false );
 	const [ shell, setShell ] = useState< WooPaymentsOverviewShell | null >(
 		null
 	);
@@ -140,12 +119,12 @@ export const WooPaymentsOverviewPage = () => {
 		] );
 
 		setOverview( nextOverview );
-		setOverviewErrorMessage( null );
+		setOverviewError( false );
 		setSelectedCurrency(
 			getSelectedBalanceCurrency( nextOverview, currency )
 		);
 		setRecentPayouts( recent.data );
-		setPayoutsErrorMessage( null );
+		setPayoutsError( false );
 
 		return deposit;
 	};
@@ -181,12 +160,19 @@ export const WooPaymentsOverviewPage = () => {
 				}
 
 				setOverview( nextOverview );
-				setOverviewErrorMessage( null );
+				setOverviewError( false );
 				setSelectedCurrency( currency );
-			} catch ( error ) {
+			} catch {
 				if ( isMounted ) {
+					// Client 11.1.0 `data/deposits/resolvers.js:61-71`: one snackbar, never the server's message.
+					dispatch( 'core/notices' ).createErrorNotice(
+						__(
+							"Error retrieving all payouts' overviews.",
+							'woocommerce'
+						)
+					);
 					setOverview( null );
-					setOverviewErrorMessage( getErrorMessage( error ) );
+					setOverviewError( true );
 					setSelectedCurrency( '' );
 				}
 			} finally {
@@ -219,12 +205,16 @@ export const WooPaymentsOverviewPage = () => {
 
 				if ( isMounted ) {
 					setRecentPayouts( recent.data );
-					setPayoutsErrorMessage( null );
+					setPayoutsError( false );
 				}
-			} catch ( error ) {
+			} catch {
 				if ( isMounted ) {
+					// Client 11.1.0 `data/deposits/resolvers.js:130-136`.
+					dispatch( 'core/notices' ).createErrorNotice(
+						__( 'Error retrieving payouts.', 'woocommerce' )
+					);
 					setRecentPayouts( [] );
-					setPayoutsErrorMessage( getErrorMessage( error ) );
+					setPayoutsError( true );
 				}
 			} finally {
 				if ( isMounted ) {
@@ -445,7 +435,7 @@ export const WooPaymentsOverviewPage = () => {
 				<>
 					<AccountBalancesCard
 						isLoading={ isLoading }
-						errorMessage={ overviewErrorMessage }
+						hasError={ hasOverviewError }
 						overview={ overview }
 						selectedCurrency={ selectedCurrency || undefined }
 						onCurrencyChange={ setSelectedCurrency }
@@ -456,7 +446,7 @@ export const WooPaymentsOverviewPage = () => {
 					/>
 					<PayoutsOverviewCard
 						isLoading={ isLoading || isPayoutsLoading }
-						errorMessage={ payoutsErrorMessage }
+						hasError={ hasPayoutsError }
 						overview={ overview }
 						recentPayouts={ recentPayouts }
 						selectedCurrency={ selectedCurrency || undefined }
