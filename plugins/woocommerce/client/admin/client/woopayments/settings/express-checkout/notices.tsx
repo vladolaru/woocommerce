@@ -10,7 +10,7 @@ import { ExpressCheckoutInlineNotice } from './components';
 import {
 	asSettingsRecord,
 	getExpressCheckoutFeatureFlags,
-	isWooPayExpressCheckoutAvailable,
+	isWooPayAvailable,
 } from './settings-utils';
 import {
 	useAmazonPayEnabledSettings,
@@ -71,7 +71,7 @@ export const ExpressCheckoutSettingsNotices = ( {
 	const isAmazonPayAvailable =
 		availablePaymentMethodIds.includes( 'amazon_pay' );
 	const isWooPayEffectivelyEnabled =
-		isWooPayEnabled && isWooPayExpressCheckoutAvailable( settings );
+		isWooPayEnabled && isWooPayAvailable( settings );
 	const isAmazonPayEffectivelyEnabled =
 		isAmazonPayEnabled && featureFlags.amazonPay && isAmazonPayAvailable;
 	const enabledMethods = [

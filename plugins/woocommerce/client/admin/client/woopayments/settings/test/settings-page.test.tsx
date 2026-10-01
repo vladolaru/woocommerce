@@ -2142,73 +2142,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect( setIsLinkEnabled ).toHaveBeenCalledWith( true );
 	} );
 
-	it( 'hides the WooPay express checkout row when the WooPay Express Checkout feature flag is disabled', async () => {
-		const setIsLinkEnabled = jest.fn();
-
-		mockUseGetSettings.mockReturnValue( {
-			account_country: 'US',
-			store_currency: 'USD',
-			is_multi_currency_enabled: true,
-			feature_flags: {
-				...DEFAULT_FEATURE_FLAGS,
-				woopayExpressCheckout: false,
-			},
-			available_payment_method_ids: [
-				'card',
-				'link',
-				'amazon_pay',
-				'apple_pay',
-				'google_pay',
-			],
-		} );
-		mockUseLinkEnabledSettings.mockImplementation(
-			( isWooPayBlockingLink?: boolean ) => {
-				const shouldBlockLink = isWooPayBlockingLink ?? true;
-				const setLinkEnabledIfNotBlocked = ( isEnabled: boolean ) => {
-					if ( shouldBlockLink ) {
-						return;
-					}
-
-					setIsLinkEnabled( isEnabled );
-				};
-
-				return [ false, setLinkEnabledIfNotBlocked, shouldBlockLink ];
-			}
-		);
-
-		render( <WooPaymentsSettingsPage /> );
-
-		const expressCheckoutsSection =
-			getSettingsSectionByName( 'Express checkouts' );
-
-		expect(
-			within( expressCheckoutsSection ).queryByRole( 'checkbox', {
-				name: 'WooPay',
-			} )
-		).not.toBeInTheDocument();
-		expect(
-			within( expressCheckoutsSection ).queryByRole( 'link', {
-				name: 'Customize WooPay',
-			} )
-		).not.toBeInTheDocument();
-		expect(
-			within( expressCheckoutsSection ).getByRole( 'checkbox', {
-				name: 'Amazon Pay',
-			} )
-		).toBeInTheDocument();
-
-		const linkCheckbox = within( expressCheckoutsSection ).getByRole(
-			'checkbox',
-			{
-				name: 'Link',
-			}
-		);
-
-		expect( linkCheckbox ).toBeEnabled();
-		await userEvent.click( linkCheckbox );
-		expect( setIsLinkEnabled ).toHaveBeenCalledWith( true );
-	} );
-
 	it( 'hides the Amazon Pay express checkout row when the Amazon Pay feature flag is disabled', () => {
 		mockUseGetSettings.mockReturnValue( {
 			account_country: 'US',
@@ -2866,6 +2799,27 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeInTheDocument();
 	} );
 
+	// Client 11.1.0 settings/general-settings/index.js:57-62.
+	it( 'shows the Test mode heading with the test mode checkbox, and neither during test mode onboarding', () => {
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			within( getGeneralSettingsSection() ).getByRole( 'heading', {
+				level: 4,
+				name: 'Test mode',
+			} )
+		).toBeInTheDocument();
+
+		mockUseTestModeOnboarding.mockReturnValue( true );
+		rerender( <WooPaymentsSettingsPage /> );
+
+		expect(
+			within( getGeneralSettingsSection() ).queryByRole( 'heading', {
+				name: 'Test mode',
+			} )
+		).not.toBeInTheDocument();
+	} );
+
 	it( 'requires confirmation before enabling test mode', async () => {
 		const setTestMode = jest.fn();
 		mockUseTestMode.mockReturnValue( [ false, setTestMode ] );
@@ -3119,7 +3073,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			is_multi_currency_enabled: true,
 			feature_flags: {
 				...DEFAULT_FEATURE_FLAGS,
-				woopayExpressCheckout: false,
+				woopay: false,
 			},
 			available_payment_method_ids: [
 				'card',
@@ -3373,6 +3327,32 @@ describe( 'WooPaymentsSettingsPage', () => {
 					/^https:\/\/example\.com\/preloaded-setup\?/
 				)
 			);
+		} );
+
+		// Client 11.1.0 prints the notice on the server, so it is there before the settings load.
+		it( 'shows the test-account notice while the settings are still loading', () => {
+			mockUseSettings.mockReturnValue( {
+				isLoading: true,
+				isSaving: false,
+				isDirty: false,
+				saveSettings: mockSaveSettings,
+			} );
+			setAccountMode( {
+				connected: true,
+				live: false,
+				testDrive: true,
+				sandbox: false,
+				setupUrl: 'https://example.com/preloaded-setup',
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.getByText( 'WooPayments settings are loading.' )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText( 'You are using a test account.' )
+			).toBeInTheDocument();
 		} );
 
 		it( 'renders the sandbox notice from the page', () => {

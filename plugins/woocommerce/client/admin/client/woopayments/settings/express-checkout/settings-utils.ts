@@ -66,13 +66,9 @@ export const isExpressFeatureEnabled = (
 	return asBoolean( flags[ flagName ], fallback );
 };
 
-export const isWooPayExpressCheckoutAvailable = (
-	settings: SettingsRecord
-) => {
-	const flags = getExpressCheckoutFeatureFlags( settings );
-
-	return flags.woopay && flags.woopayExpressCheckout;
-};
+// Client 11.1.0 offers WooPay on the `woopay` flag alone; `woopayExpressCheckout` only hides the subpage's 'general' section.
+export const isWooPayAvailable = ( settings: SettingsRecord ) =>
+	getExpressCheckoutFeatureFlags( settings ).woopay;
 
 export const isAmazonPayExpressCheckoutAvailable = (
 	settings: SettingsRecord

@@ -21,11 +21,11 @@ export const EXPRESS_CHECKOUT_METHOD_ICONS: Record<
 	payment_request: [
 		{
 			alt: 'Apple Pay',
-			src: assetUrl( 'images/payment-methods/applepay.svg' ),
+			src: assetUrl( 'images/cards/apple-pay.svg' ),
 		},
 		{
 			alt: 'Google Pay',
-			src: assetUrl( 'images/payment-methods/googlepay.svg' ),
+			src: assetUrl( 'images/cards/google-pay.svg' ),
 		},
 	],
 	amazon_pay: [
@@ -50,7 +50,12 @@ export const ExpressCheckoutMethodIcons = ( {
 	<div className="woopayments-express-checkout-settings__icons">
 		{ EXPRESS_CHECKOUT_METHOD_ICONS[ methodId ].map( ( icon ) => (
 			<div
-				className="woopayments-express-checkout-settings__icon"
+				// Like the client, the WooPay logo has no badge outline.
+				className={
+					methodId === 'woopay'
+						? 'woopayments-express-checkout-settings__icon'
+						: 'woopayments-express-checkout-settings__icon woopayments-express-checkout-settings__icon--badge'
+				}
 				key={ icon.alt }
 			>
 				<img src={ icon.src } alt={ icon.alt } />

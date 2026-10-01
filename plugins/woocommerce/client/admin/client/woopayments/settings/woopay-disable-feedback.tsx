@@ -22,7 +22,15 @@ export const WooPayDisableFeedback = ( {
 
 	return (
 		<Modal
-			title={ __( 'WooPay feedback', 'woocommerce' ) }
+			// Client 11.1.0 settings/woopay-disable-feedback/index.js:15-23 shows the WooPay logo in place of a text title.
+			icon={
+				<img
+					src={ WooPayLogoImage }
+					alt=""
+					className="woopayments-woopay-disable-feedback__logo"
+				/>
+			}
+			contentLabel={ __( 'WooPay feedback', 'woocommerce' ) }
 			isDismissible
 			shouldCloseOnClickOutside={ false }
 			shouldCloseOnEsc
@@ -30,11 +38,6 @@ export const WooPayDisableFeedback = ( {
 			className="woopayments-woopay-disable-feedback"
 		>
 			<div className="woopayments-woopay-disable-feedback__body">
-				<img
-					src={ WooPayLogoImage }
-					alt={ __( 'WooPay logo', 'woocommerce' ) }
-					className="woopayments-woopay-disable-feedback__logo"
-				/>
 				{ isLoading && (
 					<p
 						className="woopayments-woopay-disable-feedback__status"

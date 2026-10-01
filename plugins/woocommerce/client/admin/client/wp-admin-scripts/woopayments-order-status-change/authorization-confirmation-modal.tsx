@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { Button, ExternalLink, Flex, Modal } from '@wordpress/components';
+import { Button, Flex, Modal } from '@wordpress/components';
 import { createInterpolateElement } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { HorizontalRule } from '@wordpress/primitives';
@@ -10,6 +10,7 @@ import { HorizontalRule } from '@wordpress/primitives';
  * Internal dependencies
  */
 import { resetOrderStatus, submitOrderForm } from './order-status-field';
+import { TextLink } from '../../woopayments/settings/text-link';
 
 const DOCS_URL =
 	'https://woocommerce.com/document/woopayments/settings-guide/authorize-and-capture/';
@@ -86,22 +87,22 @@ export function AuthorizationConfirmationModal( {
 					),
 					{
 						authorizedNotCaptured: (
-							<ExternalLink
+							<TextLink
 								href={ `${ DOCS_URL }#authorize-vs-capture` }
 							>
 								{ __(
 									'authorized but payment has not been captured',
 									'woocommerce'
 								) }
-							</ExternalLink>
+							</TextLink>
 						),
 						newOrderStatus: <b>{ copy.newOrderStatus }</b>,
 						authorizationAction: (
-							<ExternalLink
+							<TextLink
 								href={ `${ DOCS_URL }#${ copy.actionAnchor }` }
 							>
 								{ copy.actionText }
-							</ExternalLink>
+							</TextLink>
 						),
 					}
 				) }

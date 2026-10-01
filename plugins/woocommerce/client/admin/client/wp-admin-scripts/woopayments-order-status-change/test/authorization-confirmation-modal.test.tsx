@@ -30,10 +30,9 @@ const renderModal = ( action: 'capture' | 'cancel' ) => {
 };
 
 const getMessage = () =>
-	( screen.getByText( /Do you want to continue\?/ ).textContent ?? '' )
-		// `ExternalLink` adds a hidden "(opens in a new tab)" and an arrow.
-		.replace( /\s*\(opens in a new tab\)|↗/g, '' )
-		.replace( /\s+/g, ' ' );
+	(
+		screen.getByText( /Do you want to continue\?/ ).textContent ?? ''
+	).replace( /\s+/g, ' ' );
 
 // Source: client 11.1.0 `client/order/order-status-change-strategies/index.tsx:60-196`.
 describe( 'AuthorizationConfirmationModal', () => {

@@ -552,7 +552,7 @@ export const WooPayPreview = ( {
 									<FieldValue themedStyle={ themed.textBox }>
 										{ sprintf(
 											/* translators: %s: shipping method name. */
-											__( '%s - Free', 'woocommerce' ),
+											__( '%s — Free', 'woocommerce' ),
 											__( 'Free shipping', 'woocommerce' )
 										) }
 									</FieldValue>
@@ -571,7 +571,7 @@ export const WooPayPreview = ( {
 												src={ VisaIconImage }
 												alt=""
 											/>
-											Visa .... 4242 Exp. 12/29
+											Visa ···· 4242 Exp. 12/29
 										</span>
 									</FieldValue>
 								</ContactField>

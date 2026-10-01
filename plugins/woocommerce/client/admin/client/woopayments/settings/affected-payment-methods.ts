@@ -13,7 +13,7 @@ import { getPaymentMethodDefinition } from './payment-method-definitions';
 import { getPaymentMethodAvailability } from './payment-methods-list';
 import {
 	isAmazonPayExpressCheckoutAvailable,
-	isWooPayExpressCheckoutAvailable,
+	isWooPayAvailable,
 } from './express-checkout/settings-utils';
 import {
 	useAmazonPayEnabledSettings,
@@ -145,7 +145,7 @@ export const useWooPaymentsAffectedCheckoutMethods = () => {
 		} );
 	}
 
-	if ( isWooPayEnabled && isWooPayExpressCheckoutAvailable( settings ) ) {
+	if ( isWooPayEnabled && isWooPayAvailable( settings ) ) {
 		addAffectedPaymentMethod( affectedMethods, {
 			id: 'woopay',
 			label: __( 'WooPay', 'woocommerce' ),

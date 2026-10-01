@@ -838,7 +838,11 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 				<div className="woopayments-fraud-protection-advanced__description">
 					<AdvancedFraudSettingsDescription />
 				</div>
-				<div role="status" aria-live="polite">
+				<div
+					className="screen-reader-text"
+					role="status"
+					aria-live="polite"
+				>
 					{ __( 'Loading fraud protection rules', 'woocommerce' ) }
 				</div>
 				<div className="woopayments-fraud-protection-advanced__rules">

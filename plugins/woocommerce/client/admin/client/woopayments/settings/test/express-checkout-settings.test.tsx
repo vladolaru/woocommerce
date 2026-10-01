@@ -882,34 +882,6 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'excludes WooPay from shared appearance notices when WooPay Express Checkout is feature-disabled', async () => {
-		mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
-		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: true,
-			feature_flags: {
-				...DEFAULT_FEATURE_FLAGS,
-				woopayExpressCheckout: false,
-			},
-		} );
-
-		render(
-			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
-		);
-
-		await screen.findByRole( 'heading', {
-			level: 1,
-			name: 'Apple Pay / Google Pay',
-		} );
-		expect(
-			screen.getByText(
-				'These settings will also apply to the Amazon Pay button on your store.'
-			)
-		).toBeInTheDocument();
-		expect(
-			screen.queryByText( /WooPay button on your store/ )
-		).not.toBeInTheDocument();
-	} );
-
 	it( 'keeps eligible WooPay in shared appearance notices when Amazon Pay is feature-disabled', async () => {
 		mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
 		mockUseAmazonPayEnabledSettings.mockReturnValue( [ true, noop ] );
@@ -1245,7 +1217,8 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'does not render writable WooPay controls when WooPay Express Checkout is feature-disabled', async () => {
+	// Client 11.1.0 express-checkout-settings/index.js:183-191 drops only the 'general' section.
+	it( 'shows the WooPay enable and appearance sections without the general section when WooPay Express Checkout is off', async () => {
 		mockUseGetSettings.mockReturnValue( {
 			is_express_checkout_in_payment_methods_list_supported: true,
 			feature_flags: {
@@ -1256,22 +1229,18 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 
 		render( <WooPaymentsExpressCheckoutSettings methodId="woopay" /> );
 
-		await screen.findByRole( 'heading', { level: 1, name: 'WooPay' } );
-		const settingsPage = screen
-			.getByRole( 'heading', { level: 1, name: 'WooPay' } )
-			.closest( '.woopayments-express-checkout-settings' ) as HTMLElement;
-
 		expect(
-			within( settingsPage ).getByText(
-				'WooPay is not available for this store.'
-			)
+			await screen.findByRole( 'checkbox', { name: 'Enable WooPay' } )
 		).toBeInTheDocument();
 		expect(
-			screen.queryByRole( 'checkbox', { name: 'Enable WooPay' } )
+			screen.getByRole( 'region', { name: 'Checkout appearance' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'region', { name: 'Settings' } )
 		).not.toBeInTheDocument();
 		expect(
-			screen.queryByRole( 'button', { name: 'Save changes' } )
-		).not.toBeInTheDocument();
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		).toBeInTheDocument();
 	} );
 
 	it( 'does not render writable Amazon Pay controls when the Amazon Pay feature is unavailable', async () => {

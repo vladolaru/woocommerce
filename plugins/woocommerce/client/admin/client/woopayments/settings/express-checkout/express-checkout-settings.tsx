@@ -16,7 +16,7 @@ import { ExpressCheckoutBusyState, ExpressCheckoutSaveBar } from './components';
 import {
 	asSettingsRecord,
 	isAmazonPayExpressCheckoutAvailable,
-	isWooPayExpressCheckoutAvailable,
+	isWooPayAvailable,
 } from './settings-utils';
 import { useDevMode, useGetSettings, useSettings } from '../data/hooks';
 import './style.scss';
@@ -57,7 +57,7 @@ const isExpressCheckoutMethodAvailable = (
 	settings: Record< string, unknown >
 ) => {
 	if ( methodId === 'woopay' ) {
-		return isWooPayExpressCheckoutAvailable( settings );
+		return isWooPayAvailable( settings );
 	}
 
 	if ( methodId === 'amazon_pay' ) {

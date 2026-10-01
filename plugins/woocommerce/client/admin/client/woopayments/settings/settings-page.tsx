@@ -57,7 +57,7 @@ import { useWooPaymentsAffectedCheckoutMethods } from './affected-payment-method
 import { AMAZON_PAY_DEFINITION } from './amazon-pay-definition';
 import {
 	isAmazonPayExpressCheckoutAvailable,
-	isWooPayExpressCheckoutAvailable,
+	isWooPayAvailable,
 } from './express-checkout/settings-utils';
 import { EXPRESS_CHECKOUT_METHOD_ICONS } from './express-checkout/method-icons';
 import type { PmPromotion } from '../promotions/types';
@@ -859,71 +859,76 @@ const GeneralSettingsSection = () => {
 					__nextHasNoMarginBottom
 				/>
 				{ ! isTestModeOnboarding && (
-					<CheckboxControl
-						checked={ isDevModeEnabled || isTestModeEnabled }
-						disabled={ isDevModeEnabled }
-						help={
-							isDevModeEnabled
-								? createInterpolateElement(
-										__(
-											'Test mode is active because your store is running in a development or staging environment. To disable it, switch to a production <wpEnvLink>WordPress environment</wpEnvLink> or remove the WCPAY_DEV_MODE constant. <learnMoreLink>Learn more</learnMoreLink>',
-											'woocommerce'
-										),
-										{
-											wpEnvLink: (
-												<TextLink
-													href={
-														WORDPRESS_ENVIRONMENT_URL
-													}
-												/>
+					<>
+						<h4>{ __( 'Test mode', 'woocommerce' ) }</h4>
+						<CheckboxControl
+							checked={ isDevModeEnabled || isTestModeEnabled }
+							disabled={ isDevModeEnabled }
+							help={
+								isDevModeEnabled
+									? createInterpolateElement(
+											__(
+												'Test mode is active because your store is running in a development or staging environment. To disable it, switch to a production <wpEnvLink>WordPress environment</wpEnvLink> or remove the WCPAY_DEV_MODE constant. <learnMoreLink>Learn more</learnMoreLink>',
+												'woocommerce'
 											),
-											learnMoreLink: (
-												<TextLink
-													href={ TESTING_DOC_URL }
-												/>
+											{
+												wpEnvLink: (
+													<TextLink
+														href={
+															WORDPRESS_ENVIRONMENT_URL
+														}
+													/>
+												),
+												learnMoreLink: (
+													<TextLink
+														href={ TESTING_DOC_URL }
+													/>
+												),
+											}
+									  )
+									: createInterpolateElement(
+											__(
+												'Use <testCardHelpLink>test card numbers</testCardHelpLink> to simulate various transactions. <learnMoreLink>Learn more</learnMoreLink>',
+												'woocommerce'
 											),
-										}
-								  )
-								: createInterpolateElement(
-										__(
-											'Use <testCardHelpLink>test card numbers</testCardHelpLink> to simulate various transactions. <learnMoreLink>Learn more</learnMoreLink>',
-											'woocommerce'
-										),
-										{
-											testCardHelpLink: (
-												<TextLink
-													href={ TEST_CARDS_DOC_URL }
-												/>
-											),
-											learnMoreLink: (
-												<TextLink
-													href={ TESTING_DOC_URL }
-												/>
-											),
-										}
-								  )
-						}
-						label={
-							isDevModeEnabled
-								? __(
-										'Enable test mode (enabled by development mode)',
-										'woocommerce'
-								  )
-								: __( 'Enable test mode', 'woocommerce' )
-						}
-						onChange={ ( value ) => {
-							if ( value ) {
-								setTestModeModalVisible( true );
-								return;
+											{
+												testCardHelpLink: (
+													<TextLink
+														href={
+															TEST_CARDS_DOC_URL
+														}
+													/>
+												),
+												learnMoreLink: (
+													<TextLink
+														href={ TESTING_DOC_URL }
+													/>
+												),
+											}
+									  )
 							}
+							label={
+								isDevModeEnabled
+									? __(
+											'Enable test mode (enabled by development mode)',
+											'woocommerce'
+									  )
+									: __( 'Enable test mode', 'woocommerce' )
+							}
+							onChange={ ( value ) => {
+								if ( value ) {
+									setTestModeModalVisible( true );
+									return;
+								}
 
-							recordEvent( 'wcpay_test_mode_disabled', {
-								source: 'wcadmin-settings-page',
-							} );
-							setIsTestModeEnabled( false );
-						} }
-						__nextHasNoMarginBottom
-					/>
+								recordEvent( 'wcpay_test_mode_disabled', {
+									source: 'wcadmin-settings-page',
+								} );
+								setIsTestModeEnabled( false );
+							} }
+							__nextHasNoMarginBottom
+						/>
+					</>
 				) }
 			</SettingsSection>
 			{ isDisableConfirmationVisible && (
@@ -1144,14 +1149,13 @@ const BuyNowPayLaterSettingsSection = () => {
 
 const ExpressCheckoutSettingsSection = () => {
 	const settings = asSettingsRecord( useGetSettings() );
-	const isWooPayExpressCheckoutAvailableForStore =
-		isWooPayExpressCheckoutAvailable( settings );
+	const isWooPayAvailableForStore = isWooPayAvailable( settings );
 	const [ isPaymentRequestEnabled, setIsPaymentRequestEnabled ] =
 		usePaymentRequestEnabledSettings() as BooleanSetting;
 	const [ isWooPayEnabled, setIsWooPayEnabled ] =
 		useWooPayEnabledSettings() as BooleanSetting;
 	const [ isLinkEnabled, setIsLinkEnabled ] = useLinkEnabledSettings(
-		isWooPayExpressCheckoutAvailableForStore && isWooPayEnabled
+		isWooPayAvailableForStore && isWooPayEnabled
 	) as [ boolean, ( isEnabled: boolean ) => void, boolean ];
 	const [ enabledMethodIds ] =
 		useEnabledPaymentMethodIds() as StringArraySetting;
@@ -1194,8 +1198,7 @@ const ExpressCheckoutSettingsSection = () => {
 			'woocommerce'
 		);
 	}
-	const isWooPayBlockingLink =
-		isWooPayExpressCheckoutAvailableForStore && isWooPayEnabled;
+	const isWooPayBlockingLink = isWooPayAvailableForStore && isWooPayEnabled;
 	const linkNotice = isWooPayBlockingLink
 		? __(
 				'To enable Link by Stripe, you must first disable WooPay.',
@@ -1211,7 +1214,7 @@ const ExpressCheckoutSettingsSection = () => {
 	const expressRows: ExpressCheckoutOverviewRow[] = [];
 
 	// Rows, logos and copy follow client 11.1.0 client/settings/express-checkout/*-item.tsx.
-	if ( isWooPayExpressCheckoutAvailableForStore ) {
+	if ( isWooPayAvailableForStore ) {
 		expressRows.push( {
 			id: 'woopay',
 			label: __( 'WooPay', 'woocommerce' ),
@@ -2701,12 +2704,12 @@ export const WooPaymentsSettingsPage = () => {
 			</header>
 
 			<ApplePayDomainErrorNotice />
+			<AccountModeNotice isDevModeEnabled={ isDevModeEnabled } />
 
 			{ ! isShowingSettings ? (
 				<SettingsLoadingSections />
 			) : (
 				<SettingsBusyState isBusy={ isSaving }>
-					<AccountModeNotice isDevModeEnabled={ isDevModeEnabled } />
 					<SpotlightPromotion />
 					<GeneralSettingsSection />
 					<PaymentMethodsSettingsSection />

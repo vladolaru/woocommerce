@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { Button, ExternalLink, Flex, Modal } from '@wordpress/components';
+import { Button, Flex, Modal } from '@wordpress/components';
 import { createInterpolateElement } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { HorizontalRule } from '@wordpress/primitives';
@@ -10,6 +10,7 @@ import { HorizontalRule } from '@wordpress/primitives';
  * Internal dependencies
  */
 import { resetOrderStatus, submitOrderForm } from './order-status-field';
+import { TextLink } from '../../woopayments/settings/text-link';
 
 const REFUNDS_DOC_URL =
 	'https://woocommerce.com/document/woopayments/managing-money/#refunds';
@@ -65,13 +66,11 @@ export function CancelConfirmationModal( {
 								{ __( 'Cancel order', 'woocommerce' ) }
 							</strong>
 						),
-						// `ExternalLink` carries the "(opens in a new tab)"
-						// announcement, so the jump out of wp-admin is not a
-						// surprise for screen reader users.
+						// A plain in-sentence link, as in client 11.1.0 order-status-change-strategies/index.tsx:270-278.
 						docsLink: (
-							<ExternalLink href={ REFUNDS_DOC_URL }>
+							<TextLink href={ REFUNDS_DOC_URL }>
 								{ __( 'how to issue refunds', 'woocommerce' ) }
-							</ExternalLink>
+							</TextLink>
 						),
 					}
 				) }
