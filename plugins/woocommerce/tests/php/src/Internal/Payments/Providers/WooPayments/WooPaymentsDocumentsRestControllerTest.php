@@ -4,9 +4,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsRestController;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
 use WP_HTTP_Response;
@@ -55,7 +57,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
+		remove_action( 'rest_api_init', array( $this->sut, 'maybe_register_routes' ) );
 		remove_filter( 'rest_pre_serve_request', array( $this->sut, 'serve_raw_document_response' ) );
 		remove_all_filters( 'wcpay_list_documents_request' );
 		remove_all_filters( 'pre_http_request' );
@@ -84,6 +86,47 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Documents routes are registered when the controller registers while plugins load and the cached account has Documents enabled.
+	 */
+	public function test_registers_routes_when_registered_while_plugins_load(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => array(
+					'account_id'           => 'acct_documents',
+					'live_publishable_key' => 'pk_live_documents',
+					'is_live'              => true,
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+					'is_documents_enabled' => true,
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		$platform  = $this->create_platform_api_client();
+		$this->sut = $this->create_controller_with_account_service( $this->create_account_service( $platform ) );
+
+		// WordPress defines get_userdata() in pluggable.php only after plugins load, so Jetpack's connection-owner check throws until then.
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'function_exists' => static fn( string $name ): bool => 'get_userdata' !== $name && function_exists( $name ),
+			)
+		);
+		$this->sut->register();
+		$this->reset_legacy_proxy_mocks();
+		$platform->available = true;
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'rest_api_init' );
+
+		$routes = $this->server->get_routes();
+		foreach ( array_keys( $this->get_expected_routes() ) as $route ) {
+			$this->assertArrayHasKey( $route, $routes, 'Client 11.1.0 checks Documents when REST initializes (class-wc-payments.php:2407).' );
+		}
+	}
+
+	/**
 	 * @testdox Documents routes are not registered when native runtime is inactive.
 	 */
 	public function test_registers_no_routes_when_native_does_not_own_runtime(): void {
@@ -91,7 +134,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->sut->register();
 
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
+		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'maybe_register_routes' ) ) );
 	}
 
 	/**
@@ -101,8 +144,13 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->sut = $this->create_controller( true, false, false );
 
 		$this->sut->register();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'rest_api_init' );
 
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
+		$routes = $this->server->get_routes();
+		foreach ( array_keys( $this->get_expected_routes() ) as $route ) {
+			$this->assertArrayNotHasKey( $route, $routes );
+		}
 	}
 
 	/**
@@ -486,6 +534,93 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$controller->init( $arbiter, $this->api_client, $account_service );
 
 		return $controller;
+	}
+
+	/**
+	 * Create a controller that native registers, backed by the given account service.
+	 *
+	 * @param WooPaymentsAccountService $account_service Account service.
+	 * @return WooPaymentsDocumentsRestController
+	 */
+	private function create_controller_with_account_service( WooPaymentsAccountService $account_service ): WooPaymentsDocumentsRestController {
+		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+
+		$controller = new WooPaymentsDocumentsRestController();
+		$controller->init( $arbiter, $this->api_client, $account_service );
+
+		return $controller;
+	}
+
+	/**
+	 * Create an account service that reads the account cache through the given platform client.
+	 *
+	 * @param WooPaymentsApiClient $platform Platform API client.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service( WooPaymentsApiClient $platform ): WooPaymentsAccountService {
+		$account_service = new class( $platform ) extends WooPaymentsAccountService {
+			/**
+			 * Platform API client.
+			 *
+			 * @var WooPaymentsApiClient
+			 */
+			private WooPaymentsApiClient $platform;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param WooPaymentsApiClient $platform Platform API client.
+			 */
+			public function __construct( WooPaymentsApiClient $platform ) {
+				$this->platform = $platform;
+			}
+
+			/**
+			 * Get the platform API client.
+			 *
+			 * @return WooPaymentsApiClient|null
+			 */
+			protected function get_api_client(): ?WooPaymentsApiClient {
+				return $this->platform;
+			}
+		};
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+
+		return $account_service;
+	}
+
+	/**
+	 * Create a platform API client whose connection starts unavailable.
+	 *
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_platform_api_client(): WooPaymentsApiClient {
+		return new class() extends WooPaymentsApiClient {
+			/**
+			 * Whether the platform connection reads as available.
+			 *
+			 * @var bool
+			 */
+			public bool $available = false;
+
+			/**
+			 * Constructor.
+			 */
+			public function __construct() {}
+
+			/**
+			 * Tell whether the platform connection reads as available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return $this->available;
+			}
+		};
 	}
 
 	/**

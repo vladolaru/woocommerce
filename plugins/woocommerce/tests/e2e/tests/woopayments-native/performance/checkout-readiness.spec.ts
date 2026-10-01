@@ -128,10 +128,14 @@ function assertCleanupSucceeded( errors: Error[] ): void {
 async function createProduct(
 	restApi: ApiClient,
 	runId: string
-): Promise< { id: number; name: string } > {
+): Promise< { id: number; name: string; permalink: string } > {
 	const name = `WooPayments checkout readiness ${ runId }`;
 	const product = (
-		await restApi.post< { id?: unknown; name?: unknown } >( PRODUCTS_API, {
+		await restApi.post< {
+			id?: unknown;
+			name?: unknown;
+			permalink?: unknown;
+		} >( PRODUCTS_API, {
 			name,
 			type: 'simple',
 			status: 'publish',
@@ -146,12 +150,16 @@ async function createProduct(
 			],
 		} )
 	).data;
-	if ( typeof product.id !== 'number' || product.name !== name ) {
+	if (
+		typeof product.id !== 'number' ||
+		product.name !== name ||
+		typeof product.permalink !== 'string'
+	) {
 		throw new Error(
 			'Checkout-readiness product response lacked its run-owned identity.'
 		);
 	}
-	return { id: product.id, name };
+	return { id: product.id, name, permalink: product.permalink };
 }
 
 async function emptyCart( page: Page ): Promise< void > {
@@ -238,6 +246,15 @@ test(
 			await expect( wooPayAction ).toHaveAttribute(
 				'aria-label',
 				/WooPay/i
+			);
+
+			// Unlike the Blocks checkout action above, the classic product-page
+			// button depends on WooPay hooks native decides on during bootstrap,
+			// so it guards the early account read that hid it on product pages.
+			const productUrl = new URL( product.permalink );
+			await page.goto( `${ productUrl.pathname }${ productUrl.search }` );
+			await expect( page.locator( '#wcpay-woopay-button' ) ).toHaveCount(
+				1
 			);
 
 			// Card readiness and the WooPay express action never dispatch to

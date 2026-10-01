@@ -95,14 +95,28 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 
 	/**
 	 * Register REST hooks.
+	 *
+	 * The Documents check waits for REST initialization, like client 11.1.0 (class-wc-payments.php:2407), because this
+	 * runs while plugins load.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() || ! $this->account_service->is_documents_enabled() ) {
+		if ( ! $this->arbiter->should_native_register() ) {
 			return;
 		}
 
-		if ( false === has_action( 'rest_api_init', array( $this, 'register_routes' ) ) ) {
-			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+		if ( false === has_action( 'rest_api_init', array( $this, 'maybe_register_routes' ) ) ) {
+			add_action( 'rest_api_init', array( $this, 'maybe_register_routes' ) );
+		}
+	}
+
+	/**
+	 * Register the Documents and VAT routes when the account has Documents enabled.
+	 *
+	 * @internal
+	 */
+	public function maybe_register_routes(): void {
+		if ( $this->account_service->is_documents_enabled() ) {
+			$this->register_routes();
 		}
 	}
 

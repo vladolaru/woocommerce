@@ -733,6 +733,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				'completed_waiting_period' => true,
 			),
 			'platform_checkout_eligible' => true,
+			'is_documents_enabled'       => true,
 			'capabilities'               => array(
 				'card_payments'   => 'active',
 				'klarna_payments' => 'active',

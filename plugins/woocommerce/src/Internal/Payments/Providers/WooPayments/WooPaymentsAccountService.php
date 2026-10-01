@@ -252,13 +252,15 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Get normalized WooPayments account cache data.
 	 *
-	 * Without a platform connection this returns no account and leaves the cache alone, like the client.
+	 * Without a platform connection this returns no account and leaves the cache alone, like the client. While plugins
+	 * load the connection state is not known yet, so this serves the cache as it is, with no fetch and no write.
 	 *
 	 * @param bool $force_refresh Whether to force a live account refresh.
 	 * @return array<string,mixed>
 	 */
 	public function get_cached_account_data( bool $force_refresh = false ): array {
-		if ( ! $this->is_platform_connected() ) {
+		$connection_state_known = $this->is_connection_state_known();
+		if ( $connection_state_known && ! $this->is_platform_connected() ) {
 			return array();
 		}
 
@@ -275,7 +277,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			$old_data = $data;
 		}
 
-		if ( $this->should_refresh_account_cache( $cache_contents, $force_refresh ) ) {
+		if ( $connection_state_known && $this->should_refresh_account_cache( $cache_contents, $force_refresh ) ) {
 			$data      = $this->fetch_account_data();
 			$errored   = false === $data;
 			$refreshed = ! $errored;
@@ -356,6 +358,22 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$api_client = $this->get_api_client();
 
 		return null !== $api_client && $api_client->is_available();
+	}
+
+	/**
+	 * Tell whether the platform connection state can be determined yet.
+	 *
+	 * Jetpack's connection-owner check calls get_userdata(), which WordPress defines in pluggable.php only after plugins
+	 * load. Before that the check throws and the connection reads as missing even on a connected store.
+	 *
+	 * @return bool
+	 */
+	private function is_connection_state_known(): bool {
+		if ( ! isset( $this->legacy_proxy ) ) {
+			return function_exists( 'get_userdata' );
+		}
+
+		return (bool) $this->legacy_proxy->call_function( 'function_exists', 'get_userdata' );
 	}
 
 	/**
@@ -988,13 +1006,17 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * Address-token cache cleanup must not treat a transient account refresh failure as a confirmed disconnect. Without a
 	 * platform connection the state is known, like the client's `is_stripe_connected( true )`, so an errored entry left
-	 * from that time does not count.
+	 * from that time does not count. While plugins load the connection state is not known yet, which is indeterminate.
 	 *
 	 * @since 11.2.0
 	 *
 	 * @return bool
 	 */
 	public function has_account_or_is_connection_indeterminate(): bool {
+		if ( ! $this->is_connection_state_known() ) {
+			return true;
+		}
+
 		if ( ! $this->is_platform_connected() ) {
 			return false;
 		}

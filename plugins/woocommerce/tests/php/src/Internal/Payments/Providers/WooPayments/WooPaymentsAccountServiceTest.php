@@ -1703,6 +1703,82 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should serve the cached account without fetching when read while plugins load, before the connection state is known.
+	 */
+	public function test_read_while_plugins_load_serves_the_cached_account_without_fetching(): void {
+		set_current_screen( 'dashboard' );
+		$cached_account = $this->get_valid_live_account_payload( array( 'is_documents_enabled' => true ) );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $cached_account,
+				'fetched'            => time() - DAY_IN_SECONDS,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fresh' ) ), false );
+		$sut        = $this->create_service_while_plugins_load( $api_client );
+
+		$this->assertSame( $cached_account, $sut->get_cached_account_data(), 'Before pluggable.php loads, the connection check reads false, so the read must not treat it as a known disconnect.' );
+		$this->assertTrue( $sut->is_documents_enabled() );
+		$this->assertTrue( $sut->has_account_or_is_connection_indeterminate(), 'An unknown connection state is indeterminate, not disconnected.' );
+		$this->assertSame( 0, $api_client->calls, 'No fetch may run before the connection state is known.' );
+	}
+
+	/**
+	 * @testdox Should leave the account cache untouched when read while plugins load, even when the entry is due for a refresh.
+	 * @dataProvider provide_account_caches_due_for_refresh
+	 *
+	 * @param array<string,mixed>|null $cached_data Cached account data.
+	 * @param bool                     $errored     Whether the cached entry is errored.
+	 */
+	public function test_read_while_plugins_load_writes_nothing( ?array $cached_data, bool $errored ): void {
+		set_current_screen( 'dashboard' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $cached_data,
+				'fetched'            => time() - DAY_IN_SECONDS,
+				'errored'            => $errored,
+				'consecutive_errors' => $errored ? 1 : 0,
+			)
+		);
+		$cache_before = get_option( 'wcpay_account_data' );
+		$refreshes    = did_action( 'woocommerce_payments_account_refreshed' );
+		$api_client   = $this->create_counting_account_api_client( $this->get_valid_live_account_payload(), false );
+		$sut          = $this->create_service_while_plugins_load( $api_client );
+
+		$sut->get_cached_account_data();
+		$sut->refresh_account_data();
+
+		$this->assertSame( $cache_before, get_option( 'wcpay_account_data' ), 'Before 42d357dca17 this read wrote an errored entry; the early read must write nothing.' );
+		$this->assertSame( 0, $api_client->calls );
+		$this->assertSame( $refreshes, did_action( 'woocommerce_payments_account_refreshed' ) );
+	}
+
+	/**
+	 * Account caches that a connected read would refresh.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|null,1:bool}>
+	 */
+	public function provide_account_caches_due_for_refresh(): array {
+		return array(
+			'expired account'               => array(
+				array(
+					'account_id'           => 'acct_expired',
+					'live_publishable_key' => 'pk_live_expired',
+					'is_live'              => true,
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+				),
+				false,
+			),
+			'errored entry with no account' => array( null, true ),
+		);
+	}
+
+	/**
 	 * @testdox Should not refresh expired account data while Action Scheduler jobs are running.
 	 */
 	public function test_get_cached_account_data_does_not_refresh_during_action_scheduler_jobs(): void {
@@ -2050,6 +2126,27 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 				return $this->account_data;
 			}
 		};
+	}
+
+	/**
+	 * Create the service under test as WooCommerce builds it while plugins load.
+	 *
+	 * WordPress defines get_userdata() in pluggable.php only after plugins load. Until then Jetpack's connection-owner
+	 * check throws, so the API client reads as unavailable.
+	 *
+	 * @param WooPaymentsApiClient $api_client Fake API client that reads as unavailable.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_service_while_plugins_load( WooPaymentsApiClient $api_client ): WooPaymentsAccountService {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'function_exists' => static fn( string $name ): bool => 'get_userdata' !== $name && function_exists( $name ),
+			)
+		);
+		$sut = $this->create_service_with_api_client( $api_client );
+		$sut->init( wc_get_container()->get( LegacyProxy::class ) );
+
+		return $sut;
 	}
 
 	/**

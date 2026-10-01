@@ -128,9 +128,22 @@ async function texts( locator: Locator ): Promise< string[] > {
 test(
 	'A merchant opens native payment details for a paid charge and sees its client timeline',
 	{ tag: [ tags.WOOPAYMENTS_NATIVE ] },
-	async ( { page, baseURL } ) => {
+	async ( { page, baseURL, restApi } ) => {
 		test.skip( ! FIXTURE, RECORDED_ONLY );
 		const health = trackPageHealth( page, baseURL );
+
+		// The fixture account has Documents enabled, so a REST request carries the
+		// Documents routes. Native registers REST controllers while plugins load,
+		// before Jetpack can confirm the connection, so this guards that early
+		// account read. The namespace index lists the route without calling it.
+		const documentsRoute = '/wc/v3/payments/documents';
+		const namespaceIndex = await restApi.get< { routes?: unknown } >(
+			'wc/v3',
+			{ _fields: `routes.${ documentsRoute }` }
+		);
+		expect( namespaceIndex.data.routes ).toHaveProperty( [
+			documentsRoute,
+		] );
 
 		await page.goto(
 			adminPath( '/woopayments/transactions/details', {

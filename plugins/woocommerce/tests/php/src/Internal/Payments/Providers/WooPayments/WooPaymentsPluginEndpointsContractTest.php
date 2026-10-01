@@ -133,7 +133,7 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	 * The registrar roots are the production admin REST wiring
 	 * (`WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots()`), called through
 	 * their public `register_routes()` directly rather than through `register()`: several (for
-	 * example `WooPaymentsDocumentsRestController`) gate `register()` behind live account
+	 * example `WooPaymentsDocumentsRestController`) gate their routes behind live account
 	 * capability flags (`is_documents_enabled()`) that a disconnected test account cannot satisfy,
 	 * even though the routes themselves are real and unconditional once reached. The WooPay
 	 * session, Multi-Currency and NOX onboarding controllers are not part of that production
