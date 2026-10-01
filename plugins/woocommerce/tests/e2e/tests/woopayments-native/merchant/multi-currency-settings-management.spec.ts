@@ -285,22 +285,18 @@ async function expectMultiCurrencySurfaceLoaded( page: Page ): Promise< void > {
 		page.getByRole( 'heading', { name: 'Store settings' } )
 	).toBeVisible();
 	// Loading states must settle; both the currencies list and the store
-	// settings section render explicit pending and failure copy.
+	// settings section render explicit pending copy.
 	await expect( page.getByText( 'Loading currencies…' ) ).toHaveCount( 0 );
 	await expect( page.getByText( 'Loading store settings…' ) ).toHaveCount(
 		0
 	);
+	// Client 11.1.0 multi-currency/client/data/resolvers.js:31,65: a failed
+	// read is reported only by these snackbars.
 	await expect(
-		page.getByText( 'Unable to load multi-currency settings.' )
+		page.getByText( 'Error retrieving currencies.' )
 	).toHaveCount( 0 );
 	await expect(
-		page.getByText( 'Unable to load store settings.' )
-	).toHaveCount( 0 );
-	await expect( page.getByText( 'Error loading currencies.' ) ).toHaveCount(
-		0
-	);
-	await expect(
-		page.getByText( 'Error loading store settings.' )
+		page.getByText( 'Error retrieving store settings.' )
 	).toHaveCount( 0 );
 }
 
