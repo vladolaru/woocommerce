@@ -35,6 +35,22 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 */
 	private const ONBOARDING_REDIRECT_HOOK_PRIORITY = 16;
 
+	/**
+	 * Moves the open state to the top-level menu holding the current submenu item, with WordPress's own menu classes.
+	 */
+	private const OPEN_CURRENT_MENU_SCRIPT = '( function () {'
+		. 'var item = document.querySelector( "#adminmenu .wp-submenu li.current" );'
+		. 'var top = item && item.closest( "li.menu-top" );'
+		. 'if ( ! top || top.classList.contains( "wp-has-current-submenu" ) ) { return; }'
+		. 'var swap = function ( el, remove, add ) { if ( el ) { el.classList.remove.apply( el.classList, remove ); el.classList.add.apply( el.classList, add ); } };'
+		. 'document.querySelectorAll( "#adminmenu > li.wp-has-current-submenu" ).forEach( function ( open ) {'
+		. 'swap( open, [ "wp-has-current-submenu", "wp-menu-open" ], [ "wp-not-current-submenu" ] );'
+		. 'swap( open.querySelector( ":scope > a" ), [ "wp-has-current-submenu", "wp-menu-open" ], [ "wp-not-current-submenu" ] );'
+		. '} );'
+		. 'swap( top, [ "wp-not-current-submenu" ], [ "wp-has-current-submenu", "wp-menu-open" ] );'
+		. 'swap( top.querySelector( ":scope > a" ), [ "wp-not-current-submenu" ], [ "wp-has-current-submenu", "wp-menu-open" ] );'
+		. '} )();';
+
 	private const UNRESOLVED_NOTIFICATION_BADGE_FORMAT = ' <span class="wcpay-menu-badge awaiting-mod count-%1$d"><span class="plugin-count">%1$d</span></span>';
 
 	private const PATH_ONBOARDING = '/woopayments/onboarding';
@@ -208,6 +224,21 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the native route a client 11.1.0 WC Admin path redirects to, or an empty string for any other path.
+	 *
+	 * The onboarding redirect uses it on stores where this controller is not loaded.
+	 *
+	 * @since 11.2.0
+	 * @internal
+	 *
+	 * @param string $legacy_path Client WC Admin route path, for example `/payments/overview`.
+	 * @return string
+	 */
+	public static function get_native_route_for_legacy_path( string $legacy_path ): string {
+		return self::LEGACY_ROUTE_REDIRECTS[ $legacy_path ] ?? '';
+	}
+
+	/**
 	 * Register admin navigation hooks.
 	 */
 	public function register() {
@@ -234,6 +265,82 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		if ( false === has_filter( 'woocommerce_admin_shared_settings', array( $this, 'preload_shared_settings' ) ) ) {
 			add_filter( 'woocommerce_admin_shared_settings', array( $this, 'preload_shared_settings' ) );
 		}
+
+		if ( false === has_filter( 'submenu_file', array( $this, 'highlight_current_payments_submenu' ) ) ) {
+			add_filter( 'submenu_file', array( $this, 'highlight_current_payments_submenu' ) );
+		}
+
+		if ( false === has_action( 'adminmenu', array( $this, 'open_payments_menu' ) ) ) {
+			add_action( 'adminmenu', array( $this, 'open_payments_menu' ) );
+		}
+	}
+
+	/**
+	 * Open the Payments menu on native WooPayments pages, like the client's pages under its Payments menu.
+	 *
+	 * WordPress resolves the open top-level menu from the `wc-settings` page slug after the `parent_file` filter runs,
+	 * so it always opens WooCommerce here. This moves the open state to the menu that holds the current item, right
+	 * after the menu is printed.
+	 *
+	 * @since 11.2.0
+	 * @internal
+	 *
+	 * @return void
+	 */
+	public function open_payments_menu(): void {
+		if ( '' === $this->get_current_menu_item_url() ) {
+			return;
+		}
+
+		wp_print_inline_script_tag( self::OPEN_CURRENT_MENU_SCRIPT );
+	}
+
+	/**
+	 * Mark the current native WooPayments page's Payments submenu item; detail pages mark their list, like the client.
+	 *
+	 * @since 11.2.0
+	 * @internal
+	 *
+	 * @param mixed $submenu_file Current submenu slug.
+	 * @return mixed
+	 */
+	public function highlight_current_payments_submenu( $submenu_file ) {
+		$menu_item_url = $this->get_current_menu_item_url();
+
+		return '' === $menu_item_url ? $submenu_file : $menu_item_url;
+	}
+
+	/**
+	 * Get the registered Payments submenu URL for the current native WooPayments page, or an empty string.
+	 *
+	 * @return string
+	 */
+	private function get_current_menu_item_url(): string {
+		global $submenu;
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only menu highlighting.
+		if ( ! $this->is_payments_settings_request() || ! isset( $_GET['path'] ) || ! is_string( $_GET['path'] ) ) {
+			return '';
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only menu highlighting.
+		$current_path = sanitize_text_field( wp_unslash( $_GET['path'] ) );
+		// Client 11.1.0 settings is a WooCommerce > Settings section, so WooCommerce stays open there.
+		if ( ! str_starts_with( $current_path, '/woopayments/' ) || self::PATH_SETTINGS === $current_path || str_starts_with( $current_path, self::PATH_SETTINGS . '/' ) ) {
+			return '';
+		}
+
+		foreach ( $submenu[ $this->get_parent_slug() ] ?? array() as $menu_item ) {
+			$menu_item_url = is_array( $menu_item ) && isset( $menu_item[2] ) && is_string( $menu_item[2] ) ? $menu_item[2] : '';
+			parse_str( (string) wp_parse_url( $menu_item_url, PHP_URL_QUERY ), $menu_item_query );
+			$menu_item_path = isset( $menu_item_query['path'] ) && is_string( $menu_item_query['path'] ) ? $menu_item_query['path'] : '';
+
+			if ( '' !== $menu_item_path && ( $current_path === $menu_item_path || str_starts_with( $current_path, $menu_item_path . '/' ) ) ) {
+				return $menu_item_url;
+			}
+		}
+
+		return '';
 	}
 
 	/**

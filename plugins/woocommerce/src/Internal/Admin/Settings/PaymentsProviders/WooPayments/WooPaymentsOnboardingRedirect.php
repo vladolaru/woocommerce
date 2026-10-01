@@ -33,6 +33,21 @@ class WooPaymentsOnboardingRedirect {
 	private const PATH_SETTINGS = '/woopayments/settings';
 
 	/**
+	 * Client 11.1.0 WC Admin paths start with this prefix; they live on in old emails, notes and bookmarks.
+	 */
+	private const LEGACY_PATH_PREFIX = '/payments/';
+
+	/**
+	 * Client 11.1.0 onboarding wizard path, which `maybe_redirect_from_onboarding_wizard_page()` tracks as its own origin.
+	 */
+	private const LEGACY_ONBOARDING_WIZARD_PATH = '/payments/onboarding';
+
+	/**
+	 * Client 11.1.0 settings section; `woocommerce_payments_<method>` sections redirect to it first.
+	 */
+	private const LEGACY_SETTINGS_SECTION = 'woocommerce_payments';
+
+	/**
 	 * Native routes that need a working connection and a valid account, matched by prefix.
 	 *
 	 * Mirrors the client 11.1.0 Payments child pages plus its settings page, which redirect to onboarding
@@ -96,22 +111,71 @@ class WooPaymentsOnboardingRedirect {
 	/**
 	 * Get the guarded native route a request asks for, or an empty string when it asks for none.
 	 *
-	 * Reads only the request, so callers can skip resolving this class on every other page.
+	 * Also covers the client's legacy links: the `woocommerce_payments` settings sections and the WC Admin `/payments/*`
+	 * paths, which the client redirects the same way. Reads only the request, so callers can skip resolving this class on every other page.
 	 *
 	 * @param array<string,mixed> $request Query request.
 	 * @return string
 	 */
 	public static function get_guarded_path( array $request ): string {
-		if (
-			'wc-settings' !== ( $request['page'] ?? '' )
-			|| 'checkout' !== ( $request['tab'] ?? '' )
-			|| ! isset( $request['path'] )
-			|| ! is_string( $request['path'] )
-		) {
+		$page = $request['page'] ?? '';
+		if ( 'wc-admin' === $page ) {
+			return self::get_guarded_legacy_admin_path( $request );
+		}
+
+		if ( 'wc-settings' !== $page || 'checkout' !== ( $request['tab'] ?? '' ) ) {
 			return '';
 		}
 
-		$current_path = wp_unslash( $request['path'] );
+		if ( isset( $request['path'] ) && is_string( $request['path'] ) ) {
+			return self::match_guarded_path( wp_unslash( $request['path'] ) );
+		}
+
+		$section = $request['section'] ?? '';
+		if ( is_string( $section ) && ( self::LEGACY_SETTINGS_SECTION === $section || str_starts_with( $section, self::LEGACY_SETTINGS_SECTION . '_' ) ) ) {
+			return self::PATH_SETTINGS;
+		}
+
+		return '';
+	}
+
+	/**
+	 * Get the guarded native route for a client 11.1.0 WC Admin `/payments/*` link, or an empty string.
+	 *
+	 * The setup links map to onboarding, which is guarded only here: a native onboarding request must not redirect to itself.
+	 *
+	 * @param array<string,mixed> $request Query request.
+	 * @return string
+	 */
+	private static function get_guarded_legacy_admin_path( array $request ): string {
+		if ( ! isset( $request['path'] ) || ! is_string( $request['path'] ) ) {
+			return '';
+		}
+
+		$legacy_path = wp_unslash( $request['path'] );
+		if ( ! str_starts_with( $legacy_path, self::LEGACY_PATH_PREFIX ) ) {
+			return '';
+		}
+
+		$native_path = WooPaymentsAdminNavigationController::get_native_route_for_legacy_path( $legacy_path );
+		if ( self::PATH_ONBOARDING === $native_path ) {
+			return self::PATH_ONBOARDING;
+		}
+
+		return self::match_guarded_path( $native_path );
+	}
+
+	/**
+	 * Get the guarded route a native route path falls under, or an empty string.
+	 *
+	 * @param string $current_path Native WooPayments route path.
+	 * @return string
+	 */
+	private static function match_guarded_path( string $current_path ): string {
+		if ( '' === $current_path ) {
+			return '';
+		}
+
 		foreach ( self::GUARDED_PATHS as $path ) {
 			if ( str_starts_with( $current_path, $path ) ) {
 				return $path;
@@ -133,8 +197,10 @@ class WooPaymentsOnboardingRedirect {
 			return;
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect for native admin routes.
-		$guarded_path = self::get_guarded_path( $_GET );
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only redirect for native admin routes and legacy links.
+		$guarded_path   = self::get_guarded_path( $_GET );
+		$requested_path = isset( $_GET['path'] ) && is_string( $_GET['path'] ) ? sanitize_text_field( wp_unslash( $_GET['path'] ) ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 		if ( '' === $guarded_path || $this->decided ) {
 			return;
 		}
@@ -157,6 +223,9 @@ class WooPaymentsOnboardingRedirect {
 		} elseif ( self::PATH_SETTINGS === $guarded_path ) {
 			$query['from']   = WooPaymentsOnboardingSource::FROM_WCADMIN_PAYMENTS_SETTINGS;
 			$query['source'] = WooPaymentsOnboardingSource::SOURCE_WCADMIN_SETTINGS_PAGE;
+		} elseif ( self::PATH_ONBOARDING === $guarded_path && self::LEGACY_ONBOARDING_WIZARD_PATH === $requested_path ) {
+			$query['from']   = WooPaymentsOnboardingSource::FROM_ONBOARDING_WIZARD;
+			$query['source'] = WooPaymentsOnboardingSource::get_source();
 		}
 
 		wp_safe_redirect( Utils::wc_payments_settings_url( self::PATH_ONBOARDING, $query ) );

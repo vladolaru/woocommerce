@@ -7,9 +7,11 @@
  */
 import apiFetch from '@wordpress/api-fetch';
 import { Notice } from '@wordpress/components';
+import { dispatch } from '@wordpress/data';
 import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { useEffect, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
+import { store as noticesStore } from '@wordpress/notices';
 import { recordEvent } from '@woocommerce/tracks';
 
 /**
@@ -350,6 +352,10 @@ export const WooPaymentsOrderDisputeNotice = ( {
 				}
 			} )
 			.catch( () => {
+				// Client 11.1.0 `client/data/charges/resolvers.js:15-29` reports every failed charge read as a snackbar.
+				void dispatch( noticesStore ).createErrorNotice(
+					__( 'Error retrieving transaction.', 'woocommerce' )
+				);
 				if ( isCurrent ) {
 					setCharge( null );
 				}

@@ -37,8 +37,9 @@ class WooPaymentsController {
 		add_action( 'admin_init', array( $this, 'handle_returns_from_wpcom' ) );
 		add_action( 'admin_init', array( $this, 'handle_referral_link' ), 13 );
 		add_action( 'admin_init', array( $this, 'maybe_activate_woopay' ) );
-		// Fires only when the Settings page loads, before any output.
+		// Fire only when the Settings or WC Admin page loads, before any output; WC Admin carries the client's legacy links.
 		add_action( 'load-woocommerce_page_wc-settings', array( $this, 'maybe_redirect_to_onboarding' ) );
+		add_action( 'load-woocommerce_page_wc-admin', array( $this, 'maybe_redirect_to_onboarding' ) );
 	}
 
 	/**

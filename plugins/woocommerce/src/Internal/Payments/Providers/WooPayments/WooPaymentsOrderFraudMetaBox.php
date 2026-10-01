@@ -24,7 +24,12 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 
 	private const PATH_TRANSACTION_DETAILS = '/woopayments/transactions/details';
 
-	private const PATH_FRAUD_PROTECTION_SETTINGS = '/woopayments/settings/fraud-protection';
+	private const PATH_SETTINGS = '/woopayments/settings';
+
+	/**
+	 * Settings page section the client's "Adjust risk filters" link scrolls to (`anchor=%23fp-settings` in client 11.1.0).
+	 */
+	private const SETTINGS_FRAGMENT_FRAUD_PROTECTION = 'fraud-protection';
 
 	private const META_INTENT_ID = '_intent_id';
 
@@ -298,7 +303,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 		}
 
 		if ( $show_adjust_risk_filters_link ) {
-			$this->print_action_link( __( 'Adjust risk filters', 'woocommerce' ), Utils::wc_payments_settings_url( self::PATH_FRAUD_PROTECTION_SETTINGS ) );
+			$this->print_action_link( __( 'Adjust risk filters', 'woocommerce' ), Utils::wc_payments_settings_url( self::PATH_SETTINGS, array(), self::SETTINGS_FRAGMENT_FRAUD_PROTECTION ) );
 		}
 
 		echo '</div>';

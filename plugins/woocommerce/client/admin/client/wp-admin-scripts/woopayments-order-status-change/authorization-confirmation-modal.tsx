@@ -1,9 +1,10 @@
 /**
  * External dependencies
  */
-import { Button, ExternalLink, Modal } from '@wordpress/components';
+import { Button, ExternalLink, Flex, Modal } from '@wordpress/components';
 import { createInterpolateElement } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
+import { HorizontalRule } from '@wordpress/primitives';
 
 /**
  * Internal dependencies
@@ -105,14 +106,19 @@ export function AuthorizationConfirmationModal( {
 					}
 				) }
 			</p>
-			<div className="woocommerce-woopayments-order-status-change__modal-actions">
+			<HorizontalRule className="woocommerce-woopayments-order-status-change__modal-separator" />
+			<Flex
+				className="woocommerce-woopayments-order-status-change__modal-actions"
+				justify="flex-end"
+				gap={ 4 }
+			>
 				<Button variant="secondary" onClick={ handleCancel }>
 					{ __( 'Cancel', 'woocommerce' ) }
 				</Button>
 				<Button variant="primary" onClick={ handleConfirm }>
 					{ copy.confirm }
 				</Button>
-			</div>
+			</Flex>
 		</Modal>
 	);
 }

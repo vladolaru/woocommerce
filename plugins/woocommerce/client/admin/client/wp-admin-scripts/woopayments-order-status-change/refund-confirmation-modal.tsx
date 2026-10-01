@@ -2,7 +2,7 @@
  * External dependencies
  */
 import apiFetch from '@wordpress/api-fetch';
-import { Button, Modal } from '@wordpress/components';
+import { Button, Flex, Modal } from '@wordpress/components';
 import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
@@ -174,9 +174,14 @@ export function RefundConfirmationModal( {
 						'WooPayments'
 					) }
 				</p>
-				<div className="woocommerce-woopayments-order-status-change__modal-actions">
+				<Flex
+					className="woocommerce-woopayments-order-status-change__modal-actions"
+					justify="flex-end"
+					gap={ 4 }
+				>
 					<Button
-						variant="tertiary"
+						variant="secondary"
+						__next40pxDefaultSize
 						disabled={ isRefunding }
 						accessibleWhenDisabled
 						onClick={ handleCancel }
@@ -185,6 +190,7 @@ export function RefundConfirmationModal( {
 					</Button>
 					<Button
 						variant="primary"
+						__next40pxDefaultSize
 						isBusy={ isRefunding }
 						disabled={ isRefunding }
 						accessibleWhenDisabled
@@ -196,7 +202,7 @@ export function RefundConfirmationModal( {
 							formattedRefundAmount
 						) }
 					</Button>
-				</div>
+				</Flex>
 			</div>
 		</Modal>
 	);

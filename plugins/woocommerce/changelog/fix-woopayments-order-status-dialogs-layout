@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Lay out the WooPayments order status confirmation dialogs like the WooPayments plugin: at most 600px wide, buttons on the right, and a separator above them.

@@ -95,7 +95,11 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 70, has_action( 'admin_menu', array( $sut, 'add_menu_items' ) ) );
 		$this->assertSame( 10, has_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ) ) );
+		$this->assertSame( 10, has_filter( 'submenu_file', array( $sut, 'highlight_current_payments_submenu' ) ) );
+		$this->assertSame( 10, has_action( 'adminmenu', array( $sut, 'open_payments_menu' ) ) );
 
+		remove_filter( 'submenu_file', array( $sut, 'highlight_current_payments_submenu' ) );
+		remove_action( 'adminmenu', array( $sut, 'open_payments_menu' ) );
 		remove_action( 'admin_menu', array( $sut, 'add_menu_items' ), 70 );
 		remove_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ), 10 );
 		remove_action( 'template_redirect', array( $sut, 'redirect_vat_details_request' ), 10 );
@@ -1567,6 +1571,129 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			array_column( $items, 2 )
 		);
 		$this->assertStringNotContainsString( 'wc-admin&path=/payments', implode( "\n", array_column( $items, 2 ) ) );
+	}
+
+	/**
+	 * Client 11.1.0 registers its pages under the Payments menu (`class-wc-payments-admin.php:230-611`), so WC Admin
+	 * opens Payments and marks the current page's item, detail pages marking their list.
+	 *
+	 * @testdox Should open the Payments menu and mark the $expected_title item on $path.
+	 * @dataProvider provider_current_payments_menu_items
+	 *
+	 * @param string $path           Native WooPayments route path.
+	 * @param string $expected_title Menu item that should be current.
+	 */
+	public function test_highlights_the_current_payments_menu_item( string $path, string $expected_title ): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+		$sut = $this->create_controller( true, array(), array( 'disputes_awaiting_response' => 3 ) );
+		$sut->add_menu_items();
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = $path;
+
+		$this->assertSame( $this->get_submenu_item_by_title( $expected_title )[2], $sut->highlight_current_payments_submenu( null ) );
+		$this->assertStringContainsString( '( function () {var item = document.querySelector( "#adminmenu .wp-submenu li.current" );', $this->get_open_payments_menu_output( $sut ) );
+		$this->assertStringStartsWith( '<script', $this->get_open_payments_menu_output( $sut ) );
+	}
+
+	/**
+	 * Print what the controller adds after the admin menu.
+	 *
+	 * @param WooPaymentsAdminNavigationController $sut Controller under test.
+	 * @return string
+	 */
+	private function get_open_payments_menu_output( WooPaymentsAdminNavigationController $sut ): string {
+		ob_start();
+		$sut->open_payments_menu();
+
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Native routes and the menu item the client marks current for each.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_current_payments_menu_items(): array {
+		return array(
+			'overview'            => array( '/woopayments/overview', 'Overview' ),
+			'payouts'             => array( '/woopayments/payouts', 'Payouts' ),
+			'payout details'      => array( '/woopayments/payouts/details', 'Payouts' ),
+			'transactions'        => array( '/woopayments/transactions', 'Transactions' ),
+			'transaction details' => array( '/woopayments/transactions/details', 'Transactions' ),
+			'disputes (badge)'    => array( '/woopayments/disputes', 'Disputes' ),
+			'dispute challenge'   => array( '/woopayments/disputes/challenge', 'Disputes' ),
+		);
+	}
+
+	/**
+	 * @testdox Should leave the admin menu highlight alone outside the native WooPayments pages.
+	 * @dataProvider provider_requests_outside_native_payments_pages
+	 *
+	 * @param array<string,string> $request Query request.
+	 */
+	public function test_does_not_change_the_menu_highlight_outside_native_payments_pages( array $request ): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+		$sut = $this->create_controller( true );
+		$sut->add_menu_items();
+		foreach ( $request as $key => $value ) {
+			$_GET[ $key ] = $value;
+		}
+
+		$this->assertSame( 'wc-settings', $sut->highlight_current_payments_submenu( 'wc-settings' ) );
+		$this->assertSame( '', $this->get_open_payments_menu_output( $sut ) );
+	}
+
+	/**
+	 * Requests that are not native WooPayments pages.
+	 *
+	 * @return array<string,array{0:array<string,string>}>
+	 */
+	public function provider_requests_outside_native_payments_pages(): array {
+		return array(
+			'Payments providers list' => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+				),
+			),
+			'offline payment method'  => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/offline/bacs',
+				),
+			),
+			'look-alike route'        => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/transactionsx',
+				),
+			),
+			'other settings tab'      => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'general',
+					'path' => '/woopayments/transactions',
+				),
+			),
+			// Client 11.1.0 settings is a WooCommerce > Settings section (checked on :8082), so WooCommerce stays open.
+			'WooPayments settings'    => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/settings',
+				),
+			),
+			'fraud protection'        => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/settings/fraud-protection',
+				),
+			),
+		);
 	}
 
 	/**

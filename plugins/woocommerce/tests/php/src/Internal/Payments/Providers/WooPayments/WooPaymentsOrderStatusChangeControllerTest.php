@@ -296,6 +296,62 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 `client/components/confirmation-modal/styles.scss`: at most 600px wide, 24px header and
+	 * content padding, paragraphs without margins and a full-width separator above the footer.
+	 *
+	 * @testdox Should size and space the status-change confirmation dialogs like the client.
+	 */
+	public function test_styles_the_confirmation_dialogs_like_the_client(): void {
+		$css = $this->enqueue_for_a_woopayments_order_and_get_inline_style();
+
+		$this->assertStringContainsString( '.woocommerce-woopayments-order-status-change__modal.woocommerce-woopayments-order-status-change__modal{max-width:600px}', $css );
+		$this->assertStringContainsString( '.woocommerce-woopayments-order-status-change__modal .components-modal__header{padding:24px}', $css );
+		$this->assertStringContainsString( '.woocommerce-woopayments-order-status-change__modal .components-modal__content{display:flex;flex-direction:column;padding:0 24px 24px}', $css );
+		$this->assertStringContainsString( '.woocommerce-woopayments-order-status-change__modal .components-modal__content p{margin:0;padding:0 0 1em}', $css );
+		$this->assertStringContainsString( '.woocommerce-woopayments-order-status-change__modal-separator{margin:24px -24px}', $css );
+	}
+
+	/**
+	 * Client 11.1.0 `client/components/inline-notice/styles.scss`: warning notices use the `#fcf9e8` fill, and the
+	 * icon box is a centred flex container, so the one-line test-mode notice is as tall as its 22px icon row.
+	 *
+	 * @testdox Should fill the order screen warning notices and centre their icon like the client.
+	 */
+	public function test_styles_the_order_notices_like_the_client(): void {
+		$css = $this->enqueue_for_a_woopayments_order_and_get_inline_style();
+
+		$this->assertStringContainsString( '#woocommerce-woopayments-order-payment-details .components-notice.is-warning{background-color:#fcf9e8}', $css );
+		$this->assertStringContainsString( '#woocommerce-woopayments-order-payment-details .woocommerce-woopayments-order-notice__icon{align-items:center;align-self:flex-start;display:flex;margin-inline-end:5px}', $css );
+	}
+
+	/**
+	 * Enqueue the order screen assets for a WooPayments order and get the inline style they add.
+	 *
+	 * @return string
+	 */
+	private function enqueue_for_a_woopayments_order_and_get_inline_style(): string {
+		if ( ! wp_style_is( 'woocommerce_admin_styles', 'registered' ) ) {
+			wp_register_style( 'woocommerce_admin_styles', false, array(), WC_VERSION );
+		}
+		wp_styles()->add_data( 'woocommerce_admin_styles', 'after', array() );
+
+		$order = $this->create_order();
+		$order->set_status( 'processing' );
+		$order->save();
+
+		$this->sut = $this->create_controller( true );
+		$this->set_current_order( $order );
+		$this->set_order_edit_screen( $this->get_order_edit_screen_ids()[0] );
+
+		$this->sut->handle_admin_enqueue_scripts();
+
+		$chunks = wp_styles()->get_data( 'woocommerce_admin_styles', 'after' );
+		$this->assertIsArray( $chunks, 'The order screen styles should be added inline.' );
+
+		return implode( "\n", array_filter( $chunks, 'is_string' ) );
+	}
+
+	/**
 	 * Supported order edit screens.
 	 *
 	 * @return array<string,array{0:int}>

@@ -13,6 +13,12 @@ import { WooPaymentsOrderDisputeNotice } from '../order-dispute-notice';
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 
+const mockCreateErrorNotice = jest.fn();
+jest.mock( '@wordpress/data', () => ( {
+	...jest.requireActual( '@wordpress/data' ),
+	dispatch: () => ( { createErrorNotice: mockCreateErrorNotice } ),
+} ) );
+
 const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
 
 describe( 'WooPayments order dispute notice', () => {
@@ -20,6 +26,7 @@ describe( 'WooPayments order dispute notice', () => {
 		jest.useFakeTimers();
 		jest.setSystemTime( new Date( '2023-10-20T00:00:00Z' ) );
 		mockApiFetch.mockReset();
+		mockCreateErrorNotice.mockReset();
 		window.wcSettings = {
 			adminUrl: 'http://example.com/wp-admin',
 		};
@@ -336,7 +343,9 @@ describe( 'WooPayments order dispute notice', () => {
 		expect( onDisableOrderRefund ).not.toHaveBeenCalled();
 	} );
 
-	it( 'fails soft when no charge can be read', async () => {
+	// Client 11.1.0 `client/data/charges/resolvers.js:15-29`: a failed charge read dispatches the
+	// "Error retrieving transaction." error notice, which the admin shows as a snackbar.
+	it( 'shows the client error snackbar and no notice when no charge can be read', async () => {
 		mockApiFetch.mockRejectedValue( new Error( 'Provider unavailable' ) );
 
 		const { container } = render(
@@ -347,9 +356,30 @@ describe( 'WooPayments order dispute notice', () => {
 		);
 
 		await waitFor( () =>
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'Error retrieving transaction.'
+			)
+		);
+		expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( container ).toBeEmptyDOMElement();
+	} );
+
+	it( 'adds no error notice when the charge is read', async () => {
+		mockApiFetch.mockResolvedValue( { disputes: [] } );
+
+		render(
+			<WooPaymentsOrderDisputeNotice
+				chargeId="ch_read"
+				onDisableOrderRefund={ jest.fn() }
+			/>
+		);
+
+		await waitFor( () =>
 			expect( mockApiFetch ).toHaveBeenCalledTimes( 1 )
 		);
-		expect( container ).toBeEmptyDOMElement();
+		await Promise.resolve();
+		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
 	} );
 	// Client 11.1.0 `components/disputed-order-notice/index.js:147-152,228-276,297-306`: under seven days
 	// left the single-dispute notice switches to the urgent wording with a days-left countdown.

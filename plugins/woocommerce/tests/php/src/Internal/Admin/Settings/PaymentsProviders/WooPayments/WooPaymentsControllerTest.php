@@ -26,7 +26,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		unset( $_GET['woopayments-ref'], $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['wcpay-connection-success'] );
+		unset( $_GET['woopayments-ref'], $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['section'], $_GET['method'], $_GET['id'], $_GET['wcpay-connection-success'] );
 		delete_transient( 'woopayments_referral_code' );
 		delete_option( NativePaymentsState::OPTION_NAME );
 		remove_all_filters( 'wp_redirect' );
@@ -94,12 +94,166 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertSame( 10, has_action( 'load-woocommerce_page_wc-settings', array( $sut, 'maybe_redirect_to_onboarding' ) ) );
+		$this->assertSame( 10, has_action( 'load-woocommerce_page_wc-admin', array( $sut, 'maybe_redirect_to_onboarding' ) ) );
 		$this->assertFalse( has_action( 'admin_init', array( $sut, 'maybe_redirect_to_onboarding' ) ) );
 
 		remove_action( 'admin_init', array( $sut, 'handle_returns_from_wpcom' ) );
 		remove_action( 'admin_init', array( $sut, 'handle_referral_link' ), 13 );
 		remove_action( 'admin_init', array( $sut, 'maybe_activate_woopay' ) );
 		remove_action( 'load-woocommerce_page_wc-settings', array( $sut, 'maybe_redirect_to_onboarding' ) );
+		remove_action( 'load-woocommerce_page_wc-admin', array( $sut, 'maybe_redirect_to_onboarding' ) );
+	}
+
+	/**
+	 * Client 11.1.0 sends these links to `redirect_to_nox_flow()` on a store without a working connection or a valid
+	 * account: the settings section (`WC_Payments_Account::maybe_redirect_from_settings_page()`, reached from payment
+	 * method sections through `WC_Payments_Admin_Settings::maybe_redirect_payment_method_settings()`), Overview
+	 * (`maybe_redirect_from_overview_page()`), the onboarding wizard (`maybe_redirect_from_onboarding_wizard_page()`) and
+	 * the Payments child pages (`WC_Payments_Admin::maybe_redirect_from_payments_admin_child_pages()`, no tracking args).
+	 * The connect page has no native equivalent; native sends it to onboarding (inbox.md N-125).
+	 *
+	 * @testdox Should redirect the legacy WooPayments link $request to onboarding on a never-connected store.
+	 * @dataProvider provider_legacy_links_on_a_never_connected_store
+	 *
+	 * @param array<string,string> $request        Legacy link query.
+	 * @param array<string,string> $expected_query Expected onboarding tracking query args.
+	 */
+	public function test_redirects_legacy_links_to_onboarding_on_a_never_connected_store( array $request, array $expected_query ): void {
+		$this->set_disabled_native_store();
+		$sut = $this->create_redirecting_controller( false, false );
+
+		$url = $this->run_shell_redirect_for_request( $sut, $request );
+
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+		$this->assertSame( admin_url( 'admin.php' ), strtok( $url, '?' ) );
+		$this->assertSame(
+			array_merge(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/onboarding',
+				),
+				$expected_query
+			),
+			$query
+		);
+		$this->assertSame( 1, $sut->resolutions );
+	}
+
+	/**
+	 * Legacy WooPayments links and the onboarding tracking args client 11.1.0 adds for each.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:array<string,string>}>
+	 */
+	public function provider_legacy_links_on_a_never_connected_store(): array {
+		$settings_from = array(
+			'from'   => 'WCADMIN_PAYMENT_SETTINGS',
+			'source' => 'wcadmin-settings-page',
+		);
+
+		return array(
+			'settings section'                => array(
+				array(
+					'page'    => 'wc-settings',
+					'tab'     => 'checkout',
+					'section' => 'woocommerce_payments',
+				),
+				$settings_from,
+			),
+			'settings section, WooPay method' => array(
+				array(
+					'page'    => 'wc-settings',
+					'tab'     => 'checkout',
+					'section' => 'woocommerce_payments',
+					'method'  => 'woopay',
+				),
+				$settings_from,
+			),
+			'payment method section'          => array(
+				array(
+					'page'    => 'wc-settings',
+					'tab'     => 'checkout',
+					'section' => 'woocommerce_payments_bancontact',
+				),
+				$settings_from,
+			),
+			'overview'                        => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/payments/overview',
+				),
+				array(
+					'from'   => 'WCPAY_OVERVIEW',
+					'source' => 'unknown',
+				),
+			),
+			'onboarding wizard'               => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/payments/onboarding',
+				),
+				array(
+					'from'   => 'WCPAY_ONBOARDING_WIZARD',
+					'source' => 'unknown',
+				),
+			),
+			'connect'                         => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/payments/connect',
+				),
+				array(),
+			),
+			'transactions'                    => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/payments/transactions',
+				),
+				array(),
+			),
+			'transaction details'             => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/payments/transactions/details',
+					'id'   => 'pi_123',
+				),
+				array(),
+			),
+			'payouts'                         => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/payments/payouts',
+				),
+				array(),
+			),
+			'disputes'                        => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/payments/disputes',
+				),
+				array(),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should leave the legacy settings section alone for a connected store with a valid account.
+	 */
+	public function test_does_not_redirect_the_legacy_settings_section_for_a_valid_account(): void {
+		$this->set_disabled_native_store();
+		$sut = $this->create_redirecting_controller( true, true );
+
+		$url = $this->run_shell_redirect_for_request(
+			$sut,
+			array(
+				'page'    => 'wc-settings',
+				'tab'     => 'checkout',
+				'section' => 'woocommerce_payments',
+			)
+		);
+
+		$this->assertSame( '', $url );
+		$this->assertSame( 1, $sut->resolutions );
 	}
 
 	/**
@@ -247,24 +401,48 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_unrelated_requests(): array {
 		return array(
-			'Payments settings main page' => array(
+			'Payments settings main page'  => array(
 				array(
 					'page' => 'wc-settings',
 					'tab'  => 'checkout',
 				),
 			),
-			'other settings tab'          => array(
+			'other settings tab'           => array(
 				array(
 					'page' => 'wc-settings',
 					'tab'  => 'general',
 					'path' => '/woopayments/overview',
 				),
 			),
-			'offline payment method'      => array(
+			'offline payment method'       => array(
 				array(
 					'page' => 'wc-settings',
 					'tab'  => 'checkout',
 					'path' => '/offline/bacs',
+				),
+			),
+			'other gateway section'        => array(
+				array(
+					'page'    => 'wc-settings',
+					'tab'     => 'checkout',
+					'section' => 'bacs',
+				),
+			),
+			'WC Home'                      => array(
+				array(
+					'page' => 'wc-admin',
+				),
+			),
+			'wc-admin analytics'           => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/analytics/overview',
+				),
+			),
+			'unknown legacy payments path' => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/payments/unknown',
 				),
 			),
 		);
@@ -313,6 +491,35 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 		$_GET['tab']  = 'checkout';
 		$_GET['path'] = $path;
 		$location     = '';
+		add_filter(
+			'wp_redirect',
+			static function ( $redirect_location ) use ( &$location ) {
+				$location = esc_url_raw( $redirect_location );
+				throw new \RuntimeException( 'wp_redirect intercepted' );
+			}
+		);
+
+		try {
+			$sut->maybe_redirect_to_onboarding();
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'wp_redirect intercepted', $exception->getMessage() );
+		}
+
+		return $location;
+	}
+
+	/**
+	 * Run the onboarding redirect for an arbitrary admin request.
+	 *
+	 * @param WooPaymentsController $sut     Controller under test.
+	 * @param array<string,string>  $request Query request.
+	 * @return string The intercepted redirect location, or an empty string.
+	 */
+	private function run_shell_redirect_for_request( WooPaymentsController $sut, array $request ): string {
+		foreach ( $request as $key => $value ) {
+			$_GET[ $key ] = $value;
+		}
+		$location = '';
 		add_filter(
 			'wp_redirect',
 			static function ( $redirect_location ) use ( &$location ) {

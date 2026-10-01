@@ -100,7 +100,9 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( $expected_status, $html );
 		$this->assertStringContainsString( $expected_description, $html );
 		$this->assertStringContainsString( 'Adjust risk filters', $html );
-		$this->assertStringContainsString( 'path=/woopayments/settings/fraud-protection', $html );
+		// Client 11.1.0 `class-order-fraud-and-risk-meta-box.php:108`: the main settings page at its Fraud protection section.
+		$this->assertStringContainsString( 'href="' . esc_url( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings#fraud-protection' ) ) . '"', $html );
+		$this->assertStringNotContainsString( '/woopayments/settings/fraud-protection', $html );
 
 		if ( null === $expected_link_label ) {
 			$this->assertStringNotContainsString( '/woopayments/transactions/details', $html );

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Match the WooPayments plugin on the order screen notices: the warning fill and the test mode notice height.
