@@ -812,7 +812,8 @@ export const WooPaymentsDisputesPage = () => {
 					rows={ disputes }
 					view={ view }
 					onChangeView={ handleViewChange }
-					total={ totalCount || disputes.length }
+					// Client 11.1.0 `disputes/index.tsx:215`: the pager counts what the summary counts.
+					total={ summaryCount ?? ( totalCount || disputes.length ) }
 					isLoading={ isLoading }
 					// Client 11.1.0 `disputes/index.tsx:527-551`: the disputes card has no search.
 					search={ false }

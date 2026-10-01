@@ -569,7 +569,8 @@ export const WooPaymentsPayouts = () => {
 					rows={ payouts }
 					view={ view }
 					onChangeView={ handleViewChange }
-					total={ totalCount || payouts.length }
+					// Client 11.1.0 `deposits/list/index.tsx:113`: the pager counts what the summary counts.
+					total={ summaryCount ?? ( totalCount || payouts.length ) }
 					isLoading={ isLoading }
 					// Client 11.1.0 `deposits/list/index.tsx:291-315`: the payouts card has no search.
 					search={ false }

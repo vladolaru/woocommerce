@@ -55,8 +55,10 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		header,
 		view,
 		onChangeView,
+		paginationInfo,
 	}: {
 		header?: ReactNode;
+		paginationInfo?: { totalItems: number; totalPages: number };
 		data?: WooPaymentsDeposit[];
 		fields?: Array< {
 			id: string;
@@ -65,7 +67,12 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		view: { fields?: string[] };
 		onChangeView: ( view: { fields?: string[] } ) => void;
 	} ) => (
-		<div role="table" data-visible-fields={ view.fields?.join( ',' ) }>
+		<div
+			role="table"
+			data-visible-fields={ view.fields?.join( ',' ) }
+			data-total-items={ paginationInfo?.totalItems }
+			data-total-pages={ paginationInfo?.totalPages }
+		>
 			{ header }
 			<button
 				type="button"
@@ -160,6 +167,44 @@ describe( 'WooPaymentsPayouts', () => {
 		);
 		expect( mockGetDepositsSummary ).toHaveBeenCalledWith(
 			expect.objectContaining( { status_is: 'paid' } )
+		);
+	} );
+
+	// Client 11.1.0 `deposits/list/index.tsx:113,296`: the pager is sized from the
+	// summary count; the list response carries no total.
+	it( 'pages through every payout the summary counts', async () => {
+		mockGetDeposits.mockResolvedValue( {
+			data: [
+				{
+					id: 'po_paid',
+					date: '2026-07-20',
+					type: 'standard',
+					status: 'paid',
+					amount: 2500,
+					currency: 'usd',
+				},
+			],
+		} );
+		mockGetDepositsSummary.mockResolvedValue( {
+			count: 37,
+			total: 92500,
+			currency: 'usd',
+		} );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/payouts' ] }>
+				<WooPaymentsPayouts />
+			</MemoryRouter>
+		);
+
+		await screen.findByText( summaryItem( '37 payouts' ) );
+		expect( screen.getByRole( 'table' ) ).toHaveAttribute(
+			'data-total-items',
+			'37'
+		);
+		expect( screen.getByRole( 'table' ) ).toHaveAttribute(
+			'data-total-pages',
+			'2'
 		);
 	} );
 

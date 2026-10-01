@@ -2801,6 +2801,43 @@ describe( 'WooPayments money movement pages', () => {
 		expect( screen.getByText( 'Disputes loaded.' ) ).toBeInTheDocument();
 	} );
 
+	// Client 11.1.0 `disputes/index.tsx:215,458`: the pager is sized from the
+	// summary count; the list response carries no total.
+	it( 'pages through every dispute the summary counts', async () => {
+		mockGetDisputes.mockResolvedValue( {
+			data: [
+				{
+					id: 'dp_test',
+					charge_id: 'ch_test',
+					reason: 'fraudulent',
+					status: 'won',
+					date: '2026-06-18',
+					amount: 5000,
+					currency: 'usd',
+				},
+			],
+		} );
+		mockGetDisputesSummary.mockResolvedValue( {
+			count: 118,
+			total: 590000,
+			currency: 'usd',
+		} );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/disputes' ] }>
+				<WooPaymentsDisputesPage />
+			</MemoryRouter>
+		);
+
+		await screen.findByText( summaryItem( '118 disputes' ) );
+		expect(
+			screen.getByTestId( 'money-movement-dataviews' )
+		).toHaveAttribute( 'data-total-items', '118' );
+		expect(
+			screen.getByTestId( 'money-movement-dataviews' )
+		).toHaveAttribute( 'data-total-pages', '5' );
+	} );
+
 	it( "restores hidden dispute columns from the client's user meta key", async () => {
 		setMockUserPreferences( {
 			wc_payments_disputes_hidden_columns: [ 'created', 'customerEmail' ],
