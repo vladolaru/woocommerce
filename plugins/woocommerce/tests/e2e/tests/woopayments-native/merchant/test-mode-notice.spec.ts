@@ -66,8 +66,8 @@ interface Surface {
 	route: string;
 	currentPage: NoticePage;
 	isDetailsView: boolean;
-	/** Whether the page shows the withheld read's message as its error view. */
-	showsLoadError?: boolean;
+	/** The error view's text when the page's read is withheld. */
+	loadErrorText?: string;
 }
 
 // Client 11.1.0 test-mode-notice/index.tsx:33-48.
@@ -158,7 +158,8 @@ const SURFACES: Surface[] = [
 		) }`,
 		currentPage: 'payments',
 		isDetailsView: true,
-		showsLoadError: true,
+		// Client 11.1.0 payment-details/payment-details/index.tsx:50-64.
+		loadErrorText: 'Payment details not loaded',
 	},
 	{
 		name: 'transactions',
@@ -322,9 +323,9 @@ async function visitSurface(
 		`${ surface.name } receives the test-mode bootstrap`
 	).toEqual( { testMode: true, devMode } );
 	await expectNotice( page, surface, devMode );
-	if ( surface.showsLoadError ) {
+	if ( surface.loadErrorText ) {
 		await expect(
-			page.getByText( WITHHELD_MESSAGE ).first(),
+			page.getByText( surface.loadErrorText ).first(),
 			`${ surface.name } shows its error view`
 		).toBeVisible();
 	}
