@@ -11,12 +11,46 @@ import { recordEvent } from '@woocommerce/tracks';
  * Internal dependencies
  */
 import { getWooPaymentsAccountSettings } from './api';
+import { getWooPaymentsSettingsBootstrap } from './bootstrap';
 import { TextLink } from './text-link';
 import './setup-live-payments-modal.scss';
 
 type AccountModeNoticeState = {
 	kind: 'test' | 'sandbox';
 	setupUrl?: string;
+};
+
+type AccountModeFields = {
+	connected?: boolean;
+	live?: boolean;
+	testDrive?: boolean;
+	sandbox?: boolean;
+	setupUrl?: string;
+};
+
+const getNoticeState = (
+	account: AccountModeFields
+): AccountModeNoticeState | null => {
+	if ( ! account.connected || account.live ) {
+		return null;
+	}
+
+	if ( account.testDrive ) {
+		return { kind: 'test', setupUrl: account.setupUrl };
+	}
+
+	return account.sandbox
+		? { kind: 'sandbox', setupUrl: account.setupUrl }
+		: null;
+};
+
+// Client 11.1.0 renders this notice on the server (`class-wc-payments-admin-settings.php:126-252`); the server preloads the account mode the same way.
+const getPreloadedAccountMode = (): AccountModeFields | null => {
+	const accountMode = getWooPaymentsSettingsBootstrap().accountMode;
+
+	return accountMode && typeof accountMode === 'object'
+		? ( accountMode as AccountModeFields )
+		: null;
 };
 
 const LEARN_MORE_URL =
@@ -131,39 +165,38 @@ export const AccountModeNotice = ( {
 }: {
 	isDevModeEnabled: boolean;
 } ) => {
+	const [ preloadedAccountMode ] = useState( getPreloadedAccountMode );
 	const [ noticeState, setNoticeState ] =
-		useState< AccountModeNoticeState | null >( null );
+		useState< AccountModeNoticeState | null >( () =>
+			preloadedAccountMode ? getNoticeState( preloadedAccountMode ) : null
+		);
 	const [ isModalVisible, setModalVisible ] = useState( false );
+	// The settings read carries dev mode; when it fails, the page's own flag still picks the client's development copy.
+	const isDevMode =
+		isDevModeEnabled || getWooPaymentsSettingsBootstrap().devMode === true;
 
 	useEffect( () => {
+		if ( preloadedAccountMode ) {
+			return;
+		}
+
 		let isMounted = true;
 
 		getWooPaymentsAccountSettings()
 			.then( ( response ) => {
-				if ( ! isMounted ) {
+				if ( ! isMounted || ! response.account ) {
 					return;
 				}
 
-				const account = response.account;
-
-				if ( ! account?.connected || account.live ) {
-					return;
-				}
-
-				if ( account.test_drive ) {
-					setNoticeState( {
-						kind: 'test',
+				setNoticeState(
+					getNoticeState( {
+						connected: response.account.connected,
+						live: response.account.live,
+						testDrive: response.account.test_drive,
+						sandbox: response.account.sandbox,
 						setupUrl: response.urls.setup,
-					} );
-					return;
-				}
-
-				if ( account.sandbox ) {
-					setNoticeState( {
-						kind: 'sandbox',
-						setupUrl: response.urls.setup,
-					} );
-				}
+					} )
+				);
 			} )
 			.catch( () => {
 				if ( isMounted ) {
@@ -174,13 +207,13 @@ export const AccountModeNotice = ( {
 		return () => {
 			isMounted = false;
 		};
-	}, [] );
+	}, [ preloadedAccountMode ] );
 
 	useEffect( () => {
 		const handleActivatePayments = () => {
 			if (
 				noticeState?.kind === 'test' &&
-				! isDevModeEnabled &&
+				! isDevMode &&
 				noticeState.setupUrl
 			) {
 				recordEvent( 'wcpay_settings_setup_live_payments_click', {
@@ -201,7 +234,7 @@ export const AccountModeNotice = ( {
 				handleActivatePayments
 			);
 		};
-	}, [ isDevModeEnabled, noticeState ] );
+	}, [ isDevMode, noticeState ] );
 
 	if ( ! noticeState ) {
 		return null;
@@ -213,7 +246,7 @@ export const AccountModeNotice = ( {
 		: __( 'You are using a sandbox test account.', 'woocommerce' );
 
 	const renderNoticeCopy = () => {
-		if ( isDevModeEnabled ) {
+		if ( isDevMode ) {
 			return (
 				<>
 					{ __(
@@ -282,7 +315,7 @@ export const AccountModeNotice = ( {
 				<p>
 					<strong>{ noticeHeading }</strong> { renderNoticeCopy() }
 				</p>
-				{ isTestAccount && ! isDevModeEnabled && (
+				{ isTestAccount && ! isDevMode && (
 					<Button
 						variant="secondary"
 						onClick={ () => {

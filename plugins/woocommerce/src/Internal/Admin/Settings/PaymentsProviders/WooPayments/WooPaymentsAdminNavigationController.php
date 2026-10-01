@@ -371,7 +371,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['featureFlags']          = $feature_flags;
 		$settings['woopaymentsSettings']['balanceReportIdentity'] = $this->get_balance_report_identity();
 
-		$settings['woopaymentsSettings']['adminRouteAvailability'] = $this->get_admin_route_availability();
+		$route_availability                                        = $this->get_admin_route_availability();
+		$settings['woopaymentsSettings']['adminRouteAvailability'] = $route_availability;
 		// Plugin 11.1.0 `WC_Payments_Admin::get_js_settings()` localizes these for the test-mode notice.
 		$settings['woopaymentsSettings']['testMode'] = $this->account_service->is_test_mode_enabled();
 		$settings['woopaymentsSettings']['devMode']  = $this->account_service->is_dev_mode_enabled();
@@ -388,6 +389,24 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['shouldUseExplicitPrice'] = MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1074-1085` localizes this for the dispute cover letter.
 		$settings['woopaymentsSettings']['formattedStoreAddress'] = $this->get_formatted_store_address();
+		// Plugin 11.1.0 `class-wc-payments-admin.php:1031` localizes this on every page; the transactions list reads it for its Loan filter.
+		$settings['woopaymentsSettings']['accountLoans'] = array( 'loans' => $this->get_capital_loans() );
+
+		$current_path = $this->get_request_scalar( $_GET, 'path' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only route check.
+		// Plugin 11.1.0 has the Overview's account data in the page, so the page renders before any request.
+		if ( self::PATH_OVERVIEW === $current_path && ! empty( $route_availability['allowedRoutes'][ self::PATH_OVERVIEW ] ) ) {
+			$overview_shell = $this->get_overview_shell();
+			if ( null !== $overview_shell ) {
+				$settings['woopaymentsSettings']['overviewShell'] = $overview_shell;
+			}
+		}
+		// Plugin 11.1.0 renders the test and sandbox account notices on the server, so they show even when the page's reads fail.
+		if ( self::PATH_SETTINGS === $current_path || str_starts_with( $current_path, self::PATH_SETTINGS . '/express-checkout/' ) ) {
+			$account_mode = $this->get_account_mode();
+			if ( null !== $account_mode ) {
+				$settings['woopaymentsSettings']['accountMode'] = $account_mode;
+			}
+		}
 
 		$provider_settings = $settings['woopaymentsSettings'];
 
@@ -424,6 +443,59 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings'] = $provider_settings;
 
 		return $settings;
+	}
+
+	/**
+	 * The cached account's Capital loans, like the plugin's `accountLoans.loans`: `<loan id>|<status>` strings.
+	 *
+	 * @return string[]
+	 */
+	private function get_capital_loans(): array {
+		$capital = $this->account_service->get_cached_account_data()['capital'] ?? array();
+		$loans   = is_array( $capital ) && is_array( $capital['loans'] ?? null ) ? $capital['loans'] : array();
+
+		return array_values( array_filter( $loans, 'is_string' ) );
+	}
+
+	/**
+	 * The Overview shell the Overview page would request, built from the cached account.
+	 *
+	 * @return array<string,mixed>|null The shell, or null when it cannot be built and the page should request it.
+	 */
+	private function get_overview_shell(): ?array {
+		try {
+			return wc_get_container()->get( WooPaymentsOverviewService::class )->get_overview();
+		} catch ( \Throwable $e ) {
+			return null;
+		}
+	}
+
+	/**
+	 * The account fields the settings test account notice reads, from the same summary the account request returns.
+	 *
+	 * @return array{connected:bool,live:bool,testDrive:bool,sandbox:bool,setupUrl:string}|null The fields, or null when the summary cannot be read.
+	 */
+	private function get_account_mode(): ?array {
+		try {
+			$summary = wc_get_container()->get( WooPaymentsService::class )->get_account_summary();
+		} catch ( \Throwable $e ) {
+			return null;
+		}
+
+		$account = $summary['account'] ?? null;
+		if ( ! is_array( $account ) ) {
+			return null;
+		}
+
+		$setup_url = $summary['urls']['setup'] ?? '';
+
+		return array(
+			'connected' => ! empty( $account['connected'] ),
+			'live'      => ! empty( $account['live'] ),
+			'testDrive' => ! empty( $account['test_drive'] ),
+			'sandbox'   => ! empty( $account['sandbox'] ),
+			'setupUrl'  => is_string( $setup_url ) ? $setup_url : '',
+		);
 	}
 
 	/**

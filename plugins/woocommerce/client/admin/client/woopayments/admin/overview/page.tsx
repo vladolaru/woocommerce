@@ -65,7 +65,20 @@ const StripeNotificationsBanner = lazy(
 	() => import( './components/stripe-notifications-banner' )
 );
 
+// Client 11.1.0 has the Overview's account data in the page (`class-wc-payments-admin.php:1020-1062`); the server preloads the shell the same way.
+const getPreloadedOverviewShell = (): WooPaymentsOverviewShell | null => {
+	const shell = getWooPaymentsSettingsBootstrap().overviewShell;
+
+	return shell &&
+		typeof shell === 'object' &&
+		'account' in shell &&
+		'account_status' in shell
+		? ( shell as WooPaymentsOverviewShell )
+		: null;
+};
+
 export const WooPaymentsOverviewPage = () => {
+	const [ preloadedShell ] = useState( getPreloadedOverviewShell );
 	const [ overview, setOverview ] =
 		useState< WooPaymentsDepositsOverview | null >( null );
 	const [ recentPayouts, setRecentPayouts ] = useState<
@@ -79,9 +92,9 @@ export const WooPaymentsOverviewPage = () => {
 	const [ hasOverviewError, setOverviewError ] = useState( false );
 	const [ hasPayoutsError, setPayoutsError ] = useState( false );
 	const [ shell, setShell ] = useState< WooPaymentsOverviewShell | null >(
-		null
+		preloadedShell
 	);
-	const [ isShellSettled, setShellSettled ] = useState( false );
+	const [ isShellSettled, setShellSettled ] = useState( !! preloadedShell );
 	const [ disputes, setDisputes ] = useState< WooPaymentsOverviewDispute[] >(
 		[]
 	);
@@ -233,6 +246,36 @@ export const WooPaymentsOverviewPage = () => {
 	useEffect( () => {
 		let isMounted = true;
 
+		const loadDisputes = ( nextShell: WooPaymentsOverviewShell ) => {
+			if (
+				! nextShell.account.connected ||
+				nextShell.disputes_awaiting_response_count === 0
+			) {
+				setDisputes( [] );
+				return;
+			}
+
+			getWooPaymentsOverviewDisputes()
+				.then( ( response ) => {
+					if ( isMounted ) {
+						setDisputes( response.data ?? [] );
+					}
+				} )
+				.catch( () => {
+					if ( isMounted ) {
+						setDisputes( [] );
+					}
+				} );
+		};
+
+		if ( preloadedShell ) {
+			loadDisputes( preloadedShell );
+
+			return () => {
+				isMounted = false;
+			};
+		}
+
 		getWooPaymentsOverviewShell()
 			.then( ( nextShell ) => {
 				if ( ! isMounted ) {
@@ -241,26 +284,7 @@ export const WooPaymentsOverviewPage = () => {
 
 				setShell( nextShell );
 				setShellSettled( true );
-
-				if (
-					! nextShell.account.connected ||
-					nextShell.disputes_awaiting_response_count === 0
-				) {
-					setDisputes( [] );
-					return;
-				}
-
-				getWooPaymentsOverviewDisputes()
-					.then( ( response ) => {
-						if ( isMounted ) {
-							setDisputes( response.data ?? [] );
-						}
-					} )
-					.catch( () => {
-						if ( isMounted ) {
-							setDisputes( [] );
-						}
-					} );
+				loadDisputes( nextShell );
 			} )
 			.catch( () => {
 				if ( isMounted ) {
@@ -273,7 +297,7 @@ export const WooPaymentsOverviewPage = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [] );
+	}, [ preloadedShell ] );
 
 	const showStripeBanner =
 		!! shell?.account.connected && ! isAccountRejectedOrUnderReview;

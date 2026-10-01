@@ -392,6 +392,82 @@ describe( 'WooPaymentsOverviewPage', () => {
 		await screen.findByRole( 'heading', { name: 'Balance' } );
 	} );
 
+	// Client 11.1.0 has the Overview's account data in the page (`class-wc-payments-admin.php:1020-1062`), so the mode notice,
+	// the Balance and Payouts placeholders and Account details show at once, with no shell request.
+	it( 'renders the shell sections from the preloaded shell without requesting it', async () => {
+		mockGetShell.mockReturnValue( new Promise( () => {} ) );
+		mockGetOverview.mockReturnValue( new Promise( () => {} ) );
+		mockGetOverviewDisputes.mockResolvedValue( {
+			data: [],
+			total_count: 0,
+		} );
+		Object.defineProperty( window, 'wcSettings', {
+			configurable: true,
+			value: {
+				adminUrl: 'https://example.com/wp-admin/',
+				admin: {
+					woopaymentsSettings: {
+						overviewShell: createShell( {
+							account: {
+								...createShell().account,
+								test_mode: true,
+							},
+							account_details: {
+								account_status: {
+									text: 'Preloaded status',
+									background_color: 'green',
+								},
+								payout_status: {
+									text: 'Preloaded payouts',
+									background_color: 'green',
+								},
+								banner: null,
+							},
+							disputes_awaiting_response_count: 2,
+						} ),
+					},
+				},
+			},
+		} );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		expect(
+			screen.getByText( 'WooPayments is in test mode.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Balance' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Account details' } )
+		).toBeInTheDocument();
+		expect( screen.getByText( 'Preloaded status' ) ).toBeInTheDocument();
+		expect( mockGetShell ).not.toHaveBeenCalled();
+		// The awaiting-response count still asks for the disputes behind the dispute task.
+		await waitFor( () =>
+			expect( mockGetOverviewDisputes ).toHaveBeenCalledTimes( 1 )
+		);
+	} );
+
+	it( 'requests the shell when the page carries none', async () => {
+		mockGetShell.mockReturnValue( new Promise( () => {} ) );
+		mockGetOverview.mockReturnValue( new Promise( () => {} ) );
+		Object.defineProperty( window, 'wcSettings', {
+			configurable: true,
+			value: {
+				adminUrl: 'https://example.com/wp-admin/',
+				admin: { woopaymentsSettings: { overviewShell: 'invalid' } },
+			},
+		} );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		expect( mockGetShell ).toHaveBeenCalledTimes( 1 );
+		expect(
+			screen.queryByRole( 'heading', { name: 'Account details' } )
+		).not.toBeInTheDocument();
+	} );
+
 	// Client 11.1.0 `overview/index.js` has no connected-account settings card.
 	it( 'does not mount the WooPayments settings account card', async () => {
 		render( <WooPaymentsOverviewPage /> );

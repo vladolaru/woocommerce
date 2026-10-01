@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments Overview notice, balance and payouts placeholders and Account details as soon as the page opens, instead of a blank page while account data loads.

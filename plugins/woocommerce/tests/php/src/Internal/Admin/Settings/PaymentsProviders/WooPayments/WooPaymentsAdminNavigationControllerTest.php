@@ -6,6 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOnboardingRedirect;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOverviewService;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
@@ -79,6 +81,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		foreach ( array( 'woocommerce_store_address', 'woocommerce_store_address_2', 'woocommerce_store_city', 'woocommerce_store_postcode', 'woocommerce_default_country' ) as $store_option ) {
 			delete_option( $store_option );
 		}
+		$this->reset_container_replacements();
 
 		parent::tearDown();
 	}
@@ -418,6 +421,214 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertArrayNotHasKey( 'applePayDomainError', $settings['woopaymentsSettings'] );
+	}
+
+	/**
+	 * @testdox Should preload the account's loans for the transactions Loan filter, keeping only the loan strings.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1031` (`accountLoans` from `WC_Payments_Account::get_capital()`, every WooPayments page)
+	 * and `client/transactions/filters/config.ts:555-571` (`<loan id>|<status>` strings).
+	 */
+	public function test_preloads_account_loans_for_the_transactions_loan_filter(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = '/woopayments/transactions';
+		$sut          = $this->create_controller(
+			true,
+			array(
+				'get_cached_account_data' => array(
+					'capital' => array(
+						'loans'           => array(
+							3 => 'flxln_active|active',
+							5 => array( 'not' => 'a loan' ),
+							7 => 'flxln_paid|paid',
+						),
+						'has_active_loan' => true,
+					),
+				),
+			)
+		);
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame(
+			array( 'loans' => array( 'flxln_active|active', 'flxln_paid|paid' ) ),
+			$settings['woopaymentsSettings']['accountLoans']
+		);
+	}
+
+	/**
+	 * @testdox Should preload no loans when the cached account has no Capital data.
+	 *
+	 * Source: plugin 11.1.0 `WC_Payments_Account::get_capital()` falls back to `loans => []`.
+	 */
+	public function test_preloads_empty_account_loans_without_capital_data(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller(
+			true,
+			array(
+				'get_cached_account_data' => array(
+					'capital' => array( 'loans' => 'flxln_active|active' ),
+				),
+			)
+		);
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame( array( 'loans' => array() ), $settings['woopaymentsSettings']['accountLoans'] );
+	}
+
+	/**
+	 * @testdox Should preload the Overview shell on the Overview route so the page renders without waiting for a request.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1020-1062` inlines the Overview's account data in `wcpaySettings`.
+	 */
+	public function test_preloads_overview_shell_on_the_overview_route(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = '/woopayments/overview';
+		$shell        = array(
+			'account'        => array( 'connected' => true ),
+			'account_status' => array( 'status' => 'complete' ),
+		);
+		$this->replace_overview_service( $shell );
+		$sut = $this->create_controller( true );
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame( $shell, $settings['woopaymentsSettings']['overviewShell'] );
+	}
+
+	/**
+	 * @testdox Should not build the Overview shell on route "$path".
+	 *
+	 * @testWith ["/woopayments/transactions"]
+	 *           ["/woopayments/settings"]
+	 *           ["/woopayments/overview/extra"]
+	 *           [""]
+	 *
+	 * @param string $path The settings page route.
+	 */
+	public function test_does_not_preload_overview_shell_outside_the_overview_route( string $path ): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = $path;
+		$this->replace_overview_service( null );
+		$this->replace_woopayments_service(
+			array(
+				'account' => null,
+				'urls'    => array(),
+			)
+		);
+		$sut = $this->create_controller( true );
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertArrayNotHasKey( 'overviewShell', $settings['woopaymentsSettings'] );
+	}
+
+	/**
+	 * @testdox Should not build the Overview shell when the account cannot open the Overview.
+	 */
+	public function test_does_not_preload_overview_shell_when_the_overview_route_is_not_allowed(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = '/woopayments/overview';
+		$this->replace_overview_service( null );
+		$sut = $this->create_controller( true, $this->get_no_account_state() );
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertArrayNotHasKey( 'overviewShell', $settings['woopaymentsSettings'] );
+	}
+
+	/**
+	 * @testdox Should leave the Overview shell to the page request when building it fails.
+	 */
+	public function test_does_not_preload_overview_shell_when_building_it_fails(): void {
+		$_GET['page']     = 'wc-settings';
+		$_GET['tab']      = 'checkout';
+		$_GET['path']     = '/woopayments/overview';
+		$overview_service = $this->getMockBuilder( WooPaymentsOverviewService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_overview' ) )
+			->getMock();
+		$overview_service->method( 'get_overview' )->willThrowException( new \Exception( 'Overview failed.' ) );
+		wc_get_container()->replace( WooPaymentsOverviewService::class, $overview_service );
+		$sut = $this->create_controller( true );
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertArrayNotHasKey( 'overviewShell', $settings['woopaymentsSettings'] );
+	}
+
+	/**
+	 * @testdox Should preload the account mode for the test account notice on settings route "$path".
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin-settings.php:126-252` renders the test and sandbox account notices on the server.
+	 *
+	 * @testWith ["/woopayments/settings"]
+	 *           ["/woopayments/settings/express-checkout/google_pay"]
+	 *
+	 * @param string $path The settings page route.
+	 */
+	public function test_preloads_account_mode_on_settings_routes( string $path ): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = $path;
+		$this->replace_woopayments_service(
+			array(
+				'account'   => array(
+					'id'         => 'acct_test',
+					'connected'  => true,
+					'live'       => false,
+					'test_drive' => true,
+					'sandbox'    => false,
+				),
+				'documents' => array( 'enabled' => false ),
+				'urls'      => array(
+					'overview_page' => 'https://example.com/overview',
+					'setup'         => 'https://example.com/setup',
+				),
+			)
+		);
+		$sut = $this->create_controller( true );
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame(
+			array(
+				'connected' => true,
+				'live'      => false,
+				'testDrive' => true,
+				'sandbox'   => false,
+				'setupUrl'  => 'https://example.com/setup',
+			),
+			$settings['woopaymentsSettings']['accountMode']
+		);
+	}
+
+	/**
+	 * @testdox Should not read the account mode on route "$path", which shows no test account notice.
+	 *
+	 * @testWith ["/woopayments/overview"]
+	 *           ["/woopayments/settings/fraud-protection"]
+	 *           [""]
+	 *
+	 * @param string $path The settings page route.
+	 */
+	public function test_does_not_preload_account_mode_outside_settings_routes( string $path ): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = $path;
+		$this->replace_overview_service( array() );
+		$this->replace_woopayments_service( null );
+		$sut = $this->create_controller( true );
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertArrayNotHasKey( 'accountMode', $settings['woopaymentsSettings'] );
 	}
 
 	/**
@@ -2438,6 +2649,44 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$gateway->id = $gateway_id;
 
 		return $gateway;
+	}
+
+	/**
+	 * Replace the container's Overview service with one that returns the shell, or that must not be asked for it.
+	 *
+	 * @param array<string,mixed>|null $shell The shell, or null when building it must not happen.
+	 * @return void
+	 */
+	private function replace_overview_service( ?array $shell ): void {
+		$overview_service = $this->getMockBuilder( WooPaymentsOverviewService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_overview' ) )
+			->getMock();
+		if ( null === $shell ) {
+			$overview_service->expects( $this->never() )->method( 'get_overview' );
+		} else {
+			$overview_service->method( 'get_overview' )->willReturn( $shell );
+		}
+		wc_get_container()->replace( WooPaymentsOverviewService::class, $overview_service );
+	}
+
+	/**
+	 * Replace the container's WooPayments service with one that returns the account summary, or that must not be asked for it.
+	 *
+	 * @param array<string,mixed>|null $summary The account summary, or null when reading it must not happen.
+	 * @return void
+	 */
+	private function replace_woopayments_service( ?array $summary ): void {
+		$woopayments_service = $this->getMockBuilder( WooPaymentsService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_account_summary' ) )
+			->getMock();
+		if ( null === $summary ) {
+			$woopayments_service->expects( $this->never() )->method( 'get_account_summary' );
+		} else {
+			$woopayments_service->method( 'get_account_summary' )->willReturn( $summary );
+		}
+		wc_get_container()->replace( WooPaymentsService::class, $woopayments_service );
 	}
 
 	/**

@@ -3296,6 +3296,151 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeInTheDocument();
 	} );
 
+	// Client 11.1.0 renders the test and sandbox account notices on the server
+	// (`includes/admin/class-wc-payments-admin-settings.php:126-252`), so they show when every read fails.
+	describe( 'preloaded account mode', () => {
+		type BootstrapWindow = typeof window & {
+			wcSettings?: {
+				admin?: { woopaymentsSettings?: Record< string, unknown > };
+			};
+		};
+		let previousWcSettings: BootstrapWindow[ 'wcSettings' ];
+		const isAccountRequest = ( options: unknown ) =>
+			( typeof options === 'string'
+				? options
+				: ( options as { path?: string } | undefined )?.path ) ===
+			'/wc-admin/settings/payments/woopayments/account';
+
+		beforeEach( () => {
+			previousWcSettings = ( window as BootstrapWindow ).wcSettings;
+			mockUseGetSettings.mockReturnValue( {} );
+			mockUseGetAvailablePaymentMethodIds.mockReturnValue( [] );
+			mockUseEnabledPaymentMethodIds.mockReturnValue( [ [], noop ] );
+			mockApiFetch.mockImplementation( () =>
+				Promise.reject( new Error( 'Internal Server Error' ) )
+			);
+		} );
+
+		afterEach( () => {
+			( window as BootstrapWindow ).wcSettings = previousWcSettings;
+		} );
+
+		const setAccountMode = (
+			accountMode: Record< string, unknown >,
+			devMode = false
+		) => {
+			( window as BootstrapWindow ).wcSettings = {
+				...previousWcSettings,
+				admin: {
+					...previousWcSettings?.admin,
+					woopaymentsSettings: { accountMode, devMode },
+				},
+			};
+		};
+
+		it( 'renders the test-account notice and its modal from the page when the settings and account reads fail', async () => {
+			setAccountMode( {
+				connected: true,
+				live: false,
+				testDrive: true,
+				sandbox: false,
+				setupUrl: 'https://example.com/preloaded-setup',
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.getByText( 'You are using a test account.' )
+			).toBeInTheDocument();
+			expect(
+				mockApiFetch.mock.calls.filter( ( [ options ] ) =>
+					isAccountRequest( options )
+				)
+			).toHaveLength( 0 );
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Activate payments' } )
+			);
+			const dialog = screen.getByRole( 'dialog', {
+				name: 'Activate payments on your store',
+			} );
+			expect(
+				within( dialog ).getByRole( 'link', {
+					name: 'Activate payments',
+				} )
+			).toHaveAttribute(
+				'href',
+				expect.stringMatching(
+					/^https:\/\/example\.com\/preloaded-setup\?/
+				)
+			);
+		} );
+
+		it( 'renders the sandbox notice from the page', () => {
+			setAccountMode( {
+				connected: true,
+				live: false,
+				testDrive: false,
+				sandbox: true,
+				setupUrl: '',
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.getByText( 'You are using a sandbox test account.' )
+			).toBeInTheDocument();
+		} );
+
+		// Client 11.1.0 picks the development copy from the server's `WC_Payments::mode()->is_dev()`.
+		it( 'uses the preloaded development mode when the settings read fails', () => {
+			setAccountMode(
+				{
+					connected: true,
+					live: false,
+					testDrive: true,
+					sandbox: false,
+					setupUrl: 'https://example.com/preloaded-setup',
+				},
+				true
+			);
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen
+					.getByText( 'You are using a test account.' )
+					.closest( 'p' )
+			).toHaveTextContent(
+				'⚠️ Development mode is enabled for the store!'
+			);
+			expect(
+				screen.queryByRole( 'button', { name: 'Activate payments' } )
+			).not.toBeInTheDocument();
+		} );
+
+		it( 'shows no notice for a live account and does not ask for the account', () => {
+			setAccountMode( {
+				connected: true,
+				live: true,
+				testDrive: false,
+				sandbox: false,
+				setupUrl: '',
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.queryByText( /You are using a/ )
+			).not.toBeInTheDocument();
+			expect(
+				mockApiFetch.mock.calls.filter( ( [ options ] ) =>
+					isAccountRequest( options )
+				)
+			).toHaveLength( 0 );
+		} );
+	} );
+
 	describe( 'links inside running text', () => {
 		// Client 11.1.0 renders links inside sentences as plain anchors, with no
 		// external-link glyph: settings/express-checkout/*-item.tsx,
