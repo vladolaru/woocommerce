@@ -47,7 +47,7 @@ import {
 	type WooPaymentsListShowFilter,
 } from './list-filters';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
-import { confirmWooPaymentsExport, runWooPaymentsExport } from './export';
+import { confirmWooPaymentsExport, useWooPaymentsExport } from './export';
 import {
 	formatCount,
 	formatDisputeReasonLabel,
@@ -287,6 +287,7 @@ export const WooPaymentsDisputesPage = () => {
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ hasLoadError, setHasLoadError ] = useState( false );
 	const [ isExporting, setIsExporting ] = useState( false );
+	const runExport = useWooPaymentsExport();
 	const { visibleFields, saveFields } = usePersistedHiddenFields(
 		'wc_payments_disputes_hidden_columns',
 		DISPUTE_FIELDS,
@@ -666,7 +667,7 @@ export const WooPaymentsDisputesPage = () => {
 		}
 
 		setIsExporting( true );
-		await runWooPaymentsExport( {
+		await runExport( {
 			requestExport: () => requestWooPaymentsDisputesExport( apiQuery ),
 			getExportUrl: getWooPaymentsDisputesExportUrl,
 		} );

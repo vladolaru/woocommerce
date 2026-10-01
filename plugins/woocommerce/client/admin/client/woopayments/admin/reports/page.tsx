@@ -38,7 +38,10 @@ import {
 } from './data';
 import { buildReportsFeesQueryFromView } from './query';
 import { ReportState } from './report-state';
-import { runWooPaymentsExport } from '../money-movement/export';
+import {
+	confirmWooPaymentsExport,
+	useWooPaymentsExport,
+} from '../money-movement/export';
 import { useDataViewsReloadState } from '../money-movement/use-dataviews-reload-state';
 import type {
 	ReportsBalanceQuery,
@@ -1272,6 +1275,7 @@ const FeesReport = ( { now }: { now: Date } ) => {
 		isLoading: true,
 	} );
 	const [ isExporting, setIsExporting ] = useState( false );
+	const runExport = useWooPaymentsExport();
 	const errorHeadingRef = useRef< HTMLHeadingElement >( null );
 	const mountedRef = useRef( true );
 	const query = useMemo(
@@ -1598,6 +1602,10 @@ const FeesReport = ( { now }: { now: Date } ) => {
 	// Client 11.1.0 `reports/fees-export-button.tsx:118-200`: the request sends the user's email and
 	// locale (added by the data layer) and the outcome is told by snackbars only.
 	const handleExport = async () => {
+		if ( ! confirmWooPaymentsExport( 'fees', totalItems, query ) ) {
+			return;
+		}
+
 		setIsExporting( true );
 		recordEvent( 'wcpay_csv_export_click', {
 			row_type: 'fees',
@@ -1605,7 +1613,7 @@ const FeesReport = ( { now }: { now: Date } ) => {
 			exported_row_count: totalItems,
 		} );
 
-		await runWooPaymentsExport( {
+		await runExport( {
 			requestExport: () => requestWooPaymentsReportsFeesExport( query ),
 			getExportUrl: getWooPaymentsReportsFeesExportUrl,
 			onSuccess: () =>

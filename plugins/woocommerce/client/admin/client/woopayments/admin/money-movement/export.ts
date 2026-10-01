@@ -2,6 +2,7 @@
  * External dependencies
  */
 import { dispatch } from '@wordpress/data';
+import { useCallback, useEffect, useRef } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
 /**
@@ -19,9 +20,10 @@ type RunWooPaymentsExportOptions = {
 	onError?: ( details: { reason: 'request' | 'timeout' } ) => void;
 	maxAttempts?: number;
 	pollDelayMs?: number;
+	signal?: AbortSignal;
 };
 
-type WooPaymentsExportList = 'transactions' | 'disputes' | 'payouts';
+type WooPaymentsExportList = 'transactions' | 'disputes' | 'payouts' | 'fees';
 
 type ExportSettingsWindow = typeof window & {
 	wcSettings?: { locale?: { userLocale?: string } };
@@ -61,7 +63,7 @@ const hasValue = ( value: unknown ) =>
 /**
  * Each list's large-export confirmation: the row count from which an unfiltered export asks first, and the
  * filters that skip the question. Client 11.1.0 `transactions/list/index.tsx:651-683`,
- * `disputes/index.tsx:384-403` and `deposits/list/index.tsx:248-267`.
+ * `disputes/index.tsx:384-403`, `deposits/list/index.tsx:248-267` and `reports/fees-export-button.tsx:33,128-153`.
  */
 const LARGE_EXPORT_CONFIRMATIONS: Record<
 	WooPaymentsExportList,
@@ -140,6 +142,28 @@ const LARGE_EXPORT_CONFIRMATIONS: Record<
 				totalRows
 			),
 	},
+	fees: {
+		threshold: 10000,
+		filters: [
+			'date_after',
+			'date_before',
+			'date_between',
+			'payment_method_type',
+			'type',
+			'order_id',
+			'deposit_id',
+			'search',
+		],
+		getMessage: ( totalRows ) =>
+			sprintf(
+				/* translators: %d: number of fees to export. */
+				__(
+					"You are about to export %d fees. If you'd like to reduce the size of your export, you can use one or more filters. Would you like to continue?",
+					'woocommerce'
+				),
+				totalRows
+			),
+	},
 };
 
 /**
@@ -202,6 +226,7 @@ export const triggerWooPaymentsExportDownload = ( downloadUrl: string ) => {
  * @param options.onError         Called when the request fails or the file is not ready in time.
  * @param options.maxAttempts     How many times to check.
  * @param options.pollDelayMs     The wait before each check.
+ * @param options.signal          Stops the checks once aborted, as when the page unmounts.
  */
 export const runWooPaymentsExport = async ( {
 	requestExport,
@@ -211,6 +236,7 @@ export const runWooPaymentsExport = async ( {
 	onError,
 	maxAttempts = 5,
 	pollDelayMs = 1000,
+	signal,
 }: RunWooPaymentsExportOptions ): Promise< void > => {
 	// The client starts the request, then raises the snackbar without waiting for it.
 	const exportRequest = requestExport().then(
@@ -251,6 +277,10 @@ export const runWooPaymentsExport = async ( {
 	for ( let attempt = 1; attempt <= maxAttempts; attempt++ ) {
 		await wait( pollDelayMs );
 
+		if ( signal?.aborted ) {
+			return;
+		}
+
 		let urlResponse: WooPaymentsExportResponse = {};
 
 		try {
@@ -274,4 +304,28 @@ export const runWooPaymentsExport = async ( {
 	}
 
 	onError?.( { reason: 'timeout' } );
+};
+
+/**
+ * Runs list exports that stop checking for the file when the component unmounts, like client 11.1.0
+ * `hooks/use-report-export.ts:45-52`, so a check left running cannot download or notify on another page.
+ */
+export const useWooPaymentsExport = () => {
+	const controllerRef = useRef< AbortController | null >( null );
+
+	useEffect( () => {
+		const controller = new AbortController();
+		controllerRef.current = controller;
+
+		return () => controller.abort();
+	}, [] );
+
+	return useCallback(
+		( options: Omit< RunWooPaymentsExportOptions, 'signal' > ) =>
+			runWooPaymentsExport( {
+				...options,
+				signal: controllerRef.current?.signal,
+			} ),
+		[]
+	);
 };

@@ -26,7 +26,7 @@ import {
 } from './query';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { WooPaymentsTransactionSearch } from './transaction-search';
-import { confirmWooPaymentsExport, runWooPaymentsExport } from './export';
+import { confirmWooPaymentsExport, useWooPaymentsExport } from './export';
 import {
 	formatAmount,
 	formatCount,
@@ -106,6 +106,7 @@ export const WooPaymentsTransactionsList = (
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ hasLoadError, setHasLoadError ] = useState( false );
 	const [ isExporting, setIsExporting ] = useState( false );
+	const runExport = useWooPaymentsExport();
 	const [ workingView, setWorkingView ] = useState< WorkingView >( null );
 	// Client 11.1.0 `transactions/filters/config.ts:103-127`: "Show" all or the advanced filters; payout details have none.
 	const showFilter = depositId
@@ -270,7 +271,7 @@ export const WooPaymentsTransactionsList = (
 		}
 
 		setIsExporting( true );
-		await runWooPaymentsExport( {
+		await runExport( {
 			requestExport: () => requestWooPaymentsTransactionsExport( query ),
 			getExportUrl: getWooPaymentsTransactionsExportUrl,
 		} );

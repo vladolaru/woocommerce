@@ -20,7 +20,7 @@ import {
 import { WooPaymentsMoneyMovementDataViews } from './money-movement/dataviews';
 import {
 	confirmWooPaymentsExport,
-	runWooPaymentsExport,
+	useWooPaymentsExport,
 } from './money-movement/export';
 import {
 	buildMoneyMovementRoutePath,
@@ -172,6 +172,7 @@ export const WooPaymentsPayouts = () => {
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ hasLoadError, setHasLoadError ] = useState( false );
 	const [ isExporting, setIsExporting ] = useState( false );
+	const runExport = useWooPaymentsExport();
 	const { visibleFields, saveFields } = usePersistedHiddenFields(
 		'wc_payments_payouts_hidden_columns',
 		PAYOUT_FIELDS
@@ -397,7 +398,7 @@ export const WooPaymentsPayouts = () => {
 		const requestQuery = getPayoutsRequestQuery( query, match );
 
 		setIsExporting( true );
-		await runWooPaymentsExport( {
+		await runExport( {
 			requestExport: () =>
 				requestWooPaymentsDepositsExport( requestQuery ),
 			getExportUrl: getWooPaymentsDepositsExportUrl,

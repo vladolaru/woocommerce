@@ -1,10 +1,16 @@
 /**
+ * External dependencies
+ */
+import { renderHook } from '@testing-library/react';
+
+/**
  * Internal dependencies
  */
 import {
 	confirmWooPaymentsExport,
 	runWooPaymentsExport,
 	triggerWooPaymentsExportDownload,
+	useWooPaymentsExport,
 } from '../money-movement/export';
 import { setExportRecipient } from './helpers/export-recipient';
 
@@ -166,6 +172,35 @@ describe( 'WooPayments list export', () => {
 			confirm.mockRestore();
 		}
 	);
+
+	// Client 11.1.0 `hooks/use-report-export.ts:45-52`: unmounting clears the pending check.
+	it( 'stops checking for the file once the page that started the export unmounts', async () => {
+		const page: { leave?: () => void } = {};
+		// The merchant leaves the page while the first check is in flight.
+		const getExportUrl = jest.fn( async () => {
+			page.leave?.();
+			return { status: 'pending' };
+		} );
+		const triggerDownload = jest.fn();
+		const { result, unmount } = renderHook( () => useWooPaymentsExport() );
+		page.leave = unmount;
+
+		await result.current( {
+			requestExport: jest
+				.fn()
+				.mockResolvedValue( { export_id: 'export_test' } ),
+			getExportUrl,
+			triggerDownload,
+			pollDelayMs: 0,
+		} );
+
+		expect( getExportUrl ).toHaveBeenCalledTimes( 1 );
+		expect( triggerDownload ).not.toHaveBeenCalled();
+		// Only the processing snackbar raised before leaving.
+		expect( getNotices().map( ( { status } ) => status ) ).toEqual( [
+			'success',
+		] );
+	} );
 
 	it( 'uses a temporary anchor for browser downloads', () => {
 		const click = jest
