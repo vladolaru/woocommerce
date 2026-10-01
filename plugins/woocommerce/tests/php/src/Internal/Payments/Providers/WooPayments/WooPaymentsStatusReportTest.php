@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
@@ -59,6 +60,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
 		wc_get_container()->reset_replacement( WooPaymentsApiClient::class );
+		wc_get_container()->reset_replacement( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, '0', true );
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
@@ -405,64 +407,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 			'details_submitted' => true,
 		);
 		$fresh_account = array_merge( $old_account, array( 'payments_enabled' => false ) );
-		$api_client    = new class( $fresh_account, $fetch_fails ) extends WooPaymentsApiClient {
-			/**
-			 * Number of account fetches.
-			 *
-			 * @var int
-			 */
-			public int $calls = 0;
-
-			/**
-			 * Account to return.
-			 *
-			 * @var array<string,mixed>
-			 */
-			private array $account;
-
-			/**
-			 * Whether every fetch fails.
-			 *
-			 * @var bool
-			 */
-			private bool $fail;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param array<string,mixed> $account Account to return.
-			 * @param bool                $fail    Whether every fetch fails.
-			 */
-			public function __construct( array $account, bool $fail ) {
-				$this->account = $account;
-				$this->fail    = $fail;
-			}
-
-			/**
-			 * Tell whether the fake client is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Return the account or fail.
-			 *
-			 * @param string $woocommerce_store_id WooCommerce store ID.
-			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When set to fail.
-			 */
-			public function get_account( string $woocommerce_store_id = '' ): array {
-				++$this->calls;
-				if ( $this->fail ) {
-					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
-				}
-
-				return $this->account;
-			}
-		};
+		$api_client    = $this->create_account_api_client( $fresh_account, $fetch_fails, true );
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$this->fake_plugin( false );
@@ -497,6 +442,75 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The account cache tool neither fetches nor touches the cache when the platform connection is unavailable.
+	 *
+	 * Client 11.1.0 `get_cached_account_data()` returns [] before any cache work when the server is not connected
+	 * (class-wc-payments-account.php:2442-2444), and WooCommerce prints "Tool ran." for an array.
+	 */
+	public function test_clear_account_cache_tool_skips_the_fetch_without_a_platform_connection(): void {
+		$api_client = $this->create_account_api_client( array( 'account_id' => 'acct_unused' ), false, false );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$this->fake_plugin( false );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->seed_connected_store();
+		$this->set_native_state( NativePaymentsState::CONNECTED );
+		$cache_before = get_option( 'wcpay_account_data' );
+		$sut          = $this->get_sut();
+		$this->remove_status_hooks( $sut );
+		$sut->register();
+
+		$result = ( new WC_REST_System_Status_Tools_V2_Controller() )->execute_tool( 'clear_wcpay_account_cache' );
+
+		$this->assertSame( 0, $api_client->calls, 'The tool must not fetch without a platform connection.' );
+		$this->assertSame( $cache_before, get_option( 'wcpay_account_data' ), 'The tool must leave the account cache untouched.' );
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( 'Tool ran.', $result['message'] );
+	}
+
+	/**
+	 * @testdox A pending remediation dry run alone leaves the remediation tools enabled.
+	 *
+	 * Client 11.1.0 disables both tools from `is_remediation_action_scheduled()`, which checks only the full-run hook
+	 * (class-wc-payments-status.php:400-422).
+	 */
+	public function test_pending_dry_run_alone_leaves_remediation_tools_enabled(): void {
+		$this->fake_plugin( false );
+		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY );
+		as_schedule_single_action( time() + HOUR_IN_SECONDS, WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
+
+		$tools = $this->get_sut()->add_debug_tools( array() );
+
+		$this->assertFalse( $tools['remediate_canceled_auth_fees_dry_run']['disabled'], 'A pending dry run alone must not disable the dry-run tool.' );
+		$this->assertFalse( $tools['remediate_canceled_auth_fees']['disabled'], 'A pending dry run alone must not disable the remediation tool.' );
+	}
+
+	/**
+	 * @testdox The remediation tools report the client's error message when scheduling throws.
+	 *
+	 * Client 11.1.0 wraps the scheduling in try/catch and returns "Error scheduling remediation: %s" or
+	 * "Error scheduling dry run: %s" (class-wc-payments-status.php:249-255, 293-299).
+	 *
+	 * @testWith ["schedule_canceled_auth_remediation", "schedule_remediation", "Error scheduling remediation: Scheduler is down."]
+	 *           ["schedule_canceled_auth_dry_run", "schedule_dry_run", "Error scheduling dry run: Scheduler is down."]
+	 *
+	 * @param string $tool_callback    Status report tool callback.
+	 * @param string $service_method   Remediation service scheduling method.
+	 * @param string $expected_message Message the merchant sees.
+	 */
+	public function test_remediation_tools_report_a_scheduling_error( string $tool_callback, string $service_method, string $expected_message ): void {
+		$remediation_service = $this->createMock( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
+		$remediation_service->method( 'is_complete' )->willReturn( false );
+		$remediation_service->method( $service_method )->willThrowException( new \Exception( 'Scheduler is down.' ) );
+		wc_get_container()->replace( WooPaymentsCanceledAuthorizationFeeRemediationService::class, $remediation_service );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$sut = new WooPaymentsStatusReport();
+		$sut->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), wc_get_container()->get( NativePaymentsState::class ) );
+
+		$this->assertSame( $expected_message, $sut->$tool_callback() );
+	}
+
+	/**
 	 * @testdox Site Health debug info exposes the native status fields and rollout note.
 	 */
 	public function test_site_health_debug_info_exposes_status_values(): void {
@@ -511,6 +525,84 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'native', $info['woocommerce_native_payments']['fields']['runtime_owner']['value'] );
 		$this->assertSame( 'acct_native_test', $info['woocommerce_native_payments']['fields']['account_id']['value'] );
 		$this->assertStringContainsString( 'mu-plugin', $info['woocommerce_native_payments']['fields']['native_enabled_note']['value'] );
+	}
+
+	/**
+	 * Create a fake API client that counts account fetches.
+	 *
+	 * @param array<string,mixed> $account   Account to return.
+	 * @param bool                $fail      Whether every fetch fails.
+	 * @param bool                $available Whether the platform connection is available.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_account_api_client( array $account, bool $fail, bool $available ): WooPaymentsApiClient {
+		return new class( $account, $fail, $available ) extends WooPaymentsApiClient {
+			/**
+			 * Number of account fetches.
+			 *
+			 * @var int
+			 */
+			public int $calls = 0;
+
+			/**
+			 * Account to return.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $account;
+
+			/**
+			 * Whether every fetch fails.
+			 *
+			 * @var bool
+			 */
+			private bool $fail;
+
+			/**
+			 * Whether the platform connection is available.
+			 *
+			 * @var bool
+			 */
+			private bool $available;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $account   Account to return.
+			 * @param bool                $fail      Whether every fetch fails.
+			 * @param bool                $available Whether the platform connection is available.
+			 */
+			public function __construct( array $account, bool $fail, bool $available ) {
+				$this->account   = $account;
+				$this->fail      = $fail;
+				$this->available = $available;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return $this->available;
+			}
+
+			/**
+			 * Return the account or fail.
+			 *
+			 * @param string $woocommerce_store_id WooCommerce store ID.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException When set to fail.
+			 */
+			public function get_account( string $woocommerce_store_id = '' ): array {
+				++$this->calls;
+				if ( $this->fail ) {
+					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+				}
+
+				return $this->account;
+			}
+		};
 	}
 
 	/**

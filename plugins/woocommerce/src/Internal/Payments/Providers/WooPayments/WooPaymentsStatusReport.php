@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Exception;
 use Throwable;
 use WC_Order;
 
@@ -455,7 +456,11 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		}
 
 		$account_service = $this->get_account_service();
-		$account_data    = $account_service->refresh_account_data();
+		if ( ! $account_service->is_platform_connected() ) {
+			return array();
+		}
+
+		$account_data = $account_service->refresh_account_data();
 
 		if ( array() === $account_data && $account_service->has_account_or_is_connection_indeterminate() ) {
 			return false;
@@ -541,17 +546,25 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return __( 'You do not have permission to run this tool.', 'woocommerce' );
 		}
 
-		if ( $this->get_fee_remediation_service()->is_complete() ) {
-			return __( 'Remediation has already been completed.', 'woocommerce' );
+		try {
+			if ( $this->get_fee_remediation_service()->is_complete() ) {
+				return __( 'Remediation has already been completed.', 'woocommerce' );
+			}
+
+			if ( $this->is_any_remediation_action_scheduled() ) {
+				return __( 'Remediation is already in progress. Check the Action Scheduler for status.', 'woocommerce' );
+			}
+
+			$this->get_fee_remediation_service()->schedule_remediation();
+
+			return __( 'Remediation has been scheduled and will run in the background. You can monitor progress in the Action Scheduler.', 'woocommerce' );
+		} catch ( Exception $e ) {
+			return sprintf(
+				/* translators: %s: error message */
+				__( 'Error scheduling remediation: %s', 'woocommerce' ),
+				$e->getMessage()
+			);
 		}
-
-		if ( $this->is_remediation_action_scheduled() ) {
-			return __( 'Remediation is already in progress. Check the Action Scheduler for status.', 'woocommerce' );
-		}
-
-		$this->get_fee_remediation_service()->schedule_remediation();
-
-		return __( 'Remediation has been scheduled and will run in the background. You can monitor progress in the Action Scheduler.', 'woocommerce' );
 	}
 
 	/**
@@ -564,17 +577,25 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return __( 'You do not have permission to run this tool.', 'woocommerce' );
 		}
 
-		if ( $this->get_fee_remediation_service()->is_complete() ) {
-			return __( 'Remediation has already been completed.', 'woocommerce' );
+		try {
+			if ( $this->get_fee_remediation_service()->is_complete() ) {
+				return __( 'Remediation has already been completed.', 'woocommerce' );
+			}
+
+			if ( $this->is_any_remediation_action_scheduled() ) {
+				return __( 'Remediation is already in progress. Check the Action Scheduler for status.', 'woocommerce' );
+			}
+
+			$this->get_fee_remediation_service()->schedule_dry_run();
+
+			return __( 'Dry run has been scheduled and will run in the background. Check WooCommerce > Status > Logs for results (source: wcpay-fee-remediation).', 'woocommerce' );
+		} catch ( Exception $e ) {
+			return sprintf(
+				/* translators: %s: error message */
+				__( 'Error scheduling dry run: %s', 'woocommerce' ),
+				$e->getMessage()
+			);
 		}
-
-		if ( $this->is_remediation_action_scheduled() ) {
-			return __( 'Remediation is already in progress. Check the Action Scheduler for status.', 'woocommerce' );
-		}
-
-		$this->get_fee_remediation_service()->schedule_dry_run();
-
-		return __( 'Dry run has been scheduled and will run in the background. Check WooCommerce > Status > Logs for results (source: wcpay-fee-remediation).', 'woocommerce' );
 	}
 
 	/**
@@ -868,7 +889,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether a remediation action is scheduled.
+	 * Tell whether the full remediation run is scheduled. A pending dry run alone does not count.
 	 *
 	 * @return bool
 	 */
@@ -877,7 +898,20 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return false;
 		}
 
-		return false !== as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID )
+		return false !== as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
+	}
+
+	/**
+	 * Tell whether the full remediation run or its dry run is scheduled.
+	 *
+	 * @return bool
+	 */
+	private function is_any_remediation_action_scheduled(): bool {
+		if ( ! function_exists( 'as_has_scheduled_action' ) ) {
+			return false;
+		}
+
+		return $this->is_remediation_action_scheduled()
 			|| false !== as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
 	}
 

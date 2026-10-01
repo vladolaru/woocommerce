@@ -334,6 +334,18 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether the site can reach the WooPayments platform, like the client's `is_server_connected()`.
+	 *
+	 * @since 11.2.0
+	 * @return bool
+	 */
+	public function is_platform_connected(): bool {
+		$api_client = $this->get_api_client();
+
+		return null !== $api_client && $api_client->is_available();
+	}
+
+	/**
 	 * Fetch account data from the native WooPayments API.
 	 *
 	 * @return array<string,mixed>|false
