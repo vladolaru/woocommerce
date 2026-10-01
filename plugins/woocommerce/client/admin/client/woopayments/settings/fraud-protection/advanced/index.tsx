@@ -3,11 +3,11 @@
  */
 import {
 	Card,
+	CheckboxControl,
 	ExternalLink,
 	Notice,
 	RadioControl,
 	TextControl,
-	ToggleControl,
 } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import {
@@ -450,8 +450,9 @@ const RuleToggle = ( {
 	}
 
 	return (
-		<div className="woopayments-fraud-protection-rule__toggle">
-			<ToggleControl
+		// Owner decision N-283: a checkbox, like every other native settings control; the client uses a toggle.
+		<div className="woopayments-fraud-protection-rule__control">
+			<CheckboxControl
 				checked={ settingUI.enabled }
 				label={ label }
 				help={ description }
