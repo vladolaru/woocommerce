@@ -69,10 +69,11 @@ export const ExpressCheckoutLocationCheckboxes = ( {
 	);
 };
 
+// Client 11.1.0 payment-request-button-preview.js:64-74 (PreviewRequirementsNotice).
 export const ExpressCheckoutPreviewFallback = () => (
 	<ExpressCheckoutInlineNotice status="info">
 		{ __(
-			'To preview the express checkout buttons, ensure your store uses HTTPS on a publicly available domain, and you are viewing this page in a Safari or Chrome browser. Your device must be configured to use Apple Pay or Google Pay.',
+			"To preview the express checkout buttons, ensure your store uses HTTPS on a publicly available domain, and you're viewing this page in a Safari or Chrome browser. Your device must be configured to use Apple Pay or Google Pay.",
 			'woocommerce'
 		) }
 	</ExpressCheckoutInlineNotice>

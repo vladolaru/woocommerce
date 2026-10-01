@@ -938,6 +938,29 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		expect( mockStripe ).not.toHaveBeenCalled();
 	} );
 
+	// Client 11.1.0 payment-request-button-preview.js:77-137: without HTTPS the Apple Pay / Google Pay preview is the
+	// requirements notice, and no button stands in for it.
+	it( 'shows the HTTPS and browser requirements instead of a button preview when the page is not HTTPS', async () => {
+		installStripeMock();
+		mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
+		mockUsePaymentRequestEnabledSettings.mockReturnValue( [ true, noop ] );
+
+		render(
+			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+		);
+
+		expect(
+			await screen.findByText(
+				"To preview the express checkout buttons, ensure your store uses HTTPS on a publicly available domain, and you're viewing this page in a Safari or Chrome browser. Your device must be configured to use Apple Pay or Google Pay.",
+				{ selector: '.components-notice__content' }
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', { name: /WooPay$/i } )
+		).not.toBeInTheDocument();
+		expect( mockStripe ).not.toHaveBeenCalled();
+	} );
+
 	it( 'keeps the visible WooPay call to action in the preview accessible name', async () => {
 		mockUsePaymentRequestButtonType.mockReturnValue( [ 'buy', noop ] );
 
