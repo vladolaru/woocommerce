@@ -1309,6 +1309,8 @@ const ExpressCheckoutSettingsSection = () => {
 			],
 			notice: amazonPayAvailability.notice || '',
 			noticeStatus: amazonPayAvailability.noticeStatus,
+			// Owner-decided improvement: client 11.1.0's amazon-pay-item.tsx shows no duplicate notice.
+			duplicatePaymentMethodId: 'amazon_pay',
 		} );
 	}
 

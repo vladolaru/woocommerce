@@ -2382,6 +2382,68 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toHaveFocus();
 	} );
 
+	it( 'renders and dismisses the duplicate notice on the Amazon Pay express row', async () => {
+		const updateDismissedDuplicateNotices = jest.fn();
+		mockUseGetDuplicatedPaymentMethodIds.mockReturnValue( {
+			amazon_pay: [
+				'stripe_amazon_pay',
+				'woocommerce_payments_amazon_pay',
+			],
+		} );
+		mockUseDismissedDuplicatePaymentMethodNotices.mockReturnValue( [
+			{},
+			updateDismissedDuplicateNotices,
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+		const amazonPayCheckbox = within( expressCheckoutsSection ).getByRole(
+			'checkbox',
+			{ name: 'Amazon Pay' }
+		);
+		const amazonPayRow = amazonPayCheckbox.closest( 'li' ) as HTMLElement;
+		const paymentRequestRow = within( expressCheckoutsSection )
+			.getByRole( 'checkbox', { name: 'Apple Pay / Google Pay' } )
+			.closest( 'li' ) as HTMLElement;
+		const hasDuplicateNotice = ( row: HTMLElement ) =>
+			within( row ).queryAllByText( ( _content, element ) =>
+				Boolean(
+					element?.textContent?.includes(
+						'This payment method is enabled by other extensions.'
+					)
+				)
+			).length > 0;
+
+		expect( hasDuplicateNotice( amazonPayRow ) ).toBe( true );
+		expect( hasDuplicateNotice( paymentRequestRow ) ).toBe( false );
+
+		await userEvent.click(
+			within( amazonPayRow ).getByRole( 'button', { name: 'Close' } )
+		);
+
+		expect( updateDismissedDuplicateNotices ).toHaveBeenCalledWith( {
+			amazon_pay: [
+				'stripe_amazon_pay',
+				'woocommerce_payments_amazon_pay',
+			],
+		} );
+		expect( mockApiFetch ).toHaveBeenCalledWith( {
+			path: '/wc/v3/payments/settings/wcpay_duplicate_payment_method_notices_dismissed',
+			method: 'post',
+			data: {
+				value: {
+					amazon_pay: [
+						'stripe_amazon_pay',
+						'woocommerce_payments_amazon_pay',
+					],
+				},
+			},
+		} );
+		expect( amazonPayCheckbox ).toHaveFocus();
+	} );
+
 	it( 'shows the manual-capture conflict banner and disables incompatible methods', () => {
 		mockUseManualCapture.mockReturnValue( [ true, noop ] );
 		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
