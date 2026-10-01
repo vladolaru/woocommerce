@@ -236,6 +236,45 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * Oracle: WooPayments 11.1.0 `WC_Payments_API_Client::add_additional_info_to_charge()` (class-wc-payments-api-client.php:2316-2349)
+	 * formats the billing address of every charge it returns, which the payment method card prints.
+	 *
+	 * @testdox Payment detail charge and payment intent routes add the formatted billing address to the charge.
+	 */
+	public function test_payment_detail_routes_add_formatted_billing_address(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		$this->create_order_with_charge( 'ch_test', 'pi_test' );
+		$charge = array(
+			'id'                  => 'ch_test',
+			'balance_transaction' => array( 'id' => 'txn_test' ),
+			'billing_details'     => array(
+				'name'    => 'Test customer',
+				'address' => array(
+					'line1'       => '60 29th Street',
+					'line2'       => null,
+					'city'        => 'San Francisco',
+					'state'       => 'CA',
+					'postal_code' => '94110',
+					'country'     => 'US',
+				),
+			),
+		);
+		$this->create_payment_details_controller( true )->register_routes();
+
+		$this->api_client->response = $charge;
+		$charge_data                = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/charges/ch_test' ) )->get_data();
+
+		$this->api_client->response = array(
+			'id'      => 'pi_test',
+			'charges' => array( 'data' => array( $charge ) ),
+		);
+		$intent_data                = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/payment_intents/pi_test' ) )->get_data();
+
+		$this->assertSame( '60 29th Street<br/>San Francisco, CA 94110', $charge_data['billing_details']['formatted_address'] );
+		$this->assertSame( '60 29th Street<br/>San Francisco, CA 94110', $intent_data['charges']['data'][0]['billing_details']['formatted_address'] );
+	}
+
+	/**
 	 * Oracle: WooPayments 11.1.0 client/payment-details/summary/index.tsx plus charge and balance_transaction fields from the recorded M2 platform response.
 	 *
 	 * @testdox Payment detail intent route preserves shopper and settlement money independently.

@@ -25,14 +25,16 @@ export const formatWooPaymentsAmount = (
 	currency?: string | null
 ) => {
 	const currencyCode = normalizeCurrencyCode( currency );
+	// Client 11.1.0 `multi-currency/client/utils/currency/index.js:156-200` signs only `amount < 0`: a negated zero fee reads "$0.00".
+	const value = amount === 0 ? 0 : amount / 100;
 
 	try {
 		return new Intl.NumberFormat( undefined, {
 			style: 'currency',
 			currency: currencyCode,
-		} ).format( amount / 100 );
+		} ).format( value );
 	} catch ( _error ) {
-		return `${ ( amount / 100 ).toFixed( 2 ) } ${ currencyCode }`;
+		return `${ value.toFixed( 2 ) } ${ currencyCode }`;
 	}
 };
 

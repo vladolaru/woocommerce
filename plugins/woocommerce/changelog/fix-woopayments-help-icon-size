@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments help icons as small grey icons that sit on the text line, as the WooPayments plugin does.

@@ -564,6 +564,249 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		).toContain( 'Downloaded software.' );
 	} );
 
+	// Client 11.1.0 `new-evidence/index.tsx:1235-1340` and `cover-letter.tsx`: the Review step is the step heading and
+	// subheading, the manual-edits warning when the letter is not the generated one, a 30-row COVER LETTER textarea and a
+	// primary "Preview cover letter ↗" button; there is no "Review" section heading.
+	describe( 'review step (client new-evidence/cover-letter.tsx)', () => {
+		const MANUAL_EDITS_WARNING =
+			"You've made some manual edits to your cover letter. If you update your evidence again, those changes won't be reflected here automatically — but you can always make further edits yourself.";
+		// The notice is also announced; read the rendered one.
+		const IGNORE_SPEAK = { ignore: '.a11y-speak-region' };
+		const goToReview = async ( dispute = makeDispute() ) => {
+			mockGetDispute.mockResolvedValue( {
+				...dispute,
+				order: {
+					id: 123,
+					number: '123',
+					suggested_product_type: 'digital_product_or_service',
+				},
+			} );
+			const { unmount } = renderChallengePage();
+			await screen.findByRole( 'heading', {
+				name: "Let's gather the basics",
+			} );
+			await clickButton( 'Next' );
+			await screen.findByRole( 'heading', {
+				name: 'Review your cover letter',
+			} );
+
+			return {
+				coverLetter: screen.getByRole( 'textbox', {
+					name: 'Cover letter',
+				} ) as HTMLTextAreaElement,
+				unmount,
+			};
+		};
+
+		it( 'shows a 30-row cover letter and no Review section heading', async () => {
+			const { coverLetter } = await goToReview();
+
+			expect( coverLetter ).toHaveAttribute( 'rows', '30' );
+			expect(
+				screen.queryByRole( 'group', { name: 'Review' } )
+			).not.toBeInTheDocument();
+			expect(
+				screen.queryByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
+			).not.toBeInTheDocument();
+		} );
+
+		it( 'previews the cover letter in a new window', async () => {
+			const { coverLetter } = await goToReview();
+			const pre = { textContent: '' };
+			let onLoad: ( () => void ) | undefined;
+			const previewWindow = {
+				addEventListener: jest.fn(
+					( _event: string, listener: () => void ) => {
+						onLoad = listener;
+					}
+				),
+				document: { getElementById: jest.fn( () => pre ) },
+			};
+			const open = jest
+				.spyOn( window, 'open' )
+				.mockReturnValue( previewWindow as unknown as Window );
+			const createObjectURL = jest.fn( () => 'blob:cover-letter' );
+			const revokeObjectURL = jest.fn();
+			Object.assign( URL, { createObjectURL, revokeObjectURL } );
+
+			const preview = screen.getByRole( 'button', {
+				name: 'Preview cover letter ↗',
+			} );
+			expect( preview ).toHaveClass( 'is-primary' );
+			await act( async () => {
+				await userEvent.click( preview );
+			} );
+
+			expect( open ).toHaveBeenCalledWith(
+				'blob:cover-letter',
+				'_blank'
+			);
+			expect( previewWindow.addEventListener ).toHaveBeenCalledWith(
+				'load',
+				expect.any( Function ),
+				{ once: true }
+			);
+			onLoad?.();
+			expect(
+				previewWindow.document.getElementById
+			).toHaveBeenCalledWith( 'cover-letter-content' );
+			expect( pre.textContent ).toBe( coverLetter.value );
+			expect( pre.textContent ).toContain( 'Dear' );
+			expect( revokeObjectURL ).toHaveBeenCalledWith(
+				'blob:cover-letter'
+			);
+		} );
+
+		it( 'warns about manual edits, and regenerates the letter when it is cleared', async () => {
+			const { coverLetter } = await goToReview();
+			const generated = coverLetter.value;
+
+			await userEvent.type( coverLetter, ' Thanks.' );
+
+			expect(
+				screen
+					.getByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
+					.closest( '.components-notice' )
+			).toHaveClass( 'is-warning' );
+
+			await userEvent.clear( coverLetter );
+
+			expect(
+				screen.queryByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
+			).not.toBeInTheDocument();
+			expect( coverLetter.value ).toBe( generated );
+		} );
+
+		// Client 11.1.0 new-evidence/index.tsx:1170-1188 passes `setRefundStatus` and `setDuplicateStatus` straight through,
+		// so the regeneration effect (index.tsx:446-452) keeps an edited letter; only a product type change resets it
+		// (index.tsx:830-838).
+		it.each( [
+			[ 'credit_not_processed', /Refund was not owed/i ],
+			[ 'duplicate', /It was not a duplicate/i ],
+		] )(
+			'keeps a manually edited letter when the %s status changes',
+			async ( reason, statusOption ) => {
+				const order = {
+					id: 123,
+					number: '123',
+					suggested_product_type: 'digital_product_or_service',
+				};
+				mockUpdateDispute.mockImplementation( async ( _id, data ) =>
+					makeDispute( {
+						reason,
+						order,
+						evidence: data.evidence,
+						metadata: data.metadata,
+					} )
+				);
+				const { coverLetter } = await goToReview(
+					makeDispute( { reason } )
+				);
+				await userEvent.type( coverLetter, ' Edited by the merchant.' );
+				const edited = coverLetter.value;
+
+				await clickButton( 'Back' );
+				await act( async () => {
+					await userEvent.click(
+						screen.getByRole( 'radio', { name: statusOption } )
+					);
+				} );
+				await clickButton( 'Next' );
+
+				expect(
+					(
+						( await screen.findByRole( 'textbox', {
+							name: 'Cover letter',
+						} ) ) as HTMLTextAreaElement
+					 ).value
+				).toBe( edited );
+				expect(
+					screen.getByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
+				).toBeInTheDocument();
+			}
+		);
+
+		it( 'does not warn about a saved cover letter that matches the generated one', async () => {
+			const firstVisit = await goToReview();
+			const generated = firstVisit.coverLetter.value;
+			firstVisit.unmount();
+
+			const { coverLetter } = await goToReview(
+				makeDispute( {
+					evidence: { uncategorized_text: generated },
+				} )
+			);
+
+			expect( coverLetter.value ).toBe( generated );
+			await waitFor( () =>
+				expect(
+					screen.queryByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
+				).not.toBeInTheDocument()
+			);
+		} );
+
+		it( 'warns about a saved cover letter that differs from the generated one', async () => {
+			await goToReview(
+				makeDispute( {
+					evidence: { uncategorized_text: 'My own letter.' },
+				} )
+			);
+
+			expect(
+				(
+					screen.getByRole( 'textbox', {
+						name: 'Cover letter',
+					} ) as HTMLTextAreaElement
+				 ).value
+			).toBe( 'My own letter.' );
+			expect(
+				screen.getByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
+			).toBeInTheDocument();
+		} );
+	} );
+
+	// Client 11.1.0 `new-evidence/shipping-details.tsx:37-80` and `index.tsx:1449-1500`.
+	it( 'shows the client delivery details copy and a Back chevron on the shipping step', async () => {
+		mockGetDispute.mockResolvedValue( makeDispute() );
+
+		renderChallengePage();
+		await screen.findByRole( 'button', { name: 'Next' } );
+		await clickButton( 'Next' );
+		await screen.findByRole( 'heading', {
+			name: 'Add your shipping details',
+		} );
+
+		const delivery = screen.getByRole( 'group', {
+			name: 'Delivery details',
+		} );
+		expect(
+			within( delivery ).getByText(
+				'Please ensure all prefilled information is correct and complete any missing details.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( delivery )
+				.getAllByRole( 'textbox' )
+				.map(
+					( field ) =>
+						field
+							.closest( '.components-base-control' )
+							?.querySelector( 'label' )?.textContent
+				)
+		).toEqual( [
+			'Shipping carrier',
+			'Shipping date',
+			'Tracking number',
+			'Shipping address',
+		] );
+		expect(
+			screen.queryByRole( 'group', { name: 'Shipping details' } )
+		).not.toBeInTheDocument();
+
+		const back = screen.getByRole( 'button', { name: 'Back' } );
+		expect( back.firstElementChild?.tagName.toLowerCase() ).toBe( 'svg' );
+	} );
+
 	it( 'should render the Visa compliance single-panel evidence flow', async () => {
 		mockGetDispute.mockResolvedValue(
 			makeDispute( {

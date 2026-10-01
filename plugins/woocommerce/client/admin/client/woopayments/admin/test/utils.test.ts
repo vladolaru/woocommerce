@@ -7,6 +7,7 @@ import {
 } from '../utils';
 import {
 	formatDisputeReasonLabel,
+	getErrorMessage,
 	getTransactionDetailsRoute,
 } from '../money-movement/utils';
 import {
@@ -226,6 +227,47 @@ describe( 'overview financial summary helpers', () => {
 		);
 		expect( getPayoutStatusClassName( 'paid' ) ).toBe(
 			'woocommerce-woopayments-overview__status-chip--paid'
+		);
+	} );
+} );
+
+describe( 'getErrorMessage', () => {
+	// Recorded read-only from :8889 `wc/v3/payments/charges/{unknown id}`: the server escapes the quotes.
+	const recordedNotFound = {
+		code: 'wcpay_bad_request',
+		message:
+			'Error: No such charge: &#039;ch_3ZZZZZZZZZZZZZZZZZZZZZZZ&#039;',
+		data: { status: 404 },
+	};
+
+	it( 'decodes the entities of a REST error message for display as text', () => {
+		expect( getErrorMessage( recordedNotFound, 'Fallback.' ) ).toBe(
+			"Error: No such charge: 'ch_3ZZZZZZZZZZZZZZZZZZZZZZZ'"
+		);
+	} );
+
+	it( 'decodes the entities of an Error message', () => {
+		expect(
+			getErrorMessage(
+				new Error( 'Tom &amp; Jerry&#039;s store' ),
+				'Fallback.'
+			)
+		).toBe( "Tom & Jerry's store" );
+	} );
+
+	it( 'returns markup-looking text as plain text, never as elements', () => {
+		const message = getErrorMessage(
+			{ message: '&lt;img src=x onerror=alert(1)&gt;' },
+			'Fallback.'
+		);
+
+		expect( typeof message ).toBe( 'string' );
+		expect( message ).toBe( '<img src=x onerror=alert(1)>' );
+	} );
+
+	it( 'falls back when there is no message', () => {
+		expect( getErrorMessage( { code: 'x' }, 'Fallback.' ) ).toBe(
+			'Fallback.'
 		);
 	} );
 } );

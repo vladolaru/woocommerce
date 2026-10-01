@@ -23,10 +23,11 @@ import {
 	useState,
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
-import { chevronRight } from '@wordpress/icons';
+import { chevronLeft, chevronRight } from '@wordpress/icons';
 import { addQueryArgs } from '@wordpress/url';
 import { Stepper } from '@woocommerce/components';
 import InfoOutlineIcon from 'gridicons/dist/info-outline';
+import NoticeOutlineIcon from 'gridicons/dist/notice-outline';
 import { recordEvent } from '@woocommerce/tracks';
 import type { ElementType, ReactNode } from 'react';
 
@@ -110,6 +111,85 @@ const getInitialEvidenceState = ( dispute: WooPaymentsDispute ) => {
 		dispute.order?.ip_address || evidence.customer_purchase_ip;
 
 	return evidence;
+};
+
+// Client 11.1.0 `components/inline-notice`: the notice-outline gridicon for warnings.
+const WarningIcon = NoticeOutlineIcon as ElementType< { className?: string } >;
+
+// Client 11.1.0 `new-evidence/shipping-details.tsx:45-80`: the delivery field labels.
+const getShippingFieldLabel = ( field: string ) => {
+	switch ( field ) {
+		case 'shipping_carrier':
+			return __( 'Shipping carrier', 'woocommerce' );
+		case 'shipping_date':
+			return __( 'Shipping date', 'woocommerce' );
+		case 'shipping_tracking_number':
+			return __( 'Tracking number', 'woocommerce' );
+		case 'shipping_address':
+			return __( 'Shipping address', 'woocommerce' );
+		default:
+			return formatLabel( field );
+	}
+};
+
+/**
+ * Opens the cover letter in a new window, ready to print.
+ * Client 11.1.0 `new-evidence/cover-letter.tsx:18-111` `handleViewCoverLetter()`.
+ *
+ * @param coverLetter The cover letter text.
+ */
+const openCoverLetterPreview = ( coverLetter: string ) => {
+	const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title>${ __( 'Cover Letter', 'woocommerce' ) }</title>
+	<style>
+		body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif; line-height: 1.6; max-width: 120ch; margin: 40px auto; padding: 20px; text-align: justify; }
+		pre { white-space: pre-wrap; word-wrap: break-word; word-break: break-word; overflow-wrap: break-word; max-width: 100%; }
+		.print-button-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: white; padding: 10px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
+		.print-button-container button { padding: 8px 16px; background: #3B5AFB; color: white; border: none; border-radius: 4px; cursor: pointer; }
+		@media print {
+			body { margin: 0; padding: 20px; font-size: 12px; }
+			pre { font-size: 12px; }
+			.no-print, .print-button-container { display: none; }
+		}
+	</style>
+</head>
+<body>
+	<pre id="cover-letter-content"></pre>
+	<div class="print-button-container no-print">
+		<button onclick="window.print()">${ __(
+			'Print Cover Letter',
+			'woocommerce'
+		) }</button>
+	</div>
+</body>
+</html>`;
+	const url = URL.createObjectURL(
+		new Blob( [ htmlContent ], { type: 'text/html' } )
+	);
+	const previewWindow = window.open( url, '_blank' );
+
+	if ( ! previewWindow ) {
+		URL.revokeObjectURL( url );
+		return;
+	}
+
+	// The letter goes in as text, so nothing in it can run as markup.
+	previewWindow.addEventListener(
+		'load',
+		() => {
+			URL.revokeObjectURL( url );
+			const pre = previewWindow.document.getElementById(
+				'cover-letter-content'
+			);
+			if ( pre ) {
+				pre.textContent = coverLetter;
+			}
+		},
+		{ once: true }
+	);
 };
 
 // Client 11.1.0 `new-evidence/customer-details.tsx`: who bought, read-only.
@@ -484,7 +564,16 @@ export const DisputeEvidenceForm = ( {
 	}, [ dispute ] );
 
 	useEffect( () => {
-		if ( isVisaCompliance || isCoverLetterManuallyEdited ) {
+		if ( isVisaCompliance ) {
+			return;
+		}
+
+		// Client 11.1.0 new-evidence/index.tsx:446-452: a letter that matches the generated one is no longer an edit.
+		if ( isCoverLetterManuallyEdited ) {
+			if ( evidence.uncategorized_text === generatedCoverLetter ) {
+				setIsCoverLetterManuallyEdited( false );
+			}
+
 			return;
 		}
 
@@ -499,6 +588,7 @@ export const DisputeEvidenceForm = ( {
 			};
 		} );
 	}, [
+		evidence.uncategorized_text,
 		generatedCoverLetter,
 		isCoverLetterManuallyEdited,
 		isVisaCompliance,
@@ -618,6 +708,7 @@ export const DisputeEvidenceForm = ( {
 		} );
 	};
 
+	// Client 11.1.0 new-evidence/index.tsx:830-838: a new product type regenerates the letter, edits included.
 	const handleProductTypeChange = ( nextProductType: string ) => {
 		recordEvent( 'wcpay_dispute_product_selected', {
 			...disputeTracksProperties,
@@ -627,14 +718,14 @@ export const DisputeEvidenceForm = ( {
 		setIsCoverLetterManuallyEdited( false );
 	};
 
+	// Client 11.1.0 new-evidence/index.tsx:1170-1188: a status change keeps a manually edited letter; the letter only
+	// follows it while it still matches the generated one.
 	const handleRefundStatusChange = ( nextRefundStatus: string ) => {
 		setRefundStatus( nextRefundStatus );
-		setIsCoverLetterManuallyEdited( false );
 	};
 
 	const handleDuplicateStatusChange = ( nextDuplicateStatus: string ) => {
 		setDuplicateStatus( nextDuplicateStatus );
-		setIsCoverLetterManuallyEdited( false );
 	};
 
 	const handleSave = async (
@@ -779,6 +870,19 @@ export const DisputeEvidenceForm = ( {
 
 	const handleCoverLetterChange = ( value: string ) => {
 		setIsCoverLetterManuallyEdited( true );
+		updateEvidenceField( 'uncategorized_text', value );
+	};
+
+	// Client 11.1.0 new-evidence/index.tsx:1266-1335: clearing the letter regenerates it; an edit only counts when the
+	// letter no longer matches the generated one.
+	const handleReviewCoverLetterChange = ( value: string ) => {
+		if ( value.trim() === '' ) {
+			setIsCoverLetterManuallyEdited( false );
+			updateEvidenceField( 'uncategorized_text', generatedCoverLetter );
+			return;
+		}
+
+		setIsCoverLetterManuallyEdited( value !== generatedCoverLetter );
 		updateEvidenceField( 'uncategorized_text', value );
 	};
 
@@ -1318,17 +1422,24 @@ export const DisputeEvidenceForm = ( {
 								currentStep === 'shipping' && (
 									<>
 										<fieldset className="woocommerce-woopayments-dispute-evidence__section">
+											{ /* Client 11.1.0 new-evidence/shipping-details.tsx:37-80. */ }
 											<legend>
 												{ __(
-													'Shipping details',
+													'Delivery details',
 													'woocommerce'
 												) }
 											</legend>
+											<p className="woocommerce-woopayments-dispute-evidence__section-description">
+												{ __(
+													'Please ensure all prefilled information is correct and complete any missing details.',
+													'woocommerce'
+												) }
+											</p>
 											{ SHIPPING_EVIDENCE_FIELDS.map(
 												( field ) => (
 													<TextControl
 														key={ field }
-														label={ formatLabel(
+														label={ getShippingFieldLabel(
 															field
 														) }
 														value={
@@ -1354,10 +1465,24 @@ export const DisputeEvidenceForm = ( {
 								) }
 							{ ! isVisaCompliance &&
 								currentStep === 'review' && (
-									<fieldset className="woocommerce-woopayments-dispute-evidence__section">
-										<legend>
-											{ __( 'Review', 'woocommerce' ) }
-										</legend>
+									<section className="woocommerce-woopayments-dispute-evidence__cover-letter">
+										{ /* Client 11.1.0 new-evidence/index.tsx:1251-1264. */ }
+										{ isCoverLetterManuallyEdited && (
+											<Notice
+												status="warning"
+												isDismissible={ false }
+												className="woocommerce-woopayments-dispute-evidence__cover-letter-warning"
+											>
+												<WarningIcon className="woocommerce-woopayments-dispute-evidence__outcome-icon" />
+												<span>
+													{ __(
+														"You've made some manual edits to your cover letter. If you update your evidence again, those changes won't be reflected here automatically — but you can always make further edits yourself.",
+														'woocommerce'
+													) }
+												</span>
+											</Notice>
+										) }
+										{ /* Client 11.1.0 new-evidence/cover-letter.tsx:112-133. */ }
 										<TextareaControl
 											label={ __(
 												'Cover letter',
@@ -1367,11 +1492,31 @@ export const DisputeEvidenceForm = ( {
 												evidence.uncategorized_text ||
 												generatedCoverLetter
 											}
+											rows={ 30 }
 											readOnly={ formLocked }
 											__nextHasNoMarginBottom
-											onChange={ handleCoverLetterChange }
+											onChange={
+												handleReviewCoverLetterChange
+											}
 										/>
-									</fieldset>
+										<Button
+											variant="primary"
+											type="button"
+											__next40pxDefaultSize
+											onClick={ () =>
+												openCoverLetterPreview(
+													evidence.uncategorized_text ||
+														generatedCoverLetter
+												)
+											}
+										>
+											{ __(
+												'Preview cover letter',
+												'woocommerce'
+											) + ' ' }
+											&#8599;
+										</Button>
+									</section>
 								) }
 							{ /* Client 11.1.0 new-evidence/index.tsx:1035-1059: who decides the outcome. */ }
 							{ ! isVisaCompliance && (
@@ -1415,6 +1560,8 @@ export const DisputeEvidenceForm = ( {
 											!! saveInProgress ||
 											isUploadingEvidence
 										}
+										icon={ chevronLeft }
+										iconPosition="left"
 										onClick={ handleBack }
 									>
 										{ __( 'Back', 'woocommerce' ) }

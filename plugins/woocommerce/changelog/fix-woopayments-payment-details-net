@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the net of refunded and disputed WooPayments payments on the payment details page after refunds, fees and dispute deductions.

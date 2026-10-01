@@ -54,7 +54,6 @@ import {
 } from './utils';
 import {
 	getChargeDisputes,
-	getDisputeBalanceAdjustments,
 	getDisputeOrdinals,
 	isDisputeAwaitingResponse,
 	isDisputeInquiry,
@@ -123,81 +122,6 @@ const getBalanceTransactionId = (
 	}
 
 	return balanceTransaction?.id || '';
-};
-
-const getBalanceTransactionAmount = (
-	balanceTransaction: WooPaymentsCharge[ 'balance_transaction' ],
-	key: 'fee' | 'net'
-) => {
-	if (
-		balanceTransaction &&
-		typeof balanceTransaction === 'object' &&
-		typeof balanceTransaction.currency === 'string' &&
-		balanceTransaction.currency.trim() &&
-		typeof balanceTransaction[ key ] === 'number'
-	) {
-		return balanceTransaction[ key ];
-	}
-
-	return undefined;
-};
-
-const getFiniteNumber = ( value: unknown ) =>
-	typeof value === 'number' && Number.isFinite( value ) ? value : undefined;
-
-const getDisputeAdjustedChargeAmounts = ( charge: WooPaymentsCharge ) => {
-	const adjustments = getDisputeBalanceAdjustments( charge );
-	if ( adjustments.fee === 0 && adjustments.refunded === 0 ) {
-		return {
-			amountRefunded: charge.amount_refunded,
-			balanceTransaction: charge.balance_transaction,
-			fee: getBalanceTransactionAmount(
-				charge.balance_transaction,
-				'fee'
-			),
-			net: getBalanceTransactionAmount(
-				charge.balance_transaction,
-				'net'
-			),
-		};
-	}
-
-	const balanceTransaction =
-		charge.balance_transaction &&
-		typeof charge.balance_transaction === 'object'
-			? charge.balance_transaction
-			: undefined;
-	const baseFee =
-		getFiniteNumber( balanceTransaction?.fee ) ??
-		getFiniteNumber( charge.application_fee_amount );
-	const baseAmount =
-		getFiniteNumber( balanceTransaction?.amount ) ??
-		getFiniteNumber( charge.amount );
-	const refundedAmount =
-		( getFiniteNumber( charge.amount_refunded ) ?? 0 ) +
-		adjustments.refunded;
-	const fee = baseFee === undefined ? undefined : baseFee + adjustments.fee;
-	const net =
-		baseAmount === undefined || fee === undefined
-			? undefined
-			: baseAmount - fee - refundedAmount;
-	const adjustedBalanceTransaction = balanceTransaction
-		? { ...balanceTransaction }
-		: undefined;
-	if ( adjustedBalanceTransaction && fee !== undefined ) {
-		adjustedBalanceTransaction.fee = fee;
-	}
-	if ( adjustedBalanceTransaction && net !== undefined ) {
-		adjustedBalanceTransaction.net = net;
-	}
-
-	return {
-		amountRefunded: refundedAmount,
-		balanceTransaction:
-			adjustedBalanceTransaction || charge.balance_transaction,
-		fee,
-		net,
-	};
 };
 
 const getIntentCharge = ( intent: WooPaymentsPaymentIntent ) =>
@@ -341,8 +265,6 @@ const normalizeCharge = (
 	const balanceTransactionId = getBalanceTransactionId(
 		charge.balance_transaction
 	);
-	const adjustedAmounts = getDisputeAdjustedChargeAmounts( charge );
-
 	return {
 		id: transactionId || balanceTransactionId || charge.id || fallbackId,
 		transaction_id: transactionId || balanceTransactionId,
@@ -364,13 +286,14 @@ const normalizeCharge = (
 		outcome: charge.outcome,
 		dispute: charge.dispute,
 		disputes: charge.disputes,
-		balance_transaction: adjustedAmounts.balanceTransaction,
+		balance_transaction: charge.balance_transaction,
 		application_fee_amount: charge.application_fee_amount,
-		amount_refunded: adjustedAmounts.amountRefunded,
+		amount_refunded: charge.amount_refunded,
 		refunded: charge.refunded,
+		refunds: charge.refunds,
+		disputed: charge.disputed,
+		fee_breakdown_v1: charge.fee_breakdown_v1,
 		captured: charge.captured,
-		fee: adjustedAmounts.fee,
-		net: adjustedAmounts.net,
 		paydown: charge.paydown,
 		status: charge.status,
 	};

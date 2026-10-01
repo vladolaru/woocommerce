@@ -56,6 +56,33 @@
 	width: 22px;
 }
 
+// Client 11.1.0 `new-evidence/style.scss:36-39,381-392`: the manual-edits warning, then the letter and its preview button.
+.woocommerce-woopayments-dispute-evidence__cover-letter {
+	display: grid;
+	gap: 16px;
+
+	.components-button {
+		justify-self: start;
+	}
+}
+
+.woocommerce-woopayments-dispute-evidence__cover-letter-warning.components-notice {
+	background-color: #fcf9e8;
+	border-inline-start: 4px solid #f0b849;
+	font-size: 14px;
+	margin: 0;
+
+	.components-notice__content {
+		align-items: flex-start;
+		display: flex;
+		gap: 5px;
+	}
+
+	.woocommerce-woopayments-dispute-evidence__outcome-icon {
+		fill: #614200;
+	}
+}
+
 .woocommerce-woopayments-dispute-evidence__actions-right {
 	align-items: center;
 	display: flex;
@@ -360,10 +387,22 @@
 		color: var(--wp-admin-theme-color, #3858e9);
 	}
 
-	> div {
+	// The billing address, a label over its value; the row above it stays a row.
+	> div:not(.woocommerce-woopayments-dispute-evidence-customer__row) {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
+	}
+
+	@media (max-width: 700px) {
+		&__row {
+			flex-direction: column;
+			gap: 8px;
+
+			> div {
+				min-width: 0;
+			}
+		}
 	}
 }
 

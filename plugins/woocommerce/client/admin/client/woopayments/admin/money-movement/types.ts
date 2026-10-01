@@ -33,6 +33,9 @@ export interface WooPaymentsTransaction {
 	fees?: number;
 	net?: number;
 	paydown?: WooPaymentsChargePaydown | null;
+	disputed?: boolean;
+	refunds?: WooPaymentsChargeRefunds;
+	fee_breakdown_v1?: WooPaymentsFeeBreakdown | null;
 	order_id?: number | string;
 	source?: string;
 	source_identifier?: string;
@@ -161,6 +164,9 @@ export interface WooPaymentsCharge {
 	refunded?: boolean;
 	captured?: boolean;
 	paydown?: WooPaymentsChargePaydown | null;
+	disputed?: boolean;
+	refunds?: WooPaymentsChargeRefunds;
+	fee_breakdown_v1?: WooPaymentsFeeBreakdown | null;
 	status?: string;
 }
 
@@ -169,6 +175,37 @@ export interface WooPaymentsCharge {
  */
 export interface WooPaymentsChargePaydown {
 	amount: number;
+}
+
+/**
+ * The charge's refunds, each with its expanded balance transaction.
+ */
+export interface WooPaymentsChargeRefunds {
+	data?: Array< {
+		balance_transaction?: { amount?: number; currency?: string } | null;
+		[ key: string ]: unknown;
+	} >;
+}
+
+interface WooPaymentsFeeBreakdownAmount {
+	amount: number;
+	currency: string;
+}
+
+/**
+ * The server's fee breakdown envelope (`fee_breakdown_v1`), the charge's current fee and net totals.
+ * Client 11.1.0 `types/charges.d.ts:103-176` `Charge.fee_breakdown_v1`.
+ */
+export interface WooPaymentsFeeBreakdown {
+	totals?: {
+		fee?: WooPaymentsFeeBreakdownAmount;
+		tax?: WooPaymentsFeeBreakdownAmount;
+		fee_plus_tax?: WooPaymentsFeeBreakdownAmount;
+		net?: WooPaymentsFeeBreakdownAmount;
+		gross?: WooPaymentsFeeBreakdownAmount;
+		[ key: string ]: unknown;
+	};
+	[ key: string ]: unknown;
 }
 
 export interface WooPaymentsPaymentIntent {

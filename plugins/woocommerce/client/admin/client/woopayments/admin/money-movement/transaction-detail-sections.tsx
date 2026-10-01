@@ -33,6 +33,9 @@ import {
 	formatExplicitCurrency,
 	formatLabel,
 	getChargeChannelLabel,
+	getP24BankLabel,
+	getTransactionSourceIconUrl,
+	getTransactionSourceLabel,
 } from './utils';
 import {
 	DISPUTE_STATUS_LABELS,
@@ -42,6 +45,10 @@ import {
 	getPrimaryDispute,
 	isDisputeAwaitingResponse,
 } from './dispute-utils';
+import {
+	getChargeAmounts,
+	getTransactionFeeBeforeDisputes,
+} from './charge-amounts';
 import {
 	isWooPaymentsSubscriptionsActive,
 	OrderLink,
@@ -210,6 +217,108 @@ export const getPaymentMethodLabel = (
 const isCardPaymentMethodType = ( type?: string ) =>
 	type === 'card' || type === 'card_present' || type === 'interac_present';
 
+// Client 11.1.0 `components/payment-method-details/index.tsx:33-90` `formatDetails()`: the method field printed after "••••".
+const LAST4_DETAIL_FIELDS: Record< string, string > = {
+	au_becs_debit: 'last4',
+	sepa_debit: 'last4',
+	bancontact: 'iban_last4',
+	ideal: 'iban_last4',
+	eps: 'iban_last4',
+	sofort: 'iban_last4',
+};
+
+const Last4 = ( { last4 }: { last4: string } ) => (
+	<>
+		<span aria-hidden="true">{ `•••• ${ last4 }` }</span>
+		<span className="screen-reader-text">
+			{ sprintf(
+				/* translators: %s: last four digits of the card or account. */
+				__( 'ending in %s', 'woocommerce' ),
+				last4
+			) }
+		</span>
+	</>
+);
+
+const SourceLogo = ( { source }: { source: string } ) => {
+	const iconUrl = getTransactionSourceIconUrl( source );
+
+	return iconUrl ? (
+		<img
+			className="woocommerce-woopayments-money-movement__card-brand"
+			src={ iconUrl }
+			alt={ getTransactionSourceLabel( source ) }
+		/>
+	) : null;
+};
+
+/**
+ * A non-card payment method as the client's `PaymentMethodDetails` shows it: the method's logo, then its detail.
+ * Client 11.1.0 `components/payment-method-details/index.tsx:136-192`.
+ *
+ * @param props        The component props.
+ * @param props.method The charge's payment method details.
+ */
+const NonCardPaymentMethodSummary = ( {
+	method,
+}: {
+	method: WooPaymentsPaymentMethodDetails;
+} ) => {
+	const type = method.type || '';
+	const details = getPaymentMethodTypedDetails( method ) as Record<
+		string,
+		unknown
+	>;
+
+	if ( ! method[ type ] && type !== 'link' ) {
+		return <>&ndash;</>;
+	}
+
+	const getText = ( value: unknown ) =>
+		typeof value === 'string' || typeof value === 'number'
+			? String( value )
+			: '';
+	const funding = details.funding as
+		| { card?: { brand?: string; last4?: string } }
+		| undefined;
+	const fundingBrand = getText( funding?.card?.brand ).toLowerCase();
+	const brand =
+		getText( details.brand ) ||
+		getText( details.network ) ||
+		fundingBrand ||
+		type;
+	const last4 =
+		type === 'amazon_pay'
+			? getText( funding?.card?.last4 )
+			: getText( details[ LAST4_DETAIL_FIELDS[ type ] ] );
+	let detail: ReactNode = last4 ? <Last4 last4={ last4 } /> : null;
+
+	if ( type === 'p24' ) {
+		detail = getP24BankLabel( getText( details.bank ) );
+	} else if ( type === 'giropay' ) {
+		detail = getText( details.bank_code );
+	}
+
+	// Amazon Pay is its own wallet logo; its funding card's brand follows only when there is one.
+	const logos = [
+		type === 'amazon_pay' ? 'amazon_pay' : '',
+		type !== 'amazon_pay' || fundingBrand ? brand : '',
+	].filter( ( source ) => source && getTransactionSourceIconUrl( source ) );
+
+	if ( ! logos.length ) {
+		return <>{ getTransactionSourceLabel( type ) }</>;
+	}
+
+	return (
+		<span className="woocommerce-woopayments-money-movement__card-summary">
+			{ logos.map( ( source ) => (
+				<SourceLogo key={ source } source={ source } />
+			) ) }
+			{ detail }
+		</span>
+	);
+};
+
 const PaymentMethodSummary = ( {
 	transaction,
 }: {
@@ -220,6 +329,10 @@ const PaymentMethodSummary = ( {
 	const cardBrand = isCardPaymentMethodType( method?.type )
 		? getPaymentMethodCardBrand( card )
 		: undefined;
+
+	if ( method?.type && ! isCardPaymentMethodType( method.type ) ) {
+		return <NonCardPaymentMethodSummary method={ method } />;
+	}
 
 	if ( ! cardBrand || ! card?.last4 ) {
 		return getPaymentMethodLabel( transaction ) || null;
@@ -463,34 +576,34 @@ const getCheckLabel = ( check?: string ) => {
 
 const stripTags = ( value: string ) => value.replace( /<[^>]*>/g, '' );
 
+// Client 11.1.0 `payment-method/card/index.js:34,175-183` prints the server's `formatted_address`; the raw fields only
+// stand in when a response carries no formatted address.
 const getAddressLines = (
 	billingDetails?: WooPaymentsBillingDetails,
 	countries: CountryMap = {}
 ) => {
-	const address = billingDetails?.address;
-	if ( address ) {
-		const lines = [
-			[ address.line1, address.line2 ].filter( Boolean ).join( ', ' ),
-			[ address.city, address.state, address.postal_code ]
-				.filter( Boolean )
-				.join( ', ' ),
-			getCountryName( address.country, countries ),
-		].filter( Boolean );
-
-		if ( lines.length ) {
-			return lines;
-		}
-	}
-
-	if ( ! billingDetails?.formatted_address ) {
-		return [];
-	}
-
-	return billingDetails.formatted_address
+	const formattedLines = ( billingDetails?.formatted_address || '' )
 		.split( /<br\s*\/?>/i )
 		.map( stripTags )
 		.map( ( line ) => line.trim() )
 		.filter( Boolean );
+
+	if ( formattedLines.length ) {
+		return formattedLines;
+	}
+
+	const address = billingDetails?.address;
+	if ( ! address ) {
+		return [];
+	}
+
+	return [
+		[ address.line1, address.line2 ].filter( Boolean ).join( ', ' ),
+		[ address.city, address.state, address.postal_code ]
+			.filter( Boolean )
+			.join( ', ' ),
+		getCountryName( address.country, countries ),
+	].filter( Boolean );
 };
 
 const StackedLines = ( { lines }: { lines: ReactNode[] } ) => {
@@ -509,9 +622,6 @@ const StackedLines = ( { lines }: { lines: ReactNode[] } ) => {
 
 const getFiniteNumber = ( value: unknown ) =>
 	typeof value === 'number' && Number.isFinite( value ) ? value : undefined;
-
-const getTransactionFee = ( transaction: WooPaymentsTransaction ) =>
-	transaction.fee ?? transaction.application_fee_amount;
 
 const formatPaymentSummaryAmount = (
 	amount: number | undefined,
@@ -830,43 +940,28 @@ export const WooPaymentsPaymentSummarySection = ( {
 	reviewActions?: ReactNode;
 	children?: ReactNode;
 } ) => {
-	const balanceTransaction =
-		transaction.balance_transaction &&
-		typeof transaction.balance_transaction === 'object' &&
-		typeof transaction.balance_transaction.currency === 'string' &&
-		transaction.balance_transaction.currency.trim()
-			? transaction.balance_transaction
-			: undefined;
-	const balanceCurrency = balanceTransaction?.currency;
+	// Client 11.1.0 `summary/index.tsx:291-296`: amounts in the settlement currency, placeholders without an amount.
+	const balance = transaction.amount
+		? getChargeAmounts( transaction )
+		: { currency: 'USD', amount: 0, fee: 0, net: 0, refunded: 0 };
 	const hasDifferentBalanceCurrency = !! (
-		balanceCurrency &&
 		transaction.currency &&
-		balanceCurrency.toLowerCase() !== transaction.currency.toLowerCase()
+		balance.currency.toLowerCase() !== transaction.currency.toLowerCase()
 	);
-	const feeFromBalance = typeof balanceTransaction?.fee === 'number';
-	const fee = feeFromBalance
-		? balanceTransaction.fee
-		: getTransactionFee( transaction );
-	const feeCurrency = feeFromBalance ? balanceCurrency : transaction.currency;
-	const netFromBalance = typeof balanceTransaction?.net === 'number';
-	const netCurrency = netFromBalance ? balanceCurrency : transaction.currency;
-	// Client 11.1.0 `payment-details/summary/index.tsx:420-431`: a capital loan repayment comes out of the net.
+	// Client 11.1.0 `summary/index.tsx:420-431`: the envelope's net already has the loan repayment taken out.
 	const paydownAmount = transaction.paydown
 		? getFiniteNumber( transaction.paydown.amount )
 		: undefined;
-	const chargeNet = netFromBalance ? balanceTransaction.net : transaction.net;
 	const net =
-		paydownAmount !== undefined && typeof chargeNet === 'number'
-			? chargeNet - Math.abs( paydownAmount )
-			: chargeNet;
-	const hasConvertedAmount =
-		hasDifferentBalanceCurrency &&
-		typeof balanceTransaction?.amount === 'number';
-	const hasRefundedAmount =
-		typeof transaction.amount_refunded === 'number' &&
-		transaction.amount_refunded > 0;
+		! transaction.fee_breakdown_v1?.totals?.net &&
+		paydownAmount !== undefined
+			? balance.net - Math.abs( paydownAmount )
+			: balance.net;
+	// Client 11.1.0 `summary/index.tsx:356-367`: "Deducted" only when a dispute moved money.
 	const disputeWithdrawnAmount =
-		getDisputeBalanceAdjustments( transaction ).refunded;
+		transaction.disputed === true
+			? getDisputeBalanceAdjustments( transaction ).refunded
+			: 0;
 	const refundedAmountLabel = disputeWithdrawnAmount
 		? /* translators: %s: formatted withdrawn amount. */
 		  __( 'Deducted: %s', 'woocommerce' )
@@ -882,6 +977,10 @@ export const WooPaymentsPaymentSummarySection = ( {
 	const disputeFeeTotal = disputeFees.reduce(
 		( total, disputeFee ) => total + ( disputeFee?.amount ?? 0 ),
 		0
+	);
+	const transactionFee = getTransactionFeeBeforeDisputes(
+		transaction,
+		disputeFeeTotal
 	);
 
 	return (
@@ -914,104 +1013,97 @@ export const WooPaymentsPaymentSummarySection = ( {
 								) }
 							</div>
 							<div className="woocommerce-woopayments-payment-summary__breakdown">
-								{ hasConvertedAmount && (
+								{ hasDifferentBalanceCurrency && (
 									<div className="woocommerce-woopayments-payment-summary__settlement-currency">
 										{ formatPaymentSummaryAmount(
-											balanceTransaction.amount,
-											balanceCurrency,
+											balance.amount,
+											balance.currency,
 											true,
 											true
 										) }
 									</div>
 								) }
-								{ hasRefundedAmount && (
+								{ !! balance.refunded && (
 									<div>
 										{ sprintf(
 											refundedAmountLabel,
 											formatExplicitCurrency(
-												-Math.abs(
-													Number(
-														transaction.amount_refunded
+												-balance.refunded,
+												balance.currency
+											)
+										) }
+									</div>
+								) }
+								<div>
+									{ sprintf(
+										/* translators: %s: formatted fee amount. */
+										__( 'Fees: %s', 'woocommerce' ),
+										formatPaymentSummaryAmount(
+											-balance.fee,
+											balance.currency,
+											hasDifferentBalanceCurrency
+										)
+									) }
+									{ disputeFees.length > 0 && (
+										<HelpPopover
+											label={ __(
+												'Fee breakdown',
+												'woocommerce'
+											) }
+										>
+											<dl className="woocommerce-woopayments-payment-summary__fee-breakdown">
+												{ [
+													[
+														__(
+															'Transaction fee',
+															'woocommerce'
+														),
+														transactionFee.fee,
+														transactionFee.currency,
+													],
+													[
+														_n(
+															'Dispute fee',
+															'Dispute fees',
+															disputeFees.length,
+															'woocommerce'
+														),
+														disputeFeeTotal,
+														balance.currency,
+													],
+													[
+														__(
+															'Total fees',
+															'woocommerce'
+														),
+														balance.fee,
+														balance.currency,
+													],
+												].map(
+													( [
+														label,
+														amount,
+														currency,
+													] ) => (
+														<div key={ label }>
+															<dt>{ label }</dt>
+															<dd>
+																{ formatAmount(
+																	Number(
+																		amount
+																	),
+																	String(
+																		currency
+																	)
+																) }
+															</dd>
+														</div>
 													)
-												),
-												transaction.currency
-											)
-										) }
-									</div>
-								) }
-								{ hasDisplayValue( fee ) && (
-									<div>
-										{ sprintf(
-											/* translators: %s: formatted fee amount. */
-											__( 'Fees: %s', 'woocommerce' ),
-											formatPaymentSummaryAmount(
-												-Math.abs( Number( fee ) ),
-												feeCurrency,
-												feeFromBalance &&
-													hasDifferentBalanceCurrency
-											)
-										) }
-										{ disputeFees.length > 0 && (
-											<HelpPopover
-												label={ __(
-													'Fee breakdown',
-													'woocommerce'
 												) }
-											>
-												<dl className="woocommerce-woopayments-payment-summary__fee-breakdown">
-													{ [
-														[
-															__(
-																'Transaction fee',
-																'woocommerce'
-															),
-															Math.abs(
-																Number( fee )
-															) - disputeFeeTotal,
-														],
-														[
-															_n(
-																'Dispute fee',
-																'Dispute fees',
-																disputeFees.length,
-																'woocommerce'
-															),
-															disputeFeeTotal,
-														],
-														[
-															__(
-																'Total fees',
-																'woocommerce'
-															),
-															Math.abs(
-																Number( fee )
-															),
-														],
-													].map(
-														( [
-															label,
-															amount,
-														] ) => (
-															<div key={ label }>
-																<dt>
-																	{ label }
-																</dt>
-																<dd>
-																	{ formatAmount(
-																		Number(
-																			amount
-																		),
-																		feeCurrency
-																	) }
-																</dd>
-															</div>
-														)
-													) }
-												</dl>
-											</HelpPopover>
-										) }
-									</div>
-								) }
+											</dl>
+										</HelpPopover>
+									) }
+								</div>
 								{ paydownAmount !== undefined && (
 									<div>
 										{ sprintf(
@@ -1022,29 +1114,25 @@ export const WooPaymentsPaymentSummarySection = ( {
 											),
 											formatPaymentSummaryAmount(
 												paydownAmount,
-												balanceCurrency ||
-													transaction.currency,
+												balance.currency,
 												hasDifferentBalanceCurrency,
 												true
 											)
 										) }
 									</div>
 								) }
-								{ hasDisplayValue( net ) && (
-									<div>
-										{ sprintf(
-											/* translators: %s: formatted net amount. */
-											__( 'Net: %s', 'woocommerce' ),
-											formatPaymentSummaryAmount(
-												net,
-												netCurrency,
-												netFromBalance &&
-													hasDifferentBalanceCurrency,
-												true
-											)
-										) }
-									</div>
-								) }
+								<div>
+									{ sprintf(
+										/* translators: %s: formatted net amount. */
+										__( 'Net: %s', 'woocommerce' ),
+										formatPaymentSummaryAmount(
+											net,
+											balance.currency,
+											hasDifferentBalanceCurrency,
+											true
+										)
+									) }
+								</div>
 							</div>
 						</div>
 						<div className="woocommerce-woopayments-payment-summary__section">

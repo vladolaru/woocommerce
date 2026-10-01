@@ -217,8 +217,21 @@ describe( 'explicit currency codes across admin surfaces', () => {
 							amount: 5000,
 							amount_refunded: 1000,
 							currency: 'usd',
-							fee: 180,
-							net: 4820,
+							balance_transaction: {
+								amount: 5000,
+								currency: 'usd',
+								fee: 180,
+							},
+							refunds: {
+								data: [
+									{
+										balance_transaction: {
+											amount: -1000,
+											currency: 'usd',
+										},
+									},
+								],
+							},
 							captured: true,
 						} as WooPaymentsTransaction
 					}
@@ -227,7 +240,7 @@ describe( 'explicit currency codes across admin surfaces', () => {
 
 			// Client 11.1.0 `payment-details/summary/index.tsx:543,676` (explicit) and fees (`formatCurrency`).
 			expect(
-				within( getSummary() ).getByText( 'Net: $48.20 USD' )
+				within( getSummary() ).getByText( 'Net: $38.20 USD' )
 			).toBeInTheDocument();
 			expect(
 				within( getSummary() ).getByText( 'Refunded: -$10.00 USD' )

@@ -915,7 +915,9 @@ describe( 'WooPayments money movement pages', () => {
 		expect( mockRefundCharge ).not.toHaveBeenCalled();
 	} );
 
-	it( 'prefers each usable balance field and currency over conflicting flat settlement values', () => {
+	// Client 11.1.0 `utils/charge/index.ts:201-280` `getChargeAmounts()`: the settlement amounts come from the balance
+	// transaction; the flat `fee` and `net` fields are list-row fields the summary never reads.
+	it( 'reads the fees and net from the balance transaction, not the flat fields', () => {
 		render(
 			<WooPaymentsPaymentSummarySection
 				transaction={ {
@@ -947,11 +949,12 @@ describe( 'WooPayments money movement pages', () => {
 			within( summary ).getByText( 'Fees: -$1.80 USD' )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Net: €49.99' )
+			within( summary ).getByText( 'Net: $53.52 USD' )
 		).toBeInTheDocument();
 	} );
 
-	it( 'resolves settlement fields independently and keeps refunds in charge currency', () => {
+	// Client 11.1.0 `getChargeAmounts()`: a refund leaves in the settlement currency, at the rate of its own balance transaction.
+	it( 'shows a refund in the settlement currency and takes it out of the net', () => {
 		render(
 			<WooPaymentsPaymentSummarySection
 				transaction={ {
@@ -959,13 +962,22 @@ describe( 'WooPayments money movement pages', () => {
 					amount: 5000,
 					amount_refunded: 1000,
 					currency: 'eur',
-					fee: 125,
-					net: 4999,
 					balance_transaction: {
 						id: 'txn_fx_net',
 						amount: 5532,
+						fee: 180,
 						net: 5352,
 						currency: 'usd',
+					},
+					refunds: {
+						data: [
+							{
+								balance_transaction: {
+									amount: -1116,
+									currency: 'usd',
+								},
+							},
+						],
 					},
 				} }
 			/>
@@ -981,13 +993,13 @@ describe( 'WooPayments money movement pages', () => {
 			} )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Refunded: -€10.00' )
+			within( summary ).getByText( 'Refunded: -$11.16' )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Fees: -€1.25' )
+			within( summary ).getByText( 'Fees: -$1.80 USD' )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Net: $53.52 USD' )
+			within( summary ).getByText( 'Net: $42.36 USD' )
 		).toBeInTheDocument();
 	} );
 
@@ -997,8 +1009,9 @@ describe( 'WooPayments money movement pages', () => {
 				transaction={ {
 					status: 'succeeded',
 					amount: 5000,
-					amount_refunded: 2000,
+					amount_refunded: 0,
 					currency: 'usd',
+					disputed: true,
 					dispute: {
 						status: 'needs_response',
 						balance_transactions: [ { amount: -2000, fee: 0 } ],
@@ -1026,6 +1039,10 @@ describe( 'WooPayments money movement pages', () => {
 					amount: 5000,
 					amount_refunded: 1000,
 					currency: 'usd',
+					refunds: {
+						data: [ { balance_transaction: { amount: -1000 } } ],
+					},
+					disputed: true,
 					dispute: {
 						status: 'warning_needs_response',
 					},
@@ -1052,6 +1069,10 @@ describe( 'WooPayments money movement pages', () => {
 					amount: 5000,
 					amount_refunded: 1000,
 					currency: 'usd',
+					refunds: {
+						data: [ { balance_transaction: { amount: -1000 } } ],
+					},
+					disputed: true,
 					dispute: {
 						status: 'won',
 						balance_transactions: [
@@ -1117,35 +1138,37 @@ describe( 'WooPayments money movement pages', () => {
 			'an object without currency',
 			{ id: 'txn_incomplete', amount: 5532, fee: 180, net: 5352 },
 		],
-	] )( 'uses flat charge-currency fallbacks for %s', ( _case, balance ) => {
-		render(
-			<WooPaymentsPaymentSummarySection
-				transaction={ {
-					status: 'succeeded',
-					amount: 5000,
-					currency: 'eur',
-					fee: 180,
-					net: 4820,
-					balance_transaction: balance,
-				} }
-			/>
-		);
+	] )(
+		'uses the charge amount and application fee for %s',
+		( _case, balance ) => {
+			render(
+				<WooPaymentsPaymentSummarySection
+					transaction={ {
+						status: 'succeeded',
+						amount: 5000,
+						currency: 'eur',
+						application_fee_amount: 180,
+						balance_transaction: balance,
+					} }
+				/>
+			);
 
-		const summary = screen.getByRole( 'region', {
-			name: 'Summary',
-		} ) as HTMLElement;
-		expect(
-			summary.querySelector(
-				'.woocommerce-woopayments-payment-summary__settlement-currency'
-			)
-		).toBeNull();
-		expect(
-			within( summary ).getByText( 'Fees: -€1.80' )
-		).toBeInTheDocument();
-		expect(
-			within( summary ).getByText( 'Net: €48.20' )
-		).toBeInTheDocument();
-	} );
+			const summary = screen.getByRole( 'region', {
+				name: 'Summary',
+			} ) as HTMLElement;
+			expect(
+				summary.querySelector(
+					'.woocommerce-woopayments-payment-summary__settlement-currency'
+				)
+			).toBeNull();
+			expect(
+				within( summary ).getByText( 'Fees: -€1.80' )
+			).toBeInTheDocument();
+			expect(
+				within( summary ).getByText( 'Net: €48.20' )
+			).toBeInTheDocument();
+		}
+	);
 
 	afterEach( () => {
 		// Hidden columns live in user meta only, never in browser storage.
@@ -3212,7 +3235,7 @@ describe( 'WooPayments money movement pages', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'omits settlement amounts when the balance currency is missing', async () => {
+	it( 'reads the charge amounts when the balance currency is missing', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_incomplete_balance',
 			status: 'succeeded',
@@ -3224,6 +3247,7 @@ describe( 'WooPayments money movement pages', () => {
 				type: 'charge',
 				amount: 5000,
 				currency: 'eur',
+				application_fee_amount: 150,
 				balance_transaction: {
 					id: 'txn_incomplete_balance',
 					amount: 5532,
@@ -3259,11 +3283,11 @@ describe( 'WooPayments money movement pages', () => {
 			)
 		).toBeNull();
 		expect(
-			within( summary ).queryByText( /Fees:/ )
-		).not.toBeInTheDocument();
+			within( summary ).getByText( 'Fees: -€1.50' )
+		).toBeInTheDocument();
 		expect(
-			within( summary ).queryByText( /Net:/ )
-		).not.toBeInTheDocument();
+			within( summary ).getByText( 'Net: €48.50' )
+		).toBeInTheDocument();
 	} );
 
 	it( 'loads payment intent details when the route id is a payment intent', async () => {
@@ -3285,9 +3309,20 @@ describe( 'WooPayments money movement pages', () => {
 				payment_method: 'pm_card_visa',
 				balance_transaction: {
 					id: 'txn_test',
+					amount: 5000,
 					fee: 180,
 					net: 4820,
 					currency: 'usd',
+				},
+				refunds: {
+					data: [
+						{
+							balance_transaction: {
+								amount: -1000,
+								currency: 'usd',
+							},
+						},
+					],
 				},
 				type: 'charge',
 				amount: 5000,
@@ -3424,7 +3459,7 @@ describe( 'WooPayments money movement pages', () => {
 			within( summary ).getByText( 'Fees: -$1.80' )
 		).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Net: $48.20' )
+			within( summary ).getByText( 'Net: $38.20' )
 		).toBeInTheDocument();
 		expect(
 			within( summary ).queryByText( 'Fee' )
@@ -5880,6 +5915,7 @@ describe( 'WooPayments money movement pages', () => {
 				captured: true,
 				amount_refunded: 0,
 				refunded: false,
+				disputed: true,
 				order: {
 					id: 123,
 					number: '123',

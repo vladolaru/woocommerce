@@ -1,7 +1,10 @@
 /**
  * External dependencies
  */
+import { Flex, FlexItem, Spinner } from '@wordpress/components';
+import { dispatch } from '@wordpress/data';
 import { useEffect } from '@wordpress/element';
+import { __ } from '@wordpress/i18n';
 import { useLocation } from 'react-router-dom';
 
 /**
@@ -10,7 +13,8 @@ import { useLocation } from 'react-router-dom';
 import { getWooPaymentsDispute } from './data';
 import type { WooPaymentsDispute } from './types';
 import { getTransactionDetailsRoute } from './utils';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import { navigateToSettingsPaymentsProviderRoute } from '../utils';
+import './transaction-details.scss';
 
 const DISPUTES_LIST_ROUTE = '/woopayments/disputes';
 
@@ -36,6 +40,11 @@ const hasTransactionReference = ( dispute: WooPaymentsDispute ) => {
 	);
 };
 
+/**
+ * The legacy dispute details route: it opens the dispute's payment details, else the disputes list.
+ * Client 11.1.0 `disputes/redirect-to-transaction-details/index.tsx:60-111`: a spinner while the dispute loads, then an
+ * in-app history replace, so Back skips this route; falling back to the list says why in a snackbar.
+ */
 export const WooPaymentsDisputeDetailsRedirect = () => {
 	const location = useLocation();
 
@@ -47,24 +56,44 @@ export const WooPaymentsDisputeDetailsRedirect = () => {
 
 		const redirectTo = ( route: string ) => {
 			if ( isMounted ) {
-				window.location.assign(
-					getSettingsPaymentsProviderRouteUrl( route )
-				);
+				navigateToSettingsPaymentsProviderRoute( route, {
+					replace: true,
+				} );
 			}
+		};
+
+		const fallBackToDisputesList = () => {
+			if ( ! isMounted ) {
+				return;
+			}
+
+			(
+				dispatch( 'core/notices' ) as unknown as {
+					createInfoNotice: (
+						message: string,
+						options: { type: 'snackbar' }
+					) => void;
+				}
+			 ).createInfoNotice(
+				__(
+					"We couldn't open that dispute directly. Find it in your disputes list below.",
+					'woocommerce'
+				),
+				{ type: 'snackbar' }
+			);
+			redirectTo( DISPUTES_LIST_ROUTE );
 		};
 
 		if ( id && ! id.startsWith( 'ch_' ) && ! id.startsWith( 'py_' ) ) {
 			getWooPaymentsDispute( id )
 				.then( ( dispute ) => {
-					redirectTo(
-						hasTransactionReference( dispute )
-							? getTransactionDetailsRoute( dispute )
-							: DISPUTES_LIST_ROUTE
-					);
+					if ( hasTransactionReference( dispute ) ) {
+						redirectTo( getTransactionDetailsRoute( dispute ) );
+					} else {
+						fallBackToDisputesList();
+					}
 				} )
-				.catch( () => {
-					redirectTo( DISPUTES_LIST_ROUTE );
-				} );
+				.catch( fallBackToDisputesList );
 
 			return () => {
 				isMounted = false;
@@ -88,5 +117,20 @@ export const WooPaymentsDisputeDetailsRedirect = () => {
 		};
 	}, [ location.search ] );
 
-	return null;
+	return (
+		<Flex
+			direction="column"
+			className="woocommerce-woopayments-dispute-details-redirect"
+		>
+			<FlexItem>
+				<Spinner />
+			</FlexItem>
+			<FlexItem>
+				<div>
+					<b>{ __( 'One moment please', 'woocommerce' ) }</b>
+				</div>
+				<div>{ __( 'Redirecting…', 'woocommerce' ) }</div>
+			</FlexItem>
+		</Flex>
+	);
 };

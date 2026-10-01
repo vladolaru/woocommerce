@@ -213,8 +213,9 @@
 			margin: 0;
 		}
 
-		// Beats the page's `.woocommerce-woopayments-money-movement h2 { margin: 0 }`.
-		.woocommerce-woopayments-money-movement & h2 {
+		// Beats the page's `.woocommerce-woopayments-money-movement h2 { margin: 0 }` for the pane's own heading only, not
+		// the "Steps you can take" accordion title below it.
+		.woocommerce-woopayments-money-movement & > h2 {
 			color: #1e1e1e;
 			font-size: 15px;
 			font-weight: 500;
@@ -597,5 +598,15 @@
 	&__lines {
 		display: grid;
 		gap: 12px;
+	}
+}
+
+// Client 11.1.0 `disputes/redirect-to-transaction-details/style.scss`: the spinner near the middle of the viewport.
+.woocommerce-woopayments-dispute-details-redirect {
+	position: relative;
+	top: 10vh;
+
+	.components-flex-item {
+		text-align: center;
 	}
 }

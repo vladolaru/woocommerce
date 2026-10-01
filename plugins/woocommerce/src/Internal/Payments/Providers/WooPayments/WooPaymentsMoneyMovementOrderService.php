@@ -111,13 +111,17 @@ class WooPaymentsMoneyMovementOrderService {
 	}
 
 	/**
-	 * Add order context to a charge detail response.
+	 * Add order context and the formatted billing address to a charge detail response.
+	 *
+	 * Client 11.1.0 `WC_Payments_API_Client::add_additional_info_to_charge()` does both for every charge it returns.
 	 *
 	 * @param array<string,mixed> $charge Platform charge.
 	 * @return array<string,mixed>
 	 */
 	public function enrich_charge_response( array $charge ): array {
-		return $this->add_detail_order_info( $charge, $this->get_charge_id_from_charge_response( $charge ) );
+		return $this->add_formatted_address_to_charge(
+			$this->add_detail_order_info( $charge, $this->get_charge_id_from_charge_response( $charge ) )
+		);
 	}
 
 	/**

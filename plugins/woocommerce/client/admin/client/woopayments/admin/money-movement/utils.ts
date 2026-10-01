@@ -2,6 +2,7 @@
  * External dependencies
  */
 import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
+import { decodeEntities } from '@wordpress/html-entities';
 import { __, sprintf } from '@wordpress/i18n';
 import { numberFormat } from '@woocommerce/number';
 import moment from 'moment';
@@ -49,9 +50,16 @@ export const formatCount = ( count: number ) => {
 	return numberFormat( { thousandSeparator }, count );
 };
 
+/**
+ * The error's message for display as text, or the fallback. REST errors arrive HTML-escaped (the charge route sends
+ * `&#039;` for quotes), so entities are decoded; callers render the result as text, never as markup.
+ *
+ * @param error    The caught error.
+ * @param fallback The message when the error has none.
+ */
 export const getErrorMessage = ( error: unknown, fallback: string ): string => {
 	if ( error instanceof Error && error.message ) {
-		return error.message;
+		return decodeEntities( error.message );
 	}
 
 	if (
@@ -60,7 +68,7 @@ export const getErrorMessage = ( error: unknown, fallback: string ): string => {
 		'message' in error &&
 		typeof error.message === 'string'
 	) {
-		return error.message;
+		return decodeEntities( error.message );
 	}
 
 	return fallback;
@@ -378,6 +386,15 @@ export const getTransactionSourceLabel = ( source: string ) =>
 	TRANSACTION_SOURCE_LABELS[ source ] ||
 	getPaymentMethodDefinition( source )?.label ||
 	formatLabel( source );
+
+/**
+ * The name of a Przelewy24 bank, or an empty string for an unknown bank.
+ * Client 11.1.0 `payment-details/payment-method/p24/bank-list.js`.
+ *
+ * @param bank The bank identifier, such as `ing`.
+ */
+export const getP24BankLabel = ( bank?: string ) =>
+	( bank && P24_BANK_LABELS[ bank ] ) || '';
 
 /**
  * The logo for a transaction or dispute source, the card brand or the payment method,

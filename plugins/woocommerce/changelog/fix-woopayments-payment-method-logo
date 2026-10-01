@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the payment method logo and account ending for non-card WooPayments payments in the payment details summary.
