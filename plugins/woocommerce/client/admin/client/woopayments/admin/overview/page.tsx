@@ -263,6 +263,10 @@ export const WooPaymentsOverviewPage = () => {
 				} )
 				.catch( () => {
 					if ( isMounted ) {
+						// Client 11.1.0 `data/disputes/resolvers.js:79-97`.
+						dispatch( 'core/notices' ).createErrorNotice(
+							__( 'Error retrieving disputes.', 'woocommerce' )
+						);
 						setDisputes( [] );
 					}
 				} );
@@ -466,6 +470,9 @@ export const WooPaymentsOverviewPage = () => {
 						onInstantPayoutSubmit={ reloadOverviewAndPayouts }
 						instantDepositsPreviouslyEligible={
 							!! shell?.instant_deposits_previously_eligible
+						}
+						isInstantDepositNoticeDismissed={
+							!! shell?.is_instant_deposit_notice_dismissed
 						}
 					/>
 					<PayoutsOverviewCard

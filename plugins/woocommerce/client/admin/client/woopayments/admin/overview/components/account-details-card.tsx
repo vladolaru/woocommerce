@@ -7,6 +7,7 @@ import {
 	CardBody,
 	CardHeader,
 	ExternalLink,
+	Flex,
 } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import { caution, check, error, info, published } from '@wordpress/icons';
@@ -168,35 +169,46 @@ export const AccountDetailsCard = ( {
 			{ /* Client 11.1.0 `components/account-details/payout-status-wrapper.tsx:19-86`. */ }
 			<div className="woocommerce-woopayments-account-details__payouts">
 				<span>{ __( 'Payouts:', 'woocommerce' ) }</span>
-				{ payoutStatus.text && (
-					<StatusChip
-						message={ payoutStatus.text }
-						type={ getStatusChipTypeFromColor(
-							payoutStatus.background_color
-						) }
-					/>
-				) }
-				{ payoutStatus.popover?.text && (
-					<HelpPopover
-						label={ __(
-							'More information about payout status',
-							'woocommerce'
-						) }
-					>
-						{ payoutStatus.popover.text }
-						{ payoutStatus.popover.cta_text &&
-							payoutStatus.popover.cta_link && (
-								<>
-									{ ' ' }
-									<ExternalLink
-										href={ payoutStatus.popover.cta_link }
-									>
-										{ payoutStatus.popover.cta_text }
-									</ExternalLink>
-								</>
+				{ /* The chip and its help sit together, as the client's inner `Flex gap={ 0 }`. */ }
+				<Flex
+					align="center"
+					gap={ 0 }
+					justify="flex-start"
+					expanded={ false }
+				>
+					{ payoutStatus.text && (
+						<StatusChip
+							message={ payoutStatus.text }
+							type={ getStatusChipTypeFromColor(
+								payoutStatus.background_color
 							) }
-					</HelpPopover>
-				) }
+						/>
+					) }
+					{ payoutStatus.popover?.text && (
+						<HelpPopover
+							size={ 24 }
+							label={ __(
+								'More information about payout status',
+								'woocommerce'
+							) }
+						>
+							{ payoutStatus.popover.text }
+							{ payoutStatus.popover.cta_text &&
+								payoutStatus.popover.cta_link && (
+									<>
+										{ ' ' }
+										<ExternalLink
+											href={
+												payoutStatus.popover.cta_link
+											}
+										>
+											{ payoutStatus.popover.cta_text }
+										</ExternalLink>
+									</>
+								) }
+						</HelpPopover>
+					) }
+				</Flex>
 			</div>
 			{ isTestModeOnboarding && (
 				<AccountTools onboardingUrl={ onboardingUrl } />

@@ -175,11 +175,6 @@ export const OverviewTaskList = ( {
 							title={ task.title }
 							// TaskItem renders its content as a node, though its type says string.
 							content={ task.content as string }
-							additionalInfo={
-								typeof task.additionalInfo === 'string'
-									? task.additionalInfo
-									: undefined
-							}
 							actionLabel={ task.actionLabel }
 							completed={ !! task.completed }
 							inProgress={ false }

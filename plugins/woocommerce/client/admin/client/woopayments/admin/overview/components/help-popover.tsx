@@ -3,6 +3,7 @@
  */
 import { Button, Dropdown } from '@wordpress/components';
 import { help } from '@wordpress/icons';
+import clsx from 'clsx';
 import type { ReactNode } from 'react';
 
 /**
@@ -16,17 +17,23 @@ import './help-popover.scss';
 export const HelpPopover = ( {
 	label,
 	children,
+	size = 16,
 }: {
 	label: string;
 	children: ReactNode;
+	/** The client's `buttonSize`: 16 by default, 24 beside the payout status chip. */
+	size?: 16 | 24;
 } ) => (
 	<Dropdown
 		className="woocommerce-woopayments-overview__help-popover"
 		renderToggle={ ( { isOpen, onToggle } ) => (
 			<Button
-				className="woocommerce-woopayments-overview__help-popover-toggle"
+				className={ clsx(
+					'woocommerce-woopayments-overview__help-popover-toggle',
+					{ 'is-large': size === 24 }
+				) }
 				icon={ help }
-				iconSize={ 16 }
+				iconSize={ size }
 				label={ label }
 				aria-expanded={ isOpen }
 				onClick={ onToggle }

@@ -263,7 +263,10 @@ describe( 'WooPaymentsCapitalPage', () => {
 					name: 'View transactions for loan loan_date_string',
 				} )
 			).toBeInTheDocument();
-			expect( screen.getByText( 'Nov 4, 2024' ) ).toBeInTheDocument();
+			// Client 11.1.0 `capital/index.tsx:157`: the site date format.
+			expect(
+				screen.getByText( 'November 4, 2024' )
+			).toBeInTheDocument();
 		} finally {
 			global.Date = RealDate;
 		}

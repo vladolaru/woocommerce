@@ -190,13 +190,18 @@ const buildReconnectTask = (
 			__( 'Reconnect %s', 'woocommerce' ),
 			'WooPayments'
 		),
-		additionalInfo: sprintf(
-			/* translators: %s: Payment provider name. */
-			__(
-				'%s is missing a connected WordPress.com account. Some functionality will be limited without a connected account.',
-				'woocommerce'
-			),
-			'WooPayments'
+		// The client's expandable task renders this as additional info above the button; native's tasks do not expand, so it goes in the content.
+		content: (
+			<div className="woocommerce-task__additional-info">
+				{ sprintf(
+					/* translators: %s: Payment provider name. */
+					__(
+						'%s is missing a connected WordPress.com account. Some functionality will be limited without a connected account.',
+						'woocommerce'
+					),
+					'WooPayments'
+				) }
+			</div>
 		),
 		actionLabel: __( 'Reconnect', 'woocommerce' ),
 		href: addQueryArgs( wpcomReconnectUrl, {
@@ -396,6 +401,18 @@ const buildDisputeTask = (
 	};
 };
 
+// Client 11.1.0 `task-list/tasks.tsx:99-110` `taskSort()`, applied in `overview/index.js:105-111`: completed tasks last, then by level.
+const compareTasks = (
+	a: WooPaymentsOverviewTask,
+	b: WooPaymentsOverviewTask
+) => {
+	if ( !! a.completed !== !! b.completed ) {
+		return a.completed ? 1 : -1;
+	}
+
+	return ( a.level || 3 ) - ( b.level || 3 );
+};
+
 export const buildOverviewTasks = ( {
 	shell,
 	disputes,
@@ -417,7 +434,9 @@ export const buildOverviewTasks = ( {
 		buildDisputeTask( disputes ),
 		// No go-live task: client 11.1.0 `overview/index.js:105` calls getTasks() without showGoLiveTask, so the
 		// task shows only on WC Home (`WooPaymentsGoLiveTask` and `woopayments/home-tasks/go-live-task.tsx`).
-	].filter( Boolean ) as WooPaymentsOverviewTask[];
+	]
+		.filter( ( task ): task is WooPaymentsOverviewTask => !! task )
+		.sort( compareTasks );
 
 // Native once let merchants dismiss or snooze these tasks, which the client never allows, so stored entries for them are ignored.
 const ALWAYS_VISIBLE_TASK_KEYS = [

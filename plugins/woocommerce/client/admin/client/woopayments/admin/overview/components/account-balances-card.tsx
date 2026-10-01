@@ -33,6 +33,7 @@ import {
 } from '../utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
 import { formatExplicitCurrency } from '../../currency';
+import { saveOption } from '../../../settings/data/actions';
 import { HelpPopover } from './help-popover';
 import { LoadablePlaceholder } from './loadable-placeholder';
 
@@ -207,6 +208,7 @@ export const AccountBalancesCard = ( {
 	onCurrencyChange,
 	onInstantPayoutSubmit,
 	instantDepositsPreviouslyEligible = false,
+	isInstantDepositNoticeDismissed = false,
 }: {
 	isLoading: boolean;
 	/** The balance read failed; the page raised the snackbar, so the card keeps only its frame. */
@@ -218,9 +220,14 @@ export const AccountBalancesCard = ( {
 		currency: string
 	) => Promise< WooPaymentsDeposit >;
 	instantDepositsPreviouslyEligible?: boolean;
+	isInstantDepositNoticeDismissed?: boolean;
 } ) => {
 	const [ isInstantPayoutModalOpen, setIsInstantPayoutModalOpen ] =
 		useState( false );
+	// Client 11.1.0 `components/account-balances/index.tsx:31-46`.
+	const [ isInstantNoticeDismissed, setInstantNoticeDismissed ] = useState(
+		isInstantDepositNoticeDismissed
+	);
 	const [ isInstantPayoutSubmitting, setIsInstantPayoutSubmitting ] =
 		useState( false );
 	const headingId = 'woocommerce-woopayments-balance-heading';
@@ -426,38 +433,79 @@ export const AccountBalancesCard = ( {
 						/>
 					</CardBody>
 					{ hasInstantBalance && (
+						// Client 11.1.0 `components/account-balances/index.tsx:149-225`: once the offer is dismissed, its help sits beside the button.
 						<CardBody className="woocommerce-woopayments-overview__instant-payout">
-							<p>
-								{ sprintf(
-									/* translators: 1: Available instant payout amount, 2: Instant payout fee percentage. */
-									__(
-										'Get %1$s via instant payout. Funds are typically in your bank account within 30 mins. Fee: %2$s%%.',
-										'woocommerce'
-									),
-									formatWooPaymentsAmount(
-										instantBalance.amount,
-										instantBalance.currency
-									),
-									String( instantBalance.fee_percentage )
+							{ ! isInstantNoticeDismissed && (
+								<Notice
+									status="info"
+									onRemove={ () => {
+										setInstantNoticeDismissed( true );
+										void saveOption(
+											'wcpay_instant_deposit_notice_dismissed',
+											true
+										);
+									} }
+								>
+									{ sprintf(
+										/* translators: 1: Available instant payout amount, 2: Instant payout fee percentage. */
+										__(
+											'Get %1$s via instant payout. Funds are typically in your bank account within 30 mins. Fee: %2$s%%.',
+											'woocommerce'
+										),
+										formatWooPaymentsAmount(
+											instantBalance.amount,
+											instantBalance.currency
+										),
+										String( instantBalance.fee_percentage )
+									) }
+								</Notice>
+							) }
+							<div className="woocommerce-woopayments-overview__instant-payout-actions">
+								<Button
+									variant="primary"
+									onClick={ () =>
+										setIsInstantPayoutModalOpen( true )
+									}
+									disabled={ ! onInstantPayoutSubmit }
+									__next40pxDefaultSize
+								>
+									{ sprintf(
+										/* translators: %s: Available instant payout amount. */
+										__( 'Get %s now', 'woocommerce' ),
+										formatWooPaymentsAmount(
+											instantBalance.amount,
+											instantBalance.currency
+										)
+									) }
+								</Button>
+								{ isInstantNoticeDismissed && (
+									<HelpPopover
+										label={ __(
+											'Learn more about instant payouts',
+											'woocommerce'
+										) }
+									>
+										{ createInterpolateElement(
+											sprintf(
+												/* translators: %s: Instant payout fee percentage. */
+												__(
+													'With <strong>instant payout</strong> you can receive requested funds in your bank account within 30 mins for a %s%% fee. <a>Learn more</a>',
+													'woocommerce'
+												),
+												String(
+													instantBalance.fee_percentage
+												)
+											),
+											{
+												strong: <strong />,
+												a: docsLink(
+													INSTANT_PAYOUTS_DOCS_URL
+												),
+											}
+										) }
+									</HelpPopover>
 								) }
-							</p>
-							<Button
-								variant="primary"
-								onClick={ () =>
-									setIsInstantPayoutModalOpen( true )
-								}
-								disabled={ ! onInstantPayoutSubmit }
-								__next40pxDefaultSize
-							>
-								{ sprintf(
-									/* translators: %s: Available instant payout amount. */
-									__( 'Get %s now', 'woocommerce' ),
-									formatWooPaymentsAmount(
-										instantBalance.amount,
-										instantBalance.currency
-									)
-								) }
-							</Button>
+							</div>
 						</CardBody>
 					) }
 					{ /* Client 11.1.0 `components/account-balances/index.tsx:226-251`. */ }

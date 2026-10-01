@@ -64,6 +64,8 @@ class WooPaymentsOverviewService {
 			'account_loans'                         => $this->get_account_loans_projection( $account_data ),
 			// Client 11.1.0 `class-wc-payments-admin.php:1062` localizes this option as `instantDepositsPreviouslyEligible`.
 			'instant_deposits_previously_eligible'  => $this->is_truthy( get_option( 'wcpay_instant_deposits_previously_eligible', false ) ),
+			// Client 11.1.0 `class-wc-payments-admin.php:1061` localizes this option as `isInstantDepositNoticeDismissed`.
+			'is_instant_deposit_notice_dismissed'   => $this->is_truthy( get_option( 'wcpay_instant_deposit_notice_dismissed', false ) ),
 			'wpcom_reconnect_url'                   => $this->get_wpcom_reconnect_url(),
 			'urls'                                  => array(
 				'overview_page' => Utils::wc_payments_settings_url( '/woopayments/overview' ),
@@ -370,6 +372,7 @@ class WooPaymentsOverviewService {
 				'wcpay_connection_success_modal_dismissed',
 				'_wcpay_feature_dispute_readiness_overview',
 				'wcpay_instant_deposits_previously_eligible',
+				'wcpay_instant_deposit_notice_dismissed',
 			)
 		);
 	}

@@ -1,8 +1,9 @@
 /**
  * External dependencies
  */
-import { Button, Modal, Notice } from '@wordpress/components';
+import { Button, Flex, Modal, Notice } from '@wordpress/components';
 import { __, sprintf } from '@wordpress/i18n';
+import { HorizontalRule } from '@wordpress/primitives';
 import { recordEvent } from '@woocommerce/tracks';
 
 /**
@@ -73,18 +74,29 @@ export const UpdateBusinessDetailsModal = ( {
 					) ) }
 				</div>
 			) }
-			<div className="woocommerce-woopayments-update-business-details-modal__footer">
-				<Button variant="secondary" onClick={ onClose }>
+			{ /* Client 11.1.0 `index.tsx:80-102` and `index.scss:1-21`: a full-width rule, then right-aligned buttons. */ }
+			<HorizontalRule className="woocommerce-woopayments-update-business-details-modal__separator" />
+			<Flex
+				className="woocommerce-woopayments-update-business-details-modal__footer"
+				justify="flex-end"
+				gap={ 4 }
+			>
+				<Button
+					variant="secondary"
+					onClick={ onClose }
+					__next40pxDefaultSize
+				>
 					{ __( 'Cancel', 'woocommerce' ) }
 				</Button>
 				<Button
 					variant="primary"
 					onClick={ openAccountLink }
 					disabled={ ! accountLink }
+					__next40pxDefaultSize
 				>
 					{ __( 'Update business details', 'woocommerce' ) }
 				</Button>
-			</div>
+			</Flex>
 		</Modal>
 	);
 };

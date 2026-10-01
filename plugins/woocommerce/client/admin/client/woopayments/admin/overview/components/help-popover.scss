@@ -17,5 +17,16 @@
 		&:active {
 			color: var(--wp-admin-theme-color, #3858e9);
 		}
+
+		// Client 11.1.0 `components/account-details/payout-status-wrapper.tsx:35`: `buttonSize={ 24 }`.
+		&.is-large {
+			height: 24px;
+			width: 24px;
+		}
 	}
+}
+
+// Client 11.1.0 `components/tooltip` lays its text out up to 300px; without a width the popover shrinks to about 100px.
+.woocommerce-woopayments-overview__help-popover-content {
+	width: max-content;
 }

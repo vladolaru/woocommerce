@@ -202,6 +202,8 @@ export interface WooPaymentsOverviewShell {
 		loans?: string[];
 	};
 	instant_deposits_previously_eligible?: boolean;
+	/** Client 11.1.0 `wcpaySettings.isInstantDepositNoticeDismissed`. */
+	is_instant_deposit_notice_dismissed?: boolean;
 	wpcom_reconnect_url: string;
 	urls: {
 		overview_page?: string;
@@ -271,7 +273,6 @@ export interface WooPaymentsOverviewTask {
 	key: string;
 	title: string;
 	content?: ReactNode;
-	additionalInfo?: ReactNode;
 	actionLabel?: string;
 	href?: string;
 	onClick?: () => void;

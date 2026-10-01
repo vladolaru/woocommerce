@@ -538,6 +538,27 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	// Client 11.1.0 `data/disputes/resolvers.js:79-97`.
+	it( 'raises the client snackbar when the disputes read fails', async () => {
+		mockGetShell.mockResolvedValue(
+			createShell( { disputes_awaiting_response_count: 3 } )
+		);
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetOverviewDisputes.mockRejectedValue(
+			new Error( 'Internal Server Error' )
+		);
+
+		render( <WooPaymentsOverviewPage /> );
+
+		await waitFor( () =>
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'Error retrieving disputes.'
+			)
+		);
+		expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
+	} );
+
 	// Client 11.1.0 `data/deposits/resolvers.js:130-136`.
 	it( 'raises the client snackbar and prints no server message when the recent payouts read fails', async () => {
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
@@ -743,7 +764,9 @@ describe( 'WooPaymentsOverviewPage', () => {
 		expect( mockGetOverview ).toHaveBeenCalledTimes( 2 );
 		expect( mockGetRecent ).toHaveBeenCalledTimes( 2 );
 		expect(
-			screen.queryByText( /Get \$9\.00 via instant payout/ )
+			screen.queryByText( /Get \$9\.00 via instant payout/, {
+				selector: '.components-notice__content',
+			} )
 		).not.toBeInTheDocument();
 	} );
 

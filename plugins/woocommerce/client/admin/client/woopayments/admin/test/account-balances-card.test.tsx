@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event';
  */
 import { AccountBalancesCard } from '../overview/components/account-balances-card';
 import type { WooPaymentsDepositsOverview } from '../overview/types';
+import { saveOption } from '../../settings/data/actions';
 
 const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
@@ -30,6 +31,10 @@ jest.mock( '@wordpress/data', () => {
 		} ),
 	};
 } );
+
+jest.mock( '../../settings/data/actions', () => ( {
+	saveOption: jest.fn(),
+} ) );
 
 const createOverview = (
 	overrides: Partial< WooPaymentsDepositsOverview > = {}
@@ -57,6 +62,13 @@ const createOverview = (
 	},
 	...overrides,
 } );
+
+// The notice text, not its copy in the screen reader announcement region.
+const queryOffer = () =>
+	screen.queryByText(
+		'Get $9.00 via instant payout. Funds are typically in your bank account within 30 mins. Fee: 1.5%.',
+		{ selector: '.components-notice__content' }
+	);
 
 describe( 'AccountBalancesCard', () => {
 	beforeEach( () => {
@@ -294,7 +306,8 @@ describe( 'AccountBalancesCard', () => {
 		);
 
 		const notice = screen.getByText(
-			'Get $9.00 via instant payout. Funds are typically in your bank account within 30 mins. Fee: 1.5%.'
+			'Get $9.00 via instant payout. Funds are typically in your bank account within 30 mins. Fee: 1.5%.',
+			{ selector: '.components-notice__content' }
 		);
 		expect(
 			notice.closest(
@@ -341,6 +354,82 @@ describe( 'AccountBalancesCard', () => {
 			}
 		);
 		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
+	} );
+
+	// Client 11.1.0 `components/account-balances/index.tsx:31-46, 157-222`.
+	describe( 'instant payout offer dismissal', () => {
+		const renderOffer = ( isDismissed: boolean ) =>
+			render(
+				<AccountBalancesCard
+					isLoading={ false }
+					overview={ createOverview( {
+						balance: {
+							available: [ { amount: 1000, currency: 'usd' } ],
+							pending: [ { amount: 250, currency: 'usd' } ],
+							instant: [
+								{
+									amount: 900,
+									currency: 'usd',
+									fee: 14,
+									net: 886,
+									fee_percentage: 1.5,
+								},
+							],
+						},
+					} ) }
+					selectedCurrency="usd"
+					onInstantPayoutSubmit={ jest.fn() }
+					isInstantDepositNoticeDismissed={ isDismissed }
+				/>
+			);
+		const helpLabel = 'Learn more about instant payouts';
+
+		beforeEach( () => {
+			( saveOption as jest.Mock ).mockReset();
+		} );
+
+		it( 'hides the offer, stores the dismissal and moves the help beside the button', async () => {
+			renderOffer( false );
+
+			expect( queryOffer() ).toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'button', { name: helpLabel } )
+			).not.toBeInTheDocument();
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Close' } )
+			);
+
+			expect( queryOffer() ).not.toBeInTheDocument();
+			expect( saveOption ).toHaveBeenCalledWith(
+				'wcpay_instant_deposit_notice_dismissed',
+				true
+			);
+			expect(
+				screen.getByRole( 'button', { name: 'Get $9.00 now' } )
+			).toBeInTheDocument();
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: helpLabel } )
+			);
+
+			expect(
+				screen.getByRole( 'link', { name: /Learn more/ } )
+			).toHaveAttribute(
+				'href',
+				'https://woocommerce.com/document/woopayments/payouts/instant-payouts/'
+			);
+		} );
+
+		it( 'keeps the offer hidden once it was dismissed', () => {
+			renderOffer( true );
+
+			expect( queryOffer() ).not.toBeInTheDocument();
+			expect(
+				screen.getByRole( 'button', { name: helpLabel } )
+			).toBeInTheDocument();
+			expect( saveOption ).not.toHaveBeenCalled();
+		} );
 	} );
 
 	// Client 11.1.0 `components/account-balances/index.tsx:226-251`.

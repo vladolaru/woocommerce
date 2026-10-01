@@ -28,12 +28,8 @@ const details = {
 	withhold_rate: 0.1,
 };
 
-const formatDate = ( timestamp: number ) =>
-	new Date( timestamp * 1000 ).toLocaleDateString( undefined, {
-		year: 'numeric',
-		month: 'short',
-		day: 'numeric',
-	} );
+// Client 11.1.0 `components/active-loan-summary/index.tsx` formats these in the site date format (default "F j, Y").
+const DUE_AT = 'February 15, 2022';
 
 const getValue = ( term: string | RegExp ) =>
 	screen.getByText( term ).closest( 'div' )?.querySelector( 'dd' )
@@ -65,14 +61,14 @@ describe( 'ActiveLoanSummary', () => {
 		expect( getValue( 'Total repaid' ) ).toBe( '$12.34 of $1,150.00' );
 		expect(
 			getValue(
-				`Repaid this period (until ${ formatDate( 1644889167 ) })`
+				`Repaid this period (until ${ DUE_AT })`
 			)
 		).toBe( '$1.23 of $24.68 minimum' );
-		expect( getValue( 'Loan disbursed' ) ).toBe( formatDate( 1643889167 ) );
+		expect( getValue( 'Loan disbursed' ) ).toBe( 'February 3, 2022' );
 		expect( getValue( 'Loan amount' ) ).toBe( '$1,000.00' );
 		expect( getValue( 'Fixed fee' ) ).toBe( '$150.00' );
 		expect( getValue( 'Withhold rate' ) ).toBe( '10%' );
-		expect( getValue( 'First paydown' ) ).toBe( formatDate( 1643999167 ) );
+		expect( getValue( 'First paydown' ) ).toBe( 'February 4, 2022' );
 	} );
 
 	// Client 11.1.0 `components/active-loan-summary/index.tsx:130-275`: the card's header holds the title and the
@@ -105,7 +101,7 @@ describe( 'ActiveLoanSummary', () => {
 			)
 		).toEqual( [
 			'Total repaid',
-			`Repaid this period (until ${ formatDate( 1644889167 ) })`,
+			`Repaid this period (until ${ DUE_AT })`,
 			'Loan disbursed',
 			'Loan amount',
 			'Fixed fee',

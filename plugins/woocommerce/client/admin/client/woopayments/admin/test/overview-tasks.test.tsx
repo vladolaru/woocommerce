@@ -312,6 +312,25 @@ describe( 'overview task builders', () => {
 		expect( tasks ).toEqual( [] );
 	} );
 
+	// Client 11.1.0 `overview/index.js:105-111` sorts with `taskSort()` (`task-list/tasks.tsx:99-110`): completed tasks last.
+	it( 'lists a completed task after the open ones', () => {
+		const tasks = buildOverviewTasks( {
+			shell: createShell(),
+			disputes: [ createDispute() ],
+			onOpenUpdateBusinessDetails: jest.fn(),
+		} );
+
+		expect(
+			tasks.map( ( { key, completed } ) => [ key, !! completed ] )
+		).toEqual( [
+			[
+				`dispute-resolution-task-${ RECORDED_DISPUTE.dispute_id }`,
+				false,
+			],
+			[ 'update-business-details', true ],
+		] );
+	} );
+
 	it( 'filters dismissed, deleted, and currently snoozed tasks', () => {
 		const tasks = [
 			{ key: 'visible', title: 'Visible' },

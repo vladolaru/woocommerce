@@ -18,52 +18,12 @@ import type { ReactNode } from 'react';
  * Internal dependencies
  */
 import type { WooPaymentsCapitalSummary } from './types';
-import { formatExplicitCurrency } from '../money-movement/utils';
+import {
+	formatExplicitCurrency,
+	formatSiteDateTime,
+} from '../money-movement/utils';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import './active-loan-summary.scss';
-
-const getDateValue = ( value: string | number ): string | number => {
-	if ( typeof value === 'number' ) {
-		return value < 10000000000 ? value * 1000 : value;
-	}
-
-	const match = value
-		.trim()
-		.match( /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/ );
-
-	if ( ! match ) {
-		return value;
-	}
-
-	const [ , year, month, day, hour, minute, second ] = match;
-
-	return Date.UTC(
-		Number( year ),
-		Number( month ) - 1,
-		Number( day ),
-		Number( hour ),
-		Number( minute ),
-		Number( second )
-	);
-};
-
-export const formatCapitalDate = ( value?: string | number | null ) => {
-	if ( ! value ) {
-		return '-';
-	}
-
-	const date = new Date( getDateValue( value ) );
-
-	if ( Number.isNaN( date.getTime() ) ) {
-		return '-';
-	}
-
-	return date.toLocaleDateString( undefined, {
-		year: 'numeric',
-		month: 'short',
-		day: 'numeric',
-	} );
-};
 
 export const formatCapitalPercent = ( value: number ) =>
 	`${ Number( ( value * 100 ).toFixed( 2 ) ) }%`;
@@ -202,8 +162,10 @@ export const ActiveLoanSummary = ( {
 								'Repaid this period (until %s)',
 								'woocommerce'
 							),
-							formatCapitalDate(
-								details.current_repayment_interval.due_at
+							// Client 11.1.0 `components/active-loan-summary/index.tsx:206-208, 243-271`: the site date format.
+							formatSiteDateTime(
+								details.current_repayment_interval.due_at,
+								false
 							)
 						) }
 					>
@@ -233,7 +195,10 @@ export const ActiveLoanSummary = ( {
 					className="woocommerce-woopayments-loan-summary__row is-bottom-row"
 				>
 					<Block title={ __( 'Loan disbursed', 'woocommerce' ) }>
-						{ formatCapitalDate( details.advance_paid_out_at ) }
+						{ formatSiteDateTime(
+							details.advance_paid_out_at,
+							false
+						) }
 					</Block>
 					<Block title={ __( 'Loan amount', 'woocommerce' ) }>
 						{ formatExplicitCurrency(
@@ -251,7 +216,10 @@ export const ActiveLoanSummary = ( {
 						{ formatCapitalPercent( details.withhold_rate ) }
 					</Block>
 					<Block title={ __( 'First paydown', 'woocommerce' ) }>
-						{ formatCapitalDate( details.repayments_begin_at ) }
+						{ formatSiteDateTime(
+							details.repayments_begin_at,
+							false
+						) }
 					</Block>
 				</Flex>
 			</CardBody>

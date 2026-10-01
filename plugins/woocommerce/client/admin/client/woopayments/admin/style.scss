@@ -131,13 +131,15 @@
 	gap: 12px;
 	justify-items: start;
 
-	p {
-		background: #f0f6fc;
-		border-left: 4px solid #72aee6;
+	.components-notice {
 		justify-self: stretch;
 		margin: 0;
-		padding: 12px;
 	}
+}
+
+.woocommerce-woopayments-overview__instant-payout-actions {
+	align-items: center;
+	display: flex;
 }
 
 .woocommerce-woopayments-instant-payout-modal ul {
@@ -458,13 +460,25 @@
 	}
 }
 
+// Client 11.1.0 `overview/modal/update-business-details/index.scss:1-21`.
+.components-modal__frame.woocommerce-woopayments-update-business-details-modal {
+	max-width: 700px;
+}
+
 .woocommerce-woopayments-update-business-details-modal__errors {
 	display: grid;
 	gap: 8px;
 	margin: 16px 0;
 }
 
-.woocommerce-woopayments-update-business-details-modal__footer,
+.woocommerce-woopayments-update-business-details-modal__separator {
+	margin: 24px -24px 0;
+}
+
+.woocommerce-woopayments-update-business-details-modal__footer {
+	margin-top: 24px;
+}
+
 .woocommerce-woopayments-connection-success-modal__footer {
 	display: flex;
 	gap: 8px;

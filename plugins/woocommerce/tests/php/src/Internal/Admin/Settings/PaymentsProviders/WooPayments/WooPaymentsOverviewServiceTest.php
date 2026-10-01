@@ -45,6 +45,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_test_dispute_status_counts_cache' );
 		delete_option( '_wcpay_feature_dispute_readiness_overview' );
 		delete_option( 'wcpay_instant_deposits_previously_eligible' );
+		delete_option( 'wcpay_instant_deposit_notice_dismissed' );
 
 		parent::tearDown();
 	}
@@ -200,6 +201,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $overview['account_loans']['has_active_loan'] );
 		$this->assertSame( array( 'flxln_paid|paid', 'flxln_123456|active' ), $overview['account_loans']['loans'] );
 		$this->assertFalse( $overview['instant_deposits_previously_eligible'] );
+		$this->assertFalse( $overview['is_instant_deposit_notice_dismissed'] );
 		$this->assertSame( '', $overview['wpcom_reconnect_url'] );
 		$this->assertStringContainsString( 'path=/woopayments/overview', $overview['urls']['overview_page'] );
 		$this->assertStringContainsString( 'path=/woopayments/onboarding', $overview['urls']['setup'] );
@@ -240,7 +242,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should link a non-test-drive account to the nonce-protected dashboard login and expose the instant payout eligibility flag.
+	 * @testdox Should link a non-test-drive account to the nonce-protected dashboard login and expose the instant payout eligibility and offer dismissal flags.
 	 */
 	public function test_get_overview_exposes_dashboard_login_link_and_instant_payout_flag(): void {
 		$this->cache_account_data(
@@ -254,6 +256,8 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		);
 		// Written by `WooPaymentsOperationalQueueService` once the account is eligible, like the plugin's `handle_instant_deposits_inbox_note()`.
 		update_option( 'wcpay_instant_deposits_previously_eligible', true );
+		// Saved by the Overview when the merchant dismisses the instant payout offer.
+		update_option( 'wcpay_instant_deposit_notice_dismissed', true );
 
 		$overview = $this->sut->get_overview();
 		$query    = array();
@@ -263,6 +267,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '1', $query['wcpay-login'] ?? null );
 		$this->assertSame( 1, wp_verify_nonce( $query['_wpnonce'] ?? '', 'wcpay-login' ) );
 		$this->assertTrue( $overview['instant_deposits_previously_eligible'] );
+		$this->assertTrue( $overview['is_instant_deposit_notice_dismissed'] );
 	}
 
 	/**

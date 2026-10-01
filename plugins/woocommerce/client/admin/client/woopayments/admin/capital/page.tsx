@@ -17,22 +17,23 @@ import type {
 } from './types';
 import {
 	ActiveLoanSummary,
-	formatCapitalDate,
 	formatCapitalPercent,
 	getCapitalLoanTransactionsUrl,
 } from './active-loan-summary';
 import {
 	formatExplicitCurrency,
+	formatSiteDateTime,
 	getErrorMessage,
 } from '../money-movement/utils';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 
+// Client 11.1.0 `capital/index.tsx:82-84, 118, 157`: loan dates in the site date format.
 const getLoanStatus = ( loan: WooPaymentsCapitalLoan ) =>
 	loan.fully_paid_at
 		? sprintf(
 				/* translators: %s: loan paid-off date. */
 				__( 'Paid off: %s', 'woocommerce' ),
-				formatCapitalDate( loan.fully_paid_at )
+				formatSiteDateTime( loan.fully_paid_at, false )
 		  )
 		: __( 'Active', 'woocommerce' );
 
@@ -262,8 +263,9 @@ export const WooPaymentsCapitalPage = () => {
 							{ loans.map( ( loan ) => (
 								<tr key={ loan.stripe_loan_id }>
 									<td>
-										{ formatCapitalDate(
-											loan.paid_out_at
+										{ formatSiteDateTime(
+											loan.paid_out_at,
+											false
 										) }
 									</td>
 									<td>
@@ -287,8 +289,9 @@ export const WooPaymentsCapitalPage = () => {
 										) }
 									</td>
 									<td>
-										{ formatCapitalDate(
-											loan.first_paydown_at
+										{ formatSiteDateTime(
+											loan.first_paydown_at,
+											false
 										) }
 									</td>
 									<td>
