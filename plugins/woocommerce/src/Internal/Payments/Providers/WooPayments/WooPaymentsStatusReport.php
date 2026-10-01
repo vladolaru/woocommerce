@@ -400,19 +400,23 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'delete_wcpay_test_orders'             => array(
 				'name'     => __( 'Delete WooPayments test orders', 'woocommerce' ),
 				'button'   => __( 'Delete', 'woocommerce' ),
-				'desc'     => __( 'This tool permanently deletes test mode orders placed through WooPayments. Orders placed through other gateways are not affected.', 'woocommerce' ),
+				'desc'     => sprintf(
+					/* translators: %s: WooPayments */
+					__( '<strong class="red">Note:</strong> This option deletes all test mode orders placed via %s. Orders placed via other gateways will not be affected. Use with caution, as this action cannot be undone.', 'woocommerce' ),
+					'WooPayments'
+				),
 				'callback' => array( $this, 'delete_test_orders' ),
 			),
 			'clear_wcpay_styles_cache'             => array(
 				'name'     => __( 'Clear WooPayments calculated styles', 'woocommerce' ),
 				'button'   => __( 'Clear', 'woocommerce' ),
-				'desc'     => __( 'This tool clears the cached styles used by WooPayments checkout elements.', 'woocommerce' ),
+				'desc'     => __( 'This tool will clear the styles cached for the WooPayments gateway UI elements at checkout', 'woocommerce' ),
 				'callback' => array( $this, 'clear_styles_cache' ),
 			),
 			'remediate_canceled_auth_fees_dry_run' => array(
-				'name'     => __( 'Preview canceled authorization fix', 'woocommerce' ),
+				'name'     => __( 'Preview canceled authorization fix (Dry Run)', 'woocommerce' ),
 				'button'   => $this->get_dry_run_button_text(),
-				'desc'     => __( 'This tool previews which orders would be affected by the canceled authorization fix without changing data.', 'woocommerce' ),
+				'desc'     => __( 'Preview what orders would be affected by the canceled authorization fix without making any changes. Results are logged to WooCommerce > Status > Logs.', 'woocommerce' ),
 				'callback' => array( $this, 'schedule_canceled_auth_dry_run' ),
 				'disabled' => $this->is_remediation_running_or_complete(),
 			),
@@ -420,7 +424,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				'name'     => __( 'Fix canceled authorization analytics', 'woocommerce' ),
 				'button'   => $this->get_remediation_button_text(),
 				'desc'     => $this->get_remediation_description(),
-				'confirm'  => __( 'This will update order metadata and delete incorrect refund records for affected orders. Make sure you have a recent backup before continuing.', 'woocommerce' ),
+				'confirm'  => __( 'This will update order metadata and delete incorrect refund records for affected orders. This fixes negative values in WooCommerce Analytics. Make sure you have a recent backup before proceeding. Continue?', 'woocommerce' ),
 				'callback' => array( $this, 'schedule_canceled_auth_remediation' ),
 				'disabled' => $this->is_remediation_running_or_complete(),
 			),
@@ -483,8 +487,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			);
 			$deleted_count = 0;
 
-			if ( ! is_array( $orders ) ) {
-				return __( 'No WooPayments test orders found.', 'woocommerce' );
+			if ( ! is_array( $orders ) || empty( $orders ) ) {
+				return __( 'No test orders found.', 'woocommerce' );
 			}
 
 			foreach ( $orders as $order ) {
@@ -493,15 +497,11 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				}
 			}
 
-			if ( 0 === $deleted_count ) {
-				return __( 'No WooPayments test orders found.', 'woocommerce' );
-			}
-
 			return sprintf(
-				/* translators: %d: number of deleted orders. */
+				/* translators: %d: number of orders deleted */
 				_n(
-					'%d WooPayments test order deleted.',
-					'%d WooPayments test orders deleted.',
+					'%d test order has been permanently deleted.',
+					'%d test orders have been permanently deleted.',
 					$deleted_count,
 					'woocommerce'
 				),
@@ -509,8 +509,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			);
 		} catch ( Throwable $exception ) {
 			return sprintf(
-				/* translators: %s: error message. */
-				__( 'Error deleting WooPayments test orders: %s', 'woocommerce' ),
+				/* translators: %s: error message */
+				__( 'Error deleting test orders: %s', 'woocommerce' ),
 				$exception->getMessage()
 			);
 		}
@@ -528,7 +528,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 		$this->get_frontend_styles_service()->invalidate_styles_cache_version();
 
-		return __( 'WooPayments styles cache cleared.', 'woocommerce' );
+		return __( 'WooPayments styles cleared', 'woocommerce' );
 	}
 
 	/**
@@ -551,7 +551,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 		$this->get_fee_remediation_service()->schedule_remediation();
 
-		return __( 'Remediation has been scheduled and will run in the background.', 'woocommerce' );
+		return __( 'Remediation has been scheduled and will run in the background. You can monitor progress in the Action Scheduler.', 'woocommerce' );
 	}
 
 	/**
@@ -574,7 +574,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 		$this->get_fee_remediation_service()->schedule_dry_run();
 
-		return __( 'Dry run has been scheduled and will run in the background.', 'woocommerce' );
+		return __( 'Dry run has been scheduled and will run in the background. Check WooCommerce > Status > Logs for results (source: wcpay-fee-remediation).', 'woocommerce' );
 	}
 
 	/**
@@ -815,26 +815,45 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_remediation_description(): string {
-		$stats = $this->get_fee_remediation_service()->get_stats();
+		$base_desc = __( 'This tool removes incorrect refund records and fee data from orders where payment authorization was canceled (not captured). This fixes negative values appearing in WooCommerce Analytics for stores using manual capture.', 'woocommerce' );
+		$stats     = $this->get_fee_remediation_service()->get_stats();
 
 		if ( $this->get_fee_remediation_service()->is_complete() ) {
+			if ( $stats['processed'] > 0 ) {
+				return sprintf(
+					/* translators: 1: base description, 2: number of orders processed, 3: number of orders remediated */
+					__( '%1$s <strong>Status: Completed.</strong> Processed %2$d orders, remediated %3$d.', 'woocommerce' ),
+					$base_desc,
+					$stats['processed'],
+					$stats['remediated']
+				);
+			}
+
 			return sprintf(
-				/* translators: 1: processed count, 2: remediated count. */
-				__( 'Remediation is complete. Processed %1$d orders and remediated %2$d.', 'woocommerce' ),
-				$stats['processed'],
-				$stats['remediated']
+				/* translators: %s: base description */
+				__( '%s <strong>Status: Completed.</strong> No affected orders found.', 'woocommerce' ),
+				$base_desc
 			);
 		}
 
 		if ( $this->is_remediation_running_or_complete() ) {
+			if ( $stats['processed'] > 0 ) {
+				return sprintf(
+					/* translators: 1: base description, 2: number of orders processed so far */
+					__( '%1$s <strong>Status: Running...</strong> Processed %2$d orders so far. Check the Action Scheduler for details.', 'woocommerce' ),
+					$base_desc,
+					$stats['processed']
+				);
+			}
+
 			return sprintf(
-				/* translators: %d: processed count. */
-				__( 'Remediation is running. Processed %d orders so far.', 'woocommerce' ),
-				$stats['processed']
+				/* translators: %s: base description */
+				__( '%s <strong>Status: Running...</strong> Check the Action Scheduler for details.', 'woocommerce' ),
+				$base_desc
 			);
 		}
 
-		return __( 'This tool removes incorrect refund records and fee data from orders where payment authorization was canceled but not captured.', 'woocommerce' );
+		return $base_desc;
 	}
 
 	/**
