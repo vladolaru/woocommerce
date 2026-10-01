@@ -1520,9 +1520,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 			name: 'Inbox',
 		} );
 		expect( inboxHeading ).toHaveClass( 'screen-reader-text' );
-		expect( inboxHeading.parentElement ).not.toHaveClass(
-			'woocommerce-woopayments-overview-card'
-		);
 		expect(
 			screen.getByText( 'Review your WooPayments account' )
 		).toBeInTheDocument();

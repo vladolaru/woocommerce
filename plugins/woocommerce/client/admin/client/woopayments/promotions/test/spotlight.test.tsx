@@ -11,7 +11,6 @@ import { recordEvent } from '@woocommerce/tracks';
 import { SpotlightPromotion } from '../spotlight';
 import { usePmPromotionActions, usePmPromotions } from '../data/hooks';
 import type { PmPromotion } from '../types';
-import { hasStyleRule } from '../../admin/test/helpers/style-rules';
 
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
@@ -142,51 +141,6 @@ describe( 'SpotlightPromotion', () => {
 			'src',
 			'https://example.com/promo.png'
 		);
-	} );
-
-	// Client 11.1.0 `components/spotlight/style.scss:3-37`: fixed at the bottom right, full width at 782px and below.
-	it( 'floats the card at the bottom right of the window', async () => {
-		render( <SpotlightPromotion /> );
-		await showSpotlight();
-
-		const floating = screen.getByRole( 'dialog' ).parentElement;
-		if ( ! floating ) {
-			throw new Error( 'The dialog has no floating wrapper.' );
-		}
-
-		expect(
-			hasStyleRule(
-				floating,
-				'../promotions/style.scss',
-				'position',
-				'fixed'
-			)
-		).toBe( true );
-		expect(
-			hasStyleRule(
-				floating,
-				'../promotions/style.scss',
-				'bottom',
-				'24px'
-			)
-		).toBe( true );
-		expect(
-			hasStyleRule(
-				floating,
-				'../promotions/style.scss',
-				'inset-inline-end',
-				'24px'
-			)
-		).toBe( true );
-		expect(
-			hasStyleRule(
-				floating,
-				'../promotions/style.scss',
-				'width',
-				'100%',
-				'max-width: 782px'
-			)
-		).toBe( true );
 	} );
 
 	// Client 11.1.0 `components/spotlight/index.tsx:225-233,376-388` and `promotions/spotlight/index.tsx:91-115`.

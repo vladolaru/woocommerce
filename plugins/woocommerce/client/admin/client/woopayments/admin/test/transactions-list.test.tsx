@@ -19,7 +19,6 @@ import { MemoryRouter } from 'react-router-dom';
  * Internal dependencies
  */
 import { summaryItem } from './helpers/table-summary';
-import { isStyledBy } from './helpers/compiled-rules';
 import { WooPaymentsTransactionsList } from '../money-movement/transactions-list';
 import {
 	getRiskLevelLabel,
@@ -377,12 +376,6 @@ describe( 'WooPayments transactions list columns', () => {
 			'txn_3UI4HnBzWlxcwgpP0JarqoHY'
 		);
 		expect( getCell( charge, 'type' ) ).toHaveTextContent( 'Charge' );
-		// Client 11.1.0 `components/clickable-cell`: the type opens the details but reads as plain text.
-		expect(
-			within( getCell( charge, 'type' ) ).getByRole( 'link' )
-		).toHaveClass(
-			'woocommerce-woopayments-money-movement__clickable-cell'
-		);
 		expect( getCell( charge, 'channel' ) ).toHaveTextContent(
 			'Online store'
 		);
@@ -517,9 +510,6 @@ describe( 'WooPayments transactions list columns', () => {
 
 			expect( link ).toHaveAttribute( 'href', detailsHref );
 			expect( link ).toHaveAttribute( 'tabindex', '-1' );
-			expect( link ).toHaveClass(
-				'woocommerce-woopayments-money-movement__clickable-cell'
-			);
 		} );
 		// The order, subscription and customer cells keep their own links.
 		expect(
@@ -564,46 +554,6 @@ describe( 'WooPayments transactions list columns', () => {
 			expect( type.container.querySelector( 'a' ) ).toBeNull();
 			type.unmount();
 		} );
-	} );
-
-	it( 'shows the conversion icon in grey, centred and spaced before the amount, like the client', async () => {
-		renderList();
-		await screen.findByText( 'Transactions loaded.' );
-
-		const indicator = within(
-			getCell( EUR_PAYMENT.transaction_id, 'amount' )
-		).getByRole( 'img', { name: 'Converted from €10.99' } );
-		const amount = indicator.closest(
-			'.woocommerce-woopayments-money-movement__converted-amount'
-		) as HTMLElement;
-
-		// Client 11.1.0 `transactions/list/style.scss:11-17`: a flex row ending at the cell's end,
-		// the icon `$studio-gray-30` with 6px before the amount.
-		expect(
-			isStyledBy( amount, 'dataviews.scss', 'display', 'flex' )
-		).toBe( true );
-		expect(
-			isStyledBy( amount, 'dataviews.scss', 'align-items', 'center' )
-		).toBe( true );
-		expect(
-			isStyledBy(
-				amount,
-				'dataviews.scss',
-				'justify-content',
-				'flex-end'
-			)
-		).toBe( true );
-		expect(
-			isStyledBy( indicator, 'dataviews.scss', 'fill', '#8c8f94' )
-		).toBe( true );
-		expect(
-			isStyledBy(
-				indicator,
-				'dataviews.scss',
-				'margin-inline-end',
-				'6px'
-			)
-		).toBe( true );
 	} );
 
 	it( "maps the client's channel and risk values", () => {

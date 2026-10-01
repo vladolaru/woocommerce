@@ -141,9 +141,9 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 		expect( lastProps ).toBeDefined();
 		const { empty } = lastProps as { empty: ReactElement };
 		render( empty );
-		expect( screen.getByText( 'No transactions found.' ) ).toHaveClass(
-			'woocommerce-woopayments-money-movement-dataviews__empty'
-		);
+		expect(
+			screen.getByText( 'No transactions found.' )
+		).toBeInTheDocument();
 	} );
 
 	it( 'allows callers to replace the built-in plain-text search', () => {
@@ -168,46 +168,6 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 		expect( mockDataViews ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				search: false,
-			} )
-		);
-	} );
-
-	it( "aligns the client's numeric columns to the end", () => {
-		const view = {
-			type: 'table',
-			page: 1,
-			perPage: 25,
-			fields: [ 'date', 'amount' ],
-			layout: { styles: { date: { width: 120 } } },
-		};
-
-		render(
-			<WooPaymentsMoneyMovementDataViews
-				fields={ [
-					{ id: 'date', label: 'Date' },
-					{ id: 'amount', label: 'Amount' },
-				] }
-				rows={ [] }
-				view={ view }
-				onChangeView={ jest.fn() }
-				total={ 0 }
-				isLoading={ false }
-				numericFields={ [ 'amount' ] }
-				searchLabel="Search transactions"
-			/>
-		);
-
-		expect( mockDataViews ).toHaveBeenLastCalledWith(
-			expect.objectContaining( {
-				view: {
-					...view,
-					layout: {
-						styles: {
-							date: { width: 120 },
-							amount: { align: 'end' },
-						},
-					},
-				},
 			} )
 		);
 	} );

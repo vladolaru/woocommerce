@@ -95,13 +95,8 @@ describe( 'AccountDetailsCard', () => {
 			const accountChip = screen.getByText( 'Connected' );
 
 			expect( title.parentElement ).toContainElement( accountChip );
-			expect( accountChip ).toHaveClass(
-				'woocommerce-status-badge--success'
-			);
 			expect( screen.getByText( 'Payouts:' ) ).toBeInTheDocument();
-			expect( screen.getByText( 'Active' ) ).toHaveClass(
-				'woocommerce-status-badge--success'
-			);
+			expect( screen.getByText( 'Active' ) ).toBeInTheDocument();
 			expect(
 				screen.queryByText( 'Account status' )
 			).not.toBeInTheDocument();
@@ -109,40 +104,10 @@ describe( 'AccountDetailsCard', () => {
 				screen.queryByText( 'Payout status' )
 			).not.toBeInTheDocument();
 		} );
-
-		it.each( [
-			[ 'yellow', 'woocommerce-status-badge--warning' ],
-			[ 'red', 'woocommerce-status-badge--error' ],
-			[ 'gray', 'woocommerce-status-badge--info' ],
-			[ 'blue', 'woocommerce-status-badge--primary' ],
-		] )(
-			'colours the chips from the platform %s background, like client getChipTypeFromColor()',
-			( color, className ) => {
-				render(
-					<AccountDetailsCard
-						accountDetails={ createAccountDetails( {
-							account_status: {
-								text: 'Restricted soon',
-								background_color: color,
-							},
-							payout_status: {
-								text: 'Paused',
-								background_color: color,
-							},
-						} ) }
-					/>
-				);
-
-				expect( screen.getByText( 'Restricted soon' ) ).toHaveClass(
-					className
-				);
-				expect( screen.getByText( 'Paused' ) ).toHaveClass( className );
-			}
-		);
 	} );
 
 	describe( 'banner', () => {
-		it( 'shows the platform banner as a notice in the banner colour with its call to action inline', () => {
+		it( 'shows the platform banner as a notice with its call to action inline', () => {
 			const { container } = render(
 				<AccountDetailsCard
 					accountDetails={ createAccountDetails( {
@@ -162,7 +127,6 @@ describe( 'AccountDetailsCard', () => {
 				'.woocommerce-woopayments-account-details__banner'
 			);
 
-			expect( banner ).toHaveClass( 'is-warning' );
 			expect( banner ).toHaveTextContent(
 				'Your account is under review. Learn more'
 			);

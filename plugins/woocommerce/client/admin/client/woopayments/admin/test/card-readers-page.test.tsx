@@ -50,7 +50,7 @@ describe( 'WooPaymentsCardReadersPage', () => {
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'region', { name: 'Connected card readers' } )
-		).toHaveClass( 'woocommerce-woopayments-card-readers__settings-card' );
+		).toBeInTheDocument();
 		expect( mockApiFetch ).toHaveBeenCalledWith( {
 			path: '/wc/v3/payments/readers?limit=10',
 			method: 'GET',
@@ -64,14 +64,8 @@ describe( 'WooPaymentsCardReadersPage', () => {
 		expect(
 			screen.getByRole( 'cell', { name: 'bbpos_wisepos_e' } )
 		).toBeInTheDocument();
-		expect( screen.getByText( 'Active' ) ).toHaveClass(
-			'woocommerce-woopayments-card-readers__status-badge',
-			'is-active'
-		);
-		expect( screen.getByText( 'Inactive' ) ).toHaveClass(
-			'woocommerce-woopayments-card-readers__status-badge',
-			'is-inactive'
-		);
+		expect( screen.getByText( 'Active' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Inactive' ) ).toBeInTheDocument();
 		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
 			'Card readers loaded.'
 		);

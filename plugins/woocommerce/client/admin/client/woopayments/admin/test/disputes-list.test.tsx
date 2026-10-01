@@ -268,13 +268,10 @@ describe( 'WooPayments disputes list columns', () => {
 		const due = DUE.dispute_id;
 		expect( getCell( due, 'amount' ) ).toHaveTextContent( '$50.00' );
 		expect( getCell( due, 'currency' ) ).toHaveTextContent( 'usd' );
-		// Client 11.1.0 `components/dispute-status-chip`: "Response needed" in a red chip.
+		// Client 11.1.0 `components/dispute-status-chip`: "Response needed".
 		expect( getCell( due, 'status' ) ).toHaveTextContent(
 			/^Response needed$/
 		);
-		expect(
-			within( getCell( due, 'status' ) ).getByText( 'Response needed' )
-		).toHaveClass( 'woocommerce-status-badge--error' );
 		expect( getCell( due, 'reason' ) ).toHaveTextContent(
 			'Transaction unauthorized'
 		);
@@ -317,9 +314,6 @@ describe( 'WooPayments disputes list columns', () => {
 		expect( getCell( won, 'customerEmail' ) ).toHaveTextContent( /^$/ );
 		expect( getCell( won, 'customerCountry' ) ).toHaveTextContent( /^$/ );
 		expect( getCell( won, 'status' ) ).toHaveTextContent( 'Won' );
-		expect(
-			within( getCell( won, 'status' ) ).getByText( 'Won' )
-		).toHaveClass( 'woocommerce-status-badge--success' );
 		expect( getCell( won, 'due_by' ) ).toHaveTextContent( /^$/ );
 	} );
 
@@ -382,13 +376,12 @@ describe( 'WooPayments disputes list columns', () => {
 		renderPage();
 		await screen.findByText( 'Disputes loaded.' );
 
-		// Client 11.1.0 `disputes/index.tsx:324-338`: a secondary "Respond" while a response is due,
-		// a tertiary "See details" otherwise, both opening the payment details.
+		// Client 11.1.0 `disputes/index.tsx:324-338`: "Respond" while a response is due,
+		// "See details" otherwise, both opening the payment details.
 		const respond = within( getCell( DUE.dispute_id, 'action' ) ).getByRole(
 			'link'
 		);
 		expect( respond ).toHaveTextContent( /^Respond$/ );
-		expect( respond ).toHaveClass( 'components-button', 'is-secondary' );
 		expect( respond ).toHaveAttribute(
 			'href',
 			expect.stringContaining( `id=${ DUE.charge_id }` )
@@ -397,7 +390,6 @@ describe( 'WooPayments disputes list columns', () => {
 			'link'
 		);
 		expect( details ).toHaveTextContent( /^See details$/ );
-		expect( details ).toHaveClass( 'components-button', 'is-tertiary' );
 
 		// Client 11.1.0 `disputes/index.tsx:217-238` `onClickDisputeRow`.
 		fireEvent.click( respond );

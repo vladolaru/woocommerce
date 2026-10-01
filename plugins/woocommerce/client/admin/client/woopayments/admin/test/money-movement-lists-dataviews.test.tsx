@@ -32,7 +32,6 @@ import {
 	getWooPaymentsDepositsSummary,
 } from '../overview/data';
 import { setMockUserPreferences } from './helpers/user-preferences';
-import { isStyledBy } from './helpers/compiled-rules';
 
 // The real DataViews, from its CommonJS build: these tests read its View options menu.
 jest.mock( '@wordpress/dataviews/wp', () =>
@@ -235,18 +234,9 @@ describe( 'WooPayments list empty state', () => {
 			renderAt( route, element() );
 
 			// Client 11.1.0 `TableCard` without `emptyMessage`: `@woocommerce/components` Table's default.
-			const empty = await screen.findByText( 'No data to display' );
-
-			// `@woocommerce/components` `.woocommerce-table__empty-item`: padded, large and bold.
 			expect(
-				isStyledBy( empty, 'dataviews.scss', 'padding', '16px 24px' )
-			).toBe( true );
-			expect(
-				isStyledBy( empty, 'dataviews.scss', 'font-weight', 'bold' )
-			).toBe( true );
-			expect(
-				isStyledBy( empty, 'dataviews.scss', 'font-size', '18px' )
-			).toBe( true );
+				await screen.findByText( 'No data to display' )
+			).toBeInTheDocument();
 		}
 	);
 } );

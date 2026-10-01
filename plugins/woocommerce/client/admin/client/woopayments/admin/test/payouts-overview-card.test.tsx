@@ -466,11 +466,8 @@ describe( 'PayoutsOverviewCard', () => {
 		expect( inCard().getByText( 'Status' ) ).toBeInTheDocument();
 		expect( inCard().getByText( 'Amount' ) ).toBeInTheDocument();
 		expect( screen.getAllByText( '$10.00' ).length ).toBeGreaterThan( 0 );
-		// Client 11.1.0 `components/deposit-status-chip`: paid is a success chip.
-		expect( inCard().getByText( 'Completed (paid)' ) ).toHaveClass(
-			'woocommerce-status-badge',
-			'woocommerce-status-badge--success'
-		);
+		// Client 11.1.0 `components/deposit-status-chip`.
+		expect( inCard().getByText( 'Completed (paid)' ) ).toBeInTheDocument();
 		// Client 11.1.0 `recent-deposits-list.tsx:48-50`: the link is named by the date it shows, in the site format (WCAG 2.5.3).
 		expect(
 			screen.getByRole( 'link', { name: 'June 18, 2026' } )

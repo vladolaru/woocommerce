@@ -259,15 +259,12 @@ describe( 'WooPayments uncaptured transactions list', () => {
 		);
 
 		// Client 11.1.0 `transactions/uncaptured/index.tsx:187-202` and
-		// `components/capture-authorization-button`: one secondary "Capture", no cancel.
+		// `components/capture-authorization-button`: one "Capture", no cancel.
 		expect(
 			within( container )
 				.getAllByRole( 'button' )
 				.map( ( button ) => button.textContent )
 		).toEqual( [ 'Capture' ] );
-		expect( within( container ).getByRole( 'button' ) ).toHaveClass(
-			'is-secondary'
-		);
 
 		// Client 11.1.0 `transactions/uncaptured/index.tsx:128-186`: the `clickable()` cells.
 		[

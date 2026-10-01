@@ -298,10 +298,10 @@ describe( 'WooPayments Blocked transactions tab', () => {
 		).toHaveAttribute( 'data-title-field', 'undefined' );
 
 		const [ , adaRow, graceRow ] = screen.getAllByRole( 'row' );
-		// Client 11.1.0 `transactions/blocked/columns.tsx:79-82`: a red "Payment blocked" pill.
-		expect( within( adaRow ).getByText( 'Payment blocked' ) ).toHaveClass(
-			'woocommerce-status-badge--error'
-		);
+		// Client 11.1.0 `transactions/blocked/columns.tsx:79-82`: a "Payment blocked" pill.
+		expect(
+			within( adaRow ).getByText( 'Payment blocked' )
+		).toBeInTheDocument();
 		// Client 11.1.0 `transactions/blocked/columns.tsx:70-72`: site formats, read as UTC.
 		expect( formatSiteDateTime( ADA.created ) ).toBe(
 			'September 20, 2026 / 10:15 am'

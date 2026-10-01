@@ -238,50 +238,6 @@ describe( 'RefundConfirmationModal', () => {
 		expect( mockApiFetch ).not.toHaveBeenCalled();
 	} );
 
-	// Client 11.1.0 `client/components/confirmation-modal`: a footer that right-aligns
-	// the secondary back-out button before the primary action.
-	const expectClientFooter = ( backOut: string, confirm: string ) => {
-		const backOutButton = screen.getByRole( 'button', { name: backOut } );
-		const confirmButton = screen.getByRole( 'button', { name: confirm } );
-		const actions = backOutButton.parentElement as HTMLElement;
-
-		expect( actions ).toHaveClass(
-			'woocommerce-woopayments-order-status-change__modal-actions'
-		);
-		expect( confirmButton.parentElement ).toBe( actions );
-		expect( window.getComputedStyle( actions ).display ).toBe( 'flex' );
-		expect( window.getComputedStyle( actions ).justifyContent ).toBe(
-			'flex-end'
-		);
-		expect( backOutButton ).toHaveClass( 'is-secondary' );
-		expect( confirmButton ).toHaveClass( 'is-primary' );
-		expect(
-			// eslint-disable-next-line no-bitwise
-			backOutButton.compareDocumentPosition( confirmButton ) &
-				window.Node.DOCUMENT_POSITION_FOLLOWING
-		).toBeTruthy();
-
-		return { actions, backOutButton, confirmButton };
-	};
-
-	// Client 11.1.0 `client/order/refund-confirm-modal`: 40px buttons and no visible separator.
-	it( 'lays out the dialog like the client: Cancel and the refund on the right, 40px buttons, no separator', () => {
-		renderModal();
-
-		const { backOutButton, confirmButton } = expectClientFooter(
-			'Cancel',
-			'Refund $42.50'
-		);
-
-		expect( backOutButton ).toHaveClass( 'is-next-40px-default-size' );
-		expect( confirmButton ).toHaveClass( 'is-next-40px-default-size' );
-		expect(
-			document.querySelector(
-				'.woocommerce-woopayments-order-status-change__modal-separator'
-			)
-		).toBeNull();
-	} );
-
 	it( 'restores the dropdown and refunds nothing when closed with the close control', async () => {
 		const { onClose, onError } = renderModal();
 

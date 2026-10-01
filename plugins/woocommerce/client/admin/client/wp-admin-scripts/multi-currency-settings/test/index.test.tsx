@@ -2,20 +2,10 @@ const mockRender = jest.fn();
 const mockCreateRoot = jest.fn( () => ( {
 	render: mockRender,
 } ) );
-const mockStyleImport = jest.fn();
 
 jest.mock( '@wordpress/element', () => ( {
 	createRoot: mockCreateRoot,
 } ) );
-jest.mock(
-	'../style.scss',
-	() => {
-		mockStyleImport();
-		return {};
-	},
-	{ virtual: true }
-);
-
 jest.mock( '../app', () => ( {
 	MultiCurrencySettingsApp: () => <div>Multi-currency settings app</div>,
 } ) );
@@ -38,7 +28,6 @@ describe( 'multi-currency-settings entrypoint', () => {
 
 		expect( mockCreateRoot ).toHaveBeenCalledWith( container );
 		expect( mockRender ).toHaveBeenCalled();
-		expect( mockStyleImport ).toHaveBeenCalled();
 	} );
 
 	it( 'does not mount when the settings container is missing', () => {

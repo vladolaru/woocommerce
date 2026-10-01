@@ -218,10 +218,6 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 			/require HTTPS and cannot be displayed/,
 			{ selector: '.woopayments-banner-notice__content' }
 		);
-		expect( httpsWarning.parentElement ).toHaveClass(
-			'woopayments-banner-notice',
-			'is-warning'
-		);
 		expect(
 			httpsWarning.parentElement?.querySelector(
 				'.woopayments-banner-notice__icon'

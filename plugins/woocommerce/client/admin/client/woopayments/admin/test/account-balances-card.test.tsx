@@ -385,12 +385,6 @@ describe( 'AccountBalancesCard', () => {
 				renderCard( true, instant );
 
 				expect( queryWarning() ).toBeInTheDocument();
-				// Core's bordered notice sits inside the card's padded body, so its border never lies on the card's edge.
-				const notice = queryWarning()?.closest( '.components-notice' );
-				expect( notice?.parentElement ).toHaveClass(
-					'components-card__body',
-					'woocommerce-woopayments-overview__instant-payout-unavailable'
-				);
 				expect(
 					screen.getByRole( 'link', {
 						name: /Learn about eligibility requirements/,

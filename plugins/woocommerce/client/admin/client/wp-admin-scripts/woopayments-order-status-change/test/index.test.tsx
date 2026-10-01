@@ -346,10 +346,10 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 			bootWithManualRefunds( true );
 			const manualRefundButton = getManualRefundButton();
 
-			expect( manualRefundButton ).not.toHaveStyle( { display: 'none' } );
+			expect( manualRefundButton ).toBeVisible();
 			openRefundPanel();
 
-			expect( manualRefundButton ).toHaveStyle( { display: 'none' } );
+			expect( manualRefundButton ).not.toBeVisible();
 			expect( manualRefundButton ).not.toHaveAttribute( 'title' );
 		} );
 
@@ -358,7 +358,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 			openRefundPanel();
 
 			const manualRefundButton = getManualRefundButton();
-			expect( manualRefundButton ).not.toHaveStyle( { display: 'none' } );
+			expect( manualRefundButton ).toBeVisible();
 			expect( manualRefundButton ).toHaveAttribute(
 				'title',
 				MANUAL_REFUNDS_TIP
@@ -401,9 +401,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 			}
 			openRefundPanel();
 
-			expect( getManualRefundButton() ).toHaveStyle( {
-				display: 'none',
-			} );
+			expect( getManualRefundButton() ).not.toBeVisible();
 		} );
 
 		it( 'hides the manual refund button when the status field is absent', () => {
@@ -411,9 +409,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 			bootWithManualRefunds( true );
 			openRefundPanel();
 
-			expect( getManualRefundButton() ).toHaveStyle( {
-				display: 'none',
-			} );
+			expect( getManualRefundButton() ).not.toBeVisible();
 		} );
 	} );
 

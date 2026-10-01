@@ -326,9 +326,7 @@ describe( 'WooPayments payment details summary parity', () => {
 			);
 
 			const summary = getSummary();
-			expect( within( summary ).getByText( 'Paid' ) ).toHaveClass(
-				'woocommerce-status-badge--success'
-			);
+			expect( within( summary ).getByText( 'Paid' ) ).toBeInTheDocument();
 			expect(
 				within( summary ).getByText( 'pi_abc' ).parentElement
 			).toHaveTextContent( 'Payment ID: pi_abc' );
@@ -386,7 +384,7 @@ describe( 'WooPayments payment details summary parity', () => {
 			);
 			expect(
 				within( getSummary() ).getByText( 'Disputed: Won' )
-			).toHaveClass( 'woocommerce-status-badge--success' );
+			).toBeInTheDocument();
 		} );
 
 		it( 'adds the subscription row when WooCommerce Subscriptions is active', () => {

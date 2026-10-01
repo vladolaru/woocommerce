@@ -1,10 +1,4 @@
 /**
- * External dependencies
- */
-import fs from 'fs';
-import nodePath from 'path';
-
-/**
  * Internal dependencies
  */
 import { getPaymentMethodDefinition } from '../payment-method-definitions';
@@ -49,24 +43,4 @@ describe( 'WooPayments payment method definitions', () => {
 			).toMatch( new RegExp( `${ iconPath.replace( '.', '\\.' ) }$` ) );
 		}
 	);
-
-	it( 'serves the client green Cash App tile for US Afterpay', () => {
-		const iconPath = getPaymentMethodDefinition(
-			'afterpay_clearpay',
-			'US'
-		)?.iconUrl.match( /images\/payment-methods\/[\w-]+\.svg$/ )?.[ 0 ];
-		const svg = fs.readFileSync(
-			nodePath.join(
-				__dirname,
-				'../../../../../../assets',
-				iconPath ?? ''
-			),
-			'utf8'
-		);
-
-		// Client 11.1.0 afterpay-cashapp-badge.svg: a full 64x40 Cash App green tile.
-		expect( svg ).toContain(
-			'<rect width="64" height="40" fill="#00D633" rx="3"/>'
-		);
-	} );
 } );

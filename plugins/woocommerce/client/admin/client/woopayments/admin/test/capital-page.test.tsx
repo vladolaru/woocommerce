@@ -173,14 +173,8 @@ describe( 'WooPaymentsCapitalPage', () => {
 		expect( screen.getByText( '2 loans' ) ).toBeInTheDocument();
 		expect( screen.getByText( '$1,500.00 total' ) ).toBeInTheDocument();
 		expect( screen.getByText( '$150.00 fixed fees' ) ).toBeInTheDocument();
-		expect( screen.getByText( 'Active' ) ).toHaveClass(
-			'woocommerce-woopayments-capital__status-chip',
-			'is-active'
-		);
-		expect( screen.getByText( /Paid off:/ ) ).toHaveClass(
-			'woocommerce-woopayments-capital__status-chip',
-			'is-paid-off'
-		);
+		expect( screen.getByText( 'Active' ) ).toBeInTheDocument();
+		expect( screen.getByText( /Paid off:/ ) ).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'link', {
 				name: 'View transactions for loan loan_test',

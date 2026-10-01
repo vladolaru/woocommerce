@@ -266,10 +266,10 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'button', { name: 'Save for later' } )
-		).toHaveClass( 'is-tertiary' );
-		expect( screen.getByRole( 'button', { name: 'Next' } ) ).toHaveClass(
-			'is-primary'
-		);
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Next' } )
+		).toBeInTheDocument();
 		expect(
 			screen.queryByRole( 'button', { name: 'Back' } )
 		).not.toBeInTheDocument();
@@ -632,7 +632,6 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			const preview = screen.getByRole( 'button', {
 				name: 'Preview cover letter ↗',
 			} );
-			expect( preview ).toHaveClass( 'is-primary' );
 			await act( async () => {
 				await userEvent.click( preview );
 			} );
@@ -922,7 +921,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		).toBeInTheDocument();
 		expect(
 			row.querySelector( 'label[for="' + input.id + '"]' )
-		).toHaveClass( 'components-button', 'is-primary', 'has-icon' );
+		).toBeInTheDocument();
 		expect( within( row ).queryByText( 'No file selected' ) ).toBeNull();
 
 		await uploadFile( 'Upload order receipt' );

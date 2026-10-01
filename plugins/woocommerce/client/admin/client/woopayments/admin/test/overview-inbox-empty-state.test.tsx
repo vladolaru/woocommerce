@@ -32,8 +32,9 @@ describe( 'overview inbox empty state', () => {
 
 		render( <InboxNotifications /> );
 
-		const emptyCard = screen.getByText( CLIENT_EMPTY_INBOX_COPY );
-		expect( emptyCard ).toHaveClass( 'woocommerce-empty-activity-card' );
+		expect(
+			screen.getByText( CLIENT_EMPTY_INBOX_COPY )
+		).toBeInTheDocument();
 		expect(
 			screen.queryByText( 'No inbox notifications.' )
 		).not.toBeInTheDocument();

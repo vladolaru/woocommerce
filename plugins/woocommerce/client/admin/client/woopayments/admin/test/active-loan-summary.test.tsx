@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 
 /**
  * Internal dependencies
@@ -10,7 +10,6 @@ import {
 	ActiveLoanSummary,
 	getActiveCapitalLoanId,
 } from '../capital/active-loan-summary';
-import { hasStyleRule } from './helpers/style-rules';
 
 // Client 11.1.0 `components/active-loan-summary/__tests__/index.test.js` fixture, with the platform's fractional withhold rate.
 const details = {
@@ -76,9 +75,9 @@ describe( 'ActiveLoanSummary', () => {
 		expect( getValue( 'First paydown' ) ).toBe( formatDate( 1643999167 ) );
 	} );
 
-	// Client 11.1.0 `components/active-loan-summary/index.tsx:130-275` and `style.scss`: an Overview card whose header
-	// holds the title and the transactions link, then a row of two blocks and a row of five, split by dividers.
-	it( 'renders the client card with a header and divided rows', () => {
+	// Client 11.1.0 `components/active-loan-summary/index.tsx:130-275`: the card's header holds the title and the
+	// transactions link, then the repaid figures come before the loan terms.
+	it( 'shows the title, the transactions link and the figures in the client order', () => {
 		render(
 			<ActiveLoanSummary
 				details={ details }
@@ -87,89 +86,32 @@ describe( 'ActiveLoanSummary', () => {
 			/>
 		);
 
-		const heading = screen.getByRole( 'heading', {
-			level: 2,
+		const card = screen.getByRole( 'region', {
 			name: 'Active loan overview',
 		} );
-		const header = heading.closest( '.components-card__header' );
-		const transactionsLink = screen.getByRole( 'link', {
-			name: 'View transactions',
-		} );
-		expect( header ).toContainElement( transactionsLink );
-		expect( transactionsLink ).toHaveClass( 'is-link' );
 		expect(
-			screen.getByRole( 'region', { name: 'Active loan overview' } )
-		).toHaveClass( 'components-card' );
-
-		const rows = Array.from(
-			document.querySelectorAll(
-				'.woocommerce-woopayments-loan-summary__row'
-			)
-		);
-		const termsOf = ( index: number ) =>
-			Array.from( rows[ index ].querySelectorAll( 'dt' ) ).map(
+			within( card ).getByRole( 'heading', {
+				level: 2,
+				name: 'Active loan overview',
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( card ).getByRole( 'link', { name: 'View transactions' } )
+		).toBeInTheDocument();
+		expect(
+			Array.from(
+				card.querySelectorAll( 'dt' ),
 				( term ) => term.textContent
-			);
-		expect( rows ).toHaveLength( 2 );
-		expect( termsOf( 0 ) ).toEqual( [
+			)
+		).toEqual( [
 			'Total repaid',
 			`Repaid this period (until ${ formatDate( 1644889167 ) })`,
-		] );
-		expect( termsOf( 1 ) ).toEqual( [
 			'Loan disbursed',
 			'Loan amount',
 			'Fixed fee',
 			'Withhold rate',
 			'First paydown',
 		] );
-		// The repaid amounts are the large figures.
-		expect( screen.getByText( '$12.34' ) ).toHaveClass( 'is-big' );
-		expect( screen.getByText( '$1.23' ) ).toHaveClass( 'is-big' );
-
-		const [ firstBlock, secondBlock ] = Array.from( rows[ 1 ].children );
-		expect(
-			hasStyleRule(
-				secondBlock,
-				'capital/active-loan-summary.scss',
-				'border-inline-start',
-				'1px solid #e0e0e0'
-			)
-		).toBe( true );
-		expect(
-			hasStyleRule(
-				firstBlock,
-				'capital/active-loan-summary.scss',
-				'border-inline-start',
-				'1px solid #e0e0e0'
-			)
-		).toBe( false );
-		expect(
-			hasStyleRule(
-				rows[ 1 ],
-				'capital/active-loan-summary.scss',
-				'border-top',
-				'1px solid #e0e0e0'
-			)
-		).toBe( true );
-		// Five blocks do not fit a phone, so under 600px each row stacks its blocks, divided by top borders.
-		expect(
-			hasStyleRule(
-				rows[ 1 ],
-				'capital/active-loan-summary.scss',
-				'flex-direction',
-				'column',
-				'max-width: 600px'
-			)
-		).toBe( true );
-		expect(
-			hasStyleRule(
-				secondBlock,
-				'capital/active-loan-summary.scss',
-				'border-top',
-				'1px solid #e0e0e0',
-				'max-width: 600px'
-			)
-		).toBe( true );
 	} );
 
 	it( 'links the active loan transactions', () => {

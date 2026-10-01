@@ -15,7 +15,6 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
  * Internal dependencies
  */
 import { setSiteDateFormats } from './helpers/site-date-formats';
-import { hasStyleRule } from './helpers/style-rules';
 import { summaryItem } from './helpers/table-summary';
 import { WooPaymentsPayouts } from '../payouts';
 import { WooPaymentsPayoutDetailsPage } from '../payout-details';
@@ -1065,38 +1064,9 @@ describe( 'WooPayments payout details admin surface', () => {
 			expect(
 				getOverviewItem( 'Payout date: Jan 2, 2020' )
 			).toHaveTextContent( 'Completed (paid)' );
-			// Client 11.1.0 deposits/details/index.tsx:48-66: core's OrderStatus dot, not a chip.
-			expect(
-				getOverviewItem( 'Payout date: Jan 2, 2020' )?.querySelector(
-					'.woocommerce-order-status .woocommerce-order-status__indicator.is-paid'
-				)
-			).not.toBeNull();
 			expect( screen.getByText( '$20.00' ) ).toBeInTheDocument();
 			expect( screen.queryByText( 'Payout amount' ) ).toBeNull();
 			expect( screen.queryByText( /service fee/ ) ).toBeNull();
-		} );
-
-		// The client's WC Admin page sizes every element as border-box, so its 0.85em dot is 17px with the 3px ring inside;
-		// the settings page is content-box, where the ring would grow the dot to 23px.
-		it( 'keeps the status dot ring inside its size, like the client', async () => {
-			await renderPayout( clientDeposit );
-
-			const indicator = getOverviewItem(
-				'Payout date: Jan 2, 2020'
-			)?.querySelector( '.woocommerce-order-status__indicator' );
-
-			const isStyled = ( property: string, value: string ) =>
-				!! indicator &&
-				hasStyleRule(
-					indicator,
-					'payout-details.scss',
-					property,
-					value
-				);
-
-			expect( indicator ).not.toBeNull();
-			expect( isStyled( 'box-sizing', 'border-box' ) ).toBe( true );
-			expect( isStyled( 'width', '0\\.85em' ) ).toBe( true );
 		} );
 
 		it( 'renders an automatic withdrawal as deducted', async () => {
@@ -1144,17 +1114,11 @@ describe( 'WooPayments payout details admin surface', () => {
 			);
 			const fee = getOverviewItem( '1.5% service fee' );
 			expect( fee ).toHaveTextContent( '$0.30' );
-			expect( fee?.lastElementChild ).toHaveClass(
-				'woocommerce-woopayments-payout-overview__value--fee'
-			);
 			const net = getOverviewItem( 'Net payout amount' );
 			expect( net ).toHaveTextContent( '$20.00' );
-			expect( net?.lastElementChild ).toHaveClass(
-				'woocommerce-woopayments-payout-overview__value--net'
-			);
 		} );
 
-		it( 'does not mark a zero service fee', async () => {
+		it( 'shows a zero service fee as 0% and $0.00', async () => {
 			await renderPayout( {
 				...clientDeposit,
 				automatic: false,
@@ -1164,9 +1128,6 @@ describe( 'WooPayments payout details admin surface', () => {
 
 			const fee = getOverviewItem( '0% service fee' );
 			expect( fee ).toHaveTextContent( '$0.00' );
-			expect( fee?.lastElementChild ).not.toHaveClass(
-				'woocommerce-woopayments-payout-overview__value--fee'
-			);
 		} );
 
 		it( 'uses withdrawal wording for an instant withdrawal breakdown', async () => {

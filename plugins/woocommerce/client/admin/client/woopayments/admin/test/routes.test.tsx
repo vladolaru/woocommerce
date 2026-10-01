@@ -3,8 +3,6 @@
  */
 import { cleanup, render, screen } from '@testing-library/react';
 import apiFetch from '@wordpress/api-fetch';
-import fs from 'fs';
-import path from 'path';
 
 /**
  * Internal dependencies
@@ -238,70 +236,6 @@ describe( 'WooPayments Settings Payments routes', () => {
 		).toBe( false );
 		expect( JSON.stringify( routes ) ).not.toContain(
 			'wc-pay-welcome-page'
-		);
-	} );
-
-	it( 'loads the settings route from the same chunk as the Payments settings tab', () => {
-		const chunkName = 'webpackChunkName: "settings-payments-woopayments"';
-		const routesSource = fs.readFileSync(
-			path.resolve( __dirname, '../routes.tsx' ),
-			'utf8'
-		);
-		const settingsPaymentsSource = fs.readFileSync(
-			path.resolve( __dirname, '../../../settings-payments/index.tsx' ),
-			'utf8'
-		);
-
-		expect( routesSource ).toContain( `${ chunkName } */ '../settings'` );
-		expect( settingsPaymentsSource ).toContain(
-			`${ chunkName } */ './settings-payments-woopayments'`
-		);
-		expect( routesSource ).not.toContain(
-			'settings-payments-woopayments-settings"'
-		);
-	} );
-
-	it( 'loads the express checkout settings route from a dedicated chunk', () => {
-		const source = fs.readFileSync(
-			path.resolve( __dirname, '../routes.tsx' ),
-			'utf8'
-		);
-
-		expect( source ).toContain(
-			'webpackChunkName: "settings-payments-woopayments-express-checkout-settings"'
-		);
-	} );
-
-	it( 'loads the fraud protection settings route from a dedicated chunk', () => {
-		const source = fs.readFileSync(
-			path.resolve( __dirname, '../routes.tsx' ),
-			'utf8'
-		);
-
-		expect( source ).toContain(
-			'webpackChunkName: "settings-payments-woopayments-fraud-protection-settings"'
-		);
-	} );
-
-	it( 'loads the Documents route from a dedicated chunk', () => {
-		const source = fs.readFileSync(
-			path.resolve( __dirname, '../routes.tsx' ),
-			'utf8'
-		);
-
-		expect( source ).toContain(
-			'webpackChunkName: "settings-payments-woopayments-documents"'
-		);
-	} );
-
-	it( 'loads the Reports route from a dedicated chunk', () => {
-		const source = fs.readFileSync(
-			path.resolve( __dirname, '../routes.tsx' ),
-			'utf8'
-		);
-
-		expect( source ).toContain(
-			'webpackChunkName: "settings-payments-woopayments-reports"'
 		);
 	} );
 

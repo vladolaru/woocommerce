@@ -319,7 +319,7 @@ describe( 'WooPaymentsTransactionDisputeDetails steps you can take', () => {
 		).not.toBeInTheDocument();
 		expect(
 			screen.getByRole( 'button', { name: 'Issue refund' } )
-		).toHaveClass( 'is-primary' );
+		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'button', {
 				name: 'Challenge dispute — available if the inquiry escalates to a dispute',

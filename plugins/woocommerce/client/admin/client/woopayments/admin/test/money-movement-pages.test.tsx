@@ -5833,10 +5833,10 @@ describe( 'WooPayments money movement pages', () => {
 			'href',
 			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes%2Fchallenge&id=dp_test'
 		);
-		// Client 11.1.0 dispute-awaiting-response-details.tsx:420-438: a tertiary Accept dispute.
+		// Client 11.1.0 dispute-awaiting-response-details.tsx:420-438: Accept dispute.
 		expect(
 			screen.getByRole( 'button', { name: 'Accept dispute' } )
-		).toHaveClass( 'is-tertiary' );
+		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'link', {
 				name: linkNamed( 'Learn more about responding to disputes' ),

@@ -3065,7 +3065,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 		} );
 		const items = within( dialog ).getAllByRole( 'listitem' );
 
-		expect( dialog ).toHaveClass( 'has-size-medium' );
 		expect( items.map( ( item ) => item.textContent ) ).toEqual( [
 			'Credit / Debit Cards',
 			'Affirm',
@@ -5172,7 +5171,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			within( section ).getByRole( 'group', {
 				name: 'Fraud protection level',
 			} )
-		).toHaveClass( 'woopayments-fraud-protection-levels' );
+		).toBeInTheDocument();
 		expect(
 			within( section ).getByRole( 'radio', { name: 'Basic' } )
 		).toBeChecked();

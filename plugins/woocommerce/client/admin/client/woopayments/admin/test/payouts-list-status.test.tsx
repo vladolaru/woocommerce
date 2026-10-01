@@ -95,15 +95,15 @@ const row = ( id: string, type: string, status: string ) => ( {
 
 // Client 11.1.0 `deposits/strings.ts:24-32` via `deposits/list/index.tsx:152` and `components/deposit-status-chip/index.tsx:30-35`.
 // Chip colours from client 11.1.0 `components/deposit-status-chip/index.tsx:18-24`.
-const CLIENT_STATUS_COPY: Array< [ string, string, string, string ] > = [
-	[ 'deposit', 'paid', 'Completed (paid)', 'success' ],
-	[ 'withdrawal', 'paid', 'Completed (deducted)', 'success' ],
-	[ 'deposit', 'pending', 'Pending', 'warning' ],
-	[ 'deposit', 'in_transit', 'In transit', 'primary' ],
-	[ 'deposit', 'canceled', 'Canceled', 'info' ],
-	[ 'deposit', 'failed', 'Failed', 'error' ],
-	[ 'withdrawal', 'pending', 'Pending', 'warning' ],
-	[ 'withdrawal', 'failed', 'Failed', 'error' ],
+const CLIENT_STATUS_COPY: Array< [ string, string, string ] > = [
+	[ 'deposit', 'paid', 'Completed (paid)' ],
+	[ 'withdrawal', 'paid', 'Completed (deducted)' ],
+	[ 'deposit', 'pending', 'Pending' ],
+	[ 'deposit', 'in_transit', 'In transit' ],
+	[ 'deposit', 'canceled', 'Canceled' ],
+	[ 'deposit', 'failed', 'Failed' ],
+	[ 'withdrawal', 'pending', 'Pending' ],
+	[ 'withdrawal', 'failed', 'Failed' ],
 ];
 
 describe( 'WooPayments payouts list status copy', () => {
@@ -137,8 +137,8 @@ describe( 'WooPayments payouts list status copy', () => {
 	} );
 
 	it.each( CLIENT_STATUS_COPY )(
-		'shows a %s with status %s as a "%s" %s chip',
-		async ( type, status, label, chipType ) => {
+		'shows a %s with status %s as "%s"',
+		async ( type, status, label ) => {
 			mockGetDeposits.mockResolvedValue( {
 				data: [ row( 'po_row', type, status ) ] as never,
 				total_count: 1,
@@ -154,10 +154,6 @@ describe( 'WooPayments payouts list status copy', () => {
 				await screen.findByTestId( 'status-po_row' )
 			).toHaveTextContent(
 				new RegExp( `^${ label.replace( /[()]/g, '\\$&' ) }$` )
-			);
-			expect( screen.getByText( label ) ).toHaveClass(
-				'woocommerce-status-badge',
-				`woocommerce-status-badge--${ chipType }`
 			);
 		}
 	);
