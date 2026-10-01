@@ -39,7 +39,7 @@ const [ APPLE_PAY_ICON, GOOGLE_PAY_ICON ] =
 	EXPRESS_CHECKOUT_METHOD_ICONS.payment_request;
 const WOOPAY_ICON_URL = `${
 	WC_ASSET_URL || ''
-}images/payment-methods/woo-short.svg`;
+}images/payment-methods/woo-short-color.svg`;
 
 const asSettingsRecord = ( value: unknown ): SettingsRecord =>
 	value && typeof value === 'object' ? ( value as SettingsRecord ) : {};

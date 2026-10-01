@@ -315,7 +315,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	public function lpm_payment_method_title_provider(): array {
 		return array(
 			'Multibanco' => array( 'multibanco', '/assets/images/payment-methods/multibanco-logo.svg', '/assets/images/payment-methods/multibanco-logo-dark.svg', 'Multibanco' ),
-			'Alipay'     => array( 'alipay', '/assets/images/payment-methods/alipay-logo.svg', null, 'Alipay' ),
+			'Alipay'     => array( 'alipay', '/assets/images/payment-methods/alipay-logo-color.svg', null, 'Alipay' ),
 		);
 	}
 

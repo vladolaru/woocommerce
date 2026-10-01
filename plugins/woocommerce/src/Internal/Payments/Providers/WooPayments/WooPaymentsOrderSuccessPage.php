@@ -666,7 +666,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	private function render_woopay_title( WC_Order $order ): string {
 		return $this->render_logo_title(
 			'WooPay',
-			WC()->plugin_url() . '/assets/images/payment-methods/woo-short.svg',
+			WC()->plugin_url() . '/assets/images/payment-methods/woo-short-color.svg',
 			'',
 			'woopay',
 			(string) $order->get_meta( 'last4', true )

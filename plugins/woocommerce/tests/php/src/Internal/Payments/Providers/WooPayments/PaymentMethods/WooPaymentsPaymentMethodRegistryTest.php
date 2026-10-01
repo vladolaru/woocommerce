@@ -247,7 +247,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'assets/images/payment-methods/afterpay-cashapp-badge.svg', $afterpay->get_settings_icon_asset_path( 'US' ) );
 		$this->assertSame( 'Clearpay', $afterpay->get_title( 'GB' ) );
 		$this->assertSame( 'Allow customers to pay over time with Clearpay.', $afterpay->get_description( 'GB' ) );
-		$this->assertSame( 'assets/images/payment-methods/clearpay.svg', $afterpay->get_icon_asset_path( 'GB' ) );
+		$this->assertSame( 'assets/images/payment-methods/clearpay-icon.svg', $afterpay->get_icon_asset_path( 'GB' ) );
 		$this->assertSame( array( 'GB' ), $afterpay->get_supported_countries( 'GB' ) );
 
 		$this->assertNotNull( $affirm );
@@ -375,7 +375,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'capabilities'               => array( 'buy_now_pay_later', 'refunds', 'domestic_transactions_only' ),
 					'icon'                       => 'assets/images/payment-methods/affirm-logo.svg',
 					'dark_icon'                  => 'assets/images/payment-methods/affirm-logo-dark.svg',
-					'settings_icon'              => 'assets/images/payment-methods/affirm-badge.svg',
+					'settings_icon'              => 'assets/images/payment-methods/affirm-badge-color.svg',
 				),
 			),
 			'afterpay_clearpay' => array(
@@ -389,8 +389,8 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array( 'USD', 'CAD', 'AUD', 'NZD', 'GBP' ),
 					'countries'                  => array( 'US', 'CA', 'AU', 'NZ', 'GB' ),
 					'capabilities'               => array( 'buy_now_pay_later', 'refunds', 'domestic_transactions_only' ),
-					'icon'                       => 'assets/images/payment-methods/afterpay-badge.svg',
-					'dark_icon'                  => 'assets/images/payment-methods/afterpay-badge.svg',
+					'icon'                       => 'assets/images/payment-methods/afterpay-badge-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/afterpay-badge-color.svg',
 					'settings_icon'              => 'assets/images/payment-methods/afterpay-logo.svg',
 				),
 			),
@@ -405,9 +405,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array( 'USD' ),
 					'countries'                  => array(),
 					'capabilities'               => array( 'refunds', 'multi_currency' ),
-					'icon'                       => 'assets/images/payment-methods/alipay-logo.svg',
-					'dark_icon'                  => 'assets/images/payment-methods/alipay-logo.svg',
-					'settings_icon'              => 'assets/images/payment-methods/alipay-logo.svg',
+					'icon'                       => 'assets/images/payment-methods/alipay-logo-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/alipay-logo-color.svg',
+					'settings_icon'              => 'assets/images/payment-methods/alipay-logo-color.svg',
 				),
 			),
 			'bancontact'        => array(
@@ -421,9 +421,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array( 'EUR' ),
 					'countries'                  => array( 'BE' ),
 					'capabilities'               => array( 'refunds' ),
-					'icon'                       => 'assets/images/payment-methods/bancontact.svg',
-					'dark_icon'                  => 'assets/images/payment-methods/bancontact.svg',
-					'settings_icon'              => 'assets/images/payment-methods/bancontact.svg',
+					'icon'                       => 'assets/images/payment-methods/bancontact-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/bancontact-color.svg',
+					'settings_icon'              => 'assets/images/payment-methods/bancontact-color.svg',
 				),
 			),
 			'au_becs_debit'     => array(
@@ -437,9 +437,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array( 'AUD' ),
 					'countries'                  => array( 'AU' ),
 					'capabilities'               => array( 'refunds' ),
-					'icon'                       => 'assets/images/payment-methods/bank-debit.svg',
-					'dark_icon'                  => 'assets/images/payment-methods/bank-debit.svg',
-					'settings_icon'              => 'assets/images/payment-methods/bank-debit.svg',
+					'icon'                       => 'assets/images/payment-methods/bank-debit-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/bank-debit-color.svg',
+					'settings_icon'              => 'assets/images/payment-methods/bank-debit-color.svg',
 				),
 			),
 			'eps'               => array(
@@ -469,9 +469,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array( 'SGD' ),
 					'countries'                  => array( 'SG' ),
 					'capabilities'               => array( 'refunds', 'domestic_transactions_only' ),
-					'icon'                       => 'assets/images/payment-methods/grabpay.svg',
-					'dark_icon'                  => 'assets/images/payment-methods/grabpay.svg',
-					'settings_icon'              => 'assets/images/payment-methods/grabpay.svg',
+					'icon'                       => 'assets/images/payment-methods/grabpay-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/grabpay-color.svg',
+					'settings_icon'              => 'assets/images/payment-methods/grabpay-color.svg',
 				),
 			),
 			'ideal'             => array(
@@ -486,7 +486,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'countries'                  => array( 'NL' ),
 					'capabilities'               => array( 'refunds' ),
 					'icon'                       => 'assets/images/payment-methods/ideal.svg',
-					'dark_icon'                  => 'assets/images/payment-methods/ideal-dark.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/ideal-dark-color.svg',
 					// Client 11.1.0 IdealDefinition::get_settings_icon_url() (:160-162) is its iDEAL | Wero tile; core ships it as ideal-wero.svg.
 					'settings_icon'              => 'assets/images/payment-methods/ideal-wero.svg',
 				),
@@ -502,9 +502,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array( 'USD' ),
 					'countries'                  => array(),
 					'capabilities'               => array( 'refunds', 'tokenization' ),
-					'icon'                       => 'assets/images/payment-methods/link.svg',
-					'dark_icon'                  => 'assets/images/payment-methods/link.svg',
-					'settings_icon'              => 'assets/images/payment-methods/link.svg',
+					'icon'                       => 'assets/images/payment-methods/link-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/link-color.svg',
+					'settings_icon'              => 'assets/images/payment-methods/link-color.svg',
 				),
 			),
 			'multibanco'        => array(
@@ -520,7 +520,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'capabilities'               => array( 'refunds' ),
 					'icon'                       => 'assets/images/payment-methods/multibanco-logo.svg',
 					'dark_icon'                  => 'assets/images/payment-methods/multibanco-logo-dark.svg',
-					'settings_icon'              => 'assets/images/payment-methods/multibanco.svg',
+					'settings_icon'              => 'assets/images/payment-methods/multibanco-color.svg',
 				),
 			),
 			'klarna'            => array(
@@ -536,7 +536,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'capabilities'               => array( 'buy_now_pay_later', 'refunds', 'domestic_transactions_only' ),
 					'icon'                       => 'assets/images/payment-methods/klarna-pill.svg',
 					'dark_icon'                  => 'assets/images/payment-methods/klarna-pill.svg',
-					'settings_icon'              => 'assets/images/payment-methods/klarna.svg',
+					'settings_icon'              => 'assets/images/payment-methods/klarna-color.svg',
 				),
 			),
 			'p24'               => array(
@@ -550,9 +550,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array( 'EUR', 'PLN' ),
 					'countries'                  => array( 'PL' ),
 					'capabilities'               => array( 'refunds' ),
-					'icon'                       => 'assets/images/payment-methods/p24.svg',
-					'dark_icon'                  => 'assets/images/payment-methods/p24.svg',
-					'settings_icon'              => 'assets/images/payment-methods/p24.svg',
+					'icon'                       => 'assets/images/payment-methods/p24-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/p24-color.svg',
+					'settings_icon'              => 'assets/images/payment-methods/p24-color.svg',
 				),
 			),
 			'sepa_debit'        => array(
@@ -566,9 +566,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array( 'EUR' ),
 					'countries'                  => array( 'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', 'CH', 'GB', 'SM', 'VA', 'AD', 'MC', 'LI', 'NO', 'IS' ),
 					'capabilities'               => array( 'refunds' ),
-					'icon'                       => 'assets/images/payment-methods/sepa-debit.svg',
-					'dark_icon'                  => 'assets/images/payment-methods/sepa-debit.svg',
-					'settings_icon'              => 'assets/images/payment-methods/sepa-debit.svg',
+					'icon'                       => 'assets/images/payment-methods/sepa-debit-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/sepa-debit-color.svg',
+					'settings_icon'              => 'assets/images/payment-methods/sepa-debit-color.svg',
 				),
 			),
 			'wechat_pay'        => array(
@@ -598,9 +598,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array(),
 					'countries'                  => array(),
 					'capabilities'               => array( 'refunds', 'multi_currency', 'tokenization', 'capture_later', 'express_checkout' ),
-					'icon'                       => 'assets/images/cards/apple-pay.svg',
-					'dark_icon'                  => 'assets/images/cards/apple-pay.svg',
-					'settings_icon'              => 'assets/images/cards/apple-pay.svg',
+					'icon'                       => 'assets/images/payment-methods/apple-pay-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/apple-pay-color.svg',
+					'settings_icon'              => 'assets/images/payment-methods/apple-pay-color.svg',
 				),
 			),
 			'google_pay'        => array(
@@ -614,9 +614,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array(),
 					'countries'                  => array(),
 					'capabilities'               => array( 'refunds', 'multi_currency', 'tokenization', 'capture_later', 'express_checkout' ),
-					'icon'                       => 'assets/images/cards/google-pay.svg',
-					'dark_icon'                  => 'assets/images/cards/google-pay.svg',
-					'settings_icon'              => 'assets/images/cards/google-pay.svg',
+					'icon'                       => 'assets/images/payment-methods/google-pay-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/google-pay-color.svg',
+					'settings_icon'              => 'assets/images/payment-methods/google-pay-color.svg',
 				),
 			),
 			'amazon_pay'        => array(
@@ -630,9 +630,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'currencies'                 => array( 'USD' ),
 					'countries'                  => array(),
 					'capabilities'               => array( 'refunds', 'multi_currency', 'tokenization', 'capture_later', 'express_checkout' ),
-					'icon'                       => 'assets/images/payment-methods/amazon-pay.svg',
-					'dark_icon'                  => 'assets/images/payment-methods/amazon-pay.svg',
-					'settings_icon'              => 'assets/images/payment-methods/amazon-pay.svg',
+					'icon'                       => 'assets/images/payment-methods/amazon-pay-color.svg',
+					'dark_icon'                  => 'assets/images/payment-methods/amazon-pay-color.svg',
+					'settings_icon'              => 'assets/images/payment-methods/amazon-pay-color.svg',
 				),
 			),
 		);

@@ -169,43 +169,43 @@ export const CARD_BRANDS: WooPaymentsCardBrand[] = [
 	{
 		id: 'visa',
 		label: 'Visa',
-		iconUrl: assetUrl( 'images/payment-methods-cards/visa.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/visa-color.svg' ),
 	},
 	{
 		id: 'mastercard',
 		label: 'Mastercard',
-		iconUrl: assetUrl( 'images/payment-methods-cards/mastercard.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/mastercard-color.svg' ),
 	},
 	{
 		id: 'amex',
 		label: 'American Express',
-		iconUrl: assetUrl( 'images/payment-methods-cards/amex.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/amex-color.svg' ),
 	},
 	{
 		id: 'discover',
 		label: 'Discover',
-		iconUrl: assetUrl( 'images/payment-methods-cards/discover.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/discover-color.svg' ),
 	},
 	{
 		id: 'diners',
 		label: 'Diners Club',
-		iconUrl: assetUrl( 'images/icons/credit-cards/diners.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/diners-color.svg' ),
 	},
 	{
 		id: 'jcb',
 		label: 'JCB',
-		iconUrl: assetUrl( 'images/payment-methods-cards/jcb.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/jcb-icon-color.svg' ),
 	},
 	{
 		id: 'unionpay',
 		label: 'UnionPay',
-		iconUrl: assetUrl( 'images/payment-methods/unionpay.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/unionpay-color.svg' ),
 	},
 	{
 		id: 'cartes_bancaires',
 		label: 'Cartes Bancaires',
 		iconUrl: assetUrl(
-			'images/payment-methods-cards/cartes_bancaires.svg'
+			'images/payment-methods/cartes_bancaires-color.svg'
 		),
 	},
 ];
@@ -230,7 +230,7 @@ const getAfterpayClearpayDefinition = (
 					'Allow customers to pay over time with Clearpay.',
 					'woocommerce'
 				),
-				iconUrl: assetUrl( 'images/payment-methods/clearpay.svg' ),
+				iconUrl: assetUrl( 'images/payment-methods/clearpay-icon.svg' ),
 			};
 		case 'US':
 			return {
@@ -281,7 +281,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'A digital wallet for customers with mainland China Alipay accounts. Regional versions like AlipayHK are not supported.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/alipay-logo.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/alipay-logo-color.svg' ),
 		stripeKey: 'alipay_payments',
 		currencies: getAlipayCurrencies(),
 		allowsManualCapture: false,
@@ -294,7 +294,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Bulk Electronic Clearing System — Accept secure bank transfer from Australia.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/bank-debit.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/bank-debit-color.svg' ),
 		stripeKey: 'au_becs_debit_payments',
 		currencies: CURRENCIES.aud,
 		allowsManualCapture: false,
@@ -307,7 +307,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Bancontact is a bank redirect payment method offered by more than 80% of online businesses in Belgium.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/bancontact.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/bancontact-color.svg' ),
 		stripeKey: 'bancontact_payments',
 		currencies: CURRENCIES.eur,
 		allowsManualCapture: false,
@@ -333,7 +333,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			"Expand your business with giropay — Germany's second most popular payment system.",
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/giropay.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/giropay-color.svg' ),
 		stripeKey: 'giropay_payments',
 		currencies: CURRENCIES.eur,
 		allowsManualCapture: false,
@@ -346,7 +346,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'A popular digital wallet for cashless payments in Singapore.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/grabpay.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/grabpay-color.svg' ),
 		stripeKey: 'grabpay_payments',
 		currencies: CURRENCIES.sgd,
 		allowsManualCapture: false,
@@ -372,7 +372,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Let your customers pay with JCB, the only international payment brand based in Japan.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/jcb.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/jcb-color.svg' ),
 		stripeKey: 'jcb_payments',
 		currencies: CURRENCIES.jpy,
 		allowsManualCapture: false,
@@ -385,7 +385,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'A voucher based payment method for your customers in Portugal.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/multibanco.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/multibanco-color.svg' ),
 		stripeKey: 'multibanco_payments',
 		currencies: CURRENCIES.eur,
 		allowsManualCapture: false,
@@ -398,7 +398,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Accept payments with Przelewy24 (P24), the most popular payment method in Poland.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/p24.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/p24-color.svg' ),
 		stripeKey: 'p24_payments',
 		currencies: CURRENCIES.p24,
 		allowsManualCapture: false,
@@ -411,7 +411,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Reach 500 million customers and over 20 million businesses across the European Union.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/sepa-debit.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/sepa-debit-color.svg' ),
 		stripeKey: 'sepa_debit_payments',
 		currencies: CURRENCIES.eur,
 		allowsManualCapture: false,
@@ -424,7 +424,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Accept secure bank transfers from Austria, Belgium, Germany, Italy, Netherlands, and Spain.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/sofort.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/sofort-color.svg' ),
 		stripeKey: 'sofort_payments',
 		currencies: CURRENCIES.eur,
 		allowsManualCapture: false,
@@ -450,7 +450,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Allow customers to pay over time with Affirm.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/affirm-badge.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/affirm-badge-color.svg' ),
 		stripeKey: 'affirm_payments',
 		currencies: CURRENCIES.affirm,
 		allowsManualCapture: false,
@@ -463,7 +463,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 			'Allow customers to pay over time or pay now with Klarna.',
 			'woocommerce'
 		),
-		iconUrl: assetUrl( 'images/payment-methods/klarna.svg' ),
+		iconUrl: assetUrl( 'images/payment-methods/klarna-color.svg' ),
 		stripeKey: 'klarna_payments',
 		currencies: CURRENCIES.klarna,
 		allowsManualCapture: false,

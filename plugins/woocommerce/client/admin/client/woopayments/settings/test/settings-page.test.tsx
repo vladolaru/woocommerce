@@ -3036,7 +3036,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		} );
 		expect( items[ 4 ].querySelector( 'img' ) ).toHaveAttribute(
 			'src',
-			'images/payment-methods/amazon-pay.svg'
+			'images/payment-methods/amazon-pay-color.svg'
 		);
 	} );
 

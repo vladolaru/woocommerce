@@ -21,23 +21,23 @@ export const EXPRESS_CHECKOUT_METHOD_ICONS: Record<
 	payment_request: [
 		{
 			alt: 'Apple Pay',
-			src: assetUrl( 'images/cards/apple-pay.svg' ),
+			src: assetUrl( 'images/payment-methods/apple-pay-color.svg' ),
 		},
 		{
 			alt: 'Google Pay',
-			src: assetUrl( 'images/cards/google-pay.svg' ),
+			src: assetUrl( 'images/payment-methods/google-pay-color.svg' ),
 		},
 	],
 	amazon_pay: [
 		{
 			alt: 'Amazon Pay',
-			src: assetUrl( 'images/payment-methods/amazon-pay.svg' ),
+			src: assetUrl( 'images/payment-methods/amazon-pay-color.svg' ),
 		},
 	],
 	link: [
 		{
 			alt: 'Link',
-			src: assetUrl( 'images/payment-methods/link.svg' ),
+			src: assetUrl( 'images/payment-methods/link-color.svg' ),
 		},
 	],
 };

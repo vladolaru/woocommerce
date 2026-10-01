@@ -227,7 +227,7 @@ class WooPaymentsPaymentMethodRegistry {
 				),
 				'icon'                       => 'assets/images/payment-methods/affirm-logo.svg',
 				'dark_icon'                  => 'assets/images/payment-methods/affirm-logo-dark.svg',
-				'settings_icon'              => 'assets/images/payment-methods/affirm-badge.svg',
+				'settings_icon'              => 'assets/images/payment-methods/affirm-badge-color.svg',
 				'limits'                     => array(
 					'CAD' => array(
 						'CA' => array(
@@ -266,20 +266,20 @@ class WooPaymentsPaymentMethodRegistry {
 					self::REFUNDS,
 					self::DOMESTIC_TRANSACTIONS_ONLY,
 				),
-				'icon'                       => 'assets/images/payment-methods/afterpay-badge.svg',
-				'dark_icon'                  => 'assets/images/payment-methods/afterpay-badge.svg',
+				'icon'                       => 'assets/images/payment-methods/afterpay-badge-color.svg',
+				'dark_icon'                  => 'assets/images/payment-methods/afterpay-badge-color.svg',
 				'settings_icon'              => 'assets/images/payment-methods/afterpay-logo.svg',
 				'icons_by_country'           => array(
 					'US' => 'assets/images/payment-methods/afterpay-cashapp-logo.svg',
-					'GB' => 'assets/images/payment-methods/clearpay.svg',
+					'GB' => 'assets/images/payment-methods/clearpay-icon.svg',
 				),
 				'dark_icons_by_country'      => array(
 					'US' => 'assets/images/payment-methods/afterpay-cashapp-logo-dark.svg',
-					'GB' => 'assets/images/payment-methods/clearpay.svg',
+					'GB' => 'assets/images/payment-methods/clearpay-icon.svg',
 				),
 				'settings_icons_by_country'  => array(
 					'US' => 'assets/images/payment-methods/afterpay-cashapp-badge.svg',
-					'GB' => 'assets/images/payment-methods/clearpay.svg',
+					'GB' => 'assets/images/payment-methods/clearpay-icon.svg',
 				),
 				'limits'                     => array(
 					'AUD' => array(
@@ -345,7 +345,7 @@ class WooPaymentsPaymentMethodRegistry {
 					self::REFUNDS,
 					self::MULTI_CURRENCY,
 				),
-				'icon'                       => 'assets/images/payment-methods/alipay-logo.svg',
+				'icon'                       => 'assets/images/payment-methods/alipay-logo-color.svg',
 			),
 			array(
 				'id'                         => 'bancontact',
@@ -357,7 +357,7 @@ class WooPaymentsPaymentMethodRegistry {
 				'currencies'                 => array( 'EUR' ),
 				'countries'                  => array( 'BE' ),
 				'capabilities'               => array( self::REFUNDS ),
-				'icon'                       => 'assets/images/payment-methods/bancontact.svg',
+				'icon'                       => 'assets/images/payment-methods/bancontact-color.svg',
 			),
 			array(
 				'id'                         => 'au_becs_debit',
@@ -369,7 +369,7 @@ class WooPaymentsPaymentMethodRegistry {
 				'currencies'                 => array( 'AUD' ),
 				'countries'                  => array( 'AU' ),
 				'capabilities'               => array( self::REFUNDS ),
-				'icon'                       => 'assets/images/payment-methods/bank-debit.svg',
+				'icon'                       => 'assets/images/payment-methods/bank-debit-color.svg',
 			),
 			array(
 				'id'                         => 'eps',
@@ -397,7 +397,7 @@ class WooPaymentsPaymentMethodRegistry {
 					self::REFUNDS,
 					self::DOMESTIC_TRANSACTIONS_ONLY,
 				),
-				'icon'                       => 'assets/images/payment-methods/grabpay.svg',
+				'icon'                       => 'assets/images/payment-methods/grabpay-color.svg',
 			),
 			array(
 				'id'                         => 'ideal',
@@ -410,7 +410,7 @@ class WooPaymentsPaymentMethodRegistry {
 				'countries'                  => array( 'NL' ),
 				'capabilities'               => array( self::REFUNDS ),
 				'icon'                       => 'assets/images/payment-methods/ideal.svg',
-				'dark_icon'                  => 'assets/images/payment-methods/ideal-dark.svg',
+				'dark_icon'                  => 'assets/images/payment-methods/ideal-dark-color.svg',
 				// Client 11.1.0 IdealDefinition::get_settings_icon_url() is its iDEAL | Wero tile; core ships it as ideal-wero.svg.
 				'settings_icon'              => 'assets/images/payment-methods/ideal-wero.svg',
 			),
@@ -428,7 +428,7 @@ class WooPaymentsPaymentMethodRegistry {
 					self::REFUNDS,
 					self::TOKENIZATION,
 				),
-				'icon'                       => 'assets/images/payment-methods/link.svg',
+				'icon'                       => 'assets/images/payment-methods/link-color.svg',
 			),
 			array(
 				'id'                         => 'multibanco',
@@ -442,7 +442,7 @@ class WooPaymentsPaymentMethodRegistry {
 				'capabilities'               => array( self::REFUNDS ),
 				'icon'                       => 'assets/images/payment-methods/multibanco-logo.svg',
 				'dark_icon'                  => 'assets/images/payment-methods/multibanco-logo-dark.svg',
-				'settings_icon'              => 'assets/images/payment-methods/multibanco.svg',
+				'settings_icon'              => 'assets/images/payment-methods/multibanco-color.svg',
 			),
 			array(
 				'id'                         => 'klarna',
@@ -460,7 +460,7 @@ class WooPaymentsPaymentMethodRegistry {
 					self::DOMESTIC_TRANSACTIONS_ONLY,
 				),
 				'icon'                       => 'assets/images/payment-methods/klarna-pill.svg',
-				'settings_icon'              => 'assets/images/payment-methods/klarna.svg',
+				'settings_icon'              => 'assets/images/payment-methods/klarna-color.svg',
 				'limits'                     => array(
 					'USD' => array(
 						'US' => array(
@@ -542,7 +542,7 @@ class WooPaymentsPaymentMethodRegistry {
 				'currencies'                 => array( 'EUR', 'PLN' ),
 				'countries'                  => array( 'PL' ),
 				'capabilities'               => array( self::REFUNDS ),
-				'icon'                       => 'assets/images/payment-methods/p24.svg',
+				'icon'                       => 'assets/images/payment-methods/p24-color.svg',
 			),
 			array(
 				'id'                         => 'sepa_debit',
@@ -554,7 +554,7 @@ class WooPaymentsPaymentMethodRegistry {
 				'currencies'                 => array( 'EUR' ),
 				'countries'                  => array( 'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', 'CH', 'GB', 'SM', 'VA', 'AD', 'MC', 'LI', 'NO', 'IS' ),
 				'capabilities'               => array( self::REFUNDS ),
-				'icon'                       => 'assets/images/payment-methods/sepa-debit.svg',
+				'icon'                       => 'assets/images/payment-methods/sepa-debit-color.svg',
 			),
 			array(
 				'id'                         => 'wechat_pay',
@@ -608,7 +608,7 @@ class WooPaymentsPaymentMethodRegistry {
 					self::CAPTURE_LATER,
 					self::EXPRESS_CHECKOUT,
 				),
-				'icon'                       => 'assets/images/cards/apple-pay.svg',
+				'icon'                       => 'assets/images/payment-methods/apple-pay-color.svg',
 			),
 			array(
 				'id'                         => 'google_pay',
@@ -627,7 +627,7 @@ class WooPaymentsPaymentMethodRegistry {
 					self::CAPTURE_LATER,
 					self::EXPRESS_CHECKOUT,
 				),
-				'icon'                       => 'assets/images/cards/google-pay.svg',
+				'icon'                       => 'assets/images/payment-methods/google-pay-color.svg',
 			),
 			array(
 				'id'                         => 'amazon_pay',
@@ -649,7 +649,7 @@ class WooPaymentsPaymentMethodRegistry {
 					self::CAPTURE_LATER,
 					self::EXPRESS_CHECKOUT,
 				),
-				'icon'                       => 'assets/images/payment-methods/amazon-pay.svg',
+				'icon'                       => 'assets/images/payment-methods/amazon-pay-color.svg',
 			),
 		);
 	}

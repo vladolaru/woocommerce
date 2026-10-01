@@ -178,7 +178,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( '<div class="wc-payment-gateway-method-name-woopay-wrapper">', $output );
 		$this->assertStringContainsString( 'Paid with', $output );
-		$this->assertStringContainsString( '<img alt="WooPay" src="' . esc_url_raw( WC()->plugin_url() . '/assets/images/payment-methods/woo-short.svg' ) . '">', $output );
+		$this->assertStringContainsString( '<img alt="WooPay" src="' . esc_url_raw( WC()->plugin_url() . '/assets/images/payment-methods/woo-short-color.svg' ) . '">', $output );
 		$this->assertMatchesRegularExpression( '/Card ending in\s+4242/', $output );
 
 		$plain = $this->create_order();

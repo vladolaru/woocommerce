@@ -223,13 +223,13 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @var array<string,string>
 	 */
 	private const CARD_BRAND_ICON_ASSETS = array(
-		'visa'             => 'payment-methods-cards/visa.svg',
-		'mastercard'       => 'payment-methods-cards/mastercard.svg',
-		'amex'             => 'payment-methods-cards/amex.svg',
-		'discover'         => 'payment-methods-cards/discover.svg',
-		'jcb'              => 'woopayments-card-brands/jcb.svg',
-		'unionpay'         => 'woopayments-card-brands/unionpay.svg',
-		'cartes_bancaires' => 'payment-methods-cards/cartes_bancaires.svg',
+		'visa'             => 'payment-methods/visa-color.svg',
+		'mastercard'       => 'payment-methods/mastercard-color.svg',
+		'amex'             => 'payment-methods/amex-color.svg',
+		'discover'         => 'payment-methods/discover-color.svg',
+		'jcb'              => 'payment-methods/jcb-icon-color.svg',
+		'unionpay'         => 'payment-methods/unionpay-color.svg',
+		'cartes_bancaires' => 'payment-methods/cartes_bancaires-color.svg',
 	);
 
 	/**

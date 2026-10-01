@@ -163,7 +163,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 		?>
 		<div class="wc-payment-gateway-method-name-woopay-wrapper">
 			<?php esc_html_e( 'Paid with', 'woocommerce' ); ?>
-			<img alt="WooPay" src="<?php echo esc_url_raw( WC()->plugin_url() . '/assets/images/payment-methods/woo-short.svg' ); ?>">
+			<img alt="WooPay" src="<?php echo esc_url_raw( WC()->plugin_url() . '/assets/images/payment-methods/woo-short-color.svg' ); ?>">
 			<?php
 			if ( '' !== $last4 ) {
 				esc_html_e( 'Card ending in', 'woocommerce' );

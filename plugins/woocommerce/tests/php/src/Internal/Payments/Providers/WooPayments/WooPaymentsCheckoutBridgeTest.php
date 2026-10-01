@@ -711,7 +711,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $config['paymentMethodsConfig']['card']['forceNetworkSavedCards'] );
 		$this->assertSame( 'visa', $config['paymentMethodsConfig']['card']['cardBrandIcons'][0]['id'] );
 		$this->assertSame( 'Visa', $config['paymentMethodsConfig']['card']['cardBrandIcons'][0]['alt'] );
-		$this->assertStringContainsString( '/assets/images/payment-methods-cards/visa.svg', $config['paymentMethodsConfig']['card']['cardBrandIcons'][0]['src'] );
+		$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $config['paymentMethodsConfig']['card']['cardBrandIcons'][0]['src'] );
 		$this->assertStringContainsString( '4000 0064 2000 0001', $config['paymentMethodsConfig']['card']['testingInstructions'] );
 		$this->assertStringContainsString( 'js-woopayments-copy-test-number', $config['paymentMethodsConfig']['card']['testingInstructions'] );
 		$this->assertStringContainsString( 'Click to copy the test number to clipboard', $config['paymentMethodsConfig']['card']['testingInstructions'] );
@@ -1025,8 +1025,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID_PREFIX . 'p24', $p24_config['gatewayId'] );
 		$this->assertSame( 'Przelewy24 (P24)', $p24_config['title'] );
-		$this->assertStringEndsWith( '/assets/images/payment-methods/p24.svg', $p24_config['icon'] );
-		$this->assertStringEndsWith( '/assets/images/payment-methods/p24.svg', $p24_config['darkIcon'] );
+		$this->assertStringEndsWith( '/assets/images/payment-methods/p24-color.svg', $p24_config['icon'] );
+		$this->assertStringEndsWith( '/assets/images/payment-methods/p24-color.svg', $p24_config['darkIcon'] );
 		$this->assertSame( array( 'PL' ), $p24_config['countries'] );
 		$this->assertFalse( $p24_config['isReusable'] );
 		$this->assertFalse( $p24_config['isBnpl'] );
@@ -1385,9 +1385,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'FR', $config['storeCountry'] );
 		$this->assertContains( 'cartes_bancaires', array_column( $icons, 'id' ) );
 		$this->assertContains( 'Cartes Bancaires', array_column( $icons, 'alt' ) );
-		$this->assertStringContainsString( '/assets/images/woopayments-card-brands/jcb.svg', $icons[4]['src'] );
-		$this->assertStringContainsString( '/assets/images/woopayments-card-brands/unionpay.svg', $icons[5]['src'] );
-		$this->assertStringContainsString( '/assets/images/payment-methods-cards/cartes_bancaires.svg', $icons[6]['src'] );
+		$this->assertStringContainsString( '/assets/images/payment-methods/jcb-icon-color.svg', $icons[4]['src'] );
+		$this->assertStringContainsString( '/assets/images/payment-methods/unionpay-color.svg', $icons[5]['src'] );
+		$this->assertStringContainsString( '/assets/images/payment-methods/cartes_bancaires-color.svg', $icons[6]['src'] );
 	}
 
 	/**
