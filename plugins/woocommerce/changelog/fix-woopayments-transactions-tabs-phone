@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the WooPayments Transactions, Uncaptured and Blocked tab labels on one line on phones.

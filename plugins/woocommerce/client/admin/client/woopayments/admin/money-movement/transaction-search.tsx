@@ -8,6 +8,7 @@ import { __, sprintf } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { getWooPaymentsTransactionSearch } from './data';
+import { isWooPaymentsSubscriptionsActive } from './transactions-list-fields';
 
 type TransactionSearchOption = {
 	label: string;
@@ -105,10 +106,18 @@ export const WooPaymentsTransactionSearch = ( {
 			autocompleter={ wooPaymentsTransactionSearchCompleter }
 			inlineTags
 			onChange={ handleChange }
-			placeholder={ __(
-				'Search by order number, customer name, or billing email',
-				'woocommerce'
-			) }
+			// Client 11.1.0 `transactions/list/index.tsx:580-588`.
+			placeholder={
+				isWooPaymentsSubscriptionsActive()
+					? __(
+							'Search by order number, subscription number, customer name, or billing email',
+							'woocommerce'
+					  )
+					: __(
+							'Search by order number, customer name, or billing email',
+							'woocommerce'
+					  )
+			}
 			selected={ selected }
 			showClearButton
 			type="custom"

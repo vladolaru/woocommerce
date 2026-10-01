@@ -1553,11 +1553,16 @@ describe( 'WooPayments money movement pages', () => {
 			} );
 			expect( typeHeader ).toHaveAttribute(
 				'data-filter-operators',
-				'is'
+				'is,isNot'
 			);
+			// Client 11.1.0 `transactions/filters/config.ts:134-600`: the columns' Date and Type, then
+			// the filters that are not columns, by their URL arguments.
 			expect(
 				screen.getByTestId( 'money-movement-dataviews' )
-			).toHaveAttribute( 'data-discoverable-filter-fields', 'date,type' );
+			).toHaveAttribute(
+				'data-discoverable-filter-fields',
+				'date,type,customer_country_is,customer_currency_is,source_device_is,source_is,risk_level_is,channel_is'
+			);
 			[ 'Amount', 'Fees', 'Net' ].forEach( ( name ) => {
 				expect(
 					screen.getByRole( 'columnheader', { name } )
@@ -2205,11 +2210,12 @@ describe( 'WooPayments money movement pages', () => {
 				name: 'Capture authorization for order #123',
 			} )
 		).toBeInTheDocument();
+		// Client 11.1.0 `transactions/uncaptured/index.tsx:187-202`: capture is the only row action.
 		expect(
-			screen.getByRole( 'button', {
+			screen.queryByRole( 'button', {
 				name: 'Cancel authorization for order #123',
 			} )
-		).toBeInTheDocument();
+		).not.toBeInTheDocument();
 		// Client 11.1.0 `transactions/uncaptured/index.tsx:166` and
 		// `components/risk-level/index.tsx:18-30`.
 		expect( screen.getByText( '#123 Ada Lovelace' ) ).toBeInTheDocument();
@@ -2739,57 +2745,6 @@ describe( 'WooPayments money movement pages', () => {
 		expect( mockGetAuthorizationsSummary ).toHaveBeenCalledTimes( 3 );
 	} );
 
-	it( 'dispatches an error notice when canceling an authorization fails', async () => {
-		mockGetAuthorizations.mockResolvedValue( {
-			data: [
-				{
-					payment_intent_id: 'pi_auth',
-					order_id: 123,
-					created: '2026-06-12T10:30:00Z',
-					amount: 5000,
-					currency: 'usd',
-				},
-			],
-			total_count: 1,
-		} );
-		mockGetAuthorizationsSummary.mockResolvedValue( {
-			count: 1,
-			total: 5000,
-			currency: 'usd',
-		} );
-		mockCancelAuthorization.mockRejectedValueOnce(
-			new Error( 'Authorization already canceled.' )
-		);
-
-		render(
-			<MemoryRouter
-				initialEntries={ [
-					'/woopayments/transactions?view=uncaptured',
-				] }
-			>
-				<WooPaymentsTransactionsPage />
-			</MemoryRouter>
-		);
-
-		const cancelButton = await screen.findByRole( 'button', {
-			name: 'Cancel authorization for order #123',
-		} );
-
-		await act( async () => {
-			await userEvent.click( cancelButton );
-		} );
-
-		await waitFor( () =>
-			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
-				'Unable to cancel authorization for order #123. Authorization already canceled.'
-			)
-		);
-		expect( mockCancelAuthorization ).toHaveBeenCalledWith(
-			123,
-			'pi_auth'
-		);
-	} );
-
 	it( 'announces loaded disputes and routes actionable rows to transaction details', async () => {
 		mockGetDisputes.mockResolvedValue( {
 			data: [
@@ -2834,11 +2789,12 @@ describe( 'WooPayments money movement pages', () => {
 			'href',
 			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=ch_test'
 		);
+		// The row's info link and its "See details" button.
 		expect(
-			screen.getByRole( 'link', {
-				name: 'View transaction details for Transaction unauthorized dispute dp_closed',
+			screen.getAllByRole( 'link', {
+				name: 'See details for Transaction unauthorized dispute dp_closed',
 			} )
-		).toBeInTheDocument();
+		).toHaveLength( 2 );
 		expect(
 			screen.getAllByText( 'Transaction unauthorized' )
 		).toHaveLength( 2 );
@@ -2863,7 +2819,7 @@ describe( 'WooPayments money movement pages', () => {
 		).toHaveAttribute(
 			'data-visible-fields',
 			// Client 11.1.0: a stored list shows every column it does not hide.
-			'amount,currency,status,reason,source,order,customerName,customerCountry,due_by,action'
+			'details,amount,currency,status,reason,source,order,customerName,customerCountry,due_by,action'
 		);
 		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
 	} );

@@ -14,14 +14,13 @@ import { __, sprintf } from '@wordpress/i18n';
 import { getHistory } from '@woocommerce/navigation';
 import { recordEvent } from '@woocommerce/tracks';
 import moment from 'moment';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 
 /**
  * Internal dependencies
  */
 import {
-	cancelWooPaymentsAuthorization,
 	captureWooPaymentsAuthorization,
 	getWooPaymentsAuthorizations,
 	getWooPaymentsAuthorizationsSummary,
@@ -43,14 +42,14 @@ import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { WooPaymentsBlockedTransactions } from './blocked-transactions';
 import { WooPaymentsTransactionsList } from './transactions-list';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
-import { getRiskLevelLabel } from './transactions-list-fields';
+import { ClickableCell, getRiskLevelLabel } from './transactions-list-fields';
 import {
 	formatExplicitCurrency,
 	formatSiteDateTime,
 	getErrorMessage,
 	getTransactionDetailsRoute,
 } from './utils';
-import { ListNotice, LiveStatusMessage } from './table';
+import { LiveStatusMessage, reportListLoadError } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import {
 	getSettingsPaymentsProviderAdminPath,
@@ -61,11 +60,6 @@ import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 import '../style.scss';
 
 type MoneyMovementSummary = WooPaymentsAuthorizationsSummary;
-type AuthorizationAction = 'capture' | 'cancel';
-type PendingAuthorizationAction = {
-	action: AuthorizationAction;
-	paymentIntentId: string;
-} | null;
 type WorkingMoneyMovementView = {
 	key: string;
 	view: WooPaymentsMoneyMovementDataView;
@@ -156,6 +150,32 @@ const getAuthorizationCaptureBy = ( value?: string | number ) => {
 		: '-';
 };
 
+/**
+ * An uncaptured list cell that opens the payment details.
+ * Client 11.1.0 `transactions/uncaptured/index.tsx:128-130`: every `clickable()` cell.
+ *
+ * @param props          The component props.
+ * @param props.item     The authorization row.
+ * @param props.children The cell content.
+ */
+const AuthorizationCell = ( {
+	item,
+	children,
+}: {
+	item: WooPaymentsAuthorization;
+	children?: ReactNode;
+} ) => (
+	<ClickableCell
+		href={ getSettingsPaymentsProviderRouteUrl(
+			getTransactionDetailsRoute( {
+				payment_intent_id: getAuthorizationPaymentIntentId( item ),
+			} )
+		) }
+	>
+		{ children }
+	</ClickableCell>
+);
+
 const getNotices = () =>
 	dispatch( 'core/notices' ) as unknown as NoticeDispatch;
 
@@ -199,9 +219,11 @@ export const WooPaymentsTransactionsPage = () => {
 	const isMountedRef = useRef( false );
 	const uncapturedCountRequestIdRef = useRef( 0 );
 	const [ isLoading, setIsLoading ] = useState( true );
-	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
-	const [ pendingAuthorizationAction, setPendingAuthorizationAction ] =
-		useState< PendingAuthorizationAction >( null );
+	const [ hasLoadError, setHasLoadError ] = useState( false );
+	// The payment intent whose capture is in flight.
+	const [ pendingCapture, setPendingCapture ] = useState< string | null >(
+		null
+	);
 	const { visibleFields, saveFields } = usePersistedHiddenFields(
 		'wc_payments_transactions_uncaptured_hidden_columns',
 		AUTHORIZATION_FIELDS,
@@ -227,8 +249,6 @@ export const WooPaymentsTransactionsPage = () => {
 		() =>
 			moneyMovementQueryToDataViewsView( resourceQuery, {
 				fields: visibleFields,
-				titleField: 'order',
-				showTitle: false,
 			} ),
 		[ resourceQuery, visibleFields ]
 	);
@@ -260,8 +280,15 @@ export const WooPaymentsTransactionsPage = () => {
 				isMountedRef.current &&
 				requestId === uncapturedCountRequestIdRef.current
 			) {
-				// Keep the active transactions view usable when its count fails.
+				// Keep the active transactions view usable when its count fails. Client 11.1.0
+				// `transactions/index.tsx:65` reads this summary, whose resolver raises the notice.
 				setUncapturedCount( null );
+				reportListLoadError(
+					__(
+						'Error retrieving uncaptured transactions.',
+						'woocommerce'
+					)
+				);
 			}
 		}
 	}, [] );
@@ -298,38 +325,44 @@ export const WooPaymentsTransactionsPage = () => {
 				setIsLoading( true );
 			}
 
-			try {
-				const [ response, nextSummary ] = await Promise.all( [
-					getWooPaymentsAuthorizations( resourceQuery ),
-					getWooPaymentsAuthorizationsSummary( resourceQuery ),
-				] );
+			// Client 11.1.0 `data/authorizations/resolvers.ts:30-125`: the list and its summary load
+			// apart, and each failure raises the same notice.
+			const [ listResult, summaryResult ] = await Promise.allSettled( [
+				getWooPaymentsAuthorizations( resourceQuery ),
+				getWooPaymentsAuthorizationsSummary( resourceQuery ),
+			] );
 
-				if ( canUpdate() ) {
-					setAuthorizations( response.data || [] );
-					setTotalCount(
-						response.total_count ??
-							getSummaryCount( nextSummary ) ??
-							0
-					);
-					setSummary( nextSummary );
-					setErrorMessage( null );
-				}
-			} catch ( error ) {
-				if ( canUpdate() ) {
-					setErrorMessage(
-						getErrorMessage(
-							error,
-							__(
-								'Unable to load WooPayments uncaptured transactions.',
-								'woocommerce'
-							)
+			if ( ! canUpdate() ) {
+				return;
+			}
+
+			[ listResult, summaryResult ].forEach( ( result ) => {
+				if ( result.status === 'rejected' ) {
+					reportListLoadError(
+						__(
+							'Error retrieving uncaptured transactions.',
+							'woocommerce'
 						)
 					);
 				}
-			} finally {
-				if ( setLoading && canUpdate() ) {
-					setIsLoading( false );
-				}
+			} );
+
+			const response =
+				listResult.status === 'fulfilled'
+					? listResult.value
+					: undefined;
+			const nextSummary =
+				summaryResult.status === 'fulfilled' ? summaryResult.value : {};
+
+			setAuthorizations( response?.data || [] );
+			setTotalCount(
+				response?.total_count ?? getSummaryCount( nextSummary ) ?? 0
+			);
+			setSummary( nextSummary );
+			setHasLoadError( listResult.status === 'rejected' );
+
+			if ( setLoading ) {
+				setIsLoading( false );
 			}
 		},
 		[ resourceQuery ]
@@ -381,21 +414,16 @@ export const WooPaymentsTransactionsPage = () => {
 			)
 		);
 	};
-	const handleAuthorizationAction = async (
-		authorization: WooPaymentsAuthorization,
-		action: AuthorizationAction
-	) => {
+	const handleCapture = async ( authorization: WooPaymentsAuthorization ) => {
 		const paymentIntentId =
 			getAuthorizationPaymentIntentId( authorization );
 		const orderId = Number( getAuthorizationOrderId( authorization ) );
 
-		if ( action === 'capture' ) {
-			// Client 11.1.0 `transactions/uncaptured/index.tsx:193-198`.
-			recordEvent(
-				'payments_transactions_uncaptured_list_capture_charge_button_click',
-				{ payment_intent_id: paymentIntentId }
-			);
-		}
+		// Client 11.1.0 `transactions/uncaptured/index.tsx:193-198`.
+		recordEvent(
+			'payments_transactions_uncaptured_list_capture_charge_button_click',
+			{ payment_intent_id: paymentIntentId }
+		);
 
 		if (
 			! paymentIntentId ||
@@ -411,55 +439,27 @@ export const WooPaymentsTransactionsPage = () => {
 			return;
 		}
 
-		setPendingAuthorizationAction( {
-			action,
-			paymentIntentId,
-		} );
+		setPendingCapture( paymentIntentId );
 
 		try {
-			if ( action === 'capture' ) {
-				await captureWooPaymentsAuthorization(
-					orderId,
-					paymentIntentId
-				);
-				await Promise.all( [
-					loadMoneyMovement( { setLoading: false } ),
-					loadUncapturedCount(),
-				] );
-				setPendingAuthorizationAction( null );
-				getNotices().createSuccessNotice(
-					sprintf(
-						/* translators: %s: order ID. */
-						__(
-							'Payment for order #%s captured successfully.',
-							'woocommerce'
-						),
-						String( orderId )
-					)
-				);
-			} else {
-				await cancelWooPaymentsAuthorization(
-					orderId,
-					paymentIntentId
-				);
-				await Promise.all( [
-					loadMoneyMovement( { setLoading: false } ),
-					loadUncapturedCount(),
-				] );
-				setPendingAuthorizationAction( null );
-				getNotices().createSuccessNotice(
-					sprintf(
-						/* translators: %s: order ID. */
-						__(
-							'Payment for order #%s canceled successfully.',
-							'woocommerce'
-						),
-						String( orderId )
-					)
-				);
-			}
+			await captureWooPaymentsAuthorization( orderId, paymentIntentId );
+			await Promise.all( [
+				loadMoneyMovement( { setLoading: false } ),
+				loadUncapturedCount(),
+			] );
+			setPendingCapture( null );
+			getNotices().createSuccessNotice(
+				sprintf(
+					/* translators: %s: order ID. */
+					__(
+						'Payment for order #%s captured successfully.',
+						'woocommerce'
+					),
+					String( orderId )
+				)
+			);
 		} catch ( error ) {
-			setPendingAuthorizationAction( null );
+			setPendingCapture( null );
 			getNotices().createErrorNotice(
 				sprintf(
 					/* translators: 1: action name, 2: order ID, 3: error message. */
@@ -467,7 +467,7 @@ export const WooPaymentsTransactionsPage = () => {
 						'Unable to %1$s authorization for order #%2$s. %3$s',
 						'woocommerce'
 					),
-					action,
+					'capture',
 					String( orderId ),
 					getErrorMessage(
 						error,
@@ -486,15 +486,21 @@ export const WooPaymentsTransactionsPage = () => {
 			id: 'created',
 			label: __( 'Authorized on', 'woocommerce' ),
 			enableHiding: false,
-			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
-				formatSiteDateTime( item.created ),
+			render: ( { item }: { item: WooPaymentsAuthorization } ) => (
+				<AuthorizationCell item={ item }>
+					{ formatSiteDateTime( item.created ) }
+				</AuthorizationCell>
+			),
 		},
 		{
 			id: 'capture_by',
 			label: __( 'Capture by', 'woocommerce' ),
 			enableHiding: false,
-			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
-				getAuthorizationCaptureBy( item.created ),
+			render: ( { item }: { item: WooPaymentsAuthorization } ) => (
+				<AuthorizationCell item={ item }>
+					{ getAuthorizationCaptureBy( item.created ) }
+				</AuthorizationCell>
+			),
 		},
 		{
 			id: 'order',
@@ -544,31 +550,43 @@ export const WooPaymentsTransactionsPage = () => {
 			label: __( 'Risk level', 'woocommerce' ),
 			enableHiding: true,
 			enableSorting: false,
-			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
-				getRiskLevelLabel( item.risk_level ),
+			render: ( { item }: { item: WooPaymentsAuthorization } ) => (
+				<AuthorizationCell item={ item }>
+					{ getRiskLevelLabel( item.risk_level ) }
+				</AuthorizationCell>
+			),
 		},
 		{
 			id: 'amount',
 			label: __( 'Amount', 'woocommerce' ),
 			enableHiding: true,
-			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
-				formatExplicitCurrency( item.amount, item.currency ),
+			render: ( { item }: { item: WooPaymentsAuthorization } ) => (
+				<AuthorizationCell item={ item }>
+					{ formatExplicitCurrency( item.amount, item.currency ) }
+				</AuthorizationCell>
+			),
 		},
 		{
 			id: 'customer_email',
 			label: __( 'Email', 'woocommerce' ),
 			enableHiding: true,
 			enableSorting: false,
-			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
-				item.customer_email || '-',
+			render: ( { item }: { item: WooPaymentsAuthorization } ) => (
+				<AuthorizationCell item={ item }>
+					{ item.customer_email || '' }
+				</AuthorizationCell>
+			),
 		},
 		{
 			id: 'customer_country',
 			label: __( 'Country', 'woocommerce' ),
 			enableHiding: true,
 			enableSorting: false,
-			render: ( { item }: { item: WooPaymentsAuthorization } ) =>
-				item.customer_country || '-',
+			render: ( { item }: { item: WooPaymentsAuthorization } ) => (
+				<AuthorizationCell item={ item }>
+					{ item.customer_country || '' }
+				</AuthorizationCell>
+			),
 		},
 		{
 			id: 'action',
@@ -576,77 +594,40 @@ export const WooPaymentsTransactionsPage = () => {
 			enableHiding: false,
 			enableSorting: false,
 			render: ( { item }: { item: WooPaymentsAuthorization } ) => {
-				const paymentIntentId = getAuthorizationPaymentIntentId( item );
 				const orderId = getAuthorizationOrderId( item );
-				const pending =
-					pendingAuthorizationAction?.paymentIntentId ===
-					paymentIntentId;
-				const pendingAction = pending
-					? pendingAuthorizationAction?.action
-					: null;
+				const isCapturing =
+					pendingCapture === getAuthorizationPaymentIntentId( item );
 
+				// Client 11.1.0 `components/capture-authorization-button`: one secondary "Capture".
 				return (
-					<div className="woocommerce-woopayments-money-movement__row-actions">
-						<Button
-							variant="primary"
-							isBusy={ pendingAction === 'capture' }
-							disabled={ pending }
-							onClick={ () =>
-								handleAuthorizationAction( item, 'capture' )
-							}
-							aria-label={
-								pendingAction === 'capture'
-									? sprintf(
-											/* translators: %s: order ID. */
-											__(
-												'Capturing authorization for order #%s',
-												'woocommerce'
-											),
-											orderId
-									  )
-									: sprintf(
-											/* translators: %s: order ID. */
-											__(
-												'Capture authorization for order #%s',
-												'woocommerce'
-											),
-											orderId
-									  )
-							}
-						>
-							{ __( 'Capture', 'woocommerce' ) }
-						</Button>
-						<Button
-							variant="secondary"
-							isDestructive
-							isBusy={ pendingAction === 'cancel' }
-							disabled={ pending }
-							onClick={ () =>
-								handleAuthorizationAction( item, 'cancel' )
-							}
-							aria-label={
-								pendingAction === 'cancel'
-									? sprintf(
-											/* translators: %s: order ID. */
-											__(
-												'Canceling authorization for order #%s',
-												'woocommerce'
-											),
-											orderId
-									  )
-									: sprintf(
-											/* translators: %s: order ID. */
-											__(
-												'Cancel authorization for order #%s',
-												'woocommerce'
-											),
-											orderId
-									  )
-							}
-						>
-							{ __( 'Cancel', 'woocommerce' ) }
-						</Button>
-					</div>
+					<Button
+						variant="secondary"
+						__next40pxDefaultSize
+						isBusy={ isCapturing }
+						disabled={ isCapturing }
+						onClick={ () => handleCapture( item ) }
+						aria-label={
+							isCapturing
+								? sprintf(
+										/* translators: %s: order ID. */
+										__(
+											'Capturing authorization for order #%s',
+											'woocommerce'
+										),
+										orderId
+								  )
+								: sprintf(
+										/* translators: %s: order ID. */
+										__(
+											'Capture authorization for order #%s',
+											'woocommerce'
+										),
+										orderId
+								  )
+						}
+					>
+						{ __( 'Capture', 'woocommerce' ) }
+					</Button>
 				);
 			},
 		},
@@ -665,8 +646,9 @@ export const WooPaymentsTransactionsPage = () => {
 		'woocommerce'
 	);
 
-	if ( errorMessage ) {
-		liveStatusMessage = errorMessage;
+	if ( hasLoadError ) {
+		// The error notice announces itself.
+		liveStatusMessage = '';
 	} else if ( isLoading ) {
 		liveStatusMessage = loadingMessage;
 	} else if ( authorizations.length === 0 ) {
@@ -788,14 +770,7 @@ export const WooPaymentsTransactionsPage = () => {
 			<SpotlightPromotion />
 			{ renderTabs(
 				<section aria-busy={ isLoading }>
-					<LiveStatusMessage isError={ !! errorMessage }>
-						{ liveStatusMessage }
-					</LiveStatusMessage>
-					{ errorMessage && (
-						<ListNotice isError isSpoken={ false }>
-							{ errorMessage }
-						</ListNotice>
-					) }
+					<LiveStatusMessage>{ liveStatusMessage }</LiveStatusMessage>
 					<WooPaymentsMoneyMovementDataViews
 						fields={ isLoading ? [] : authorizationFields }
 						rows={ authorizations }
@@ -813,7 +788,6 @@ export const WooPaymentsTransactionsPage = () => {
 						summary={ summaryItems }
 						// Client 11.1.0 `transactions/uncaptured/index.tsx:81-86`.
 						numericFields={ [ 'amount' ] }
-						empty={ emptyMessage }
 						getItemId={ getAuthorizationPaymentIntentId }
 					/>
 				</section>

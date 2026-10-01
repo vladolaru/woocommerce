@@ -10,6 +10,7 @@ import {
 	waitFor,
 	within,
 } from '@testing-library/react';
+import { recordEvent } from '@woocommerce/tracks';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -55,6 +56,24 @@ jest.mock( '@woocommerce/data', () => ( {
 			.requireActual( './helpers/user-preferences' )
 			.useMockUserPreferences(),
 } ) );
+
+const mockCreateErrorNotice = jest.fn();
+
+// Records the list's notices; other stores keep the real dispatch.
+jest.mock( '@wordpress/data', () => {
+	const actual = jest.requireActual( '@wordpress/data' );
+
+	return {
+		...actual,
+		dispatch: ( store: string ) =>
+			store === 'core/notices'
+				? {
+						createErrorNotice: ( message: string ) =>
+							mockCreateErrorNotice( message ),
+				  }
+				: actual.dispatch( store ),
+	};
+} );
 
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
@@ -145,8 +164,9 @@ const RECORDED = JSON.parse(
 ).response.data as Array< Record< string, unknown > >;
 const [ DUE, PAST_DUE, WON ] = RECORDED;
 
-// Client 11.1.0 `disputes/index.tsx:50-148`, in order, without the info-button column.
+// Client 11.1.0 `disputes/index.tsx:50-148`, in order; the info-button column is named for menus.
 const CLIENT_COLUMNS = [
+	[ 'details', 'Details' ],
 	[ 'amount', 'Amount' ],
 	[ 'currency', 'Currency' ],
 	[ 'status', 'Status' ],
@@ -162,6 +182,7 @@ const CLIENT_COLUMNS = [
 ];
 // The client's `required: true` columns.
 const REQUIRED = [
+	'details',
 	'amount',
 	'currency',
 	'status',
@@ -231,7 +252,7 @@ describe( 'WooPayments disputes list columns', () => {
 		await screen.findByText( 'Disputes loaded.' );
 		expect( screen.getByTestId( 'disputes-dataviews' ) ).toHaveAttribute(
 			'data-visible-fields',
-			'amount,status,reason,source,order,customerName,due_by,action'
+			'details,amount,status,reason,source,order,customerName,due_by,action'
 		);
 	} );
 
@@ -283,18 +304,111 @@ describe( 'WooPayments disputes list columns', () => {
 		expect(
 			within( getCell( pastDue, 'customerName' ) ).queryByRole( 'link' )
 		).not.toBeInTheDocument();
+		// Client 11.1.0 `disputes/index.tsx:300-322`: an unknown customer detail is left empty.
 		expect( getCell( pastDue, 'customerCountry' ) ).toHaveTextContent(
-			'-'
+			/^$/
 		);
 		expect( getCell( pastDue, 'due_by' ) ).toHaveTextContent( /^$/ );
 
 		const won = WON.dispute_id;
-		expect( getCell( won, 'order' ) ).toHaveTextContent( '–' );
+		// Client 11.1.0 `components/order-link`: an en dash without an order, and nothing else.
+		expect( getCell( won, 'order' ) ).toHaveTextContent( /^–$/ );
+		expect( getCell( won, 'customerName' ) ).toHaveTextContent( /^$/ );
+		expect( getCell( won, 'customerEmail' ) ).toHaveTextContent( /^$/ );
+		expect( getCell( won, 'customerCountry' ) ).toHaveTextContent( /^$/ );
 		expect( getCell( won, 'status' ) ).toHaveTextContent( 'Won' );
 		expect(
 			within( getCell( won, 'status' ) ).getByText( 'Won' )
 		).toHaveClass( 'woocommerce-status-badge--success' );
 		expect( getCell( won, 'due_by' ) ).toHaveTextContent( /^$/ );
+	} );
+
+	it( 'opens the payment details from the info link and every clickable cell, like the client', async () => {
+		setMockUserPreferences( { wc_payments_disputes_hidden_columns: [] } );
+		renderPage();
+		await screen.findByText( 'Disputes loaded.' );
+
+		const due = DUE.dispute_id;
+		// Client 11.1.0 `components/details-link`: the row's first cell, an info icon link.
+		const info = within( getCell( due, 'details' ) ).getByRole( 'link', {
+			name: `See details for Transaction unauthorized dispute ${ due }`,
+		} );
+		expect( info ).toHaveAttribute(
+			'href',
+			expect.stringContaining(
+				`path=%2Fwoopayments%2Ftransactions%2Fdetails&id=${ DUE.charge_id }`
+			)
+		);
+		const detailsHref = info.getAttribute( 'href' );
+
+		// Client 11.1.0 `disputes/index.tsx:255-323`: the `clickable()` cells, out of the tab order.
+		[
+			'amount',
+			'currency',
+			'status',
+			'reason',
+			'source',
+			'customerEmail',
+			'customerCountry',
+			'created',
+			'due_by',
+		].forEach( ( field ) => {
+			const link = within( getCell( due, field ) ).getByRole( 'link' );
+
+			expect( link ).toHaveAttribute( 'href', detailsHref );
+			expect( link ).toHaveAttribute( 'tabindex', '-1' );
+		} );
+		// A cell with nothing to show has nothing to click.
+		expect(
+			within( getCell( WON.dispute_id, 'customerEmail' ) ).queryByRole(
+				'link'
+			)
+		).not.toBeInTheDocument();
+
+		fireEvent.click(
+			within( getCell( due, 'amount' ) ).getByRole( 'link' )
+		);
+		expect( recordEvent ).toHaveBeenLastCalledWith(
+			'wcpay_disputes_row_action_click',
+			{
+				dispute_id: due,
+				dispute_status: DUE.status,
+				dispute_reason: DUE.reason,
+			}
+		);
+	} );
+
+	it( "offers the client's Respond and See details buttons and records its row click", async () => {
+		renderPage();
+		await screen.findByText( 'Disputes loaded.' );
+
+		// Client 11.1.0 `disputes/index.tsx:324-338`: a secondary "Respond" while a response is due,
+		// a tertiary "See details" otherwise, both opening the payment details.
+		const respond = within( getCell( DUE.dispute_id, 'action' ) ).getByRole(
+			'link'
+		);
+		expect( respond ).toHaveTextContent( /^Respond$/ );
+		expect( respond ).toHaveClass( 'components-button', 'is-secondary' );
+		expect( respond ).toHaveAttribute(
+			'href',
+			expect.stringContaining( `id=${ DUE.charge_id }` )
+		);
+		const details = within( getCell( WON.dispute_id, 'action' ) ).getByRole(
+			'link'
+		);
+		expect( details ).toHaveTextContent( /^See details$/ );
+		expect( details ).toHaveClass( 'components-button', 'is-tertiary' );
+
+		// Client 11.1.0 `disputes/index.tsx:217-238` `onClickDisputeRow`.
+		fireEvent.click( respond );
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_disputes_row_action_click',
+			{
+				dispute_id: DUE.dispute_id,
+				dispute_status: DUE.status,
+				dispute_reason: DUE.reason,
+			}
+		);
 	} );
 
 	it( "shows the client's card toolbar: the title and Export only with rows, and no search", async () => {
@@ -319,7 +433,7 @@ describe( 'WooPayments disputes list columns', () => {
 		).toEqual( [ '3disputes' ] );
 	} );
 
-	it( 'shows a load failure in a core error notice and no second loading line', async () => {
+	it( 'shows no second loading line, and no raw server message after a failure', async () => {
 		mockGetDisputes.mockRejectedValue(
 			new Error( 'Platform unavailable.' )
 		);
@@ -331,11 +445,18 @@ describe( 'WooPayments disputes list columns', () => {
 			'screen-reader-text'
 		);
 
-		const message = await screen.findByText( 'Platform unavailable.', {
-			selector: '.components-notice__content',
-		} );
-		expect( message.closest( '.components-notice' ) ).toHaveClass(
-			'is-error'
+		// Client 11.1.0 `data/disputes/resolvers.js:91-96`: the failure is the client's snackbar
+		// (see `money-movement-lists-dataviews.test.tsx`), never the server's own words.
+		await waitFor( () =>
+			expect(
+				screen.queryByText( 'Loading disputes…' )
+			).not.toBeInTheDocument()
+		);
+		expect(
+			screen.queryByText( 'Platform unavailable.' )
+		).not.toBeInTheDocument();
+		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+			'Error retrieving disputes.'
 		);
 	} );
 

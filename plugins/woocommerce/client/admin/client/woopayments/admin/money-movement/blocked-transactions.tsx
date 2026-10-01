@@ -173,8 +173,7 @@ export const WooPaymentsBlockedTransactions = () => {
 	const title = __( 'Blocked transactions', 'woocommerce' );
 	const view = moneyMovementQueryToDataViewsView(
 		{ sort: 'created', direction: 'desc', ...query },
-		// Without `showTitle: false` DataViews adds a second Date / Time column.
-		{ fields: visibleFields, titleField: 'created', showTitle: false }
+		{ fields: visibleFields }
 	);
 	const columnsToDisplay = COLUMNS.filter(
 		( { key } ) => view.fields?.includes( key )
@@ -396,7 +395,6 @@ export const WooPaymentsBlockedTransactions = () => {
 				// Client 11.1.0 `transactions/blocked/columns.tsx:42-47`.
 				numericFields={ [ 'amount' ] }
 				// Client 11.1.0 uses TableCard, whose empty text this is.
-				empty={ __( 'No data to display', 'woocommerce' ) }
 				getItemId={ ( item ) =>
 					item.payment_intent?.id || String( item.order_id )
 				}

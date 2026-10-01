@@ -1,9 +1,11 @@
 /**
  * External dependencies
  */
+import { Button } from '@wordpress/components';
 import { useEffect, useMemo, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
+import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 
 /**
@@ -56,8 +58,19 @@ import {
 	getErrorMessage,
 	getTransactionDetailsRoute,
 } from './utils';
-import { OrderLink, PaymentSource } from './transactions-list-fields';
-import { ExportButton, ListNotice, LiveStatusMessage } from './table';
+import {
+	ClickableCell,
+	DETAILS_FIELD_BASE,
+	DetailsLink,
+	OrderLink,
+	PaymentSource,
+} from './transactions-list-fields';
+import {
+	ExportButton,
+	ListNotice,
+	LiveStatusMessage,
+	reportListLoadError,
+} from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import {
 	getSettingsPaymentsProviderRouteUrl,
@@ -85,8 +98,9 @@ type WooPaymentsDisputeListRow = WooPaymentsDispute & {
 	order?: WooPaymentsPaymentOrder | null;
 };
 
-// Client 11.1.0 `disputes/index.tsx:50-148`, in order; its info-button `details` column is the row link here.
+// Client 11.1.0 `disputes/index.tsx:50-148`, in order.
 const DISPUTE_FIELDS = [
+	'details',
 	'amount',
 	'currency',
 	'status',
@@ -231,6 +245,39 @@ export const getDisputeRespondBy = (
 	return formatSiteDateTime( dueBy.toISOString() );
 };
 
+// Client 11.1.0 `disputes/index.tsx:217-238` `onClickDisputeRow`: the Tracks event of a row click.
+const recordDisputeRowClick = ( dispute: WooPaymentsDisputeListRow ) =>
+	recordEvent( 'wcpay_disputes_row_action_click', {
+		dispute_id: getDisputeId( dispute ),
+		dispute_status: dispute.status,
+		dispute_reason: dispute.reason,
+	} );
+
+/**
+ * A disputes list cell that opens the payment details.
+ * Client 11.1.0 `disputes/index.tsx:212-238`: every `clickable()` cell and its row click event.
+ *
+ * @param props          The component props.
+ * @param props.item     The dispute row.
+ * @param props.children The cell content.
+ */
+const DisputeCell = ( {
+	item,
+	children,
+}: {
+	item: WooPaymentsDisputeListRow;
+	children?: ReactNode;
+} ) => (
+	<ClickableCell
+		href={ getSettingsPaymentsProviderRouteUrl(
+			getTransactionDetailsRoute( item )
+		) }
+		onClick={ () => recordDisputeRowClick( item ) }
+	>
+		{ children }
+	</ClickableCell>
+);
+
 type ExportMessage = {
 	text: string;
 	isError?: boolean;
@@ -249,7 +296,7 @@ export const WooPaymentsDisputesPage = () => {
 	const [ totalCount, setTotalCount ] = useState( 0 );
 	const [ summary, setSummary ] = useState< DisputesSummary >( {} );
 	const [ isLoading, setIsLoading ] = useState( true );
-	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
+	const [ hasLoadError, setHasLoadError ] = useState( false );
 	const [ exportMessage, setExportMessage ] =
 		useState< ExportMessage | null >( null );
 	const [ isExporting, setIsExporting ] = useState( false );
@@ -284,8 +331,6 @@ export const WooPaymentsDisputesPage = () => {
 		() =>
 			moneyMovementQueryToDataViewsView( query, {
 				fields: visibleFields,
-				titleField: 'reason',
-				showTitle: false,
 				dateField: 'created',
 			} ),
 		[ query, visibleFields ]
@@ -293,19 +338,44 @@ export const WooPaymentsDisputesPage = () => {
 	const fields = useMemo(
 		() => [
 			{
+				...DETAILS_FIELD_BASE,
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
+					<DetailsLink
+						href={ getSettingsPaymentsProviderRouteUrl(
+							getTransactionDetailsRoute( item )
+						) }
+						label={ sprintf(
+							/* translators: 1: dispute reason, 2: dispute ID. */
+							__(
+								'See details for %1$s dispute %2$s',
+								'woocommerce'
+							),
+							formatDisputeReasonLabel( item.reason ),
+							getDisputeId( item )
+						) }
+					/>
+				),
+			},
+			{
 				id: 'amount',
 				label: __( 'Amount', 'woocommerce' ),
 				enableHiding: false,
-				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					formatExplicitCurrency( item.amount, item.currency ),
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
+					<DisputeCell item={ item }>
+						{ formatExplicitCurrency( item.amount, item.currency ) }
+					</DisputeCell>
+				),
 			},
 			{
 				id: 'currency',
 				label: __( 'Currency', 'woocommerce' ),
 				enableHiding: false,
 				enableSorting: false,
-				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					item.currency || '-',
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
+					<DisputeCell item={ item }>
+						{ item.currency || '' }
+					</DisputeCell>
+				),
 			},
 			{
 				id: 'status',
@@ -321,16 +391,19 @@ export const WooPaymentsDisputesPage = () => {
 					  }
 					: ( false as const ),
 				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
-					<StatusChip
-						message={
-							DISPUTE_STATUS_LABELS[ item.status || '' ] ||
-							formatLabel( item.status )
-						}
-						type={
-							DISPUTE_STATUS_CHIP_TYPES[ item.status || '' ] ||
-							'info'
-						}
-					/>
+					<DisputeCell item={ item }>
+						<StatusChip
+							message={
+								DISPUTE_STATUS_LABELS[ item.status || '' ] ||
+								formatLabel( item.status )
+							}
+							type={
+								DISPUTE_STATUS_CHIP_TYPES[
+									item.status || ''
+								] || 'info'
+							}
+						/>
+					</DisputeCell>
 				),
 			},
 			{
@@ -338,8 +411,11 @@ export const WooPaymentsDisputesPage = () => {
 				label: __( 'Reason', 'woocommerce' ),
 				enableHiding: false,
 				enableSorting: false,
-				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					formatDisputeReasonLabel( item.reason ),
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
+					<DisputeCell item={ item }>
+						{ formatDisputeReasonLabel( item.reason ) }
+					</DisputeCell>
+				),
 			},
 			{
 				id: 'source',
@@ -347,12 +423,15 @@ export const WooPaymentsDisputesPage = () => {
 				enableHiding: false,
 				enableSorting: false,
 				// Client 11.1.0 `disputes/index.tsx:280-290`: the card brand logo.
-				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					item.source ? (
-						<PaymentSource source={ item.source } />
-					) : (
-						'-'
-					),
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
+					<DisputeCell item={ item }>
+						{ item.source ? (
+							<PaymentSource source={ item.source } />
+						) : (
+							''
+						) }
+					</DisputeCell>
+				),
 			},
 			{
 				id: 'order',
@@ -374,22 +453,30 @@ export const WooPaymentsDisputesPage = () => {
 							{ item.customer_name }
 						</a>
 					) : (
-						item.customer_name || '-'
+						<DisputeCell item={ item }>
+							{ item.customer_name || '' }
+						</DisputeCell>
 					),
 			},
 			{
 				id: 'customerEmail',
 				label: __( 'Email', 'woocommerce' ),
 				enableSorting: false,
-				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					item.customer_email || '-',
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
+					<DisputeCell item={ item }>
+						{ item.customer_email || '' }
+					</DisputeCell>
+				),
 			},
 			{
 				id: 'customerCountry',
 				label: __( 'Country', 'woocommerce' ),
 				enableSorting: false,
-				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					item.customer_country || '-',
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
+					<DisputeCell item={ item }>
+						{ item.customer_country || '' }
+					</DisputeCell>
+				),
 			},
 			{
 				id: 'created',
@@ -406,15 +493,21 @@ export const WooPaymentsDisputesPage = () => {
 							isPrimary: true,
 					  }
 					: ( false as const ),
-				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					formatSiteDateTime( item.created || item.date ),
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
+					<DisputeCell item={ item }>
+						{ formatSiteDateTime( item.created || item.date ) }
+					</DisputeCell>
+				),
 			},
 			{
 				id: 'due_by',
 				label: __( 'Respond by', 'woocommerce' ),
 				enableHiding: false,
-				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					getDisputeRespondBy( item ),
+				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
+					<DisputeCell item={ item }>
+						{ getDisputeRespondBy( item ) }
+					</DisputeCell>
+				),
 			},
 			{
 				id: 'action',
@@ -441,34 +534,26 @@ export const WooPaymentsDisputesPage = () => {
 						: sprintf(
 								/* translators: 1: dispute reason, 2: dispute ID. */
 								__(
-									'View transaction details for %1$s dispute %2$s',
+									'See details for %1$s dispute %2$s',
 									'woocommerce'
 								),
 								reasonLabel,
 								id
 						  );
-					const action = isActionable
-						? 'respond_from_transaction_details'
-						: 'view_transaction';
 
+					// Client 11.1.0 `disputes/index.tsx:324-338`: a secondary "Respond" while a response
+					// is due and a tertiary "See details" otherwise.
 					return (
-						<a
+						<Button
+							variant={ isActionable ? 'secondary' : 'tertiary' }
 							href={ rowHref }
 							aria-label={ ariaLabel }
-							onClick={ () =>
-								recordEvent(
-									'wcpay_disputes_row_action_click',
-									{
-										action,
-										dispute_id: id,
-									}
-								)
-							}
+							onClick={ () => recordDisputeRowClick( item ) }
 						>
 							{ isActionable
-								? __( 'Respond now', 'woocommerce' )
+								? __( 'Respond', 'woocommerce' )
 								: __( 'See details', 'woocommerce' ) }
-						</a>
+						</Button>
 					);
 				},
 			},
@@ -488,35 +573,44 @@ export const WooPaymentsDisputesPage = () => {
 		const loadDisputes = async () => {
 			setIsLoading( true );
 
-			try {
-				const [ response, nextSummary ] = await Promise.all( [
-					getWooPaymentsDisputes( apiQuery ),
-					getWooPaymentsDisputesSummary( apiQuery ),
-				] );
+			// Client 11.1.0 `data/disputes/resolvers.js:79-118`: the list and its summary load
+			// apart, and each failure raises its own notice.
+			const [ listResult, summaryResult ] = await Promise.allSettled( [
+				getWooPaymentsDisputes( apiQuery ),
+				getWooPaymentsDisputesSummary( apiQuery ),
+			] );
 
-				if ( isMounted ) {
-					setDisputes( response.data || [] );
-					setTotalCount( response.total_count || 0 );
-					setSummary( nextSummary );
-					setErrorMessage( null );
-				}
-			} catch ( error ) {
-				if ( isMounted ) {
-					setErrorMessage(
-						getErrorMessage(
-							error,
-							__(
-								'Unable to load WooPayments disputes.',
-								'woocommerce'
-							)
-						)
-					);
-				}
-			} finally {
-				if ( isMounted ) {
-					setIsLoading( false );
-				}
+			if ( ! isMounted ) {
+				return;
 			}
+
+			if ( listResult.status === 'rejected' ) {
+				reportListLoadError(
+					__( 'Error retrieving disputes.', 'woocommerce' )
+				);
+			}
+
+			if ( summaryResult.status === 'rejected' ) {
+				reportListLoadError(
+					__(
+						'Error retrieving the summary of disputes.',
+						'woocommerce'
+					)
+				);
+			}
+
+			const response =
+				listResult.status === 'fulfilled'
+					? listResult.value
+					: undefined;
+
+			setDisputes( response?.data || [] );
+			setTotalCount( response?.total_count || 0 );
+			setSummary(
+				summaryResult.status === 'fulfilled' ? summaryResult.value : {}
+			);
+			setHasLoadError( listResult.status === 'rejected' );
+			setIsLoading( false );
 		};
 
 		void loadDisputes();
@@ -605,8 +699,9 @@ export const WooPaymentsDisputesPage = () => {
 	};
 	let liveStatusMessage: string = __( 'Disputes loaded.', 'woocommerce' );
 
-	if ( errorMessage ) {
-		liveStatusMessage = errorMessage;
+	if ( hasLoadError ) {
+		// The error notice announces itself.
+		liveStatusMessage = '';
 	} else if ( isLoading ) {
 		liveStatusMessage = __( 'Loading disputes…', 'woocommerce' );
 	} else if ( disputes.length === 0 ) {
@@ -706,14 +801,7 @@ export const WooPaymentsDisputesPage = () => {
 			<SpotlightPromotion />
 			<WooPaymentsListFilters filters={ listFilters } />
 			<section aria-busy={ isLoading }>
-				<LiveStatusMessage isError={ !! errorMessage }>
-					{ liveStatusMessage }
-				</LiveStatusMessage>
-				{ errorMessage && (
-					<ListNotice isError isSpoken={ false }>
-						{ errorMessage }
-					</ListNotice>
-				) }
+				<LiveStatusMessage>{ liveStatusMessage }</LiveStatusMessage>
 				{ exportMessage && (
 					<ListNotice isError={ !! exportMessage.isError }>
 						{ exportMessage.text }
@@ -733,7 +821,6 @@ export const WooPaymentsDisputesPage = () => {
 					summary={ summaryItems }
 					// Client 11.1.0 `disputes/index.tsx:139-146`: the action column is the numeric one.
 					numericFields={ [ 'action' ] }
-					empty={ __( 'No disputes found.', 'woocommerce' ) }
 					getItemId={ getDisputeId }
 					toolbarActions={
 						// Client 11.1.0 `disputes/index.tsx:370, :539-548`: Export only with rows.

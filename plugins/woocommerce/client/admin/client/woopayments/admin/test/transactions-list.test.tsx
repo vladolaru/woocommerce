@@ -19,6 +19,7 @@ import { MemoryRouter } from 'react-router-dom';
  * Internal dependencies
  */
 import { summaryItem } from './helpers/table-summary';
+import { isStyledBy } from './helpers/compiled-rules';
 import { WooPaymentsTransactionsList } from '../money-movement/transactions-list';
 import {
 	getRiskLevelLabel,
@@ -46,7 +47,15 @@ type MockField = {
 	filterBy?: false | { operators: string[] };
 	render?: ( props: { item: Record< string, unknown > } ) => ReactNode;
 	filterBy?: false | Record< string, unknown >;
+	elements?: Array< { value: string; label: string } >;
 };
+
+type MockViewFilter = { field: string; operator: string; value?: unknown };
+type MockView = { filters?: MockViewFilter[]; [ key: string ]: unknown };
+
+let mockLastFields: MockField[] = [];
+let mockLastView: MockView = {};
+let mockOnChangeView: ( view: MockView ) => void = () => undefined;
 
 jest.mock( '@woocommerce/data', () => ( {
 	useUserPreferences: () =>
@@ -90,6 +99,9 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		const visible = fields.filter( ( field ) =>
 			( view.fields || [] ).includes( field.id )
 		);
+		mockLastFields = fields;
+		mockLastView = view;
+		mockOnChangeView = onChangeView || ( () => undefined );
 
 		return (
 			<div
@@ -470,6 +482,130 @@ describe( 'WooPayments transactions list columns', () => {
 		);
 	} );
 
+	it( 'opens the payment details from every clickable cell, like the client', async () => {
+		setMockUserPreferences( {
+			wc_payments_transactions_hidden_columns: [],
+		} );
+		renderList();
+		await screen.findByText( 'Transactions loaded.' );
+
+		const charge = SUBSCRIPTION_CHARGE.transaction_id;
+		const detailsHref = within( getCell( charge, 'type' ) )
+			.getByRole( 'link' )
+			.getAttribute( 'href' );
+		expect( detailsHref ).toContain(
+			'path=%2Fwoopayments%2Ftransactions%2Fdetails'
+		);
+
+		// Client 11.1.0 `transactions/list/index.tsx:327-339, :445-548`: the `clickable()` cells,
+		// out of the tab order like `components/clickable-cell`.
+		[
+			'transaction_id',
+			'date',
+			'channel',
+			'customer_currency',
+			'customer_amount',
+			'currency',
+			'amount',
+			'fees',
+			'net',
+			'source',
+			'customer_country',
+			'risk_level',
+		].forEach( ( field ) => {
+			const link = within( getCell( charge, field ) ).getByRole( 'link' );
+
+			expect( link ).toHaveAttribute( 'href', detailsHref );
+			expect( link ).toHaveAttribute( 'tabindex', '-1' );
+			expect( link ).toHaveClass(
+				'woocommerce-woopayments-money-movement__clickable-cell'
+			);
+		} );
+		// The order, subscription and customer cells keep their own links.
+		expect(
+			within( getCell( charge, 'order' ) ).getByRole( 'link' )
+		).not.toHaveAttribute( 'href', detailsHref );
+		expect(
+			within( getCell( charge, 'customer_name' ) ).getByRole( 'link' )
+		).not.toHaveAttribute( 'href', detailsHref );
+	} );
+
+	it( 'opens no details from loan disbursement and network cost rows, like the client', () => {
+		const fields = getTransactionListFields( {
+			includeDeposit: true,
+			includeSubscription: false,
+			includeFilters: false,
+		} ) as MockField[];
+		const renderCell = ( id: string, item: Record< string, unknown > ) =>
+			render(
+				<>
+					{ fields
+						.find( ( field ) => field.id === id )
+						?.render?.( { item } ) }
+				</>
+			);
+
+		[
+			{ type: 'financing_payout', charge_id: '' },
+			{ type: 'network_costs', charge_id: '' },
+			{ type: 'financing_paydown', charge_id: '' },
+		].forEach( ( row ) => {
+			const item = {
+				...SUBSCRIPTION_CHARGE,
+				...row,
+				transaction_id: `txn_${ row.type }`,
+			};
+			const { container, unmount } = renderCell( 'amount', item );
+
+			expect( container.querySelector( 'a' ) ).toBeNull();
+			unmount();
+
+			const type = renderCell( 'type', item );
+			expect( type.container.querySelector( 'a' ) ).toBeNull();
+			type.unmount();
+		} );
+	} );
+
+	it( 'shows the conversion icon in grey, centred and spaced before the amount, like the client', async () => {
+		renderList();
+		await screen.findByText( 'Transactions loaded.' );
+
+		const indicator = within(
+			getCell( EUR_PAYMENT.transaction_id, 'amount' )
+		).getByRole( 'img', { name: 'Converted from €10.99' } );
+		const amount = indicator.closest(
+			'.woocommerce-woopayments-money-movement__converted-amount'
+		) as HTMLElement;
+
+		// Client 11.1.0 `transactions/list/style.scss:11-17`: a flex row ending at the cell's end,
+		// the icon `$studio-gray-30` with 6px before the amount.
+		expect(
+			isStyledBy( amount, 'dataviews.scss', 'display', 'flex' )
+		).toBe( true );
+		expect(
+			isStyledBy( amount, 'dataviews.scss', 'align-items', 'center' )
+		).toBe( true );
+		expect(
+			isStyledBy(
+				amount,
+				'dataviews.scss',
+				'justify-content',
+				'flex-end'
+			)
+		).toBe( true );
+		expect(
+			isStyledBy( indicator, 'dataviews.scss', 'fill', '#8c8f94' )
+		).toBe( true );
+		expect(
+			isStyledBy(
+				indicator,
+				'dataviews.scss',
+				'margin-inline-end',
+				'6px'
+			)
+		).toBe( true );
+	} );
+
 	it( "maps the client's channel and risk values", () => {
 		// Client 11.1.0 `utils/charge/index.ts:294-303`; the store records no in-person sale.
 		expect( getTransactionChannelLabel( 'in_person' ) ).toBe( 'In-person' );
@@ -567,6 +703,28 @@ describe( 'WooPayments transactions list columns', () => {
 	} );
 } );
 
+// Client 11.1.0 `transactions/filters/config.ts:134-553`, in the add menu's order; sentence case.
+const ADVANCED_FILTER_LABELS = [
+	'Date',
+	'Type',
+	'Customer country',
+	'Customer currency',
+	'Device type',
+	'Payment method',
+	'Risk level',
+	'Sales channel',
+];
+
+const getFilterLabels = () =>
+	mockLastFields
+		.filter( ( field ) => field.filterBy )
+		.map( ( field ) => String( field.label ) );
+
+const getFilterField = ( label: string ) =>
+	mockLastFields.find(
+		( field ) => field.filterBy && field.label === label
+	) as MockField & { filterBy: { operators: string[] } };
+
 describe( 'WooPayments transactions list Show and currency filters', () => {
 	beforeEach( () => {
 		setMockUserPreferences( {} );
@@ -603,18 +761,19 @@ describe( 'WooPayments transactions list Show and currency filters', () => {
 		);
 		unmount();
 
-		renderList( undefined, '?filter=advanced&type_is=refund' );
+		renderList(
+			undefined,
+			'?filter=advanced&type_is=refund&customer_country_is=BE'
+		);
 		await screen.findByText( 'No transactions found.' );
-		expect(
-			screen.getByTestId( 'transactions-dataviews' )
-		).toHaveAttribute( 'data-filterable-fields', 'date,type' );
+		expect( getFilterLabels() ).toEqual( ADVANCED_FILTER_LABELS );
 
 		// Leaving Advanced filters drops them, as the client's FilterPicker does.
 		fireEvent.change( screen.getByLabelText( 'Show' ), {
 			target: { value: 'all' },
 		} );
 		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
-			expect.not.stringMatching( /type_is|filter=/ )
+			expect.not.stringMatching( /type_is|customer_country_is|filter=/ )
 		);
 	} );
 
@@ -651,6 +810,178 @@ describe( 'WooPayments transactions list Show and currency filters', () => {
 		} );
 		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
 			expect.not.stringContaining( 'match=' )
+		);
+	} );
+
+	it( "offers the client's advanced filters with its choices", async () => {
+		window.wcSettings = {
+			...window.wcSettings,
+			countries: { BE: 'Belgium', US: 'United States (US)' },
+		} as typeof window.wcSettings;
+		mockGetSummary.mockResolvedValue( {
+			count: 0,
+			total: 0,
+			store_currencies: [ 'usd' ],
+			// Client 11.1.0 `transactions/list/index.tsx:775-776`: the summary lists these choices.
+			customer_currencies: [ 'eur', 'usd' ],
+			sources: [ 'visa', 'bancontact' ],
+		} );
+		renderList( undefined, '?filter=advanced' );
+		await screen.findByText( 'No transactions found.' );
+
+		expect( getFilterLabels() ).toEqual( ADVANCED_FILTER_LABELS );
+		const values = ( label: string ) =>
+			getFilterField( label ).elements?.map( ( { value } ) => value );
+		const labels = ( label: string ) =>
+			getFilterField( label ).elements?.map(
+				( element ) => element.label
+			);
+
+		expect( values( 'Customer country' ) ).toEqual( [ 'BE', 'US' ] );
+		expect( values( 'Customer currency' ) ).toEqual( [ 'eur', 'usd' ] );
+		expect( values( 'Payment method' ) ).toEqual( [
+			'visa',
+			'bancontact',
+		] );
+		expect( labels( 'Payment method' ) ).toEqual( [
+			'Visa',
+			'Bancontact',
+		] );
+		// Client 11.1.0 `transactions/strings.ts:29-46`.
+		expect( getFilterField( 'Device type' ).elements ).toEqual( [
+			{ value: 'android', label: 'Android' },
+			{ value: 'ios', label: 'iPhone' },
+		] );
+		expect( getFilterField( 'Risk level' ).elements ).toEqual( [
+			{ value: '0', label: 'Normal' },
+			{ value: '1', label: 'Elevated' },
+			{ value: '2', label: 'Highest' },
+		] );
+		expect( values( 'Sales channel' ) ).toEqual( [
+			'online',
+			'in_person',
+			'in_person_pos',
+		] );
+		// Every select filter matches "Is" or "Is not", as the client's rules do.
+		ADVANCED_FILTER_LABELS.slice( 1 ).forEach( ( label ) =>
+			expect( getFilterField( label ).filterBy.operators ).toEqual( [
+				'is',
+				'isNot',
+			] )
+		);
+	} );
+
+	it( 'honors the advanced filters in the URL for the list, summary and export', async () => {
+		const args = {
+			type_is_not: 'refund',
+			customer_country_is: 'BE',
+			customer_currency_is: 'eur',
+			source_device_is_not: 'ios',
+			source_is: 'bancontact',
+			risk_level_is: '1',
+			channel_is: 'online',
+		};
+		mockGetTransactions.mockResolvedValue( {
+			data: [ { transaction_id: 'txn_filtered', type: 'charge' } ],
+			total_count: 1,
+		} as never );
+		mockRequestExport.mockReset();
+		mockRequestExport.mockRejectedValue( new Error( 'Stop here.' ) );
+		renderList(
+			undefined,
+			`?filter=advanced&${ new URLSearchParams( args ).toString() }`
+		);
+		await screen.findByText( 'Transactions loaded.' );
+
+		expect( mockGetTransactions ).toHaveBeenLastCalledWith(
+			expect.objectContaining( args )
+		);
+		expect( mockGetSummary ).toHaveBeenLastCalledWith(
+			expect.objectContaining( args )
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'Export' } ) );
+		await waitFor( () =>
+			expect( mockRequestExport ).toHaveBeenCalledWith(
+				expect.objectContaining( args )
+			)
+		);
+
+		// The chips show them, as the client's AdvancedFilters reads them from the URL.
+		const byId = Object.fromEntries(
+			mockLastFields.map( ( field ) => [ field.id, field.label ] )
+		);
+		expect(
+			( mockLastView.filters || [] ).map( ( filter ) => [
+				byId[ filter.field ],
+				filter.operator,
+				filter.value,
+			] )
+		).toEqual(
+			expect.arrayContaining( [
+				[ 'Type', 'isNot', 'refund' ],
+				[ 'Customer country', 'is', 'BE' ],
+				[ 'Customer currency', 'is', 'eur' ],
+				[ 'Device type', 'isNot', 'ios' ],
+				[ 'Payment method', 'is', 'bancontact' ],
+				[ 'Risk level', 'is', '1' ],
+				[ 'Sales channel', 'is', 'online' ],
+			] )
+		);
+	} );
+
+	it( "writes a chosen advanced filter to the route under the client's argument", async () => {
+		renderList( undefined, '?filter=advanced' );
+		await screen.findByText( 'No transactions found.' );
+
+		act( () =>
+			mockOnChangeView( {
+				...mockLastView,
+				filters: [
+					{
+						field: getFilterField( 'Customer country' ).id,
+						operator: 'isNot',
+						value: 'US',
+					},
+					{
+						field: getFilterField( 'Device type' ).id,
+						operator: 'is',
+						value: 'android',
+					},
+				],
+			} )
+		);
+
+		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
+			expect.stringMatching(
+				/customer_country_is_not=US.*source_device_is=android|source_device_is=android.*customer_country_is_not=US/
+			)
+		);
+	} );
+
+	it( 'offers the Loan filter only when the account has loans', async () => {
+		window.wcSettings = {
+			...window.wcSettings,
+			admin: {
+				woopaymentsSettings: {
+					accountLoans: {
+						loans: [ 'flxln_active|active', 'flxln_paid|paid' ],
+					},
+				},
+			},
+		} as typeof window.wcSettings;
+		renderList( undefined, '?filter=advanced&loan_id_is=flxln_paid' );
+		await screen.findByText( 'No transactions found.' );
+
+		// Client 11.1.0 `transactions/filters/config.ts:555-598`.
+		expect( getFilterField( 'Loan' ).elements ).toEqual( [
+			{ value: 'flxln_active', label: 'ID: flxln_active | In Progress' },
+			{ value: 'flxln_paid', label: 'ID: flxln_paid | Paid in Full' },
+		] );
+		expect( getFilterField( 'Loan' ).filterBy.operators ).toEqual( [
+			'is',
+		] );
+		expect( mockGetTransactions ).toHaveBeenLastCalledWith(
+			expect.objectContaining( { loan_id_is: 'flxln_paid' } )
 		);
 	} );
 

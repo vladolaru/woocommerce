@@ -501,6 +501,12 @@
 .woocommerce-woopayments-money-movement__tabs .components-tab-panel__tabs {
 	box-shadow: inset 0 -1px 0 #ccc;
 	margin-bottom: 24px;
+	// On a phone the tabs scroll within their row instead of wrapping "Uncaptured (1)" onto two lines.
+	overflow-x: auto;
+
+	.components-tab-panel__tabs-item {
+		white-space: nowrap;
+	}
 }
 
 .woocommerce-woopayments-money-movement__status,
@@ -535,13 +541,6 @@
 .woocommerce-woopayments-money-movement__table th:last-child,
 .woocommerce-woopayments-money-movement__table td:last-child {
 	text-align: right;
-}
-
-.woocommerce-woopayments-money-movement__row-actions {
-	align-items: center;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
 }
 
 .woocommerce-woopayments-money-movement__detail-header {

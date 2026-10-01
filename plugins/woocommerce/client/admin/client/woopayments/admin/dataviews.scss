@@ -86,17 +86,59 @@
 	}
 }
 
-// Client 11.1.0 `TableCard` footer: the summary centered under the table.
-.woocommerce-woopayments-money-movement-dataviews > .components-card__footer {
+// Client 11.1.0 `TableCard` footer: the summary centered under the table. Core's `Card` wraps its
+// children in a content element, so the footer is not a direct child of the card.
+.woocommerce-woopayments-money-movement-dataviews .components-card__footer {
 	justify-content: center;
 }
 
-// Client 11.1.0 `components/clickable-cell/style.scss`: a details link that reads as the cell's text.
+// Client 11.1.0 `@woocommerce/components` `.woocommerce-table__empty-item`: the empty list's message.
+.woocommerce-woopayments-money-movement-dataviews__empty {
+	color: #757575;
+	font-size: 18px;
+	font-weight: bold;
+	margin: 0;
+	padding: 16px 24px;
+	text-align: center;
+
+	@media (max-width: 781px) {
+		font-size: 13px;
+	}
+}
+
+// Client 11.1.0 `components/clickable-cell/style.scss`: a details link that reads as the cell's text
+// and fills the cell's width.
 .woocommerce-woopayments-money-movement__clickable-cell {
 	color: inherit;
+	display: block;
 	text-decoration: none;
 
 	&:hover {
 		color: var(--wp-admin-theme-color);
 	}
+}
+
+// Client 11.1.0 `style.scss` `.info-button`: the grey info icon that starts a disputes or payouts row.
+.woocommerce-woopayments-money-movement__details-link {
+	display: inline-flex;
+	fill: #8c8f94;
+
+	&:hover,
+	&:focus {
+		fill: var(--wp-admin-theme-color);
+	}
+}
+
+// Client 11.1.0 `transactions/list/style.scss:11-17`: a converted amount ends at the cell's end, after
+// a grey sync icon 6px before it.
+.woocommerce-woopayments-money-movement__converted-amount {
+	align-items: center;
+	display: flex;
+	justify-content: flex-end;
+}
+
+.woocommerce-woopayments-money-movement__conversion-indicator {
+	display: inline-flex;
+	fill: #8c8f94;
+	margin-inline-end: 6px;
 }

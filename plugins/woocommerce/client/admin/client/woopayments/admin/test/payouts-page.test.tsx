@@ -70,7 +70,8 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 			<button
 				type="button"
 				onClick={ () =>
-					onChangeView( { ...view, fields: [ 'date' ] } )
+					// The info column cannot be hidden.
+					onChangeView( { ...view, fields: [ 'details', 'date' ] } )
 				}
 			>
 				Mock show only Date
@@ -179,7 +180,7 @@ describe( 'WooPaymentsPayouts', () => {
 
 		expect( await screen.findByRole( 'table' ) ).toHaveAttribute(
 			'data-visible-fields',
-			'date,type,amount,bankReferenceId'
+			'details,date,type,amount,bankReferenceId'
 		);
 		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
 
@@ -200,7 +201,7 @@ describe( 'WooPaymentsPayouts', () => {
 		} );
 		expect( screen.getByRole( 'table' ) ).toHaveAttribute(
 			'data-visible-fields',
-			'date'
+			'details,date'
 		);
 		expect( getItemSpy ).not.toHaveBeenCalled();
 		expect( setItemSpy ).not.toHaveBeenCalled();

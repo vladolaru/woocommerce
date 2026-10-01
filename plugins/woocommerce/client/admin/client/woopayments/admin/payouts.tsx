@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
+import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 
 /**
@@ -44,6 +45,7 @@ import {
 	ExportButton,
 	ListNotice,
 	LiveStatusMessage,
+	reportListLoadError,
 } from './money-movement/table';
 import {
 	formatCount,
@@ -51,6 +53,11 @@ import {
 	getErrorMessage,
 } from './money-movement/utils';
 import { usePersistedHiddenFields } from './money-movement/view-preferences';
+import {
+	ClickableCell,
+	DETAILS_FIELD_BASE,
+	DetailsLink,
+} from './money-movement/transactions-list-fields';
 import type {
 	WooPaymentsDeposit,
 	WooPaymentsDepositsQuery,
@@ -78,8 +85,9 @@ type PayoutsSummary = WooPaymentsDepositsSummary;
 const PAYOUTS_SHOW_FILTERS: WooPaymentsListShowFilter[] = [ 'all', 'advanced' ];
 const ALL_CURRENCIES = '---';
 
-// Client 11.1.0 `deposits/list/index.tsx:41-94`, in order; its info-button `details` column is the date link here.
+// Client 11.1.0 `deposits/list/index.tsx:41-94`, in order.
 const PAYOUT_FIELDS = [
+	'details',
 	'date',
 	'type',
 	'amount',
@@ -93,6 +101,34 @@ const PAYOUT_TYPE_LABELS: Record< string, string > = {
 	deposit: __( 'Payout', 'woocommerce' ),
 	withdrawal: __( 'Withdrawal', 'woocommerce' ),
 };
+const getPayoutDetailsUrl = ( payout: WooPaymentsDeposit ) =>
+	getSettingsPaymentsProviderRouteUrl(
+		`/woopayments/payouts/details?id=${ encodeURIComponent( payout.id ) }`
+	);
+
+/**
+ * A payouts list cell that opens the payout details.
+ * Client 11.1.0 `deposits/list/index.tsx:107-115`: every `clickable()` cell and its row click event.
+ *
+ * @param props          The component props.
+ * @param props.item     The payout row.
+ * @param props.children The cell content.
+ */
+const PayoutCell = ( {
+	item,
+	children,
+}: {
+	item: WooPaymentsDeposit;
+	children?: ReactNode;
+} ) => (
+	<ClickableCell
+		href={ getPayoutDetailsUrl( item ) }
+		onClick={ () => recordEvent( 'wcpay_deposits_row_click' ) }
+	>
+		{ children }
+	</ClickableCell>
+);
+
 type ExportMessage = {
 	text: string;
 	isError?: boolean;
@@ -141,7 +177,7 @@ export const WooPaymentsPayouts = () => {
 	const [ totalCount, setTotalCount ] = useState( 0 );
 	const [ summary, setSummary ] = useState< PayoutsSummary >( {} );
 	const [ isLoading, setIsLoading ] = useState( true );
-	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
+	const [ hasLoadError, setHasLoadError ] = useState( false );
 	const [ exportMessage, setExportMessage ] =
 		useState< ExportMessage | null >( null );
 	const [ isExporting, setIsExporting ] = useState( false );
@@ -170,24 +206,31 @@ export const WooPaymentsPayouts = () => {
 		() =>
 			moneyMovementQueryToDataViewsView( query, {
 				fields: visibleFields,
-				titleField: 'date',
-				showTitle: false,
 			} ),
 		[ query, visibleFields ]
 	);
 	const fields = useMemo(
 		() => [
 			{
+				...DETAILS_FIELD_BASE,
+				render: ( { item }: { item: WooPaymentsDeposit } ) => (
+					<DetailsLink
+						href={ getPayoutDetailsUrl( item ) }
+						label={ sprintf(
+							/* translators: %s: payout ID. */
+							__( 'See details for payout %s', 'woocommerce' ),
+							item.id
+						) }
+					/>
+				),
+			},
+			{
 				id: 'date',
 				label: __( 'Date', 'woocommerce' ),
 				enableHiding: false,
 				render: ( { item }: { item: WooPaymentsDeposit } ) => (
 					<a
-						href={ getSettingsPaymentsProviderRouteUrl(
-							`/woopayments/payouts/details?id=${ encodeURIComponent(
-								item.id
-							) }`
-						) }
+						href={ getPayoutDetailsUrl( item ) }
 						// Client 11.1.0 `deposits/list/index.tsx:116-121`.
 						onClick={ () =>
 							recordEvent( 'wcpay_deposits_row_click' )
@@ -212,15 +255,21 @@ export const WooPaymentsPayouts = () => {
 				label: __( 'Type', 'woocommerce' ),
 				enableHiding: false,
 				enableSorting: false,
-				render: ( { item }: { item: WooPaymentsDeposit } ) =>
-					PAYOUT_TYPE_LABELS[ item.type ] || '',
+				render: ( { item }: { item: WooPaymentsDeposit } ) => (
+					<PayoutCell item={ item }>
+						{ PAYOUT_TYPE_LABELS[ item.type ] || '' }
+					</PayoutCell>
+				),
 			},
 			{
 				id: 'amount',
 				label: __( 'Amount', 'woocommerce' ),
 				enableHiding: false,
-				render: ( { item }: { item: WooPaymentsDeposit } ) =>
-					formatExplicitCurrency( item.amount, item.currency ),
+				render: ( { item }: { item: WooPaymentsDeposit } ) => (
+					<PayoutCell item={ item }>
+						{ formatExplicitCurrency( item.amount, item.currency ) }
+					</PayoutCell>
+				),
 			},
 			{
 				id: 'status',
@@ -237,25 +286,34 @@ export const WooPaymentsPayouts = () => {
 					: ( false as const ),
 				// Client 11.1.0 `deposits/list/index.tsx:131` renders `DepositStatusChip`.
 				render: ( { item }: { item: WooPaymentsDeposit } ) => (
-					<StatusChip
-						message={ getPayoutStatusLabel( item ) }
-						type={ getPayoutStatusChipType( item ) }
-					/>
+					<PayoutCell item={ item }>
+						<StatusChip
+							message={ getPayoutStatusLabel( item ) }
+							type={ getPayoutStatusChipType( item ) }
+						/>
+					</PayoutCell>
 				),
 			},
 			{
 				id: 'bankAccount',
 				label: __( 'Bank account', 'woocommerce' ),
 				enableSorting: false,
-				render: ( { item }: { item: WooPaymentsDeposit } ) =>
-					item.bankAccount || '',
+				render: ( { item }: { item: WooPaymentsDeposit } ) => (
+					<PayoutCell item={ item }>
+						{ item.bankAccount || '' }
+					</PayoutCell>
+				),
 			},
 			{
 				id: 'bankReferenceId',
 				label: __( 'Bank reference ID', 'woocommerce' ),
 				enableSorting: false,
-				render: ( { item }: { item: WooPaymentsDeposit } ) =>
-					item.bank_reference_key ?? __( 'N/A', 'woocommerce' ),
+				render: ( { item }: { item: WooPaymentsDeposit } ) => (
+					<PayoutCell item={ item }>
+						{ item.bank_reference_key ??
+							__( 'N/A', 'woocommerce' ) }
+					</PayoutCell>
+				),
 			},
 		],
 		[ isAdvanced ]
@@ -267,38 +325,36 @@ export const WooPaymentsPayouts = () => {
 		const loadPayouts = async () => {
 			setIsLoading( true );
 
-			try {
-				const requestQuery = getPayoutsRequestQuery( query, match );
-				const [ response, nextSummary ] = await Promise.all( [
-					getWooPaymentsDeposits( requestQuery ),
-					getWooPaymentsDepositsSummary( requestQuery ),
-				] );
+			// Client 11.1.0 `data/deposits/resolvers.js:117-155`: the list and its summary load
+			// apart; a failed list raises a notice, a failed summary leaves the footer out.
+			const requestQuery = getPayoutsRequestQuery( query, match );
+			const [ listResult, summaryResult ] = await Promise.allSettled( [
+				getWooPaymentsDeposits( requestQuery ),
+				getWooPaymentsDepositsSummary( requestQuery ),
+			] );
 
-				if ( ! isMounted ) {
-					return;
-				}
-
-				setPayouts( response.data || [] );
-				setTotalCount( response.total_count || 0 );
-				setSummary( nextSummary );
-				setErrorMessage( null );
-			} catch ( error ) {
-				if ( isMounted ) {
-					setErrorMessage(
-						getErrorMessage(
-							error,
-							__(
-								'Unable to load WooPayments payout history.',
-								'woocommerce'
-							)
-						)
-					);
-				}
-			} finally {
-				if ( isMounted ) {
-					setIsLoading( false );
-				}
+			if ( ! isMounted ) {
+				return;
 			}
+
+			if ( listResult.status === 'rejected' ) {
+				reportListLoadError(
+					__( 'Error retrieving payouts.', 'woocommerce' )
+				);
+			}
+
+			const response =
+				listResult.status === 'fulfilled'
+					? listResult.value
+					: undefined;
+
+			setPayouts( response?.data || [] );
+			setTotalCount( response?.total_count || 0 );
+			setSummary(
+				summaryResult.status === 'fulfilled' ? summaryResult.value : {}
+			);
+			setHasLoadError( listResult.status === 'rejected' );
+			setIsLoading( false );
 		};
 
 		void loadPayouts();
@@ -370,8 +426,9 @@ export const WooPaymentsPayouts = () => {
 		'woocommerce'
 	);
 
-	if ( errorMessage ) {
-		liveStatusMessage = errorMessage;
+	if ( hasLoadError ) {
+		// The error notice announces itself.
+		liveStatusMessage = '';
 	} else if ( isLoading ) {
 		liveStatusMessage = __( 'Loading payouts…', 'woocommerce' );
 	} else if ( payouts.length === 0 ) {
@@ -501,14 +558,7 @@ export const WooPaymentsPayouts = () => {
 			<SpotlightPromotion />
 			<WooPaymentsListFilters filters={ listFilters } />
 			<section aria-busy={ isLoading }>
-				<LiveStatusMessage isError={ !! errorMessage }>
-					{ liveStatusMessage }
-				</LiveStatusMessage>
-				{ errorMessage && (
-					<ListNotice isError isSpoken={ false }>
-						{ errorMessage }
-					</ListNotice>
-				) }
+				<LiveStatusMessage>{ liveStatusMessage }</LiveStatusMessage>
 				{ exportMessage && (
 					<ListNotice isError={ !! exportMessage.isError }>
 						{ exportMessage.text }
@@ -528,7 +578,6 @@ export const WooPaymentsPayouts = () => {
 					summary={ summaryItems }
 					// Client 11.1.0 `deposits/list/index.tsx:67-72`.
 					numericFields={ [ 'amount' ] }
-					empty={ __( 'No payouts found.', 'woocommerce' ) }
 					getItemId={ ( payout ) => payout.id }
 					toolbarActions={
 						// Client 11.1.0 `deposits/list/index.tsx:215, :303-312`: Export only with rows.

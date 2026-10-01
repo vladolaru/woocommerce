@@ -116,4 +116,24 @@ describe( 'WooPaymentsTransactionSearch', () => {
 		expect( onChange ).toHaveBeenNthCalledWith( 1, 'Order #1520' );
 		expect( onChange ).toHaveBeenNthCalledWith( 2, '' );
 	} );
+
+	it( 'names subscription numbers in the placeholder while WooCommerce Subscriptions is active', () => {
+		const settingsWindow = window as typeof window & {
+			wcSettings?: Record< string, unknown >;
+		};
+		const previousSettings = settingsWindow.wcSettings;
+		settingsWindow.wcSettings = {
+			admin: { woopaymentsSettings: { isSubscriptionsActive: true } },
+		};
+
+		render(
+			<WooPaymentsTransactionSearch value="" onChange={ jest.fn() } />
+		);
+
+		// Client 11.1.0 `transactions/list/index.tsx:580-588`.
+		expect( getSearchProps().placeholder ).toBe(
+			'Search by order number, subscription number, customer name, or billing email'
+		);
+		settingsWindow.wcSettings = previousSettings;
+	} );
 } );

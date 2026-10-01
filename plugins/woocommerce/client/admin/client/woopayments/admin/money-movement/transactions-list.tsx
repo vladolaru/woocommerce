@@ -34,11 +34,17 @@ import {
 	getErrorMessage,
 	getResourceId,
 } from './utils';
-import { ExportButton, ListNotice, LiveStatusMessage } from './table';
+import {
+	ExportButton,
+	ListNotice,
+	LiveStatusMessage,
+	reportListLoadError,
+} from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import {
 	TRANSACTION_LIST_DEFAULT_HIDDEN_COLUMNS,
 	getTransactionListFields,
+	getTransactionListFilterFields,
 	isWooPaymentsSubscriptionsActive,
 	type WooPaymentsTransactionListRow,
 } from './transactions-list-fields';
@@ -108,7 +114,7 @@ export const WooPaymentsTransactionsList = (
 	const [ totalCount, setTotalCount ] = useState( 0 );
 	const [ summary, setSummary ] = useState< TransactionsSummary >( {} );
 	const [ isLoading, setIsLoading ] = useState( true );
-	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
+	const [ hasLoadError, setHasLoadError ] = useState( false );
 	const [ exportMessage, setExportMessage ] =
 		useState< ExportMessage | null >( null );
 	const [ isExporting, setIsExporting ] = useState( false );
@@ -118,7 +124,7 @@ export const WooPaymentsTransactionsList = (
 		? 'all'
 		: getListShowFilter( location.search, TRANSACTIONS_SHOW_FILTERS );
 	const isAdvanced = showFilter === 'advanced';
-	const fields = useMemo(
+	const columns = useMemo(
 		() =>
 			getTransactionListFields( {
 				includeDeposit: ! depositId,
@@ -128,8 +134,8 @@ export const WooPaymentsTransactionsList = (
 		[ depositId, isAdvanced ]
 	);
 	const fieldIds = useMemo(
-		() => fields.map( ( field ) => field.id ),
-		[ fields ]
+		() => columns.map( ( field ) => field.id ),
+		[ columns ]
 	);
 	const { visibleFields, saveFields } = usePersistedHiddenFields(
 		'wc_payments_transactions_hidden_columns',
@@ -162,8 +168,6 @@ export const WooPaymentsTransactionsList = (
 		() =>
 			moneyMovementQueryToDataViewsView( urlQuery, {
 				fields: visibleFields,
-				titleField: 'type',
-				showTitle: false,
 			} ),
 		[ urlQuery, visibleFields ]
 	);
@@ -180,40 +184,40 @@ export const WooPaymentsTransactionsList = (
 		async ( isCurrent: () => boolean ) => {
 			setIsLoading( true );
 
-			try {
-				const [ response, nextSummary ] = await Promise.all( [
-					getWooPaymentsTransactions( query ),
-					getWooPaymentsTransactionsSummary( query ),
-				] );
+			// Client 11.1.0 `data/transactions/resolvers.js:64-113`: the list and its summary load
+			// apart; a failed list raises a notice and shows no rows, a failed summary no footer.
+			const [ listResult, summaryResult ] = await Promise.allSettled( [
+				getWooPaymentsTransactions( query ),
+				getWooPaymentsTransactionsSummary( query ),
+			] );
 
-				if ( isCurrent() ) {
-					setTransactions( response.data || [] );
-					setTotalCount(
-						response.total_count ??
-							getSummaryCount( nextSummary ) ??
-							response.data?.length ??
-							0
-					);
-					setSummary( nextSummary );
-					setErrorMessage( null );
-				}
-			} catch ( error ) {
-				if ( isCurrent() ) {
-					setErrorMessage(
-						getErrorMessage(
-							error,
-							__(
-								'Unable to load WooPayments transactions.',
-								'woocommerce'
-							)
-						)
-					);
-				}
-			} finally {
-				if ( isCurrent() ) {
-					setIsLoading( false );
-				}
+			if ( ! isCurrent() ) {
+				return;
 			}
+
+			const response =
+				listResult.status === 'fulfilled'
+					? listResult.value
+					: undefined;
+			const nextSummary =
+				summaryResult.status === 'fulfilled' ? summaryResult.value : {};
+
+			if ( listResult.status === 'rejected' ) {
+				reportListLoadError(
+					__( 'Error retrieving transactions.', 'woocommerce' )
+				);
+			}
+
+			setTransactions( response?.data || [] );
+			setTotalCount(
+				response?.total_count ??
+					getSummaryCount( nextSummary ) ??
+					response?.data?.length ??
+					0
+			);
+			setSummary( nextSummary );
+			setHasLoadError( listResult.status === 'rejected' );
+			setIsLoading( false );
 		},
 		[ query ]
 	);
@@ -301,8 +305,9 @@ export const WooPaymentsTransactionsList = (
 	const emptyMessage = __( 'No transactions found.', 'woocommerce' );
 	let liveStatusMessage: string = __( 'Transactions loaded.', 'woocommerce' );
 
-	if ( errorMessage ) {
-		liveStatusMessage = errorMessage;
+	if ( hasLoadError ) {
+		// The error notice announces itself.
+		liveStatusMessage = '';
 	} else if ( isLoading ) {
 		liveStatusMessage = loadingMessage;
 	} else if ( transactions.length === 0 ) {
@@ -358,6 +363,23 @@ export const WooPaymentsTransactionsList = (
 			}
 		);
 	}
+	// Client 11.1.0 `transactions/list/index.tsx:775-776`: the summary lists the currencies and
+	// payment methods to filter by.
+	const customerCurrencies = Array.isArray( summary.customer_currencies )
+		? summary.customer_currencies.map( String )
+		: [];
+	const sources = Array.isArray( summary.sources )
+		? summary.sources.map( String )
+		: [];
+	const fields = isAdvanced
+		? [
+				...columns,
+				...getTransactionListFilterFields( {
+					customerCurrencies,
+					sources,
+				} ),
+		  ]
+		: columns;
 	const searchValue = Array.isArray( query.search )
 		? query.search[ 0 ] || ''
 		: query.search || '';
@@ -450,14 +472,7 @@ export const WooPaymentsTransactionsList = (
 			{ ! depositId && (
 				<WooPaymentsListFilters filters={ listFilters } />
 			) }
-			<LiveStatusMessage isError={ !! errorMessage }>
-				{ liveStatusMessage }
-			</LiveStatusMessage>
-			{ errorMessage && (
-				<ListNotice isError isSpoken={ false }>
-					{ errorMessage }
-				</ListNotice>
-			) }
+			<LiveStatusMessage>{ liveStatusMessage }</LiveStatusMessage>
 			{ exportMessage && (
 				<ListNotice isError={ !! exportMessage.isError }>
 					{ exportMessage.text }
@@ -476,7 +491,6 @@ export const WooPaymentsTransactionsList = (
 				summary={ summaryItems }
 				// Client 11.1.0 `transactions/list/index.tsx:173-222`: the `isNumeric` columns.
 				numericFields={ [ 'customer_amount', 'amount', 'fees', 'net' ] }
-				empty={ emptyMessage }
 				getItemId={ getResourceId }
 				toolbarActions={
 					<>

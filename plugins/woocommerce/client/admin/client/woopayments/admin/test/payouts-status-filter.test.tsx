@@ -287,7 +287,6 @@ describe( 'PayoutsOverviewCard status copy', () => {
 			render(
 				<PayoutsOverviewCard
 					isLoading={ false }
-					errorMessage={ null }
 					overview={ createOverview() }
 					recentPayouts={ [ createDeposit( { type, status } ) ] }
 				/>

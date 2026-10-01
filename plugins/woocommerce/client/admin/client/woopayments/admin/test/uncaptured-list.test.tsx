@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -247,6 +247,51 @@ describe( 'WooPayments uncaptured transactions list', () => {
 		expect( renderCell( 'customer_country', AUTHORIZATION ) ).toBe(
 			'Kingdom of Dogs'
 		);
+	} );
+
+	it( "offers the client's one secondary Capture button and opens the details from every other cell", async () => {
+		await renderUncaptured();
+
+		const { container } = render(
+			<div>
+				{ getField( 'action' ).render( { item: AUTHORIZATION } ) }
+			</div>
+		);
+
+		// Client 11.1.0 `transactions/uncaptured/index.tsx:187-202` and
+		// `components/capture-authorization-button`: one secondary "Capture", no cancel.
+		expect(
+			within( container )
+				.getAllByRole( 'button' )
+				.map( ( button ) => button.textContent )
+		).toEqual( [ 'Capture' ] );
+		expect( within( container ).getByRole( 'button' ) ).toHaveClass(
+			'is-secondary'
+		);
+
+		// Client 11.1.0 `transactions/uncaptured/index.tsx:128-186`: the `clickable()` cells.
+		[
+			'created',
+			'capture_by',
+			'risk_level',
+			'amount',
+			'customer_email',
+			'customer_country',
+		].forEach( ( id ) => {
+			const cell = render(
+				<div>{ getField( id ).render( { item: AUTHORIZATION } ) }</div>
+			);
+			const link = within( cell.container ).getByRole( 'link' );
+
+			expect( link ).toHaveAttribute(
+				'href',
+				expect.stringContaining(
+					'path=%2Fwoopayments%2Ftransactions%2Fdetails&id=pi_4242'
+				)
+			);
+			expect( link ).toHaveAttribute( 'tabindex', '-1' );
+			cell.unmount();
+		} );
 	} );
 
 	it( 'shows the authorized and capture-by dates with their time', async () => {

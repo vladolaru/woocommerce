@@ -3,7 +3,8 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { recordEvent } from '@woocommerce/tracks';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -108,8 +109,9 @@ const RECORDED = JSON.parse(
 	)
 ).response.data as Array< Record< string, unknown > >;
 
-// Client 11.1.0 `deposits/list/index.tsx:41-94`, in order, without the info-button column.
+// Client 11.1.0 `deposits/list/index.tsx:41-94`, in order; the info-button column is named for menus.
 const CLIENT_COLUMNS = [
+	[ 'details', 'Details' ],
 	[ 'date', 'Date' ],
 	[ 'type', 'Type' ],
 	[ 'amount', 'Amount' ],
@@ -154,7 +156,7 @@ describe( 'WooPayments payouts list columns', () => {
 			mockFields
 				.filter( ( field ) => field.enableHiding === false )
 				.map( ( field ) => field.id )
-		).toEqual( [ 'date', 'type', 'amount', 'status' ] );
+		).toEqual( [ 'details', 'date', 'type', 'amount', 'status' ] );
 		// Client `isSortable`: Date and Amount.
 		expect(
 			mockFields
@@ -184,6 +186,54 @@ describe( 'WooPayments payouts list columns', () => {
 		);
 		expect( getCell( latest.id, 'bankReferenceId' ) ).toHaveTextContent(
 			'7UF6L35gB5by3c28997Ds6ch6t65Lg5Y660T3gl1k'
+		);
+	} );
+
+	it( 'opens the payout details from the info link and every clickable cell, like the client', async () => {
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/payouts' ] }>
+				<WooPaymentsPayouts />
+			</MemoryRouter>
+		);
+
+		await screen.findByText( 'Payout history loaded.' );
+		const [ latest ] = RECORDED;
+		// Client 11.1.0 `components/details-link`: the row's first cell, an info icon link.
+		const info = within( getCell( latest.id, 'details' ) ).getByRole(
+			'link',
+			{ name: `See details for payout ${ latest.id }` }
+		);
+		expect( info ).toHaveAttribute(
+			'href',
+			expect.stringContaining(
+				`path=%2Fwoopayments%2Fpayouts%2Fdetails&id=${ latest.id }`
+			)
+		);
+
+		// Client 11.1.0 `deposits/list/index.tsx:107-156`: the `clickable()` cells, out of the tab order.
+		[
+			'type',
+			'amount',
+			'status',
+			'bankAccount',
+			'bankReferenceId',
+		].forEach( ( field ) => {
+			const link = within( getCell( latest.id, field ) ).getByRole(
+				'link'
+			);
+
+			expect( link ).toHaveAttribute(
+				'href',
+				info.getAttribute( 'href' )
+			);
+			expect( link ).toHaveAttribute( 'tabindex', '-1' );
+		} );
+
+		fireEvent.click(
+			within( getCell( latest.id, 'amount' ) ).getByRole( 'link' )
+		);
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_deposits_row_click'
 		);
 	} );
 } );

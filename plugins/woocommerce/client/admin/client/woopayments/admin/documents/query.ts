@@ -274,8 +274,6 @@ export const documentsQueryToDataViewsView = (
 				: '',
 		filters,
 		fields: [ 'date', 'type', 'description', 'actions' ],
-		titleField: 'type',
-		showTitle: false,
 		layout: {},
 	};
 

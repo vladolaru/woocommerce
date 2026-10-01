@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -102,7 +102,7 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 				total={ 0 }
 				isLoading
 				loadingMessage="Loading transactions"
-				empty={ <p>No transactions found.</p> }
+				empty="No transactions found."
 				searchLabel="Search transactions"
 			/>
 		);
@@ -125,21 +125,25 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 				total={ 0 }
 				isLoading={ false }
 				loadingMessage="Loading transactions"
-				empty={ <p>No transactions found.</p> }
+				empty="No transactions found."
 				searchLabel="Search transactions"
 			/>
 		);
 
 		// DataViews shows the empty text in its own no-results area, so the
 		// wrapper passes it through rather than adding a second message.
-		expect( mockDataViews ).toHaveBeenLastCalledWith(
-			expect.objectContaining( {
-				empty: <p>No transactions found.</p>,
-			} )
-		);
 		expect(
 			screen.queryByText( 'No transactions found.' )
 		).not.toBeInTheDocument();
+		const lastProps = mockDataViews.mock.lastCall?.[ 0 ] as
+			| { empty: ReactElement }
+			| undefined;
+		expect( lastProps ).toBeDefined();
+		const { empty } = lastProps as { empty: ReactElement };
+		render( empty );
+		expect( screen.getByText( 'No transactions found.' ) ).toHaveClass(
+			'woocommerce-woopayments-money-movement-dataviews__empty'
+		);
 	} );
 
 	it( 'allows callers to replace the built-in plain-text search', () => {

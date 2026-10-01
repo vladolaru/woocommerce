@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Centre the summary line under the WooPayments transactions, disputes and payouts lists.

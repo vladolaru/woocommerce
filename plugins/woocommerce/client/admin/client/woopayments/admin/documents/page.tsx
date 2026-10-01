@@ -544,7 +544,6 @@ export const WooPaymentsDocumentsPage = () => {
 				numericFields={ [ 'actions' ] }
 				total={ totalCount }
 				loadingMessage={ __( 'Loading Documents…', 'woocommerce' ) }
-				empty={ __( 'No data to display', 'woocommerce' ) }
 				getItemId={ getDocumentId }
 			/>
 			<SpotlightPromotion />

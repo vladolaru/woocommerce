@@ -23,6 +23,20 @@ export const MONEY_MOVEMENT_FILTER_PARAMS = [
 	'deposit_id',
 	'store_currency_is',
 	'type_is',
+	// Client 11.1.0 `data/transactions/resolvers.js:27-57`: the transactions advanced filters.
+	'type_is_not',
+	'customer_country_is',
+	'customer_country_is_not',
+	'customer_currency_is',
+	'customer_currency_is_not',
+	'source_device_is',
+	'source_device_is_not',
+	'source_is',
+	'source_is_not',
+	'channel_is',
+	'channel_is_not',
+	'risk_level_is',
+	'risk_level_is_not',
 	'status_is',
 	'status_is_not',
 	'date_after',
@@ -71,6 +85,12 @@ const FILTER_FIELD_ALIASES: Record<
 	status: 'status_is',
 	status_is: 'status_is',
 	status_is_not: 'status_is_not',
+	customer_country_is: 'customer_country_is',
+	customer_currency_is: 'customer_currency_is',
+	source_device_is: 'source_device_is',
+	source_is: 'source_is',
+	channel_is: 'channel_is',
+	risk_level_is: 'risk_level_is',
 	date_after: 'date_after',
 	date_before: 'date_before',
 	date_between: 'date_between',
@@ -81,12 +101,35 @@ const FILTER_PARAM_TO_FIELD: Partial<
 > = {
 	store_currency_is: 'currency',
 	type_is: 'type',
+	type_is_not: 'type',
 	status_is: 'status',
 	status_is_not: 'status',
-	loan_id_is: 'loan_id',
+	loan_id_is: 'loan_id_is',
+	customer_country_is_not: 'customer_country_is',
+	customer_currency_is_not: 'customer_currency_is',
+	source_device_is_not: 'source_device_is',
+	source_is_not: 'source_is',
+	channel_is_not: 'channel_is',
+	risk_level_is_not: 'risk_level_is',
 	date_after: 'date',
 	date_before: 'date',
 	date_between: 'date',
+};
+
+// Filter fields whose "Is not" goes to the client's `<name>_is_not` argument.
+const IS_NOT_FILTER_PARAMS: Record<
+	string,
+	WooPaymentsMoneyMovementQueryFilterParam
+> = {
+	status: 'status_is_not',
+	status_is: 'status_is_not',
+	type: 'type_is_not',
+	customer_country_is: 'customer_country_is_not',
+	customer_currency_is: 'customer_currency_is_not',
+	source_device_is: 'source_device_is_not',
+	source_is: 'source_is_not',
+	channel_is: 'channel_is_not',
+	risk_level_is: 'risk_level_is_not',
 };
 
 const DATE_FILTER_OPERATOR_BY_PARAM: Partial<
@@ -377,7 +420,7 @@ const getFilterOperator = (
 		return dateOperator;
 	}
 
-	if ( param === 'status_is_not' ) {
+	if ( param.endsWith( '_is_not' ) ) {
 		return Array.isArray( value ) ? 'isNone' : 'isNot';
 	}
 
@@ -405,17 +448,10 @@ const getFilterParamForDataViewFilter = (
 	}
 
 	if (
-		filter.field === 'status' &&
+		IS_NOT_FILTER_PARAMS[ filter.field ] &&
 		[ 'isNot', 'isNone', 'isNotAll' ].includes( filter.operator )
 	) {
-		return 'status_is_not';
-	}
-
-	if (
-		filter.field === 'status_is' &&
-		[ 'isNot', 'isNone', 'isNotAll' ].includes( filter.operator )
-	) {
-		return 'status_is_not';
+		return IS_NOT_FILTER_PARAMS[ filter.field ];
 	}
 
 	return FILTER_FIELD_ALIASES[ filter.field ];
@@ -567,7 +603,7 @@ export const moneyMovementQueryToDataViewsView = (
 		dateField?: string;
 	} = {}
 ): WooPaymentsMoneyMovementDataView => {
-	const normalizedQuery = {
+	const normalizedQuery: WooPaymentsMoneyMovementQuery = {
 		...DEFAULT_MONEY_MOVEMENT_QUERY,
 		...query,
 	};

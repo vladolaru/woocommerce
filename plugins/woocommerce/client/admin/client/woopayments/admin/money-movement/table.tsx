@@ -2,6 +2,7 @@
  * External dependencies
  */
 import { Button, Notice } from '@wordpress/components';
+import { dispatch } from '@wordpress/data';
 import { __ } from '@wordpress/i18n';
 import { download } from '@wordpress/icons';
 import type { HTMLAttributes, ReactNode } from 'react';
@@ -90,6 +91,19 @@ export const ListNotice = ( {
 		{ children }
 	</Notice>
 );
+
+/**
+ * Reports a list read that failed, with the client's copy for that read, as the client's data
+ * resolvers do (for example client 11.1.0 `data/transactions/resolvers.js:76-81`).
+ *
+ * @param message The client's message, such as "Error retrieving transactions.".
+ */
+export const reportListLoadError = ( message: string ) =>
+	(
+		dispatch( 'core/notices' ) as unknown as {
+			createErrorNotice: ( text: string ) => void;
+		}
+	 ).createErrorNotice( message );
 
 /**
  * A list's export button. Client 11.1.0 `components/download-button/index.tsx`.

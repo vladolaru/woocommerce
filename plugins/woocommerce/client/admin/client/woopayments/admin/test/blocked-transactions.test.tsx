@@ -137,14 +137,14 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		} >;
 		header?: ReactNode;
 		empty?: ReactNode;
-		view?: { fields?: string[]; showTitle?: boolean };
+		view?: { fields?: string[]; titleField?: string };
 	} ) => {
 		const visibleFields = fields.filter(
 			( field ) => ! view.fields || view.fields.includes( field.id )
 		);
 
 		return (
-			<div data-show-title={ String( view.showTitle ) }>
+			<div data-title-field={ String( view.titleField ) }>
 				{ header }
 				{ data.length === 0 && empty }
 				<div role="row">
@@ -292,11 +292,10 @@ describe( 'WooPayments Blocked transactions tab', () => {
 				.getAllByRole( 'columnheader' )
 				.map( ( header ) => header.textContent )
 		).toEqual( [ 'Date / Time', 'Amount', 'Customer', 'Status' ] );
-		// DataViews would add its own title column, a second "Date / Time".
-		expect( document.querySelector( '[data-show-title]' ) ).toHaveAttribute(
-			'data-show-title',
-			'false'
-		);
+		// A title field would add DataViews' own title column, a second "Date / Time".
+		expect(
+			document.querySelector( '[data-title-field]' )
+		).toHaveAttribute( 'data-title-field', 'undefined' );
 
 		const [ , adaRow, graceRow ] = screen.getAllByRole( 'row' );
 		// Client 11.1.0 `transactions/blocked/columns.tsx:79-82`: a red "Payment blocked" pill.
