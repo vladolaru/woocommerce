@@ -2,8 +2,7 @@
  * External dependencies
  */
 import { Card, CardBody, CardFooter } from '@wordpress/components';
-import { TableSummary } from '@woocommerce/components';
-import { useEffect, useRef } from '@wordpress/element';
+import { TableSummary, TableSummaryPlaceholder } from '@woocommerce/components';
 import { __ } from '@wordpress/i18n';
 import type { ReactNode } from 'react';
 
@@ -105,17 +104,6 @@ export function WooPaymentsMoneyMovementDataViews<
 		rows,
 		isLoading
 	);
-	// The client keeps its footer while a list reloads; the last summary stays until the new one loads.
-	const loadedSummaryRef = useRef( summary );
-
-	useEffect( () => {
-		if ( ! isLoading ) {
-			loadedSummaryRef.current = summary;
-		}
-	} );
-
-	const shownSummary = isLoading ? loadedSummaryRef.current : summary;
-
 	return (
 		<Card
 			ref={ listRef }
@@ -160,10 +148,18 @@ export function WooPaymentsMoneyMovementDataViews<
 					}
 				/>
 			</CardBody>
-			{ shownSummary && shownSummary.length > 0 && (
+			{ /* Client 11.1.0 `@woocommerce/components` TableCard: the footer shows TableSummaryPlaceholder while loading. */ }
+			{ isLoading ? (
 				<CardFooter>
-					<TableSummary data={ shownSummary } />
+					<TableSummaryPlaceholder />
 				</CardFooter>
+			) : (
+				summary &&
+				summary.length > 0 && (
+					<CardFooter>
+						<TableSummary data={ summary } />
+					</CardFooter>
+				)
 			) }
 		</Card>
 	);

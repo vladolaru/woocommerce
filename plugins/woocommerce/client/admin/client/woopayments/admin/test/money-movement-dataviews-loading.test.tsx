@@ -21,8 +21,14 @@ const firstPageRows: Row[] = [
 	{ id: 'txn_2', date: 'Another row' },
 ];
 
-const renderList = ( page: number, rows: Row[], isLoading: boolean ) => (
+const renderList = (
+	page: number,
+	rows: Row[],
+	isLoading: boolean,
+	summary?: Array< { label: string; value: string } >
+) => (
 	<WooPaymentsMoneyMovementDataViews
+		summary={ summary }
 		fields={ fields }
 		rows={ rows }
 		view={ {
@@ -81,6 +87,24 @@ describe( 'WooPaymentsMoneyMovementDataViews loading a new page', () => {
 		expect(
 			container.querySelector( '.dataviews-loading-more' )
 		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 `@woocommerce/components` TableCard: while loading, the footer shows
+	// TableSummaryPlaceholder instead of the summary (packages/js/components/src/table/index.tsx:230-231).
+	it( 'replaces the previous totals with the summary placeholder while the list reloads', () => {
+		const loadedSummary = [ { label: 'transactions', value: '4' } ];
+		const { container, rerender } = render(
+			renderList( 1, firstPageRows, false, loadedSummary )
+		);
+
+		expect( screen.getByText( 'transactions' ) ).toBeInTheDocument();
+
+		rerender( renderList( 1, firstPageRows, true, loadedSummary ) );
+
+		expect( screen.queryByText( 'transactions' ) ).not.toBeInTheDocument();
+		expect(
+			container.querySelector( '.woocommerce-table__summary.is-loading' )
+		).toBeInTheDocument();
 	} );
 
 	it( 'scrolls the list top into view on a page change, not on the first load', () => {
