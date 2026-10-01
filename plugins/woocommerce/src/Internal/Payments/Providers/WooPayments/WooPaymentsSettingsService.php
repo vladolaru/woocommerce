@@ -92,22 +92,35 @@ class WooPaymentsSettingsService {
 		'afterpay_clearpay' => 'afterpay_clearpay_payments',
 	);
 
+	/**
+	 * Gateway IDs that belong to the card cluster only on an exact match, so their sub-gateways
+	 * (stripe_alipay, stripe_link, ...) are classified by payment method keyword instead.
+	 */
+	private const DUPLICATE_CARD_GATEWAY_IDS = array( 'woocommerce_payments', 'stripe' );
+
+	/**
+	 * Gateway ID keywords per payment method, checked in order; the first match wins.
+	 * Keywords and order follow the client's payment method definitions and their registry order.
+	 */
 	private const DUPLICATE_PAYMENT_METHOD_KEYWORDS = array(
-		'card'              => array( 'credit_card', 'creditcard', 'cc', 'card', 'stripe', 'woocommerce_payments' ),
-		'alipay'            => array( 'alipay' ),
-		'amazon_pay'        => array( 'amazon_pay', 'amazonpay' ),
-		'au_becs_debit'     => array( 'au_becs', 'becs' ),
-		'bancontact'        => array( 'bancontact' ),
-		'eps'               => array( 'eps' ),
-		'grabpay'           => array( 'grabpay' ),
-		'ideal'             => array( 'ideal' ),
-		'klarna'            => array( 'klarna' ),
-		'multibanco'        => array( 'multibanco' ),
-		'p24'               => array( 'p24', 'przelewy24' ),
-		'sepa_debit'        => array( 'sepa' ),
-		'wechat_pay'        => array( 'wechat' ),
+		'card'              => array( 'credit_card', 'creditcard', 'cc', 'card' ),
 		'affirm'            => array( 'affirm' ),
 		'afterpay_clearpay' => array( 'afterpay', 'clearpay' ),
+		'alipay'            => array( 'alipay' ),
+		'bancontact'        => array( 'bancontact' ),
+		'au_becs_debit'     => array( 'becs' ),
+		'eps'               => array( 'eps' ),
+		'grabpay'           => array( 'grabpay', 'grab_pay', 'grab' ),
+		'ideal'             => array( 'ideal' ),
+		'link'              => array( 'link' ),
+		'multibanco'        => array( 'multibanco' ),
+		'klarna'            => array( 'klarna' ),
+		'p24'               => array( 'p24', 'przelewy24' ),
+		'sepa_debit'        => array( 'sepa' ),
+		'wechat_pay'        => array( 'wechat_pay', 'wechatpay' ),
+		'apple_pay'         => array( 'apple_pay', 'applepay' ),
+		'google_pay'        => array( 'google_pay', 'googlepay', 'gpay' ),
+		'amazon_pay'        => array( 'amazon_pay', 'amazonpay', 'amazon' ),
 	);
 
 	private const PAYMENT_REQUEST_DUPLICATE_METHOD_ID = 'apple_pay_google_pay';
@@ -1145,6 +1158,10 @@ class WooPaymentsSettingsService {
 			return in_array( $payment_method_id, self::SUPPORTED_PAYMENT_METHOD_IDS, true ) ? $payment_method_id : '';
 		}
 
+		if ( in_array( $gateway_id, self::DUPLICATE_CARD_GATEWAY_IDS, true ) ) {
+			return 'card';
+		}
+
 		foreach ( self::DUPLICATE_PAYMENT_METHOD_KEYWORDS as $payment_method_id => $keywords ) {
 			if ( $this->gateway_id_contains_keyword( $gateway_id, $keywords ) ) {
 				return $payment_method_id;
@@ -1174,7 +1191,8 @@ class WooPaymentsSettingsService {
 			return true;
 		}
 
-		if ( 'stripe' === $gateway_id && $this->is_gateway_option_enabled( $gateway, 'payment_request' ) ) {
+		// The Stripe gateway moved this setting from `payment_request` to `express_checkout` in version 9.1.0.
+		if ( 'stripe' === $gateway_id && ( $this->is_gateway_option_enabled( $gateway, 'payment_request' ) || $this->is_gateway_option_enabled( $gateway, 'express_checkout' ) ) ) {
 			return true;
 		}
 

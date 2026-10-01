@@ -1014,6 +1014,86 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should cluster the Stripe gateway's express checkout option with native Apple Pay and Google Pay only when the native wallets are on.
+	 * @testWith ["yes", true]
+	 *           ["no", false]
+	 *
+	 * @param string $native_payment_request Native WooPayments payment request setting.
+	 * @param bool   $expect_cluster         Whether the Apple Pay and Google Pay cluster is expected.
+	 */
+	public function test_get_settings_clusters_stripe_express_checkout_option_with_native_payment_request( string $native_payment_request, bool $expect_cluster ): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'payment_request' => $native_payment_request,
+			)
+		);
+		// WooCommerce Stripe Gateway 11 stores its Apple Pay / Google Pay switch as `express_checkout`, not `payment_request`.
+		$this->mock_payment_gateways(
+			array(
+				$this->create_gateway( 'woocommerce_payments', 'yes' ),
+				$this->create_gateway( 'stripe', 'yes', array( 'express_checkout' => 'yes' ) ),
+			)
+		);
+
+		$duplicates = $this->sut->get_settings()['duplicated_payment_method_ids'];
+
+		if ( ! $expect_cluster ) {
+			$this->assertArrayNotHasKey(
+				'apple_pay_google_pay',
+				$duplicates,
+				'Without native Apple Pay / Google Pay there is no wallet duplicate to report.'
+			);
+			return;
+		}
+
+		$this->assertArrayHasKey(
+			'apple_pay_google_pay',
+			$duplicates,
+			'Stripe express checkout should be detected as an Apple Pay / Google Pay duplicate.'
+		);
+		$this->assertEqualsCanonicalizing(
+			array( 'woocommerce_payments', 'stripe' ),
+			$duplicates['apple_pay_google_pay'],
+			'The wallet cluster should hold native WooPayments and the Stripe gateway.'
+		);
+	}
+
+	/**
+	 * @testdox Should classify Stripe sub-gateways by their payment method and match only the exact Stripe and WooPayments IDs as card.
+	 */
+	public function test_get_settings_classifies_stripe_sub_gateways_by_payment_method(): void {
+		$this->mock_payment_gateways(
+			array(
+				$this->create_gateway( 'woocommerce_payments', 'yes' ),
+				$this->create_gateway( 'woocommerce_payments_alipay', 'yes' ),
+				$this->create_gateway( 'woocommerce_payments_amazon_pay', 'yes' ),
+				$this->create_gateway( 'stripe', 'yes' ),
+				$this->create_gateway( 'stripe_alipay', 'yes' ),
+				$this->create_gateway( 'stripe_amazon_pay', 'yes' ),
+				$this->create_gateway( 'stripe_link', 'yes' ),
+				$this->create_gateway( 'stripe_boleto', 'yes' ),
+			)
+		);
+
+		$duplicates = $this->sut->get_settings()['duplicated_payment_method_ids'];
+
+		// WooPayments registers no separate Link gateway, so stripe_link has no WooPayments partner to cluster with.
+		$this->assertEqualsCanonicalizing(
+			array( 'card', 'alipay', 'amazon_pay' ),
+			array_keys( $duplicates ),
+			'Each Stripe sub-gateway should form a cluster with its WooPayments method.'
+		);
+		$this->assertEqualsCanonicalizing(
+			array( 'woocommerce_payments', 'stripe' ),
+			$duplicates['card'],
+			'Only the exact stripe and woocommerce_payments IDs belong to the card cluster.'
+		);
+		$this->assertEqualsCanonicalizing( array( 'woocommerce_payments_alipay', 'stripe_alipay' ), $duplicates['alipay'] );
+		$this->assertEqualsCanonicalizing( array( 'woocommerce_payments_amazon_pay', 'stripe_amazon_pay' ), $duplicates['amazon_pay'] );
+	}
+
+	/**
 	 * @testdox Should source account and deposit response fields from cached account data.
 	 */
 	public function test_get_settings_sources_account_and_deposit_fields_from_cached_account_data(): void {
