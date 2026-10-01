@@ -444,6 +444,8 @@ const setHookDefaults = () => {
 				? [ 'amazon_pay' ]
 				: [] ),
 		],
+		advanced_fraud_protection_settings:
+			mockUseAdvancedFraudProtectionSettings()[ 0 ],
 	} ) );
 	mockUseSettings.mockReturnValue( {
 		isLoading: false,
@@ -5202,6 +5204,32 @@ describe( 'WooPaymentsSettingsPage', () => {
 				'path=%2Fwoopayments%2Fsettings%2Ffraud-protection'
 			)
 		);
+	} );
+
+	// Owner decision N-280: the label follows the saved rules, not rules the subpage has not saved yet.
+	it( 'keeps Configure until advanced fraud rules are saved', () => {
+		let savedSettings: Record< string, unknown > = {
+			advanced_fraud_protection_settings: [],
+		};
+		mockUseCurrentProtectionLevel.mockReturnValue( [ 'advanced', noop ] );
+		mockUseAdvancedFraudProtectionSettings.mockReturnValue( [
+			[ { key: 'avs_verification' } ],
+			noop,
+		] );
+		mockUseGetSavedSettings.mockImplementation( () => savedSettings );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+		expect(
+			screen.getByRole( 'link', { name: 'Configure' } )
+		).toBeInTheDocument();
+
+		savedSettings = {
+			advanced_fraud_protection_settings: [ { key: 'avs_verification' } ],
+		};
+		rerender( <WooPaymentsSettingsPage /> );
+		expect(
+			screen.getByRole( 'link', { name: 'Edit' } )
+		).toBeInTheDocument();
 	} );
 
 	it( 'opens the Basic fraud protection help modal', async () => {

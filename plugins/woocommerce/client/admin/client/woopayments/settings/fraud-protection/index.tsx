@@ -18,6 +18,7 @@ import {
 import {
 	useAdvancedFraudProtectionSettings,
 	useCurrentProtectionLevel,
+	useGetSavedSettings,
 	useGetSettings,
 } from '../data/hooks';
 import './style.scss';
@@ -178,9 +179,13 @@ export const FraudProtectionSettings = () => {
 		'/woopayments/settings/fraud-protection?from=woopayments-settings';
 	const advancedSettingsUrl =
 		getSettingsPaymentsProviderRouteUrl( advancedSettingsPath );
+	// Owner decision N-280: Edit / Configure follows the saved rules, so an unsaved ruleset does not relabel it.
+	const savedAdvancedFraudProtectionSettings = asSettingsRecord(
+		useGetSavedSettings()
+	).advanced_fraud_protection_settings;
 	const isAdvancedSettingsConfigured =
-		Array.isArray( advancedFraudProtectionSettings ) &&
-		advancedFraudProtectionSettings.length > 0;
+		Array.isArray( savedAdvancedFraudProtectionSettings ) &&
+		savedAdvancedFraudProtectionSettings.length > 0;
 	const isAdvancedSelected =
 		normalizedProtectionLevel === ProtectionLevel.ADVANCED;
 
