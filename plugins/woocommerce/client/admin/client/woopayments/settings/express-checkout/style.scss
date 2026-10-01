@@ -86,32 +86,82 @@
 		gap: 12px;
 	}
 
+	// Like the client, the preview box darkens behind the light buttons so they stay visible.
+	&__preview[data-theme="light"] {
+		background: #2b2b2b;
+	}
+
+	&__preview[data-theme="light-outline"] {
+		background: #f0f0f0;
+	}
+
+	// Copy of the storefront `.woopay-express-button` rules in
+	// client/blocks/assets/js/extensions/payment-methods/woopayments/woopay/style.scss; change both together.
 	&__woopay-button-preview {
-		display: inline-flex;
+		display: flex;
 		align-items: center;
 		justify-content: center;
 		box-sizing: border-box;
 		width: 100%;
+		overflow: hidden;
 		border: 0;
-		font-size: 16px;
-		font-weight: 600;
-		line-height: 24px;
+		background: $white;
+		color: #000;
+		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Roboto, Arial, sans-serif;
+		font-size: 18px;
+		font-weight: 500;
+		letter-spacing: 0.8px;
+		line-height: 1;
+		white-space: nowrap;
 
-		&[data-theme="dark"] {
-			background: #000;
-			color: $white;
+		&-content {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			max-width: 100%;
+			padding: 0 12px;
+			transform: scale(0.9);
 		}
 
-		&[data-theme="light"] {
-			background: $white;
-			color: #000;
-			box-shadow: inset 0 0 0 1px rgba(25, 23, 17, 0.2);
+		// The shared light logo stands in for the storefront's inline icons: sized to the same wordmark, and pushed
+		// 2px down like the empty space at the top of their viewBox does.
+		img {
+			flex: 0 0 auto;
+			width: 98px;
+			height: auto;
+			margin-block-start: 4px;
+		}
+
+		&[data-type="buy"],
+		&[data-type="book"],
+		&[data-type="donate"] {
+			min-width: 150px;
+
+			img {
+				margin-inline-start: 5px;
+			}
+		}
+
+		&[data-theme="dark"] {
+			background: #873eff;
+			color: $white;
+
+			// The storefront's dark icon is the same wordmark in solid white.
+			img {
+				filter: brightness(0) invert(1);
+			}
 		}
 
 		&[data-theme="light-outline"] {
-			background: $white;
-			color: #000;
-			box-shadow: inset 0 0 0 1px #000;
+			border: 1px solid #000;
+		}
+
+		&[data-size="medium"] &-content {
+			transform: scale(1);
+		}
+
+		&[data-size="large"] &-content {
+			transform: scale(1.1);
 		}
 	}
 

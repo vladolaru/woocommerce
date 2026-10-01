@@ -974,11 +974,13 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
 		);
 
-		expect(
-			await screen.findByRole( 'button', {
-				name: /^Buy with WooPay$/i,
-			} )
-		).toHaveAccessibleDescription( 'Express checkout preview' );
+		const previewButton = await screen.findByRole( 'button', {
+			name: /^Buy with WooPay$/i,
+		} );
+		expect( previewButton ).toHaveAccessibleDescription(
+			'Express checkout preview'
+		);
+		expect( previewButton ).toHaveTextContent( /^Buy with$/ );
 	} );
 
 	it( 'mounts the live Stripe Express Checkout preview with native checkout loader behavior on HTTPS', async () => {

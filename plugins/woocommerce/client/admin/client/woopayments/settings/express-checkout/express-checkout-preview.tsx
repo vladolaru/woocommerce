@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { useEffect, useRef, useState } from '@wordpress/element';
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 
 /**
  * Internal dependencies
@@ -12,6 +12,7 @@ import {
 	ExpressCheckoutPreviewFallback,
 } from './components';
 import { asSettingsRecord } from './settings-utils';
+import WooPayLogoImage from './assets/woopay-preview-logo.svg';
 import {
 	useGetSettings,
 	usePaymentRequestButtonBorderRadius,
@@ -192,24 +193,52 @@ const FailedAppleGooglePayPreviewNotice = () => (
 	</ExpressCheckoutInlineNotice>
 );
 
+/*
+ * Small copy of the storefront WooPay express button, for this preview only. It mirrors `WooPayButtonContent` and
+ * `getWooPayButtonLabel` in client/blocks/assets/js/extensions/payment-methods/woopayments/woopay/index.js, and
+ * ./style.scss copies the `.woopay-express-button` rules next to it. The admin and blocks builds cannot import each
+ * other, so the two must change together.
+ */
+const getWooPayButtonLabel = ( type: string ) => {
+	const labels: Record< string, string > = {
+		default: __( 'WooPay', 'woocommerce' ),
+		buy: sprintf(
+			/* translators: %s: WooPay. */
+			__( 'Buy with %s', 'woocommerce' ),
+			'WooPay'
+		),
+		donate: sprintf(
+			/* translators: %s: WooPay. */
+			__( 'Donate with %s', 'woocommerce' ),
+			'WooPay'
+		),
+		book: sprintf(
+			/* translators: %s: WooPay. */
+			__( 'Book with %s', 'woocommerce' ),
+			'WooPay'
+		),
+	};
+
+	return labels[ type ] || labels.default;
+};
+
 const WooPayButtonPreview = ( {
 	buttonType,
 	height,
 	radius,
+	size,
 	theme,
 }: {
 	buttonType: string;
 	height: number;
 	radius: number;
+	size: string;
 	theme: string;
 } ) => {
-	const actionLabelByType: Record< string, string > = {
-		buy: __( 'Buy with WooPay', 'woocommerce' ),
-		donate: __( 'Donate with WooPay', 'woocommerce' ),
-		book: __( 'Book with WooPay', 'woocommerce' ),
-	};
-	const label =
-		actionLabelByType[ buttonType ] || __( 'WooPay', 'woocommerce' );
+	const type = buttonType || 'default';
+	const label = getWooPayButtonLabel( type );
+	const prefix =
+		type === 'default' ? '' : label.replace( /\s*WooPay\s*$/, '' );
 	const descriptionId =
 		'woopayments-express-checkout-settings__woopay-button-preview-description';
 
@@ -218,17 +247,23 @@ const WooPayButtonPreview = ( {
 			<button
 				type="button"
 				className="woopayments-express-checkout-settings__woopay-button-preview"
-				data-theme={ theme }
+				aria-label={ label }
 				aria-describedby={ descriptionId }
 				aria-disabled="true"
 				tabIndex={ -1 }
+				data-type={ type }
+				data-theme={ theme || 'dark' }
+				data-size={ BUTTON_HEIGHT_BY_SIZE[ size ] ? size : 'medium' }
 				style={ {
-					minHeight: `${ height }px`,
+					height: `${ height }px`,
 					borderRadius: `${ radius }px`,
 				} }
 				onClick={ ( event ) => event.preventDefault() }
 			>
-				{ label }
+				<span className="woopayments-express-checkout-settings__woopay-button-preview-content">
+					{ prefix ? <span>{ prefix }</span> : null }
+					<img src={ WooPayLogoImage } alt="" />
+				</span>
 			</button>
 			<span id={ descriptionId } className="screen-reader-text">
 				{ __( 'Express checkout preview', 'woocommerce' ) }
@@ -384,12 +419,16 @@ export const ExpressCheckoutPreview = () => {
 	}
 
 	return (
-		<div className="woopayments-express-checkout-settings__preview woopayments-express-checkout-settings__preview-stack">
+		<div
+			className="woopayments-express-checkout-settings__preview woopayments-express-checkout-settings__preview-stack"
+			data-theme={ theme }
+		>
 			{ isWooPayEnabled && (
 				<WooPayButtonPreview
 					buttonType={ buttonType }
 					height={ height }
 					radius={ Number( radius || 0 ) }
+					size={ size }
 					theme={ theme }
 				/>
 			) }
