@@ -84,6 +84,17 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
+
+		// Like the client, which wraps each preview button in a div with a 4px margin and sets its notices 24px lower.
+		> .woopayments-express-checkout-settings__woopay-button-preview,
+		> .woopayments-express-checkout-settings__stripe-preview {
+			width: auto;
+			margin: 4px;
+		}
+
+		> .woopayments-express-checkout-settings__notice.components-notice {
+			margin: 24px 0 0;
+		}
 	}
 
 	// Like the client, the preview box darkens behind the light buttons so they stay visible.
