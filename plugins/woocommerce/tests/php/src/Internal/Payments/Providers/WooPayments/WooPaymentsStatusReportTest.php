@@ -7,12 +7,15 @@ use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
+use WC_REST_System_Status_Tools_V2_Controller;
 use WC_Unit_Test_Case;
 
 /**
@@ -55,6 +58,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_account_data' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
+		wc_get_container()->reset_replacement( WooPaymentsApiClient::class );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, '0', true );
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
@@ -371,6 +375,125 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 			$this->assertArrayHasKey( 'native-' . $tool_id, $tools );
 			$this->assertIsCallable( $tools[ 'native-' . $tool_id ]['callback'] );
 		}
+	}
+
+	/**
+	 * @testdox The account cache tool refetches the account once and leaves the cache as the client does ($fetch_fails, $had_cached_account).
+	 *
+	 * Client 11.1.0 runs `refresh_account_data()` (class-wc-payments-status.php:89-102), which is `get_cached_account_data( true )`
+	 * (class-wc-payments-account.php:2534-2536): one fetch; a failed fetch keeps the old data marked errored, or returns false
+	 * without it (class-database-cache.php:166-181, class-wc-payments-account.php:2487-2489). WooCommerce prints "Tool ran." for
+	 * an array and an error for false (class-wc-rest-system-status-tools-v2-controller.php:738-746).
+	 *
+	 * @testWith [false, true, "fresh", false, 0, true, "Tool ran."]
+	 *           [true, true, "old", true, 1, true, "Tool ran."]
+	 *           [true, false, "none", true, 1, false, "There was an error calling "]
+	 *
+	 * @param bool   $fetch_fails        Whether the account fetch fails.
+	 * @param bool   $had_cached_account Whether an account was cached before the tool ran.
+	 * @param string $expected_data      Account the cache holds afterwards: fresh, old, or none.
+	 * @param bool   $expected_errored   Expected errored flag on the cache.
+	 * @param int    $expected_errors    Expected consecutive error count on the cache.
+	 * @param bool   $expected_success   Whether WooCommerce reports the tool as successful.
+	 * @param string $expected_message   Start of the message WooCommerce shows the merchant.
+	 */
+	public function test_clear_account_cache_tool_refetches_the_account( bool $fetch_fails, bool $had_cached_account, string $expected_data, bool $expected_errored, int $expected_errors, bool $expected_success, string $expected_message ): void {
+		$old_account   = array(
+			'account_id'        => 'acct_native_test',
+			'is_live'           => true,
+			'payments_enabled'  => true,
+			'details_submitted' => true,
+		);
+		$fresh_account = array_merge( $old_account, array( 'payments_enabled' => false ) );
+		$api_client    = new class( $fresh_account, $fetch_fails ) extends WooPaymentsApiClient {
+			/**
+			 * Number of account fetches.
+			 *
+			 * @var int
+			 */
+			public int $calls = 0;
+
+			/**
+			 * Account to return.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $account;
+
+			/**
+			 * Whether every fetch fails.
+			 *
+			 * @var bool
+			 */
+			private bool $fail;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $account Account to return.
+			 * @param bool                $fail    Whether every fetch fails.
+			 */
+			public function __construct( array $account, bool $fail ) {
+				$this->account = $account;
+				$this->fail    = $fail;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return the account or fail.
+			 *
+			 * @param string $woocommerce_store_id WooCommerce store ID.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException When set to fail.
+			 */
+			public function get_account( string $woocommerce_store_id = '' ): array {
+				++$this->calls;
+				if ( $this->fail ) {
+					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+				}
+
+				return $this->account;
+			}
+		};
+		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$this->fake_plugin( false );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->seed_connected_store();
+		$this->set_native_state( NativePaymentsState::CONNECTED );
+		$sut = $this->get_sut();
+		$this->remove_status_hooks( $sut );
+		$sut->register();
+		if ( ! $had_cached_account ) {
+			wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
+		}
+
+		$result = ( new WC_REST_System_Status_Tools_V2_Controller() )->execute_tool( 'clear_wcpay_account_cache' );
+
+		$cache = get_option( 'wcpay_account_data' );
+		$this->assertSame( 1, $api_client->calls, 'The tool must fetch the account exactly once.' );
+		$this->assertIsArray( $cache, 'The tool must leave an account cache entry behind.' );
+		$this->assertSame(
+			array(
+				'fresh' => $fresh_account,
+				'old'   => $old_account,
+				'none'  => null,
+			)[ $expected_data ],
+			$cache['data'],
+			'The cache must hold what the client leaves after the refetch.'
+		);
+		$this->assertSame( $expected_errored, $cache['errored'] );
+		$this->assertSame( $expected_errors, $cache['consecutive_errors'] );
+		$this->assertSame( $expected_success, $result['success'] );
+		$this->assertStringStartsWith( $expected_message, $result['message'] );
 	}
 
 	/**

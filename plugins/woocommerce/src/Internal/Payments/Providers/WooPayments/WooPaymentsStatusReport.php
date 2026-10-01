@@ -438,18 +438,26 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Clear the WooPayments account cache.
+	 * Refetch the WooPayments account so the cache holds fresh data, as the client's tool does.
 	 *
-	 * @return string Result message.
+	 * Returns the account data, or false when the fetch failed with no account to keep, so WooCommerce
+	 * shows the client's "Tool ran." or error message.
+	 *
+	 * @return array<string,mixed>|false|string Account data, false on failure, or a permission message.
 	 */
-	public function clear_account_cache(): string {
+	public function clear_account_cache() {
 		if ( ! current_user_can( 'manage_woocommerce' ) ) {
 			return __( 'You do not have permission to run this tool.', 'woocommerce' );
 		}
 
-		$this->get_account_service()->clear_cache();
+		$account_service = $this->get_account_service();
+		$account_data    = $account_service->refresh_account_data();
 
-		return __( 'WooPayments account cache cleared.', 'woocommerce' );
+		if ( array() === $account_data && $account_service->has_account_or_is_connection_indeterminate() ) {
+			return false;
+		}
+
+		return $account_data;
 	}
 
 	/**
