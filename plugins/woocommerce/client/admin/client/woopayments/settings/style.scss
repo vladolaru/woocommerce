@@ -239,13 +239,8 @@
 		line-height: 18px;
 	}
 
-	&__fee-wrapper {
-		position: relative;
-		display: inline-flex;
-	}
-
+	&__fee-wrapper,
 	&__promotion-wrapper {
-		position: relative;
 		display: inline-flex;
 	}
 
@@ -324,91 +319,6 @@
 		background: #e8f7f0;
 		color: #005c3a;
 		font-weight: 500;
-	}
-
-	&__fees-tooltip {
-		position: absolute;
-		z-index: 20;
-		left: 0;
-		top: calc(100% + 6px);
-		display: grid;
-		gap: 8px;
-		min-width: 260px;
-		max-width: 320px;
-		padding: 12px;
-		border-radius: 2px;
-		background: $gray-900;
-		color: $white;
-		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
-		font-size: 12px;
-		line-height: 18px;
-		opacity: 0;
-		pointer-events: auto;
-		transform: translateY(-4px);
-		transition:
-			opacity 120ms ease,
-			transform 120ms ease;
-
-		> span {
-			display: flex;
-			justify-content: space-between;
-			gap: 16px;
-		}
-
-		strong {
-			color: $white;
-		}
-
-		a {
-			color: $white;
-			text-decoration: underline;
-		}
-	}
-
-	&__promotion-tooltip {
-		position: absolute;
-		z-index: 20;
-		left: 0;
-		top: calc(100% + 6px);
-		display: grid;
-		gap: 8px;
-		min-width: 240px;
-		max-width: 320px;
-		padding: 12px;
-		border-radius: 2px;
-		background: $gray-900;
-		color: $white;
-		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
-		font-size: 12px;
-		line-height: 18px;
-		opacity: 0;
-		pointer-events: auto;
-		transform: translateY(-4px);
-		transition:
-			opacity 120ms ease,
-			transform 120ms ease;
-
-		a {
-			color: $white;
-			text-decoration: underline;
-		}
-
-		p {
-			margin: 0;
-			color: $white;
-		}
-	}
-
-	&__fee-wrapper:hover &__fees-tooltip,
-	&__fee-wrapper:focus-within &__fees-tooltip {
-		opacity: 1;
-		transform: translateY(0);
-	}
-
-	&__promotion-wrapper:hover &__promotion-tooltip,
-	&__promotion-wrapper:focus-within &__promotion-tooltip {
-		opacity: 1;
-		transform: translateY(0);
 	}
 
 	&__chip {

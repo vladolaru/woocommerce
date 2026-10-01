@@ -1542,7 +1542,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 		// reference it with a dangling aria-controls IDREF.
 		expect( cardFeeButton ).not.toHaveAttribute( 'aria-controls' );
 
-		await userEvent.click( cardFeeButton );
+		// Client 11.1.0 opens the fee details on hover (HoverTooltip) and on keyboard focus.
+		await userEvent.hover( cardFeeButton );
 		const feeDetailsDialog = screen.getByRole( 'dialog', {
 			name: 'From 2.61% + $0.27 fee details',
 		} );
@@ -1552,9 +1553,14 @@ describe( 'WooPaymentsSettingsPage', () => {
 			feeDetailsDialog.id
 		);
 		expect( screen.queryByRole( 'tooltip' ) ).not.toBeInTheDocument();
+		// Only "Learn more" is linked, as in client 11.1.0 utils/account-fees.tsx:224-246.
 		const feesLink = within( feeDetailsDialog ).getByRole( 'link', {
-			name: /^Learn more about WooPayments Fees in your country/,
+			name: /^Learn more/,
 		} );
+		expect( feesLink ).not.toHaveTextContent( /about/ );
+		expect( feeDetailsDialog ).toHaveTextContent(
+			/about WooPayments Fees in your country/
+		);
 		expect( feesLink ).toHaveAttribute(
 			'href',
 			'https://woocommerce.com/document/woopayments/fees/#united-states'
@@ -1659,15 +1665,20 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 			render( <WooPaymentsSettingsPage /> );
 
-			await userEvent.click(
-				screen.getByRole( 'button', {
+			// Keyboard focus opens the details too.
+			screen
+				.getByRole( 'button', {
 					name: 'From 2.9% + $0.30 fee details',
 				} )
+				.focus();
+			const dialog = await screen.findByRole( 'dialog', {
+				name: 'From 2.9% + $0.30 fee details',
+			} );
+			expect( dialog ).toHaveTextContent(
+				linkLabel.replace( /^Learn more/, '' )
 			);
 			expect(
-				screen.getByRole( 'link', {
-					name: new RegExp( `^${ linkLabel }` ),
-				} )
+				within( dialog ).getByRole( 'link', { name: /^Learn more/ } )
 			).toHaveAttribute( 'href', expectedUrl );
 		}
 	);

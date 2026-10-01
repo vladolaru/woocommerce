@@ -8,6 +8,7 @@ import {
 	Icon,
 	Modal,
 	Notice,
+	Popover,
 } from '@wordpress/components';
 import {
 	createInterpolateElement,
@@ -18,7 +19,7 @@ import {
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { info as infoIcon } from '@wordpress/icons';
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -525,6 +526,139 @@ const getDiscountTooltipText = ( discountFee?: FeeAmount ) => {
 	);
 };
 
+/**
+ * A pill that opens its details above itself in a core Popover, on hover, focus or click, as the client's
+ * HoverTooltip does for fees. Escape closes it and returns focus to the pill.
+ */
+const PillDetailsPopover = ( {
+	id,
+	label,
+	wrapperClassName,
+	triggerClassName,
+	trigger,
+	children,
+}: {
+	id: string;
+	label: string;
+	wrapperClassName: string;
+	triggerClassName: string;
+	trigger: ReactNode;
+	children: ReactNode;
+} ) => {
+	const [ isOpen, setIsOpen ] = useState( false );
+	const [ triggerElement, setTriggerElement ] =
+		useState< HTMLButtonElement | null >( null );
+	const wrapperRef = useRef< HTMLSpanElement >( null );
+	const contentRef = useRef< HTMLDivElement >( null );
+	const shouldSuppressNextFocusOpenRef = useRef( false );
+	// The popover renders in a portal, so "inside" covers the pill and the popover content.
+	const isInside = ( node: EventTarget | null ) =>
+		node instanceof Node &&
+		( !! wrapperRef.current?.contains( node ) ||
+			!! contentRef.current?.contains( node ) );
+	const close = ( shouldRestoreFocus: boolean ) => {
+		setIsOpen( false );
+
+		if ( ! shouldRestoreFocus || ! triggerElement ) {
+			return;
+		}
+
+		shouldSuppressNextFocusOpenRef.current = true;
+		triggerElement.focus();
+		triggerElement.ownerDocument.defaultView?.setTimeout( () => {
+			shouldSuppressNextFocusOpenRef.current = false;
+		}, 0 );
+	};
+	useEffect( () => {
+		const ownerDocument = triggerElement?.ownerDocument;
+
+		if ( ! isOpen || ! ownerDocument ) {
+			return;
+		}
+
+		const handleEscape = ( event: KeyboardEvent ) => {
+			if (
+				event.key === 'Escape' &&
+				isInside( ownerDocument.activeElement )
+			) {
+				event.stopPropagation();
+				close( true );
+			}
+		};
+
+		ownerDocument.addEventListener( 'keydown', handleEscape, true );
+
+		return () => {
+			ownerDocument.removeEventListener( 'keydown', handleEscape, true );
+		};
+	} );
+	const closeUnlessInside = ( node: EventTarget | null ) => {
+		if ( ! isInside( node ) ) {
+			setIsOpen( false );
+		}
+	};
+
+	return (
+		<span
+			ref={ wrapperRef }
+			className={ wrapperClassName }
+			onMouseEnter={ () => setIsOpen( true ) }
+			onMouseLeave={ () =>
+				closeUnlessInside(
+					wrapperRef.current?.ownerDocument.activeElement ?? null
+				)
+			}
+		>
+			<button
+				ref={ setTriggerElement }
+				type="button"
+				className={ triggerClassName }
+				aria-label={ label }
+				aria-haspopup="dialog"
+				aria-expanded={ isOpen }
+				// Only reference the dialog while it is mounted; otherwise
+				// aria-controls points at a non-existent element.
+				aria-controls={ isOpen ? id : undefined }
+				onClick={ () => setIsOpen( true ) }
+				onFocus={ () => {
+					if ( ! shouldSuppressNextFocusOpenRef.current ) {
+						setIsOpen( true );
+					}
+				} }
+				onBlur={ ( event ) => closeUnlessInside( event.relatedTarget ) }
+			>
+				{ trigger }
+			</button>
+			{ isOpen && (
+				// The Popover also closes when focus leaves it.
+				<Popover
+					anchor={ triggerElement }
+					placement="top"
+					focusOnMount={ false }
+					onClose={ () =>
+						close(
+							isInside(
+								triggerElement?.ownerDocument.activeElement ??
+									null
+							)
+						)
+					}
+				>
+					<div
+						ref={ contentRef }
+						id={ id }
+						role="dialog"
+						aria-label={ label }
+						className="woopayments-settings-payment-method-item__details-popover"
+					>
+						{ children }
+					</div>
+				</Popover>
+			) }
+		</span>
+	);
+};
+
 const FeeDetails = ( {
 	feeStructure,
 	tooltipId,
@@ -534,62 +668,6 @@ const FeeDetails = ( {
 	tooltipId: string;
 	accountCountry?: string;
 } ) => {
-	const [ isTooltipOpen, setIsTooltipOpen ] = useState( false );
-	const triggerRef = useRef< HTMLButtonElement >( null );
-	const wrapperRef = useRef< HTMLDivElement >( null );
-	const shouldSuppressNextFocusOpenRef = useRef( false );
-	const restoreFocusToTrigger = () => {
-		shouldSuppressNextFocusOpenRef.current = true;
-		triggerRef.current?.focus();
-
-		const ownerWindow = triggerRef.current?.ownerDocument.defaultView;
-		ownerWindow?.setTimeout( () => {
-			shouldSuppressNextFocusOpenRef.current = false;
-		}, 0 );
-	};
-	const handleTriggerFocus = () => {
-		if ( shouldSuppressNextFocusOpenRef.current ) {
-			return;
-		}
-
-		setIsTooltipOpen( true );
-	};
-
-	useEffect( () => {
-		if ( ! isTooltipOpen || ! wrapperRef.current ) {
-			return;
-		}
-
-		const wrapper = wrapperRef.current;
-		const ownerDocument = wrapper.ownerDocument;
-		const handleKeyDown = ( event: KeyboardEvent ) => {
-			if (
-				event.key === 'Escape' &&
-				ownerDocument.activeElement &&
-				wrapper.contains( ownerDocument.activeElement )
-			) {
-				event.stopPropagation();
-				setIsTooltipOpen( false );
-				restoreFocusToTrigger();
-			}
-		};
-
-		ownerDocument.addEventListener( 'keydown', handleKeyDown, true );
-
-		return () => {
-			ownerDocument.removeEventListener( 'keydown', handleKeyDown, true );
-		};
-	}, [ isTooltipOpen ] );
-
-	const handleEscape = ( event: ReactKeyboardEvent< HTMLElement > ) => {
-		if ( event.key !== 'Escape' ) {
-			return;
-		}
-
-		event.stopPropagation();
-		setIsTooltipOpen( false );
-		restoreFocusToTrigger();
-	};
 	const feeDescription = formatMethodFeesDescription( feeStructure );
 	const baseFee = feeStructure?.base;
 
@@ -614,13 +692,32 @@ const FeeDetails = ( {
 		__( '%s fee details', 'woocommerce' ),
 		feeDescription
 	);
-	const feeDocumentationLabel = feeDocumentationSectionSlug
-		? __(
-				'Learn more about WooPayments Fees in your country',
-				'woocommerce'
-		  )
-		: __( 'Learn more about WooPayments Fees', 'woocommerce' );
-	const feeDetailsLabelId = `${ tooltipId }-label`;
+	// Client 11.1.0 utils/account-fees.tsx:224-246 links only "Learn more".
+	const feeDocumentationHint = createInterpolateElement(
+		feeDocumentationSectionSlug
+			? sprintf(
+					/* translators: %s: WooPayments */
+					__(
+						'<link>Learn more</link> about %s Fees in your country',
+						'woocommerce'
+					),
+					'WooPayments'
+			  )
+			: sprintf(
+					/* translators: %s: WooPayments */
+					__(
+						'<link>Learn more</link> about %s Fees',
+						'woocommerce'
+					),
+					'WooPayments'
+			  ),
+		{
+			// The interpolated "Learn more" becomes the link text.
+			link: (
+				<ExternalLink href={ feeDocumentationUrl }>{ '' }</ExternalLink>
+			),
+		}
+	);
 	const totalFee = {
 		percentage_rate:
 			( baseFee.percentage_rate || 0 ) * discountMultiplier +
@@ -635,100 +732,42 @@ const FeeDetails = ( {
 	};
 
 	return (
-		<div
-			ref={ wrapperRef }
-			className="woopayments-settings-payment-method-item__fee-wrapper"
-			onBlur={ ( event ) => {
-				const nextFocusedElement = event.relatedTarget;
-				if (
-					! nextFocusedElement ||
-					! event.currentTarget.contains( nextFocusedElement as Node )
-				) {
-					setIsTooltipOpen( false );
-				}
-			} }
-			onMouseEnter={ () => setIsTooltipOpen( true ) }
-			onMouseLeave={ () => {
-				const activeElement =
-					wrapperRef.current?.ownerDocument.activeElement;
-				if (
-					! activeElement ||
-					! wrapperRef.current?.contains( activeElement )
-				) {
-					setIsTooltipOpen( false );
-				}
-			} }
+		<PillDetailsPopover
+			id={ tooltipId }
+			label={ feeDetailsLabel }
+			wrapperClassName="woopayments-settings-payment-method-item__fee-wrapper"
+			triggerClassName="woopayments-settings-payment-method-item__fee-pill"
+			trigger={ feeDescription }
 		>
-			<button
-				ref={ triggerRef }
-				type="button"
-				className="woopayments-settings-payment-method-item__fee-pill"
-				aria-label={ feeDetailsLabel }
-				aria-haspopup="dialog"
-				aria-expanded={ isTooltipOpen }
-				// Only reference the dialog while it is mounted; otherwise
-				// aria-controls points at a non-existent element.
-				aria-controls={ isTooltipOpen ? tooltipId : undefined }
-				onClick={ () => setIsTooltipOpen( true ) }
-				onFocus={ handleTriggerFocus }
-				onKeyDown={ handleEscape }
-			>
-				{ feeDescription }
-			</button>
-			{ isTooltipOpen && (
-				<div
-					id={ tooltipId }
-					role="dialog"
-					aria-labelledby={ feeDetailsLabelId }
-					className="woopayments-settings-payment-method-item__fees-tooltip"
-				>
-					<span
-						id={ feeDetailsLabelId }
-						className="screen-reader-text"
-					>
-						{ feeDetailsLabel }
-					</span>
+			<span>
+				<span>{ __( 'Base fee', 'woocommerce' ) }</span>
+				<span>{ baseFeeDescription }</span>
+			</span>
+			{ additionalFee && (
+				<span>
 					<span>
-						<span>{ __( 'Base fee', 'woocommerce' ) }</span>
-						<span>{ baseFeeDescription }</span>
+						{ __(
+							'International payment method fee',
+							'woocommerce'
+						) }
 					</span>
-					{ additionalFee && (
-						<span>
-							<span>
-								{ __(
-									'International payment method fee',
-									'woocommerce'
-								) }
-							</span>
-							<span>{ additionalFee }</span>
-						</span>
-					) }
-					{ fxFee && (
-						<span>
-							<span>
-								{ __(
-									'Currency conversion fee',
-									'woocommerce'
-								) }
-							</span>
-							<span>{ fxFee }</span>
-						</span>
-					) }
-					<span>
-						<span>
-							{ __( 'Total per transaction', 'woocommerce' ) }
-						</span>
-						<strong>{ formatFeeAmount( totalFee ) }</strong>
-					</span>
-					<ExternalLink
-						href={ feeDocumentationUrl }
-						onKeyDown={ handleEscape }
-					>
-						{ feeDocumentationLabel }
-					</ExternalLink>
-				</div>
+					<span>{ additionalFee }</span>
+				</span>
 			) }
-		</div>
+			{ fxFee && (
+				<span>
+					<span>
+						{ __( 'Currency conversion fee', 'woocommerce' ) }
+					</span>
+					<span>{ fxFee }</span>
+				</span>
+			) }
+			<span>
+				<span>{ __( 'Total per transaction', 'woocommerce' ) }</span>
+				<strong>{ formatFeeAmount( totalFee ) }</strong>
+			</span>
+			<p>{ feeDocumentationHint }</p>
+		</PillDetailsPopover>
 	);
 };
 
@@ -772,74 +811,6 @@ const PmPromotionBadge = ( {
 	promotion?: PmPromotion;
 	tooltipId: string;
 } ) => {
-	const [ isTooltipOpen, setIsTooltipOpen ] = useState( false );
-	const triggerRef = useRef< HTMLButtonElement >( null );
-	const wrapperRef = useRef< HTMLDivElement >( null );
-	const shouldSuppressNextFocusOpenRef = useRef( false );
-
-	const restoreFocusToTrigger = () => {
-		shouldSuppressNextFocusOpenRef.current = true;
-		triggerRef.current?.focus();
-
-		const ownerWindow = triggerRef.current?.ownerDocument.defaultView;
-		ownerWindow?.setTimeout( () => {
-			shouldSuppressNextFocusOpenRef.current = false;
-		}, 0 );
-	};
-
-	const handleTriggerFocus = () => {
-		if ( shouldSuppressNextFocusOpenRef.current ) {
-			return;
-		}
-
-		setIsTooltipOpen( true );
-	};
-
-	useEffect( () => {
-		if ( ! isTooltipOpen || ! wrapperRef.current ) {
-			return;
-		}
-
-		const wrapper = wrapperRef.current;
-		const ownerDocument = wrapper.ownerDocument;
-		const handleKeyDown = ( event: KeyboardEvent ) => {
-			if (
-				event.key === 'Escape' &&
-				ownerDocument.activeElement &&
-				wrapper.contains( ownerDocument.activeElement )
-			) {
-				event.stopPropagation();
-				setIsTooltipOpen( false );
-				restoreFocusToTrigger();
-			}
-		};
-		const handleFocusIn = ( event: FocusEvent ) => {
-			if (
-				event.target instanceof Node &&
-				! wrapper.contains( event.target )
-			) {
-				setIsTooltipOpen( false );
-			}
-		};
-
-		ownerDocument.addEventListener( 'keydown', handleKeyDown, true );
-		ownerDocument.addEventListener( 'focusin', handleFocusIn );
-
-		return () => {
-			ownerDocument.removeEventListener( 'keydown', handleKeyDown, true );
-			ownerDocument.removeEventListener( 'focusin', handleFocusIn );
-		};
-	}, [ isTooltipOpen ] );
-	const handleEscape = ( event: React.KeyboardEvent< HTMLElement > ) => {
-		if ( event.key !== 'Escape' ) {
-			return;
-		}
-
-		event.stopPropagation();
-		setIsTooltipOpen( false );
-		restoreFocusToTrigger();
-	};
-
 	if ( ! promotion ) {
 		return null;
 	}
@@ -851,7 +822,6 @@ const PmPromotionBadge = ( {
 		__( '%s promotion details', 'woocommerce' ),
 		promotion.title
 	);
-	const labelId = `${ tooltipId }-label`;
 
 	if ( ! hasTooltip ) {
 		return (
@@ -864,56 +834,31 @@ const PmPromotionBadge = ( {
 	}
 
 	return (
-		<div
-			ref={ wrapperRef }
-			className="woopayments-settings-payment-method-item__promotion-wrapper"
+		<PillDetailsPopover
+			id={ tooltipId }
+			label={ label }
+			wrapperClassName="woopayments-settings-payment-method-item__promotion-wrapper"
+			triggerClassName={ `woopayments-settings-payment-method-item__promotion-badge is-${ badgeType }` }
+			trigger={
+				<>
+					{ promotion.title }
+					<Icon
+						className="woopayments-settings-payment-method-item__promotion-icon"
+						icon={ infoIcon }
+						size={ 14 }
+					/>
+				</>
+			}
 		>
-			<button
-				ref={ triggerRef }
-				type="button"
-				className={ `woopayments-settings-payment-method-item__promotion-badge is-${ badgeType }` }
-				aria-label={ label }
-				aria-haspopup="dialog"
-				aria-expanded={ isTooltipOpen }
-				// Only reference the dialog while it is mounted; otherwise
-				// aria-controls points at a non-existent element.
-				aria-controls={ isTooltipOpen ? tooltipId : undefined }
-				onClick={ () => setIsTooltipOpen( true ) }
-				onFocus={ handleTriggerFocus }
-				onKeyDown={ handleEscape }
-			>
-				{ promotion.title }
-				<Icon
-					className="woopayments-settings-payment-method-item__promotion-icon"
-					icon={ infoIcon }
-					size={ 14 }
-				/>
-			</button>
-			{ isTooltipOpen && (
-				<div
-					id={ tooltipId }
-					role="dialog"
-					aria-labelledby={ labelId }
-					className="woopayments-settings-payment-method-item__promotion-tooltip"
-				>
-					<span id={ labelId } className="screen-reader-text">
-						{ label }
-					</span>
-					{ promotion.description && (
-						<RawHTML>{ promotion.description }</RawHTML>
-					) }
-					{ promotion.tc_url && (
-						<ExternalLink
-							href={ promotion.tc_url }
-							onKeyDown={ handleEscape }
-						>
-							{ promotion.tc_label ||
-								__( 'See terms', 'woocommerce' ) }
-						</ExternalLink>
-					) }
-				</div>
+			{ promotion.description && (
+				<RawHTML>{ promotion.description }</RawHTML>
 			) }
-		</div>
+			{ promotion.tc_url && (
+				<ExternalLink href={ promotion.tc_url }>
+					{ promotion.tc_label || __( 'See terms', 'woocommerce' ) }
+				</ExternalLink>
+			) }
+		</PillDetailsPopover>
 	);
 };
 
