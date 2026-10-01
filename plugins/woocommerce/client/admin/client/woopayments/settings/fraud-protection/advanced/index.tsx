@@ -26,6 +26,7 @@ import type { KeyboardEvent, ReactNode } from 'react';
 /**
  * Internal dependencies
  */
+import { BackButton } from '~/settings-payments/components/buttons/back-button';
 import { getSettingsPaymentsProviderRouteUrl } from '../../../admin/utils';
 import '../../../../settings-payments/settings-payments-body.scss';
 import {
@@ -119,9 +120,10 @@ const getFraudProtectionEnvironment = ( settings: SettingsRecord ) => {
 		),
 		allowedCountriesType: asString( allowedCountries.type, 'all' ),
 		settingCountries: asStringArray( allowedCountries.countries ),
+		// Unknown AVS state reads as off, CVC as on, as in the client.
 		isAvsFailureDeclineEnabled: asBoolean(
 			fraudProtection.decline_on_avs_failure,
-			true
+			false
 		),
 		isCvcFailureDeclineEnabled: asBoolean(
 			fraudProtection.decline_on_cvc_failure,
@@ -659,6 +661,24 @@ const AdvancedFraudSettingsDescription = () => (
 	</>
 );
 
+// Client 11.1.0 puts a back arrow before the page title (advanced-settings/index.tsx:74-100).
+const AdvancedFraudProtectionTitle = () => (
+	<h1>
+		<BackButton
+			href={ getSettingsPaymentsProviderRouteUrl(
+				'/woopayments/settings'
+			) }
+			tooltipText={ __(
+				'Return to WooPayments settings',
+				'woocommerce'
+			) }
+			from="woopayments_fraud_protection_settings"
+		>
+			{ __( 'Advanced fraud protection', 'woocommerce' ) }
+		</BackButton>
+	</h1>
+);
+
 export const FraudProtectionAdvancedSettingsPage = () => {
 	const settings = asSettingsRecord( useGetSettings() );
 	const environment = useMemo(
@@ -814,15 +834,7 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 				className="woopayments-fraud-protection-advanced"
 				aria-busy="true"
 			>
-				<a
-					className="woopayments-fraud-protection-advanced__back-link"
-					href={ getSettingsPaymentsProviderRouteUrl(
-						'/woopayments/settings'
-					) }
-				>
-					{ __( 'Back to WooPayments settings', 'woocommerce' ) }
-				</a>
-				<h1>{ __( 'Advanced fraud protection', 'woocommerce' ) }</h1>
+				<AdvancedFraudProtectionTitle />
 				<div className="woopayments-fraud-protection-advanced__description">
 					<AdvancedFraudSettingsDescription />
 				</div>
@@ -843,23 +855,18 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 	const supportsAllCountries = environment.allowedCountriesType === 'all';
 	const isSellingToSupportedAvsLocations =
 		isSellingToAvsSupportedLocations( environment );
+	// A failed settings read shows the same retrieval error as an `'error'` ruleset, with no Save, so
+	// default rules are never saved over the stored ruleset (N-261).
 	const hasAdvancedFraudProtectionSettingsError =
-		advancedFraudProtectionSettings === 'error';
+		advancedFraudProtectionSettings === 'error' ||
+		Object.keys( settings ).length === 0;
 
 	return (
 		<section
 			className="woopayments-fraud-protection-advanced"
 			aria-busy={ isSaving ? 'true' : undefined }
 		>
-			<a
-				className="woopayments-fraud-protection-advanced__back-link"
-				href={ getSettingsPaymentsProviderRouteUrl(
-					'/woopayments/settings'
-				) }
-			>
-				{ __( 'Back to WooPayments settings', 'woocommerce' ) }
-			</a>
-			<h1>{ __( 'Advanced fraud protection', 'woocommerce' ) }</h1>
+			<AdvancedFraudProtectionTitle />
 			<div className="woopayments-fraud-protection-advanced__description">
 				<AdvancedFraudSettingsDescription />
 			</div>

@@ -28,6 +28,7 @@ import {
 	ExpressCheckoutSettingsSection,
 } from './components';
 import { ExpressCheckoutMethodIcons } from './method-icons';
+import { TextLink } from '../text-link';
 import {
 	asSettingsRecord,
 	asString,
@@ -271,17 +272,18 @@ export const WooPaySettings = () => {
 		: undefined;
 	const privacyPolicyPermalink = getStorePagePermalink( 'privacy' );
 	const termsOfServicePermalink = getStorePagePermalink( 'terms' );
+	// Client 11.1.0 woopay-settings.js:291-296 links these with a plain same-tab anchor.
 	const privacyPolicyHelp = privacyPolicyPermalink ? (
-		<ExternalLink href={ privacyPolicyPermalink }>
+		<a href={ privacyPolicyPermalink }>
 			{ __( 'privacy policy', 'woocommerce' ) }
-		</ExternalLink>
+		</a>
 	) : (
 		__( 'privacy policy', 'woocommerce' )
 	);
 	const termsOfServiceHelp = termsOfServicePermalink ? (
-		<ExternalLink href={ termsOfServicePermalink }>
+		<a href={ termsOfServicePermalink }>
 			{ __( 'terms of service', 'woocommerce' ) }
-		</ExternalLink>
+		</a>
 	) : (
 		__( 'terms of service', 'woocommerce' )
 	);
@@ -335,27 +337,27 @@ export const WooPaySettings = () => {
 									'When enabled, customers will be able to checkout using WooPay. In order to use ',
 									'woocommerce'
 								) }
-								<ExternalLink href={ WOOPAY_MERCHANT_DOCS_URL }>
+								<TextLink href={ WOOPAY_MERCHANT_DOCS_URL }>
 									{ __( 'WooPay', 'woocommerce' ) }
-								</ExternalLink>
+								</TextLink>
 								{ __(
 									', you must agree to our ',
 									'woocommerce'
 								) }
-								<ExternalLink href="https://wordpress.com/tos/">
+								<TextLink href="https://wordpress.com/tos/">
 									{ __(
 										'WooCommerce Terms of Service',
 										'woocommerce'
 									) }
-								</ExternalLink>
+								</TextLink>
 								{ __( ' and ', 'woocommerce' ) }
-								<ExternalLink href="https://automattic.com/privacy/">
+								<TextLink href="https://automattic.com/privacy/">
 									{ __( 'Privacy Policy', 'woocommerce' ) }
-								</ExternalLink>
+								</TextLink>
 								{ __( '. ', 'woocommerce' ) }
-								<ExternalLink href="https://woocommerce.com/usage-tracking/">
+								<TextLink href="https://woocommerce.com/usage-tracking/">
 									{ __( 'Click here', 'woocommerce' ) }
-								</ExternalLink>
+								</TextLink>
 								{ __(
 									' to learn more about the data you will be sharing and opt-out options.',
 									'woocommerce'
@@ -400,13 +402,13 @@ export const WooPaySettings = () => {
 										"When enabled, WooPay checkout will be themed with your store's brand colors and fonts. ",
 										'woocommerce'
 									) }
-									<ExternalLink
+									<TextLink
 										href={
 											WOOPAY_CHECKOUT_APPEARANCE_DOCS_URL
 										}
 									>
 										{ __( 'Learn more', 'woocommerce' ) }
-									</ExternalLink>
+									</TextLink>
 								</>
 							}
 							onChange={ ( value ) =>

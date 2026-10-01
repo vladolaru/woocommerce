@@ -11,15 +11,18 @@
 		grid-column: 2;
 	}
 
-	> .woopayments-fraud-protection-advanced__back-link,
 	> h1 {
 		grid-column: 1 / -1;
 	}
 
+	// The client's back arrow and title, at the size core's offline payments header uses.
 	> h1 {
+		display: flex;
+		align-items: center;
 		margin: 0 0 24px;
-		font-size: 24px;
-		line-height: 32px;
+		padding: 0;
+		font-size: 16px;
+		line-height: 24px;
 		font-weight: 600;
 	}
 
@@ -37,14 +40,6 @@
 			grid-row: auto;
 		}
 	}
-}
-
-.woopayments-fraud-protection-advanced__back-link {
-	display: inline-flex;
-	margin-bottom: 12px;
-	font-size: 13px;
-	line-height: 20px;
-	text-decoration: none;
 }
 
 .woopayments-fraud-protection-advanced__description {

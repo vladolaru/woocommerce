@@ -37,6 +37,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	private const ADMIN_NAVIGATION = 'Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController';
 
+	private const ADMIN_NOTICES_PASSTHROUGH = 'Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNoticesPassthrough';
+
 	private const WCPAY = 'Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\\';
 
 	/** Available admin roots. */
@@ -70,6 +72,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPay\WooPaymentsWooPayExtensionSync',
 		self::WCPAY . 'WooPaymentsApplePayDomainService',
 		self::WCPAY . 'WooPaymentsCurrencyComplianceNotice',
+		self::ADMIN_NOTICES_PASSTHROUGH,
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
@@ -216,6 +219,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPay\WooPaymentsWooPayExtensionSync',
 		self::WCPAY . 'WooPaymentsApplePayDomainService',
 		self::WCPAY . 'WooPaymentsCurrencyComplianceNotice',
+		self::ADMIN_NOTICES_PASSTHROUGH,
 		self::WCPAY . 'WooPaymentsOrderTrackingService',
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',

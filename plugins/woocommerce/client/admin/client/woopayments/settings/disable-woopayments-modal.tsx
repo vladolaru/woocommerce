@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { Button, ExternalLink, Modal } from '@wordpress/components';
+import { Button, Modal } from '@wordpress/components';
 import { Children, createInterpolateElement } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
@@ -101,17 +101,14 @@ export const WooPaymentsDisableConfirmationModal = ( {
 								PROVIDER_NAME
 							),
 							{
+								// Client 11.1.0 disable-confirmation-modal/index.js:167-174: plain, same-tab links.
 								wooPaymentsLink: (
-									<ExternalLink href={ WOOPAYMENTS_DOC_URL }>
-										<></>
-									</ExternalLink>
+									// eslint-disable-next-line jsx-a11y/anchor-has-content -- createInterpolateElement adds the text.
+									<a href={ WOOPAYMENTS_DOC_URL } />
 								),
 								supportLink: (
-									<ExternalLink
-										href={ WOOCOMMERCE_SUPPORT_URL }
-									>
-										<></>
-									</ExternalLink>
+									// eslint-disable-next-line jsx-a11y/anchor-has-content -- createInterpolateElement adds the text.
+									<a href={ WOOCOMMERCE_SUPPORT_URL } />
 								),
 							}
 						)

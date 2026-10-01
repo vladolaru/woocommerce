@@ -25,7 +25,7 @@ export function* getPmPromotions(): Generator< unknown, void, unknown > {
 		if ( ! isPmPromotionsResponse( response ) ) {
 			yield dispatch( 'core/notices' ).createErrorNotice(
 				__(
-					'Error retrieving payment method promotions.',
+					'Error retrieving promotions. Please try again later.',
 					'woocommerce'
 				)
 			);
@@ -35,7 +35,10 @@ export function* getPmPromotions(): Generator< unknown, void, unknown > {
 		yield setPmPromotions( response );
 	} catch ( e ) {
 		yield dispatch( 'core/notices' ).createErrorNotice(
-			__( 'Error retrieving payment method promotions.', 'woocommerce' )
+			__(
+				'Error retrieving promotions. Please try again later.',
+				'woocommerce'
+			)
 		);
 	}
 }

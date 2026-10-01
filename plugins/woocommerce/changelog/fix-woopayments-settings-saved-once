@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Report a WooPayments settings save only in the snackbar, not a second time beside the Save button.

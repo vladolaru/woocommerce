@@ -1468,15 +1468,9 @@ export const WooPaymentsPaymentMethodsList = ( {
 			return 0;
 		} );
 
+	// Like the client, an empty list (for example after a failed settings read) shows nothing.
 	if ( definitions.length === 0 ) {
-		return (
-			<p className="woopayments-settings-muted">
-				{ __(
-					'No additional checkout payment methods are available for this account.',
-					'woocommerce'
-				) }
-			</p>
-		);
+		return null;
 	}
 
 	return (

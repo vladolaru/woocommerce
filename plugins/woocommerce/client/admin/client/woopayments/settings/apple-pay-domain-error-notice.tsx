@@ -2,7 +2,7 @@
  * External dependencies
  */
 import apiFetch from '@wordpress/api-fetch';
-import { ExternalLink, Notice } from '@wordpress/components';
+import { Notice } from '@wordpress/components';
 import { createInterpolateElement, useEffect } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
@@ -10,6 +10,7 @@ import { __ } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { getWooPaymentsSettingsBootstrap } from './bootstrap';
+import { TextLink } from './text-link';
 
 type ApplePayDomainError = {
 	error: string;
@@ -93,9 +94,9 @@ export const ApplePayDomainErrorNotice = () => {
 								'woocommerce'
 						  ) }
 				</span>{ ' ' }
-				<ExternalLink href={ LEARN_MORE_URL }>
+				<TextLink href={ LEARN_MORE_URL }>
 					{ __( 'Learn more', 'woocommerce' ) }
-				</ExternalLink>
+				</TextLink>
 				.
 			</p>
 			{ domainError.error && (

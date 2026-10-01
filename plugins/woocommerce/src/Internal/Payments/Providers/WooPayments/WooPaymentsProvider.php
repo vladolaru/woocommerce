@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNoticesPassthrough;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
@@ -133,6 +134,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsWooPayExtensionSync::class,
 			WooPaymentsApplePayDomainService::class,
 			WooPaymentsCurrencyComplianceNotice::class,
+			WooPaymentsAdminNoticesPassthrough::class,
 			WooPaymentsOrderTrackingService::class,
 			WooPaymentsOperationalQueueService::class,
 			WooPaymentsTestModeOrderEmailService::class,

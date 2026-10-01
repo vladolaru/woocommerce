@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show WooPayments' own admin notices, such as the store currency change and unsupported currency notices, on the WooPayments pages of the Payments settings tab.

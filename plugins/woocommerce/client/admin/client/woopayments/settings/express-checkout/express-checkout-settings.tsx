@@ -8,6 +8,7 @@ import { __ } from '@wordpress/i18n';
 /**
  * Internal dependencies
  */
+import { BackButton } from '~/settings-payments/components/buttons/back-button';
 import { getSettingsPaymentsProviderRouteUrl } from '../../admin/utils';
 import { AccountModeNotice } from '../account-mode-notice';
 import { ApplePayDomainErrorNotice } from '../apple-pay-domain-error-notice';
@@ -154,18 +155,23 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 			aria-labelledby={ headingId }
 		>
 			<header className="woopayments-express-checkout-settings__header">
-				<a
-					className="woopayments-express-checkout-settings__return-link"
-					href={ getSettingsPaymentsProviderRouteUrl(
-						'/woopayments/settings?from=woopayments-settings'
-					) }
-				>
-					{ __( 'Return to payments', 'woocommerce' ) }
-				</a>
-				<h1 id={ headingId }>{ title }</h1>
+				<h1 id={ headingId }>
+					<BackButton
+						href={ getSettingsPaymentsProviderRouteUrl(
+							'/woopayments/settings?from=woopayments-settings'
+						) }
+						tooltipText={ __(
+							'Return to WooPayments settings',
+							'woocommerce'
+						) }
+						from="woopayments_express_checkout_settings"
+					>
+						{ title }
+					</BackButton>
+				</h1>
 			</header>
 			<ApplePayDomainErrorNotice />
-			{ ! isLoading && hasSettings && (
+			{ ! isLoading && (
 				<AccountModeNotice isDevModeEnabled={ isDevModeEnabled } />
 			) }
 			{ content }

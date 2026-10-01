@@ -101,10 +101,24 @@ describe( 'WooPayments PM promotions data store', () => {
 		const result = resolver.next( { data: { id: 'card' } } );
 
 		expect( result.value ).toBeUndefined();
+		// Client 11.1.0 client/data/pm-promotions/resolvers.ts:86.
 		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
-			'Error retrieving payment method promotions.'
+			'Error retrieving promotions. Please try again later.'
 		);
 		expect( resolver.next().done ).toBe( true );
+	} );
+
+	it( 'shows the client error snackbar when the PM promotions read fails', async () => {
+		const { getPmPromotions } = await import( '../resolvers' );
+		const resolver = getPmPromotions();
+
+		resolver.next();
+		resolver.throw( new Error( 'Internal Server Error' ) );
+
+		expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
+		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+			'Error retrieving promotions. Please try again later.'
+		);
 	} );
 
 	it( 'posts activation requests to the PM promotion activate endpoint', async () => {

@@ -550,6 +550,24 @@ const setHookDefaults = () => {
 	mockUseGetSavingError.mockReturnValue( null );
 };
 
+const expectPlainLinks = ( hrefs: string[], target?: '_blank' ) => {
+	hrefs.forEach( ( href ) => {
+		const links = Array.from(
+			document.querySelectorAll( `a[href="${ href }"]` )
+		);
+
+		expect( links.length ).toBeGreaterThan( 0 );
+		links.forEach( ( link ) => {
+			expect( link ).not.toHaveClass( 'components-external-link' );
+			if ( target ) {
+				expect( link ).toHaveAttribute( 'target', target );
+			} else {
+				expect( link ).not.toHaveAttribute( 'target' );
+			}
+		} );
+	} );
+};
+
 describe( 'WooPaymentsSettingsPage', () => {
 	beforeEach( () => {
 		jest.clearAllMocks();
@@ -690,13 +708,15 @@ describe( 'WooPaymentsSettingsPage', () => {
 			expect( detailLink.parentElement?.parentElement?.tagName ).toBe(
 				'P'
 			);
-			expect(
-				screen
-					.getAllByRole( 'link', { name: /^Learn more/ } )
-					.map( ( link ) => link.getAttribute( 'href' ) )
-			).toContain(
-				'https://woocommerce.com/document/woopayments/payment-methods/apple-pay/#button-does-not-appear'
+			// Client 11.1.0 class-wc-payments-apple-pay-registration.php:303-308: a plain new-tab link.
+			const learnMoreLink = document.querySelector(
+				'.woopayments-settings-apple-pay-domain-notice a[href="https://woocommerce.com/document/woopayments/payment-methods/apple-pay/#button-does-not-appear"]'
 			);
+			expect( learnMoreLink ).toHaveTextContent( /^Learn more$/ );
+			expect( learnMoreLink ).not.toHaveClass(
+				'components-external-link'
+			);
+			expect( learnMoreLink ).toHaveAttribute( 'target', '_blank' );
 			expect(
 				screen.getByRole( 'link', { name: 'logs' } )
 			).toHaveAttribute(
@@ -934,6 +954,55 @@ describe( 'WooPaymentsSettingsPage', () => {
 			).length
 		).toBeGreaterThan( 8 );
 	} );
+
+	// Client 11.1.0 settings/settings-manager/index.js:40-64 and
+	// settings/payment-methods-section/index.js:26-38 render the same
+	// descriptions while the settings load and after they load.
+	it.each( [
+		[ 'loaded', false ],
+		[ 'loading', true ],
+	] )(
+		'renders the client section descriptions when settings are %s',
+		( _state, isLoading ) => {
+			if ( isLoading ) {
+				mockUseSettings.mockReturnValue( {
+					isLoading: true,
+					isSaving: false,
+					isDirty: false,
+					saveSettings: mockSaveSettings,
+				} );
+				mockUseGetSettings.mockReturnValue( {} );
+			}
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				within( getSettingsSectionByName( 'General' ) ).getByText(
+					'Enable or disable WooPayments on your store.'
+				)
+			).toBeInTheDocument();
+			expect(
+				within(
+					getSettingsSectionByName( 'Payments accepted on checkout' )
+				).getByText(
+					'Add and edit payments available to customers at checkout. Based on their device type, location, and purchase history, your customers will only see the most relevant payment methods.'
+				)
+			).toBeInTheDocument();
+			expect(
+				within(
+					getSettingsSectionByName( 'Express checkouts' )
+				).getByText(
+					'Let your customers use their favorite express payment methods and digital wallets for faster, more secure checkouts across different parts of your store.'
+				)
+			).toBeInTheDocument();
+			expect(
+				getSectionLinkByHref(
+					getSettingsSectionByName( 'Fraud protection' ),
+					'https://woocommerce.com/document/woopayments/fraud-and-disputes/fraud-protection/'
+				)
+			).toHaveTextContent( /Learn more about fraud protection/ );
+		}
+	);
 
 	it( 'renders reference section descriptions and documentation links', () => {
 		render( <WooPaymentsSettingsPage /> );
@@ -3184,6 +3253,239 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect( mockSaveSettings ).not.toHaveBeenCalled();
 	} );
 
+	// Client 11.1.0 settings/payment-methods-list/index.js renders an empty
+	// list under the "Payment methods" heading when the settings read fails,
+	// and its server-rendered test-account notice stays.
+	it( 'leaves the payment methods card empty and keeps the test-account notice when the settings read fails', async () => {
+		mockUseGetSettings.mockReturnValue( {} );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [] );
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [ [], noop ] );
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( {
+					account: {
+						connected: true,
+						test_drive: true,
+						sandbox: false,
+						live: false,
+					},
+					urls: { setup: '#live-onboarding' },
+				} );
+			}
+
+			return Promise.reject( new Error( 'Internal Server Error' ) );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const paymentMethodsSection = getSettingsSectionByName(
+			'Payments accepted on checkout'
+		);
+		expect(
+			within( paymentMethodsSection ).getByText( 'Payment methods' )
+		).toBeInTheDocument();
+		expect(
+			within( paymentMethodsSection ).queryByText(
+				/No additional checkout payment methods/
+			)
+		).not.toBeInTheDocument();
+		expect(
+			await screen.findByText( 'You are using a test account.' )
+		).toBeInTheDocument();
+	} );
+
+	describe( 'links inside running text', () => {
+		// Client 11.1.0 renders links inside sentences as plain anchors, with no
+		// external-link glyph: settings/express-checkout/*-item.tsx,
+		// general-settings/index.js:104-145, transactions/manual-capture-control.tsx:68,147,
+		// deposits/index.js:170,194, disable-confirmation-modal/index.js:159-176 and the
+		// server-rendered account notice (includes/admin/class-wc-payments-admin-settings.php).
+		it( 'renders express checkout terms links as plain links', () => {
+			mockUsePaymentRequestEnabledSettings.mockReturnValue( [
+				false,
+				noop,
+			] );
+			mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
+			mockUseLinkEnabledSettings.mockReturnValue( [
+				false,
+				noop,
+				false,
+			] );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expectPlainLinks(
+				[
+					'https://stripe.com/apple-pay/legal',
+					'https://developer.apple.com/apple-pay/acceptable-use-guidelines-for-websites/',
+					'https://androidpay.developers.google.com/terms/sellertos',
+					'https://link.com/terms',
+					'https://link.com/privacy',
+					'https://woocommerce.com/document/woopay-merchant-documentation/',
+					'https://wordpress.com/tos/',
+					'https://automattic.com/privacy/',
+					'https://woocommerce.com/usage-tracking/',
+					'https://stripe.com/legal/ssa',
+					'https://stripe.com/legal/amazon-pay',
+				],
+				'_blank'
+			);
+		} );
+
+		it( 'renders test mode and manual capture help links as plain links', async () => {
+			render( <WooPaymentsSettingsPage /> );
+
+			expectPlainLinks(
+				[
+					'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/#test-cards',
+					'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/',
+					'https://woocommerce.com/document/woopayments/settings-guide/authorize-and-capture/',
+				],
+				'_blank'
+			);
+
+			await userEvent.click(
+				screen.getByRole( 'checkbox', {
+					name: 'Enable manual capture',
+				} )
+			);
+			const modal = screen.getByRole( 'dialog', {
+				name: 'Enable manual capture',
+			} );
+			expect(
+				within( modal ).getByRole( 'link', {
+					name: 'Learn more about manual capture',
+				} )
+			).not.toHaveClass( 'components-external-link' );
+		} );
+
+		it( 'renders development mode help links as plain links', () => {
+			mockUseDevMode.mockReturnValue( true );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expectPlainLinks(
+				[
+					'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/',
+					'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/',
+				],
+				'_blank'
+			);
+		} );
+
+		it.each( [
+			[
+				'restricted',
+				() =>
+					mockUseDepositRestrictions.mockReturnValue(
+						'schedule_restricted'
+					),
+				'Payout scheduling is currently unavailable for your store. Learn more',
+			],
+			[
+				'in the waiting period',
+				() => mockUseCompletedWaitingPeriod.mockReturnValue( false ),
+				'Payout scheduling becomes available after the standard 7-day waiting period for new accounts is complete. Learn more',
+			],
+		] )(
+			'renders the payout schedule notice link inline when scheduling is %s',
+			( _state, arrange, text ) => {
+				arrange();
+
+				render( <WooPaymentsSettingsPage /> );
+
+				const payouts = getSettingsSectionByName( 'Payouts' );
+				expect(
+					within( payouts ).getByText(
+						( _content, element ) =>
+							element?.classList.contains(
+								'components-notice__content'
+							) === true && element.textContent?.trim() === text
+					)
+				).toBeInTheDocument();
+				expect(
+					within( payouts ).getByRole( 'link', {
+						name: 'Learn more',
+					} )
+				).not.toHaveClass( 'components-external-link' );
+			}
+		);
+
+		it( 'renders the Disable dialog help links as plain same-tab links', async () => {
+			render( <WooPaymentsSettingsPage /> );
+
+			await userEvent.click(
+				screen.getByRole( 'checkbox', { name: 'Enable WooPayments' } )
+			);
+
+			const dialog = screen.getByRole( 'dialog' );
+			[
+				'https://woocommerce.com/document/woopayments/',
+				'https://woocommerce.com/my-account/create-a-ticket/?select=5278104',
+			].forEach( ( href ) => {
+				const link = dialog.querySelector( `a[href="${ href }"]` );
+
+				expect( link ).toBeInTheDocument();
+				expect( link ).not.toHaveClass( 'components-external-link' );
+				expect( link ).not.toHaveAttribute( 'target' );
+			} );
+		} );
+
+		it.each( [
+			[ 'test', false, { test_drive: true, sandbox: false } ],
+			[
+				'development-mode sandbox',
+				true,
+				{ test_drive: false, sandbox: true },
+			],
+		] )(
+			'renders the %s account notice links as plain links',
+			async ( _kind, isDevMode, account ) => {
+				mockUseDevMode.mockReturnValue( isDevMode );
+				mockApiFetch.mockImplementation( ( options ) => {
+					const path =
+						typeof options === 'string' ? options : options?.path;
+
+					if (
+						path ===
+						'/wc-admin/settings/payments/woopayments/account'
+					) {
+						return Promise.resolve( {
+							account: {
+								connected: true,
+								live: false,
+								...account,
+							},
+							urls: { setup: '#live-onboarding' },
+						} );
+					}
+
+					return Promise.resolve( {} );
+				} );
+
+				render( <WooPaymentsSettingsPage /> );
+
+				const notice = (
+					await screen.findByText( /You are using a/, {
+						selector: 'strong',
+					} )
+				).closest(
+					'.woopayments-settings-account-mode-notice'
+				) as HTMLElement;
+				const links = within( notice ).getAllByRole( 'link' );
+				expect( links.length ).toBeGreaterThan( 0 );
+				links.forEach( ( link ) => {
+					expect( link ).not.toHaveClass(
+						'components-external-link'
+					);
+					expect( link ).toHaveAttribute( 'target', '_blank' );
+				} );
+			}
+		);
+	} );
+
 	it( 'renders the test-account switch-to-live notice and modal', async () => {
 		mockApiFetch.mockImplementation( ( options ) => {
 			const path = typeof options === 'string' ? options : options?.path;
@@ -3522,7 +3824,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		expect(
 			screen.getByText(
-				'Payout scheduling is currently unavailable for this account.'
+				/^Payout scheduling is currently unavailable for your store\./
 			)
 		).toBeInTheDocument();
 		expect(
@@ -4178,6 +4480,105 @@ describe( 'WooPaymentsSettingsPage', () => {
 		await userEvent.click( save );
 		expect( mockSaveSettings ).toHaveBeenCalledTimes( 1 );
 	} );
+
+	// Client 11.1.0 data/settings/actions.js:190-208 reports the save outcome
+	// in a snackbar only; the save bar must not repeat it.
+	it.each( [
+		[ 'succeeds', true, 'Settings saved.' ],
+		[ 'fails', false, 'Error saving settings.' ],
+	] )(
+		'does not repeat the save snackbar in the save bar when the save %s',
+		async ( _outcome, isSuccess, snackbarText ) => {
+			let isDirty = true;
+			mockUseSettings.mockImplementation( () => ( {
+				isLoading: false,
+				isSaving: false,
+				isDirty,
+				saveSettings: mockSaveSettings,
+			} ) );
+			mockSaveSettings.mockImplementation( async () => {
+				isDirty = ! isSuccess;
+				return isSuccess;
+			} );
+
+			const { rerender } = render( <WooPaymentsSettingsPage /> );
+			const save = screen.getByRole( 'button', { name: 'Save changes' } );
+
+			await act( async () => {
+				await userEvent.click( save );
+			} );
+			rerender( <WooPaymentsSettingsPage /> );
+
+			expect( mockSaveSettings ).toHaveBeenCalledTimes( 1 );
+			expect(
+				screen.queryByText( snackbarText )
+			).not.toBeInTheDocument();
+			expect( save ).toHaveAccessibleDescription(
+				isSuccess
+					? 'Settings are up to date.'
+					: 'You have unsaved changes.'
+			);
+		}
+	);
+
+	// Client 11.1.0 settings/settings-manager/index.js:174-198 scrolls to the section named by the
+	// `anchor` query argument or the URL hash once settings have loaded, below the admin header.
+	it.each( [
+		[ 'hash', '#fraud-protection', 'fraud-protection' ],
+		[ 'anchor query argument', 'anchor=%23advanced', 'advanced' ],
+	] )(
+		'scrolls to the section named by the %s once settings have loaded',
+		( _source, urlPart, sectionId ) => {
+			if ( urlPart.startsWith( '#' ) ) {
+				setSettingsPageUrl();
+				window.history.replaceState(
+					null,
+					'',
+					`${ window.location.pathname }${ window.location.search }${ urlPart }`
+				);
+			} else {
+				setSettingsPageUrl( urlPart );
+			}
+			const scrollTo = jest
+				.spyOn( window, 'scrollTo' )
+				.mockImplementation( () => undefined );
+			const getBoundingClientRect = jest
+				.spyOn( HTMLElement.prototype, 'getBoundingClientRect' )
+				.mockImplementation( function ( this: HTMLElement ) {
+					return {
+						top: this.id === sectionId ? 4000 : 0,
+					} as DOMRect;
+				} );
+
+			try {
+				mockUseSettings.mockReturnValue( {
+					isLoading: true,
+					isSaving: false,
+					isDirty: false,
+					saveSettings: mockSaveSettings,
+				} );
+				mockUseGetSettings.mockReturnValue( {} );
+				const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+				// Sections move while settings load, so the client waits.
+				expect( scrollTo ).not.toHaveBeenCalled();
+
+				setHookDefaults();
+				rerender( <WooPaymentsSettingsPage /> );
+
+				// No `.woocommerce-layout__header` here: 60px header + 50px margin.
+				expect( scrollTo ).toHaveBeenCalledTimes( 1 );
+				expect( scrollTo ).toHaveBeenCalledWith( {
+					top: 4000 - 110,
+					behavior: 'smooth',
+				} );
+			} finally {
+				scrollTo.mockRestore();
+				getBoundingClientRect.mockRestore();
+				setSettingsPageUrl();
+			}
+		}
+	);
 
 	it( 'asks before leaving only while there are unsaved changes', () => {
 		const leavePage = () => {

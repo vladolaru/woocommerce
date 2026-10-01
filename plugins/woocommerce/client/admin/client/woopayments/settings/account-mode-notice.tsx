@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { Button, ExternalLink, Modal, Notice } from '@wordpress/components';
+import { Button, Modal, Notice } from '@wordpress/components';
 import { useEffect, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { addQueryArgs } from '@wordpress/url';
@@ -11,6 +11,7 @@ import { recordEvent } from '@woocommerce/tracks';
  * Internal dependencies
  */
 import { getWooPaymentsAccountSettings } from './api';
+import { TextLink } from './text-link';
 import './setup-live-payments-modal.scss';
 
 type AccountModeNoticeState = {
@@ -224,13 +225,13 @@ export const AccountModeNotice = ( {
 						'To begin accepting real payments, please go to the live store or change your',
 						'woocommerce'
 					) }{ ' ' }
-					<ExternalLink href={ WORDPRESS_ENVIRONMENT_URL }>
+					<TextLink href={ WORDPRESS_ENVIRONMENT_URL }>
 						{ __( 'WordPress environment', 'woocommerce' ) }
-					</ExternalLink>{ ' ' }
+					</TextLink>{ ' ' }
 					{ __( 'to a production one.', 'woocommerce' ) }{ ' ' }
-					<ExternalLink href={ TEST_ACCOUNT_DEV_URL }>
+					<TextLink href={ TEST_ACCOUNT_DEV_URL }>
 						{ __( 'Learn more', 'woocommerce' ) }
-					</ExternalLink>
+					</TextLink>
 				</>
 			);
 		}
@@ -244,9 +245,9 @@ export const AccountModeNotice = ( {
 							'woocommerce'
 						) }
 					</span>{ ' ' }
-					<ExternalLink href={ LEARN_MORE_URL }>
+					<TextLink href={ LEARN_MORE_URL }>
 						{ __( 'Learn more', 'woocommerce' ) }
-					</ExternalLink>
+					</TextLink>
 				</>
 			);
 		}
@@ -257,16 +258,16 @@ export const AccountModeNotice = ( {
 					'To begin accepting real payments you will need to first',
 					'woocommerce'
 				) }{ ' ' }
-				<ExternalLink href={ RESET_ACCOUNT_URL }>
+				<TextLink href={ RESET_ACCOUNT_URL }>
 					{ __( 'reset your account', 'woocommerce' ) }
-				</ExternalLink>{ ' ' }
+				</TextLink>{ ' ' }
 				{ __(
 					'and, then, provide additional details about your business.',
 					'woocommerce'
 				) }{ ' ' }
-				<ExternalLink href={ LEARN_MORE_URL }>
+				<TextLink href={ LEARN_MORE_URL }>
 					{ __( 'Learn more', 'woocommerce' ) }
-				</ExternalLink>
+				</TextLink>
 			</>
 		);
 	};

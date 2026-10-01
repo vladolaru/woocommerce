@@ -8,7 +8,6 @@ import {
 	Notice,
 	Spinner,
 } from '@wordpress/components';
-import { useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import type { ReactNode } from 'react';
 
@@ -121,7 +120,6 @@ export const ExpressCheckoutPreviewFallback = () => (
 
 export const ExpressCheckoutSaveBar = () => {
 	const { saveSettings, isSaving, isLoading, isDirty } = useSettings();
-	const [ statusMessage, setStatusMessage ] = useState( '' );
 	const isDisabled = isSaving || isLoading || ! isDirty;
 
 	const saveOnClick = async () => {
@@ -129,13 +127,8 @@ export const ExpressCheckoutSaveBar = () => {
 			return;
 		}
 
-		setStatusMessage( '' );
-		const isSuccess = await saveSettings();
-		setStatusMessage(
-			isSuccess
-				? __( 'Settings saved.', 'woocommerce' )
-				: __( 'Error saving settings.', 'woocommerce' )
-		);
+		// The save outcome is announced by the snackbar only, as in the client.
+		await saveSettings();
 	};
 
 	return (
@@ -155,8 +148,7 @@ export const ExpressCheckoutSaveBar = () => {
 			>
 				{ isDirty
 					? __( 'You have unsaved changes.', 'woocommerce' )
-					: statusMessage ||
-					  __( 'Settings are up to date.', 'woocommerce' ) }
+					: __( 'Settings are up to date.', 'woocommerce' ) }
 			</p>
 		</div>
 	);

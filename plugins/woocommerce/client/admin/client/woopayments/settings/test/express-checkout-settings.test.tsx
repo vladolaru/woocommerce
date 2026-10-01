@@ -270,6 +270,18 @@ const mockAccountSettingsResponse = ( account: Record< string, unknown > ) => {
 	} );
 };
 
+const expectPlainLink = ( href: string, target?: string ) => {
+	const link = document.querySelector( `a[href="${ href }"]` );
+
+	expect( link ).toBeInTheDocument();
+	expect( link ).not.toHaveClass( 'components-external-link' );
+	if ( target ) {
+		expect( link ).toHaveAttribute( 'target', target );
+	} else {
+		expect( link ).not.toHaveAttribute( 'target' );
+	}
+};
+
 describe( 'WooPaymentsExpressCheckoutSettings', () => {
 	beforeEach( () => {
 		jest.clearAllMocks();
@@ -298,6 +310,54 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 				originalWooSettings;
 		}
 	} );
+
+	// Client 11.1.0 data/settings/actions.js:190-208 reports the save outcome
+	// in a snackbar only; the save bar must not repeat it.
+	it.each( [
+		[ 'succeeds', true, 'Settings saved.' ],
+		[ 'fails', false, 'Error saving settings.' ],
+	] )(
+		'does not repeat the save snackbar in the save bar when the save %s',
+		async ( _outcome, isSuccess, snackbarText ) => {
+			let isDirty = true;
+			mockUseSettings.mockImplementation( () => ( {
+				isLoading: false,
+				isSaving: false,
+				isDirty,
+				saveSettings: mockSaveSettings,
+			} ) );
+			mockSaveSettings.mockImplementation( async () => {
+				isDirty = ! isSuccess;
+				return isSuccess;
+			} );
+
+			const { rerender } = render(
+				<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+			);
+			const save = await screen.findByRole( 'button', {
+				name: 'Save changes',
+			} );
+
+			await act( async () => {
+				await userEvent.click( save );
+			} );
+			rerender(
+				<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+			);
+
+			expect( mockSaveSettings ).toHaveBeenCalledTimes( 1 );
+			expect(
+				screen.queryByText( snackbarText )
+			).not.toBeInTheDocument();
+			expect(
+				screen.getByText(
+					isSuccess
+						? 'Settings are up to date.'
+						: 'You have unsaved changes.'
+				)
+			).toBeInTheDocument();
+		}
+	);
 
 	it( 'fails closed for invalid express checkout method IDs', () => {
 		render( <WooPaymentsExpressCheckoutSettings methodId="invalid" /> );
@@ -422,6 +482,25 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		}
 	);
 
+	// The client's subpage notice is server-rendered, so it stays when the
+	// settings read fails.
+	it( 'keeps the test-account notice on a subpage when the settings read fails', async () => {
+		mockUseGetSettings.mockReturnValue( {} );
+		mockAccountSettingsResponse( {
+			live: false,
+			test_drive: true,
+			sandbox: false,
+		} );
+
+		render(
+			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+		);
+
+		expect(
+			await screen.findByText( 'You are using a test account.' )
+		).toBeInTheDocument();
+	} );
+
 	it( 'shows the sandbox notice with the development-mode copy on subpages', async () => {
 		mockUseDevMode.mockReturnValue( true );
 		mockAccountSettingsResponse( {
@@ -476,17 +555,22 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
 		);
 
+		// Client 11.1.0 puts one back arrow before the subpage title; core's
+		// shell ships BackButton for it.
+		const heading = await screen.findByRole( 'heading', {
+			level: 1,
+			name: 'Apple Pay / Google Pay',
+		} );
 		expect(
-			await screen.findByRole( 'heading', {
-				level: 1,
+			screen.queryByRole( 'link', { name: 'Return to payments' } )
+		).not.toBeInTheDocument();
+		await userEvent.click(
+			within( heading ).getByRole( 'button', {
 				name: 'Apple Pay / Google Pay',
 			} )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'link', { name: 'Return to payments' } )
-		).toHaveAttribute(
-			'href',
-			expect.stringContaining( 'path=%2Fwoopayments%2Fsettings' )
+		);
+		expect( window.location.href ).toContain(
+			'path=%2Fwoopayments%2Fsettings'
 		);
 		expect(
 			await screen.findByRole( 'img', { name: 'Apple Pay' } )
@@ -1238,6 +1322,45 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		expect(
 			screen.queryByRole( 'button', { name: 'Save changes' } )
 		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 settings/express-checkout-settings/woopay-settings.js:104-139 and 262-296
+	// link inside running text with plain anchors: new-tab for the WooPay terms and the theme
+	// docs, same-tab for the store's own privacy and terms pages.
+	it( 'renders WooPay subpage links inside running text as plain links', async () => {
+		mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
+		( window as WindowWithWooSettings ).wcSettings = {
+			...( window as WindowWithWooSettings ).wcSettings,
+			storePages: {
+				privacy: {
+					permalink: 'https://example.test/privacy-policy/',
+				},
+				terms: {
+					permalink: 'https://example.test/terms-and-conditions/',
+				},
+			},
+		};
+
+		render( <WooPaymentsExpressCheckoutSettings methodId="woopay" /> );
+
+		await screen.findByRole( 'checkbox', { name: 'Enable WooPay' } );
+		[
+			'https://woocommerce.com/document/woopay-merchant-documentation/',
+			'https://wordpress.com/tos/',
+			'https://automattic.com/privacy/',
+			'https://woocommerce.com/usage-tracking/',
+		].forEach( ( href ) => expectPlainLink( href, '_blank' ) );
+		expect(
+			within(
+				screen
+					.getByRole( 'checkbox', {
+						name: 'Enable global theme support',
+					} )
+					.closest( '.components-base-control' ) as HTMLElement
+			).getByRole( 'link', { name: 'Learn more' } )
+		).not.toHaveClass( 'components-external-link' );
+		expectPlainLink( 'https://example.test/privacy-policy/' );
+		expectPlainLink( 'https://example.test/terms-and-conditions/' );
 	} );
 
 	it( 'renders WooPay detail controls and blocks WooPay while Link is enabled', async () => {

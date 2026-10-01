@@ -7,20 +7,16 @@
 		max-width: 760px;
 		margin-bottom: 24px;
 
+		// The client's back arrow and title, at the size core's offline payments header uses.
 		h1 {
+			display: flex;
+			align-items: center;
 			margin: 0;
-			font-size: 24px;
-			line-height: 32px;
+			padding: 0;
+			font-size: 16px;
+			line-height: 24px;
 			font-weight: 600;
 		}
-	}
-
-	&__return-link {
-		display: inline-flex;
-		margin-bottom: 12px;
-		font-size: 13px;
-		line-height: 20px;
-		text-decoration: none;
 	}
 
 	&__icons {
@@ -50,7 +46,7 @@
 		padding: 24px 0;
 
 		@include breakpoint("<782px") {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 			gap: 12px;
 		}
 	}
@@ -172,11 +168,9 @@
 		width: 100%;
 	}
 
+	// Like the client, the checkout preview scales to the column instead of scrolling sideways.
 	&__woopay-preview {
-		overflow: auto;
-
 		.preview-layout {
-			min-width: 620px;
 			padding: 0;
 			border: 1px solid #ddd;
 			border-radius: 4px;

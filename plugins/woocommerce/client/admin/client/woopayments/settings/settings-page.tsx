@@ -20,6 +20,7 @@ import {
 	Suspense,
 	useEffect,
 	useId,
+	useLayoutEffect,
 	useRef,
 	useState,
 } from '@wordpress/element';
@@ -49,6 +50,7 @@ import {
 } from './payment-methods-list';
 import { PayoutBankAccount } from './payout-bank-account';
 import { SettingsBusyState } from './settings-busy-state';
+import { TextLink } from './text-link';
 import { WooPayDisableFeedback } from './woopay-disable-feedback';
 import { WooPaymentsDisableConfirmationModal } from './disable-woopayments-modal';
 import { useWooPaymentsAffectedCheckoutMethods } from './affected-payment-methods';
@@ -219,11 +221,7 @@ const asString = ( value: unknown, fallback = '' ) =>
 const asBoolean = ( value: unknown, fallback = false ) =>
 	typeof value === 'boolean' ? value : fallback;
 
-const createTermsLink = ( href: string ) => (
-	<ExternalLink href={ href }>
-		<></>
-	</ExternalLink>
-);
+const createTermsLink = ( href: string ) => <TextLink href={ href } />;
 
 const isVatDetailsModalDeepLinkActive = () => {
 	if ( typeof window === 'undefined' ) {
@@ -502,37 +500,69 @@ const SettingsSectionLoadingPlaceholder = ( { lines }: { lines: number } ) => (
 	</div>
 );
 
+// Client 11.1.0 settings/settings-manager/index.js and
+// settings/payment-methods-section/index.js: the loading and loaded states
+// show the same section descriptions.
+const GeneralSectionDescription = () => (
+	<p>
+		{ sprintf(
+			/* translators: %s: Payment provider name. */
+			__( 'Enable or disable %s on your store.', 'woocommerce' ),
+			PROVIDER_NAME
+		) }
+	</p>
+);
+
+const PaymentMethodsSectionDescription = () => (
+	<p>
+		{ __(
+			'Add and edit payments available to customers at checkout. Based on their device type, location, and purchase history, your customers will only see the most relevant payment methods.',
+			'woocommerce'
+		) }
+	</p>
+);
+
+const ExpressCheckoutsSectionDescription = () => (
+	<>
+		<p>
+			{ __(
+				'Let your customers use their favorite express payment methods and digital wallets for faster, more secure checkouts across different parts of your store.',
+				'woocommerce'
+			) }
+		</p>
+		<ExternalLink href="https://woocommerce.com/document/woopayments/settings-guide/#express-checkouts">
+			{ __( 'Learn more', 'woocommerce' ) }
+		</ExternalLink>
+	</>
+);
+
+const FraudProtectionSectionDescription = () => (
+	<>
+		<p>
+			{ __(
+				'Help avoid unauthorized transactions and disputes by setting your fraud protection level.',
+				'woocommerce'
+			) }
+		</p>
+		<ExternalLink href="https://woocommerce.com/document/woopayments/fraud-and-disputes/fraud-protection/">
+			{ __( 'Learn more about fraud protection', 'woocommerce' ) }
+		</ExternalLink>
+	</>
+);
+
 const SettingsLoadingSections = () => {
 	const sections = [
 		{
 			id: 'general',
 			title: __( 'General', 'woocommerce' ),
 			lines: 5,
-			description: (
-				<p>
-					{ sprintf(
-						/* translators: %s: Payment provider name. */
-						__(
-							'Enable %s, test payments, and account mode settings.',
-							'woocommerce'
-						),
-						PROVIDER_NAME
-					) }
-				</p>
-			),
+			description: <GeneralSectionDescription />,
 		},
 		{
 			id: 'payment-methods',
 			title: __( 'Payments accepted on checkout', 'woocommerce' ),
 			lines: 8,
-			description: (
-				<p>
-					{ __(
-						'Based on their device type, location, and purchase history, your customers will only see the most relevant payment methods.',
-						'woocommerce'
-					) }
-				</p>
-			),
+			description: <PaymentMethodsSectionDescription />,
 		},
 		{
 			id: 'buy-now-pay-later-methods',
@@ -556,14 +586,7 @@ const SettingsLoadingSections = () => {
 			id: 'express-checkouts',
 			title: __( 'Express checkouts', 'woocommerce' ),
 			lines: 8,
-			description: (
-				<p>
-					{ __(
-						'Let customers use their preferred express checkout options.',
-						'woocommerce'
-					) }
-				</p>
-			),
+			description: <ExpressCheckoutsSectionDescription />,
 		},
 		{
 			id: 'transactions',
@@ -615,14 +638,7 @@ const SettingsLoadingSections = () => {
 			id: 'fraud-protection',
 			title: __( 'Fraud protection', 'woocommerce' ),
 			lines: 5,
-			description: (
-				<p>
-					{ __(
-						'Help avoid unauthorized transactions and disputes by setting your fraud protection level.',
-						'woocommerce'
-					) }
-				</p>
-			),
+			description: <FraudProtectionSectionDescription />,
 		},
 		{
 			id: 'advanced',
@@ -738,9 +754,15 @@ const ManualCaptureConfirmationModal = ( {
 				'woocommerce'
 			) }
 			<br />
-			<ExternalLink href={ MANUAL_CAPTURE_DOC_URL }>
-				{ __( 'Learn more about manual capture', 'woocommerce' ) }
-			</ExternalLink>
+			{ createInterpolateElement(
+				__(
+					'<learnMoreLink>Learn more about manual capture</learnMoreLink>.',
+					'woocommerce'
+				),
+				{
+					learnMoreLink: <TextLink href={ MANUAL_CAPTURE_DOC_URL } />,
+				}
+			) }
 		</p>
 		<Notice status="info" isDismissible={ false }>
 			{ __(
@@ -814,18 +836,7 @@ const GeneralSettingsSection = () => {
 			<SettingsSection
 				id="general"
 				title={ __( 'General', 'woocommerce' ) }
-				description={
-					<p>
-						{ sprintf(
-							/* translators: %s: Payment provider name. */
-							__(
-								'Enable or disable %s and choose the account mode used for transactions.',
-								'woocommerce'
-							),
-							PROVIDER_NAME
-						) }
-					</p>
-				}
+				description={ <GeneralSectionDescription /> }
 			>
 				<CheckboxControl
 					checked={ isWCPayEnabled }
@@ -860,20 +871,16 @@ const GeneralSettingsSection = () => {
 										),
 										{
 											wpEnvLink: (
-												<ExternalLink
+												<TextLink
 													href={
 														WORDPRESS_ENVIRONMENT_URL
 													}
-												>
-													<></>
-												</ExternalLink>
+												/>
 											),
 											learnMoreLink: (
-												<ExternalLink
+												<TextLink
 													href={ TESTING_DOC_URL }
-												>
-													<></>
-												</ExternalLink>
+												/>
 											),
 										}
 								  )
@@ -884,18 +891,14 @@ const GeneralSettingsSection = () => {
 										),
 										{
 											testCardHelpLink: (
-												<ExternalLink
+												<TextLink
 													href={ TEST_CARDS_DOC_URL }
-												>
-													<></>
-												</ExternalLink>
+												/>
 											),
 											learnMoreLink: (
-												<ExternalLink
+												<TextLink
 													href={ TESTING_DOC_URL }
-												>
-													<></>
-												</ExternalLink>
+												/>
 											),
 										}
 								  )
@@ -1017,14 +1020,7 @@ const PaymentMethodsSettingsSection = () => {
 		<SettingsSection
 			id="payment-methods"
 			title={ __( 'Payments accepted on checkout', 'woocommerce' ) }
-			description={
-				<p>
-					{ __(
-						'Based on their device type, location, and purchase history, your customers will only see the most relevant payment methods.',
-						'woocommerce'
-					) }
-				</p>
-			}
+			description={ <PaymentMethodsSectionDescription /> }
 		>
 			<FieldGroup title={ __( 'Payment methods', 'woocommerce' ) }>
 				{ isManualCaptureEnabled && (
@@ -1395,19 +1391,7 @@ const ExpressCheckoutSettingsSection = () => {
 		<SettingsSection
 			id="express-checkouts"
 			title={ __( 'Express checkouts', 'woocommerce' ) }
-			description={
-				<>
-					<p>
-						{ __(
-							'Let your customers use their favorite express payment methods and digital wallets for faster, more secure checkouts across different parts of your store.',
-							'woocommerce'
-						) }
-					</p>
-					<ExternalLink href="https://woocommerce.com/document/woopayments/settings-guide/#express-checkouts">
-						{ __( 'Learn more', 'woocommerce' ) }
-					</ExternalLink>
-				</>
-			}
+			description={ <ExpressCheckoutsSectionDescription /> }
 		>
 			<ul className="woopayments-settings-payment-methods-list woopayments-settings-express-checkout-list">
 				{ expressRows.map( ( row ) => (
@@ -1691,11 +1675,9 @@ const TransactionsSettingsSection = ( {
 									),
 									{
 										learnMoreLink: (
-											<ExternalLink
+											<TextLink
 												href={ MANUAL_CAPTURE_DOC_URL }
-											>
-												<></>
-											</ExternalLink>
+											/>
 										),
 									}
 								)
@@ -1984,30 +1966,39 @@ const PayoutsSettingsSection = () => {
 				id="payout-schedule"
 				title={ __( 'Payout schedule', 'woocommerce' ) }
 			>
+				{ /* Client 11.1.0 settings/deposits/index.js:160-203. */ }
 				{ isScheduleRestricted && (
 					<Notice status="warning" isDismissible={ false }>
-						<p>
-							{ __(
-								'Payout scheduling is currently unavailable for this account.',
+						{ createInterpolateElement(
+							__(
+								'Payout scheduling is currently unavailable for your store. <learnMoreLink>Learn more</learnMoreLink>',
 								'woocommerce'
-							) }
-						</p>
-						<ExternalLink href={ PAYOUT_SCHEDULE_DOC_URL }>
-							{ __( 'Learn more', 'woocommerce' ) }
-						</ExternalLink>
+							),
+							{
+								learnMoreLink: (
+									<TextLink
+										href={ PAYOUT_SCHEDULE_DOC_URL }
+									/>
+								),
+							}
+						) }
 					</Notice>
 				) }
 				{ ! isScheduleRestricted && isWaitingPeriodIncomplete && (
 					<Notice status="warning" isDismissible={ false }>
-						<p>
-							{ __(
-								'Payout scheduling becomes available after the standard 7-day waiting period for new accounts is complete.',
+						{ createInterpolateElement(
+							__(
+								'Payout scheduling becomes available after the standard 7-day waiting period for new accounts is complete. <learnMoreLink>Learn more</learnMoreLink>',
 								'woocommerce'
-							) }
-						</p>
-						<ExternalLink href={ PAYOUT_SCHEDULE_DOC_URL }>
-							{ __( 'Learn more', 'woocommerce' ) }
-						</ExternalLink>
+							),
+							{
+								learnMoreLink: (
+									<TextLink
+										href={ PAYOUT_SCHEDULE_DOC_URL }
+									/>
+								),
+							}
+						) }
 					</Notice>
 				) }
 				{ ! isScheduleRestricted && ! isWaitingPeriodIncomplete && (
@@ -2249,22 +2240,7 @@ const FraudProtectionSettingsSection = () => {
 		<SettingsSection
 			id="fraud-protection"
 			title={ __( 'Fraud protection', 'woocommerce' ) }
-			description={
-				<>
-					<p>
-						{ __(
-							'Help avoid unauthorized transactions and disputes by setting your fraud protection level.',
-							'woocommerce'
-						) }
-					</p>
-					<ExternalLink href="https://woocommerce.com/document/woopayments/fraud-and-disputes/fraud-protection/">
-						{ __(
-							'Learn more about fraud protection',
-							'woocommerce'
-						) }
-					</ExternalLink>
-				</>
-			}
+			description={ <FraudProtectionSectionDescription /> }
 		>
 			<FraudProtectionSettings />
 		</SettingsSection>
@@ -2401,7 +2377,6 @@ const SaveSettingsSection = ( {
 	const { saveSettings, isSaving, isLoading, isDirty } = useSettings();
 	const settings = asSettingsRecord( useGetSettings() );
 	const savingError = useGetSavingError();
-	const [ statusMessage, setStatusMessage ] = useState( '' );
 	const [ initialIsWooPayEnabled, setInitialIsWooPayEnabled ] = useState<
 		boolean | null
 	>( null );
@@ -2478,13 +2453,8 @@ const SaveSettingsSection = ( {
 			return;
 		}
 
-		setStatusMessage( '' );
+		// The save outcome is announced by the snackbar only, as in the client.
 		const isSuccess = await saveSettings();
-		setStatusMessage(
-			isSuccess
-				? __( 'Settings saved.', 'woocommerce' )
-				: __( 'Error saving settings.', 'woocommerce' )
-		);
 
 		if ( ! isSuccess ) {
 			setShouldFocusSavingError( true );
@@ -2548,8 +2518,7 @@ const SaveSettingsSection = ( {
 				{ ! isBlockedByValidation &&
 					( isDirty
 						? __( 'You have unsaved changes.', 'woocommerce' )
-						: statusMessage ||
-						  __( 'Settings are up to date.', 'woocommerce' ) ) }
+						: __( 'Settings are up to date.', 'woocommerce' ) ) }
 			</p>
 			{ isWooPayDisableFeedbackOpen && (
 				<WooPayDisableFeedback
@@ -2585,8 +2554,46 @@ export const WooPaymentsSettingsPage = () => {
 	const hasHandledVatDetailsDeepLink = useRef( false );
 	const hasSettings = Object.keys( settings ).length > 0;
 	const isDevModeEnabled = Boolean( useDevMode() );
+	const isShowingSettings = ! ( isLoading && ! hasSettings );
 
 	useConfirmUnsavedChanges( isDirty );
+
+	// Client 11.1.0 settings/settings-manager/index.js:174-198: once settings have loaded, scroll to the
+	// section named by the `anchor` query argument or the URL hash, clear of the admin header.
+	useLayoutEffect( () => {
+		const scrollTarget =
+			new URLSearchParams( window.location.search ).get( 'anchor' ) ||
+			window.location.hash;
+
+		if ( ! isShowingSettings || ! scrollTarget ) {
+			return;
+		}
+
+		let element: Element | null = null;
+		try {
+			element = document.querySelector( scrollTarget );
+		} catch {
+			return;
+		}
+
+		if ( ! element ) {
+			return;
+		}
+
+		const headerElement = document.querySelector(
+			'.woocommerce-layout__header'
+		);
+		const headerOffset =
+			( headerElement ? headerElement.clientHeight : 60 ) + 50;
+
+		window.scrollTo( {
+			top:
+				element.getBoundingClientRect().top +
+				window.pageYOffset -
+				headerOffset,
+			behavior: 'smooth',
+		} );
+	}, [ isShowingSettings ] );
 
 	useEffect( () => {
 		if (
@@ -2695,7 +2702,7 @@ export const WooPaymentsSettingsPage = () => {
 
 			<ApplePayDomainErrorNotice />
 
-			{ isLoading && ! hasSettings ? (
+			{ ! isShowingSettings ? (
 				<SettingsLoadingSections />
 			) : (
 				<SettingsBusyState isBusy={ isSaving }>

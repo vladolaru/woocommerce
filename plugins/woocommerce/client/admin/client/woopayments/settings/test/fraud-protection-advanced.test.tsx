@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { dispatch } from '@wordpress/data';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
 
@@ -286,15 +286,17 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 			document.querySelector( '.woopayments-fraud-protection-advanced' )
 		).toHaveAttribute( 'aria-busy', 'true' );
 		expect(
-			screen.getByRole( 'link', { name: 'Back to WooPayments settings' } )
-		).toHaveAttribute(
-			'href',
-			expect.stringContaining( 'path=%2Fwoopayments%2Fsettings' )
-		);
-		expect(
-			screen.getByRole( 'heading', {
-				name: 'Advanced fraud protection',
+			screen.queryByRole( 'link', {
+				name: 'Back to WooPayments settings',
 			} )
+		).not.toBeInTheDocument();
+		expect(
+			within(
+				screen.getByRole( 'heading', {
+					level: 1,
+					name: 'Advanced fraud protection',
+				} )
+			).getByRole( 'button', { name: 'Advanced fraud protection' } )
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'heading', { name: 'Filter configuration' } )
@@ -332,20 +334,40 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 		).toBeDisabled();
 	} );
 
-	it( 'renders the advanced fraud protection rule configuration page', () => {
+	it( 'renders the advanced fraud protection rule configuration page', async () => {
 		render( <FraudProtectionAdvancedSettingsPage /> );
 
+		// Client 11.1.0 advanced-settings/index.tsx:74-100 puts one back
+		// arrow before the page title; core's shell ships BackButton for it.
+		const pageTitle = screen.getByRole( 'heading', {
+			level: 1,
+			name: 'Advanced fraud protection',
+		} );
 		expect(
-			screen.getByRole( 'heading', {
-				name: 'Advanced fraud protection',
+			screen.queryByRole( 'link', {
+				name: 'Back to WooPayments settings',
 			} )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'link', { name: 'Back to WooPayments settings' } )
-		).toHaveAttribute(
-			'href',
-			expect.stringContaining( 'path=%2Fwoopayments%2Fsettings' )
-		);
+		).not.toBeInTheDocument();
+		const originalLocation = window.location;
+		Object.defineProperty( window, 'location', {
+			configurable: true,
+			value: { href: '' },
+		} );
+		try {
+			await userEvent.click(
+				within( pageTitle ).getByRole( 'button', {
+					name: 'Advanced fraud protection',
+				} )
+			);
+			expect( window.location.href ).toContain(
+				'path=%2Fwoopayments%2Fsettings'
+			);
+		} finally {
+			Object.defineProperty( window, 'location', {
+				configurable: true,
+				value: originalLocation,
+			} );
+		}
 		expect(
 			screen.getByRole( 'heading', { name: 'Filter configuration' } )
 		).toBeInTheDocument();
@@ -752,6 +774,53 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 		expect(
 			screen.queryByRole( 'button', { name: 'Save changes' } )
 		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 advanced-settings/utils.ts:282-284 turns the AVS filter
+	// on only when the account says so (`declineOnAVSFailure || false`), and
+	// cards/cvc-verification.tsx:17-19 keeps CVC on when unknown (`?? true`).
+	// N-261: after a failed settings read the page shows its own retrieval error, as for the
+	// client's `'error'` ruleset (advanced-settings/index.tsx:333-345, Save disabled at :405-410),
+	// so default rules can never be saved over the account's stored ruleset.
+	it( 'shows the retrieval error and offers no Save when the settings read failed', async () => {
+		mockUseGetSettings.mockReturnValue( {} );
+
+		render( <FraudProtectionAdvancedSettingsPage /> );
+
+		expect(
+			screen.getByText(
+				'There was an error retrieving your fraud protection settings. Please refresh the page to try again.',
+				{ selector: '.components-notice__content' }
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'checkbox', {
+				name: 'Enable AVS Mismatch filter',
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', { name: 'Save changes' } )
+		).not.toBeInTheDocument();
+		expect( mockSaveSettings ).not.toHaveBeenCalled();
+		expect( setAdvancedFraudProtectionSettings ).not.toHaveBeenCalled();
+	} );
+
+	it( 'shows the AVS filter off and CVC on when the account has no fraud protection flags', () => {
+		mockUseGetSettings.mockReturnValue( { store_currency: 'USD' } );
+
+		render( <FraudProtectionAdvancedSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'checkbox', {
+				name: 'Enable AVS Mismatch filter',
+			} )
+		).not.toBeChecked();
+		expect(
+			screen.getByText(
+				/For security, this filter is enabled and cannot be modified./,
+				{ selector: '.components-notice__content' }
+			)
+		).toBeInTheDocument();
 	} );
 
 	it( 'blocks saving advanced protection without enabled filters while still Basic', async () => {

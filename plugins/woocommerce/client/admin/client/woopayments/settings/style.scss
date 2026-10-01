@@ -66,7 +66,7 @@
 	padding: 24px 0;
 
 	@include breakpoint("<782px") {
-		grid-template-columns: 1fr;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 12px;
 	}
 
@@ -148,11 +148,6 @@
 		grid-template-columns: 32px 64px minmax(0, 1fr) auto;
 		gap: 16px;
 		align-items: center;
-
-		@include breakpoint("<660px") {
-			grid-template-columns: 32px minmax(0, 1fr);
-			gap: 12px;
-		}
 	}
 
 	// Apple Pay and Google Pay share one checkbox and one action, like the client's grouped express checkout row.
@@ -169,11 +164,6 @@
 		.woopayments-settings-payment-method-item__actions {
 			grid-column: 4;
 			grid-row: 1 / span 2;
-
-			@include breakpoint("<660px") {
-				grid-column: 2;
-				grid-row: auto;
-			}
 		}
 	}
 
@@ -208,11 +198,6 @@
 		border-radius: 4px;
 		object-fit: contain;
 		background: $white;
-
-		@include breakpoint("<660px") {
-			grid-column: 2;
-			grid-row: 1;
-		}
 	}
 
 	&__icon--fallback {
@@ -224,10 +209,6 @@
 
 	&__body {
 		min-width: 0;
-
-		@include breakpoint("<660px") {
-			grid-column: 2;
-		}
 
 		p {
 			margin: 4px 0 0;
@@ -243,13 +224,6 @@
 		justify-content: flex-end;
 		min-width: max-content;
 		margin-left: 16px;
-
-		@include breakpoint("<660px") {
-			grid-column: 2;
-			justify-content: flex-start;
-			margin-top: 8px;
-			margin-left: 0;
-		}
 	}
 
 	&__heading {
@@ -481,8 +455,52 @@
 
 	&__duplicate-notice.components-notice {
 		margin: 12px 0 0 48px;
+	}
 
-		@include breakpoint("<660px") {
+	// Below 660px the client restacks each row: the checkbox, then the logo and name on one line, with the
+	// description, card brands and fee pill underneath. core's breakpoint() mixin has no 660px size, so this
+	// uses the client's width directly.
+	@media (max-width: 660px) {
+		&__main {
+			grid-template-columns: 24px auto minmax(0, 1fr);
+			gap: 8px 12px;
+		}
+
+		// The client's logos drop to 30px high on narrow screens.
+		&__icon {
+			width: 48px;
+			height: 30px;
+		}
+
+		&__body {
+			display: contents;
+		}
+
+		&__body > p,
+		&__card-brands,
+		&__actions {
+			grid-column: 2 / -1;
+		}
+
+		&__card-brands {
+			margin-top: 4px;
+		}
+
+		&__actions {
+			justify-content: flex-start;
+			margin-left: 0;
+		}
+
+		&--grouped &__actions {
+			grid-column: 2 / -1;
+			grid-row: auto;
+		}
+
+		&--grouped .components-checkbox-control {
+			grid-row: auto;
+		}
+
+		&__duplicate-notice.components-notice {
 			margin-left: 0;
 		}
 	}
