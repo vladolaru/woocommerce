@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
@@ -3277,6 +3278,9 @@ class WooPaymentsService {
 	private function apply_native_kyc_connection( bool $is_live ): void {
 		$this->enable_native_gateway_after_kyc_finalization( $is_live );
 		$this->restore_native_test_drive_payment_methods();
+
+		// Client 11.1.0 cleanup_on_account_onboarded(): recommended methods serve only the initial onboarding. Native caches no onboarding fields.
+		$this->proxy->call_function( 'delete_transient', NativeWooPaymentsGateway::RECOMMENDED_PAYMENT_METHODS_CACHE_KEY );
 
 		// Flag the new connection for the Overview's wcpay_stripe_connected Tracks event, as the plugin does.
 		$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => false ), false );

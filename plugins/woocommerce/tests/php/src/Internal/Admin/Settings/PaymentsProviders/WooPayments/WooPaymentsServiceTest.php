@@ -1831,6 +1831,39 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native embedded KYC finalization drops the cached recommended payment methods, like client 11.1.0 cleanup_on_account_onboarded().
+	 */
+	public function test_finish_native_onboarding_kyc_session_clears_recommended_payment_methods_cache(): void {
+		set_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods', array( 'payment_methods' => array( array( 'id' => 'card' ) ) ), DAY_IN_SECONDS );
+		$fresh_account = array(
+			'account_id'        => 'acct_finalized_native',
+			'is_live'           => true,
+			'payments_enabled'  => true,
+			'details_submitted' => true,
+			'capabilities'      => array( 'card_payments' => 'active' ),
+			'fees'              => array( 'card' => array() ),
+		);
+		$this->arrange_native_finalize_projection( array( $fresh_account ), array( 'card' => true ) );
+
+		$this->sut->finish_onboarding_kyc_session( 'US' );
+
+		// Client 11.1.0 class-wc-payments-onboarding-service.php:980-985, called from finalize_embedded_connection() (class-wc-payments-account.php:2336).
+		$this->assertFalse( get_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' ) );
+	}
+
+	/**
+	 * @testdox Native hosted KYC return drops the cached recommended payment methods, like client 11.1.0 finalize_connection().
+	 */
+	public function test_finalize_native_hosted_kyc_connection_clears_recommended_payment_methods_cache(): void {
+		set_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods', array( 'payment_methods' => array( array( 'id' => 'card' ) ) ), DAY_IN_SECONDS );
+
+		$this->sut->finalize_native_hosted_kyc_connection( false );
+
+		// Client 11.1.0 class-wc-payments-account.php:2428 runs cleanup_on_account_onboarded() on the hosted return.
+		$this->assertFalse( get_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' ) );
+	}
+
+	/**
 	 * Provider finalize responses for both embedded KYC modes.
 	 *
 	 * @return array<string,array{0:array<string,mixed>,1:bool,2:string}>
