@@ -117,10 +117,10 @@
 }
 
 // Client 11.1.0 renders the payout placeholder on a border-box WC Admin page; its fixed 117px item height assumes it.
-.woocommerce-woopayments-money-movement
-	.woocommerce-summary.is-placeholder
-	.woocommerce-summary__item {
-	box-sizing: border-box;
+.woocommerce-woopayments-money-movement {
+	.woocommerce-summary.is-placeholder .woocommerce-summary__item {
+		box-sizing: border-box;
+	}
 }
 
 // Client 11.1.0 `deposits/details/style.scss:62-100`: the payout details card.
