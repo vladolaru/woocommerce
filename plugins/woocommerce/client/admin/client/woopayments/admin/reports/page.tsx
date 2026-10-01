@@ -39,6 +39,7 @@ import {
 import { buildReportsFeesQueryFromView } from './query';
 import { ReportState } from './report-state';
 import { runWooPaymentsExport } from '../money-movement/export';
+import { useDataViewsReloadState } from '../money-movement/use-dataviews-reload-state';
 import type {
 	ReportsBalanceQuery,
 	ReportsBalanceSummary,
@@ -1063,6 +1064,12 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 		changeDateFilter( getBalanceDateFilterForPreset( nextPreset, now ) );
 	};
 
+	const { data: balanceData, listRef: balanceListRef } =
+		useDataViewsReloadState< BalanceRow, HTMLElement >(
+			tableRows,
+			state.isLoading
+		);
+
 	if ( isInitialLoading ) {
 		return (
 			<div role="status" aria-live="polite" aria-busy="true">
@@ -1113,7 +1120,10 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 	}
 
 	return (
-		<section className="woocommerce-woopayments-reports-balance">
+		<section
+			ref={ balanceListRef }
+			className="woocommerce-woopayments-reports-balance"
+		>
 			<div className="woocommerce-woopayments-reports__toolbar">
 				<h2>{ __( 'Balance summary', 'woocommerce' ) }</h2>
 				<SelectControl
@@ -1217,7 +1227,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				{ exportStatus }
 			</div>
 			<DataViews
-				data={ tableRows }
+				data={ balanceData }
 				fields={ fields }
 				view={ view }
 				onChangeView={ handleChangeView }
@@ -1632,6 +1642,11 @@ const FeesReport = ( { now }: { now: Date } ) => {
 		}
 	};
 
+	const { data: feesData, listRef: feesListRef } = useDataViewsReloadState<
+		ReportsFee,
+		HTMLElement
+	>( rows, isLoading );
+
 	if ( isInitialLoading ) {
 		return (
 			<div role="status" aria-live="polite" aria-busy="true">
@@ -1682,9 +1697,12 @@ const FeesReport = ( { now }: { now: Date } ) => {
 	}
 
 	return (
-		<section className="woocommerce-woopayments-reports-fees">
+		<section
+			ref={ feesListRef }
+			className="woocommerce-woopayments-reports-fees"
+		>
 			<DataViews
-				data={ rows }
+				data={ feesData }
 				fields={ fields }
 				view={ view }
 				onChangeView={ handleChangeView }

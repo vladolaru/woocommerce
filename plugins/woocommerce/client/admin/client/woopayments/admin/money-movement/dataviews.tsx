@@ -3,6 +3,7 @@
  */
 import { Card, CardBody, CardFooter } from '@wordpress/components';
 import { TableSummary } from '@woocommerce/components';
+import { useEffect, useRef } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import type { ReactNode } from 'react';
 
@@ -13,6 +14,7 @@ import { DataViews, type Field, type View } from '@wordpress/dataviews/wp';
  * Internal dependencies
  */
 import '../dataviews.scss';
+import { useDataViewsReloadState } from './use-dataviews-reload-state';
 
 export type WooPaymentsMoneyMovementDataViewsProps<
 	Item extends { id?: string },
@@ -99,9 +101,26 @@ export function WooPaymentsMoneyMovementDataViews<
 		) : undefined;
 	const resolvedGetItemId =
 		getItemId || ( ( item: Item ) => String( item.id || '' ) );
+	const { data, listRef } = useDataViewsReloadState< Item, HTMLDivElement >(
+		rows,
+		isLoading
+	);
+	// The client keeps its footer while a list reloads; the last summary stays until the new one loads.
+	const loadedSummaryRef = useRef( summary );
+
+	useEffect( () => {
+		if ( ! isLoading ) {
+			loadedSummaryRef.current = summary;
+		}
+	} );
+
+	const shownSummary = isLoading ? loadedSummaryRef.current : summary;
 
 	return (
-		<Card className="woocommerce-woopayments-money-movement-dataviews">
+		<Card
+			ref={ listRef }
+			className="woocommerce-woopayments-money-movement-dataviews"
+		>
 			{ loadingMessage && (
 				<div
 					role="status"
@@ -118,7 +137,7 @@ export function WooPaymentsMoneyMovementDataViews<
 					view={ tableView }
 					onChangeView={ onChangeView }
 					fields={ fields }
-					data={ rows }
+					data={ data }
 					isLoading={ isLoading }
 					search={ search }
 					searchLabel={ searchLabel }
@@ -141,9 +160,9 @@ export function WooPaymentsMoneyMovementDataViews<
 					}
 				/>
 			</CardBody>
-			{ summary && summary.length > 0 && (
+			{ shownSummary && shownSummary.length > 0 && (
 				<CardFooter>
-					<TableSummary data={ summary } />
+					<TableSummary data={ shownSummary } />
 				</CardFooter>
 			) }
 		</Card>

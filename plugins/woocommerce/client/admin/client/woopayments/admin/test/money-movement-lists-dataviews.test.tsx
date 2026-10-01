@@ -346,3 +346,29 @@ describe( 'WooPayments list load errors', () => {
 		}
 	);
 } );
+
+describe( 'WooPayments uncaptured list while loading', () => {
+	beforeEach( () => {
+		setEmptyLists();
+		mocked( getWooPaymentsAuthorizations ).mockReturnValue(
+			new Promise( () => {} )
+		);
+		mocked( getWooPaymentsAuthorizationsSummary ).mockReturnValue(
+			new Promise( () => {} )
+		);
+	} );
+
+	it( 'labels its column headers before the rows load', async () => {
+		renderAt(
+			'/woopayments/transactions?view=uncaptured',
+			<WooPaymentsTransactionsPage />
+		);
+
+		expect(
+			await screen.findByRole( 'columnheader', { name: 'Authorized on' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'columnheader', { name: 'Capture by' } )
+		).toBeInTheDocument();
+	} );
+} );

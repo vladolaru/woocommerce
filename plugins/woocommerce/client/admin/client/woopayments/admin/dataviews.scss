@@ -96,9 +96,13 @@
 		}
 	}
 
-	// Client 11.1.0 `@woocommerce/components` `table/style.scss`: the header row sits on a grey band.
+	// Client 11.1.0 `@woocommerce/components` `table/style.scss`: the header row sits on a grey band
+	// with a line below it. The line above it is the client's card header border (`CardHeader`); on
+	// the header row it stays right above the header when DataViews shows its filter row.
 	.dataviews-view-table thead th {
 		background-color: #f8f9fa;
+		border-block-end: 1px solid #e2e4e7;
+		border-block-start: 1px solid rgba(0, 0, 0, 0.1);
 	}
 
 	// Client 11.1.0 `style.scss` `.info-button`: the details column is as wide as its icon.

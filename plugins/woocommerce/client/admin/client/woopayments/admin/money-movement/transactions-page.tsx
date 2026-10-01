@@ -772,7 +772,7 @@ export const WooPaymentsTransactionsPage = () => {
 				<section aria-busy={ isLoading }>
 					<LiveStatusMessage>{ liveStatusMessage }</LiveStatusMessage>
 					<WooPaymentsMoneyMovementDataViews
-						fields={ isLoading ? [] : authorizationFields }
+						fields={ authorizationFields }
 						rows={ authorizations }
 						view={ view }
 						onChangeView={ handleViewChange }
