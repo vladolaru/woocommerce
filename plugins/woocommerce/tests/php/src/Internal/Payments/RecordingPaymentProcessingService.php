@@ -42,6 +42,13 @@ class RecordingPaymentProcessingService extends PaymentProcessingService {
 	public PaymentOutcome $checkout_outcome;
 
 	/**
+	 * Exception thrown by checkout processing instead of returning the outcome, when set.
+	 *
+	 * @var \Exception|null
+	 */
+	public ?\Exception $checkout_exception = null;
+
+	/**
 	 * Constructor.
 	 */
 	public function __construct() {
@@ -71,10 +78,15 @@ class RecordingPaymentProcessingService extends PaymentProcessingService {
 	 * @param PaymentContext   $context  Payment context.
 	 * @param ProviderContract $provider Provider.
 	 * @return PaymentOutcome
+	 * @throws \Exception When a checkout exception is configured.
 	 */
 	public function process_checkout_outcome( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
 		$this->last_checkout_context = $context;
 		++$this->checkout_attempt_count;
+
+		if ( null !== $this->checkout_exception ) {
+			throw $this->checkout_exception;
+		}
 
 		return $this->checkout_outcome;
 	}

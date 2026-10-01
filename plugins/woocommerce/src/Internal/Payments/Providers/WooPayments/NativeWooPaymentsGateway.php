@@ -26,6 +26,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
+use Exception;
 use Throwable;
 use WC_Order;
 use WC_Payment_Token;
@@ -1563,6 +1564,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * @param int $order_id Order ID.
 	 * @return array<string,string>
+	 * @throws Exception When processing fails and the order's intent has not succeeded.
 	 */
 	public function process_payment( $order_id ) {
 		$this->ensure_current_blog_context();
@@ -1583,13 +1585,36 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		// The plugin refuses these first, before any other check (Invalid_Phone_Number_Exception).
-		// When the order already has a succeeded intent, the plugin's catch returns success with a
-		// downstream-error note instead; native keeps its early-guard shape pending owner item O12.
-		if ( 20 < strlen( $order->get_billing_phone() ) ) {
+		try {
+			return $this->process_order_payment( $order );
+		} catch ( Exception $exception ) {
 			if ( ! $this->has_succeeded_intent( $order ) ) {
-				$order->update_status( OrderStatus::FAILED );
+				throw $exception;
 			}
+
+			return $this->keep_succeeded_intent_order( $order, $exception->getMessage(), get_class( $exception ) );
+		}
+	}
+
+	/**
+	 * Run the checkout payment for a loaded order.
+	 *
+	 * The plugin throws its refusals inside process_payment()'s try (client 11.1.0 `gw:1206-1233`);
+	 * native returns them, so each refusal checks for a succeeded intent itself.
+	 *
+	 * @param WC_Order $order Order being paid.
+	 * @return array<string,string>
+	 */
+	private function process_order_payment( WC_Order $order ): array {
+		$order_id = $order->get_id();
+
+		// The plugin refuses these first, before any other check (Invalid_Phone_Number_Exception).
+		if ( 20 < strlen( $order->get_billing_phone() ) ) {
+			if ( $this->has_succeeded_intent( $order ) ) {
+				return $this->keep_succeeded_intent_order( $order, __( 'Invalid phone number.', 'woocommerce' ), 'invalid_phone_number' );
+			}
+
+			$order->update_status( OrderStatus::FAILED );
 			wc_add_notice( __( 'Invalid phone number.', 'woocommerce' ), 'error', array( 'icon' => 'error' ) );
 
 			return array(
@@ -1601,9 +1626,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$fraud_prevention_error = $this->get_fraud_prevention_error_message( true );
 		if ( '' !== $fraud_prevention_error ) {
-			if ( ! $this->has_succeeded_intent( $order ) ) {
-				$order->update_status( OrderStatus::FAILED );
+			if ( $this->has_succeeded_intent( $order ) ) {
+				return $this->keep_succeeded_intent_order( $order, $fraud_prevention_error, 'fraud_prevention_enabled' );
 			}
+
+			$order->update_status( OrderStatus::FAILED );
 			wc_add_notice( $fraud_prevention_error, 'error', array( 'icon' => 'error' ) );
 
 			return array(
@@ -1615,10 +1642,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$failed_transaction_rate_limiter_error = $this->get_failed_transaction_rate_limiter_error_message();
 		if ( '' !== $failed_transaction_rate_limiter_error ) {
-			if ( ! $this->has_succeeded_intent( $order ) ) {
-				$order->update_status( OrderStatus::FAILED );
-				$order->add_order_note( wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_rate_limited_payment_note( $order ) );
+			if ( $this->has_succeeded_intent( $order ) ) {
+				return $this->keep_succeeded_intent_order( $order, $failed_transaction_rate_limiter_error, 'rate_limiter_enabled' );
 			}
+
+			$order->update_status( OrderStatus::FAILED );
+			$order->add_order_note( wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_rate_limited_payment_note( $order ) );
 			wc_add_notice( $failed_transaction_rate_limiter_error, 'error', array( 'icon' => 'error' ) );
 
 			return array(
@@ -1646,6 +1675,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$existing_intent_result = $this->get_duplicate_payment_prevention_service()->check_payment_intent_attached_to_order_succeeded( $order, $this );
 		if ( is_wp_error( $existing_intent_result ) ) {
+			if ( $this->has_succeeded_intent( $order ) ) {
+				return $this->keep_succeeded_intent_order( $order, $existing_intent_result->get_error_message(), (string) $existing_intent_result->get_error_code() );
+			}
+
 			wc_add_notice( $existing_intent_result->get_error_message(), 'error', array( 'icon' => 'error' ) );
 
 			return array(
@@ -2617,6 +2650,41 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	private function has_succeeded_intent( WC_Order $order ): bool {
 		return 'succeeded' === (string) $order->get_meta( '_intention_status', true );
+	}
+
+	/**
+	 * Keep an order whose intent already succeeded when checkout fails after the payment.
+	 *
+	 * Client 11.1.0 `gw:1283-1304`: the order keeps its status, gets a diagnostic note and a warning
+	 * log, and checkout returns success so a shopper who was already charged does not pay again.
+	 * The warning is not behind the debug-log setting, like the gateway's other error logs.
+	 *
+	 * @param WC_Order $order   Order being paid.
+	 * @param string   $message Error message of the failure.
+	 * @param string   $failure The exception class, or the refusal code where native returns instead of throwing.
+	 * @return array<string,string>
+	 */
+	private function keep_succeeded_intent_order( WC_Order $order, string $message, string $failure ): array {
+		$order->add_order_note(
+			sprintf(
+				/* translators: %s: error message from the downstream exception */
+				__( 'Payment succeeded, but a downstream error occurred during post-payment processing: %s. Order status preserved.', 'woocommerce' ),
+				esc_html( $message )
+			)
+		);
+
+		wc_get_logger()->warning(
+			sprintf( 'Payment intent already succeeded; downstream %s on order #%d suppressed to preserve order status.', $failure, $order->get_id() ),
+			array(
+				'source'   => 'woopayments',
+				'order_id' => $order->get_id(),
+			)
+		);
+
+		return array(
+			'result'   => 'success',
+			'redirect' => $this->get_return_url( $order ),
+		);
 	}
 
 	/**

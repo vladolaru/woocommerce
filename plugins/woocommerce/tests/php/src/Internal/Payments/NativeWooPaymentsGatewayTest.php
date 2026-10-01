@@ -3354,37 +3354,65 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave an order whose intent already succeeded untouched when checkout is refused: $_dataName.
+	 * @testdox Should keep a paid order and return success when checkout is refused after the intent succeeded: $_dataName.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1283` checks the order's
-	 * intention status first in the catch; when it is `succeeded` it returns before the failed
-	 * status (`:1326-1327`) and the rate-limiter note (`:1403-1421`) are reached.
+	 * Oracle: WooPayments 11.1.0 throws these refusals inside process_payment()'s try
+	 * (`class-wc-payment-gateway-wcpay.php:1206-1233`, `class-duplicate-payment-prevention-service.php:131-139`).
+	 * The catch checks the intention status first (`gw:1283`); when it is `succeeded` it adds the
+	 * downstream-error note, logs a warning and returns success with the return URL (`gw:1284-1304`),
+	 * before the failed status (`gw:1326-1327`), the rate-limiter note (`gw:1403-1421`) and the notice (`gw:1426`).
 	 *
 	 * @dataProvider refused_checkout_with_succeeded_intent_provider
 	 *
-	 * @param string $refusal Which refusal branch runs: `fraud_token` or `rate_limiter`.
+	 * @param string $refusal Which refusal runs: `phone`, `fraud_token`, `rate_limiter` or `amount_mismatch`.
 	 */
-	public function test_process_payment_refusal_keeps_order_whose_intent_succeeded( string $refusal ): void {
-		wc_clear_notices();
+	public function test_process_payment_refusal_on_succeeded_intent_keeps_order_and_returns_success( string $refusal ): void {
 		$order = $this->create_order();
 		$order->set_status( 'processing' );
 		$order->update_meta_data( '_intention_status', 'succeeded' );
 		$order->save();
-		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 
-		$session = $this->create_session();
-		if ( 'fraud_token' === $refusal ) {
+		$session                  = $this->create_session();
+		$fraud_prevention_service = $this->create_fraud_prevention_service( false, $session );
+		$api_client               = null;
+		if ( 'phone' === $refusal ) {
+			$order->set_billing_phone( '+1 555 0100 0000 0000 0' );
+			$order->save();
+			$message = 'Invalid phone number.';
+			$label   = 'invalid_phone_number';
+		} elseif ( 'fraud_token' === $refusal ) {
 			$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
 			$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
 			$fraud_prevention_service                               = $this->create_fraud_prevention_service( true, $session );
-		} else {
+			$message = "We're not able to process this payment. Please refresh the page and try again.";
+			$label   = 'fraud_prevention_enabled';
+		} elseif ( 'rate_limiter' === $refusal ) {
 			$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
-			$fraud_prevention_service = $this->create_fraud_prevention_service( false, $session );
+			$message = 'Your payment was not processed.';
+			$label   = 'rate_limiter_enabled';
+		} else {
+			$order->update_meta_data( '_intent_id', 'pi_existing' );
+			$order->save();
+			$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+				->disableOriginalConstructor()
+				->onlyMethods( array( 'get_payment_intention' ) )
+				->getMock();
+			$api_client->method( 'get_payment_intention' )->willReturn( $this->create_intent_response( $order, 'succeeded', 1000 ) );
+			$message = sprintf(
+				'This order was already paid for %1$s, but the order total has since changed to %2$s, so we prevented an overpayment. Please create a new order for any additional items.',
+				wc_price( 10.00, array( 'currency' => $order->get_currency() ) ),
+				wc_price( 12.00, array( 'currency' => $order->get_currency() ) )
+			);
+			$label   = 'duplicate_payment_amount_mismatch';
 		}
+		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$logger     = $this->capture_logs();
+		$return_url = $this->filter_return_url( $order );
 
+		$service = new RecordingPaymentProcessingService();
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init(
-			new RecordingPaymentProcessingService(),
+			$service,
 			new WooPaymentsProvider(),
 			null,
 			null,
@@ -3392,26 +3420,126 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			null,
 			null,
 			$fraud_prevention_service,
-			new WooPaymentsFailedTransactionRateLimiter( $session )
+			new WooPaymentsFailedTransactionRateLimiter( $session ),
+			$this->create_duplicate_payment_prevention_service( $session, $api_client )
 		);
 
-		$gateway->process_payment( $order->get_id() );
+		$result = $gateway->process_payment( $order->get_id() );
 
-		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertCount( $note_count, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'Neither a status-change note nor the rate-limiter note may be added.' );
+		$this->assertNull( $service->last_checkout_context, 'A refused checkout must not reach the provider.' );
+		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, $message, $label, $logger );
 	}
 
 	/**
-	 * Refusal branches of process_payment().
+	 * Refusals process_payment() can return before charging.
 	 *
 	 * @return array<string,array{0:string}>
 	 */
 	public function refused_checkout_with_succeeded_intent_provider(): array {
 		return array(
-			'fraud-token refusal'  => array( 'fraud_token' ),
-			'rate-limiter refusal' => array( 'rate_limiter' ),
+			'billing phone over 20 characters' => array( 'phone' ),
+			'fraud-token refusal'              => array( 'fraud_token' ),
+			'rate-limiter refusal'             => array( 'rate_limiter' ),
+			'attached intent amount mismatch'  => array( 'amount_mismatch' ),
 		);
+	}
+
+	/**
+	 * @testdox Should keep a paid checkout order and return success when post-payment processing throws.
+	 *
+	 * Oracle: WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4531`
+	 * (WOOPMNT-6145): when process_payment_for_order() throws after the intent succeeded, the catch
+	 * (`class-wc-payment-gateway-wcpay.php:1283-1304`) keeps the order status, adds the downstream-error
+	 * note, logs a warning and returns success with get_return_url().
+	 */
+	public function test_process_payment_downstream_exception_on_succeeded_intent_keeps_order_and_returns_success(): void {
+		// Pending like the client test's order: a paid status would stop at the already-paid guard first.
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$logger     = $this->capture_logs();
+		$return_url = $this->filter_return_url( $order );
+
+		$service                     = new RecordingPaymentProcessingService();
+		$service->checkout_exception = new \Exception( 'Auth credentials missing' );
+		$gateway                     = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context, 'The payment must have run before the downstream failure.' );
+		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, 'Auth credentials missing', 'Exception', $logger, 'pending' );
+	}
+
+	/**
+	 * @testdox Should keep a subscription and return success when its payment-method change throws after the intent succeeded.
+	 *
+	 * Oracle: WooPayments 11.1.0 runs a subscription payment-method change through the same
+	 * process_payment() try (`class-wc-payment-gateway-wcpay.php:1201-1282`, flagged at `:1637`), so the
+	 * succeeded-intent catch (`:1283-1304`) covers it too; only the failed-status branch below it
+	 * excludes the change (`:1326`).
+	 */
+	public function test_process_payment_downstream_exception_on_succeeded_intent_keeps_subscription_payment_method_change(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$subscription = $this->create_order();
+		$subscription->update_meta_data( '_intention_status', 'succeeded' );
+		$subscription->save();
+		$note_count = count( wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) );
+		$logger     = $this->capture_logs();
+		$return_url = $this->filter_return_url( $subscription );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $subscription->get_id() );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $subscription->get_id();
+
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$service                     = new RecordingPaymentProcessingService();
+		$service->checkout_exception = new \RuntimeException( 'Subscription hook failed' );
+		$gateway                     = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$result = $gateway->process_payment( $subscription->get_id() );
+
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'The request must run as a validated subscription payment-method change.' );
+		$this->assert_succeeded_intent_defense( $subscription->get_id(), $result, $return_url, $note_count, 'Subscription hook failed', 'RuntimeException', $logger, 'pending' );
+	}
+
+	/**
+	 * @testdox Should not add the succeeded-intent note when post-payment processing throws before the intent succeeded.
+	 *
+	 * Oracle: WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4594`: without a
+	 * succeeded intent the guard (`class-wc-payment-gateway-wcpay.php:1283`) does not fire.
+	 */
+	public function test_process_payment_downstream_exception_without_succeeded_intent_skips_defense(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$order->save();
+		$logger = $this->capture_logs();
+
+		$service                     = new RecordingPaymentProcessingService();
+		$service->checkout_exception = new \Exception( 'Genuine payment failure' );
+		$gateway                     = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		$thrown = null;
+		try {
+			$gateway->process_payment( $order->get_id() );
+		} catch ( \Exception $exception ) {
+			$thrown = $exception;
+		}
+
+		$this->assertSame( $service->checkout_exception, $thrown, 'Without a succeeded intent the exception keeps its existing path.' );
+		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		foreach ( $notes as $note ) {
+			$this->assertStringNotContainsString( 'Payment succeeded, but a downstream error occurred', $note );
+		}
+		$this->assertSame( array(), $logger->warning_messages() );
 	}
 
 	/**
@@ -5174,6 +5302,199 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway = new NativeWooPaymentsGateway();
 
 		$this->assertSame( '', $gateway->get_transaction_url( $order ) );
+	}
+
+	/**
+	 * Assert the succeeded-intent defense of client 11.1.0 `class-wc-payment-gateway-wcpay.php:1283-1304`.
+	 *
+	 * @param int                  $order_id   Order ID.
+	 * @param array<string,string> $result     process_payment() result.
+	 * @param string               $return_url Filtered return URL for the order.
+	 * @param int                  $note_count Order note count before processing.
+	 * @param string               $message    Downstream error message.
+	 * @param string               $label      What the warning names as the downstream failure.
+	 * @param object               $logger     Logger from capture_logs().
+	 * @param string               $status     Order status that must be preserved.
+	 */
+	private function assert_succeeded_intent_defense( int $order_id, array $result, string $return_url, int $note_count, string $message, string $label, object $logger, string $status = 'processing' ): void {
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( $return_url, $result['redirect'] ?? '' );
+
+		$order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $status, $order->get_status(), 'The order status must be preserved.' );
+
+		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order_id ) ) );
+		$this->assertCount( $note_count + 1, $notes, 'Only the downstream-error note may be added.' );
+		$this->assertContains( 'Payment succeeded, but a downstream error occurred during post-payment processing: ' . esc_html( $message ) . '. Order status preserved.', $notes );
+
+		$this->assertSame(
+			array( sprintf( 'Payment intent already succeeded; downstream %s on order #%d suppressed to preserve order status.', $label, $order_id ) ),
+			$logger->warning_messages()
+		);
+		$this->assertSame( 0, wc_notice_count( 'error' ), 'The shopper must not see an error notice.' );
+	}
+
+	/**
+	 * Route the order's return URL to a distinctive value.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return string
+	 */
+	private function filter_return_url( WC_Order $order ): string {
+		$return_url = 'https://example.test/return/' . $order->get_id();
+		add_filter(
+			'woocommerce_get_return_url',
+			static function ( $url, $filtered_order ) use ( $order, $return_url ) {
+				return $filtered_order instanceof WC_Order && $filtered_order->get_id() === $order->get_id() ? $return_url : $url;
+			},
+			10,
+			2
+		);
+
+		return $return_url;
+	}
+
+	/**
+	 * Capture WooCommerce log entries through the woocommerce_logging_class filter.
+	 *
+	 * @return object Logger with a warning_messages() reader.
+	 */
+	private function capture_logs(): object {
+		$logger = new class() implements \WC_Logger_Interface {
+			/**
+			 * Logged entries.
+			 *
+			 * @var array<int,array{level:string,message:string}>
+			 */
+			public array $entries = array();
+
+			/**
+			 * Messages logged at warning level.
+			 *
+			 * @return string[]
+			 */
+			public function warning_messages(): array {
+				return array_values( array_map( static fn( $entry ) => $entry['message'], array_filter( $this->entries, static fn( $entry ) => 'warning' === $entry['level'] ) ) );
+			}
+
+			/**
+			 * Add a log entry.
+			 *
+			 * @param string $handle  File handle.
+			 * @param string $message Log message.
+			 * @param string $level   Log level.
+			 * @return bool
+			 */
+			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
+				unset( $handle );
+				$this->log( $level, $message );
+				return true;
+			}
+
+			/**
+			 * Add a log entry.
+			 *
+			 * @param string              $level   Log level.
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function log( $level, $message, $context = array() ) {
+				unset( $context );
+				$this->entries[] = array(
+					'level'   => (string) $level,
+					'message' => (string) $message,
+				);
+			}
+
+			/**
+			 * Log an emergency entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function emergency( $message, $context = array() ) {
+				$this->log( 'emergency', $message, $context );
+			}
+
+			/**
+			 * Log an alert entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function alert( $message, $context = array() ) {
+				$this->log( 'alert', $message, $context );
+			}
+
+			/**
+			 * Log a critical entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function critical( $message, $context = array() ) {
+				$this->log( 'critical', $message, $context );
+			}
+
+			/**
+			 * Log an error entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function error( $message, $context = array() ) {
+				$this->log( 'error', $message, $context );
+			}
+
+			/**
+			 * Log a warning entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function warning( $message, $context = array() ) {
+				$this->log( 'warning', $message, $context );
+			}
+
+			/**
+			 * Log a notice entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function notice( $message, $context = array() ) {
+				$this->log( 'notice', $message, $context );
+			}
+
+			/**
+			 * Log an info entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function info( $message, $context = array() ) {
+				$this->log( 'info', $message, $context );
+			}
+
+			/**
+			 * Log a debug entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function debug( $message, $context = array() ) {
+				$this->log( 'debug', $message, $context );
+			}
+		};
+		add_filter(
+			'woocommerce_logging_class',
+			static function () use ( $logger ) {
+				return $logger;
+			}
+		);
+
+		return $logger;
 	}
 
 	/**
