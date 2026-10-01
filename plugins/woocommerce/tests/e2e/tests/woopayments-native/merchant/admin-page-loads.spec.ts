@@ -376,6 +376,15 @@ test(
 			).toBeVisible();
 		}
 
+		// Client 11.1.0 `settings/express-checkout-settings/index.js:125-163`:
+		// the Amazon Pay subpage, under its title.
+		await page.goto(
+			adminPath( '/woopayments/settings/express-checkout/amazon_pay' )
+		);
+		await expect(
+			page.getByRole( 'heading', { name: 'Amazon Pay', exact: true } )
+		).toBeVisible();
+
 		await expectHealthyLoad( health );
 	}
 );
