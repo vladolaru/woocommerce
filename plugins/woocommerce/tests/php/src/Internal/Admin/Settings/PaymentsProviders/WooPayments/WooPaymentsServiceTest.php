@@ -355,7 +355,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $summary['urls']['overview_page'] );
 		$this->assertStringNotContainsString( 'wcpay-connection-success', $summary['urls']['overview_page'] );
 		$this->assertStringNotContainsString( 'wcpay-connection-error', $summary['urls']['overview_page'] );
-		$this->assertSame( 'https://example.com/woopayments/onboarding', $summary['urls']['setup'] );
+		// Client 11.1.0 `sandbox-mode-switch-to-live-notice/modal/index.tsx:39-45`: Activate payments goes to the onboarding route.
+		$this->assertSame( Utils::wc_payments_settings_url( '/woopayments/onboarding' ), $summary['urls']['setup'] );
 		$this->assertArrayNotHasKey( 'test_publishable_key', $summary['account'] );
 		$this->assertArrayNotHasKey( 'live_publishable_key', $summary['account'] );
 		$this->assertArrayNotHasKey( 'is_documents_enabled', $summary['account'] );
@@ -391,7 +392,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $summary['urls']['overview_page'] );
 		$this->assertStringNotContainsString( 'wcpay-connection-success', $summary['urls']['overview_page'] );
 		$this->assertStringNotContainsString( 'wcpay-connection-error', $summary['urls']['overview_page'] );
-		$this->assertSame( 'https://example.com/woopayments/onboarding', $summary['urls']['setup'] );
+		$this->assertSame( Utils::wc_payments_settings_url( '/woopayments/onboarding' ), $summary['urls']['setup'] );
 	}
 
 	/**

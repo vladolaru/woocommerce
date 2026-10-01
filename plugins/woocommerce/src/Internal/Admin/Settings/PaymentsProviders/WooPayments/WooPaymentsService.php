@@ -309,20 +309,13 @@ class WooPaymentsService {
 	}
 
 	/**
-	 * Get the setup URL for the native WooPayments settings surface.
+	 * Get the setup URL for the native WooPayments settings surface: the onboarding route, where plugin 11.1.0's
+	 * Activate payments modal sends a test or sandbox account (`sandbox-mode-switch-to-live-notice/modal/index.tsx:39-45`).
 	 *
 	 * @return string Setup URL.
 	 */
 	private function get_setup_page_url(): string {
-		return $this->provider->get_onboarding_url(
-			$this->get_payment_gateway(),
-			Utils::wc_payments_settings_url(
-				self::ONBOARDING_PATH_BASE,
-				array(
-					'from' => self::FROM_PAYMENT_SETTINGS,
-				)
-			)
-		);
+		return Utils::wc_payments_settings_url( self::ONBOARDING_PATH_BASE );
 	}
 
 	/**
