@@ -74,6 +74,9 @@ jest.mock( '@woocommerce/components', () => ( {
 			) ) }
 		</ul>
 	),
+	TableSummaryPlaceholder: () => (
+		<ul className="woocommerce-table__summary is-loading" />
+	),
 	Pill: ( {
 		children,
 		className,
