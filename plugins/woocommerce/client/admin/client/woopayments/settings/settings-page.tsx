@@ -46,6 +46,7 @@ import {
 import { FraudProtectionSettings } from './fraud-protection';
 import {
 	DuplicatePaymentMethodNotice,
+	PaymentMethodRowNotices,
 	getPaymentMethodAvailability,
 	WooPaymentsPaymentMethodsList,
 } from './payment-methods-list';
@@ -1386,44 +1387,45 @@ const ExpressCheckoutSettingsSection = () => {
 								{ row.action }
 							</div>
 						</div>
-						{ row.notice && (
-							<Notice
-								status={ row.noticeStatus || 'warning' }
-								isDismissible={ false }
-								className="woopayments-settings-payment-method-item__notice"
-							>
-								{ row.notice }
-							</Notice>
-						) }
-						{ row.duplicatePaymentMethodId &&
-							duplicatedPaymentMethodIds[
-								row.duplicatePaymentMethodId
-							]?.length &&
-							! row.notice && (
-								<DuplicatePaymentMethodNotice
-									paymentMethodId={
-										row.duplicatePaymentMethodId
-									}
-									gatewayIds={
-										duplicatedPaymentMethodIds[
-											row.duplicatePaymentMethodId
-										] || []
-									}
-									dismissedNotices={
-										dismissedDuplicatePaymentMethodNotices
-									}
-									onDismiss={ onDismissDuplicateNotice }
-									onRestoreFocus={ () => {
-										document
-											.getElementById(
-												getExpressCheckoutCheckboxId(
-													row.id
-												)
-											)
-											?.focus();
-									} }
-								/>
+						<PaymentMethodRowNotices>
+							{ row.notice && (
+								<Notice
+									status={ row.noticeStatus || 'warning' }
+									isDismissible={ false }
+									className="woopayments-settings-payment-method-item__notice"
+								>
+									{ row.notice }
+								</Notice>
 							) }
+							{ row.duplicatePaymentMethodId &&
+								( duplicatedPaymentMethodIds[
+									row.duplicatePaymentMethodId
+								]?.length ?? 0 ) > 0 && (
+									<DuplicatePaymentMethodNotice
+										paymentMethodId={
+											row.duplicatePaymentMethodId
+										}
+										gatewayIds={
+											duplicatedPaymentMethodIds[
+												row.duplicatePaymentMethodId
+											] || []
+										}
+										dismissedNotices={
+											dismissedDuplicatePaymentMethodNotices
+										}
+										onDismiss={ onDismissDuplicateNotice }
+										onRestoreFocus={ () => {
+											document
+												.getElementById(
+													getExpressCheckoutCheckboxId(
+														row.id
+													)
+												)
+												?.focus();
+										} }
+									/>
+								) }
+						</PaymentMethodRowNotices>
 					</li>
 				) ) }
 			</ul>

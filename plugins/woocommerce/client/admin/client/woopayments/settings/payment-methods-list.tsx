@@ -865,6 +865,19 @@ const PmPromotionBadge = ( {
 	);
 };
 
+/**
+ * Holds a payment method row's notices, stacked below the row like the client's row notices.
+ */
+export const PaymentMethodRowNotices = ( {
+	children,
+}: {
+	children: ReactNode;
+} ) => (
+	<div className="woopayments-settings-payment-method-item__notices">
+		{ children }
+	</div>
+);
+
 export const DuplicatePaymentMethodNotice = ( {
 	paymentMethodId,
 	gatewayIds,
@@ -917,7 +930,7 @@ export const DuplicatePaymentMethodNotice = ( {
 						onRestoreFocus();
 					}
 				} }
-				className="woopayments-settings-payment-method-item__duplicate-notice"
+				className="woopayments-settings-payment-method-item__notice"
 			>
 				<span>
 					{ __(
@@ -1346,27 +1359,29 @@ const PaymentMethodRow = ( {
 					/>
 				</div>
 			</div>
-			{ duplicateGatewayIds.length > 0 && ! availability.notice && (
-				<DuplicatePaymentMethodNotice
-					paymentMethodId={ definition.id }
-					gatewayIds={ duplicateGatewayIds }
-					dismissedNotices={
-						dismissedDuplicatePaymentMethodNotices || {}
-					}
-					onDismiss={ onDismissDuplicateNotice }
-					onRestoreFocus={ restoreFocusToRow }
-				/>
-			) }
-			{ availability.notice && (
-				<Notice
-					status={ availability.noticeStatus || 'warning' }
-					isDismissible={ false }
-					className="woopayments-settings-payment-method-item__notice"
-					spokenMessage={ availability.noticeSpokenMessage }
-				>
-					<span id={ noticeId }>{ availability.notice }</span>
-				</Notice>
-			) }
+			<PaymentMethodRowNotices>
+				{ availability.notice && (
+					<Notice
+						status={ availability.noticeStatus || 'warning' }
+						isDismissible={ false }
+						className="woopayments-settings-payment-method-item__notice"
+						spokenMessage={ availability.noticeSpokenMessage }
+					>
+						<span id={ noticeId }>{ availability.notice }</span>
+					</Notice>
+				) }
+				{ duplicateGatewayIds.length > 0 && ! availability.notice && (
+					<DuplicatePaymentMethodNotice
+						paymentMethodId={ definition.id }
+						gatewayIds={ duplicateGatewayIds }
+						dismissedNotices={
+							dismissedDuplicatePaymentMethodNotices || {}
+						}
+						onDismiss={ onDismissDuplicateNotice }
+						onRestoreFocus={ restoreFocusToRow }
+					/>
+				) }
+			</PaymentMethodRowNotices>
 			{ activationMethodId === definition.id && (
 				<PaymentMethodActivationModal
 					definition={ definition }

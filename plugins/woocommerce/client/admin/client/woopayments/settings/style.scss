@@ -352,12 +352,21 @@
 		}
 	}
 
-	&__notice.components-notice {
-		margin: 12px 0 0;
+	// One slot for every row notice (availability, exclusion, duplicate), placed like the client's: full row
+	// width, 24px below the row, stacked when more than one applies.
+	&__notices {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		margin-top: 24px;
+
+		&:empty {
+			display: none;
+		}
 	}
 
-	&__duplicate-notice.components-notice {
-		margin: 12px 0 0 48px;
+	&__notice.components-notice {
+		margin: 0;
 	}
 
 	// Below 660px the client restacks each row: the checkbox, then the logo and name on one line, with the
@@ -401,10 +410,6 @@
 
 		&--grouped .components-checkbox-control {
 			grid-row: auto;
-		}
-
-		&__duplicate-notice.components-notice {
-			margin-left: 0;
 		}
 	}
 }
