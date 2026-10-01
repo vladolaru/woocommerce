@@ -56,6 +56,22 @@ let mockLastFields: MockField[] = [];
 let mockLastView: MockView = {};
 let mockOnChangeView: ( view: MockView ) => void = () => undefined;
 
+// The export raises snackbars; other stores keep the real dispatch.
+jest.mock( '@wordpress/data', () => {
+	const actual = jest.requireActual( '@wordpress/data' );
+
+	return {
+		...actual,
+		dispatch: ( store: string ) =>
+			store === 'core/notices'
+				? {
+						createSuccessNotice: jest.fn(),
+						createErrorNotice: jest.fn(),
+				  }
+				: actual.dispatch( store ),
+	};
+} );
+
 jest.mock( '@woocommerce/data', () => ( {
 	useUserPreferences: () =>
 		jest

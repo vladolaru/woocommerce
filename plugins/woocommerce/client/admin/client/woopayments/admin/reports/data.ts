@@ -19,6 +19,7 @@ import type {
 	ReportsFeesQuery,
 	ReportsFeesSummary,
 } from './types';
+import { getWooPaymentsExportRecipient } from '../money-movement/export';
 
 const REPORTS_PATH = '/wc/v3/payments/reports';
 
@@ -64,7 +65,10 @@ export const requestWooPaymentsReportsFeesExport = (
 	apiFetch< Record< string, unknown > >( {
 		path: buildPathWithQuery(
 			`${ REPORTS_PATH }/fees/download`,
-			serializeReportsFeesExportQuery( query )
+			serializeReportsFeesExportQuery( {
+				...query,
+				...getWooPaymentsExportRecipient(),
+			} )
 		),
 		method: 'POST',
 	} );

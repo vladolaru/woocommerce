@@ -17,6 +17,7 @@ import type {
 	WooPaymentsAccountSession,
 	WooPaymentsDisputeReadinessPayload,
 } from './types';
+import { getWooPaymentsExportRecipient } from '../money-movement/export';
 
 const DEPOSITS_PATH = '/wc/v3/payments/deposits';
 const DISPUTES_PATH = '/wc/v3/payments/disputes';
@@ -97,7 +98,10 @@ export const requestWooPaymentsDepositsExport = async (
 	query: WooPaymentsDepositsQuery = {}
 ): Promise< Record< string, unknown > > =>
 	apiFetch< Record< string, unknown > >( {
-		path: buildPathWithQuery( `${ DEPOSITS_PATH }/download`, query ),
+		path: buildPathWithQuery( `${ DEPOSITS_PATH }/download`, {
+			...query,
+			...getWooPaymentsExportRecipient(),
+		} ),
 		method: 'POST',
 	} );
 

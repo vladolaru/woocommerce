@@ -70,6 +70,7 @@ jest.mock( '@wordpress/data', () => {
 				? {
 						createErrorNotice: ( message: string ) =>
 							mockCreateErrorNotice( message ),
+						createSuccessNotice: jest.fn(),
 				  }
 				: actual.dispatch( store ),
 	};

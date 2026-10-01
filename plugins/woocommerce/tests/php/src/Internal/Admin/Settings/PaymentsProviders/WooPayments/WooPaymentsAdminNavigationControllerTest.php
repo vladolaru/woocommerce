@@ -278,6 +278,24 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preload the email the list exports are sent to: the current user's, else the site admin email.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:930-935,1046` (`currentUserEmail`), which the
+	 * transactions, disputes and payouts exports send as `user_email`.
+	 */
+	public function test_preloads_current_user_email_for_list_exports(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller( true );
+
+		$this->assertSame( get_option( 'admin_email' ), $sut->preload_shared_settings( array() )['woopaymentsSettings']['currentUserEmail'] );
+
+		wp_set_current_user( self::factory()->user->create( array( 'user_email' => 'merchant@example.test' ) ) );
+
+		$this->assertSame( 'merchant@example.test', $sut->preload_shared_settings( array() )['woopaymentsSettings']['currentUserEmail'] );
+	}
+
+	/**
 	 * @testdox Should preload whether manual capture is on, which shows the Uncaptured transactions tab.
 	 *
 	 * Source: plugin 11.1.0 `client/transactions/index.tsx:63-72` (`getIsManualCaptureEnabled`).

@@ -28,6 +28,22 @@ import {
 } from '../reports/data';
 import { formatAmount as formatMoneyMovementAmount } from '../money-movement/utils';
 
+// The export raises snackbars; other stores keep the real dispatch.
+jest.mock( '@wordpress/data', () => {
+	const actual = jest.requireActual( '@wordpress/data' );
+
+	return {
+		...actual,
+		dispatch: ( store: string ) =>
+			store === 'core/notices'
+				? {
+						createSuccessNotice: jest.fn(),
+						createErrorNotice: jest.fn(),
+				  }
+				: actual.dispatch( store ),
+	};
+} );
+
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
 } ) );
@@ -1000,9 +1016,6 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 		expect( screen.getByText( '$25.00' ) ).toBeInTheDocument();
 		expect( screen.getByText( '-$1.20' ) ).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'status', { name: 'Fees export status' } )
-		).toBeEmptyDOMElement();
 		expect( speak ).toHaveBeenCalledWith( '1 fees loaded.', 'polite' );
 
 		fireEvent.change(
@@ -1037,22 +1050,22 @@ describe( 'WooPaymentsReportsPage', () => {
 			expect.objectContaining( {
 				search: [ 'txn_456' ],
 				user_timezone: expect.stringMatching( /^[+-]\d{2}:\d{2}$/ ),
-				user_email: 'merchant@example.com',
-				locale: 'en_US',
 			} )
 		);
+		// Client 11.1.0 `hooks/use-report-export.ts:91-95`: the first check runs a second after the request.
+		await waitFor( () => expect( clickSpy ).toHaveBeenCalledTimes( 1 ), {
+			timeout: 2000,
+		} );
 		expect( mockGetFeesExportUrl ).toHaveBeenCalledWith( 'export_123' );
-		await waitFor( () => expect( clickSpy ).toHaveBeenCalledTimes( 1 ) );
 		expect( recordEvent ).toHaveBeenCalledWith( 'wcpay_csv_export_click', {
 			row_type: 'fees',
 			source: 'payments_reports',
 			exported_row_count: 1,
 		} );
-		expect(
-			await screen.findByRole( 'status', {
-				name: 'Fees export status',
-			} )
-		).toHaveTextContent( 'Fees export is ready.' );
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_reports_fees_export_success',
+			{ exported_row_count: 1 }
+		);
 		clickSpy.mockRestore();
 	} );
 

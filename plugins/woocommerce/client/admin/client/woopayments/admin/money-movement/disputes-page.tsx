@@ -47,7 +47,7 @@ import {
 	type WooPaymentsListShowFilter,
 } from './list-filters';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
-import { runWooPaymentsExport } from './export';
+import { confirmWooPaymentsExport, runWooPaymentsExport } from './export';
 import {
 	formatCount,
 	formatDisputeReasonLabel,
@@ -55,7 +55,6 @@ import {
 	formatLabel,
 	formatSiteDateTime,
 	getDisputeId,
-	getErrorMessage,
 	getTransactionDetailsRoute,
 } from './utils';
 import {
@@ -65,12 +64,7 @@ import {
 	OrderLink,
 	PaymentSource,
 } from './transactions-list-fields';
-import {
-	ExportButton,
-	ListNotice,
-	LiveStatusMessage,
-	reportListLoadError,
-} from './table';
+import { ExportButton, LiveStatusMessage, reportListLoadError } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import {
 	getSettingsPaymentsProviderRouteUrl,
@@ -278,11 +272,6 @@ const DisputeCell = ( {
 	</ClickableCell>
 );
 
-type ExportMessage = {
-	text: string;
-	isError?: boolean;
-};
-
 const getSummaryCount = ( summary: DisputesSummary ) => {
 	const count = summary.total_count || summary.count;
 
@@ -297,8 +286,6 @@ export const WooPaymentsDisputesPage = () => {
 	const [ summary, setSummary ] = useState< DisputesSummary >( {} );
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ hasLoadError, setHasLoadError ] = useState( false );
-	const [ exportMessage, setExportMessage ] =
-		useState< ExportMessage | null >( null );
 	const [ isExporting, setIsExporting ] = useState( false );
 	const { visibleFields, saveFields } = usePersistedHiddenFields(
 		'wc_payments_disputes_hidden_columns',
@@ -666,36 +653,24 @@ export const WooPaymentsDisputesPage = () => {
 			buildDisputesRoute( nextQuery, showFilter, match )
 		);
 	};
+	// Client 11.1.0 `disputes/index.tsx:349-422`: the outcome is told by snackbars only.
 	const handleExport = async () => {
-		setIsExporting( true );
-		setExportMessage( null );
-
-		try {
-			await runWooPaymentsExport( {
-				requestExport: () =>
-					requestWooPaymentsDisputesExport( apiQuery ),
-				getExportUrl: getWooPaymentsDisputesExportUrl,
-			} );
-			setExportMessage( {
-				text: __(
-					'Your disputes export has started downloading.',
-					'woocommerce'
-				),
-			} );
-		} catch ( error ) {
-			setExportMessage( {
-				text: getErrorMessage(
-					error,
-					__(
-						'Unable to export WooPayments disputes.',
-						'woocommerce'
-					)
-				),
-				isError: true,
-			} );
-		} finally {
-			setIsExporting( false );
+		if (
+			! confirmWooPaymentsExport(
+				'disputes',
+				getSummaryCount( summary ) ?? 0,
+				query
+			)
+		) {
+			return;
 		}
+
+		setIsExporting( true );
+		await runWooPaymentsExport( {
+			requestExport: () => requestWooPaymentsDisputesExport( apiQuery ),
+			getExportUrl: getWooPaymentsDisputesExportUrl,
+		} );
+		setIsExporting( false );
 	};
 	let liveStatusMessage: string = __( 'Disputes loaded.', 'woocommerce' );
 
@@ -802,11 +777,6 @@ export const WooPaymentsDisputesPage = () => {
 			<WooPaymentsListFilters filters={ listFilters } />
 			<section aria-busy={ isLoading }>
 				<LiveStatusMessage>{ liveStatusMessage }</LiveStatusMessage>
-				{ exportMessage && (
-					<ListNotice isError={ !! exportMessage.isError }>
-						{ exportMessage.text }
-					</ListNotice>
-				) }
 				<WooPaymentsMoneyMovementDataViews
 					fields={ fields }
 					rows={ disputes }

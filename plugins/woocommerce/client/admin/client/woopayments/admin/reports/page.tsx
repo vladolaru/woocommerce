@@ -102,7 +102,6 @@ type DataViewsFilter = {
 type GlobalSettings = typeof globalThis & {
 	wcpaySettings?: {
 		accountDefaultCurrency?: string;
-		currentUserEmail?: string;
 		dateFormat?: string;
 		timeFormat?: string;
 	};
@@ -116,9 +115,6 @@ type GlobalSettings = typeof globalThis & {
 					accountId?: string;
 				};
 			};
-		};
-		locale?: {
-			userLocale?: string;
 		};
 	};
 };
@@ -1276,7 +1272,6 @@ const FeesReport = ( { now }: { now: Date } ) => {
 		isLoading: true,
 	} );
 	const [ isExporting, setIsExporting ] = useState( false );
-	const [ exportStatus, setExportStatus ] = useState( '' );
 	const errorHeadingRef = useRef< HTMLHeadingElement >( null );
 	const mountedRef = useRef( true );
 	const query = useMemo(
@@ -1600,46 +1595,29 @@ const FeesReport = ( { now }: { now: Date } ) => {
 		} ) );
 	};
 
+	// Client 11.1.0 `reports/fees-export-button.tsx:118-200`: the request sends the user's email and
+	// locale (added by the data layer) and the outcome is told by snackbars only.
 	const handleExport = async () => {
-		const settings = getGlobalSettings();
-		const exportQuery = {
-			...query,
-			user_email: settings.wcpaySettings?.currentUserEmail,
-			locale: settings.wcSettings?.locale?.userLocale,
-		};
-
 		setIsExporting( true );
-		setExportStatus( __( 'Preparing fees export…', 'woocommerce' ) );
 		recordEvent( 'wcpay_csv_export_click', {
 			row_type: 'fees',
 			source: 'payments_reports',
 			exported_row_count: totalItems,
 		} );
 
-		try {
-			await runWooPaymentsExport( {
-				requestExport: () =>
-					requestWooPaymentsReportsFeesExport( exportQuery ),
-				getExportUrl: getWooPaymentsReportsFeesExportUrl,
-			} );
-			setExportStatus( __( 'Fees export is ready.', 'woocommerce' ) );
-			recordEvent( 'wcpay_reports_fees_export_success', {
-				exported_row_count: totalItems,
-			} );
-		} catch ( error ) {
-			setExportStatus(
-				__( 'Fees export could not be prepared.', 'woocommerce' )
-			);
-			recordEvent( 'wcpay_reports_fees_export_error', {
-				error_type: error instanceof Error ? 'request' : 'unknown',
-			} );
-			speak(
-				__( 'Fees export could not be prepared.', 'woocommerce' ),
-				'assertive'
-			);
-		} finally {
-			setIsExporting( false );
-		}
+		await runWooPaymentsExport( {
+			requestExport: () => requestWooPaymentsReportsFeesExport( query ),
+			getExportUrl: getWooPaymentsReportsFeesExportUrl,
+			onSuccess: () =>
+				recordEvent( 'wcpay_reports_fees_export_success', {
+					exported_row_count: totalItems,
+				} ),
+			onError: ( { reason } ) =>
+				recordEvent( 'wcpay_reports_fees_export_error', {
+					error_type: reason,
+				} ),
+		} );
+		setIsExporting( false );
 	};
 
 	const { data: feesData, listRef: feesListRef } = useDataViewsReloadState<
@@ -1773,14 +1751,6 @@ const FeesReport = ( { now }: { now: Date } ) => {
 					) }
 				/>
 			) }
-			<div
-				role="status"
-				aria-live="polite"
-				aria-atomic="true"
-				aria-label={ __( 'Fees export status', 'woocommerce' ) }
-			>
-				{ exportStatus }
-			</div>
 		</section>
 	);
 };

@@ -21,6 +21,7 @@ import {
 	getWooPaymentsDepositsExportUrl,
 	requestWooPaymentsDepositsExport,
 } from '../overview/data';
+import { setExportRecipient } from './helpers/export-recipient';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
@@ -91,13 +92,34 @@ describe( 'WooPayments overview deposits data', () => {
 		await getWooPaymentsDepositsExportUrl( 'export_test' );
 
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 1, {
-			path: '/wc/v3/payments/deposits/download?store_currency_is=usd&status_is=paid',
+			path: '/wc/v3/payments/deposits/download?store_currency_is=usd&status_is=paid&locale=en_US',
 			method: 'POST',
 		} );
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 2, {
 			path: '/wc/v3/payments/deposits/download/export_test',
 			method: 'GET',
 		} );
+	} );
+
+	// Client 11.1.0 `deposits/list/index.tsx:222-246`: the platform emails the file to this address.
+	it( 'sends the current user email and locale with the payouts export', async () => {
+		const restore = setExportRecipient( 'merchant@example.test', 'fr_FR' );
+
+		try {
+			await requestWooPaymentsDepositsExport( { status_is: 'paid' } );
+		} finally {
+			restore();
+		}
+
+		const request = new URL(
+			( mockApiFetch.mock.calls[ 0 ][ 0 ] as { path: string } ).path,
+			'https://example.com'
+		);
+		expect( request.pathname ).toBe( '/wc/v3/payments/deposits/download' );
+		expect( request.searchParams.get( 'user_email' ) ).toBe(
+			'merchant@example.test'
+		);
+		expect( request.searchParams.get( 'locale' ) ).toBe( 'fr_FR' );
 	} );
 
 	it( 'loads the overview action shell projection from the native endpoint', async () => {

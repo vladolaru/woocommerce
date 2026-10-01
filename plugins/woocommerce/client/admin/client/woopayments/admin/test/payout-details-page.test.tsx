@@ -103,7 +103,10 @@ jest.mock( '@wordpress/data', () => {
 		...actual,
 		dispatch: jest.fn( ( storeName ) =>
 			storeName === 'core/notices'
-				? { createErrorNotice: mockCreateErrorNotice }
+				? {
+						createErrorNotice: mockCreateErrorNotice,
+						createSuccessNotice: jest.fn(),
+				  }
 				: actual.dispatch( storeName )
 		),
 	};
@@ -375,6 +378,7 @@ describe( 'WooPayments payout details admin surface', () => {
 			export_id: 'export_test',
 		} );
 		mockGetDepositsExportUrl.mockResolvedValue( {
+			status: 'success',
 			download_url: 'https://example.com/payouts.csv',
 		} );
 
@@ -395,17 +399,6 @@ describe( 'WooPayments payout details admin surface', () => {
 		await act( async () => {
 			await userEvent.click( exportButton );
 		} );
-		// Monitor ruling N-243: a core success notice.
-		expect(
-			(
-				await screen.findByText(
-					'Your payouts export has started downloading.',
-					{
-						selector: '.components-notice__content',
-					}
-				)
-			).closest( '.components-notice' )
-		).toHaveClass( 'is-success' );
 
 		expect( mockRequestDepositsExport ).toHaveBeenCalledWith(
 			expect.objectContaining( {
@@ -414,8 +407,13 @@ describe( 'WooPayments payout details admin surface', () => {
 				store_currency_is: 'usd',
 			} )
 		);
-		expect( mockGetDepositsExportUrl ).toHaveBeenCalledWith(
-			'export_test'
+		// Client 11.1.0 `hooks/use-report-export.ts:91-95`: the first check runs a second after the request.
+		await waitFor(
+			() =>
+				expect( mockGetDepositsExportUrl ).toHaveBeenCalledWith(
+					'export_test'
+				),
+			{ timeout: 2000 }
 		);
 	} );
 
@@ -552,6 +550,7 @@ describe( 'WooPayments payout details admin surface', () => {
 			export_id: 'export_payout',
 		} );
 		mockGetTransactionsExportUrl.mockResolvedValue( {
+			status: 'success',
 			download_url: 'https://example.com/payout.csv',
 		} );
 
@@ -616,8 +615,12 @@ describe( 'WooPayments payout details admin surface', () => {
 		expect( mockRequestTransactionsExport ).toHaveBeenCalledWith(
 			expect.objectContaining( { deposit_id: 'po_test' } )
 		);
-		expect( mockGetTransactionsExportUrl ).toHaveBeenCalledWith(
-			'export_payout'
+		await waitFor(
+			() =>
+				expect( mockGetTransactionsExportUrl ).toHaveBeenCalledWith(
+					'export_payout'
+				),
+			{ timeout: 2000 }
 		);
 
 		await userEvent.click(

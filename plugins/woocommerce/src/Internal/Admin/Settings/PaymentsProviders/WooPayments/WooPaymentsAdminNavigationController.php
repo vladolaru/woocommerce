@@ -393,6 +393,9 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['formattedStoreAddress'] = $this->get_formatted_store_address();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1031` localizes this on every page; the transactions list reads it for its Loan filter.
 		$settings['woopaymentsSettings']['accountLoans'] = array( 'loans' => $this->get_capital_loans() );
+		// Plugin 11.1.0 `class-wc-payments-admin.php:930-935,1046`: the list exports send it as `user_email`, the address the platform emails the file to.
+		$current_user                                        = wp_get_current_user();
+		$settings['woopaymentsSettings']['currentUserEmail'] = $current_user->user_email ? $current_user->user_email : get_option( 'admin_email' );
 
 		$current_path = $this->get_request_scalar( $_GET, 'path' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only route check.
 		// Plugin 11.1.0 has the Overview's account data in the page, so the page renders before any request.

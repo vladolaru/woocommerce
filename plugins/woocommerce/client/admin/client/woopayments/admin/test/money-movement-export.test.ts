@@ -2,116 +2,170 @@
  * Internal dependencies
  */
 import {
+	confirmWooPaymentsExport,
 	runWooPaymentsExport,
 	triggerWooPaymentsExportDownload,
 } from '../money-movement/export';
+import { setExportRecipient } from './helpers/export-recipient';
 
-describe( 'WooPayments money movement export helpers', () => {
-	it( 'requests an export, fetches the download URL, and starts the download', async () => {
-		const requestExport = jest.fn().mockResolvedValue( {
-			export_id: 'export_test',
-		} );
+const mockNotices: Array< { status: string; content: string } > = [];
+
+// Records the snackbars the export raises; other stores keep the real dispatch.
+jest.mock( '@wordpress/data', () => {
+	const actual = jest.requireActual( '@wordpress/data' );
+
+	return {
+		...actual,
+		dispatch: ( store: string | { name: string } ) =>
+			( typeof store === 'string' ? store : store.name ) ===
+			'core/notices'
+				? {
+						createSuccessNotice: ( content: string ) =>
+							mockNotices.push( { status: 'success', content } ),
+						createErrorNotice: ( content: string ) =>
+							mockNotices.push( { status: 'error', content } ),
+				  }
+				: actual.dispatch( store ),
+	};
+} );
+
+const getNotices = () => [ ...mockNotices ];
+
+// Client 11.1.0 `hooks/use-report-export.ts` and the list `onDownload` handlers that call it.
+describe( 'WooPayments list export', () => {
+	let restoreRecipient: () => void;
+
+	beforeEach( () => {
+		restoreRecipient = setExportRecipient(
+			'merchant@example.test',
+			'en_US'
+		);
+		mockNotices.length = 0;
+	} );
+
+	afterEach( () => {
+		restoreRecipient();
+	} );
+
+	it( 'downloads the file once the export is ready', async () => {
 		const getExportUrl = jest.fn().mockResolvedValue( {
 			status: 'success',
 			download_url: 'https://example.com/export.csv',
 		} );
 		const triggerDownload = jest.fn();
 
-		await expect(
-			runWooPaymentsExport( {
-				requestExport,
-				getExportUrl,
-				triggerDownload,
-				pollDelayMs: 0,
-			} )
-		).resolves.toBe( 'https://example.com/export.csv' );
+		await runWooPaymentsExport( {
+			requestExport: jest
+				.fn()
+				.mockResolvedValue( { export_id: 'export_test' } ),
+			getExportUrl,
+			triggerDownload,
+			pollDelayMs: 0,
+		} );
 
-		expect( requestExport ).toHaveBeenCalledTimes( 1 );
 		expect( getExportUrl ).toHaveBeenCalledWith( 'export_test' );
 		expect( triggerDownload ).toHaveBeenCalledWith(
 			'https://example.com/export.csv?force_download=true'
 		);
 	} );
 
-	it( 'polls until a generated export returns a download URL', async () => {
-		const requestExport = jest.fn().mockResolvedValue( {
-			export_id: 'export_test',
+	it( 'tells the merchant at once that the export is processing and will be emailed', async () => {
+		const pendingRequest: {
+			resolve?: ( value: Record< string, unknown > ) => void;
+		} = {};
+		const exporting = runWooPaymentsExport( {
+			requestExport: () =>
+				new Promise( ( resolve ) => {
+					pendingRequest.resolve = resolve;
+				} ),
+			getExportUrl: jest.fn(),
+			pollDelayMs: 0,
 		} );
-		const getExportUrl = jest
-			.fn()
-			.mockResolvedValueOnce( {} )
-			.mockResolvedValueOnce( {
+
+		expect( getNotices() ).toEqual( [
+			{
 				status: 'success',
-				download_url: 'https://example.com/export.csv',
-			} );
+				content:
+					'We’re processing your export. 🎉 The file will download automatically and be emailed to merchant@example.test.',
+			},
+		] );
 
-		await expect(
-			runWooPaymentsExport( {
-				requestExport,
-				getExportUrl,
-				triggerDownload: jest.fn(),
-				maxAttempts: 2,
-				pollDelayMs: 0,
-			} )
-		).resolves.toBe( 'https://example.com/export.csv' );
-
-		expect( getExportUrl ).toHaveBeenCalledTimes( 2 );
+		pendingRequest.resolve?.( {} );
+		await exporting;
 	} );
 
-	it( 'continues polling when a download URL check temporarily fails', async () => {
-		const requestExport = jest.fn().mockResolvedValue( {
-			export_id: 'export_test',
-		} );
+	it( 'retries failed and unfinished checks five times, then leaves the file to the email', async () => {
 		const getExportUrl = jest
 			.fn()
-			.mockRejectedValueOnce( new Error( 'Unavailable' ) )
-			.mockResolvedValueOnce( {
-				status: 'success',
-				download_url: 'https://example.com/export.csv',
-			} );
+			.mockRejectedValueOnce( new Error( 'Internal Server Error' ) )
+			.mockResolvedValueOnce( { status: 'failed' } )
+			.mockResolvedValue( { status: 'pending' } );
 		const triggerDownload = jest.fn();
 
-		await expect(
-			runWooPaymentsExport( {
-				requestExport,
-				getExportUrl,
-				triggerDownload,
-				maxAttempts: 2,
-				pollDelayMs: 0,
-			} )
-		).resolves.toBe( 'https://example.com/export.csv' );
+		await runWooPaymentsExport( {
+			requestExport: jest
+				.fn()
+				.mockResolvedValue( { export_id: 'export_test' } ),
+			getExportUrl,
+			triggerDownload,
+			pollDelayMs: 0,
+		} );
 
-		expect( getExportUrl ).toHaveBeenCalledTimes( 2 );
-		expect( triggerDownload ).toHaveBeenCalledWith(
-			'https://example.com/export.csv?force_download=true'
-		);
+		expect( getExportUrl ).toHaveBeenCalledTimes( 5 );
+		expect( triggerDownload ).not.toHaveBeenCalled();
+		// Only the processing snackbar, which already says the file will be emailed.
+		expect( getNotices().map( ( { status } ) => status ) ).toEqual( [
+			'success',
+		] );
 	} );
 
-	it( 'fails loudly when the export response does not include an export id', async () => {
-		await expect(
-			runWooPaymentsExport( {
-				requestExport: jest.fn().mockResolvedValue( {} ),
-				getExportUrl: jest.fn(),
-				triggerDownload: jest.fn(),
-				pollDelayMs: 0,
-			} )
-		).rejects.toThrow( 'WooPayments export did not return an export ID.' );
+	it( 'reports a failed export request with the client error notice', async () => {
+		const getExportUrl = jest.fn();
+
+		await runWooPaymentsExport( {
+			requestExport: jest.fn().mockRejectedValue( new Error( 'boom' ) ),
+			getExportUrl,
+			pollDelayMs: 0,
+		} );
+
+		expect( getExportUrl ).not.toHaveBeenCalled();
+		expect( getNotices() ).toContainEqual( {
+			status: 'error',
+			content: 'There was a problem generating your export.',
+		} );
 	} );
 
-	it( 'fails loudly when the export URL response reports failure', async () => {
-		await expect(
-			runWooPaymentsExport( {
-				requestExport: jest.fn().mockResolvedValue( {
-					export_id: 'export_test',
-				} ),
-				getExportUrl: jest.fn().mockResolvedValue( {
-					status: 'failed',
-				} ),
-				triggerDownload: jest.fn(),
-				pollDelayMs: 0,
-			} )
-		).rejects.toThrow( 'WooPayments export failed.' );
-	} );
+	it.each( [
+		[ 'transactions', 10000, { type_is: 'charge' } ],
+		[ 'disputes', 1000, { status_is: 'needs_response' } ],
+		[ 'deposits', 1000, { store_currency_is: 'usd' } ],
+	] as const )(
+		'asks before an unfiltered export of %s at the client threshold',
+		( noun, threshold, filteredQuery ) => {
+			const list = noun === 'deposits' ? 'payouts' : noun;
+			const confirm = jest
+				.spyOn( window, 'confirm' )
+				.mockReturnValue( false );
+
+			expect( confirmWooPaymentsExport( list, threshold, {} ) ).toBe(
+				false
+			);
+			expect( confirm ).toHaveBeenCalledWith(
+				`You are about to export ${ threshold } ${ noun }. If you'd like to reduce the size of your export, you can use one or more filters. Would you like to continue?`
+			);
+
+			confirm.mockClear();
+			expect( confirmWooPaymentsExport( list, threshold - 1, {} ) ).toBe(
+				true
+			);
+			expect(
+				confirmWooPaymentsExport( list, threshold, filteredQuery )
+			).toBe( true );
+			expect( confirm ).not.toHaveBeenCalled();
+
+			confirm.mockRestore();
+		}
+	);
 
 	it( 'uses a temporary anchor for browser downloads', () => {
 		const click = jest

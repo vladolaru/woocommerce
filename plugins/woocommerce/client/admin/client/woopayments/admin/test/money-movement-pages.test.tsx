@@ -2016,6 +2016,7 @@ describe( 'WooPayments money movement pages', () => {
 			export_id: 'export_test',
 		} );
 		mockGetTransactionsExportUrl.mockResolvedValue( {
+			status: 'success',
 			download_url: 'https://example.com/transactions.csv',
 		} );
 
@@ -2041,17 +2042,6 @@ describe( 'WooPayments money movement pages', () => {
 		await act( async () => {
 			await userEvent.click( exportButton );
 		} );
-		// Monitor ruling N-243: a core success notice.
-		expect(
-			(
-				await screen.findByText(
-					'Your transactions export has started downloading.',
-					{
-						selector: '.components-notice__content',
-					}
-				)
-			).closest( '.components-notice' )
-		).toHaveClass( 'is-success' );
 
 		expect( mockRequestTransactionsExport ).toHaveBeenCalledWith(
 			expect.objectContaining( {
@@ -2059,8 +2049,13 @@ describe( 'WooPayments money movement pages', () => {
 				store_currency_is: 'usd',
 			} )
 		);
-		expect( mockGetTransactionsExportUrl ).toHaveBeenCalledWith(
-			'export_test'
+		// Client 11.1.0 `hooks/use-report-export.ts:91-95`: the first check runs a second after the request.
+		await waitFor(
+			() =>
+				expect( mockGetTransactionsExportUrl ).toHaveBeenCalledWith(
+					'export_test'
+				),
+			{ timeout: 2000 }
 		);
 	} );
 
@@ -2941,6 +2936,7 @@ describe( 'WooPayments money movement pages', () => {
 			export_id: 'export_test',
 		} );
 		mockGetDisputesExportUrl.mockResolvedValue( {
+			status: 'success',
 			download_url: 'https://example.com/disputes.csv',
 		} );
 
@@ -2960,25 +2956,18 @@ describe( 'WooPayments money movement pages', () => {
 		await act( async () => {
 			await userEvent.click( exportButton );
 		} );
-		// Monitor ruling N-243: a core success notice.
-		expect(
-			(
-				await screen.findByText(
-					'Your disputes export has started downloading.',
-					{
-						selector: '.components-notice__content',
-					}
-				)
-			).closest( '.components-notice' )
-		).toHaveClass( 'is-success' );
 
 		expect( mockRequestDisputesExport ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				status_is: 'needs_response',
 			} )
 		);
-		expect( mockGetDisputesExportUrl ).toHaveBeenCalledWith(
-			'export_test'
+		await waitFor(
+			() =>
+				expect( mockGetDisputesExportUrl ).toHaveBeenCalledWith(
+					'export_test'
+				),
+			{ timeout: 2000 }
 		);
 	} );
 

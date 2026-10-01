@@ -26,20 +26,14 @@ import {
 } from './query';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { WooPaymentsTransactionSearch } from './transaction-search';
-import { runWooPaymentsExport } from './export';
+import { confirmWooPaymentsExport, runWooPaymentsExport } from './export';
 import {
 	formatAmount,
 	formatCount,
 	formatExplicitCurrency,
-	getErrorMessage,
 	getResourceId,
 } from './utils';
-import {
-	ExportButton,
-	ListNotice,
-	LiveStatusMessage,
-	reportListLoadError,
-} from './table';
+import { ExportButton, LiveStatusMessage, reportListLoadError } from './table';
 import { usePersistedHiddenFields } from './view-preferences';
 import {
 	TRANSACTION_LIST_DEFAULT_HIDDEN_COLUMNS,
@@ -69,10 +63,6 @@ const TRANSACTIONS_SHOW_FILTERS: WooPaymentsListShowFilter[] = [
 const ALL_CURRENCIES = '---';
 
 type TransactionsSummary = Record< string, unknown >;
-type ExportMessage = {
-	text: string;
-	isError?: boolean;
-};
 type WorkingView = {
 	key: string;
 	view: WooPaymentsMoneyMovementDataView;
@@ -115,8 +105,6 @@ export const WooPaymentsTransactionsList = (
 	const [ summary, setSummary ] = useState< TransactionsSummary >( {} );
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ hasLoadError, setHasLoadError ] = useState( false );
-	const [ exportMessage, setExportMessage ] =
-		useState< ExportMessage | null >( null );
 	const [ isExporting, setIsExporting ] = useState( false );
 	const [ workingView, setWorkingView ] = useState< WorkingView >( null );
 	// Client 11.1.0 `transactions/filters/config.ts:103-127`: "Show" all or the advanced filters; payout details have none.
@@ -269,36 +257,24 @@ export const WooPaymentsTransactionsList = (
 		} );
 	};
 
+	// Client 11.1.0 `transactions/list/index.tsx:595-701`: the outcome is told by snackbars only.
 	const handleExport = async () => {
-		setIsExporting( true );
-		setExportMessage( null );
-
-		try {
-			await runWooPaymentsExport( {
-				requestExport: () =>
-					requestWooPaymentsTransactionsExport( query ),
-				getExportUrl: getWooPaymentsTransactionsExportUrl,
-			} );
-			setExportMessage( {
-				text: __(
-					'Your transactions export has started downloading.',
-					'woocommerce'
-				),
-			} );
-		} catch ( error ) {
-			setExportMessage( {
-				text: getErrorMessage(
-					error,
-					__(
-						'Unable to export WooPayments transactions.',
-						'woocommerce'
-					)
-				),
-				isError: true,
-			} );
-		} finally {
-			setIsExporting( false );
+		if (
+			! confirmWooPaymentsExport(
+				'transactions',
+				getSummaryCount( summary ) ?? 0,
+				query
+			)
+		) {
+			return;
 		}
+
+		setIsExporting( true );
+		await runWooPaymentsExport( {
+			requestExport: () => requestWooPaymentsTransactionsExport( query ),
+			getExportUrl: getWooPaymentsTransactionsExportUrl,
+		} );
+		setIsExporting( false );
 	};
 
 	const loadingMessage = __( 'Loading transactions…', 'woocommerce' );
@@ -476,11 +452,6 @@ export const WooPaymentsTransactionsList = (
 				<WooPaymentsListFilters filters={ listFilters } />
 			) }
 			<LiveStatusMessage>{ liveStatusMessage }</LiveStatusMessage>
-			{ exportMessage && (
-				<ListNotice isError={ !! exportMessage.isError }>
-					{ exportMessage.text }
-				</ListNotice>
-			) }
 			<WooPaymentsMoneyMovementDataViews
 				fields={ fields }
 				rows={ transactions }

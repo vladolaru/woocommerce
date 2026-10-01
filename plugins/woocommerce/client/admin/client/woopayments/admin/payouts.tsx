@@ -18,7 +18,10 @@ import {
 	requestWooPaymentsDepositsExport,
 } from './overview/data';
 import { WooPaymentsMoneyMovementDataViews } from './money-movement/dataviews';
-import { runWooPaymentsExport } from './money-movement/export';
+import {
+	confirmWooPaymentsExport,
+	runWooPaymentsExport,
+} from './money-movement/export';
 import {
 	buildMoneyMovementRoutePath,
 	dataViewsViewToMoneyMovementQuery,
@@ -43,15 +46,10 @@ import {
 import { formatCurrencyName } from './currency';
 import {
 	ExportButton,
-	ListNotice,
 	LiveStatusMessage,
 	reportListLoadError,
 } from './money-movement/table';
-import {
-	formatCount,
-	formatExplicitCurrency,
-	getErrorMessage,
-} from './money-movement/utils';
+import { formatCount, formatExplicitCurrency } from './money-movement/utils';
 import { usePersistedHiddenFields } from './money-movement/view-preferences';
 import {
 	ClickableCell,
@@ -129,11 +127,6 @@ const PayoutCell = ( {
 	</ClickableCell>
 );
 
-type ExportMessage = {
-	text: string;
-	isError?: boolean;
-};
-
 const getSummaryCount = ( summary: PayoutsSummary ) => {
 	const count = summary.count;
 
@@ -178,8 +171,6 @@ export const WooPaymentsPayouts = () => {
 	const [ summary, setSummary ] = useState< PayoutsSummary >( {} );
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ hasLoadError, setHasLoadError ] = useState( false );
-	const [ exportMessage, setExportMessage ] =
-		useState< ExportMessage | null >( null );
 	const [ isExporting, setIsExporting ] = useState( false );
 	const { visibleFields, saveFields } = usePersistedHiddenFields(
 		'wc_payments_payouts_hidden_columns',
@@ -391,35 +382,27 @@ export const WooPaymentsPayouts = () => {
 
 		navigateTo( dataViewsViewToMoneyMovementQuery( nextView, query ) );
 	};
+	// Client 11.1.0 `deposits/list/index.tsx:215-287`: the outcome is told by snackbars only.
 	const handleExport = async () => {
-		setIsExporting( true );
-		setExportMessage( null );
-
-		try {
-			const requestQuery = getPayoutsRequestQuery( query, match );
-
-			await runWooPaymentsExport( {
-				requestExport: () =>
-					requestWooPaymentsDepositsExport( requestQuery ),
-				getExportUrl: getWooPaymentsDepositsExportUrl,
-			} );
-			setExportMessage( {
-				text: __(
-					'Your payouts export has started downloading.',
-					'woocommerce'
-				),
-			} );
-		} catch ( error ) {
-			setExportMessage( {
-				text: getErrorMessage(
-					error,
-					__( 'Unable to export WooPayments payouts.', 'woocommerce' )
-				),
-				isError: true,
-			} );
-		} finally {
-			setIsExporting( false );
+		if (
+			! confirmWooPaymentsExport(
+				'payouts',
+				getSummaryCount( summary ) ?? 0,
+				query
+			)
+		) {
+			return;
 		}
+
+		const requestQuery = getPayoutsRequestQuery( query, match );
+
+		setIsExporting( true );
+		await runWooPaymentsExport( {
+			requestExport: () =>
+				requestWooPaymentsDepositsExport( requestQuery ),
+			getExportUrl: getWooPaymentsDepositsExportUrl,
+		} );
+		setIsExporting( false );
 	};
 	let liveStatusMessage: string = __(
 		'Payout history loaded.',
@@ -559,11 +542,6 @@ export const WooPaymentsPayouts = () => {
 			<WooPaymentsListFilters filters={ listFilters } />
 			<section aria-busy={ isLoading }>
 				<LiveStatusMessage>{ liveStatusMessage }</LiveStatusMessage>
-				{ exportMessage && (
-					<ListNotice isError={ !! exportMessage.isError }>
-						{ exportMessage.text }
-					</ListNotice>
-				) }
 				<WooPaymentsMoneyMovementDataViews
 					fields={ fields }
 					rows={ payouts }

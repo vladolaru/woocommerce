@@ -25,6 +25,7 @@ import type {
 	WooPaymentsTimelineResponse,
 } from './types';
 import { buildPathWithQuery } from './utils';
+import { getWooPaymentsExportRecipient } from './export';
 import {
 	buildSettledTransactionsApiPath,
 	serializeWooPaymentsAuthorizationsQuery,
@@ -129,7 +130,7 @@ export const requestWooPaymentsTransactionsExport = (
 	apiFetch< Record< string, unknown > >( {
 		path: buildSettledTransactionsApiPath(
 			`${ PAYMENTS_PATH }/transactions/download`,
-			query
+			{ ...query, ...getWooPaymentsExportRecipient() }
 		),
 		method: 'POST',
 	} );
@@ -302,10 +303,10 @@ export const requestWooPaymentsDisputesExport = (
 	query: WooPaymentsMoneyMovementQuery = {}
 ): Promise< Record< string, unknown > > =>
 	apiFetch< Record< string, unknown > >( {
-		path: buildPathWithQuery(
-			`${ PAYMENTS_PATH }/disputes/download`,
-			query
-		),
+		path: buildPathWithQuery( `${ PAYMENTS_PATH }/disputes/download`, {
+			...query,
+			...getWooPaymentsExportRecipient(),
+		} ),
 		method: 'POST',
 	} );
 

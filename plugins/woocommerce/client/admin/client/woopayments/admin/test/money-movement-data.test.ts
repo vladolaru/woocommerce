@@ -31,6 +31,7 @@ import {
 	updateWooPaymentsDispute,
 	uploadWooPaymentsDisputeFile,
 } from '../money-movement/data';
+import { setExportRecipient } from './helpers/export-recipient';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
@@ -109,7 +110,7 @@ describe( 'WooPayments money movement data helpers', () => {
 			method: 'GET',
 		} );
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 8, {
-			path: `/wc/v3/payments/transactions/download?deposit_id=po_test&user_timezone=${ encodedUserTimezone }`,
+			path: `/wc/v3/payments/transactions/download?deposit_id=po_test&locale=en_US&user_timezone=${ encodedUserTimezone }`,
 			method: 'POST',
 		} );
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 9, {
@@ -371,13 +372,61 @@ describe( 'WooPayments money movement data helpers', () => {
 			method: 'POST',
 		} );
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 5, {
-			path: '/wc/v3/payments/disputes/download?status_is=needs_response',
+			path: '/wc/v3/payments/disputes/download?status_is=needs_response&locale=en_US',
 			method: 'POST',
 		} );
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 6, {
 			path: '/wc/v3/payments/disputes/download/export_test',
 			method: 'GET',
 		} );
+	} );
+
+	// Client 11.1.0 `transactions/list/index.tsx:602-631`: the platform emails the file to this address.
+	it( 'sends the current user email and locale with the transactions export', async () => {
+		const restore = setExportRecipient( 'merchant@example.test', 'fr_FR' );
+
+		try {
+			await requestWooPaymentsTransactionsExport( {
+				deposit_id: 'po_test',
+			} );
+		} finally {
+			restore();
+		}
+
+		const request = new URL(
+			( mockApiFetch.mock.calls[ 0 ][ 0 ] as { path: string } ).path,
+			'https://example.com'
+		);
+		expect( request.pathname ).toBe(
+			'/wc/v3/payments/transactions/download'
+		);
+		expect( request.searchParams.get( 'user_email' ) ).toBe(
+			'merchant@example.test'
+		);
+		expect( request.searchParams.get( 'locale' ) ).toBe( 'fr_FR' );
+	} );
+
+	// Client 11.1.0 `disputes/index.tsx:353-382`.
+	it( 'sends the current user email and locale with the disputes export', async () => {
+		const restore = setExportRecipient( 'merchant@example.test', 'fr_FR' );
+
+		try {
+			await requestWooPaymentsDisputesExport( {
+				status_is: 'needs_response',
+			} );
+		} finally {
+			restore();
+		}
+
+		const request = new URL(
+			( mockApiFetch.mock.calls[ 0 ][ 0 ] as { path: string } ).path,
+			'https://example.com'
+		);
+		expect( request.pathname ).toBe( '/wc/v3/payments/disputes/download' );
+		expect( request.searchParams.get( 'user_email' ) ).toBe(
+			'merchant@example.test'
+		);
+		expect( request.searchParams.get( 'locale' ) ).toBe( 'fr_FR' );
 	} );
 
 	it( 'posts dispute evidence file uploads as form data', async () => {
