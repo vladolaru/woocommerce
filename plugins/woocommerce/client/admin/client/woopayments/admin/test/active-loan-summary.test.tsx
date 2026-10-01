@@ -59,11 +59,9 @@ describe( 'ActiveLoanSummary', () => {
 			} )
 		).toBeInTheDocument();
 		expect( getValue( 'Total repaid' ) ).toBe( '$12.34 of $1,150.00' );
-		expect(
-			getValue(
-				`Repaid this period (until ${ DUE_AT })`
-			)
-		).toBe( '$1.23 of $24.68 minimum' );
+		expect( getValue( `Repaid this period (until ${ DUE_AT })` ) ).toBe(
+			'$1.23 of $24.68 minimum'
+		);
 		expect( getValue( 'Loan disbursed' ) ).toBe( 'February 3, 2022' );
 		expect( getValue( 'Loan amount' ) ).toBe( '$1,000.00' );
 		expect( getValue( 'Fixed fee' ) ).toBe( '$150.00' );
