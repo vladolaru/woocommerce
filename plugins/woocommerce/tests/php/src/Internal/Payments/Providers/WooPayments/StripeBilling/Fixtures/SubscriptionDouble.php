@@ -112,6 +112,33 @@ class SubscriptionDouble extends \WC_Order {
 	}
 
 	/**
+	 * Get the related order with the highest ID among the given relations, as WooCommerce Subscriptions does; `any` means parent, renewal and switch.
+	 *
+	 * Relations are read from the `WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS` registry.
+	 *
+	 * @param string          $return_fields `ids` for the order ID, anything else for the order.
+	 * @param string|string[] $order_types   Relations to look at.
+	 * @return \WC_Order|int|false
+	 */
+	public function get_last_order( $return_fields = 'ids', $order_types = array( 'parent', 'renewal' ) ) {
+		$order_types = 'any' === $order_types ? array( 'parent', 'renewal', 'switch' ) : (array) $order_types;
+		$order_ids   = array();
+		foreach ( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] ?? array() as $order_id => $relations ) {
+			foreach ( $order_types as $order_type ) {
+				if ( in_array( $this->get_id(), array_map( 'absint', $relations[ $order_type ] ?? array() ), true ) ) {
+					$order_ids[] = absint( $order_id );
+				}
+			}
+		}
+
+		if ( empty( $order_ids ) ) {
+			return false;
+		}
+
+		return 'ids' === $return_fields ? max( $order_ids ) : wc_get_order( max( $order_ids ) );
+	}
+
+	/**
 	 * Save GMT dates and fire `woocommerce_subscription_date_updated` for each, as WooCommerce Subscriptions does.
 	 *
 	 * @param array<string,string> $dates GMT dates in `Y-m-d H:i:s`, by date type.

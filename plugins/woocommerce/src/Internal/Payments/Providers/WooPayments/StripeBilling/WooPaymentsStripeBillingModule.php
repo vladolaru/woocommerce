@@ -184,6 +184,14 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 		$this->attach( 'woocommerce_subscription_payment_method_updated', StripeBillingSubscriptionService::class, 'maybe_create_subscription_from_update_payment_method', 10, 2 );
 
 		$this->attach( 'woocommerce_subscriptions_minimum_processable_recurring_amount', StripeBillingMinimumAmountHandler::class, 'get_minimum_recurring_amount', 10, 2 );
+
+		$this->attach( 'wcs_view_subscription_actions', StripeBillingChangePaymentMethodHandler::class, 'update_subscription_change_payment_button', 15, 2 );
+		$this->attach( 'woocommerce_can_subscription_be_updated_to_new-payment-method', StripeBillingChangePaymentMethodHandler::class, 'can_update_payment_method', 15, 2 );
+		$this->attach( 'woocommerce_my_account_my_orders_actions', StripeBillingChangePaymentMethodHandler::class, 'update_order_pay_button', 15, 2 );
+		$this->attach( 'woocommerce_subscriptions_change_payment_method_page_title', StripeBillingChangePaymentMethodHandler::class, 'change_payment_method_page_title', 10, 2 );
+		$this->attach( 'woocommerce_subscriptions_change_payment_method_page_notice_message', StripeBillingChangePaymentMethodHandler::class, 'change_payment_method_page_notice', 10, 2 );
+		$this->attach( 'template_redirect', StripeBillingChangePaymentMethodHandler::class, 'redirect_pay_for_order_to_update_payment_method' );
+		$this->attach( 'woocommerce_change_payment_button_text', StripeBillingChangePaymentMethodHandler::class, 'change_payment_method_form_submit_text' );
 	}
 
 	/**

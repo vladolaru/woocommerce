@@ -209,6 +209,30 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The update payment method flow for a failed renewal runs only while the toggle is on (client `class-wc-payments-subscription-change-payment-method-handler.php:25-27`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith ["1", "Update payment details"]
+	 *           ["0", "Change payment method"]
+	 *
+	 * @param string $toggle   Toggle value.
+	 * @param string $expected Change payment method page title.
+	 */
+	public function test_runs_the_update_payment_method_flow_only_while_the_toggle_is_on( string $toggle, string $expected ): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		$this->register_module( true );
+		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
+		$subscription->set_status( 'on-hold' );
+		$subscription->update_meta_data( '_wcpay_pending_invoice_id', 'in_1UM1Y0BzWlxcwgpPefRU4SSy' );
+		$subscription->save();
+		$order->set_status( 'failed' );
+		$order->save();
+
+		$this->assertSame( $expected, apply_filters( 'woocommerce_subscriptions_change_payment_method_page_title', 'Change payment method', $subscription ) );
+	}
+
+	/**
 	 * Create a subscription billed by Stripe Billing on the recorded main chain, and a renewal order of it.
 	 *
 	 * @return array{0:WC_Order,1:WC_Order}
