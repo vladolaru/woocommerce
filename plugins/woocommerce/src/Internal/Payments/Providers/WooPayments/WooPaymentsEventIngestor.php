@@ -417,7 +417,8 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Tell whether an event that failed to process for a passing reason is processed again later.
 	 *
-	 * The Stripe Billing invoice events are retried only while the Stripe Billing module is loaded.
+	 * Of the Stripe Billing invoice events, only `invoice.paid` is retried, and only while the module is loaded: the
+	 * failed and upcoming invoice handlers write notes and count failed attempts before their last platform call.
 	 *
 	 * @since 11.2.0
 	 *
@@ -434,7 +435,7 @@ class WooPaymentsEventIngestor {
 			return true;
 		}
 
-		return $this->is_stripe_billing_invoice_event( $event_type ) && $this->get_stripe_billing_module()->is_loaded();
+		return 'invoice.paid' === $event_type && $this->get_stripe_billing_module()->is_loaded();
 	}
 
 	/**

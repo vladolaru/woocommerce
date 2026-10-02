@@ -3198,7 +3198,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Only succeeded and failed intents, and invoice events while Stripe Billing is loaded, are retried after a failure.
+	 * @testdox Only succeeded and failed intents, and invoice.paid while Stripe Billing is loaded, are retried after a failure.
 	 */
 	public function test_retried_event_types(): void {
 		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
@@ -3222,10 +3222,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		}
 
 		$loaded = true;
-		foreach ( array( 'invoice.paid', 'invoice.payment_failed', 'invoice.upcoming' ) as $type ) {
-			$this->assertTrue( $retried( $type ), "$type is retried while Stripe Billing is loaded." );
+		$this->assertTrue( $retried( 'invoice.paid' ), 'invoice.paid is retried while Stripe Billing is loaded.' );
+		foreach ( array( 'invoice.payment_failed', 'invoice.upcoming', 'charge.refunded' ) as $type ) {
+			$this->assertFalse( $retried( $type ), "$type must get one attempt: its handler is not safe to run twice." );
 		}
-		$this->assertFalse( $retried( 'charge.refunded' ) );
 	}
 
 	/**
