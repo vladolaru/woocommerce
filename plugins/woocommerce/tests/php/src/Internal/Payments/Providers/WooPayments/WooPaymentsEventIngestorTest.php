@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlyFraudWarningEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
@@ -3194,6 +3195,37 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pending', $order->get_meta( '_wcpay_refund_status', true ) );
 		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
 		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'is pending', 'WooPayments', 're_123' ) );
+	}
+
+	/**
+	 * @testdox Only succeeded and failed intents, and invoice events while Stripe Billing is loaded, are retried after a failure.
+	 */
+	public function test_retried_event_types(): void {
+		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_loaded' ) )
+			->getMock();
+		$loaded = false;
+		$module->method( 'is_loaded' )->willReturnCallback(
+			static function () use ( &$loaded ): bool {
+				return $loaded;
+			}
+		);
+		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+
+		$retried = fn( string $type ): bool => $this->sut->is_retried_event( array( 'type' => $type ) );
+
+		$this->assertTrue( $retried( 'payment_intent.succeeded' ) );
+		$this->assertTrue( $retried( 'payment_intent.payment_failed' ) );
+		foreach ( array( 'charge.refunded', 'charge.refund.updated', 'charge.dispute.closed', 'radar.early_fraud_warning.created', 'invoice.paid' ) as $type ) {
+			$this->assertFalse( $retried( $type ), "$type must get one attempt." );
+		}
+
+		$loaded = true;
+		foreach ( array( 'invoice.paid', 'invoice.payment_failed', 'invoice.upcoming' ) as $type ) {
+			$this->assertTrue( $retried( $type ), "$type is retried while Stripe Billing is loaded." );
+		}
+		$this->assertFalse( $retried( 'charge.refunded' ) );
 	}
 
 	/**

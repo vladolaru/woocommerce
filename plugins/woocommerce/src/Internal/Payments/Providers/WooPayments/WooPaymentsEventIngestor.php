@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use InvalidArgumentException;
 use Throwable;
@@ -80,6 +81,19 @@ class WooPaymentsEventIngestor {
 		'invoice.paid',
 		'invoice.payment_failed',
 		'invoice.upcoming',
+	);
+
+	/**
+	 * Event types retried after a processing failure, whose handlers are safe to run again and to run late.
+	 *
+	 * Other types get one attempt, as on the client: running the refund, dispute or fraud warning handlers again can
+	 * duplicate a refund or apply an older event over a newer one.
+	 *
+	 * @var string[]
+	 */
+	private const RETRIED_EVENT_TYPES = array(
+		'payment_intent.succeeded',
+		'payment_intent.payment_failed',
 	);
 
 	/**
@@ -392,6 +406,30 @@ class WooPaymentsEventIngestor {
 		}
 
 		$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
+	}
+
+	/**
+	 * Tell whether an event that failed to process for a passing reason is processed again later.
+	 *
+	 * The Stripe Billing invoice events are retried only while the Stripe Billing module is loaded.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $event Event payload.
+	 * @return bool
+	 */
+	public function is_retried_event( array $event ): bool {
+		$event_type = $event['type'] ?? null;
+		if ( ! is_string( $event_type ) ) {
+			return false;
+		}
+
+		if ( in_array( $event_type, self::RETRIED_EVENT_TYPES, true ) ) {
+			return true;
+		}
+
+		return in_array( $event_type, self::RETIRED_STRIPE_BILLING_INVOICE_EVENT_TYPES, true )
+			&& wc_get_container()->get( WooPaymentsStripeBillingModule::class )->is_loaded();
 	}
 
 	/**

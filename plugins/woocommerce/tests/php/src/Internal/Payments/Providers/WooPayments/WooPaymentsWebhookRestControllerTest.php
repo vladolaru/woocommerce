@@ -210,7 +210,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_failed_event_is_kept_and_scheduled_for_retry(): void {
 		$event      = array(
 			'id'   => 'evt_retry_controller',
-			'type' => 'invoice.paid',
+			'type' => 'payment_intent.succeeded',
 		);
 		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new RuntimeException( 'platform call failed' ) ) );
 
@@ -231,6 +231,26 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A refund event that fails for a passing reason is not kept or retried: it gets one attempt, as on the client.
+	 */
+	public function test_failed_event_off_the_retried_list_is_not_kept(): void {
+		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new RuntimeException( 'database error' ) ) );
+
+		$response = $controller->handle_webhook(
+			$this->create_post_request(
+				array(
+					'id'   => 'evt_refund_controller',
+					'type' => 'charge.refunded',
+				)
+			)
+		);
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertNull( wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_refund_controller' ) );
+		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
+	}
+
+	/**
 	 * @testdox A malformed event is not kept or retried.
 	 */
 	public function test_malformed_event_is_not_retried(): void {
@@ -240,7 +260,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 			$this->create_post_request(
 				array(
 					'id'   => 'evt_malformed_controller',
-					'type' => 'invoice.paid',
+					'type' => 'payment_intent.succeeded',
 				)
 			)
 		);

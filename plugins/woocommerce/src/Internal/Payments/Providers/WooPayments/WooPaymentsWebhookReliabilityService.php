@@ -173,15 +173,15 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Keep an event whose processing failed for a passing reason, and schedule a job to process it again.
+	 * Keep an event whose processing failed for a passing reason, and schedule a job to process it again, when its type is retried.
 	 *
 	 * The platform counts the store's error reply as delivered and never sends the event again, so the store retries
-	 * it itself. Client 11.1.0 loses such an event.
+	 * it itself. Client 11.1.0 loses such an event; event types that are not retried get one attempt, as on the client.
 	 *
 	 * @param array<string,mixed> $event Event payload.
 	 */
 	public function retry_failed_event( array $event ): void {
-		if ( empty( $event['id'] ) || ! is_string( $event['id'] ) ) {
+		if ( empty( $event['id'] ) || ! is_string( $event['id'] ) || ! $this->event_ingestor->is_retried_event( $event ) ) {
 			return;
 		}
 
@@ -193,9 +193,10 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * Process a queued failed webhook event.
 	 *
 	 * The stored event is removed once the ingestor handles it, or when it is malformed, since a malformed event can never
-	 * succeed. Any other failure schedules the same job again, at most three more times after 1 minute, 10 minutes and
-	 * 1 hour; after the last attempt the event is removed and an error is logged. Action Scheduler does not retry a
-	 * failed action by itself. The exception is always re-thrown, so Action Scheduler records the failed attempt.
+	 * succeed. Any other failure of a retried event type schedules the same job again, at most three more times after
+	 * 1 minute, 10 minutes and 1 hour; after the last attempt the event is removed and an error is logged. Other types
+	 * get this one attempt, as on the client. Action Scheduler does not retry a failed action by itself. The exception
+	 * is always re-thrown, so Action Scheduler records the failed attempt.
 	 *
 	 * @param string $event_id Event ID.
 	 * @throws \InvalidArgumentException When the event is malformed; it is dropped.
@@ -216,7 +217,9 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			$this->failed_event_store->delete_event( $event_id );
 			throw $exception;
 		} catch ( \Throwable $exception ) {
-			$this->schedule_retry_or_give_up( $event_id, $event, $attempts, $exception );
+			if ( $this->event_ingestor->is_retried_event( $event ) ) {
+				$this->schedule_retry_or_give_up( $event_id, $event, $attempts, $exception );
+			}
 			throw $exception;
 		}
 

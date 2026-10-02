@@ -294,7 +294,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_process',
-			'type' => 'invoice.paid',
+			'type' => 'payment_intent.succeeded',
 		);
 		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
 		$store->set_event( 'evt_process', $event + ( $attempts > 0 ? array( WooPaymentsWebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => $attempts ) : array() ) );
@@ -336,7 +336,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			'evt_exhausted',
 			array(
 				'id'   => 'evt_exhausted',
-				'type' => 'invoice.paid',
+				'type' => 'payment_intent.succeeded',
 				WooPaymentsWebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3,
 			)
 		);
@@ -360,7 +360,31 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $scheduler->scheduled_jobs );
 		$errors = array_values( array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], 'evt_exhausted' ) ) );
 		$this->assertNotEmpty( $errors, 'An error naming the dropped event must be logged.' );
-		$this->assertStringContainsString( 'invoice.paid', $errors[0][1] );
+		$this->assertStringContainsString( 'payment_intent.succeeded', $errors[0][1] );
+	}
+
+	/**
+	 * @testdox A refund event that fails gets one attempt, as on the client: no retry is scheduled.
+	 */
+	public function test_process_event_does_not_retry_an_event_type_off_the_list(): void {
+		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$scheduler = new RecordingActionSchedulerService();
+		$event     = array(
+			'id'   => 'evt_refund',
+			'type' => 'charge.refunded',
+		);
+		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
+		$store->set_event( 'evt_refund', $event );
+
+		try {
+			$service->process_event( 'evt_refund' );
+			$this->fail( 'The failure must still reach Action Scheduler.' );
+		} catch ( \RuntimeException $exception ) {
+			unset( $exception );
+		}
+
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+		$this->assertSame( $event, $store->get_event( 'evt_refund' ), 'The stored event is left as it was, with no retry count.' );
 	}
 
 	/**
@@ -371,7 +395,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$ingestor = new RecordingEventIngestor();
 		$event    = array(
 			'id'   => 'evt_retried',
-			'type' => 'invoice.paid',
+			'type' => 'payment_intent.succeeded',
 		);
 		$service  = $this->create_service( new RecordingActionSchedulerService(), $store, new StaticFailedEventsProvider(), $ingestor );
 		$store->set_event( 'evt_retried', $event + array( WooPaymentsWebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 2 ) );
@@ -393,7 +417,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			'evt_malformed',
 			array(
 				'id'   => 'evt_malformed',
-				'type' => 'invoice.paid',
+				'type' => 'payment_intent.succeeded',
 			)
 		);
 
