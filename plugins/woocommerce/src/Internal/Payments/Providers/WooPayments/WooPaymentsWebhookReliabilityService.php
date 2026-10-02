@@ -40,6 +40,20 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	const WEBHOOK_PROCESS_EVENT_ACTION = 'wcpay_webhook_process_event';
 
 	/**
+	 * Key on the stored event that counts the retries already scheduled for it.
+	 *
+	 * @var string
+	 */
+	const RETRY_ATTEMPTS_EVENT_KEY = '_native_retry_attempts';
+
+	/**
+	 * Delays, in seconds, of the retries after a failed processing job: three more attempts at most.
+	 *
+	 * @var int[]
+	 */
+	const RETRY_DELAYS_SECONDS = array( MINUTE_IN_SECONDS, 10 * MINUTE_IN_SECONDS, HOUR_IN_SECONDS );
+
+	/**
 	 * Option key for the last failed-webhook fetch timestamp.
 	 *
 	 * @var string
@@ -159,16 +173,33 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Keep an event whose processing failed for a passing reason, and schedule a job to process it again.
+	 *
+	 * The platform counts the store's error reply as delivered and never sends the event again, so the store retries
+	 * it itself. Client 11.1.0 loses such an event.
+	 *
+	 * @param array<string,mixed> $event Event payload.
+	 */
+	public function retry_failed_event( array $event ): void {
+		if ( empty( $event['id'] ) || ! is_string( $event['id'] ) ) {
+			return;
+		}
+
+		$this->failed_event_store->set_event( $event['id'], $event );
+		$this->scheduler->schedule_job( self::WEBHOOK_PROCESS_EVENT_ACTION, array( 'event_id' => $event['id'] ) );
+	}
+
+	/**
 	 * Process a queued failed webhook event.
 	 *
-	 * The stored event is removed only after the ingestor settles it: on success because it is
-	 * handled, and on InvalidArgumentException because a malformed event can never succeed and must
-	 * not loop on every retry. Any other failure is treated as transient, so the event is left in the
-	 * store for Action Scheduler retries or the next failed-event poll to re-attempt. The exception is
-	 * always re-thrown so the failure surfaces to the caller and the Action Scheduler retry machinery.
+	 * The stored event is removed once the ingestor handles it, or when it is malformed, since a malformed event can never
+	 * succeed. Any other failure schedules the same job again, at most three more times after 1 minute, 10 minutes and
+	 * 1 hour; after the last attempt the event is removed and an error is logged. Action Scheduler does not retry a
+	 * failed action by itself. The exception is always re-thrown, so Action Scheduler records the failed attempt.
 	 *
 	 * @param string $event_id Event ID.
-	 * @throws \InvalidArgumentException When the event is malformed and gets dropped before re-throwing; any other ingestor failure also propagates, but the event is preserved for retry.
+	 * @throws \InvalidArgumentException When the event is malformed; it is dropped.
+	 * @throws \Throwable When the ingestor fails otherwise; the event is kept for the next attempt unless none is left.
 	 */
 	public function process_event( string $event_id ): void {
 		$event = $this->failed_event_store->get_event( $event_id );
@@ -176,14 +207,52 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			return;
 		}
 
+		$attempts = isset( $event[ self::RETRY_ATTEMPTS_EVENT_KEY ] ) ? (int) $event[ self::RETRY_ATTEMPTS_EVENT_KEY ] : 0;
+		unset( $event[ self::RETRY_ATTEMPTS_EVENT_KEY ] );
+
 		try {
 			$this->event_ingestor->process( $event );
 		} catch ( \InvalidArgumentException $exception ) {
-			// Malformed/unprocessable event: drop it so it does not retry forever, then surface the failure.
 			$this->failed_event_store->delete_event( $event_id );
+			throw $exception;
+		} catch ( \Throwable $exception ) {
+			$this->schedule_retry_or_give_up( $event_id, $event, $attempts, $exception );
 			throw $exception;
 		}
 
 		$this->failed_event_store->delete_event( $event_id );
+	}
+
+	/**
+	 * Schedule the next attempt for a failed event, or drop it and log an error when no attempt is left.
+	 *
+	 * @param string              $event_id  Event ID.
+	 * @param array<string,mixed> $event     Event payload.
+	 * @param int                 $attempts  Retries already scheduled.
+	 * @param \Throwable          $exception Failure of this attempt.
+	 */
+	private function schedule_retry_or_give_up( string $event_id, array $event, int $attempts, \Throwable $exception ): void {
+		if ( $attempts >= count( self::RETRY_DELAYS_SECONDS ) ) {
+			$this->failed_event_store->delete_event( $event_id );
+			wc_get_logger()->error(
+				sprintf(
+					'WooPayments webhook event %1$s (%2$s) could not be processed after %3$d retries and was dropped: %4$s',
+					$event_id,
+					isset( $event['type'] ) && is_string( $event['type'] ) ? $event['type'] : 'unknown type',
+					$attempts,
+					$exception->getMessage()
+				),
+				array( 'source' => 'native-payments-webhook' )
+			);
+			return;
+		}
+
+		$event[ self::RETRY_ATTEMPTS_EVENT_KEY ] = $attempts + 1;
+		$this->failed_event_store->set_event( $event_id, $event );
+		$this->scheduler->schedule_job(
+			self::WEBHOOK_PROCESS_EVENT_ACTION,
+			array( 'event_id' => $event_id ),
+			time() + self::RETRY_DELAYS_SECONDS[ $attempts ]
+		);
 	}
 }

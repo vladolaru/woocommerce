@@ -7,6 +7,8 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedEventStore;
 use InvalidArgumentException;
 use RuntimeException;
 use WC_REST_Unit_Test_Case;
@@ -18,6 +20,13 @@ use WP_REST_Server;
  * Tests for the WooPaymentsWebhookRestController class.
  */
 class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
+
+	/**
+	 * Scheduler the controller's reliability service schedules retries on.
+	 *
+	 * @var RecordingActionSchedulerService
+	 */
+	private RecordingActionSchedulerService $scheduler;
 
 	/**
 	 * The System Under Test.
@@ -196,6 +205,52 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An event that fails to process for a passing reason is kept and scheduled to run again; the reply is unchanged.
+	 */
+	public function test_failed_event_is_kept_and_scheduled_for_retry(): void {
+		$event      = array(
+			'id'   => 'evt_retry_controller',
+			'type' => 'invoice.paid',
+		);
+		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new RuntimeException( 'platform call failed' ) ) );
+
+		$response = $controller->handle_webhook( $this->create_post_request( $event ) );
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
+		$this->assertSame( $event, wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_retry_controller' ) );
+		$this->assertSame(
+			array(
+				array(
+					'hook' => WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					'args' => array( 'event_id' => 'evt_retry_controller' ),
+				),
+			),
+			$this->scheduler->scheduled_jobs
+		);
+	}
+
+	/**
+	 * @testdox A malformed event is not kept or retried.
+	 */
+	public function test_malformed_event_is_not_retried(): void {
+		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new InvalidArgumentException( 'malformed event' ) ) );
+
+		$response = $controller->handle_webhook(
+			$this->create_post_request(
+				array(
+					'id'   => 'evt_malformed_controller',
+					'type' => 'invoice.paid',
+				)
+			)
+		);
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertNull( wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_malformed_controller' ) );
+		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
+	}
+
+	/**
 	 * @testdox Logger failures do not replace the webhook error envelope.
 	 */
 	public function test_logger_failures_do_not_replace_webhook_error_envelope(): void {
@@ -303,8 +358,18 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$runtime = new WooPaymentsLegacyRuntime();
 		$runtime->init( new LegacyRuntimeProxy( true, null, null, null, $logger ) );
 
+		$this->scheduler     = new RecordingActionSchedulerService();
+		$reliability_service = new WooPaymentsWebhookReliabilityService();
+		$reliability_service->init(
+			wc_get_container()->get( NativePaymentsRuntimeArbiter::class ),
+			$this->scheduler,
+			wc_get_container()->get( WooPaymentsFailedEventStore::class ),
+			new StaticFailedEventsProvider(),
+			$ingestor
+		);
+
 		$controller = new WooPaymentsWebhookRestController();
-		$controller->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), $ingestor, $runtime );
+		$controller->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), $ingestor, $runtime, $reliability_service );
 
 		return $controller;
 	}

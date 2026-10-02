@@ -45,18 +45,27 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	private WooPaymentsLegacyRuntime $legacy_runtime;
 
 	/**
+	 * Webhook reliability service, which retries events that fail to process.
+	 *
+	 * @var WooPaymentsWebhookReliabilityService
+	 */
+	private WooPaymentsWebhookReliabilityService $reliability_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter        Runtime owner arbiter.
-	 * @param WooPaymentsEventIngestor     $event_ingestor Event ingestor.
-	 * @param WooPaymentsLegacyRuntime     $legacy_runtime WooPayments legacy runtime.
+	 * @param NativePaymentsRuntimeArbiter         $arbiter        Runtime owner arbiter.
+	 * @param WooPaymentsEventIngestor             $event_ingestor Event ingestor.
+	 * @param WooPaymentsLegacyRuntime             $legacy_runtime WooPayments legacy runtime.
+	 * @param WooPaymentsWebhookReliabilityService $reliability_service Webhook reliability service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsEventIngestor $event_ingestor, WooPaymentsLegacyRuntime $legacy_runtime ): void {
-		$this->arbiter        = $arbiter;
-		$this->event_ingestor = $event_ingestor;
-		$this->legacy_runtime = $legacy_runtime;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsEventIngestor $event_ingestor, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsWebhookReliabilityService $reliability_service ): void {
+		$this->arbiter             = $arbiter;
+		$this->event_ingestor      = $event_ingestor;
+		$this->legacy_runtime      = $legacy_runtime;
+		$this->reliability_service = $reliability_service;
 	}
 
 	/**
@@ -122,14 +131,17 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 			$payload = $request->get_body_params();
 		}
 
+		$payload = is_array( $payload ) ? $payload : array();
 		try {
-			$this->event_ingestor->process( is_array( $payload ) ? $payload : array() );
+			$this->event_ingestor->process( $payload );
 			return new WP_REST_Response( array( 'result' => 'success' ), 200 );
 		} catch ( InvalidArgumentException $exception ) {
 			$this->log_webhook_exception( $exception );
 			return new WP_REST_Response( array( 'result' => 'bad_request' ), 400 );
 		} catch ( Throwable $exception ) {
 			$this->log_webhook_exception( $exception );
+			// The platform counts this reply as delivered, so the store retries the event itself.
+			$this->reliability_service->retry_failed_event( $payload );
 			return new WP_REST_Response( array( 'result' => 'error' ), 500 );
 		}
 	}
