@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions as ExtensionSuggestions;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\RestApi\UnitTests\CorePayPalGatewayTrait;
 use Automattic\WooCommerce\Tests\Internal\Admin\Settings\Mocks\FakePaymentGateway;
@@ -68,10 +69,12 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		// Reset gateways, hooks, and cached provider data between tests.
 		remove_all_actions( 'wc_payment_gateways_initialized' );
+		remove_all_filters( PayPalWalletRuntimeArbiter::FILTER_ENABLED );
 		self::reload_payment_gateways();
 		if ( isset( $this->sut ) ) {
 			$this->sut->clear_cache();
 		}
+		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
 
 		parent::tearDown();
 	}
@@ -1238,7 +1241,10 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 	 * Test that get_payment_gateway_details does not override title for excluded gateways.
 	 */
 	public function test_get_payment_gateway_details_does_not_override_excluded_gateway_titles() {
-		// Arrange.
+		// Arrange - Pin native ownership off to prevent the provider override from retitling the ppcp-gateway row.
+		add_filter( PayPalWalletRuntimeArbiter::FILTER_ENABLED, '__return_false' );
+		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
+
 		$plugin_slug   = 'woocommerce-gateway-paypal';
 		$gateway_links = array(
 			array(
