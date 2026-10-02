@@ -427,7 +427,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%d. Subscription not found.', $subscription_id ) );
 		}
 
-		$migrated_wcpay_subscription_id = $subscription->get_meta( '_migrated' . StripeBillingSubscriptionService::SUBSCRIPTION_ID_META_KEY, true );
+		$migrated_wcpay_subscription_id = $subscription->get_meta( StripeBillingSubscriptionService::MIGRATED_SUBSCRIPTION_ID_META_KEY, true );
 		if ( ! empty( $migrated_wcpay_subscription_id ) ) {
 			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%1$d (%2$s). Subscription has already been migrated.', $subscription_id, $migrated_wcpay_subscription_id ) );
 		}

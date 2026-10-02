@@ -37,6 +37,13 @@ class StripeBillingSubscriptionService {
 	public const SUBSCRIPTION_ID_META_KEY = '_wcpay_subscription_id';
 
 	/**
+	 * Subscription meta holding the Stripe subscription ID once the subscription is migrated off Stripe Billing.
+	 *
+	 * The migrator writes it as the `_migrated` prefix plus SUBSCRIPTION_ID_META_KEY.
+	 */
+	public const MIGRATED_SUBSCRIPTION_ID_META_KEY = '_migrated_wcpay_subscription_id';
+
+	/**
 	 * Subscription item meta holding the Stripe subscription item ID.
 	 */
 	public const SUBSCRIPTION_ITEM_ID_META_KEY = '_wcpay_subscription_item_id';
@@ -334,7 +341,7 @@ class StripeBillingSubscriptionService {
 	 * @return int
 	 */
 	public function get_migrated_subscription_count(): int {
-		return $this->count_subscriptions_with_meta( '_migrated' . self::SUBSCRIPTION_ID_META_KEY );
+		return $this->count_subscriptions_with_meta( self::MIGRATED_SUBSCRIPTION_ID_META_KEY );
 	}
 
 	/**
