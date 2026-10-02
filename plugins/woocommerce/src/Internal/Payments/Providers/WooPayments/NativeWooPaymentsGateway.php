@@ -302,11 +302,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Add the classic checkout and order-pay fallback hooks once per request, from the card gateway.
 	 */
 	private function maybe_add_classic_checkout_fallback_hooks(): void {
-		if (
-			self::$classic_checkout_fallback_hooks_added
-			|| OrderPaymentStore::GATEWAY_ID !== $this->id
-			|| ! wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register()
-		) {
+		if ( self::$classic_checkout_fallback_hooks_added || OrderPaymentStore::GATEWAY_ID !== $this->id ) {
 			return;
 		}
 		self::$classic_checkout_fallback_hooks_added = true;
@@ -316,11 +312,17 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Localize the classic checkout config when no WooPayments fields rendered.
+	 * Localize the classic checkout config when no WooPayments fields rendered and native owns payments.
+	 *
+	 * The ownership check runs here, not when the gateway is built, so building a gateway never settles it early.
 	 *
 	 * @internal
 	 */
 	public function handle_classic_checkout_without_fields(): void {
+		if ( ! wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register() ) {
+			return;
+		}
+
 		$this->get_checkout_bridge()->enqueue_classic_checkout_assets_without_fields( $this->supports );
 	}
 

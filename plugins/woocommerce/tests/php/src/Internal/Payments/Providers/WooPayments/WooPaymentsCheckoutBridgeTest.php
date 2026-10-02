@@ -91,6 +91,28 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should localize no checkout config from the fallback while the WooPayments plugin owns payments.
+	 */
+	public function test_after_checkout_form_fallback_does_nothing_when_native_does_not_own_payments(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+		$sut = new WooPaymentsCheckoutBridge();
+		$sut->init( $this->create_legacy_runtime_for_bridge(), $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		try {
+			$this->create_card_gateway_for_bridge( $sut );
+			/** This action is documented in templates/checkout/form-checkout.php */
+			do_action( 'woocommerce_after_checkout_form', WC()->checkout() );
+		} finally {
+			delete_option( 'woocommerce_' . OrderPaymentStore::GATEWAY_ID . '_settings' );
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+			wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		}
+
+		$this->assertFalse( wp_script_is( 'wc-woopayments-checkout', 'enqueued' ) );
+		$this->assertStringNotContainsString( 'wcpay_core_checkout_config', (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' ) );
+	}
+
+	/**
 	 * @testdox Should track classic and Blocks checkout page views once with the exact WooPayments contract.
 	 */
 	public function test_tracks_classic_and_blocks_checkout_page_views_once(): void {
