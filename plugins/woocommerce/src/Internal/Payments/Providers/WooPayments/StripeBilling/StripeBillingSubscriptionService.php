@@ -164,6 +164,29 @@ class StripeBillingSubscriptionService {
 	}
 
 	/**
+	 * Tag the recurring payments of an order whose subscription Stripe bills, which the platform charges the Stripe Billing fee for.
+	 *
+	 * Other subscription payments keep the regular context, whatever the toggle.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $metadata Payment metadata sent to the platform.
+	 * @param mixed $order    Order being paid.
+	 * @return mixed
+	 */
+	public function set_stripe_billing_payment_context( $metadata, $order ) {
+		if ( ! is_array( $metadata ) || ! $order instanceof WC_Order || 'regular_subscription' !== ( $metadata['payment_context'] ?? '' ) ) {
+			return $metadata;
+		}
+
+		if ( $this->is_wcpay_subscription_order( $order ) ) {
+			$metadata['payment_context'] = 'wcpay_subscription';
+		}
+
+		return $metadata;
+	}
+
+	/**
 	 * Get the Stripe subscription ID of a subscription.
 	 *
 	 * @param WC_Order $subscription Subscription.

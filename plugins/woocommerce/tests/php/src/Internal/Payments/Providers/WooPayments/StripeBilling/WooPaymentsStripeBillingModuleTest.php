@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\LateLoadedSubscriptions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -138,6 +139,51 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertFalse( $sut->is_stripe_billed_subscription( $subscription ) );
 			$this->assertFalse( $sut->is_stripe_billed_order( $order ) );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
+		}
+	}
+
+	/**
+	 * @testdox A recurring payment carries the Stripe Billing fee context only when the order's subscription is Stripe-billed, toggle off included (client OrderServiceTest provider_subscription_details, `src/Internal/Service/OrderService.php:104-121`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith ["initial", "parent", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", "wcpay_subscription"]
+	 *           ["renewal", "renewal", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", "wcpay_subscription"]
+	 *           ["initial", "parent", "", "regular_subscription"]
+	 *           ["renewal", "renewal", "", "regular_subscription"]
+	 *
+	 * @param string $subscription_payment  Subscription payment type.
+	 * @param string $relation              How the order relates to its subscription.
+	 * @param string $wcpay_subscription_id Stripe subscription ID of the subscription, empty when it is tokenized.
+	 * @param string $expected              Payment context sent to the platform.
+	 */
+	public function test_sends_the_stripe_billing_fee_context_only_for_stripe_billed_orders( string $subscription_payment, string $relation, string $wcpay_subscription_id, string $expected ): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '0' );
+		$this->register_module( true );
+		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
+		$subscription->update_meta_data( '_wcpay_subscription_id', $wcpay_subscription_id );
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $order->get_id() ] = array( $relation => array( $subscription->get_id() ) );
+
+		$metadata = WooPaymentsIntentRequestBuilder::metadata_from_order( $order, 'recurring', $subscription_payment );
+
+		$this->assertSame( $subscription_payment, $metadata['subscription_payment'] );
+		$this->assertSame( $expected, $metadata['payment_context'] );
+	}
+
+	/**
+	 * @testdox A recurring payment keeps the regular context while the module is not loaded (client test_get_payment_metadata_marks_subscription_as_regular_when_stripe_billing_not_loaded).
+	 */
+	public function test_sends_the_regular_context_while_not_loaded(): void {
+		$this->register_module( true );
+		list( , $order ) = $this->create_stripe_billed_subscription_and_renewal();
+
+		try {
+			$metadata = WooPaymentsIntentRequestBuilder::metadata_from_order( $order, 'recurring', 'renewal' );
+
+			$this->assertSame( 'regular_subscription', $metadata['payment_context'] );
 		} finally {
 			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		}
