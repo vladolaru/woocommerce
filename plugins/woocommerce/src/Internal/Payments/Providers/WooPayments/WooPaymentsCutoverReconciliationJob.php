@@ -60,16 +60,17 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Maximum duration for the plugin-update lock. */
 	private const PLUGIN_UPDATE_LOCK_TTL = 5 * MINUTE_IN_SECONDS;
 
-	/** Operational actions whose native callbacks continue after cutover. */
+	/**
+	 * Operational actions whose native callbacks continue after cutover.
+	 *
+	 * The Stripe Billing migration actions are among them: native's migrator takes them with the same arguments, so a migration
+	 * off Stripe Billing started by the plugin finishes after the switch.
+	 */
 	private const ADOPTED_OPERATIONAL_QUEUE_HOOKS = array(
 		WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION,
 		WooPaymentsOperationalQueueService::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,
-	);
-
-	/** Legacy subscription migration actions that must not survive cutover. */
-	private const LEGACY_SUBSCRIPTION_MIGRATOR_HOOKS = array(
 		'wcpay_schedule_subscription_migrations',
 		'wcpay_migrate_subscription',
 		'wcpay_migrate_subscription_retry',
@@ -1717,7 +1718,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Reconcile queued legacy actions without canceling native-owned callbacks.
+	 * Record the queued plugin actions native adopts; their callbacks run natively after the switch.
 	 *
 	 * @return array<int,mixed> Informational operational-action outcomes.
 	 */
@@ -1732,64 +1733,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					'code' => 'operational_action_adopted',
 					'hook' => $action['hook'],
 				);
-				continue;
-			}
-			if ( ! in_array( $action['hook'], self::LEGACY_SUBSCRIPTION_MIGRATOR_HOOKS, true ) || $action['action_id'] < 1 ) {
-				continue;
-			}
-			$cancelled = $this->cancel_pending_legacy_migrator( $action['action_id'] );
-			if ( true === $cancelled ) {
-				$outcomes[] = array(
-					'code' => 'legacy_migrator_canceled',
-					'hook' => $action['hook'],
-				);
-			} elseif ( null === $cancelled ) {
-				$this->log_error(
-					'WooPayments cutover could not cancel a legacy subscription migrator.',
-					array(
-						'action_id' => $action['action_id'],
-					)
-				);
 			}
 		}
 
 		return $outcomes;
-	}
-
-	/**
-	 * Atomically cancel one unclaimed pending legacy migrator in the custom Action Scheduler table.
-	 *
-	 * @param int $action_id Action Scheduler action ID.
-	 * @return bool|null True when canceled, false when claimed or changed, null on database failure.
-	 */
-	protected function cancel_pending_legacy_migrator( int $action_id ): ?bool {
-		global $wpdb;
-
-		$updated = $wpdb->query(
-			$wpdb->prepare(
-				"UPDATE {$wpdb->actionscheduler_actions} SET status = %s WHERE action_id = %d AND status = %s AND claim_id = %d",
-				\ActionScheduler_Store::STATUS_CANCELED,
-				$action_id,
-				\ActionScheduler_Store::STATUS_PENDING,
-				0
-			)
-		);
-		if ( false === $updated ) {
-			return null;
-		}
-		if ( 1 !== $updated ) {
-			return false;
-		}
-
-		\ActionScheduler::store()->flush_caches();
-		/**
-		 * Fires after reconciliation atomically cancels one pending legacy migrator.
-		 *
-		 * @param int $action_id Action Scheduler action ID.
-		 * @since 11.2.0
-		 */
-		do_action( 'action_scheduler_canceled_action', $action_id );
-		return true;
 	}
 
 	/**

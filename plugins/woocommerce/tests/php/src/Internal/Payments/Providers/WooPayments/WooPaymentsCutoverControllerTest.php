@@ -1451,6 +1451,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			'authorization-fee affected-order scan' => array( 'wcpay_check_affected_auth_fee_orders' ),
 			'failed webhook fetch'                  => array( 'wcpay_webhook_fetch_events' ),
 			'failed webhook processing'             => array( 'wcpay_webhook_process_event' ),
+			'Stripe Billing migration scheduling'   => array( 'wcpay_schedule_subscription_migrations' ),
+			'Stripe Billing migration'              => array( 'wcpay_migrate_subscription' ),
+			'Stripe Billing migration retry'        => array( 'wcpay_migrate_subscription_retry' ),
 		);
 	}
 
@@ -1484,7 +1487,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight blocks while legacy Stripe Billing subscription markers exist.
+	 * @testdox Cutover preflight blocks a store without WooCommerce Subscriptions while a subscription is still Stripe-billed (bundled flavor, spec section 7).
 	 */
 	public function test_preflight_blocks_when_legacy_stripe_billing_subscription_marker_exists(): void {
 		$this->fake_plugin_active();
@@ -1496,7 +1499,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight blocks cancelled legacy Stripe Billing subscription markers.
+	 * @testdox Cutover preflight blocks a bundled-flavor store whatever the status of its Stripe-billed subscription.
 	 */
 	public function test_preflight_blocks_cancelled_legacy_stripe_billing_subscription_marker(): void {
 		$this->fake_plugin_active();
@@ -1508,15 +1511,32 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight blocks migrated legacy Stripe Billing subscription marker variants.
+	 * @testdox Cutover preflight allows a store whose subscriptions were all migrated off Stripe Billing: the migrator leaves only `_migrated_*` meta (client `class-wc-payments-subscriptions-migrator.php:271-300`).
 	 */
-	public function test_preflight_blocks_migrated_legacy_stripe_billing_subscription_marker(): void {
+	public function test_preflight_allows_a_store_migrated_off_stripe_billing(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
-		$this->create_legacy_stripe_billing_subscription( 'cancelled', '_migrated_wcpay_subscription_id' );
+		$this->create_legacy_stripe_billing_subscription( 'active', '_migrated_wcpay_subscription_id' );
+		$this->create_legacy_stripe_billing_subscription( 'active', '_wcpay_subscription_migrated_during' );
 
-		$this->assertContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+		$this->assertNotContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+	}
+
+	/**
+	 * @testdox Cutover preflight blocks a store with the bundled WooPayments subscriptions on, even with no Stripe-billed subscription.
+	 */
+	public function test_preflight_blocks_a_store_with_bundled_subscriptions_on(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		$this->enable_ready_cutover();
+		update_option( '_wcpay_feature_subscriptions', '1' );
+
+		try {
+			$this->assertContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+		} finally {
+			delete_option( '_wcpay_feature_subscriptions' );
+		}
 	}
 
 	/**
@@ -1533,27 +1553,28 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight blocks legacy Stripe Billing invoice order markers.
+	 * @testdox Cutover preflight allows orders that keep their Stripe Billing invoice IDs after a migration.
 	 */
-	public function test_preflight_blocks_legacy_stripe_billing_invoice_order_marker(): void {
+	public function test_preflight_allows_stripe_billing_invoice_order_markers(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
 		$order = wc_create_order();
-		$order->update_meta_data( '_migrated_wcpay_billing_invoice_id', 'in_migrated_123' );
+		$order->update_meta_data( '_wcpay_billing_invoice_id', 'in_1UM1VrBzWlxcwgpPgrIwNSlu' );
+		$order->update_meta_data( '_migrated_wcpay_billing_invoice_id', 'in_1UM1VrBzWlxcwgpPgrIwNSlu' );
 		$order->save();
 
-		$this->assertContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+		$this->assertNotContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
 	}
 
 	/**
-	 * @testdox Cutover preflight blocks legacy Stripe Billing markers in HPOS order meta.
+	 * @testdox Cutover preflight finds a Stripe-billed subscription in HPOS order meta.
 	 */
 	public function test_preflight_blocks_legacy_stripe_billing_hpos_marker(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
-		$this->create_legacy_stripe_billing_hpos_marker( '_wcpay_pending_invoice_id' );
+		$this->create_legacy_stripe_billing_hpos_marker( '_wcpay_subscription_id' );
 
 		$this->assertContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
 	}

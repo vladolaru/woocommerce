@@ -1675,11 +1675,20 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reconciliation adopts native queue callbacks and cancels pending legacy migrators.
+	 * @testdox Reconciliation adopts native queue callbacks, Stripe Billing migrations included: a pending migration stays queued for native's migrator (spec section 7).
 	 */
-	public function test_reconciliation_adopts_native_queue_callbacks_and_cancels_legacy_migrators(): void {
+	public function test_reconciliation_adopts_native_queue_callbacks_and_stripe_billing_migrations(): void {
 		$native_action_id   = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_store_setup_sync', array(), 'cutover-test', false );
-		$migrator_action_id = as_schedule_single_action( time() - MINUTE_IN_SECONDS, 'wcpay_migrate_subscription_retry', array(), 'cutover-test', false );
+		$migrator_action_id = as_schedule_single_action(
+			time() - MINUTE_IN_SECONDS,
+			'wcpay_migrate_subscription_retry',
+			array(
+				'migrate_subscription' => 4712,
+				'attempt'              => 1,
+			),
+			'cutover-test',
+			false
+		);
 		$this->assertIsInt( $native_action_id );
 		$this->assertIsInt( $migrator_action_id );
 		$preflight = $this->create_preflight_with_failures(
@@ -1705,149 +1714,29 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $pending );
 		$this->require_scheduler()->cancel( $pending['generation'], 1 );
 		$sut->register();
-		$canceled_action_ids = array();
-		$record_cancellation = static function ( $action_id ) use ( &$canceled_action_ids ): void {
-			$canceled_action_ids[] = $action_id;
-		};
-		add_action( 'action_scheduler_canceled_action', $record_cancellation );
 
-		try {
-			$sut->handle_reconcile( $pending['generation'], 1 );
-		} finally {
-			remove_action( 'action_scheduler_canceled_action', $record_cancellation );
-		}
+		$sut->handle_reconcile( $pending['generation'], 1 );
 
 		$deferred = $this->require_state_store()->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $native_action_id ) );
-		$this->assertSame( ActionScheduler_Store::STATUS_CANCELED, ActionScheduler::store()->get_status( $migrator_action_id ) );
-		$this->assertContains(
-			array(
-				'code' => 'operational_action_adopted',
-				'hook' => 'wcpay_store_setup_sync',
-			),
-			$deferred['informational_outcomes']
-		);
-		$this->assertContains(
-			array(
-				'code' => 'legacy_migrator_canceled',
-				'hook' => 'wcpay_migrate_subscription_retry',
-			),
-			$deferred['informational_outcomes']
-		);
-		$this->assertSame( array( $migrator_action_id ), $canceled_action_ids );
-		$store = new \ActionScheduler_DBStore();
-		$claim = $store->stake_claim( 1, new \DateTime( '@' . time() ), array( 'wcpay_migrate_subscription_retry' ), 'cutover-test' );
-		try {
-			$this->assertNotContains( $migrator_action_id, $claim->get_actions() );
-		} finally {
-			$store->release_claim( $claim );
-		}
-	}
-
-	/**
-	 * @testdox A lost pending-action cancellation race leaves its migration blocker deferred and unadopted.
-	 */
-	public function test_lost_pending_migrator_cancellation_race_defers_without_a_canceled_outcome(): void {
-		$hook      = 'wcpay_migrate_subscription_retry';
-		$action_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook, array(), 'cutover-test', false );
-		$this->assertIsInt( $action_id );
-		$preflight = $this->create_preflight_with_failures(
-			array( 'operational_queue_hooks_undispositioned' ),
-			false,
-			false,
-			array(
-				array(
-					'action_id' => $action_id,
-					'hook'      => $hook,
-					'group'     => 'cutover-test',
-				),
-			)
-		);
-		$job       = new class() extends WooPaymentsCutoverReconciliationJob {
-			/**
-			 * Simulate a runner claiming the migrator immediately before its conditional cancellation.
-			 *
-			 * @param int $action_id Action Scheduler action ID.
-			 * @return bool
-			 */
-			protected function cancel_pending_legacy_migrator( int $action_id ): bool {
-				return false;
-			}
-		};
-		$sut       = $this->create_job( true, $preflight, $job );
-		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-
-		$sut->handle_reconcile( $pending['generation'], 1 );
-
-		$deferred = $this->require_state_store()->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
-		$this->assertSame( array( 'operational_queue_hooks_undispositioned' ), $deferred['deferred_codes'] );
-		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $action_id ) );
-		$this->assertNotContains(
-			array(
-				'code' => 'legacy_migrator_canceled',
-				'hook' => $hook,
-			),
-			$deferred['informational_outcomes']
-		);
-	}
-
-	/**
-	 * @testdox A claimed custom-table migrator cannot be canceled by reconciliation's pending-only compare-and-set.
-	 */
-	public function test_claimed_pending_migrator_remains_queued_when_conditional_cancellation_loses_its_compare_and_set(): void {
-		$hook      = 'wcpay_migrate_subscription_retry';
-		$action_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook, array(), 'cutover-test', false );
-		$this->assertIsInt( $action_id );
-		global $wpdb;
+		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $migrator_action_id ) );
 		$this->assertSame(
-			1,
-			$wpdb->update(
-				$wpdb->actionscheduler_actions,
-				array( 'claim_id' => 123 ),
-				array( 'action_id' => $action_id ),
-				array( '%d' ),
-				array( '%d' )
-			)
-		);
-		ActionScheduler::store()->flush_caches();
-		$preflight = $this->create_preflight_with_failures(
-			array( 'operational_queue_hooks_undispositioned' ),
-			false,
-			false,
 			array(
-				array(
-					'action_id' => $action_id,
-					'hook'      => $hook,
-					'group'     => 'cutover-test',
-				),
-			)
-		);
-		$sut       = $this->create_job_with_preflight( true, $preflight );
-		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-
-		$sut->handle_reconcile( $pending['generation'], 1 );
-
-		$deferred = $this->require_state_store()->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
-		$this->assertSame( array( 'operational_queue_hooks_undispositioned' ), $deferred['deferred_codes'] );
-		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $action_id ) );
-		$this->assertNotContains(
-			array(
-				'code' => 'legacy_migrator_canceled',
-				'hook' => $hook,
+				'migrate_subscription' => 4712,
+				'attempt'              => 1,
 			),
-			$deferred['informational_outcomes']
+			ActionScheduler::store()->fetch_action( (string) $migrator_action_id )->get_args()
 		);
+		foreach ( array( 'wcpay_store_setup_sync', 'wcpay_migrate_subscription_retry' ) as $hook ) {
+			$this->assertContains(
+				array(
+					'code' => 'operational_action_adopted',
+					'hook' => $hook,
+				),
+				$deferred['informational_outcomes']
+			);
+		}
 	}
 
 	/**
@@ -3686,69 +3575,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $active_after_attempt, 'A deferred version-blocked update must leave the plugin active; only finalize() may deactivate it.' );
 		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, $owner_after_attempt, 'The plugin must still own the runtime while the version blocker defers the cutover.' );
 		$this->assertFalse( $maintenance_after_attempt, 'bulk_upgrade() must always turn maintenance mode back off, even though this attempt stops before install.' );
-	}
-
-	/**
-	 * @testdox A running migrator defers until its completed callback creates a retry that is canceled next.
-	 */
-	public function test_running_legacy_migrator_defers_then_cancels_its_retry(): void {
-		$hook      = 'wcpay_migrate_subscription_retry';
-		$group     = 'cutover-test';
-		$action_id = as_schedule_single_action( time() - MINUTE_IN_SECONDS, $hook, array(), $group, false );
-		$this->assertIsInt( $action_id );
-		$store = new \ActionScheduler_DBStore();
-		$claim = $store->stake_claim( 1, new \DateTime( '@' . time() ), array( $hook ), $group );
-		try {
-			$this->assertCount( 1, $claim->get_actions() );
-			$this->assertSame( array( $action_id ), $claim->get_actions() );
-			$store->log_execution( $action_id );
-			$this->assertSame( ActionScheduler_Store::STATUS_RUNNING, $store->get_status( $action_id ) );
-			$preflight = $this->create_preflight_with_failures(
-				array( 'operational_queue_hooks_undispositioned' ),
-				false,
-				false,
-				array(
-					array(
-						'action_id' => $action_id,
-						'hook'      => $hook,
-						'group'     => $group,
-					),
-				),
-				'',
-				true
-			);
-			$sut       = $this->create_job_with_preflight( true, $preflight );
-			$sut->enqueue( 'merchant' );
-			$pending = $this->require_state_store()->get_record();
-			$this->assertIsArray( $pending );
-			$this->require_scheduler()->cancel( $pending['generation'], 1 );
-
-			$sut->handle_reconcile( $pending['generation'], 1 );
-			$deferred = $this->require_state_store()->get_record();
-			$this->assertIsArray( $deferred );
-			$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
-			$this->assertSame( array( 'operational_queue_hooks_undispositioned' ), $deferred['deferred_codes'] );
-			$this->assertSame( ActionScheduler_Store::STATUS_RUNNING, $store->get_status( $action_id ) );
-			$store->mark_complete( $action_id );
-			$retry_action_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook, array(), $group, false );
-			$this->assertIsInt( $retry_action_id );
-			$preflight->add_queued_operational_action(
-				array(
-					'action_id' => $retry_action_id,
-					'hook'      => $hook,
-					'group'     => $group,
-				)
-			);
-
-			$sut->handle_reconcile( $deferred['generation'], 2 );
-
-			$resolved = $this->require_state_store()->get_record();
-			$this->assertIsArray( $resolved );
-			$this->assertSame( array( 'normalization_failed' ), $resolved['deferred_codes'] );
-			$this->assertSame( ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $retry_action_id ) );
-		} finally {
-			$store->release_claim( $claim );
-		}
 	}
 
 	/**

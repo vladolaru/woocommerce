@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\LateLoadedSubscriptions;
 use WC_Unit_Test_Case;
 
 /**
@@ -30,7 +31,7 @@ class WooPaymentsLegacySubscriptionsGuardTest extends WC_Unit_Test_Case {
 		$wpdb->expects( $this->never() )->method( 'prepare' );
 		$wpdb->expects( $this->never() )->method( 'get_var' );
 
-		$this->assertTrue( $this->create_guard( $wpdb )->has_legacy_stripe_billing_subscription_markers() );
+		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_stripe_billing_store() );
 	}
 
 	/**
@@ -53,7 +54,7 @@ class WooPaymentsLegacySubscriptionsGuardTest extends WC_Unit_Test_Case {
 			->method( 'get_var' )
 			->willReturn( 'wp_wc_orders', 'wp_wc_orders_meta', '1' );
 
-		$this->assertTrue( $this->create_guard( $wpdb )->has_legacy_stripe_billing_subscription_markers() );
+		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_stripe_billing_store() );
 	}
 
 	/**
@@ -91,7 +92,7 @@ class WooPaymentsLegacySubscriptionsGuardTest extends WC_Unit_Test_Case {
 				}
 			);
 
-		$this->assertFalse( $this->create_guard( $wpdb )->has_legacy_stripe_billing_subscription_markers() );
+		$this->assertFalse( $this->create_guard( $wpdb )->is_bundled_stripe_billing_store() );
 	}
 
 	/**
@@ -122,7 +123,7 @@ class WooPaymentsLegacySubscriptionsGuardTest extends WC_Unit_Test_Case {
 				}
 			);
 
-		$this->assertTrue( $this->create_guard( $wpdb )->has_legacy_stripe_billing_subscription_markers() );
+		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_stripe_billing_store() );
 	}
 
 	/**
@@ -158,7 +159,44 @@ class WooPaymentsLegacySubscriptionsGuardTest extends WC_Unit_Test_Case {
 				}
 			);
 
-		$this->assertTrue( $this->create_guard( $wpdb )->has_legacy_stripe_billing_subscription_markers() );
+		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_stripe_billing_store() );
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions active the store is never bundled, whatever its Stripe Billing data or bundled flag (spec section 7).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_store_with_woocommerce_subscriptions_active_is_not_bundled(): void {
+		require_once __DIR__ . '/../Fixtures/LateLoadedSubscriptions.php';
+		class_alias( LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+		register_post_type( 'shop_subscription' );
+		$subscription_id = wp_insert_post(
+			array(
+				'post_type'   => 'shop_subscription',
+				'post_status' => 'wc-active',
+			)
+		);
+		update_post_meta( $subscription_id, '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
+		update_option( '_wcpay_feature_subscriptions', '1' );
+
+		$this->assertFalse( ( new WooPaymentsLegacySubscriptionsGuard() )->is_bundled_stripe_billing_store() );
+	}
+
+	/**
+	 * @testdox Without WooCommerce Subscriptions the store is bundled while a subscription is still Stripe-billed.
+	 */
+	public function test_a_store_without_woocommerce_subscriptions_and_a_stripe_billed_subscription_is_bundled(): void {
+		register_post_type( 'shop_subscription' );
+		$subscription_id = wp_insert_post(
+			array(
+				'post_type'   => 'shop_subscription',
+				'post_status' => 'wc-cancelled',
+			)
+		);
+		update_post_meta( $subscription_id, '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
+
+		$this->assertTrue( ( new WooPaymentsLegacySubscriptionsGuard() )->is_bundled_stripe_billing_store() );
 	}
 
 	/**

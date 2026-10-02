@@ -90,7 +90,7 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_plugins_loaded(): void {
-		if ( ! class_exists( 'WC_Subscriptions' ) ) {
+		if ( ! self::is_woocommerce_subscriptions_active() ) {
 			return;
 		}
 
@@ -159,6 +159,16 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 				'permission_callback' => static fn() => current_user_can( 'manage_woocommerce' ),
 			)
 		);
+	}
+
+	/**
+	 * Tell whether WooCommerce Subscriptions is active in this request, the condition for the module to load (client 11.1.0
+	 * `class-wc-payments-features.php:312`). The cutover guard asks the same question.
+	 *
+	 * @return bool
+	 */
+	public static function is_woocommerce_subscriptions_active(): bool {
+		return class_exists( 'WC_Subscriptions' );
 	}
 
 	/**

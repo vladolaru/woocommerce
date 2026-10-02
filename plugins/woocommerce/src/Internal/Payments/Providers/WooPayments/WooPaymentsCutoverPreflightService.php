@@ -65,6 +65,10 @@ class WooPaymentsCutoverPreflightService {
 		WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK,
 		WooPaymentsWebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION,
 		WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+		// Stripe Billing migration off Stripe, continued by native's migrator after the switch.
+		'wcpay_schedule_subscription_migrations',
+		'wcpay_migrate_subscription',
+		'wcpay_migrate_subscription_retry',
 	);
 
 	/**
@@ -276,7 +280,7 @@ class WooPaymentsCutoverPreflightService {
 			$raw_failures[]           = 'financial_migrations_unavailable';
 			$compatibility_failures[] = 'financial_migrations_unavailable';
 		}
-		if ( $this->get_legacy_subscriptions_guard()->has_legacy_stripe_billing_subscription_markers() ) {
+		if ( $this->get_legacy_subscriptions_guard()->is_bundled_stripe_billing_store() ) {
 			$raw_failures[] = 'legacy_stripe_billing_subscriptions_present';
 		}
 		$raw_failures           = self::normalize_string_list( $raw_failures );

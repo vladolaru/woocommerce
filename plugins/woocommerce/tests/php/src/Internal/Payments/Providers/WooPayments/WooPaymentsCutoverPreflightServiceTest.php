@@ -451,14 +451,14 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a legacy Stripe Billing marker on an order post.
+	 * Create a subscription still billed by Stripe Billing, which makes a store without WooCommerce Subscriptions bundled.
 	 */
 	private function create_legacy_stripe_billing_subscription_marker(): void {
 		$post_id = wp_insert_post(
 			array(
-				'post_type'   => 'shop_order',
-				'post_status' => 'wc-pending',
-				'post_title'  => 'Legacy Stripe Billing order',
+				'post_type'   => 'shop_subscription',
+				'post_status' => 'wc-active',
+				'post_title'  => 'Stripe-billed subscription',
 			)
 		);
 

@@ -8,9 +8,14 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 
 /**
- * Detects legacy WooPayments Stripe Billing subscription markers.
+ * Detects stores on the bundled WooPayments subscriptions flavor, which stay on the plugin at cutover.
+ *
+ * Stores with WooCommerce Subscriptions active switch with their Stripe Billing data, which native serves. A store without it
+ * is bundled when the bundled subscriptions flag is on or a subscription is still billed by Stripe Billing; subscriptions
+ * migrated off Stripe Billing keep only `_migrated_*` meta, so they do not count.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
@@ -18,70 +23,90 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 class WooPaymentsLegacySubscriptionsGuard {
 
 	/**
-	 * Order types that can carry legacy Stripe Billing subscription markers.
-	 *
-	 * @var string[]
+	 * Order type of the subscriptions Stripe Billing bills.
 	 */
-	private const ORDER_TYPES = array(
-		'shop_subscription',
-		'shop_order',
-	);
+	private const SUBSCRIPTION_ORDER_TYPE = 'shop_subscription';
 
 	/**
-	 * Legacy WCPay/Stripe Billing post meta keys that prove native cutover would strand data.
-	 *
-	 * @var string[]
+	 * Subscription meta holding the Stripe subscription ID while Stripe Billing bills the subscription.
 	 */
-	private const LEGACY_POST_META_KEYS = array(
-		'_wcpay_subscription_id',
-		'_migrated_wcpay_subscription_id',
-		'_wcpay_billing_invoice_id',
-		'_migrated_wcpay_billing_invoice_id',
-		'_wcpay_pending_invoice_id',
-		'_migrated_wcpay_pending_invoice_id',
-		'_wcpay_subscription_discount_ids',
-		'_migrated_wcpay_subscription_discount_ids',
-		'_wcpay_subscription_migrated_during',
-	);
+	private const STRIPE_BILLED_META_KEY = '_wcpay_subscription_id';
+
+	/**
+	 * Option that turns the bundled WooPayments subscriptions on (client 11.1.0 `WC_Payments_Features::WCPAY_SUBSCRIPTIONS_FLAG_NAME`).
+	 */
+	private const BUNDLED_SUBSCRIPTIONS_FLAG_OPTION = '_wcpay_feature_subscriptions';
+
+	/**
+	 * Plugin file of WooCommerce Subscriptions, whatever folder it is installed in.
+	 */
+	private const SUBSCRIPTIONS_PLUGIN_FILE = 'woocommerce-subscriptions.php';
 
 	/**
 	 * Cached results for each blog visited during the current request.
 	 *
 	 * @var array<int,bool>
 	 */
-	private array $has_legacy_markers = array();
+	private array $is_bundled_store = array();
 
 	/**
-	 * Tell whether native cutover would strand legacy Stripe Billing subscription data.
+	 * Tell whether the store uses the bundled WooPayments subscriptions, so cutover would strand its subscriptions.
 	 *
-	 * @return bool True when at least one legacy WCPay/Stripe Billing marker exists.
+	 * A database error counts as bundled, so cutover never proceeds on an unknown answer.
+	 *
+	 * @return bool True when WooCommerce Subscriptions is inactive and the bundled flag is on or a subscription is still Stripe-billed.
 	 */
-	public function has_legacy_stripe_billing_subscription_markers(): bool {
+	public function is_bundled_stripe_billing_store(): bool {
 		$blog_id = get_current_blog_id();
-		if ( array_key_exists( $blog_id, $this->has_legacy_markers ) ) {
-			return $this->has_legacy_markers[ $blog_id ];
+		if ( array_key_exists( $blog_id, $this->is_bundled_store ) ) {
+			return $this->is_bundled_store[ $blog_id ];
 		}
 
-		$this->has_legacy_markers[ $blog_id ] = $this->query_legacy_marker_exists();
+		$this->is_bundled_store[ $blog_id ] = ! $this->is_subscriptions_plugin_active()
+			&& ( '1' === get_option( self::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '0' ) || $this->query_stripe_billed_subscription_exists() );
 
-		return $this->has_legacy_markers[ $blog_id ];
+		return $this->is_bundled_store[ $blog_id ];
 	}
 
 	/**
-	 * Query whether an order or subscription carries legacy WCPay/Stripe Billing markers.
+	 * Tell whether WooCommerce Subscriptions is active on the current site.
 	 *
-	 * @return bool True when at least one marker exists.
+	 * On the site serving the request this is the Stripe Billing module's own check. A site visited with switch_to_blog() has not
+	 * loaded its plugins, so its active plugin options are read instead.
+	 *
+	 * @return bool
 	 */
-	private function query_legacy_marker_exists(): bool {
-		return $this->query_legacy_marker_exists_from_hpos_tables() || $this->query_legacy_marker_exists_from_posts();
+	protected function is_subscriptions_plugin_active(): bool {
+		if ( ! is_multisite() || ! ms_is_switched() ) {
+			return WooPaymentsStripeBillingModule::is_woocommerce_subscriptions_active();
+		}
+
+		$active_plugins = (array) get_option( 'active_plugins', array() );
+		$network_active = array_keys( (array) get_site_option( 'active_sitewide_plugins', array() ) );
+		foreach ( array_merge( $active_plugins, $network_active ) as $plugin_file ) {
+			if ( is_string( $plugin_file ) && self::SUBSCRIPTIONS_PLUGIN_FILE === basename( $plugin_file ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
-	 * Query the HPOS tables directly for legacy markers.
+	 * Query whether a subscription is still billed by Stripe Billing.
 	 *
-	 * @return bool True when at least one marker exists.
+	 * @return bool True when at least one exists, or the query failed.
 	 */
-	private function query_legacy_marker_exists_from_hpos_tables(): bool {
+	private function query_stripe_billed_subscription_exists(): bool {
+		return $this->query_stripe_billed_subscription_exists_from_hpos_tables() || $this->query_stripe_billed_subscription_exists_from_posts();
+	}
+
+	/**
+	 * Query the HPOS tables directly for a Stripe-billed subscription.
+	 *
+	 * @return bool True when one exists, or the query failed.
+	 */
+	private function query_stripe_billed_subscription_exists_from_hpos_tables(): bool {
 		$wpdb = $this->get_database();
 
 		if ( ! $wpdb->has_cap( 'identifier_placeholders' ) ) {
@@ -96,27 +121,17 @@ class WooPaymentsLegacySubscriptionsGuard {
 			return false;
 		}
 
-		// Keep this placeholder matrix in sync with the fixed marker constants above.
 		$sql = $wpdb->prepare(
 			'SELECT 1
 			FROM %i AS orders
 			INNER JOIN %i AS ordermeta ON orders.id = ordermeta.order_id
-			WHERE orders.type IN ( %s, %s )
-				AND ordermeta.meta_key IN ( %s, %s, %s, %s, %s, %s, %s, %s, %s )
+			WHERE orders.type = %s
+				AND ordermeta.meta_key = %s
 			LIMIT 1',
 			OrdersTableDataStore::get_orders_table_name(),
 			OrdersTableDataStore::get_meta_table_name(),
-			self::ORDER_TYPES[0],
-			self::ORDER_TYPES[1],
-			self::LEGACY_POST_META_KEYS[0],
-			self::LEGACY_POST_META_KEYS[1],
-			self::LEGACY_POST_META_KEYS[2],
-			self::LEGACY_POST_META_KEYS[3],
-			self::LEGACY_POST_META_KEYS[4],
-			self::LEGACY_POST_META_KEYS[5],
-			self::LEGACY_POST_META_KEYS[6],
-			self::LEGACY_POST_META_KEYS[7],
-			self::LEGACY_POST_META_KEYS[8]
+			self::SUBSCRIPTION_ORDER_TYPE,
+			self::STRIPE_BILLED_META_KEY
 		);
 
 		$wpdb->last_error = '';
@@ -150,38 +165,28 @@ class WooPaymentsLegacySubscriptionsGuard {
 	}
 
 	/**
-	 * Query the CPT store directly for markers the order APIs cannot surface.
+	 * Query the CPT store directly for a Stripe-billed subscription the order APIs cannot surface.
 	 *
-	 * @return bool True when at least one marker exists.
+	 * @return bool True when one exists, or the query failed.
 	 */
-	private function query_legacy_marker_exists_from_posts(): bool {
+	private function query_stripe_billed_subscription_exists_from_posts(): bool {
 		$wpdb = $this->get_database();
 
 		if ( ! $wpdb->has_cap( 'identifier_placeholders' ) ) {
 			return true;
 		}
 
-		// Keep this placeholder matrix in sync with the fixed marker constants above.
 		$sql = $wpdb->prepare(
 			'SELECT 1
 			FROM %i AS posts
 			INNER JOIN %i AS postmeta ON posts.ID = postmeta.post_id
-			WHERE posts.post_type IN ( %s, %s )
-				AND postmeta.meta_key IN ( %s, %s, %s, %s, %s, %s, %s, %s, %s )
+			WHERE posts.post_type = %s
+				AND postmeta.meta_key = %s
 			LIMIT 1',
 			$wpdb->posts,
 			$wpdb->postmeta,
-			self::ORDER_TYPES[0],
-			self::ORDER_TYPES[1],
-			self::LEGACY_POST_META_KEYS[0],
-			self::LEGACY_POST_META_KEYS[1],
-			self::LEGACY_POST_META_KEYS[2],
-			self::LEGACY_POST_META_KEYS[3],
-			self::LEGACY_POST_META_KEYS[4],
-			self::LEGACY_POST_META_KEYS[5],
-			self::LEGACY_POST_META_KEYS[6],
-			self::LEGACY_POST_META_KEYS[7],
-			self::LEGACY_POST_META_KEYS[8]
+			self::SUBSCRIPTION_ORDER_TYPE,
+			self::STRIPE_BILLED_META_KEY
 		);
 
 		$wpdb->last_error = '';
