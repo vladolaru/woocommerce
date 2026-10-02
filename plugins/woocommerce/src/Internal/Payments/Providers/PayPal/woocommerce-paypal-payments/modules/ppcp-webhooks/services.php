@@ -15,6 +15,7 @@ use WooCommerce\PayPalCommerce\ApiClient\Entity\Webhook;
 use WooCommerce\PayPalCommerce\ApiClient\Factory\WebhookFactory;
 use WooCommerce\PayPalCommerce\Assets\AssetGetter;
 use WooCommerce\PayPalCommerce\Assets\AssetGetterFactory;
+use WooCommerce\PayPalCommerce\ModuleAvailability;
 use WooCommerce\PayPalCommerce\Vendor\Psr\Container\ContainerInterface;
 use WooCommerce\PayPalCommerce\Webhooks\Endpoint\ResubscribeEndpoint;
 use WooCommerce\PayPalCommerce\Webhooks\Endpoint\SimulateEndpoint;
@@ -101,7 +102,7 @@ return array(
 		$authorized_payments_processor = $container->get( 'wcgateway.processor.authorized-payments' );
 		$refund_fees_updater = $container->get( 'wcgateway.helper.refund-fees-updater' );
 
-		return array(
+		$handlers = array(
 			new CheckoutOrderApproved(
 				$logger,
 				$order_endpoint,
@@ -116,13 +117,20 @@ return array(
 			new PaymentCaptureCompleted( $logger, $order_endpoint ),
 			new VaultPaymentTokenDeleted( $logger ),
 			new PaymentCapturePending( $logger ),
-			new PaymentSaleCompleted( $logger, $container->get( 'paypal-subscriptions.renewal-handler' ) ),
 			new PaymentSaleRefunded( $logger, $refund_fees_updater ),
 			new BillingSubscriptionCancelled( $logger ),
 			new BillingPlanPricingChangeActivated( $logger ),
 			new CatalogProductUpdated( $logger ),
 			new BillingPlanUpdated( $logger ),
 		);
+
+		$availability = $container->get( 'ppcp.module-availability' );
+		assert( $availability instanceof ModuleAvailability );
+		if ( $availability->is_loaded( 'paypal-subscriptions' ) ) {
+			$handlers[] = new PaymentSaleCompleted( $logger, $container->get( 'paypal-subscriptions.renewal-handler' ) );
+		}
+
+		return $handlers;
 	},
 
 	'webhook.current'                         => static function ( ContainerInterface $container ): ?Webhook {

@@ -60,4 +60,7 @@ return array(
 		/** @psalm-suppress UndefinedInterfaceMethod */
 		return $properties->pluginMainFile();
 	},
+	'ppcp.module-availability'      => static function ( ContainerInterface $container ): ModuleAvailability {
+		return new ModuleAvailability( $container );
+	},
 );

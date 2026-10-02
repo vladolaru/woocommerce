@@ -204,7 +204,9 @@ return array(
 	},
 	'button.helper.context'                       => static function ( ContainerInterface $container ): Context {
 		$session_handler = $container->get( 'session.handler' );
-		$subscription_status = $container->get( 'paypal-subscriptions.status' );
+		$subscription_status = $container->get( 'ppcp.module-availability' )->is_loaded( 'paypal-subscriptions' )
+			? $container->get( 'paypal-subscriptions.status' )
+			: null;
 
 		return new Context( $session_handler, $subscription_status );
 	},

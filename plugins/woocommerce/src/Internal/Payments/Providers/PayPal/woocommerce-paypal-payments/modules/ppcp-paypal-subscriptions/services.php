@@ -14,6 +14,9 @@ use WooCommerce\PayPalCommerce\Assets\AssetGetterFactory;
 use WooCommerce\PayPalCommerce\Vendor\Psr\Container\ContainerInterface;
 
 return array(
+	'paypal-subscriptions.available'                => static function (): bool {
+		return true;
+	},
 	'paypal-subscriptions.deactivate-plan-endpoint' => static function ( ContainerInterface $container ): DeactivatePlanEndpoint {
 		return new DeactivatePlanEndpoint(
 			$container->get( 'button.request-data' ),

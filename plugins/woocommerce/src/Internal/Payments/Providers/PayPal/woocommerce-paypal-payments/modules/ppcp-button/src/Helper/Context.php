@@ -12,11 +12,23 @@ use WooCommerce\PayPalCommerce\Session\SessionHandler;
 class Context {
 
 	protected SessionHandler $session_handler;
-	protected SubscriptionStatus $subscription_status;
 
+	/**
+	 * The PayPal Subscriptions status helper, or null when that module is not loaded.
+	 *
+	 * @var SubscriptionStatus|null
+	 */
+	protected ?SubscriptionStatus $subscription_status;
+
+	/**
+	 * Context constructor.
+	 *
+	 * @param SessionHandler          $session_handler     The session handler.
+	 * @param SubscriptionStatus|null $subscription_status The subscription status helper, null when PayPal Subscriptions is not loaded.
+	 */
 	public function __construct(
 		SessionHandler $session_handler,
-		SubscriptionStatus $subscription_status
+		?SubscriptionStatus $subscription_status = null
 	) {
 
 		$this->session_handler     = $session_handler;
@@ -272,6 +284,9 @@ class Context {
 
 		$subscription_status = '';
 		if ( $subscription_id ) {
+			if ( null === $this->subscription_status ) {
+				return false;
+			}
 			try {
 				$subscription_status = $this->subscription_status->get_status( $subscription_id );
 			} catch ( RuntimeException | PayPalApiException $exception ) {

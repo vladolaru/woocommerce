@@ -20,6 +20,9 @@ use WooCommerce\PayPalCommerce\Settings\Data\GeneralSettings;
 use WooCommerce\PayPalCommerce\Vendor\Psr\Container\ContainerInterface;
 
 return array(
+	'ppcp-local-apms.available'                  => static function (): bool {
+		return true;
+	},
 	'ppcp-local-apms.asset_getter'               => static function ( ContainerInterface $container ): AssetGetter {
 		$factory = $container->get( 'assets.asset_getter_factory' );
 		assert( $factory instanceof AssetGetterFactory );

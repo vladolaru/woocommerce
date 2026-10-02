@@ -21,6 +21,7 @@ use WooCommerce\PayPalCommerce\Assets\AssetGetter;
 use WooCommerce\PayPalCommerce\Assets\AssetGetterFactory;
 use WooCommerce\PayPalCommerce\Axo\Gateway\AxoGateway;
 use WooCommerce\PayPalCommerce\Googlepay\GooglePayGateway;
+use WooCommerce\PayPalCommerce\ModuleAvailability;
 use WooCommerce\PayPalCommerce\Button\Helper\MessagesApply;
 use WooCommerce\PayPalCommerce\Button\Helper\MessagesDisclaimers;
 use WooCommerce\PayPalCommerce\Button\Session\CartDataTransientStorage;
@@ -1430,11 +1431,13 @@ return array(
 	 * should not be directly accessed.
 	 */
 	'wcgateway.feature-eligibility.list'                   => static function ( ContainerInterface $container ): array {
+		$availability = $container->get( 'ppcp.module-availability' );
+		assert( $availability instanceof ModuleAvailability );
 		return array(
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => $container->get( 'save-payment-methods.eligibility.check' ),
-			FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS => $container->get( 'card-fields.eligibility.check' ),
-			FeaturesDefinition::FEATURE_GOOGLE_PAY     => $container->get( 'googlepay.eligibility.check' ),
-			FeaturesDefinition::FEATURE_APPLE_PAY      => $container->get( 'applepay.eligibility.check' ),
+			FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS => $availability->eligibility_check( 'card-fields' ),
+			FeaturesDefinition::FEATURE_GOOGLE_PAY     => $availability->eligibility_check( 'googlepay' ),
+			FeaturesDefinition::FEATURE_APPLE_PAY      => $availability->eligibility_check( 'applepay' ),
 			FeaturesDefinition::FEATURE_CONTACT_MODULE => $container->get( 'wcgateway.contact-module.eligibility.check' ),
 		);
 	},

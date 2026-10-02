@@ -24,6 +24,9 @@ use WooCommerce\PayPalCommerce\OrderTracking\Assets\OrderEditPageAssets;
 use WooCommerce\PayPalCommerce\OrderTracking\Endpoint\OrderTrackingEndpoint;
 
 return array(
+	'order-tracking.available'                        => static function (): bool {
+		return true;
+	},
 	'order-tracking.assets'                           => function ( ContainerInterface $container ): OrderEditPageAssets {
 		return new OrderEditPageAssets(
 			$container->get( 'order-tracking.asset_getter' ),

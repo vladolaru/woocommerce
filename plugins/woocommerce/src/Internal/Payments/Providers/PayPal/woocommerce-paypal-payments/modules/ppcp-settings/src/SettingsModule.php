@@ -16,6 +16,7 @@ use WooCommerce\PayPalCommerce\ApiClient\Helper\PartnerAttribution;
 use WooCommerce\PayPalCommerce\Applepay\ApplePayGateway;
 use WooCommerce\PayPalCommerce\Axo\Gateway\AxoGateway;
 use WooCommerce\PayPalCommerce\Googlepay\GooglePayGateway;
+use WooCommerce\PayPalCommerce\ModuleAvailability;
 use WooCommerce\PayPalCommerce\Settings\Data\OnboardingProfile;
 use WooCommerce\PayPalCommerce\Settings\Data\SettingsModel;
 use WooCommerce\PayPalCommerce\Settings\Data\TodosModel;
@@ -429,15 +430,20 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 				$card_button_gateway = $container->get( 'wcgateway.card-button-gateway' );
 				assert( $card_button_gateway instanceof CardButtonGateway );
 
-				$googlepay_gateway = $container->get( 'googlepay.wc-gateway' );
-				assert( $googlepay_gateway instanceof WC_Payment_Gateway );
-
-				$applepay_gateway = $container->get( 'applepay.wc-gateway' );
-				assert( $applepay_gateway instanceof WC_Payment_Gateway );
+				$availability = $container->get( 'ppcp.module-availability' );
+				assert( $availability instanceof ModuleAvailability );
 
 				$methods[] = $card_button_gateway;
-				$methods[] = $googlepay_gateway;
-				$methods[] = $applepay_gateway;
+				if ( $availability->is_loaded( 'googlepay' ) ) {
+					$googlepay_gateway = $container->get( 'googlepay.wc-gateway' );
+					assert( $googlepay_gateway instanceof WC_Payment_Gateway );
+					$methods[] = $googlepay_gateway;
+				}
+				if ( $availability->is_loaded( 'applepay' ) ) {
+					$applepay_gateway = $container->get( 'applepay.wc-gateway' );
+					assert( $applepay_gateway instanceof WC_Payment_Gateway );
+					$methods[] = $applepay_gateway;
+				}
 
 				if ( $container->has( 'axo.eligible' ) && $container->get( 'axo.eligible' ) ) {
 					$axo_gateway = $container->get( 'axo.gateway' );
@@ -616,7 +622,7 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 		add_action(
 			'woocommerce_paypal_payments_toggle_payment_gateways',
 			function ( PaymentSettings $payment_methods, ConfigurationFlagsDTO $flags ) use ( $container ) {
-				if ( $flags->is_business_seller && $flags->use_card_payments ) {
+				if ( $flags->is_business_seller && $flags->use_card_payments && $container->get( 'ppcp.module-availability' )->is_loaded( 'axo' ) ) {
 					$compatibility_checker = $container->get( 'axo.helpers.compatibility-checker' );
 					assert( $compatibility_checker instanceof CompatibilityChecker );
 
@@ -807,7 +813,7 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 				$payment_settings = $container->get( 'settings.data.payment' );
 				assert( $payment_settings instanceof PaymentSettings );
 
-				$local_apms      = $container->get( 'ppcp-local-apms.payment-methods' );
+				$local_apms      = $container->get( 'ppcp.module-availability' )->is_loaded( 'ppcp-local-apms' ) ? $container->get( 'ppcp-local-apms.payment-methods' ) : array();
 				$disable_funding = (array) ( $legacy_settings['disable_funding'] ?? array() );
 				$changed         = false;
 
@@ -888,18 +894,25 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 					return;
 				}
 
-				$applepay_product_status = $container->get( 'applepay.apple-product-status' );
-				$applepay_eligibility    = $container->get( 'applepay.eligibility.check' );
-				$apple_pay_available     = $applepay_product_status->is_active() && $applepay_eligibility();
-				if ( ! $apple_pay_available ) {
-					$payment_methods->toggle_method_state( ApplePayGateway::ID, false );
+				$availability = $container->get( 'ppcp.module-availability' );
+				assert( $availability instanceof ModuleAvailability );
+
+				if ( $availability->is_loaded( 'applepay' ) ) {
+					$applepay_product_status = $container->get( 'applepay.apple-product-status' );
+					$applepay_eligibility    = $container->get( 'applepay.eligibility.check' );
+					$apple_pay_available     = $applepay_product_status->is_active() && $applepay_eligibility();
+					if ( ! $apple_pay_available ) {
+						$payment_methods->toggle_method_state( ApplePayGateway::ID, false );
+					}
 				}
 
-				$googlepay_product_status = $container->get( 'googlepay.helpers.apm-product-status' );
-				$googlepay_eligibility    = $container->get( 'googlepay.eligibility.check' );
-				$google_pay_available     = $googlepay_product_status->is_active() && $googlepay_eligibility();
-				if ( ! $google_pay_available ) {
-					$payment_methods->toggle_method_state( GooglePayGateway::ID, false );
+				if ( $availability->is_loaded( 'googlepay' ) ) {
+					$googlepay_product_status = $container->get( 'googlepay.helpers.apm-product-status' );
+					$googlepay_eligibility    = $container->get( 'googlepay.eligibility.check' );
+					$google_pay_available     = $googlepay_product_status->is_active() && $googlepay_eligibility();
+					if ( ! $google_pay_available ) {
+						$payment_methods->toggle_method_state( GooglePayGateway::ID, false );
+					}
 				}
 			},
 			10,

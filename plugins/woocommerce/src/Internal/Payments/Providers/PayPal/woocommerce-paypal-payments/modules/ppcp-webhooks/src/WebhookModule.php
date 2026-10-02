@@ -68,6 +68,21 @@ class WebhookModule implements ServiceModule, FactoryModule, ExecutableModule {
 		add_action(
 			'woocommerce_paypal_payments_gateway_deactivate',
 			static function () use ( $container ) {
+				/**
+				 * Whether to keep the PayPal webhook subscription when the gateway is deactivated.
+				 *
+				 * A host that keeps serving PayPal from another copy of this
+				 * code (WooCommerce core providing the wallet) returns true so
+				 * the subscription survives the hand-over.
+				 *
+				 * @since 4.1.4
+				 *
+				 * @param bool $skip Default false: the subscription is deleted at PayPal.
+				 */
+				if ( apply_filters( 'woocommerce_paypal_payments_skip_webhook_unregister_on_deactivate', false ) ) {
+					return;
+				}
+
 				$registrar = $container->get( 'webhook.registrar' );
 				assert( $registrar instanceof WebhookRegistrar );
 				$registrar->unregister();

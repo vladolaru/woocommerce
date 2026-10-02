@@ -14,6 +14,9 @@ use WooCommerce\PayPalCommerce\CardFields\Service\CardCaptureValidator;
 use WooCommerce\PayPalCommerce\Vendor\Psr\Container\ContainerInterface;
 
 return array(
+	'card-fields.available'                            => static function (): bool {
+		return true;
+	},
 	'card-fields.eligibility.check'                    => static function ( ContainerInterface $container ): callable {
 		$save_payment_methods_applies = $container->get( 'card-fields.helpers.save-payment-methods-applies' );
 		assert( $save_payment_methods_applies instanceof CardFieldsApplies );

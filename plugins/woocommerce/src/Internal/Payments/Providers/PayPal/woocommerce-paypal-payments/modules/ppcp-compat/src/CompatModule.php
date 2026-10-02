@@ -13,6 +13,7 @@ use Exception;
 use WC_Order;
 use WC_Order_Item_Product;
 use WooCommerce\PayPalCommerce\Button\Session\CartData;
+use WooCommerce\PayPalCommerce\ModuleAvailability;
 use WooCommerce\PayPalCommerce\SdkV6\Helper\MerchantCountrySupport;
 use WooCommerce\PayPalCommerce\Settings\Data\PaymentSettings;
 use WooCommerce\PayPalCommerce\Settings\Data\SettingsProvider;
@@ -178,6 +179,12 @@ class CompatModule implements ServiceModule, ExecutableModule {
 	 * @return void
 	 */
 	protected function initialize_tracking_compat_layer( ContainerInterface $c ): void {
+		$availability = $c->get( 'ppcp.module-availability' );
+		assert( $availability instanceof ModuleAvailability );
+		if ( ! $availability->is_loaded( 'order-tracking' ) ) {
+			return;
+		}
+
 		$order_tracking_integrations = $c->get( 'order-tracking.integrations' );
 
 		foreach ( $order_tracking_integrations as $integration ) {

@@ -19,6 +19,7 @@ use WooCommerce\PayPalCommerce\AdminNotices\Repository\Repository;
 use WooCommerce\PayPalCommerce\ApiClient\Entity\Authorization;
 use WooCommerce\PayPalCommerce\ApiClient\Entity\Capture;
 use WooCommerce\PayPalCommerce\ApiClient\Helper\ReferenceTransactionStatus;
+use WooCommerce\PayPalCommerce\ModuleAvailability;
 use WooCommerce\PayPalCommerce\ApiClient\Helper\DccApplies;
 use WooCommerce\PayPalCommerce\LocalAlternativePaymentMethods\LocalApmProductStatus;
 use WooCommerce\PayPalCommerce\Settings\Data\Definition\FeaturesDefinition;
@@ -492,8 +493,14 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 
 				$dcc_applies = $c->get( 'api.helpers.dccapplies' );
 
-				$apms_product_status = $c->get( 'ppcp-local-apms.product-status' );
-				assert( $apms_product_status instanceof LocalApmProductStatus );
+				$availability = $c->get( 'ppcp.module-availability' );
+				assert( $availability instanceof ModuleAvailability );
+				$apms_enabled = false;
+				if ( $availability->is_loaded( 'ppcp-local-apms' ) ) {
+					$apms_product_status = $c->get( 'ppcp-local-apms.product-status' );
+					assert( $apms_product_status instanceof LocalApmProductStatus );
+					$apms_enabled = $apms_product_status->is_active();
+				}
 
 				$installments_product_status = $c->get( 'wcgateway.installments-product-status' );
 				assert( $installments_product_status instanceof InstallmentsProductStatus );
@@ -519,7 +526,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 				);
 
 				$features[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ] = array(
-					'enabled' => $apms_product_status->is_active(),
+					'enabled' => $apms_enabled,
 				);
 
 				// When local APMs are available, then PayLater messaging is also available.
