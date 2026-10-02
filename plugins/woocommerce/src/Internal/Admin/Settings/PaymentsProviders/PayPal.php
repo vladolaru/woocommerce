@@ -4,6 +4,7 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 
 use Automattic\WooCommerce\Internal\Logging\SafeGlobalFunctionProxy;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use WC_Payment_Gateway;
 
 defined( 'ABSPATH' ) || exit;
@@ -14,6 +15,52 @@ defined( 'ABSPATH' ) || exit;
  * This class handles all the custom logic for the PayPal payment gateway provider.
  */
 class PayPal extends PaymentGateway {
+
+	/**
+	 * Get the provider title, naming the row "PayPal Wallet" when core provides the gateway.
+	 *
+	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
+	 *
+	 * @return string
+	 */
+	public function get_title( WC_Payment_Gateway $payment_gateway ): string {
+		if ( $this->is_core_provided( $payment_gateway ) ) {
+			return esc_html__( 'PayPal Wallet', 'woocommerce' );
+		}
+
+		return parent::get_title( $payment_gateway );
+	}
+
+	/**
+	 * Get the plugin details, with no plugin file when core provides the gateway (so it cannot be deactivated).
+	 *
+	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
+	 *
+	 * @return array
+	 */
+	public function get_plugin_details( WC_Payment_Gateway $payment_gateway ): array {
+		$plugin_details = parent::get_plugin_details( $payment_gateway );
+		if ( $this->is_core_provided( $payment_gateway ) ) {
+			$plugin_details['file'] = '';
+		}
+
+		return $plugin_details;
+	}
+
+	/**
+	 * Whether this gateway is the extension's PayPal gateway served by the core-native wallet runtime.
+	 *
+	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
+	 *
+	 * @return bool
+	 */
+	private function is_core_provided( WC_Payment_Gateway $payment_gateway ): bool {
+		if ( 'ppcp-gateway' !== $payment_gateway->id ) {
+			return false;
+		}
+
+		return wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->should_native_register();
+	}
 
 	/**
 	 * Try to determine if the payment gateway is in test mode.
