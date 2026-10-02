@@ -11,6 +11,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMobileRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use WC_Helper_Order;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
@@ -1071,6 +1073,69 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( 'prod', $order->get_meta( '_wcpay_mode', true ) );
+	}
+
+	/**
+	 * A card-reader capture writes the client's authorized and capture notes and schedules the Fee details job; an
+	 * intent the reader already captured (Interac) writes the payment note and schedules it too
+	 * (class-wc-rest-payments-orders-controller.php:217, :228; class-wc-payments-order-service.php:1582, :1612-1628, :1659-1685).
+	 *
+	 * @dataProvider terminal_capture_paths
+	 *
+	 * @param string   $intent_status Status of the intent the app sends.
+	 * @param string[] $note_kinds    Notes the client writes, in order.
+	 */
+	public function test_capture_terminal_payment_writes_client_notes_and_schedules_fee_details_job( string $intent_status, array $note_kinds ): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$intent                                       = array(
+			'id'       => 'pi_terminal_notes',
+			'status'   => $intent_status,
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_notes' ) ) ),
+		);
+		$this->api_client->payment_intention_response = $intent;
+		$this->api_client->captured_intention_response = array_merge( $intent, array( 'status' => 'succeeded' ) );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_notes' );
+		$this->assertInstanceOf( WP_REST_Response::class, $this->sut->capture_terminal_payment( $request ) );
+
+		$order        = wc_get_order( $order->get_id() );
+		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$expected     = array(
+			'authorized' => $note_service->format_payment_authorized_note_candidates( $order, 'pi_terminal_notes', 'ch_terminal_notes' )[0],
+			'captured'   => $note_service->format_capture_success_note_candidates( $order, 'pi_terminal_notes', 'ch_terminal_notes' )[0],
+			// The client never sets `_wcpay_mode` on a terminal order before this note, so it reads as a live payment.
+			'paid'       => $note_service->format_payment_success_note_candidates( $order, 'pi_terminal_notes', 'ch_terminal_notes', '', '' )[0],
+		);
+		$contents     = array_reverse( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+		$written      = array_values( array_intersect( $contents, $expected ) );
+		$this->assertSame( array_map( static fn( string $kind ): string => $expected[ $kind ], $note_kinds ), $written );
+		$this->assertTrue(
+			as_has_scheduled_action(
+				WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				array(
+					'order_id'     => $order->get_id(),
+					'intent_id'    => 'pi_terminal_notes',
+					'is_test_mode' => false,
+				),
+				'woocommerce_payments'
+			)
+		);
+	}
+
+	/**
+	 * Terminal capture paths and the notes the client writes on each.
+	 *
+	 * @return array<string,array{string,string[]}>
+	 */
+	public function terminal_capture_paths(): array {
+		return array(
+			'card reader authorization, captured by the store' => array( 'requires_capture', array( 'authorized', 'captured' ) ),
+			'Interac, captured by the reader' => array( 'succeeded', array( 'paid' ) ),
+		);
 	}
 
 	/**

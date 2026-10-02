@@ -8,7 +8,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -514,8 +516,19 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				return new WP_Error( 'wcpay_payment_uncapturable', __( 'Payment cannot be captured for this order.', 'woocommerce' ), array( 'status' => 409 ) );
 			}
 
+			// The client attaches the in-person method and channel before any status change, so the order emails and core's POS email checks see them (class-wc-rest-payments-orders-controller.php:209-215).
+			$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+			$order->set_payment_method_title( __( 'WooCommerce In-Person Payments', 'woocommerce' ) );
+			$ipp_channel = $this->get_ipp_channel_from_intent( $intent );
+			if ( '' !== $ipp_channel ) {
+				$order->update_meta_data( '_wcpay_ipp_channel', $ipp_channel );
+			}
+			$order->save();
+
 			if ( 'succeeded' !== $status ) {
 				wc_admin_record_tracks_event( 'wcpay_merchant_captured_auth' );
+				// The client first records the authorization: on hold, with the authorized note (class-wc-rest-payments-orders-controller.php:217, class-wc-payments-order-service.php:1612-1628).
+				$this->apply_terminal_lifecycle_event( $order, $intent, $intent_id, PaymentLifecycleEvent::STATUS_AUTHORIZED );
 			}
 			try {
 				$result = 'succeeded' === $status
@@ -539,6 +552,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				return $this->get_terminal_capture_error( $result );
 			}
 
+			// The capture note, or the payment note for an intent the reader already captured (Interac), completes the payment as on the client (class-wc-payments-order-service.php:1582, :1659-1685); writing it schedules the Fee details job.
+			$this->apply_terminal_lifecycle_event( $order, $result, $intent_id, PaymentLifecycleEvent::STATUS_COMPLETED, 'succeeded' === $status );
 			$this->mark_terminal_payment_completed( $order, $result, $intent_id );
 
 			return new WP_REST_Response(
@@ -1020,6 +1035,47 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 */
 	private function get_intent_metadata( array $intent ): array {
 		return isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
+	}
+
+	/**
+	 * Record a terminal payment step through the payment lifecycle with the client's note for it.
+	 *
+	 * @param WC_Order            $order              Order.
+	 * @param array<string,mixed> $intent             Intent or capture response.
+	 * @param string              $intent_id          Intent ID.
+	 * @param string              $status             Lifecycle status, authorized or completed.
+	 * @param bool                $already_captured   Whether the reader captured the payment itself, so completion is a payment rather than a capture.
+	 */
+	private function apply_terminal_lifecycle_event( WC_Order $order, array $intent, string $intent_id, string $status, bool $already_captured = false ): void {
+		$charge                 = $this->get_latest_charge( $intent );
+		$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
+		$balance_transaction_id = WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null );
+
+		if ( PaymentLifecycleEvent::STATUS_AUTHORIZED === $status ) {
+			$note_type  = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED;
+			$candidates = $this->note_service->format_payment_authorized_note_candidates( $order, $intent_id, $charge_id );
+		} elseif ( $already_captured ) {
+			$note_type  = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;
+			$candidates = $this->note_service->format_payment_success_note_candidates( $order, $intent_id, $charge_id, $balance_transaction_id );
+		} else {
+			$note_type  = PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS;
+			$candidates = $this->note_service->format_capture_success_note_candidates( $order, $intent_id, $charge_id, $balance_transaction_id );
+		}
+
+		$this->get_lifecycle_service()->apply(
+			$order,
+			new PaymentLifecycleEvent( $status, $intent_id, array(), array(), $candidates[0], $note_type, $candidates ),
+			new WooPaymentsPersistenceProfile()
+		);
+	}
+
+	/**
+	 * Get the payment lifecycle service.
+	 *
+	 * @return OrderPaymentLifecycleService
+	 */
+	private function get_lifecycle_service(): OrderPaymentLifecycleService {
+		return wc_get_container()->get( OrderPaymentLifecycleService::class );
 	}
 
 	/**
