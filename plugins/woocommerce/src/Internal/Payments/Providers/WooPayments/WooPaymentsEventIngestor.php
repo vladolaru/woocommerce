@@ -370,8 +370,11 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
-		$this->maybe_add_completed_fee_breakdown_note( $order, $event_type, $event_object );
-		$this->maybe_apply_completed_payment_method_display_title( $order, $event_type, $event_object );
+		if ( 'payment_intent.succeeded' === $event_type ) {
+			$this->record_succeeded_payment_intent( $order, $event_object );
+			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
+			return;
+		}
 
 		$lifecycle_event = $this->build_lifecycle_event( $event_type, $event_object, $order );
 		if ( null === $lifecycle_event ) {
@@ -379,18 +382,39 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
-		$this->maybe_repair_recurring_order_token( $order, $event_type, $event_object );
 		$this->lifecycle_service->apply( $order, $lifecycle_event, new WooPaymentsPersistenceProfile() );
-		$this->maybe_send_ipp_receipt_email( $order, $event_type, $event_object );
 
-		// Captures and expiries change what the uncaptured-transactions badge counts;
-		// the plugin invalidates after the order effects land, and a failed apply
-		// re-runs the whole delivery anyway.
-		if ( in_array( $event_type, array( 'payment_intent.succeeded', 'charge.expired' ), true ) ) {
+		// Expiries change what the uncaptured-transactions badge counts; the plugin
+		// invalidates after the order effects land, and a failed apply re-runs the
+		// whole delivery anyway.
+		if ( 'charge.expired' === $event_type ) {
 			$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
 		}
 
 		$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
+	}
+
+	/**
+	 * Record a succeeded payment intent on its order: fee note, payment method title, payment meta, status and notes.
+	 *
+	 * The `payment_intent.succeeded` webhook uses it, and so does any provider code that learns of a succeeded intent another way.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order            $order          WooPayments order the intent belongs to.
+	 * @param array<string,mixed> $payment_intent Provider payment intent object.
+	 */
+	public function record_succeeded_payment_intent( WC_Order $order, array $payment_intent ): void {
+		$this->add_completed_fee_breakdown_note( $order, $payment_intent );
+		$this->apply_completed_payment_method_display_title( $order, $payment_intent );
+		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
+		$this->repair_recurring_order_token( $order, $payment_intent );
+		$this->lifecycle_service->apply( $order, $lifecycle_event, new WooPaymentsPersistenceProfile() );
+		$this->maybe_send_ipp_receipt_email( $order, $payment_intent );
+
+		// Captures change what the uncaptured-transactions badge counts; the plugin
+		// invalidates after the order effects land.
+		$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
 	}
 
 	/**
@@ -582,14 +606,9 @@ class WooPaymentsEventIngestor {
 	 * Add completed-payment fee details independently from the payment lifecycle note.
 	 *
 	 * @param WC_Order            $order        Order object.
-	 * @param string              $event_type   Event type.
 	 * @param array<string,mixed> $event_object Provider object.
 	 */
-	private function maybe_add_completed_fee_breakdown_note( WC_Order $order, string $event_type, array $event_object ): void {
-		if ( 'payment_intent.succeeded' !== $event_type ) {
-			return;
-		}
-
+	private function add_completed_fee_breakdown_note( WC_Order $order, array $event_object ): void {
 		$charge_id = $this->get_charge_id_from_intent( $event_object );
 		$this->get_order_data_service()->add_fee_breakdown_note(
 			$order,
@@ -602,14 +621,9 @@ class WooPaymentsEventIngestor {
 	 * Apply charge-derived display title data before WooCommerce writes completion notes.
 	 *
 	 * @param WC_Order            $order        Order object.
-	 * @param string              $event_type   Event type.
 	 * @param array<string,mixed> $event_object Provider object.
 	 */
-	private function maybe_apply_completed_payment_method_display_title( WC_Order $order, string $event_type, array $event_object ): void {
-		if ( 'payment_intent.succeeded' !== $event_type ) {
-			return;
-		}
-
+	private function apply_completed_payment_method_display_title( WC_Order $order, array $event_object ): void {
 		$this->get_order_effect_applier()->apply_payment_method_display_title(
 			$order,
 			$event_object,
@@ -631,6 +645,63 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
+	 * Build the neutral lifecycle event for a succeeded payment intent.
+	 *
+	 * @param array<string,mixed> $event_object Provider intent object.
+	 * @param WC_Order            $order        Order object.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function build_succeeded_lifecycle_event( array $event_object, WC_Order $order ): PaymentLifecycleEvent {
+		$charge         = $this->get_first_charge_from_intent( $event_object );
+		$completed_note = $this->get_completed_payment_note_data_from_intent( $event_object, $order );
+		$meta           = $this->without_empty_values(
+			array(
+				'_intent_id'             => $this->get_object_id( $event_object ),
+				'_charge_id'             => $this->get_charge_id_from_intent( $event_object ),
+				'_payment_method_id'     => $this->get_payment_method_id_from_intent( $event_object ),
+				'_intention_status'      => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
+				// Plugin 11.1.0 stores the webhook's raw, lowercase currency (class-wc-payments-webhook-processing-service.php:497,514).
+				'_wcpay_intent_currency' => isset( $event_object['currency'] ) ? (string) $event_object['currency'] : '',
+				'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $event_object ),
+				'_wcpay_mode'            => $this->get_account_service()->get_order_mode(),
+				'_wcpay_ipp_channel'     => $this->get_ipp_channel_from_intent( $event_object ),
+			)
+		);
+		if ( ! empty( $charge ) ) {
+			$settlement_meta = $this->get_order_data_service()->get_settlement_exchange_rate_order_meta(
+				$order,
+				$charge,
+				$this->get_account_service()->get_account_default_currency()
+			);
+			$meta            = array_merge(
+				$meta,
+				WooPaymentsOrderEffects::completed_charge_meta(
+					$event_object,
+					$charge,
+					$settlement_meta,
+					false,
+					$order->has_status( 'on-hold' )
+				),
+				WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
+					$charge,
+					$this->order_has_placeholder_payment_method_details( $order ),
+					(string) $order->get_meta( '_wcpay_payment_transaction_id', true )
+				)
+			);
+		}
+
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			$this->get_object_id( $event_object ),
+			$meta,
+			array(),
+			$completed_note['note'],
+			$completed_note['type'],
+			$completed_note['equivalents']
+		);
+	}
+
+	/**
 	 * Build a neutral lifecycle event for a supported WooPayments webhook type.
 	 *
 	 * @param string              $event_type Event type.
@@ -640,55 +711,6 @@ class WooPaymentsEventIngestor {
 	 */
 	private function build_lifecycle_event( string $event_type, array $event_object, WC_Order $order ): ?PaymentLifecycleEvent {
 		switch ( $event_type ) {
-			case 'payment_intent.succeeded':
-				$charge         = $this->get_first_charge_from_intent( $event_object );
-				$completed_note = $this->get_completed_payment_note_data_from_intent( $event_object, $order );
-				$meta           = $this->without_empty_values(
-					array(
-						'_intent_id'             => $this->get_object_id( $event_object ),
-						'_charge_id'             => $this->get_charge_id_from_intent( $event_object ),
-						'_payment_method_id'     => $this->get_payment_method_id_from_intent( $event_object ),
-						'_intention_status'      => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
-						// Plugin 11.1.0 stores the webhook's raw, lowercase currency (class-wc-payments-webhook-processing-service.php:497,514).
-						'_wcpay_intent_currency' => isset( $event_object['currency'] ) ? (string) $event_object['currency'] : '',
-						'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $event_object ),
-						'_wcpay_mode'            => $this->get_account_service()->get_order_mode(),
-						'_wcpay_ipp_channel'     => $this->get_ipp_channel_from_intent( $event_object ),
-					)
-				);
-				if ( ! empty( $charge ) ) {
-					$settlement_meta = $this->get_order_data_service()->get_settlement_exchange_rate_order_meta(
-						$order,
-						$charge,
-						$this->get_account_service()->get_account_default_currency()
-					);
-					$meta            = array_merge(
-						$meta,
-						WooPaymentsOrderEffects::completed_charge_meta(
-							$event_object,
-							$charge,
-							$settlement_meta,
-							false,
-							$order->has_status( 'on-hold' )
-						),
-						WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
-							$charge,
-							$this->order_has_placeholder_payment_method_details( $order ),
-							(string) $order->get_meta( '_wcpay_payment_transaction_id', true )
-						)
-					);
-				}
-
-				return new PaymentLifecycleEvent(
-					PaymentLifecycleEvent::STATUS_COMPLETED,
-					$this->get_object_id( $event_object ),
-					$meta,
-					array(),
-					$completed_note['note'],
-					$completed_note['type'],
-					$completed_note['equivalents']
-				);
-
 			case 'payment_intent.payment_failed':
 				if ( ! $this->should_process_payment_failed_event( $event_object, $order ) ) {
 					return null;
@@ -1087,15 +1109,10 @@ class WooPaymentsEventIngestor {
 	 * Send the IPP customer receipt email for card-present successful payments.
 	 *
 	 * @param WC_Order            $order        Order object.
-	 * @param string              $event_type   Event type.
 	 * @param array<string,mixed> $event_object PaymentIntent object.
 	 * @return void
 	 */
-	private function maybe_send_ipp_receipt_email( WC_Order $order, string $event_type, array $event_object ): void {
-		if ( 'payment_intent.succeeded' !== $event_type ) {
-			return;
-		}
-
+	private function maybe_send_ipp_receipt_email( WC_Order $order, array $event_object ): void {
 		$charge = $this->get_first_charge_from_intent( $event_object );
 		if ( ! $this->is_ipp_receipt_charge( $charge ) ) {
 			return;
@@ -1178,14 +1195,9 @@ class WooPaymentsEventIngestor {
 	 * event marks the order paid, the redelivery guard below would skip the repair.
 	 *
 	 * @param WC_Order            $order        Order the event resolved to.
-	 * @param string              $event_type   Event type.
 	 * @param array<string,mixed> $event_object Provider intent object.
 	 */
-	private function maybe_repair_recurring_order_token( WC_Order $order, string $event_type, array $event_object ): void {
-		if ( 'payment_intent.succeeded' !== $event_type ) {
-			return;
-		}
-
+	private function repair_recurring_order_token( WC_Order $order, array $event_object ): void {
 		$payment_method_id = $this->get_payment_method_id_from_intent( $event_object );
 		$intent_status     = isset( $event_object['status'] ) ? (string) $event_object['status'] : '';
 		if ( '' === $payment_method_id || ! WooPaymentsIntentCodec::is_authorized_native_intent_status( $intent_status ) ) {
