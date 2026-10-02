@@ -14,7 +14,10 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  *
  * Mirrors what the extension's main plugin file does on plugins_loaded (constants, autoloader,
  * bootstrap, PPCP::init, built-container action, version/migration hook), gated by the arbiter and
- * trimmed to the wallet through the extension's own feature flags and module filter. When the
+ * trimmed through the extension's own feature flags and module filter: card fields and store sync are
+ * forced off and the fraud protection, abilities, status report and uninstall modules are dropped.
+ * Apple Pay, Google Pay, Fastlane, local APM and order tracking modules stay loaded because kept
+ * modules read their services; WalletStubsModule makes them take their "not eligible" path. When the
  * extension owns the site nothing is required, so the two copies never load together.
  *
  * @since 11.3.0
@@ -29,21 +32,17 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 
 	/**
 	 * Feature flags (suffixes of woocommerce.feature-flags.woocommerce_paypal_payments.*) forced off.
+	 * Apple Pay, Google Pay and Fastlane flags are left alone; their modules load and turn themselves off through the stubbed eligibility checks.
 	 */
 	public const DISABLED_FEATURE_FLAGS = array(
-		'applepay_enabled',
-		'googlepay_enabled',
 		'card_fields_enabled',
-		'axo_enabled',
 		'store_sync_enabled',
 	);
 
 	/**
-	 * Module classes removed from the extension's module list.
+	 * Module classes removed from the extension's module list. No kept module reads their services.
 	 */
 	public const DROPPED_MODULE_CLASSES = array(
-		'WooCommerce\\PayPalCommerce\\OrderTracking\\OrderTrackingModule',
-		'WooCommerce\\PayPalCommerce\\LocalAlternativePaymentMethods\\LocalAlternativePaymentMethodsModule',
 		'WooCommerce\\PayPalCommerce\\FraudProtection\\FraudProtectionModule',
 		'WooCommerce\\PayPalCommerce\\Abilities\\AbilitiesModule',
 		'WooCommerce\\PayPalCommerce\\StatusReport\\StatusReportModule',

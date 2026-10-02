@@ -12,11 +12,12 @@ use WooCommerce\PayPalCommerce\Vendor\Inpsyde\Modularity\Module\ServiceModule;
 use WooCommerce\PayPalCommerce\Vendor\Psr\Container\ContainerInterface;
 
 /**
- * Null services for container IDs that the wallet path reads unguarded but whose owning modules
- * the POC does not load (Fastlane, card fields, Google Pay, Apple Pay).
+ * "Not eligible" services for the Fastlane, card fields, Google Pay, Apple Pay and local APM checks.
  *
- * Passed to the vendored bootstrap as an additional module, so it is added after the extension's own
- * modules; Modularity's container configurator lets the later registration win.
+ * The owning modules stay loaded because kept modules read their services, so these stubs override
+ * the real eligibility services and each module takes its own "not eligible" path. Passed to the
+ * vendored bootstrap as an additional module, so it is added after the extension's own modules;
+ * Modularity's container configurator lets the later registration win.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -35,9 +36,16 @@ class WalletStubsModule implements ServiceModule {
 	);
 
 	/**
+	 * The service IDs this module stubs, each resolving to the plain bool false.
+	 */
+	public const STUBBED_FLAG_IDS = array(
+		'ppcp-local-apms.eligibility.check',
+	);
+
+	/**
 	 * Services provided by this module.
 	 *
-	 * @return array<string, callable(ContainerInterface): callable>
+	 * @return array<string, callable(ContainerInterface): mixed>
 	 */
 	public function services(): array {
 		$not_eligible = static function (): callable {
@@ -49,6 +57,11 @@ class WalletStubsModule implements ServiceModule {
 		$services = array();
 		foreach ( self::STUBBED_SERVICE_IDS as $id ) {
 			$services[ $id ] = $not_eligible;
+		}
+		foreach ( self::STUBBED_FLAG_IDS as $id ) {
+			$services[ $id ] = static function (): bool {
+				return false;
+			};
 		}
 
 		return $services;

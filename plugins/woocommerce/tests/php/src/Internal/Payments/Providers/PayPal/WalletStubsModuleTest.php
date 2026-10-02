@@ -37,11 +37,23 @@ class WalletStubsModuleTest extends WC_Unit_Test_Case {
 	public function test_every_stubbed_service_is_a_false_callable(): void {
 		$services = $this->sut->services();
 
-		$this->assertSame( WalletStubsModule::STUBBED_SERVICE_IDS, array_keys( $services ), 'The registered IDs must match the published list' );
-		foreach ( $services as $id => $factory ) {
+		$this->assertSame( array_merge( WalletStubsModule::STUBBED_SERVICE_IDS, WalletStubsModule::STUBBED_FLAG_IDS ), array_keys( $services ), 'The registered IDs must match the published lists' );
+		foreach ( WalletStubsModule::STUBBED_SERVICE_IDS as $id ) {
+			$factory = $services[ $id ];
 			$service = $factory();
 			$this->assertIsCallable( $service, "$id must resolve to a callable" );
 			$this->assertFalse( $service(), "$id must report not eligible" );
+		}
+	}
+
+	/**
+	 * @testdox Should register every stubbed flag ID as the plain bool false.
+	 */
+	public function test_every_stubbed_flag_is_false(): void {
+		$services = $this->sut->services();
+
+		foreach ( WalletStubsModule::STUBBED_FLAG_IDS as $id ) {
+			$this->assertFalse( $services[ $id ](), "$id must be the bool false" );
 		}
 	}
 

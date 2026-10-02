@@ -53,7 +53,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $this->sut->is_booted() );
 		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_modules' ), 'No trimming filter must be added while dormant' );
-		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.applepay_enabled' ) );
+		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.card_fields_enabled' ) );
 	}
 
 	/**
@@ -93,6 +93,31 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $container->has( 'axo.eligibility.check' ), 'Stubbed services must be registered' );
 		$this->assertFalse( $container->get( 'axo.eligibility.check' )(), 'Stubbed eligibility must be false' );
 		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_modules', array( $this->sut, 'filter_modules' ) ), 'The module filter must be in place' );
-		$this->assertSame( 10, has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.applepay_enabled', '__return_false' ), 'Feature flags must be forced off' );
+		$this->assertSame( 10, has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.card_fields_enabled', '__return_false' ), 'Feature flags must be forced off' );
+		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.applepay_enabled' ), 'Wallet flags must be left alone' );
+		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_gateway_group_cards', '__return_empty_array' ), 'The card group must stay empty' );
+		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_gateway_group_apm', '__return_empty_array' ), 'The APM group must stay empty' );
+		$this->assertInstanceOf( \WooCommerce\PayPalCommerce\Settings\Service\FeaturesEligibilityService::class, $container->get( 'settings.service.features_eligibilities' ) );
+		$this->assertInstanceOf( \WooCommerce\PayPalCommerce\Settings\Service\PaymentMethodsEligibilityService::class, $container->get( 'settings.service.payment_methods_eligibilities' ) );
+
+		// What is offered: the card, wallet and local APM gateways are connection-gated by the extension and the test store is not connected, so only the main PayPal gateway is observable.
+		$offered_ids = array_map(
+			static function ( $gateway ): string {
+				return $gateway->id;
+			},
+			apply_filters( 'woocommerce_payment_gateways', array() ) // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		);
+		$this->assertContains( \WooCommerce\PayPalCommerce\WcGateway\Gateway\PayPalGateway::ID, $offered_ids, 'The PayPal gateway must be offered' );
+		$not_offered = array(
+			\WooCommerce\PayPalCommerce\Applepay\ApplePayGateway::ID,
+			\WooCommerce\PayPalCommerce\Googlepay\GooglePayGateway::ID,
+			\WooCommerce\PayPalCommerce\Axo\Gateway\AxoGateway::ID,
+			\WooCommerce\PayPalCommerce\WcGateway\Gateway\CreditCardGateway::ID,
+			\WooCommerce\PayPalCommerce\WcGateway\Gateway\CardButtonGateway::ID,
+			\WooCommerce\PayPalCommerce\LocalAlternativePaymentMethods\IDealGateway::ID,
+			\WooCommerce\PayPalCommerce\LocalAlternativePaymentMethods\BancontactGateway::ID,
+			\WooCommerce\PayPalCommerce\LocalAlternativePaymentMethods\PWCGateway::ID,
+		);
+		$this->assertSame( array(), array_values( array_intersect( $not_offered, $offered_ids ) ), 'No card, wallet or local APM gateway may be offered' );
 	}
 }
