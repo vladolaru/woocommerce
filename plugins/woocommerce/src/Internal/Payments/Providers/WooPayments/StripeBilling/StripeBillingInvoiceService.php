@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeB
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use WC_Order;
 use WP_Http;
@@ -46,7 +45,7 @@ class StripeBillingInvoiceService {
 	private StripeBillingApi $api;
 
 	/**
-	 * Platform API client, for the intent and charge reads.
+	 * Platform API client, for the charge read.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -256,23 +255,6 @@ class StripeBillingInvoiceService {
 	public function set_subscription_invoice_id( WC_Order $subscription, string $parent_invoice_id ): void {
 		$subscription->update_meta_data( self::ORDER_INVOICE_ID_KEY, $parent_invoice_id );
 		$subscription->save();
-	}
-
-	/**
-	 * Record the payment of an invoice's intent on its order, as any other succeeded payment intent is recorded.
-	 *
-	 * @param WC_Order $order     Order the invoice paid.
-	 * @param string   $intent_id Payment intent ID.
-	 */
-	public function get_and_attach_intent_info_to_order( WC_Order $order, string $intent_id ): void {
-		try {
-			$intent = $this->api_client->get_payment_intention( $intent_id );
-		} catch ( WooPaymentsApiException $exception ) {
-			$order->add_order_note( __( 'The payment info couldn\'t be added to the order.', 'woocommerce' ) );
-			return;
-		}
-
-		wc_get_container()->get( WooPaymentsEventIngestor::class )->record_succeeded_payment_intent( $order, $intent );
 	}
 
 	/**

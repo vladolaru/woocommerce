@@ -69,15 +69,14 @@ class WooPaymentsEventIngestor {
 	const KNOWN_UNHANDLED_EVENT_TYPES = array();
 
 	/**
-	 * Retired Stripe Billing invoice event types.
+	 * Stripe Billing invoice event types.
 	 *
-	 * These are Bucket D events: native WooPayments must not implement their legacy engine.
-	 * If one reaches native, cutover data-safety failed and the event must be alarmed instead
-	 * of silently falling through as an ordinary no-op.
+	 * The Stripe Billing module handles them when it is loaded. Otherwise one reaching native means the store should not have
+	 * switched, so the event is alarmed instead of falling through as an ordinary no-op.
 	 *
 	 * @var string[]
 	 */
-	private const RETIRED_STRIPE_BILLING_INVOICE_EVENT_TYPES = array(
+	private const STRIPE_BILLING_INVOICE_EVENT_TYPES = array(
 		'invoice.paid',
 		'invoice.payment_failed',
 		'invoice.upcoming',
@@ -323,9 +322,10 @@ class WooPaymentsEventIngestor {
 			throw new InvalidArgumentException( 'WooPayments webhook event is missing a type.' );
 		}
 
-		if ( $this->is_retired_stripe_billing_invoice_event( $event_type ) ) {
+		$is_stripe_billing_invoice_event = $this->is_stripe_billing_invoice_event( $event_type );
+		if ( $is_stripe_billing_invoice_event && ! $this->get_stripe_billing_module()->is_loaded() ) {
 			$this->run_delivery_hook( 'woocommerce_payments_before_webhook_delivery', $event_type, $event );
-			$this->log_retired_stripe_billing_invoice_event( $event_type, $event );
+			$this->log_stripe_billing_invoice_event_without_module( $event_type, $event );
 			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
@@ -335,6 +335,12 @@ class WooPaymentsEventIngestor {
 		}
 
 		$this->run_delivery_hook( 'woocommerce_payments_before_webhook_delivery', $event_type, $event );
+
+		if ( $is_stripe_billing_invoice_event ) {
+			$this->get_stripe_billing_module()->handle_invoice_event( $event );
+			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
+			return;
+		}
 
 		if ( $this->notification_event_handler->is_supported_event( $event_type ) ) {
 			$this->notification_event_handler->process( $event );
@@ -428,8 +434,7 @@ class WooPaymentsEventIngestor {
 			return true;
 		}
 
-		return in_array( $event_type, self::RETIRED_STRIPE_BILLING_INVOICE_EVENT_TYPES, true )
-			&& wc_get_container()->get( WooPaymentsStripeBillingModule::class )->is_loaded();
+		return $this->is_stripe_billing_invoice_event( $event_type ) && $this->get_stripe_billing_module()->is_loaded();
 	}
 
 	/**
@@ -1362,22 +1367,31 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Tell whether the event belongs to the retired Stripe Billing subscriptions engine.
+	 * Tell whether the event is a Stripe Billing invoice event.
 	 *
 	 * @param string $event_type Event type.
 	 * @return bool
 	 */
-	private function is_retired_stripe_billing_invoice_event( string $event_type ): bool {
-		return in_array( $event_type, self::RETIRED_STRIPE_BILLING_INVOICE_EVENT_TYPES, true );
+	private function is_stripe_billing_invoice_event( string $event_type ): bool {
+		return in_array( $event_type, self::STRIPE_BILLING_INVOICE_EVENT_TYPES, true );
 	}
 
 	/**
-	 * Log an alarm when retired Stripe Billing invoice traffic reaches native WooPayments.
+	 * Get the Stripe Billing module.
+	 *
+	 * @return WooPaymentsStripeBillingModule
+	 */
+	private function get_stripe_billing_module(): WooPaymentsStripeBillingModule {
+		return wc_get_container()->get( WooPaymentsStripeBillingModule::class );
+	}
+
+	/**
+	 * Log an alarm when a Stripe Billing invoice event reaches native WooPayments while the Stripe Billing module is not loaded.
 	 *
 	 * @param string              $event_type Event type.
 	 * @param array<string,mixed> $event      Event payload.
 	 */
-	private function log_retired_stripe_billing_invoice_event( string $event_type, array $event ): void {
+	private function log_stripe_billing_invoice_event_without_module( string $event_type, array $event ): void {
 		$logger = $this->legacy_runtime->get_logger();
 		if ( ! is_object( $logger ) || ! is_callable( array( $logger, 'error' ) ) ) {
 			return;

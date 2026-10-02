@@ -30,6 +30,11 @@ class StripeBillingException extends RuntimeException {
 	public const CANNOT_COMBINE_CURRENCIES = 'cannot_combine_currencies';
 
 	/**
+	 * An invoice event lacks a field, or names a subscription or renewal this store cannot find or create (client 11.1.0 `Invalid_Webhook_Data_Exception`).
+	 */
+	public const INVALID_EVENT_DATA = 'invalid_event_data';
+
+	/**
 	 * An invoice lacks an item of its WooCommerce subscription (client 11.1.0 `Rest_Request_Exception` in the invoice service).
 	 */
 	public const INVOICE_ITEMS_MISMATCH = 'invoice_items_mismatch';

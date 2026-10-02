@@ -47,6 +47,11 @@ final class WooCommerceSubscriptionsDoubles {
 	public const DUPLICATE_SITE = 'wcpay_test_duplicate_site';
 
 	/**
+	 * Global that makes `wcs_create_renewal_order()` fail with a `WP_Error` when true.
+	 */
+	public const RENEWAL_ORDER_ERROR = 'wcpay_test_renewal_order_error';
+
+	/**
 	 * Define the doubles that are not defined yet, and load registered subscriptions as `SubscriptionDouble` until the test ends.
 	 */
 	public static function load(): void {
@@ -82,7 +87,17 @@ final class WooCommerceSubscriptionsDoubles {
 
 		if ( ! class_exists( 'WCS_Staging' ) ) {
 			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its staging check, off unless a test turns it on.
-			eval( 'namespace { class WCS_Staging { public static function is_duplicate_site() { return ! empty( $GLOBALS["' . self::DUPLICATE_SITE . '"] ); } } }' );
+			eval( 'namespace { class WCS_Staging { public static function is_duplicate_site() { return ! empty( $GLOBALS["' . self::DUPLICATE_SITE . '"] ); } public static function get_site_url_from_source( $source = "current_wp_site" ) { return "subscriptions_install" === $source ? "https://live.rec-t63.test" : "https://staging.rec-t63.test"; } } }' );
+		}
+
+		if ( ! function_exists( 'wcs_get_subscriptions' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its subscription query.
+			eval( 'namespace { function wcs_get_subscriptions( $args ) { return \\' . self::class . '::get_subscriptions( $args ); } }' );
+		}
+
+		if ( ! function_exists( 'wcs_create_renewal_order' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its renewal order creation.
+			eval( 'namespace { function wcs_create_renewal_order( $subscription ) { return \\' . self::class . '::create_renewal_order( $subscription ); } }' );
 		}
 
 		// The test's hook snapshot removes this filter when the test ends.
@@ -140,6 +155,99 @@ final class WooCommerceSubscriptionsDoubles {
 			}
 			PHP
 		);
+	}
+
+	/**
+	 * Make paying a renewal order activate its subscriptions that are not active, as WooCommerce Subscriptions does.
+	 *
+	 * The test's hook snapshot removes the callback when the test ends.
+	 */
+	public static function activate_subscriptions_on_renewal_payment(): void {
+		add_action( 'woocommerce_order_status_changed', array( self::class, 'maybe_activate_renewal_subscriptions' ), 10, 3 );
+	}
+
+	/**
+	 * Activate the subscriptions of a renewal order that moved from unpaid to paid, noting it on each.
+	 *
+	 * @param mixed $order_id   Order ID.
+	 * @param mixed $old_status Previous status.
+	 * @param mixed $new_status New status.
+	 */
+	public static function maybe_activate_renewal_subscriptions( $order_id, $old_status, $new_status ): void {
+		if ( ! in_array( $old_status, array( 'pending', 'on-hold', 'failed' ), true ) || ! in_array( $new_status, wc_get_is_paid_statuses(), true ) ) {
+			return;
+		}
+
+		foreach ( $GLOBALS[ self::RENEWAL_SUBSCRIPTIONS ][ absint( $order_id ) ] ?? array() as $subscription_id ) {
+			$subscription = wc_get_order( $subscription_id );
+			if ( $subscription instanceof SubscriptionDouble && ! $subscription->has_status( 'active' ) ) {
+				$subscription->add_order_note( 'Payment status marked complete.' );
+				$subscription->update_status( 'active' );
+			}
+		}
+	}
+
+	/**
+	 * Find registered subscriptions whose meta matches every clause of `meta_query`, as `wcs_get_subscriptions()` does.
+	 *
+	 * @param array<string,mixed> $args Query arguments: `meta_query` and `subscriptions_per_page`.
+	 * @return array<int,SubscriptionDouble> Subscriptions by ID.
+	 */
+	public static function get_subscriptions( array $args ): array {
+		$subscriptions = array();
+		foreach ( $GLOBALS[ self::SUBSCRIPTION_IDS ] ?? array() as $subscription_id ) {
+			$subscription = wc_get_order( $subscription_id );
+			if ( ! $subscription instanceof SubscriptionDouble ) {
+				continue;
+			}
+
+			foreach ( $args['meta_query'] ?? array() as $clause ) {
+				if ( (string) $subscription->get_meta( $clause['key'], true ) !== (string) $clause['value'] ) {
+					continue 2;
+				}
+			}
+
+			$subscriptions[ $subscription->get_id() ] = $subscription;
+		}
+
+		$per_page = (int) ( $args['subscriptions_per_page'] ?? -1 );
+
+		return $per_page > 0 ? array_slice( $subscriptions, 0, $per_page, true ) : $subscriptions;
+	}
+
+	/**
+	 * Create a pending renewal order with the subscription's customer, billing address, currency, line items and total, as `wcs_create_renewal_order()` does.
+	 *
+	 * @param \WC_Order $subscription Subscription.
+	 * @return \WC_Order|\WP_Error
+	 */
+	public static function create_renewal_order( \WC_Order $subscription ) {
+		if ( ! empty( $GLOBALS[ self::RENEWAL_ORDER_ERROR ] ) ) {
+			return new \WP_Error( 'renewal_order_error', 'Renewal order could not be created.' );
+		}
+
+		$order = new \WC_Order();
+		$order->set_customer_id( $subscription->get_customer_id() );
+		$order->set_currency( $subscription->get_currency() );
+		$order->set_address( $subscription->get_address( 'billing' ), 'billing' );
+		foreach ( $subscription->get_items() as $item ) {
+			if ( $item instanceof \WC_Order_Item_Product ) {
+				$copy = new \WC_Order_Item_Product();
+				$copy->set_product_id( $item->get_product_id() );
+				$copy->set_quantity( $item->get_quantity() );
+				$copy->set_subtotal( $item->get_subtotal() );
+				$copy->set_total( $item->get_total() );
+				$order->add_item( $copy );
+			}
+		}
+		$order->set_total( $subscription->get_total() );
+		$order->update_meta_data( '_subscription_renewal', $subscription->get_id() );
+		$order->save();
+
+		$GLOBALS[ self::RENEWAL_SUBSCRIPTIONS ][ $order->get_id() ][]          = $subscription->get_id();
+		$GLOBALS[ self::ORDER_SUBSCRIPTIONS ][ $order->get_id() ]['renewal'][] = $subscription->get_id();
+
+		return $order;
 	}
 
 	/**

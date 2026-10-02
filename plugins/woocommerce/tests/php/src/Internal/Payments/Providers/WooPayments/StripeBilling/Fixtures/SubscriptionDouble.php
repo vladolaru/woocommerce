@@ -35,6 +35,15 @@ class SubscriptionDouble extends \WC_Order {
 	}
 
 	/**
+	 * Accept the subscription statuses an order does not have.
+	 *
+	 * @return string[]
+	 */
+	protected function get_valid_statuses() {
+		return array_merge( parent::get_valid_statuses(), array( 'wc-active', 'wc-pending-cancel', 'wc-expired' ) );
+	}
+
+	/**
 	 * Get the billing period: `day`, `week`, `month` or `year`.
 	 *
 	 * @return string
@@ -70,6 +79,36 @@ class SubscriptionDouble extends \WC_Order {
 		$date = (string) $this->get_meta( '_schedule_' . $date_type, true );
 
 		return '' === $date ? 0 : ( new \DateTime( $date, new \DateTimeZone( 'UTC' ) ) )->getTimestamp();
+	}
+
+	/**
+	 * Update the status, firing the subscription status hooks WooCommerce Subscriptions fires on a change.
+	 *
+	 * @param string $new_status New status.
+	 * @param string $note       Note added with the change.
+	 * @param bool   $manual     Whether the change was made by a user.
+	 * @return bool
+	 */
+	public function update_status( $new_status, $note = '', $manual = false ) {
+		$old_status = $this->get_status();
+		$result     = parent::update_status( $new_status, $note, $manual );
+		$new_status = $this->get_status();
+
+		if ( $old_status !== $new_status ) {
+			do_action( 'woocommerce_subscription_status_' . $new_status, $this );
+			do_action( 'woocommerce_subscription_status_' . $old_status . '_to_' . $new_status, $this );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Record a failed renewal payment: the subscription moves to the given status, on hold unless told otherwise.
+	 *
+	 * @param string $new_status Status after the failure.
+	 */
+	public function payment_failed( string $new_status = 'on-hold' ): void {
+		$this->update_status( $new_status );
 	}
 
 	/**

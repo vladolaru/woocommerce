@@ -14,7 +14,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -34,12 +33,6 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 
 	private const BILLING_FIXTURE = __DIR__ . '/../Fixtures/rec-t63-billing-api.json';
 	private const EVENTS_FIXTURE  = __DIR__ . '/../Fixtures/rec-t63-invoice-events.json';
-
-	/**
-	 * A succeeded card intent recorded from `GET intentions/{id}` on the local platform.
-	 */
-	private const INTENT_FIXTURE     = __DIR__ . '/../Fixtures/rec-t3-3ds-manual.json';
-	private const RECORDED_INTENT_ID = 'pi_3UJjK4BzWlxcwgpP0xWpBE77';
 
 	/**
 	 * Blog and account the recordings were made on.
@@ -93,13 +86,6 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	private $gateway;
 
 	/**
-	 * Ingestor stand-in that records succeeded intents.
-	 *
-	 * @var WooPaymentsEventIngestor&MockObject
-	 */
-	private $ingestor;
-
-	/**
 	 * Set up the service over a fake transport, connected to the recorded account in test mode.
 	 */
 	public function setUp(): void {
@@ -135,9 +121,6 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'update_failing_payment_method' ) )
 			->getMock();
 		wc_get_container()->replace( NativeWooPaymentsGateway::class, $this->gateway );
-
-		$this->ingestor = $this->createMock( WooPaymentsEventIngestor::class );
-		wc_get_container()->replace( WooPaymentsEventIngestor::class, $this->ingestor );
 
 		$this->sut = new StripeBillingInvoiceService();
 		$this->sut->init( $api, $api_client, $module, $logger );
@@ -540,44 +523,6 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$this->sut->update_transaction_details( $this->get_event_object( 'invoice_paid_renewal' ), \WC_Helper_Order::create_order() );
 
 		$this->assertSame( 1, $this->http_client->request_count, 'Only the charge is read.' );
-	}
-
-	/**
-	 * @testdox The invoice's payment intent is fetched and recorded on the order as any succeeded payment intent (client test_get_and_attach_intent_info_to_order).
-	 */
-	public function test_records_the_fetched_intent_on_the_order(): void {
-		$entry = $this->get_entry( self::INTENT_FIXTURE, 'classic_checkout_challenge_completed' );
-		$this->queue_entry( $entry );
-		$order = \WC_Helper_Order::create_order();
-		$this->ingestor->expects( $this->once() )
-			->method( 'record_succeeded_payment_intent' )
-			->with( $this->identicalTo( $order ), $entry['response']['body'] );
-
-		$this->sut->get_and_attach_intent_info_to_order( $order, self::RECORDED_INTENT_ID );
-
-		$this->assertSame( array( array( 'GET', '/sites/4/wcpay/intentions/' . self::RECORDED_INTENT_ID . '?test_mode=1', null ) ), $this->get_requests() );
-		$this->assertNotContains( "The payment info couldn't be added to the order.", $this->get_order_note_texts( $order ) );
-	}
-
-	/**
-	 * @testdox When the intent cannot be fetched, the order gets a note and nothing is recorded (client test_get_and_attach_intent_info_to_order_with_exception).
-	 */
-	public function test_notes_the_order_when_the_intent_cannot_be_fetched(): void {
-		$this->http_client->responses[] = $this->make_response(
-			403,
-			array(
-				'code'    => 'wcpay_forbidden',
-				'message' => 'Forbidden',
-				'data'    => array( 'status' => 403 ),
-			)
-		);
-
-		$order = \WC_Helper_Order::create_order();
-		$this->ingestor->expects( $this->never() )->method( 'record_succeeded_payment_intent' );
-
-		$this->sut->get_and_attach_intent_info_to_order( $order, self::RECORDED_INTENT_ID );
-
-		$this->assertContains( "The payment info couldn't be added to the order.", $this->get_order_note_texts( $order ) );
 	}
 
 	/**

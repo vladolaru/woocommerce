@@ -111,6 +111,13 @@ class StripeBillingSubscriptionService {
 	private bool $is_creating_subscription_from_update_payment_method = false;
 
 	/**
+	 * Whether subscription status changes are kept from reaching Stripe, while a callback passed to `run_without_stripe_sync()` runs.
+	 *
+	 * @var bool
+	 */
+	private bool $is_stripe_sync_paused = false;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -194,6 +201,71 @@ class StripeBillingSubscriptionService {
 	 */
 	public function get_wcpay_subscription_id( WC_Order $subscription ): string {
 		return (string) $subscription->get_meta( self::SUBSCRIPTION_ID_META_KEY, true );
+	}
+
+	/**
+	 * Get the subscription linked to a Stripe subscription.
+	 *
+	 * @param string $wcpay_subscription_id Stripe subscription ID.
+	 * @return WC_Order|null The subscription, or null when no subscription is linked to it.
+	 */
+	public function get_subscription_from_wcpay_subscription_id( string $wcpay_subscription_id ): ?WC_Order {
+		if ( ! function_exists( 'wcs_get_subscriptions' ) ) {
+			return null;
+		}
+
+		$subscriptions = wcs_get_subscriptions(
+			array(
+				'subscriptions_per_page' => 1,
+				'meta_query'             => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+					array(
+						'key'   => self::SUBSCRIPTION_ID_META_KEY,
+						'value' => $wcpay_subscription_id,
+					),
+				),
+			)
+		);
+		$subscription  = is_array( $subscriptions ) ? reset( $subscriptions ) : false;
+
+		return $subscription instanceof WC_Order ? $subscription : null;
+	}
+
+	/**
+	 * Get the Stripe subscription of a subscription.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @return array<string,mixed>|null The Stripe subscription, or null when it has none or the platform cannot be read.
+	 */
+	public function get_wcpay_subscription( WC_Order $subscription ): ?array {
+		$wcpay_subscription_id = $this->get_wcpay_subscription_id( $subscription );
+		if ( ! $wcpay_subscription_id ) {
+			return null;
+		}
+
+		try {
+			return $this->api->get_subscription( $wcpay_subscription_id );
+		} catch ( WooPaymentsApiException $exception ) {
+			return null;
+		}
+	}
+
+	/**
+	 * Run a callback while subscription status changes are kept from reaching Stripe.
+	 *
+	 * Putting a subscription on hold then does not pause its Stripe subscription, and making it active again does not resume it.
+	 * An invoice event uses it to record a renewal that Stripe already billed.
+	 *
+	 * @param callable $callback Callback.
+	 */
+	public function run_without_stripe_sync( callable $callback ): void {
+		$was_paused                  = $this->is_stripe_sync_paused;
+		$this->is_stripe_sync_paused = true;
+
+		try {
+			$callback();
+		} finally {
+			$this->is_stripe_sync_paused = $was_paused;
+		}
 	}
 
 	/**
@@ -384,7 +456,7 @@ class StripeBillingSubscriptionService {
 	 */
 	public function handle_subscription_status_on_hold( $subscription ): void {
 		// With WooCommerce Subscriptions, this also runs for subscriptions renewed with saved tokens.
-		if ( ! $subscription instanceof WC_Order || ! $this->is_wcpay_subscription( $subscription ) ) {
+		if ( $this->is_stripe_sync_paused || ! $subscription instanceof WC_Order || ! $this->is_wcpay_subscription( $subscription ) ) {
 			return;
 		}
 
@@ -430,7 +502,7 @@ class StripeBillingSubscriptionService {
 	 * @param mixed $subscription Subscription.
 	 */
 	public function reactivate_subscription( $subscription ): void {
-		if ( ! $subscription instanceof WC_Order ) {
+		if ( $this->is_stripe_sync_paused || ! $subscription instanceof WC_Order ) {
 			return;
 		}
 

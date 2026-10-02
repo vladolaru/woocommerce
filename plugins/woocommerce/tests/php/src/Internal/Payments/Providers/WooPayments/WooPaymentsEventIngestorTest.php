@@ -3065,9 +3065,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Retired Stripe Billing invoice events are alarmed instead of falling through silently.
+	 * @testdox Invoice events are alarmed while the Stripe Billing module is not loaded, instead of falling through silently.
 	 */
-	public function test_retired_stripe_billing_invoice_event_logs_alarm(): void {
+	public function test_invoice_event_without_the_stripe_billing_module_logs_alarm(): void {
 		$logger = new class() {
 			/**
 			 * Logged entries.
@@ -3226,6 +3226,62 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			$this->assertTrue( $retried( $type ), "$type is retried while Stripe Billing is loaded." );
 		}
 		$this->assertFalse( $retried( 'charge.refunded' ) );
+	}
+
+	/**
+	 * @testdox While the Stripe Billing module is loaded, invoice events go to it after the mode check, between the delivery hooks.
+	 */
+	public function test_invoice_events_go_to_the_stripe_billing_module_after_the_mode_check(): void {
+		$calls  = array();
+		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_loaded', 'handle_invoice_event' ) )
+			->getMock();
+		$module->method( 'is_loaded' )->willReturn( true );
+		$module->method( 'handle_invoice_event' )->willReturnCallback(
+			static function ( array $event ) use ( &$calls ): void {
+				$calls[] = 'module ' . $event['id'];
+			}
+		);
+		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		foreach ( array( 'before', 'after' ) as $moment ) {
+			add_action(
+				"woocommerce_payments_{$moment}_webhook_delivery",
+				static function ( string $event_type, array $event ) use ( &$calls, $moment ): void {
+					$calls[] = "$moment {$event['id']}";
+				},
+				10,
+				2
+			);
+		}
+
+		foreach ( array( 'invoice.paid', 'invoice.payment_failed', 'invoice.upcoming', 'invoice.paid' ) as $index => $event_type ) {
+			$this->sut->process(
+				array(
+					'id'       => "evt_rec63_invoice_$index",
+					'type'     => $event_type,
+					'livemode' => 3 === $index,
+					'data'     => array( 'object' => array( 'id' => 'in_rec63_invoice' ) ),
+				)
+			);
+		}
+
+		$this->assertSame(
+			array(
+				'before evt_rec63_invoice_0',
+				'module evt_rec63_invoice_0',
+				'after evt_rec63_invoice_0',
+				'before evt_rec63_invoice_1',
+				'module evt_rec63_invoice_1',
+				'after evt_rec63_invoice_1',
+				'before evt_rec63_invoice_2',
+				'module evt_rec63_invoice_2',
+				'after evt_rec63_invoice_2',
+			),
+			$calls,
+			'A live event reaching a test-mode store is dropped by the mode check, as any event.'
+		);
 	}
 
 	/**

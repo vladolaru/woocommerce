@@ -536,6 +536,36 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Status changes made while running without Stripe sync stay local, and reach Stripe again afterwards, even when the callback fails.
+	 *
+	 * Client 11.1.0 removes the on-hold and reactivation hooks around a renewal recorded from an invoice event (`class-wc-payments-subscriptions-event-handler.php:165-175`).
+	 */
+	public function test_status_changes_reach_stripe_again_after_running_without_sync(): void {
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+
+		try {
+			$this->sut->run_without_stripe_sync(
+				function () use ( $subscription ): void {
+					$this->sut->handle_subscription_status_on_hold( $subscription );
+					$this->sut->reactivate_subscription( $subscription );
+					throw new \RuntimeException( 'Recording the renewal failed.' );
+				}
+			);
+			$this->fail( 'The callback failure must be passed on.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'Recording the renewal failed.', $exception->getMessage() );
+		}
+
+		$this->assertSame( 0, $this->http_client->request_count );
+		$this->assertNotContains( 'Suspended WooPayments Subscription because subscription status changed to on-hold.', $this->get_order_note_texts( $subscription ) );
+
+		$this->queue_entry( $this->get_entry( 'update_subscription' ) );
+		$this->sut->handle_subscription_status_on_hold( $subscription );
+
+		$this->assertSame( 1, $this->http_client->request_count, 'Putting it on hold later pauses it at Stripe again.' );
+	}
+
+	/**
 	 * @testdox Status changes send nothing for a subscription without a Stripe subscription, and on-hold sends nothing for one moved to another gateway (client `class-wc-payments-subscription-service.php:521-523`, `:543-545`, `:1010-1012`).
 	 * @testWith ["cancel_subscription", "woocommerce_payments", ""]
 	 *           ["handle_subscription_status_on_hold", "woocommerce_payments", ""]

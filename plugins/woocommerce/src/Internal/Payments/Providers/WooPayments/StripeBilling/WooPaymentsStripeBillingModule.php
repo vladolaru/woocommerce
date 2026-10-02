@@ -135,6 +135,17 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Handle one Stripe Billing invoice event: `invoice.upcoming`, `invoice.paid` or `invoice.payment_failed`.
+	 *
+	 * @param array<string,mixed> $event Event payload.
+	 * @throws \InvalidArgumentException When the event has missing data or names no subscription of this store; it is not retried.
+	 * @throws \Throwable When processing fails for another reason, so the event is retried.
+	 */
+	public function handle_invoice_event( array $event ): void {
+		wc_get_container()->get( StripeBillingEventHandler::class )->handle_event( $event );
+	}
+
+	/**
 	 * Attach the hooks that serve existing Stripe Billing data whatever the toggle.
 	 */
 	private function attach_maintenance_hooks(): void {

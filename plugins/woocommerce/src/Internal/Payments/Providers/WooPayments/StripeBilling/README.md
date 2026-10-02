@@ -22,7 +22,7 @@ Code outside this folder names only `WooPaymentsStripeBillingModule`, and only i
 | S1 | `WooPaymentsProvider.php` | registers the module root in the bootstrap matrix |
 | S2 | `NativeWooPaymentsGateway.php` | adjusts the gateway's subscription supports to the toggle |
 | S3 | `NativeWooPaymentsGateway.php` | skips native renewal charges for Stripe-billed subscriptions |
-| S4 | `WooPaymentsEventIngestor.php` | hands `invoice.*` webhook events to the module |
+| S4 | `WooPaymentsEventIngestor.php` | hands `invoice.upcoming`, `invoice.paid` and `invoice.payment_failed` to the module after the mode check; alarms when the module is not loaded |
 | S5 | `NativeWooPaymentsGateway.php` | fires `woocommerce_payments_changed_subscription_payment_method` after a payment method change |
 | S6 | `WooPaymentsOperationalQueueService.php` | reports whether Stripe Billing is enabled |
 | S7 | `WooPaymentsSettingsService.php`, `WooPaymentsMerchantRestController.php` | the Stripe Billing settings fields and the toggle write |
