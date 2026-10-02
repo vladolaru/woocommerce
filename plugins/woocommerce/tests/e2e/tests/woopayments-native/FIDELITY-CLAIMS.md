@@ -740,6 +740,33 @@ Platform environment incident, not a finding: at 14:15Z the WooPay blog's own Wo
 
 W3's O10 evidence: the parent payment method carries the merchant account's suffix (the platform cloned the WooPay method onto the merchant), the saved token holds that clone, and the renewal charged it.
 
+## `stripe-billing-subscriptions`
+
+Added by Task 6.3 step 16 (owner decision 2026-10-01, inbox N-287 and N-288; spec section 10). This family has no rows in `fidelity-partition.tsv` and is not in the programme partition above: client 11.1.0 has no browser test of Stripe Billing, so no client contract row discharges here. The oracle is the client's mechanics and the platform's own Stripe Billing flow on local WPCOM.
+
+### Claim
+
+With Stripe Billing on, a shopper who buys a WooCommerce Subscriptions product with a card gets one paid parent order and one active subscription billed by a Stripe subscription tagged `subscription_source = woo_subscriptions`, whose first invoice the store marks paid out of band. When Stripe bills the next period, the `invoice.paid` webhook reaches the store and becomes exactly one paid renewal order linked by the invoice id, and the subscription's next payment date follows the Stripe period end.
+
+### Falsified by
+
+A purchase that leaves no Stripe subscription id on the subscription, a Stripe subscription on another customer, without the `woo_subscriptions` source, or whose first invoice is unpaid or charged a second time; a renewal that creates no order, more than one order, an order not linked to the paid invoice, an order not settled for `1947 usd` on the card, or a next payment date that differs from the Stripe period end.
+
+### Fixed run contract
+
+| Contract item | Fixed value |
+| --- | --- |
+| Intended selector | The D16 provider command (docblock of `tests/e2e/utils/woopayments.ts`) on `shopper/provider-fidelity-stripe-billing.spec.ts`, `--grep "@fidelity:stripe-billing-subscriptions"`: two cases, `SB1` and `SB2`, run in order (serial). Local only: the store connected to the local WPCOM in test mode, WooCommerce Subscriptions active, `wpcom-local transact listen` running so invoice webhooks reach the store, and the local WPCOM env's Stripe test key in `~/.wpcom-local/secrets/transact.json` (`stripe_test_secret_key`; `WOOPAYMENTS_STRIPE_TEST_SECRETS_FILE` overrides the path). Without the key the family skips. GitHub CI cannot run it; the Phase 7 canary covers production. |
+| Test clock | `tests/e2e/utils/stripe-test-clock.ts` reads the key at run time, refuses any key that is not a Stripe test key, binds to the store's own connected account after `requireTestModeAccount`, and never writes the key anywhere. `beforeAll` creates one clock frozen at the run's start and one clock-bound Stripe customer, and gives the run's WooCommerce customer `_wcpay_customer_id_test` = that customer, so the store reuses it and the Stripe subscription lands on the clock. |
+| Store setup | `beforeAll` reads `is_stripe_billing_enabled` from `/wc/v3/payments/settings` and turns it on; `afterAll` turns it back off when it was off. One run-owned customer and one run-owned USD 19.47 monthly subscription product. |
+| `SB1` required outcome | Classic checkout with test card `4242`: one parent order settled by `expectSettledCardPayment` for `1947 usd`; exactly one subscription, active, parent = that order, gateway `woocommerce_payments`, `_wcpay_subscription_id` a `sub_` id. On Stripe: that subscription is active, bills the clock-bound customer, has metadata `subscription_source = woo_subscriptions`, and its latest invoice is paid, `paid_out_of_band`, for `1947`; the subscription's `_wcpay_billing_invoice_id` names that invoice (client keeps the parent invoice on the subscription, `class-wc-payments-invoice-service.php:277`). |
+| `SB2` required outcome | The clock advances three hours past the period end. On Stripe: the subscription's latest invoice is a paid `subscription_cycle` invoice for `1947`. In the store, within 180 s: exactly one renewal order, paid, with `_wcpay_billing_invoice_id` = that invoice (client `class-wc-payments-subscriptions-event-handler.php:141-156`) and settled by `expectSettledCardPayment` for `1947 usd`; the subscription active with `next_payment_date_gmt` equal to the new Stripe period end. |
+| Cleanup | The subscription is cancelled through the REST API (native cancels the Stripe subscription), the clock is deleted (Stripe deletes its customer and subscriptions), the toggle is restored, and the run-owned product and customer are deleted. |
+
+### Status (2026-10-02): established on `:8889` against wpcom-local on WPCOM trunk
+
+`SB1` and `SB2` passed on `:8889` (WooCommerce Subscriptions 9.0.1, test account suffix `pP`) at 23:22-23:23 local, 2 passed in 1.6 min, with the Transact listener running. Each case was mutation-checked against production code. Without `set_subscription_invoice_id()` in `StripeBillingSubscriptionService`, `SB1` fails: the first invoice is never paid out of band and the Stripe subscription stays `incomplete`. Without `set_order_invoice_id()` in `StripeBillingEventHandler`, `SB2` fails: the renewal order carries the parent invoice id that WooCommerce Subscriptions copies from the subscription. The first run failed only because the customers REST route drops protected meta (`_wcpay_customer_id_test`); the case now sets it through the same user option the store reads (`utils/cli.ts` `wpEvalJson`). Evidence for the wider Stripe Billing behaviour (failed renewal, payment-method change, cancellation, migration, cutover, both stores side by side) is in the session ledger, V584-V597.
+
 ## Excluded: `3ds-authentication`
 
 Exactly 12 rows are enumerated with treatment `excluded`. The corrected rationale is narrower than the decision's recorded premise: Core has substantial mocked/lower-layer customer-action proof in classic JS, Blocks JS, gateway, codec, processing, adapter, AJAX-controller, and error-message tests. What it does not have is a native provider/browser journey that invokes and proves a real challenge. A thin provider check therefore has no assembled authentication journey to join and cannot discharge these rows.
