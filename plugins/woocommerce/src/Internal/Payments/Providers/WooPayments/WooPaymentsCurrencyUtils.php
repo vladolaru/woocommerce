@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
+
 /**
  * WooPayments currency helpers for provider-boundary amount handling.
  *
@@ -88,6 +90,83 @@ final class WooPaymentsCurrencyUtils {
 		$minor_unit = self::get_stripe_minor_unit_for_currency( $currency );
 
 		return (int) round( $amount * ( 10 ** $minor_unit ) );
+	}
+
+	/**
+	 * Format an amount with the currency's localized format, as client 11.1.0 `WC_Payments_Utils::format_currency()` does.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param float  $amount   Decimal amount.
+	 * @param string $currency Currency code.
+	 * @return string
+	 */
+	public static function format_currency( float $amount, string $currency ): string {
+		return html_entity_decode( wp_strip_all_tags( wc_price( $amount, self::get_currency_format_for_wc_price( $currency ) ) ), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 );
+	}
+
+	/**
+	 * Format an amount with the currency code on the right, as client 11.1.0 `WC_Payments_Utils::format_explicit_currency()` does.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param float               $amount          Decimal amount.
+	 * @param string              $currency        Currency code.
+	 * @param bool                $skip_symbol     Whether to drop the currency symbol.
+	 * @param array<string,mixed> $currency_format Format arguments for `wc_price()` that override the currency's own.
+	 * @return string
+	 */
+	public static function format_explicit_currency( float $amount, string $currency, bool $skip_symbol = false, array $currency_format = array() ): string {
+		$currency         = strtoupper( $currency );
+		$formatted_amount = html_entity_decode( wp_strip_all_tags( wc_price( $amount, wp_parse_args( $currency_format, self::get_currency_format_for_wc_price( $currency ) ) ) ), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 );
+
+		if ( $skip_symbol ) {
+			$formatted_amount = (string) preg_replace( '/[^0-9,\.]+/', '', $formatted_amount );
+		}
+
+		if ( false === strpos( $formatted_amount, $currency ) ) {
+			return $formatted_amount . ' ' . $currency;
+		}
+
+		return $formatted_amount;
+	}
+
+	/**
+	 * Get the `wc_price()` arguments for a currency's localized format, as client 11.1.0 `WC_Payments_Utils::get_currency_format_for_wc_price()` does.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $currency Currency code.
+	 * @return array<string,mixed>
+	 */
+	public static function get_currency_format_for_wc_price( string $currency ): array {
+		$currency      = strtoupper( $currency );
+		$price_formats = array(
+			'right'       => '%2$s%1$s',
+			'left_space'  => '%1$s %2$s',
+			'right_space' => '%2$s %1$s',
+		);
+
+		$args = array();
+		foreach ( wc_get_container()->get( MultiCurrencyLocalizationService::class )->get_currency_format( $currency ) as $key => $format ) {
+			switch ( $key ) {
+				case 'thousand_sep':
+					$args['thousand_separator'] = $format;
+					break;
+				case 'decimal_sep':
+					$args['decimal_separator'] = $format;
+					break;
+				case 'num_decimals':
+					$args['decimals'] = $format;
+					break;
+				case 'currency_pos':
+					$args['price_format'] = $price_formats[ $format ] ?? '%1$s%2$s';
+					break;
+			}
+		}
+		$args['currency'] = $currency;
+
+		return $args;
 	}
 
 	/**

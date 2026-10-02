@@ -136,7 +136,7 @@ class WooPaymentsOrderDataService {
 			return '';
 		}
 
-		return $this->get_fee_breakdown_note_from_charge_like_data( $event );
+		return $this->get_fee_details_note_title() . ( new WooPaymentsCapturedEventNote( $event ) )->generate_html_note();
 	}
 
 	/**

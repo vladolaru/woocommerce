@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\ClientRenderedCapturedEvents;
 use Exception;
 use InvalidArgumentException;
 use RuntimeException;
@@ -1011,6 +1012,13 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			public array $requested_timelines = array();
 
 			/**
+			 * Recorded captured event the timeline returns.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $timeline_event = array();
+
+			/**
 			 * Retrieve a WooPayments PaymentIntent.
 			 *
 			 * @param string $intent_id Intent ID.
@@ -1075,69 +1083,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			public function get_timeline( string $id ): array {
 				$this->requested_timelines[] = $id;
 
-				return array(
-					'data' => array(
-						array(
-							'type'             => 'captured',
-							'fee_breakdown_v1' => array(
-								'rows'    => array(
-									array(
-										'key'      => 'base',
-										'kind'     => 'fee',
-										'amount'   => 293,
-										'currency' => 'usd',
-										'rate'     => array(
-											'percentage' => 0.029,
-											'fixed'      => 30,
-											'fixed_currency' => 'usd',
-										),
-									),
-									array(
-										'key'      => 'additional.fx',
-										'kind'     => 'fee',
-										'amount'   => 0,
-										'currency' => 'usd',
-										'rate'     => array(
-											'percentage' => 0.01,
-											'fixed'      => 0,
-											'fixed_currency' => 'usd',
-										),
-									),
-								),
-								'totals'  => array(
-									'fee'         => array(
-										'amount'   => 293,
-										'currency' => 'usd',
-										'rate'     => array(
-											'percentage' => 0.039,
-											'fixed'      => 30,
-											'fixed_currency' => 'usd',
-										),
-									),
-									'net'         => array(
-										'amount'   => 6421,
-										'currency' => 'usd',
-									),
-									'capture_net' => array(
-										'amount'   => 6421,
-										'currency' => 'usd',
-									),
-								),
-								'fx'      => array(
-									'from_currency' => 'gbp',
-									'to_currency'   => 'usd',
-									'from_amount'   => 5000,
-									'to_amount'     => 6714,
-								),
-								'sources' => array(
-									'balance_transaction_exchange_rate' => 1.34274,
-								),
-							),
-						),
-					),
-				);
+				return array( 'data' => array( $this->timeline_event ) );
 			}
 		};
+
+		$api_client->timeline_event = ClientRenderedCapturedEvents::get( 'recorded:pi_3UMBsdBzWlxcwgpP0H03QP3h' )['event'];
 
 		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
@@ -1153,16 +1103,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( array( 'pi_123' ), $api_client->requested_intents );
 		$this->assertSame( array( 'pi_123' ), $api_client->requested_timelines );
-		$this->assertOrderHasNote(
-			$order,
-			'<strong>Fee details:</strong><div class="captured-event-details">' . PHP_EOL
-			. '<p>1.00 GBP → 1.34274 USD: $67.14 USD</p>' . PHP_EOL
-			. '<p>Fee (3.9% + $0.30): $2.93 USD</p>' . PHP_EOL
-			. '<p>&nbsp;&nbsp;&nbsp;&nbsp;Base fee: 2.9% + $0.30</p>' . PHP_EOL
-			. '<p>&nbsp;&nbsp;&nbsp;&nbsp;Currency conversion fee: 1%</p>' . PHP_EOL
-			. '<p>Net payout: $64.21 USD</p>' . PHP_EOL
-			. '</div>'
-		);
+		$this->assertOrderHasNote( $order, '<strong>Fee details:</strong>' . ClientRenderedCapturedEvents::get( 'recorded:pi_3UMBsdBzWlxcwgpP0H03QP3h' )['client_html'] );
 	}
 
 	/**
@@ -1191,6 +1132,13 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			 * @var string[]
 			 */
 			public array $requested_timelines = array();
+
+			/**
+			 * Recorded captured event the timeline returns.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $timeline_event = array();
 
 			/**
 			 * Retrieve a WooPayments PaymentIntent.
@@ -1238,36 +1186,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			public function get_timeline( string $id ): array {
 				$this->requested_timelines[] = $id;
 
-				return array(
-					'data' => array(
-						array(
-							'type'             => 'captured',
-							'fee_breakdown_v1' => array(
-								'totals' => array(
-									'fee'         => array(
-										'amount'   => 175,
-										'currency' => 'usd',
-										'rate'     => array(
-											'percentage' => 0.029,
-											'fixed'      => 30,
-											'fixed_currency' => 'usd',
-										),
-									),
-									'net'         => array(
-										'amount'   => 4825,
-										'currency' => 'usd',
-									),
-									'capture_net' => array(
-										'amount'   => 4825,
-										'currency' => 'usd',
-									),
-								),
-							),
-						),
-					),
-				);
+				return array( 'data' => array( $this->timeline_event ) );
 			}
 		};
+
+		$api_client->timeline_event = ClientRenderedCapturedEvents::get( 'recorded:pi_3UMBrXBzWlxcwgpP0OjZoist' )['event'];
 
 		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
@@ -1313,13 +1236,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( array( 'pi_123' ), $api_client->requested_intents );
 		$this->assertSame( array( 'pi_123' ), $api_client->requested_timelines );
-		$this->assertOrderHasNote(
-			$order,
-			'<strong>Fee details:</strong><div class="captured-event-details">' . PHP_EOL
-			. '<p>Fee (2.9% + $0.30): $1.75 USD</p>' . PHP_EOL
-			. '<p>Net payout: $48.25 USD</p>' . PHP_EOL
-			. '</div>'
-		);
+		$this->assertOrderHasNote( $order, '<strong>Fee details:</strong>' . ClientRenderedCapturedEvents::get( 'recorded:pi_3UMBrXBzWlxcwgpP0OjZoist' )['client_html'] );
 	}
 
 	/**
