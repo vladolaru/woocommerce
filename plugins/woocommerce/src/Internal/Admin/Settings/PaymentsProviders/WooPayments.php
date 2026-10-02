@@ -291,6 +291,9 @@ class WooPayments extends PaymentGateway {
 		}
 
 		$is_core_native_suggestion = self::ONBOARDING_TYPE_NATIVE_IN_CONTEXT === $extension_suggestion['onboarding']['type'] && empty( $extension_suggestion['plugin']['slug'] );
+		if ( $is_core_native_suggestion ) {
+			$extension_suggestion['_native'] = true;
+		}
 		if ( $is_core_native_suggestion && ! empty( $extension_suggestion['_incentive'] ) && is_array( $extension_suggestion['_incentive'] ) ) {
 			$extension_suggestion['_incentive']['cta_label'] = __( 'Get started', 'woocommerce' );
 		}

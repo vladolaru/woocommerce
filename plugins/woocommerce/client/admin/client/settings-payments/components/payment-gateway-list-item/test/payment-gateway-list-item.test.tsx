@@ -109,6 +109,7 @@ jest.mock( '~/settings-payments/components/official-badge', () => ( {
 } ) );
 
 jest.mock( '@wordpress/components', () => ( {
+	...jest.requireActual( '@wordpress/components' ),
 	Tooltip: ( { children }: { children: React.ReactNode } ) => (
 		<div>{ children }</div>
 	),
@@ -640,6 +641,38 @@ describe( 'PaymentGatewayListItem', () => {
 			expect( officialBadge ).toHaveTextContent(
 				'Official-test-suggestion'
 			);
+		} );
+
+		it( 'shows Native on the native WooPayments row and Official on the plugin-run one', () => {
+			const native = render(
+				<PaymentGatewayListItem
+					gateway={ createMockGateway( {
+						id: 'woocommerce_payments',
+						_suggestion_id: 'woopayments',
+						_native: true,
+					} ) }
+					{ ...defaultProps }
+				/>
+			);
+			expect( native.getByText( 'Native' ) ).toBeInTheDocument();
+			expect(
+				native.queryByTestId( 'official-badge' )
+			).not.toBeInTheDocument();
+			native.unmount();
+
+			const pluginRun = render(
+				<PaymentGatewayListItem
+					gateway={ createMockGateway( {
+						id: 'woocommerce_payments',
+						_suggestion_id: 'woopayments',
+					} ) }
+					{ ...defaultProps }
+				/>
+			);
+			expect(
+				pluginRun.getByTestId( 'official-badge' )
+			).toHaveTextContent( 'Official-woopayments' );
+			expect( pluginRun.queryByText( 'Native' ) ).not.toBeInTheDocument();
 		} );
 
 		it( 'does not show OfficialBadge when _suggestion_id does not exist', () => {

@@ -1457,6 +1457,10 @@ class PaymentsProviders {
 		$normalized_plugin_slug = Utils::normalize_plugin_slug( $plugin_slug );
 		$suggestion_plugin_slug = $this->get_suggestion_plugin_slug_for_gateway( $payment_gateway, $normalized_plugin_slug );
 
+		if ( $this->is_native_woopayments_gateway( $payment_gateway, $normalized_plugin_slug ) ) {
+			$gateway_details['_native'] = true;
+		}
+
 		// If we have a matching suggestion, hoist details from there.
 		// Native WooPayments is matched by ID because its localized suggestion intentionally omits plugin metadata.
 		$suggestion = $this->get_extension_suggestion_for_gateway( $payment_gateway, $suggestion_plugin_slug, $country_code );

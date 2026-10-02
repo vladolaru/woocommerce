@@ -161,6 +161,7 @@ export type PaymentsProvider = PaymentsEntity & {
 	tags?: string[];
 	_incentive?: PaymentsProviderIncentive;
 	_admin_notice?: WooPaymentsAdminNotice;
+	_native?: boolean; // True only for the WooPayments gateway or suggestion built into WooCommerce.
 };
 
 // Represents a payment gateway in the main providers list.

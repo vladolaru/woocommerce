@@ -958,6 +958,31 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Test only the core-native suggestion is marked as native, not the extension's install suggestion.
+	 *
+	 * @testWith ["", true]
+	 *           ["woocommerce-payments", false]
+	 *
+	 * @param string $plugin_slug     The suggestion's plugin slug; the core-native suggestion has none.
+	 * @param bool   $expected_native Whether the enhanced suggestion should be marked as native.
+	 */
+	public function test_enhance_extension_suggestion_marks_only_core_native_suggestion_as_native( string $plugin_slug, bool $expected_native ): void {
+		$extension_suggestion = array(
+			'id'         => '_wc_pes_woopayments',
+			'plugin'     => array(
+				'slug'   => $plugin_slug,
+				'file'   => '',
+				'status' => PaymentsProviders::EXTENSION_NOT_INSTALLED,
+			),
+			'onboarding' => array(),
+		);
+
+		$enhanced = $this->sut->enhance_extension_suggestion( $extension_suggestion );
+
+		$this->assertSame( $expected_native, $enhanced['_native'] ?? false );
+	}
+
+	/**
 	 * Test enhance_extension_suggestion includes preload link without WPCOM connection.
 	 */
 	public function test_enhance_extension_suggestion_includes_preload_link_without_wpcom() {

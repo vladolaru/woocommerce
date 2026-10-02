@@ -1305,6 +1305,30 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should mark only the built-in WooPayments gateway as native: $plugin_slug.
+	 *
+	 * @testWith ["woocommerce", true]
+	 *           ["woocommerce-payments", false]
+	 *
+	 * @param string $plugin_slug     The plugin that registers the WooPayments gateway.
+	 * @param bool   $expected_native Whether the gateway details should mark it as native.
+	 */
+	public function test_get_payment_gateway_details_marks_only_built_in_woopayments_as_native( string $plugin_slug, bool $expected_native ): void {
+		$this->mock_woopayments_suggestion_with_install_incentive();
+		$fake_gateway = new FakePaymentGateway(
+			'woocommerce_payments',
+			array(
+				'plugin_slug' => $plugin_slug,
+				'plugin_file' => $plugin_slug . '/' . $plugin_slug . '.php',
+			),
+		);
+
+		$gateway_details = $this->sut->get_payment_gateway_details( $fake_gateway, 0, 'US' );
+
+		$this->assertSame( $expected_native, $gateway_details['_native'] ?? false );
+	}
+
+	/**
 	 * Mock the WooPayments suggestion lookups to carry an incentive worded around installing the extension.
 	 */
 	private function mock_woopayments_suggestion_with_install_incentive(): void {
