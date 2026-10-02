@@ -5135,6 +5135,21 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A site request returns the decoded body whatever its JSON type, as the client's request() does.
+	 *
+	 * The platform's minimum recurring amount endpoint answers with a bare integer (`Fixtures/rec-t63-billing-api.json`).
+	 */
+	public function test_send_site_request_returns_a_bare_integer_body(): void {
+		list( $sut, $http_client ) = $this->make_sut( true, 100 );
+
+		$result = $sut->send_site_request( array(), 'subscriptions/minimum_amount/usd', 'GET' );
+
+		$this->assertSame( 100, $result );
+		$this->assertSame( '/sites/123/wcpay/subscriptions/minimum_amount/usd?test_mode=1', $http_client->last_path );
+		$this->assertFalse( $http_client->last_use_user_token );
+	}
+
+	/**
 	 * Build an initialized API client backed by a fresh fake HTTP client.
 	 *
 	 * Each endpoint scenario gets its own fake so that one failing endpoint

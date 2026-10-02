@@ -2213,6 +2213,27 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	private function request( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false ): array {
+		$decoded_body = $this->request_decoded( $params, $api, $method, $is_site_scoped, $use_user_token, $blocking, $include_test_mode_param, $return_raw_response, $use_v2_api );
+
+		return is_array( $decoded_body ) ? $decoded_body : array();
+	}
+
+	/**
+	 * Send a request through the provider transport and return the decoded body, whatever its JSON type.
+	 *
+	 * @param array<int|string,mixed> $params        Request params.
+	 * @param string                  $api           API path.
+	 * @param string                  $method        HTTP method.
+	 * @param bool                    $is_site_scoped Whether to include the WPCOM site ID in the API path.
+	 * @param bool                    $use_user_token Whether to sign with the connection-owner user token.
+	 * @param bool                    $blocking      Whether to block for the transport response.
+	 * @param bool                    $include_test_mode_param Whether to add test mode to request params.
+	 * @param bool                    $return_raw_response Whether to return the raw transport response.
+	 * @param bool                    $use_v2_api Whether to use the Transact API root.
+	 * @return mixed Decoded body; the raw transport response when asked for; an empty array for a non-blocking request.
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	private function request_decoded( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false ) {
 		if ( ! $this->is_available() ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new WooPaymentsApiException( __( 'Site is not connected to WordPress.com.', 'woocommerce' ), 'wcpay_wpcom_not_connected', 409 );
@@ -2382,7 +2403,7 @@ class WooPaymentsApiClient {
 			$this->throw_api_error( is_array( $decoded_body ) ? $decoded_body : array(), $response_code );
 		}
 
-		return is_array( $decoded_body ) ? $decoded_body : array();
+		return $decoded_body;
 	}
 
 	/**
@@ -2409,20 +2430,20 @@ class WooPaymentsApiClient {
 	}
 
 	/**
-	 * Send a site-scoped platform request, signed with the store's own token, and return the decoded body.
+	 * Send a site-scoped platform request, signed with the store's own token, and return the decoded body whatever its JSON type.
 	 *
-	 * For provider modules that own their platform paths. The caller validates ids and paths.
+	 * For provider modules that own their platform paths. The caller validates ids and paths, and the type of the body.
 	 *
 	 * @since 11.2.0
 	 *
 	 * @param array<int|string,mixed> $params Request params.
 	 * @param string                  $api    API path below the site's WooPayments root.
 	 * @param string                  $method HTTP method.
-	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @return mixed Decoded JSON body.
+	 * @throws WooPaymentsApiException When the request fails or the body cannot be decoded.
 	 */
-	public function send_site_request( array $params, string $api, string $method ): array {
-		return $this->request( $params, $api, $method );
+	public function send_site_request( array $params, string $api, string $method ) {
+		return $this->request_decoded( $params, $api, $method );
 	}
 
 	/**
