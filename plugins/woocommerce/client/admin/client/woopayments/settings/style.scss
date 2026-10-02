@@ -107,6 +107,10 @@
 	.components-base-control {
 		margin-bottom: 16px;
 	}
+
+	> .components-notice {
+		margin: 0 0 $gap;
+	}
 }
 
 .woopayments-settings-payment-methods-list {
