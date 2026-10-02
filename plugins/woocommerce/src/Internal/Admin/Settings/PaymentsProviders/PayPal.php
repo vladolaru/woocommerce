@@ -19,13 +19,15 @@ class PayPal extends PaymentGateway {
 	/**
 	 * Get the provider title, naming the row "PayPal Wallet" when core provides the gateway.
 	 *
+	 * @since 11.3.0
+	 *
 	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
 	 *
 	 * @return string
 	 */
 	public function get_title( WC_Payment_Gateway $payment_gateway ): string {
 		if ( $this->is_core_provided( $payment_gateway ) ) {
-			return esc_html__( 'PayPal Wallet', 'woocommerce' );
+			return __( 'PayPal Wallet', 'woocommerce' );
 		}
 
 		return parent::get_title( $payment_gateway );
@@ -33,6 +35,8 @@ class PayPal extends PaymentGateway {
 
 	/**
 	 * Get the plugin details, with no plugin file when core provides the gateway (so it cannot be deactivated).
+	 *
+	 * @since 11.3.0
 	 *
 	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
 	 *
@@ -49,6 +53,8 @@ class PayPal extends PaymentGateway {
 
 	/**
 	 * Whether this gateway is the extension's PayPal gateway served by the core-native wallet runtime.
+	 *
+	 * @since 11.3.0
 	 *
 	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
 	 *
