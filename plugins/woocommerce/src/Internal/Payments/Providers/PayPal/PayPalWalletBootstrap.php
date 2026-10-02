@@ -60,6 +60,25 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	);
 
 	/**
+	 * Constants the extension's main file defines, copied so core can define them without including that file.
+	 * A unit test compares this map to the vendored main file to catch drift.
+	 */
+	private const EXTENSION_CONSTANTS = array(
+		'PAYPAL_API_URL'                  => 'https://api-m.paypal.com',
+		'PAYPAL_URL'                      => 'https://www.paypal.com',
+		'PAYPAL_SANDBOX_API_URL'          => 'https://api-m.sandbox.paypal.com',
+		'PAYPAL_SANDBOX_URL'              => 'https://www.sandbox.paypal.com',
+		'PAYPAL_INTEGRATION_DATE'         => '2026-09-02',
+		'PPCP_PAYPAL_BN_CODE'             => 'Woo_PPCP',
+		'CONNECT_WOO_CLIENT_ID'           => 'AcCAsWta_JTL__OfpjspNyH7c1GGHH332fLwonA5CwX4Y10mhybRZmHLA0GdRbwKwjQIhpDQy0pluX_P',
+		'CONNECT_WOO_SANDBOX_CLIENT_ID'   => 'AYmOHbt1VHg-OZ_oihPdzKEVbU3qg0qXonBcAztuzniQRaKE0w1Hr762cSFwd4n8wxOl-TCWohEa0XM_',
+		'CONNECT_WOO_MERCHANT_ID'         => 'K8SKZ36LQBWXJ',
+		'CONNECT_WOO_SANDBOX_MERCHANT_ID' => 'MPMFHQTVMBZ6G',
+		'CONNECT_WOO_URL'                 => 'https://api.woocommerce.com/integrations/ppc',
+		'CONNECT_WOO_SANDBOX_URL'         => 'https://api.woocommerce.com/integrations/ppcsandbox',
+	);
+
+	/**
 	 * The runtime arbiter.
 	 *
 	 * @var PayPalWalletRuntimeArbiter
@@ -258,24 +277,22 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	}
 
 	/**
+	 * The constants core defines on the extension's behalf, by name.
+	 *
+	 * @since 11.3.0
+	 * @internal Exposed for the drift test against the vendored main file.
+	 *
+	 * @return array<string, string>
+	 */
+	public static function get_extension_constants(): array {
+		return self::EXTENSION_CONSTANTS;
+	}
+
+	/**
 	 * Define the constants the extension's main file defines, when not already defined.
 	 */
 	private function define_constants(): void {
-		$constants = array(
-			'PAYPAL_API_URL'                  => 'https://api-m.paypal.com',
-			'PAYPAL_URL'                      => 'https://www.paypal.com',
-			'PAYPAL_SANDBOX_API_URL'          => 'https://api-m.sandbox.paypal.com',
-			'PAYPAL_SANDBOX_URL'              => 'https://www.sandbox.paypal.com',
-			'PAYPAL_INTEGRATION_DATE'         => '2026-09-02',
-			'PPCP_PAYPAL_BN_CODE'             => 'Woo_PPCP',
-			'CONNECT_WOO_CLIENT_ID'           => 'AcCAsWta_JTL__OfpjspNyH7c1GGHH332fLwonA5CwX4Y10mhybRZmHLA0GdRbwKwjQIhpDQy0pluX_P',
-			'CONNECT_WOO_SANDBOX_CLIENT_ID'   => 'AYmOHbt1VHg-OZ_oihPdzKEVbU3qg0qXonBcAztuzniQRaKE0w1Hr762cSFwd4n8wxOl-TCWohEa0XM_',
-			'CONNECT_WOO_MERCHANT_ID'         => 'K8SKZ36LQBWXJ',
-			'CONNECT_WOO_SANDBOX_MERCHANT_ID' => 'MPMFHQTVMBZ6G',
-			'CONNECT_WOO_URL'                 => 'https://api.woocommerce.com/integrations/ppc',
-			'CONNECT_WOO_SANDBOX_URL'         => 'https://api.woocommerce.com/integrations/ppcsandbox',
-		);
-		foreach ( $constants as $name => $value ) {
+		foreach ( self::EXTENSION_CONSTANTS as $name => $value ) {
 			if ( ! defined( $name ) ) {
 				define( $name, $value );
 			}

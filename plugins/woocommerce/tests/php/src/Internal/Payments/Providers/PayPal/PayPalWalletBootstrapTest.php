@@ -371,4 +371,23 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->build_sut( true );
 		$this->assertFalse( $this->sut->is_extension_loaded_elsewhere(), 'The real extension function must not exist in the test process' );
 	}
+
+	/**
+	 * @testdox Should define the same constants, with the same values, as the vendored main file.
+	 */
+	public function test_constants_match_the_vendored_main_file(): void {
+		$main_file = PayPalWalletBootstrap::VENDORED_DIR . '/woocommerce-paypal-payments.php';
+		if ( ! file_exists( $main_file ) ) {
+			$this->markTestSkipped( 'Vendored extension is not present.' );
+		}
+		$source = file_get_contents( $main_file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local fixture.
+		preg_match_all( "/^\s*(?:!\s*defined\(\s*'[A-Z_]+'\s*\)\s*&&\s*)?define\(\s*'([A-Z_]+)'\s*,\s*'([^']*)'\s*\)\s*;/m", $source, $matches, PREG_SET_ORDER );
+		$expected = array();
+		foreach ( $matches as $match ) {
+			$expected[ $match[1] ] = $match[2];
+		}
+
+		$this->assertNotEmpty( $expected, 'The vendored main file must define constants' );
+		$this->assertSame( $expected, PayPalWalletBootstrap::get_extension_constants() );
+	}
 }
