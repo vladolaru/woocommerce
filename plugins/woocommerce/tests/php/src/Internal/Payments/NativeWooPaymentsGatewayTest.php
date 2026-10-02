@@ -1732,7 +1732,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep tokenized WC Subscriptions renewals independent of deprecated Stripe Billing flags.
+	 * @testdox Should charge tokenized renewals while the Stripe Billing module is not loaded, even with the Stripe Billing options set.
 	 */
 	public function test_scheduled_subscription_payment_uses_tokenized_renewal_when_deprecated_stripe_billing_flags_remain(): void {
 		update_option( '_wcpay_feature_subscriptions', '1' );

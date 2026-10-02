@@ -7,8 +7,12 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
+use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
 use WC_Unit_Test_Case;
 
 /**
@@ -273,6 +277,45 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A renewal of a Stripe-billed subscription is not charged here, toggle on or off; a tokenized subscription's renewal still is (client `trait-wc-payment-gateway-wcpay-subscriptions.php:405-407`, `:1243-1258`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith ["0", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", false]
+	 *           ["1", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", false]
+	 *           ["1", "", true]
+	 *
+	 * @param string $toggle                Stripe Billing toggle option value.
+	 * @param string $wcpay_subscription_id Stripe subscription ID of the subscription, empty when it is tokenized.
+	 * @param bool   $expect_charge         Whether the renewal is charged.
+	 */
+	public function test_renewals_of_stripe_billed_subscriptions_are_not_charged( string $toggle, string $wcpay_subscription_id, bool $expect_charge ): void {
+		$this->load_stripe_billing_module( $toggle );
+		$user_id      = self::factory()->user->create();
+		$subscription = $this->create_subscription( $user_id, $wcpay_subscription_id );
+		$renewal      = \WC_Helper_Order::create_order( $user_id );
+		$renewal->add_payment_token( $this->create_card_token( $user_id ) );
+		$renewal->set_status( 'pending' );
+		$renewal->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $renewal->get_id() ]['renewal'][] = $subscription->get_id();
+		$note_count = count( wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
+		$service    = new RecordingPaymentProcessingService();
+		$gateway    = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, new WooPaymentsTokenService() );
+
+		$gateway->scheduled_subscription_payment( 10.0, wc_get_order( $renewal->get_id() ) );
+
+		if ( $expect_charge ) {
+			$this->assertSame( $renewal->get_id(), $service->last_checkout_context ? $service->last_checkout_context->get_order_id() : 0, 'A tokenized renewal is charged.' );
+			return;
+		}
+
+		$this->assertSame( 0, $service->checkout_attempt_count, 'A Stripe-billed renewal must not be charged.' );
+		$saved = wc_get_order( $renewal->get_id() );
+		$this->assertSame( 'pending', $saved->get_status() );
+		$this->assertCount( $note_count, wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
+	}
+
+	/**
 	 * Subscription supports per toggle value, from client 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions-trait.php:63-110`.
 	 *
 	 * @return array<string,array{0:string,1:string[]}>
@@ -448,5 +491,45 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$all = array_merge( self::stripe_billing_subscription_supports()['toggle off'][1], array( 'gateway_scheduled_payments' ) );
 
 		return array_values( array_intersect( $gateway->supports, $all ) );
+	}
+
+	/**
+	 * Create a WooPayments subscription for a customer, billed by Stripe Billing when it has a Stripe subscription ID.
+	 *
+	 * @param int    $user_id               Customer user ID.
+	 * @param string $wcpay_subscription_id Stripe subscription ID, empty for a tokenized subscription.
+	 * @return SubscriptionDouble
+	 */
+	private function create_subscription( int $user_id, string $wcpay_subscription_id ): SubscriptionDouble {
+		$subscription = new SubscriptionDouble();
+		$subscription->set_payment_method( 'woocommerce_payments' );
+		$subscription->set_customer_id( $user_id );
+		if ( '' !== $wcpay_subscription_id ) {
+			$subscription->update_meta_data( '_wcpay_subscription_id', $wcpay_subscription_id );
+		}
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ][] = $subscription->get_id();
+
+		return $subscription;
+	}
+
+	/**
+	 * Create a saved card for a customer.
+	 *
+	 * @param int $user_id Customer user ID.
+	 * @return \WC_Payment_Token_CC
+	 */
+	private function create_card_token( int $user_id ): \WC_Payment_Token_CC {
+		$token = new \WC_Payment_Token_CC();
+		$token->set_gateway_id( 'woocommerce_payments' );
+		$token->set_user_id( $user_id );
+		$token->set_token( 'pm_1UJhOFBzWlxcwgpPvcySvyc5' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2034' );
+		$token->save();
+
+		return $token;
 	}
 }

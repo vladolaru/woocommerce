@@ -781,6 +781,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return;
 		}
 
+		// Stripe charges the renewals of Stripe Billing subscriptions itself; the invoice webhooks record them.
+		if ( $this->get_stripe_billing_module()->is_stripe_billed_order( $renewal_order ) ) {
+			return;
+		}
+
 		$token = $this->get_payment_token_from_order( $renewal_order );
 		if ( ! $token instanceof WC_Payment_Token && ! $this->is_network_saved_cards_enabled() ) {
 			$token = $this->maybe_repair_renewal_order_payment_token( $renewal_order );
