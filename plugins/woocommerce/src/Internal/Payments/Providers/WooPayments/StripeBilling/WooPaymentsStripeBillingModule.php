@@ -20,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
  * the toggle is turned off; the toggle only decides whether new subscriptions go to Stripe Billing.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 
