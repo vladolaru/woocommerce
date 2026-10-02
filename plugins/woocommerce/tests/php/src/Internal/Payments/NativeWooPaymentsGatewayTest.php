@@ -6288,6 +6288,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- The production class is optional; tests need a process-local stand-in.
 		eval(
 			'class WC_Subscriptions_Change_Payment_Gateway {
+				public static $is_request_to_change_payment = false;
 				public static $updated_payment_methods = array();
 				public static $updated_all_payment_methods = array();
 				public static $will_update_all_payment_methods = true;

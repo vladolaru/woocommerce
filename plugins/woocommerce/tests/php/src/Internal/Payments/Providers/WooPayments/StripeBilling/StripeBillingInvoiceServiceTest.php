@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
@@ -125,9 +126,6 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 
 		$product_service = new StripeBillingProductService();
 		$product_service->init( $api, $account_service, $logger );
-		$subscription_service = new StripeBillingSubscriptionService();
-		$subscription_service->init( $product_service );
-		wc_get_container()->replace( StripeBillingSubscriptionService::class, $subscription_service );
 
 		$module = $this->createMock( WooPaymentsStripeBillingModule::class );
 		$module->method( 'is_stripe_billing_enabled' )->willReturnCallback( fn() => $this->stripe_billing_enabled );
@@ -143,6 +141,10 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 
 		$this->sut = new StripeBillingInvoiceService();
 		$this->sut->init( $api, $api_client, $module, $logger );
+
+		$subscription_service = new StripeBillingSubscriptionService();
+		$subscription_service->init( $api, $this->createMock( WooPaymentsCustomerService::class ), $product_service, $this->sut, $logger );
+		wc_get_container()->replace( StripeBillingSubscriptionService::class, $subscription_service );
 	}
 
 	/**

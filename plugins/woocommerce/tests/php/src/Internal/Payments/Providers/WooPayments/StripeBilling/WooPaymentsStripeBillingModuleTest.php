@@ -6,6 +6,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\LateLoadedSubscriptions;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
+use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
@@ -109,6 +112,55 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 		foreach ( array_keys( $stripe_meta ) as $key ) {
 			$this->assertFalse( $duplicate->meta_exists( $key ), "$key must not be copied." );
 		}
+	}
+
+	/**
+	 * @testdox Should tell a Stripe-billed subscription and its renewal order apart once loaded (client `class-wc-payments-subscription-service.php:292-294`, `:312-324`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_tells_stripe_billed_subscriptions_and_orders_once_loaded(): void {
+		$this->load_subscriptions();
+		$sut                          = $this->register_module( true );
+		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
+
+		$this->assertTrue( $sut->is_stripe_billed_subscription( $subscription ) );
+		$this->assertTrue( $sut->is_stripe_billed_order( $order ) );
+	}
+
+	/**
+	 * @testdox Should call nothing Stripe-billed while the module is not loaded.
+	 */
+	public function test_calls_nothing_stripe_billed_while_not_loaded(): void {
+		$sut                          = $this->register_module( true );
+		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
+
+		try {
+			$this->assertFalse( $sut->is_stripe_billed_subscription( $subscription ) );
+			$this->assertFalse( $sut->is_stripe_billed_order( $order ) );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
+		}
+	}
+
+	/**
+	 * Create a subscription billed by Stripe Billing on the recorded main chain, and a renewal order of it.
+	 *
+	 * @return array{0:WC_Order,1:WC_Order}
+	 */
+	private function create_stripe_billed_subscription_and_renewal(): array {
+		WooCommerceSubscriptionsDoubles::load();
+
+		$subscription = new SubscriptionDouble();
+		$subscription->set_payment_method( 'woocommerce_payments' );
+		$subscription->update_meta_data( '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
+		$subscription->save();
+		$order = \WC_Helper_Order::create_order();
+
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ][]                                   = $subscription->get_id();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $order->get_id() ]['renewal'][] = $subscription->get_id();
+
+		return array( wc_get_order( $subscription->get_id() ), $order );
 	}
 
 	/**

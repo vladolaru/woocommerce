@@ -51,4 +51,40 @@ class SubscriptionDouble extends \WC_Order {
 	public function get_billing_interval(): string {
 		return (string) $this->get_meta( '_billing_interval', true );
 	}
+
+	/**
+	 * Get a date as a timestamp, 0 when unset: `start` is the creation date, others are GMT dates under `_schedule_{type}`.
+	 *
+	 * WooCommerce Subscriptions works out the last order dates from the related orders; here they are read like the others.
+	 *
+	 * @param string $date_type Date type, such as `trial_end` or `next_payment`.
+	 * @return int
+	 */
+	public function get_time( string $date_type ): int {
+		if ( 'start' === $date_type ) {
+			$date_created = $this->get_date_created();
+
+			return $date_created ? $date_created->getTimestamp() : 0;
+		}
+
+		$date = (string) $this->get_meta( '_schedule_' . $date_type, true );
+
+		return '' === $date ? 0 : ( new \DateTime( $date, new \DateTimeZone( 'UTC' ) ) )->getTimestamp();
+	}
+
+	/**
+	 * Save GMT dates and fire `woocommerce_subscription_date_updated` for each, as WooCommerce Subscriptions does.
+	 *
+	 * @param array<string,string> $dates GMT dates in `Y-m-d H:i:s`, by date type.
+	 */
+	public function update_dates( array $dates ): void {
+		foreach ( $dates as $date_type => $date ) {
+			$this->update_meta_data( '_schedule_' . $date_type, $date );
+		}
+		$this->save();
+
+		foreach ( $dates as $date_type => $date ) {
+			do_action( 'woocommerce_subscription_date_updated', $this, $date_type, $date );
+		}
+	}
 }

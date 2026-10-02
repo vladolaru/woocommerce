@@ -122,7 +122,6 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 		'wcpay_prepare_terminal_payment_request'           => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:86 §1(a)',
 		'wcpay_refund_charge_request'                      => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:75 §1(a)',
 		'wcpay_review_prompt_experiment_variant'           => 'data/client-delta-10.8.0-11.1.0.tsv:81 and :105 (11.0.0 review-prompt rows, n/a, owner review 2026-09-12)',
-		'wcpay_subscriptions_prepare_subscription_data'    => 'data/bc-surface-diff.md:122 §1(b) + plan.md Decision 1 (Stripe Billing excluded)',
 		'wcpay_update_account_settings'                    => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:78 §1(a)',
 		'wcpay_update_intention_request'                   => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:68 §1(a)',
 		'wcpay_update_payment_result_on_error'             => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:95 §1(a)',

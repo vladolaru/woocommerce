@@ -9,7 +9,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeB
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use WC_Order;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -113,10 +115,43 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether a subscription is billed by Stripe Billing; always false when the module is not loaded.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @return bool
+	 */
+	public function is_stripe_billed_subscription( WC_Order $subscription ): bool {
+		return $this->loaded && $this->get_subscription_service()->is_wcpay_subscription( $subscription );
+	}
+
+	/**
+	 * Tell whether any subscription related to an order is billed by Stripe Billing; always false when the module is not loaded.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return bool
+	 */
+	public function is_stripe_billed_order( WC_Order $order ): bool {
+		return $this->loaded && $this->get_subscription_service()->is_wcpay_subscription_order( $order );
+	}
+
+	/**
 	 * Attach the hooks that serve existing Stripe Billing data whatever the toggle.
 	 */
 	private function attach_maintenance_hooks(): void {
 		$this->attach( 'woocommerce_duplicate_product_exclude_meta', StripeBillingProductService::class, 'exclude_meta_wcpay_product' );
+
+		$this->attach( 'woocommerce_payment_token_added_to_order', StripeBillingSubscriptionService::class, 'update_wcpay_subscription_payment_method', 10, 3 );
+		$this->attach( 'woocommerce_subscription_status_cancelled', StripeBillingSubscriptionService::class, 'cancel_subscription' );
+		$this->attach( 'woocommerce_subscription_status_expired', StripeBillingSubscriptionService::class, 'cancel_subscription' );
+		$this->attach( 'woocommerce_subscription_status_on-hold', StripeBillingSubscriptionService::class, 'handle_subscription_status_on_hold' );
+		$this->attach( 'woocommerce_subscription_status_pending-cancel', StripeBillingSubscriptionService::class, 'set_pending_cancel_for_subscription' );
+		$this->attach( 'woocommerce_subscription_status_pending-cancel_to_active', StripeBillingSubscriptionService::class, 'reactivate_subscription' );
+		$this->attach( 'woocommerce_subscription_status_on-hold_to_active', StripeBillingSubscriptionService::class, 'reactivate_subscription' );
+		$this->attach( 'woocommerce_subscription_payment_gateway_supports', StripeBillingSubscriptionService::class, 'prevent_wcpay_subscription_changes', 10, 3 );
+		$this->attach( 'woocommerce_order_actions', StripeBillingSubscriptionService::class, 'prevent_wcpay_manual_renewal', 11 );
+		$this->attach( 'woocommerce_payments_changed_subscription_payment_method', StripeBillingSubscriptionService::class, 'maybe_attempt_payment_for_subscription', 10, 2 );
+		$this->attach( 'woocommerce_admin_order_data_after_billing_address', StripeBillingSubscriptionService::class, 'show_wcpay_subscription_id' );
+		$this->attach( 'woocommerce_subscription_payment_method_updated_from_' . WooPaymentsPersistenceProfile::GATEWAY_ID, StripeBillingSubscriptionService::class, 'maybe_cancel_subscription', 10, 2 );
 	}
 
 	/**
@@ -130,6 +165,19 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 		$this->attach( 'woocommerce_save_product_variation', StripeBillingProductService::class, 'maybe_schedule_product_create_or_update', 30 );
 		$this->attach( 'woocommerce_order_payment_status_changed', StripeBillingInvoiceService::class, 'maybe_record_invoice_payment' );
 		$this->attach( 'woocommerce_renewal_order_payment_complete', StripeBillingInvoiceService::class, 'maybe_record_invoice_payment', 11 );
+
+		$this->attach( 'woocommerce_checkout_subscription_created', StripeBillingSubscriptionService::class, 'create_subscription' );
+		$this->attach( 'woocommerce_renewal_order_payment_complete', StripeBillingSubscriptionService::class, 'create_subscription_for_manual_renewal' );
+		$this->attach( 'woocommerce_subscription_payment_method_updated', StripeBillingSubscriptionService::class, 'maybe_create_subscription_from_update_payment_method', 10, 2 );
+	}
+
+	/**
+	 * Get the subscription service, which holds the one rule for what is Stripe-billed.
+	 *
+	 * @return StripeBillingSubscriptionService
+	 */
+	private function get_subscription_service(): StripeBillingSubscriptionService {
+		return wc_get_container()->get( StripeBillingSubscriptionService::class );
 	}
 
 	/**
