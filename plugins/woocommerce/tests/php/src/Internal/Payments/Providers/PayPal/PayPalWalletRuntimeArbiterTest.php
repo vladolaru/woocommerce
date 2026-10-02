@@ -42,25 +42,55 @@ class PayPalWalletRuntimeArbiterTest extends WC_Unit_Test_Case {
 	private $active_plugins = array();
 
 	/**
+	 * Whether the mocked is_multisite returns true.
+	 *
+	 * @var bool
+	 */
+	private $multisite = false;
+
+	/**
+	 * Network-active plugins the mocked active_sitewide_plugins option lists, keyed by plugin file.
+	 *
+	 * @var array<string, int>
+	 */
+	private $sitewide_plugins = array();
+
+	/**
+	 * The blog ID the mocked get_current_blog_id returns.
+	 *
+	 * @var int
+	 */
+	private $blog_id = 1;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->options        = array();
-		$this->active_plugins = array();
-		$this->legacy_proxy   = wc_get_container()->get( LegacyProxy::class );
+		$this->options          = array();
+		$this->active_plugins   = array();
+		$this->blog_id          = 1;
+		$this->multisite        = false;
+		$this->sitewide_plugins = array();
+		$this->legacy_proxy     = wc_get_container()->get( LegacyProxy::class );
 		$this->legacy_proxy->register_function_mocks(
 			array(
-				'get_option'      => function ( $name, $default_value = false ) {
+				'get_option'          => function ( $name, $default_value = false ) {
 					if ( 'active_plugins' === $name ) {
 						return $this->active_plugins;
 					}
 					return $this->options[ $name ] ?? $default_value;
 				},
-				'is_multisite'    => function () {
-					return false;
+				'get_current_blog_id' => function () {
+					return $this->blog_id;
 				},
-				'get_site_option' => function ( $name, $default_value = false ) {
+				'is_multisite'        => function () {
+					return $this->multisite;
+				},
+				'get_site_option'     => function ( $name, $default_value = false ) {
+					if ( 'active_sitewide_plugins' === $name ) {
+						return $this->sitewide_plugins;
+					}
 					return $default_value;
 				},
 			)
@@ -147,5 +177,59 @@ class PayPalWalletRuntimeArbiterTest extends WC_Unit_Test_Case {
 
 		$this->sut->invalidate();
 		$this->assertSame( PayPalWalletRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Invalidate should re-evaluate' );
+	}
+
+	/**
+	 * @testdox Should report the extension as owner on multisite when it is network-active, read as a plugin-file key.
+	 */
+	public function test_extension_owns_when_network_active(): void {
+		$this->multisite        = true;
+		$this->sitewide_plugins = array( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE => 1234567890 );
+
+		$this->assertTrue( $this->sut->is_extension_active() );
+		$this->assertSame( PayPalWalletRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner() );
+	}
+
+	/**
+	 * @testdox Should ignore network-active plugins when the install is not multisite.
+	 */
+	public function test_network_active_list_ignored_on_single_site(): void {
+		$this->sitewide_plugins = array( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE => 1234567890 );
+
+		$this->assertFalse( $this->sut->is_extension_active() );
+	}
+
+	/**
+	 * @testdox Should memoize the owner per blog so one blog's cached owner does not leak to another.
+	 */
+	public function test_owner_memo_is_keyed_by_blog(): void {
+		$this->options[ PayPalWalletRuntimeArbiter::ENABLED_OPTION ] = 'yes';
+		$this->blog_id = 1;
+		$this->assertSame( PayPalWalletRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner() );
+
+		$this->active_plugins = array( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE );
+		$this->blog_id        = 2;
+		$this->assertSame( PayPalWalletRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'A second blog should be evaluated on its own' );
+
+		$this->blog_id = 1;
+		$this->assertSame( PayPalWalletRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner(), 'The first blog should keep its memoized owner' );
+	}
+
+	/**
+	 * @testdox Should invalidate only the requested blog's memoized owner.
+	 */
+	public function test_invalidate_targets_one_blog(): void {
+		$this->options[ PayPalWalletRuntimeArbiter::ENABLED_OPTION ] = 'yes';
+		$this->blog_id = 1;
+		$this->sut->get_runtime_owner();
+		$this->blog_id = 2;
+		$this->sut->get_runtime_owner();
+
+		$this->active_plugins = array( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE );
+		$this->sut->invalidate( 2 );
+
+		$this->assertSame( PayPalWalletRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Blog 2 should be re-evaluated' );
+		$this->blog_id = 1;
+		$this->assertSame( PayPalWalletRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner(), 'Blog 1 should stay memoized' );
 	}
 }

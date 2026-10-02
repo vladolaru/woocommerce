@@ -80,7 +80,7 @@ class PayPalWalletRuntimeArbiter {
 	 * @return string One of the OWNER_* constants.
 	 */
 	public function get_runtime_owner(): string {
-		$blog_id = get_current_blog_id();
+		$blog_id = $this->get_current_blog_id();
 		if ( ! array_key_exists( $blog_id, $this->owners ) ) {
 			if ( $this->is_extension_active() ) {
 				$this->owners[ $blog_id ] = self::OWNER_EXTENSION;
@@ -98,7 +98,16 @@ class PayPalWalletRuntimeArbiter {
 	 * @param int|null $blog_id Blog ID, or null for the current blog.
 	 */
 	public function invalidate( ?int $blog_id = null ): void {
-		unset( $this->owners[ $blog_id ?? get_current_blog_id() ] );
+		unset( $this->owners[ $blog_id ?? $this->get_current_blog_id() ] );
+	}
+
+	/**
+	 * Get the current blog ID through the legacy proxy so tests can vary it.
+	 *
+	 * @return int
+	 */
+	private function get_current_blog_id(): int {
+		return (int) $this->legacy_proxy->call_function( 'get_current_blog_id' );
 	}
 
 	/**
