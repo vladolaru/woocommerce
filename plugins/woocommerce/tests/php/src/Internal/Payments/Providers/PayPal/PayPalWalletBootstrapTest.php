@@ -373,6 +373,38 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The Jetpack classmap can list the vendored classes and is first in the autoload chain, so a class_exists check is not proof the vendored loader is registered.
+	 *
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should register the vendored Composer autoloader when native owns the site.
+	 */
+	public function test_registers_the_vendored_autoloader_when_native_owns(): void {
+		if ( ! file_exists( PayPalWalletBootstrap::VENDORED_DIR . '/vendor/autoload.php' ) ) {
+			$this->markTestSkipped( 'Vendored extension is not present.' );
+		}
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$vendored_dir = realpath( PayPalWalletBootstrap::VENDORED_DIR );
+		$registered   = false;
+		foreach ( spl_autoload_functions() as $loader ) {
+			if ( ! is_array( $loader ) || ! $loader[0] instanceof \Composer\Autoload\ClassLoader ) {
+				continue;
+			}
+			$prefixes = $loader[0]->getPrefixesPsr4();
+			foreach ( $prefixes['WooCommerce\\PayPalCommerce\\'] ?? array() as $dir ) {
+				$real = realpath( $dir );
+				if ( false !== $real && 0 === strpos( $real, $vendored_dir ) ) {
+					$registered = true;
+				}
+			}
+		}
+		$this->assertTrue( $registered, 'The vendored Composer loader must be registered for WooCommerce\\PayPalCommerce\\' );
+	}
+
+	/**
 	 * A subclass points the guard at a function the test controls, so the real extension function is never declared here.
 	 *
 	 * @param string $function_name  The function name the guard looks for.

@@ -156,9 +156,9 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		}
 
 		$this->define_constants();
-		if ( ! class_exists( '\WooCommerce\PayPalCommerce\PluginModule' ) ) {
-			require $autoload;
-		}
+		// Core's Jetpack classmap is built from the vendored tree despite the fence, goes stale between core dumps, and comes first in the chain,
+		// so a class_exists check was met by the wrong loader. Always register the vendored one.
+		require_once $autoload;
 		$this->add_trimming_filters();
 
 		$bootstrap = require self::VENDORED_DIR . '/bootstrap.php';
