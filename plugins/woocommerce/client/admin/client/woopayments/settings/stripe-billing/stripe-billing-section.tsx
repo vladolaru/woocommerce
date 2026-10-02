@@ -24,7 +24,7 @@ import {
 	useSettings,
 	useStripeBilling,
 	useStripeBillingMigration,
-} from './data/hooks';
+} from '../data/hooks';
 
 const STRIPE_BILLING_DOC_URL =
 	'https://woocommerce.com/document/woopayments/subscriptions/stripe-billing/';

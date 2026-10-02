@@ -62,7 +62,7 @@ import {
 	SUPPORT_PHONE_INPUT_ID,
 } from './save-settings-section';
 import { SettingsSection, type FieldValidationError } from './settings-shell';
-import { StripeBillingSection } from './stripe-billing-section';
+import { StripeBillingSection } from './stripe-billing/stripe-billing-section';
 import { TextLink } from './text-link';
 import { WooPaymentsDisableConfirmationModal } from './disable-woopayments-modal';
 import { useWooPaymentsAffectedCheckoutMethods } from './affected-payment-methods';

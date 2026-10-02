@@ -24,7 +24,7 @@ const mockUpdateIsStripeBillingEnabled = jest.fn();
 const mockStartMigration = jest.fn();
 let mockState: SectionState;
 
-jest.mock( '../data/hooks', () => ( {
+jest.mock( '../../data/hooks', () => ( {
 	useStripeBilling: () => [
 		mockState.isStripeBillingEnabled,
 		mockUpdateIsStripeBillingEnabled,
