@@ -324,6 +324,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			'applepay.available',
 			'googlepay.available',
 			'axo.available',
+			'axoblock.available',
 			'card-fields.eligibility.check',
 			'ppcp-local-apms.available',
 			'order-tracking.available',
