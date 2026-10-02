@@ -320,6 +320,48 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The Plugins screen warns that Stripe-billed subscriptions keep renewing after deactivating WooCommerce Subscriptions only when it applies: $label (client `class-wc-payments-subscriptions-plugin-notice-manager.php:31-84`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith ["shown", true, false, "active", "plugins", "administrator", true]
+	 *           ["no WooCommerce Subscriptions", false, false, "active", "plugins", "administrator", false]
+	 *           ["staging copy", true, true, "active", "plugins", "administrator", false]
+	 *           ["no active Stripe-billed subscription", true, false, "on-hold", "plugins", "administrator", false]
+	 *           ["another screen", true, false, "active", "dashboard", "administrator", false]
+	 *           ["user who cannot deactivate plugins", true, false, "active", "plugins", "shop_manager", false]
+	 *
+	 * @param string $label               Case name.
+	 * @param bool   $has_subscriptions   Whether WooCommerce Subscriptions is active.
+	 * @param bool   $is_staging          Whether the site is a staging copy.
+	 * @param string $subscription_status Status of the Stripe-billed subscription.
+	 * @param string $screen              Admin screen.
+	 * @param string $role                Role of the current user.
+	 * @param bool   $expected_shown      Whether the warning is shown.
+	 */
+	public function test_warns_on_the_plugins_screen_only_when_it_applies( string $label, bool $has_subscriptions, bool $is_staging, string $subscription_status, string $screen, string $role, bool $expected_shown ): void {
+		unset( $label );
+		if ( $has_subscriptions ) {
+			$this->load_subscriptions();
+		}
+		WooCommerceSubscriptionsDoubles::load();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::DUPLICATE_SITE ] = $is_staging;
+		list( $subscription )                                       = $this->create_stripe_billed_subscription_and_renewal();
+		$subscription->set_status( $subscription_status );
+		$subscription->save();
+		$this->register_module( true );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
+		set_current_screen( $screen );
+
+		ob_start();
+		do_action( 'admin_notices' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$output = (string) ob_get_clean();
+
+		$warning = 'Your store has subscriptions using WooPayments Stripe Billing functionality for payment processing. Due to the <a href="https://woocommerce.com/document/woopayments/subscriptions/stripe-billing/#faq" target="_blank">off-site billing engine</a> these subscriptions use,<strong> they will continue to renew even after you deactivate Woo Subscriptions</strong>.';
+		$this->assertSame( $expected_shown, is_int( strpos( $output, $warning ) ) );
+		$this->assertSame( $expected_shown, is_int( strpos( $output, 'If you do not want these subscriptions to continue to be billed, you should <a href="https://woocommerce.com/document/subscriptions/customers-view/suspend-cancel-or-remove-an-item/#how-to-cancel-a-subscription-as-a-store-manager" target="_blank" rel="noreferrer noopener">cancel these subscriptions</a> prior to deactivating Woo Subscriptions.' ) ) );
+	}
+
+	/**
 	 * Create a subscription billed by Stripe Billing on the recorded main chain, and a renewal order of it.
 	 *
 	 * @return array{0:WC_Order,1:WC_Order}

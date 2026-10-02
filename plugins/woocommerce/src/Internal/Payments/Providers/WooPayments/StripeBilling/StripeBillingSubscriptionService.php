@@ -294,6 +294,32 @@ class StripeBillingSubscriptionService {
 	}
 
 	/**
+	 * Tell whether at least one active subscription is billed by Stripe Billing; one row is read.
+	 *
+	 * @return bool
+	 */
+	public function has_active_stripe_billed_subscriptions(): bool {
+		if ( ! function_exists( 'wcs_get_subscriptions' ) ) {
+			return false;
+		}
+
+		$subscriptions = wcs_get_subscriptions(
+			array(
+				'subscriptions_per_page' => 1,
+				'subscription_status'    => 'active',
+				'meta_query'             => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+					array(
+						'key'     => self::SUBSCRIPTION_ID_META_KEY,
+						'compare' => 'EXISTS',
+					),
+				),
+			)
+		);
+
+		return is_countable( $subscriptions ) && count( $subscriptions ) > 0;
+	}
+
+	/**
 	 * Count the subscriptions still billed by Stripe Billing, whatever their status or payment method.
 	 *
 	 * @return int

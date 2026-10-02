@@ -382,21 +382,25 @@ final class WooCommerceSubscriptionsDoubles {
 	}
 
 	/**
-	 * Find registered subscriptions whose meta matches every clause of `meta_query`, as `wcs_get_subscriptions()` does.
+	 * Find registered subscriptions with the `subscription_status` asked for whose meta matches every clause of `meta_query`, `=` or `EXISTS`, as `wcs_get_subscriptions()` does.
 	 *
-	 * @param array<string,mixed> $args Query arguments: `meta_query` and `subscriptions_per_page`.
+	 * @param array<string,mixed> $args Query arguments: `subscription_status`, `meta_query` and `subscriptions_per_page`.
 	 * @return array<int,SubscriptionDouble> Subscriptions by ID.
 	 */
 	public static function get_subscriptions( array $args ): array {
+		$status        = $args['subscription_status'] ?? 'any';
 		$subscriptions = array();
 		foreach ( $GLOBALS[ self::SUBSCRIPTION_IDS ] ?? array() as $subscription_id ) {
 			$subscription = wc_get_order( $subscription_id );
-			if ( ! $subscription instanceof SubscriptionDouble ) {
+			if ( ! $subscription instanceof SubscriptionDouble || ( 'any' !== $status && ! $subscription->has_status( $status ) ) ) {
 				continue;
 			}
 
 			foreach ( $args['meta_query'] ?? array() as $clause ) {
-				if ( (string) $subscription->get_meta( $clause['key'], true ) !== (string) $clause['value'] ) {
+				$matches = 'EXISTS' === ( $clause['compare'] ?? '=' )
+					? $subscription->meta_exists( $clause['key'] )
+					: (string) $subscription->get_meta( $clause['key'], true ) === (string) $clause['value'];
+				if ( ! $matches ) {
 					continue 2;
 				}
 			}
