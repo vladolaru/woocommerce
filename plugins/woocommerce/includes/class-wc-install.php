@@ -725,6 +725,7 @@ class WC_Install {
 		self::maybe_create_pages();
 		self::maybe_set_activation_transients();
 		self::set_paypal_standard_load_eligibility();
+		self::maybe_enable_native_paypal_wallet();
 		self::update_wc_version();
 		self::maybe_update_db_version();
 		self::maybe_set_store_id();
@@ -2952,6 +2953,21 @@ $stock_notifications_table_schema;
 
 			// Discard feedback.
 			ob_end_clean();
+		}
+	}
+
+	/**
+	 * Enable the core-native PayPal wallet runtime on new installs (POC).
+	 *
+	 * Existing stores keep the option unset; the arbiter then reports no native owner until it is set.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return void
+	 */
+	private static function maybe_enable_native_paypal_wallet() {
+		if ( self::is_new_install() ) {
+			add_option( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter::ENABLED_OPTION, 'yes', '', 'yes' );
 		}
 	}
 
