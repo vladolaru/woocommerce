@@ -2409,6 +2409,23 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Send a site-scoped platform request, signed with the store's own token, and return the decoded body.
+	 *
+	 * For provider modules that own their platform paths. The caller validates ids and paths.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<int|string,mixed> $params Request params.
+	 * @param string                  $api    API path below the site's WooPayments root.
+	 * @param string                  $method HTTP method.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function send_site_request( array $params, string $api, string $method ): array {
+		return $this->request( $params, $api, $method );
+	}
+
+	/**
 	 * Send a legacy compatibility request through its request-object filter contract.
 	 *
 	 * @since 11.0.0
