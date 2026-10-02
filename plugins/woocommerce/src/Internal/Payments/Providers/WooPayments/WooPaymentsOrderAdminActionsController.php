@@ -234,6 +234,12 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			if ( $this->operation_failed_without_note( $outcome, $operation ) ) {
 				$this->add_operation_failure_note( $order, $operation );
 			}
+
+			// The client schedules the Fee details job after this capture even when its capture note already exists (class-wc-payments-order-service.php:1862-1874).
+			if ( $on_status_change && PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() ) {
+				$intent_id = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) $order->get_meta( '_intent_id', true );
+				wc_get_container()->get( WooPaymentsFeeDetailsNoteScheduler::class )->schedule( $order, $intent_id );
+			}
 		} catch ( Throwable $exception ) {
 			unset( $exception );
 			$this->add_operation_failure_note( $order, $operation );

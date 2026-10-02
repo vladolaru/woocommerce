@@ -1127,6 +1127,60 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * A card-reader capture stores the fee its capture response carries, alone, as the client's capture does; an
+	 * intent the reader already captured stores none (class-wc-rest-payments-orders-controller.php:228,
+	 * class-wc-payments-order-service.php:1681, :1775-1781).
+	 *
+	 * @dataProvider terminal_capture_fee_cases
+	 *
+	 * @param string      $intent_status Status of the intent the app sends.
+	 * @param string|null $expected_fee  Fee meta the client stores, or null for none.
+	 */
+	public function test_capture_terminal_payment_stores_the_client_fee_meta( string $intent_status, ?string $expected_fee ): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$charge                                       = array(
+			'id'                     => 'ch_terminal_fee',
+			'captured'               => true,
+			'currency'               => 'usd',
+			'amount'                 => 1234,
+			'application_fee_amount' => 61,
+		);
+		$intent                                       = array(
+			'id'       => 'pi_terminal_fee',
+			'status'   => $intent_status,
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( $charge ) ),
+		);
+		$this->api_client->payment_intention_response = $intent;
+		$this->api_client->captured_intention_response = array_merge( $intent, array( 'status' => 'succeeded' ) );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_fee' );
+		$this->assertInstanceOf( WP_REST_Response::class, $this->sut->capture_terminal_payment( $request ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( null !== $expected_fee, $order->meta_exists( '_wcpay_transaction_fee' ) );
+		if ( null !== $expected_fee ) {
+			$this->assertSame( $expected_fee, $order->get_meta( '_wcpay_transaction_fee', true ) );
+		}
+		$this->assertFalse( $order->meta_exists( '_wcpay_net' ) );
+	}
+
+	/**
+	 * Terminal capture paths and the fee meta the client stores on each.
+	 *
+	 * @return array<string,array{string,string|null}>
+	 */
+	public function terminal_capture_fee_cases(): array {
+		return array(
+			'card reader authorization, captured by the store' => array( 'requires_capture', '0.61' ),
+			'Interac, captured by the reader' => array( 'succeeded', null ),
+		);
+	}
+
+	/**
 	 * Terminal capture paths and the notes the client writes on each.
 	 *
 	 * @return array<string,array{string,string[]}>

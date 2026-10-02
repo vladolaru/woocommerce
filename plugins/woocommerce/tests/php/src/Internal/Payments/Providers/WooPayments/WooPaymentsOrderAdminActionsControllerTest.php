@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -266,6 +267,63 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( PaymentContext::class, $last_capture_context );
 		$this->assertSame( (float) $order->get_total(), $last_capture_context->get_amount() );
 		$this->assertTrue( $last_capture_context->get_provider_data()[ WooPaymentsProviderGatewayAdapter::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE ] ?? false, 'The client writes no fee meta on this capture (class-wc-payments-order-service.php:1847-1886).' );
+	}
+
+	/**
+	 * A capture on the status change to completed schedules the Fee details job even when no new capture note is
+	 * written; the order action leaves scheduling to the capture note (class-wc-payments-order-service.php:1668, :1862-1874).
+	 *
+	 * @dataProvider capture_triggers_and_job_scheduling
+	 *
+	 * @param bool $on_status_change Whether the status change triggers the capture.
+	 * @param bool $schedules        Whether the job is scheduled without a new capture note.
+	 */
+	public function test_status_change_capture_schedules_the_fee_details_job( bool $on_status_change, bool $schedules ): void {
+		$order              = $this->create_authorized_order( OrderPaymentStore::GATEWAY_ID, 'requires_capture', $on_status_change ? 'completed' : 'on-hold' );
+		$processing_service = $this->createMock( PaymentProcessingService::class );
+		$processing_service->method( 'capture' )->willReturn( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_status_capture' ) );
+		$this->sut = $this->create_controller( true, $processing_service );
+		$this->sut->register();
+
+		if ( $on_status_change ) {
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce status hook.
+			do_action(
+				'woocommerce_order_status_completed',
+				$order->get_id(),
+				$order,
+				array(
+					'from' => 'on-hold',
+					'to'   => 'completed',
+				)
+			);
+		} else {
+			$this->sut->handle_woocommerce_order_action_capture_charge( $order );
+		}
+
+		$this->assertSame(
+			$schedules,
+			as_has_scheduled_action(
+				WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				array(
+					'order_id'     => $order->get_id(),
+					'intent_id'    => 'pi_status_capture',
+					'is_test_mode' => false,
+				),
+				'woocommerce_payments'
+			)
+		);
+	}
+
+	/**
+	 * Capture triggers and whether each schedules the job by itself.
+	 *
+	 * @return array<string,array{bool,bool}>
+	 */
+	public function capture_triggers_and_job_scheduling(): array {
+		return array(
+			'status change to completed' => array( true, true ),
+			'order action'               => array( false, false ),
+		);
 	}
 
 	/**

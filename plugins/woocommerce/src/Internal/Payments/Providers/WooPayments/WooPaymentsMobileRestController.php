@@ -1051,6 +1051,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
 		$balance_transaction_id = WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null );
 
+		$meta = array();
 		if ( PaymentLifecycleEvent::STATUS_AUTHORIZED === $status ) {
 			$note_type  = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED;
 			$candidates = $this->note_service->format_payment_authorized_note_candidates( $order, $intent_id, $charge_id );
@@ -1060,11 +1061,16 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		} else {
 			$note_type  = PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS;
 			$candidates = $this->note_service->format_capture_success_note_candidates( $order, $intent_id, $charge_id, $balance_transaction_id );
+			// The client's capture attaches the exchange rate and the fee the capture response carries (class-wc-payment-gateway-wcpay.php:4038-4041, class-wc-payments-order-service.php:1681).
+			$meta = array_merge(
+				$this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() ),
+				WooPaymentsOrderEffects::attached_fee_meta( $charge )
+			);
 		}
 
 		$this->get_lifecycle_service()->apply(
 			$order,
-			new PaymentLifecycleEvent( $status, $intent_id, array(), array(), $candidates[0], $note_type, $candidates ),
+			new PaymentLifecycleEvent( $status, $intent_id, $meta, array(), $candidates[0], $note_type, $candidates ),
 			new WooPaymentsPersistenceProfile()
 		);
 	}

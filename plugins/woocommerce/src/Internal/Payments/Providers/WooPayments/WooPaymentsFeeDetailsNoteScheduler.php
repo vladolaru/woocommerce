@@ -64,15 +64,23 @@ class WooPaymentsFeeDetailsNoteScheduler {
 			preg_quote( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, '/' ),
 			preg_quote( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, '/' )
 		);
-		if ( 1 !== preg_match( $pattern, $identity, $matches ) ) {
-			return;
+		if ( 1 === preg_match( $pattern, $identity, $matches ) ) {
+			$this->schedule( $order, $matches[1] );
 		}
+	}
 
+	/**
+	 * Schedule the note job for an order's payment intent.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $intent_id Payment intent the job reads.
+	 */
+	public function schedule( WC_Order $order, string $intent_id ): void {
 		$this->action_scheduler->schedule_job(
 			WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
 			array(
 				'order_id'     => $order->get_id(),
-				'intent_id'    => $matches[1],
+				'intent_id'    => $intent_id,
 				'is_test_mode' => $this->account_service->is_test_mode_enabled(),
 			)
 		);
