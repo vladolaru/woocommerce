@@ -280,6 +280,7 @@ export const StripeBillingSection = () => {
 					title={ __( 'Enable Stripe Billing', 'woocommerce' ) }
 					onRequestClose={ () => setIsConflictModalOpen( false ) }
 					className="woopayments-settings-modal"
+					size="medium"
 				>
 					<p>
 						{ createInterpolateElement(
