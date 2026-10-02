@@ -5,7 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -13,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
@@ -351,6 +354,69 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A successful change to a saved payment method fires the client hook once with the subscription and the new token; a failed one fires nothing (client `class-wc-payment-gateway-wcpay.php:1747-1757`).
+	 * @testWith ["completed", 1]
+	 *           ["failed", 0]
+	 *
+	 * @param string $outcome_status Outcome of the change request.
+	 * @param int    $expected_calls How often the hook fires.
+	 */
+	public function test_a_saved_method_change_fires_the_changed_payment_method_hook( string $outcome_status, int $expected_calls ): void {
+		WooCommerceSubscriptionsDoubles::load();
+		$user_id      = self::factory()->user->create();
+		$subscription = $this->create_subscription( $user_id, '' );
+		$token        = $this->create_card_token( $user_id );
+		$calls        = array();
+		add_action(
+			'woocommerce_payments_changed_subscription_payment_method',
+			static function ( ...$args ) use ( &$calls ) {
+				$calls[] = $args;
+			},
+			10,
+			5
+		);
+
+		$this->process_saved_method_change( $subscription, $token, $outcome_status );
+
+		$this->assertCount( $expected_calls, $calls );
+		if ( 0 === $expected_calls ) {
+			return;
+		}
+		$this->assertCount( 2, $calls[0], 'The hook passes the subscription and the token, as the client does.' );
+		$this->assertInstanceOf( WC_Order::class, $calls[0][0] );
+		$this->assertSame( $subscription->get_id(), $calls[0][0]->get_id() );
+		$this->assertInstanceOf( WC_Payment_Token::class, $calls[0][1] );
+		$this->assertSame( $token->get_id(), $calls[0][1]->get_id() );
+	}
+
+	/**
+	 * @testdox After a Stripe-billed subscription is switched to a saved card, the Stripe Billing module charges its pending invoice and completes the failed renewal (client `class-wc-payments-subscription-service.php:658-694`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_saved_method_change_charges_the_pending_stripe_billing_invoice(): void {
+		$this->load_stripe_billing_module( '0' );
+		$http_client  = $this->use_recorded_platform( 'charge_invoice' );
+		$user_id      = self::factory()->user->create();
+		$subscription = $this->create_subscription( $user_id, 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
+		$subscription->update_meta_data( '_wcpay_pending_invoice_id', 'in_1UM1VrBzWlxcwgpPgrIwNSlu' );
+		$subscription->save();
+		$renewal = \WC_Helper_Order::create_order( $user_id );
+		$renewal->update_meta_data( '_wcpay_billing_invoice_id', 'in_1UM1VrBzWlxcwgpPgrIwNSlu' );
+		$renewal->set_status( 'failed' );
+		$renewal->save();
+		$token = $this->create_card_token( $user_id );
+
+		$this->process_saved_method_change( $subscription, $token, 'completed' );
+
+		$this->assertSame( array( 'POST /sites/4/wcpay/invoices/in_1UM1VrBzWlxcwgpPgrIwNSlu/pay' ), array_map( static fn( array $request ) => $request['method'] . ' ' . $request['path'], $http_client->requests ) );
+		$this->assertSame( '', wc_get_order( $subscription->get_id() )->get_meta( '_wcpay_pending_invoice_id', true ) );
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertTrue( $renewal->is_paid(), 'The failed renewal is completed once Stripe collected the invoice.' );
+		$this->assertSame( array( $token->get_id() ), array_map( 'absint', $renewal->get_payment_tokens() ) );
+	}
+
+	/**
 	 * Subscription supports per toggle value, from client 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions-trait.php:63-110`.
 	 *
 	 * @return array<string,array{0:string,1:string[]}>
@@ -608,5 +674,43 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, new WooPaymentsTokenService() );
 
 		$gateway->process_payment( $subscription->get_id() );
+	}
+
+	/**
+	 * Answer the Stripe Billing module's platform requests with a recorded response, on the account and blog it was recorded on.
+	 *
+	 * @param string $pair Entry name in `Fixtures/rec-t63-billing-api.json`.
+	 * @return FakeWooPaymentsHttpClient
+	 */
+	private function use_recorded_platform( string $pair ): FakeWooPaymentsHttpClient {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t63-billing-api.json' ), true );
+		$entries   = array_values( array_filter( array_merge( $recording['entries'], $recording['supporting_entries'] ?? array() ), static fn( array $entry ) => $pair === $entry['pair'] ) );
+		$this->assertNotEmpty( $entries, "Fixture entry $pair is missing." );
+
+		$http_client              = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id     = 4;
+		$http_client->responses[] = array(
+			'response' => array( 'code' => (int) $entries[0]['response']['http_status'] ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( $entries[0]['response']['body'] ),
+		);
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled', 'is_test_mode_onboarding_enabled', 'get_account_id', 'is_dev_mode_enabled', 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_onboarding_enabled' )->willReturn( true );
+		$account_service->method( 'get_account_id' )->willReturn( 'acct_1TrY2nBzWlxcwgpP' );
+		$account_service->method( 'get_gateway_setting' )->willReturn( '' );
+
+		$api_client = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+		$api = new StripeBillingApi();
+		$api->init( $api_client );
+		wc_get_container()->replace( StripeBillingApi::class, $api );
+
+		return $http_client;
 	}
 }

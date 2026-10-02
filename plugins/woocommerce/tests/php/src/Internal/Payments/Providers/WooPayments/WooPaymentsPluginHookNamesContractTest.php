@@ -127,7 +127,6 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 		'wcpay_update_payment_result_on_error'             => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:95 §1(a)',
 		'wcpay_woopay_use_blog_token'                      => 'data/bc-surface-diff.md:123 §1(b) dropped by design (no mode switch)',
 		'woocommerce_payments_abilities_enabled'           => 'data/client-delta-10.8.0-11.1.0.tsv:20 (10.9.0 Abilities API registration, n/a)',
-		'woocommerce_payments_changed_subscription_payment_method' => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:99 §1(a)',
 		'woocommerce_payments_order_failed'                => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:96 §1(a)',
 		'woocommerce_woocommerce_payments_updated'         => 'data/bc-surface-diff.md:124 §1(b) dropped by design (no plugin version)',
 	);

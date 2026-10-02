@@ -2495,7 +2495,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Note the saved payment method a customer switched their subscription to, as the plugin does.
+	 * Note the saved payment method a customer switched their subscription to, and announce the change, as the plugin does.
 	 *
 	 * @param WC_Order             $order                  Subscription order.
 	 * @param array<string,string> $result                 Native checkout result.
@@ -2514,6 +2514,16 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$order->add_order_note( self::get_payment_method_changed_note( $token ) );
+
+		/**
+		 * Fires after a customer changed the payment method of a subscription to a saved one.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param WC_Order         $order The subscription.
+		 * @param WC_Payment_Token $token The new payment token.
+		 */
+		do_action( 'woocommerce_payments_changed_subscription_payment_method', $order, $token );
 	}
 
 	/**
