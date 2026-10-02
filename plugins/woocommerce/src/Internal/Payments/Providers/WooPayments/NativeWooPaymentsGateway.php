@@ -28,10 +28,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Exception;
 use Throwable;
 use WC_Order;
 use WC_Payment_Token;
+use WC_Payment_Token_CC;
 use WC_Payment_Gateway_CC;
 use WP_Error;
 
@@ -1819,6 +1821,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$this->maybe_handle_subscription_change_payment_success( $order, $result, $outcome, $is_subscription_change );
+		$this->maybe_handle_saved_method_subscription_change_success( $order, $result, $outcome, $is_subscription_payment_method_change && ! $is_subscription_change );
 		$result = $this->maybe_add_order_pay_save_intent_to_confirmation_redirect( $context, $order, $result );
 
 		return $result;
@@ -2489,6 +2492,50 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		\WC_Subscriptions_Change_Payment_Gateway::update_payment_method( $order, $this->id );
 
 		remove_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_payment_method_for_subscriptions' ), 10 );
+	}
+
+	/**
+	 * Note the saved payment method a customer switched their subscription to, as the plugin does.
+	 *
+	 * @param WC_Order             $order                  Subscription order.
+	 * @param array<string,string> $result                 Native checkout result.
+	 * @param PaymentOutcome       $outcome                Provider payment outcome.
+	 * @param bool                 $is_saved_method_change Whether this is a validated change to a saved payment method.
+	 * @return void
+	 */
+	private function maybe_handle_saved_method_subscription_change_success( WC_Order $order, array $result, PaymentOutcome $outcome, bool $is_saved_method_change ): void {
+		if ( ! $is_saved_method_change || 'success' !== ( $result['result'] ?? '' ) || $this->is_confirmation_redirect_result( $result ) || ! $this->is_terminal_subscription_change_outcome( $outcome ) ) {
+			return;
+		}
+
+		$token = $this->get_token_service()->get_valid_token_from_token_id( $this->sanitize_post_string( 'wc-' . $this->id . '-payment-token' ), $order->get_user_id() );
+		if ( ! $token instanceof WC_Payment_Token ) {
+			return;
+		}
+
+		$order->add_order_note( self::get_payment_method_changed_note( $token ) );
+	}
+
+	/**
+	 * Get the note that names the payment method a subscription was changed to.
+	 *
+	 * @param WC_Payment_Token $token New payment token.
+	 * @return string
+	 */
+	private static function get_payment_method_changed_note( WC_Payment_Token $token ): string {
+		if ( $token instanceof WooPaymentsLinkToken ) {
+			return sprintf(
+				/* translators: %1$s: redacted email address for Link payment method */
+				__( 'Payment method is changed to: <strong>Link ending in %1$s</strong>.', 'woocommerce' ),
+				esc_html( $token->get_redacted_email() )
+			);
+		}
+
+		return sprintf(
+			/* translators: %1$s: the last 4 digit of the credit card */
+			__( 'Payment method is changed to: <strong>Credit card ending in %1$s</strong>.', 'woocommerce' ),
+			$token instanceof WC_Payment_Token_CC ? esc_html( $token->get_last4() ) : '----'
+		);
 	}
 
 	/**

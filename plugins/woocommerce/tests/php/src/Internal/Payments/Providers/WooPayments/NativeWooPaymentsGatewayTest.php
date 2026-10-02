@@ -4,15 +4,20 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
+use WC_Order;
+use WC_Payment_Token;
 use WC_Unit_Test_Case;
 
 /**
@@ -25,6 +30,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		delete_option( 'woocommerce_default_country' );
+		unset(
+			$_POST['_wcsnonce'],
+			$_POST['woocommerce_change_payment'],
+			$_POST['wc-woocommerce_payments-payment-token'],
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ],
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ]
+		);
 		$this->reset_container_replacements();
 		wc_get_container()->reset_all_resolved();
 
@@ -316,6 +328,29 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A successful change to a saved payment method notes the new method on the subscription; a failed one notes nothing (client `class-wc-payment-gateway-wcpay.php:1720-1745`).
+	 * @testWith ["card", "completed", "Payment method is changed to: <strong>Credit card ending in 4242</strong>."]
+	 *           ["link", "completed", "Payment method is changed to: <strong>Link ending in ***pper@example.com</strong>."]
+	 *           ["card", "failed", ""]
+	 *
+	 * @param string $token_type     Saved payment method type: `card` or `link`.
+	 * @param string $outcome_status Outcome of the change request.
+	 * @param string $expected_note  Note expected on the subscription, empty for none.
+	 */
+	public function test_a_saved_method_change_notes_the_new_payment_method( string $token_type, string $outcome_status, string $expected_note ): void {
+		WooCommerceSubscriptionsDoubles::load();
+		$user_id      = self::factory()->user->create();
+		$subscription = $this->create_subscription( $user_id, '' );
+		$token        = 'link' === $token_type ? $this->create_link_token( $user_id ) : $this->create_card_token( $user_id );
+		$note_count   = count( wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) );
+
+		$this->process_saved_method_change( $subscription, $token, $outcome_status );
+
+		$new_notes = array_slice( array_map( static fn( $note ) => $note->content, array_reverse( wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) ) ), $note_count );
+		$this->assertSame( '' === $expected_note ? array() : array( $expected_note ), $new_notes );
+	}
+
+	/**
 	 * Subscription supports per toggle value, from client 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions-trait.php:63-110`.
 	 *
 	 * @return array<string,array{0:string,1:string[]}>
@@ -531,5 +566,47 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$token->save();
 
 		return $token;
+	}
+
+	/**
+	 * Create a saved Link payment method for a customer, with Link enabled on the store.
+	 *
+	 * @param int $user_id Customer user ID.
+	 * @return WooPaymentsLinkToken
+	 */
+	private function create_link_token( int $user_id ): WooPaymentsLinkToken {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) ) );
+		add_filter( 'woocommerce_payment_token_class', array( new WooPaymentsTokenClassMapController(), 'handle_woocommerce_payment_token_class' ), 10, 2 );
+
+		$token = new WooPaymentsLinkToken();
+		$token->set_gateway_id( 'woocommerce_payments' );
+		$token->set_user_id( $user_id );
+		$token->set_token( 'pm_1UJhOFBzWlxcwgpPLinkT63' );
+		$token->set_email( 'shopper@example.com' );
+		$token->save();
+
+		return $token;
+	}
+
+	/**
+	 * Send a customer's request to switch a subscription to a saved payment method through the gateway.
+	 *
+	 * @param WC_Order         $subscription   Subscription.
+	 * @param WC_Payment_Token $token          Saved payment method picked.
+	 * @param string           $outcome_status Outcome the payment processing answers with.
+	 */
+	private function process_saved_method_change( WC_Order $subscription, WC_Payment_Token $token, string $outcome_status ): void {
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		wp_set_current_user( $subscription->get_customer_id() );
+		$_POST['_wcsnonce']                             = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']            = (string) $subscription->get_id();
+		$_POST['wc-woocommerce_payments-payment-token'] = (string) $token->get_id();
+
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( $outcome_status, 'seti_1UM1VrBzWlxcwgpPChgT63' );
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, new WooPaymentsTokenService() );
+
+		$gateway->process_payment( $subscription->get_id() );
 	}
 }
