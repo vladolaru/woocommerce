@@ -553,6 +553,7 @@ class WooPaymentsEventIngestor {
 			$order_id = $this->get_order_id_from_first_charge_metadata( $event_object );
 		}
 		if ( 0 === $order_id ) {
+			// This includes Stripe Billing intents, which carry an invoice: their invoice event records them (client 11.1.0 webhook processing service :990-993).
 			return null;
 		}
 

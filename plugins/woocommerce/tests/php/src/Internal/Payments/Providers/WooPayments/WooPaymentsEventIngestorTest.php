@@ -3229,6 +3229,40 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A succeeded intent that carries an invoice and no order ID is left to its invoice event, as on the client.
+	 *
+	 * Client 11.1.0 `class-wc-payments-webhook-processing-service.php:968-993`. The recorded renewal intent
+	 * (`Fixtures/rec-t63-invoice-events.json`, `payment_intent_succeeded_with_invoice`) reaches the store about one
+	 * second before its `invoice.paid`, when the renewal order may already exist unpaid.
+	 */
+	public function test_succeeded_intent_with_an_invoice_and_no_order_id_is_left_to_the_invoice_event(): void {
+		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t63-invoice-events.json' ), true );
+		$event     = array_values( array_filter( $recording['supporting_entries'], static fn( array $entry ) => 'payment_intent_succeeded_with_invoice' === $entry['pair'] ) )[0]['body'];
+
+		$renewal_order = $this->create_woopayments_order();
+		$renewal_order->update_meta_data( '_wcpay_billing_invoice_id', $event['data']['object']['invoice'] );
+		$renewal_order->save();
+		$delivered = array();
+		add_action(
+			'woocommerce_payments_after_webhook_delivery',
+			static function ( string $event_type ) use ( &$delivered ): void {
+				$delivered[] = $event_type;
+			}
+		);
+
+		$this->sut->process( $event );
+
+		$renewal_order = wc_get_order( $renewal_order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $renewal_order );
+		$this->assertSame( 'pending', $renewal_order->get_status(), 'Only invoice.paid completes the renewal order.' );
+		$this->assertSame( '', $renewal_order->get_meta( '_intent_id', true ) );
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $renewal_order->get_id() ) ) );
+		$this->assertSame( array( 'payment_intent.succeeded' ), $delivered );
+	}
+
+	/**
 	 * @testdox charge.refunded ignores already persisted WooPayments refund IDs.
 	 */
 	public function test_charge_refunded_ignores_duplicate_provider_refund_id(): void {
