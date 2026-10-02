@@ -140,8 +140,7 @@ class PayPal extends PaymentGateway {
 	 *               Null if the environment could not be determined.
 	 */
 	private function is_paypal_in_sandbox_mode( WC_Payment_Gateway $payment_gateway ): ?bool {
-		if ( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) &&
-			is_callable( '\WooCommerce\PayPalCommerce\PPCP::container' ) ) {
+		if ( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) ) {
 			try {
 				$container = \WooCommerce\PayPalCommerce\PPCP::container();
 
@@ -185,8 +184,7 @@ class PayPal extends PaymentGateway {
 	 *               Null if we failed to determine the onboarding status.
 	 */
 	private function is_paypal_onboarded( WC_Payment_Gateway $payment_gateway ): ?bool {
-		if ( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) &&
-			is_callable( '\WooCommerce\PayPalCommerce\PPCP::container' ) ) {
+		if ( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) ) {
 			try {
 				$container = \WooCommerce\PayPalCommerce\PPCP::container();
 
