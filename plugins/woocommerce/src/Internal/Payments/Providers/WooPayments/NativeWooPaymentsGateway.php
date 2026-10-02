@@ -252,6 +252,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private array $externally_removed_supports = array();
 
 	/**
+	 * Whether the classic checkout fallback hooks were added in this request.
+	 *
+	 * @var bool
+	 */
+	private static bool $classic_checkout_fallback_hooks_added = false;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
@@ -287,6 +294,34 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		} else {
 			add_action( 'init', array( $this, 'handle_init' ) );
 		}
+
+		$this->maybe_add_classic_checkout_fallback_hooks();
+	}
+
+	/**
+	 * Add the classic checkout and order-pay fallback hooks once per request, from the card gateway.
+	 */
+	private function maybe_add_classic_checkout_fallback_hooks(): void {
+		if (
+			self::$classic_checkout_fallback_hooks_added
+			|| OrderPaymentStore::GATEWAY_ID !== $this->id
+			|| ! wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register()
+		) {
+			return;
+		}
+		self::$classic_checkout_fallback_hooks_added = true;
+
+		add_action( 'woocommerce_after_checkout_form', array( $this, 'handle_classic_checkout_without_fields' ) );
+		add_action( 'woocommerce_pay_order_before_payment', array( $this, 'handle_classic_checkout_without_fields' ) );
+	}
+
+	/**
+	 * Localize the classic checkout config when no WooPayments fields rendered.
+	 *
+	 * @internal
+	 */
+	public function handle_classic_checkout_without_fields(): void {
+		$this->get_checkout_bridge()->enqueue_classic_checkout_assets_without_fields( $this->supports );
 	}
 
 	/**
@@ -589,7 +624,22 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return void
 	 */
 	public function form() {
-		$this->get_checkout_bridge()->render_payment_fields( $this->payment_method_definition );
+		$this->get_checkout_bridge()->render_payment_fields( $this->get_card_gateway_supports(), $this->payment_method_definition );
+	}
+
+	/**
+	 * Get the card gateway's support features, which every WooPayments checkout method shares, as in client 11.1.0.
+	 *
+	 * @return string[]
+	 */
+	private function get_card_gateway_supports(): array {
+		if ( OrderPaymentStore::GATEWAY_ID === $this->id ) {
+			return $this->supports;
+		}
+
+		$card_gateway = $this->get_provider()->get_gateway_for_method( 'card' );
+
+		return null === $card_gateway ? array() : $card_gateway->supports;
 	}
 
 	/**

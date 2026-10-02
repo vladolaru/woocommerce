@@ -219,7 +219,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return array<string,mixed>
 	 */
 	public function get_payment_method_data() {
-		$data       = $this->checkout_bridge->get_blocks_payment_method_data( $this->payment_gateway ? $this->payment_gateway->get_payment_method_definition() : null, $this->shared_config );
+		$data       = $this->checkout_bridge->get_blocks_payment_method_data( $this->get_card_gateway_supports(), $this->payment_gateway ? $this->payment_gateway->get_payment_method_definition() : null, $this->shared_config );
 		$gateway_id = null === $this->payment_gateway ? OrderPaymentStore::GATEWAY_ID : $this->payment_gateway->id;
 		$data       = array_merge(
 			$data,
@@ -233,6 +233,23 @@ final class WooPayments extends AbstractPaymentMethodType {
 		}
 
 		return $data;
+	}
+
+	/**
+	 * Get the card gateway's support features, which every WooPayments Blocks method shares, as in client 11.1.0.
+	 *
+	 * The card gateway exists even when card is not offered, as the client's does; with no gateways at all, nothing is supported.
+	 *
+	 * @return string[]
+	 */
+	private function get_card_gateway_supports(): array {
+		if ( null !== $this->payment_gateway && OrderPaymentStore::GATEWAY_ID === $this->payment_gateway->id ) {
+			return $this->payment_gateway->supports;
+		}
+
+		$card_gateway = $this->provider->get_gateway_for_method( 'card' );
+
+		return null === $card_gateway ? array() : $card_gateway->supports;
 	}
 
 	/**

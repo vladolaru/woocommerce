@@ -438,9 +438,10 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			);
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments' ) )
+			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
+		$provider->method( 'get_payment_gateways' )->willReturn( array() );
 
 		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 
@@ -471,7 +472,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$klarna_gateway          = new NativeWooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
 		$provider                = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways' ) )
+			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway, $klarna_gateway ) );
@@ -506,7 +507,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->getMock();
 		$holders   = array();
 		$bridge->method( 'get_blocks_payment_method_data' )->willReturnCallback(
-			static function ( $definition, $shared = null ) use ( &$holders ): array {
+			static function ( $supports, $definition, $shared = null ) use ( &$holders ): array {
 				$holders[] = $shared;
 				return array();
 			}
@@ -514,7 +515,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$registry = new WooPaymentsPaymentMethodRegistry();
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways' ) )
+			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( false );
 		$provider->method( 'get_payment_gateways' )->willReturn( array( new NativeWooPaymentsGateway( $registry->get( 'card' ) ), new NativeWooPaymentsGateway( $registry->get( 'klarna' ) ) ) );
@@ -565,15 +566,20 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * @testdox Should expose Blocks payment method data for the current native WooPayments gateway definition.
+	 * @testdox Should expose Blocks payment method data for the current split gateway definition with the card gateway's supports.
+	 *
+	 * Client 11.1.0 registers one Blocks method that sends the card gateway's `$supports`, so a split gateway sends them too.
 	 */
 	public function test_get_payment_method_data_uses_current_gateway_definition(): void {
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
+		$card_gateway            = new NativeWooPaymentsGateway( $payment_method_registry->get( 'card' ) );
+		$card_gateway->supports  = array( 'products', 'refunds', 'tokenization', 'add_payment_method' );
 		$klarna_gateway          = new NativeWooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
-		$asset_api               = $this->getMockBuilder( AssetApi::class )
+		$this->assertNotSame( $card_gateway->supports, $klarna_gateway->supports );
+		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$bridge                  = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_blocks_payment_method_data', 'should_expose_checkout_surface' ) )
 			->getMock();
@@ -581,7 +587,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$bridge
 			->expects( $this->once() )
 			->method( 'get_blocks_payment_method_data' )
-			->with( $klarna_gateway->get_payment_method_definition() )
+			->with( array( 'products', 'refunds', 'tokenization', 'add_payment_method' ), $klarna_gateway->get_payment_method_definition() )
 			->willReturn(
 				array(
 					'gatewayId'          => 'woocommerce_payments_klarna',
@@ -591,9 +597,11 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			);
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments' ) )
+			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
+		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway, $klarna_gateway ) );
+		$provider->method( 'get_gateway_for_method' )->willReturnMap( array( array( 'card', $card_gateway ) ) );
 
 		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service(), $klarna_gateway );
 
@@ -628,9 +636,10 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		);
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments' ) )
+			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
+		$provider->method( 'get_payment_gateways' )->willReturn( array() );
 		$express_checkout_service = $this->create_express_checkout_service( true );
 
 		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $express_checkout_service );

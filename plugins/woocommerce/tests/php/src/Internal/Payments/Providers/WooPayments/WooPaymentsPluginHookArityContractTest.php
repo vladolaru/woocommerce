@@ -631,7 +631,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 */
 	private function probe_checkout_config(): void {
 		$bridge = wc_get_container()->get( WooPaymentsCheckoutBridge::class );
-		$bridge->get_payment_fields_js_config();
+		$bridge->get_payment_fields_js_config( array( 'products' ) );
 	}
 
 	/**

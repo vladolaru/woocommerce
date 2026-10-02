@@ -113,6 +113,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$subscription_handlers = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
 		$subscription_handlers->setAccessible( true );
 		$subscription_handlers->setValue( null, false );
+		$classic_checkout_fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
+		$classic_checkout_fallback_hooks->setAccessible( true );
+		$classic_checkout_fallback_hooks->setValue( null, false );
 		remove_all_filters( 'woocommerce_email_classes' );
 		remove_all_filters( 'wcs_get_retry_rule_raw' );
 		unset( $_POST['wcpay-setup-intent'] );
@@ -5133,13 +5136,44 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should delegate payment fields rendering to the checkout bridge.
+	 * @testdox A split gateway renders its payment fields with the card gateway's supports, as the client's one checkout does.
+	 */
+	public function test_split_gateway_payment_fields_use_the_card_gateway_supports(): void {
+		$registry          = new WooPaymentsPaymentMethodRegistry();
+		$card_gateway      = new NativeWooPaymentsGateway( $registry->get( 'card' ) );
+		$received_supports = null;
+		$bridge            = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'render_payment_fields' ) )
+			->getMock();
+		$bridge->method( 'render_payment_fields' )->willReturnCallback(
+			static function ( array $supports ) use ( &$received_supports ): void {
+				$received_supports = $supports;
+			}
+		);
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_for_method' ) )
+			->getMock();
+		$provider->method( 'get_gateway_for_method' )->willReturnMap( array( array( 'card', $card_gateway ) ) );
+		$card_gateway->supports = array( 'products', 'refunds', 'subscriptions', 'card_only_marker' );
+
+		$klarna_gateway = new NativeWooPaymentsGateway( $registry->get( 'klarna' ) );
+		$klarna_gateway->init( new RecordingPaymentProcessingService(), $provider, $bridge );
+		$klarna_gateway->form();
+
+		$this->assertSame( $card_gateway->supports, $received_supports );
+	}
+
+	/**
+	 * @testdox Should delegate payment fields rendering to the checkout bridge with the gateway's own supports.
 	 */
 	public function test_payment_fields_delegate_to_checkout_bridge(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 
-		$service = new RecordingPaymentProcessingService();
-		$bridge  = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$service           = new RecordingPaymentProcessingService();
+		$received_supports = null;
+		$bridge            = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'render_payment_fields' ) )
 			->getMock();
@@ -5147,18 +5181,21 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->expects( $this->once() )
 			->method( 'render_payment_fields' )
 			->willReturnCallback(
-				static function (): void {
+				static function ( array $supports ) use ( &$received_supports ): void {
+					$received_supports = $supports;
 					echo '<div id="wcpay-bridge-marker"></div>';
 				}
 			);
 
-		$output = '';
+		$output           = '';
+		$gateway_supports = array();
 		try {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => 'yes' ),
-				function () use ( $service, $bridge, &$output ): void {
+				function () use ( $service, $bridge, &$output, &$gateway_supports ): void {
 					$gateway = new NativeWooPaymentsGateway();
 					$gateway->init( $service, new WooPaymentsProvider(), $bridge );
+					$gateway_supports = $gateway->supports;
 
 					ob_start();
 					$gateway->payment_fields();
@@ -5169,6 +5206,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_is_checkout', '__return_true' );
 		}
 
+		$this->assertSame( $gateway_supports, $received_supports );
+		$this->assertContains( PaymentGatewayFeature::TOKENIZATION, $received_supports );
 		$this->assertStringContainsString( 'wcpay-bridge-marker', $output );
 		$this->assertStringContainsString( 'wc-woocommerce_payments-new-payment-method', $output );
 		$this->assertStringContainsString( 'wc-woocommerce_payments-payment-token-new', $output );

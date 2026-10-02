@@ -24,33 +24,6 @@ use Throwable;
  */
 class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
-	 * WooPayments checkout base support features exposed to Checkout Blocks.
-	 *
-	 * @var string[]
-	 */
-	private const BASE_BLOCKS_SUPPORTS = array(
-		'products',
-	);
-
-	/**
-	 * WooPayments subscription support features exposed to Checkout Blocks when WCS is active.
-	 *
-	 * @var string[]
-	 */
-	private const SUBSCRIPTION_BLOCKS_SUPPORTS = array(
-		'subscriptions',
-		'multiple_subscriptions',
-		'subscription_cancellation',
-		'subscription_suspension',
-		'subscription_reactivation',
-		'subscription_amount_changes',
-		'subscription_date_changes',
-		'subscription_payment_method_change',
-		'subscription_payment_method_change_customer',
-		'subscription_payment_method_change_admin',
-	);
-
-	/**
 	 * Native payment method capability for saved/reusable payment credentials.
 	 */
 	private const PAYMENT_METHOD_CAPABILITY_TOKENIZATION = 'tokenization';
@@ -371,9 +344,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( false === has_action( 'woocommerce_after_checkout_form', array( $this, 'handle_woocommerce_after_checkout_form' ) ) ) {
-			add_action( 'woocommerce_after_checkout_form', array( $this, 'handle_woocommerce_after_checkout_form' ) );
-		}
 		if ( false === has_action( 'woocommerce_after_checkout_form', array( $this, 'record_classic_checkout_page_view' ) ) ) {
 			add_action( 'woocommerce_after_checkout_form', array( $this, 'record_classic_checkout_page_view' ) );
 		}
@@ -385,9 +355,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 		if ( false === has_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ) ) ) {
 			add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ), 10, 2 );
-		}
-		if ( false === has_action( 'woocommerce_pay_order_before_payment', array( $this, 'handle_woocommerce_after_checkout_form' ) ) ) {
-			add_action( 'woocommerce_pay_order_before_payment', array( $this, 'handle_woocommerce_after_checkout_form' ) );
 		}
 		foreach ( array( 'woocommerce_after_cart', 'woocommerce_blocks_enqueue_cart_block_scripts_after', 'woocommerce_after_single_product', 'before_woocommerce_pay_form', 'woocommerce_payments_save_user_in_woopay' ) as $hook ) {
 			if ( false === has_action( $hook, array( $this, 'record_shopper_funnel_event' ) ) ) {
@@ -434,14 +401,14 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Ensure classic checkout and order-pay assets exist when no WooPayments fields rendered.
 	 *
-	 * @internal
+	 * @param string[] $supports Card gateway support features.
 	 */
-	public function handle_woocommerce_after_checkout_form(): void {
+	public function enqueue_classic_checkout_assets_without_fields( array $supports ): void {
 		if ( $this->base_classic_config_localized ) {
 			return;
 		}
 
-		$this->enqueue_classic_checkout_assets( $this->get_payment_fields_js_config() );
+		$this->enqueue_classic_checkout_assets( $this->get_payment_fields_js_config( $supports ) );
 	}
 
 	/**
@@ -524,19 +491,21 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Get the classic checkout JS config.
 	 *
+	 * @param string[]                                $supports                  Card gateway support features, sent as `features`.
 	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return array<string,mixed>
 	 */
-	public function get_payment_fields_js_config( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
-		return $this->complete_payment_fields_js_config( $this->get_payment_fields_js_config_base(), $payment_method_definition );
+	public function get_payment_fields_js_config( array $supports, ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
+		return $this->complete_payment_fields_js_config( $this->get_payment_fields_js_config_base( $supports ), $payment_method_definition );
 	}
 
 	/**
 	 * Build the gateway-independent part of the payment fields config.
 	 *
+	 * @param string[] $supports Card gateway support features.
 	 * @return array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}
 	 */
-	private function get_payment_fields_js_config_base(): array {
+	private function get_payment_fields_js_config_base( array $supports ): array {
 		$force_network_saved_cards = $this->should_force_network_saved_cards();
 		$saved_cards_enabled       = $this->is_saved_cards_enabled();
 		$payment_context           = $this->get_payment_context();
@@ -577,7 +546,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 				'woocommerce'
 			),
 			'fraudServices'                            => $this->get_fraud_services_config(),
-			'features'                                 => $this->get_blocks_supports(),
+			'features'                                 => array_values( $supports ),
 			'usesLegacySetupIntentBridge'              => false,
 			'usesLegacyOrderStatusBridge'              => false,
 			'usesNativeSetupIntentBridge'              => true,
@@ -662,11 +631,12 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Render the classic checkout payment fields.
 	 *
+	 * @param string[]                                $supports                  Card gateway support features.
 	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return void
 	 */
-	public function render_payment_fields( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): void {
-		$config      = $this->get_payment_fields_js_config( $payment_method_definition );
+	public function render_payment_fields( array $supports, ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): void {
+		$config      = $this->get_payment_fields_js_config( $supports, $payment_method_definition );
 		$json_config = wp_json_encode( $config );
 
 		if ( ! is_string( $json_config ) ) {
@@ -701,16 +671,17 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Get Blocks payment method data.
 	 *
+	 * @param string[]                                $supports                  Card gateway support features, shared by every Blocks method.
 	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @param \ArrayObject|null                       $shared                    Holder that lets split gateways share one config base (client 11.1.0 registers one Blocks method).
 	 * @phpstan-param \ArrayObject<string,mixed>|null $shared
 	 * @return array<string,mixed>
 	 */
-	public function get_blocks_payment_method_data( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null, ?\ArrayObject $shared = null ): array {
+	public function get_blocks_payment_method_data( array $supports, ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null, ?\ArrayObject $shared = null ): array {
 		if ( null !== $shared && ! isset( $shared['base'] ) ) {
-			$shared['base'] = $this->get_blocks_payment_fields_js_config_base();
+			$shared['base'] = $this->get_blocks_payment_fields_js_config_base( $supports );
 		}
-		$base = null === $shared ? $this->get_blocks_payment_fields_js_config_base() : $shared['base'];
+		$base = null === $shared ? $this->get_blocks_payment_fields_js_config_base( $supports ) : $shared['base'];
 		$data = $this->complete_payment_fields_js_config( $base, $payment_method_definition, true );
 
 		// Sanitize the shopper-facing testing instructions after the wcpay_payment_fields_js_config
@@ -736,7 +707,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 				'description' => $this->get_blocks_payment_method_description( $payment_method_definition ),
 				// Client 11.1.0 class-wc-payments-blocks-payment-method.php:102, for the payment method preview in wp-admin.
 				'is_admin'    => is_admin(),
-				'supports'    => $this->get_blocks_supports(),
+				'supports'    => array_values( $supports ),
 			)
 		);
 	}
@@ -747,10 +718,11 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * Before the config filter, the client's own filter callbacks add the WooPay button keys, the express checkout
 	 * switches and the order-pay keys only while their handlers run; a subscription payment method change skips them all.
 	 *
+	 * @param string[] $supports Card gateway support features.
 	 * @return array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}
 	 */
-	private function get_blocks_payment_fields_js_config_base(): array {
-		$base   = $this->get_payment_fields_js_config_base();
+	private function get_blocks_payment_fields_js_config_base( array $supports ): array {
+		$base   = $this->get_payment_fields_js_config_base( $supports );
 		$config = array_diff_key( $base['config'], array_flip( self::BLOCKS_OMITTED_CONFIG_KEYS ) );
 
 		if ( ! $this->is_woopay_button_handler_active() ) {
@@ -1139,7 +1111,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 				'forceNetworkSavedCards' => $this->should_force_network_saved_cards(),
 				'cardBrandIcons'         => $this->get_card_brand_icons(),
 				'showSaveOption'         => $this->should_show_card_save_option( $saved_cards_enabled ),
-				'supports'               => $this->get_blocks_supports(),
 				'testingInstructions'    => $this->get_card_testing_instructions(),
 				'countries'              => array(),
 			),
@@ -1211,7 +1182,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			'isBnpl'            => $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_BUY_NOW_PAY_LATER ),
 			'isExpressCheckout' => $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT ),
 			'showSaveOption'    => $is_reusable && $this->should_show_save_option( $saved_cards_enabled ),
-			'supports'          => $this->get_blocks_supports(),
 			'countries'         => $definition->get_supported_countries( $account_country ),
 		);
 	}
@@ -1359,21 +1329,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get WooPayments support features exposed to Checkout Blocks.
-	 *
-	 * @return string[]
-	 */
-	private function get_blocks_supports(): array {
-		$supports = self::BASE_BLOCKS_SUPPORTS;
-
-		if ( $this->is_subscriptions_enabled() ) {
-			$supports = array_merge( $supports, self::SUBSCRIPTION_BLOCKS_SUPPORTS );
-		}
-
-		return array_values( array_unique( $supports ) );
-	}
-
-	/**
 	 * Get WooPayments fraud services config exposed to checkout scripts.
 	 *
 	 * @return array<string,mixed>
@@ -1491,21 +1446,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether WooCommerce Subscriptions support is available for Blocks.
-	 *
-	 * @return bool
-	 */
-	private function is_subscriptions_enabled(): bool {
-		if ( class_exists( 'WC_Subscriptions' ) ) {
-			$version = isset( \WC_Subscriptions::$version ) ? (string) \WC_Subscriptions::$version : '';
-
-			return '' !== $version && version_compare( $version, '2.2.0', '>=' );
-		}
-
-		return class_exists( 'WC_Subscriptions_Core_Plugin' );
-	}
-
-	/**
 	 * Tell whether the current order-pay request changes a subscription payment method.
 	 *
 	 * @return bool
@@ -1513,7 +1453,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	private function is_changing_payment_method_for_subscription(): bool {
 		if (
 			! is_wc_endpoint_url( 'order-pay' ) ||
-			! $this->is_subscriptions_enabled() ||
+			! WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available() ||
 			! isset( $_GET['change_payment_method'] ) || // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request context matching WooCommerce Subscriptions.
 			! function_exists( 'wcs_is_subscription' )
 		) {
