@@ -2959,7 +2959,9 @@ $stock_notifications_table_schema;
 	/**
 	 * Enable the core-native PayPal wallet runtime on new installs (POC).
 	 *
-	 * Existing stores keep the option unset; the arbiter then reports no native owner until it is set.
+	 * Seeds the option when is_new_install() is true: a first install, or an existing store that is still in coming-soon
+	 * mode, has not completed the setup task list and has no shop page or products. Other existing stores keep the option
+	 * unset, and the arbiter then reports no native owner until it is set.
 	 *
 	 * @since 11.3.0
 	 *
