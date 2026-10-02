@@ -1159,6 +1159,80 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A bundled-flavor store owes its notice once per exclusion: dismissed, it stays dismissed; reopened and excluded again, it is owed again (spec section 7).
+	 */
+	public function test_bundled_exclusion_notice_is_owed_once_per_exclusion(): void {
+		$failures  = array( 'legacy_stripe_billing_subscriptions_present' );
+		$preflight = $this->create_controllable_preflight( $failures );
+		$sut       = $this->create_job( true, $preflight );
+		$bundled   = WooPaymentsCutoverReconciliationJob::NOTICE_BUNDLED_EXCLUSION;
+
+		$excluded = $sut->classify_for_admin_notice();
+		$this->assertTrue( $sut->is_bundled_exclusion_notice_due( $excluded ) );
+		$this->assertTrue( $sut->dismiss_completion_notice( $bundled ) );
+		$this->assertFalse( $sut->dismiss_completion_notice( $bundled ), 'A dismissed notice stays dismissed.' );
+		wp_cache_flush();
+		$this->assertFalse( $sut->is_bundled_exclusion_notice_due( $this->require_state_store()->get_record() ) );
+
+		$failures = array();
+		$awaiting = $sut->classify_for_admin_notice();
+		$this->assertFalse( $sut->is_bundled_exclusion_notice_due( $awaiting ), 'A store that can switch gets the start notice instead.' );
+		$failures   = array( 'legacy_stripe_billing_subscriptions_present' );
+		$reexcluded = $sut->classify_for_admin_notice();
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $reexcluded['state'] );
+		$this->assertSame( $excluded['generation'] + 1, $reexcluded['generation'] );
+		$this->assertTrue( $sut->is_bundled_exclusion_notice_due( $reexcluded ), 'The dismissal belonged to the earlier exclusion.' );
+	}
+
+	/**
+	 * @testdox An excluded store waits for the hour-long cached classification, unless it is forgotten, as when WooCommerce Subscriptions is activated.
+	 */
+	public function test_forgetting_the_admin_classification_reopens_an_excluded_store_at_once(): void {
+		$failures  = array( 'legacy_stripe_billing_subscriptions_present' );
+		$preflight = $this->create_controllable_preflight( $failures );
+		$sut       = $this->create_job( true, $preflight );
+		$excluded  = $sut->classify_for_admin_notice();
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $excluded['state'] );
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $sut->classify_for_admin_notice()['state'], 'The excluded record is classified and cached.' );
+
+		$failures = array();
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $sut->classify_for_admin_notice()['state'], 'The cached classification still says bundled.' );
+		$sut->forget_admin_classification();
+
+		$this->assertSame( 'awaiting_merchant_start', $sut->classify_for_admin_notice()['current_step'] );
+	}
+
+	/**
+	 * Create a preflight double that reports the given failures, by reference so a test can change them.
+	 *
+	 * @param string[] $failures Failures to report.
+	 * @return WooPaymentsCutoverPreflightService
+	 */
+	private function create_controllable_preflight( array &$failures ): WooPaymentsCutoverPreflightService {
+		return new class( $failures ) extends WooPaymentsCutoverPreflightService {
+			/** @var string[] */
+			private array $failures;
+
+			/**
+			 * @param string[] $failures Controlled failures.
+			 */
+			public function __construct( array &$failures ) {
+				$this->failures =& $failures;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return $this->failures;
+			}
+
+			/** Report a site-local activation; this double never initializes the legacy proxy. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+		};
+	}
+
+	/**
 	 * @testdox Stripe exclusion removal opens an unscheduled generation that only a merchant click can start.
 	 */
 	public function test_removed_stripe_exclusion_waits_for_merchant_start(): void {

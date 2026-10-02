@@ -30,6 +30,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Completion notice: the switch finished. */
 	public const NOTICE_SUCCESS = 'success';
 
+	/** Notice telling a bundled-flavor store why it cannot switch yet. */
+	public const NOTICE_BUNDLED_EXCLUSION = 'bundled_exclusion';
+
+	/** Failure code of stores on the bundled WooPayments subscriptions; stored in records, so it never changes. */
+	private const BUNDLED_EXCLUSION_CODE = 'legacy_stripe_billing_subscriptions_present';
+
 	/** Reconciliation action hook. */
 	public const ACTION_HOOK = WooPaymentsCutoverActionScheduler::ACTION_HOOK;
 
@@ -558,7 +564,34 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True only for the request that recorded the dismissal.
 	 */
 	public function dismiss_completion_notice( string $notice ): bool {
+		if ( self::NOTICE_BUNDLED_EXCLUSION === $notice ) {
+			return $this->consume_notice( fn( ?array $record ): bool => $this->is_bundled_exclusion_notice_due( $record ), $notice . '_notice_dismissed' );
+		}
+
 		return $this->consume_notice( fn( ?array $record ): bool => $this->is_completion_notice_due( $record, $notice ), $notice . '_notice_dismissed' );
+	}
+
+	/**
+	 * Tell whether a store excluded for the bundled WooPayments subscriptions still owes its notice.
+	 *
+	 * The dismissal is recorded on the record, so a reopened and excluded-again store, which gets a new generation, sees it again.
+	 *
+	 * @param array<string,mixed>|null $record Current record.
+	 * @return bool
+	 */
+	public function is_bundled_exclusion_notice_due( ?array $record ): bool {
+		return is_array( $record )
+			&& WooPaymentsCutoverState::EXCLUDED === ( $record['state'] ?? null )
+			&& in_array( self::BUNDLED_EXCLUSION_CODE, (array) ( $record['deferred_codes'] ?? array() ), true )
+			&& is_array( $record['informational_outcomes'] ?? null )
+			&& ! $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => self::NOTICE_BUNDLED_EXCLUSION . '_notice_dismissed' ) );
+	}
+
+	/**
+	 * Forget the cached admin classification, so the next admin page checks the bundled-flavor rule again.
+	 */
+	public function forget_admin_classification(): void {
+		delete_option( self::ADMIN_CLASSIFICATION_OPTION );
 	}
 
 	/**

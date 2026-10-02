@@ -503,6 +503,76 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A store excluded for the bundled WooPayments subscriptions is told why it cannot switch, with no start button, until a manager dismisses it (spec section 7).
+	 */
+	public function test_bundled_store_is_told_why_it_cannot_switch_until_dismissed(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$job        = $this->create_excluded_notice_job( 'legacy_stripe_billing_subscriptions_present' );
+		$controller = $this->create_cutover_controller( null, $job );
+		$this->register_exit_mock( static fn() => null );
+		add_filter( 'wp_redirect', '__return_empty_string' );
+
+		try {
+			$notices = $this->render_admin_notices( $controller );
+			$this->assertStringContainsString( 'WooPayments is now part of WooCommerce, but this store can&#039;t switch yet. Its subscriptions are billed through Stripe Billing, which needs the Woo Subscriptions extension. Install and activate Woo Subscriptions to make the switch available. Until then nothing changes and WooPayments keeps running from the plugin.', $notices );
+			$this->assertStringNotContainsString( 'Start the switch', $notices );
+			$this->assertStringNotContainsString( 'button', $notices );
+
+			$this->follow_dismiss_link( $controller, $notices, WooPaymentsCutoverReconciliationJob::NOTICE_BUNDLED_EXCLUSION );
+			$this->assertSame( array( WooPaymentsCutoverReconciliationJob::NOTICE_BUNDLED_EXCLUSION ), $job->dismissed );
+			$this->assertSame( '', trim( $this->render_admin_notices( $controller ) ) );
+		} finally {
+			remove_filter( 'wp_redirect', '__return_empty_string' );
+		}
+	}
+
+	/**
+	 * @testdox The bundled-store notice shows only where the start notice would: not for another exclusion, and not for a user who cannot start the switch.
+	 */
+	public function test_bundled_store_notice_follows_the_start_notice_eligibility(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+
+		$this->assertSame( '', trim( $this->render_admin_notices( $this->create_cutover_controller( null, $this->create_excluded_notice_job( 'some_other_exclusion' ) ) ) ) );
+
+		$this->fake_current_user_caps( false );
+		$this->assertSame( '', trim( $this->render_admin_notices( $this->create_cutover_controller( null, $this->create_excluded_notice_job( 'legacy_stripe_billing_subscriptions_present' ) ) ) ) );
+	}
+
+	/**
+	 * @testdox Activating or deactivating WooCommerce Subscriptions, in any folder, forgets the cached cutover classification; other plugins do not.
+	 * @testWith ["woocommerce-subscriptions/woocommerce-subscriptions.php", "activated", false]
+	 *           ["woocommerce-com-woocommerce-subscriptions/woocommerce-subscriptions.php", "deactivated", false]
+	 *           ["hello.php", "activated", true]
+	 *
+	 * @param string $plugin          Plugin file.
+	 * @param string $change          Activated or deactivated.
+	 * @param bool   $expected_cached Whether the classification stays cached.
+	 */
+	public function test_woocommerce_subscriptions_changes_forget_the_classification( string $plugin, string $change, bool $expected_cached ): void {
+		update_option(
+			WooPaymentsCutoverReconciliationJob::ADMIN_CLASSIFICATION_OPTION,
+			array(
+				'key'        => 'none',
+				'present'    => true,
+				'expires_at' => time() + HOUR_IN_SECONDS,
+			)
+		);
+		$controller = $this->create_cutover_controller();
+
+		if ( 'activated' === $change ) {
+			$controller->handle_plugin_activated( $plugin, false );
+		} else {
+			$controller->handle_plugin_deactivated( $plugin, false );
+		}
+
+		$this->assertSame( $expected_cached, is_array( get_option( WooPaymentsCutoverReconciliationJob::ADMIN_CLASSIFICATION_OPTION ) ) );
+	}
+
+	/**
 	 * @testdox A user who cannot manage WooCommerce never sees the completion notices and cannot dismiss them.
 	 */
 	public function test_completion_notices_are_for_store_managers_only(): void {
@@ -1774,6 +1844,53 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function dismiss_completion_notice( string $notice ): bool {
 				if ( ! $this->is_completion_notice_due( $this->record, $notice ) ) {
+					return false;
+				}
+				$this->dismissed[]                        = $notice;
+				$this->record['informational_outcomes'][] = array( 'code' => $notice . '_notice_dismissed' );
+				return true;
+			}
+		};
+	}
+
+	/**
+	 * Create a job whose record is excluded for the given code, recording dismissals the way the durable record does.
+	 *
+	 * @param string $code Exclusion code.
+	 * @return WooPaymentsCutoverReconciliationJob
+	 */
+	private function create_excluded_notice_job( string $code ): WooPaymentsCutoverReconciliationJob {
+		return new class( $code ) extends WooPaymentsCutoverReconciliationJob {
+			/** @var string[] Dismissed notices, in order. */
+			public array $dismissed = array();
+
+			/** @var array<string,mixed> Excluded record. */
+			private array $record;
+
+			/**
+			 * @param string $code Exclusion code.
+			 */
+			public function __construct( string $code ) {
+				$this->record = array(
+					'state'                  => WooPaymentsCutoverState::EXCLUDED,
+					'current_step'           => 'excluded',
+					'deferred_codes'         => array( $code ),
+					'informational_outcomes' => array(),
+				);
+			}
+
+			/** @return array<string,mixed>|null */
+			public function classify_for_admin_notice(): ?array {
+				return $this->record;
+			}
+
+			/**
+			 * Record the dismissal the way the durable record does.
+			 *
+			 * @param string $notice Notice to dismiss.
+			 */
+			public function dismiss_completion_notice( string $notice ): bool {
+				if ( self::NOTICE_BUNDLED_EXCLUSION !== $notice || ! $this->is_bundled_exclusion_notice_due( $this->record ) ) {
 					return false;
 				}
 				$this->dismissed[]                        = $notice;

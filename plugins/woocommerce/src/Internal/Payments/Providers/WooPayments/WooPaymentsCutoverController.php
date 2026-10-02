@@ -358,6 +358,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		if ( $this->reconciliation_job->is_internal_plugin_lifecycle_change() || ! is_string( $plugin ) || ! is_bool( $network_deactivating ) ) {
 			return;
 		}
+		$this->maybe_forget_admin_classification( $plugin );
 		$active_plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
 		if ( NativePaymentsRuntimeArbiter::PLUGIN_FILE !== $plugin && $active_plugin_file !== $plugin ) {
 			return;
@@ -378,12 +379,26 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		if ( $this->reconciliation_job->is_internal_plugin_lifecycle_change() || ! is_string( $plugin ) || ! is_bool( $network_wide ) ) {
 			return;
 		}
+		$this->maybe_forget_admin_classification( $plugin );
 		$active_plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
 		if ( NativePaymentsRuntimeArbiter::PLUGIN_FILE !== $plugin && $active_plugin_file !== $plugin ) {
 			return;
 		}
 
 		$this->reconciliation_job->record_plugin_activation( $network_wide );
+	}
+
+	/**
+	 * Forget the cached admin classification when WooCommerce Subscriptions changes, since it decides the bundled-flavor exclusion.
+	 *
+	 * Current site only: after a network-wide change, other sites catch up when their cached classification expires.
+	 *
+	 * @param string $plugin Activated or deactivated plugin path.
+	 */
+	private function maybe_forget_admin_classification( string $plugin ): void {
+		if ( 'woocommerce-subscriptions.php' === basename( $plugin ) ) {
+			$this->reconciliation_job->forget_admin_classification();
+		}
 	}
 
 	/**
@@ -632,6 +647,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 					return;
 			}
 			if ( WooPaymentsCutoverState::EXCLUDED === $record['state'] ) {
+				if ( $this->is_start_eligible() && $this->reconciliation_job->is_bundled_exclusion_notice_due( $record ) ) {
+					$this->output_bundled_exclusion_notice();
+				}
 				return;
 			}
 			if ( WooPaymentsCutoverState::DONE === $record['state'] && ! $this->arbiter->is_plugin_runtime_active() ) {
@@ -657,6 +675,18 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 */
 	private function is_start_eligible(): bool {
 		return $this->account_service->is_native_eligible() && $this->is_soft_cutover_enabled() && $this->arbiter->is_plugin_runtime_active() && $this->current_user_can_cutover();
+	}
+
+	/**
+	 * Output the notice telling a store on the bundled WooPayments subscriptions why it cannot switch yet (spec section 7).
+	 */
+	private function output_bundled_exclusion_notice(): void {
+		?>
+		<div class="notice notice-info" style="position:relative;">
+			<?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_BUNDLED_EXCLUSION ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
+			<p><?php esc_html_e( "WooPayments is now part of WooCommerce, but this store can't switch yet. Its subscriptions are billed through Stripe Billing, which needs the Woo Subscriptions extension. Install and activate Woo Subscriptions to make the switch available. Until then nothing changes and WooPayments keeps running from the plugin.", 'woocommerce' ); ?></p>
+		</div>
+		<?php
 	}
 
 	/**
