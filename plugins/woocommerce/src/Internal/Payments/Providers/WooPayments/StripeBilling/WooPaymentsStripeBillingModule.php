@@ -117,7 +117,7 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell the settings page whether the store may use Stripe Billing and whether the toggle is on, as the plugin's admin settings do.
+	 * Tell the settings page whether the store may use Stripe Billing, as the plugin's admin settings do.
 	 *
 	 * Stripe Billing is available to US stores only (client 11.1.0 `class-wc-payments-features.php:290-297`, `class-wc-payments-admin.php:1057-1058`).
 	 *
@@ -134,7 +134,6 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 		$base_location = wc_get_base_location();
 		$woopayments   = isset( $settings['woopaymentsSettings'] ) && is_array( $settings['woopaymentsSettings'] ) ? $settings['woopaymentsSettings'] : array();
 
-		$woopayments['isStripeBillingEnabled']  = '1' === get_option( self::TOGGLE_OPTION, '0' );
 		$woopayments['isStripeBillingEligible'] = 'US' === ( $base_location['country'] ?? '' );
 		$settings['woopaymentsSettings']        = $woopayments;
 
@@ -177,7 +176,7 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function is_stripe_billing_enabled(): bool {
-		return $this->loaded && '1' === get_option( self::TOGGLE_OPTION, '0' );
+		return $this->loaded && $this->is_toggle_on();
 	}
 
 	/**
@@ -209,7 +208,7 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	 */
 	public function get_settings_fields(): array {
 		return array(
-			'is_stripe_billing_enabled'         => '1' === get_option( self::TOGGLE_OPTION, '0' ),
+			'is_stripe_billing_enabled'         => $this->is_toggle_on(),
 			'is_migrating_stripe_billing'       => $this->is_migrating(),
 			'stripe_billing_subscription_count' => $this->get_stripe_billing_subscription_count(),
 			'stripe_billing_migrated_count'     => $this->get_migrated_subscription_count(),
@@ -323,6 +322,15 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 		$this->attach( 'woocommerce_subscriptions_change_payment_method_page_notice_message', StripeBillingChangePaymentMethodHandler::class, 'change_payment_method_page_notice', 10, 2 );
 		$this->attach( 'template_redirect', StripeBillingChangePaymentMethodHandler::class, 'redirect_pay_for_order_to_update_payment_method' );
 		$this->attach( 'woocommerce_change_payment_button_text', StripeBillingChangePaymentMethodHandler::class, 'change_payment_method_form_submit_text' );
+	}
+
+	/**
+	 * Tell whether the toggle is stored as on, whether or not WooCommerce Subscriptions is active.
+	 *
+	 * @return bool
+	 */
+	private function is_toggle_on(): bool {
+		return '1' === get_option( self::TOGGLE_OPTION, '0' );
 	}
 
 	/**

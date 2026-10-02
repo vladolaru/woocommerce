@@ -295,7 +295,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The settings page learns whether the store may use Stripe Billing and whether the toggle is on, staging copy included ($country, staging: $is_staging) (client `class-wc-payments-admin.php:1057-1058`, `class-wc-payments-features.php:290-297`).
+	 * @testdox The settings page learns whether the store may use Stripe Billing, staging copy included ($country, staging: $is_staging) (client `class-wc-payments-admin.php:1057-1058`, `class-wc-payments-features.php:290-297`).
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 * @testWith ["US:CA", false, true]
@@ -311,13 +311,11 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::DUPLICATE_SITE ] = $is_staging;
 		update_option( 'woocommerce_default_country', $country );
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '1' );
 		$this->register_module( true );
 
 		$settings = apply_filters( 'woocommerce_admin_shared_settings', array( 'woopaymentsSettings' => array( 'isSubscriptionsActive' => true ) ) );
 
 		$this->assertTrue( $settings['woopaymentsSettings']['isSubscriptionsActive'], 'Other values are kept.' );
-		$this->assertTrue( $settings['woopaymentsSettings']['isStripeBillingEnabled'] );
 		$this->assertSame( $expected_eligible, $settings['woopaymentsSettings']['isStripeBillingEligible'] );
 	}
 
