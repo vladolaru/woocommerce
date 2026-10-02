@@ -21,6 +21,50 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	private $sut;
 
 	/**
+	 * Saved request state, restored in tearDown.
+	 *
+	 * @var array
+	 */
+	private $saved_request = array();
+
+	/**
+	 * Save the request globals the activation guard reads.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->saved_request = array(
+			'get'     => $_GET, // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Saving test state.
+			'request' => $_REQUEST, // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Saving test state.
+			'pagenow' => $GLOBALS['pagenow'] ?? null,
+		);
+	}
+
+	/**
+	 * Restore the request globals.
+	 */
+	public function tearDown(): void {
+		$_GET     = $this->saved_request['get'];
+		$_REQUEST = $this->saved_request['request'];
+		if ( null === $this->saved_request['pagenow'] ) {
+			unset( $GLOBALS['pagenow'] );
+		} else {
+			$GLOBALS['pagenow'] = $this->saved_request['pagenow']; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulating the admin page.
+		}
+		parent::tearDown();
+	}
+
+	/**
+	 * Simulate a plugins.php request with the given query args.
+	 *
+	 * @param array $args Query args.
+	 */
+	private function set_plugins_request( array $args ): void {
+		$_GET               = $args;
+		$_REQUEST           = $args;
+		$GLOBALS['pagenow'] = 'plugins.php'; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulating the admin page.
+	}
+
+	/**
 	 * Build the SUT with an arbiter stub that answers as instructed.
 	 *
 	 * @param bool $native_owns Whether the arbiter should say native owns the site.
@@ -55,6 +99,86 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $this->sut->is_booted() );
 		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_modules' ), 'No trimming filter must be added while dormant' );
 		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.card_fields_enabled' ) );
+	}
+
+	/**
+	 * @testdox Should not boot when the request activates the extension.
+	 */
+	public function test_does_not_boot_when_activating_extension(): void {
+		$this->build_sut( true );
+		$this->set_plugins_request(
+			array(
+				'action' => 'activate',
+				'plugin' => PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE,
+			)
+		);
+
+		$this->sut->maybe_boot();
+
+		$this->assertTrue( $this->sut->is_extension_activation_request() );
+		$this->assertFalse( $this->sut->is_booted() );
+		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_modules' ) );
+	}
+
+	/**
+	 * @testdox Should not boot when a bulk activation includes the extension.
+	 */
+	public function test_does_not_boot_when_bulk_activating_extension(): void {
+		$this->build_sut( true );
+		$this->set_plugins_request(
+			array(
+				'action'  => 'activate-selected',
+				'checked' => array( 'akismet/akismet.php', PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE ),
+			)
+		);
+
+		$this->sut->maybe_boot();
+
+		$this->assertTrue( $this->sut->is_extension_activation_request() );
+		$this->assertFalse( $this->sut->is_booted() );
+		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_modules' ) );
+	}
+
+	/**
+	 * @testdox Should not treat activating another plugin, or another page, as an extension activation.
+	 */
+	public function test_activation_guard_ignores_other_plugins_and_pages(): void {
+		$this->build_sut( true );
+
+		$this->set_plugins_request(
+			array(
+				'action' => 'activate',
+				'plugin' => 'akismet/akismet.php',
+			)
+		);
+		$this->assertFalse( $this->sut->is_extension_activation_request() );
+
+		$this->set_plugins_request(
+			array(
+				'action'  => 'activate-selected',
+				'checked' => array( 'akismet/akismet.php' ),
+			)
+		);
+		$this->assertFalse( $this->sut->is_extension_activation_request() );
+
+		$this->set_plugins_request(
+			array(
+				'action' => 'activate',
+				'plugin' => PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE,
+			)
+		);
+		$GLOBALS['pagenow'] = 'index.php'; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulating the admin page.
+		$this->assertFalse( $this->sut->is_extension_activation_request() );
+	}
+
+	/**
+	 * @testdox Should not treat a request without an action as an extension activation.
+	 */
+	public function test_activation_guard_is_false_without_action(): void {
+		$this->build_sut( true );
+		$this->set_plugins_request( array() );
+
+		$this->assertFalse( $this->sut->is_extension_activation_request() );
 	}
 
 	/**

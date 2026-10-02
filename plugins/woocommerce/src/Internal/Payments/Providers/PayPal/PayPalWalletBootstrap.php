@@ -111,6 +111,10 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		if ( 'update.php' === ( $GLOBALS['pagenow'] ?? '' ) ) {
 			return;
 		}
+		// WordPress includes the extension's main file next on this request, and it defines the same constants.
+		if ( $this->is_extension_activation_request() ) {
+			return;
+		}
 		if ( ! $this->arbiter->should_native_register() ) {
 			return;
 		}
@@ -134,6 +138,39 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		do_action( 'woocommerce_paypal_payments_built_container', $container ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment
 
 		add_action( 'init', array( $this, 'maybe_run_migrations' ), -1 );
+	}
+
+	/**
+	 * Whether this request activates the PayPal Payments extension from the plugins screen.
+	 *
+	 * Covers single and bulk activation. Only reads the request to decide whether to skip a boot.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return bool
+	 */
+	public function is_extension_activation_request(): bool {
+		if ( 'plugins.php' !== ( $GLOBALS['pagenow'] ?? '' ) ) {
+			return false;
+		}
+
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only check that only skips a boot; no action is performed.
+		$action = isset( $_GET['action'] ) ? sanitize_text_field( wp_unslash( $_GET['action'] ) ) : '';
+		if ( 'activate' === $action ) {
+			$plugin = isset( $_GET['plugin'] ) ? sanitize_text_field( wp_unslash( $_GET['plugin'] ) ) : '';
+			return PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE === $plugin;
+		}
+		if ( 'activate-selected' === $action ) {
+			$checked = isset( $_REQUEST['checked'] ) ? wp_unslash( $_REQUEST['checked'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitized below.
+			if ( ! is_array( $checked ) ) {
+				return false;
+			}
+			$checked = array_map( 'sanitize_text_field', $checked );
+			return in_array( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE, $checked, true );
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		return false;
 	}
 
 	/**
