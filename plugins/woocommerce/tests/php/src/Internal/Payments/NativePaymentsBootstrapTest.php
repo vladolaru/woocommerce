@@ -81,6 +81,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsAdminNotesController',
 		self::WCPAY . 'WooPaymentsLoanApprovedNote',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
 		WooPaymentsTokenService::class,
 		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
@@ -103,6 +104,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsLoanApprovedNote',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
 		WooPaymentsTokenService::class,
 		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
@@ -140,6 +142,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsHomeTasks',
 		self::WCPAY . 'WooPaymentsLoanApprovedNote',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
 		WooPaymentsTokenService::class,
 		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
@@ -162,6 +165,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		self::WCPAY . 'WooPaymentsLoanApprovedNote',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
 		WooPaymentsTokenService::class,
 		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
@@ -195,6 +199,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOperationalQueueService',
 		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
 		WooPaymentsTokenService::class,
 	);
 
@@ -228,6 +233,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsAdminNotesController',
 		self::WCPAY . 'WooPaymentsLoanApprovedNote',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
 		WooPaymentsTokenService::class,
 		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
@@ -260,6 +266,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsTokenClassMapController',
 		self::WCPAY . 'WooPaymentsFrontendTrackingController',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
 		WooPaymentsTokenService::class,
 		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
@@ -307,6 +314,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsExpressCheckoutCurrencyGuard',
 		self::WCPAY . 'WooPaymentsTokenClassMapController',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
 		WooPaymentsTokenService::class,
 		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
@@ -332,6 +340,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsOrderStatusChangeController',
 		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
 		WooPaymentsSubscriptionRenewalHooks::class,
+		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
 		WooPaymentsTokenService::class,
 		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 	);
@@ -556,7 +565,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			'available admin' => array( NativePaymentsState::AVAILABLE, 'admin', self::AVAILABLE_ADMIN ),
 			'available cron'  => array( NativePaymentsState::AVAILABLE, 'cron', self::AVAILABLE_CRON ),
 			'available CLI'   => array( NativePaymentsState::AVAILABLE, 'cli', self::AVAILABLE_CRON ),
-			'connected front' => array( NativePaymentsState::CONNECTED, 'front', array( NativePaymentsGatewayRegistry::class, WooPaymentsProvider::class, WooPaymentsGatewayListController::class, WooPaymentsSubscriptionRenewalHooks::class, WooPaymentsTokenService::class ) ),
+			'connected front' => array( NativePaymentsState::CONNECTED, 'front', array( NativePaymentsGatewayRegistry::class, WooPaymentsProvider::class, WooPaymentsGatewayListController::class, WooPaymentsSubscriptionRenewalHooks::class, self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule', WooPaymentsTokenService::class ) ),
 			'connected admin' => array( NativePaymentsState::CONNECTED, 'admin', self::CONNECTED_ADMIN ),
 			'connected AJAX'  => array( NativePaymentsState::CONNECTED, 'ajax', self::CONNECTED_AJAX ),
 			'connected REST'  => array( NativePaymentsState::CONNECTED, 'rest', self::CONNECTED_REST ),
