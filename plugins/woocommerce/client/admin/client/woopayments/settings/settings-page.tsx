@@ -62,6 +62,7 @@ import {
 	SUPPORT_PHONE_INPUT_ID,
 } from './save-settings-section';
 import { SettingsSection, type FieldValidationError } from './settings-shell';
+import { StripeBillingSection } from './stripe-billing-section';
 import { TextLink } from './text-link';
 import { WooPaymentsDisableConfirmationModal } from './disable-woopayments-modal';
 import { useWooPaymentsAffectedCheckoutMethods } from './affected-payment-methods';
@@ -108,12 +109,12 @@ import {
 	useSavedCards,
 	useSelectedPaymentMethod as usePaymentMethodSelection,
 	useSettings,
+	useStripeBilling,
 	useTestMode,
 	useTestModeOnboarding,
 	useUnselectedPaymentMethod as usePaymentMethodDeselection,
 	useWooPayEnabledSettings,
 	useWooPayShowIncompatibilityNotice,
-	useWCPaySubscriptions,
 } from './data/hooks';
 import { registerWooPaymentsSettingsStore } from './data/register';
 import { getWooPaymentsAccountSettings } from './api';
@@ -1445,6 +1446,7 @@ const TransactionsSettingsSection = ( {
 		useManualCapture() as BooleanSetting;
 	const [ isCardPresentEligible ] =
 		useCardPresentEligible() as BooleanSetting;
+	const [ isStripeBillingEnabled ] = useStripeBilling() as BooleanSetting;
 	const [ isManualCaptureModalVisible, setManualCaptureModalVisible ] =
 		useState( false );
 	const [ accountStatementDescriptor, setAccountStatementDescriptor ] =
@@ -1599,6 +1601,7 @@ const TransactionsSettingsSection = ( {
 				/>
 				<CheckboxControl
 					checked={ isManualCaptureEnabled }
+					disabled={ isStripeBillingEnabled }
 					help={
 						<>
 							{ Children.toArray(
@@ -1653,6 +1656,14 @@ const TransactionsSettingsSection = ( {
 					} }
 					__nextHasNoMarginBottom
 				/>
+				{ isStripeBillingEnabled && (
+					<Notice status="warning" isDismissible={ false }>
+						{ __(
+							'Manual capture is not available when Stripe Billing is active.',
+							'woocommerce'
+						) }
+					</Notice>
+				) }
 				{ isManualCaptureModalVisible && (
 					<ManualCaptureConfirmationModal
 						onClose={ () => setManualCaptureModalVisible( false ) }
@@ -2187,11 +2198,11 @@ const AdvancedSettingsSection = () => {
 	const [ isDebugLogEnabled, setIsDebugLogEnabled ] =
 		useDebugLog() as BooleanSetting;
 	const isDevModeEnabled = Boolean( useDevMode() );
-	const [
-		isWCPaySubscriptionsEnabled,
-		isWCPaySubscriptionsEligible,
-		setIsWCPaySubscriptionsEnabled,
-	] = useWCPaySubscriptions() as [ boolean, boolean, BooleanSetter ];
+	const bootstrap = getWooPaymentsSettingsBootstrap();
+	// Client 11.1.0 `advanced-settings/index.js:22-27`; both values come from the server.
+	const isStripeBillingShown =
+		bootstrap.isSubscriptionsActive === true &&
+		bootstrap.isStripeBillingEligible === true;
 
 	return (
 		<SettingsSection
@@ -2231,50 +2242,11 @@ const AdvancedSettingsSection = () => {
 				}
 				__nextHasNoMarginBottom
 			/>
-			<CheckboxControl
-				checked={ isWCPaySubscriptionsEnabled }
-				disabled={
-					! isWCPaySubscriptionsEligible ||
-					! isWCPaySubscriptionsEnabled
-				}
-				help={
-					isWCPaySubscriptionsEligible ? (
-						<>
-							{ __(
-								'This feature is deprecated. Existing subscription renewals will continue to work, but creating or managing subscriptions is no longer available. Install',
-								'woocommerce'
-							) }{ ' ' }
-							<ExternalLink href="https://woocommerce.com/products/woocommerce-subscriptions/">
-								{ __(
-									'WooCommerce Subscriptions',
-									'woocommerce'
-								) }
-							</ExternalLink>{ ' ' }
-							{ __(
-								'to continue managing subscriptions.',
-								'woocommerce'
-							) }
-						</>
-					) : (
-						__(
-							'WooPayments subscriptions are not available for this account.',
-							'woocommerce'
-						)
-					)
-				}
-				label={ __(
-					'Enable Subscriptions with WooPayments',
-					'woocommerce'
-				) }
-				onChange={ ( value ) => {
-					if ( value ) {
-						return;
-					}
-
-					setIsWCPaySubscriptionsEnabled( false );
-				} }
-				__nextHasNoMarginBottom
-			/>
+			{ isStripeBillingShown && (
+				<FieldGroup title={ __( 'Subscriptions', 'woocommerce' ) }>
+					<StripeBillingSection />
+				</FieldGroup>
+			) }
 			<FieldGroup title={ __( 'Debug mode', 'woocommerce' ) }>
 				<CheckboxControl
 					checked={ isDevModeEnabled || isDebugLogEnabled }

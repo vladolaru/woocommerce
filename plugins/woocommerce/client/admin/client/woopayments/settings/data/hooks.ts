@@ -200,6 +200,32 @@ export const useWCPaySubscriptions = () => {
 	];
 };
 
+export const useStripeBilling = makeSettingHook(
+	'getIsStripeBillingEnabled',
+	'updateIsStripeBillingEnabled'
+);
+
+export const useStripeBillingMigration = () => {
+	const { submitStripeBillingSubscriptionMigration } =
+		useRegisteredDispatch();
+
+	return useRegisteredSelect(
+		( select ) => {
+			const store = select( STORE_NAME );
+
+			return [
+				store.getIsStripeBillingMigrationInProgress(),
+				store.getStripeBillingMigratedCount(),
+				store.getStripeBillingSubscriptionCount(),
+				submitStripeBillingSubscriptionMigration,
+				store.isResolving( 'scheduleStripeBillingMigration' ),
+				store.hasFinishedResolution( 'scheduleStripeBillingMigration' ),
+			];
+		},
+		[ submitStripeBillingSubscriptionMigration ]
+	);
+};
+
 export const useDepositDelayDays = () =>
 	useRegisteredSelect(
 		( select ) => select( STORE_NAME ).getDepositDelayDays(),

@@ -212,6 +212,26 @@ export const getIsSubscriptionsPluginActive = ( state: SettingsRootState ) => {
 	return getSettings( state ).is_subscriptions_plugin_active || false;
 };
 
+export const getIsStripeBillingEnabled = ( state: SettingsRootState ) => {
+	return getSettings( state ).is_stripe_billing_enabled || false;
+};
+
+export const getIsStripeBillingMigrationInProgress = (
+	state: SettingsRootState
+) => {
+	return getSettings( state ).is_migrating_stripe_billing || false;
+};
+
+export const getStripeBillingSubscriptionCount = (
+	state: SettingsRootState
+) => {
+	return getSettings( state ).stripe_billing_subscription_count || 0;
+};
+
+export const getStripeBillingMigratedCount = ( state: SettingsRootState ) => {
+	return getSettings( state ).stripe_billing_migrated_count || 0;
+};
+
 export const getIsWooPayEnabled = ( state: SettingsRootState ) => {
 	return getSettings( state ).is_woopay_enabled || false;
 };

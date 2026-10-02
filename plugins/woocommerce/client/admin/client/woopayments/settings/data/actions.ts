@@ -152,6 +152,37 @@ export function updateIsWCPaySubscriptionsEnabled( isEnabled: boolean ) {
 	} );
 }
 
+export function updateIsStripeBillingEnabled( isEnabled: boolean ) {
+	return updateSettingsValues( { is_stripe_billing_enabled: isEnabled } );
+}
+
+export function* submitStripeBillingSubscriptionMigration(): Generator<
+	unknown,
+	void,
+	unknown
+> {
+	try {
+		yield dispatch( STORE_NAME ).startResolution(
+			'scheduleStripeBillingMigration',
+			[]
+		);
+
+		yield apiFetch( {
+			path: `${ NAMESPACE }/settings/schedule-stripe-billing-migration`,
+			method: 'post',
+		} );
+	} catch {
+		yield dispatch( 'core/notices' ).createErrorNotice(
+			__( 'Error starting the Stripe Billing migration.', 'woocommerce' )
+		);
+	}
+
+	yield dispatch( STORE_NAME ).finishResolution(
+		'scheduleStripeBillingMigration',
+		[]
+	);
+}
+
 export function updateAccountStatementDescriptor( value: string ) {
 	return updateSettingsValues( { account_statement_descriptor: value } );
 }

@@ -96,6 +96,9 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 
 		$this->loaded = true;
 
+		// The settings page shows the Stripe Billing section on a staging copy too, as the plugin does.
+		add_filter( 'woocommerce_admin_shared_settings', array( $this, 'add_admin_settings' ), 20 );
+
 		// A staging copy must never change anything at Stripe for the live store.
 		if ( WooPaymentsSubscriptionMethodPolicy::is_duplicate_site() ) {
 			return;
@@ -111,6 +114,31 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 			$this->migrator = new StripeBillingMigrator();
 			$this->migrator->init_hooks();
 		}
+	}
+
+	/**
+	 * Tell the settings page whether the store may use Stripe Billing and whether the toggle is on, as the plugin's admin settings do.
+	 *
+	 * Stripe Billing is available to US stores only (client 11.1.0 `class-wc-payments-features.php:290-297`, `class-wc-payments-admin.php:1057-1058`).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $settings Admin shared settings.
+	 * @return mixed
+	 */
+	public function add_admin_settings( $settings ) {
+		if ( ! is_array( $settings ) ) {
+			return $settings;
+		}
+
+		$base_location = wc_get_base_location();
+		$woopayments   = isset( $settings['woopaymentsSettings'] ) && is_array( $settings['woopaymentsSettings'] ) ? $settings['woopaymentsSettings'] : array();
+
+		$woopayments['isStripeBillingEnabled']  = '1' === get_option( self::TOGGLE_OPTION, '0' );
+		$woopayments['isStripeBillingEligible'] = 'US' === ( $base_location['country'] ?? '' );
+		$settings['woopaymentsSettings']        = $woopayments;
+
+		return $settings;
 	}
 
 	/**

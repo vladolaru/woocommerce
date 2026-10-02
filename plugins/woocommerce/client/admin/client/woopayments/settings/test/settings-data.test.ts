@@ -386,26 +386,95 @@ describe( 'WooPayments settings data store', () => {
 		} );
 	} );
 
-	it( 'does not export Stripe Billing migration actions, selectors, or hooks', async () => {
-		const [ actions, selectors, hooks ] = await Promise.all( [
-			import( '../data/actions' ),
-			import( '../data/selectors' ),
-			import( '../data/hooks' ),
-		] );
+	it( 'starts the Stripe Billing migration through the plugin route and tracks the request', async () => {
+		const { dispatch } = jest.requireMock( '@wordpress/data' );
+		const { submitStripeBillingSubscriptionMigration } = await import(
+			'../data/actions'
+		);
+		const action = submitStripeBillingSubscriptionMigration();
 
-		expect( actions ).not.toHaveProperty(
-			'submitStripeBillingSubscriptionMigration'
+		action.next();
+		const storeDispatch = dispatch.mock.results.at( -1 ).value;
+		expect( storeDispatch.startResolution ).toHaveBeenCalledWith(
+			'scheduleStripeBillingMigration',
+			[]
 		);
-		expect( actions ).not.toHaveProperty( 'updateIsStripeBillingEnabled' );
-		expect( selectors ).not.toHaveProperty( 'getIsStripeBillingEnabled' );
-		expect( selectors ).not.toHaveProperty(
-			'getIsStripeBillingMigrationInProgress'
+		expect( action.next().value ).toEqual( {
+			type: 'API_FETCH',
+			request: {
+				path: '/wc/v3/payments/settings/schedule-stripe-billing-migration',
+				method: 'post',
+			},
+		} );
+
+		action.next();
+		expect(
+			dispatch.mock.results.at( -1 ).value.finishResolution
+		).toHaveBeenCalledWith( 'scheduleStripeBillingMigration', [] );
+		expect( action.next().done ).toBe( true );
+		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
+	} );
+
+	it( 'reports a failed Stripe Billing migration request and still finishes it', async () => {
+		const { dispatch } = jest.requireMock( '@wordpress/data' );
+		const { submitStripeBillingSubscriptionMigration } = await import(
+			'../data/actions'
 		);
-		expect( hooks ).not.toHaveProperty( 'useStripeBilling' );
-		expect( hooks ).not.toHaveProperty( 'useStripeBillingMigration' );
-		expect( JSON.stringify( actions ) ).not.toContain(
-			'/settings/schedule-stripe-billing-migration'
+		const action = submitStripeBillingSubscriptionMigration();
+
+		action.next();
+		action.next();
+		action.throw( new Error( 'Forbidden' ) );
+
+		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+			'Error starting the Stripe Billing migration.'
 		);
+		action.next();
+		expect(
+			dispatch.mock.results.at( -1 ).value.finishResolution
+		).toHaveBeenCalledWith( 'scheduleStripeBillingMigration', [] );
+	} );
+
+	it( 'reads the Stripe Billing settings, with the plugin defaults when they are missing', async () => {
+		const selectors = await import( '../data/selectors' );
+		const withSettings = ( data: Record< string, unknown > ) => ( {
+			settings: { data },
+		} );
+		const reported = withSettings( {
+			is_stripe_billing_enabled: true,
+			is_migrating_stripe_billing: true,
+			stripe_billing_subscription_count: 3,
+			stripe_billing_migrated_count: 2,
+		} );
+		const missing = withSettings( {} );
+
+		expect( selectors.getIsStripeBillingEnabled( reported ) ).toBe( true );
+		expect(
+			selectors.getIsStripeBillingMigrationInProgress( reported )
+		).toBe( true );
+		expect( selectors.getStripeBillingSubscriptionCount( reported ) ).toBe(
+			3
+		);
+		expect( selectors.getStripeBillingMigratedCount( reported ) ).toBe( 2 );
+		expect( selectors.getIsStripeBillingEnabled( missing ) ).toBe( false );
+		expect(
+			selectors.getIsStripeBillingMigrationInProgress( missing )
+		).toBe( false );
+		expect( selectors.getStripeBillingSubscriptionCount( missing ) ).toBe(
+			0
+		);
+		expect( selectors.getStripeBillingMigratedCount( missing ) ).toBe( 0 );
+	} );
+
+	it( 'saves the Stripe Billing toggle under the plugin field name', async () => {
+		const { updateIsStripeBillingEnabled } = await import(
+			'../data/actions'
+		);
+
+		expect( updateIsStripeBillingEnabled( false ) ).toEqual( {
+			type: 'SET_SETTINGS_VALUES',
+			payload: { is_stripe_billing_enabled: false },
+		} );
 	} );
 
 	it( 'reads settings bootstrap data from the Core-owned wcSettings admin payload', async () => {

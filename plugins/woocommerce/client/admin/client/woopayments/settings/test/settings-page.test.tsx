@@ -202,6 +202,8 @@ const mockUseUnselectedPaymentMethod = jest.fn();
 const mockUseTestModeOnboarding = jest.fn();
 const mockUseDevMode = jest.fn();
 const mockUseWCPaySubscriptions = jest.fn();
+const mockUseStripeBilling = jest.fn();
+const mockUseStripeBillingMigration = jest.fn();
 const mockUseDepositDelayDays = jest.fn();
 const mockUseCompletedWaitingPeriod = jest.fn();
 const mockUseDepositStatus = jest.fn();
@@ -266,6 +268,8 @@ jest.mock( '../data/hooks', () => ( {
 	useTestModeOnboarding: () => mockUseTestModeOnboarding(),
 	useDevMode: () => mockUseDevMode(),
 	useWCPaySubscriptions: () => mockUseWCPaySubscriptions(),
+	useStripeBilling: () => mockUseStripeBilling(),
+	useStripeBillingMigration: () => mockUseStripeBillingMigration(),
 	useDepositDelayDays: () => mockUseDepositDelayDays(),
 	useCompletedWaitingPeriod: () => mockUseCompletedWaitingPeriod(),
 	useDepositStatus: () => mockUseDepositStatus(),
@@ -529,6 +533,15 @@ const setHookDefaults = () => {
 	mockUseTestModeOnboarding.mockReturnValue( false );
 	mockUseDevMode.mockReturnValue( false );
 	mockUseWCPaySubscriptions.mockReturnValue( [ true, true, noop ] );
+	mockUseStripeBilling.mockReturnValue( [ false, noop ] );
+	mockUseStripeBillingMigration.mockReturnValue( [
+		false,
+		0,
+		0,
+		noop,
+		false,
+		false,
+	] );
 	mockUseDepositDelayDays.mockReturnValue( 2 );
 	mockUseCompletedWaitingPeriod.mockReturnValue( true );
 	mockUseDepositStatus.mockReturnValue( 'enabled' );
@@ -5696,21 +5709,100 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'keeps Stripe Billing migration UI out of the native settings page', () => {
-		render( <WooPaymentsSettingsPage /> );
+	describe( 'Stripe Billing', () => {
+		type BootstrapWindow = typeof window & {
+			wcSettings?: {
+				admin?: { woopaymentsSettings?: Record< string, unknown > };
+			};
+		};
+		let previousWcSettings: BootstrapWindow[ 'wcSettings' ];
 
-		expect(
-			screen.queryByText( /Stripe Billing/i )
-		).not.toBeInTheDocument();
-		expect( screen.queryByText( /migration/i ) ).not.toBeInTheDocument();
-		expect(
-			screen.queryByRole( 'button', { name: /migrate/i } )
-		).not.toBeInTheDocument();
+		beforeEach( () => {
+			previousWcSettings = ( window as BootstrapWindow ).wcSettings;
+		} );
+
+		afterEach( () => {
+			( window as BootstrapWindow ).wcSettings = previousWcSettings;
+		} );
+
+		const setBootstrap = (
+			woopaymentsSettings: Record< string, unknown >
+		) => {
+			( window as BootstrapWindow ).wcSettings = {
+				...previousWcSettings,
+				admin: { ...previousWcSettings?.admin, woopaymentsSettings },
+			};
+		};
+
+		// Client 11.1.0 `client/settings/advanced-settings/index.js:22-27`.
+		it.each( [
+			[ 'shows', true, true ],
+			[ 'hides without WooCommerce Subscriptions', false, true ],
+			[ 'hides for a store outside the US', true, false ],
+		] )(
+			'%s the Stripe Billing settings in Advanced settings',
+			( _label, isSubscriptionsActive, isStripeBillingEligible ) => {
+				setBootstrap( {
+					isSubscriptionsActive,
+					isStripeBillingEligible,
+				} );
+
+				render( <WooPaymentsSettingsPage /> );
+
+				const section = getSettingsSectionByName( 'Advanced settings' );
+				const isShown =
+					isSubscriptionsActive && isStripeBillingEligible;
+				expect(
+					within( section ).queryByRole( 'group', {
+						name: 'Subscriptions',
+					} )
+				).toEqual( isShown ? expect.anything() : null );
+				expect(
+					within( section ).queryByRole( 'checkbox', {
+						name: 'Enable Stripe Billing for future subscriptions',
+					} )
+				).toEqual( isShown ? expect.anything() : null );
+			}
+		);
+
+		// Client 11.1.0 `client/settings/transactions/manual-capture-control.tsx:55,95-102`.
+		it( 'locks manual capture while Stripe Billing is on', () => {
+			mockUseStripeBilling.mockReturnValue( [ true, noop ] );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			const section = getSettingsSectionByName( 'Transactions' );
+			expect(
+				within( section ).getByRole( 'checkbox', {
+					name: 'Enable manual capture',
+				} )
+			).toBeDisabled();
+			expect(
+				within( section ).getByText(
+					'Manual capture is not available when Stripe Billing is active.'
+				)
+			).toBeInTheDocument();
+		} );
+
+		it( 'leaves manual capture available while Stripe Billing is off', () => {
+			render( <WooPaymentsSettingsPage /> );
+
+			const section = getSettingsSectionByName( 'Transactions' );
+			expect(
+				within( section ).getByRole( 'checkbox', {
+					name: 'Enable manual capture',
+				} )
+			).toBeEnabled();
+			expect(
+				within( section ).queryByText(
+					'Manual capture is not available when Stripe Billing is active.'
+				)
+			).not.toBeInTheDocument();
+		} );
 	} );
 
 	it( 'renders reference advanced settings copy and development-mode debug behavior', () => {
 		mockUseDevMode.mockReturnValue( true );
-		mockUseWCPaySubscriptions.mockReturnValue( [ true, true, noop ] );
 
 		render( <WooPaymentsSettingsPage /> );
 
@@ -5728,10 +5820,10 @@ describe( 'WooPaymentsSettingsPage', () => {
 			'https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/'
 		);
 		expect(
-			within( section ).getByText(
-				/This feature is deprecated. Existing subscription renewals will continue to work, but creating or managing subscriptions is no longer available./
-			)
-		).toBeInTheDocument();
+			within( section ).queryByRole( 'checkbox', {
+				name: 'Enable Subscriptions with WooPayments',
+			} )
+		).not.toBeInTheDocument();
 
 		const debugLog = within( section ).getByRole( 'checkbox', {
 			name: 'Log error messages (defaulted on for test accounts)',
@@ -5743,30 +5835,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 				'When enabled, payment error logs will be saved to WooCommerce > Status > Logs.'
 			)
 		).toBeInTheDocument();
-	} );
-
-	it( 'prevents enabling deprecated bundled subscriptions from the native settings page', () => {
-		const setSubscriptionsEnabled = jest.fn();
-		mockUseWCPaySubscriptions.mockReturnValue( [
-			false,
-			true,
-			setSubscriptionsEnabled,
-		] );
-
-		render( <WooPaymentsSettingsPage /> );
-
-		const subscriptionsToggle = screen.getByRole( 'checkbox', {
-			name: 'Enable Subscriptions with WooPayments',
-		} );
-
-		expect( subscriptionsToggle ).toBeDisabled();
-		// Intentionally fireEvent, not userEvent: userEvent.click refuses to
-		// dispatch on a disabled control, so it cannot express "a raw click on a
-		// disabled toggle is inert". fireEvent bypasses the disabled guard and
-		// lets us prove the handler stays unfired. Do not convert this to userEvent.
-		fireEvent.click( subscriptionsToggle );
-
-		expect( setSubscriptionsEnabled ).not.toHaveBeenCalled();
 	} );
 
 	// The rendering tests above rely on a blanket `jest.mock( '../data/hooks' )`
