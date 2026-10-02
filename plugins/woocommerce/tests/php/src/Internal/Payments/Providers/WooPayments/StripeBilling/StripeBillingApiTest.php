@@ -69,7 +69,7 @@ class StripeBillingApiTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An amount below the platform minimum fails with the minimum and currency, as the client's Amount_Too_Small_Exception.
+	 * @testdox An amount below the platform minimum fails with the minimum and the platform's currency, as the client's Amount_Too_Small_Exception (client `class-wc-payments-api-client.php:2845-2851`).
 	 */
 	public function test_amount_too_small_carries_the_minimum(): void {
 		$entry       = $this->get_entry( 'error_amount_too_small' );
@@ -80,8 +80,8 @@ class StripeBillingApiTest extends WC_Unit_Test_Case {
 			$this->fail( 'An amount below the minimum must fail.' );
 		} catch ( StripeBillingException $exception ) {
 			$this->assertSame( StripeBillingException::AMOUNT_TOO_SMALL, $exception->get_error_code() );
-			$this->assertSame( (int) $entry['response']['body']['data']['minimum_amount'], $exception->get_data()['minimum_amount'] );
-			$this->assertSame( strtoupper( $entry['response']['body']['data']['currency'] ), $exception->get_data()['currency'] );
+			$this->assertSame( $entry['response']['body']['data']['minimum_amount'], $exception->get_data()['minimum_amount'] );
+			$this->assertSame( $entry['response']['body']['data']['currency'], $exception->get_data()['currency'], 'The currency is passed on as the platform sends it.' );
 			$this->assertSame( $entry['response']['body']['message'], $exception->getMessage() );
 		}
 	}
@@ -117,6 +117,43 @@ class StripeBillingApiTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'wcpay_route_validation_failure', $exception->get_error_code() );
 		}
 		$this->assertSame( 0, $http_client->request_count );
+	}
+
+	/**
+	 * @testdox An empty product or price ID fails with the client's own code before any request; a non-empty ID still has to be safe (client `class-wc-payments-api-client.php:1462-1510`).
+	 * @testWith ["update_product", "", "wcpay_mandatory_product_id_missing", "Product ID is required"]
+	 *           ["update_product", "  ", "wcpay_mandatory_product_id_missing", "Product ID is required"]
+	 *           ["update_price", "", "wcpay_mandatory_price_id_missing", "Price ID is required"]
+	 *           ["update_price", "price_1/../accounts", "wcpay_route_validation_failure", "Route param validation failed."]
+	 *
+	 * @param string $method     API method.
+	 * @param string $id         ID passed.
+	 * @param string $error_code Expected failure code.
+	 * @param string $message    Expected failure message.
+	 */
+	public function test_empty_product_or_price_id_is_refused_before_the_request( string $method, string $id, string $error_code, string $message ): void {
+		list( $sut, $http_client ) = $this->make_sut( $this->get_entry( $method ) );
+
+		try {
+			$sut->$method( $id, array( 'active' => 'false' ) );
+			$this->fail( 'The ID must be refused.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertSame( $error_code, $exception->get_error_code() );
+			$this->assertSame( $message, $exception->getMessage() );
+			$this->assertSame( 400, $exception->get_http_code() );
+		}
+		$this->assertSame( 0, $http_client->request_count );
+	}
+
+	/**
+	 * @testdox The minimum recurring amount is cast to an integer whatever JSON type the platform answers with (client `class-wc-payments-api-client.php:2516`).
+	 */
+	public function test_minimum_recurring_amount_is_cast_to_an_integer(): void {
+		$entry                     = $this->get_entry( 'get_currency_minimum_recurring_amount' );
+		$entry['response']['body'] = (string) $entry['response']['body'];
+		list( $sut )               = $this->make_sut( $entry );
+
+		$this->assertSame( 100, $sut->get_currency_minimum_recurring_amount( 'usd' ) );
 	}
 
 	/**

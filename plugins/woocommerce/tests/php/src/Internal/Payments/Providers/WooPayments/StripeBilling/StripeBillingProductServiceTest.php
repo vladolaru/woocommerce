@@ -9,6 +9,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingProductService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionVariationProductDouble;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\VariableSubscriptionProductDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Product;
 use WC_Unit_Test_Case;
@@ -18,7 +20,8 @@ use WC_Unit_Test_Case;
  *
  * Expectations follow client 11.1.0 (`tests/unit/subscriptions/test-class-wc-payments-product-service.php` and
  * `includes/subscriptions/class-wc-payments-product-service.php`); platform answers are the local platform recordings
- * in `Fixtures/rec-t63-billing-api.json`.
+ * in `Fixtures/rec-t63-billing-api.json`. Request bodies are written from the client's array literals, with `test_mode`
+ * first as the client's `request()` adds it (`class-wc-payments-api-client.php:2635-2640`).
  */
 class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 
@@ -107,10 +110,10 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A product without a Stripe product gets one with its name and description, linked to the current account (client test_create_product, test_get_or_create_wcpay_product_id_will_create_product_if_not_exist).
+	 * @testdox A product without a Stripe product gets one with its name and description, linked to the current account (client test_create_product, test_get_or_create_wcpay_product_id_will_create_product_if_not_exist, `class-wc-payments-product-service.php:387-397`, `:703-708`).
 	 */
 	public function test_creates_the_stripe_product_when_the_product_has_none(): void {
-		$entry   = $this->queue_recorded_responses( 'create_product' )[0];
+		$this->queue_recorded_responses( 'create_product' );
 		$product = $this->create_subscription_product( 'REC-T63 Coffee Box', 'REC-T63 monthly coffee box, Stripe Billing recording' );
 
 		$result = $this->sut->get_or_create_wcpay_product_id( $product );
@@ -118,7 +121,18 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::RECORDED_PRODUCT_ID, $result );
 		$requests = $this->get_requests();
 		$this->assertCount( 1, $requests );
-		$this->assertSame( array( 'POST', '/sites/4/wcpay/products', $entry['request']['body'] ), $requests[0] );
+		$this->assertSame(
+			array(
+				'POST',
+				'/sites/4/wcpay/products',
+				array(
+					'test_mode'   => true,
+					'description' => 'REC-T63 monthly coffee box, Stripe Billing recording',
+					'name'        => 'REC-T63 Coffee Box',
+				),
+			),
+			$requests[0]
+		);
 		$saved = wc_get_product( $product->get_id() );
 		$this->assertSame( self::RECORDED_PRODUCT_ID, $saved->get_meta( '_wcpay_product_id_test' ) );
 		$this->assertSame( self::RECORDED_ACCOUNT_ID, $saved->get_meta( '_wcpay_product_id_test_linked_to' ) );
@@ -126,15 +140,16 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A Stripe product linked to the current account is returned without a platform call (client test_get_or_create_wcpay_product_id_for_test and _for_live).
+	 * @testdox A Stripe product linked to the current account is returned in the store's mode without a platform call (client test_get_or_create_wcpay_product_id_for_test and _for_live, `class-wc-payments-product-service.php:275-277`).
 	 * @testWith [true, "_wcpay_product_id_test"]
 	 *           [false, "_wcpay_product_id_live"]
 	 *
-	 * @param bool   $test_mode Mode asked for.
+	 * @param bool   $test_mode Mode of the store, and the mode asked for.
 	 * @param string $meta_key  Meta key of that mode.
 	 */
 	public function test_returns_the_linked_stripe_product_without_a_request( bool $test_mode, string $meta_key ): void {
-		$this->test_mode = false;
+		// In the store's mode a link the service does not accept makes it create a Stripe product, so the link check shows.
+		$this->test_mode = $test_mode;
 		$product         = $this->create_subscription_product(
 			'REC-T63 Coffee Box',
 			'REC-T63 monthly coffee box, Stripe Billing recording',
@@ -194,10 +209,10 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A renamed subscription product is sent to the platform at the end of the request and its hash updated (client test_update_products_live_only).
+	 * @testdox A renamed subscription product is sent to the platform at the end of the request and its hash updated (client test_update_products_live_only, `class-wc-payments-product-service.php:451-465`).
 	 */
 	public function test_sends_a_renamed_product_at_the_end_of_the_request(): void {
-		$entry   = $this->queue_recorded_responses( 'update_product' )[0];
+		$this->queue_recorded_responses( 'update_product' );
 		$product = $this->create_subscription_product(
 			'REC-T63 Coffee Box Deluxe',
 			'REC-T63 monthly coffee box, renamed',
@@ -212,12 +227,25 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $this->http_client->request_count, 'Nothing is sent before the end of the request.' );
 		$this->sut->create_or_update_products();
 
-		$this->assertSame( array( array( 'POST', '/sites/4/wcpay/products/' . self::RECORDED_PRODUCT_ID, $entry['request']['body'] ) ), $this->get_requests() );
+		$this->assertSame(
+			array(
+				array(
+					'POST',
+					'/sites/4/wcpay/products/' . self::RECORDED_PRODUCT_ID,
+					array(
+						'test_mode'   => true,
+						'description' => 'REC-T63 monthly coffee box, renamed',
+						'name'        => 'REC-T63 Coffee Box Deluxe',
+					),
+				),
+			),
+			$this->get_requests()
+		);
 		$this->assertSame( '3a7fe09e2b840163667f5f451ef9c1a8', wc_get_product( $product->get_id() )->get_meta( '_wcpay_product_hash' ) );
 	}
 
 	/**
-	 * @testdox A renamed product is sent to both its live and its test Stripe products, each with its mode (client test_update_products_live_and_test).
+	 * @testdox A renamed product is sent to both its live and its test Stripe products, each with its mode (client test_update_products_live_and_test, `class-wc-payments-product-service.php:460-463`).
 	 */
 	public function test_sends_a_renamed_product_to_both_modes(): void {
 		$this->test_mode = false;
@@ -250,31 +278,128 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A subscription product saved several times is sent once, and other products are not sent (client maybe_schedule_product_create_or_update).
+	 * @testdox A variation already queued in the request is not checked again when its product is saved again (client `class-wc-payments-product-service.php:345-348`).
 	 */
-	public function test_sends_each_saved_subscription_product_once(): void {
-		$this->queue_recorded_responses( 'create_product' );
-		$product       = $this->create_subscription_product( 'REC-T63 Coffee Box', 'REC-T63 monthly coffee box, Stripe Billing recording' );
-		$other_product = \WC_Helper_Product::create_simple_product();
+	public function test_checks_a_queued_variation_once_per_request(): void {
+		// The legacy Stripe product check fails, so the variation stays queued and a second check would ask the platform again.
+		$this->http_client->responses[] = $this->make_error_response( 404, 'resource_missing', 'No such product: \'' . self::OTHER_PRODUCT_ID . '\'' );
 
-		$this->sut->maybe_schedule_product_create_or_update( $product->get_id() );
-		$this->sut->maybe_schedule_product_create_or_update( $product->get_id() );
-		$this->sut->maybe_schedule_product_create_or_update( $other_product->get_id() );
-		$this->sut->create_or_update_products();
+		list( $variable_product ) = $this->create_variable_subscription_product(
+			array(
+				'24.90' => array( '_wcpay_product_id_test' => self::OTHER_PRODUCT_ID ),
+			)
+		);
 
-		$requests = $this->get_requests();
-		$this->assertCount( 1, $requests );
-		$this->assertSame( '/sites/4/wcpay/products', $requests[0][1] );
-		$this->assertSame( 'REC-T63 Coffee Box', $requests[0][2]['name'] );
+		$this->sut->maybe_schedule_product_create_or_update( $variable_product->get_id() );
+		$this->sut->maybe_schedule_product_create_or_update( $variable_product->get_id() );
+
+		$this->assertSame( 1, $this->http_client->request_count );
 	}
 
 	/**
-	 * @testdox Trashing a subscription product archives its legacy prices in both modes, forgets them, and archives its Stripe product (client test_archive_product, test_archive_price).
+	 * @testdox Saving a product that is not a subscription sends nothing, even when it carries a legacy Stripe product (client `class-wc-payments-product-service.php:339-342`).
+	 */
+	public function test_saving_a_product_that_is_not_a_subscription_sends_nothing(): void {
+		$product = \WC_Helper_Product::create_simple_product();
+		$product->update_meta_data( '_wcpay_product_id_test', self::OTHER_PRODUCT_ID );
+		$product->save();
+
+		$this->sut->maybe_schedule_product_create_or_update( $product->get_id() );
+		$this->sut->create_or_update_products();
+
+		$this->assertSame( 0, $this->http_client->request_count );
+	}
+
+	/**
+	 * @testdox A queued product that is no longer a subscription at the end of the request is not sent (client `class-wc-payments-product-service.php:431-433`).
+	 */
+	public function test_a_queued_product_that_stopped_being_a_subscription_is_not_sent(): void {
+		$product = $this->create_subscription_product( 'REC-T63 Coffee Box', 'REC-T63 monthly coffee box, Stripe Billing recording' );
+		$this->sut->maybe_schedule_product_create_or_update( $product->get_id() );
+
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ] = array();
+		$this->sut->create_or_update_products();
+
+		$this->assertSame( 0, $this->http_client->request_count );
+	}
+
+	/**
+	 * @testdox A subscription product whose name and description match the saved hash sends nothing (client `class-wc-payments-product-service.php:355`, `:447-449`).
+	 */
+	public function test_an_unchanged_product_sends_nothing(): void {
+		$product = $this->create_subscription_product(
+			'REC-T63 Coffee Box',
+			'REC-T63 monthly coffee box, Stripe Billing recording',
+			array(
+				'_wcpay_product_id_test'           => self::RECORDED_PRODUCT_ID,
+				'_wcpay_product_id_test_linked_to' => self::RECORDED_ACCOUNT_ID,
+				'_wcpay_product_hash'              => '157edb40778acb45ff5dce71451e7ff1',
+			)
+		);
+
+		$this->sut->maybe_schedule_product_create_or_update( $product->get_id() );
+		$this->sut->create_or_update_products();
+
+		$this->assertSame( 0, $this->http_client->request_count );
+	}
+
+	/**
+	 * @testdox A variable subscription syncs each priced variation with its own data and skips variations without a price (client `class-wc-payments-product-service.php:344-353`, `:719-721`).
+	 */
+	public function test_syncs_priced_variations_and_skips_unpriced_ones(): void {
+		$this->queue_recorded_responses( 'create_product' );
+		// A store can show variations without a price; the service must still skip them.
+		add_filter( 'woocommerce_hide_invisible_variations', '__return_false' );
+		list( $variable_product, $priced, $unpriced ) = $this->create_variable_subscription_product(
+			array(
+				'24.90' => array(),
+				''      => array(),
+			)
+		);
+
+		$this->sut->maybe_schedule_product_create_or_update( $variable_product->get_id() );
+		$this->sut->create_or_update_products();
+
+		$this->assertSame(
+			array(
+				array(
+					'POST',
+					'/sites/4/wcpay/products',
+					array(
+						'test_mode'   => true,
+						'description' => 'REC-T63 variation priced at 24.90',
+						'name'        => 'REC-T63 Coffee Plan',
+					),
+				),
+			),
+			$this->get_requests()
+		);
+		$this->assertSame( self::RECORDED_PRODUCT_ID, wc_get_product( $priced->get_id() )->get_meta( '_wcpay_product_id_test' ) );
+		$this->assertFalse( wc_get_product( $unpriced->get_id() )->meta_exists( '_wcpay_product_id_test' ) );
+		$this->assertFalse( wc_get_product( $variable_product->get_id() )->meta_exists( '_wcpay_product_id_test' ), 'The variable product itself has no Stripe product.' );
+	}
+
+	/**
+	 * @testdox A product without a name gets no Stripe product (client `class-wc-payments-product-service.php:391`, `:907-911`).
+	 */
+	public function test_refuses_a_product_without_a_name(): void {
+		$product = $this->create_subscription_product( 'REC-T63 Coffee Box', 'REC-T63 monthly coffee box, Stripe Billing recording' );
+		$product->set_name( '' );
+
+		$result = $this->sut->get_or_create_wcpay_product_id( $product );
+
+		$this->assertSame( '', $result );
+		$this->assertSame( 0, $this->http_client->request_count );
+		$this->assertFalse( wc_get_product( $product->get_id() )->meta_exists( '_wcpay_product_id_test' ) );
+	}
+
+	/**
+	 * @testdox Trashing a subscription product archives its legacy prices in both modes, forgets them, and archives its Stripe product (client test_archive_product, test_archive_price, `class-wc-payments-product-service.php:531-537`, `:577-584`, `:880-898`).
 	 */
 	public function test_trashing_archives_the_prices_and_the_stripe_product(): void {
 		$this->test_mode = false;
-		$price_entry     = $this->queue_recorded_responses( 'update_price', 'update_price', 'update_product' )[0];
-		$product         = $this->create_subscription_product(
+		$this->queue_recorded_responses( 'update_price', 'update_price', 'update_product' );
+		$product = $this->create_subscription_product(
 			'REC-T63 Coffee Box',
 			'REC-T63 monthly coffee box, Stripe Billing recording',
 			array(
@@ -290,7 +415,14 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				array( 'POST', '/sites/4/wcpay/products/prices/' . self::TEST_PRICE_ID, $price_entry['request']['body'] ),
+				array(
+					'POST',
+					'/sites/4/wcpay/products/prices/' . self::TEST_PRICE_ID,
+					array(
+						'test_mode' => true,
+						'active'    => 'false',
+					),
+				),
 				array(
 					'POST',
 					'/sites/4/wcpay/products/prices/' . self::LIVE_PRICE_ID,
@@ -318,7 +450,7 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Restoring a trashed subscription product reactivates its live and test Stripe products (client unarchive_product).
+	 * @testdox Restoring a trashed subscription product reactivates its live and test Stripe products (client unarchive_product, `class-wc-payments-product-service.php:558-564`).
 	 */
 	public function test_restoring_reactivates_the_stripe_products(): void {
 		$this->queue_recorded_responses( 'update_product', 'update_product' );
@@ -359,7 +491,7 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A one-time item gets a Stripe product saved under its sanitized type, linked to the current account (client test_get_wcpay_product_id_for_item).
+	 * @testdox A one-time item gets a Stripe product saved under its sanitized type, linked to the current account (client test_get_wcpay_product_id_for_item, `class-wc-payments-product-service.php:413-420`).
 	 */
 	public function test_creates_the_stripe_product_for_an_item_type(): void {
 		$this->test_mode = false;
@@ -402,45 +534,45 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An item type's Stripe product is reused for the current account and replaced for another one (client get_wcpay_product_id_for_item).
-	 * @testWith ["acct_1TrY2nBzWlxcwgpP", "prod_VMl1fRBycUk6wP", 0]
-	 *           ["acct_1PrevAcctS7k2Qm", "prod_VMl10VL0VK371N", 1]
-	 *
-	 * @param string $linked_account_id Account the saved Stripe product belongs to.
-	 * @param string $expected          Stripe product ID used.
-	 * @param int    $request_count     Platform requests sent.
+	 * @testdox An item type's Stripe product linked to the current account is reused without a platform call (client `class-wc-payments-product-service.php:212-218`).
 	 */
-	public function test_reuses_an_item_stripe_product_only_for_its_account( string $linked_account_id, string $expected, int $request_count ): void {
-		$this->queue_recorded_responses( 'create_product' );
+	public function test_reuses_an_item_stripe_product_of_the_current_account(): void {
 		update_option( '_wcpay_product_id_test_sign_up_fee', self::OTHER_PRODUCT_ID );
-		update_option( '_wcpay_product_id_test_sign_up_fee_linked_to', $linked_account_id );
+		update_option( '_wcpay_product_id_test_sign_up_fee_linked_to', self::RECORDED_ACCOUNT_ID );
 
 		$result = $this->sut->get_wcpay_product_id_for_item( 'sign_up_fee' );
 
-		$this->assertSame( $expected, $result );
-		$this->assertSame( $request_count, $this->http_client->request_count );
-		$this->assertSame( $expected, get_option( '_wcpay_product_id_test_sign_up_fee' ) );
-		$this->assertSame( self::RECORDED_ACCOUNT_ID, get_option( '_wcpay_product_id_test_sign_up_fee_linked_to' ) );
+		$this->assertSame( self::OTHER_PRODUCT_ID, $result );
+		$this->assertSame( 0, $this->http_client->request_count );
 	}
 
 	/**
-	 * @testdox A duplicated product does not carry the Stripe product IDs, prices or hashes (client exclude_meta_wcpay_product).
+	 * @testdox An item type's Stripe product linked to another account is replaced by a new one linked to the current account (client `class-wc-payments-product-service.php:212-215`, `:412-420`).
 	 */
-	public function test_duplicates_leave_out_the_stripe_ids_and_hashes(): void {
-		$result = $this->sut->exclude_meta_wcpay_product( array( '_existing_excluded_key' ) );
+	public function test_replaces_an_item_stripe_product_of_another_account(): void {
+		$this->queue_recorded_responses( 'create_product' );
+		update_option( '_wcpay_product_id_test_sign_up_fee', self::OTHER_PRODUCT_ID );
+		update_option( '_wcpay_product_id_test_sign_up_fee_linked_to', self::PREVIOUS_ACCOUNT_ID );
 
+		$result = $this->sut->get_wcpay_product_id_for_item( 'sign_up_fee' );
+
+		$this->assertSame( self::RECORDED_PRODUCT_ID, $result );
 		$this->assertSame(
 			array(
-				'_existing_excluded_key',
-				'_wcpay_product_hash',
-				'_wcpay_product_id_live',
-				'_wcpay_product_id_test',
-				'_wcpay_product_price_hash',
-				'_wcpay_product_price_id_live',
-				'_wcpay_product_price_id_test',
+				array(
+					'POST',
+					'/sites/4/wcpay/products',
+					array(
+						'test_mode'   => true,
+						'description' => 'N/A',
+						'name'        => 'Sign_up_fee',
+					),
+				),
 			),
-			$result
+			$this->get_requests()
 		);
+		$this->assertSame( self::RECORDED_PRODUCT_ID, get_option( '_wcpay_product_id_test_sign_up_fee' ) );
+		$this->assertSame( self::RECORDED_ACCOUNT_ID, get_option( '_wcpay_product_id_test_sign_up_fee_linked_to' ) );
 	}
 
 	/**
@@ -485,6 +617,83 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ][] = $product->get_id();
 
 		return $product;
+	}
+
+	/**
+	 * Create a variable subscription with one variation per price, each registered as a subscription product.
+	 *
+	 * Wires the doubles the way WooCommerce Subscriptions stores these types: the variable and variation data stores.
+	 *
+	 * @param array<string,array<string,string>> $variations Variation meta keyed by regular price; an empty price leaves the variation unpriced.
+	 * @return array<int,WC_Product> The variable product, then the variations in the given order.
+	 */
+	private function create_variable_subscription_product( array $variations ): array {
+		add_filter(
+			'woocommerce_data_stores',
+			static fn( $stores ) => array_merge(
+				$stores,
+				array(
+					'product-variable-subscription'  => 'WC_Product_Variable_Data_Store_CPT',
+					'product-subscription_variation' => 'WC_Product_Variation_Data_Store_CPT',
+				)
+			)
+		);
+		add_filter(
+			'woocommerce_product_class',
+			static function ( $classname, $product_type ) {
+				if ( 'variable-subscription' === $product_type ) {
+					return VariableSubscriptionProductDouble::class;
+				}
+
+				return 'variation' === $product_type ? SubscriptionVariationProductDouble::class : $classname;
+			},
+			10,
+			2
+		);
+
+		$variable_product = new VariableSubscriptionProductDouble();
+		$variable_product->set_name( 'REC-T63 Coffee Plan' );
+		$variable_product->set_description( 'REC-T63 coffee plan, two bag sizes' );
+		$variable_product->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ][] = $variable_product->get_id();
+
+		$products = array( $variable_product );
+		foreach ( $variations as $price => $meta ) {
+			$variation = new SubscriptionVariationProductDouble();
+			$variation->set_parent_id( $variable_product->get_id() );
+			$variation->set_description( '' === (string) $price ? 'REC-T63 variation without a price' : 'REC-T63 variation priced at ' . $price );
+			$variation->set_regular_price( (string) $price );
+			foreach ( $meta as $key => $value ) {
+				$variation->update_meta_data( $key, $value );
+			}
+			$variation->save();
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ][] = $variation->get_id();
+			$products[] = $variation;
+		}
+
+		return $products;
+	}
+
+	/**
+	 * Build a platform error answer.
+	 *
+	 * @param int    $http_status HTTP status.
+	 * @param string $code        Error code.
+	 * @param string $message     Error message.
+	 * @return array<string,mixed>
+	 */
+	private function make_error_response( int $http_status, string $code, string $message ): array {
+		return array(
+			'response' => array( 'code' => $http_status ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode(
+				array(
+					'code'    => $code,
+					'message' => $message,
+					'data'    => array( 'status' => $http_status ),
+				)
+			),
+		);
 	}
 
 	/**

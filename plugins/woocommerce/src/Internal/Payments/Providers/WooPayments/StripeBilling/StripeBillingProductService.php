@@ -320,7 +320,7 @@ class StripeBillingProductService {
 	 */
 	private function create_product( WC_Product $product ): void {
 		$product_data = $this->get_product_data( $product );
-		if ( '' === $product_data['name'] ) {
+		if ( empty( $product_data['name'] ) ) {
 			$this->log( sprintf( 'There was a problem creating the product #%s in WooPayments: The product "name" is required.', $product->get_id() ) );
 			return;
 		}
@@ -395,7 +395,7 @@ class StripeBillingProductService {
 		}
 
 		$data = $this->get_product_data( $product );
-		if ( '' === $data['name'] ) {
+		if ( empty( $data['name'] ) ) {
 			$this->log( sprintf( 'There was a problem updating the product #%s in WooPayments: The product "name" is required.', $product->get_id() ) );
 			return;
 		}

@@ -74,9 +74,11 @@ class StripeBillingApi {
 	 * @param string              $product_id   Stripe product ID.
 	 * @param array<string,mixed> $product_data Product and price data.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws WooPaymentsApiException When the ID is empty or the request fails.
 	 */
 	public function update_product( string $product_id, array $product_data = array() ): array {
+		$this->require_id( $product_id, __( 'Product ID is required', 'woocommerce' ), 'wcpay_mandatory_product_id_missing' );
+
 		return $this->send_array( $product_data, 'products/' . $this->id( $product_id ), 'POST' );
 	}
 
@@ -85,9 +87,11 @@ class StripeBillingApi {
 	 *
 	 * @param string              $price_id   Stripe price ID.
 	 * @param array<string,mixed> $price_data Price data.
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws WooPaymentsApiException When the ID is empty or the request fails.
 	 */
 	public function update_price( string $price_id, array $price_data = array() ): void {
+		$this->require_id( $price_id, __( 'Price ID is required', 'woocommerce' ), 'wcpay_mandatory_price_id_missing' );
+
 		$this->send_array( $price_data, 'products/prices/' . $this->id( $price_id ), 'POST' );
 	}
 
@@ -178,15 +182,10 @@ class StripeBillingApi {
 	 *
 	 * @param string $currency Currency code.
 	 * @return int Minimum amount in the currency's smallest unit.
-	 * @throws WooPaymentsApiException When the request fails or the platform does not answer with a number.
+	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function get_currency_minimum_recurring_amount( string $currency ): int {
-		$minimum_amount = $this->send( array(), 'subscriptions/minimum_amount/' . $this->id( $currency ), 'GET' );
-		if ( ! is_int( $minimum_amount ) ) {
-			throw $this->unexpected_body_exception();
-		}
-
-		return $minimum_amount;
+		return (int) $this->send( array(), 'subscriptions/minimum_amount/' . $this->id( $currency ), 'GET' );
 	}
 
 	/**
@@ -273,8 +272,8 @@ class StripeBillingApi {
 				$exception->getMessage(),
 				StripeBillingException::AMOUNT_TOO_SMALL,
 				array(
-					'minimum_amount' => (int) $data['minimum_amount'],
-					'currency'       => strtoupper( (string) $data['currency'] ),
+					'minimum_amount' => $data['minimum_amount'],
+					'currency'       => (string) $data['currency'],
 				),
 				$exception
 			);
@@ -292,6 +291,21 @@ class StripeBillingApi {
 		}
 
 		return $exception;
+	}
+
+	/**
+	 * Refuse an empty ID, as the client does for products and prices.
+	 *
+	 * @param string $id         Stripe ID.
+	 * @param string $message    Failure message.
+	 * @param string $error_code Failure code.
+	 * @throws WooPaymentsApiException When the ID is empty or only whitespace.
+	 */
+	private function require_id( string $id, string $message, string $error_code ): void {
+		if ( '' === trim( $id ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( $message, $error_code, 400 );
+		}
 	}
 
 	/**

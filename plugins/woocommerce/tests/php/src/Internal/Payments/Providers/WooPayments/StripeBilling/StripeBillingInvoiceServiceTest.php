@@ -26,7 +26,8 @@ use WC_Unit_Test_Case;
  *
  * Expectations follow client 11.1.0 (`tests/unit/subscriptions/test-class-wc-payments-invoice-service.php` and
  * `includes/subscriptions/class-wc-payments-invoice-service.php`); platform answers are the local platform recordings
- * in `Fixtures/rec-t63-billing-api.json` and `Fixtures/rec-t63-invoice-events.json`.
+ * in `Fixtures/rec-t63-billing-api.json` and `Fixtures/rec-t63-invoice-events.json`. Request bodies are written from the
+ * client's array literals, with `test_mode` first as the client's `request()` adds it (`class-wc-payments-api-client.php:2635-2640`).
  */
 class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 
@@ -161,17 +162,29 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Paying the parent order marks the subscription's invoice paid out of band, without charging (client test_maybe_record_invoice_payment).
+	 * @testdox Paying the parent order marks the subscription's invoice paid out of band, without charging (client test_maybe_record_invoice_payment, `class-wc-payments-invoice-service.php:207`).
 	 */
 	public function test_marks_the_invoice_paid_out_of_band_when_the_parent_order_is_paid(): void {
-		$entry        = $this->queue_recorded_responses( 'charge_invoice' )[0];
+		$this->queue_recorded_responses( 'charge_invoice' );
 		$order        = \WC_Helper_Order::create_order();
 		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
 		$this->gateway->expects( $this->never() )->method( 'update_failing_payment_method' );
 
 		$this->sut->maybe_record_invoice_payment( $order->get_id() );
 
-		$this->assertSame( array( array( 'POST', '/sites/4/wcpay/invoices/' . self::MAIN_INVOICE_ID . '/pay', $entry['request']['body'] ) ), $this->get_requests() );
+		$this->assertSame(
+			array(
+				array(
+					'POST',
+					'/sites/4/wcpay/invoices/' . self::MAIN_INVOICE_ID . '/pay',
+					array(
+						'test_mode'        => true,
+						'paid_out_of_band' => 'true',
+					),
+				),
+			),
+			$this->get_requests()
+		);
 		$this->assertFalse( wc_get_order( $subscription->get_id() )->is_manual(), 'An automatic subscription stays automatic.' );
 	}
 
@@ -295,25 +308,43 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A different quantity and price are sent to the Stripe subscription item, keeping Stripe's currency and billing cycle (client test_validate_invoice_with_invalid_data).
+	 * @testdox A different quantity and price are sent to the Stripe subscription item, keeping Stripe's currency and billing cycle (client test_validate_invoice_with_invalid_data, `class-wc-payments-invoice-service.php:243`, `:447-465`).
+	 *
+	 * The price data is the client's `format_item_price_data()` (`class-wc-payments-subscription-service.php:337-358`, `:877`): 59.80 for two is 2990 cents a unit.
 	 */
 	public function test_validating_repairs_the_quantity_and_price_of_an_item(): void {
-		$entry        = $this->queue_recorded_responses( 'update_subscription_item' )[0];
+		$this->queue_recorded_responses( 'update_subscription_item' );
 		$invoice      = $this->get_event_object( 'invoice_upcoming' );
 		$subscription = $this->create_subscription_with_line_item( 2, '59.80' );
 
 		$this->sut->validate_invoice( $invoice['lines']['data'], $invoice['discounts'], $subscription );
 
-		$requests = $this->get_requests();
-		$this->assertCount( 1, $requests );
-		$this->assertSame( 'POST', $requests[0][0] );
-		$this->assertSame( '/sites/4/wcpay/subscriptions/items/' . self::CLOCK_ITEM_ID, $requests[0][1] );
-		// The recorded request repaired the same chain's item to quantity 2 at 29.90 USD a month.
-		$this->assertEquals( $entry['request']['body'], $requests[0][2] );
+		$this->assertSame(
+			array(
+				array(
+					'POST',
+					'/sites/4/wcpay/subscriptions/items/' . self::CLOCK_ITEM_ID,
+					array(
+						'test_mode'  => true,
+						'quantity'   => 2,
+						'price_data' => array(
+							'currency'            => 'usd',
+							'product'             => self::RECORDED_PRODUCT_ID,
+							'unit_amount_decimal' => 2990,
+							'recurring'           => array(
+								'interval'       => 'month',
+								'interval_count' => 1,
+							),
+						),
+					),
+				),
+			),
+			$this->get_requests()
+		);
 	}
 
 	/**
-	 * @testdox The subscription's coupons are sent to Stripe when the invoice's discounts differ, and the returned discount IDs saved (client get_repair_data_for_wcpay_discounts).
+	 * @testdox The subscription's coupons are sent to Stripe when the invoice's discounts differ, and the returned discount IDs saved (client get_repair_data_for_wcpay_discounts, `class-wc-payments-invoice-service.php:250-255`, `class-wc-payments-subscription-service.php:367-388`).
 	 * @testWith [["di_1UM1RecT63Kept"], ["di_1UM1RecT63Kept"], false]
 	 *           [[], [], false]
 	 *           [["di_1UM1RecT63Kept"], [], true]
@@ -403,7 +434,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The invoice payment is recorded as Stripe Billing while the toggle is on, else as a legacy WooPayments subscription (client record_subscription_payment_context).
+	 * @testdox The invoice payment is recorded as Stripe Billing while the toggle is on, else as a legacy WooPayments subscription (client record_subscription_payment_context, `class-wc-payments-invoice-service.php:311-317`).
 	 * @testWith [true, "stripe_billing"]
 	 *           [false, "legacy_wcpay_subscription"]
 	 *
@@ -434,25 +465,37 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The order ID is sent to the charge of a paid renewal invoice, and nothing is sent for an invoice without a charge (client update_charge_details).
+	 * @testdox The order ID is sent to the charge of a paid renewal invoice, and nothing is sent for an invoice without a charge (client update_charge_details, `class-wc-payments-invoice-service.php:359-368`).
 	 */
 	public function test_sends_the_order_id_to_the_invoice_charge(): void {
-		$entry = $this->queue_recorded_responses( 'update_charge' )[0];
+		$this->queue_recorded_responses( 'update_charge' );
 
 		$this->sut->update_charge_details( $this->get_event_object( 'invoice_paid_parent' ), 5821 );
 		$this->assertSame( 0, $this->http_client->request_count, 'An invoice paid out of band has no charge.' );
 
 		$this->sut->update_charge_details( $this->get_event_object( 'invoice_paid_renewal' ), 5821 );
 
-		$this->assertSame( array( array( 'POST', '/sites/4/wcpay/charges/ch_3UM1YABzWlxcwgpP0Fazmyr5', $entry['request']['body'] ) ), $this->get_requests() );
+		$this->assertSame(
+			array(
+				array(
+					'POST',
+					'/sites/4/wcpay/charges/ch_3UM1YABzWlxcwgpP0Fazmyr5',
+					array(
+						'test_mode' => true,
+						'metadata'  => array( 'order_id' => 5821 ),
+					),
+				),
+			),
+			$this->get_requests()
+		);
 	}
 
 	/**
-	 * @testdox The order's billing name, email and country are sent to the transaction of the invoice charge (client update_transaction_details).
+	 * @testdox The order's billing name, email and country are sent to the transaction of the invoice charge (client update_transaction_details, `class-wc-payments-invoice-service.php:339-347`).
 	 */
 	public function test_sends_the_billing_details_to_the_invoice_transaction(): void {
-		$entries = $this->queue_recorded_responses( 'get_charge_for_update_transaction', 'update_transaction' );
-		$order   = \WC_Helper_Order::create_order();
+		$this->queue_recorded_responses( 'get_charge_for_update_transaction', 'update_transaction' );
+		$order = \WC_Helper_Order::create_order();
 		$order->set_billing_first_name( 'Rec' );
 		$order->set_billing_last_name( 'Renewal' );
 		$order->set_billing_email( 'rec-t63-renewal@woo.test' );
@@ -467,7 +510,17 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				array( 'GET', '/sites/4/wcpay/charges/ch_3UM1YABzWlxcwgpP0Fazmyr5?test_mode=1', null ),
-				array( 'POST', '/sites/4/wcpay/transactions/txn_3UM1YABzWlxcwgpP0tCiQoKI', array_merge( $entries[1]['request']['body'], array( 'customer_email' => 'rec-t63-renewal@woo.test' ) ) ),
+				array(
+					'POST',
+					'/sites/4/wcpay/transactions/txn_3UM1YABzWlxcwgpP0tCiQoKI',
+					array(
+						'test_mode'           => true,
+						'customer_first_name' => 'Rec',
+						'customer_last_name'  => 'Renewal',
+						'customer_email'      => 'rec-t63-renewal@woo.test',
+						'customer_country'    => 'US',
+					),
+				),
 			),
 			$this->get_requests()
 		);

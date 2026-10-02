@@ -78,6 +78,40 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should leave the Stripe product IDs, legacy price IDs and hashes off a duplicated product, whatever the toggle (client `class-wc-payments-product-service.php:125`, `:312-324`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_duplicating_a_product_leaves_out_its_stripe_ids_and_hashes(): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '0' );
+		$this->register_module( true );
+
+		$stripe_meta = array(
+			'_wcpay_product_hash'          => '157edb40778acb45ff5dce71451e7ff1',
+			'_wcpay_product_id_live'       => 'prod_VMl1fRBycUk6wP',
+			'_wcpay_product_id_test'       => 'prod_VMl10VL0VK371N',
+			'_wcpay_product_price_hash'    => 'c1f0e9b4d2a7c3e8f5b6a9d0e1f2a3b4',
+			'_wcpay_product_price_id_live' => 'price_1UM1WdBzWlxcwgpPTdu1MSjd',
+			'_wcpay_product_price_id_test' => 'price_1UM1VFBzWlxcwgpPfqFOGkZ2',
+		);
+		$product     = \WC_Helper_Product::create_simple_product();
+		foreach ( $stripe_meta as $key => $value ) {
+			$product->update_meta_data( $key, $value );
+		}
+		$product->update_meta_data( '_rec_t63_other_meta', 'copied' );
+		$product->save();
+
+		$duplicate = ( new \WC_Admin_Duplicate_Product() )->product_duplicate( wc_get_product( $product->get_id() ) );
+		$duplicate = wc_get_product( $duplicate->get_id() );
+
+		$this->assertSame( 'copied', $duplicate->get_meta( '_rec_t63_other_meta' ), 'Other meta is still copied.' );
+		foreach ( array_keys( $stripe_meta ) as $key ) {
+			$this->assertFalse( $duplicate->meta_exists( $key ), "$key must not be copied." );
+		}
+	}
+
+	/**
 	 * Build and register the module with the given ownership decision.
 	 *
 	 * @param bool $native_owns Whether native owns payments.
