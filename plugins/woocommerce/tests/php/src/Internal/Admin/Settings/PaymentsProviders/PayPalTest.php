@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PayPal;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -42,16 +43,30 @@ class PayPalTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build a fake gateway with the extension's ID.
+	 * Build a fake gateway with the extension's ID, mapped to a regular plugin file.
 	 *
 	 * @return WC_Payment_Gateway
 	 */
 	private function fake_ppcp_gateway(): WC_Payment_Gateway {
-		$gateway               = $this->getMockBuilder( WC_Payment_Gateway::class )->onlyMethods( array( 'get_method_title' ) )->getMock();
-		$gateway->id           = 'ppcp-gateway';
-		$gateway->method_title = 'PayPal';
+		$gateway     = $this->getMockBuilder( WC_Payment_Gateway::class )->onlyMethods( array( 'get_method_title' ) )->getMock();
+		$gateway->id = 'ppcp-gateway';
+		// Test hooks read by the base provider, so it reports a deactivatable plugin.
+		$gateway->extension_type = PaymentsProviders::EXTENSION_TYPE_WPORG;
+		$gateway->plugin_file    = 'woocommerce-paypal-payments/woocommerce-paypal-payments.php';
+		$gateway->method_title   = 'PayPal';
 		$gateway->method( 'get_method_title' )->willReturn( 'PayPal' );
 		return $gateway;
+	}
+
+	/**
+	 * Get the plugin details the base provider returns, bypassing the PayPal override.
+	 *
+	 * @param WC_Payment_Gateway $gateway The gateway.
+	 *
+	 * @return array
+	 */
+	private function parent_plugin_details( WC_Payment_Gateway $gateway ): array {
+		return ( new PaymentGateway( wc_get_container()->get( LegacyProxy::class ) ) )->get_plugin_details( $gateway );
 	}
 
 	/**
@@ -62,6 +77,9 @@ class PayPalTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
 
 		$gateway = $this->fake_ppcp_gateway();
+
+		$parent_details = $this->parent_plugin_details( $gateway );
+		$this->assertSame( 'woocommerce-paypal-payments/woocommerce-paypal-payments', $parent_details['file'], 'Precondition: the base provider reports a plugin file' );
 
 		$this->assertSame( 'PayPal Wallet', $this->sut->get_title( $gateway ) );
 		$this->assertSame( '', $this->sut->get_plugin_details( $gateway )['file'], 'A core-provided row must have no deactivate action' );
@@ -76,8 +94,8 @@ class PayPalTest extends WC_Unit_Test_Case {
 
 		$gateway = $this->fake_ppcp_gateway();
 
-		// What the parent provider returns, bypassing the override.
-		$parent_details = ( new PaymentGateway( wc_get_container()->get( LegacyProxy::class ) ) )->get_plugin_details( $gateway );
+		$parent_details = $this->parent_plugin_details( $gateway );
+		$this->assertNotSame( '', $parent_details['file'], 'Precondition: the base provider reports a plugin file' );
 
 		$this->assertSame( 'PayPal', $this->sut->get_title( $gateway ) );
 		$this->assertSame( $parent_details, $this->sut->get_plugin_details( $gateway ) );
