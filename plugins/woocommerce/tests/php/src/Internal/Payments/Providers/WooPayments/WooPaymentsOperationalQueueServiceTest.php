@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProvider
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
@@ -451,6 +452,42 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			->willReturn( array( 'result' => 'success' ) );
 
 		$this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, null, null, $settings_service )->handle_wcpay_store_setup_sync();
+	}
+
+	/**
+	 * @testdox Should report the Stripe Billing toggle in the store setup snapshot while WooCommerce Subscriptions is active (client `class-wc-payments-account.php:2977`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith ["1", true]
+	 *           ["0", false]
+	 *
+	 * @param string $toggle   Stripe Billing toggle option value.
+	 * @param bool   $expected Reported `stripe_billing_enabled`.
+	 */
+	public function test_store_setup_sync_reports_stripe_billing( string $toggle, bool $expected ): void {
+		require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
+		class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		$module = new WooPaymentsStripeBillingModule();
+		$module->init( new StaticNativeRuntimeArbiter( true ) );
+		$module->register();
+		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+
+		$snapshots  = array();
+		$api_client = $this->create_api_client( array( 'is_available', 'send_store_setup' ) );
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'send_store_setup' )->willReturnCallback(
+			static function ( array $snapshot ) use ( &$snapshots ): array {
+				$snapshots[] = $snapshot;
+				return array( 'result' => 'success' );
+			}
+		);
+
+		$this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_store_setup_sync();
+
+		$this->assertCount( 1, $snapshots );
+		$this->assertSame( $expected, $snapshots[0]['stripe_billing_enabled'] );
 	}
 
 	/**

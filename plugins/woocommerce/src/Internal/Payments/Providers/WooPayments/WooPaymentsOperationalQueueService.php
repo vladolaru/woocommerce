@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -1112,9 +1113,9 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				'custom_message'          => $settings['platform_checkout_custom_message'] ?? '',
 				'invalid_extension_found' => (bool) get_option( 'woopay_invalid_extension_found', false ),
 			),
-			// The plugin reads the Multi-Currency feature flag with a default of enabled; Stripe Billing is retired natively, so false is the true value.
+			// The plugin reads the Multi-Currency feature flag with a default of enabled.
 			'multi_currency_enabled'                      => '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ),
-			'stripe_billing_enabled'                      => false,
+			'stripe_billing_enabled'                      => wc_get_container()->get( WooPaymentsStripeBillingModule::class )->is_stripe_billing_enabled(),
 			'plugin'                                      => array(
 				'version'              => defined( 'WC_VERSION' ) ? explode( '-', WC_VERSION, 2 )[0] : '',
 				'activation_timestamp' => get_option( 'wcpay_activation_timestamp', null ),
