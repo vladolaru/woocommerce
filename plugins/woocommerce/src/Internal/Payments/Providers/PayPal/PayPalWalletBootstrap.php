@@ -155,9 +155,10 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		}
 
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only check that only skips a boot; no action is performed.
-		$action = isset( $_GET['action'] ) ? sanitize_text_field( wp_unslash( $_GET['action'] ) ) : '';
+		// The bulk form posts, the single link is a GET; $_REQUEST covers both, as core's current_action() does.
+		$action = isset( $_REQUEST['action'] ) && is_string( $_REQUEST['action'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['action'] ) ) : '';
 		if ( 'activate' === $action ) {
-			$plugin = isset( $_GET['plugin'] ) ? sanitize_text_field( wp_unslash( $_GET['plugin'] ) ) : '';
+			$plugin = isset( $_REQUEST['plugin'] ) && is_string( $_REQUEST['plugin'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['plugin'] ) ) : '';
 			return PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE === $plugin;
 		}
 		if ( 'activate-selected' === $action ) {
@@ -165,7 +166,7 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 			if ( ! is_array( $checked ) ) {
 				return false;
 			}
-			$checked = array_map( 'sanitize_text_field', $checked );
+			$checked = array_map( 'sanitize_text_field', array_filter( $checked, 'is_string' ) );
 			return in_array( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE, $checked, true );
 		}
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended

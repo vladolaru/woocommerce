@@ -33,6 +33,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->saved_request = array(
+			'post'    => $_POST, // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Saving test state.
 			'get'     => $_GET, // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Saving test state.
 			'request' => $_REQUEST, // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Saving test state.
 			'pagenow' => $GLOBALS['pagenow'] ?? null,
@@ -43,6 +44,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	 * Restore the request globals.
 	 */
 	public function tearDown(): void {
+		$_POST    = $this->saved_request['post'];
 		$_GET     = $this->saved_request['get'];
 		$_REQUEST = $this->saved_request['request'];
 		if ( null === $this->saved_request['pagenow'] ) {
@@ -57,9 +59,11 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	 * Simulate a plugins.php request with the given query args.
 	 *
 	 * @param array $args Query args.
+	 * @param bool  $post Whether the args arrive by POST (bulk form) rather than GET (link).
 	 */
-	private function set_plugins_request( array $args ): void {
-		$_GET               = $args;
+	private function set_plugins_request( array $args, bool $post = false ): void {
+		$_GET               = $post ? array() : $args;
+		$_POST              = $post ? $args : array(); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Simulating a request.
 		$_REQUEST           = $args;
 		$GLOBALS['pagenow'] = 'plugins.php'; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulating the admin page.
 	}
@@ -129,7 +133,8 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			array(
 				'action'  => 'activate-selected',
 				'checked' => array( 'akismet/akismet.php', PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE ),
-			)
+			),
+			true
 		);
 
 		$this->sut->maybe_boot();
@@ -168,6 +173,22 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			)
 		);
 		$GLOBALS['pagenow'] = 'index.php'; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulating the admin page.
+		$this->assertFalse( $this->sut->is_extension_activation_request() );
+	}
+
+	/**
+	 * @testdox Should ignore a nested checked array without raising notices.
+	 */
+	public function test_activation_guard_ignores_nested_checked_entries(): void {
+		$this->build_sut( true );
+		$this->set_plugins_request(
+			array(
+				'action'  => 'activate-selected',
+				'checked' => array( array( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE ) ),
+			),
+			true
+		);
+
 		$this->assertFalse( $this->sut->is_extension_activation_request() );
 	}
 
