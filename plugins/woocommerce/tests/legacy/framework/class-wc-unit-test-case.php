@@ -137,6 +137,7 @@ class WC_Unit_Test_Case extends WP_HTTP_TestCase {
 		// runs later. Subclass setUp() runs after this, so a test that wants one
 		// of these signals still sets it and wins.
 		EnvironmentIsolation::apply();
+		EnvironmentIsolation::apply_for_test( static::class );
 
 		// Add custom factories.
 		$this->factory = new WC_Unit_Test_Factory();

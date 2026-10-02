@@ -85,6 +85,22 @@ final class EnvironmentIsolation {
 	);
 
 	/**
+	 * Native payments test namespaces that get a fixed geolocation answer: their payment requests geolocate the shopper, and no native test may reach the network for it.
+	 *
+	 * @var string[]
+	 */
+	private const OFFLINE_GEOLOCATION_TEST_NAMESPACES = array(
+		'Automattic\\WooCommerce\\Tests\\Internal\\Payments\\',
+		'Automattic\\WooCommerce\\Tests\\Internal\\MultiCurrency\\',
+		'Automattic\\WooCommerce\\Tests\\Internal\\Admin\\Settings\\PaymentsProviders\\',
+	);
+
+	/**
+	 * Country the fixed geolocation answer reports.
+	 */
+	private const OFFLINE_GEOLOCATION_COUNTRY = 'US';
+
+	/**
 	 * Apply the baseline.
 	 *
 	 * Runs on `muplugins_loaded` after WooCommerce is loaded, so the Jetpack
@@ -107,6 +123,33 @@ final class EnvironmentIsolation {
 		foreach ( self::CLEARED_OPTIONS as $option ) {
 			delete_option( $option );
 		}
+	}
+
+	/**
+	 * Apply the per-test parts of the baseline that depend on the test class.
+	 *
+	 * Runs from each test's setUp, after the hooks backup, so WordPress removes what it adds when the test ends. A test
+	 * that is about geolocation adds its own `woocommerce_geolocate_ip` filter and wins.
+	 *
+	 * @param string $test_class Fully qualified name of the running test class.
+	 */
+	public static function apply_for_test( string $test_class ): void {
+		foreach ( self::OFFLINE_GEOLOCATION_TEST_NAMESPACES as $namespace ) {
+			if ( 0 === strpos( $test_class, $namespace ) ) {
+				add_filter( 'woocommerce_geolocate_ip', array( self::class, 'answer_offline_geolocation' ) );
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Answer a geolocation lookup without the network, unless an earlier callback already answered.
+	 *
+	 * @param mixed $country_code Country code from earlier callbacks, or false.
+	 * @return mixed
+	 */
+	public static function answer_offline_geolocation( $country_code ) {
+		return false === $country_code ? self::OFFLINE_GEOLOCATION_COUNTRY : $country_code;
 	}
 
 	/**
