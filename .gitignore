@@ -132,3 +132,6 @@ CLAUDE.local.md
 .docusaurus
 
 .mcp.json
+
+# The vendored PayPal Payments tree ships its own built vendor/ directory.
+!plugins/woocommerce/src/Internal/Payments/Providers/PayPal/woocommerce-paypal-payments/vendor/
