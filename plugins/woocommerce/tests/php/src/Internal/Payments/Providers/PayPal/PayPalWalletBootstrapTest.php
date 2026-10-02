@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\WalletStubsModule;
 use WC_Unit_Test_Case;
 
 /**
@@ -90,8 +91,19 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertTrue( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) );
 		$container = \WooCommerce\PayPalCommerce\PPCP::container();
 		$this->assertTrue( $container->has( 'wcgateway.paypal-gateway' ), 'The vendored gateway service must exist' );
-		$this->assertTrue( $container->has( 'axo.eligibility.check' ), 'Stubbed services must be registered' );
-		$this->assertFalse( $container->get( 'axo.eligibility.check' )(), 'Stubbed eligibility must be false' );
+		$stub_file = ( new \ReflectionClass( WalletStubsModule::class ) )->getFileName();
+		foreach ( WalletStubsModule::STUBBED_SERVICE_IDS as $id ) {
+			$this->assertTrue( $container->has( $id ), "$id must be registered" );
+			$service = $container->get( $id );
+			$this->assertIsCallable( $service, "$id must resolve to a callable" );
+			$this->assertFalse( $service(), "$id must report not eligible" );
+			// The loaded module provides a real service for the same ID; the stub must win.
+			$this->assertSame( $stub_file, ( new \ReflectionFunction( \Closure::fromCallable( $service ) ) )->getFileName(), "$id must come from the stub, not the module" );
+		}
+		foreach ( WalletStubsModule::STUBBED_FLAG_IDS as $id ) {
+			// The real local APM check is true unless the merchant country is RU, BR or JP, so false proves the stub won.
+			$this->assertFalse( $container->get( $id ), "$id must be the stubbed bool false" );
+		}
 		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_modules', array( $this->sut, 'filter_modules' ) ), 'The module filter must be in place' );
 		$this->assertSame( 10, has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.card_fields_enabled', '__return_false' ), 'Feature flags must be forced off' );
 		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.applepay_enabled' ), 'Wallet flags must be left alone' );
