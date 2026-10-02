@@ -265,6 +265,36 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Turning Stripe Billing off saves the toggle and starts the migration of the remaining subscriptions; turning it on starts nothing (client `class-wc-rest-payments-settings-controller.php:1314-1327`, `:530-600`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $enabled Whether Stripe Billing is turned on.
+	 */
+	public function test_turning_stripe_billing_off_starts_the_migration( bool $enabled ): void {
+		$this->load_subscriptions();
+		WooCommerceSubscriptionsDoubles::load_background_repairer();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $enabled ? '0' : '1' );
+		$this->create_stripe_billed_subscription_and_renewal();
+		$sut = $this->register_module( true );
+
+		$sut->set_stripe_billing_enabled( $enabled );
+
+		$this->assertSame( $enabled ? '1' : '0', get_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION ) );
+		$this->assertSame(
+			array(
+				'is_stripe_billing_enabled'         => $enabled,
+				'is_migrating_stripe_billing'       => ! $enabled,
+				'stripe_billing_subscription_count' => 1,
+				'stripe_billing_migrated_count'     => 0,
+			),
+			$sut->get_settings_fields()
+		);
+	}
+
+	/**
 	 * Create a subscription billed by Stripe Billing on the recorded main chain, and a renewal order of it.
 	 *
 	 * @return array{0:WC_Order,1:WC_Order}

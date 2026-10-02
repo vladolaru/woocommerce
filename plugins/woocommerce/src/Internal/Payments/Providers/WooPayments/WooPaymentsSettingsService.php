@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Throwable;
 use WP_Error;
 use WP_REST_Request;
@@ -311,7 +312,7 @@ class WooPaymentsSettingsService {
 			$available_payment_method_ids
 		);
 
-		return array(
+		$contract = array(
 			'enabled_payment_method_ids'                 => $enabled_payment_method_ids,
 			'available_payment_method_ids'               => $available_payment_method_ids,
 			'payment_method_statuses'                    => $this->get_payment_method_statuses(),
@@ -383,6 +384,8 @@ class WooPaymentsSettingsService {
 			'express_checkout_checkout_methods'          => $this->sanitize_payment_method_ids( $this->get_array_setting( $settings, 'express_checkout_checkout_methods' ), self::EXPRESS_CHECKOUT_METHOD_IDS ),
 			'express_checkout_preview'                   => $this->get_express_checkout_preview_settings(),
 		);
+
+		return array_merge( $contract, wc_get_container()->get( WooPaymentsStripeBillingModule::class )->get_settings_fields() );
 	}
 
 	/**
@@ -636,6 +639,10 @@ class WooPaymentsSettingsService {
 
 		if ( array_key_exists( 'is_wcpay_subscriptions_enabled', $params ) && ! $params['is_wcpay_subscriptions_enabled'] ) {
 			update_option( self::WCPAY_SUBSCRIPTIONS_FLAG_OPTION, '0' );
+		}
+
+		if ( array_key_exists( 'is_stripe_billing_enabled', $params ) ) {
+			wc_get_container()->get( WooPaymentsStripeBillingModule::class )->set_stripe_billing_enabled( (bool) $params['is_stripe_billing_enabled'] );
 		}
 
 		foreach ( array_keys( self::ACCOUNT_SETTING_MAP ) as $request_key ) {

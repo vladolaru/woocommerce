@@ -117,9 +117,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the native WooPayments settings contract without Stripe Billing fields.
+	 * @testdox Should return the native WooPayments settings contract, with the Stripe Billing fields as the plugin reports them without WooCommerce Subscriptions (client `class-wc-rest-payments-settings-controller.php:530-600`).
 	 */
-	public function test_get_settings_returns_reference_shaped_contract_without_stripe_billing_fields(): void {
+	public function test_get_settings_returns_reference_shaped_contract(): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
 		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => 'yes' ) );
 		update_option(
@@ -166,9 +166,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'express_checkout_product_methods'       => array( 'payment_request' ),
 				'express_checkout_cart_methods'          => array( 'amazon_pay' ),
 				'express_checkout_checkout_methods'      => array( 'woopay' ),
-				'is_stripe_billing_enabled'              => true,
+				'is_stripe_billing_enabled'              => false,
 			)
 		);
+		update_option( '_wcpay_feature_stripe_billing', '1' );
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
 		update_option( '_wcpay_feature_subscriptions', '1' );
 		update_option( 'woopay_invalid_extension_found', true );
@@ -351,10 +352,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			$settings['account_fees']['card']
 		);
 		$this->assertArrayNotHasKey( 'invalid_method', $settings['account_fees'] );
-		$this->assertArrayNotHasKey( 'is_stripe_billing_enabled', $settings );
-		$this->assertArrayNotHasKey( 'is_migrating_stripe_billing', $settings );
-		$this->assertArrayNotHasKey( 'stripe_billing_subscription_count', $settings );
-		$this->assertArrayNotHasKey( 'stripe_billing_migrated_count', $settings );
+		$this->assertTrue( $settings['is_stripe_billing_enabled'], 'The toggle is reported as stored, from its option, even without WooCommerce Subscriptions.' );
+		$this->assertFalse( $settings['is_migrating_stripe_billing'] );
+		$this->assertSame( 0, $settings['stripe_billing_subscription_count'] );
+		$this->assertSame( 0, $settings['stripe_billing_migrated_count'] );
 	}
 
 	/**
@@ -1322,7 +1323,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'woopay' ), $stored['express_checkout_checkout_methods'] );
 		$this->assertSame( '1', get_option( '_wcpay_feature_customer_multi_currency' ) );
 		$this->assertSame( '0', get_option( '_wcpay_feature_subscriptions' ) );
-		$this->assertSame( '1', get_option( '_wcpay_feature_stripe_billing' ), 'Native settings must not mutate the Stripe Billing flag.' );
+		$this->assertSame( '0', get_option( '_wcpay_feature_stripe_billing' ), 'Turning Stripe Billing off is saved, as the plugin does.' );
 		$this->assertSame( $stored['upe_enabled_payment_method_ids'], $result['enabled_payment_method_ids'] );
 		$this->assertSame( $store_setup_sync_count + 1, did_action( 'wcpay_store_setup_sync' ) );
 	}
@@ -3087,6 +3088,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			'is_wcpay_subscriptions_enabled',
 			'is_wcpay_subscriptions_eligible',
 			'is_subscriptions_plugin_active',
+			'is_stripe_billing_enabled',
+			'is_migrating_stripe_billing',
+			'stripe_billing_subscription_count',
+			'stripe_billing_migrated_count',
 			'account_country',
 			'account_statement_descriptor',
 			'account_statement_descriptor_kanji',

@@ -173,6 +173,35 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the Stripe Billing fields of the WooPayments settings, as the plugin's settings controller reports them.
+	 *
+	 * The toggle is reported as stored, whether or not WooCommerce Subscriptions is active.
+	 *
+	 * @return array{is_stripe_billing_enabled:bool,is_migrating_stripe_billing:bool,stripe_billing_subscription_count:int,stripe_billing_migrated_count:int}
+	 */
+	public function get_settings_fields(): array {
+		return array(
+			'is_stripe_billing_enabled'         => '1' === get_option( self::TOGGLE_OPTION, '0' ),
+			'is_migrating_stripe_billing'       => $this->is_migrating(),
+			'stripe_billing_subscription_count' => $this->get_stripe_billing_subscription_count(),
+			'stripe_billing_migrated_count'     => $this->get_migrated_subscription_count(),
+		);
+	}
+
+	/**
+	 * Turn the toggle on or off; turning it off starts the migration of the remaining Stripe-billed subscriptions.
+	 *
+	 * @param bool $enabled Whether new subscriptions go to Stripe Billing.
+	 */
+	public function set_stripe_billing_enabled( bool $enabled ): void {
+		update_option( self::TOGGLE_OPTION, $enabled ? '1' : '0' );
+
+		if ( ! $enabled ) {
+			$this->schedule_migration();
+		}
+	}
+
+	/**
 	 * Count the subscriptions still billed by Stripe Billing; 0 when the module is not loaded.
 	 *
 	 * @return int

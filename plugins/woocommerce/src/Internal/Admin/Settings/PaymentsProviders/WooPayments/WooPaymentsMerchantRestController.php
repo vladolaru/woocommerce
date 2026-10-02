@@ -449,6 +449,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 				'is_woopay_global_theme_support_enabled',
 				'is_multi_currency_enabled',
 				'is_wcpay_subscriptions_enabled',
+				'is_stripe_billing_enabled',
 			) as $key
 		) {
 			$args[ $key ] = $this->get_typed_arg( 'boolean' );
