@@ -2967,7 +2967,7 @@ $stock_notifications_table_schema;
 	 */
 	private static function maybe_enable_native_paypal_wallet() {
 		if ( self::is_new_install() ) {
-			add_option( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter::ENABLED_OPTION, 'yes', '', 'yes' );
+			add_option( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter::ENABLED_OPTION, 'yes', '', true );
 		}
 	}
 
