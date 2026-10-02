@@ -31,6 +31,11 @@ class WooPaymentsProviderGatewayAdapter {
 	public const CHARGE_IDEMPOTENCY_KEY_META = '_wcpay_charge_idempotency_key';
 
 	/**
+	 * Provider data key set when a capture runs because the order status changed to completed.
+	 */
+	public const PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE = 'capture_on_status_change';
+
+	/**
 	 * Outcome data key marking a definitive native charge failure.
 	 *
 	 * @var string
@@ -251,8 +256,9 @@ class WooPaymentsProviderGatewayAdapter {
 						$this->capture_level3_data( $order )
 					);
 					$outcome = WooPaymentsIntentCodec::outcome_from_native_capture_result( $result, $intent_id );
+					$plan    = WooPaymentsOrderEffectPlan::for_capture( $result );
 
-					return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( $result ) );
+					return $outcome->with_effect_plan( empty( $context->get_provider_data()[ self::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE ] ) ? $plan : $plan->without_fee_meta() );
 				} catch ( WooPaymentsApiException $exception ) {
 					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'capture', $exception, $intent_id );
 

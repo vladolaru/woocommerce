@@ -811,6 +811,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 								'outcome'                => array( 'risk_level' => 'normal' ),
 								'amount'                 => 5000,
 								'currency'               => 'usd',
+								'captured'               => true,
 								'application_fee_amount' => 218,
 								'fee_breakdown_v1'       => array(
 									'totals' => array(

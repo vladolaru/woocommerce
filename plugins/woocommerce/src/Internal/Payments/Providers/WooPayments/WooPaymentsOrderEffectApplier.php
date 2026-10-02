@@ -152,7 +152,7 @@ class WooPaymentsOrderEffectApplier {
 			case WooPaymentsOrderEffectPlan::TYPE_CAPTURE:
 				$outcome = $this->merge_effect_data_into_outcome(
 					$outcome,
-					$this->compose_capture_effect_data( $context->get_order(), $outcome, $plan->get_provider_result() ),
+					$this->compose_capture_effect_data( $context->get_order(), $outcome, $plan->get_provider_result(), $plan->writes_fee_meta() ),
 					$plan
 				);
 				return $outcome;
@@ -227,7 +227,7 @@ class WooPaymentsOrderEffectApplier {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
 				return $this->merge_effect_data_into_outcome(
 					$outcome,
-					$this->compose_payment_intent_effect_data( $context->get_order(), $plan->get_provider_result() ),
+					$this->compose_payment_intent_effect_data( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta() ),
 					$plan
 				);
 
@@ -290,11 +290,12 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Compose PaymentIntent metadata and notes after the provider outcome is retained.
 	 *
-	 * @param WC_Order            $order  Order being charged.
-	 * @param array<string,mixed> $result Provider PaymentIntent response.
+	 * @param WC_Order            $order            Order being charged.
+	 * @param array<string,mixed> $result           Provider PaymentIntent response.
+	 * @param bool                $include_fee_meta Whether to write the fee meta.
 	 * @return array<string,mixed>
 	 */
-	private function compose_payment_intent_effect_data( WC_Order $order, array $result ): array {
+	private function compose_payment_intent_effect_data( WC_Order $order, array $result, bool $include_fee_meta ): array {
 		$status          = (string) ( $result['status'] ?? '' );
 		$charge          = WooPaymentsOrderEffects::latest_charge( $result );
 		$settlement_meta = ! empty( $charge ) && in_array( $status, array( 'processing', 'requires_capture', 'succeeded' ), true )
@@ -307,7 +308,8 @@ class WooPaymentsOrderEffectApplier {
 			(string) $order->get_currency(),
 			$order_mode,
 			$settlement_meta,
-			$order->has_status( 'on-hold' ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true )
+			$order->has_status( 'on-hold' ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ),
+			$include_fee_meta
 		);
 		if ( ! empty( $display_effects ) ) {
 			$meta = array_merge( $meta, $display_effects['meta'] );
@@ -353,12 +355,13 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Compose capture metadata and notes after the provider outcome is retained.
 	 *
-	 * @param WC_Order            $order  Order being captured.
-	 * @param PaymentOutcome      $outcome Provider capture outcome.
-	 * @param array<string,mixed> $result  Provider capture response.
+	 * @param WC_Order            $order            Order being captured.
+	 * @param PaymentOutcome      $outcome          Provider capture outcome.
+	 * @param array<string,mixed> $result           Provider capture response.
+	 * @param bool                $include_fee_meta Whether to write the fee meta.
 	 * @return array<string,mixed>
 	 */
-	private function compose_capture_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result ): array {
+	private function compose_capture_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result, bool $include_fee_meta ): array {
 		$charge    = WooPaymentsOrderEffects::latest_charge( $result );
 		$intent_id = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
 		$charge_id = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
@@ -381,7 +384,8 @@ class WooPaymentsOrderEffectApplier {
 					(string) $order->get_currency(),
 					$this->account_service->get_order_mode(),
 					$settlement_meta,
-					'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true )
+					'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ),
+					$include_fee_meta
 				),
 				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
 				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,

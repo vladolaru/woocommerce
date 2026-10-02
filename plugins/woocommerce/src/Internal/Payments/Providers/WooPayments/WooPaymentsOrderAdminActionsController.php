@@ -149,7 +149,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		$order = $this->resolve_status_order( $order_id, $order );
 
 		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, false ) ) {
-			$this->run_operation( $order, 'capture' );
+			$this->run_operation( $order, 'capture', true );
 		}
 	}
 
@@ -210,14 +210,20 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	/**
 	 * Delegate capture or cancel to the shared payment processing path.
 	 *
-	 * @param WC_Order $order     Order.
-	 * @param string   $operation Capture or cancel.
+	 * @param WC_Order $order            Order.
+	 * @param string   $operation        Capture or cancel.
+	 * @param bool     $on_status_change Whether the order status change to completed triggered the capture.
 	 */
-	private function run_operation( WC_Order $order, string $operation ): void {
+	private function run_operation( WC_Order $order, string $operation, bool $on_status_change = false ): void {
 		try {
 			$outcome = 'capture' === $operation
 				? $this->processing_service->capture(
-					PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, (float) $order->get_total() ),
+					PaymentContext::for_capture(
+						$order,
+						OrderPaymentStore::GATEWAY_ID,
+						(float) $order->get_total(),
+						$on_status_change ? array( WooPaymentsProviderGatewayAdapter::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE => true ) : array()
+					),
 					$this->provider
 				)
 				: $this->processing_service->cancel(

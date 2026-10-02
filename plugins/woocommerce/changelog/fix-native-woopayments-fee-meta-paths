@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Record the WooPayments transaction fee and net payout on orders exactly where and from what the WooPayments extension records them.

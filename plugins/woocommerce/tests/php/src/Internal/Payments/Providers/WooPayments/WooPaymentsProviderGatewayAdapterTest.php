@@ -5393,6 +5393,51 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A capture made because the order status changed to completed writes no fee meta, as on the client
+	 * (class-wc-payments-order-service.php:1847-1886); other captures do (:1681).
+	 *
+	 * @dataProvider capture_fee_meta_cases
+	 *
+	 * @param array<string,mixed> $provider_data   Capture context provider data.
+	 * @param bool                $writes_fee_meta Whether the capture plan writes fee meta.
+	 */
+	public function test_capture_plan_writes_fee_meta_unless_the_status_change_captured( array $provider_data, bool $writes_fee_meta ): void {
+		$order      = $this->create_woopayments_order();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'capture_intention' ) )
+			->getMock();
+		$order->set_transaction_id( 'pi_capture_fee' );
+		$order->save();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'capture_intention' )->willReturn(
+			array(
+				'id'     => 'pi_capture_fee',
+				'status' => 'succeeded',
+			)
+		);
+
+		$outcome = $this->create_adapter( new RecordingLegacyGateway( array( 'result' => 'success' ), true ), $api_client )
+			->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, null, $provider_data ), 'key_capture_fee' );
+
+		$plan = $outcome->get_effect_plan();
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
+		$this->assertSame( $writes_fee_meta, $plan->writes_fee_meta() );
+	}
+
+	/**
+	 * Capture contexts and whether their plan writes fee meta.
+	 *
+	 * @return array<string,array{array<string,mixed>,bool}>
+	 */
+	public function capture_fee_meta_cases(): array {
+		return array(
+			'order action or REST capture'          => array( array(), true ),
+			'capture on status change to completed' => array( array( WooPaymentsProviderGatewayAdapter::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE => true ), false ),
+		);
+	}
+
+	/**
 	 * @testdox Capture should send the context amount to the native transport.
 	 */
 	public function test_capture_sends_context_amount_to_native_transport(): void {

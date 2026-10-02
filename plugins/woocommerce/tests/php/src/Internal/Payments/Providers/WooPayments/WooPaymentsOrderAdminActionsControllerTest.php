@@ -201,6 +201,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $last_capture_context->get_order_id() );
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $last_capture_context->get_gateway_id() );
 		$this->assertSame( (float) $order->get_total(), $last_capture_context->get_amount() );
+		$this->assertArrayNotHasKey( WooPaymentsProviderGatewayAdapter::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE, $last_capture_context->get_provider_data() );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assert_order_has_note_containing( $order, 'Shared capture success note.' );
 	}
@@ -264,6 +265,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( PaymentContext::class, $last_capture_context );
 		$this->assertSame( (float) $order->get_total(), $last_capture_context->get_amount() );
+		$this->assertTrue( $last_capture_context->get_provider_data()[ WooPaymentsProviderGatewayAdapter::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE ] ?? false, 'The client writes no fee meta on this capture (class-wc-payments-order-service.php:1847-1886).' );
 	}
 
 	/**

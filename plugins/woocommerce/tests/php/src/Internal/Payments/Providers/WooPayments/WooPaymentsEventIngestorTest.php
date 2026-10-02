@@ -665,6 +665,70 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A succeeded event for an order that checkout already completed still writes the client's meta: the intent, charge
+	 * and payment method IDs, the event's lowercase currency, the mandate, and the envelope's fee and net
+	 * (class-wc-payments-webhook-processing-service.php:510-569, written before any status logic).
+	 */
+	public function test_payment_intent_succeeded_after_checkout_still_writes_the_client_meta(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_intent_id', 'pi_123' );
+		$order->save();
+		$event = $this->create_payment_intent_event( 'payment_intent.succeeded', $order );
+		$this->sut->process( $event );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		// Checkout-time values the event must replace.
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.75' );
+		$order->update_meta_data( '_wcpay_net', '11.59' );
+		$order->update_meta_data( '_wcpay_intent_currency', 'EUR' );
+		$order->save();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.succeeded',
+				$order,
+				array(
+					'currency' => 'eur',
+					'amount'   => 1234,
+					'charges'  => array(
+						'data' => array(
+							array(
+								'id'                     => 'ch_replayed',
+								'payment_method'         => 'pm_replayed',
+								'application_fee_amount' => 75,
+								'payment_method_details' => array( 'card' => array( 'mandate' => 'mandate_replayed' ) ),
+								'fee_breakdown_v1'       => array(
+									'totals' => array(
+										'fee' => array(
+											'amount'   => 85,
+											'currency' => 'usd',
+										),
+										'net' => array(
+											'amount'   => 1321,
+											'currency' => 'usd',
+										),
+									),
+								),
+							),
+						),
+					),
+				),
+				array( 'id' => 'evt_replayed' )
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'ch_replayed', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'pm_replayed', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'eur', $order->get_meta( '_wcpay_intent_currency', true ) );
+		$this->assertSame( 'mandate_replayed', $order->get_meta( '_stripe_mandate_id', true ) );
+		$this->assertSame( '0.85', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '13.21', $order->get_meta( '_wcpay_net', true ) );
+	}
+
+	/**
 	 * @testdox A replayed payment_intent.succeeded schedules no second Fee details job, as the client returns once the payment note exists.
 	 */
 	public function test_replayed_payment_intent_succeeded_schedules_no_fee_details_job(): void {

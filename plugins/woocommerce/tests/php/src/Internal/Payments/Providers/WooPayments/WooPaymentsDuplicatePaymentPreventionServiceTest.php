@@ -211,6 +211,45 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox Recovering an already-succeeded attached intent writes no fee or net, as the client's duplicate prevention writes none (class-duplicate-payment-prevention-service.php:95-143).
+	 */
+	public function test_attached_succeeded_intent_writes_no_fee_meta(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->set_total( '12.00' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+
+		$intent                                   = $this->create_intent_response( $order, 'succeeded', 1200 );
+		$intent['charges']['data'][0]['captured'] = true;
+		$intent['charges']['data'][0]['application_fee_amount'] = 65;
+		$intent['charges']['data'][0]['fee_breakdown_v1']       = array(
+			'totals' => array(
+				'fee' => array(
+					'amount'   => 65,
+					'currency' => 'usd',
+				),
+				'net' => array(
+					'amount'   => 1135,
+					'currency' => 'usd',
+				),
+			),
+		);
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->willReturn( $intent );
+
+		$this->create_service( $this->create_session(), $api_client )->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertContains( $order->get_status(), wc_get_is_paid_statuses() );
+		$this->assertFalse( $order->meta_exists( '_wcpay_transaction_fee' ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_net' ) );
+	}
+
+	/**
 	 * @testdox Attached intent recovery does not persist effects when lifecycle ownership is unavailable.
 	 */
 	public function test_attached_intent_does_not_persist_effects_before_lifecycle_application(): void {

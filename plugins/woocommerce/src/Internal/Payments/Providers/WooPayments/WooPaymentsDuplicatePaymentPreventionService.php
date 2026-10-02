@@ -444,7 +444,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$outcome               = $this->get_order_effect_applier()->enrich_outcome_for_lifecycle(
 			PaymentContext::for_checkout( $order, (string) $order->get_payment_method(), $outcome->get_payment_method_id() ),
 			$outcome,
-			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
+			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )->without_fee_meta()
 		);
 
 		$data             = $outcome->get_data();

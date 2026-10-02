@@ -841,6 +841,8 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 						'id'                  => 'ch_shadow',
 						'payment_method'      => 'pm_shadow',
 						'balance_transaction' => array( 'id' => 'txn_shadow' ),
+						// Stripe marks the charge of a succeeded intent captured.
+						'captured'            => 'succeeded' === $status,
 					),
 				),
 			),

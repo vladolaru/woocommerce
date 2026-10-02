@@ -49,8 +49,6 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 			array( '_wcpay_multi_currency_stripe_exchange_rate' => '1.33127' )
 		);
 
-		$this->assertSame( '1.75', $meta['_wcpay_transaction_fee'] );
-		$this->assertSame( '48.25', $meta['_wcpay_net'] );
 		$this->assertSame( 'txn_native', $meta['_wcpay_payment_transaction_id'] );
 		$this->assertSame( 'normal', $meta['_charge_risk_level'] );
 		$this->assertSame( '1.33127', $meta['_wcpay_multi_currency_stripe_exchange_rate'] );
@@ -160,6 +158,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 					array( 'id' => 'ch_old' ),
 					array(
 						'id'                  => 'ch_capture',
+						'captured'            => true,
 						'currency'            => 'usd',
 						'amount'              => 5000,
 						'balance_transaction' => array( 'id' => 'txn_capture' ),
@@ -196,6 +195,97 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 		$this->assertSame( '1.75', $meta['_wcpay_transaction_fee'] );
 		$this->assertSame( '48.25', $meta['_wcpay_net'] );
 		$this->assertSame( '1.25', $meta['_wcpay_multi_currency_stripe_exchange_rate'] );
+	}
+
+	/**
+	 * Fee meta from a charge follows client 11.1.0 `attach_transaction_fee_to_order()` (class-wc-payments-order-service.php:1741-1786),
+	 * on the charges recorded in REC-3 (a 12.34 EUR payment on a USD account).
+	 *
+	 * @dataProvider attached_fee_meta_cases
+	 *
+	 * @param array<string,mixed>  $charge   Charge.
+	 * @param array<string,string> $expected Fee meta the client writes.
+	 */
+	public function test_attached_fee_meta_follows_the_client( array $charge, array $expected ): void {
+		$this->assertSame( $expected, WooPaymentsOrderEffects::attached_fee_meta( $charge ) );
+	}
+
+	/**
+	 * REC-3 charges and the fee meta the client writes for each.
+	 *
+	 * @return array<string,array{array<string,mixed>,array<string,string>}>
+	 */
+	public function attached_fee_meta_cases(): array {
+		$created_charge    = $this->load_rec_3_entry( 0 )['charges']['data'][0];
+		$fetched_charge    = $this->load_rec_3_entry( 1 );
+		$uncaptured_charge = array_merge( $created_charge, array( 'captured' => false ) );
+
+		return array(
+			'create response, no envelope: the application fee alone, in the charge currency' => array( $created_charge, array( '_wcpay_transaction_fee' => '0.75' ) ),
+			'charge read back with its envelope: fee and net from the envelope' => array(
+				$fetched_charge,
+				array(
+					'_wcpay_transaction_fee' => '0.85',
+					'_wcpay_net'             => '13.21',
+				),
+			),
+			'charge not captured yet: nothing' => array( $uncaptured_charge, array() ),
+		);
+	}
+
+	/**
+	 * Fee meta from a succeeded payment intent event follows client 11.1.0 (class-wc-payments-webhook-processing-service.php:525-569).
+	 *
+	 * @dataProvider webhook_fee_meta_cases
+	 *
+	 * @param array<string,mixed>  $charge   First charge of the event's intent.
+	 * @param array<string,string> $expected Fee meta the client writes.
+	 */
+	public function test_webhook_fee_meta_follows_the_client( array $charge, array $expected ): void {
+		$intent = array(
+			'amount'   => 1234,
+			'currency' => 'eur',
+		);
+
+		$this->assertSame( $expected, WooPaymentsOrderEffects::webhook_fee_meta( $intent, $charge ) );
+	}
+
+	/**
+	 * Event charges and the fee meta the client writes for each.
+	 *
+	 * @return array<string,array{array<string,mixed>,array<string,string>}>
+	 */
+	public function webhook_fee_meta_cases(): array {
+		$created_charge = $this->load_rec_3_entry( 0 )['charges']['data'][0];
+
+		return array(
+			'envelope: fee and net from the envelope' => array(
+				$this->load_rec_3_entry( 1 ),
+				array(
+					'_wcpay_transaction_fee' => '0.85',
+					'_wcpay_net'             => '13.21',
+				),
+			),
+			'no envelope: the fee and the intent amount less it' => array(
+				$created_charge,
+				array(
+					'_wcpay_transaction_fee' => '0.75',
+					'_wcpay_net'             => '11.59',
+				),
+			),
+			'no envelope and a zero fee: nothing, as the client skips a falsy fee' => array( array_merge( $created_charge, array( 'application_fee_amount' => 0 ) ), array() ),
+		);
+	}
+
+	/**
+	 * Load a REC-3 recorded response body.
+	 *
+	 * @param int $index Entry index.
+	 * @return array<string,mixed>
+	 */
+	private function load_rec_3_entry( int $index ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		return json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-3-eur-charge.json' ), true )['entries'][ $index ]['response']['body'];
 	}
 
 	/**

@@ -449,6 +449,7 @@ class WooPaymentsEventIngestor {
 	 * @param array<string,mixed> $payment_intent Provider payment intent object.
 	 */
 	public function record_succeeded_payment_intent( WC_Order $order, array $payment_intent ): void {
+		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
 		$this->apply_completed_payment_method_display_title( $order, $payment_intent );
 		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
 		$this->repair_recurring_order_token( $order, $payment_intent );
@@ -458,6 +459,37 @@ class WooPaymentsEventIngestor {
 		// Captures change what the uncaptured-transactions badge counts; the plugin
 		// invalidates after the order effects land.
 		$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
+	}
+
+	/**
+	 * Write the meta client 11.1.0 writes on every succeeded payment intent event, whatever the order's status.
+	 *
+	 * Intent, charge and payment method IDs, the event's currency and the mandate are written when set; the fee and net
+	 * are written whenever the event yields them, zero included.
+	 *
+	 * @param WC_Order            $order          WooPayments order the intent belongs to.
+	 * @param array<string,mixed> $payment_intent Provider payment intent object.
+	 */
+	private function write_succeeded_payment_intent_meta( WC_Order $order, array $payment_intent ): void {
+		$values = array(
+			'_intent_id'             => $this->get_object_id( $payment_intent ),
+			'_charge_id'             => $this->get_charge_id_from_intent( $payment_intent ),
+			'_payment_method_id'     => $this->get_payment_method_id_from_intent( $payment_intent ),
+			// The event's raw, lowercase currency.
+			'_wcpay_intent_currency' => isset( $payment_intent['currency'] ) ? (string) $payment_intent['currency'] : '',
+			'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $payment_intent ),
+		);
+		foreach ( $values as $key => $value ) {
+			if ( '' !== $value && '0' !== $value ) {
+				$order->update_meta_data( $key, $value );
+			}
+		}
+
+		foreach ( WooPaymentsOrderEffects::webhook_fee_meta( $payment_intent, $this->get_first_charge_from_intent( $payment_intent ) ) as $key => $value ) {
+			$order->update_meta_data( $key, $value );
+		}
+
+		$order->save();
 	}
 
 	/**

@@ -117,6 +117,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 				'data' => array(
 					array(
 						'id'                     => 'ch_display',
+						'captured'               => true,
 						'currency'               => 'usd',
 						'amount'                 => 5000,
 						'application_fee_amount' => 175,
@@ -154,7 +155,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( '4242', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ]['last4'] );
 		$this->assertStringContainsString( '"last4":"4242"', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_payment_method_details'] );
 		$this->assertSame( '1.75', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_transaction_fee'] );
-		$this->assertSame( '48.25', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_net'] );
+		// Without an envelope the client writes the fee alone (class-wc-payments-order-service.php:1775-1781).
+		$this->assertArrayNotHasKey( '_wcpay_net', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ] );
 		$this->assertSame( 'txn_display', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_payment_transaction_id'] );
 		$this->assertSame( $plan, $applied_outcome->get_effect_plan() );
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -1212,6 +1214,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 				'data' => array(
 					array(
 						'id'                     => 'ch_capture_effects',
+						'captured'               => true,
 						'currency'               => 'gbp',
 						'amount'                 => 5000,
 						'application_fee_amount' => 175,
@@ -1236,7 +1239,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'ch_capture_effects', $result->get_data()[ PaymentOutcome::DATA_META ]['_charge_id'] );
 		$this->assertArrayNotHasKey( '_wcpay_payment_transaction_id', $result->get_data()[ PaymentOutcome::DATA_META ] );
 		$this->assertSame( '1.75', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_transaction_fee'] );
-		$this->assertSame( '48.25', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_net'] );
+		// A capture response carries no envelope, so the client writes the fee alone (class-wc-payments-order-service.php:1681).
+		$this->assertArrayNotHasKey( '_wcpay_net', $result->get_data()[ PaymentOutcome::DATA_META ] );
 		$this->assertSame( 'prod', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'], 'A live capture stores plugin 11.1.0 Order_Mode::PRODUCTION.' );
 		$this->assertSame( '1.33127', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_multi_currency_stripe_exchange_rate'] );
 		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
@@ -1253,17 +1257,11 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 * `GET charges/{id}` (`gw:2776-2804`); this proves native's synchronous read of the same field
 	 * from the create-and-confirm response (no extra request) lands the identical order meta (F4).
 	 *
-	 * The recorded charge carries no `fee_breakdown_v1` (that field is only on the separate GET), so
-	 * `_wcpay_transaction_fee`/`_wcpay_net` fall back to `application_fee_amount` (75), which Stripe
-	 * returns in the **charge's own currency** (EUR minor units → 0.75), not `balance_transaction.fee`
-	 * (85 USD, the settlement currency). This assertion is therefore in EUR, not USD. This is
-	 * checkout-time parity, not a native-only reading: the client's own checkout path
-	 * (`gw:2206` → `attach_transaction_fee_to_order()`, `os:1741-1781`) falls back to the same
-	 * `application_fee_amount` for a charge shaped like this one. The client's own fee/net meta can
-	 * still end up overwritten later by a webhook-driven capture path (`os:1681`) that receives a
-	 * charge carrying `fee_breakdown_v1` (85 usd, from the recorded `GET charge`); native does not
-	 * revisit this meta after checkout in this batch's scope, which is a variant of finding F6
-	 * (timing), not asserted here.
+	 * The recorded charge carries no `fee_breakdown_v1` (that field is only on the separate GET), so the
+	 * fee is the captured charge's `application_fee_amount` (75) in the charge's own currency (EUR
+	 * 0.75), and no net is written: client 11.1.0 `attach_transaction_fee_to_order()` (`gw:2206`,
+	 * `os:1741-1781`) writes only the fee without an envelope. The succeeded webhook writes the
+	 * envelope's fee and net later.
 	 */
 	public function test_payment_intent_effects_persist_settlement_meta_for_converted_order(): void {
 		$original_currency = get_option( 'woocommerce_currency', 'USD' );
@@ -1296,7 +1294,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'ch_3UJWs2BzWlxcwgpP1y9vRrWr', $meta['_charge_id'] );
 		$this->assertSame( 'txn_3UJWs2BzWlxcwgpP1MLoqLbF', $meta['_wcpay_payment_transaction_id'], 'The balance_transaction id must resolve even though it arrives as an expanded object, not a bare id.' );
 		$this->assertSame( '0.75', $meta['_wcpay_transaction_fee'], 'Falls back to application_fee_amount (75) in the charge currency (EUR) because REC-3 carries no fee_breakdown_v1.' );
-		$this->assertSame( '11.59', $meta['_wcpay_net'], '12.34 EUR charge amount minus the 0.75 EUR application fee.' );
+		$this->assertArrayNotHasKey( '_wcpay_net', $meta, 'The client writes no net without an envelope (os:1775-1781).' );
 	}
 
 	/**

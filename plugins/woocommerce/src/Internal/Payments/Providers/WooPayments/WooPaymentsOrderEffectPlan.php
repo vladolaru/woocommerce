@@ -97,6 +97,13 @@ class WooPaymentsOrderEffectPlan implements ProviderOperationEffectPlan {
 	private array $setup_meta;
 
 	/**
+	 * Whether the effects write the transaction fee and net meta.
+	 *
+	 * @var bool
+	 */
+	private bool $writes_fee_meta = true;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string               $type                Effect plan type.
@@ -159,6 +166,27 @@ class WooPaymentsOrderEffectPlan implements ProviderOperationEffectPlan {
 	 */
 	public static function for_capture( array $provider_result ): self {
 		return new self( self::TYPE_CAPTURE, $provider_result, false, false );
+	}
+
+	/**
+	 * Get a copy of this plan whose effects write no transaction fee or net meta, for paths where the client writes none.
+	 *
+	 * @return self
+	 */
+	public function without_fee_meta(): self {
+		$plan                  = clone $this;
+		$plan->writes_fee_meta = false;
+
+		return $plan;
+	}
+
+	/**
+	 * Tell whether the effects write the transaction fee and net meta.
+	 *
+	 * @return bool
+	 */
+	public function writes_fee_meta(): bool {
+		return $this->writes_fee_meta;
 	}
 
 	/**

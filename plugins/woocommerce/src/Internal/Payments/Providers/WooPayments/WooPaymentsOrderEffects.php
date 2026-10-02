@@ -199,9 +199,10 @@ class WooPaymentsOrderEffects {
 	 * @param string               $order_mode          `_wcpay_mode` value, one of WooPaymentsOrderMode.
 	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
 	 * @param bool                 $was_held_for_review Whether the order was held for fraud review before completing.
+	 * @param bool                 $include_fee_meta    Whether to add the fee meta the client attaches from the charge.
 	 * @return array<string,string>
 	 */
-	public static function payment_intent_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false ): array {
+	public static function payment_intent_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false, bool $include_fee_meta = true ): array {
 		$status                 = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 		$charge                 = self::latest_charge( $intent );
 		$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
@@ -229,6 +230,10 @@ class WooPaymentsOrderEffects {
 			$meta                      = array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta, false, true ) );
 		} elseif ( in_array( $status, array( 'requires_action', 'requires_confirmation' ), true ) ) {
 			$meta = array_merge( $meta, self::started_payment_meta( $intent, $order_currency ) );
+		}
+
+		if ( $include_fee_meta ) {
+			$meta = array_merge( $meta, self::attached_fee_meta( $charge ) );
 		}
 
 		return array_merge( $meta, self::multibanco_voucher_meta( $intent ) );
@@ -272,17 +277,7 @@ class WooPaymentsOrderEffects {
 	 * @return array<string,string>
 	 */
 	public static function completed_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $include_payment_transaction_id = true, bool $was_held_for_review = false ): array {
-		$meta            = array();
-		$transaction_fee = self::transaction_fee_from_charge( $intent, $charge );
-		if ( '' !== $transaction_fee ) {
-			$meta['_wcpay_transaction_fee'] = $transaction_fee;
-		}
-
-		$net = self::net_from_charge( $intent, $charge, $transaction_fee );
-		if ( '' !== $net ) {
-			$meta['_wcpay_net'] = $net;
-		}
-
+		$meta                   = array();
 		$balance_transaction_id = self::balance_transaction_id( $charge['balance_transaction'] ?? null );
 		if ( $include_payment_transaction_id && '' !== $balance_transaction_id ) {
 			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
@@ -367,9 +362,10 @@ class WooPaymentsOrderEffects {
 	 * @param string               $order_mode          `_wcpay_mode` value, one of WooPaymentsOrderMode.
 	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
 	 * @param bool                 $was_held_for_review Whether the order's stored fraud outcome is review.
+	 * @param bool                 $include_fee_meta    Whether to add the fee meta the client attaches from the charge.
 	 * @return array<string,string>
 	 */
-	public static function completed_capture_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false ): array {
+	public static function completed_capture_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false, bool $include_fee_meta = true ): array {
 		$charge = self::latest_charge( $intent );
 		if ( empty( $charge ) ) {
 			return array();
@@ -385,7 +381,9 @@ class WooPaymentsOrderEffects {
 			$meta['_charge_id'] = $charge_id;
 		}
 
-		return array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta, false, $was_held_for_review ) );
+		$meta = array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta, false, $was_held_for_review ) );
+
+		return $include_fee_meta ? array_merge( $meta, self::attached_fee_meta( $charge ) ) : $meta;
 	}
 
 	/**
@@ -466,48 +464,76 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Get the merchant transaction fee from a native charge.
+	 * Get the fee meta client 11.1.0 `attach_transaction_fee_to_order()` writes from a charge: nothing until the charge is
+	 * captured; the envelope's fee and net when it has one; otherwise the application fee alone, in the charge currency.
 	 *
-	 * @param array<string,mixed> $intent Native PaymentIntent response.
 	 * @param array<string,mixed> $charge Native Charge response.
-	 * @return string
+	 * @return array<string,string>
 	 */
-	public static function transaction_fee_from_charge( array $intent, array $charge ): string {
-		$fee_breakdown_v1 = $charge['fee_breakdown_v1'] ?? null;
-		if ( is_array( $fee_breakdown_v1 ) && isset( $fee_breakdown_v1['totals']['fee']['amount'], $fee_breakdown_v1['totals']['fee']['currency'] ) ) {
-			return (string) self::interpret_stripe_amount( (int) $fee_breakdown_v1['totals']['fee']['amount'], (string) $fee_breakdown_v1['totals']['fee']['currency'] );
+	public static function attached_fee_meta( array $charge ): array {
+		if ( empty( $charge['captured'] ) ) {
+			return array();
+		}
+
+		$envelope_meta = self::envelope_fee_meta( $charge );
+		if ( null !== $envelope_meta ) {
+			return $envelope_meta;
 		}
 
 		$application_fee_amount = $charge['application_fee_amount'] ?? null;
-		$currency               = isset( $charge['currency'] ) ? (string) $charge['currency'] : (string) ( $intent['currency'] ?? '' );
 
-		return null !== $application_fee_amount && '' !== $currency
-			? (string) self::interpret_stripe_amount( (int) $application_fee_amount, $currency )
-			: '';
+		return null !== $application_fee_amount
+			? array( '_wcpay_transaction_fee' => (string) self::interpret_stripe_amount( (int) $application_fee_amount, (string) ( $charge['currency'] ?? '' ) ) )
+			: array();
 	}
 
 	/**
-	 * Get the merchant net amount from a native charge.
+	 * Get the fee meta client 11.1.0 writes from a `payment_intent.succeeded` event: the envelope's fee and net when the
+	 * first charge has one; otherwise, when the application fee is not zero, that fee and the intent amount less it, in
+	 * the intent currency.
 	 *
-	 * @param array<string,mixed> $intent          Native PaymentIntent response.
-	 * @param array<string,mixed> $charge          Native Charge response.
-	 * @param string              $transaction_fee Transaction fee.
-	 * @return string
+	 * @param array<string,mixed> $intent PaymentIntent from the event.
+	 * @param array<string,mixed> $charge First charge of the intent.
+	 * @return array<string,string>
 	 */
-	public static function net_from_charge( array $intent, array $charge, string $transaction_fee ): string {
-		$fee_breakdown_v1 = $charge['fee_breakdown_v1'] ?? null;
-		if ( is_array( $fee_breakdown_v1 ) && isset( $fee_breakdown_v1['totals']['net']['amount'], $fee_breakdown_v1['totals']['net']['currency'] ) ) {
-			return (string) self::interpret_stripe_amount( (int) $fee_breakdown_v1['totals']['net']['amount'], (string) $fee_breakdown_v1['totals']['net']['currency'] );
+	public static function webhook_fee_meta( array $intent, array $charge ): array {
+		$envelope_meta = self::envelope_fee_meta( $charge );
+		if ( null !== $envelope_meta ) {
+			return $envelope_meta;
 		}
 
-		$application_fee_amount = $charge['application_fee_amount'] ?? null;
-		$charge_amount          = $charge['amount'] ?? $intent['amount'] ?? null;
-		$currency               = isset( $charge['currency'] ) ? (string) $charge['currency'] : (string) ( $intent['currency'] ?? '' );
-		if ( null !== $application_fee_amount && '' !== $transaction_fee && null !== $charge_amount && '' !== $currency ) {
-			return (string) ( self::interpret_stripe_amount( (int) $charge_amount, $currency ) - (float) $transaction_fee );
+		$application_fee_amount = (int) ( $charge['application_fee_amount'] ?? 0 );
+		if ( 0 === $application_fee_amount ) {
+			return array();
 		}
 
-		return '';
+		$currency = (string) ( $intent['currency'] ?? '' );
+		$fee      = self::interpret_stripe_amount( $application_fee_amount, $currency );
+
+		return array(
+			'_wcpay_transaction_fee' => (string) $fee,
+			'_wcpay_net'             => (string) ( self::interpret_stripe_amount( (int) ( $intent['amount'] ?? 0 ), $currency ) - $fee ),
+		);
+	}
+
+	/**
+	 * Get the fee and net meta from a charge's fee envelope.
+	 *
+	 * @param array<string,mixed> $charge Native Charge response.
+	 * @return array<string,string>|null Null when the charge has no envelope with a fee total.
+	 */
+	private static function envelope_fee_meta( array $charge ): ?array {
+		$totals = $charge['fee_breakdown_v1']['totals'] ?? null;
+		if ( ! is_array( $totals ) || ! isset( $totals['fee']['amount'], $totals['fee']['currency'] ) ) {
+			return null;
+		}
+
+		$meta = array( '_wcpay_transaction_fee' => (string) self::interpret_stripe_amount( (int) $totals['fee']['amount'], (string) $totals['fee']['currency'] ) );
+		if ( isset( $totals['net']['amount'], $totals['net']['currency'] ) ) {
+			$meta['_wcpay_net'] = (string) self::interpret_stripe_amount( (int) $totals['net']['amount'], (string) $totals['net']['currency'] );
+		}
+
+		return $meta;
 	}
 
 	/**
