@@ -42,6 +42,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
 use ReflectionClass;
 use ReflectionMethod;
 use WC_Coupon;
@@ -630,6 +631,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `checkout_config` (2 hooks): the checkout payment-fields JS config builder.
 	 */
 	private function probe_checkout_config(): void {
+		RecordedPublicFraudServices::answer();
 		$bridge = wc_get_container()->get( WooPaymentsCheckoutBridge::class );
 		$bridge->get_payment_fields_js_config( array( 'products' ) );
 	}

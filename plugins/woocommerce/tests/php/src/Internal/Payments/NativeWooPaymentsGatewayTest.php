@@ -39,6 +39,7 @@ use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
 use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentContext as StoreApiPaymentContext;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentResult as StoreApiPaymentResult;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
 use WC_Order;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
@@ -5335,6 +5336,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should keep the ordinary save control when subscription change form identity does not match.
 	 */
 	public function test_payment_fields_reject_mismatched_subscription_change_form_identity(): void {
+		RecordedPublicFraudServices::answer();
 		$this->ensure_wcs_subscription_detector_double();
 		$order = $this->create_order();
 
@@ -5380,6 +5382,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should resolve checkout bridge dependencies when payment fields are rendered directly.
 	 */
 	public function test_payment_fields_resolve_dependencies_without_explicit_init(): void {
+		RecordedPublicFraudServices::answer();
 		$gateway = new NativeWooPaymentsGateway();
 
 		ob_start();

@@ -3527,6 +3527,48 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->markTestSkipped( 'ZipArchive is required to build the test package.' );
 		}
 
+		// The upgrader runs core's update checks; answer them with "no updates", since this case is about deactivation.
+		add_filter(
+			'pre_http_request',
+			static function ( $response, $args, $url ) {
+				unset( $args );
+				$no_updates = array(
+					'/core/version-check/'   => array(
+						'offers'       => array(),
+						'translations' => array(),
+					),
+					'/plugins/update-check/' => array(
+						'plugins'      => array(),
+						'translations' => array(),
+						'no_update'    => array(),
+					),
+					'/themes/update-check/'  => array(
+						'themes'       => array(),
+						'translations' => array(),
+						'no_update'    => array(),
+					),
+				);
+				foreach ( $no_updates as $path => $body ) {
+					if ( false === $response && 'api.wordpress.org' === wp_parse_url( $url, PHP_URL_HOST ) && false !== strpos( $url, $path ) ) {
+						return array(
+							'headers'  => array(),
+							'body'     => wp_json_encode( $body ),
+							'response' => array(
+								'code'    => 200,
+								'message' => 'OK',
+							),
+							'cookies'  => array(),
+							'filename' => null,
+						);
+					}
+				}
+
+				return $response;
+			},
+			10,
+			3
+		);
+
 		// This PHPUnit environment does not mount the real WooPayments plugin (only the browser/e2e
 		// environments do), so create a minimal fixture plugin under the test install's own plugins
 		// directory. Only remove what this test itself created, so a real mounted plugin is never touched.

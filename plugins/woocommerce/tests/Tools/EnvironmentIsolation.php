@@ -85,11 +85,11 @@ final class EnvironmentIsolation {
 	);
 
 	/**
-	 * Native payments test namespaces that get a fixed geolocation answer: their payment requests geolocate the shopper, and no native test may reach the network for it.
+	 * Native payments test namespaces kept off the network: no native test may depend on an outside service, so they get a fixed geolocation answer and any un-mocked HTTP request fails.
 	 *
 	 * @var string[]
 	 */
-	private const OFFLINE_GEOLOCATION_TEST_NAMESPACES = array(
+	private const OFFLINE_TEST_NAMESPACES = array(
 		'Automattic\\WooCommerce\\Tests\\Internal\\Payments\\',
 		'Automattic\\WooCommerce\\Tests\\Internal\\MultiCurrency\\',
 		'Automattic\\WooCommerce\\Tests\\Internal\\Admin\\Settings\\PaymentsProviders\\',
@@ -129,17 +129,37 @@ final class EnvironmentIsolation {
 	 * Apply the per-test parts of the baseline that depend on the test class.
 	 *
 	 * Runs from each test's setUp, after the hooks backup, so WordPress removes what it adds when the test ends. A test
-	 * that is about geolocation adds its own `woocommerce_geolocate_ip` filter and wins.
+	 * that is about geolocation adds its own `woocommerce_geolocate_ip` filter and wins; a test that expects a request
+	 * answers it with its own `pre_http_request` callback, which runs before the refusal.
 	 *
 	 * @param string $test_class Fully qualified name of the running test class.
 	 */
 	public static function apply_for_test( string $test_class ): void {
-		foreach ( self::OFFLINE_GEOLOCATION_TEST_NAMESPACES as $namespace ) {
+		foreach ( self::OFFLINE_TEST_NAMESPACES as $namespace ) {
 			if ( 0 === strpos( $test_class, $namespace ) ) {
 				add_filter( 'woocommerce_geolocate_ip', array( self::class, 'answer_offline_geolocation' ) );
+				add_filter( 'pre_http_request', array( self::class, 'refuse_unmocked_request' ), PHP_INT_MAX, 3 );
 				return;
 			}
 		}
+	}
+
+	/**
+	 * Fail an HTTP request that no test callback answered, naming it, instead of letting it reach the network.
+	 *
+	 * @param mixed  $response Response from earlier callbacks, or false.
+	 * @param mixed  $args     Request arguments.
+	 * @param string $url      Request URL.
+	 * @return mixed
+	 */
+	public static function refuse_unmocked_request( $response, $args, $url ) {
+		if ( false !== $response ) {
+			return $response;
+		}
+
+		$method = is_array( $args ) && isset( $args['method'] ) ? (string) $args['method'] : 'GET';
+
+		return new \WP_Error( 'woocommerce_test_unmocked_http_request', sprintf( 'Un-mocked HTTP request in a native payments test: %s %s', $method, $url ) );
 	}
 
 	/**
