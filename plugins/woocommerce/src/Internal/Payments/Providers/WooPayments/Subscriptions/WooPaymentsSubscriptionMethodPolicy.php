@@ -51,6 +51,21 @@ final class WooPaymentsSubscriptionMethodPolicy {
 	}
 
 	/**
+	 * Tell whether WooCommerce Subscriptions considers this site a staging copy of the live store.
+	 *
+	 * Client 11.1.0 `WC_Payments_Subscriptions::is_duplicate_site()`: a staging copy must do nothing at Stripe.
+	 *
+	 * @return bool
+	 */
+	public static function is_duplicate_site(): bool {
+		if ( class_exists( 'WC_Subscriptions' ) && version_compare( (string) \WC_Subscriptions::$version, '4.0.0', '<' ) ) {
+			return (bool) \WC_Subscriptions::is_duplicate_site();
+		}
+
+		return class_exists( 'WCS_Staging' ) && (bool) \WCS_Staging::is_duplicate_site();
+	}
+
+	/**
 	 * Get gateway IDs that support reusable subscription payment methods.
 	 *
 	 * @return array<int,string>

@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -204,6 +205,110 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $gateway );
 		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID ), 'No native renewal handler may be attached.' );
 		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The native failed-renewal email must not be registered.' );
+	}
+
+	/**
+	 * @testdox A renewal of a subscription paid in $subscription_mode mode, created in $current_mode mode, is refused only when the modes differ.
+	 * @dataProvider renewal_modes
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * Client 11.1.0 `tests/unit/subscriptions/test-class-wc-payments-subscription-service.php:858-884`.
+	 *
+	 * @param string      $subscription_mode `_wcpay_mode` on the subscription's parent order.
+	 * @param string      $current_mode      Current order mode of the store.
+	 * @param string|null $expected_error    Expected refusal message, or null when the renewal goes ahead.
+	 */
+	public function test_renewal_is_refused_when_the_mode_changed( string $subscription_mode, string $current_mode, ?string $expected_error ): void {
+		$this->load_subscriptions();
+		$this->arrange_ownership( false, true, NativePaymentsState::ACTIVE );
+		$this->register_native_payments_and_run_init();
+		$this->use_order_mode( $current_mode );
+		$items = array( 'line_item_a', 'line_item_b' );
+
+		if ( null !== $expected_error ) {
+			$this->expectException( \RuntimeException::class );
+			$this->expectExceptionMessage( $expected_error );
+		}
+
+		$result = apply_filters( 'wcs_renewal_order_items', $items, new WC_Order(), $this->create_subscription_paid_in_mode( $subscription_mode ) );
+
+		$this->assertSame( $items, $result );
+	}
+
+	/**
+	 * @testdox A staging copy does not refuse renewals over the mode, as in the client.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_staging_copy_does_not_refuse_renewals_over_the_mode(): void {
+		$this->load_subscriptions();
+		require_once __DIR__ . '/../Fixtures/DuplicateSiteSubscriptionsStaging.php';
+		class_alias( \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\DuplicateSiteSubscriptionsStaging::class, 'WCS_Staging' );
+		$this->arrange_ownership( false, true, NativePaymentsState::ACTIVE );
+		$this->register_native_payments_and_run_init();
+		$this->use_order_mode( 'prod' );
+		$items = array( 'line_item_a' );
+
+		$result = apply_filters( 'wcs_renewal_order_items', $items, new WC_Order(), $this->create_subscription_paid_in_mode( 'test' ) );
+
+		$this->assertSame( $items, $result );
+	}
+
+	/** @return array<string,array{string,string,?string}> */
+	public static function renewal_modes(): array {
+		return array(
+			'test subscription, live store' => array( 'test', 'prod', 'Subscription was made when WooPayments was in the test mode and cannot be renewed in the live mode.' ),
+			'live subscription, test store' => array( 'prod', 'test', 'Subscription was made when WooPayments was in the live mode and cannot be renewed in the test mode.' ),
+			'same mode'                     => array( 'test', 'test', null ),
+			'no recorded mode'              => array( '', 'prod', null ),
+		);
+	}
+
+	/**
+	 * Make the store report the given order mode.
+	 *
+	 * @param string $order_mode `test` or `prod`.
+	 */
+	private function use_order_mode( string $order_mode ): void {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_order_mode' ) )
+			->getMock();
+		$account_service->method( 'get_order_mode' )->willReturn( $order_mode );
+		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
+	}
+
+	/**
+	 * Create a subscription stand-in whose parent order was paid in the given mode.
+	 *
+	 * @param string $mode `_wcpay_mode` on the parent order; empty for none.
+	 * @return WC_Order
+	 */
+	private function create_subscription_paid_in_mode( string $mode ): WC_Order {
+		$parent_order = new WC_Order();
+		$parent_order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		if ( '' !== $mode ) {
+			$parent_order->update_meta_data( '_wcpay_mode', $mode );
+		}
+		$parent_order->save();
+
+		$subscription               = new class() extends WC_Order {
+			/** @var WC_Order|null */
+			public ?WC_Order $parent_order = null;
+
+			/**
+			 * Return the parent order, as WC_Subscription::get_parent() does.
+			 *
+			 * @return WC_Order|false
+			 */
+			public function get_parent() {
+				return $this->parent_order ?? false;
+			}
+		};
+		$subscription->parent_order = $parent_order;
+
+		return $subscription;
 	}
 
 	/** @return array<string,array{string,string,bool}> */

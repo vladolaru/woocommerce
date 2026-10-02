@@ -9,6 +9,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscri
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -116,7 +118,50 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 
 		WooPaymentsSubscriptionAdminPaymentMethodHandler::instance()->register_hooks();
 
+		if ( ! WooPaymentsSubscriptionMethodPolicy::is_duplicate_site() ) {
+			add_filter( 'wcs_renewal_order_items', array( self::class, 'check_renewal_mode' ), 10, 3 );
+		}
+
 		return true;
+	}
+
+	/**
+	 * Refuse to create a renewal order when the subscription was paid in a different WooPayments mode than the current one.
+	 *
+	 * A test-mode payment method cannot be charged in live mode, and the reverse, so the renewal would only fail.
+	 * Client 11.1.0 `WC_Payments_Subscription_Service::check_wcpay_mode_for_subscription()`; WooCommerce Subscriptions
+	 * rolls the renewal order back when this throws.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $items         Items for the renewal order.
+	 * @param mixed $renewal_order Renewal order.
+	 * @param mixed $subscription  Subscription being renewed.
+	 * @return mixed The items, unchanged.
+	 * @throws \RuntimeException When the subscription's mode differs from the current mode.
+	 */
+	public static function check_renewal_mode( $items, $renewal_order, $subscription ) {
+		unset( $renewal_order );
+		if ( ! $subscription instanceof \WC_Order || ! is_callable( array( $subscription, 'get_parent' ) ) ) {
+			return $items;
+		}
+
+		$parent_order = $subscription->get_parent();
+		if ( ! $parent_order instanceof \WC_Order ) {
+			return $items;
+		}
+
+		$subscription_mode = $parent_order->get_meta( '_wcpay_mode' );
+		$current_mode      = wc_get_container()->get( WooPaymentsAccountService::class )->get_order_mode();
+		if ( ! is_string( $subscription_mode ) || '' === $subscription_mode || $subscription_mode === $current_mode ) {
+			return $items;
+		}
+
+		if ( WooPaymentsOrderMode::TEST === $subscription_mode ) {
+			throw new \RuntimeException( esc_html__( 'Subscription was made when WooPayments was in the test mode and cannot be renewed in the live mode.', 'woocommerce' ) );
+		}
+
+		throw new \RuntimeException( esc_html__( 'Subscription was made when WooPayments was in the live mode and cannot be renewed in the test mode.', 'woocommerce' ) );
 	}
 
 	/**
