@@ -8,7 +8,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingMigrator;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\LateLoadedSubscriptions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -22,12 +21,8 @@ use WC_Unit_Test_Case;
  * case). Stripe subscriptions are the local platform recordings in `Fixtures/rec-t63-billing-api.json`: `update_subscription`
  * answered with the main-chain subscription active on user 1's saved card, `cancel_subscription` with it cancelled.
  *
- * Every case runs in a separate process: it needs WooCommerce Subscriptions and its background repairer, which cannot be unloaded.
- * The migrator and the mocks stay local to each case, since PHPUnit sends a failed case back to a process where the
- * repairer does not exist.
- *
- * @runTestsInSeparateProcesses
- * @preserveGlobalState disabled
+ * WooCommerce Subscriptions is made active through the legacy proxy's `class_exists`, which every test resets. Its background
+ * repairer classes stay defined once loaded; only the Stripe Billing module asks for them.
  */
 class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 
@@ -49,12 +44,28 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		require_once __DIR__ . '/../Fixtures/LateLoadedSubscriptions.php';
-		class_alias( LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
 		WooCommerceSubscriptionsDoubles::load();
 		WooCommerceSubscriptionsDoubles::load_background_repairer();
 
 		$this->active_wcpay_subscription = $this->get_recorded_body( 'update_subscription' );
+	}
+
+	/**
+	 * Clear the container replacements and the subscription registry.
+	 */
+	public function tearDown(): void {
+		try {
+			$this->reset_container_replacements();
+			$this->reset_container_resolutions();
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		} finally {
+			parent::tearDown();
+		}
 	}
 
 	/**
@@ -289,6 +300,8 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 	 */
 	private function build_migrator(): array {
 		$api = $this->createMock( StripeBillingApi::class );
+		// Services resolved by earlier tests hold the real platform calls; rebuild them over the mock.
+		$this->reset_container_resolutions();
 		wc_get_container()->replace( StripeBillingApi::class, $api );
 
 		$sut = new StripeBillingMigrator();

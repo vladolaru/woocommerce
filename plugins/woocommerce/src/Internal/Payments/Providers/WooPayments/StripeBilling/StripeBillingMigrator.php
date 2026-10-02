@@ -240,7 +240,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	 * @return mixed
 	 */
 	public function add_manual_migration_tool( $tools ) {
-		if ( ! is_array( $tools ) || '1' === get_option( '_wcpay_feature_subscriptions', '0' ) || ! class_exists( 'WC_Subscriptions' ) ) {
+		if ( ! is_array( $tools ) || '1' === get_option( '_wcpay_feature_subscriptions', '0' ) || ! WooPaymentsStripeBillingModule::is_woocommerce_subscriptions_active() ) {
 			return $tools;
 		}
 
@@ -414,7 +414,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	 */
 	private function validate_subscription_to_migrate( int $subscription_id ): WC_Order {
 		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Messages go to the migration log, not to output.
-		if ( ! class_exists( 'WC_Subscriptions' ) || ! function_exists( 'wcs_get_subscription' ) ) {
+		if ( ! WooPaymentsStripeBillingModule::is_woocommerce_subscriptions_active() || ! function_exists( 'wcs_get_subscription' ) ) {
 			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%d. The WooCommerce Subscriptions extension is not active.', $subscription_id ) );
 		}
 

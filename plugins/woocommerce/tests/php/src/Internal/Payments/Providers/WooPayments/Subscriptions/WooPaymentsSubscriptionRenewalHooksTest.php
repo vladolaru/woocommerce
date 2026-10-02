@@ -26,7 +26,7 @@ use WC_Unit_Test_Case;
 class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox A native-owned $state store has the renewal handlers and the failed-renewal email after init.
+	 * @testdox A native-owned $state store has the renewal handlers and the failed-renewal email after init, and refuses a renewal across test and live mode.
 	 * @dataProvider native_owned_states
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
@@ -44,6 +44,11 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 			$this->assertTrue( has_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id ), "The $gateway_id failing-method handler must be attached." );
 		}
 		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The failed-renewal email must be registered.' );
+
+		$this->use_order_mode( 'prod' );
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'Subscription was made when WooPayments was in the test mode and cannot be renewed in the live mode.' );
+		apply_filters( 'wcs_renewal_order_items', array( 'line_item_a' ), new WC_Order(), $this->create_subscription_paid_in_mode( 'test' ) );
 	}
 
 	/**
@@ -210,30 +215,30 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A renewal of a subscription paid in $subscription_mode mode, created in $current_mode mode, is refused only when the modes differ.
 	 * @dataProvider renewal_modes
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
-	 * Client 11.1.0 `tests/unit/subscriptions/test-class-wc-payments-subscription-service.php:858-884`.
+	 * Client 11.1.0 `tests/unit/subscriptions/test-class-wc-payments-subscription-service.php:858-884`. The staging case below
+	 * shows the guard is attached to `wcs_renewal_order_items`.
 	 *
 	 * @param string      $subscription_mode `_wcpay_mode` on the subscription's parent order.
 	 * @param string      $current_mode      Current order mode of the store.
 	 * @param string|null $expected_error    Expected refusal message, or null when the renewal goes ahead.
 	 */
 	public function test_renewal_is_refused_when_the_mode_changed( string $subscription_mode, string $current_mode, ?string $expected_error ): void {
-		$this->load_subscriptions();
-		$this->arrange_ownership( false, true, NativePaymentsState::ACTIVE );
-		$this->register_native_payments_and_run_init();
 		$this->use_order_mode( $current_mode );
 		$items = array( 'line_item_a', 'line_item_b' );
 
-		if ( null !== $expected_error ) {
-			$this->expectException( \RuntimeException::class );
-			$this->expectExceptionMessage( $expected_error );
+		try {
+			if ( null !== $expected_error ) {
+				$this->expectException( \RuntimeException::class );
+				$this->expectExceptionMessage( $expected_error );
+			}
+
+			$result = WooPaymentsSubscriptionRenewalHooks::check_renewal_mode( $items, new WC_Order(), $this->create_subscription_paid_in_mode( $subscription_mode ) );
+
+			$this->assertSame( $items, $result );
+		} finally {
+			$this->reset_container_replacements();
 		}
-
-		$result = apply_filters( 'wcs_renewal_order_items', $items, new WC_Order(), $this->create_subscription_paid_in_mode( $subscription_mode ) );
-
-		$this->assertSame( $items, $result );
 	}
 
 	/**

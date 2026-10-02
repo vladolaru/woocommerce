@@ -16,6 +16,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
  * when it builds the suite, so the doubles are only defined when a test calls `load()`. Each double answers as if
  * nothing were a subscription until a test registers it, so doubles left defined change nothing for later tests.
  *
+ * Once loaded, these symbols stay defined for the rest of the PHPUnit run, since the tests that load them run in-process.
+ * The full native suite is verified to pass in both default and reverse order with them loaded this way.
+ *
  * Never define `WC_Subscriptions` or `WC_Subscriptions_Core_Plugin` here: other tests rely on their absence to mean that
  * WooCommerce Subscriptions is inactive.
  */

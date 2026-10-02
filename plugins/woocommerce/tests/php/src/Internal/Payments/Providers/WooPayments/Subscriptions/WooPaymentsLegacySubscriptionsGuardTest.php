@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\LateLoadedSubscriptions;
 use WC_Unit_Test_Case;
 
 /**
@@ -164,12 +163,13 @@ class WooPaymentsLegacySubscriptionsGuardTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox With WooCommerce Subscriptions active the store is never bundled, whatever its Stripe Billing data or bundled flag (spec section 7).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_a_store_with_woocommerce_subscriptions_active_is_not_bundled(): void {
-		require_once __DIR__ . '/../Fixtures/LateLoadedSubscriptions.php';
-		class_alias( LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
 		register_post_type( 'shop_subscription' );
 		$subscription_id = wp_insert_post(
 			array(

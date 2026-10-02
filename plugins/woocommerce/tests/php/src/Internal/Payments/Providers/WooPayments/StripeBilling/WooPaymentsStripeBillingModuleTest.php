@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\LateLoadedSubscriptions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
@@ -15,14 +14,30 @@ use WC_Unit_Test_Case;
 /**
  * Load condition of the Stripe Billing module (client 11.1.0 `includes/class-wc-payments-features.php:306-318`).
  *
- * Cases that need WooCommerce Subscriptions run in a separate process, since its class cannot be unloaded.
+ * WooCommerce Subscriptions is made active through the legacy proxy's `class_exists`, which every test resets, so no
+ * class is defined for later tests.
  */
 class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Clear the registries the subscription doubles read, the staging flag and the admin screen.
+	 */
+	public function tearDown(): void {
+		try {
+			unset(
+				$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ],
+				$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ],
+				$GLOBALS[ WooCommerceSubscriptionsDoubles::DUPLICATE_SITE ],
+				$GLOBALS['current_screen']
+			);
+			$GLOBALS['wp_rest_server'] = null;
+		} finally {
+			parent::tearDown();
+		}
+	}
+
+	/**
 	 * @testdox Should not load without WooCommerce Subscriptions, even with the toggle on.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_does_not_load_without_subscriptions(): void {
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '1' );
@@ -35,8 +50,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should load with WooCommerce Subscriptions while the toggle is off, without enabling Stripe Billing.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_loads_with_subscriptions_while_the_toggle_is_off(): void {
 		$this->load_subscriptions();
@@ -50,8 +63,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should enable Stripe Billing when WooCommerce Subscriptions is active and the toggle is on.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_enables_stripe_billing_with_subscriptions_and_the_toggle_on(): void {
 		$this->load_subscriptions();
@@ -68,8 +79,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not load while the WooPayments plugin owns payments.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_does_not_load_while_the_plugin_owns_payments(): void {
 		$this->load_subscriptions();
@@ -83,8 +92,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should leave the Stripe product IDs, legacy price IDs and hashes off a duplicated product, whatever the toggle (client `class-wc-payments-product-service.php:125`, `:312-324`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_duplicating_a_product_leaves_out_its_stripe_ids_and_hashes(): void {
 		$this->load_subscriptions();
@@ -117,8 +124,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should tell a Stripe-billed subscription and its renewal order apart once loaded (client `class-wc-payments-subscription-service.php:292-294`, `:312-324`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_tells_stripe_billed_subscriptions_and_orders_once_loaded(): void {
 		$this->load_subscriptions();
@@ -146,8 +151,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A recurring payment carries the Stripe Billing fee context only when the order's subscription is Stripe-billed, toggle off included (client OrderServiceTest provider_subscription_details, `src/Internal/Service/OrderService.php:104-121`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 * @testWith ["initial", "parent", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", "wcpay_subscription"]
 	 *           ["renewal", "renewal", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", "wcpay_subscription"]
 	 *           ["initial", "parent", "", "regular_subscription"]
@@ -191,8 +194,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox WooCommerce Subscriptions gets the platform's minimum recurring amount only while the toggle is on (client `class-wc-payments-subscription-minimum-amount-handler.php:48-50`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 * @testWith ["1", 1.0]
 	 *           ["0", false]
 	 *
@@ -210,8 +211,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The update payment method flow for a failed renewal runs only while the toggle is on (client `class-wc-payments-subscription-change-payment-method-handler.php:25-27`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 * @testWith ["1", "Update payment details"]
 	 *           ["0", "Change payment method"]
 	 *
@@ -234,8 +233,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The migration route starts the migration off Stripe Billing for a store manager while Stripe-billed subscriptions remain, and does nothing on a staging copy ($role, staging: $is_staging, Stripe-billed: $has_stripe_billed).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 * @testWith ["administrator", false, true, 200, true]
 	 *           ["administrator", false, false, 200, false]
 	 *           ["administrator", true, true, 200, false]
@@ -255,7 +252,9 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 			$this->create_stripe_billed_subscription_and_renewal();
 		}
 		$this->register_module( true );
-		do_action( 'rest_api_init', rest_get_server() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		// A fresh server fires rest_api_init, so only this test's module serves the route.
+		$GLOBALS['wp_rest_server'] = null;
+		rest_get_server();
 		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
 
 		$response = rest_do_request( new \WP_REST_Request( 'POST', '/wc/v3/payments/settings/schedule-stripe-billing-migration' ) );
@@ -266,8 +265,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Turning Stripe Billing off saves the toggle and starts the migration of the remaining subscriptions; turning it on starts nothing (client `class-wc-rest-payments-settings-controller.php:1314-1327`, `:530-600`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 * @testWith [false]
 	 *           [true]
 	 *
@@ -296,8 +293,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The settings page learns whether the store may use Stripe Billing, staging copy included ($country, staging: $is_staging) (client `class-wc-payments-admin.php:1057-1058`, `class-wc-payments-features.php:290-297`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 * @testWith ["US:CA", false, true]
 	 *           ["CA:ON", false, false]
 	 *           ["US:NY", true, true]
@@ -321,8 +316,6 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The Plugins screen warns that Stripe-billed subscriptions keep renewing after deactivating WooCommerce Subscriptions only when it applies: $label (client `class-wc-payments-subscriptions-plugin-notice-manager.php:31-84`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 * @testWith ["shown", true, false, "active", "plugins", "administrator", true]
 	 *           ["no WooCommerce Subscriptions", false, false, "active", "plugins", "administrator", false]
 	 *           ["staging copy", true, true, "active", "plugins", "administrator", false]
@@ -402,10 +395,13 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Load a WooCommerce Subscriptions stand-in.
+	 * Make WooCommerce Subscriptions active for this test.
 	 */
 	private function load_subscriptions(): void {
-		require_once __DIR__ . '/../Fixtures/LateLoadedSubscriptions.php';
-		class_alias( LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
 	}
 }
