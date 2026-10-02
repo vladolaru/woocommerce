@@ -67,6 +67,7 @@ use WooCommerce\PayPalCommerce\WcGateway\Helper\MerchantDetails;
 use WooCommerce\PayPalCommerce\WcGateway\Helper\PaymentMethodTitleEnricher;
 use WooCommerce\PayPalCommerce\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceHelper;
 use WooCommerce\PayPalCommerce\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceProductStatus;
+use WooCommerce\PayPalCommerce\WcGateway\Helper\ApmCapabilityStatus;
 use WooCommerce\PayPalCommerce\WcGateway\Helper\PWCProductStatus;
 use WooCommerce\PayPalCommerce\WcGateway\Helper\RefundFeesUpdater;
 use WooCommerce\PayPalCommerce\WcGateway\Helper\ResumedOrderShippingRestorer;
@@ -753,6 +754,14 @@ return array(
 	},
 	'wcgateway.pwc-product-status'                         => static function ( ContainerInterface $container ): PWCProductStatus {
 		return new PWCProductStatus(
+			$container->get( 'settings.flag.is-connected' ),
+			$container->get( 'api.endpoint.partners' ),
+			$container->get( 'api.helper.failure-registry' ),
+			$container->get( 'api.helper.product-status-result-cache' )
+		);
+	},
+	'wcgateway.apm-capability-status'                      => static function ( ContainerInterface $container ): ApmCapabilityStatus {
+		return new ApmCapabilityStatus(
 			$container->get( 'settings.flag.is-connected' ),
 			$container->get( 'api.endpoint.partners' ),
 			$container->get( 'api.helper.failure-registry' ),

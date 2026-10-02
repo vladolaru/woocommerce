@@ -44,6 +44,7 @@ use WooCommerce\PayPalCommerce\WcGateway\Exception\NotFoundException;
 use WooCommerce\PayPalCommerce\WcGateway\Gateway\CreditCardGateway;
 use WooCommerce\PayPalCommerce\WcGateway\Gateway\GatewayRepository;
 use WooCommerce\PayPalCommerce\WcGateway\Gateway\PayPalGateway;
+use WooCommerce\PayPalCommerce\WcGateway\Helper\ApmCapabilityStatus;
 use WooCommerce\PayPalCommerce\WcGateway\Helper\CardPaymentsConfiguration;
 use WooCommerce\PayPalCommerce\WcGateway\Helper\DCCProductStatus;
 use WooCommerce\PayPalCommerce\WcGateway\Helper\InstallmentsProductStatus;
@@ -502,6 +503,9 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 					$apms_enabled = $apms_product_status->is_active();
 				}
 
+				$apm_capability_status = $c->get( 'wcgateway.apm-capability-status' );
+				assert( $apm_capability_status instanceof ApmCapabilityStatus );
+
 				$installments_product_status = $c->get( 'wcgateway.installments-product-status' );
 				assert( $installments_product_status instanceof InstallmentsProductStatus );
 
@@ -529,9 +533,10 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 					'enabled' => $apms_enabled,
 				);
 
-				// When local APMs are available, then PayLater messaging is also available.
+				// Seller status has no Pay Later messaging capability, so the APM capability is the proxy.
+				// It is read here directly, so the result does not depend on the local APM module being loaded.
 				$features[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ] = array(
-					'enabled' => $features[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ]['enabled'],
+					'enabled' => $apm_capability_status->is_active(),
 				);
 
 				$features[ FeaturesDefinition::FEATURE_INSTALLMENTS ] = array(
