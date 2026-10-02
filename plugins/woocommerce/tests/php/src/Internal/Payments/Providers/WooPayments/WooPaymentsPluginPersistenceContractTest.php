@@ -80,11 +80,10 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	 */
 	private const ALLOWED_DIFFERENCES = array(
 		'wcpay_check_subscriptions_eligibility_after_onboarding' => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_menu_badge_hidden'                      => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_should_redirect_to_onboarding'          => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_survey_payment_overview_submitted'      => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_subscription_minimum_recurring_amounts' => 'plan.md Decision 1 (Stripe Billing / WCPay Subscriptions excluded).',
-		'wcpay_error_message'                          => 'plan.md T.7 Step 6 (d): superseded by the NOX wcpay-connection-error query arg.',
+		'wcpay_menu_badge_hidden'                 => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
+		'wcpay_should_redirect_to_onboarding'     => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
+		'wcpay_survey_payment_overview_submitted' => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
+		'wcpay_error_message'                     => 'plan.md T.7 Step 6 (d): superseded by the NOX wcpay-connection-error query arg.',
 		'woocommerce_admin_wc_payments_review_prompt_dismissed' => 'data/client-delta-10.8.0-11.1.0.tsv:81 and :105 (11.0.0 review-prompt rows, n/a, owner review 2026-09-12).',
 		'woocommerce_admin_wc_payments_review_prompt_maybe_later' => 'data/client-delta-10.8.0-11.1.0.tsv:81 and :105 (11.0.0 review-prompt rows, n/a, owner review 2026-09-12).',
 	);

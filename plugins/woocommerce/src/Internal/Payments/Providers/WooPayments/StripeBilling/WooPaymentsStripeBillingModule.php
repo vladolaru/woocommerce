@@ -182,6 +182,8 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 		$this->attach( 'woocommerce_checkout_subscription_created', StripeBillingSubscriptionService::class, 'create_subscription' );
 		$this->attach( 'woocommerce_renewal_order_payment_complete', StripeBillingSubscriptionService::class, 'create_subscription_for_manual_renewal' );
 		$this->attach( 'woocommerce_subscription_payment_method_updated', StripeBillingSubscriptionService::class, 'maybe_create_subscription_from_update_payment_method', 10, 2 );
+
+		$this->attach( 'woocommerce_subscriptions_minimum_processable_recurring_amount', StripeBillingMinimumAmountHandler::class, 'get_minimum_recurring_amount', 10, 2 );
 	}
 
 	/**

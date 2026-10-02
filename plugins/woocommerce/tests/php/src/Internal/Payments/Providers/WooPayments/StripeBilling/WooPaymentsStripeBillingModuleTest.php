@@ -190,6 +190,25 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WooCommerce Subscriptions gets the platform's minimum recurring amount only while the toggle is on (client `class-wc-payments-subscription-minimum-amount-handler.php:48-50`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith ["1", 1.0]
+	 *           ["0", false]
+	 *
+	 * @param string     $toggle   Toggle value.
+	 * @param float|bool $expected Minimum amount WooCommerce Subscriptions gets.
+	 */
+	public function test_gives_the_minimum_recurring_amount_only_while_the_toggle_is_on( string $toggle, $expected ): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		set_transient( 'WCPAY_SUBSCRIPTION_MINIMUM_RECURRING_AMOUNTS_USD', 100 );
+		$this->register_module( true );
+
+		$this->assertSame( $expected, apply_filters( 'woocommerce_subscriptions_minimum_processable_recurring_amount', false, 'USD' ) );
+	}
+
+	/**
 	 * Create a subscription billed by Stripe Billing on the recorded main chain, and a renewal order of it.
 	 *
 	 * @return array{0:WC_Order,1:WC_Order}
