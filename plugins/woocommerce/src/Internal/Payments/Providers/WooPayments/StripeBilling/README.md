@@ -13,6 +13,8 @@ Stripe Billing lets a store with WooCommerce Subscriptions bill subscription ren
 
 Hook callbacks resolve their service from the container only when the hook fires, so registering them constructs no service and runs no query. `WooPaymentsStripeBillingModule::attach_maintenance_hooks()` holds the hooks that serve existing Stripe Billing data whatever the toggle; `attach_engaged_hooks()` holds those that only run while it is on.
 
+The one exception is `StripeBillingMigrator`, built with `new` on every request once WooCommerce Subscriptions' `WCS_Background_Repairer` is known to exist, whatever the toggle, and never on a staging copy: it extends that class, which attaches its own Action Scheduler hooks in `init()`, so it cannot be resolved lazily or from the container. The module also registers the migration route `wc/v3/payments/settings/schedule-stripe-billing-migration` for every store native serves, as the plugin's settings controller does; it does nothing without the migrator. `php-stubs/wcs-background-repairer.php` declares the repairer classes for PHPStan only.
+
 ## Boundary
 
 Code outside this folder names only `WooPaymentsStripeBillingModule`, and only in these seams, each a one-line delegation that does nothing when the module is not loaded:

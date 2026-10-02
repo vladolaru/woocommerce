@@ -158,6 +158,200 @@ final class WooCommerceSubscriptionsDoubles {
 	}
 
 	/**
+	 * Define WooCommerce Subscriptions' background repairer classes, with their WooCommerce Subscriptions 9.0.1 logic, and its order query.
+	 *
+	 * Defining them makes the Stripe Billing module build its migrator, so only tests that run in a separate process call this.
+	 */
+	public static function load_background_repairer(): void {
+		if ( ! defined( 'WCS_INIT_TIMESTAMP' ) ) {
+			define( 'WCS_INIT_TIMESTAMP', time() );
+		}
+
+		if ( ! function_exists( 'wcs_get_orders_with_meta_query' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its order query.
+			eval( 'namespace { function wcs_get_orders_with_meta_query( $args ) { return \\' . self::class . '::get_orders_with_meta_query( $args ); } }' );
+		}
+
+		if ( class_exists( 'WCS_Background_Repairer', false ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need a process-local stand-in.
+		eval(
+			<<<'PHP'
+			namespace {
+			abstract class WCS_Background_Updater {
+				protected $time_limit;
+				protected $scheduled_hook;
+
+				public function init() {
+					if ( is_null( $this->scheduled_hook ) ) {
+						throw new RuntimeException( __CLASS__ . ' must assign a hook to $this->scheduled_hook' );
+					}
+					if ( is_null( $this->time_limit ) ) {
+						$this->time_limit = 60;
+					}
+					$this->time_limit = apply_filters( 'wcs_debug_tools_time_limit', $this->time_limit, $this );
+					add_action( $this->scheduled_hook, array( $this, 'run_update' ) );
+				}
+
+				abstract protected function get_items_to_update();
+
+				abstract protected function update_item( $item );
+
+				public function run_update() {
+					$this->schedule_background_update();
+					$start_time = $this->is_wp_cli_request() ? (int) gmdate( 'U' ) : WCS_INIT_TIMESTAMP;
+					do {
+						$items = $this->get_items_to_update();
+						foreach ( $items as $item ) {
+							$this->update_item( $item );
+							if ( (int) gmdate( 'U' ) - $start_time >= $this->time_limit ) {
+								break 2;
+							}
+						}
+					} while ( ! empty( $items ) );
+					if ( empty( $items ) ) {
+						$this->unschedule_background_updates();
+					}
+				}
+
+				protected function schedule_background_update() {
+					if ( ! is_numeric( as_next_scheduled_action( $this->scheduled_hook ) ) ) {
+						as_schedule_single_action( (int) gmdate( 'U' ) + $this->time_limit, $this->scheduled_hook );
+					}
+				}
+
+				protected function unschedule_background_updates() {
+					as_unschedule_action( $this->scheduled_hook );
+				}
+
+				protected function is_wp_cli_request() {
+					return ( defined( 'WP_CLI' ) && WP_CLI );
+				}
+			}
+
+			abstract class WCS_Background_Upgrader extends WCS_Background_Updater {
+				protected $logger;
+				protected $log_handle;
+
+				public function schedule_repair() {
+					$this->schedule_background_update();
+				}
+
+				protected function log( $message ) {
+					$this->logger->add( $this->log_handle, $message );
+				}
+			}
+
+			abstract class WCS_Background_Repairer extends WCS_Background_Upgrader {
+				protected $repair_hook;
+				protected $items_to_repair = array();
+
+				public function init() {
+					parent::init();
+					add_action( $this->repair_hook, array( $this, 'repair_item' ) );
+				}
+
+				public function schedule_repair() {
+					$this->set_page( 1 );
+					parent::schedule_repair();
+				}
+
+				protected function get_items_to_update() {
+					$items_to_repair   = array();
+					$unprocessed_items = $this->get_unprocessed_items();
+					if ( ! empty( $unprocessed_items ) ) {
+						$items_to_repair = $unprocessed_items;
+						$this->clear_unprocessed_items_cache();
+					} elseif ( $page = $this->get_page() ) {
+						$items_to_repair = $this->get_items_to_repair( $page );
+						$this->set_page( $page + 1 );
+					}
+					$this->items_to_repair = array_flip( $items_to_repair );
+					return $items_to_repair;
+				}
+
+				public function run_update() {
+					parent::run_update();
+					$this->save_unprocessed_items();
+				}
+
+				protected function update_item( $item ) {
+					as_schedule_single_action( (int) gmdate( 'U' ) + HOUR_IN_SECONDS, $this->repair_hook, array( 'repair_object' => $item ) );
+					unset( $this->items_to_repair[ $item ] );
+				}
+
+				protected function get_page() {
+					return absint( get_option( "{$this->repair_hook}_page", 0 ) );
+				}
+
+				protected function set_page( $page ) {
+					update_option( "{$this->repair_hook}_page", (string) $page );
+				}
+
+				protected function get_unprocessed_items() {
+					return get_option( "{$this->repair_hook}_unprocessed", array() );
+				}
+
+				protected function save_unprocessed_items() {
+					if ( ! empty( $this->items_to_repair ) ) {
+						update_option( "{$this->repair_hook}_unprocessed", array_flip( $this->items_to_repair ) );
+					}
+				}
+
+				protected function clear_unprocessed_items_cache() {
+					delete_option( "{$this->repair_hook}_unprocessed" );
+				}
+
+				protected function unschedule_background_updates() {
+					parent::unschedule_background_updates();
+					delete_option( "{$this->repair_hook}_page" );
+				}
+
+				abstract protected function repair_item( $item );
+
+				abstract protected function get_items_to_repair( $page );
+			}
+			}
+			PHP
+		);
+	}
+
+	/**
+	 * Find registered subscription IDs matching a `meta_query` of `EXISTS` and `=` clauses, paged and in ascending ID order, as `wcs_get_orders_with_meta_query()` does with `return` set to `ids`.
+	 *
+	 * @param array<string,mixed> $args Query arguments: `meta_query`, `limit` and `paged`.
+	 * @return int[]
+	 */
+	public static function get_orders_with_meta_query( array $args ): array {
+		$meta_query = $args['meta_query'] ?? array();
+		$relation   = $meta_query['relation'] ?? 'AND';
+		unset( $meta_query['relation'] );
+
+		$ids = array();
+		foreach ( $GLOBALS[ self::SUBSCRIPTION_IDS ] ?? array() as $subscription_id ) {
+			$subscription = wc_get_order( $subscription_id );
+			if ( ! $subscription instanceof SubscriptionDouble ) {
+				continue;
+			}
+
+			$matches = array_map(
+				static fn( array $clause ) => 'EXISTS' === $clause['compare'] ? $subscription->meta_exists( $clause['key'] ) : (string) $subscription->get_meta( $clause['key'], true ) === (string) $clause['value'],
+				$meta_query
+			);
+			if ( 'OR' === $relation ? in_array( true, $matches, true ) : ! in_array( false, $matches, true ) ) {
+				$ids[] = absint( $subscription_id );
+			}
+		}
+		sort( $ids );
+
+		$limit = (int) ( $args['limit'] ?? -1 );
+
+		return $limit > 0 ? array_slice( $ids, ( max( 1, (int) ( $args['paged'] ?? 1 ) ) - 1 ) * $limit, $limit ) : $ids;
+	}
+
+	/**
 	 * Make paying a renewal order activate its subscriptions that are not active, as WooCommerce Subscriptions does.
 	 *
 	 * The test's hook snapshot removes the callback when the test ends.

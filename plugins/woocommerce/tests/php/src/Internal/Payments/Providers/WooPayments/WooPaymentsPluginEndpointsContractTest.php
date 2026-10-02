@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
@@ -90,11 +91,6 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 			'disposition' => 'SUPERSEDED',
 			'successors'  => array( 'wc-admin /settings/payments/woopayments/onboarding/test_account/disable', 'wc-admin /settings/payments/woopayments/onboarding/step/business_verification/test_account/disable' ),
 		),
-		'POST wc/v3 /payments/settings/schedule-stripe-billing-migration' => array(
-			'authority'   => 'rest-route-exceptions.txt (Task 6.1 / D13) + plan.md Decision 1: DROPPED, Stripe Billing engine excluded.',
-			'disposition' => 'DROPPED',
-			'successors'  => array(),
-		),
 		'POST wc/v3 /payments/survey/reports-feedback'  => array(
 			'authority'   => 'data/client-delta-10.8.0-11.1.0.tsv row 4 (10.9.0 inline Reports feedback survey, n/a plugin-only).',
 			'disposition' => 'DROPPED',
@@ -156,6 +152,7 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsWooPaySessionController::class )->register_routes();
 		wc_get_container()->get( MultiCurrencyRestController::class )->handle_rest_api_init();
 		wc_get_container()->get( WooPaymentsRestController::class )->register_routes();
+		wc_get_container()->get( WooPaymentsStripeBillingModule::class )->register_routes();
 	}
 
 	/**

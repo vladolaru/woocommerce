@@ -12,6 +12,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
+use WP_REST_Response;
+use WP_REST_Server;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -47,6 +49,13 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	private bool $loaded = false;
 
 	/**
+	 * Migrator off Stripe Billing, built when WooCommerce Subscriptions' background repairer exists and the site is not a staging copy.
+	 *
+	 * @var StripeBillingMigrator|null
+	 */
+	private ?StripeBillingMigrator $migrator = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -64,6 +73,8 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 		if ( ! $this->arbiter->should_native_register() ) {
 			return;
 		}
+
+		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 
 		if ( did_action( 'plugins_loaded' ) ) {
 			$this->handle_plugins_loaded();
@@ -94,6 +105,33 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 		if ( $this->is_stripe_billing_enabled() ) {
 			$this->attach_engaged_hooks();
 		}
+
+		// The migrator extends a WooCommerce Subscriptions class, so its file loads only once that class is known to exist.
+		if ( class_exists( 'WCS_Background_Repairer' ) && function_exists( 'wcs_get_orders_with_meta_query' ) ) {
+			$this->migrator = new StripeBillingMigrator();
+			$this->migrator->init_hooks();
+		}
+	}
+
+	/**
+	 * Register the route that starts the migration off Stripe Billing, as the plugin's settings controller does.
+	 *
+	 * @internal
+	 */
+	public function register_routes(): void {
+		register_rest_route(
+			'wc/v3',
+			'/payments/settings/schedule-stripe-billing-migration',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => function () {
+					$this->schedule_migration();
+
+					return new WP_REST_Response( array(), 200 );
+				},
+				'permission_callback' => static fn() => current_user_can( 'manage_woocommerce' ),
+			)
+		);
 	}
 
 	/**
@@ -132,6 +170,42 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	 */
 	public function is_stripe_billed_order( WC_Order $order ): bool {
 		return $this->loaded && $this->get_subscription_service()->is_wcpay_subscription_order( $order );
+	}
+
+	/**
+	 * Count the subscriptions still billed by Stripe Billing; 0 when the module is not loaded.
+	 *
+	 * @return int
+	 */
+	public function get_stripe_billing_subscription_count(): int {
+		return $this->loaded ? $this->get_subscription_service()->get_stripe_billing_subscription_count() : 0;
+	}
+
+	/**
+	 * Count the subscriptions migrated off Stripe Billing; 0 when the module is not loaded.
+	 *
+	 * @return int
+	 */
+	public function get_migrated_subscription_count(): int {
+		return $this->loaded ? $this->get_subscription_service()->get_migrated_subscription_count() : 0;
+	}
+
+	/**
+	 * Tell whether a migration off Stripe Billing is running; false when there is no migrator.
+	 *
+	 * @return bool
+	 */
+	public function is_migrating(): bool {
+		return $this->migrator ? $this->migrator->is_migrating() : false;
+	}
+
+	/**
+	 * Start the migration off Stripe Billing when Stripe-billed subscriptions remain and none is running; nothing without a migrator.
+	 */
+	public function schedule_migration(): void {
+		if ( $this->migrator && ! $this->migrator->is_migrating() && $this->get_stripe_billing_subscription_count() > 0 ) {
+			$this->migrator->schedule_migrate_wcpay_subscriptions_action();
+		}
 	}
 
 	/**

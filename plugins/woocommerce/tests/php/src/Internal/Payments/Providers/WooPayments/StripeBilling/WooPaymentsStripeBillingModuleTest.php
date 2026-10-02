@@ -233,6 +233,38 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The migration route starts the migration off Stripe Billing for a store manager while Stripe-billed subscriptions remain, and does nothing on a staging copy ($role, staging: $is_staging, Stripe-billed: $has_stripe_billed).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith ["administrator", false, true, 200, true]
+	 *           ["administrator", false, false, 200, false]
+	 *           ["administrator", true, true, 200, false]
+	 *           ["subscriber", false, true, 403, false]
+	 *
+	 * @param string $role                Role of the user calling the route.
+	 * @param bool   $is_staging          Whether the site is a staging copy.
+	 * @param bool   $has_stripe_billed   Whether a Stripe-billed subscription remains.
+	 * @param int    $expected_status     Response status.
+	 * @param bool   $expected_scheduled  Whether the migration is scheduled.
+	 */
+	public function test_migration_route_starts_the_migration( string $role, bool $is_staging, bool $has_stripe_billed, int $expected_status, bool $expected_scheduled ): void {
+		$this->load_subscriptions();
+		WooCommerceSubscriptionsDoubles::load_background_repairer();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::DUPLICATE_SITE ] = $is_staging;
+		if ( $has_stripe_billed ) {
+			$this->create_stripe_billed_subscription_and_renewal();
+		}
+		$this->register_module( true );
+		do_action( 'rest_api_init', rest_get_server() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
+
+		$response = rest_do_request( new \WP_REST_Request( 'POST', '/wc/v3/payments/settings/schedule-stripe-billing-migration' ) );
+
+		$this->assertSame( $expected_status, $response->get_status() );
+		$this->assertSame( $expected_scheduled, (bool) as_next_scheduled_action( 'wcpay_schedule_subscription_migrations' ) );
+	}
+
+	/**
 	 * Create a subscription billed by Stripe Billing on the recorded main chain, and a renewal order of it.
 	 *
 	 * @return array{0:WC_Order,1:WC_Order}

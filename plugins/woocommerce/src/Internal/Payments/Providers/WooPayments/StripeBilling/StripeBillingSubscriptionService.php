@@ -118,6 +118,13 @@ class StripeBillingSubscriptionService {
 	private bool $is_stripe_sync_paused = false;
 
 	/**
+	 * Whether payment tokens added to a subscription are kept from reaching Stripe, while a callback passed to `run_without_payment_method_sync()` runs.
+	 *
+	 * @var bool
+	 */
+	private bool $is_payment_method_sync_paused = false;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -266,6 +273,71 @@ class StripeBillingSubscriptionService {
 		} finally {
 			$this->is_stripe_sync_paused = $was_paused;
 		}
+	}
+
+	/**
+	 * Run a callback while payment tokens added to a subscription are kept from reaching Stripe.
+	 *
+	 * The migration off Stripe Billing uses it to set the token of a subscription whose Stripe subscription it has just cancelled.
+	 *
+	 * @param callable $callback Callback.
+	 */
+	public function run_without_payment_method_sync( callable $callback ): void {
+		$was_paused                          = $this->is_payment_method_sync_paused;
+		$this->is_payment_method_sync_paused = true;
+
+		try {
+			$callback();
+		} finally {
+			$this->is_payment_method_sync_paused = $was_paused;
+		}
+	}
+
+	/**
+	 * Count the subscriptions still billed by Stripe Billing, whatever their status or payment method.
+	 *
+	 * @return int
+	 */
+	public function get_stripe_billing_subscription_count(): int {
+		return $this->count_subscriptions_with_meta( self::SUBSCRIPTION_ID_META_KEY );
+	}
+
+	/**
+	 * Count the subscriptions migrated off Stripe Billing.
+	 *
+	 * @return int
+	 */
+	public function get_migrated_subscription_count(): int {
+		return $this->count_subscriptions_with_meta( '_migrated' . self::SUBSCRIPTION_ID_META_KEY );
+	}
+
+	/**
+	 * Count the subscriptions that have a meta key, with WooCommerce Subscriptions' order query.
+	 *
+	 * @param string $meta_key Meta key.
+	 * @return int
+	 */
+	private function count_subscriptions_with_meta( string $meta_key ): int {
+		if ( ! function_exists( 'wcs_get_orders_with_meta_query' ) ) {
+			return 0;
+		}
+
+		$result = wcs_get_orders_with_meta_query(
+			array(
+				'status'     => 'any',
+				'return'     => 'ids',
+				'type'       => 'shop_subscription',
+				'limit'      => -1,
+				'meta_query' => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+					array(
+						'key'     => $meta_key,
+						'compare' => 'EXISTS',
+					),
+				),
+			)
+		);
+
+		return is_countable( $result ) ? count( $result ) : 0;
 	}
 
 	/**
@@ -542,7 +614,7 @@ class StripeBillingSubscriptionService {
 	public function update_wcpay_subscription_payment_method( $subscription_id, $token_id, $token ): void {
 		unset( $token_id );
 
-		if ( ! function_exists( 'wcs_get_subscription' ) || ! $token instanceof WC_Payment_Token ) {
+		if ( $this->is_payment_method_sync_paused || ! function_exists( 'wcs_get_subscription' ) || ! $token instanceof WC_Payment_Token ) {
 			return;
 		}
 
