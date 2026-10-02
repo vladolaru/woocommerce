@@ -309,4 +309,66 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		);
 		$this->assertSame( array(), array_values( array_intersect( $not_offered, $offered_ids ) ), 'No card, wallet or local APM gateway may be offered' );
 	}
+
+	/**
+	 * A subclass points the guard at a function the test controls, so the real extension function is never declared here.
+	 *
+	 * @param string $function_name The function name the guard looks for.
+	 * @return PayPalWalletBootstrap
+	 */
+	private function build_guarded_sut( string $function_name ): PayPalWalletBootstrap {
+		$sut = new class( $function_name ) extends PayPalWalletBootstrap {
+			/**
+			 * Function name to look for.
+			 *
+			 * @var string
+			 */
+			private $function_name;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $function_name The function name.
+			 */
+			public function __construct( string $function_name ) {
+				$this->function_name = $function_name;
+			}
+
+			/**
+			 * Return the test's function name.
+			 *
+			 * @return string
+			 */
+			protected function get_extension_init_function(): string {
+				return $this->function_name;
+			}
+		};
+		// Native ownership is forced on so a skipped boot can only be the guard's doing.
+		$arbiter = $this->getMockBuilder( PayPalWalletRuntimeArbiter::class )
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$sut->init( $arbiter );
+		return $sut;
+	}
+
+	/**
+	 * @testdox Should report the extension as loaded elsewhere and skip the boot when its init function exists.
+	 */
+	public function test_skips_boot_when_extension_is_loaded_elsewhere(): void {
+		$sut = $this->build_guarded_sut( 'wp_parse_args' ); // Any declared function stands in for the extension's init.
+
+		$this->assertTrue( $sut->is_extension_loaded_elsewhere() );
+		$sut->maybe_boot();
+		$this->assertFalse( $sut->is_booted() );
+	}
+
+	/**
+	 * @testdox Should not report the extension as loaded elsewhere when its init function is not declared.
+	 */
+	public function test_extension_not_loaded_elsewhere_when_function_is_missing(): void {
+		$this->assertFalse( $this->build_guarded_sut( 'wc_test_no_such_extension_init' )->is_extension_loaded_elsewhere() );
+		$this->build_sut( true );
+		$this->assertFalse( $this->sut->is_extension_loaded_elsewhere(), 'The real extension function must not exist in the test process' );
+	}
 }

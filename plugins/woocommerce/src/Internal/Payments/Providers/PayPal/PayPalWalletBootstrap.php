@@ -107,6 +107,10 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		if ( $this->booted ) {
 			return;
 		}
+		// The extension's own copy is already running (for example from a renamed folder); never boot a second container.
+		if ( $this->is_extension_loaded_elsewhere() ) {
+			return;
+		}
 		// The extension skips its own bootstrap during manual plugin updates; do the same.
 		if ( 'update.php' === ( $GLOBALS['pagenow'] ?? '' ) ) {
 			return;
@@ -138,6 +142,29 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		do_action( 'woocommerce_paypal_payments_built_container', $container ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment
 
 		add_action( 'init', array( $this, 'maybe_run_migrations' ), -1 );
+	}
+
+	/**
+	 * Whether the extension's main file has already been included, from a folder core does not boot from.
+	 *
+	 * Core never includes the vendored main file (the bootstrap only reads its header), so its init function
+	 * existing means another copy of the extension is loaded, for example from a renamed folder or an mu-plugin.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return bool
+	 */
+	public function is_extension_loaded_elsewhere(): bool {
+		return function_exists( $this->get_extension_init_function() );
+	}
+
+	/**
+	 * Name of the function the extension's main file declares once it has been included.
+	 *
+	 * @return string
+	 */
+	protected function get_extension_init_function(): string {
+		return 'WooCommerce\\PayPalCommerce\\init';
 	}
 
 	/**
