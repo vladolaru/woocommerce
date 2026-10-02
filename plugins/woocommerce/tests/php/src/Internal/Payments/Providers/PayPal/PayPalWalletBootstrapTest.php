@@ -72,6 +72,36 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should remove the card button and keep the other methods when filtering the payment methods.
+	 */
+	public function test_payment_methods_filter_removes_only_the_card_button(): void {
+		$this->build_sut( true );
+		$methods = array(
+			'__meta'                   => array( 'x' => 1 ),
+			'ppcp-gateway'             => array( 'id' => 'ppcp-gateway' ),
+			'venmo'                    => array( 'id' => 'venmo' ),
+			'pay-later'                => array( 'id' => 'pay-later' ),
+			'ppcp-card-button-gateway' => array( 'id' => 'ppcp-card-button-gateway' ),
+			'paypalShowLogo'           => true,
+		);
+
+		$result = $this->sut->filter_payment_methods( $methods );
+
+		unset( $methods['ppcp-card-button-gateway'] );
+		$this->assertSame( $methods, $result );
+	}
+
+	/**
+	 * @testdox Should return the input unchanged when the payment methods are not an array.
+	 */
+	public function test_payment_methods_filter_returns_non_array_unchanged(): void {
+		$this->build_sut( true );
+
+		$this->assertSame( 'oops', $this->sut->filter_payment_methods( 'oops' ) );
+		$this->assertNull( $this->sut->filter_payment_methods( null ) );
+	}
+
+	/**
 	 * Booting sets PPCP container process state, so this test is tagged to allow isolated runs.
 	 *
 	 * @group paypal-wallet-boot
@@ -109,6 +139,8 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.applepay_enabled' ), 'Wallet flags must be left alone' );
 		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_gateway_group_cards', '__return_empty_array' ), 'The card group must stay empty' );
 		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_gateway_group_apm', '__return_empty_array' ), 'The APM group must stay empty' );
+		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_payment_methods', array( $this->sut, 'filter_payment_methods' ) ), 'The card button must be hidden from the settings data' );
+		$this->assertContains( \WooCommerce\PayPalCommerce\WcGateway\Gateway\CardButtonGateway::ID, PayPalWalletBootstrap::HIDDEN_PAYMENT_METHOD_IDS, 'The hidden ID must match the vendored card button ID' );
 		$this->assertInstanceOf( \WooCommerce\PayPalCommerce\Settings\Service\FeaturesEligibilityService::class, $container->get( 'settings.service.features_eligibilities' ) );
 		$this->assertInstanceOf( \WooCommerce\PayPalCommerce\Settings\Service\PaymentMethodsEligibilityService::class, $container->get( 'settings.service.payment_methods_eligibilities' ) );
 

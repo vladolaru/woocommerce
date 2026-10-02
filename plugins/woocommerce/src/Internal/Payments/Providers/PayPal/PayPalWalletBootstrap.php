@@ -50,6 +50,16 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	);
 
 	/**
+	 * Payment method IDs removed from the extension's settings payment methods list.
+	 * The card button sits in the PayPal group, which the group filters do not cover.
+	 *
+	 * @since 11.3.0
+	 */
+	public const HIDDEN_PAYMENT_METHOD_IDS = array(
+		'ppcp-card-button-gateway',
+	);
+
+	/**
 	 * The runtime arbiter.
 	 *
 	 * @var PayPalWalletRuntimeArbiter
@@ -168,6 +178,21 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Remove the hidden payment methods from the settings payment methods data, which is keyed by method ID.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param mixed $payment_methods Payment methods data, keyed by method ID.
+	 * @return mixed The data without the hidden methods, or the input unchanged when it is not an array.
+	 */
+	public function filter_payment_methods( $payment_methods ) {
+		if ( ! is_array( $payment_methods ) ) {
+			return $payment_methods;
+		}
+		return array_diff_key( $payment_methods, array_flip( self::HIDDEN_PAYMENT_METHOD_IDS ) );
+	}
+
+	/**
 	 * Define the constants the extension's main file defines, when not already defined.
 	 */
 	private function define_constants(): void {
@@ -202,5 +227,6 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		add_filter( 'woocommerce_paypal_payments_modules', array( $this, 'filter_modules' ) );
 		add_filter( 'woocommerce_paypal_payments_gateway_group_cards', '__return_empty_array' );
 		add_filter( 'woocommerce_paypal_payments_gateway_group_apm', '__return_empty_array' );
+		add_filter( 'woocommerce_paypal_payments_payment_methods', array( $this, 'filter_payment_methods' ) );
 	}
 }
