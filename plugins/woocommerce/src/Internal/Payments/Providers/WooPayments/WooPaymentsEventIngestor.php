@@ -439,7 +439,7 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Record a succeeded payment intent on its order: fee note, payment method title, payment meta, status and notes.
+	 * Record a succeeded payment intent on its order: payment method title, payment meta, status and notes.
 	 *
 	 * The `payment_intent.succeeded` webhook uses it, and so does any provider code that learns of a succeeded intent another way.
 	 *
@@ -449,7 +449,6 @@ class WooPaymentsEventIngestor {
 	 * @param array<string,mixed> $payment_intent Provider payment intent object.
 	 */
 	public function record_succeeded_payment_intent( WC_Order $order, array $payment_intent ): void {
-		$this->add_completed_fee_breakdown_note( $order, $payment_intent );
 		$this->apply_completed_payment_method_display_title( $order, $payment_intent );
 		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
 		$this->repair_recurring_order_token( $order, $payment_intent );
@@ -644,21 +643,6 @@ class WooPaymentsEventIngestor {
 				'charge.expired',
 			),
 			true
-		);
-	}
-
-	/**
-	 * Add completed-payment fee details independently from the payment lifecycle note.
-	 *
-	 * @param WC_Order            $order        Order object.
-	 * @param array<string,mixed> $event_object Provider object.
-	 */
-	private function add_completed_fee_breakdown_note( WC_Order $order, array $event_object ): void {
-		$charge_id = $this->get_charge_id_from_intent( $event_object );
-		$this->get_order_data_service()->add_fee_breakdown_note(
-			$order,
-			$this->get_completed_fee_breakdown_note_from_intent( $event_object ),
-			'' !== $charge_id ? 'charge:' . $charge_id : ''
 		);
 	}
 
@@ -994,119 +978,6 @@ class WooPaymentsEventIngestor {
 		}
 
 		return $this->early_fraud_warning_event_handler;
-	}
-
-	/**
-	 * Get the best available fee-breakdown note for a completed PaymentIntent object.
-	 *
-	 * @param array<string,mixed> $event_object PaymentIntent object.
-	 * @return string
-	 */
-	private function get_completed_fee_breakdown_note_from_intent( array $event_object ): string {
-		$fee_breakdown_note = $this->get_order_data_service()->get_fee_breakdown_note_from_intent( $event_object );
-		if ( '' === $fee_breakdown_note || $this->get_order_data_service()->intent_needs_fee_breakdown_refresh( $event_object ) ) {
-			$fresh_fee_breakdown_note = $this->get_fresh_fee_breakdown_note( $event_object );
-			if ( '' !== $fresh_fee_breakdown_note ) {
-				$fee_breakdown_note = $fresh_fee_breakdown_note;
-			}
-		}
-
-		return $fee_breakdown_note;
-	}
-
-	/**
-	 * Get the best available fee breakdown note from fresh provider reads.
-	 *
-	 * @param array<string,mixed> $event_object PaymentIntent object.
-	 * @return string
-	 */
-	private function get_fresh_fee_breakdown_note( array $event_object ): string {
-		$fallback_note = '';
-
-		$latest_intent_note = $this->get_fee_breakdown_note_from_latest_intent( $event_object );
-		if ( '' !== $latest_intent_note['note'] && ! $latest_intent_note['needs_refresh'] ) {
-			return $latest_intent_note['note'];
-		}
-		$fallback_note = $latest_intent_note['note'];
-
-		$timeline_note = $this->get_fee_breakdown_note_from_timeline( $event_object );
-		if ( '' !== $timeline_note['note'] && ! $timeline_note['needs_refresh'] ) {
-			return $timeline_note['note'];
-		}
-
-		return '' !== $fallback_note ? $fallback_note : $timeline_note['note'];
-	}
-
-	/**
-	 * Get a fee breakdown note from a fresh PaymentIntent read.
-	 *
-	 * @param array<string,mixed> $event_object PaymentIntent object.
-	 * @return array{note:string,needs_refresh:bool}
-	 */
-	private function get_fee_breakdown_note_from_latest_intent( array $event_object ): array {
-		$intent_id = $this->get_object_id( $event_object );
-		if ( '' === $intent_id ) {
-			return array(
-				'note'          => '',
-				'needs_refresh' => true,
-			);
-		}
-
-		try {
-			$latest_intent = $this->api_client->get_payment_intention( $intent_id );
-
-			return array(
-				'note'          => $this->get_order_data_service()->get_fee_breakdown_note_from_intent( $latest_intent ),
-				'needs_refresh' => $this->get_order_data_service()->intent_needs_fee_breakdown_refresh( $latest_intent ),
-			);
-		} catch ( Throwable $exception ) {
-			return array(
-				'note'          => '',
-				'needs_refresh' => true,
-			);
-		}
-	}
-
-	/**
-	 * Get a fee breakdown note from the intent timeline.
-	 *
-	 * @param array<string,mixed> $event_object PaymentIntent object.
-	 * @return array{note:string,needs_refresh:bool}
-	 */
-	private function get_fee_breakdown_note_from_timeline( array $event_object ): array {
-		$intent_id = $this->get_object_id( $event_object );
-		if ( '' === $intent_id ) {
-			return array(
-				'note'          => '',
-				'needs_refresh' => true,
-			);
-		}
-
-		try {
-			$timeline = $this->api_client->get_timeline( $intent_id );
-		} catch ( Throwable $exception ) {
-			return array(
-				'note'          => '',
-				'needs_refresh' => true,
-			);
-		}
-
-		$events = isset( $timeline['data'] ) && is_array( $timeline['data'] ) ? $timeline['data'] : array();
-		foreach ( $events as $event ) {
-			if ( ! is_array( $event ) || 'captured' !== ( $event['type'] ?? null ) ) {
-				continue;
-			}
-
-			return array(
-				'note'          => $this->get_order_data_service()->get_fee_breakdown_note_from_timeline_event( $event ),
-				'needs_refresh' => $this->get_order_data_service()->timeline_event_needs_fee_breakdown_refresh( $event ),
-			);
-		}
-
-		return array(
-			'note'          => '',
-			'needs_refresh' => true,
-		);
 	}
 
 	/**

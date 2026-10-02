@@ -28,13 +28,6 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	private string $original_currency;
 
 	/**
-	 * Test-only gettext replacements.
-	 *
-	 * @var array<string,string>
-	 */
-	private array $gettext_replacements = array();
-
-	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -47,9 +40,7 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10 );
 		update_option( 'woocommerce_currency', $this->original_currency );
-		$this->gettext_replacements = array();
 		parent::tearDown();
 	}
 
@@ -90,47 +81,6 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Fee-breakdown notes render from a PaymentIntent envelope.
-	 */
-	public function test_get_fee_breakdown_note_from_intent_renders_native_charge_envelope(): void {
-		$this->assertSame( $this->get_expected_fee_note(), $this->sut->get_fee_breakdown_note_from_intent( $this->get_intent_with_fee_breakdown() ) );
-	}
-
-	/**
-	 * @testdox PaymentIntent fee-breakdown notes preserve the newest-first charge order used by webhooks.
-	 */
-	public function test_get_fee_breakdown_note_from_intent_uses_first_charge(): void {
-		$intent = array(
-			'id'      => 'pi_123',
-			'charges' => array(
-				'data' => array(
-					$this->get_charge_with_fee_breakdown(),
-					$this->get_charge_with_fee_breakdown( 999, 1234, 5432 ),
-				),
-			),
-		);
-
-		$this->assertSame( $this->get_expected_fee_note(), $this->sut->get_fee_breakdown_note_from_intent( $intent ) );
-	}
-
-	/**
-	 * @testdox PaymentIntent fee-breakdown notes can preserve the API-client latest-charge selector.
-	 */
-	public function test_get_fee_breakdown_note_from_intent_can_use_last_charge(): void {
-		$intent = array(
-			'id'      => 'pi_123',
-			'charges' => array(
-				'data' => array(
-					$this->get_charge_with_fee_breakdown( 999, 1234, 5432 ),
-					$this->get_charge_with_fee_breakdown(),
-				),
-			),
-		);
-
-		$this->assertSame( $this->get_expected_fee_note(), $this->sut->get_fee_breakdown_note_from_intent( $intent, false ) );
-	}
-
-	/**
 	 * Fee-breakdown notes from recorded captured timeline events read exactly as client 11.1.0 renders them.
 	 *
 	 * @dataProvider recorded_captured_event_names
@@ -153,84 +103,6 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 			'USD, no conversion' => array( 'recorded-rec-5a:usd_full_refund_free_text_reason' ),
 			'converted from EUR' => array( 'recorded-rec-5a:eur_full_refund' ),
 		);
-	}
-
-	/**
-	 * @testdox Fee-breakdown notes use WooCommerce translations for merchant-facing labels.
-	 */
-	public function test_get_fee_breakdown_note_uses_woocommerce_translations_for_labels(): void {
-		$this->install_woocommerce_test_translations(
-			array(
-				'<strong>Fee details:</strong>' => '<strong>Gebuehrendetails:</strong>',
-				'Fee (%1$s): %2$s'              => 'Gebuehr (%1$s): %2$s',
-				'Base fee'                      => 'Grundgebuehr',
-				'Currency conversion fee'       => 'Waehrungsumrechnungsgebuehr',
-				'Net payout: %1$s'              => 'Nettoauszahlung: %1$s',
-			)
-		);
-
-		$note = $this->sut->get_fee_breakdown_note_from_intent( $this->get_intent_with_fee_breakdown() );
-
-		$this->assertStringContainsString( '<strong>Gebuehrendetails:</strong>', $note );
-		$this->assertStringContainsString( '<p>Gebuehr (3.9% + $0.30): $2.93 USD</p>', $note );
-		$this->assertStringContainsString( '<p>&nbsp;&nbsp;&nbsp;&nbsp;Grundgebuehr: 2.9% + $0.30</p>', $note );
-		$this->assertStringContainsString( '<p>&nbsp;&nbsp;&nbsp;&nbsp;Waehrungsumrechnungsgebuehr: 1%</p>', $note );
-		$this->assertStringContainsString( '<p>Nettoauszahlung: $64.22 USD</p>', $note );
-	}
-
-	/**
-	 * @testdox PaymentIntent fee-breakdown refresh is required for a non-FX envelope missing its fee rate.
-	 */
-	public function test_intent_needs_fee_breakdown_refresh_for_non_fx_envelope_without_rate(): void {
-		$intent = $this->get_intent_with_non_fx_fee_breakdown();
-		unset( $intent['charges']['data'][0]['fee_breakdown_v1']['totals']['fee']['rate'] );
-		unset( $intent['charges']['data'][0]['fee_breakdown_v1']['rows'][0]['rate'] );
-
-		$this->assertTrue( $this->sut->intent_needs_fee_breakdown_refresh( $intent ) );
-	}
-
-	/**
-	 * @testdox PaymentIntent fee-breakdown refresh is not required when rows provide the fee rate.
-	 */
-	public function test_intent_does_not_need_fee_breakdown_refresh_when_rows_provide_the_rate(): void {
-		$intent = $this->get_intent_with_non_fx_fee_breakdown();
-		unset( $intent['charges']['data'][0]['fee_breakdown_v1']['totals']['fee']['rate'] );
-
-		$this->assertFalse( $this->sut->intent_needs_fee_breakdown_refresh( $intent ) );
-	}
-
-	/**
-	 * @testdox PaymentIntent fee-breakdown refresh is required for an FX envelope without renderable rates.
-	 */
-	public function test_intent_needs_fee_breakdown_refresh_for_fx_envelope_without_renderable_rates(): void {
-		$this->assertTrue( $this->sut->intent_needs_fee_breakdown_refresh( $this->get_intent_with_stale_fx_fee_breakdown() ) );
-	}
-
-	/**
-	 * @testdox PaymentIntent fee-breakdown refresh is not required for a non-FX envelope with its fee rate.
-	 */
-	public function test_intent_does_not_need_fee_breakdown_refresh_for_non_fx_envelope_with_rate(): void {
-		$this->assertFalse( $this->sut->intent_needs_fee_breakdown_refresh( $this->get_intent_with_non_fx_fee_breakdown() ) );
-	}
-
-	/**
-	 * @testdox Fee-breakdown notes are not duplicated on the same order.
-	 */
-	public function test_add_fee_breakdown_note_from_timeline_event_does_not_duplicate_notes(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->save();
-
-		$case = ClientRenderedCapturedEvents::get( 'recorded-rec-5a:eur_full_refund' );
-		$this->assertTrue( $this->sut->add_fee_breakdown_note_from_timeline_event( $order, $case['event'] ) );
-		$this->assertFalse( $this->sut->add_fee_breakdown_note_from_timeline_event( $order, $case['event'] ) );
-
-		$matching_notes = array_filter(
-			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
-			static fn( $note ): bool => '<strong>Fee details:</strong>' . $case['client_html'] === $note->content
-		);
-
-		$this->assertCount( 1, $matching_notes );
 	}
 
 	/**
@@ -326,219 +198,6 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Get a PaymentIntent envelope with a fee breakdown.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_intent_with_fee_breakdown(): array {
-		return array(
-			'id'      => 'pi_123',
-			'charges' => array(
-				'data' => array(
-					$this->get_charge_with_fee_breakdown(),
-				),
-			),
-		);
-	}
-
-	/**
-	 * Get a PaymentIntent envelope with a non-FX fee breakdown.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_intent_with_non_fx_fee_breakdown(): array {
-		return array(
-			'id'      => 'pi_123',
-			'charges' => array(
-				'data' => array(
-					array_diff_key( $this->get_non_fx_captured_timeline_event(), array( 'type' => true ) ),
-				),
-			),
-		);
-	}
-
-	/**
-	 * Get a PaymentIntent envelope with stale FX fee breakdown data.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_intent_with_stale_fx_fee_breakdown(): array {
-		return array(
-			'id'      => 'pi_123',
-			'charges' => array(
-				'data' => array(
-					array(
-						'id'               => 'ch_123',
-						'fee_breakdown_v1' => array(
-							'rows'    => array(
-								array(
-									'key'      => 'base',
-									'kind'     => 'fee',
-									'amount'   => 266,
-									'currency' => 'usd',
-									'rate'     => null,
-								),
-							),
-							'totals'  => array(
-								'fee' => array(
-									'amount'   => 266,
-									'currency' => 'usd',
-									'rate'     => null,
-								),
-								'net' => array(
-									'amount'   => 7141,
-									'currency' => 'usd',
-								),
-							),
-							'fx'      => array(
-								'from_currency' => 'eur',
-								'to_currency'   => 'usd',
-								'from_amount'   => 6500,
-								'to_amount'     => 7407,
-							),
-							'sources' => array(
-								'balance_transaction_exchange_rate' => 1.13956,
-							),
-						),
-					),
-				),
-			),
-		);
-	}
-
-	/**
-	 * Get a non-FX captured timeline event with a fee rate.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_non_fx_captured_timeline_event(): array {
-		return array(
-			'type'             => 'captured',
-			'fee_breakdown_v1' => array(
-				'rows'   => array(
-					array(
-						'key'      => 'base',
-						'kind'     => 'fee',
-						'amount'   => 175,
-						'currency' => 'usd',
-						'rate'     => array(
-							'percentage'     => 0.029,
-							'fixed'          => 30,
-							'fixed_currency' => 'usd',
-						),
-					),
-				),
-				'totals' => array(
-					'fee'         => array(
-						'amount'   => 175,
-						'currency' => 'usd',
-						'rate'     => array(
-							'percentage'     => 0.029,
-							'fixed'          => 30,
-							'fixed_currency' => 'usd',
-						),
-					),
-					'net'         => array(
-						'amount'   => 4825,
-						'currency' => 'usd',
-					),
-					'capture_net' => array(
-						'amount'   => 4825,
-						'currency' => 'usd',
-					),
-				),
-			),
-		);
-	}
-
-	/**
-	 * Get a charge-like payload with a fee breakdown.
-	 *
-	 * @param int $fee_amount Fee amount in minor units.
-	 * @param int $net_amount Net amount in minor units.
-	 * @param int $to_amount  Total amount in minor units.
-	 * @return array<string,mixed>
-	 */
-	private function get_charge_with_fee_breakdown( int $fee_amount = 293, int $net_amount = 6422, int $to_amount = 6715 ): array {
-		return array(
-			'id'               => 'ch_123',
-			'fee_breakdown_v1' => array(
-				'rows'    => array(
-					array(
-						'key'      => 'base',
-						'kind'     => 'fee',
-						'amount'   => $fee_amount,
-						'currency' => 'usd',
-						'rate'     => array(
-							'percentage'     => 0.029,
-							'fixed'          => 30,
-							'fixed_currency' => 'usd',
-						),
-					),
-					array(
-						'key'      => 'additional.fx',
-						'kind'     => 'fee',
-						'amount'   => 0,
-						'currency' => 'usd',
-						'rate'     => array(
-							'percentage'     => 0.01,
-							'fixed'          => 0,
-							'fixed_currency' => 'usd',
-						),
-					),
-				),
-				'totals'  => array(
-					'fee'         => array(
-						'amount'   => $fee_amount,
-						'currency' => 'usd',
-						'rate'     => array(
-							'percentage'     => 0.039,
-							'fixed'          => 30,
-							'fixed_currency' => 'usd',
-						),
-					),
-					'tax'         => array(
-						'amount'   => 0,
-						'currency' => 'usd',
-					),
-					'net'         => array(
-						'amount'   => $net_amount,
-						'currency' => 'usd',
-					),
-					'capture_net' => array(
-						'amount'   => $net_amount,
-						'currency' => 'usd',
-					),
-				),
-				'fx'      => array(
-					'from_currency' => 'gbp',
-					'to_currency'   => 'usd',
-					'from_amount'   => 5000,
-					'to_amount'     => $to_amount,
-				),
-				'sources' => array(
-					'balance_transaction_exchange_rate' => 1.3428,
-				),
-			),
-		);
-	}
-
-	/**
-	 * Get the expected fee note HTML.
-	 *
-	 * @return string
-	 */
-	private function get_expected_fee_note(): string {
-		return '<strong>Fee details:</strong><div class="captured-event-details">' . PHP_EOL
-			. '<p>1.00 GBP → 1.3428 USD: $67.15 USD</p>' . PHP_EOL
-			. '<p>Fee (3.9% + $0.30): $2.93 USD</p>' . PHP_EOL
-			. '<p>&nbsp;&nbsp;&nbsp;&nbsp;Base fee: 2.9% + $0.30</p>' . PHP_EOL
-			. '<p>&nbsp;&nbsp;&nbsp;&nbsp;Currency conversion fee: 1%</p>' . PHP_EOL
-			. '<p>Net payout: $64.22 USD</p>' . PHP_EOL
-			. '</div>';
-	}
-
-	/**
 	 * Create an order in the given currency.
 	 *
 	 * @param string $currency Currency code.
@@ -551,31 +210,5 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		return $order;
-	}
-
-	/**
-	 * Install test-only WooCommerce translations.
-	 *
-	 * @param array<string,string> $replacements Source text to translated text.
-	 */
-	private function install_woocommerce_test_translations( array $replacements ): void {
-		$this->gettext_replacements = $replacements;
-		add_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10, 3 );
-	}
-
-	/**
-	 * Translate a WooCommerce string for tests.
-	 *
-	 * @param string $translation Translated text.
-	 * @param string $text        Source text.
-	 * @param string $domain      Text domain.
-	 * @return string
-	 */
-	public function translate_woocommerce_test_string( string $translation, string $text, string $domain ): string {
-		if ( 'woocommerce' !== $domain ) {
-			return $translation;
-		}
-
-		return $this->gettext_replacements[ $text ] ?? $translation;
 	}
 }

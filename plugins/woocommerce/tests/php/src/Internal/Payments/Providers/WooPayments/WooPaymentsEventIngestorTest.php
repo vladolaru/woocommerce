@@ -20,9 +20,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\ClientRenderedCapturedEvents;
 use Exception;
 use InvalidArgumentException;
 use RuntimeException;
@@ -563,12 +563,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded adds fee-breakdown details from the native charge envelope.
+	 * @testdox payment_intent.succeeded that completes the order schedules the Fee details job and writes no fee note itself, as the client does.
 	 */
-	public function test_payment_intent_succeeded_adds_fee_breakdown_details_note(): void {
+	public function test_payment_intent_succeeded_schedules_the_fee_details_job(): void {
 		$order = $this->create_woopayments_order();
-		$order->set_transaction_id( 'pi_123' );
-		$order->set_status( 'processing' );
 		$order->update_meta_data( '_intent_id', 'pi_123' );
 		$order->save();
 
@@ -661,16 +659,27 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertOrderHasNote(
-			$order,
-			'<strong>Fee details:</strong><div class="captured-event-details">' . PHP_EOL
-			. '<p>1.00 GBP → 1.3428 USD: $67.15 USD</p>' . PHP_EOL
-			. '<p>Fee (3.9% + $0.30): $2.93 USD</p>' . PHP_EOL
-			. '<p>&nbsp;&nbsp;&nbsp;&nbsp;Base fee: 2.9% + $0.30</p>' . PHP_EOL
-			. '<p>&nbsp;&nbsp;&nbsp;&nbsp;Currency conversion fee: 1%</p>' . PHP_EOL
-			. '<p>Net payout: $64.22 USD</p>' . PHP_EOL
-			. '</div>'
-		);
+		$this->assertOrderHasNoteContaining( $order, array( 'successfully charged', 'pi_123' ) );
+		$this->assertOrderHasNoNoteContaining( $order, 'Fee details' );
+		$this->assertTrue( $this->is_fee_details_job_pending( $order->get_id(), 'pi_123', false ) );
+	}
+
+	/**
+	 * @testdox A replayed payment_intent.succeeded schedules no second Fee details job, as the client returns once the payment note exists.
+	 */
+	public function test_replayed_payment_intent_succeeded_schedules_no_fee_details_job(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_intent_id', 'pi_123' );
+		$order->save();
+		$event = $this->create_payment_intent_event( 'payment_intent.succeeded', $order );
+
+		$this->sut->process( $event );
+		$this->assertTrue( $this->is_fee_details_job_pending( $order->get_id(), 'pi_123', false ) );
+		as_unschedule_all_actions( WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+
+		$this->sut->process( $event );
+
+		$this->assertFalse( $this->is_fee_details_job_pending( $order->get_id(), 'pi_123', false ) );
 	}
 
 	/**
@@ -812,7 +821,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( $checkout_payment_method_details, $order->get_meta( '_wcpay_payment_method_details', true ) );
 		$this->assertOrderHasNoteContaining( $order, array( 'A payment of', 'successfully charged', 'WooPayments', 'pi_123' ) );
 		$this->assertOrderHasNote( $order, 'Payment via SEPA Direct Debit (pi_123).' );
-		$this->assertOrderHasNoteContaining( $order, array( '<strong>Fee details:</strong>', 'Net payout' ) );
+		$this->assertOrderHasNoNoteContaining( $order, 'Fee details' );
+		$this->assertTrue( $this->is_fee_details_job_pending( $order->get_id(), 'pi_123', true ) );
 	}
 
 	/**
@@ -982,261 +992,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			),
 			$order->get_meta( '_wcpay_payment_method_details', true )
 		);
-	}
-
-	/**
-	 * @testdox payment_intent.succeeded fetches fee-breakdown details when the webhook envelope is stale.
-	 */
-	public function test_payment_intent_succeeded_fetches_fee_breakdown_details_when_webhook_envelope_is_stale(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_payment_method_title( 'Visa credit card' );
-		$order->set_transaction_id( 'pi_123' );
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_intent_id', 'pi_123' );
-		$order->update_meta_data( '_intention_status', 'succeeded' );
-		$order->save();
-
-		$api_client = new class() extends WooPaymentsApiClient {
-			/**
-			 * Requested intent IDs.
-			 *
-			 * @var string[]
-			 */
-			public array $requested_intents = array();
-
-			/**
-			 * Requested timeline IDs.
-			 *
-			 * @var string[]
-			 */
-			public array $requested_timelines = array();
-
-			/**
-			 * Recorded captured event the timeline returns.
-			 *
-			 * @var array<string,mixed>
-			 */
-			public array $timeline_event = array();
-
-			/**
-			 * Retrieve a WooPayments PaymentIntent.
-			 *
-			 * @param string $intent_id Intent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_payment_intention( string $intent_id ): array {
-				$this->requested_intents[] = $intent_id;
-
-				return array(
-					'id'      => $intent_id,
-					'charges' => array(
-						'data' => array(
-							array(
-								'id'               => 'ch_123',
-								'fee_breakdown_v1' => array(
-									'rows'    => array(
-										array(
-											'key'      => 'base',
-											'kind'     => 'fee',
-											'amount'   => 293,
-											'currency' => 'usd',
-											'rate'     => null,
-										),
-									),
-									'totals'  => array(
-										'fee'         => array(
-											'amount'   => 293,
-											'currency' => 'usd',
-											'rate'     => null,
-										),
-										'net'         => array(
-											'amount'   => 6421,
-											'currency' => 'usd',
-										),
-										'capture_net' => array(
-											'amount'   => 6421,
-											'currency' => 'usd',
-										),
-									),
-									'fx'      => array(
-										'from_currency' => 'gbp',
-										'to_currency'   => 'usd',
-										'from_amount'   => 5000,
-										'to_amount'     => 6714,
-									),
-									'sources' => array(
-										'balance_transaction_exchange_rate' => 1.34274,
-									),
-								),
-							),
-						),
-					),
-				);
-			}
-
-			/**
-			 * Retrieve a WooPayments timeline.
-			 *
-			 * @param string $id Payment intent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_timeline( string $id ): array {
-				$this->requested_timelines[] = $id;
-
-				return array( 'data' => array( $this->timeline_event ) );
-			}
-		};
-
-		$api_client->timeline_event = ClientRenderedCapturedEvents::get( 'recorded:pi_3UMBsdBzWlxcwgpP0H03QP3h' )['event'];
-
-		$sut = $this->create_ingestor(
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
-			new WooPaymentsLegacyRuntime(),
-			$api_client
-		);
-
-		$sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( array( 'pi_123' ), $api_client->requested_intents );
-		$this->assertSame( array( 'pi_123' ), $api_client->requested_timelines );
-		$this->assertOrderHasNote( $order, '<strong>Fee details:</strong>' . ClientRenderedCapturedEvents::get( 'recorded:pi_3UMBsdBzWlxcwgpP0H03QP3h' )['client_html'] );
-	}
-
-	/**
-	 * @testdox payment_intent.succeeded refreshes non-FX fee-breakdown details when the webhook envelope is missing the fee rate.
-	 */
-	public function test_payment_intent_succeeded_fetches_non_fx_fee_rate_when_webhook_envelope_is_stale(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_payment_method_title( 'Visa credit card' );
-		$order->set_transaction_id( 'pi_123' );
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_intent_id', 'pi_123' );
-		$order->update_meta_data( '_intention_status', 'succeeded' );
-		$order->save();
-
-		$api_client = new class() extends WooPaymentsApiClient {
-			/**
-			 * Requested intent IDs.
-			 *
-			 * @var string[]
-			 */
-			public array $requested_intents = array();
-
-			/**
-			 * Requested timeline IDs.
-			 *
-			 * @var string[]
-			 */
-			public array $requested_timelines = array();
-
-			/**
-			 * Recorded captured event the timeline returns.
-			 *
-			 * @var array<string,mixed>
-			 */
-			public array $timeline_event = array();
-
-			/**
-			 * Retrieve a WooPayments PaymentIntent.
-			 *
-			 * @param string $intent_id Intent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_payment_intention( string $intent_id ): array {
-				$this->requested_intents[] = $intent_id;
-
-				return array(
-					'id'      => $intent_id,
-					'charges' => array(
-						'data' => array(
-							array(
-								'id'               => 'ch_123',
-								'fee_breakdown_v1' => array(
-									'totals' => array(
-										'fee'         => array(
-											'amount'   => 175,
-											'currency' => 'usd',
-										),
-										'net'         => array(
-											'amount'   => 4825,
-											'currency' => 'usd',
-										),
-										'capture_net' => array(
-											'amount'   => 4825,
-											'currency' => 'usd',
-										),
-									),
-								),
-							),
-						),
-					),
-				);
-			}
-
-			/**
-			 * Retrieve a WooPayments timeline.
-			 *
-			 * @param string $id Payment intent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_timeline( string $id ): array {
-				$this->requested_timelines[] = $id;
-
-				return array( 'data' => array( $this->timeline_event ) );
-			}
-		};
-
-		$api_client->timeline_event = ClientRenderedCapturedEvents::get( 'recorded:pi_3UMBrXBzWlxcwgpP0OjZoist' )['event'];
-
-		$sut = $this->create_ingestor(
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
-			new WooPaymentsLegacyRuntime(),
-			$api_client
-		);
-
-		$sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.succeeded',
-				$order,
-				array(
-					'charges' => array(
-						'data' => array(
-							array(
-								'id'               => 'ch_123',
-								'fee_breakdown_v1' => array(
-									'totals' => array(
-										'fee'         => array(
-											'amount'   => 175,
-											'currency' => 'usd',
-										),
-										'net'         => array(
-											'amount'   => 4825,
-											'currency' => 'usd',
-										),
-										'capture_net' => array(
-											'amount'   => 4825,
-											'currency' => 'usd',
-										),
-									),
-								),
-							),
-						),
-					),
-				)
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( array( 'pi_123' ), $api_client->requested_intents );
-		$this->assertSame( array( 'pi_123' ), $api_client->requested_timelines );
-		$this->assertOrderHasNote( $order, '<strong>Fee details:</strong>' . ClientRenderedCapturedEvents::get( 'recorded:pi_3UMBrXBzWlxcwgpP0OjZoist' )['client_html'] );
 	}
 
 	/**
@@ -4719,6 +4474,38 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		}
 
 		return $this->gettext_replacements[ $text ] ?? $translation;
+	}
+
+	/**
+	 * Assert that no order note contains a fragment.
+	 *
+	 * @param WC_Order $order    Order.
+	 * @param string   $fragment Fragment that must not appear.
+	 */
+	private function assertOrderHasNoNoteContaining( WC_Order $order, string $fragment ): void {
+		foreach ( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) as $note ) {
+			$this->assertStringNotContainsString( $fragment, $note->content );
+		}
+	}
+
+	/**
+	 * Tell whether the Fee details job is pending with the client's arguments.
+	 *
+	 * @param int    $order_id     Order ID.
+	 * @param string $intent_id    Payment intent ID.
+	 * @param bool   $is_test_mode Expected test mode argument.
+	 * @return bool
+	 */
+	private function is_fee_details_job_pending( int $order_id, string $intent_id, bool $is_test_mode ): bool {
+		return as_has_scheduled_action(
+			WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+			array(
+				'order_id'     => $order_id,
+				'intent_id'    => $intent_id,
+				'is_test_mode' => $is_test_mode,
+			),
+			'woocommerce_payments'
+		);
 	}
 
 	/**

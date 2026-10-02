@@ -155,7 +155,6 @@ class WooPaymentsOrderEffectApplier {
 					$this->compose_capture_effect_data( $context->get_order(), $outcome, $plan->get_provider_result() ),
 					$plan
 				);
-				$this->apply_capture_fee_details( $context->get_order(), $plan->get_provider_result() );
 				return $outcome;
 
 			case WooPaymentsOrderEffectPlan::TYPE_CAPTURE_EXPIRED:
@@ -987,20 +986,6 @@ class WooPaymentsOrderEffectApplier {
 			$order->update_meta_data( $key, $value );
 		}
 		$order->save();
-	}
-
-	/**
-	 * Apply capture fee details when the provider capture succeeded.
-	 *
-	 * @param WC_Order            $order  Order being captured.
-	 * @param array<string,mixed> $result Provider capture response.
-	 */
-	private function apply_capture_fee_details( WC_Order $order, array $result ): void {
-		if ( 'succeeded' !== (string) ( $result['status'] ?? '' ) ) {
-			return;
-		}
-
-		$this->order_data_service->add_fee_breakdown_note_from_intent( $order, $result, false );
 	}
 
 	/**

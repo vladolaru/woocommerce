@@ -1627,7 +1627,13 @@ class WooPaymentsOrderNoteService {
 			? array()
 			: array( self::NOTE_IDENTITY_META_KEY => $identity_hash );
 
-		return 0 < (int) $order->add_order_note( $note, 0, false, $meta_data );
+		if ( 0 >= (int) $order->add_order_note( $note, 0, false, $meta_data ) ) {
+			return false;
+		}
+
+		wc_get_container()->get( WooPaymentsFeeDetailsNoteScheduler::class )->schedule_after_lifecycle_note( $order, $identity );
+
+		return true;
 	}
 
 	/**

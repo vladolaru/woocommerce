@@ -887,7 +887,10 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 
 				foreach ( $events['data'] as $event ) {
 					if ( is_array( $event ) && 'captured' === ( $event['type'] ?? null ) ) {
-						if ( $this->order_data_service->add_fee_breakdown_note_from_timeline_event( $order, $event ) ) {
+						// The client adds the note every time the job runs; the job is scheduled once per completed payment or capture.
+						$note = $this->order_data_service->get_fee_breakdown_note_from_timeline_event( $event );
+						if ( '' !== $note ) {
+							$order->add_order_note( $note );
 							$order->save();
 						}
 						return;

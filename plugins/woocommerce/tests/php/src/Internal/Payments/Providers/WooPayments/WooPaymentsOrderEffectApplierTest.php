@@ -1196,15 +1196,15 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capture effects delegate successful fee details to the order data service.
+	 * @testdox Capture effects carry the capture meta and the capture-success note.
 	 */
-	public function test_capture_effects_delegate_fee_details(): void {
+	public function test_capture_effects_carry_capture_meta_and_note(): void {
 		$original_currency = get_option( 'woocommerce_currency', 'USD' );
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = $this->create_woopayments_order();
 		$order->set_currency( 'GBP' );
 		$order->save();
-		$capture_result     = array(
+		$capture_result = array(
 			'id'       => 'pi_capture_effects',
 			'status'   => 'succeeded',
 			'currency' => 'gbp',
@@ -1223,19 +1223,11 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
-		$order_data_service = $this->getMockBuilder( WooPaymentsOrderDataService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'add_fee_breakdown_note_from_intent' ) )
-			->getMock();
-		$order_data_service->expects( $this->once() )
-			->method( 'add_fee_breakdown_note_from_intent' )
-			->with( $order, $capture_result, false )
-			->willReturn( true );
 
 		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture_effects' );
 		$plan    = WooPaymentsOrderEffectPlan::for_capture( $capture_result );
 		try {
-			$result = $this->create_applier( null, $order_data_service )->apply( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), $outcome, $plan );
+			$result = $this->create_applier( null, wc_get_container()->get( WooPaymentsOrderDataService::class ) )->apply( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), $outcome, $plan );
 		} finally {
 			update_option( 'woocommerce_currency', $original_currency );
 		}
