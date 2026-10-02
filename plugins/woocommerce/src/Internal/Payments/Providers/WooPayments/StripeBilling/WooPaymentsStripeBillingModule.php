@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -71,7 +72,7 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Load the module when WooCommerce Subscriptions is active.
+	 * Load the module when WooCommerce Subscriptions is active, and attach its hooks unless the site is a staging copy.
 	 *
 	 * @internal
 	 */
@@ -81,6 +82,16 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 		}
 
 		$this->loaded = true;
+
+		// A staging copy must never change anything at Stripe for the live store.
+		if ( WooPaymentsSubscriptionMethodPolicy::is_duplicate_site() ) {
+			return;
+		}
+
+		$this->attach_maintenance_hooks();
+		if ( $this->is_stripe_billing_enabled() ) {
+			$this->attach_engaged_hooks();
+		}
 	}
 
 	/**
@@ -99,5 +110,47 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	 */
 	public function is_stripe_billing_enabled(): bool {
 		return $this->loaded && '1' === get_option( self::TOGGLE_OPTION, '0' );
+	}
+
+	/**
+	 * Attach the hooks that serve existing Stripe Billing data whatever the toggle.
+	 */
+	private function attach_maintenance_hooks(): void {
+		$this->attach( 'woocommerce_duplicate_product_exclude_meta', StripeBillingProductService::class, 'exclude_meta_wcpay_product' );
+	}
+
+	/**
+	 * Attach the hooks that only run while the toggle is on.
+	 */
+	private function attach_engaged_hooks(): void {
+		$this->attach( 'shutdown', StripeBillingProductService::class, 'create_or_update_products' );
+		$this->attach( 'untrashed_post', StripeBillingProductService::class, 'maybe_unarchive_product' );
+		$this->attach( 'wp_trash_post', StripeBillingProductService::class, 'maybe_archive_product' );
+		$this->attach( 'save_post_product', StripeBillingProductService::class, 'maybe_schedule_product_create_or_update', 12 );
+		$this->attach( 'woocommerce_save_product_variation', StripeBillingProductService::class, 'maybe_schedule_product_create_or_update', 30 );
+	}
+
+	/**
+	 * Attach a hook whose callback resolves the service from the container only when the hook fires.
+	 *
+	 * Works for actions and filters, since an action is a filter whose return value is ignored.
+	 *
+	 * @param string $hook          Hook name.
+	 * @param string $service_class Service class name.
+	 * @param string $method        Service method name.
+	 * @param int    $priority      Priority.
+	 * @param int    $accepted_args Number of arguments the method takes.
+	 *
+	 * @phpstan-param class-string<object> $service_class
+	 */
+	private function attach( string $hook, string $service_class, string $method, int $priority = 10, int $accepted_args = 1 ): void {
+		add_filter(
+			$hook,
+			static function ( ...$args ) use ( $service_class, $method ) {
+				return wc_get_container()->get( $service_class )->$method( ...$args );
+			},
+			$priority,
+			$accepted_args
+		);
 	}
 }

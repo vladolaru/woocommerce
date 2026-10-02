@@ -8,7 +8,10 @@ Stripe Billing lets a store with WooCommerce Subscriptions bill subscription ren
 
 - WooCommerce Subscriptions inactive: the module loads nothing.
 - WooCommerce Subscriptions active: the module loads, so subscriptions already billed at Stripe keep being served while the toggle is off.
+- Staging copy (as WooCommerce Subscriptions reports it): the module loads but attaches no hooks, so nothing changes at Stripe for the live store.
 - Toggle (`_wcpay_feature_stripe_billing`) on: new subscriptions also go to Stripe Billing.
+
+Hook callbacks resolve their service from the container only when the hook fires, so registering them constructs no service and runs no query. `WooPaymentsStripeBillingModule::attach_maintenance_hooks()` holds the hooks that serve existing Stripe Billing data whatever the toggle; `attach_engaged_hooks()` holds those that only run while it is on.
 
 ## Boundary
 
