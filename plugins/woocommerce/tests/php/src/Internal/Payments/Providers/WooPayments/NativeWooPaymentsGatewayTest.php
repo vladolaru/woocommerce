@@ -3,9 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
 
 /**
@@ -235,6 +238,64 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The subscription supports follow the Stripe Billing toggle: on adds gateway-scheduled payments, off keeps amount and date changes (client test_maybe_init_subscriptions, test_maybe_init_subscriptions_with_stripe_billing_enabled).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @dataProvider stripe_billing_subscription_supports
+	 *
+	 * @param string   $toggle   Stripe Billing toggle option value.
+	 * @param string[] $expected Subscription supports, in the client's order.
+	 */
+	public function test_subscription_supports_follow_the_stripe_billing_toggle( string $toggle, array $expected ): void {
+		$this->load_stripe_billing_module( $toggle );
+
+		$gateway = new NativeWooPaymentsGateway();
+
+		$this->assertSame( $expected, $this->get_subscription_supports( $gateway ) );
+	}
+
+	/**
+	 * @testdox A gateway built before the Stripe Billing module loads gets the toggle-on supports once init runs.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_init_replaces_supports_settled_before_the_stripe_billing_module_loaded(): void {
+		require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
+		class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '1' );
+		$gateway = new NativeWooPaymentsGateway();
+		$this->assertContains( 'subscription_amount_changes', $gateway->supports, 'The fixture must build the gateway before the module loads.' );
+
+		$this->load_stripe_billing_module( '1' );
+		$gateway->handle_init();
+
+		$this->assertSame( self::stripe_billing_subscription_supports()['toggle on'][1], $this->get_subscription_supports( $gateway ) );
+	}
+
+	/**
+	 * Subscription supports per toggle value, from client 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions-trait.php:63-110`.
+	 *
+	 * @return array<string,array{0:string,1:string[]}>
+	 */
+	public static function stripe_billing_subscription_supports(): array {
+		$base = array(
+			'multiple_subscriptions',
+			'subscription_cancellation',
+			'subscription_payment_method_change_admin',
+			'subscription_payment_method_change_customer',
+			'subscription_payment_method_change',
+			'subscription_reactivation',
+			'subscription_suspension',
+			'subscriptions',
+		);
+
+		return array(
+			'toggle off' => array( '0', array_merge( $base, array( 'subscription_amount_changes', 'subscription_date_changes' ) ) ),
+			'toggle on'  => array( '1', array_merge( $base, array( 'gateway_scheduled_payments' ) ) ),
+		);
+	}
+
+	/**
 	 * @testdox Should render country-aware definition branding for a classic split gateway.
 	 */
 	public function test_classic_split_gateway_icon_uses_country_aware_definition_branding(): void {
@@ -347,5 +408,45 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'details_submitted' => $details_submitted,
 			'payments_enabled'  => $payments_enabled,
 		);
+	}
+
+	/**
+	 * Load WooCommerce Subscriptions and the Stripe Billing module with the given toggle, while native owns payments.
+	 *
+	 * @param string $toggle Stripe Billing toggle option value.
+	 * @return WooPaymentsStripeBillingModule
+	 */
+	private function load_stripe_billing_module( string $toggle ): WooPaymentsStripeBillingModule {
+		if ( ! class_exists( 'WC_Subscriptions' ) ) {
+			require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
+			class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+		}
+		WooCommerceSubscriptionsDoubles::load();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+
+		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+
+		$module = new WooPaymentsStripeBillingModule();
+		$module->init( $arbiter );
+		$module->register();
+		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+
+		return $module;
+	}
+
+	/**
+	 * Get the gateway's subscription supports, in the gateway's order.
+	 *
+	 * @param NativeWooPaymentsGateway $gateway Gateway.
+	 * @return string[]
+	 */
+	private function get_subscription_supports( NativeWooPaymentsGateway $gateway ): array {
+		$all = array_merge( self::stripe_billing_subscription_supports()['toggle off'][1], array( 'gateway_scheduled_payments' ) );
+
+		return array_values( array_intersect( $gateway->supports, $all ) );
 	}
 }

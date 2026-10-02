@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedAuthenticationRetryEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedRenewalAuthenticationEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
@@ -333,7 +334,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	public function handle_init(): void {
 		$this->method_description = __( 'Accept payments with WooPayments.', 'woocommerce' );
-		$this->init_supported_features();
+		$this->refresh_site_supports();
 	}
 
 	/**
@@ -2102,6 +2103,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->title                = $this->payment_method_definition->get_title();
 		$this->method_title         = $this->get_untranslated_method_title();
 		$this->init_settings();
+		$this->refresh_site_supports(
+			'card' === $this->get_payment_method_id()
+				? 'yes' === $this->get_option( 'saved_cards' )
+				: $this->is_saved_cards_enabled()
+		);
+	}
+
+	/**
+	 * Rebuild the capabilities this gateway adds, keeping out any that other code removed.
+	 *
+	 * @param bool|null $saved_cards_enabled Current-blog saved-card setting when already loaded.
+	 */
+	private function refresh_site_supports( ?bool $saved_cards_enabled = null ): void {
 		$this->externally_removed_supports = array_values(
 			array_unique(
 				array_merge(
@@ -2111,9 +2125,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			)
 		);
 		$this->supports                    = array_values( array_diff( $this->supports, $this->site_supports ) );
-		$saved_cards_enabled               = 'card' === $this->get_payment_method_id()
-			? 'yes' === $this->get_option( 'saved_cards' )
-			: $this->is_saved_cards_enabled();
 		$base_supports                     = $this->supports;
 		$this->init_supported_features( $saved_cards_enabled );
 		$this->site_supports = array_values( array_diff( $this->supports, $base_supports ) );
@@ -2245,6 +2256,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return $this->token_service;
+	}
+
+	/**
+	 * Get the Stripe Billing module, which answers whether Stripe bills a subscription.
+	 *
+	 * @return WooPaymentsStripeBillingModule
+	 */
+	private function get_stripe_billing_module(): WooPaymentsStripeBillingModule {
+		return wc_get_container()->get( WooPaymentsStripeBillingModule::class );
 	}
 
 	/**
@@ -2635,9 +2655,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				)
 			);
 
+			// Stripe schedules the payments of Stripe Billing subscriptions, so their amounts and dates cannot change here.
 			$this->supports = array_merge(
 				$this->supports,
-				array( 'subscription_amount_changes', 'subscription_date_changes' )
+				$this->get_stripe_billing_module()->is_stripe_billing_enabled()
+					? array( 'gateway_scheduled_payments' )
+					: array( 'subscription_amount_changes', 'subscription_date_changes' )
 			);
 		}
 

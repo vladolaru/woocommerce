@@ -1125,7 +1125,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should ignore deprecated Stripe Billing flags for native subscription support.
+	 * @testdox Should keep amount and date changes while the Stripe Billing module is not loaded, even with the toggle on.
 	 */
 	public function test_subscription_support_ignores_deprecated_stripe_billing_mode(): void {
 		update_option( '_wcpay_feature_subscriptions', '1' );
