@@ -12,7 +12,7 @@ use RuntimeException;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * A Stripe Billing failure the module handles itself, told apart by its code.
+ * A Stripe Billing module failure, told apart by its code.
  *
  * @since 11.2.0
  * @internal
@@ -28,6 +28,16 @@ class StripeBillingException extends RuntimeException {
 	 * The customer already has subscriptions in another currency (client 11.1.0 `Cannot_Combine_Currencies_Exception`).
 	 */
 	public const CANNOT_COMBINE_CURRENCIES = 'cannot_combine_currencies';
+
+	/**
+	 * An invoice lacks an item of its WooCommerce subscription (client 11.1.0 `Rest_Request_Exception` in the invoice service).
+	 */
+	public const INVOICE_ITEMS_MISMATCH = 'invoice_items_mismatch';
+
+	/**
+	 * A subscription item's product no longer exists, so it has no Stripe product to bill (the client fatals here).
+	 */
+	public const SUBSCRIPTION_PRODUCT_MISSING = 'subscription_product_missing';
 
 	/**
 	 * Failure code, one of the class constants.
