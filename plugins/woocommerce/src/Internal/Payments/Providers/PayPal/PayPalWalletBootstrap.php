@@ -14,11 +14,10 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  *
  * Mirrors what the extension's main plugin file does on plugins_loaded (constants, autoloader,
  * bootstrap, PPCP::init, built-container action, version/migration hook), gated by the arbiter and
- * trimmed through the extension's own feature flags and module filter: card fields and store sync are
- * forced off and the fraud protection, abilities, status report and uninstall modules are dropped.
- * Apple Pay, Google Pay, Fastlane, local APM and order tracking modules stay loaded because kept
- * modules read their services; WalletStubsModule makes them take their "not eligible" path. When the
- * extension owns the site nothing is required, so the two copies never load together.
+ * trimmed through the extension's own feature flags and module filter: Apple Pay, Google Pay, card
+ * fields, Fastlane and store sync are forced off, and the seven flag-less non-wallet modules are
+ * dropped. The kept modules tolerate the absent ones through the extension's availability contract.
+ * When the extension owns the site nothing is required, so the two copies never load together.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -32,17 +31,22 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 
 	/**
 	 * Feature flags (suffixes of woocommerce.feature-flags.woocommerce_paypal_payments.*) forced off.
-	 * Apple Pay, Google Pay and Fastlane flags are left alone; their modules load and turn themselves off through the stubbed eligibility checks.
 	 */
 	public const DISABLED_FEATURE_FLAGS = array(
+		'applepay_enabled',
+		'googlepay_enabled',
 		'card_fields_enabled',
+		'axo_enabled',
 		'store_sync_enabled',
 	);
 
 	/**
-	 * Module classes removed from the extension's module list. No kept module reads their services.
+	 * Module classes removed from the extension's module list. They have no feature flag; the kept modules read their services through the extension's availability contract.
 	 */
 	public const DROPPED_MODULE_CLASSES = array(
+		'WooCommerce\\PayPalCommerce\\LocalAlternativePaymentMethods\\LocalAlternativePaymentMethodsModule',
+		'WooCommerce\\PayPalCommerce\\OrderTracking\\OrderTrackingModule',
+		'WooCommerce\\PayPalCommerce\\PayPalSubscriptions\\PayPalSubscriptionsModule',
 		'WooCommerce\\PayPalCommerce\\FraudProtection\\FraudProtectionModule',
 		'WooCommerce\\PayPalCommerce\\Abilities\\AbilitiesModule',
 		'WooCommerce\\PayPalCommerce\\StatusReport\\StatusReportModule',
@@ -126,6 +130,11 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		if ( $this->booted ) {
 			return;
 		}
+		// Runs before the loaded-elsewhere return: on the extension's deactivation request its main file is already loaded, so that guard would return first.
+		// The extension owns this request; if native is enabled it owns the next one, so keep the PayPal webhooks across the hand-back.
+		if ( PayPalWalletRuntimeArbiter::OWNER_EXTENSION === $this->arbiter->get_runtime_owner() && $this->arbiter->is_native_enabled() ) {
+			add_filter( 'woocommerce_paypal_payments_skip_webhook_unregister_on_deactivate', '__return_true' );
+		}
 		// The extension's own copy is already running (for example from a renamed folder); never boot a second container.
 		if ( $this->is_extension_loaded_elsewhere() ) {
 			return;
@@ -153,7 +162,7 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		$this->add_trimming_filters();
 
 		$bootstrap = require self::VENDORED_DIR . '/bootstrap.php';
-		$container = $bootstrap( self::VENDORED_DIR, array(), array( new WalletStubsModule() ) );
+		$container = $bootstrap( self::VENDORED_DIR );
 		\WooCommerce\PayPalCommerce\PPCP::init( $container );
 		$this->booted = true;
 

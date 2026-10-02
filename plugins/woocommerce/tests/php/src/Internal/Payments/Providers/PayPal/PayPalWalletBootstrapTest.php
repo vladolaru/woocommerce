@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\WalletStubsModule;
 use WC_Unit_Test_Case;
 
 /**
@@ -71,13 +70,17 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Build the SUT with an arbiter stub that answers as instructed.
 	 *
-	 * @param bool $native_owns Whether the arbiter should say native owns the site.
+	 * @param bool   $native_owns    Whether the arbiter should say native owns the site.
+	 * @param string $owner          The runtime owner the arbiter reports.
+	 * @param bool   $native_enabled Whether the arbiter reports native as enabled.
 	 */
-	private function build_sut( bool $native_owns ): void {
+	private function build_sut( bool $native_owns, string $owner = PayPalWalletRuntimeArbiter::OWNER_NONE, bool $native_enabled = false ): void {
 		$arbiter = $this->getMockBuilder( PayPalWalletRuntimeArbiter::class )
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'should_native_register', 'get_runtime_owner', 'is_native_enabled' ) )
 			->getMock();
 		$arbiter->method( 'should_native_register' )->willReturn( $native_owns );
+		$arbiter->method( 'get_runtime_owner' )->willReturn( $owner );
+		$arbiter->method( 'is_native_enabled' )->willReturn( $native_enabled );
 
 		$this->sut = new PayPalWalletBootstrap();
 		$this->sut->init( $arbiter );
@@ -103,6 +106,38 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $this->sut->is_booted() );
 		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_modules' ), 'No trimming filter must be added while dormant' );
 		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.card_fields_enabled' ) );
+	}
+
+	/**
+	 * @testdox Should keep the PayPal webhooks across a hand-back when the extension owns and native is enabled.
+	 */
+	public function test_keeps_webhooks_on_handback_when_extension_owns_and_native_is_enabled(): void {
+		$this->build_sut( false, PayPalWalletRuntimeArbiter::OWNER_EXTENSION, true );
+		$this->sut->maybe_boot();
+
+		$this->assertFalse( $this->sut->is_booted() );
+		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_skip_webhook_unregister_on_deactivate', '__return_true' ), 'Core will own the next request, so the extension must not delete the webhooks' );
+	}
+
+	/**
+	 * @testdox Should let the extension delete its webhooks when native is not enabled.
+	 */
+	public function test_does_not_keep_webhooks_when_native_is_disabled(): void {
+		$this->build_sut( false, PayPalWalletRuntimeArbiter::OWNER_EXTENSION, false );
+		$this->sut->maybe_boot();
+
+		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_skip_webhook_unregister_on_deactivate' ) );
+	}
+
+	/**
+	 * @testdox Should keep the PayPal webhooks even when the extension's own copy is already loaded, as on its deactivation request.
+	 */
+	public function test_keeps_webhooks_when_extension_is_loaded_and_native_is_enabled(): void {
+		$sut = $this->build_guarded_sut( 'wp_parse_args', false, PayPalWalletRuntimeArbiter::OWNER_EXTENSION, true );
+		$sut->maybe_boot();
+
+		$this->assertFalse( $sut->is_booted() );
+		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_skip_webhook_unregister_on_deactivate', '__return_true' ), 'The block must run before the loaded-elsewhere return' );
 	}
 
 	/**
@@ -217,6 +252,25 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should name only module classes that exist in the vendored tree in the drop list.
+	 */
+	public function test_dropped_module_classes_exist_in_the_vendored_tree(): void {
+		$autoload = PayPalWalletBootstrap::VENDORED_DIR . '/vendor/autoload.php';
+		if ( ! file_exists( $autoload ) ) {
+			$this->markTestSkipped( 'Vendored extension is not present.' );
+		}
+		if ( ! class_exists( '\WooCommerce\PayPalCommerce\PluginModule' ) ) {
+			require $autoload;
+		}
+		foreach ( PayPalWalletBootstrap::DROPPED_MODULE_CLASSES as $class ) {
+			$this->assertTrue( class_exists( $class ), "$class must exist in the vendored tree, or the filter drops nothing" );
+		}
+		$this->assertCount( 7, PayPalWalletBootstrap::DROPPED_MODULE_CLASSES );
+	}
+
+	/**
 	 * @testdox Should remove the card button and keep the other methods when filtering the payment methods.
 	 */
 	public function test_payment_methods_filter_removes_only_the_card_button(): void {
@@ -266,22 +320,29 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertTrue( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) );
 		$container = \WooCommerce\PayPalCommerce\PPCP::container();
 		$this->assertTrue( $container->has( 'wcgateway.paypal-gateway' ), 'The vendored gateway service must exist' );
-		$stub_file = ( new \ReflectionClass( WalletStubsModule::class ) )->getFileName();
-		foreach ( WalletStubsModule::STUBBED_SERVICE_IDS as $id ) {
-			$this->assertTrue( $container->has( $id ), "$id must be registered" );
-			$service = $container->get( $id );
-			$this->assertIsCallable( $service, "$id must resolve to a callable" );
-			$this->assertFalse( $service(), "$id must report not eligible" );
-			// The loaded module provides a real service for the same ID; the stub must win.
-			$this->assertSame( $stub_file, ( new \ReflectionFunction( \Closure::fromCallable( $service ) ) )->getFileName(), "$id must come from the stub, not the module" );
+		$absent_ids = array(
+			'applepay.available',
+			'googlepay.available',
+			'axo.available',
+			'card-fields.eligibility.check',
+			'ppcp-local-apms.available',
+			'order-tracking.available',
+			'paypal-subscriptions.available',
+			'agentic.logger.default', // The store-sync module's prefix.
+		);
+		foreach ( $absent_ids as $id ) {
+			$this->assertFalse( $container->has( $id ), "$id must not be registered: its module is dropped" );
 		}
-		foreach ( WalletStubsModule::STUBBED_FLAG_IDS as $id ) {
-			// The real local APM check is true unless the merchant country is RU, BR or JP, so false proves the stub won.
-			$this->assertFalse( $container->get( $id ), "$id must be the stubbed bool false" );
-		}
+		$availability = $container->get( 'ppcp.module-availability' );
+		$this->assertInstanceOf( \WooCommerce\PayPalCommerce\ModuleAvailability::class, $availability );
+		$this->assertFalse( $availability->is_loaded( 'applepay' ) );
+		$this->assertFalse( $availability->is_eligible( 'ppcp-local-apms' ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_modules', array( $this->sut, 'filter_modules' ) ), 'The module filter must be in place' );
-		$this->assertSame( 10, has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.card_fields_enabled', '__return_false' ), 'Feature flags must be forced off' );
-		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.applepay_enabled' ), 'Wallet flags must be left alone' );
+		foreach ( PayPalWalletBootstrap::DISABLED_FEATURE_FLAGS as $flag ) {
+			$this->assertSame( 10, has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.' . $flag, '__return_false' ), "$flag must be forced off" );
+		}
+		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.vault_component_enabled' ), 'Wallet flags must be left alone' );
+		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.sdk_v6_enabled' ), 'Wallet flags must be left alone' );
 		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_gateway_group_cards', '__return_empty_array' ), 'The card group must stay empty' );
 		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_gateway_group_apm', '__return_empty_array' ), 'The APM group must stay empty' );
 		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_payment_methods', array( $this->sut, 'filter_payment_methods' ) ), 'The card button must be hidden from the settings data' );
@@ -313,10 +374,13 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * A subclass points the guard at a function the test controls, so the real extension function is never declared here.
 	 *
-	 * @param string $function_name The function name the guard looks for.
+	 * @param string $function_name  The function name the guard looks for.
+	 * @param bool   $native_owns    Whether the arbiter says native owns the site. Defaults to true so a skipped boot can only be the guard's doing.
+	 * @param string $owner          The runtime owner the arbiter reports.
+	 * @param bool   $native_enabled Whether the arbiter reports native as enabled.
 	 * @return PayPalWalletBootstrap
 	 */
-	private function build_guarded_sut( string $function_name ): PayPalWalletBootstrap {
+	private function build_guarded_sut( string $function_name, bool $native_owns = true, string $owner = PayPalWalletRuntimeArbiter::OWNER_NONE, bool $native_enabled = false ): PayPalWalletBootstrap {
 		$sut = new class( $function_name ) extends PayPalWalletBootstrap {
 			/**
 			 * Function name to look for.
@@ -343,11 +407,13 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 				return $this->function_name;
 			}
 		};
-		// Native ownership is forced on so a skipped boot can only be the guard's doing.
+		// Native ownership defaults to on so a skipped boot can only be the guard's doing.
 		$arbiter = $this->getMockBuilder( PayPalWalletRuntimeArbiter::class )
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'should_native_register', 'get_runtime_owner', 'is_native_enabled' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter->method( 'should_native_register' )->willReturn( $native_owns );
+		$arbiter->method( 'get_runtime_owner' )->willReturn( $owner );
+		$arbiter->method( 'is_native_enabled' )->willReturn( $native_enabled );
 		$sut->init( $arbiter );
 		return $sut;
 	}
