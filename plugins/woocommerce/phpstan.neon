@@ -11,15 +11,20 @@ parameters:
 		- src/
 		- includes/
 	excludePaths:
-		# Matches the prior test implementation; GeoIP relies on data files.
-		- includes/class-wc-geo-ip.php
-		- includes/react-admin/feature-config.php (?)
+		analyseAndScan:
+			# Matches the prior test implementation; GeoIP relies on data files.
+			- includes/class-wc-geo-ip.php
+			- includes/react-admin/feature-config.php (?)
+		analyse:
+			- src/Internal/Payments/Providers/PayPal/woocommerce-paypal-payments
 	bootstrapFiles:
 		- vendor/autoload.php
 	scanDirectories:
 		- vendor/wordpress/abilities-api
 		- packages/action-scheduler
 		- ../../packages/php/woocommerce-analytics/src
+		- src/Internal/Payments/Providers/PayPal/woocommerce-paypal-payments/lib/packages
+		- src/Internal/Payments/Providers/PayPal/woocommerce-paypal-payments/src
 	scanFiles:
 		- php-stubs/wc-admin-feature-config.php
 		- php-stubs/wc-constants.php
