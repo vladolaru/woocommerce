@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -43,6 +44,12 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->reset_container_replacements();
 		wc_get_container()->reset_all_resolved();
 
+		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
+		$renewal_hooks->setAccessible( true );
+		$renewal_hooks->setValue( null, false );
+		$fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
+		$fallback_hooks->setAccessible( true );
+		$fallback_hooks->setValue( null, false );
 		parent::tearDown();
 	}
 
@@ -258,8 +265,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The subscription supports follow the Stripe Billing toggle: on adds gateway-scheduled payments, off keeps amount and date changes (client test_maybe_init_subscriptions, test_maybe_init_subscriptions_with_stripe_billing_enabled).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 * @dataProvider stripe_billing_subscription_supports
 	 *
 	 * @param string   $toggle   Stripe Billing toggle option value.
@@ -275,12 +280,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A gateway built before the Stripe Billing module loads gets the toggle-on supports once init runs.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_init_replaces_supports_settled_before_the_stripe_billing_module_loaded(): void {
-		require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
-		class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+		$this->report_subscriptions_loaded();
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '1' );
 		$gateway = new NativeWooPaymentsGateway();
 		$this->assertContains( 'subscription_amount_changes', $gateway->supports, 'The fixture must build the gateway before the module loads.' );
@@ -293,8 +295,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A renewal of a Stripe-billed subscription is not charged here, toggle on or off; a tokenized subscription's renewal still is (client `trait-wc-payment-gateway-wcpay-subscriptions.php:405-407`, `:1243-1258`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 * @testWith ["0", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", false]
 	 *           ["1", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", false]
 	 *           ["1", "", true]
@@ -391,8 +391,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox After a Stripe-billed subscription is switched to a saved card, the Stripe Billing module charges its pending invoice and completes the failed renewal (client `class-wc-payments-subscription-service.php:658-694`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_a_saved_method_change_charges_the_pending_stripe_billing_invoice(): void {
 		$this->load_stripe_billing_module( '0' );
@@ -555,16 +553,25 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Report WooCommerce Subscriptions as loaded to the Stripe Billing module and the gateway's subscription supports, which
+	 * ask LegacyProxy. The mock is reset after every test.
+	 */
+	private function report_subscriptions_loaded(): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => in_array( $class_name, array( 'WC_Subscriptions', 'WC_Subscriptions_Core_Plugin' ), true ) || class_exists( $class_name, ...$args ),
+			)
+		);
+	}
+
+	/**
 	 * Load WooCommerce Subscriptions and the Stripe Billing module with the given toggle, while native owns payments.
 	 *
 	 * @param string $toggle Stripe Billing toggle option value.
 	 * @return WooPaymentsStripeBillingModule
 	 */
 	private function load_stripe_billing_module( string $toggle ): WooPaymentsStripeBillingModule {
-		if ( ! class_exists( 'WC_Subscriptions' ) ) {
-			require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
-			class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
-		}
+		$this->report_subscriptions_loaded();
 		WooCommerceSubscriptionsDoubles::load();
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
 

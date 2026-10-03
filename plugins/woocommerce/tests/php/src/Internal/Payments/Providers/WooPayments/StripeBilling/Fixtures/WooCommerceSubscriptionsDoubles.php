@@ -90,10 +90,7 @@ final class WooCommerceSubscriptionsDoubles {
 			eval( 'namespace { function wcs_get_subscriptions_for_renewal_order( $order_id ) { $ids = $GLOBALS["' . self::RENEWAL_SUBSCRIPTIONS . '"][ $order_id ] ?? array(); return array_map( "wc_get_order", $ids ); } }' );
 		}
 
-		if ( ! function_exists( 'wcs_is_subscription' ) ) {
-			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the other native tests define, reading the same registry.
-			eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( absint( $subscription_id ), $GLOBALS["' . self::SUBSCRIPTION_IDS . '"] ?? array(), true ); } }' );
-		}
+		self::load_subscription_detector();
 
 		if ( ! function_exists( 'wcs_get_subscription' ) ) {
 			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public subscription lookup.
@@ -131,6 +128,18 @@ final class WooCommerceSubscriptionsDoubles {
 		if ( ! class_exists( 'WC_Subscriptions_Product' ) ) {
 			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public product helper in the global namespace.
 			eval( 'namespace { class WC_Subscriptions_Product { public static function is_subscription( $product ) { $product_id = $product instanceof WC_Product ? $product->get_id() : absint( $product ); return in_array( $product_id, $GLOBALS["' . self::SUBSCRIPTION_PRODUCT_IDS . '"] ?? array(), true ); } public static function get_sign_up_fee( $product ) { return $product instanceof WC_Product ? (float) $product->get_meta( "_subscription_sign_up_fee" ) : 0; } public static function needs_one_time_shipping( $product ) { return $product instanceof WC_Product && "yes" === $product->get_meta( "_subscription_one_time_shipping" ); } } }' );
+		}
+	}
+
+	/**
+	 * Define `wcs_is_subscription()`, which reports only the IDs registered in `SUBSCRIPTION_IDS` as subscriptions.
+	 *
+	 * Unlike `load()`, it leaves orders loading as ordinary orders.
+	 */
+	public static function load_subscription_detector(): void {
+		if ( ! function_exists( 'wcs_is_subscription' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the other native tests define, reading the same registry.
+			eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( absint( $subscription_id ), $GLOBALS["' . self::SUBSCRIPTION_IDS . '"] ?? array(), true ); } }' );
 		}
 	}
 

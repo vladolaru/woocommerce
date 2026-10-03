@@ -697,7 +697,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		$this->reset_frontend_surface_state();
-		unset( $_GET['change_payment_method'], $_GET['pay_for_order'], $_GET['key'], $_POST['email'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] );
+		unset( $_GET['change_payment_method'], $_GET['pay_for_order'], $_GET['key'], $_POST['email'], $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] );
 		delete_option( '_wcpay_feature_woopay_express_checkout' );
 		remove_all_filters( 'wcpay_woopay_enabled' );
 		delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
@@ -716,6 +716,19 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->reset_classic_checkout_fallback_hooks_flag();
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		parent::tearDown();
+	}
+
+	/**
+	 * Report the WooCommerce Subscriptions core library as loaded, through the LegacyProxy check the bridge's subscription
+	 * policy uses (the mock is reset after every test), and define the shared `wcs_is_subscription()` double.
+	 */
+	private function report_subscriptions_loaded(): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 	}
 
 	/**
@@ -874,14 +887,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should expose change-payment state only for an order-pay subscription request without mutating it.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_get_payment_fields_js_config_exposes_subscription_change_payment_request_state(): void {
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its availability marker.
-		eval( 'namespace { class WC_Subscriptions_Core_Plugin {} }' );
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public detector.
-		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { return in_array( $subscription_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
+		$this->report_subscriptions_loaded();
 
 		$bridge = new WooPaymentsCheckoutBridge();
 		$bridge->init(
@@ -903,10 +911,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		);
 
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- The test verifies read-only request detection and non-mutation.
-		$GLOBALS['wcpay_test_subscription_ids'] = array( '123' );
-		$_GET['change_payment_method']          = '123';
-		$original_request                       = $_GET;
-		$not_order_pay                          = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( 123 );
+		$_GET['change_payment_method']                                = '123';
+		$original_request = $_GET;
+		$not_order_pay    = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$this->assertArrayNotHasKey( 'isChangingPayment', $not_order_pay );
 		$this->assertTrue( $not_order_pay['testFilterMutation'] );
 		$this->assertSame( $original_request, $_GET );
@@ -938,14 +946,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should resolve a subscription payment-method change to the cart context, not the order behind its order-pay URL.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_get_payment_fields_js_config_change_payment_request_uses_cart_context(): void {
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its availability marker.
-		eval( 'namespace { class WC_Subscriptions_Core_Plugin {} }' );
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public detector.
-		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { return in_array( $subscription_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
+		$this->report_subscriptions_loaded();
 
 		update_option( 'woocommerce_currency', 'USD' );
 		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
@@ -963,8 +966,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		global $wp;
 		$wp->query_vars['order-pay'] = $order->get_id();
 		set_query_var( 'order-pay', $order->get_id() );
-		$GLOBALS['wcpay_test_subscription_ids'] = array( (string) $order->get_id() );
-		$_GET['change_payment_method']          = (string) $order->get_id(); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request context matching WooCommerce Subscriptions.
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $order->get_id() );
+		$_GET['change_payment_method']                                = (string) $order->get_id(); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request context matching WooCommerce Subscriptions.
 
 		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
 		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
@@ -2060,19 +2063,14 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Blocks data leaves out the order-pay keys on a subscription's change payment method page, where the client skips its config filters.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_blocks_data_omits_order_pay_keys_while_changing_a_subscription_payment_method(): void {
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its availability marker.
-		eval( 'namespace { class WC_Subscriptions_Core_Plugin {} }' );
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public detector.
-		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { return in_array( $subscription_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
+		$this->report_subscriptions_loaded();
 
 		$order = \WC_Helper_Order::create_order( 0 );
 		$this->go_to_pay_for_order_link( $order );
-		$GLOBALS['wcpay_test_subscription_ids'] = array( '123' );
-		$_GET['change_payment_method']          = '123';
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( 123 );
+		$_GET['change_payment_method']                                = '123';
 
 		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 

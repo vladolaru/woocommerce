@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
  * Defines which native WooPayments methods support automatic subscription renewals.
@@ -47,7 +48,7 @@ final class WooPaymentsSubscriptionMethodPolicy {
 			return isset( \WC_Subscriptions::$version ) && version_compare( (string) \WC_Subscriptions::$version, '2.2.0', '>=' );
 		}
 
-		return class_exists( 'WC_Subscriptions_Core_Plugin' );
+		return (bool) wc_get_container()->get( LegacyProxy::class )->call_function( 'class_exists', 'WC_Subscriptions_Core_Plugin' );
 	}
 
 	/**

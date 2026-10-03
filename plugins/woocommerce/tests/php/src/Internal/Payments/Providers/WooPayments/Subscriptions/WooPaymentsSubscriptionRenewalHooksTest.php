@@ -21,24 +21,52 @@ use WC_Unit_Test_Case;
  * gateway enabled: `wcpay_init()` runs on `plugins_loaded` (client 11.1.0 `woocommerce-payments.php:214`), builds the
  * card gateway and calls its `init_hooks()` (`includes/class-wc-payments.php:630-649`), which attaches the email filter
  * and the per-gateway renewal actions (`includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:274-298`).
- * Most cases run in their own process because they load a Subscriptions stand-in class; the forwarding case uses only a
- * spy gateway and runs in the main process.
+ * Each case boots the native payments bootstrap for one request; tearDown undoes what that boot leaves for the rest of
+ * the process. The WP-CLI renewals, the legacy facade case and the staging case run in their own process, as they define
+ * WP_CLI, declare WC_Payments or alias WCS_Staging.
  */
 class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 
 	/**
-	 * Drop the roots resolved with a spy gateway, for the cases that run in the main process.
+	 * Payment gateways before the case booted the native bootstrap.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $original_payment_gateways = array();
+
+	/**
+	 * Remember the gateway list the case may rebuild.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->original_payment_gateways = WC()->payment_gateways()->payment_gateways;
+	}
+
+	/**
+	 * Undo what one booted request leaves for the rest of the process: the gateway list rebuilt with native gateways, the
+	 * container's replacements and resolved roots, the payments ownership memos, the REST routes and the two static
+	 * one-time hook flags.
 	 */
 	public function tearDown(): void {
+		WC()->payment_gateways()->payment_gateways = $this->original_payment_gateways;
+		wc_get_container()->reset_all_replacements();
 		wc_get_container()->reset_all_resolved();
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		$GLOBALS['wp_rest_server'] = null;
+
+		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
+		$renewal_hooks->setAccessible( true );
+		$renewal_hooks->setValue( null, false );
+		$fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
+		$fallback_hooks->setAccessible( true );
+		$fallback_hooks->setValue( null, false );
 		parent::tearDown();
 	}
 
 	/**
 	 * @testdox A native-owned $state store has the renewal handlers and the failed-renewal email after init, and refuses a renewal across test and live mode.
 	 * @dataProvider native_owned_states
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string $state Stored native tier.
 	 */
@@ -62,8 +90,6 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The renewal handler resolves the card gateway only when a renewal runs.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_connected_store_attaches_the_renewal_root_without_building_the_gateway(): void {
 		$this->load_subscriptions();
@@ -81,8 +107,6 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A $label store has no native renewal handler and no native failed-renewal email after init.
 	 * @dataProvider stores_without_native_renewals
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string $label        Case label.
 	 * @param bool   $plugin_owned Whether the WooPayments plugin is active.
@@ -158,8 +182,6 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A gateway built after the renewal root attached adds no second renewal handler.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_gateway_built_after_the_root_adds_no_second_handler(): void {
 		global $wp_filter;
@@ -179,8 +201,6 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The renewal root attaches on plugins_loaded priority 11 when WooCommerce loads earlier, as the client does.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_renewal_root_attaches_at_the_client_timing(): void {
 		global $wp_actions;
@@ -446,12 +466,15 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Load a WooCommerce Subscriptions core stand-in, which is how the gateway and the renewal root detect Subscriptions.
+	 * Report the WooCommerce Subscriptions core library as loaded, which is how the gateway and the renewal root detect
+	 * Subscriptions. They ask LegacyProxy; the mock is reset after every test.
 	 */
 	private function load_subscriptions(): void {
-		if ( ! class_exists( 'WC_Subscriptions_Core_Plugin', false ) ) {
-			class_alias( self::class, 'WC_Subscriptions_Core_Plugin' );
-		}
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
 	}
 
 	/**
