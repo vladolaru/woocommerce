@@ -236,6 +236,7 @@ class StripeBillingEventHandler {
 		$intent_id = isset( $event_object['payment_intent'] ) && is_string( $event_object['payment_intent'] ) ? $event_object['payment_intent'] : '';
 		$intent    = '' !== $intent_id ? $this->get_payment_intent( $intent_id ) : null;
 
+		$was_succeeded = 'succeeded' === $order->get_meta( '_intention_status', true );
 		if ( null !== $intent ) {
 			// Recording writes this mode too, after the success note reads it; a renewal has none stored, so it is set first.
 			$order->update_meta_data( '_wcpay_mode', $this->account_service->get_order_mode() );
@@ -271,6 +272,12 @@ class StripeBillingEventHandler {
 			$this->event_ingestor->record_succeeded_payment_intent( $order, $intent );
 		} elseif ( '' !== $intent_id ) {
 			$order->add_order_note( __( 'The payment info couldn\'t be added to the order.', 'woocommerce' ) );
+		}
+
+		if ( null !== $intent && ! $was_succeeded ) {
+			// The client attaches the fetched intent here, which stores its currency upper case; the webhook's lower-case write only covers other payments.
+			$order->update_meta_data( '_wcpay_intent_currency', strtoupper( isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? $intent['currency'] : $order->get_currency() ) );
+			$order->save();
 		}
 
 		$this->invoice_service->mark_pending_invoice_paid_for_subscription( $subscription );

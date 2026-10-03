@@ -230,6 +230,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( self::RENEWAL_CHARGE_ID, $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( self::RENEWAL_CUSTOMER_ID, $order->get_meta( '_stripe_customer_id', true ), 'The client stores the intent customer (`class-wc-payments-order-service.php:1360`).' );
+		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ), 'The client attaches the fetched intent, whose model upper-cases the currency (`class-wc-payments-order-service.php:1414`, `class-wc-payments-api-payment-intention.php:93`); live client renewal 27 stored USD.' );
 		$this->assertCount( 1, $this->get_notes_containing( $order, 'A test payment of' ), 'A test-mode renewal gets the test wording.' );
 		$this->assertTrue(
 			as_has_scheduled_action(
