@@ -352,9 +352,15 @@ const loadNativeProviderRoutes = () => {
 	if ( ! nativeProviderRoutesRequest ) {
 		nativeProviderRoutesRequest = import(
 			/* webpackChunkName: "settings-payments-woopayments-routes" */ './register-provider-routes'
-		).then( () => {
-			nativeProviderRoutesLoaded = true;
-		} );
+		)
+			.then( () => {
+				nativeProviderRoutesLoaded = true;
+			} )
+			.catch( ( error ) => {
+				// Let the next mount try again.
+				nativeProviderRoutesRequest = undefined;
+				throw error;
+			} );
 	}
 
 	return nativeProviderRoutesRequest;
@@ -374,8 +380,12 @@ const SettingsPaymentsRoutes = () => {
 	const [ hasNativeProviderRoutes, setHasNativeProviderRoutes ] = useState(
 		nativeProviderRoutesLoaded
 	);
+	// A failed load (offline, broken build) falls back to the other routes instead of loading forever.
+	const [ hasLoadFailed, setHasLoadFailed ] = useState( false );
 	const isLoadingNativeProviderRoutes =
-		! hasNativeProviderRoutes && needsNativeProviderRoutes( pathname );
+		! hasNativeProviderRoutes &&
+		! hasLoadFailed &&
+		needsNativeProviderRoutes( pathname );
 
 	useEffect( () => {
 		if ( ! isLoadingNativeProviderRoutes ) {
@@ -383,11 +393,18 @@ const SettingsPaymentsRoutes = () => {
 		}
 
 		let isMounted = true;
-		void loadNativeProviderRoutes().then( () => {
-			if ( isMounted ) {
-				setHasNativeProviderRoutes( true );
+		loadNativeProviderRoutes().then(
+			() => {
+				if ( isMounted ) {
+					setHasNativeProviderRoutes( true );
+				}
+			},
+			() => {
+				if ( isMounted ) {
+					setHasLoadFailed( true );
+				}
 			}
-		} );
+		);
 
 		return () => {
 			isMounted = false;

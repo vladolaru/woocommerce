@@ -149,4 +149,30 @@ describe( 'SettingsPaymentsMainWrapper native provider routes', () => {
 		).toBeInTheDocument();
 		expect( mockNativeRoutesLoaded ).toHaveBeenCalledTimes( 1 );
 	} );
+
+	it( 'falls back instead of loading forever when the routes chunk fails, and retries on the next mount', async () => {
+		mockNativeRoutesLoaded.mockImplementationOnce( () => {
+			throw new Error( 'ChunkLoadError' );
+		} );
+		setPaymentsPath( '/woopayments/overview' );
+		const { rtl, settingsPayments } = await loadModules();
+		const { SettingsPaymentsMainWrapper } = settingsPayments;
+
+		const first = rtl.render( <SettingsPaymentsMainWrapper /> );
+		expect(
+			await rtl.screen.findByText( 'Main payments list' )
+		).toBeInTheDocument();
+		expect(
+			rtl.screen.queryByText( 'Loading WooPayments…' )
+		).not.toBeInTheDocument();
+		first.unmount();
+
+		rtl.render( <SettingsPaymentsMainWrapper /> );
+		cleanup = rtl.cleanup;
+
+		expect(
+			await rtl.screen.findByText( 'Native overview page' )
+		).toBeInTheDocument();
+		expect( mockNativeRoutesLoaded ).toHaveBeenCalledTimes( 2 );
+	} );
 } );
