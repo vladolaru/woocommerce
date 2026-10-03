@@ -22,11 +22,6 @@ class WooPaymentsWooPayAdaptedExtensionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should track the affiliate conversion carried on a WooPay order request.
-	 *
-	 * Defines the extension's constant and helper function, so it runs in its own process.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_update_order_extension_data_tracks_affiliate_conversion(): void {
 		$this->install_affiliate_for_woocommerce_double();
@@ -49,9 +44,6 @@ class WooPaymentsWooPayAdaptedExtensionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not track a conversion when the request carries no affiliate.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_update_order_extension_data_ignores_requests_without_affiliate(): void {
 		$this->install_affiliate_for_woocommerce_double();
@@ -74,13 +66,18 @@ class WooPaymentsWooPayAdaptedExtensionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Install the Affiliate for WooCommerce surface the adapter probes.
+	 *
+	 * The adapter asks LegacyProxy whether the extension's constant is defined, and the mock is reset after every test.
+	 * The helper function and API class stay defined for later tests, but nothing reaches them without that constant.
 	 */
 	private function install_affiliate_for_woocommerce_double(): void {
-		if ( ! defined( 'AFWC_PLUGIN_FILE' ) ) {
-			define( 'AFWC_PLUGIN_FILE', __FILE__ );
-		}
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'defined' => static fn( $constant_name ) => 'AFWC_PLUGIN_FILE' === $constant_name || defined( $constant_name ),
+			)
+		);
 		if ( ! function_exists( 'afwc_get_referrer_id' ) ) {
-			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Extension function double, confined to a separate test process.
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Extension function double; inert unless a test reports the extension's constant as defined.
 			eval( 'function afwc_get_referrer_id() { return 42; }' );
 		}
 		if ( ! class_exists( 'AFWC_API', false ) ) {

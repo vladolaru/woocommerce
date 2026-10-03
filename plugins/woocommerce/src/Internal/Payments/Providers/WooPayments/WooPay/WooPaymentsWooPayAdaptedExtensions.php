@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\WooCommerce\Blocks\Integrations\IntegrationInterface;
 use Automattic\WooCommerce\Blocks\Integrations\IntegrationRegistry;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WP_User;
 
 /**
@@ -230,7 +231,7 @@ class WooPaymentsWooPayAdaptedExtensions extends IntegrationRegistry {
 	private function is_affiliate_for_woocommerce_enabled(): bool {
 		$api_class = 'AFWC_API';
 
-		return defined( 'AFWC_PLUGIN_FILE' ) &&
+		return (bool) wc_get_container()->get( LegacyProxy::class )->call_function( 'defined', 'AFWC_PLUGIN_FILE' ) &&
 			$this->is_optional_function_available( 'afwc_get_referrer_id' ) &&
 			$this->optional_class_has_method( $api_class, 'get_instance' ) &&
 			$this->optional_class_has_method( $api_class, 'track_conversion' );
