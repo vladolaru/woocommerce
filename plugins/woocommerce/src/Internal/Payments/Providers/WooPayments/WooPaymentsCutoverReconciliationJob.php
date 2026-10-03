@@ -931,6 +931,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					return;
 				}
 			}
+			if ( $this->is_expired_held_claim( $claimed ) ) {
+				$this->close_held_claim( $claimed );
+				return;
+			}
 			if ( ! $this->account_service->is_native_eligible() ) {
 				$this->hold_ineligible_claim( $claimed );
 				return;
@@ -1007,6 +1011,34 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 
+		$this->close_held_claim( $claimed );
+	}
+
+	/**
+	 * Tell whether a switch held back past the fast retry window is still waiting on the merchant's old click.
+	 *
+	 * Held means deferred for eligibility, or never attempted because the job was not loaded (the tier went disabled).
+	 * A day-old click must not fire a switch the merchant stopped expecting; the start notice offers a fresh one.
+	 *
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 * @return bool
+	 */
+	private function is_expired_held_claim( array $claimed ): bool {
+		if ( time() - $claimed['started_at'] < self::FAST_RETRY_WINDOW || ! $this->arbiter->is_plugin_runtime_active() ) {
+			return false;
+		}
+
+		return 1 === $claimed['attempt']
+			|| in_array( self::INELIGIBLE_CODE, $claimed['deferred_codes'], true )
+			|| $this->has_information_outcome( $claimed['informational_outcomes'], array( 'code' => 'eligibility_withdrawn' ) );
+	}
+
+	/**
+	 * Close a held switch without finalizing: the plugin keeps the runtime and the tier is re-synced from the account.
+	 *
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 */
+	private function close_held_claim( array $claimed ): void {
 		if ( true === ( $claimed['network_cutover'] ?? false ) ) {
 			if ( ! $this->propagate_network_exclusion( $claimed['generation'], self::INELIGIBLE_CODE ) ) {
 				$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ) );
@@ -1016,7 +1048,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->exclude( $claimed, self::INELIGIBLE_CODE );
 		}
 		$this->account_service->synchronize_native_payments_state_from_options( true );
-		$this->log_error( 'WooPayments cutover closed without switching: the account is no longer eligible for native payments.', array( 'generation' => $claimed['generation'] ) );
+		$this->log_error( 'WooPayments cutover closed without switching: it was held past the retry window while the account was not eligible for native payments.', array( 'generation' => $claimed['generation'] ) );
 	}
 
 	/**
@@ -2241,8 +2273,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		$queued                 = $record;
 		$queued['revision']     = $record['revision'] + 1;
 		$queued['current_step'] = 'queued';
-		$queued['updated_at']   = $now;
-		$queued                 = $this->append_step( $queued, 'queued', $now, array( 'source' => $source ) );
+		// The retry cadence and the held-switch window count from the merchant's start, not from when the offer was created.
+		$queued['started_at'] = $now;
+		$queued['updated_at'] = $now;
+		$queued               = $this->append_step( $queued, 'queued', $now, array( 'source' => $source ) );
 		if ( ! $this->state_store->compare_and_set_record( $record, $queued ) ) {
 			return false;
 		}

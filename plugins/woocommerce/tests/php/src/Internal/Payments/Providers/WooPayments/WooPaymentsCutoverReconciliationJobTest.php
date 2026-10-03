@@ -449,6 +449,87 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A switch held for eligibility past the retry window closes on its next attempt even when eligibility has returned.
+	 */
+	public function test_expired_held_switch_does_not_complete_on_the_old_click(): void {
+		$this->arrange_plugin_era_store();
+		$preflight = $this->create_plugin_deactivating_preflight();
+		$origin    = $this->create_state_writing_job( true, $preflight );
+		$this->assertTrue( $origin->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->set_native_eligibility( false );
+		$origin->handle_reconcile( $pending['generation'], 1 );
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( array( 'native_payments_ineligible' ), $deferred['deferred_codes'] );
+		$aged               = $deferred;
+		$aged['revision']   = $deferred['revision'] + 1;
+		$aged['started_at'] = time() - DAY_IN_SECONDS - 1;
+		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $deferred, $aged ) );
+		$this->require_scheduler()->cancel( $aged['generation'], 2 );
+		$this->set_native_eligibility( true );
+
+		$origin->handle_reconcile( $aged['generation'], 2 );
+
+		$closed = $this->require_state_store()->get_record();
+		$this->assertIsArray( $closed );
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $closed['state'] );
+		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'A day-old click must not switch the store.' );
+		$this->assertSame( NativePaymentsState::AVAILABLE, get_option( NativePaymentsState::OPTION_NAME ), 'The tier follows the account again, so the start notice can offer a fresh switch.' );
+	}
+
+	/**
+	 * @testdox A switch never attempted within the retry window, because the job was not loaded, closes instead of finishing on the old click.
+	 */
+	public function test_switch_first_attempted_after_the_retry_window_closes(): void {
+		$this->arrange_plugin_era_store();
+		$preflight = $this->create_plugin_deactivating_preflight();
+		$origin    = $this->create_state_writing_job( true, $preflight );
+		$this->assertTrue( $origin->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$aged               = $pending;
+		$aged['revision']   = $pending['revision'] + 1;
+		$aged['started_at'] = time() - DAY_IN_SECONDS - 1;
+		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $aged ) );
+
+		$origin->handle_reconcile( $aged['generation'], 1 );
+
+		$closed = $this->require_state_store()->get_record();
+		$this->assertIsArray( $closed );
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $closed['state'] );
+		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ) );
+	}
+
+	/**
+	 * @testdox The merchant's start restarts the retry clock of an offer created earlier.
+	 */
+	public function test_merchant_start_restarts_the_retry_clock(): void {
+		$sut = $this->require_sut();
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$awaiting                 = $pending;
+		$awaiting['revision']     = $pending['revision'] + 1;
+		$awaiting['current_step'] = 'awaiting_merchant_start';
+		$awaiting['action_id']    = 0;
+		$awaiting['started_at']   = time() - 3 * DAY_IN_SECONDS;
+		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $awaiting ) );
+		$before = time();
+
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+
+		$queued = $this->require_state_store()->get_record();
+		$this->assertIsArray( $queued );
+		$this->assertSame( 'queued', $queued['current_step'] );
+		$this->assertGreaterThanOrEqual( $before, $queued['started_at'] );
+	}
+
+	/**
 	 * Set the cached account's native eligibility, as a platform account refresh would.
 	 *
 	 * @param bool $eligible Whether the platform keeps the account eligible.
@@ -3804,22 +3885,24 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$record = $this->require_state_store()->get_record();
 		$this->assertIsArray( $record );
 		$scheduler->cancel( $record['generation'], 1 );
+		// A first attempt a day after the start is a held switch and closes, so the cadence is read on a second attempt.
 		$aged               = $record;
 		$aged['revision']   = $record['revision'] + 1;
+		$aged['attempt']    = 1;
 		$aged['started_at'] = time() - $age;
 		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $record, $aged ) );
 		$record = $aged;
 		$before = time();
-		$sut->handle_reconcile( $record['generation'], 1 );
+		$sut->handle_reconcile( $record['generation'], 2 );
 		$after    = time();
 		$deferred = $this->require_state_store()->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
-		$this->assertSame( 1, $deferred['attempt'] );
+		$this->assertSame( 2, $deferred['attempt'] );
 		$this->assertSame( array( 'native_transport_unavailable' ), $deferred['deferred_codes'] );
 		$this->assertGreaterThanOrEqual( $before + $expected_delay, $deferred['next_attempt_at'] );
 		$this->assertLessThanOrEqual( $after + $expected_delay, $deferred['next_attempt_at'] );
-		$this->assertSame( $deferred['action_id'], $scheduler->get_scheduled_action_id( $deferred['generation'], 2 ) );
+		$this->assertSame( $deferred['action_id'], $scheduler->get_scheduled_action_id( $deferred['generation'], 3 ) );
 	}
 
 	/**
