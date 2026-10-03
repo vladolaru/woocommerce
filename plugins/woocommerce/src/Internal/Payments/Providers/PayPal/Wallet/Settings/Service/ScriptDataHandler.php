@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\AgenticBetaBannerEligibility;
 
 /**
  * This class is responsible for localizing the scripts and styles for the settings page.
@@ -28,7 +27,6 @@ class ScriptDataHandler {
 	protected SettingsProvider $settings_provider;
 	protected PaymentLevelEligibility $payment_level_eligibility;
 	private bool $is_bcdc_override_flag_enabled;
-	private AgenticBetaBannerEligibility $agentic_beta_banner_eligibility;
 
 	/**
 	 * Whether the SDK v6 module is loaded. Defaulted for existing callers.
@@ -45,7 +43,6 @@ class ScriptDataHandler {
 		SettingsProvider $settings_provider,
 		PaymentLevelEligibility $payment_level_eligibility,
 		bool $is_bcdc_override_flag_enabled,
-		AgenticBetaBannerEligibility $agentic_beta_banner_eligibility,
 		bool $is_sdk_v6_active = false
 	) {
 		$this->asset_getter                    = $asset_getter;
@@ -57,7 +54,6 @@ class ScriptDataHandler {
 		$this->settings_provider               = $settings_provider;
 		$this->payment_level_eligibility       = $payment_level_eligibility;
 		$this->is_bcdc_override_flag_enabled   = $is_bcdc_override_flag_enabled;
-		$this->agentic_beta_banner_eligibility = $agentic_beta_banner_eligibility;
 		$this->is_sdk_v6_active                = $is_sdk_v6_active;
 	}
 
@@ -197,7 +193,6 @@ class ScriptDataHandler {
 			'threeDSecureOptions'                 => $three_d_secure_options,
 			'isEligibleForPaymentLevelProcessing' => $this->payment_level_eligibility->is_eligible( CreditCardGateway::ID ),
 			'isBcdcOverrideFlagEnabled'           => $this->is_bcdc_override_flag_enabled,
-			'isAgenticBetaBannerEligible'         => $this->agentic_beta_banner_eligibility->is_eligible(),
 			'blueprint'                           => array(
 				'isActive'  => 'yes' === get_option( 'woocommerce_feature_blueprint_enabled', 'no' ),
 				'importUrl' => admin_url( 'admin.php?page=wc-settings&tab=advanced&section=blueprint' ),

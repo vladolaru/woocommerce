@@ -297,9 +297,9 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		foreach ( $absent_ids as $id ) {
 			$this->assertFalse( $container->has( $id ), "$id must not be registered: its module is not part of the fork" );
 		}
-		$removed_ids = array( 'api.endpoint.billing-plans', 'api.endpoint.catalog-products', 'api.factory.plan', 'api.factory.product', 'api.factory.billing-cycle' );
+		$removed_ids = array( 'api.endpoint.billing-plans', 'api.endpoint.catalog-products', 'api.factory.plan', 'api.factory.product', 'api.factory.billing-cycle', 'settings.data.fastlane', 'settings.service.data-migration.fastlane', 'settings.rest.migrate_to_acdc', 'settings.rest.agentic_beta_banner', 'settings.service.agentic-beta-eligibility' );
 		foreach ( $removed_ids as $id ) {
-			$this->assertFalse( $container->has( $id ), "$id serves only PayPal-hosted subscriptions, which the wallet does not offer" );
+			$this->assertFalse( $container->has( $id ), "$id is a dropped feature (subscriptions, Fastlane, ACDC migration or the agentic banner) and is not registered" );
 		}
 		$availability = $container->get( 'ppcp.module-availability' );
 		$this->assertInstanceOf( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability::class, $availability );

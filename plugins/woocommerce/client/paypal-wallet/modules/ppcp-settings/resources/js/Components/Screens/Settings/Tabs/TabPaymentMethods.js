@@ -8,7 +8,6 @@ import {
 } from '@ppcp-settings/data/common/hooks';
 import Modal from '../Components/Payment/Modal';
 import PaymentMethodCard from '../Components/Payment/PaymentMethodCard';
-import MigrationBanner from '../Components/Payment/MigrationBanner';
 import { useFeatures } from '@ppcp-settings/data/features/hooks';
 
 const TabPaymentMethods = () => {
@@ -81,8 +80,6 @@ const TabPaymentMethods = () => {
 
 	const showApms = methods.apm.length > 0 && merchant.isBusinessSeller;
 
-	const isBcdcOverrideFlagEnabled =
-		window.ppcpSettings?.isBcdcOverrideFlagEnabled;
 	return (
 		<div className="ppcp-r-payment-methods">
 			<PaymentMethodCard
@@ -113,39 +110,6 @@ const TabPaymentMethods = () => {
 					methods={ methods.cardPayment }
 					onTriggerModal={ setActiveModal }
 					methodsMap={ methodsMap }
-				/>
-			) }
-
-			{ isBcdcOverrideFlagEnabled && (
-				<MigrationBanner
-					id="ppcp-migration-banner"
-					className="ppcp-r-settings-banner"
-					title={ __(
-						'Unlock Advanced Card Processing',
-						'woocommerce'
-					) }
-					description={ __(
-						'Get Apple Pay, Google Pay, and Fastlane accelerated guest checkout, and enjoy lower processing fees and advanced fraud protection.',
-						'woocommerce'
-					) }
-					actionProps={ {
-						buttons: [
-							{
-								type: 'secondary',
-								text: __(
-									'Unlock now',
-									'woocommerce'
-								),
-							},
-							{
-								type: 'tertiary',
-								text: __(
-									'Dismiss',
-									'woocommerce'
-								),
-							},
-						],
-					} }
 				/>
 			) }
 

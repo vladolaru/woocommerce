@@ -26,7 +26,6 @@ class MigrationManager implements SettingsMigrationInterface {
 	protected SettingsTabMigration $settings_tab_migration;
 	protected StylingSettingsMigration $styling_settings_migration;
 	protected PaymentSettingsMigration $payment_settings_migration;
-	protected FastlaneSettingsMigration $fastlane_settings_migration;
 	protected OnboardingProfile $onboarding_profile;
 	protected LoggerInterface $logger;
 
@@ -35,7 +34,6 @@ class MigrationManager implements SettingsMigrationInterface {
 		SettingsTabMigration $settings_tab_migration,
 		StylingSettingsMigration $styling_settings_migration,
 		PaymentSettingsMigration $payment_settings_migration,
-		FastlaneSettingsMigration $fastlane_settings_migration,
 		OnboardingProfile $onboarding_profile,
 		LoggerInterface $logger
 	) {
@@ -43,7 +41,6 @@ class MigrationManager implements SettingsMigrationInterface {
 		$this->settings_tab_migration      = $settings_tab_migration;
 		$this->styling_settings_migration  = $styling_settings_migration;
 		$this->payment_settings_migration  = $payment_settings_migration;
-		$this->fastlane_settings_migration = $fastlane_settings_migration;
 		$this->onboarding_profile          = $onboarding_profile;
 		$this->logger                      = $logger;
 	}
@@ -91,7 +88,6 @@ class MigrationManager implements SettingsMigrationInterface {
 			'settings_tab' => $this->settings_tab_migration,
 			'styling'      => $this->styling_settings_migration,
 			'payment'      => $this->payment_settings_migration,
-			'fastlane'     => $this->fastlane_settings_migration,
 		);
 
 		foreach ( $migrations as $name => $migration ) {

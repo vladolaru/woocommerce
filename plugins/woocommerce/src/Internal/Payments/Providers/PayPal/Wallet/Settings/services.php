@@ -36,7 +36,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsModel;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\StylingSettings;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\FastlaneSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PayLaterMessagingSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\TodosModel;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\TodosDefinition;
@@ -44,8 +43,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\En
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\CommonRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\FeaturesRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\LoginLinkRestEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\AgenticBetaBannerEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\MigrateToAcdcRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\OnboardingRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\PayLaterMessagingEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\PaymentRestEndpoint;
@@ -59,7 +56,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Se
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\BrandedExperience\ActivationDetector;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\BrandedExperience\PathRepository;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\ConnectionUrlGenerator;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\AgenticBetaBannerEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\FeaturesEligibilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\GatewayRedirectService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\LoadingScreenService;
@@ -68,7 +64,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Se
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\PaymentSettingsMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\SettingsTabMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\StylingSettingsMigration;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\FastlaneSettingsMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\OnboardingNotices;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\OnboardingUrlManager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\SellerTypeResolver;
@@ -106,7 +101,6 @@ return array(
 			$container->get( 'settings.data.payment' ),
 			$container->get( 'settings.data.settings' ),
 			$container->get( 'settings.data.styling' ),
-			$container->get( 'settings.data.fastlane' ),
 			$container->get( 'settings.data.paylater-messaging-settings' )
 		);
 	},
@@ -148,9 +142,6 @@ return array(
 	},
 	'settings.data.payment'                               => static function ( ContainerInterface $container ): PaymentSettings {
 		return new PaymentSettings();
-	},
-	'settings.data.fastlane'                              => static function (): FastlaneSettings {
-		return new FastlaneSettings();
 	},
 	'settings.data.paylater-messaging-settings'           => static function ( ContainerInterface $container ): PayLaterMessagingSettings {
 		return new PayLaterMessagingSettings(
@@ -291,14 +282,6 @@ return array(
 			$container->get( 'settings.data.settings' )
 		);
 	},
-	'settings.rest.migrate_to_acdc'                       => static function ( ContainerInterface $container ): MigrateToAcdcRestEndpoint {
-		return new MigrateToAcdcRestEndpoint(
-			$container->get( 'settings.data.payment' )
-		);
-	},
-	'settings.rest.agentic_beta_banner'                   => static function ( ContainerInterface $container ): AgenticBetaBannerEndpoint {
-		return new AgenticBetaBannerEndpoint();
-	},
 	'settings.casual-selling.supported-countries'         => static function ( ContainerInterface $container ): array {
 		return array(
 			'AR',
@@ -410,12 +393,6 @@ return array(
 			$container->get( 'settings.data.todos' ),
 		);
 	},
-	'settings.service.agentic-beta-eligibility'           => static function ( ContainerInterface $container ): AgenticBetaBannerEligibility {
-		return new AgenticBetaBannerEligibility(
-			$container->get( 'settings.data.general' ),
-			$container->get( 'wcgateway.store-country' )
-		);
-	},
 	'settings.service.script-data-handler'                => static function ( ContainerInterface $container ): ScriptDataHandler {
 		$check_override = $container->get( 'settings.migration.bcdc-override-check' );
 		assert( is_callable( $check_override ) );
@@ -430,7 +407,6 @@ return array(
 			$container->get( 'settings.settings-provider' ),
 			$container->get( 'api.helpers.paymentLevelEligibility' ),
 			$check_override(),
-			$container->get( 'settings.service.agentic-beta-eligibility' ),
 			// The module registers its services only behind its feature flag, so
 			// presence means v6 is active; has() does not instantiate it. Per-page
 			// ownership is moot: one admin screen configures every page.
@@ -442,7 +418,6 @@ return array(
 		$c->get( 'settings.service.data-migration.settings-tab' ),
 		$c->get( 'settings.service.data-migration.styling' ),
 		$c->get( 'settings.service.data-migration.payment-settings' ),
-		$c->get( 'settings.service.data-migration.fastlane' ),
 		$c->get( 'settings.data.onboarding' ),
 		$c->get( 'woocommerce.logger.woocommerce' )
 	),
@@ -474,10 +449,6 @@ return array(
 		$c->get( 'api.endpoint.partners' ),
 		$c->get( 'woocommerce.logger.woocommerce' ),
 		$c->get( 'settings.service.seller-type-resolver' ),
-	),
-	'settings.service.data-migration.fastlane'            => static fn( ContainerInterface $c ): FastlaneSettingsMigration => new FastlaneSettingsMigration(
-		(array) get_option( 'woocommerce-ppcp-settings', array() ),
-		$c->get( 'settings.data.fastlane' ),
 	),
 	'settings.rest.todos'                                 => static function ( ContainerInterface $container ): TodosRestEndpoint {
 		return new TodosRestEndpoint(
