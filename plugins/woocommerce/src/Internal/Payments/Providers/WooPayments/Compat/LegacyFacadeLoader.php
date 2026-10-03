@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -138,7 +139,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	 * @return bool True when the command can sandbox-load WooPayments in this process.
 	 */
 	private function is_wp_cli_woopayments_activation_request(): bool {
-		if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
+		if ( ! Constants::is_true( 'WP_CLI' ) ) {
 			return false;
 		}
 

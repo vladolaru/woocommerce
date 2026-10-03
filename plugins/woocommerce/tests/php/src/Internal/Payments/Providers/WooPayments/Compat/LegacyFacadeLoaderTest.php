@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
@@ -32,10 +33,11 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Restore the server globals.
+	 * Restore the server globals and clear the WP_CLI override.
 	 */
 	public function tearDown(): void {
 		$_SERVER = $this->server_snapshot; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Restoring the test's own snapshot.
+		Constants::clear_single_constant( 'WP_CLI' );
 		parent::tearDown();
 	}
 
@@ -249,14 +251,13 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox WP-CLI keeps plugin-owned symbols available for programmatic activation.
 	 * @dataProvider wp_cli_activation_request_provider
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param array<int,string> $arguments WP-CLI arguments.
 	 */
 	public function test_wp_cli_keeps_plugin_symbols_available_for_activation( array $arguments ): void {
-		define( 'WP_CLI', true );
+		Constants::set_constant( 'WP_CLI', true );
 		$_SERVER['argv'] = $arguments;
+		$this->assert_facades_not_declared_yet();
 
 		$this->register_legacy_facades();
 
