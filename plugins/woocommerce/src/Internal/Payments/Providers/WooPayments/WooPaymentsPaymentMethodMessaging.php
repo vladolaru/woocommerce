@@ -413,9 +413,32 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_supported_surface(): bool {
-		return ( function_exists( 'is_product' ) && is_product() )
+		$is_surface = ( function_exists( 'is_product' ) && is_product() )
 			|| ( function_exists( 'is_cart' ) && is_cart() )
 			|| $this->is_cart_block_surface();
+
+		return $is_surface && ! $this->is_subscription_surface();
+	}
+
+	/**
+	 * Tell whether the request shows a subscription product or a cart with a subscription.
+	 *
+	 * Client 11.1.0 shows no BNPL messaging there (includes/class-wc-payments.php:2061-2073).
+	 *
+	 * @return bool
+	 */
+	private function is_subscription_surface(): bool {
+		$product = $this->get_current_product();
+		if ( null === $product && function_exists( 'is_product' ) && is_product() ) {
+			// The global product is set only inside the loop; callers that run earlier read the queried product.
+			$product = wc_get_product( get_queried_object_id() );
+		}
+		if ( $product instanceof WC_Product && class_exists( 'WC_Subscriptions_Product' ) && \WC_Subscriptions_Product::is_subscription( $product ) ) {
+			return true;
+		}
+
+		return function_exists( 'is_cart' ) && is_cart()
+			&& class_exists( 'WC_Subscriptions_Cart' ) && \WC_Subscriptions_Cart::cart_contains_subscription();
 	}
 
 	/**

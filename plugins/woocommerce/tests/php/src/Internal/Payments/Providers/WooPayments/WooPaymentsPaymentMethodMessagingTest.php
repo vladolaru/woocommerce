@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodMessaging;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Product;
 use WC_Unit_Test_Case;
 
@@ -65,6 +66,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_calc_taxes' );
 		delete_option( 'woocommerce_prices_include_tax' );
 		delete_option( 'woocommerce_tax_display_shop' );
+		unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] );
 		$this->reset_frontend_surface_state();
 
 		parent::tearDown();
@@ -386,6 +388,56 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $expect_enqueued, wp_style_is( self::STYLE_HANDLE, 'enqueued' ) );
 		$this->assertFalse( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ), 'The messaging script and its config stay at render time.' );
+	}
+
+	/**
+	 * @testdox Should show BNPL messaging on a simple product page and not on a subscription product page.
+	 * @testWith [false, true]
+	 *           [true, false]
+	 *
+	 * @param bool $is_subscription  Whether WooCommerce Subscriptions reports the product as a subscription.
+	 * @param bool $expect_messaging Whether messaging should render and load its assets.
+	 */
+	public function test_shows_messaging_only_for_non_subscription_products( bool $is_subscription, bool $expect_messaging ): void {
+		WooCommerceSubscriptionsDoubles::load_product();
+		$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '50.00' ) );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ] = $is_subscription ? array( $product->get_id() ) : array();
+		$this->set_current_product( $product );
+		$controller = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+
+		unset( $GLOBALS['product'] );
+		$controller->enqueue_site_messaging_style();
+		$head_style_enqueued = wp_style_is( self::STYLE_HANDLE, 'enqueued' );
+		$GLOBALS['product']  = $product;
+		ob_start();
+		$controller->render_site_messaging();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( $expect_messaging, $head_style_enqueued, 'The head stylesheet must follow the subscription rule before the loop sets the global product.' );
+		$this->assertSame( $expect_messaging ? '<div id="payment-method-message"></div>' : '', $output );
+		$this->assertSame( $expect_messaging, wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should not show BNPL messaging on a cart that contains a subscription.
+	 * @testWith [false, true]
+	 *           [true, false]
+	 *
+	 * @param bool $cart_contains_subscription Whether WooCommerce Subscriptions reports a subscription in the cart.
+	 * @param bool $expect_messaging           Whether messaging should render.
+	 */
+	public function test_shows_cart_messaging_only_without_subscriptions_in_the_cart( bool $cart_contains_subscription, bool $expect_messaging ): void {
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = $cart_contains_subscription;
+		add_filter( 'woocommerce_is_cart', '__return_true' );
+		$controller = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+
+		ob_start();
+		$controller->render_site_messaging();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( $expect_messaging ? '<div id="payment-method-message"></div>' : '', $output );
+		$this->assertSame( $expect_messaging, wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
 	}
 
 	/**
