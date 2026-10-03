@@ -4,17 +4,10 @@ const woopaymentsLiteralPx =
 
 // Native WooPayments files the styling sweep has not converted yet; each leaves the list when it converts.
 const woopaymentsUnconvertedFiles = [
-	'client/woopayments/admin/capital/style.scss',
-	'client/woopayments/admin/card-readers/style.scss',
-	'client/woopayments/admin/dataviews.scss',
-	'client/woopayments/admin/documents/style.scss',
-	'client/woopayments/admin/documents/vat-modal.scss',
 	'client/woopayments/admin/money-movement/dispute-evidence.scss',
 	'client/woopayments/admin/money-movement/transaction-details.scss',
 	'client/woopayments/admin/money-movement/transaction-timeline.scss',
 	'client/woopayments/admin/payout-details.scss',
-	'client/woopayments/admin/reports/style.scss',
-	'client/woopayments/promotions/style.scss',
 ];
 
 module.exports = {

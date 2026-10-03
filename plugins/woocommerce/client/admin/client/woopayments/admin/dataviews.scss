@@ -12,7 +12,7 @@
 	.dataviews__view-actions {
 		align-items: center;
 		flex-wrap: wrap;
-		gap: 8px 16px;
+		gap: $gap-smaller $gap;
 
 		> :last-child,
 		.woocommerce-woopayments-money-movement-dataviews__header {
@@ -47,6 +47,7 @@
 	}
 
 	.woocommerce-woopayments-money-movement-dataviews__title {
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- base-styles' type scale has no 16px (15px → 20px).
 		font-size: 16px;
 		font-weight: 600;
 		line-height: 1.5;
@@ -59,7 +60,7 @@
 		display: flex;
 		flex: 1 1 auto;
 		flex-wrap: wrap;
-		gap: 8px;
+		gap: $gap-smaller;
 		justify-content: flex-end;
 
 		// The transactions and blocked searches take the room left in the row, as in the client.
@@ -73,7 +74,7 @@
 	// and actions onto the next row.
 	@container dataviews-wrapper (max-width: 430px) {
 		.dataviews__view-actions {
-			column-gap: 8px;
+			column-gap: $gap-smaller;
 		}
 
 		// A search takes its own row with the actions.
@@ -100,8 +101,9 @@
 	// with a line below it. The line above it is the client's card header border (`CardHeader`); on
 	// the header row it stays right above the header when DataViews shows its filter row.
 	.dataviews-view-table thead th {
+		// stylelint-disable-next-line color-no-hex -- Client 11.1.0 table header band; no upstream token.
 		background-color: #f8f9fa;
-		border-block-end: 1px solid #e2e4e7;
+		border-block-end: 1px solid $table-border;
 		border-block-start: 1px solid rgba(0, 0, 0, 0.1);
 	}
 
@@ -120,10 +122,10 @@
 // the list card, 16px below 782px.
 .woocommerce-woopayments-money-movement__list {
 	display: grid;
-	gap: 24px;
+	gap: $gap-large;
 
 	@media (max-width: 781px) {
-		gap: 16px;
+		gap: $gap;
 	}
 }
 
@@ -144,15 +146,16 @@
 
 // Client 11.1.0 `@woocommerce/components` `.woocommerce-table__empty-item`: the empty list's message.
 .woocommerce-woopayments-money-movement-dataviews__empty {
-	color: #757575;
+	color: $gray-700;
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- Client 11.1.0 empty-list message size; base-styles' type scale has no 18px.
 	font-size: 18px;
 	font-weight: bold;
 	margin: 0;
-	padding: 16px 24px;
+	padding: $gap $gap-large;
 	text-align: center;
 
 	@media (max-width: 781px) {
-		font-size: 13px;
+		font-size: $font-size-medium;
 	}
 }
 
@@ -171,7 +174,7 @@
 // Client 11.1.0 `style.scss` `.info-button`: the grey info icon that starts a disputes or payouts row.
 .woocommerce-woopayments-money-movement__details-link {
 	display: inline-flex;
-	fill: #8c8f94;
+	fill: $studio-gray-30;
 
 	&:hover,
 	&:focus {
@@ -189,6 +192,7 @@
 
 .woocommerce-woopayments-money-movement__conversion-indicator {
 	display: inline-flex;
-	fill: #8c8f94;
+	fill: $studio-gray-30;
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 6px (between $gap-smallest and $gap-smaller).
 	margin-inline-end: 6px;
 }

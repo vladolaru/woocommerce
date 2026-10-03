@@ -32,3 +32,6 @@ $woopayments-admin-page-max-width: 960px;
 
 // base-styles' $alert-yellow, which WooCommerce's shared variables redefine as #ffb900; the client's dispute warnings use this one.
 $woopayments-warning-yellow: #f0b849;
+
+// Pages under the Payments settings tab (the settings page, Reports) stop at 1120px; no upstream page width token.
+$woopayments-wide-page-max-width: 1120px;

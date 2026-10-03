@@ -1,11 +1,14 @@
+@import "../../_tokens.scss";
+
 .woocommerce-woopayments-capital {
 	display: grid;
-	gap: 16px;
-	max-width: 960px;
+	gap: $gap;
+	max-width: $woopayments-admin-page-max-width;
 
 	&__section {
-		background: #fff;
-		border: 1px solid #dcdcde;
+		background: $white;
+		border: 1px solid $studio-gray-5;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 20px (between $gap and $gap-large).
 		padding: 20px;
 	}
 
@@ -15,23 +18,24 @@
 	}
 
 	&__status {
-		margin: 16px 0 0;
+		margin: $gap 0 0;
 	}
 
 	&__list-summary {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 12px;
-		margin: 0 0 16px;
+		gap: $gap-small;
+		margin: 0 0 $gap;
 	}
 
 	&__list-summary span {
-		background: #f6f7f7;
-		border: 1px solid #dcdcde;
-		border-radius: 2px;
-		color: #1e1e1e;
+		background: $studio-gray-0;
+		border: 1px solid $studio-gray-5;
+		border-radius: $radius-small;
+		color: $gray-900;
 		display: inline-block;
 		font-weight: 600;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- the loan count pill's padding; no token at 6px or 10px.
 		padding: 6px 10px;
 	}
 
@@ -42,8 +46,8 @@
 
 	&__table th,
 	&__table td {
-		border-bottom: 1px solid #dcdcde;
-		padding: 12px;
+		border-bottom: 1px solid $studio-gray-5;
+		padding: $gap-small;
 		text-align: left;
 		vertical-align: top;
 	}
@@ -58,22 +62,25 @@
 	}
 
 	&__loan-action:focus-visible {
+		// stylelint-disable-next-line color-no-hex -- pending accent improvement: the WP admin focus width and theme colour vars.
 		outline: 2px solid #2271b1;
 		outline-offset: 2px;
 	}
 
+
+	// stylelint-disable color-no-hex, declaration-property-value-disallowed-list -- loan status chip palette and 2px padding have no upstream token; the improvement pass moves these chips to core's status badges.
 	&__status-chip {
-		border: 1px solid #8c8f94;
-		border-radius: 2px;
+		border: 1px solid $studio-gray-30;
+		border-radius: $radius-small;
 		display: inline-block;
 		font-weight: 600;
 		line-height: 1.5;
-		padding: 2px 8px;
+		padding: 2px $gap-smaller;
 
 		&.is-active {
 			background: #fcf9e8;
 			border-color: #dba617;
-			color: #4f3500;
+			color: $studio-yellow-80;
 		}
 
 		&.is-paid-off {
@@ -82,4 +89,5 @@
 			color: #0a4b78;
 		}
 	}
+	// stylelint-enable color-no-hex, declaration-property-value-disallowed-list
 }

@@ -2,8 +2,7 @@
 
 // The page sits under core's offline payments header (settings-payments/index.tsx), so it takes that header's inset.
 .woopayments-settings-page {
-	// stylelint-disable-next-line declaration-property-value-disallowed-list -- page width; no upstream page width token.
-	max-width: 1120px;
+	max-width: $woopayments-wide-page-max-width;
 	margin: $gap-large $grid-unit-60 $gap;
 	color: $gray-900;
 
