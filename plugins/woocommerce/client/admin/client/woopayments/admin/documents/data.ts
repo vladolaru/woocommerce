@@ -6,6 +6,7 @@ import apiFetch from '@wordpress/api-fetch';
 /**
  * Internal dependencies
  */
+import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 import {
 	DOCUMENT_LIST_QUERY_PARAM_ORDER,
 	DOCUMENT_SUMMARY_QUERY_PARAM_ORDER,
@@ -45,12 +46,24 @@ const getWpApiSettings = () =>
 		}
 	 ).wpApiSettings;
 
+/**
+ * The Documents account facts, from the admin preload as client 11.1.0 has them in `wcpaySettings.accountStatus`, or from
+ * the account route when the page was not preloaded.
+ */
 export const getWooPaymentsDocumentsAccount =
-	(): Promise< WooPaymentsDocumentsAccountResponse > =>
-		apiFetch< WooPaymentsDocumentsAccountResponse >( {
+	(): Promise< WooPaymentsDocumentsAccountResponse > => {
+		const preloaded = getWooPaymentsSettingsBootstrap().accountDocuments;
+		if ( preloaded && typeof preloaded === 'object' ) {
+			return Promise.resolve( {
+				documents: preloaded,
+			} as WooPaymentsDocumentsAccountResponse );
+		}
+
+		return apiFetch< WooPaymentsDocumentsAccountResponse >( {
 			path: ACCOUNT_PATH,
 			method: 'GET',
 		} );
+	};
 
 export const getWooPaymentsDocuments = (
 	query: WooPaymentsDocumentsQuery = {}

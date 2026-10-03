@@ -434,6 +434,12 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['formattedStoreAddress'] = $this->get_formatted_store_address();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1031` localizes this on every page; the transactions list reads it for its Loan filter.
 		$settings['woopaymentsSettings']['accountLoans'] = $this->get_account_loans();
+		// Plugin 11.1.0 localizes these in `accountStatus` (isDocumentsEnabled, hasSubmittedVatData, country) for Documents and the VAT link.
+		$settings['woopaymentsSettings']['accountDocuments'] = array(
+			'enabled'                => $this->account_service->is_documents_enabled(),
+			'has_submitted_vat_data' => $this->account_service->has_submitted_vat_data(),
+			'country'                => $this->account_service->get_account_country(),
+		);
 		// Plugin 11.1.0 `class-wc-payments-admin.php:930-935,1046`: the list exports send it as `user_email`, the address the platform emails the file to.
 		$current_user                                        = wp_get_current_user();
 		$settings['woopaymentsSettings']['currentUserEmail'] = $current_user->user_email ? $current_user->user_email : get_option( 'admin_email' );

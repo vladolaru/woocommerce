@@ -30,7 +30,31 @@ describe( 'WooPayments Documents data helpers', () => {
 		};
 	} );
 
-	it( 'loads account document metadata from the native account summary', async () => {
+	it( 'reads the preloaded account Documents block without a request, as the client reads accountStatus', async () => {
+		const settingsWindow = window as typeof window & {
+			wcSettings?: Record< string, unknown >;
+		};
+		const previous = settingsWindow.wcSettings;
+		const documents = {
+			enabled: true,
+			has_submitted_vat_data: false,
+			country: 'CH',
+		};
+		settingsWindow.wcSettings = {
+			admin: { woopaymentsSettings: { accountDocuments: documents } },
+		};
+
+		try {
+			await expect( getWooPaymentsDocumentsAccount() ).resolves.toEqual( {
+				documents,
+			} );
+			expect( mockApiFetch ).not.toHaveBeenCalled();
+		} finally {
+			settingsWindow.wcSettings = previous;
+		}
+	} );
+
+	it( 'loads account document metadata from the native account summary when nothing was preloaded', async () => {
 		await getWooPaymentsDocumentsAccount();
 
 		expect( mockApiFetch ).toHaveBeenCalledWith( {

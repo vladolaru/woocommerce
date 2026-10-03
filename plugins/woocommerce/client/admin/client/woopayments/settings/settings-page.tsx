@@ -117,7 +117,7 @@ import {
 	useWooPayShowIncompatibilityNotice,
 } from './data/hooks';
 import { registerWooPaymentsSettingsStore } from './data/register';
-import { getWooPaymentsAccountSettings } from './api';
+import { getWooPaymentsDocumentsAccount } from '../admin/documents/data';
 import type { WooPaymentsVatDetails } from '../admin/documents/types';
 import './settings-page-only.scss';
 import './style.scss';
@@ -2342,7 +2342,7 @@ export const WooPaymentsSettingsPage = () => {
 		hasHandledVatDetailsDeepLink.current = true;
 		let isMounted = true;
 
-		getWooPaymentsAccountSettings()
+		getWooPaymentsDocumentsAccount()
 			.then( ( response ) => {
 				if ( ! isMounted ) {
 					return;

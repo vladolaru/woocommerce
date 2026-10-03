@@ -514,6 +514,40 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preload the account's Documents facts so Documents and the VAT link need no account request.
+	 *
+	 * Source: plugin 11.1.0 `WC_Payments_Account::get_account_status_data()` (`isDocumentsEnabled`, `hasSubmittedVatData`, `country`,
+	 * class-wc-payments-account.php:371-384), localized as `wcpaySettings.accountStatus`.
+	 */
+	public function test_preloads_the_account_documents_facts(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = '/woopayments/documents';
+		$sut          = $this->create_controller(
+			true,
+			array(
+				'is_documents_enabled'    => true,
+				'get_cached_account_data' => array(
+					'account_id'             => 'acct_documents',
+					'country'                => 'CH',
+					'has_submitted_vat_data' => true,
+				),
+			)
+		);
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame(
+			array(
+				'enabled'                => true,
+				'has_submitted_vat_data' => true,
+				'country'                => 'CH',
+			),
+			$settings['woopaymentsSettings']['accountDocuments']
+		);
+	}
+
+	/**
 	 * @testdox Should preload no loans when the cached account has no Capital data.
 	 *
 	 * Source: plugin 11.1.0 `WC_Payments_Account::get_capital()` falls back to no loans and no active or previous loan.
