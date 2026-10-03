@@ -1,19 +1,22 @@
+@import "../_tokens.scss";
+
 // The page sits under core's offline payments header (settings-payments/index.tsx), so it takes that header's inset.
 .woopayments-settings-page {
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- page width; no upstream page width token.
 	max-width: 1120px;
-	margin: 24px 48px 16px;
+	margin: $gap-large $grid-unit-60 $gap;
 	color: $gray-900;
 
 	.woopayments-settings-loadable-placeholder-group {
 		display: grid;
-		gap: 12px;
+		gap: $gap-small;
 	}
 
 	.woopayments-settings-loadable-placeholder {
 		display: block;
 		width: 100%;
-		height: 16px;
-		border-radius: 2px;
+		height: $grid-unit-20;
+		border-radius: $radius-small;
 		background-color: $gray-100;
 		animation: loading-fade 1.6s ease-in-out infinite;
 
@@ -44,68 +47,70 @@
 .woopayments-settings-section {
 	display: grid;
 	grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-	gap: 24px;
-	padding: 24px 0;
+	gap: $gap-large;
+	padding: $gap-large 0;
 
 	@include breakpoint("<782px") {
 		grid-template-columns: minmax(0, 1fr);
-		gap: 12px;
+		gap: $gap-small;
 	}
 
 	&__details {
 		h2 {
 			margin: 0;
+			// stylelint-disable-next-line declaration-property-value-disallowed-list -- base-styles' type scale has no 16px (15px → 20px).
 			font-size: 16px;
-			line-height: 24px;
+			line-height: $font-line-height-medium;
 			font-weight: 600;
 		}
 	}
 
 	&__description {
-		margin-top: 8px;
+		margin-top: $gap-smaller;
 		color: $gray-700;
-		font-size: 13px;
-		line-height: 20px;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
 
 		&:first-child {
 			margin-top: 0;
 		}
 
 		p {
-			margin: 0 0 8px;
+			margin: 0 0 $gap-smaller;
 		}
 	}
 
 	&__controls.components-card {
 		box-sizing: border-box;
 		width: 100%;
-		padding: 24px;
+		padding: $gap-large;
 	}
 
 	// Controls that bring their own cards stack them.
 	&__controls:not(.components-card) {
 		display: grid;
-		gap: 16px;
+		gap: $gap;
 		align-content: start;
 	}
 }
 
 .woopayments-settings-field-group {
 	& + & {
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 28px (between $gap-large and $gap-larger).
 		margin-top: 28px;
-		padding-top: 24px;
+		padding-top: $gap-large;
 		border-top: 1px solid $gray-100;
 	}
 
 	h3 {
-		margin: 0 0 16px;
-		font-size: 14px;
-		line-height: 20px;
+		margin: 0 0 $gap;
+		font-size: $woopayments-font-size-subheading;
+		line-height: $font-line-height-small;
 		font-weight: 600;
 	}
 
 	.components-base-control {
-		margin-bottom: 16px;
+		margin-bottom: $gap;
 	}
 
 	> .components-notice {
@@ -137,13 +142,13 @@
 
 .woopayments-settings-payment-method-item {
 	margin: 0;
-	padding: 24px 0;
+	padding: $gap-large 0;
 	border-bottom: 1px solid $gray-100;
 
 	&__main {
 		display: grid;
 		grid-template-columns: 32px 64px minmax(0, 1fr) auto;
-		gap: 16px;
+		gap: $gap;
 		align-items: center;
 	}
 
@@ -189,17 +194,17 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 64px;
-		height: 40px;
+		width: $woopayments-payment-method-logo-width;
+		height: $woopayments-payment-method-logo-height;
 		border: 1px solid $gray-200;
-		border-radius: 4px;
+		border-radius: $radius-medium;
 		object-fit: contain;
 		background: $white;
 	}
 
 	&__icon--fallback {
 		color: $gray-700;
-		font-size: 13px;
+		font-size: $font-size-medium;
 		font-weight: 600;
 		line-height: 1;
 	}
@@ -208,10 +213,10 @@
 		min-width: 0;
 
 		p {
-			margin: 4px 0 0;
+			margin: $gap-smallest 0 0;
 			color: $gray-700;
-			font-size: 13px;
-			line-height: 20px;
+			font-size: $font-size-medium;
+			line-height: $font-line-height-small;
 		}
 	}
 
@@ -220,26 +225,27 @@
 		align-items: center;
 		justify-content: flex-end;
 		min-width: max-content;
-		margin-left: 16px;
+		margin-inline-start: $gap;
 	}
 
 	&__heading {
 		display: flex;
 		align-items: center;
 		flex-wrap: wrap;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 6px (between $gap-smallest and $gap-smaller).
 		gap: 6px;
 	}
 
 	&__label {
 		color: $gray-900;
-		font-size: 14px;
-		line-height: 20px;
+		font-size: $woopayments-font-size-subheading;
+		line-height: $font-line-height-small;
 		font-weight: 600;
 	}
 
 	&__required {
 		color: $gray-700;
-		font-size: 12px;
+		font-size: $font-size-small;
 		line-height: 18px;
 	}
 
@@ -253,10 +259,10 @@
 	&__promotion-badge {
 		display: inline-flex;
 		align-items: center;
-		min-height: 20px;
-		padding: 1px 8px;
-		border-radius: 2px;
-		font-size: 12px;
+		min-height: $woopayments-badge-min-height;
+		padding: 1px $gap-smaller;
+		border-radius: $radius-small;
+		font-size: $font-size-small;
 		line-height: 18px;
 	}
 
@@ -271,17 +277,18 @@
 	}
 
 	&__promotion-badge {
-		gap: 4px;
+		gap: $gap-smallest;
 		font-weight: 500;
 
 		&:not(button) {
 			cursor: default;
 		}
 
+		// stylelint-disable color-no-hex -- one-off badge state colours with no upstream token; see _tokens.scss for the shared ones.
 		&.is-success {
 			border-color: #b8e6cd;
-			background: #e8f7f0;
-			color: #005c3a;
+			background: $woopayments-badge-success-background;
+			color: $woopayments-badge-success-color;
 		}
 
 		&.is-primary {
@@ -298,18 +305,20 @@
 
 		&.is-warning {
 			border-color: #f0d96a;
-			background: #fcf9e8;
+			background: $woopayments-badge-warning-background;
 			color: $gray-900;
 		}
 
 		&.is-alert {
 			border-color: #f0b7bf;
-			background: #f7ebec;
+			background: $studio-red-0;
 			color: $alert-red;
 		}
+		// stylelint-enable color-no-hex
 	}
 
 	&__fee-pill {
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- a pill; $radius-full is 9999px, not 999px.
 		border-radius: 999px;
 		white-space: nowrap;
 	}
@@ -320,24 +329,24 @@
 	}
 
 	&__discount-badge {
-		background: #e8f7f0;
-		color: #005c3a;
+		background: $woopayments-badge-success-background;
+		color: $woopayments-badge-success-color;
 		font-weight: 500;
 	}
 
 	&__chip {
 		display: inline-flex;
 		align-items: center;
-		min-height: 20px;
-		padding: 1px 8px;
-		border-radius: 2px;
-		background: #fcf9e8;
+		min-height: $woopayments-badge-min-height;
+		padding: 1px $gap-smaller;
+		border-radius: $radius-small;
+		background: $woopayments-badge-warning-background;
 		color: $gray-900;
-		font-size: 12px;
+		font-size: $font-size-small;
 		line-height: 18px;
 
 		&.is-error {
-			background: #f7ebec;
+			background: $studio-red-0;
 			color: $alert-red;
 		}
 	}
@@ -346,12 +355,14 @@
 		display: flex;
 		align-items: center;
 		flex-wrap: wrap;
-		gap: 8px;
-		margin-top: 12px;
+		gap: $gap-smaller;
+		margin-top: $gap-small;
 
 		img {
+			// stylelint-disable declaration-property-value-disallowed-list -- sized by the asset.
 			width: 32px;
 			height: 20px;
+			// stylelint-enable declaration-property-value-disallowed-list
 			object-fit: contain;
 		}
 	}
@@ -361,8 +372,8 @@
 	&__notices {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
-		margin-top: 24px;
+		gap: $gap-small;
+		margin-top: $gap-large;
 
 		&:empty {
 			display: none;
@@ -379,13 +390,15 @@
 	@media (max-width: 660px) {
 		&__main {
 			grid-template-columns: 24px auto minmax(0, 1fr);
-			gap: 8px 12px;
+			gap: $gap-smaller $gap-small;
 		}
 
 		// The client's logos drop to 30px high on narrow screens.
 		&__icon {
+			// stylelint-disable declaration-property-value-disallowed-list -- narrow-screen logo box, sized by the asset.
 			width: 48px;
 			height: 30px;
+			// stylelint-enable declaration-property-value-disallowed-list
 		}
 
 		&__body {
@@ -399,12 +412,12 @@
 		}
 
 		&__card-brands {
-			margin-top: 4px;
+			margin-top: $gap-smallest;
 		}
 
 		&__actions {
 			justify-content: flex-start;
-			margin-left: 0;
+			margin-inline-start: 0;
 		}
 
 		&--grouped &__actions {
@@ -419,14 +432,14 @@
 }
 
 .woopayments-settings-payment-methods__manual-capture-notice.components-notice {
-	margin: 0 0 16px;
+	margin: 0 0 $gap;
 }
 
 .woopayments-settings-payment-method-activation-modal {
 	&__body {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: $gap-small;
 
 		p,
 		ul {
@@ -434,12 +447,13 @@
 		}
 
 		ul {
-			padding-left: 20px;
+			padding-inline-start: $woopayments-list-indent;
 		}
 	}
 
 	.woopayments-settings-payment-method-item__icon {
-		width: 64px;
+		width: $woopayments-payment-method-logo-width;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- the modal logo box is 2px taller than the row's.
 		height: 42px;
 	}
 }
@@ -447,7 +461,7 @@
 .woopayments-settings-control-grid {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 16px;
+	gap: $gap;
 
 	.wcpay-component-phone-number-input {
 		display: block;
@@ -457,7 +471,7 @@
 	.wcpay-component-phone-number-input__input {
 		box-sizing: border-box;
 		width: 100%;
-		min-height: 40px;
+		min-height: $grid-unit-50;
 	}
 
 	@include breakpoint("<782px") {
@@ -466,7 +480,7 @@
 
 	&--stacked {
 		grid-template-columns: 1fr;
-		max-width: 500px;
+		max-width: $woopayments-field-max-width;
 	}
 
 	&--inline {
@@ -476,22 +490,22 @@
 }
 
 .woopayments-settings-advanced-option {
-	margin-bottom: 16px;
+	margin-bottom: $gap;
 }
 
 .components-checkbox-control + .woopayments-settings-field-group {
-	margin-top: 24px;
+	margin-top: $gap-large;
 }
 
 .woopayments-settings-field-narrow {
-	max-width: 500px;
+	max-width: $woopayments-field-max-width;
 }
 
 .woopayments-settings-location-grid {
 	display: grid;
 	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 12px;
-	margin: 8px 0 16px;
+	gap: $gap-small;
+	margin: $gap-smaller 0 $gap;
 
 	@include breakpoint("<782px") {
 		grid-template-columns: 1fr;
@@ -500,17 +514,17 @@
 
 .woopayments-settings-location-fieldset {
 	min-width: 0;
-	margin: 8px 0 16px;
+	margin: $gap-smaller 0 $gap;
 	padding: 0;
 	border: 0;
 }
 
 .woopayments-settings-logo-upload {
-	margin-top: 16px;
+	margin-top: $gap;
 
 	label {
 		display: block;
-		margin-bottom: 8px;
+		margin-bottom: $gap-smaller;
 		font-weight: 500;
 	}
 
@@ -520,14 +534,14 @@
 	}
 
 	.components-notice {
-		margin: 12px 0 0;
+		margin: $gap-small 0 0;
 	}
 }
 
 .woopayments-settings-modal {
 	display: flex;
 	flex-direction: column;
-	gap: 16px;
+	gap: $gap;
 
 	h2,
 	p {
@@ -537,8 +551,8 @@
 	&__actions {
 		display: flex;
 		justify-content: flex-end;
-		gap: 8px;
-		margin-top: 8px;
+		gap: $gap-smaller;
+		margin-top: $gap-smaller;
 	}
 }
 
@@ -546,7 +560,7 @@
 	&__payment-methods-list {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: $gap-small;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -554,12 +568,12 @@
 		li {
 			display: flex;
 			align-items: center;
-			gap: 8px;
+			gap: $gap-smaller;
 			min-width: 0;
 			margin: 0;
 			color: $gray-900;
-			font-size: 13px;
-			line-height: 20px;
+			font-size: $font-size-medium;
+			line-height: $font-line-height-small;
 		}
 	}
 
@@ -568,63 +582,70 @@
 		align-items: center;
 		justify-content: center;
 		flex: 0 0 auto;
+		// stylelint-disable declaration-property-value-disallowed-list -- small logo box, sized by the asset.
 		width: 32px;
 		height: 24px;
+		// stylelint-enable declaration-property-value-disallowed-list
 		border: 1px solid $gray-200;
-		border-radius: 2px;
+		border-radius: $radius-small;
 		background: $white;
 		object-fit: contain;
 	}
 
 	&__method-icon--fallback {
 		color: $gray-700;
-		font-size: 12px;
+		font-size: $font-size-small;
 		font-weight: 600;
 		line-height: 1;
 	}
 
 	&__help {
 		color: $gray-700;
-		font-size: 13px;
-		line-height: 20px;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
 	}
 }
 
 .woopayments-woopay-disable-feedback {
 	@media (min-width: 960px) {
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- modal inset for the hosted feedback form; no upstream token.
 		max-height: calc(100% - 120px);
 	}
 
 	.components-modal__content {
-		padding: 24px;
+		padding: $gap-large;
 	}
 
 	&__body {
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- modal width for the hosted feedback form; no upstream token.
 		width: min(600px, calc(100vw - 96px));
 	}
 
 	&__logo {
 		display: block;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- sized by the WooPay logo asset.
 		height: 31px;
 	}
 
 	&__status {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		margin: 0 0 12px;
+		gap: $gap-smaller;
+		margin: 0 0 $gap-small;
 		color: $gray-700;
-		font-size: 13px;
-		line-height: 20px;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
 	}
 
 	&__iframe {
 		display: block;
 		width: 100%;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- sized by the hosted form's content.
 		min-height: 650px;
 		border: 0;
 
 		@include breakpoint("<782px") {
+			// stylelint-disable-next-line declaration-property-value-disallowed-list -- sized by the hosted form's content.
 			min-height: 560px;
 		}
 	}
@@ -633,25 +654,25 @@
 .woopayments-settings-inline-status {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	margin: 8px 0 0;
+	gap: $gap-smaller;
+	margin: $gap-smaller 0 0;
 	color: $gray-700;
 
 	.components-button {
-		margin-left: 8px;
+		margin-inline-start: $gap-smaller;
 	}
 }
 
 .woopayments-settings-character-count,
 .woopayments-settings-muted {
-	margin: 8px 0 0;
+	margin: $gap-smaller 0 0;
 	color: $gray-700;
-	font-size: 12px;
+	font-size: $font-size-small;
 	line-height: 18px;
 }
 
 .woopayments-settings-field-group > .woopayments-settings-muted {
-	margin: 0 0 16px;
+	margin: 0 0 $gap;
 }
 
 .woopayments-settings-save-bar {
@@ -660,9 +681,9 @@
 	z-index: 1;
 	display: flex;
 	align-items: center;
-	gap: 16px;
-	margin-top: 24px;
-	padding: 16px 0;
+	gap: $gap;
+	margin-top: $gap-large;
+	padding: $gap 0;
 	border-top: 1px solid $gray-200;
 	background: $white;
 
@@ -674,8 +695,8 @@
 	&__status {
 		margin: 0;
 		color: $gray-700;
-		font-size: 13px;
-		line-height: 20px;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
 
 		&.is-error {
 			color: $alert-red;
@@ -702,20 +723,21 @@
 // popovers (settings-payments-main.scss), the Popover's class sets the width, wide enough for one line per fee row.
 .woopayments-settings-payment-method-item__popover .woopayments-settings-payment-method-item__details-popover {
 	box-sizing: border-box;
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- wide enough for one line per fee row; no upstream popover width.
 	width: 320px;
 }
 
 .woopayments-settings-payment-method-item__details-popover {
 	display: grid;
-	gap: 8px;
-	padding: 12px;
-	font-size: 12px;
+	gap: $gap-smaller;
+	padding: $gap-small;
+	font-size: $font-size-small;
 	line-height: 18px;
 
 	> span {
 		display: flex;
 		justify-content: space-between;
-		gap: 16px;
+		gap: $gap;
 		white-space: nowrap;
 	}
 

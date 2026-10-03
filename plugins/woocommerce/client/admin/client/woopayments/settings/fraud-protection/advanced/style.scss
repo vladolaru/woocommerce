@@ -1,40 +1,44 @@
+@import "../../../_tokens.scss";
+
 .woopayments-fraud-protection-advanced__rules {
 	display: grid;
-	gap: 16px;
+	gap: $gap;
 }
 
 .woopayments-fraud-protection-rule {
-	padding: 24px;
+	padding: $gap-large;
 
 	h3 {
-		margin: 0 0 16px;
-		font-size: 14px;
-		line-height: 20px;
+		margin: 0 0 $gap;
+		font-size: $woopayments-font-size-subheading;
+		line-height: $font-line-height-small;
 		font-weight: 600;
 	}
 }
 
 .woopayments-fraud-protection-rule--loading {
 	display: grid;
-	gap: 12px;
+	gap: $gap-small;
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- the loading card's height; no upstream token.
 	min-height: 136px;
 }
 
 .woopayments-fraud-protection-rule__loading-title,
 .woopayments-fraud-protection-rule__loading-line {
 	display: block;
-	border-radius: 2px;
-	background: linear-gradient(90deg, #f0f0f1 0%, #f6f7f7 50%, #f0f0f1 100%);
+	border-radius: $radius-small;
+	background: linear-gradient(90deg, $wp-admin-background 0%, $studio-gray-0 50%, $wp-admin-background 100%);
 }
 
 .woopayments-fraud-protection-rule__loading-title {
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- the loading title's width; no upstream token.
 	width: 220px;
-	height: 24px;
+	height: $grid-unit-30;
 }
 
 .woopayments-fraud-protection-rule__loading-line {
 	width: 100%;
-	height: 16px;
+	height: $grid-unit-20;
 }
 
 .woopayments-fraud-protection-rule__loading-line--short {
@@ -43,41 +47,41 @@
 
 .woopayments-fraud-protection-rule__control {
 	display: grid;
-	gap: 16px;
+	gap: $gap;
 }
 
 .woopayments-fraud-protection-rule .components-notice {
-	margin: 0 0 16px;
+	margin: 0 0 $gap;
 }
 
 .woopayments-fraud-protection-rule__description {
-	margin-top: 16px;
+	margin-top: $gap;
 
 	p {
-		margin: 8px 0 0;
-		color: #646970;
+		margin: $gap-smaller 0 0;
+		color: $studio-gray-50;
 	}
 }
 
 .woopayments-fraud-protection-rule__threshold-details {
-	margin: 0 0 8px 24px;
+	margin: 0 0 $gap-smaller $gap-large;
 
 	h4 {
-		margin: 0 0 12px;
-		font-size: 13px;
-		line-height: 20px;
+		margin: 0 0 $gap-small;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
 		font-weight: 600;
 	}
 
 	.components-notice {
-		margin: 8px 0 0;
+		margin: $gap-smaller 0 0;
 	}
 }
 
 .woopayments-fraud-protection-rule__thresholds {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 16px;
+	gap: $gap;
 	margin: 0;
 }
 
@@ -85,41 +89,43 @@
 	display: block;
 
 	.components-base-control__help {
-		margin: 8px 0 0;
-		color: #646970;
+		margin: $gap-smaller 0 0;
+		color: $studio-gray-50;
 	}
 }
 
 .woopayments-fraud-protection-rule__threshold-label {
 	display: block;
-	margin: 0 0 8px;
-	color: #1e1e1e;
-	font-size: 11px;
+	margin: 0 0 $gap-smaller;
+	color: $gray-900;
+	font-size: $font-size-x-small;
 	font-weight: 500;
-	line-height: 16px;
+	line-height: $font-line-height-x-small;
 	text-transform: uppercase;
 }
 
 .woopayments-fraud-protection-rule__currency-input {
 	display: flex;
 	align-items: center;
-	min-height: 40px;
-	border: 1px solid #8c8f94;
-	border-radius: 2px;
-	background: #fff;
+	min-height: $grid-unit-50;
+	border: 1px solid $studio-gray-30;
+	border-radius: $radius-small;
+	background: $white;
 
+	// The ring width is base-styles' input focus relation: focus width minus the 1px border already coloured.
 	&:focus-within {
-		border-color: #3858e9;
-		box-shadow: 0 0 0 1px #3858e9;
+		border-color: var(--wp-admin-theme-color);
+		box-shadow: 0 0 0 ($border-width-focus-fallback - $border-width) var(--wp-admin-theme-color);
 	}
 
 	.components-text-control__input {
 		flex: 1 1 auto;
 		min-width: 0;
-		height: 40px;
+		height: $grid-unit-50;
 		border: 0;
 		box-shadow: none;
-		padding-left: 6px;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 6px (between $gap-smallest and $gap-smaller).
+		padding-inline-start: 6px;
 
 		&:focus {
 			box-shadow: none;
@@ -130,8 +136,8 @@
 
 .woopayments-fraud-protection-rule__currency-prefix {
 	flex: 0 0 auto;
-	padding-left: 12px;
-	color: #646970;
+	padding-inline-start: $gap-small;
+	color: $studio-gray-50;
 	line-height: 1;
 }
 

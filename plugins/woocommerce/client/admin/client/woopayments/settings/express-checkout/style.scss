@@ -1,16 +1,19 @@
+@import "../../_tokens.scss";
+
 .woopayments-express-checkout-settings {
 	// Client 11.1.0 express-checkout-settings/index.scss:25-39 and the `payment-method__icon` ring in client/style.scss.
 	&__icons {
 		display: flex;
 		flex-wrap: wrap;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 18px (between $gap and $gap-large).
 		gap: 18px;
-		margin-bottom: 12px;
+		margin-bottom: $gap-small;
 	}
 
 	&__icon {
 		display: inline-flex;
-		width: 64px;
-		height: 40px;
+		width: $woopayments-payment-method-logo-width;
+		height: $woopayments-payment-method-logo-height;
 
 		img {
 			display: block;
@@ -26,7 +29,7 @@
 	}
 
 	.woopayments-settings-section__controls .components-base-control {
-		margin-bottom: 16px;
+		margin-bottom: $gap;
 	}
 
 	&__locations .components-base-control {
@@ -36,26 +39,26 @@
 	&__locations {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
-		margin: 8px 0 0 24px;
+		gap: $gap-smaller;
+		margin: $gap-smaller 0 0 $gap-large;
 		padding: 0;
 		list-style: none;
 	}
 
 	&__notice.components-notice {
-		margin: 0 0 16px;
+		margin: 0 0 $gap;
 	}
 
 	&__appearance {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: $gap;
 	}
 
 	&__border-radius {
 		display: flex;
 		align-items: center;
-		gap: 16px;
+		gap: $gap;
 
 		> :first-child {
 			flex: 0 0 80px;
@@ -67,47 +70,49 @@
 	}
 
 	&__help-text {
-		margin-bottom: 12px;
+		margin-bottom: $gap-small;
 		color: $gray-700;
-		font-size: 13px;
-		line-height: 20px;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
 	}
 
 	&__preview {
-		padding: 24px;
+		padding: $gap-large;
 		border: 1px solid rgba(25, 23, 17, 0.3);
-		border-radius: 4px;
+		border-radius: $radius-medium;
 		background: $white;
 	}
 
 	&__preview-stack {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: $gap-small;
 
 		// Like the client, which wraps each preview button in a div with a 4px margin and sets its notices 24px lower.
 		> .woopayments-express-checkout-settings__woopay-button-preview,
 		> .woopayments-express-checkout-settings__stripe-preview {
 			width: auto;
-			margin: 4px;
+			margin: $gap-smallest;
 		}
 
 		> .woopayments-express-checkout-settings__notice.components-notice {
-			margin: 24px 0 0;
+			margin: $gap-large 0 0;
 		}
 	}
 
 	// Like the client, the preview box darkens behind the light buttons so they stay visible.
 	&__preview[data-theme="light"] {
+		// stylelint-disable-next-line color-no-hex -- the client's dark preview backdrop; no upstream token.
 		background: #2b2b2b;
 	}
 
 	&__preview[data-theme="light-outline"] {
-		background: #f0f0f0;
+		background: $gray-100;
 	}
 
 	// Copy of the storefront `.woopay-express-button` rules in
 	// client/blocks/assets/js/extensions/payment-methods/woopayments/woopay/style.scss; change both together.
+	// stylelint-disable color-no-hex, declaration-property-value-disallowed-list -- storefront values, kept literal so the copy stays comparable.
 	&__woopay-button-preview {
 		display: flex;
 		align-items: center;
@@ -175,12 +180,14 @@
 			transform: scale(1.1);
 		}
 	}
+	// stylelint-enable color-no-hex, declaration-property-value-disallowed-list
 
 	&__stripe-preview {
 		width: 100%;
 	}
 
 	// Like the client, the checkout preview scales to the column instead of scrolling sideways.
+	// stylelint-disable color-no-hex, declaration-property-value-disallowed-list -- a scaled-down replica of WooPay's checkout page: WooPay's own colours and miniature sizes, not admin UI.
 	&__woopay-preview {
 		.preview-layout {
 			padding: 0;
@@ -539,35 +546,36 @@
 			}
 		}
 	}
+	// stylelint-enable color-no-hex, declaration-property-value-disallowed-list
 
 	&__logo-upload {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 16px;
+		gap: $gap;
 	}
 
 	&__logo-actions {
 		display: inline-flex;
 		align-items: center;
-		gap: 8px;
+		gap: $gap-smaller;
 	}
 
 	&__global-theme-label {
 		display: inline-flex;
 		align-items: center;
-		gap: 4px;
+		gap: $gap-smallest;
 	}
 
 	&__badge {
 		display: inline-flex;
 		align-items: center;
-		min-height: 20px;
-		padding: 0 8px;
-		border-radius: 2px;
+		min-height: $woopayments-badge-min-height;
+		padding: 0 $gap-smaller;
+		border-radius: $radius-small;
 		background: $gray-100;
 		color: $gray-900;
-		font-size: 12px;
+		font-size: $font-size-small;
 		line-height: 18px;
 	}
 }

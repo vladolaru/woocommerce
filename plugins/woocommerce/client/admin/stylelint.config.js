@@ -19,12 +19,6 @@ const woopaymentsUnconvertedFiles = [
 	'client/woopayments/admin/reports/style.scss',
 	'client/woopayments/admin/style.scss',
 	'client/woopayments/promotions/style.scss',
-	'client/woopayments/settings/express-checkout/style.scss',
-	'client/woopayments/settings/fraud-protection/advanced/style.scss',
-	'client/woopayments/settings/fraud-protection/style.scss',
-	'client/woopayments/settings/settings-page-only.scss',
-	'client/woopayments/settings/setup-live-payments-modal.scss',
-	'client/woopayments/settings/style.scss',
 ];
 
 module.exports = {

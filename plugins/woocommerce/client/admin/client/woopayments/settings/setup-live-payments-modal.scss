@@ -1,8 +1,10 @@
+@import "../_tokens.scss";
+
 .woopayments-settings-setup-live-modal {
 	&__content {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: $gap;
 
 		p,
 		ul {
@@ -11,14 +13,14 @@
 
 		ul {
 			display: grid;
-			gap: 12px;
-			padding-inline-start: 20px;
+			gap: $gap-small;
+			padding-inline-start: $woopayments-list-indent;
 		}
 	}
 
 	&__footer {
 		display: flex;
 		justify-content: flex-end;
-		margin-top: 24px;
+		margin-top: $gap-large;
 	}
 }

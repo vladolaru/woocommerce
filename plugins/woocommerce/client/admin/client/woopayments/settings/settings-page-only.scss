@@ -1,10 +1,11 @@
 .woopayments-settings-account-mode-notice.components-notice {
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 20px (between $gap and $gap-large).
 	margin: 0 0 20px;
 
 	p {
-		margin: 0 0 12px;
-		font-size: 13px;
-		line-height: 20px;
+		margin: 0 0 $gap-small;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
 
 		&:last-child {
 			margin-bottom: 0;
@@ -17,22 +18,22 @@
 }
 
 .woopayments-settings-notifications-email-warning.components-notice {
-	margin: 12px 0 16px;
+	margin: $gap-small 0 $gap;
 }
 
 .woopayments-settings-payout-bank-account {
 	margin: 0;
 	color: $gray-700;
-	font-size: 13px;
-	line-height: 20px;
+	font-size: $font-size-medium;
+	line-height: $font-line-height-small;
 }
 
 .woopayments-settings-payout-bank-account__notice {
 	margin: 0;
-	padding: 12px;
+	padding: $gap-small;
 	border-left: 4px solid $alert-red;
-	background: #f7ebec;
+	background: $studio-red-0;
 	color: $gray-900;
-	font-size: 13px;
-	line-height: 20px;
+	font-size: $font-size-medium;
+	line-height: $font-line-height-small;
 }
